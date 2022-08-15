@@ -483,6 +483,7 @@ not the current one and innodb_force_recovery != 0 is passed.
 @return DB_SUCCESS or error */
 static dberr_t log_sys_check_format(const log_t &log);
 
+#ifndef XTRABACKUP
 /** Checks if the redo log directory exists, can be listed and contains
 at least one redo log file.
 @remarks Redo log file is recognized only by looking at the file name,
@@ -496,6 +497,7 @@ call
 @retval DB_NOT_FOUND  if the log directory does not exist */
 static dberr_t log_sys_check_directory(const Log_files_context &ctx,
                                        std::string &path, bool &found_files);
+#endif /* XTRABACKUP */
 
 /** Free the log system data structures. Deallocate all the related memory. */
 static void log_sys_free();
@@ -559,7 +561,7 @@ that the proper size of the log buffer should be a power of two.
 @param[out]     log             redo log */
 static void log_calc_buf_size(log_t &log);
 
-Log_format log_detected_format = Log_format::LEGACY;
+Log_format log_detected_format = Log_format::CURRENT;
 
 /** Pauses writer, flusher and notifiers and switches user threads
 to write log as former version.
@@ -1579,8 +1581,12 @@ static dberr_t log_sys_check_format(const log_t &log) {
   return DB_SUCCESS;
 }
 
-static dberr_t log_sys_check_directory(const Log_files_context &ctx,
-                                       std::string &path, bool &found_files) {
+#ifndef XTRABACKUP
+static
+#endif /* XTRABACKUP */
+    dberr_t
+    log_sys_check_directory(const Log_files_context &ctx, std::string &path,
+                            bool &found_files) {
   path = log_directory_path(ctx);
   if (!os_file_exists(path.c_str())) {
     return DB_NOT_FOUND;
@@ -1850,6 +1856,7 @@ dberr_t log_sys_init(bool expect_no_files, lsn_t flushed_lsn,
     auto result = mtr_t::s_logging.disable(nullptr);
     /* Currently never fails. */
     ut_a(result == 0);
+    /* XB30 assert if redo log is disabled */
     srv_redo_log = false;
   }
 

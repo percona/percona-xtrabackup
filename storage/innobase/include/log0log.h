@@ -380,4 +380,20 @@ void log_crash_safe_validate(log_t &log);
 
 #endif /* !UNIV_HOTBACKUP */
 
+#ifdef XTRABACKUP
+/** Checks if the redo log directory exists, can be listed and contains
+at least one redo log file.
+@remarks Redo log file is recognized only by looking at the file name,
+accordingly to the configured ruleset (@see log_configure()).
+@param[in]      ctx           redo log files context
+@param[in,out]  path          path to redo log directory checked during this
+call
+@param[out]  found_files  true iff found at least one redo log file
+@retval DB_SUCCESS    if succeeded to list the log directory
+@retval DB_ERROR      if failed to list the existing log directory
+@retval DB_NOT_FOUND  if the log directory does not exist */
+dberr_t log_sys_check_directory(const Log_files_context &ctx, std::string &path,
+                                bool &found_files);
+#endif
+
 #endif /* !log0log_h */

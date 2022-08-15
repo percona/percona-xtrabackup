@@ -52,7 +52,7 @@ bool Redo_Log_Reader::find_start_checkpoint_lsn() {
   /* Look for the latest checkpoint */
   Log_checkpoint_location checkpoint;
 
-  if (recv_find_max_checkpoint(*log_sys, checkpoint)) {
+  if (!recv_find_max_checkpoint(*log_sys, checkpoint)) {
     xb::error() << "recv_find_max_checkpoint() failed.";
     return (false);
   }
@@ -98,7 +98,8 @@ bool Redo_Log_Reader::find_start_checkpoint_lsn() {
 
   */
 
-  log_scanned_lsn = checkpoint_lsn_start;
+  log_scanned_lsn = checkpoint.m_checkpoint_lsn;
+  checkpoint_lsn_start = checkpoint.m_checkpoint_lsn;
 
   return (true);
 }
@@ -107,8 +108,8 @@ bool Redo_Log_Reader::validate_redo_log_file() {
   /* Look for the latest checkpoint */
   Log_checkpoint_location checkpoint;
 
-  if (recv_find_max_checkpoint(*log_sys, checkpoint)) {
-    xb::error() << "recv_find_max_checkpoint() failed.";
+  if (!recv_find_max_checkpoint(*log_sys, checkpoint)) {
+    xb::error() << " recv_find_max_checkpoint() failed.";
     return (false);
   }
   return (true);
@@ -128,17 +129,59 @@ lsn_t Redo_Log_Reader::get_start_checkpoint_lsn() const {
   return (checkpoint_lsn_start);
 }
 
+/* scan redo log files form server directory and update log.m_files */
+static bool reopen_log_files() {
+  log_t &log = *log_sys;
+  Log_files_context log_files_ctx =
+      Log_files_context{srv_log_group_home_dir, Log_files_ruleset::CURRENT};
+
+  std::string subdir_path;
+  bool found_files_in_subdir{false};
+  auto err = log_sys_check_directory(log_files_ctx, subdir_path,
+                                     found_files_in_subdir);
+  log.m_files_ctx = std::move(log_files_ctx);
+
+  Log_files_dict files{log.m_files_ctx};
+  Log_format format;
+  std::string creator_name;
+  Log_flags log_flags;
+  Log_uuid log_uuid;
+
+  auto res = log_files_find_and_analyze(
+      srv_read_only_mode, log.m_encryption_metadata, files, format,
+      creator_name, log_flags, log_uuid);
+
+  ut_a(res == Log_files_find_result::FOUND_VALID_FILES);
+
+  log.m_format = format;
+  log.m_creator_name = creator_name;
+  log.m_log_flags = log_flags;
+  log.m_log_uuid = log_uuid;
+  log.m_files = std::move(files);
+
+  if (err != DB_SUCCESS) {
+    ut_ad(0);
+  }
+  return true;
+}
+
 lsn_t Redo_Log_Reader::read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
                                     lsn_t end_lsn) {
   ut_a(start_lsn < end_lsn);
 
-  /*XB30 file should dynamic open. so we need to load m_files */
-  auto file = log.m_files.find(start_lsn);
+  // update the in-memory structure log files by scanning
+  if (log.m_files.find(start_lsn) == log.m_files.end() ||
+      log.m_files.find(end_lsn) == log.m_files.end()) {
+    reopen_log_files();
+  }
 
+  auto file = log.m_files.find(start_lsn);
   if (file == log.m_files.end()) {
     return start_lsn;
   }
+
   auto file_handle = file->open(Log_file_access_mode::READ_ONLY);
+
   ut_a(file_handle.is_open());
 
   do {
@@ -301,7 +344,7 @@ ssize_t Redo_Log_Reader::scan_log_recs(byte *buf, bool is_last, lsn_t start_lsn,
     }
   }
 
-  *read_upto_lsn = scanned_epoch_no;
+  *read_upto_lsn = scanned_lsn;
 
   ssize_t write_size;
 
@@ -869,69 +912,9 @@ void Archived_Redo_Log_Monitor::thread_func() {
   my_thread_end();
 }
 
-/* XB30 link to create_log_file */
-static dberr_t open_or_create_log_file(bool *log_file_created, ulint i,
-                                       fil_space_t **log_space) {
-  bool ret;
-  os_offset_t size;
-  char name[10000];
-  ulint dirnamelen;
-
-  *log_file_created = false;
-
-  Fil_path::normalize(srv_log_group_home_dir);
-
-  dirnamelen = strlen(srv_log_group_home_dir);
-  ut_a(dirnamelen < (sizeof name) - 10 - sizeof "ib_logfile");
-  memcpy(name, srv_log_group_home_dir, dirnamelen);
-
-  /* Add a path separator if needed. */
-  if (dirnamelen && name[dirnamelen - 1] != OS_PATH_SEPARATOR) {
-    name[dirnamelen++] = OS_PATH_SEPARATOR;
-  }
-
-  sprintf(name + dirnamelen, "%s%ld", "ib_logfile", i);
-
-  pfs_os_file_t file = os_file_create(0, name, OS_FILE_OPEN, OS_FILE_NORMAL,
-                                      OS_LOG_FILE, true, &ret);
-  if (!ret) {
-    xb::error() << "error in opening " << name;
-
-    return (DB_ERROR);
-  }
-
-  size = os_file_get_size(file);
-
-  if (size != srv_log_file_size) {
-    xb::error() << "log file " << name << " is of different size " << size
-                << " bytes than specified in the .cnf file "
-                << srv_log_file_size << " bytes!";
-
-    return (DB_ERROR);
-  }
-
-  ret = os_file_close(file);
-  ut_a(ret);
-
-  if (i == 0) {
-    /* Create in memory the file space object
-    which is for this log group */
-
-    *log_space = fil_space_create(name, dict_sys_t::s_log_space_id,
-                                  fsp_flags_set_page_size(0, univ_page_size),
-                                  FIL_TYPE_TEMPORARY);
-  }
-
-  ut_a(*log_space != NULL);
-  ut_ad(fil_validate());
-
-  ut_a(fil_node_create(name, srv_log_file_size / univ_page_size.physical(),
-                       *log_space, false, false) != NULL);
-
-  return (DB_SUCCESS);
-}
-
 bool Redo_Log_Data_Manager::init() {
+  /*XB30 srv_redo_log_capacity */
+  srv_redo_log_capacity = srv_redo_log_capacity_used = 1024 * 1024 * 1024;
   error = true;
   event = os_event_create();
 
@@ -939,14 +922,17 @@ bool Redo_Log_Data_Manager::init() {
 
   lsn_t flushed_lsn = LOG_START_LSN + LOG_BLOCK_HDR_SIZE;
 
-  if (!log_sys_init(false, flushed_lsn, flushed_lsn)) {
+  if (log_sys_init(false, flushed_lsn, flushed_lsn) != DB_SUCCESS) {
     return (false);
   }
+
+  ut_a(log_sys != nullptr);
 
   recv_sys_create();
   recv_sys_init();
 
   /*XB30 srv_n_log_files */
+  /*
   ulong srv_n_log_files = 2;
   ut_a(srv_n_log_files > 0);
 
@@ -955,11 +941,16 @@ bool Redo_Log_Data_Manager::init() {
   bool log_opened = false;
   fil_space_t *log_space = nullptr;
 
+  if (!open_log_files()) {
+    return (false);
+  }
+
   for (ulong i = 0; i < srv_n_log_files; i++) {
     dberr_t err = open_or_create_log_file(&log_file_created, i, &log_space);
     if (err != DB_SUCCESS) {
       return (false);
     }
+
 
     if (log_file_created) {
       log_created = true;
@@ -978,14 +969,17 @@ bool Redo_Log_Data_Manager::init() {
       return (false);
     }
   }
+  */
 
   /* log_file_created must not be true, if online */
+  /*
   if (log_file_created) {
     xb::error() << "Something wrong with source files...";
     exit(EXIT_FAILURE);
   }
+  */
 
-  ut_a(log_space != nullptr);
+  ut_a(log_sys != nullptr);
 
   /*XB30 add log_encryption_read */
   // log_encryption_read(log);
