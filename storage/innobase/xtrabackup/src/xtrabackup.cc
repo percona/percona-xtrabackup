@@ -5034,10 +5034,10 @@ static bool xtrabackup_init_temp_log(void) {
   }
 
   if (!xtrabackup_incremental_dir) {
-    sprintf(dst_path, "%s/ib_logfile0", xtrabackup_target_dir);
+    sprintf(dst_path, "%s/#ib_redo/ib_redo1", xtrabackup_target_dir);
     sprintf(src_path, "%s/%s", xtrabackup_target_dir, XB_LOG_FILENAME);
   } else {
-    sprintf(dst_path, "%s/ib_logfile0", xtrabackup_incremental_dir);
+    sprintf(dst_path, "%s/#ib_redo/ib_redo1", xtrabackup_incremental_dir);
     sprintf(src_path, "%s/%s", xtrabackup_incremental_dir, XB_LOG_FILENAME);
   }
 
@@ -5047,7 +5047,8 @@ retry:
   src_file = os_file_create_simple_no_error_handling(
       0, src_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, srv_read_only_mode,
       &success);
-  if (!success) {
+
+  if (!success && false) {
     /* The following call prints an error message */
     os_file_get_last_error(true);
 
@@ -5057,6 +5058,7 @@ retry:
     src_file = os_file_create_simple_no_error_handling(
         0, dst_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, srv_read_only_mode,
         &success);
+
     if (!success) {
       os_file_get_last_error(true);
       xb::fatal_or_error(UT_LOCATION_HERE) << "cannot find " << src_path;

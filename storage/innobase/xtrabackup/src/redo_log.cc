@@ -57,46 +57,24 @@ bool Redo_Log_Reader::find_start_checkpoint_lsn() {
     return (false);
   }
 
-  /*XB30 --- Reread from header file to ensure we have read the correct value.
-   * because server might be writting when we try to read this
+  /* Redo log file header is never encrypted. */
+  Encryption_metadata unused_encryption_metadata;
 
-  log_files_header_read(*log_sys, max_cp_field);
-  log_detected_format = log_sys->m_format;
+  Log_files_context log_files_ctx =
+      Log_files_context{srv_log_group_home_dir, Log_files_ruleset::CURRENT};
 
-  checkpoint_lsn_start =
-      mach_read_from_8(log_sys->checkpoint_buf + LOG_CHECKPOINT_LSN);
+  auto file_handle =
+      Log_file::open(log_files_ctx, checkpoint.m_checkpoint_file_id,
+                     Log_file_access_mode::READ_ONLY,
+                     unused_encryption_metadata, Log_file_type::NORMAL);
 
-  while (true) {
-    err = fil_redo_io(IORequest(IORequest::LOG | IORequest::READ),
-                      page_id_t(log_sys->files_space_id, 0), univ_page_size, 0,
-                      LOG_FILE_HDR_SIZE, log_hdr_buf);
-
-    if (err != DB_SUCCESS) {
-      xb::error() << "fil_redo_io() failed.";
-
-      return (false);
-    }
-
-    err = recv_find_max_checkpoint(*log_sys, &max_cp_field);
-
-    if (err != DB_SUCCESS) {
-      xb::error() << "recv_find_max_checkpoint() failed.";
-      return (false);
-    }
-
-    log_files_header_read(*log_sys, max_cp_field);
-
-    if (checkpoint_lsn_start !=
-        mach_read_from_8(log_sys->checkpoint_buf + LOG_CHECKPOINT_LSN)) {
-      checkpoint_lsn_start =
-          mach_read_from_8(log_sys->checkpoint_buf + LOG_CHECKPOINT_LSN);
-      continue;
-    }
-
-    break;
+  if (!file_handle.is_open()) {
+    xb::error() << "Failed to open redo log file id "
+                << checkpoint.m_checkpoint_file_id;
+    return false;
   }
 
-  */
+  log_file_header_read(file_handle, log_hdr_buf);
 
   log_scanned_lsn = checkpoint.m_checkpoint_lsn;
   checkpoint_lsn_start = checkpoint.m_checkpoint_lsn;
