@@ -911,15 +911,16 @@ static bool reencrypt_redo_header(const char *dir, const char *filename,
   xb::info() << "Encrypting " << fullpath << " header with new master key";
 
   memset(encrypt_info, 0, Encryption::INFO_SIZE);
-  space.id = dict_sys_t::s_log_space_first_id;
-  bool found = xb_fetch_tablespace_key(space.id, space.encryption_key,
-                                       space.encryption_iv);
+  space.id = dict_sys_t::s_log_space_id;
+  byte key[Encryption::KEY_LEN];
+  byte iv[Encryption::KEY_LEN];
+  bool found = xb_fetch_tablespace_key(space.id, key, iv);
   ut_a(found);
-  space.encryption_type = Encryption::AES;
-  space.encryption_klen = Encryption::KEY_LEN;
+  Encryption::set_or_generate(Encryption::AES, key, iv,
+                              space.m_encryption_metadata);
 
-  if (!Encryption::fill_encryption_info(
-          space.encryption_key, space.encryption_iv, encrypt_info, true)) {
+  if (!Encryption::fill_encryption_info(space.m_encryption_metadata, true,
+                                        encrypt_info)) {
     my_close(fd, MYF(MY_FAE));
     return (false);
   }
@@ -969,16 +970,17 @@ static bool reencrypt_datafile_header(const char *dir, const char *filepath,
   memset(encrypt_info, 0, Encryption::INFO_SIZE);
 
   space.id = page_get_space_id(page);
-  bool found = xb_fetch_tablespace_key(space.id, space.encryption_key,
-                                       space.encryption_iv);
+  byte key[Encryption::KEY_LEN];
+  byte iv[Encryption::KEY_LEN];
+  bool found = xb_fetch_tablespace_key(space.id, key, iv);
   ut_a(found);
-  space.encryption_type = Encryption::AES;
-  space.encryption_klen = Encryption::KEY_LEN;
+  Encryption::set_or_generate(Encryption::AES, key, iv,
+                              space.m_encryption_metadata);
 
   const page_size_t page_size(fsp_header_get_page_size(page));
 
-  if (!Encryption::fill_encryption_info(
-          space.encryption_key, space.encryption_iv, encrypt_info, true)) {
+  if (!Encryption::fill_encryption_info(space.m_encryption_metadata, true,
+                                        encrypt_info)) {
     my_close(fd, MYF(MY_FAE));
     return (false);
   }

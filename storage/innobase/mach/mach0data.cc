@@ -325,15 +325,17 @@ advanced by the number of bytes consumed, or set NULL if out of space
 @param[in]	end_ptr	end of the buffer
 @return unsigned value */
 uint32_t mach_parse_compressed(const byte **ptr, const byte *end_ptr) {
-  switch (log_sys->format) {
-    case LOG_HEADER_FORMAT_5_7_9:
+  switch (log_sys->m_format) {
+    case Log_format::VERSION_5_7_9:
+    case Log_format::LEGACY:
       ut_a(0);
       return (0);
-    case LOG_HEADER_FORMAT_8_0_1:
-    case LOG_HEADER_FORMAT_8_0_3:
-       return(mach_parse_compressed_v3(ptr, end_ptr));
-    case LOG_HEADER_FORMAT_8_0_19:
-    case LOG_HEADER_FORMAT_8_0_28:
+    case Log_format::VERSION_8_0_1:
+    case Log_format::VERSION_8_0_3:
+      return (mach_parse_compressed_v3(ptr, end_ptr));
+    case Log_format::VERSION_8_0_19:
+    case Log_format::VERSION_8_0_28:
+    case Log_format::VERSION_8_0_30:
       return (mach_parse_compressed_v4(ptr, end_ptr));
   }
   /* make compiler happy */

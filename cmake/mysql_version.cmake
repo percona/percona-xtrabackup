@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2021, Oracle and/or its affiliates.
+# Copyright (c) 2009, 2022, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -78,7 +78,7 @@ MACRO(GET_MYSQL_VERSION)
   SET(CPACK_PACKAGE_VERSION_MAJOR ${MAJOR_VERSION})
   SET(CPACK_PACKAGE_VERSION_MINOR ${MINOR_VERSION})
   SET(CPACK_PACKAGE_VERSION_PATCH ${PATCH_VERSION})
-
+  
   IF(WITH_NDBCLUSTER)
     # Read MySQL Cluster version values from MYSQL_VERSION, these are optional
     # as by default MySQL Cluster is using the MySQL Server version
@@ -97,12 +97,12 @@ MACRO(GET_MYSQL_VERSION)
       # Set MySQL Cluster version to the specific version defined in MYSQL_VERSION
       SET(MYSQL_CLUSTER_VERSION "${CLUSTER_MAJOR_VERSION}")
       SET(MYSQL_CLUSTER_VERSION
-        "${MYSQL_CLUSTER_VERSION}.${CLUSTER_MINOR_VERSION}")
+	"${MYSQL_CLUSTER_VERSION}.${CLUSTER_MINOR_VERSION}")
       SET(MYSQL_CLUSTER_VERSION
-        "${MYSQL_CLUSTER_VERSION}.${CLUSTER_PATCH_VERSION}")
+	"${MYSQL_CLUSTER_VERSION}.${CLUSTER_PATCH_VERSION}")
       IF(DEFINED CLUSTER_EXTRA_VERSION)
-        SET(MYSQL_CLUSTER_VERSION
-          "${MYSQL_CLUSTER_VERSION}${CLUSTER_EXTRA_VERSION}")
+	SET(MYSQL_CLUSTER_VERSION
+	  "${MYSQL_CLUSTER_VERSION}${CLUSTER_EXTRA_VERSION}")
       ENDIF()
     ELSE()
       # Set MySQL Cluster version to the same as MySQL Server, possibly
@@ -110,17 +110,17 @@ MACRO(GET_MYSQL_VERSION)
       # This might be used when MySQL Cluster is still released as DMR
       # while MySQL Server is already GA.
       SET(MYSQL_CLUSTER_VERSION
-        "${MAJOR_VERSION}.${MINOR_VERSION}.${PATCH_VERSION}")
+	"${MAJOR_VERSION}.${MINOR_VERSION}.${PATCH_VERSION}")
       IF(DEFINED CLUSTER_EXTRA_VERSION)
-        # Using specific MySQL Cluster extra version
-        SET(MYSQL_CLUSTER_VERSION
-          "${MYSQL_CLUSTER_VERSION}${CLUSTER_EXTRA_VERSION}")
-        # Override the extra version for rpm packages
-        STRING(REGEX REPLACE "^-" "." MYSQL_VERSION_EXTRA_DOT
-          "${CLUSTER_EXTRA_VERSION}")
+	# Using specific MySQL Cluster extra version
+	SET(MYSQL_CLUSTER_VERSION
+	  "${MYSQL_CLUSTER_VERSION}${CLUSTER_EXTRA_VERSION}")
+	# Override the extra version for rpm packages
+	STRING(REGEX REPLACE "^-" "." MYSQL_VERSION_EXTRA_DOT
+	  "${CLUSTER_EXTRA_VERSION}")
       ELSE()
-        SET(MYSQL_CLUSTER_VERSION
-          "${MYSQL_CLUSTER_VERSION}${EXTRA_VERSION}")
+	SET(MYSQL_CLUSTER_VERSION
+	  "${MYSQL_CLUSTER_VERSION}${EXTRA_VERSION}")
       ENDIF()
     ENDIF()
     MESSAGE(STATUS "MySQL Cluster version: ${MYSQL_CLUSTER_VERSION}")
