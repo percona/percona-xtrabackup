@@ -1566,8 +1566,6 @@ dberr_t srv_start(bool create_new_db, lsn_t to_lsn) {
   /* just for assertions */
   lsn_t previous_lsn;
 
-  page_no_t sum_of_data_file_sizes;
-  page_no_t tablespace_size_in_header;
   dberr_t err;
   mtr_t mtr;
   purge_pq_t *purge_queue;
