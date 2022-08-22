@@ -1856,7 +1856,6 @@ dberr_t log_sys_init(bool expect_no_files, lsn_t flushed_lsn,
     auto result = mtr_t::s_logging.disable(nullptr);
     /* Currently never fails. */
     ut_a(result == 0);
-    /* XB30 assert if redo log is disabled */
     srv_redo_log = false;
   }
 
