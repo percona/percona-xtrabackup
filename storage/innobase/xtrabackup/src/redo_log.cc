@@ -21,6 +21,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "redo_log.h"
 
 #include <dict0dict.h>
+#include <log0chkp.h>
 #include <log0log.h>
 #include <ut0ut.h>
 #include <univ.i>
@@ -138,6 +139,14 @@ static bool reopen_log_files() {
   log.m_log_flags = log_flags;
   log.m_log_uuid = log_uuid;
   log.m_files = std::move(files);
+  auto file = log.m_files.find(log_get_checkpoint_lsn(log));
+  if (file == log.m_files.end()) {
+    xb::error() << "Cannot find file with LSN " << log_get_checkpoint_lsn(log)
+                << ". Required file has been deleted by server.";
+    xb::error() << "Please consider increasing your innodb_redo_log_capacity "
+                   "or using redo log archiving.";
+    return (false);
+  }
   log_encryption_read(log);
 
   if (err != DB_SUCCESS) {
@@ -153,12 +162,16 @@ lsn_t Redo_Log_Reader::read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
   // update the in-memory structure log files by scanning
   if (log.m_files.find(start_lsn) == log.m_files.end() ||
       log.m_files.find(end_lsn) == log.m_files.end()) {
-    reopen_log_files();
+    if (!reopen_log_files()) {
+      // file not found
+      return 0;
+    }
   }
 
   auto file = log.m_files.find(start_lsn);
   if (file == log.m_files.end()) {
-    return start_lsn;
+    // file not found
+    return 0;
   }
 
   auto file_handle = file->open(Log_file_access_mode::READ_ONLY);
@@ -241,7 +254,7 @@ ssize_t Redo_Log_Reader::read_logfile(bool is_last, bool *finished) {
       break;
     }
 
-    if (size < 0) {
+    if (size < 0 || end_lsn == 0) {
       xb::error() << "read_logfile() failed.";
       return (-1);
     }
