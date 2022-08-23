@@ -3,12 +3,12 @@ name: Docker Image CI
 on:
   push:
     branches:
-      - "8.0"
-      - "release-8.0.23-16"
+      - 8.0
+      - release/*
   pull_request:
     branches:  
-    - "8.0"
-    - "release-8.0.23-16"
+    - 8.0
+    - release/*
 
 jobs:
 
