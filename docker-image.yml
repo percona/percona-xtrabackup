@@ -1,0 +1,25 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches:
+      - 8.0
+      - release/*
+      - pxb-8.0-2831-8.0.30-merge
+      - release/*
+  pull_request:
+    branches:  
+    - 8.0
+    - release/*
+    - pxb-8.0-2831-8.0.30-merge
+    - release/*
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build the Docker image
+      run: docker buildx build --platform=linux/arm64 . --file Dockerfile --tag my-image-name:$(date +%s)
