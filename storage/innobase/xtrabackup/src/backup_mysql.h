@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011-2021 Percona LLC and/or its affiliates.
+Copyright (c) 2011-2022 Percona LLC and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -267,5 +267,9 @@ void dump_innodb_buffer_pool(MYSQL *connection);
 
 void check_dump_innodb_buffer_pool(MYSQL *connection);
 
+/* print tables that have INSTANT ADD/DROP column row version
+ * @param[in]   connection  MySQL connection handler
+ * @return true if tables with row versions > 0 */
+bool print_instant_versioned_tables(MYSQL *connection);
 extern log_status_t log_status;
 #endif

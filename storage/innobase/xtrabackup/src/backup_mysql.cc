@@ -1,6 +1,6 @@
 /******************************************************
 hot backup tool for InnoDB
-(c) 2009-2021 Percona LLC and/or its affiliates
+(c) 2009-2022 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -2356,4 +2356,46 @@ void check_dump_innodb_buffer_pool(MYSQL *connection) {
              original_innodb_buffer_pool_dump_pct);
     xb_mysql_query(mysql_connection, change_bp_dump_pct_query, false);
   }
+}
+
+/* print tables that have INSTANT ADD/DROP column row version
+ * @param[in]   connection  MySQL connection handler
+ * @return true if tables with row versions > 0 */
+bool print_instant_versioned_tables(MYSQL *connection) {
+  /* PS not affected by INSTANT issues. Upstream only affected on 8.0.29+ */
+  if (server_flavor == FLAVOR_PERCONA_SERVER || mysql_server_version < 80029)
+    return false;
+
+  bool ret = false;
+  my_ulonglong rows_count = 0;
+  MYSQL_RES *result =
+      xb_mysql_query(connection,
+                     "SELECT NAME FROM INFORMATION_SCHEMA.INNODB_TABLES WHERE "
+                     "TOTAL_ROW_VERSIONS > 0",
+                     true, true);
+
+  if (result) {
+    rows_count = mysql_num_rows(result);
+    if (rows_count > 0) {
+      MYSQL_ROW row;
+      ret = true;
+      xb::error()
+          << "Found tables with row versions due to INSTANT ADD/DROP columns";
+      xb::error()
+          << "This feature is not stable and will cause backup corruption.";
+      xb::error()
+          << "Please check "
+             "https://docs.percona.com/percona-xtrabackup/8.0/em/instant.html "
+             "for more details.";
+      xb::error() << "Tables found:";
+      while ((row = mysql_fetch_row(result)) != NULL) {
+        xb::error() << row[0];
+      }
+      xb::error()
+          << "Please run OPTIMIZE TABLE or ALTER TABLE ALGORITHM=COPY on "
+             "all listed tables to fix this issue.";
+    }
+    mysql_free_result(result);
+  }
+  return ret;
 }
