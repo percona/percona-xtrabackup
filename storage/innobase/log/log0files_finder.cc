@@ -242,6 +242,9 @@ Log_files_find_result log_files_find_and_analyze(
 
   /* Read headers of all log files. */
   ut::vector<Log_file_id_and_header> file_headers;
+#ifdef XTRABACKUP
+  auto last_file_id = file_sizes.at(file_sizes.size() - 1).m_id;
+#endif
   for (const auto &file : file_sizes) {
     Log_file_header file_header;
 
@@ -263,6 +266,17 @@ Log_files_find_result log_files_find_and_analyze(
                 file_handle.file_path().c_str());
       return Log_files_find_result::SYSTEM_ERROR;
     }
+#ifdef XTRABACKUP
+    /* PXB may copy redo header after the last file marked full.
+     It can happen during backup and prepare. */
+    if (file.m_id == last_file_id &&
+        log_file_header_check_flag(file_header.m_log_flags,
+                                   LOG_HEADER_FLAG_FILE_FULL)) {
+      log_file_header_reset_flag(file_header.m_log_flags,
+                                 LOG_HEADER_FLAG_FILE_FULL);
+    }
+#endif /* XTRABACKUP */
+
     file_headers.emplace_back(file.m_id, file_header);
   }
 
