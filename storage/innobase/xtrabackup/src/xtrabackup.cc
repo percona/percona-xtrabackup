@@ -6157,14 +6157,34 @@ static bool xtrabackup_close_temp_log(bool clear_flag) {
 
   if (!xtrabackup_logfile_is_renamed) return (false);
 
-  /* rename '#ib_redo0' to 'xtrabackup_logfile' */
+  /* rename '#ib_redoN' to 'xtrabackup_logfile' */
+  Log_files_context log_files_ctx;
   if (!xtrabackup_incremental_dir) {
-    sprintf(dst_path, "%s/%s/%s0", xtrabackup_target_dir, LOG_DIRECTORY_NAME,
-            LOG_FILE_BASE_NAME);
+    log_files_ctx =
+        Log_files_context{xtrabackup_target_dir, Log_files_ruleset::CURRENT};
+    sprintf(redo_folder, "%s/%s", xtrabackup_target_dir, LOG_DIRECTORY_NAME);
+  } else {
+    log_files_ctx = Log_files_context{xtrabackup_incremental_dir,
+                                      Log_files_ruleset::CURRENT};
+    sprintf(redo_folder, "%s/%s", xtrabackup_incremental_dir,
+            LOG_DIRECTORY_NAME);
+  }
+  ut::vector<Log_file_id> listed_files;
+
+  const dberr_t err = log_list_existing_files(log_files_ctx, listed_files);
+  if (err != DB_SUCCESS) {
+    return DB_ERROR;
+  }
+
+  ut_ad(listed_files.size() == 1);
+
+  if (!xtrabackup_incremental_dir) {
+    sprintf(dst_path, "%s/%s/%s%ld", xtrabackup_target_dir, LOG_DIRECTORY_NAME,
+            LOG_FILE_BASE_NAME, listed_files.back());
     sprintf(src_path, "%s/%s", xtrabackup_target_dir, XB_LOG_FILENAME);
   } else {
-    sprintf(dst_path, "%s/%s/%s0", xtrabackup_incremental_dir,
-            LOG_DIRECTORY_NAME, LOG_FILE_BASE_NAME);
+    sprintf(dst_path, "%s/%s/%s%ld", xtrabackup_incremental_dir,
+            LOG_DIRECTORY_NAME, LOG_FILE_BASE_NAME, listed_files.back());
     sprintf(src_path, "%s/%s", xtrabackup_incremental_dir, XB_LOG_FILENAME);
   }
 
@@ -6208,14 +6228,6 @@ static bool xtrabackup_close_temp_log(bool clear_flag) {
   innobase_log_files_in_group = innobase_log_files_in_group_save;
   srv_log_group_home_dir = srv_log_group_home_dir_save;
   innobase_log_file_size = innobase_log_file_size_save;
-
-  /* remove #innodb_redo folder */
-  if (!xtrabackup_incremental_dir) {
-    sprintf(redo_folder, "%s/%s", xtrabackup_target_dir, LOG_DIRECTORY_NAME);
-  } else {
-    sprintf(redo_folder, "%s/%s", xtrabackup_incremental_dir,
-            LOG_DIRECTORY_NAME);
-  }
 
   /* remove #innodb_redo dir if exist */
   if (!os_file_scan_directory(
