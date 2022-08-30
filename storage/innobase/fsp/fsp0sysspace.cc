@@ -545,12 +545,13 @@ dberr_t SysTablespace::read_lsn_and_check_flags(lsn_t *flushed_lsn) {
     return (err);
   }
 
+#ifndef XTRABACKUP
   err = recv_sys->dblwr->reduced_load();
 
   if (err != DB_SUCCESS) {
     return (err);
   }
-
+#endif
   /* Check the contents of the first page of the first datafile. */
   for (int retry = 0; retry < 2; ++retry) {
     err = it->validate_first_page(it->m_space_id, flushed_lsn, false);

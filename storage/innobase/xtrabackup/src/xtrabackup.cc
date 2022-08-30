@@ -5045,8 +5045,8 @@ static bool xtrabackup_init_temp_log(void) {
     sprintf(src_path, "%s/%s", xtrabackup_target_dir, XB_LOG_FILENAME);
     sprintf(redo_folder, "%s/%s", xtrabackup_target_dir, LOG_DIRECTORY_NAME);
   } else {
-    sprintf(dst_path, "%s/%s/#ib_redo0", LOG_DIRECTORY_NAME,
-            xtrabackup_incremental_dir);
+    sprintf(dst_path, "%s/%s/#ib_redo0", xtrabackup_incremental_dir,
+            LOG_DIRECTORY_NAME);
     sprintf(src_path, "%s/%s", xtrabackup_incremental_dir, XB_LOG_FILENAME);
     sprintf(redo_folder, "%s/%s", xtrabackup_incremental_dir,
             LOG_DIRECTORY_NAME);
@@ -5129,9 +5129,10 @@ retry:
 
   log_format = (Log_format)mach_read_from_4(log_buf + LOG_HEADER_FORMAT);
   original_log_format = log_format;
-  if (log_format == Log_format::VERSION_8_0_28) {
-    // We interpret v5 as v6 by writting proper start lsn header later in this
-    // function
+  if (log_format == Log_format::VERSION_8_0_28 ||
+      log_format == Log_format::VERSION_8_0_19) {
+    // We interpret v4 & v5 as v6 by writting proper start lsn header later in
+    // this function
     log_format = Log_format::VERSION_8_0_30;
   }
   log_detected_format = log_format;
