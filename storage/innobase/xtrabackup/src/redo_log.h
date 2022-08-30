@@ -72,6 +72,9 @@ class Redo_Log_Reader {
   /** Seek logfile to specified lsn. */
   void seek_logfile(lsn_t lsn);
 
+  /** Whether there was an error. */
+  bool is_error() const;
+
  private:
   /** log header buffer. */
   ut::aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> log_hdr_buf;
@@ -110,6 +113,9 @@ class Redo_Log_Reader {
 
   /** last scanned LSN. */
   lsn_t log_scanned_lsn{0};
+
+  /** error flag. */
+  static std::atomic<bool> m_error;
 };
 
 /** Redo log parser. */

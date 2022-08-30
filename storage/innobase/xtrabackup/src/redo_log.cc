@@ -42,12 +42,15 @@ extern ds_ctxt_t *ds_redo;
 /* first block of redo archive file which is all zero in 8.0.22  */
 constexpr size_t HEADER_BLOCK_SIZE = 4096;
 static bool archive_first_block_zero = false;
+std::atomic<bool> Redo_Log_Reader::m_error;
 
 Redo_Log_Reader::Redo_Log_Reader() {
   log_hdr_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
                             ut::Count{LOG_FILE_HDR_SIZE});
   log_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
                         ut::Count{redo_log_read_buffer_size});
+
+  m_error = false;
 }
 
 bool Redo_Log_Reader::find_start_checkpoint_lsn() {
@@ -110,6 +113,7 @@ lsn_t Redo_Log_Reader::get_start_checkpoint_lsn() const {
   return (checkpoint_lsn_start);
 }
 
+bool Redo_Log_Reader::is_error() const { return (m_error); }
 /* scan redo log files form server directory and update log.m_files */
 static bool reopen_log_files() {
   log_t &log = *log_sys;
@@ -139,15 +143,8 @@ static bool reopen_log_files() {
   log.m_log_flags = log_flags;
   log.m_log_uuid = log_uuid;
   log.m_files = std::move(files);
-  auto file = log.m_files.find(log_get_checkpoint_lsn(log));
-  if (file == log.m_files.end()) {
-    xb::error() << "Cannot find file with LSN " << log_get_checkpoint_lsn(log)
-                << ". Required file has been deleted by server.";
-    xb::error() << "Please consider increasing your innodb_redo_log_capacity "
-                   "or using redo log archiving.";
-    return (false);
-  }
-  log_encryption_read(log);
+  auto file = log.m_files.front();
+  log_encryption_read(log, file);
 
   if (err != DB_SUCCESS) {
     ut_ad(0);
@@ -160,10 +157,10 @@ lsn_t Redo_Log_Reader::read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
   ut_a(start_lsn < end_lsn);
 
   // update the in-memory structure log files by scanning
-  if (log.m_files.find(start_lsn) == log.m_files.end() ||
-      log.m_files.find(end_lsn) == log.m_files.end()) {
+  if (log.m_files.find(start_lsn) == log.m_files.end()) {
     if (!reopen_log_files()) {
       // file not found
+      m_error = true;
       return 0;
     }
   }
@@ -171,12 +168,17 @@ lsn_t Redo_Log_Reader::read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
   auto file = log.m_files.find(start_lsn);
   if (file == log.m_files.end()) {
     // file not found
+    m_error = true;
     return 0;
   }
 
   auto file_handle = file->open(Log_file_access_mode::READ_ONLY);
 
-  ut_a(file_handle.is_open());
+  if (!file_handle.is_open()) {
+    // file not found
+    m_error = true;
+    return 0;
+  }
 
   do {
     os_offset_t source_offset;
@@ -1070,6 +1072,8 @@ bool Redo_Log_Data_Manager::copy_once(bool is_last, bool *finished) {
   }
 
   auto len = reader.read_logfile(is_last, finished);
+  error = reader.is_error();
+
   if (len <= 0) {
     return (len == 0);
   }

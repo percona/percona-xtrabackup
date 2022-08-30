@@ -1050,7 +1050,7 @@ static bool copy_or_move_file(const char *src_file_path,
 }
 
 static void backup_thread_func(datadir_thread_ctxt_t *ctx, bool prep_mode,
-                               FILE *rsync_tmpfile) {
+                               FILE *rsync_tmpfile, Backup_context &context) {
   bool ret = true;
   datadir_entry_t entry;
   THD *thd = nullptr;
@@ -1099,6 +1099,9 @@ static void backup_thread_func(datadir_thread_ctxt_t *ctx, bool prep_mode,
         goto cleanup;
       }
     }
+    if (context.redo_mgr->is_error()) {
+      goto cleanup;
+    }
   }
 
 cleanup:
@@ -1112,7 +1115,7 @@ cleanup:
   ctx->ret = ret;
 }
 
-bool backup_files(const char *from, bool prep_mode) {
+bool backup_files(const char *from, bool prep_mode, Backup_context &context) {
   char rsync_tmpfile_name[FN_REFLEN];
   FILE *rsync_tmpfile = NULL;
   bool ret = true;
@@ -1136,7 +1139,7 @@ bool backup_files(const char *from, bool prep_mode) {
 
   run_data_threads(from,
                    std::bind(backup_thread_func, std::placeholders::_1,
-                             prep_mode, rsync_tmpfile),
+                             prep_mode, rsync_tmpfile, context),
                    xtrabackup_parallel, "backup");
 
   if (opt_rsync) {
@@ -1211,15 +1214,17 @@ bool backup_files(const char *from, bool prep_mode) {
     }
   }
 
-  xb::info() << "Finished " << (prep_mode ? "a prep copy of" : "backing up")
-             << " non-InnoDB tables and files";
-
 out:
   if (rsync_tmpfile != NULL) {
     fclose(rsync_tmpfile);
   }
 
-  return (ret);
+  if (ret && !context.redo_mgr->is_error()) {
+    xb::info() << "Finished " << (prep_mode ? "a prep copy of" : "backing up")
+               << " non-InnoDB tables and files";
+    return true;
+  }
+  return false;
 }
 
 void Myrocks_datadir::scan_dir(const std::string &dir,
@@ -1476,7 +1481,7 @@ static bool backup_rocksdb_checkpoint(Backup_context &context, bool final) {
 @return true if success. */
 bool backup_start(Backup_context &context) {
   if (!opt_no_lock) {
-    if (!backup_files(MySQL_datadir_path.path().c_str(), true)) {
+    if (!backup_files(MySQL_datadir_path.path().c_str(), true, context)) {
       return (false);
     }
 
@@ -1488,8 +1493,7 @@ bool backup_start(Backup_context &context) {
     }
   }
 
-
-  if (!backup_files(MySQL_datadir_path.path().c_str(), false)) {
+  if (!backup_files(MySQL_datadir_path.path().c_str(), false, context)) {
     return (false);
   }
 
@@ -1976,7 +1980,7 @@ files match given list of file extensions.
 bool rm_for_cleanup_full_backup(const char **ext_list,
                                 const datadir_entry_t &entry, void *arg) {
   char path[FN_REFLEN];
-
+  const char *keep_folder_list[] = {"#innodb_redo/", NULL};
   if (entry.db_name.empty()) {
     return (true);
   }
@@ -1984,7 +1988,7 @@ bool rm_for_cleanup_full_backup(const char **ext_list,
   fn_format(path, entry.rel_path.c_str(), entry.datadir.c_str(), "",
             MY_UNPACK_FILENAME | MY_SAFE_PATH);
 
-  if (entry.is_empty_dir) {
+  if (entry.is_empty_dir && !filename_matches(path, keep_folder_list)) {
     if (rmdir(path) != 0) {
       return (false);
     }
@@ -2498,6 +2502,21 @@ bool copy_back(int argc, char **argv) {
 
       ds_destroy(ds_data);
       ds_data = nullptr;
+    }
+  }
+  /* create #innodb_redo */
+  if (directory_exists(LOG_DIRECTORY_NAME, false)) {
+    char errbuf[MYSYS_STRERROR_SIZE];
+    dst_dir = (innobase_data_home_dir && *innobase_data_home_dir)
+                  ? innobase_data_home_dir
+                  : mysql_data_home;
+    std::string dest_redo_dir =
+        std::string(dst_dir) + FN_DIRSEP + LOG_DIRECTORY_NAME;
+    if (mkdirp(dest_redo_dir.c_str(), 0777, MYF(0)) < 0) {
+      xb::error() << "Can not create directory " << dest_redo_dir << ": "
+                  << my_strerror(errbuf, sizeof(errbuf), my_errno());
+
+      return (false);
     }
   }
 
