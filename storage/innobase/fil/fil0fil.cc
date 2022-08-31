@@ -10560,6 +10560,12 @@ byte *fil_tablespace_redo_rename(byte *ptr, const byte *end,
   ptr += to_len;
   Fil_path::normalize(to_name);
 
+#ifdef XTRABACKUP
+  if (parse_only) {
+    return ptr;
+  }
+#endif /* XTRABACKUP */
+
 #ifdef UNIV_HOTBACKUP
 
   if (!parse_only) {
@@ -10587,10 +10593,7 @@ byte *fil_tablespace_redo_rename(byte *ptr, const byte *end,
 
   if (!srv_backup_mode) {
     bool success;
-
-    success = fil_tablespace_open_for_recovery(page_id.space());
-
-    if (!success) {
+    if (fil_tablespace_open_for_recovery(page_id.space()) != DB_SUCCESS) {
       xb::info() << "Rename failed. Cannot find " << SQUOTE(from_name) << "!";
       return (ptr);
     }
