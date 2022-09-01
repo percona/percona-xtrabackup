@@ -511,7 +511,7 @@ bool Redo_Log_Writer::close_logfile() {
 
 /* set encryption info of redo log on io request */
 static void set_encryption_info(IORequest &req_type) {
-  auto encryption_metadata = log_sys->m_encryption_metadata;
+  auto& encryption_metadata = log_sys->m_encryption_metadata;
   ut_ad(encryption_metadata.m_type != Encryption::NONE);
   req_type.encryption_algorithm(encryption_metadata.m_type);
   req_type.encryption_key(encryption_metadata.m_key,
