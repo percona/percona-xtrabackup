@@ -299,8 +299,9 @@ function test_archived_logs
 		   --apply-log-only \
 		   $XTRABACKUP_OPTIONS
 	#Copy prepared data to server data dir
-	cp -R $BACKUP_DIR/* $mysql_datadir
-	rm $mysql_datadir/ib_*
+	rm -rf $mysql_datadir
+	xtrabackup --datadir=$mysql_datadir --copy-back \
+		--target-dir=$BACKUP_DIR
 	#Start server with prepared data
 	start_server "--binlog-format=ROW $EXTRA_OPTIONS"
 	#Get values from restored data files before remembered LSN

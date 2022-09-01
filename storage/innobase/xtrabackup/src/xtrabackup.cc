@@ -5040,8 +5040,8 @@ static bool xtrabackup_init_temp_log(void) {
   }
 
   if (!xtrabackup_incremental_dir) {
-    sprintf(dst_path, "%s/%s/#ib_redo0", LOG_DIRECTORY_NAME,
-            xtrabackup_target_dir);
+    sprintf(dst_path, "%s/%s/#ib_redo0", xtrabackup_target_dir,
+            LOG_DIRECTORY_NAME);
     sprintf(src_path, "%s/%s", xtrabackup_target_dir, XB_LOG_FILENAME);
     sprintf(redo_folder, "%s/%s", xtrabackup_target_dir, LOG_DIRECTORY_NAME);
   } else {
@@ -6141,35 +6141,28 @@ static bool xtrabackup_apply_deltas() {
                             xtrabackup_apply_delta, NULL);
 }
 
-static bool xtrabackup_close_temp_log(bool clear_flag) {
-  pfs_os_file_t src_file = XB_FILE_UNDEFINED;
-  char src_path[FN_REFLEN];
-  char dst_path[FN_REFLEN];
-  char redo_folder[FN_REFLEN];
-  bool success;
+/* replace log file in redo directory to xtrabackup_log
+@in redo_path  path of redo direcotry
+@in log_files_ctx log_files_ctxt
+@in clear_flag  remove log_creator and log_format
+@return false if failed and true if successful
+*/
+static bool xtrabackup_replace_log_file(const char *redo_path,
+                                        const Log_files_context &log_files_ctx,
+                                        bool clear_flag) {
   byte log_buf[UNIV_PAGE_SIZE_MAX];
   IORequest read_request(IORequest::READ);
   IORequest write_request(IORequest::WRITE);
-
-  if (!xtrabackup_logfile_is_renamed) return (false);
-
+  char src_path[FN_REFLEN];
+  char dst_path[FN_REFLEN];
+  bool success;
+  pfs_os_file_t src_file = XB_FILE_UNDEFINED;
   /* rename '#ib_redoN' to 'xtrabackup_logfile' */
-  Log_files_context log_files_ctx;
-  if (!xtrabackup_incremental_dir) {
-    log_files_ctx =
-        Log_files_context{xtrabackup_target_dir, Log_files_ruleset::CURRENT};
-    sprintf(redo_folder, "%s/%s", xtrabackup_target_dir, LOG_DIRECTORY_NAME);
-  } else {
-    log_files_ctx = Log_files_context{xtrabackup_incremental_dir,
-                                      Log_files_ruleset::CURRENT};
-    sprintf(redo_folder, "%s/%s", xtrabackup_incremental_dir,
-            LOG_DIRECTORY_NAME);
-  }
   ut::vector<Log_file_id> listed_files;
 
   const dberr_t err = log_list_existing_files(log_files_ctx, listed_files);
   if (err != DB_SUCCESS) {
-    goto error;
+    return false;
   }
 
   ut_ad(listed_files.size() == 1);
@@ -6187,15 +6180,15 @@ static bool xtrabackup_close_temp_log(bool clear_flag) {
   Fil_path::normalize(dst_path);
   Fil_path::normalize(src_path);
 
-  success = os_file_rename(0, dst_path, src_path);
-  if (!success) {
-    goto error;
+  if (!os_file_rename(0, dst_path, src_path)) {
+    return false;
   }
   xtrabackup_logfile_is_renamed = false;
 
-  if (!clear_flag) return (false);
+  if (!clear_flag) {
+    return true;
+  }
 
-  /* clear LOG_HEADER_CREATOR field */
   src_file = os_file_create_simple_no_error_handling(
       0, src_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, srv_read_only_mode,
       &success);
@@ -6209,6 +6202,7 @@ static bool xtrabackup_close_temp_log(bool clear_flag) {
     goto error;
   }
 
+  /* clear LOG_HEADER_CREATOR field */
   memset(log_buf + LOG_HEADER_CREATOR, ' ', 4);
 
   /* restore original log format */
@@ -6221,9 +6215,42 @@ static bool xtrabackup_close_temp_log(bool clear_flag) {
 
   src_file = XB_FILE_UNDEFINED;
 
-  innobase_log_files_in_group = innobase_log_files_in_group_save;
-  srv_log_group_home_dir = srv_log_group_home_dir_save;
-  innobase_log_file_size = innobase_log_file_size_save;
+  return true;
+
+error:
+  if (src_file != XB_FILE_UNDEFINED) os_file_close(src_file);
+  xb::error() << "xtrabackup_replace_log_file() failed.";
+  return false; /*ERROR*/
+}
+
+/* Replace the redo log file in redo directory to xtrabackup_log and clear the
+redo directory
+@in clear_flag clear the log_format and log_creator in redo log
+@return true if any error occured or false  */
+static bool xtrabackup_close_temp_log(bool clear_flag) {
+  char redo_folder[FN_REFLEN];
+  Log_files_context log_files_ctx;
+
+  if (!xtrabackup_incremental_dir) {
+    log_files_ctx =
+        Log_files_context{xtrabackup_target_dir, Log_files_ruleset::CURRENT};
+    sprintf(redo_folder, "%s/%s", xtrabackup_target_dir, LOG_DIRECTORY_NAME);
+  } else {
+    log_files_ctx = Log_files_context{xtrabackup_incremental_dir,
+                                      Log_files_ruleset::CURRENT};
+    sprintf(redo_folder, "%s/%s", xtrabackup_incremental_dir,
+            LOG_DIRECTORY_NAME);
+  }
+
+  if (xtrabackup_logfile_is_renamed) {
+    if (!xtrabackup_replace_log_file(redo_folder, log_files_ctx, clear_flag)) {
+      xb::error() << "failed to replace redo log file to " << XB_LOG_FILENAME;
+      return (true);
+    }
+    innobase_log_files_in_group = innobase_log_files_in_group_save;
+    srv_log_group_home_dir = srv_log_group_home_dir_save;
+    innobase_log_file_size = innobase_log_file_size_save;
+  }
 
   /* remove #innodb_redo dir if exist */
   if (!os_file_scan_directory(
@@ -6237,16 +6264,11 @@ static bool xtrabackup_close_temp_log(bool clear_flag) {
             unlink(to_remove.c_str());
           },
           false)) {
-    ib::error(ER_IB_CLONE_STATUS_FILE)
-        << "Error removing directory : " << redo_folder;
-    goto error;
+    xb::error() << "Error removing directory : " << redo_folder;
+    return (true);
   }
 
   return (false);
-error:
-  if (src_file != XB_FILE_UNDEFINED) os_file_close(src_file);
-  xb::error() << "xtrabackup_close_temp_log() failed.";
-  return (true); /*ERROR*/
 }
 
 /*********************************************************************/ /**
@@ -7065,7 +7087,7 @@ skip_check:
   /* temporally dummy value to avoid crash */
   srv_page_size_shift = 14;
   srv_page_size = (1 << srv_page_size_shift);
-  srv_redo_log_capacity = 8388608;  // min val
+  srv_redo_log_capacity = 1024 * 1024 * 1024;  // min val
   srv_redo_log_capacity_used = srv_redo_log_capacity;
   os_event_global_init();
   sync_check_init(srv_max_n_threads);

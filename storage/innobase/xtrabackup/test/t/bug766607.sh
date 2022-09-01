@@ -38,9 +38,8 @@ rm -r $mysql_datadir/*
 
 vlog "Copying files"
 
-cd $topdir/backup/full/
-cp -r * $mysql_datadir
-cd $topdir
+xtrabackup --datadir=$mysql_datadir --copy-back \
+	--target-dir=$topdir/backup/full
 
 vlog "Data restored"
 start_server

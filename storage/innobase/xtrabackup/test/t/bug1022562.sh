@@ -74,9 +74,10 @@ stop_server
 
 vlog "Copying files"
 
-cd $FULL_DIR
-cp -r * $mysql_datadir
-cd -
+rm -rf $mysql_datadir
+
+xtrabackup --datadir=$mysql_datadir --copy-back --target-dir=$FULL_DIR \
+	$mysqld_additional_args
 
 vlog "Data restored"
 

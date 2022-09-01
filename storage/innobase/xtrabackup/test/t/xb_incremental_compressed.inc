@@ -162,9 +162,9 @@ incremental_sample`
 
   vlog "Copying files"
 
-  cd $topdir/full/
-  cp -r * $mysql_datadir
-  cd -
+  rm -rf $mysql_datadir
+  xtrabackup --datadir=$mysql_datadir --copy-back \
+	  --target-dir=$topdir/backup/full
 
   vlog "Data restored"
 
