@@ -19,6 +19,9 @@ mkdir $topdir/backup
 
 xtrabackup --backup --dump-innodb-buffer-pool --target-dir=$topdir/backup
 
+grep -q "Server has no support for innodb_buffer_pool_dump_now" $OUTFILE \
+&& skip_test "Server has no support for innodb_buffer_pool_dump_now"
+
 if [[ ! -f  $mysql_datadir/ib_buffer_pool ]]; then
     die "dump file doesnt exist"
 fi

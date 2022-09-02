@@ -4830,8 +4830,6 @@ static void stat_with_rec(dict_table_t *table, THD *thd,
 }
 
 static void xtrabackup_stats_func(int argc, char **argv) {
-  ulint n;
-
   /* cd to datadir */
 
   if (my_setwd(mysql_real_data_home, MYF(MY_WME))) {
