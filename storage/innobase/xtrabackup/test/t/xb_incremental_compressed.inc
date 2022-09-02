@@ -164,7 +164,7 @@ incremental_sample`
 
   rm -rf $mysql_datadir
   xtrabackup --datadir=$mysql_datadir --copy-back \
-	  --target-dir=$topdir/backup/full
+	  --target-dir=$topdir/full
 
   vlog "Data restored"
 

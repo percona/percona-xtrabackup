@@ -6,6 +6,7 @@ require_debug_pxb_version
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb-flush-log-at-trx-commit=0
 sync-binlog=0
+innodb-redo-log-capacity=512M
 "
 start_server
 backupdir="${topdir}/full"
