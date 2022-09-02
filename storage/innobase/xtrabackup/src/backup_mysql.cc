@@ -1091,7 +1091,12 @@ bool lock_tables_ftwrl(MYSQL *connection) {
   }
 
   if (have_galera_enabled) {
-    xb_mysql_query(connection, "SET SESSION wsrep_causal_reads=0", false);
+    /* Deprecated since MySQL-wsrep 5.5.42-25.12 and removed in 8.0 */
+    if (server_flavor == FLAVOR_MYSQL && mysql_server_version >= 80000) {
+      xb_mysql_query(connection, "SET SESSION wsrep_sync_wait=0", false);
+    } else {
+      xb_mysql_query(connection, "SET SESSION wsrep_causal_reads=0", false);
+    }
   }
 
   xb_mysql_query(connection, "FLUSH TABLES WITH READ LOCK", false);
