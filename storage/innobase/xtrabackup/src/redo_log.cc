@@ -280,7 +280,7 @@ ssize_t Redo_Log_Reader::scan_log_recs(byte *buf, bool is_last, lsn_t start_lsn,
 
     if (block_header.m_hdr_no != expected_hdr_no && checksum_is_ok) {
       /* old log block, do nothing */
-      if (block_header.m_hdr_no == 0) {
+      if (block_header.m_hdr_no < expected_hdr_no) {
         *finished = true;
         break;
       }
