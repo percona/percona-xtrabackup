@@ -5,7 +5,7 @@
 
 . inc/common.sh
 
-options="innodb_log_files_in_group innodb_log_file_size"
+options=""
 
 # innodb_page_size is supported in XtraDB 5.1+ and InnoDB 5.6+
 if is_xtradb || is_server_version_higher_than 5.6.0

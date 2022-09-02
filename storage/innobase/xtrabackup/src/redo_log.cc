@@ -88,17 +88,6 @@ bool Redo_Log_Reader::find_start_checkpoint_lsn() {
   return (true);
 }
 
-bool Redo_Log_Reader::validate_redo_log_file() {
-  /* Look for the latest checkpoint */
-  Log_checkpoint_location checkpoint;
-
-  if (!recv_find_max_checkpoint(*log_sys, checkpoint)) {
-    xb::error() << " recv_find_max_checkpoint() failed.";
-    return (false);
-  }
-  return (true);
-}
-
 byte *Redo_Log_Reader::get_header() const { return log_hdr_buf; }
 
 byte *Redo_Log_Reader::get_buffer() const { return log_buf; }
@@ -1165,10 +1154,10 @@ bool Redo_Log_Data_Manager::stop_at(lsn_t lsn, lsn_t checkpoint_lsn) {
 
   archived_log_monitor.stop();
 
-  /* check if redo log are disabled */
-  if (!reader.validate_redo_log_file()) {
-    return (false);
-  }
+  /* to ensure redo logs are not disabled during the backup, reopen the log
+  files to read HEADER */
+  reopen_log_files();
+  log_crash_safe_validate(*log_sys);
 
   scanned_lsn = reader.get_scanned_lsn();
 

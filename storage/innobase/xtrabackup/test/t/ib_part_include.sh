@@ -27,6 +27,12 @@ vlog "Backup taken"
 
 mysql -e 'SELECT * FROM INFORMATION_SCHEMA.TABLES\G'
 
+stop_server
+
+# Restore partial backup
+ib_part_restore $TEST_VAR_ROOT/remote $mysql_datadir
+
+start_server
 # also test xtrabackup --stats work with --tables-file
 xtrabackup --stats --tables='test.test$' --datadir=$topdir/backup
 
@@ -38,11 +44,5 @@ if [ $COUNT != 5 ] ; then
 	exit -1
 fi
 
-stop_server
-
-# Restore partial backup
-ib_part_restore $TEST_VAR_ROOT/remote $mysql_datadir
-
-start_server
 
 ib_part_assert_checksum $checksum_a

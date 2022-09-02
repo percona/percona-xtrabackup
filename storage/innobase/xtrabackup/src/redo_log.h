@@ -43,10 +43,6 @@ class Redo_Log_Reader {
   @return true if success. */
   bool find_start_checkpoint_lsn();
 
-  /** Check if redo logs are disabled during the backup.
-  @return true if redo logs are disabled */
-  bool validate_redo_log_file();
-
   /** Get log header. */
   byte *get_header() const;
 

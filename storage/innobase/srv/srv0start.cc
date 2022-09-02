@@ -2105,12 +2105,8 @@ dberr_t srv_start(bool create_new_db, lsn_t to_lsn) {
       would write new redo records in the current fmt,
       and end up with file in both formats = invalid. */
 
-      err = recv_apply_hashed_log_recs(
-          *log_sys, !recv_sys->is_cloned_db && !log_upgrade
-#ifdef XTRABACKUP
-                        && !srv_read_only_mode
-#endif
-      );
+      err = recv_apply_hashed_log_recs(*log_sys,
+                                       !recv_sys->is_cloned_db && !log_upgrade);
 
       if (recv_sys->found_corrupt_log || err != DB_SUCCESS) {
         err = DB_ERROR;

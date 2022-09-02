@@ -17,15 +17,25 @@ xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only --target-dir=$top
 vlog "===> xtrabackup --stats --datadir=$topdir/backup"
 run_cmd_expect_failure $XB_BIN $XB_ARGS --stats --datadir=$topdir/backup
 
-if ! grep -q "Cannot find log file" $OUTFILE
+if ! grep -q "Cannot create redo log files" $OUTFILE
 then
     die "Cannot find the expected error message from xtrabackup --stats"
 fi
 
-# Now create the log files in the backup and try xtrabackup --stats again
-
 xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$topdir/backup
 
-xtrabackup --stats --datadir=$topdir/backup
+vlog "Now start the server so it creates redo log files"
+stop_server
+rm -rf $mysql_datadir
+xtrabackup --copy-back --datadir=$mysql_datadir --target-dir=$topdir/backup
+
+start_server
+innodb_wait_for_flush_all
+mysql -e "set global innodb_fast_shutdown=0"
+shutdown_server
+
+vlog " checking Stats on data directory "
+
+xtrabackup --stats --datadir=$mysql_datadir
 
 vlog "stats did not fail"

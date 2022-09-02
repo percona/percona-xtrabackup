@@ -2316,7 +2316,7 @@ bool copy_back(int argc, char **argv) {
     ds_data = NULL;
   }
 
-  /* copy redo logs */
+  /* create #innodb_redo */
 
   dst_dir = (srv_log_group_home_dir && *srv_log_group_home_dir)
                 ? srv_log_group_home_dir
@@ -2324,16 +2324,17 @@ bool copy_back(int argc, char **argv) {
 
   ds_data = ds_create(dst_dir, DS_TYPE_LOCAL);
 
-  for (long i = 0; i < innobase_log_files_in_group; i++) {
-    char filename[30];
-    sprintf(filename, "ib_logfile%ld", i);
+  if (directory_exists(LOG_DIRECTORY_NAME, false)) {
+    char errbuf[MYSYS_STRERROR_SIZE];
+    dst_dir = (srv_log_group_home_dir && *srv_log_group_home_dir)
+                  ? srv_log_group_home_dir
+                  : mysql_data_home;
+    std::string dest_redo_dir =
+        std::string(dst_dir) + FN_DIRSEP + LOG_DIRECTORY_NAME;
+    if (mkdirp(dest_redo_dir.c_str(), 0777, MYF(0)) < 0) {
+      xb::error() << "Can not create directory " << dest_redo_dir << ": "
+                  << my_strerror(errbuf, sizeof(errbuf), my_errno());
 
-    if (!file_exists(filename)) {
-      continue;
-    }
-
-    if (!(ret = copy_or_move_file(filename, filename, dst_dir, 1,
-                                  FILE_PURPOSE_REDO_LOG))) {
       goto cleanup;
     }
   }
@@ -2414,7 +2415,7 @@ bool copy_back(int argc, char **argv) {
                          "copy-back");
   if (!ret) goto cleanup;
 
-  /* copy buufer pool dump */
+  /* copy buffer pool dump */
   if (innobase_buffer_pool_filename) {
     const char *src_name;
     char path[FN_REFLEN];
@@ -2502,21 +2503,6 @@ bool copy_back(int argc, char **argv) {
 
       ds_destroy(ds_data);
       ds_data = nullptr;
-    }
-  }
-  /* create #innodb_redo */
-  if (directory_exists(LOG_DIRECTORY_NAME, false)) {
-    char errbuf[MYSYS_STRERROR_SIZE];
-    dst_dir = (innobase_data_home_dir && *innobase_data_home_dir)
-                  ? innobase_data_home_dir
-                  : mysql_data_home;
-    std::string dest_redo_dir =
-        std::string(dst_dir) + FN_DIRSEP + LOG_DIRECTORY_NAME;
-    if (mkdirp(dest_redo_dir.c_str(), 0777, MYF(0)) < 0) {
-      xb::error() << "Can not create directory " << dest_redo_dir << ": "
-                  << my_strerror(errbuf, sizeof(errbuf), my_errno());
-
-      return (false);
     }
   }
 

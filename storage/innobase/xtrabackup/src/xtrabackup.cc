@@ -4879,25 +4879,19 @@ static void xtrabackup_stats_func(int argc, char **argv) {
 
   /* Check if the log files have been created, otherwise innodb_init()
   will crash when called with srv_read_only == true */
-  for (n = 0; n < srv_log_n_files; n++) {
-    char logname[FN_REFLEN];
-    bool exists;
-    os_file_type_t type;
+  auto log_files_ctx =
+      Log_files_context{srv_log_group_home_dir, Log_files_ruleset::CURRENT};
+  ut::vector<Log_file_id> listed_files;
+  const dberr_t err = log_list_existing_files(log_files_ctx, listed_files);
 
-    snprintf(logname, sizeof(logname), "%s%c%s%lu", srv_log_group_home_dir,
-             OS_PATH_SEPARATOR, "ib_logfile", (ulong)n);
-    Fil_path::normalize(logname);
-
-    if (!os_file_status(logname, &exists, &type) || !exists ||
-        type != OS_FILE_TYPE_FILE) {
-      xb::error() << "Cannot find log file " << logname;
-      xb::error() << "to use the statistics feature, you need a "
-                     "clean copy of the database including "
-                     "correctly sized log files, so you need to "
-                     "execute with --prepare twice to use this "
-                     "functionality on a backup.";
-      exit(EXIT_FAILURE);
-    }
+  if (err != DB_SUCCESS) {
+    xb::error() << "Cannot find log files ";
+    xb::error() << "to use the statistics feature, you need a "
+                   "clean copy of the database including "
+                   "correctly sized log files, so you need to "
+                   "start server once after prepare to use "
+                   "functionality on a backup.";
+    exit(EXIT_FAILURE);
   }
 
   xb::info() << "Starting 'read-only' InnoDB instance to gather "
@@ -4906,6 +4900,9 @@ static void xtrabackup_stats_func(int argc, char **argv) {
              << " bytes for buffer pool (set by "
              << ((predict_memory) ? "--use-free-memory-pct" : "--use-memory")
              << " parameter)";
+
+  srv_redo_log_capacity = 1024 * 1024 * 1024;
+  srv_redo_log_capacity_used = srv_redo_log_capacity;
 
   if (innodb_init(true, false)) exit(EXIT_FAILURE);
 
