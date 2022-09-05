@@ -30,7 +30,6 @@ rm -rf $mysql_datadir
 xtrabackup --copy-back --datadir=$mysql_datadir --target-dir=$topdir/backup
 
 start_server
-innodb_wait_for_flush_all
 mysql -e "set global innodb_fast_shutdown=0"
 shutdown_server
 

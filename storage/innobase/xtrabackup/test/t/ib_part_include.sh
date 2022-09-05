@@ -34,9 +34,14 @@ ib_part_restore $TEST_VAR_ROOT/remote $mysql_datadir
 
 start_server
 # also test xtrabackup --stats work with --tables-file
-xtrabackup --stats --tables='test.test$' --datadir=$topdir/backup
 
-COUNT=`xtrabackup --stats --tables='test.test$' --datadir=$topdir/backup \
+ib_part_assert_checksum $checksum_a
+
+mysql -e "set global innodb_fast_shutdown=0"
+shutdown_server
+
+xtrabackup --stats --tables='test.test$' --datadir=$mysql_datadir
+COUNT=`xtrabackup --stats --tables='test.test$' --datadir=$mysql_datadir \
        | grep table: | grep -v "mysql/" | awk '{print $2}' | sort -u | wc -l`
 
 if [ $COUNT != 5 ] ; then
@@ -44,5 +49,3 @@ if [ $COUNT != 5 ] ; then
 	exit -1
 fi
 
-
-ib_part_assert_checksum $checksum_a
