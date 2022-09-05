@@ -1736,6 +1736,12 @@ dberr_t log_sys_init(bool expect_no_files, lsn_t flushed_lsn,
   ut_a(log_sys != nullptr);
   log_t &log = *log_sys;
 
+  /* We dont care about capacity margin safe caclulation in PXB
+  we dont have user threads genearting redo. Also see the comment
+  in server code that says when srv_redo_log_cpacity and
+  srv_redo_log_capacity_used = 0, there will be no upsizing or downsizing of
+  redo logs */
+#ifndef XTRABACKUP
   bool is_concurrency_margin_safe;
   log_concurrency_margin(
       Log_files_capacity::soft_logical_capacity_for_hard(
@@ -1775,6 +1781,7 @@ dberr_t log_sys_init(bool expect_no_files, lsn_t flushed_lsn,
 
     return DB_ERROR;
   }
+#endif /* XTRABACKUP */
 
   log.m_files_ctx = std::move(log_files_ctx);
 
