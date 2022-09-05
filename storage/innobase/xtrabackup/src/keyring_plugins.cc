@@ -114,6 +114,21 @@ static void init_plugins(int argc, char **argv) {
   delete[] t_argv;
 }
 
+/** Load the encryption metadata of redo log from encryption info hash into
+variable
+@param[out]   e_m   Encryption metadata of redo log
+@return true on success, else false */
+bool xb_load_saved_redo_encryption(Encryption_metadata &e_m) {
+  bool success =
+      xb_fetch_tablespace_key(dict_sys_t::s_log_space_id, e_m.m_key, e_m.m_iv);
+  if (success) {
+    e_m.m_key_len = Encryption::KEY_LEN;
+    e_m.m_type = Encryption::AES;
+    return (true);
+  }
+  return (false);
+}
+
 /** Fetch tablespace key from "xtrabackup_keys".
 @param[in]	space_id	tablespace id
 @param[out]	key		fetched tablespace key
@@ -143,6 +158,17 @@ void xb_insert_tablespace_key(ulint space_id, const byte *key, const byte *iv) {
   memcpy(info.key, key, Encryption::KEY_LEN);
   memcpy(info.iv, iv, Encryption::KEY_LEN);
   encryption_info[space_id] = info;
+}
+
+/** Save the encryption metadata of redo log into encryption keys hash.
+This hash is later used to dump the saved keys into xtrabackup_keys file
+@param[in]   e_m   Encryption metadata of redo log */
+void xb_save_redo_encryption_key(const Encryption_metadata& em) {
+  tablespace_encryption_info info;
+
+  memcpy(info.key, em.m_key, Encryption::KEY_LEN);
+  memcpy(info.iv, em.m_iv, Encryption::KEY_LEN);
+  encryption_info[dict_sys_t::s_log_space_id] = info;
 }
 
 /** Fetch tablespace key from "xtrabackup_keys" and set the encryption

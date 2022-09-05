@@ -22,6 +22,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <mysql.h>
 #include <os0file.h>
 #include "datasink.h"
+#include "log0types.h"
 
 /** Initialize keyring plugin for backup. Config is read from live mysql server.
 @param[in]	connection	mysql connection
@@ -93,4 +94,14 @@ bool xb_binlog_password_reencrypt(const char *binlog_file_path);
 /** Shutdown keyring plugins. */
 void xb_keyring_shutdown();
 
+/** Save the encryption metadata of redo log into encryption keys hash.
+This hash is later used to dump the saved keys into xtrabackup_keys file
+@param[in]   e_m   Encryption metadata of redo log */
+void xb_save_redo_encryption_key(const Encryption_metadata &em);
+
+/** Load the encryption metadata of redo log from encryption info hash into
+variable
+@param[out]   e_m   Encryption metadata of redo log
+@return true on success, else false */
+bool xb_load_saved_redo_encryption(Encryption_metadata &em);
 #endif  // XB_KEYRING_PLUGINS_H
