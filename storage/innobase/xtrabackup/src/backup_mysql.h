@@ -27,6 +27,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "redo_log.h"
 #include "xtrabackup.h"
 
+// Forward declaration
+class Redo_Log_Data_Manager;
+
 /* mysql flavor and version */
 enum mysql_flavor_t {
   FLAVOR_UNKNOWN,

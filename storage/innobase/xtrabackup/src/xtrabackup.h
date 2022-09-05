@@ -223,6 +223,8 @@ extern char *opt_tls_version;
 extern bool ssl_mode_set_explicitly;
 extern int set_client_ssl_options(MYSQL *mysql);
 
+extern bool xtrabackup_register_redo_log_consumer;
+
 enum binlog_info_enum {
   BINLOG_INFO_OFF,
   BINLOG_INFO_LOCKLESS,

@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <vector>
 
 #include "datasink.h"
+#include "redo_log_consumer.h"
 
 #define redo_log_read_buffer_size ((srv_log_buffer_size) / 2)
 
@@ -352,6 +353,12 @@ class Redo_Log_Data_Manager {
 
   /** error flag. */
   std::atomic<bool> error;
+
+  /** redo log consumer */
+  Redo_Log_Consumer redo_log_consumer;
+
+  /** MySQL connection to register redo log consumer */
+  MYSQL *redo_log_consumer_cnx = nullptr;
 
   enum {
     ARCHIVED_LOG_NONE,

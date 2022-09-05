@@ -1123,8 +1123,15 @@ static
 
   log_files_for_each(log.m_files, [&](const Log_file &file) {
     auto file_handle = file.open(Log_file_access_mode::READ_ONLY);
+#ifndef XTRABACKUP
     ut_a(file_handle.is_open());
-
+#else
+    if (!file_handle.is_open()) {
+      xb::error(ER_IB_MSG_716) << "Cannot open redo log file. Please consider "
+                                  "increasing innodb_redo_log_capacity";
+      return;
+    }
+#endif
     Log_checkpoint_location checkpoint_in_file;
 
     if (!recv_find_max_checkpoint(log, file_handle, checkpoint_in_file)) {

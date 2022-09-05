@@ -914,6 +914,19 @@ bool Redo_Log_Data_Manager::init() {
 
   lsn_t flushed_lsn = LOG_START_LSN + LOG_BLOCK_HDR_SIZE;
 
+  if (xtrabackup_register_redo_log_consumer) {
+    if (!redo_log_consumer.check()) {
+      xtrabackup_register_redo_log_consumer = false;
+    } else {
+      redo_log_consumer_cnx = xb_mysql_connect();
+      if (redo_log_consumer_cnx == nullptr) {
+        xtrabackup_register_redo_log_consumer = false;
+        return (false);
+      }
+      redo_log_consumer.init(redo_log_consumer_cnx);
+    }
+  }
+
   if (log_sys_init(false, flushed_lsn, flushed_lsn) != DB_SUCCESS) {
     return (false);
   }
@@ -1086,14 +1099,32 @@ void Redo_Log_Data_Manager::copy_func() {
   THD *thd = create_thd(false, false, true, 0, 0);
 
   aborted = false;
+  if (xtrabackup_register_redo_log_consumer) {
+    redo_log_consumer.advance(redo_log_consumer_cnx, reader.get_scanned_lsn());
+  }
 
   bool finished;
+  lsn_t consumer_lsn = 0;
   while (!aborted && (stop_lsn == 0 || stop_lsn > reader.get_scanned_lsn())) {
     xtrabackup_io_throttling();
 
     if (!copy_once(false, &finished)) {
       error = true;
       return;
+    }
+
+    if (xtrabackup_register_redo_log_consumer) {
+      if (archived_log_monitor.is_ready() &&
+          archived_log_state == ARCHIVED_LOG_POSITIONED) {
+        redo_log_consumer.deinit(redo_log_consumer_cnx);
+        mysql_close(redo_log_consumer_cnx);
+        xtrabackup_register_redo_log_consumer = false;
+      } else {
+        if (consumer_lsn != reader.get_scanned_lsn()) {
+          consumer_lsn = reader.get_scanned_lsn();
+          redo_log_consumer.advance(redo_log_consumer_cnx, consumer_lsn);
+        }
+      }
     }
 
     if (finished) {
@@ -1170,6 +1201,11 @@ bool Redo_Log_Data_Manager::stop_at(lsn_t lsn, lsn_t checkpoint_lsn) {
 
   if (!writer.close_logfile()) {
     return (false);
+  }
+
+  if (xtrabackup_register_redo_log_consumer) {
+    redo_log_consumer.deinit(redo_log_consumer_cnx);
+    mysql_close(redo_log_consumer_cnx);
   }
 
   return (true);

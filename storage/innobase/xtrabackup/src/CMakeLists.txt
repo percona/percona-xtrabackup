@@ -104,6 +104,7 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   utils.cc
   kdf.cc
   space_map.cc
+  redo_log_consumer.cc
   redo_log.cc
   ${CMAKE_SOURCE_DIR}/sql-common/client_authentication.cc
   )

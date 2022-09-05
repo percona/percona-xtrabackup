@@ -198,6 +198,8 @@ char *xtrabackup_tables_exclude = NULL;
 
 lsn_t xtrabackup_start_checkpoint;
 
+bool xtrabackup_register_redo_log_consumer = false;
+
 typedef std::list<xb_regex_t> regex_list_t;
 static regex_list_t regex_include_list;
 static regex_list_t regex_exclude_list;
@@ -721,6 +723,7 @@ enum options_xtrabackup {
   OPT_XTRA_PLUGIN_DIR,
   OPT_XTRA_PLUGIN_LOAD,
   OPT_GENERATE_NEW_MASTER_KEY,
+  OPT_REGISTER_REDO_LOG_CONSUMER,
 
   OPT_SSL_SSL,
   OPT_SSL_KEY,
@@ -1573,6 +1576,15 @@ Disable with --skip-innodb-checksums.",
     {"rocksdb_wal_dir", OPT_ROCKSDB_WAL_DIR, "RocksDB WAL directory",
      &opt_rocksdb_wal_dir, &opt_rocksdb_wal_dir, 0, GET_STR_ALLOC, REQUIRED_ARG,
      0, 0, 0, 0, 0, 0},
+
+    {"register_redo_log_consumer", OPT_REGISTER_REDO_LOG_CONSUMER,
+     "Register a redo log consumer in the start of the backup. If this option "
+     "is enabled, it will block the server from purging redo log if PXB redo "
+     "follow thread is still copying it, causing stall in writes on the "
+     "server.",
+     &xtrabackup_register_redo_log_consumer,
+     &xtrabackup_register_redo_log_consumer, 0, GET_BOOL, NO_ARG, false, 0, 0,
+     0, 0, 0},
 
     {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
 
