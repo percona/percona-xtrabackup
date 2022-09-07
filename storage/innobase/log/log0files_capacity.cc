@@ -153,6 +153,7 @@ void Log_files_capacity::initialize(const Log_files_dict &files,
   m_resize_mode = Log_resize_mode::NONE;
   m_current_physical_capacity = LOG_CAPACITY_MAX;
 
+#ifndef XTRABACKUP
   os_offset_t min_t = LOG_CAPACITY_MIN, max_t = LOG_CAPACITY_MAX;
 
   /* One could compute the m_target_physical_capacity backward by reverting
@@ -182,6 +183,9 @@ void Log_files_capacity::initialize(const Log_files_dict &files,
 
   update_exposed(
       hard_logical_capacity_for_physical(m_current_physical_capacity));
+#else
+  m_target_physical_capacity = m_current_physical_capacity = LOG_CAPACITY_MAX;
+#endif /* !XTRABACKUP */
 
   update(files, current_logical_size, current_checkpoint_age);
 }

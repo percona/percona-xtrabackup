@@ -1167,6 +1167,10 @@ static dberr_t log_check_file(const Log_files_context &ctx, Log_file_id file_id,
     ib::error(ER_IB_MSG_LOG_FILE_IS_EMPTY, file_path.c_str());
     return DB_ERROR;
   }
+
+  /* PXB logs redo log doesn't care about server redo log size
+  restrictions */
+#ifndef XTRABACKUP
   if (size_in_bytes < LOG_FILE_MIN_SIZE) {
     ib::error(ER_IB_MSG_LOG_FILE_TOO_SMALL, file_path.c_str(),
               ulonglong{LOG_FILE_MIN_SIZE});
@@ -1179,6 +1183,8 @@ static dberr_t log_check_file(const Log_files_context &ctx, Log_file_id file_id,
       return DB_ERROR;
     }
   }
+#endif /* XTRABACKUP */
+
   if (size_in_bytes % UNIV_PAGE_SIZE != 0) {
     /* Even though we tolerate different sizes of log files, still
     we require that each of them has size divisible by page size. */
