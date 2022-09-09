@@ -5074,13 +5074,13 @@ retry:
       0, src_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, srv_read_only_mode,
       &success);
 
-  if (!success && false) {
+  if (!success) {
     /* The following call prints an error message */
     os_file_get_last_error(true);
 
     xb::warn() << "cannot open " << src_path << " will try to find.";
 
-    /* check if ib_logfile0 may be xtrabackup_logfile */
+    /* check if #ib_redo0 may be xtrabackup_logfile */
     src_file = os_file_create_simple_no_error_handling(
         0, dst_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, srv_read_only_mode,
         &success);
@@ -5100,7 +5100,7 @@ retry:
 
     if (ut_memcmp(log_buf + LOG_HEADER_CREATOR, (byte *)"xtrabkup",
                   (sizeof "xtrabkup") - 1) == 0) {
-      xb::info() << "'ib_logfile0' seems to be 'xtrabackup_logfile'. will "
+      xb::info() << "'#ib_redo0' seems to be 'xtrabackup_logfile'. will "
                     "retry.";
 
       os_file_close(src_file);
@@ -6170,10 +6170,14 @@ static bool xtrabackup_replace_log_file(const char *redo_path,
 
   const dberr_t err = log_list_existing_files(log_files_ctx, listed_files);
   if (err != DB_SUCCESS) {
-    return false;
+    xb::error() << "Failed to find log files in redo directory ";
+    goto error;
   }
 
-  ut_ad(listed_files.size() == 1);
+  if (listed_files.size() != 1) {
+    xb::error() << "Found more than one file in redo directory ";
+    goto error;
+  }
 
   if (!xtrabackup_incremental_dir) {
     sprintf(dst_path, "%s/%s/%s%ld", xtrabackup_target_dir, LOG_DIRECTORY_NAME,

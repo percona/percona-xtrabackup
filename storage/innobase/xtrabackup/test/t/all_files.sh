@@ -14,7 +14,7 @@ function compare_files() {
 dir1=$1
 dir2=$2
 
-ign_list="(innodb_temp|xtrabackup_binlog_pos_innodb|*.dblwr)"
+ign_list="(innodb_temp|xtrabackup_binlog_pos_innodb|dblwr|innodb_redo)"
 
 # files that present in the backup directory, but not present in the datadir
 diff -u <( ( ( cd $dir1; find . | grep -Ev $ign_list )
@@ -79,7 +79,7 @@ EOF
 # files that present in the datadir, but not present in the backup
 diff -B -u <( ( ( cd $dir1; find . | grep -Ev $ign_list )
                 ( cd $dir1; find . | grep -Ev $ign_list )
-                ( cd $dir2; find . | grep -Ev "innodb_temp|*.dblwr" ) ) | sort | uniq -u ) - <<EOF
+                ( cd $dir2; find . | grep -Ev "innodb_temp|dblwr|innodb_redo" ) ) | sort | uniq -u ) - <<EOF
 ./auto.cnf
 ./ca-key.pem
 ./ca.pem

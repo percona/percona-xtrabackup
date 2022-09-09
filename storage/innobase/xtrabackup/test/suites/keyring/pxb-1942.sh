@@ -1,6 +1,8 @@
 #
 # PXB-1942: Backup fails when database is on a fast storage with redo archive logs enabled
 #
+. inc/common.sh
+. inc/keyring_file.sh
 
 require_server_version_higher_than 8.0.16
 
@@ -8,6 +10,7 @@ mkdir $TEST_VAR_ROOT/b
 
 start_server --innodb-redo-log-archive-dirs=":$TEST_VAR_ROOT/b"
 
+mysql -e "set global innodb_redo_log_encrypt=on"
 mysql -e "CREATE TABLE t (a INT)" test
 mysql -e "INSERT INTO t VALUES (1), (2), (3), (4)" test
 mysql -e "INSERT INTO t SELECT * FROM t" test
