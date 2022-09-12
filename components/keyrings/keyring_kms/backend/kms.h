@@ -35,9 +35,6 @@
 #include <string>
 #include <vector>
 
-#include <openssl/hmac.h>
-#include <openssl/sha.h>
-
 namespace aws {
 
 std::string uri_escape_string(const std::string &s);
@@ -51,16 +48,11 @@ inline curl_easy_unique_ptr make_curl_easy() {
   return curl_easy_unique_ptr(curl_easy_init(), curl_easy_cleanup);
 }
 
+std::vector<unsigned char> sha256_ex(const unsigned char *ptr, std::size_t len);
+
 template <typename T>
 std::vector<unsigned char> sha256(const T &s) {
-  std::vector<unsigned char> md(SHA256_DIGEST_LENGTH);
-
-  SHA256_CTX sha256;
-  SHA256_Init(&sha256);
-  SHA256_Update(&sha256, &s[0], s.size());
-  SHA256_Final(md.data(), &sha256);
-
-  return md;
+  return sha256_ex(reinterpret_cast<const unsigned char *>(&s[0]), s.size());
 }
 
 class Http_buffer {
