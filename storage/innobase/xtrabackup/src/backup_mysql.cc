@@ -1887,7 +1887,7 @@ bool write_xtrabackup_info(MYSQL *connection) {
                  "compact ENUM('Y', 'N') DEFAULT NULL,"
                  "compressed ENUM('Y', 'N') DEFAULT NULL,"
                  "encrypted ENUM('Y', 'N') DEFAULT NULL"
-                 ") CHARACTER SET utf8 ENGINE=innodb",
+                 ") CHARACTER SET utf8mb4 ENGINE=innodb",
                  false);
 
   /* Upgrade from previous versions */
@@ -1895,6 +1895,10 @@ bool write_xtrabackup_info(MYSQL *connection) {
                  "ALTER TABLE PERCONA_SCHEMA.xtrabackup_history MODIFY COLUMN "
                  "binlog_pos TEXT DEFAULT NULL",
                  false);
+  xb_mysql_query(connection,
+                 "ALTER TABLE PERCONA_SCHEMA.xtrabackup_history CONVERT TO "
+                 "CHARACTER SET utf8mb4",
+                 false);  
 
   stmt = mysql_stmt_init(connection);
 
