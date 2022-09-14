@@ -6986,28 +6986,6 @@ static void innodb_free_param() {
   ibt::srv_temp_dir = srv_temp_dir;
 }
 
-/**************************************************************************
-Store current master key ID.
-@return 'false' on error. */
-static bool store_master_key_id(
-    /*==============*/
-    const char *filename) /*!< in: output file name */
-{
-  FILE *fp;
-
-  fp = fopen(filename, "w");
-
-  if (!fp) {
-    xb::error() << "failed to open " << SQUOTE(filename);
-    return (false);
-  }
-
-  fprintf(fp, "%u", Encryption::get_master_key_id());
-  fclose(fp);
-
-  return (true);
-}
-
 static void read_metadata() {
   char metadata_path[FN_REFLEN];
 
@@ -7316,10 +7294,6 @@ skip_check:
 
     destroy_internal_thd(thd);
     my_thread_end();
-  }
-
-  if (!store_master_key_id("xtrabackup_master_key_id")) {
-    exit(EXIT_FAILURE);
   }
 
   /* Check whether the log is applied enough or not. */

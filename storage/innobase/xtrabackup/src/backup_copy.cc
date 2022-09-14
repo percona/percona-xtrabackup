@@ -2234,15 +2234,6 @@ bool copy_back(int argc, char **argv) {
   }
 
   if (xb_tablespace_keys_exist() && opt_generate_new_master_key) {
-    FILE *f = fopen("xtrabackup_master_key_id", "r");
-    if (f == NULL) {
-      xb::error() << "can't read master_key_id";
-      return (false);
-    }
-    auto key = Encryption::get_master_key_id();
-    int ret = fscanf(f, "%u", &key);
-    ut_a(ret == 1);
-    fclose(f);
     if (!xb_keyring_init_for_copy_back(argc, argv)) {
       xb::error() << "failed to init keyring plugin";
       return (false);
@@ -2253,6 +2244,11 @@ bool copy_back(int argc, char **argv) {
       xb::error() << "failed to load tablespace keys";
       return (false);
     }
+
+    /* Generate new random uuid to compound new MK */
+    std::string new_uuid = xtrabackup::utils::generate_uuid();
+    memset(server_uuid, 0, Encryption::SERVER_UUID_LEN + 1);
+    strncpy(server_uuid, new_uuid.c_str(), Encryption::SERVER_UUID_LEN);
 
     byte *master_key = NULL;
 
