@@ -876,6 +876,8 @@ static dberr_t log_rename_file_low(const Log_files_context &ctx
                                    const std::string &old_file_path,
                                    const std::string &new_file_path,
                                    int err_msg_id) {
+  ib::info() << "Renaming redo log file from " << old_file_path << " to "
+             << new_file_path;
   const bool success = os_file_rename(
       innodb_log_file_key, old_file_path.c_str(), new_file_path.c_str());
 
@@ -932,6 +934,9 @@ static dberr_t log_remove_file_low(const Log_files_context &,
     return DB_NOT_FOUND;
   }
   ut_a(file_type == OS_FILE_TYPE_FILE);
+
+  ib::info() << "Removing redo log file: " << file_path;
+
   const bool deleted =
       os_file_delete_if_exists(innodb_log_file_key, file_path.c_str(), nullptr);
   if (!deleted) {
@@ -1032,6 +1037,9 @@ dberr_t log_create_unused_file(const Log_files_context &ctx,
 
   const auto file_path = log_file_path_for_unused_file(ctx, file_id);
 
+  ib::info() << "Creating redo log file at " << file_path << " with file_id "
+             << file_id << " with size " << size_in_bytes << " bytes";
+
   bool ret;
   auto file = os_file_create(innodb_log_file_key, file_path.c_str(),
                              OS_FILE_CREATE | OS_FILE_ON_ERROR_NO_EXIT,
@@ -1081,6 +1089,8 @@ static dberr_t log_resize_file_low(const std::string &file_path,
     return DB_SUCCESS;
   }
 
+  ib::info() << "Resizing redo log file " << file_path << " to size "
+             << size_in_bytes << " bytes";
   bool ret;
   auto file = os_file_create(innodb_log_file_key, file_path.c_str(),
                              OS_FILE_OPEN | OS_FILE_ON_ERROR_NO_EXIT,

@@ -4911,9 +4911,8 @@ static void xtrabackup_stats_func(int argc, char **argv) {
              << ((predict_memory) ? "--use-free-memory-pct" : "--use-memory")
              << " parameter)";
 
-  //srv_redo_log_capacity = 1024 * 1024 * 1024;
-  srv_redo_log_capacity = 0;
-  srv_redo_log_capacity_used = srv_redo_log_capacity;
+  srv_redo_log_capacity = 1024 * 1024 * 1024;  // default 1G
+  srv_redo_log_capacity_used = 0;
 
   if (innodb_init(true, false)) exit(EXIT_FAILURE);
 
@@ -7099,9 +7098,8 @@ skip_check:
   /* temporally dummy value to avoid crash */
   srv_page_size_shift = 14;
   srv_page_size = (1 << srv_page_size_shift);
-  //srv_redo_log_capacity = 1024 * 1024 * 1024;  // min val
-  srv_redo_log_capacity = 0;
-  srv_redo_log_capacity_used = srv_redo_log_capacity;
+  srv_redo_log_capacity = 1024 * 1024 * 1024;  // default 1G
+  srv_redo_log_capacity_used = 0;
   os_event_global_init();
   sync_check_init(srv_max_n_threads);
 #ifdef UNIV_DEBUG

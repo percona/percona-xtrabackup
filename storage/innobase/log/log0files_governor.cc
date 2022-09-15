@@ -876,7 +876,7 @@ static bool might_recycle_file(const log_t &log, os_offset_t removed_file_size,
 
 static bool might_create_unused_file(const log_t &log,
                                      os_offset_t unused_file_size) {
-  return number_of_files_allows_to_create(log) &&
+  return !recv_recovery_is_on() && number_of_files_allows_to_create(log) &&
          physical_capacity_allows_to_create(log, unused_file_size);
 }
 

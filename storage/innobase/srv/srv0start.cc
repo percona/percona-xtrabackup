@@ -2219,8 +2219,16 @@ dberr_t srv_start(bool create_new_db, lsn_t to_lsn) {
     DBUG_EXECUTE_IF("log_force_resize", log_downsize_requested = true;);
 
     const bool need_to_recreate_log_files =
-        log_upgrade || (log_downsize_requested && !srv_force_recovery &&
-                        !recv_sys->found_corrupt_log);
+#ifdef XTRABACKUP
+        /* we have to recreate always in PXB because the ib_redo0 file
+        is always full and we cannot reuse it. No circular buffer
+        logic from 8.0.30. Recreate this #ib_redo0 file and it will be
+        used by transaction rollbacks */
+        (!srv_apply_log_only && !srv_read_only_mode) ||
+#endif
+        log_upgrade ||
+        (log_downsize_requested && !srv_force_recovery &&
+         !recv_sys->found_corrupt_log);
 
     if (need_to_recreate_log_files) {
       /* Prepare to replace the redo log files. */

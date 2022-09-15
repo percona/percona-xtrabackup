@@ -184,7 +184,13 @@ void Log_files_capacity::initialize(const Log_files_dict &files,
   update_exposed(
       hard_logical_capacity_for_physical(m_current_physical_capacity));
 #else
-  m_target_physical_capacity = m_current_physical_capacity = LOG_CAPACITY_MAX;
+  if (recv_recovery_is_on()) {
+    m_target_physical_capacity = m_current_physical_capacity =
+        log_files_size_of_existing_files(files);
+  } else {
+    m_target_physical_capacity = m_current_physical_capacity =
+        srv_redo_log_capacity;
+  }
 #endif /* !XTRABACKUP */
 
   update(files, current_logical_size, current_checkpoint_age);
