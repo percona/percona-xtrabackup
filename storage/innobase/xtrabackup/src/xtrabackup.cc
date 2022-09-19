@@ -2169,8 +2169,6 @@ static bool innodb_init_param(void) {
 
   srv_force_recovery = (ulint)innobase_force_recovery;
 
-  dblwr::g_mode = dblwr::Mode::OFF;
-
   if (!innobase_use_checksums) {
     srv_checksum_algorithm = SRV_CHECKSUM_ALGORITHM_NONE;
   }
@@ -5097,8 +5095,8 @@ retry:
       goto error;
     }
 
-    if (ut_memcmp(log_buf + LOG_HEADER_CREATOR, (byte *)"xtrabkup",
-                  (sizeof "xtrabkup") - 1) == 0) {
+    if (ut_memcmp(log_buf + LOG_HEADER_CREATOR, (byte *)LOG_HEADER_CREATOR_PXB,
+                  (sizeof LOG_HEADER_CREATOR_PXB) - 1) == 0) {
       xb::info() << "'#ib_redo0' seems to be 'xtrabackup_logfile'. will "
                     "retry.";
 
@@ -5144,8 +5142,8 @@ retry:
   }
   log_detected_format = log_format;
 
-  if (ut_memcmp(log_buf + LOG_HEADER_CREATOR, (byte *)"xtrabkup",
-                (sizeof "xtrabkup") - 1) != 0) {
+  if (ut_memcmp(log_buf + LOG_HEADER_CREATOR, (byte *)LOG_HEADER_CREATOR_PXB,
+                (sizeof LOG_HEADER_CREATOR_PXB) - 1) != 0) {
     if (xtrabackup_incremental_dir) {
       xb::error() << "xtrabackup_logfile was already used "
                      "to '--prepare'.";

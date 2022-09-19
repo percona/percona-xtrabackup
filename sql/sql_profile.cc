@@ -72,7 +72,7 @@ using std::min;
 #define TIME_I_S_DECIMAL_SIZE \
   (TIME_FLOAT_DIGITS * 100) + (TIME_FLOAT_DIGITS - 3)
 
-static const size_t MAX_QUERY_LENGTH = 300;
+[[maybe_unused]] static const size_t MAX_QUERY_LENGTH = 300;
 #define MAX_QUERY_HISTORY 101U
 
 /**

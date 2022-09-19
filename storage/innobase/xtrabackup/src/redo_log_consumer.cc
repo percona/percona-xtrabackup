@@ -41,7 +41,7 @@ void Redo_Log_Consumer::deinit(MYSQL *connection) {
 
 void Redo_Log_Consumer::advance(MYSQL *connection, lsn_t lsn) {
   char query[200];
-  snprintf(query, sizeof(query), "DO innodb_redo_log_consumer_advance(%ld);",
-           lsn);
+  snprintf(query, sizeof(query), "DO innodb_redo_log_consumer_advance(%llu);",
+           ulonglong{lsn});
   xb_mysql_query(connection, query, true);
 }

@@ -1537,6 +1537,15 @@ static dberr_t log_sys_handle_creator(log_t &log) {
     }
     ib::info(ER_IB_MSG_LOG_FILES_CREATED_BY_CLONE);
 
+  } else if (str_starts_with(creator_name, LOG_HEADER_CREATOR_PXB)) {
+    dblwr::g_mode = dblwr::Mode::OFF;
+    dblwr::set();
+
+    if (srv_read_only_mode) {
+      ib::error() << "Cannot restore from xtrabackup, InnoDB running in "
+                     "read-only mode!";
+      return DB_ERROR;
+    }
   } else if (!str_starts_with(creator_name, "MySQL ")) {
     ib::warn(ER_IB_MSG_LOG_FILES_CREATED_BY_UNKNOWN_CREATOR,
              creator_name.c_str());
