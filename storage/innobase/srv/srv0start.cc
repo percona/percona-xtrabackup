@@ -2289,7 +2289,7 @@ dberr_t srv_start(bool create_new_db, lsn_t to_lsn) {
 
       {
         /* Emit a message to the error log. */
-        const auto target_size = log_sys->m_capacity.target_physical_capacity();
+        const auto target_size = srv_redo_log_capacity;
         const auto target_size_in_M = target_size / (1024 * 1024UL);
         if (log_upgrade) {
           ib::info(ER_IB_MSG_LOG_FILES_UPGRADE, ulonglong{target_size_in_M},
