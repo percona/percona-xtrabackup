@@ -2169,6 +2169,8 @@ static bool innodb_init_param(void) {
 
   srv_force_recovery = (ulint)innobase_force_recovery;
 
+  dblwr::g_mode = dblwr::Mode::OFF;
+
   if (!innobase_use_checksums) {
     srv_checksum_algorithm = SRV_CHECKSUM_ALGORITHM_NONE;
   }
