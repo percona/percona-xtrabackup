@@ -396,8 +396,14 @@ Log_files_find_result log_files_find_and_analyze(
                                            LOG_HEADER_FLAG_FILE_FULL),
                 encryption_metadata);
     } else {
+#ifdef XTRABACKUP
+      files.add(file_sizes[i].m_id, file_sizes[i].m_size_in_bytes,
+                file_headers[i].m_header.m_start_lsn, true,
+                encryption_metadata);
+#else
       files.add(file_sizes[i].m_id, file_sizes[i].m_size_in_bytes, 0, true,
                 encryption_metadata);
+#endif  // XTRABACKUP
     }
   }
 
