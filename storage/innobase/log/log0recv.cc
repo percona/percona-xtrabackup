@@ -1138,7 +1138,9 @@ static
       return;
     }
 
-    if (!file.contains(checkpoint_in_file.m_checkpoint_lsn)) {
+    if (IF_XB(log.m_files_ctx.m_files_ruleset >
+              Log_files_ruleset::PRE_8_0_30) &&
+        !file.contains(checkpoint_in_file.m_checkpoint_lsn)) {
       const auto file_path = file_handle.file_path();
       ib::error(ER_IB_MSG_RECOVERY_CHECKPOINT_OUTSIDE_LOG_FILE,
                 ulonglong{checkpoint_in_file.m_checkpoint_lsn},

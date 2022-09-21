@@ -65,11 +65,8 @@ bool Redo_Log_Reader::find_start_checkpoint_lsn() {
   /* Redo log file header is never encrypted. */
   Encryption_metadata unused_encryption_metadata;
 
-  Log_files_context log_files_ctx =
-      Log_files_context{srv_log_group_home_dir, Log_files_ruleset::CURRENT};
-
   auto file_handle =
-      Log_file::open(log_files_ctx, checkpoint.m_checkpoint_file_id,
+      Log_file::open(log_sys->m_files_ctx, checkpoint.m_checkpoint_file_id,
                      Log_file_access_mode::READ_ONLY,
                      unused_encryption_metadata, Log_file_type::NORMAL);
 
@@ -103,17 +100,13 @@ lsn_t Redo_Log_Reader::get_start_checkpoint_lsn() const {
 }
 
 bool Redo_Log_Reader::is_error() const { return (m_error); }
-/* scan redo log files form server directory and update log.m_files */
-static bool reopen_log_files() {
-  log_t &log = *log_sys;
-  Log_files_context log_files_ctx =
-      Log_files_context{srv_log_group_home_dir, Log_files_ruleset::CURRENT};
 
-  std::string subdir_path;
-  bool found_files_in_subdir{false};
-  auto err = log_sys_check_directory(log_files_ctx, subdir_path,
-                                     found_files_in_subdir);
-  log.m_files_ctx = std::move(log_files_ctx);
+/** scan redo log files form server directory and update log.m_files.
+@param[in,out]  desired_lsn             LSN that triggered file reopening.
+@return true if re-open was sucessful */
+
+static bool reopen_log_files(lsn_t desired_lsn) {
+  log_t &log = *log_sys;
 
   Log_files_dict files{log.m_files_ctx};
   Log_format format;
@@ -132,12 +125,10 @@ static bool reopen_log_files() {
   log.m_log_flags = log_flags;
   log.m_log_uuid = log_uuid;
   log.m_files = std::move(files);
-  auto file = log.m_files.front();
-  log_encryption_read(log, file);
+  auto file = log.m_files.find(desired_lsn);
+  if (file == log.m_files.end()) return false;
+  log_encryption_read(log, *file);
 
-  if (err != DB_SUCCESS) {
-    ut_ad(0);
-  }
   return true;
 }
 
@@ -147,7 +138,7 @@ lsn_t Redo_Log_Reader::read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
 
   // update the in-memory structure log files by scanning
   if (log.m_files.find(start_lsn) == log.m_files.end()) {
-    if (!reopen_log_files()) {
+    if (!reopen_log_files(start_lsn)) {
       // file not found
       m_error = true;
       return 0;
@@ -1187,7 +1178,10 @@ bool Redo_Log_Data_Manager::stop_at(lsn_t lsn, lsn_t checkpoint_lsn) {
 
   /* to ensure redo logs are not disabled during the backup, reopen the log
   files to read HEADER */
-  reopen_log_files();
+  if (!reopen_log_files(lsn)) {
+    xb::error() << "Cannot find file with LSN " << lsn;
+    return (false);
+  }
   log_crash_safe_validate(*log_sys);
 
   scanned_lsn = reader.get_scanned_lsn();
