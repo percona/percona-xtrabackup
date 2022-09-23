@@ -915,6 +915,7 @@ bool Redo_Log_Data_Manager::init() {
         return (false);
       }
       redo_log_consumer.init(redo_log_consumer_cnx);
+      redo_log_consumer_can_advance.store(true);
     }
   }
 
@@ -1090,7 +1091,8 @@ void Redo_Log_Data_Manager::copy_func() {
   THD *thd = create_thd(false, false, true, 0, 0);
 
   aborted = false;
-  if (xtrabackup_register_redo_log_consumer) {
+  if (xtrabackup_register_redo_log_consumer &&
+      redo_log_consumer_can_advance.load()) {
     redo_log_consumer.advance(redo_log_consumer_cnx, reader.get_scanned_lsn());
   }
 
@@ -1104,7 +1106,8 @@ void Redo_Log_Data_Manager::copy_func() {
       return;
     }
 
-    if (xtrabackup_register_redo_log_consumer) {
+    if (xtrabackup_register_redo_log_consumer &&
+        redo_log_consumer_can_advance.load()) {
       if (archived_log_monitor.is_ready() &&
           archived_log_state == ARCHIVED_LOG_POSITIONED) {
         redo_log_consumer.deinit(redo_log_consumer_cnx);

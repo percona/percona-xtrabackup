@@ -224,6 +224,7 @@ extern bool ssl_mode_set_explicitly;
 extern int set_client_ssl_options(MYSQL *mysql);
 
 extern bool xtrabackup_register_redo_log_consumer;
+extern std::atomic<bool> redo_log_consumer_can_advance;
 
 enum binlog_info_enum {
   BINLOG_INFO_OFF,

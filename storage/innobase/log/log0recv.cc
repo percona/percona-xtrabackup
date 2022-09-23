@@ -3844,17 +3844,56 @@ bool meb_scan_log_recs(
 #endif
         auto data_len = block_header.m_data_len;
 
-    if (scanned_lsn + data_len > recv_sys->scanned_lsn &&
-        recv_sys->scanned_epoch_no > 0 &&
-        !log_block_epoch_no_is_valid(block_header.m_epoch_no,
-                                     recv_sys->scanned_epoch_no)) {
-      /* Garbage from a log buffer flush which was made
-      before the most recent database recovery */
+#ifdef XTRABACKUP
+    /**
+     * 8.0.30 records LOG_BLOCK_EPOCH_NO at 8th by of log block header
+     * while pre-8.0.30 we recorded LOG_BLOCK_CHECKPOINT_NO
+     */
+    if (scanned_lsn + data_len > recv_sys->scanned_lsn) {
+      if (xtrabackup_original_log_format >= Log_format::VERSION_8_0_30 &&
+          recv_sys->scanned_epoch_no > 0 &&
+          !log_block_epoch_no_is_valid(block_header.m_epoch_no,
+                                       recv_sys->scanned_epoch_no)) {
+        /* Garbage from a log buffer flush which was made
+        before the most recent database recovery */
 
-      finished = true;
+        finished = true;
 
-      break;
+        break;
+      } else {
+        /** block_header.m_epoch_no = log_block_get_checkpoint_no
+         * recv_sys->scanned_epoch_no = recv_sys->scanned_checkpoint_no
+         *  log_block_get_checkpoint_no(log_block) <
+            recv_sys->scanned_checkpoint_no &&
+        (recv_sys->scanned_checkpoint_no -
+             log_block_get_checkpoint_no(log_block) >
+         0x80000000UL)
+         */
+        if (block_header.m_epoch_no < recv_sys->scanned_epoch_no &&
+            (recv_sys->scanned_epoch_no - block_header.m_epoch_no >
+             0x80000000UL)) {
+          /* Garbage from a log buffer flush which was made
+          before the most recent database recovery */
+
+          finished = true;
+
+          break;
+        }
+      }
     }
+#else
+        if (scanned_lsn + data_len > recv_sys->scanned_lsn &&
+            recv_sys->scanned_epoch_no > 0 &&
+            !log_block_epoch_no_is_valid(block_header.m_epoch_no,
+                                         recv_sys->scanned_epoch_no)) {
+          /* Garbage from a log buffer flush which was made
+          before the most recent database recovery */
+
+          finished = true;
+
+          break;
+        }
+#endif  // XTRABACKUP
 
     if (!recv_sys->parse_start_lsn && block_header.m_first_rec_group > 0) {
       /* We found a point from which to start the parsing of log records */
