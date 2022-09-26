@@ -103,7 +103,10 @@ class Redo_Log_Reader {
                             const lsn_t end_lsn);
 
   /** checkpoint LSN at the backup start. */
-  lsn_t checkpoint_lsn_start{0};
+  static lsn_t checkpoint_lsn_start;
+
+  /** offset of checkpoint_lsn_start */
+  static os_offset_t checkpoint_offset_start;
 
   /** checkpoint number at the backup start. */
   lsn_t checkpoint_no_start{0};

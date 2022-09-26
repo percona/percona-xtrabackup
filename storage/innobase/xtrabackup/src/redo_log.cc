@@ -33,6 +33,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "common.h"
 #include "file_utils.h"
 #include "log0encryption.h"
+#include "log0pre_8_0_30.h"
 #include "os0event.h"
 #include "sql_thd_internal_api.h"
 #include "xb0xb.h"
@@ -43,6 +44,8 @@ extern ds_ctxt_t *ds_redo;
 constexpr size_t HEADER_BLOCK_SIZE = 4096;
 static bool archive_first_block_zero = false;
 std::atomic<bool> Redo_Log_Reader::m_error;
+lsn_t Redo_Log_Reader::checkpoint_lsn_start;
+os_offset_t Redo_Log_Reader::checkpoint_offset_start;
 
 Redo_Log_Reader::Redo_Log_Reader() {
   log_hdr_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
@@ -54,33 +57,54 @@ Redo_Log_Reader::Redo_Log_Reader() {
 }
 
 bool Redo_Log_Reader::find_start_checkpoint_lsn() {
-  /* Look for the latest checkpoint */
-  Log_checkpoint_location checkpoint;
+  if (log_sys->m_files.ctx().m_files_ruleset == Log_files_ruleset::CURRENT) {
+    /* Look for the latest checkpoint */
+    Log_checkpoint_location checkpoint;
 
-  if (!recv_find_max_checkpoint(*log_sys, checkpoint)) {
-    xb::error() << "recv_find_max_checkpoint() failed.";
-    return (false);
+    if (!recv_find_max_checkpoint(*log_sys, checkpoint)) {
+      xb::error() << "recv_find_max_checkpoint() failed.";
+      return (false);
+    }
+
+    /* Redo log file header is never encrypted. */
+    Encryption_metadata unused_encryption_metadata;
+
+    auto file_handle =
+        Log_file::open(log_sys->m_files_ctx, checkpoint.m_checkpoint_file_id,
+                       Log_file_access_mode::READ_ONLY,
+                       unused_encryption_metadata, Log_file_type::NORMAL);
+    if (!file_handle.is_open()) {
+      xb::error() << "Failed to open redo log file id "
+                  << checkpoint.m_checkpoint_file_id;
+      return false;
+    }
+    log_scanned_lsn = checkpoint.m_checkpoint_lsn;
+    checkpoint_lsn_start = checkpoint.m_checkpoint_lsn;
+
+    /* Copy the header into log_hdr_buf */
+    file_handle.read(0, LOG_FILE_HDR_SIZE, log_hdr_buf);
+  } else {
+    const auto logfile0 = log_sys->m_files.file(0);
+    auto file_handle = logfile0->open(Log_file_access_mode::READ_ONLY);
+    if (!file_handle.is_open()) {
+      xb::error() << "Failed to open redo log file id 0";
+      return false;
+    }
+    log_pre_8_0_30::Checkpoint_header chkp_header = {};
+    if (!log_pre_8_0_30::recv_find_max_checkpoint(file_handle, chkp_header)) {
+      xb::error() << "recv_find_max_checkpoint() failed.";
+      return (false);
+    }
+
+    os_offset_t current_file_real_offset = chkp_header.m_checkpoint_offset;
+
+    log_scanned_lsn = chkp_header.m_checkpoint_lsn;
+    checkpoint_lsn_start = chkp_header.m_checkpoint_lsn;
+    checkpoint_offset_start = current_file_real_offset;
+
+    /* Copy the header into log_hdr_buf */
+    file_handle.read(0, LOG_FILE_HDR_SIZE, log_hdr_buf);
   }
-
-  /* Redo log file header is never encrypted. */
-  Encryption_metadata unused_encryption_metadata;
-
-  auto file_handle =
-      Log_file::open(log_sys->m_files_ctx, checkpoint.m_checkpoint_file_id,
-                     Log_file_access_mode::READ_ONLY,
-                     unused_encryption_metadata, Log_file_type::NORMAL);
-
-  if (!file_handle.is_open()) {
-    xb::error() << "Failed to open redo log file id "
-                << checkpoint.m_checkpoint_file_id;
-    return false;
-  }
-
-  /* Copy the header into log_hdr_buf */
-  file_handle.read(0, LOG_FILE_HDR_SIZE, log_hdr_buf);
-
-  log_scanned_lsn = checkpoint.m_checkpoint_lsn;
-  checkpoint_lsn_start = checkpoint.m_checkpoint_lsn;
 
   return (true);
 }
@@ -162,8 +186,19 @@ lsn_t Redo_Log_Reader::read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
 
   do {
     os_offset_t source_offset;
-
-    source_offset = file->offset(start_lsn);
+    if (log.m_files.ctx().m_files_ruleset == Log_files_ruleset::CURRENT) {
+      source_offset = file->offset(start_lsn);
+    } else {
+      const size_t n_files = log_files_number_of_existing_files(log.m_files);
+      const auto logfile0 = log.m_files.file(0);
+      const os_offset_t file_size = logfile0->m_size_in_bytes;
+      source_offset = log_pre_8_0_30::compute_real_offset_for_lsn(
+          n_files, file_size, checkpoint_lsn_start, checkpoint_offset_start,
+          start_lsn);
+      source_offset %= file->m_size_in_bytes;
+      source_offset =
+          ut_uint64_align_down(source_offset, OS_FILE_LOG_BLOCK_SIZE);
+    }
 
     ut_a(end_lsn - start_lsn <= ULINT_MAX);
 
@@ -922,14 +957,33 @@ bool Redo_Log_Data_Manager::init() {
   if (log_sys_init(false, flushed_lsn, flushed_lsn) != DB_SUCCESS) {
     return (false);
   }
-
-  Log_checkpoint_location checkpoint;
-  if (!recv_find_max_checkpoint(*log_sys, checkpoint)) {
-    xb::error() << " recv_find_max_checkpoint() failed.";
+  lsn_t checkpoint_lsn;
+  if (log_sys->m_files.ctx().m_files_ruleset == Log_files_ruleset::CURRENT) {
+    Log_checkpoint_location checkpoint;
+    if (!recv_find_max_checkpoint(*log_sys, checkpoint)) {
+      xb::error() << " recv_find_max_checkpoint() failed.";
+      return (false);
+    }
+    checkpoint_lsn = checkpoint.m_checkpoint_lsn;
+  } else {
+    const auto logfile0 = log_sys->m_files.file(0);
+    auto file_handle = logfile0->open(Log_file_access_mode::READ_ONLY);
+    if (!file_handle.is_open()) {
+      xb::error() << "Failed to open redo log file id 0";
+      return false;
+    }
+    log_pre_8_0_30::Checkpoint_header chkp_header = {};
+    if (!log_pre_8_0_30::recv_find_max_checkpoint(file_handle, chkp_header)) {
+      xb::error() << "recv_find_max_checkpoint() failed.";
+      return (false);
+    }
+    checkpoint_lsn = chkp_header.m_checkpoint_lsn;
+  }
+  auto file = log_sys->m_files.find(checkpoint_lsn);
+  if (file == log_sys->m_files.end()) {
+    xb::error() << " Cannot find file with checkpoint " << checkpoint_lsn;
     return (false);
   }
-  auto file = log_sys->m_files.find(checkpoint.m_checkpoint_lsn);
-
   log_encryption_read(*log_sys, *file);
 
   ut_a(log_sys != nullptr);

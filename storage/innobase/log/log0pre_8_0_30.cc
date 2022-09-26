@@ -117,5 +117,29 @@ bool files_validate_format(const Log_files_context &files_ctx,
     return false;
   }
 }
-
+#ifdef XTRABACKUP
+bool recv_find_max_checkpoint(Log_file_handle &file_handle,
+                              Checkpoint_header &chkp_header) {
+  byte header_buf[OS_FILE_LOG_BLOCK_SIZE] = {};
+  bool checkpoint_found = false;
+  for (auto hdr_no : {Log_checkpoint_header_no::HEADER_1,
+                      Log_checkpoint_header_no::HEADER_2}) {
+    const dberr_t err =
+        log_checkpoint_header_read(file_handle, hdr_no, header_buf);
+    if (err != DB_SUCCESS) {
+      xb::error() << "log_checkpoint_header_read failed";
+      return false;
+    }
+    Checkpoint_header h;
+    if (!checkpoint_header_deserialize(header_buf, h)) {
+      continue;
+    }
+    if (!checkpoint_found || h.m_checkpoint_no > chkp_header.m_checkpoint_no) {
+      chkp_header = h;
+      checkpoint_found = true;
+    }
+  }
+  return checkpoint_found;
+}
+#endif  // XTRABACKUP
 }  // namespace log_pre_8_0_30
