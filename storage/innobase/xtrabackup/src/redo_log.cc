@@ -151,7 +151,10 @@ static bool reopen_log_files(lsn_t desired_lsn) {
   log.m_files = std::move(files);
   auto file = log.m_files.find(desired_lsn);
   if (file == log.m_files.end()) return false;
-  log_encryption_read(log, *file);
+  if (log_encryption_read(log, *file) != DB_SUCCESS) {
+    xb::error() << "log_encryption_read failed on file ID " << file->m_id;
+    return (false);
+  };
 
   return true;
 }
@@ -984,7 +987,10 @@ bool Redo_Log_Data_Manager::init() {
     xb::error() << " Cannot find file with checkpoint " << checkpoint_lsn;
     return (false);
   }
-  log_encryption_read(*log_sys, *file);
+  if (log_encryption_read(*log_sys, *file) != DB_SUCCESS) {
+    xb::error() << "log_encryption_read failed on file ID " << file->m_id;
+    return (false);
+  };
 
   ut_a(log_sys != nullptr);
 

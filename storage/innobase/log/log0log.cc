@@ -1546,8 +1546,7 @@ static dberr_t log_sys_handle_creator(log_t &log) {
                      "read-only mode!";
       return DB_ERROR;
     }
-  } else if (!str_starts_with(creator_name, "MySQL ") &&
-             !str_starts_with(creator_name, "xtrabkup ")) {
+  } else if (!str_starts_with(creator_name, "MySQL ")) {
     ib::warn(ER_IB_MSG_LOG_FILES_CREATED_BY_UNKNOWN_CREATOR,
              creator_name.c_str());
   }
