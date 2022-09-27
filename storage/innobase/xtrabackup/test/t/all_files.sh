@@ -79,7 +79,7 @@ EOF
 # files that present in the datadir, but not present in the backup
 diff -B -u <( ( ( cd $dir1; find . | grep -Ev $ign_list )
                 ( cd $dir1; find . | grep -Ev $ign_list )
-                ( cd $dir2; find . | grep -Ev "innodb_temp|dblwr|innodb_redo" ) ) | sort | uniq -u ) - <<EOF
+                ( cd $dir2; find . | grep -Ev "innodb_temp|dblwr|innodb_redo|ib_logfile" ) ) | sort | uniq -u ) - <<EOF
 ./auto.cnf
 ./ca-key.pem
 ./ca.pem
