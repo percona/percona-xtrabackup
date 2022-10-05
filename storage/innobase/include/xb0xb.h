@@ -79,10 +79,10 @@ bool check_if_skip_table(
 extern bool xtrabackup_stats;
 
 /** Amount of memory calculated at --backup for recovery hash records */
-extern size_t redo_memory;
+extern size_t real_redo_memory;
 
 /** Number of total frames that will be required for prepare */
-extern ulint redo_frames;
+extern ulint real_redo_frames;
 
 /** This variables holds the result of all conditions that must be set in order
 to enable estimate memory functionality */

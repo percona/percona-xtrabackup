@@ -629,10 +629,10 @@ void recv_sys_init() {
 
 #ifdef XTRABACKUP
   if (estimate_memory) {
-    if (srv_buf_pool_curr_size >= (long long)redo_memory) {
-      if (recv_n_pool_free_frames < redo_frames) {
-        xb::info() << "Setting free frames to " << redo_frames;
-        recv_n_pool_free_frames = redo_frames;
+    if (srv_buf_pool_curr_size >= (long long)real_redo_memory) {
+      if (recv_n_pool_free_frames < real_redo_frames) {
+        xb::info() << "Setting free frames to " << real_redo_frames;
+        recv_n_pool_free_frames = real_redo_frames;
       }
     } else {
       recv_n_pool_free_frames = 0;
@@ -711,7 +711,7 @@ static void recv_sys_empty_hash() {
 
 #ifdef XTRABACKUP
 
-  if (estimate_memory && srv_buf_pool_curr_size < (long long)redo_memory) {
+  if (estimate_memory && srv_buf_pool_curr_size < (long long)real_redo_memory) {
     recv_n_pool_free_frames = 0;
   }
   if (pxb_recv_sys->spaces == nullptr) return;
@@ -2815,7 +2815,7 @@ static void recv_add_to_hash_table(mlog_id_t type, space_id_t space_id,
      * batch, we adjust recv_n_pool_free_frames as we parse each single record.
      * This way we have room to hold all required pages on this batch.
      */
-    if (estimate_memory && recv_n_pool_free_frames != redo_frames) {
+    if (estimate_memory && recv_n_pool_free_frames != real_redo_frames) {
       recv_n_pool_free_frames++;
       max_mem =
           UNIV_PAGE_SIZE * (buf_pool_get_n_pages() -

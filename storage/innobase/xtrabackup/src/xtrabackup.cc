@@ -176,6 +176,9 @@ lsn_t incremental_start_checkpoint_lsn;
 lsn_t incremental_to_lsn;
 lsn_t incremental_last_lsn;
 lsn_t incremental_flushed_lsn;
+size_t incremental_redo_memory = 0;
+ulint incremental_redo_frames = 0;
+
 xb_page_bitmap *changed_page_bitmap = NULL;
 pagetracking::xb_space_map *changed_page_tracking = nullptr;
 
@@ -260,6 +263,8 @@ ulonglong xtrabackup_encrypt_chunk_size = 0;
 
 size_t redo_memory = 0;
 ulint redo_frames = 0;
+size_t real_redo_memory = 0;
+ulint real_redo_frames = 0;
 
 ulint xtrabackup_rebuild_threads = 1;
 
@@ -2106,19 +2111,27 @@ static bool innodb_init_param(void) {
 
   srv_buf_pool_chunk_unit = 134217728;
   srv_buf_pool_instances = 1;
-  estimate_memory = xtrabackup_prepare && redo_memory != 0 &&
-                    redo_frames != 0 && !xtrabackup_use_memory_set &&
+  if (xtrabackup_incremental_dir) {
+    real_redo_memory = incremental_redo_memory;
+    real_redo_frames = incremental_redo_frames;
+  } else {
+    real_redo_memory = redo_memory;
+    real_redo_frames = redo_frames;
+  }
+
+  estimate_memory = xtrabackup_prepare && real_redo_memory != 0 &&
+                    real_redo_frames != 0 && !xtrabackup_use_memory_set &&
                     xtrabackup_use_free_memory_pct != 0;
 
   if (estimate_memory) {
     ulint free_memory_total = xtrabackup::utils::host_free_memory();
     ulint free_memory_usable =
         (free_memory_total * xtrabackup_use_free_memory_pct) / 100;
-    ulint mem =
-        buf_pool_size_align(redo_memory + (redo_frames * UNIV_PAGE_SIZE));
+    ulint mem = buf_pool_size_align(real_redo_memory +
+                                    (real_redo_frames * UNIV_PAGE_SIZE));
     if (mem > (ulint)xtrabackup_use_memory) {
-      xb::info() << "Got estimation from backup: " << redo_memory
-                 << " bytes for parsing and " << redo_frames
+      xb::info() << "Got estimation from backup: " << real_redo_memory
+                 << " bytes for parsing and " << real_redo_frames
                  << " frames. Requesting " << mem << " for --prepare.";
       if (mem > free_memory_usable) {
         xb::info() << "Required memory will exceed Free memory configuration. "
@@ -8167,6 +8180,8 @@ int main(int argc, char **argv) {
     incremental_last_lsn = metadata_last_lsn;
     incremental_flushed_lsn = backup_redo_log_flushed_lsn;
     xtrabackup_incremental = xtrabackup_incremental_dir;  // dummy
+    incremental_redo_memory = redo_memory;
+    incremental_redo_frames = redo_frames;
 
   } else if (opt_incremental_history_name) {
     xtrabackup_incremental = opt_incremental_history_name;
