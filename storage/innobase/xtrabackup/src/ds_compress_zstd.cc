@@ -149,11 +149,14 @@ static int compress_write(ds_file_t *file, const void *buf, size_t len) {
                              comp_size, 0};
     size_t const remaining =
         ZSTD_compressStream2(comp_file->cctx, &output, &input, mode);
+
+    if (ZSTD_isError(remaining)) goto err;
+
     comp_file->raw_bytes += input.pos;
     comp_file->comp_bytes += output.pos;
     finished = last_chunk ? (remaining == 0) : false;
 
-    if (last_chunk && finished) {
+    if (finished) {
       break;
     }
   }
