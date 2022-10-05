@@ -493,7 +493,7 @@ bool get_mysql_vars(MYSQL *connection) {
   }
 
   if (slave_parallel_workers_var != NULL &&
-      atoi(slave_parallel_workers_var) > 0) {
+      atoi(slave_parallel_workers_var) > 1) {
     have_multi_threaded_slave = true;
   }
 
