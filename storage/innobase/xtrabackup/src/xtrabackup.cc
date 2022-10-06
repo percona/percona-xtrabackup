@@ -2124,6 +2124,8 @@ static bool innodb_init_param(void) {
                     xtrabackup_use_free_memory_pct != 0;
 
   if (estimate_memory) {
+    ut_ad(real_redo_frames != UINT64_MAX);
+
     ulint free_memory_total = xtrabackup::utils::host_free_memory();
     ulint free_memory_usable =
         (free_memory_total * xtrabackup_use_free_memory_pct) / 100;
@@ -2151,9 +2153,9 @@ static bool innodb_init_param(void) {
       }
       xb::info() << "Setting buffer pool to: " << xtrabackup_use_memory;
     }
-    if ((long)redo_frames > innobase_open_files) {
-      xb::info() << "Setting innobase_open_files to: " << redo_frames;
-      innobase_open_files = (long)redo_frames;
+    if ((long)real_redo_frames > innobase_open_files) {
+      xb::info() << "Setting innobase_open_files to: " << real_redo_frames;
+      innobase_open_files = (long)real_redo_frames;
     }
   }
 
