@@ -32,6 +32,7 @@ extern char *xtrabackup_incremental;
 extern lsn_t incremental_start_checkpoint_lsn;
 extern lsn_t xtrabackup_start_checkpoint;
 extern bool use_dumped_tablespace_keys;
+extern bool xb_generated_redo;
 
 extern std::vector<ulint> invalid_encrypted_tablespace_ids;
 

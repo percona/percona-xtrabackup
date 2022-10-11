@@ -48,6 +48,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 /* os_offset_t */
 #include "os0file.h"
 
+/* srv_read_only_mode */
+#include "srv0srv.h"
+/* xb_generated_redo variable */
+#include "xb0xb.h"
+
 /**************************************************/ /**
 
  @name Log - multiple files analysis
@@ -407,6 +412,83 @@ Log_files_find_result log_files_find_and_analyze(
   ut_a(size_capacity == log_files_capacity_of_existing_files(files));
 
   return Log_files_find_result::FOUND_VALID_FILES;
+}
+
+static bool xb_log_files_open(
+    const char *backup_dir, ut::vector<Log_file_id_and_header> &file_headers) {
+  auto log_files_ctx =
+      Log_files_context{backup_dir, Log_files_ruleset::CURRENT};
+
+  ut::vector<Log_file_id_and_size> file_sizes;
+  switch (log_collect_existing_files(log_files_ctx, srv_read_only_mode,
+                                     file_sizes)) {
+    case DB_NOT_FOUND:
+      // No xtrabackup_logfile, no redo. Fully prepared dir
+      return (true);
+    case DB_SUCCESS:
+      ut_ad(!file_sizes.empty());
+      break;
+    case DB_ERROR:
+      /* Error message emitted in log_collect_existing_files. */
+      return (false);
+    default:
+      ut_error;
+  }
+
+  for (const auto &file : file_sizes) {
+    Log_file_header file_header;
+
+    /* Redo log file header is never encrypted. */
+    Encryption_metadata unused_encryption_metadata;
+
+    auto file_handle = Log_file::open(
+        log_files_ctx, file.m_id, Log_file_access_mode::READ_ONLY,
+        unused_encryption_metadata, Log_file_type::NORMAL);
+
+    /* The file can be opened - checked by
+    the log_collect_existing_files() */
+    if (!file_handle.is_open()) {
+      return (false);
+    }
+
+    if (log_file_header_read(file_handle, file_header) != DB_SUCCESS) {
+      ib::error(ER_IB_MSG_LOG_FILE_HEADER_READ_FAILED,
+                file_handle.file_path().c_str());
+      return (false);
+    }
+
+    file_headers.emplace_back(file.m_id, file_header);
+  }
+
+  return (true);
+}
+
+bool xb_log_files_validate_creators(const char *backup_dir) {
+  ut::vector<Log_file_id_and_header> file_headers;
+  if (!xb_log_files_open(backup_dir, file_headers)) {
+    return false;
+  }
+
+  // we have ib_redo* files.
+  // we ensured only ib_redo* files are present. Lets check their headers.
+  // only the first file ib_redo0 is allowed to have PXB (backup) creator,
+  // ib_redo1, ib_redo2, etc cannot have PXB (backup) creator.
+  for (auto it = file_headers.begin(); it != file_headers.end(); ++it) {
+    auto &file = *it;
+    if (file.m_header.m_creator_name.compare(LOG_HEADER_CREATOR_PXB_PREPARE) !=
+        0) {
+      if (it == file_headers.begin() && file.m_id == 0 &&
+          strncmp(file.m_header.m_creator_name.c_str(), LOG_HEADER_CREATOR_PXB,
+                  strlen(LOG_HEADER_CREATOR_PXB)) == 0) {
+        continue;
+      } else {
+        return false;
+      }
+    } else {
+      xb_generated_redo = true;
+    }
+  }
+  return (true);
 }
 
 /** @} */

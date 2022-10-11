@@ -90,4 +90,13 @@ Log_files_find_result log_files_find_and_analyze(
     Log_files_dict &files, Log_format &format, std::string &creator_name,
     Log_flags &log_flags, Log_uuid &log_uuid);
 
+/** Check for redo log files with PXB creator in redo log headers. Also sets
+a global variable xb_generated_redo to true if any redo header file has
+creator tag LOG_HEADER_CREATOR_PXB_PREPARE
+@param[in] backup_dir backup directory
+@return true if first file is either LOG_HEADER_CREATOR_PXB or
+LOG_HEADER_CREATOR_PXB_PREPARE and remaining redo file headers should be only
+LOG_HEADER_CREATOR_PXB_PREPARE */
+bool xb_log_files_validate_creators(const char *backup_dir);
+
 #endif /* !log0files_finder_h */
