@@ -52,9 +52,9 @@
 #include "my_inttypes.h"
 #include "my_io.h"
 #include "my_macros.h"
+#include "mysys_err.h"
 #include "template_utils.h"
 #include "vio/vio_priv.h"
-
 #ifdef FIONREAD_IN_SYS_FILIO
 #include <sys/filio.h>
 #endif
@@ -470,12 +470,19 @@ int vio_shutdown(Vio *vio) {
     if (mysql_socket_shutdown(vio->mysql_socket, SHUT_RDWR)) r = -1;
 
 #ifdef USE_PPOLL_IN_VIO
-    if (vio->thread_id != 0 && vio->poll_shutdown_flag.test_and_set()) {
+    assert(vio->thread_id.has_value());
+    if (vio->thread_id.value() != 0 && vio->poll_shutdown_flag.test_and_set()) {
       // Send signal to wake up from poll.
-      if (pthread_kill(vio->thread_id, SIGALRM) == 0)
+      int en = pthread_kill(vio->thread_id.value(), SIGALRM);
+      if (en == 0)
         vio_wait_until_woken(vio);
-      else
-        perror("Error in pthread_kill");
+      else {
+        char buf[512];
+        my_message_local(WARNING_LEVEL, EE_PTHREAD_KILL_FAILED,
+                         vio->thread_id.value(), "SIGALRM",
+                         strerror_r(en, buf, sizeof(buf)));
+        assert("pthread_kill failure" == nullptr);
+      }
     }
 #elif defined HAVE_KQUEUE
     if (vio->kq_fd != -1 && vio->kevent_wakeup_flag.test_and_set())
@@ -828,7 +835,10 @@ int vio_io_wait(Vio *vio, enum enum_vio_io_event event, int timeout) {
 
 #ifdef USE_PPOLL_IN_VIO
   // Check if shutdown is in progress, if so return -1
-  if (vio->poll_shutdown_flag.test_and_set()) return -1;
+  if (vio->poll_shutdown_flag.test_and_set()) {
+    MYSQL_END_SOCKET_WAIT(locker, 0);
+    return -1;
+  }
 
   timespec ts;
   timespec *ts_ptr = nullptr;
@@ -846,12 +856,14 @@ int vio_io_wait(Vio *vio, enum enum_vio_io_event event, int timeout) {
   do {
 #ifdef USE_PPOLL_IN_VIO
     /*
-      vio->signal_mask is only useful when thread_id != 0.
-      thread_id is only set for servers, so signal_mask is unused for client
-      libraries.
+      thread_id is only set to std::nullopt or a non-zero value for servers, so
+      signal_mask is unused for client libraries. A valid value for thread_id
+      is not assigned until there is attempt to shut down the connection.
     */
     ret = ppoll(&pfd, 1, ts_ptr,
-                vio->thread_id != 0 ? &vio->signal_mask : nullptr);
+                !vio->thread_id.has_value() || (vio->thread_id.value() != 0)
+                    ? &vio->signal_mask
+                    : nullptr);
 #else
     ret = poll(&pfd, 1, timeout);
 #endif
@@ -992,7 +1004,10 @@ int vio_io_wait(Vio *vio, enum enum_vio_io_event event, int timeout) {
                  (static_cast<long>(timeout) % 1000) * 1000000};
 
   // Check if shutdown is in progress, if so return -1.
-  if (vio->kevent_wakeup_flag.test_and_set()) return -1;
+  if (vio->kevent_wakeup_flag.test_and_set()) {
+    MYSQL_END_SOCKET_WAIT(locker, 0);
+    return -1;
+  }
 
   int retry_count = 0;
   do {

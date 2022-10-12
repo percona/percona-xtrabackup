@@ -236,7 +236,7 @@ bool Common_table_expr::substitute_recursive_reference(THD *thd,
   TABLE *t = clone_tmp_table(thd, tl);
   if (t == nullptr) return true; /* purecov: inspected */
   // Eliminate the dummy unit:
-  tl->derived_query_expression()->exclude_tree(thd);
+  tl->derived_query_expression()->exclude_tree();
   tl->set_derived_query_expression(nullptr);
   tl->set_privileges(SELECT_ACL);
   return false;
@@ -355,6 +355,10 @@ bool TABLE_LIST::resolve_derived(THD *thd, bool apply_semijoin) {
     for (Query_block *sl = derived->first_query_block(); sl;
          sl = sl->next_query_block()) {
       if (sl->is_recursive()) {
+        if (sl->parent()->term_type() != QT_UNION) {
+          my_error(ER_CTE_RECURSIVE_NOT_UNION, MYF(0));
+          return true;
+        }
         if (sl->is_ordered() || sl->has_limit() || sl->is_distinct()) {
           /*
             On top of posing implementation problems, it looks meaningless to
@@ -369,7 +373,7 @@ bool TABLE_LIST::resolve_derived(THD *thd, bool apply_semijoin) {
                    " in recursive query block of Common Table Expression");
           return true;
         }
-        if (sl == derived->union_distinct && sl->next_query_block()) {
+        if (sl == derived->last_distinct() && sl->next_query_block()) {
           /*
             Consider
               anchor UNION ALL rec1 UNION DISTINCT rec2 UNION ALL rec3:
@@ -548,8 +552,9 @@ static Item *parse_expression(THD *thd, Item *item, Query_block *query_block,
                               bool is_system_view) {
   // Set up for parsing item
   LEX *const old_lex = thd->lex;
-  LEX new_lex;
-  thd->lex = &new_lex;
+  LEX *new_lex = new (thd->mem_root) st_lex_local;
+
+  thd->lex = new_lex;
   if (lex_start(thd)) {
     thd->lex = old_lex;
     return nullptr;  // OOM
@@ -610,7 +615,11 @@ static Item *parse_expression(THD *thd, Item *item, Query_block *query_block,
   bool result = parse_sql(thd, &parser_state, nullptr);
 
   thd->lex->reparse_derived_table_condition = false;
-  thd->lex->reparse_derived_table_params_at.clear();
+  // Delete the vector contents:
+  std::vector<uint>().swap(thd->lex->reparse_derived_table_params_at);
+  // thd->lex is now in a MEM_ROOT, so we need to delete:
+  delete thd->lex->sroutines.release();
+
   // lex_end() would try to destroy sphead if set. So we reset it.
   thd->lex->set_sp_current_parsing_ctx(nullptr);
   thd->lex->sphead = nullptr;
@@ -808,7 +817,7 @@ bool TABLE_LIST::setup_materialized_derived_tmp_table(THD *thd)
     // will figure out whether it wants to create it as the primary key or just
     // a regular index.
     bool is_distinct = derived->can_materialize_directly_into_result() &&
-                       derived->union_distinct != nullptr;
+                       derived->has_top_level_distinct();
 
     bool rc = derived_result->create_result_table(
         thd, *derived->get_unit_column_types(), is_distinct, create_options,
@@ -1012,7 +1021,7 @@ bool Condition_pushdown::make_cond_for_derived() {
   for (Query_block *qb = derived_query_expression->first_query_block();
        qb != nullptr; qb = qb->next_query_block()) {
     // Make a copy that can be pushed to this query block
-    if (derived_query_expression->is_union()) {
+    if (derived_query_expression->is_set_operation()) {
       m_cond_to_push =
           derived_query_expression->outer_query_block()->clone_expression(
               thd, orig_cond_to_push,
@@ -1484,6 +1493,14 @@ bool Condition_pushdown::attach_cond_to_derived(Item *derived_cond,
   bool fix_having = m_query_block->having_fix_field;
 
   derived_cond = and_items(derived_cond, cond_to_attach);
+  // Need to call setup_ftfuncs() if we are going to push
+  // down a condition having full text function.
+  if (m_query_block->has_ft_funcs() &&
+      contains_function_of_type(cond_to_attach, Item_func::FT_FUNC)) {
+    if (setup_ftfuncs(thd, m_query_block)) {
+      return true;
+    }
+  }
   if (having) m_query_block->having_fix_field = true;
   if (!derived_cond->fixed && derived_cond->fix_fields(thd, &derived_cond)) {
     m_query_block->having_fix_field = fix_having;
@@ -1495,14 +1512,6 @@ bool Condition_pushdown::attach_cond_to_derived(Item *derived_cond,
   having ? m_query_block->set_having_cond(derived_cond)
          : m_query_block->set_where_cond(derived_cond);
   thd->lex->set_current_query_block(saved_query_block);
-  // Need to call setup_ftfuncs() if we have pushed down a condition having
-  // full text function.
-  if (m_query_block->has_ft_funcs() &&
-      contains_function_of_type(cond_to_attach, Item_func::FT_FUNC)) {
-    if (setup_ftfuncs(thd, m_query_block)) {
-      return true;
-    }
-  }
   return false;
 }
 
@@ -1691,7 +1700,7 @@ bool TABLE_LIST::materialize_derived(THD *thd) {
    Clean up the query expression for a materialized derived table
 */
 
-void TABLE_LIST::cleanup_derived(THD *thd) {
+void TABLE_LIST::cleanup_derived() {
   assert(is_view_or_derived() && uses_materialization());
-  derived_query_expression()->cleanup(thd, false);
+  derived_query_expression()->cleanup(false);
 }

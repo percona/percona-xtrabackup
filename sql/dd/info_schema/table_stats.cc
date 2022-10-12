@@ -887,7 +887,7 @@ ulonglong Table_statistics::read_stat_by_open_table(
   }
 
 end:
-  lex->cleanup(thd, true);
+  lex->cleanup(true);
 
   /* Restore original LEX value, statement's arena and THD arena values. */
   lex_end(thd->lex);

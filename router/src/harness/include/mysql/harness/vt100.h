@@ -28,6 +28,7 @@
 #include "harness_export.h"
 
 #include <array>
+#include <cstdint>
 #include <string>
 #include <tuple>
 
@@ -200,7 +201,7 @@ enum class Csi {
   CHA = 'G',
   // cursor position absolute
   CUP = 'H',
-  // cursor tab foreward
+  // cursor tab forward
   CHT = 'I',
   // erase in display
   ED = 'J',

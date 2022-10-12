@@ -100,7 +100,7 @@ public:
 
   /**
    * Returns a default formatted header. It currently has the
-   * follwing default format: '%H:%M:%S %Y-%m-%d [CATEGORY] LOGLEVEL --' 
+   * following default format: '%H:%M:%S %Y-%m-%d [CATEGORY] LOGLEVEL --'
    *
    * @param pStr the header string to format.
    * @param pCategory a category/name to tag the log entry with.
@@ -179,14 +179,14 @@ public:
    */
   virtual bool getParams(BaseString &/*config*/) {return false;}
 
-  virtual off_t getCurrentSize() {return -1;}
-  virtual off_t getMaxSize() {return -1;}
+  virtual ndb_off_t getCurrentSize() {return -1;}
+  virtual ndb_off_t getMaxSize() {return -1;}
 
   /** Max length of the header the log. */
   static constexpr Uint32 MAX_HEADER_LENGTH = 128;
 
 protected:
-  /** Max lenght of footer in the log. */
+  /** Max length of footer in the log. */
   static constexpr Uint32 MAX_FOOTER_LENGTH = 128;
 
   /**

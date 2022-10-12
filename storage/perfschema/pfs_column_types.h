@@ -244,12 +244,13 @@ enum enum_object_type : char {
   OBJECT_TYPE_BACKUP_LOCK = 16,
   OBJECT_TYPE_RESOURCE_GROUPS = 17,
   OBJECT_TYPE_FOREIGN_KEY = 18,
-  OBJECT_TYPE_CHECK_CONSTRAINT = 19
+  OBJECT_TYPE_CHECK_CONSTRAINT = 19,
+  OBJECT_TYPE_RESOURCE_GROUPS_GLOBAL = 20
 };
 /** Integer, first value of @sa enum_object_type. */
 #define FIRST_OBJECT_TYPE (static_cast<int>(OBJECT_TYPE_EVENT))
 /** Integer, last value of @sa enum_object_type. */
-#define LAST_OBJECT_TYPE (static_cast<int>(OBJECT_TYPE_CHECK_CONSTRAINT))
+#define LAST_OBJECT_TYPE (static_cast<int>(OBJECT_TYPE_RESOURCE_GROUPS_GLOBAL))
 /** Integer, number of values of @sa enum_object_type. */
 #define COUNT_OBJECT_TYPE (LAST_OBJECT_TYPE - FIRST_OBJECT_TYPE + 1)
 
@@ -355,6 +356,13 @@ enum enum_transaction_mode {
 #define INSTR_PROPERTIES_SET_USER (1 << 2)
 #define INSTR_PROPERTIES_SET_GLOBAL_STAT (1 << 3)
 #define INSTR_PROPERTIES_SET_MUTABLE (1 << 4)
+#define INSTR_PROPERTIES_SET_QUOTA_BY_DEFAULT (1 << 5)
+
+/* Flags exposed in setup_instruments.enforced */
+#define INSTR_FLAGS_SET_CONTROLLED (1 << 0)
+
+/* All valid flags, only INSTR_FLAGS_SET_CONTROLLED so far. */
+#define INSTR_FLAGS_MASK (1)
 
 /* Flags exposed in setup_threads.properties */
 #define THREAD_PROPERTIES_SET_SINGLETON (1 << 0)

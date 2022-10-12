@@ -213,8 +213,8 @@ void Trix::execNDB_STTOR(Signal* signal)
   Uint16 startphase = signal->theData[2];      /* RESTART PHASE           */
   Uint16 mynode = signal->theData[1];		 
   //Uint16 restarttype = signal->theData[3];	 
-  //UintR configInfo1 = signal->theData[6];     /* CONFIGRATION INFO PART 1 */
-  //UintR configInfo2 = signal->theData[7];     /* CONFIGRATION INFO PART 2 */
+  //UintR configInfo1 = signal->theData[6];     /* CONFIGURATION INFO PART 1 */
+  //UintR configInfo2 = signal->theData[7];     /* CONFIGURATION INFO PART 2 */
   switch (startphase) {
   case 3:
     jam();
@@ -1282,7 +1282,7 @@ void Trix::executeBuildInsertTransaction(Signal* signal,
       return;
 
     if (i < subRec->noOfIndexColumns)
-      // Renumber index attributes in consequtive order
+      // Renumber index attributes in consecutive order
       keyAttrHead->setAttributeId(i);
     else
       // Calculate total size of PK attribute
@@ -2744,17 +2744,16 @@ Trix::statCleanPrepare(Signal* signal, StatOp& stat)
   ndbrequire(ao_buf.isEmpty());
   ao_buf.append(ao_list, ao_size);
 
-  // create TUX bounds
-  clean.m_bound[0] = TuxBoundInfo::BoundEQ;
-  clean.m_bound[1] = AttributeHeader(0, 4).m_value;
-  clean.m_bound[2] = data.m_indexId;
-  clean.m_bound[3] = TuxBoundInfo::BoundEQ;
-  clean.m_bound[4] = AttributeHeader(1, 4).m_value;
-  clean.m_bound[5] = data.m_indexVersion;
-  Uint32 boundCount;
+  Uint32 boundCount = 0;
   switch (stat.m_requestType) {
   case IndexStatReq::RT_CLEAN_NEW:
     D("statCleanPrepare delete sample versions > " << data.m_sampleVersion);
+    clean.m_bound[0] = TuxBoundInfo::BoundEQ;
+    clean.m_bound[1] = AttributeHeader(0, 4).m_value;
+    clean.m_bound[2] = data.m_indexId;
+    clean.m_bound[3] = TuxBoundInfo::BoundEQ;
+    clean.m_bound[4] = AttributeHeader(1, 4).m_value;
+    clean.m_bound[5] = data.m_indexVersion;
     clean.m_bound[6] = TuxBoundInfo::BoundLT;
     clean.m_bound[7] = AttributeHeader(2, 4).m_value;
     clean.m_bound[8] = data.m_sampleVersion;
@@ -2762,17 +2761,27 @@ Trix::statCleanPrepare(Signal* signal, StatOp& stat)
     break;
   case IndexStatReq::RT_CLEAN_OLD:
     D("statCleanPrepare delete sample versions < " << data.m_sampleVersion);
+    clean.m_bound[0] = TuxBoundInfo::BoundEQ;
+    clean.m_bound[1] = AttributeHeader(0, 4).m_value;
+    clean.m_bound[2] = data.m_indexId;
+    clean.m_bound[3] = TuxBoundInfo::BoundEQ;
+    clean.m_bound[4] = AttributeHeader(1, 4).m_value;
+    clean.m_bound[5] = data.m_indexVersion;
     clean.m_bound[6] = TuxBoundInfo::BoundGT;
     clean.m_bound[7] = AttributeHeader(2, 4).m_value;
     clean.m_bound[8] = data.m_sampleVersion;
     boundCount = 3;
     break;
   case IndexStatReq::RT_CLEAN_ALL:
-    D("statCleanPrepare delete all sample versions");
-    boundCount = 2;
+    D("statCleanPrepare delete all sample versions and index versions");
+    // Delete all entries corresponding to the index id. This handles
+    // scenarios involving index versions bumps as well
+    clean.m_bound[0] = TuxBoundInfo::BoundEQ;
+    clean.m_bound[1] = AttributeHeader(0, 4).m_value;
+    clean.m_bound[2] = data.m_indexId;
+    boundCount = 1;
     break;
   default:
-    boundCount = 0; /* Silence compiler warning */
     ndbabort();
   }
   clean.m_boundSize = 3 * boundCount;
@@ -2819,7 +2828,7 @@ Trix::statCleanExecute(Signal* signal, StatOp& stat)
   ndbrequire(ptr1.sz <= avmax);
   ::copy(av, ptr1);
   ndbrequire(data.m_indexId == av[0]);
-  ndbrequire(data.m_indexVersion == av[1]);
+  data.m_indexVersion = av[1];
   data.m_sampleVersion = av[2];
   data.m_statKey = &av[3];
   const unsigned char* kp = (const unsigned char*)data.m_statKey;

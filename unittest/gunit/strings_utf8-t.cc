@@ -40,7 +40,7 @@ class StringsUTF8Test : public ::testing::Test {
     // Save global settings.
     m_charset = system_charset_info;
 
-    system_charset_info = &my_charset_utf8_bin;
+    system_charset_info = &my_charset_utf8mb3_bin;
   }
 
   void TearDown() override {
@@ -565,7 +565,6 @@ class StringsUTF8mb4_900Test : public ::testing::Test {
  protected:
   void SetUp() override {
     MY_CHARSET_LOADER loader;
-    my_charset_loader_init_mysys(&loader);
     m_charset = my_collation_get_by_name(&loader, "utf8mb4_0900_ai_ci", MYF(0));
   }
 
@@ -607,7 +606,6 @@ class StringsUTF8mb4_900_AS_CS_NoPad_Test : public ::testing::Test {
  protected:
   void SetUp() override {
     MY_CHARSET_LOADER loader;
-    my_charset_loader_init_mysys(&loader);
     m_charset = my_collation_get_by_name(&loader, "utf8mb4_0900_as_cs", MYF(0));
   }
 
@@ -669,7 +667,6 @@ static bool uca_wildcmp(const CHARSET_INFO *cs, const char *str,
 
 TEST(UCAWildCmpTest, UCA900WildCmp) {
   MY_CHARSET_LOADER loader;
-  my_charset_loader_init_mysys(&loader);
   CHARSET_INFO *cs =
       my_collation_get_by_name(&loader, "utf8mb4_0900_ai_ci", MYF(0));
 
@@ -699,7 +696,6 @@ TEST(UCAWildCmpTest, UCA900WildCmp) {
 
 TEST(UCAWildCmpTest, UCA900WildCmpCaseSensitive) {
   MY_CHARSET_LOADER loader;
-  my_charset_loader_init_mysys(&loader);
   CHARSET_INFO *cs =
       my_collation_get_by_name(&loader, "utf8mb4_0900_as_cs", MYF(0));
 
@@ -729,7 +725,6 @@ TEST(UCAWildCmpTest, UCA900WildCmpCaseSensitive) {
 
 TEST(UCAWildCmpTest, UCA900WildCmp_AS_CI) {
   MY_CHARSET_LOADER loader;
-  my_charset_loader_init_mysys(&loader);
   CHARSET_INFO *cs =
       my_collation_get_by_name(&loader, "utf8mb4_0900_as_ci", MYF(0));
   EXPECT_TRUE(uca_wildcmp(cs, "ǎḄÇ", "Ǎḅç"));

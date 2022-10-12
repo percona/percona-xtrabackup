@@ -377,7 +377,7 @@ static void lock_wait_release_thread_if_suspended(que_thr_t *thr) {
     lock->trx->lock.wait_lock == lock and sets lock->trx->lock.wait_lock = NULL
   Together all this facts imply, that it is impossible for a single trx to be
   woken up twice (unless it got to sleep again) because doing so requires
-  reseting wait_lock to NULL.
+  resetting wait_lock to NULL.
 
   We now hold either an exclusive lock_sys latch, or just for the shard which
   contains the lock which used to be trx->lock.wait_lock, but we can not assert
@@ -432,7 +432,7 @@ void lock_reset_wait_and_release_thread_if_suspended(lock_t *lock) {
   Clearing blocking_trx helps with:
   1. performance optimization, as lock_wait_snapshot_waiting_threads() can omit
      this trx when building wait-for-graph
-  2. debugging, as reseting blocking_trx makes it easier to spot it was not
+  2. debugging, as resetting blocking_trx makes it easier to spot it was not
      properly set on subsequent waits.
   3. helping lock_make_trx_hit_list() notice that HP trx is no longer waiting
      for a lock, so it can take a fast path
@@ -1438,8 +1438,11 @@ void lock_wait_timeout_thread() {
   /** The last time we've checked for timeouts. */
   auto last_checked_for_timeouts_at = std::chrono::steady_clock::now();
   do {
-    auto current_time = std::chrono::steady_clock::now();
-    if (std::chrono::milliseconds(500) <
+    auto current_time = std::chrono::steady_clock::now(); /* Calling this more
+    often than once a second isn't needed, as lock timeouts are specified with
+    one second resolution, so probably nobody cares if we wake up after T or
+    T+0.99, when T itself can't be precise. */
+    if (std::chrono::seconds(1) <=
         current_time - last_checked_for_timeouts_at) {
       last_checked_for_timeouts_at = current_time;
       lock_wait_check_slots_for_timeouts();

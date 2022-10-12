@@ -836,7 +836,7 @@ private:
   };
   Uint32 transId1;
   Uint32 transId2;
-  Uint32 numFiredTriggers; // bit 31 defered trigger
+  Uint32 numFiredTriggers; // bit 31 deferred trigger
 
   static Uint32 getFiredCount(Uint32 v) {
     return NoOfFiredTriggers::getFiredCount(v);
@@ -874,7 +874,8 @@ class LqhKeyRef {
   friend bool printLQHKEYREF(FILE * output, const Uint32 * theData, Uint32 len, Uint16 receiverBlockNo);
 
 public:
-  static constexpr Uint32 SignalLength = 5;
+  static constexpr Uint32 SignalLengthWithoutFlags = 5;
+  static constexpr Uint32 SignalLength = 6;
 
 private:
 
@@ -886,8 +887,30 @@ private:
   Uint32 errorCode;
   Uint32 transId1;
   Uint32 transId2;
+  Uint32 flags;
+
+  static Uint32 getReplicaErrorFlag(const Uint32& flags);
+  static void setReplicaErrorFlag(Uint32& flags, Uint32 val);
+
+  enum Flags {
+    LKR_REPLICA_ERROR_SHIFT  = 0
+  };
 };
 
+inline
+Uint32
+LqhKeyRef::getReplicaErrorFlag(const Uint32& flags)
+{
+  return ((flags >> LKR_REPLICA_ERROR_SHIFT) & 0x1);
+}
+
+inline
+void
+LqhKeyRef::setReplicaErrorFlag(Uint32& flags, Uint32 val)
+{
+  ASSERT_BOOL(val, "LqhKeyRef::setReplicaErrorFlag");
+  flags |= (val << LKR_REPLICA_ERROR_SHIFT);
+}
 
 #undef JAM_FILE_ID
 

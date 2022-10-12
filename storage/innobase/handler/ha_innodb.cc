@@ -243,7 +243,7 @@ static bool intitialize_service_handles() {
   return true;
 }
 
-/** Deinitialize compoent service handles */
+/** Deinitialize component service handles */
 static void deinitialize_service_handles() {
   DBUG_TRACE;
   if (!opt_initialize) {
@@ -937,7 +937,7 @@ static void doublewrite_update(THD *thd [[maybe_unused]],
   }
 
   /* Handle DETECT_AND_RECOVER to DETECT_ONLY
-  1. Check if DETECT_ONLY setup is already initalized. If not, intialize
+  1. Check if DETECT_ONLY setup is already initialized. If not, initialize
      DETECT_ONLY files and structures.
   2. Flush the partially filled dblwr buffers. */
   if (dblwr::Mode::is_reduced_low(new_value)) {
@@ -1103,7 +1103,7 @@ static MYSQL_THDVAR_ULONG(parallel_read_threads, PLUGIN_VAR_RQCMDARG,
                           "Number of threads to do parallel read.", nullptr,
                           nullptr, 4,                   /* Default. */
                           1,                            /* Minimum. */
-                          Parallel_reader::MAX_THREADS, /* Maxumum. */
+                          Parallel_reader::MAX_THREADS, /* Maximum. */
                           0);
 
 static MYSQL_THDVAR_ULONG(ddl_buffer_size, PLUGIN_VAR_RQCMDARG,
@@ -1127,6 +1127,12 @@ static SHOW_VAR innodb_status_variables[] = {
      SHOW_SCOPE_GLOBAL},
     {"buffer_pool_resize_status",
      (char *)&export_vars.innodb_buffer_pool_resize_status, SHOW_CHAR,
+     SHOW_SCOPE_GLOBAL},
+    {"buffer_pool_resize_status_code",
+     (char *)&export_vars.innodb_buffer_pool_resize_status_code, SHOW_INT,
+     SHOW_SCOPE_GLOBAL},
+    {"buffer_pool_resize_status_progress",
+     (char *)&export_vars.innodb_buffer_pool_resize_status_progress, SHOW_INT,
      SHOW_SCOPE_GLOBAL},
     {"buffer_pool_pages_data",
      (char *)&export_vars.innodb_buffer_pool_pages_data, SHOW_LONG,
@@ -1836,7 +1842,7 @@ extern "C" time_t thd_start_time(const THD *thd);
 std::chrono::system_clock::time_point thd_start_time(THD *) {
   // FIXME: This function should be added to the server code.
   // return(thd_start_time(thd));
-  return std::chrono::system_clock::now();
+  return std::chrono::system_clock::from_time_t(time(nullptr));
 }
 
 /** Enter InnoDB engine after checking the max number of user threads
@@ -2206,7 +2212,8 @@ int convert_error_code_to_mysql(dberr_t error, uint32_t flags, THD *thd) {
       bool prefix = !DICT_TF_HAS_ATOMIC_BLOBS(flags);
       my_printf_error(
           ER_TOO_BIG_ROWSIZE,
-          "Row size too large (> %lu). Changing some columns"
+          "Row size too large (> " ULINTPF
+          "). Changing some columns"
           " to TEXT or BLOB %smay help. In current row"
           " format, BLOB prefix of %d bytes is stored inline.",
           MYF(0),
@@ -2587,7 +2594,7 @@ bool Compression::is_none(const char *algorithm) {
   return (false);
 }
 
-/** Check wether the compression algorithm is supported.
+/** Check whether the compression algorithm is supported.
 @param[in]  algorithm   Compression algorithm to check
 @param[out] compression The type that algorithm maps to
 @return DB_SUCCESS or error code */
@@ -6240,7 +6247,7 @@ CREATE TABLE options and SE capabilities.
 @note The current code in this method is redundant with/copy of code from
 create_table_info_t::innobase_table_flags(). This is temporary workaround.
 In future this method will always return ROW_TYPE_DYNAMIC
-(which is suitable for intrisinc temporary tables)
+(which is suitable for intrinsic temporary tables)
 and rely on adjusting row format in table definition at ha_innobase::create()
 or ha_innobase::prepare_inplace_alter_table() time.
 */
@@ -6350,7 +6357,7 @@ ulong ha_innobase::index_flags(uint key, uint, bool) const {
   }
 
   /* For dd tables mysql.*, we disable ICP for them,
-  it's for avoiding recusively access same page. */
+  it's for avoiding recursively access same page. */
   /* TODO: Remove these code once the recursiveely access issue which
   caused by ICP fixed. */
   const char *dbname = table_share->db.str;
@@ -7000,7 +7007,7 @@ func_exit:
 
 /** This function uses index translation table to quickly locate the
  requested index structure.
- Note we do not have mutex protection for the index translatoin table
+ Note we do not have mutex protection for the index translation table
  access, it is based on the assumption that there is no concurrent
  translation table rebuild (fter create/drop index) and DMLs that
  require index lookup.
@@ -7504,7 +7511,7 @@ int ha_innobase::open(const char *name, int, uint open_flags,
     of the index used on scan, to make it avoid checking if we
     update the column of the index. That is why we assert below
     that key_used_on_scan is the undefined value MAX_KEY.
-    The column is the row id in the automatical generation case,
+    The column is the row id in the automatic generation case,
     and it will never be updated anyway. */
 
     if (key_used_on_scan != MAX_KEY) {
@@ -8576,7 +8583,7 @@ void ha_innobase::build_template(bool whole_row) {
       bool is_virtual = innobase_is_v_fld(table->field[i]);
 
       if (whole_row) {
-        /* Even this is whole_row, if the seach is
+        /* Even this is whole_row, if the search is
         on a virtual column, and read_just_key is
         set, and field is not in this index, we
         will not try to fill the value since they
@@ -9170,7 +9177,7 @@ func_exit:
 }
 
 /** Fill the update vector's "old_vrow" field for those non-updated,
-but indexed columns. Such columns could stil present in the virtual
+but indexed columns. Such columns could still present in the virtual
 index rec fields even if they are not updated (some other fields updated),
 so needs to be logged.
 @param[in]      prebuilt                InnoDB prebuilt struct
@@ -10905,7 +10912,7 @@ FT_INFO *ha_innobase::ft_init_ext(uint flags,  /* in: */
   if (strcmp(char_set->csname, "utf32") == 0 ||
       strcmp(char_set->csname, "utf16") == 0) {
     buf_tmp_used = innobase_convert_string(
-        buf_tmp, sizeof(buf_tmp) - 1, &my_charset_utf8_general_ci, query,
+        buf_tmp, sizeof(buf_tmp) - 1, &my_charset_utf8mb3_general_ci, query,
         query_len, (CHARSET_INFO *)char_set, &num_errors);
 
     buf_tmp[buf_tmp_used] = 0;
@@ -12024,7 +12031,7 @@ inline int create_index(
     prefix, key_part->field is not the table's column (it's a
     "fake" field forged in open_table_from_share() with length
     equal to the length of the prefix); so we have to go to
-    form->fied. */
+    form->field. */
     Field *field = form->field[key_part->field->field_index()];
     if (field == nullptr) ut_error;
 
@@ -12698,14 +12705,15 @@ const char *create_table_info_t::create_options_are_invalid() {
         kbs_max = std::min(1 << (UNIV_PAGE_SSIZE_MAX - 1),
                            1 << (PAGE_ZIP_SSIZE_MAX - 1));
         if (m_create_info->key_block_size > kbs_max) {
-          push_warning_printf(
-              m_thd, Sql_condition::SL_WARNING, ER_ILLEGAL_HA_CREATE_OPTION,
-              "InnoDB: KEY_BLOCK_SIZE=%" PRIu32 " cannot be larger than %ld.",
-              m_create_info->key_block_size, kbs_max);
+          push_warning_printf(m_thd, Sql_condition::SL_WARNING,
+                              ER_ILLEGAL_HA_CREATE_OPTION,
+                              "InnoDB: KEY_BLOCK_SIZE=%" PRIu32
+                              " cannot be larger than " ULINTPF ".",
+                              m_create_info->key_block_size, kbs_max);
           ret = "KEY_BLOCK_SIZE";
         }
 
-        /* The following checks do not appy to shared tablespaces */
+        /* The following checks do not apply to shared tablespaces */
         if (m_use_shared_space) {
           break;
         }
@@ -13072,7 +13080,7 @@ int create_table_info_t::parse_table_name(const char *name) {
   }
 
   /* The TABLESPACE designation has already been validated by
-  create_option_tablespace_is_valid() irregardless of strict-mode.
+  create_option_tablespace_is_valid() regardless of strict-mode.
   So it only needs to be copied now. */
   if (m_use_shared_space) {
     strncpy(m_tablespace, m_create_info->tablespace, NAME_LEN - 1);
@@ -13103,7 +13111,7 @@ bool create_table_info_t::innobase_table_flags() {
   /* Validate the page compression parameter. */
   if (!create_option_compression_is_valid()) {
     /* No need to do anything. Warnings were issued.
-    The compresion setting will be ignored later.
+    The compression setting will be ignored later.
     If inodb_strict_mode=ON, this is called twice unless
     there was a problem before.
     If inodb_strict_mode=OFF, this is the only call. */
@@ -13326,7 +13334,7 @@ bool create_table_info_t::innobase_table_flags() {
     if (m_create_info->options & HA_LEX_CREATE_INTERNAL_TMP_TABLE) {
       /* Intrinsic tables reside only in the shared temporary
       tablespace and we will always use ROW_FORMAT=DYNAMIC. */
-      /* We do not allow compressed instrinsic temporary tables. */
+      /* We do not allow compressed intrinsic temporary tables. */
       ut_ad(zip_ssize == 0);
       innodb_row_format = REC_FORMAT_DYNAMIC;
       m_flags2 |= DICT_TF2_INTRINSIC;
@@ -15354,7 +15362,7 @@ static int validate_create_tablespace_info(ib_file_suffix type,
       my_printf_error(ER_ILLEGAL_HA_CREATE_OPTION,
                       "InnoDB: Cannot create a tablespace"
                       " with FILE_BLOCK_SIZE=%llu because"
-                      " INNODB_PAGE_SIZE=%lu.",
+                      " INNODB_PAGE_SIZE=" ULINTPF ".",
                       MYF(0), alter_info->file_block_size, UNIV_PAGE_SIZE);
       error = HA_WRONG_CREATE_OPTION;
 
@@ -20399,15 +20407,12 @@ static bool innodb_buffer_pool_size_validate(THD *thd,
                                              longlong buffer_pool_size,
                                              ulint &aligned_buffer_pool_size) {
   os_rmb;
-  if (srv_buf_pool_old_size != srv_buf_pool_size) {
-    push_warning(thd, ER_BUFPOOL_RESIZE_INPROGRESS);
-    return false;
-  }
+  ut_ad(srv_buf_pool_old_size == srv_buf_pool_size);
 
   if (srv_buf_pool_instances > 1 &&
       buffer_pool_size < BUF_POOL_SIZE_THRESHOLD) {
 #ifdef UNIV_DEBUG
-    /* Ignore 1G constraint to enable mulitple instances
+    /* Ignore 1G constraint to enable multiple instances
     for debug and test. */
     if (srv_buf_pool_debug) {
       goto debug_set;
@@ -20494,19 +20499,37 @@ static void innodb_buffer_pool_size_update(THD *thd, SYS_VAR *, void *var_ptr,
                                            const void *save) {
   longlong requested_buffer_pool_size = *static_cast<const longlong *>(save);
   ulint aligned_buffer_pool_size = 0u;
-  if (innodb_buffer_pool_size_validate(thd, requested_buffer_pool_size,
-                                       aligned_buffer_pool_size)) {
+
+  /* Since this function can be called at any time, we must allow change
+in status code only if no other resize is in progress */
+  if (buf_pool_resize_status_code.load() == BUF_POOL_RESIZE_COMPLETE ||
+      buf_pool_resize_status_code.load() == BUF_POOL_RESIZE_FAILED) {
+    /* No other resize is in progress */
     snprintf(export_vars.innodb_buffer_pool_resize_status,
              sizeof(export_vars.innodb_buffer_pool_resize_status),
              "Requested to resize buffer pool.");
+    buf_pool_resize_status_code.store(BUF_POOL_RESIZE_START);
+    buf_pool_resize_status_progress.store(0);
 
-    os_event_set(srv_buf_resize_event);
+    if (innodb_buffer_pool_size_validate(thd, requested_buffer_pool_size,
+                                         aligned_buffer_pool_size)) {
+      os_event_set(srv_buf_resize_event);
 
-    ib::info(ER_IB_MSG_573)
-        << export_vars.innodb_buffer_pool_resize_status
-        << " (new size: " << aligned_buffer_pool_size << " bytes)";
+      ib::info(ER_IB_MSG_573)
+          << export_vars.innodb_buffer_pool_resize_status
+          << " (new size: " << aligned_buffer_pool_size << " bytes)";
 
-    *static_cast<longlong *>(var_ptr) = aligned_buffer_pool_size;
+      *static_cast<longlong *>(var_ptr) = aligned_buffer_pool_size;
+    } else {
+      snprintf(export_vars.innodb_buffer_pool_resize_status,
+               sizeof(export_vars.innodb_buffer_pool_resize_status),
+               "Failed to validate requested buffer pool size.");
+      buf_pool_resize_status_code.store(BUF_POOL_RESIZE_FAILED);
+      buf_pool_resize_status_progress.store(100);
+    }
+  } else {
+    /* Resize operation is in progress */
+    push_warning(thd, ER_BUFPOOL_RESIZE_INPROGRESS);
   }
 }
 
@@ -21050,7 +21073,7 @@ static void innodb_monitor_update(
 
     ut_a(monitor_info);
 
-    /* If monitor is already truned on, someone could already
+    /* If monitor is already turned on, someone could already
     collect monitor data, exit and ask user to turn off the
     monitor before turn it on again. */
     if (set_option == MONITOR_TURN_ON && MONITOR_IS_ON(monitor_id)) {
@@ -21737,7 +21760,7 @@ static void innodb_log_write_ahead_size_update(THD *thd, SYS_VAR *, void *,
   } else if (val != in_val) {
     push_warning_printf(thd, Sql_condition::SL_WARNING, ER_WRONG_ARGUMENTS,
                         "innodb_log_write_ahead_size should be"
-                        " set to power of 2, in range [%lu,%lu]",
+                        " set to power of 2, in range [%lu," ULINTPF "]",
                         INNODB_LOG_WRITE_AHEAD_SIZE_MIN,
                         INNODB_LOG_WRITE_AHEAD_SIZE_MAX);
   }
@@ -22080,7 +22103,7 @@ static MYSQL_SYSVAR_ULONG(
 static MYSQL_SYSVAR_ULONG(max_purge_lag_delay, srv_max_purge_lag_delay,
                           PLUGIN_VAR_RQCMDARG,
                           "Maximum delay of user threads in micro-seconds",
-                          nullptr, nullptr, 0L, /* Default seting */
+                          nullptr, nullptr, 0L, /* Default setting */
                           0L,                   /* Minimum value */
                           10000000UL, 0);       /* Maximum value */
 
@@ -22771,7 +22794,7 @@ static MYSQL_SYSVAR_ULONG(undo_tablespaces, srv_undo_tablespaces,
                           PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_NOPERSIST,
                           "Number of undo tablespaces to use. (deprecated)",
                           nullptr, innodb_undo_tablespaces_update,
-                          FSP_IMPLICIT_UNDO_TABLESPACES, /* Default seting */
+                          FSP_IMPLICIT_UNDO_TABLESPACES, /* Default setting */
                           FSP_MIN_UNDO_TABLESPACES,      /* Minimum value */
                           FSP_MAX_UNDO_TABLESPACES, 0);  /* Maximum value */
 
@@ -24075,7 +24098,8 @@ void ib_warn_row_too_big(const dict_table_t *table) {
 
   push_warning_printf(
       thd, Sql_condition::SL_WARNING, HA_ERR_TOO_BIG_ROW,
-      "Row size too large (> %lu). Changing some columns to TEXT"
+      "Row size too large (> " ULINTPF
+      "). Changing some columns to TEXT"
       " or BLOB %smay help. In current row format, BLOB prefix of"
       " %d bytes is stored inline.",
       free_space,

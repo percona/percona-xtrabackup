@@ -83,14 +83,11 @@
 #include "mysql/harness/loader.h"
 #include "mysql/harness/logging/registry.h"
 #include "mysql/harness/plugin.h"
+#include "mysql/harness/process_state_component.h"
+#include "mysql/harness/signal_handler.h"
 #include "mysql/harness/utility/string.h"
 #include "test/helpers.h"
 #include "utilities.h"
-
-// see loader.cc for more info on this define
-#ifndef _WIN32
-#define USE_POSIX_SIGNALS
-#endif
 
 #define USE_DLCLOSE 1
 
@@ -163,7 +160,11 @@ class TestLoader : public Loader {
  public:
   TestLoader(const std::string &program, mysql_harness::LoaderConfig &config)
       : Loader(program, config) {
-    unittest_backdoor::set_shutdown_pending(false);
+    // unittest_backdoor::set_shutdown_pending(false);
+    mysql_harness::ProcessStateComponent::get_instance().shutdown_pending()(
+        [](auto &pending) {
+          pending.reason(mysql_harness::ShutdownPending::Reason::NONE);
+        });
   }
 
   void read(std::istream &stream) {
@@ -340,7 +341,8 @@ class LifecycleTest : public BasicConsoleOutputTest {
 
 void delayed_shutdown() {
   std::this_thread::sleep_for(ch::milliseconds(kSleepShutdown));
-  request_application_shutdown();
+  mysql_harness::ProcessStateComponent::get_instance()
+      .request_application_shutdown();
 }
 
 int time_diff(const ch::time_point<ch::steady_clock> &t0,
@@ -1747,16 +1749,19 @@ TEST_F(LifecycleTest, NoInstances) {
 
   EXPECT_THAT(log_lines_, IsSupersetOf({
                               has_init_plugins(init_plugins),
-                              HasSubstr("Waiting for readiness of: "),
+                              HasSubstr("Service ready!"),
                               HasSubstr("Shutting down."),
                           }));
 
-  EXPECT_THAT(log_lines_,
-              Not(IsSupersetOf({
-                  HasSubstr("Starting:"),  // no plugin with a start() method
-                  HasSubstr("Deinitializing"),  // no plugin with a deinit()
-                  HasSubstr("failed"),
-              })));
+  EXPECT_THAT(
+      log_lines_,
+      Not(IsSupersetOf({
+          HasSubstr("Starting:"),       // no plugin with a start() method
+          HasSubstr("Deinitializing"),  // no plugin with a deinit()
+          HasSubstr("Waiting for readiness of:"),  // no service that announces
+                                                   // readiness
+          HasSubstr("failed"),
+      })));
 }
 
 // note: we don't test an equivalent scenario when the plugin throws (an empty
@@ -1871,81 +1876,6 @@ TEST_F(LifecycleTest, set_error_exception) {
   EXPECT_THROW({ std::rethrow_exception(eptr); }, std::runtime_error);
 }
 
-#ifdef USE_POSIX_SIGNALS  // these don't make sense on Windows
-TEST_F(LifecycleTest, send_signals) {
-  // this test verifies that:
-  // - sending SIGINT or SIGTERM will trigger shutdown
-  //   (we only test SIGINT here, and SIGTERM in the next test)
-  // - sending any other signal will do nothing
-
-  config_text_ << "init   = exit           \n"
-               << "start  = exitonstop     \n"
-               << "stop   = exit           \n"
-               << "deinit = exit           \n";
-  using namespace mysql_harness::test::PluginDescriptorFlags;
-  ASSERT_NO_FATAL_FAILURE(init_test(config_text_, 0));
-  LifecyclePluginSyncBus &bus = msg_bus("instance1");
-
-  EXPECT_EQ(loader_.init_all(), nullptr);
-  freeze_bus(bus);
-  loader_.start_all();
-  unfreeze_and_wait_for_msg(
-      bus, "lifecycle:instance1 start():EXIT_ON_STOP:sleeping");
-
-  // nothing should happen - all signals but the ones we care
-  // about should be ignored (here we only test a few, the rest
-  // is assumed to behave the same)
-  kill(getpid(), SIGUSR1);
-  kill(getpid(), SIGALRM);
-
-  // signal shutdown after 10ms, main_loop() should block until
-  // then
-  auto call_SIGINT = []() {
-    std::this_thread::sleep_for(ch::milliseconds(kSleepShutdown));
-    kill(getpid(), SIGINT);
-  };
-  std::thread(call_SIGINT).detach();
-  EXPECT_EQ(loader_.main_loop(), nullptr);
-
-  refresh_log();
-
-  EXPECT_THAT(log_lines_,
-              IsSupersetOf({HasSubstr("Shutting down. Signaling stop to:")}));
-}
-
-TEST_F(LifecycleTest, send_signals2) {
-  // continuation of the previous test (test SIGTERM this time)
-
-  config_text_ << "init   = exit           \n"
-               << "start  = exitonstop     \n"
-               << "stop   = exit           \n"
-               << "deinit = exit           \n";
-  using namespace mysql_harness::test::PluginDescriptorFlags;
-  ASSERT_NO_FATAL_FAILURE(init_test(config_text_, 0));
-  LifecyclePluginSyncBus &bus = msg_bus("instance1");
-
-  EXPECT_EQ(loader_.init_all(), nullptr);
-  freeze_bus(bus);
-  loader_.start_all();
-  unfreeze_and_wait_for_msg(
-      bus, "lifecycle:instance1 start():EXIT_ON_STOP:sleeping");
-
-  // signal shutdown after 10ms, main_loop() should block until
-  // then
-  auto call_SIGTERM = []() {
-    std::this_thread::sleep_for(ch::milliseconds(kSleepShutdown));
-    kill(getpid(), SIGTERM);
-  };
-  std::thread(call_SIGTERM).detach();
-  EXPECT_EQ(loader_.main_loop(), nullptr);
-
-  refresh_log();
-
-  EXPECT_THAT(log_lines_,
-              IsSupersetOf({HasSubstr("Shutting down. Signaling stop to:")}));
-}
-#endif
-
 /**
  * @test
  * This test verifies operation of Harness API function wait_for_stop().
@@ -1978,7 +1908,7 @@ TEST_F(LifecycleTest, wait_for_stop) {
   //   will be called. stop() makes a call to wait_for_stop(<big
   //   timeout value>). Since this time around, Router is
   //   already in the "stopping" state, the function SHOULD exit
-  //   immediately, returing control back to stop(), which just
+  //   immediately, returning control back to stop(), which just
   //   exits after.
   config_text_ << "stop  = exitonstop_longtimeout\n";
 
@@ -2073,7 +2003,7 @@ TEST_F(LifecycleTest, wait_for_stop) {
     //
     // We don't bother #ifdef-ing the timeout for OSX, because
     // in principle, many/all non-RT OSes probably have no tight
-    // guarrantees for wait_for() just like OSX, and an
+    // guarantees for wait_for() just like OSX, and an
     // excessive timeout value does not slow down the test run
     // time.
 

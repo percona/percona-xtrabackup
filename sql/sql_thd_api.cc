@@ -159,9 +159,13 @@ void thd_clear_errors(THD *thd [[maybe_unused]]) { set_my_errno(0); }
   Close the socket used by this connection
 
   @param thd                THD object
+  @note Expects lock on thd->LOCK_thd_data.
 */
 
-void thd_close_connection(THD *thd) { thd->get_protocol_classic()->shutdown(); }
+void thd_close_connection(THD *thd) {
+  mysql_mutex_assert_owner(&thd->LOCK_thd_data);
+  thd->shutdown_active_vio();
+}
 
 /**
   Get current THD object from thread local data
@@ -208,6 +212,14 @@ void thd_unlock_data(THD *thd) { mysql_mutex_unlock(&thd->LOCK_thd_data); }
 
 bool thd_is_transaction_active(THD *thd) {
   return thd->get_transaction()->is_active(Transaction_ctx::SESSION);
+}
+
+/**
+  Predicate for determining if connection is in active multi-statement
+  transaction.
+ */
+bool thd_in_active_multi_stmt_transaction(const THD *thd) {
+  return thd->in_active_multi_stmt_transaction();
 }
 
 /**

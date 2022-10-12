@@ -110,12 +110,6 @@ class Primary_election_action : public Group_action, Group_event_observer {
   bool stop_action_execution(bool killed) override;
 
   /**
-    Returns the name of the action for debug messages and such
-    @return the action name
-  */
-  const char *get_action_name() override;
-
-  /**
     Gets the info about execution, be it success or failure
     @return the execution diagnostics object that was the message and its level
   */
@@ -166,7 +160,7 @@ class Primary_election_action : public Group_action, Group_event_observer {
 
    @return status
    @retval true failed to stop the thread
-   @retval false thread stopped succesfully.
+   @retval false thread stopped successfully.
   */
   bool stop_transaction_monitor_thread();
 

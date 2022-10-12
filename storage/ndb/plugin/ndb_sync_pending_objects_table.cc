@@ -24,6 +24,7 @@
 #include "storage/ndb/plugin/ndb_sync_pending_objects_table.h"
 
 #include <assert.h>
+#include <cstdint>
 #include <cstring>  // std::strlen
 
 // assert
@@ -69,7 +70,7 @@ int Ndb_sync_pending_objects_table::rnd_init() {
   return 0;
 }
 
-extern SERVICE_TYPE_NO_CONST(pfs_plugin_column_string_v1) * pfscol_string;
+extern SERVICE_TYPE_NO_CONST(pfs_plugin_column_string_v2) * pfscol_string;
 extern SERVICE_TYPE_NO_CONST(pfs_plugin_column_enum_v1) * pfscol_enum;
 
 int Ndb_sync_pending_objects_table::read_column_value(PSI_field *field,
@@ -82,11 +83,11 @@ int Ndb_sync_pending_objects_table::read_column_value(PSI_field *field,
 
   switch (index) {
     case 0: /* SCHEMA_NAME: Name of the schema */
-      pfscol_string->set_varchar_utf8(
+      pfscol_string->set_varchar_utf8mb4(
           field, obj.m_schema_name == "" ? nullptr : obj.m_schema_name.c_str());
       break;
     case 1: /* NAME: Object name */
-      pfscol_string->set_varchar_utf8(
+      pfscol_string->set_varchar_utf8mb4(
           field, obj.m_name == "" ? nullptr : obj.m_name.c_str());
       break;
     case 2: /* TYPE */

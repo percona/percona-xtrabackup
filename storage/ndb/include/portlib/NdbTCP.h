@@ -25,12 +25,8 @@
 #ifndef NDB_TCP_H
 #define NDB_TCP_H
 
-#include <ndb_global.h>
-#include <ndb_net.h>
-#include "ndb_socket.h"
-#include <portlib/ndb_socket_poller.h>
-
-typedef ndb_socket_t NDB_SOCKET_TYPE;
+#include "ndb_global.h"
+#include "portlib/ndb_socket.h"
 
 #define NDB_ADDR_STRLEN 512
 
@@ -65,7 +61,6 @@ char* Ndb_inet_ntop(int af,
                     char *dst,
                     size_t dst_size);
 
-int Ndb_check_socket_hup(NDB_SOCKET_TYPE sock);
 int Ndb_split_string_address_port(const char *arg,
                                char *host,
                                size_t hostlen,

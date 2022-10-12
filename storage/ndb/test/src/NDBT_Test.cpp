@@ -1543,7 +1543,15 @@ static const char *load_default_groups[]= {
 
 static struct my_option my_long_options[] =
 {
-  NDB_STD_OPTS(""),
+  NdbStdOpt::usage,
+  NdbStdOpt::help,
+  NdbStdOpt::version,
+  NdbStdOpt::ndb_connectstring,
+  NdbStdOpt::mgmd_host,
+  NdbStdOpt::connectstring,
+  NdbStdOpt::ndb_nodeid,
+  NdbStdOpt::optimized_node_selection,
+  NDB_STD_OPT_DEBUG
   { "backup-password", NDB_OPT_NOSHORT,
     "Password to use for encrypted backup files",
     NULL, NULL, 0,
@@ -1619,12 +1627,12 @@ int NDBT_TestSuite::execute(int argc, const char** argv){
        Other parameters should:
        * be calculated from the above two parameters 
        * be divided into different test cases, ex. one testcase runs
-         with FragmentType = Single and another perfoms the same 
+         with FragmentType = Single and another performs the same 
          test with FragmentType = Large
        * let the test case iterate over all/subset of appropriate parameters
          ex. iterate over FragmentType = Single to FragmentType = AllLarge
 
-       Remeber that the intention is that it should be _easy_ to run 
+       Remember that the intention is that it should be _easy_ to run 
        a complete test suite without any greater knowledge of what 
        should be tested ie. keep arguments at a minimum
   */

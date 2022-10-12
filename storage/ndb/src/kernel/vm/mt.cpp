@@ -57,6 +57,7 @@
 #include "ThreadConfig.hpp"
 #include <signaldata/StartOrd.hpp>
 
+#include <Bitmask.hpp>
 #include <NdbTick.h>
 #include <NdbMutex.h>
 #include <NdbCondition.h>
@@ -133,7 +134,7 @@ GlobalData::mt_getBlock(BlockNumber blockNo, Uint32 instanceNo)
  * Max. signals to execute from one job buffer before considering other
  * possible stuff to do.
  */
-static constexpr  Uint32 MAX_SIGNALS_PER_JB = 75;
+static constexpr Uint32 MAX_SIGNALS_PER_JB = 75;
 
 /**
  * Max signals written to other thread before calling wakeup_pending_signals
@@ -155,6 +156,7 @@ static Uint32 max_send_delay = 0;
 static Uint32 glob_ndbfs_thr_no = 0;
 static Uint32 glob_wakeup_latency = 25;
 static Uint32 glob_num_job_buffers_per_thread = 0;
+static Uint32 glob_num_writers_per_job_buffers = 0;
 static bool glob_use_write_lock_mutex = false;
 /**
  * Ensure that the above variables that are read-only after startup are
@@ -204,6 +206,14 @@ futex_wake(volatile unsigned * addr)
   return syscall(SYS_futex, addr, FUTEX_WAKE, 1, 0, 0, 0) == 0 ? 0 : errno;
 }
 
+static inline
+int
+futex_wake_all(volatile unsigned * addr)
+{
+  return syscall(SYS_futex,
+                 addr, FUTEX_WAKE, INT_MAX, 0, 0, 0) == 0 ? 0 : errno;
+}
+
 struct alignas(NDB_CL) thr_wait
 {
   volatile unsigned m_futex_state;
@@ -212,7 +222,7 @@ struct alignas(NDB_CL) thr_wait
     FS_SLEEPING = 1
   };
   thr_wait() {
-    assert((sizeof(*this) % NDB_CL) == 0); //Maintain any CL-allignment
+    assert((sizeof(*this) % NDB_CL) == 0); //Maintain any CL-alignment
     xcng(&m_futex_state, FS_RUNNING);
   }
   void init () {}
@@ -234,11 +244,7 @@ yield(struct thr_wait* wait, const Uint32 nsec,
       bool (*check_callback)(T*), T* check_arg)
 {
   volatile unsigned * val = &wait->m_futex_state;
-#ifndef NDEBUG
-  int old =
-#endif
-    xcng(val, thr_wait::FS_SLEEPING);
-  assert(old == thr_wait::FS_RUNNING);
+  xcng(val, thr_wait::FS_SLEEPING);
 
   /**
    * At this point, we need to re-check the condition that made us decide to
@@ -288,6 +294,23 @@ wakeup(struct thr_wait* wait)
 
 static inline
 int
+wakeup_all(struct thr_wait* wait)
+{
+  volatile unsigned * val = &wait->m_futex_state;
+  /**
+   * We must ensure that any state update (new data in buffers...) are visible
+   * to the other thread before we can look at the sleep state of that other
+   * thread.
+   */
+  if (xcng(val, thr_wait::FS_RUNNING) == thr_wait::FS_SLEEPING)
+  {
+    return futex_wake_all(val);
+  }
+  return 0;
+}
+
+static inline
+int
 try_wakeup(struct thr_wait* wait)
 {
   return wakeup(wait);
@@ -300,7 +323,7 @@ struct alignas(NDB_CL) thr_wait
   NdbCondition *m_cond;
   bool m_need_wakeup;
   thr_wait() : m_mutex(0), m_cond(0), m_need_wakeup(false) {
-    assert((sizeof(*this) % NDB_CL) == 0); //Maintain any CL-allignment
+    assert((sizeof(*this) % NDB_CL) == 0); //Maintain any CL-alignment
   }
 
   void init() {
@@ -369,6 +392,21 @@ wakeup(struct thr_wait* wait)
   {
     wait->m_need_wakeup = false;
     NdbCondition_Signal(wait->m_cond);
+  }
+  NdbMutex_Unlock(wait->m_mutex);
+  return 0;
+}
+
+static inline
+int
+wakeup_all(struct thr_wait* wait)
+{
+  NdbMutex_Lock(wait->m_mutex);
+  // We should avoid signaling when not waiting for wakeup
+  if (wait->m_need_wakeup)
+  {
+    wait->m_need_wakeup = false;
+    NdbCondition_Broadcast(wait->m_cond);
   }
   NdbMutex_Unlock(wait->m_mutex);
   return 0;
@@ -733,7 +771,7 @@ public:
   }
 
   /**
-   * Release to local pool even if it get's "too" full
+   * Release to local pool even if it gets "too" full
    *   (wrt to m_max_free)
    */
   void release_local(T *t)
@@ -893,6 +931,9 @@ private:
  */
 struct thr_job_buffer // 32k
 {
+  thr_job_buffer()  // Construct an empty thr_job_buffer
+    : m_len(0), m_prioa(false) {}
+
   static const unsigned SIZE = 8190;
 
   /*
@@ -912,13 +953,9 @@ struct thr_job_buffer // 32k
   };
 };
 
-static
-inline
-Uint32
-calc_fifo_used(Uint32 ri, Uint32 wi, Uint32 sz)
-{
-  return (wi >= ri) ? wi - ri : (sz - ri) + wi;
-}
+// The 'empty_job_buffer' is a sentinel for a job_queue possibly never used.
+static thr_job_buffer empty_job_buffer;
+
 
 /**
  * thr_job_queue is shared between a single consumer / multiple producers.
@@ -933,13 +970,6 @@ calc_fifo_used(Uint32 ri, Uint32 wi, Uint32 sz)
  */
 struct alignas(NDB_CL) thr_job_queue
 {
-  enum
-  {
-    NO_CONGESTION = 0,
-    CAN_EXECUTE = 1,
-    LEVEL_1_CONGESTION = 2,
-    LEVEL_2_CONGESTION = 3
-  };
   /**
    * Size of A and B buffer must be in the form 2^n since we
    * use & (size - 1) for modulo which only works when it is
@@ -951,26 +981,38 @@ struct alignas(NDB_CL) thr_job_queue
    * There is a SAFETY limit on free buffers we never allocate,
    * but may allow these to be implicitly used as a last resort
    * when job scheduler is really stuck. ('sleeploop 10')
+   *
+   * Note that 'free' calculations are with the SAFETY limit
+   * subtracted, such that max-free is 'SIZE - SAFETY' (30).
+   *
+   * In addition there is an additional 'safety' in that all partially
+   * filled JB-pages are counted as completely used when calculating 'free'.
+   *
+   * There is also an implicit safety limit in allowing 'flush' from
+   * m_local_buffer to fail, and execution to continue until even that
+   * buffer is full. In such cases we are in a CRITICAL JB-state.
    */
   static constexpr unsigned SAFETY = 2;
 
   /**
-   * Some more free buffers are RESERVED to be used to avoid
-   * or resolve circular wait-locks between threads waiting
-   * for buffers to become available.
+   * Some more free buffers on top of SAFETY are RESERVED. Normally the JB's
+   * are regarded being 'full' when reaching the RESERVED limit. However, they
+   * are allowed to be used to avoid or resolve circular wait-locks between
+   * threads waiting for buffers to become available. In such cases these are
+   * allocated as 'extra_signals' allowed to execute.
    */
-  static constexpr unsigned RESERVED = 4;
+  static constexpr unsigned RESERVED = 4; // In addition to 'SAFETY'
 
   /**
-   * When free buffer count drops below ALMOST_FULL, we
-   * are allowed to start using RESERVED buffers to prevent
-   * circular wait-locks.
+   * We start being CONGESTED a bit before reaching the RESERVED limit.
+   * We will then start reducing quota of signals run_job_buffers may
+   * execute in each round, giving a tighter control of job-buffer overruns.
+   *
+   * Note that there will be some execution overhead when running in a
+   * congested state (Smaller JB quotas, tighter checking of JB-state,
+   * optionally requiring the write_lock to be taken.)
    */
-  static constexpr unsigned ALMOST_FULL = RESERVED + 2;
-  static constexpr unsigned RECEIVE_LIMIT = 10;
-
-  static constexpr unsigned FIRST_CONGESTION_LEVEL = SIZE - RECEIVE_LIMIT;
-  static constexpr unsigned SECOND_CONGESTION_LEVEL = SIZE - ALMOST_FULL;
+  static constexpr unsigned CONGESTED = RESERVED + 4;  // 4+4
 
   /**
    * As there are multiple writers, 'm_write_lock' has to be set before
@@ -1003,6 +1045,13 @@ struct alignas(NDB_CL) thr_job_queue
   alignas(NDB_CL) unsigned m_read_index;
   alignas(NDB_CL) unsigned m_write_index;
   unsigned m_cached_read_index;
+
+  /**
+   * Producer thread-local shortcuts to current write pos:
+   * NOT under memory barrier control - Can't be consistently read by consumer!
+   * (When adding a new write_buffer, the consumer could see either the 'end'
+   * of the previous, the new one, or a mix.)
+   */
   struct thr_job_buffer *m_current_write_buffer;
   unsigned m_current_write_buffer_len;
 
@@ -1021,26 +1070,42 @@ struct alignas(NDB_CL) thr_job_queue
   unsigned m_pending_signals;
 
   /**
-   * This cacheline is read-only, so don't share it with others that are
-   * updated.
-   *
-   * Job buffer size is set at startup and never changed.
+   * Job buffer size is const: Max number of JB-pages allowed
    */
-  alignas(NDB_CL) unsigned m_size;         // Job queue size (SIZE)
+  static constexpr unsigned m_size = SIZE;  // Job queue size (SIZE)
 
   /**
    * Ensure that the busy cache line isn't shared with job buffers.
    */
   alignas(NDB_CL) struct thr_job_buffer* m_buffers[SIZE];
-
-  /* Note that m_write_lock is needed to get a correct free() / used() */
-  Uint32 used() const {
-    return calc_fifo_used(m_read_index, m_write_index, m_size);
-  }
-  Uint32 free() const {
-    return (m_size - used());
-  }
 };
+
+
+/**
+ * Calculate remaining free slots in the job_buffer queue.
+ * The SAFETY limit is subtracted from the 'free'.
+ *
+ * Note that calc free consider a JB-page as non-free as soon as it
+ * has been allocated to the JB-queue.
+ *  -> A partial filled 'write-page', or even empty page, is non-free.
+ *  -> A partial consumed 'read-page is non-free, until fully consumed
+ *     and released back to the page pool
+ *
+ * This also implies that max- 'fifo_free' is 'SIZE-SAFETY-1'.
+ * (We do not care to handle the special initial case where
+ *  there is just an empty_job_buffer/nullptr in the JB-queue)
+ */
+static inline
+unsigned
+calc_fifo_free(Uint32 ri, Uint32 wi, Uint32 sz)
+{
+  // Note: The 'wi' 'write-in-progress' page is not 'free, thus 'wi+1'
+  const unsigned free = (ri > wi) ? ri - (wi+1) : (sz - (wi+1)) + ri;
+  if (likely(free >= thr_job_queue::SAFETY))
+    return free - thr_job_queue::SAFETY;
+  else
+    return 0;
+}
 
 /**
  * Identify type of thread.
@@ -1197,7 +1262,7 @@ struct thr_tq
 #define THR_SEND_BUFFER_ALLOC_SIZE 32
 
 /**
- * THR_SEND_BUFFER_PRE_ALLOC is the amout of 32k pages that are
+ * THR_SEND_BUFFER_PRE_ALLOC is the amount of 32k pages that are
  *   allocated before we start to run signals
  */
 #define THR_SEND_BUFFER_PRE_ALLOC 32
@@ -1299,7 +1364,7 @@ struct alignas(NDB_CL) thr_data
 #endif
   {
 
-    // Check cacheline allignment
+    // Check cacheline alignment
     assert((((UintPtr)this) % NDB_CL) == 0);
     assert((((UintPtr)&m_waiter) % NDB_CL) == 0);
     assert((((UintPtr)&m_jba) % NDB_CL) == 0);
@@ -1337,8 +1402,6 @@ struct alignas(NDB_CL) thr_data
    */
   alignas(NDB_CL) struct thr_job_queue m_jbb[NUM_JOB_BUFFERS_PER_THREAD];
 
-  alignas(NDB_CL) Uint32 m_congestion_level[NUM_JOB_BUFFERS_PER_THREAD];
-
   /**
    * The remainder of the variables in thr_data are thread-local,
    * meaning that they are always updated by the thread that owns those
@@ -1349,8 +1412,9 @@ struct alignas(NDB_CL) thr_data
   alignas(NDB_CL) unsigned m_thr_no;
 
   /**
-   * Thread 0 doesn't necessarily handle all threads in a loop.
-   * This variable keeps track of which to handle next.
+   * JBB resume point: We might return from run_job_buffers without executing
+   * signals from all the JBB buffers.
+   * This variable keeps track of where to resume execution from in next 'run'.
    */
   unsigned m_next_jbb_no;
 
@@ -1385,6 +1449,22 @@ struct alignas(NDB_CL) thr_data
   alignas(NDB_CL) unsigned m_max_signals_per_jb;
 
   /**
+   * Extra JBB signal execute quota allowed to be used to
+   * drain (almost) full in-buffers. Reserved for usage where
+   * we are about to end up in a circular wait-lock between
+   * threads where none of them will be able to proceed.
+   * Allocated from the RESERVED signal quota.
+   */
+  unsigned m_total_extra_signals;
+
+  /**
+   * Extra signals allowed to be execute from each specific JBB.
+   * Allocated to each job_buffer from the m_total_extra_signals.
+   * Only set up / to be used, if thread is JBB congested.
+   */
+  unsigned m_extra_signals[NUM_JOB_BUFFERS_PER_THREAD];
+
+  /**
    * This state show how much assistance we are to provide to the
    * send threads in sending. At OVERLOAD we provide no assistance
    * and at MEDIUM we take care of our own generated sends and
@@ -1415,19 +1495,6 @@ struct alignas(NDB_CL) thr_data
    * assist the send threads.
    */
   OverloadStatus m_node_overload_status;
-
-  /**
-   * Extra JBB signal execute quota allowed to be used to
-   * drain (almost) full in-buffers. Reserved for usage where
-   * we are about to end up in a circular wait-lock between
-   * threads where none if them will be able to proceed.
-   */
-  unsigned m_max_extra_signals;
-
-  /**
-   * max signals to execute before recomputing m_max_signals_per_jb
-   */
-  unsigned m_max_exec_signals;
 
   /**
    * Flag indicating that we have sent a local Prio A signal. Used to know
@@ -1518,6 +1585,9 @@ struct alignas(NDB_CL) thr_data
   /* Thread-local read state of prio B buffer(s). */
   struct thr_jb_read_state m_jbb_read_state[NUM_JOB_BUFFERS_PER_THREAD];
 
+  /* Bitmask of thr_jb_read_state[] having data to read. */
+  Bitmask<(NUM_JOB_BUFFERS_PER_THREAD + 31)/32> m_jbb_read_mask;
+
   /**
    * Threads might need a wakeup() to be signalled before it can yield.
    * They are registered in the Bitmask m_wake_threads_mask
@@ -1525,11 +1595,17 @@ struct alignas(NDB_CL) thr_data
   BlockThreadBitmask m_wake_threads_mask;
 
   /**
-   * We have signals buffered for each of the threads in the
-   * m_local_signals_mask. When buffer is full or when the flush level is
-   * reached we will send those signals.
+   * We have signals buffered for each of the threads in the thread-local
+   * m_local_signals_mask. When buffer is full, or when the flush level is
+   * reached, we will flush those signals to the thread-shared m_buffer[]
    */
   BlockThreadBitmask m_local_signals_mask;
+
+  /**
+   * Set of destination threads where the JB's are CONGESTED *and*
+   * contributed to a reduction in 'm_max_signals_per_jb' to be executed.
+   */
+  BlockThreadBitmask m_congested_threads_mask;
 
   /* Jam buffers for making trace files at crashes. */
   EmulatedJamBuffer m_jam;
@@ -1728,11 +1804,9 @@ struct thr_repository
       m_section_lock("sectionlock"),
       m_mem_manager_lock("memmanagerlock"),
       m_jb_pool("jobbufferpool"),
-      m_sb_pool("sendbufferpool"),
-      m_first_congestion_level(0),
-      m_second_congestion_level(0)
+      m_sb_pool("sendbufferpool")
   {
-    // Verify assumed cacheline allignment
+    // Verify assumed cacheline alignment
     assert((((UintPtr)this) % NDB_CL) == 0);
     assert((((UintPtr)&m_receive_lock) % NDB_CL) == 0);
     assert((((UintPtr)&m_section_lock) % NDB_CL) == 0);
@@ -1767,13 +1841,6 @@ struct thr_repository
    * isn't a good idea
    */
   alignas(NDB_CL) struct thr_data m_thread[MAX_BLOCK_THREADS];
-
-  /**
-   * Global counters of number of threads in first and second congestion
-   * levels. When 0 no congestion exists.
-   */
-  alignas(NDB_CL) std::atomic<unsigned int> m_first_congestion_level;
-  alignas(NDB_CL) std::atomic<unsigned int> m_second_congestion_level;
 
   /* The buffers that are to be sent */
   struct send_buffer
@@ -1901,7 +1968,7 @@ struct thr_send_thread_instance
   /**
    * This variable is registered in the watchdog, it is set by the
    * send thread and reset every now and then by watchdog thread.
-   * No sepecial protection is required in setting it.
+   * No special protection is required in setting it.
    */
   Uint32 m_watchdog_counter;
 
@@ -2056,7 +2123,7 @@ struct thr_send_trps
    * This will be reset again immediately after sending is completed.
    * It is used to ensure that neighbour trps aren't taken out for
    * sending by more than one thread. The neighbour list is simply
-   * an array of the neighbours and we will send if data is avaiable
+   * an array of the neighbours and we will send if data is available
    * to send AND no one else is sending which is checked by looking at
    * this variable.
    */
@@ -2737,7 +2804,7 @@ static const Uint64 MAX_SEND_BUFFER_SIZE_TO_DELAY = (20 * 1024);
  * Get a trp having data to be sent to a trp (returned).
  *
  * Sending could have been delayed, in such cases the trp
- * to expire its delay first will be returned. It is then upto
+ * to expire its delay first will be returned. It is then up to
  * the callee to either accept this trp, or reinsert it
  * such that it can be returned and retried later.
  *
@@ -4265,14 +4332,14 @@ handle_time_wrap(struct thr_data* selfptr)
  * that delayed signals will arrive in correct relative order,
  * and repeated signals (pace signals) are received with
  * the expected frequence. However, each individual signal may
- * be delayed or arriving to fast. Where excact timing is critical,
+ * be delayed or arriving too fast. Where exact timing is critical,
  * these signals should do their own time calculation by reading
  * the clock, instead of trusting that the signal is delivered as
  * specified by the 'delay' argument
  *
  * If there are leaps larger than 1500ms, we try a hybrid
  * solution by moving the 'm_ticks' forward, close to the
- * actuall current time, then continue as above from that
+ * actual current time, then continue as above from that
  * point in time. A 'time leap Warning' will also be printed
  * in the logs.
  */
@@ -4327,7 +4394,7 @@ scan_time_queues_impl(struct thr_data* selfptr,
       }
       last = NdbTick_AddMilliseconds(last, diff-1000);
     }
-    step = 20;  // Max expire intervall handled is 20ms
+    step = 20;  // Max expire interval handled is 20ms
   }
 
   struct thr_tq * tq = &selfptr->m_tq;
@@ -4580,46 +4647,24 @@ senddelay(Uint32 thr_no, const SignalHeader* s, Uint32 delay)
 }
 
 /**
- * Compute free buffers in specified queue.
- * The SAFETY margin is subtracted from the available
- * 'free'. which is returned.
+ *  Compute *total* max signals that this thread can execute wo/ risking
+ *  job-buffer-full.
  *
- * FIXME: need concurrency control for m_write_index
- */
-static
-Uint32
-compute_free_buffers_in_queue(const thr_job_queue *q)
-{
-  /**
-   * NOTE: m_read_index is read wo/ lock (and updated by different thread)
-   *       but since the different thread can only consume
-   *       signals this means that the value returned from this
-   *       function is always conservative (i.e it can be better than
-   *       returned value, if read-index has moved but we didnt see it)
-   *
-   * FIXME: Calling q->free() (m_write_index) need locking!
-   */
-  const unsigned free = q->free();
-  assert(free <= q->m_size);
-
-  if (free <= (1 + thr_job_queue::SAFETY))
-    return 0;
-  else
-    return free - (1 + thr_job_queue::SAFETY);
-}
-
-/**
- * Compute max signals that thr_no can execute wo/ risking
- *   job-buffer-full
+ * 1) min_free_buffers are number of free job-buffer pages in (one of) the
+ *    job buffer queues this thread may send signals to.
+ * 2) Compute how many signals this corresponds to.
+ * 3) Divide 'max_signals' among the threads writing to each 'queue'.
  *
- *  see-also update_sched_config
+ *  Note, that there might be multiple threads writing to each job-buffer,
+ *  each seeing the same number of initial min_free_buffers. Thus, we need
+ *  to divide the 'free_buffers' between these threads.
  *
- *
- * 1) compute free-slots in ring-buffer from self to each thread in system
- * 2) pick smallest value
- * 3) compute how many signals this corresponds to
- * 4) compute how many signals self can execute if all were to be to
- *    the thread with the fullest ring-buffer (i.e the worst case)
+ *  Note, that min_free_buffers is updated when we last flushed thread-local
+ *  signals to the job-buffer queue. It might be outdated if other threads
+ *  flushed to the same job-buffer queue in between. Thus, there are no
+ *  guarantees that we do not compute a too large max_signals-quota. However,
+ *  we have a 'RESERVED' area to provide for this, and we will flush and update
+ *  the free_buffers view every MAX_SIGNALS_BEFORE_FLUSH_*.
  *
  *   Assumption: each signal may send *at most* 4 signals
  *     - this assumption is made the same in ndbd and ndbmtd and is
@@ -4629,41 +4674,72 @@ static
 Uint32
 compute_max_signals_to_execute(Uint32 min_free_buffers)
 {
-  return ((min_free_buffers * MIN_SIGNALS_PER_PAGE) + 3) / 4;
+  const Uint32 max_signals_to_execute =
+    ((min_free_buffers * MIN_SIGNALS_PER_PAGE) + 3) / 4;
+  return max_signals_to_execute / glob_num_writers_per_job_buffers;
 }
 
+/**
+ * Compute max signals to execute from a single job buffer.
+ * ... Note that MAX_SIGNALS_PER_JB also applies, not checked here.
+ *
+ * Assumption is that we have a total quota of max_signals_to_execute
+ * by this thread (see above) in a round of run_job_buffers. We are limited
+ * by the worst case scenario, where all signals executed from the incoming
+ * 'glob_num_job_buffers_per_thread' job-buffers, produce their max quota of
+ * 4 outgoing signals to the same job-buffer out-queue.
+ */
+static
+Uint32
+compute_max_signals_per_jb(Uint32 max_signals_to_execute)
+{
+  const Uint32 per_jb =
+      (max_signals_to_execute + glob_num_job_buffers_per_thread - 1) /
+       glob_num_job_buffers_per_thread;
+  return per_jb;
+}
+
+/**
+ * Out queue to 'congested' has reached a CONGESTED level.
+ *
+ * Reduce the 'm_max_signals_per_jb' execute quota to account for this.
+ * In case we have reached the 'RESERVED' congestion level, we stop the
+ * 'normal' execute paths by setting 'm_max_signals_per_jb = 0'. In this
+ * state we can only execute extra signals from the 'm_extra_signals[]'
+ * quota. These are assigned to drain from in-queues which at detected
+ * to be congested as well.
+ *
+ * Note that we only handle quota reduction due to the specified 'congested'
+ * queue. There may be other congestions as well, thus we take MIN's of
+ *  the calculated quotas below.
+ */
 static
 void
-dumpJobQueues(void)
+set_congested_jb_quotas(thr_data *selfptr, Uint32 congested, Uint32 free)
 {
-  BaseString tmp;
-  const struct thr_repository* rep = g_thr_repository;
-  for (unsigned to = 0; to < glob_num_threads; to++)
+  assert(free <= thr_job_queue::CONGESTED);
+  // JB-page usage is congested, reduce execution quota
+  if (unlikely(free <= thr_job_queue::RESERVED))
   {
-    for (unsigned from = 0; from < glob_num_job_buffers_per_thread; from++)
-    {
-      const thr_data *thrptr = rep->m_thread + to;
-      const thr_job_queue *q = thrptr->m_jbb + from;
-      const unsigned used = q->used();
-      if (used > 0)
-      {
-        tmp.appfmt(" job buffer %d --> %d, used %d",
-                   from, to, used);
-        unsigned free = compute_free_buffers_in_queue(q);
-        if (free <= 0)
-        {
-          tmp.appfmt(" FULL!");
-        }
-        else if (free <= thr_job_queue::RESERVED)
-        {
-          tmp.appfmt(" HIGH LOAD (free:%d)", free);
-        }
-      }
-    }
+    // Can't do 'normal' JB-execute anymore, only 'extra' signals
+    const Uint32 reserved = free;
+    const Uint32 extra = compute_max_signals_to_execute(reserved);
+    selfptr->m_congested_threads_mask.set(congested);
+    selfptr->m_max_signals_per_jb = 0;
+    selfptr->m_total_extra_signals  = MIN(extra, selfptr->m_total_extra_signals);
   }
-  if (!tmp.empty())
+  else
   {
-    g_eventLogger->info("Dumping non-empty job queues: %s", tmp.c_str());
+    // Might need to reduce JB-quota. As we have not reached the 'RESERVED',
+    // this congestion does not affect amount of extra signals.
+    const Uint32 avail =
+        compute_max_signals_to_execute(free - thr_job_queue::RESERVED);
+    const Uint32 perjb = compute_max_signals_per_jb(avail);
+    if (perjb < MAX_SIGNALS_PER_JB)
+    {
+      selfptr->m_congested_threads_mask.set(congested);
+      selfptr->m_max_signals_per_jb = MIN(perjb, selfptr->m_max_signals_per_jb);
+    }
   }
 }
 
@@ -4757,24 +4833,209 @@ trp_callback::unlock_send_transporter(NodeId node, TrpId trp_id)
   unlock(&rep->m_send_buffers[trp_id].m_send_lock);
 }
 
-static bool
-get_congested_recv_queue(struct thr_repository* rep)
+/**
+ * Provide a producer side estimate for number of free JB-pages
+ * in a specific 'out-'thr_job_queue.
+ *
+ * Is an 'estimate' as if we are in a non-congested state, we use the
+ * 'cached_read_index' to calculate the 'used'. This may return a too high,
+ * but still 'uncongested', value of used pages, as the 'dst' consumer might
+ * have moved the read_index since cached_read_index was updated. This is ok
+ * as the upper levels should only use this function to check for congestions.
+ *
+ * If the cached_read indicate congestion, we check the non-cached read_index
+ * to get a more accurate estimate - Possible uncongested if read_index was
+ * moved since we updated the cached_read_index
+ *
+ * Rational is to avoid reading the read_index-cache-line, which was
+ * likely invalidated by the consumer, too frequently.
+ *
+ * Need to be called with the m_write_lock held if there are
+ * multiple writers. (glob_use_write_lock_mutex==true)
+ */
+static
+unsigned get_free_estimate_out_queue(thr_job_queue *q)
 {
-  rmb();
-  return rep->m_first_congestion_level.load() != 0;
+  const Uint32 cached_read_index = q->m_cached_read_index;
+  const Uint32 write_index = q->m_write_index;
+  const unsigned free = calc_fifo_free(cached_read_index,
+                                       write_index,
+                                       q->m_size);
+
+  if (free > thr_job_queue::CONGESTED)
+    // As long as we are unCONGESTED, we do not care about exact free-amount
+    return free;
+
+  /**
+   * NOTE: m_read_index is read wo/ lock (and updated by different thread(s))
+   *       but since the different thread can only consume
+   *       signals this means that the value returned from this
+   *       function is always conservative (i.e it can be better than
+   *       returned value, if read-index has moved but we didn't see it)
+   */
+  const Uint32 read_index = q->m_read_index;
+  q->m_cached_read_index = read_index;
+  return calc_fifo_free(read_index, write_index, q->m_size);
+}
+
+/**
+ * Compute free buffers in specified in-queue.
+ *
+ * Is lock free, with same assumption as rest of JB-queue
+ * algorithms. .. Only a single reader (this) which do not need locks.
+ * Concurrent writer(s) might have written more though, which we
+ * will not see until rechecked again later.
+ */
+static
+unsigned get_free_in_queue(const thr_job_queue *q)
+{
+  return calc_fifo_free(q->m_read_index, q->m_write_index, q->m_size);
+}
+
+/**
+ * Callback functions used by yield() to recheck
+ * 'job buffers congested/full' condition before going to sleep.
+ * Set write_lock as required. (if having multiple writers)
+ *
+ * Check if the specified congested waitfor-thread (arg) still has
+ * job buffer congestion (-> outgoing JBs too full), return true if so.
+ */
+static bool
+check_congested_job_queue(thr_job_queue *waitfor)
+{
+  unsigned free;
+  if (unlikely(glob_use_write_lock_mutex))
+  {
+    lock(&waitfor->m_write_lock);
+    free = get_free_estimate_out_queue(waitfor);
+    unlock(&waitfor->m_write_lock);
+  } else {
+    free = get_free_estimate_out_queue(waitfor);
+  }
+  return (free <= thr_job_queue::CONGESTED);
 }
 
 static bool
-get_congested_job_queue(struct thr_repository* rep)
+check_full_job_queue(thr_job_queue *waitfor)
 {
-  rmb();
-  return rep->m_second_congestion_level.load() != 0;
+  unsigned free;
+  if (unlikely(glob_use_write_lock_mutex))
+  {
+    lock(&waitfor->m_write_lock);
+    free = get_free_estimate_out_queue(waitfor);
+    unlock(&waitfor->m_write_lock);
+  } else {
+    free = get_free_estimate_out_queue(waitfor);
+  }
+  return (free <= thr_job_queue::RESERVED);
+}
+
+/**
+ * Get a FULL JB-queue, preferably not 'self'.
+ *
+ * Get the thread whose our out-JB-queue is FULL-congested on.
+ * Try to avoid returning the 'self-queue' if there are other
+ * FULL queues we need to wait on. (We can not wait on 'self')
+ *
+ * Assumption is that function is called only when execution thread has
+ * reached m_max_signals_per_jb == 0. Thus, one of the congested threads
+ * should have reached the 'RESERVED' limit.
+ *
+ * Note that we 'get_free_estimate' without holding the write_lock.
+ * Thus, congestion can later get more severe due to other writers, or it
+ * could have cleared due to yet undetected read-consumption. Anyhow,
+ * we will later set lock and either recheck_congested_job_buffers() or
+ * recheck in the yield-callback function.
+ *
+ * We might then possibly not yield, which results in another call
+ * to this function.
+ *
+ * If full: Return 'thr_data*' for (one of) the thread(s)
+ *          which we have to wait for. (to consume from queue)
+ */
+static thr_data*
+get_congested_job_queue(thr_data *selfptr)
+{
+  thr_repository* rep = g_thr_repository;
+  const unsigned self = selfptr->m_thr_no;
+  const unsigned self_jbb = self % NUM_JOB_BUFFERS_PER_THREAD;
+  thr_data *self_is_full = nullptr;
+
+  // Precondition: Had full job_queues:
+  assert(selfptr->m_max_signals_per_jb == 0);
+
+  for (unsigned thr_no = selfptr->m_congested_threads_mask.find_first();
+       thr_no != BitmaskImpl::NotFound;
+       thr_no = selfptr->m_congested_threads_mask.find_next(thr_no+1))
+  {
+    thr_data *congested_thr = &rep->m_thread[thr_no];
+    thr_job_queue *congested_queue = &congested_thr->m_jbb[self_jbb];
+    const unsigned free = get_free_estimate_out_queue(congested_queue);
+
+    if (free <= thr_job_queue::RESERVED) {  // is 'FULL'
+      /**
+       * We try to find another thread than 'self' to wait for:
+       * - If self_is_full, we just note it for later.
+       * - Any other non-self thread is returned immediately
+       */
+      if (thr_no != self) {
+        return congested_thr;
+      } else {
+        self_is_full = selfptr;
+      }
+    }
+  }
+  /**
+   * We possibly didn't find a FULL-congested job_buffer: it could have been
+   * consumed from after we set 'per_jb==0'. We will then need to
+   * recheck_congested_job_buffers() in order to relcalculate 'per_jb'
+   * and 'extra' execution quotas, and recheck the FULL-congestions.
+   */
+  return self_is_full;  // selfptr or nullptr
+}
+
+static
+void
+dumpJobQueues(void)
+{
+  BaseString tmp;
+  const struct thr_repository* rep = g_thr_repository;
+  for (unsigned to = 0; to < glob_num_threads; to++)
+  {
+    for (unsigned from = 0; from < glob_num_job_buffers_per_thread; from++)
+    {
+      const thr_data *thrptr = rep->m_thread + to;
+      const thr_job_queue *q = thrptr->m_jbb + from;
+      const unsigned free = get_free_in_queue(q);
+      const unsigned used =  q->m_size - thr_job_queue::SAFETY - free;
+      if (used > 1)  // At least 1 jb-page in use, even if 'empty'
+      {
+        tmp.appfmt("\n job buffer %d --> %d, used %d",
+                   from, to, used);
+        if (free <= 0)
+        {
+          tmp.appfmt(" FULL!");
+        }
+        else if (free <= thr_job_queue::RESERVED)
+        {
+          tmp.appfmt(" HIGH LOAD (free:%d)", free);
+        }
+      }
+    }
+  }
+  if (!tmp.empty())
+  {
+    g_eventLogger->info("Dumping non-empty job queues: %s", tmp.c_str());
+  }
 }
 
 int
 mt_checkDoJob(Uint32 recv_thread_idx)
 {
   struct thr_repository* rep = g_thr_repository;
+  // Find the thr_data for the specified recv_thread
+  const unsigned recv_thr_no = first_receiver_thread_no + recv_thread_idx;
+  struct thr_data *recv_thr = &rep->m_thread[recv_thr_no];
 
   /**
    * Return '1' if we are not allowed to receive more signals
@@ -4790,7 +5051,7 @@ mt_checkDoJob(Uint32 recv_thread_idx)
    *   handling open/close of connections, and catching
    *   its own shutdown events
    */
-  return (get_congested_recv_queue(rep));
+  return !recv_thr->m_congested_threads_mask.isclear();
 }
 
 /**
@@ -5053,7 +5314,7 @@ release_list(thread_local_pool<thr_send_page>* pool,
  * this function.
  *
  * Any available 'm_buffer's will be appended to the
- * 'm_sending' buffers with apropriate locks taken.
+ * 'm_sending' buffers with appropriate locks taken.
  *
  * If sending to trp is not enabled, the buffered pages
  * are released instead of being returned from this method.
@@ -5451,7 +5712,7 @@ static
 void
 flush_send_buffer(thr_data* selfptr, Uint32 trp_id)
 {
-  Uint32 thr_no = selfptr->m_thr_no;
+  unsigned thr_no = selfptr->m_thr_no;
   thr_send_buffer * src = selfptr->m_send_buffers + trp_id;
   thr_repository* rep = g_thr_repository;
 
@@ -5470,7 +5731,7 @@ flush_send_buffer(thr_data* selfptr, Uint32 trp_id)
 
   /**
    * If thread local ring buffer of send-buffers is full:
-   * Empty it by transfering them to the global send_buffer list.
+   * Empty it by transferring them to the global send_buffer list.
    */
   if (unlikely(next == ri))
   {
@@ -6162,13 +6423,23 @@ publish_position(thr_job_buffer *write_buffer, Uint32 write_pos)
   write_buffer->m_len = write_pos;
 }
 
+/**
+ * Check, and if allowed, add the 'new_buffer' to our job_queue of
+ * buffer pages containing signals.
+ * If the 'job_queue' is full, the new buffer is not inserted,
+ * and 'true' is returned. It is up to the caller to handle 'full'.
+ * (In many cases it can be a critical error)
+ *
+ * Note that the thread always hold a spare 'new_buffer' to be used if we
+ * filled the current buffer. Thus, we can always complete a flush/write of
+ * signals while holding the write_lock, without having to allocate
+ * a new buffer. (To reduce time the write_lock is held.)
+ * Another 'new_buffer' will be allocated after lock is released.
+ */
 static
-void
+bool
 check_next_index_position(thr_job_queue *q,
-                          Uint32 & write_pos,
-                          struct thr_job_buffer *write_buffer,
-                          struct thr_job_buffer *new_buffer,
-                          bool prioa)
+                          struct thr_job_buffer *new_buffer)
 {
   /**
    * We make sure that there is always room for at least one signal in the
@@ -6183,15 +6454,7 @@ check_next_index_position(thr_job_queue *q,
   write_index = (write_index + 1) & (queue_size - 1);
   NDB_PREFETCH_WRITE(&q->m_buffers[write_index]);
 
-  /**
-   * Full job buffer is fatal.
-   *
-   * ToDo: should we wait for it to become non-full? There is no guarantee
-   * that this will actually happen...
-   *
-   * Or alternatively, ndbrequire() ?
-   */
-  if (unlikely(write_index == q->m_cached_read_index))
+  if (unlikely(write_index == q->m_cached_read_index))  // Is full?
   {
     /**
      * We use local cached copy of m_read_index for JBB handling.
@@ -6204,42 +6467,55 @@ check_next_index_position(thr_job_queue *q,
      * as m_write_index which we are sure we have access to here.
      */
     Uint32 read_index = q->m_read_index;
-    if (write_index == read_index)
+    if (write_index == read_index)  // Is really full?
     {
-      job_buffer_full(0);
+      return true;
     }
-    else
-    {
-      q->m_cached_read_index = read_index;
-    }
+    q->m_cached_read_index = read_index;
   }
-  new_buffer->m_len = 0;
-  new_buffer->m_prioa = prioa;
+  assert(new_buffer->m_len == 0);
   q->m_buffers[write_index] = new_buffer;
+
+  // Memory barrier ensures that m_buffers[] contain new_buffer
+  // before 'write_index' referring it is written.
   wmb();
   q->m_write_index = write_index;
+
+  // Note that m_current_write_* is only intended for use by the *writer*.
+  // Thus, there are no memory barriers protecting the buffer vs len conistency.
   q->m_current_write_buffer = new_buffer;
   q->m_current_write_buffer_len = 0;
-  write_pos = 0;
+  return false;
 }
 
+/**
+ * insert_prioa_signal and publish_prioa_signal:
+ * As naming suggest, these are for JBA signals only.
+ * There is a similar insert_local_signal() for JBB signals,
+ * which 'flush' and 'publish' chunks of signals.
+ *
+ * prioa_signals are effectively flushed and published for
+ * each signal.
+ */
 static inline
 bool
-publish_signal(thr_job_queue *q,
-               Uint32 write_pos,
-               struct thr_job_buffer *write_buffer,
-               struct thr_job_buffer *new_buffer,
-               bool prioa)
+publish_prioa_signal(thr_job_queue *q,
+                     Uint32 write_pos,
+                     struct thr_job_buffer *write_buffer,
+                     struct thr_job_buffer *new_buffer)
 {
   publish_position(write_buffer, write_pos);
-  Uint32 max_size = MAX_SIGNAL_SIZE * MAX_SIGNALS_BEFORE_FLUSH_OTHER;
-  if (unlikely(write_pos + max_size > thr_job_buffer::SIZE))
+  if (unlikely(write_pos + MAX_SIGNAL_SIZE > thr_job_buffer::SIZE))
   {
-    check_next_index_position(q,
-                              write_pos,
-                              write_buffer,
-                              new_buffer,
-                              prioa);
+    // Not room for one more signal
+    new_buffer->m_prioa = true;
+    const bool jba_full = check_next_index_position(q, new_buffer);
+    if (jba_full) {
+      // Assume rather low traffic on JBA.
+      // Contrary to JBB, signals are not first stored in a local_buffer.
+      // Thus a full JBA is always immediately critical.
+      job_buffer_full(0);
+    }
     return true; // Buffer new_buffer used
   }
   return false; // Buffer new_buffer not used
@@ -6265,11 +6541,11 @@ copy_signal(Uint32 *dst,
 
 static
 bool
-insert_signal(thr_job_queue *q,
-              const SignalHeader* sh,
-              const Uint32 *data,
-              const Uint32 secPtr[3],
-              thr_job_buffer *new_buffer)
+insert_prioa_signal(thr_job_queue *q,
+                    const SignalHeader* sh,
+                    const Uint32 *data,
+                    const Uint32 secPtr[3],
+                    thr_job_buffer *new_buffer)
 {
   thr_job_buffer *write_buffer = q->m_current_write_buffer;
   Uint32 write_pos = q->m_current_write_buffer_len;
@@ -6285,11 +6561,10 @@ insert_signal(thr_job_queue *q,
   write_pos= (write_pos+1) & ~((Uint32)1);
 #endif
   q->m_current_write_buffer_len = write_pos;
-  return publish_signal(q,
-                        write_pos,
-                        write_buffer,
-                        new_buffer,
-                        true);
+  return publish_prioa_signal(q,
+                              write_pos,
+                              write_buffer,
+                              new_buffer);
 }
 
 //#define DEBUG_LOAD_INDICATOR 1
@@ -6302,6 +6577,16 @@ insert_signal(thr_job_queue *q,
 #define debug_load_indicator(x)
 #endif
 
+/**
+ * Check all incoming m_jbb[] instances for available signals.
+ * Set up the thread-local m_jbb_read_state[] to reflect JBB state.
+ * Also set jbb_read_mask to contain the JBBs containing data.
+ *
+ * As reading the m_jbb[] will access thread shared data, which is cache-line
+ * invalidated by the writer, we try to avoid loading read_state from shared
+ * data when the local read_state already contain a sufficient amount of
+ * signals to execute.
+ */
 static inline bool
 read_all_jbb_state(thr_data *selfptr, bool check_before_sleep)
 {
@@ -6323,6 +6608,8 @@ read_all_jbb_state(thr_data *selfptr, bool check_before_sleep)
     NDB_PREFETCH_READ(&jbb->m_write_index);
   }
 #endif
+
+  selfptr->m_jbb_read_mask.clear();
   Uint32 tot_num_words = 0;
   for (Uint32 jbb_instance = 0;
        jbb_instance < glob_num_job_buffers_per_thread;
@@ -6330,21 +6617,22 @@ read_all_jbb_state(thr_data *selfptr, bool check_before_sleep)
   {
     const thr_job_queue *jbb = selfptr->m_jbb + jbb_instance;
     thr_jb_read_state *r = selfptr->m_jbb_read_state + jbb_instance;
+
+    /**
+     * We avoid reading the cache-shared write-pointers until the
+     * thread local thr_jb_read_state indicate a possibly empty read queue.
+     * Writer side might have updated write pointer, thus invalidating our
+     * cache line for it. We will like to avoid memory stalls reading these
+     * until we really need to refresh the written positions.
+     */
     const Uint32 read_index = r->m_read_index;
     const Uint32 read_pos = r->m_read_pos;
-    const Uint32 write_index = jbb->m_write_index;
-    const Uint32 write_buffer_len = jbb->m_current_write_buffer_len;
-    Uint32 num_words;
-    if (write_index == read_index)
+    Uint32 write_index = r->m_write_index;
+    Uint32 read_end = r->m_read_end;
+
+    if (write_index == read_index)  // Possibly empty, reload thread-local state
     {
-      num_words = 0;
-      if (write_buffer_len >= read_pos)
-      {
-        num_words = write_buffer_len - read_pos;
-      }
-    }
-    else
-    {
+      write_index = jbb->m_write_index;
       if (write_index != r->m_write_index)
       {
         /**
@@ -6353,30 +6641,61 @@ read_all_jbb_state(thr_data *selfptr, bool check_before_sleep)
          */
         rmb();
       }
-      if (write_index > read_index)
+      r->m_write_index = write_index;
+      r->m_read_end = read_end = r->m_read_buffer->m_len;
+      /**
+       * Note ^^ that we will need a later rmb() before we can safely read the
+       * m_buffer[] contents up to 'm_read_end': We need to synch on the wmb()
+       * in publish_position(), such that the m_buffer[] contents itself
+       * has been fully written before we can start executing from it.
+       *
+       * To reduce the mem-synch stalls, we do this once for all JBB's, just
+       * before we execute_signals().
+       */
+      if (!r->is_empty())
       {
-        num_words = write_index - read_index;
+        selfptr->m_jbb_read_mask.set(jbb_instance);
       }
-      else
-      {
-        num_words = read_index - write_index;
-      }
-      num_words *= thr_job_buffer::SIZE;
-      num_words += write_buffer_len;
-      num_words -= read_pos;
+    }
+    else
+    {
+      /**
+       * Only update the thread-local 'write_index'.
+       * 'read_end' should already contain the end of current read_buffer.
+       */
+      r->m_write_index = write_index = jbb->m_write_index;
+      selfptr->m_jbb_read_mask.set(jbb_instance);
+    }
+
+    // Calculate / estimate 'num_words' being available
+    Uint32 num_pages;
+    if (likely(write_index >= read_index))
+    {
+      num_pages = write_index - read_index;
+    }
+    else
+    {
+      num_pages = read_index - write_index;
+    }
+
+    assert(read_end >= read_pos);
+    Uint32 num_words = read_end - read_pos;  // Remaining on current page
+    if (num_pages > 0)
+    {
+      // Rest of the pages will be (almost) full:
+      num_words += (num_pages-1) * thr_job_buffer::SIZE;
+
+      /**
+       * Estimate the written size in the 'current_write_buffer':
+       * Although producer set the 'm_current_write_buffer_len', it is not
+       * intended to be used by the consumer (No concurrency control).
+       * We just assume as an estimate:
+       *  - if num_pages==1 we just wrapped to a new page which is ~empty.
+       *  - if multiple pages, the last is assumed half-filled.
+       */
+      if (num_pages > 1) num_words += thr_job_buffer::SIZE/2;
     }
     tot_num_words += num_words;
-    r->m_write_index = write_index;
-    r->m_read_end = r->m_read_buffer->m_len;
-    /**
-     * Note ^^ that we will need a later rmb() before we can safely read the
-     * m_buffer[] contents upto 'm_read_end': We need to synch on the wmb()
-     * in publish_position(), such that the m_buffer[] contents itself
-     * has been fully written before we can start executing from it.
-     *
-     * To reduce the mem-synch stalls, we do this once for all JBB's, just
-     * before we execute_signals().
-     */
   }
   selfptr->m_cpu_percentage_changed = true;
   /**
@@ -6391,13 +6710,13 @@ read_all_jbb_state(thr_data *selfptr, bool check_before_sleep)
    * empty that can happen either just before going to sleep or when
    * spinning.
    */
-  bool ret_state = (tot_num_words == 0);
+  const bool jbb_empty = selfptr->m_jbb_read_mask.isclear();
   if (!check_before_sleep)
   {
     selfptr->m_jbb_execution_steps++;
     selfptr->m_jbb_accumulated_queue_size += tot_num_words;
   }
-  else if (ret_state)
+  else if (jbb_empty)
   {
     if (selfptr->m_load_indicator > 1)
     {
@@ -6405,7 +6724,7 @@ read_all_jbb_state(thr_data *selfptr, bool check_before_sleep)
       debug_load_indicator(selfptr);
     }
   }
-  if (!ret_state || selfptr->m_jbb_estimate_next_set)
+  if (!jbb_empty || selfptr->m_jbb_estimate_next_set)
   {
     selfptr->m_jbb_estimate_next_set = false;
     Uint32 current_queue_size = selfptr->m_jbb_estimated_queue_size_in_words;
@@ -6458,8 +6777,8 @@ read_all_jbb_state(thr_data *selfptr, bool check_before_sleep)
 #ifdef DEBUG_SCHED_STATS
   selfptr->m_jbb_total_words += tot_num_words;
 #endif
-  selfptr->m_read_jbb_state_consumed = ret_state;
-  return ret_state;
+  selfptr->m_read_jbb_state_consumed = jbb_empty;
+  return jbb_empty;
 }
 
 static inline
@@ -6479,7 +6798,7 @@ read_jba_state(thr_data *selfptr)
   }
 
   /**
-   * Will need a later rmb()-synch before we can execute_signals() upto
+   * Will need a later rmb()-synch before we can execute_signals() up to
    * '...buffer->m_len', see comment in read_all_jbb_state().
    */
   r->m_read_end = r->m_read_buffer->m_len;
@@ -6572,6 +6891,85 @@ void handle_scheduling_decisions(thr_data *selfptr,
 #if defined(USE_INIT_GLOBAL_VARIABLES)
   void mt_clear_global_variables(thr_data*);
 #endif
+
+
+/**
+ * prepare_congested_execution()
+ *
+ * If this thread is in a congested JBB state, its perjb-quota will be
+ * reduced, possibly even set to '0'. If we didn't get a max 'perjb' quota,
+ * our out buffers are about to fill up. This thread is thus effectively
+ * slowed down in order to let other threads consume from our out buffers.
+ * Eventually, when 'perjb==0', we will have to wait/sleep for buffers to
+ * become available.
+ *
+ * This can bring us into a circular wait-lock, where threads are stalled
+ * due to full out buffers. The same thread may also have full in buffers,
+ * thus blocking other threads from progressing. The entire scheduler will
+ * then be stuck.
+ *
+ * This function check the JBB queues we are about to execute signals from.
+ * if they are filled to a level where the producer will detect a congestion,
+ * we allow some 'extra_signals' to be executed from this JBB, such that the
+ * congestion hopefully can be reduced.
+ *
+ * The amount of extra_signals allowed are scaled proportional to
+ * the congestion level in each job buffer.
+ */
+static
+void
+prepare_congested_execution(thr_data *selfptr)
+{
+  unsigned congestion[NUM_JOB_BUFFERS_PER_THREAD];
+  unsigned total_congestion = 0;
+
+  // Assumed precondition:
+  assert(!selfptr->m_congested_threads_mask.isclear());
+
+  /**
+   * Two steps:
+   * 1. Collect amount of congestion (in job_buffer pages) in the JBBs.
+   * 2. Allocate extra_signals proportional to congestion level
+   */
+  for (unsigned jbb_instance = selfptr->m_jbb_read_mask.find_first();
+       jbb_instance != BitmaskImpl::NotFound;
+       jbb_instance = selfptr->m_jbb_read_mask.find_next(jbb_instance+1))
+  {
+    selfptr->m_extra_signals[jbb_instance] = 0;
+
+    thr_job_queue *queue = &selfptr->m_jbb[jbb_instance];
+    const unsigned free = get_free_in_queue(queue);
+    if (free <= thr_job_queue::CONGESTED) {
+      // In queue is congested as well. Calculate the total number of
+      // job_buffers to consume from in-queue(s) to get out of overload.
+      congestion[jbb_instance] = (thr_job_queue::CONGESTED - free) + 1;
+      total_congestion += congestion[jbb_instance];
+    } else {
+      congestion[jbb_instance] = 0;
+    }
+  }
+
+  if (unlikely(total_congestion > 0) && selfptr->m_total_extra_signals > 0)
+  {
+    // Found congestion, allocate 'extra_signals' proportional to congestion
+    for (unsigned jbb_instance = selfptr->m_jbb_read_mask.find_first();
+         jbb_instance != BitmaskImpl::NotFound;
+         jbb_instance = selfptr->m_jbb_read_mask.find_next(jbb_instance+1))
+    {
+      if (congestion[jbb_instance] > 0) {
+        selfptr->m_extra_signals[jbb_instance] =
+            std::max(1u, congestion[jbb_instance] *
+                     selfptr->m_total_extra_signals / total_congestion);
+      } else if (selfptr->m_max_signals_per_jb == 0)  {
+        // Need to run a bit in order to avoid starvation of the JBB's
+        selfptr->m_extra_signals[jbb_instance] = 1;
+      }
+    }
+  }
+}
+
+static void recheck_congested_job_buffers(thr_data *selfptr);
+
 /*
  * Execute at most MAX_SIGNALS signals from one job queue, updating local read
  * state as appropriate.
@@ -6615,7 +7013,10 @@ execute_signals(thr_data *selfptr,
         /* Move to next buffer. */
         const unsigned queue_size = q->m_size;
         read_index = (read_index + 1) & (queue_size - 1);
-        release_buffer(g_thr_repository, selfptr->m_thr_no, read_buffer);
+        NDB_PREFETCH_READ (q->m_buffers[read_index]->m_data);
+        if (likely(read_buffer != &empty_job_buffer)) {
+          release_buffer(g_thr_repository, selfptr->m_thr_no, read_buffer);
+        }
         read_buffer = q->m_buffers[read_index];
         read_pos = 0;
         read_end = read_buffer->m_len;
@@ -6624,6 +7025,7 @@ execute_signals(thr_data *selfptr,
         r->m_read_buffer = read_buffer;
         r->m_read_pos = read_pos;
         r->m_read_end = read_end;
+        wakeup_all(&selfptr->m_congestion_waiter);
       }
     }
     /*
@@ -6731,30 +7133,59 @@ run_job_buffers(thr_data *selfptr,
 {
   Uint32 signal_count = 0;
   Uint32 signal_count_since_last_zero_time_queue = 0;
-  Uint32 perjb = selfptr->m_max_signals_per_jb;
 
-  if (read_all_jbb_state(selfptr, false) && read_jba_state(selfptr))
+  if (read_all_jbb_state(selfptr, false))
   {
-    return 0;
+    // JBB is empty, execute any JBA signals
+    while (!read_jba_state(selfptr))
+    {
+      rmb();  // See memory barrier reasoning right below
+      selfptr->m_sent_local_prioa_signal = false;
+      static Uint32 max_prioA = thr_job_queue::SIZE * thr_job_buffer::SIZE;
+      Uint32 num_signals = execute_signals(selfptr,
+                                           &(selfptr->m_jba),
+                                           &(selfptr->m_jba_read_state), sig,
+                                           max_prioA);
+      signal_count += num_signals;
+      send_sum += num_signals;
+      flush_sum += num_signals;
+      if (!selfptr->m_sent_local_prioa_signal)
+      {
+        /**
+         * Break out of loop if there was no prio A signals generated
+         * from the local execution.
+         */
+        break;
+      }
+    }
+    // As we had no JBB signals, we are done
+    assert(selfptr->m_jbb_read_mask.isclear());
+    return signal_count;
   }
-  /*
+
+  /**
    * A load memory barrier to ensure that we see the m_buffers[] content,
    * referred by the jbb_states, before we start executing signals.
    * See comments in read_all_jbb_state() and read_jba_state as well.
    */
   rmb();
 
+  if (unlikely(!selfptr->m_congested_threads_mask.isclear()))
+  {
+    // Will assign 'extra' signal execution to be used by congested JBB's
+    prepare_congested_execution(selfptr);
+  }
+
   /**
-   * For the main thread we can stop at any job buffer, so we proceed from
-   * where we stopped to make different job buffers be equal in importance.
-   *
-   * For all other threads m_next_jbb_no should always be 0 when we reach here.
+   * We might have a JBB resume point:
+   *  - For the main thread we can stop at any job buffer.
+   *  - Other threads could stop execution due to JB congestion.
    */
-  Uint32 first_jbb_no = selfptr->m_next_jbb_no;
+  const Uint32 first_jbb_no = selfptr->m_next_jbb_no;
   selfptr->m_watchdog_counter = 13;
-  for (Uint32 jbb_instance = first_jbb_no;
-       jbb_instance < glob_num_job_buffers_per_thread;
-       jbb_instance++)
+  for (unsigned jbb_instance = selfptr->m_jbb_read_mask.find_next(first_jbb_no);
+       jbb_instance != BitmaskImpl::NotFound;
+       jbb_instance = selfptr->m_jbb_read_mask.find_next(jbb_instance+1))
   {
     /* Read the prio A state often, to avoid starvation of prio A. */
     while (!read_jba_state(selfptr))
@@ -6798,31 +7229,22 @@ run_job_buffers(thr_data *selfptr,
      * The entire scheduler will then be stuck.
      *
      * We try to avoid this situation by reserving some
-     * 'm_max_extra_signals' which are only used to consume
+     * 'm_extra_signals[]' which are only used to consume
      * from 'almost full' in-buffers. We will then reduce the
      * risk of ending up in the above wait-lock.
      *
      * Exclude receiver threads, as there can't be a
      * circular wait between recv-thread and workers.
      */
+    Uint32 perjb = selfptr->m_max_signals_per_jb;
     Uint32 extra = 0;
 
-    if (perjb < MAX_SIGNALS_PER_JB)  //Job buffer contention
+    if (perjb < MAX_SIGNALS_PER_JB)  // Has a job buffer contention
     {
-      const Uint32 free = compute_free_buffers_in_queue(queue);
-      if (free <= thr_job_queue::ALMOST_FULL)
-      {
-        if (selfptr->m_max_extra_signals > MAX_SIGNALS_PER_JB - perjb)
-	{
-          extra = MAX_SIGNALS_PER_JB - perjb;
-        }
-        else
-	{
-          extra = selfptr->m_max_extra_signals;
-          selfptr->m_max_exec_signals = 0; //Force recalc
-        }
-        selfptr->m_max_extra_signals -= extra;
-      }
+      // Prefer a tighter JB-quota control when executing in congested state:
+      recheck_congested_job_buffers(selfptr);
+      perjb = selfptr->m_max_signals_per_jb;
+      extra = selfptr->m_extra_signals[jbb_instance];
     }
 
 #ifdef ERROR_INSERT
@@ -6842,10 +7264,11 @@ run_job_buffers(thr_data *selfptr,
 #endif
 
     /* Now execute prio B signals from one thread. */
-    Uint32 num_signals = execute_signals(selfptr, queue, read_state,
-                                         sig, perjb+extra);
+    const Uint32 max_signals = std::min(perjb+extra,MAX_SIGNALS_PER_JB);
+    const Uint32 num_signals = execute_signals(selfptr, queue, read_state,
+                                               sig, max_signals);
 
-    if (num_signals > 0)
+    if (likely(num_signals > 0))
     {
       signal_count += num_signals;
       send_sum += num_signals;
@@ -6876,16 +7299,23 @@ run_job_buffers(thr_data *selfptr,
         scan_zero_queue(selfptr);
         selfptr->m_watchdog_counter = 13;
       }
-      if (selfptr->m_thr_no == 0)
+      /**
+       * We might return before all JBB's has been executed when:
+       * 1. When execution in main thread, which can sometimes be a bit
+       *    more lengthy.
+       * 2. Last execute_signals() filled the job_buffers to a level
+       *    where normal execution can't continue.
+       *
+       * We ensure that we don't miss out on heartbeats and other
+       * important things by returning to upper levels, where we handle_full,
+       * checking scan_time_queues and decide further scheduling strategies.
+       */
+      if (selfptr->m_thr_no == 0 ||                            // 1.
+          (selfptr->m_max_signals_per_jb == 0 && perjb > 0))   // 2.
       {
-        /**
-         * Execution in main thread can sometimes be a bit more lengthy,
-         * so we ensure that we don't miss out on heartbeats and other
-         * important things by returning to checking scan_time_queues
-         * more often.
-         */
-        jbb_instance++;
-        if (jbb_instance >= glob_num_job_buffers_per_thread)
+        // We will resume execution from next jbb_instance later.
+        jbb_instance = selfptr->m_jbb_read_mask.find_next(jbb_instance+1);
+        if (jbb_instance == BitmaskImpl::NotFound)
         {
           jbb_instance = 0;
         }
@@ -6894,6 +7324,7 @@ run_job_buffers(thr_data *selfptr,
       }
     }
   }
+  // We completed all jbb_instances
   selfptr->m_read_jbb_state_consumed = true;
   selfptr->m_next_jbb_no = 0;
   return signal_count;
@@ -7177,7 +7608,7 @@ mt_add_thr_map(Uint32 block, Uint32 instance)
 
 /**
  * create the duplicate entries needed so that
- *   sender doesnt need to know how many instances there
+ *   sender doesn't need to know how many instances there
  *   actually are in this node...
  *
  * if only 1 instance...then duplicate that for all slots
@@ -7406,7 +7837,7 @@ init_thread(thr_data *selfptr)
 
 /**
  * Align signal buffer for better cache performance.
- * Also skew it a litte for each thread to avoid cache pollution.
+ * Also skew it a little for each thread to avoid cache pollution.
  */
 #define SIGBUF_SIZE (sizeof(Signal) + 63 + 256 * MAX_BLOCK_THREADS)
 static Signal *
@@ -7474,8 +7905,6 @@ update_spin_config(struct thr_data *selfptr,
 {
   min_spin_timer = selfptr->m_spintime;
 }
-
-static void check_congestion(thr_data *selfptr);
 
 extern "C"
 void *
@@ -7561,7 +7990,6 @@ mt_receiver_thread_main(void *thr_arg)
     {
       watchDogCounter = 6;
       flush_all_local_signals_and_wakeup(selfptr);
-      check_congestion(selfptr);
     }
 
     const bool pending_send = do_send(selfptr, true, false);
@@ -7641,12 +8069,25 @@ mt_receiver_thread_main(void *thr_arg)
         /**
          * Will wait for congestion to disappear or 1 ms has passed.
          */
-        const Uint32 nano_wait = 1000*1000;    /* -> 1 ms */
+        watchDogCounter = 18;  // "Yielding to OS"
+        static constexpr Uint32 nano_wait_1ms = 1000*1000;    /* -> 1 ms */
         NDB_TICKS before = NdbTick_getCurrentTicks();
-        const bool waited = yield(&selfptr->m_congestion_waiter,
-                                  nano_wait,
-                                  get_congested_recv_queue,
-                                  rep);
+
+        /**
+         * Find (one of) the congested receive queues we need to wait for
+         * in order to get out of 'buffersFull' state. We will be woken up
+         * when consumer has freed a JB-page from the 'congested_queue'.
+         */
+        assert(!selfptr->m_congested_threads_mask.isclear());
+        const unsigned thr_no = selfptr->m_congested_threads_mask.find_first();
+        struct thr_data *congested_thr = &rep->m_thread[thr_no];
+        const unsigned self_jbb = thr_no % NUM_JOB_BUFFERS_PER_THREAD;
+        thr_job_queue *congested_queue = &congested_thr->m_jbb[self_jbb];
+
+        const bool waited = yield(&congested_thr->m_congestion_waiter,
+                                  nano_wait_1ms,
+                                  check_congested_job_queue,
+                                  congested_queue);
         if (waited)
         {
           NDB_TICKS after = NdbTick_getCurrentTicks();
@@ -7654,6 +8095,11 @@ mt_receiver_thread_main(void *thr_arg)
           selfptr->m_buffer_full_micros_sleep +=
             NdbTick_Elapsed(before, after).microSec();
         }
+        /**
+         * We waited due to congestion, or didn't find the expected congestion.
+         * Recheck if it cleared while we (not-)waited.
+         */
+        recheck_congested_job_buffers(selfptr);
       }
     }
     selfptr->m_stat.m_loop_cnt++;
@@ -7663,65 +8109,59 @@ mt_receiver_thread_main(void *thr_arg)
   return NULL;                  // Return value not currently used
 }
 
+
 /**
  * has_full_in_queues()
  *
  * Avoid circular waits between block-threads:
- * A thread is not allowed to sleep due to full
- * 'out' job-buffers if there are other threads
- * already having full 'in' job buffers sent to
- * this thread.
+ * A thread is not allowed to sleep due to full 'out' job-buffers if there
+ * are other threads already having full in-queues, blocked on this thread.
  *
- * run_job_buffers() has reserved a 'm_max_extra_signals'
- * quota which will be used to drain these 'full_in_queues'.
- * So we should allow it to be.
+ * prepare_congested_execute() will set up the m_extra_signals[] prior to
+ * executing from its JBB instances. As the queues are lock-free, more signals
+ * could have been added to the in-queues since m_extra_signals[] was set up.
+ * Some of the available m_total_extra_signals could have been consumed by
+ * other writers as well.
  *
- * Returns 'true' if any in-queues to this thread are full
+ * Thus, the algorithm provide no guarantee for the correct drain/yield
+ * decision to be taken. However, a possibly incorrect sleep will be short,
+ * and there is a SAFETY limit to take care of over provisioning of 'extra'.
+ *
+ * Returns 'true' if we need to continue execute_signals() from (only!)
+ * the full in-queues, else we may yield() the thread.
  */
 static
 bool
 has_full_in_queues(struct thr_data* selfptr)
 {
-  for (Uint32 i = 0; i < glob_num_job_buffers_per_thread; i++)
+  // Precondition: About to execute signals while being FULL-congested
+  assert(!selfptr->m_congested_threads_mask.isclear());
+  assert(selfptr->m_max_signals_per_jb == 0);
+
+  // Check the JBB in-queues known to contain signals to be executed
+  for (unsigned jbb_instance = selfptr->m_jbb_read_mask.find_first();
+       jbb_instance != BitmaskImpl::NotFound;
+       jbb_instance = selfptr->m_jbb_read_mask.find_next(jbb_instance+1))
   {
-    if (selfptr->m_congestion_level[i] >= thr_job_queue::LEVEL_1_CONGESTION)
-    {
+    if (selfptr->m_extra_signals[jbb_instance] > 0)
       return true;
-    }
   }
-  bool found = false;
-  for (Uint32 i = 0; i < glob_num_job_buffers_per_thread; i++)
-  {
-    if (selfptr->m_congestion_level[i] != thr_job_queue::NO_CONGESTION)
-    {
-      found = true;
-      break;
-    }
-  }
-  if (found == false)
-  {
-    return false;
-  }
-  if (get_congested_recv_queue(g_thr_repository))
-  {
-    return false;
-  }
-  return true;
+  return false;
 }
 
 /**
- * update_sched_config
+ * handle_full_job_buffers
  *
- *   In order to prevent "job-buffer-full", i.e
- *     that one thread(T1) produces so much signals to another thread(T2)
- *     so that the ring-buffer from T1 to T2 gets full
- *     the main loop have 2 "config" variables
- *   - m_max_exec_signals
- *     This is the *total* no of signals T1 can execute before calling
- *     this method again
- *   - m_max_signals_per_jb
- *     This is the max no of signals T1 can execute from each other thread
- *     in system
+ * One or more job buffers are 'full', such that we could not continue
+ * without using the RESERVED signals.
+ *
+ * We need to either yield() the CPU in order to wait for the consumer
+ * to make more job buffers available, or continue using 'extra' signals
+ * from the RESERVED area.
+ *
+ * As a last resort we may also time-out on the wait and let the thread
+ * continue with a small m_max_signals_per_jb quota, possibly with some
+ * 'extra_signals' in order to solve circular wait queues.
  *
  *   Assumption: each signal may send *at most* 4 signals
  *     - this assumption is made the same in ndbd and ndbmtd and is
@@ -7732,70 +8172,49 @@ has_full_in_queues(struct thr_data* selfptr)
  *      risking job-buffer-full)
  */
 static
-Uint32
-compute_min_free_out_buffers(Uint32 thr_no)
-{
-  const Uint32 jbb_instance = thr_no % NUM_JOB_BUFFERS_PER_THREAD;
-  Uint32 minfree = thr_job_queue::SIZE;
-  const struct thr_repository* rep = g_thr_repository;
-  const struct thr_data *thrptr = rep->m_thread;
-
-  for (unsigned i = 0; i < glob_num_threads; i++, thrptr++)
-  {
-    const thr_job_queue *q = thrptr->m_jbb + jbb_instance;
-    unsigned free = compute_free_buffers_in_queue(q);
-    if (free < minfree)
-      minfree = free;
-  }
-  return minfree;
-}
-
-static
 bool
-update_sched_config(struct thr_data* selfptr,
-                    bool pending_send,
-                    Uint32 & send_sum,
-                    Uint32 & flush_sum)
+handle_full_job_buffers(struct thr_data* selfptr,
+                        bool pending_send,
+                        Uint32 & send_sum,
+                        Uint32 & flush_sum)
 {
-  Uint32 sleeploop = 0;
+  unsigned sleeploop = 0;
+  const unsigned self_jbb = selfptr->m_thr_no % NUM_JOB_BUFFERS_PER_THREAD;
   selfptr->m_watchdog_counter = 16;
-loop:
-  Uint32 minfree = compute_min_free_out_buffers(selfptr->m_thr_no);
-  Uint32 reserved = (minfree > thr_job_queue::RESERVED)
-                   ? thr_job_queue::RESERVED
-                   : minfree;
 
-  Uint32 avail = compute_max_signals_to_execute(minfree - reserved);
-  Uint32 perjb = (avail + glob_num_job_buffers_per_thread - 1) /
-                  glob_num_job_buffers_per_thread;
-  if (perjb > MAX_SIGNALS_PER_JB)
-    perjb = MAX_SIGNALS_PER_JB;
-
-  selfptr->m_max_exec_signals = avail;
-  selfptr->m_max_signals_per_jb = perjb;
-  selfptr->m_max_extra_signals =
-    compute_max_signals_to_execute(reserved);
-
-  if (unlikely(perjb == 0))
+  while (selfptr->m_max_signals_per_jb == 0)  // or return
   {
-    if (sleeploop != 0)
+    if (unlikely(sleeploop >= 10))
     {
       /**
-       * we've slept for 1ms...run a bit anyway
+       * we've slept for 10ms...run a bit anyway
        */
-      selfptr->m_max_signals_per_jb = 1;
       g_eventLogger->info(
           "thr_no:%u - sleeploop 10!! "
-          "(Worker thread blocked (>= 1ms) by slow consumer threads)",
+          "(Worker thread blocked (>= 10ms) by slow consumer threads)",
           selfptr->m_thr_no);
       return true;
     }
 
-    if (has_full_in_queues(selfptr) &&
-        selfptr->m_max_extra_signals > 0)
+    struct thr_data *const congested = get_congested_job_queue(selfptr);
+    if (unlikely(congested == nullptr))
+    {
+      // Recalculate congestions w/ locks, recalculate per_jb-quota as well:
+      recheck_congested_job_buffers(selfptr);
+      continue;  // Recheck if FULL-congested 
+    }
+    if (congested == selfptr)
+    {
+      // Found a 'self' congestion - can't wait for FULL blockage on 'self'
+      return sleeploop > 0;
+    }
+    /**
+     * Avoid 'self-wait', where 'self' participate in a cyclic wait graph.
+     */
+    if (has_full_in_queues(selfptr))
     {
       /**
-       * 'extra_signals' used to drain 'full_in_queues'.
+       * 'extra_signals' need to be used to drain 'full_in_queues'.
        */
       return sleeploop > 0;
     }
@@ -7807,21 +8226,34 @@ loop:
       send_sum = 0;
       flush_sum = 0;
     }
-    const Uint32 nano_wait = 1000*1000;    /* -> 1 ms */
-    NDB_TICKS before = NdbTick_getCurrentTicks();
-    const bool waited = yield(&selfptr->m_congestion_waiter,
-                              nano_wait,
-                              get_congested_job_queue,
-                              g_thr_repository);
+    thr_job_queue *congested_queue = &congested->m_jbb[self_jbb];
+    static constexpr Uint32 nano_wait_1ms = 1000*1000;    /* -> 1 ms */
+    /**
+     * Wait for congested-thread' to consume some of the
+     * pending signals from its jbb queue.
+     * Will recheck queue status with 'check_full_job_queue'
+     * after latch has been set, and *before* going to sleep.
+     */
+    selfptr->m_watchdog_counter = 18;  // "Yielding to OS"
+    const NDB_TICKS before = NdbTick_getCurrentTicks();
+    const bool waited = yield(&congested->m_congestion_waiter,
+                              nano_wait_1ms,
+                              check_full_job_queue,
+                              congested_queue);
     if (waited)
     {
-      NDB_TICKS after = NdbTick_getCurrentTicks();
+      const NDB_TICKS after = NdbTick_getCurrentTicks();
+      selfptr->m_curr_ticks = after;
       selfptr->m_read_jbb_state_consumed = true;
       selfptr->m_buffer_full_micros_sleep +=
         NdbTick_Elapsed(before, after).microSec();
       sleeploop++;
     }
-    goto loop;
+    /**
+     * We waited due to congestion, or didn't find the expected congestion.
+     * Recheck if it cleared while we (not-)waited.
+     */
+    recheck_congested_job_buffers(selfptr);
   }
 
   return sleeploop > 0;
@@ -7958,7 +8390,7 @@ mt_job_thread_main(void *thr_arg)
      * prefill our thread local send buffers
      *   up to THR_SEND_BUFFER_PRE_ALLOC (1Mb)
      *
-     * and if this doesnt work pack buffers before start to execute signals
+     * and if this doesn't work pack buffers before start to execute signals
      */
     watchDogCounter = 11;
     if (!selfptr->m_send_buffer_pool.fill(g_thr_repository->m_mm,
@@ -8006,7 +8438,6 @@ mt_job_thread_main(void *thr_arg)
         do_flush(selfptr);
         flush_sum = 0;
       }
-      check_congestion(selfptr);
     }
     /**
      * Scheduler is not allowed to yield until its internal
@@ -8089,8 +8520,6 @@ mt_job_thread_main(void *thr_arg)
             selfptr->m_stat.m_loop_cnt += loops;
             selfptr->m_read_jbb_state_consumed = true;
             init_jbb_estimate(selfptr, now);
-            /* Always recalculate how many signals to execute after sleep */
-            selfptr->m_max_exec_signals = 0;
             if (selfptr->m_overload_status <=
                 (OverloadStatus)MEDIUM_LOAD_CONST)
             {
@@ -8124,29 +8553,23 @@ mt_job_thread_main(void *thr_arg)
     }
 
     /**
-     * Check if we executed enough signals,
-     *   and if so recompute how many signals to execute
+     * If job-buffers are full, we need to handle that somehow:
+     *  - yield() and wait for more JB's to become available.
+     *  - continue using the 'extra' signal quota (see RESERVED)
      */
-    now = NdbTick_getCurrentTicks();
-    if (sum >= selfptr->m_max_exec_signals)
+    if (unlikely(selfptr->m_max_signals_per_jb == 0))  // JB's are full?
     {
-      if (update_sched_config(selfptr,
-                              send_sum + Uint32(pending_send),
-                              send_sum,
-                              flush_sum))
+      if (handle_full_job_buffers(selfptr,
+                                  send_sum + Uint32(pending_send),
+                                  send_sum,
+                                  flush_sum))
       {
-        /* Update current time after sleeping */
-        selfptr->m_curr_ticks = now;
         selfptr->m_stat.m_wait_cnt += waits;
         selfptr->m_stat.m_loop_cnt += loops;
         waits = loops = 0;
         update_rt_config(selfptr, real_time, BlockThread);
         calculate_max_signals_parameters(selfptr);
       }
-    }
-    else
-    {
-      selfptr->m_max_exec_signals -= sum;
     }
 
     /**
@@ -8600,151 +9023,116 @@ mt_getNumThreads()
   return glob_num_threads;
 }
 
-static
-inline
-Uint32 get_free_level(Uint32 read_index, Uint32 write_index)
+/**
+ * Copy out signals one-by-one from the 'm_local_buffer' into the thread-shared
+ * 'm_current_write_buffer'. If the write_buffer becomes full, the available
+ * 'm_next_buffer' will be used. The copied signals will be 'published'
+ * such that they becomes visible for the consumer side.
+ *
+ * Assumed to be called with write_lock held, if the ThreadConfig is
+ * such that multiple writer are possible.
+ */
+static Uint32
+copy_out_local_buffer(struct thr_data *selfptr,
+                      thr_job_queue *q,
+                      Uint32 &next)
 {
-  unsigned used = calc_fifo_used(read_index,
-                                 write_index,
-                                 thr_job_queue::SIZE);
-  if (used <= thr_job_queue::FIRST_CONGESTION_LEVEL)
-    return thr_job_queue::NO_CONGESTION;
-  else if (used <= thr_job_queue::SECOND_CONGESTION_LEVEL)
-    return thr_job_queue::LEVEL_1_CONGESTION;
-  else
-    return thr_job_queue::LEVEL_2_CONGESTION;
-}
+  Uint32 num_signals = 0;
+  const thr_job_buffer *const local_buffer = selfptr->m_local_buffer;
+  Uint32 next_signal = next;
 
-static void
-check_congestion(thr_data *selfptr)
-{
-  /**
-   * check_congestion is called after executing a bunch of signals
-   * and is only used to decrease congestion levels. Thus in the
-   * case of no congestion we can avoid checking the congestion
-   * levels. The read index is not a problem to read since it is
-   * only written by this thread. The write_index is constantly
-   * updated by us and others, but is required to get the correct
-   * free level.
-   */
-  struct thr_repository* rep = g_thr_repository;
-  for (Uint32 jbb_instance = 0;
-       jbb_instance < glob_num_job_buffers_per_thread;
-       jbb_instance++)
+  thr_job_buffer *write_buffer = q->m_current_write_buffer;
+  Uint32 write_pos = q->m_current_write_buffer_len;
+  NDB_PREFETCH_WRITE(&write_buffer->m_len);
+  NDB_PREFETCH_WRITE(&write_buffer->m_data[write_pos]);
+  do
   {
-    thr_job_queue *jbb = selfptr->m_jbb + jbb_instance;
-    if (selfptr->m_congestion_level[jbb_instance] <
-          thr_job_queue::LEVEL_1_CONGESTION)
+    assert(next_signal != SIGNAL_RNIL);
+    const Uint32 *const signal_buffer = &local_buffer->m_data[next_signal];
+    const Uint32 siglen = signal_buffer[1];
+    if (unlikely(write_pos + siglen > thr_job_buffer::SIZE))
     {
-      continue;
-    }
-    if (unlikely(glob_use_write_lock_mutex))
-    {
-      lock(&jbb->m_write_lock);
-    }
-    Uint32 congestion_level = get_free_level(jbb->m_read_index,
-                                             jbb->m_write_index);
-    if (unlikely(glob_use_write_lock_mutex))
-    {
-      unlock(&jbb->m_write_lock);
-    }
-    if (congestion_level < selfptr->m_congestion_level[jbb_instance])
-    {
-      if (selfptr->m_congestion_level[jbb_instance] >
-            thr_job_queue::LEVEL_1_CONGESTION)
-      {
-        /**
-         * Step down one step at a time from extreme congestion.
-         */
-        congestion_level = thr_job_queue::LEVEL_1_CONGESTION;
+      // job_buffer was filled & consumed.
+      if (num_signals > 0) {
+        publish_position(write_buffer, write_pos);
       }
-      selfptr->m_congestion_level[jbb_instance] = congestion_level;
-      if (congestion_level < thr_job_queue::LEVEL_1_CONGESTION)
-      {
-        rep->m_first_congestion_level--;
-        if (rep->m_first_congestion_level.load() == 0)
-        {
-          wmb();
-          /* Wake all threads up. */
-          for (Uint32 i = 0; i < glob_num_threads; i++)
-          {
-            thr_data *dstptr = &rep->m_thread[i];
-            wakeup(&(dstptr->m_congestion_waiter));
-          }
-        }
+      // Add a new job_buffer?
+      const bool full = check_next_index_position(q, selfptr->m_next_buffer);
+      if (unlikely(full)) {
+        break;
       }
-      else if (congestion_level == thr_job_queue::LEVEL_1_CONGESTION)
-      {
-        rep->m_second_congestion_level--;
-        if (rep->m_second_congestion_level.load() == 0)
-        {
-          wmb();
-          /* Wake all threads up. */
-          for (Uint32 i = 0; i < glob_num_threads; i++)
-          {
-            thr_data *dstptr = &rep->m_thread[i];
-            wakeup(&(dstptr->m_congestion_waiter));
-          }
-        }
-      }
-      else
-      {
-        require(false);
-      }
+      write_pos = 0;
+      write_buffer = selfptr->m_next_buffer;
+      selfptr->m_next_buffer = nullptr;
     }
-  }
+    memcpy(write_buffer->m_data + write_pos, &signal_buffer[2], 4*siglen);
+    next_signal = signal_buffer[0];
+    /**
+     * We update write_pos without publishing the position until we're done
+     * with all writes. The reason is that the same job buffer page could be
+     * read by the executing thread and we want to avoid those from getting
+     * into cache line bouncing.
+     */
+    write_pos += siglen;
+    num_signals++;
+  } while (next_signal != SIGNAL_RNIL);
+
+  q->m_current_write_buffer_len = write_pos;
+  publish_position(write_buffer, write_pos);
+  next = next_signal;
+  return num_signals;
 }
 
-static void inline
-handle_sent_signals(struct thr_data *selfptr,
-                    struct thr_data *dstptr,
-                    struct thr_job_queue *q);
-
+/**
+ * Copy signals to the specified 'dst' thread from m_local_buffer into
+ * the thread-shared signal buffer - Updates the write-indexes and wakeup
+ * the destination thread if needed.
+ */
 static
 void
 flush_local_signals(struct thr_data *selfptr,
-                   Uint32 dst)
+                    Uint32 dst)
 {
   struct thr_job_buffer * const local_buffer = selfptr->m_local_buffer;
-  Uint32 self = selfptr->m_thr_no;
-  const Uint32 jbb_instance = self % NUM_JOB_BUFFERS_PER_THREAD;
+  unsigned self = selfptr->m_thr_no;
+  const unsigned jbb_instance = self % NUM_JOB_BUFFERS_PER_THREAD;
   struct thr_repository *rep = g_thr_repository;
   struct thr_data *dstptr = &rep->m_thread[dst];
   thr_job_queue *q = dstptr->m_jbb + jbb_instance;
 
-  thr_job_buffer *write_buffer;
-  Uint32 write_pos;
   Uint32 num_signals = 0;
+  Uint32 next_signal = selfptr->m_first_local[dst].m_first_signal;
+
+  if (unlikely(selfptr->m_congested_threads_mask.get(dst)))
+  {
+    // Assume uncongested, set again further below if still congested
+    selfptr->m_congested_threads_mask.clear(dst);
+    if (selfptr->m_congested_threads_mask.isclear())
+    {
+      // Last congestion cleared, assume full JB quotas
+      selfptr->m_max_signals_per_jb = MAX_SIGNALS_PER_JB;
+      selfptr->m_total_extra_signals =
+          compute_max_signals_to_execute(thr_job_queue::RESERVED);
+    }
+  }
+
   if (likely(!glob_use_write_lock_mutex))
   {
     /**
      * No locking used, thus no need to perform extra copying step to
      * minimise the lock hold time.
      */
-    write_buffer = q->m_current_write_buffer;
-    write_pos = q->m_current_write_buffer_len;
-    Uint32 next_signal = selfptr->m_first_local[dst].m_first_signal;
-    NDB_PREFETCH_WRITE(&write_buffer->m_len);
-    NDB_PREFETCH_WRITE(&write_buffer->m_data[write_pos]);
-    do
-    {
-      assert(next_signal != SIGNAL_RNIL);
-      Uint32 *signal_buffer = &local_buffer->m_data[next_signal];
-      Uint32 siglen = signal_buffer[1];
-      memcpy(write_buffer->m_data + write_pos, &signal_buffer[2], 4*siglen);
-      next_signal = signal_buffer[0];
-      write_pos += siglen;
-      num_signals++;
-    } while (next_signal != SIGNAL_RNIL);
+    num_signals = copy_out_local_buffer(selfptr, q, next_signal);
   }
-  else
+  else if (selfptr->m_first_local[dst].m_num_signals <=
+	     MAX_SIGNALS_BEFORE_FLUSH_OTHER)
   {
     /**
      * Copy data into local flush_buffer before grabbing the write mutex.
      * The purpose is to decrease the amount of time we spend holding the
-     * write mutex by ensuring that we copy from L1 cache.
+     * write mutex by 'loading' the flush_buffer into L1 cache.
      *
-     * For the same reason and also to improve performance we prefetch the
+     * For the same reason, and also to improve performance, we prefetch the
      * cache line that contains the m_write_index before taking the mutex.
      * We expect mutex contention on this mutex to be rare and when
      * contention arises we will only prefetch it for read and thus at most
@@ -8752,55 +9140,49 @@ flush_local_signals(struct thr_data *selfptr,
      * front of us.
      */
     Uint32 copy_len = 0;
-    Uint32 next_signal = selfptr->m_first_local[dst].m_first_signal;
     Uint64 flush_buffer[MAX_SIGNALS_BEFORE_FLUSH_OTHER * MAX_SIGNAL_SIZE / 2];
     Uint32 *flush_buffer_ptr = (Uint32*)&flush_buffer[0];
     do
     {
       Uint32 *signal_buffer = &local_buffer->m_data[next_signal];
       Uint32 siglen = signal_buffer[1];
-      assert((siglen + copy_len) <= (MAX_SIGNALS_BEFORE_FLUSH_OTHER *
-                                     MAX_SIGNAL_SIZE));
       memcpy(&flush_buffer_ptr[copy_len], &signal_buffer[2], 4*siglen);
       next_signal = signal_buffer[0];
       copy_len += siglen;
       num_signals++;
     } while (next_signal != SIGNAL_RNIL);
-    assert(num_signals <= MAX_SIGNALS_BEFORE_FLUSH_OTHER);
-    require(num_signals == selfptr->m_first_local[dst].m_num_signals);
-    /**
-     * We update write_pos without publishing the position until we're done
-     * with all writes. The reason is that the same job buffer page could be
-     * read by the executing thread and we want to avoid those from getting
-     * into cache line bouncing.
-     */
+
     NDB_PREFETCH_READ(&q->m_write_index);
     lock(&q->m_write_lock);
-    write_buffer = q->m_current_write_buffer;
+    thr_job_buffer *write_buffer = q->m_current_write_buffer;
+    Uint32 write_pos = q->m_current_write_buffer_len;
     NDB_PREFETCH_WRITE(&write_buffer->m_len);
-    write_pos = q->m_current_write_buffer_len;
-    memcpy(write_buffer->m_data + write_pos, flush_buffer_ptr, 4*copy_len);
-    write_pos += copy_len;
+    if (likely(write_pos+copy_len <= thr_job_buffer::SIZE)) {
+      memcpy(write_buffer->m_data + write_pos, flush_buffer_ptr, 4*copy_len);
+      write_pos += copy_len;
+      q->m_current_write_buffer_len = write_pos;
+      publish_position(write_buffer, write_pos);
+    } else {
+      /**
+       * We could not append the prepared set of signals in flush_buffer.
+       * Copy them one-by-one until full.
+       * Even if the memcpy into flush_buffer[] was wasted, the signals will
+       * now at least be in the cache.
+       */
+      next_signal = selfptr->m_first_local[dst].m_first_signal;
+      num_signals = copy_out_local_buffer(selfptr, q, next_signal);
+    }
   }
-  q->m_current_write_buffer_len = write_pos;
-  publish_position(write_buffer, write_pos);
-  Uint32 max_size = MAX_SIGNAL_SIZE * MAX_SIGNALS_BEFORE_FLUSH_OTHER;
-  bool buf_used;
-  if (unlikely(write_pos + max_size > thr_job_buffer::SIZE))
+  else  // unlikely case:
   {
-    check_next_index_position(q,
-                              write_pos,
-                              write_buffer,
-                              selfptr->m_next_buffer,
-                              false);
-   buf_used = true;
+    /**
+     * Too many signals to fit the flush_buffer[]. Will only
+     * happen when we previously hit a full out-queue.
+     * (Will likely happen again now, but we need to keep trying)
+     */
+    lock(&q->m_write_lock);
+    num_signals = copy_out_local_buffer(selfptr, q, next_signal);
   }
-  else
-  {
-    buf_used = false;
-  }
-  require(num_signals == selfptr->m_first_local[dst].m_num_signals);
-  handle_sent_signals(selfptr, dstptr, q);
 
   // Check *total* pending_signals in this queue, wakeup consumer?
   bool need_wakeup = false;
@@ -8814,10 +9196,17 @@ flush_local_signals(struct thr_data *selfptr,
       need_wakeup = true;
     }
   }
+  const unsigned free = get_free_estimate_out_queue(q);
   if (unlikely(glob_use_write_lock_mutex))
   {
     unlock(&q->m_write_lock);
   }
+
+  if (unlikely(free <= thr_job_queue::CONGESTED))
+  {
+    set_congested_jb_quotas(selfptr, dst, free);
+  }
+
   // Handle wakeup decision taken above
   if (dst != self)
   {
@@ -8833,15 +9222,135 @@ flush_local_signals(struct thr_data *selfptr,
       selfptr->m_wake_threads_mask.set(dst);
     }
   }
-  if (buf_used)
+  if (unlikely(selfptr->m_next_buffer == nullptr))
   {
     selfptr->m_next_buffer = seize_buffer(rep, self, false);
   }
-  selfptr->m_first_local[dst].m_num_signals = 0;
-  selfptr->m_first_local[dst].m_first_signal = SIGNAL_RNIL;
-  selfptr->m_first_local[dst].m_last_signal = SIGNAL_RNIL;
+  selfptr->m_first_local[dst].m_num_signals -= num_signals;
+  selfptr->m_first_local[dst].m_first_signal = next_signal;
+  if (next_signal == SIGNAL_RNIL)
+  {
+    selfptr->m_first_local[dst].m_last_signal = SIGNAL_RNIL;
+    selfptr->m_local_signals_mask.clear(dst);
+  }
 }
 
+/**
+ * recheck_congested_job_buffers is intended to be used after
+ * we slept for a while, waiting for some JB-congestion to be cleared.
+ * It recheck the known congested buffers.
+ *
+ * In a well behaved system where there are no congestions, it is expected
+ * to be called very infrequently. Thus, the locks taken by the congestion
+ * check should not really be a performance problem.
+ */
+static
+void
+recheck_congested_job_buffers(struct thr_data *selfptr)
+{
+  unsigned self = selfptr->m_thr_no;
+  const Uint32 self_jbb = self % NUM_JOB_BUFFERS_PER_THREAD;
+  struct thr_repository *rep = g_thr_repository;
+
+  // Assume full JB quotas, reduce below if congested
+  selfptr->m_max_signals_per_jb = MAX_SIGNALS_PER_JB;
+  selfptr->m_total_extra_signals =
+      compute_max_signals_to_execute(thr_job_queue::RESERVED);
+
+  for (unsigned thr_no = selfptr->m_congested_threads_mask.find_first();
+       thr_no != BitmaskImpl::NotFound;
+       thr_no = selfptr->m_congested_threads_mask.find_next(thr_no+1))
+  {
+    struct thr_data *thrptr = &rep->m_thread[thr_no];
+    thr_job_queue *q = &thrptr->m_jbb[self_jbb];
+
+    // Assume congestion cleared, set again if needed
+    selfptr->m_congested_threads_mask.clear(thr_no);
+
+    unsigned free;
+    if (unlikely(glob_use_write_lock_mutex))
+    {
+      lock(&q->m_write_lock);
+      free = get_free_estimate_out_queue(q);
+      unlock(&q->m_write_lock);
+    } else {
+      free = get_free_estimate_out_queue(q);
+    }
+
+    if (unlikely(free <= thr_job_queue::CONGESTED))
+    {
+      // JB-page usage is congested, reduce execution quota
+      set_congested_jb_quotas(selfptr, thr_no, free);
+    }
+  }
+}
+
+/**
+ * 'Pack' the signal contents in 'm_local_buffer' in order to make any
+ * fragmented free space in between the signals available. We use the
+ * already pre-allocated (and unused) 'm_next_buffer' to copy the signals
+ * into, and just swap m_local_buffer with m_next_buffer when completed.
+ */
+static
+void
+pack_local_signals(struct thr_data *selfptr)
+{
+  thr_job_buffer *const local_buffer = selfptr->m_local_buffer;
+  thr_job_buffer *write_buffer = selfptr->m_next_buffer;
+  Uint32 write_pos = 0;
+  for (Uint32 dst = selfptr->m_local_signals_mask.find_first();
+       dst != BitmaskImpl::NotFound;
+       dst = selfptr->m_local_signals_mask.find_next(dst+1))
+  {
+    Uint32 siglen = 0;
+    Uint32 next_signal  = selfptr->m_first_local[dst].m_first_signal;
+    selfptr->m_first_local[dst].m_first_signal = write_pos;
+    do
+    {
+      assert(next_signal != SIGNAL_RNIL);
+      Uint32 *signal_buffer = &local_buffer->m_data[next_signal];
+      next_signal = signal_buffer[0];
+      siglen = signal_buffer[1];
+      write_buffer->m_data[write_pos] = write_pos + siglen + 2;
+      memcpy(&write_buffer->m_data[write_pos+1], &signal_buffer[1], 4*(siglen+1));
+      write_pos += siglen + 2;
+    } while (next_signal != SIGNAL_RNIL);
+    Uint32 last_pos = write_pos - siglen - 2;
+    write_buffer->m_data[last_pos] = SIGNAL_RNIL;
+    selfptr->m_first_local[dst].m_last_signal = last_pos;
+  }
+  write_buffer->m_len = write_pos;
+
+  // Swap m_next_buffer / selfptr->m_local_buffer
+  thr_job_buffer *const tmp = selfptr->m_local_buffer;
+  selfptr->m_local_buffer = write_buffer;
+  selfptr->m_next_buffer = tmp;
+
+  // Reset the swapped m_next_buffer:
+  selfptr->m_next_buffer->m_len = 0;
+  selfptr->m_next_buffer->m_prioa = false;
+}
+
+/**
+ * flush_all_local_signals copy signals from thread local buffer
+ * into the job-buffer queues to the destination thread(s).
+ *  It is typically called when:
+ *   - The local buffer is full.
+ *   - run_job_buffers executed a round of signals.
+ *   - We prepare to yield the CPU.
+ *
+ * A 'flush' might not complete entirely if all page slots in the
+ * out-queue is full. We will then have a 'critical' JB congestion.
+ *
+ * For each destination JB flushed to, it will also check for JB's
+ * being congested, and if needed reduce the 'max_signals_per_jb' quota
+ * each round of run_job_buffers is allowed to execute.
+ *
+ * If 'max_signals_per_jb' became '0', we are blocked from further
+ * signal execution. (Except where 'extra' signals are assigned).
+ * Upper level will call handle_full_job_buffers(), which
+ * decide how to handle the 'full'.
+ */
 static
 void
 flush_all_local_signals(struct thr_data *selfptr)
@@ -8853,9 +9362,30 @@ flush_all_local_signals(struct thr_data *selfptr)
     assert(selfptr->m_local_signals_mask.get(thr_no));
     flush_local_signals(selfptr, thr_no);
   }
-  selfptr->m_local_signals_mask.clear();
-  struct thr_job_buffer * const local_buffer = selfptr->m_local_buffer;
-  local_buffer->m_len = 0;
+
+  if (likely(selfptr->m_local_signals_mask.isclear()))
+  {
+    // Normal exit: Flushed all local signals.
+    selfptr->m_local_buffer->m_len = 0;
+    return;
+  }
+  /**
+   * Failed to flush all signals - This is a CRITICAL JBB state:
+   *
+   * Having remaining local_signals is only expected when a JBB queue
+   * has been completely filled - Even the SAFETY limit has been consumed.
+   * We can still continue though, as long as we have remaining
+   * m_local_buffer.
+   */
+  if (unlikely(selfptr->m_local_buffer->m_len > MAX_LOCAL_BUFFER_USAGE)) {
+    // Try to free up some space
+    pack_local_signals(selfptr);
+    if (selfptr->m_local_buffer->m_len > MAX_LOCAL_BUFFER_USAGE) {
+      // Still full
+      job_buffer_full(0);  // -> WILL CRASH
+    }
+  }
+  return;  // We survived this time ... for a while
 }
 
 /**
@@ -8868,7 +9398,7 @@ flush_all_local_signals(struct thr_data *selfptr)
  *
  * The same wakeup mechanism is also used for efficiency reason
  * when certain other 'milestones' have been reached - Like
- * completed processing of a larger chunk of incomming signals.
+ * completed processing of a larger chunk of incoming signals.
  *
  * Note that we do not clear the shared m_pending_signals at this point.
  * That would have been preferable in order to avoid later redundant
@@ -8913,9 +9443,10 @@ insert_local_signal(struct thr_data *selfptr,
   Uint32 num_signals = selfptr->m_first_local[dst].m_num_signals;
   Uint32 write_pos = local_buffer->m_len;
   Uint32 *buffer_data = &local_buffer->m_data[write_pos];
+  num_signals++;
   buffer_data[0] = SIGNAL_RNIL;
   selfptr->m_first_local[dst].m_last_signal = write_pos;
-  selfptr->m_first_local[dst].m_num_signals = num_signals + 1;
+  selfptr->m_first_local[dst].m_num_signals = num_signals;
   if (first_signal == SIGNAL_RNIL)
   {
     selfptr->m_first_local[dst].m_first_signal = write_pos;
@@ -8936,8 +9467,8 @@ insert_local_signal(struct thr_data *selfptr,
   assert(sh->theLength + sh->m_noOfSections <= 25);
   selfptr->m_local_signals_mask.set(dst);
 
-  const Uint32 self = selfptr->m_thr_no;
-  const Uint32 MAX_SIGNALS_BEFORE_FLUSH = (self >= first_receiver_thread_no)
+  const unsigned self = selfptr->m_thr_no;
+  const unsigned MAX_SIGNALS_BEFORE_FLUSH = (self >= first_receiver_thread_no)
     ? MAX_SIGNALS_BEFORE_FLUSH_RECEIVER
     : MAX_SIGNALS_BEFORE_FLUSH_OTHER;
 
@@ -8945,10 +9476,13 @@ insert_local_signal(struct thr_data *selfptr,
   {
     flush_all_local_signals(selfptr);
   }
-  else if (unlikely((num_signals + 1) >= MAX_SIGNALS_BEFORE_FLUSH))
+  else if (unlikely(num_signals >= MAX_SIGNALS_BEFORE_FLUSH))
   {
     flush_local_signals(selfptr, dst);
-    selfptr->m_local_signals_mask.clear(dst);
+    if (selfptr->m_local_signals_mask.isclear()) {
+      // All signals flushed, we have an empty local_buffer.
+      selfptr->m_local_buffer->m_len = 0;
+    }
   }
 }
 
@@ -8985,101 +9519,6 @@ sendlocal(Uint32 self,
   insert_local_signal(selfptr, s, data, secPtr, dst);
 }
 
-static void inline
-handle_sent_signals(struct thr_data *selfptr,
-                    struct thr_data *dstptr,
-                    struct thr_job_queue *q)
-{
-  /**
-   * At this point in time we need to check congestion, we have inserted
-   * a signal into the job buffer. This could potentially create a situation
-   * where a congestion have occurred. Setting congestion states is handled
-   * entirely from here. Resetting those states is entirely by the threads
-   * after executing a set of signals.
-   *
-   * We use two congestion levels. The first levels stops execution of signals
-   * in most threads. Only congested threads are allowed to continue executing.
-   * The second level of congestion will also stop receive threads from
-   * inserting signals into the job buffers.
-   *
-   * The reason for continuing to receive signals even as we reach the first
-   * congestion level is to be able to handle higher priority level signals
-   * as much as possible. We will also avoid stopping the main thread until
-   * we block the receive threads from progressing.
-   *
-   * So there are a number of job buffer levels:
-   * CAN_EXECUTE: This level is around 1 MByte, threads having more than this
-   *   level is allowed to continue executing until we reach the second
-   *   congestion level.
-   * LEVEL_1_CONGESTION: This level is around 16 Mbytes and when any thread
-   *   has reached this level it will ensure that all threads that are not in
-   *   CAN_EXECUTE level will be held off from executing. Threads that are in
-   *   LEVEL_1_CONGESTION will be allowed to execute even when any thread are
-   *   LEVEL_2_CONGESTION.
-   * LEVEL_2_CONGESTION: This level is around 20 MBytes and when this level is
-   *   reached we will no longer receive from receive threads and no longer
-   *   execute from threads in CAN_EXECUTE mode.
-   *
-   * The job buffer can contain up to 32 MBytes of signal data.
-   *
-   * The owner of the m_write_lock can change the state a thread is in
-   * upwards. The thread itself can decrease the congestion state of a thread
-   * is in when holding this mutex.
-   *
-   * Whenever a thread goes up to LEVEL_1_CONGESTION an atomic counter will
-   * be increased, similarly when it drops below LEVEL_1_CONGESTION the same
-   * atomic counter will be decreased. So this atomic variable being larger
-   * than 0 means that any thread is in LEVEL_1_CONGESTION state.
-   *
-   * There is a similar atomic variable for LEVEL_2_CONGESTION.
-   *
-   * We optimise this function by using the cached_read_index first. If there
-   * is no congestion with the cached read index, then there is certainly no
-   * congestion on the real m_read_index since the cached_read_index is always
-   * going to show a smaller free level.
-   *
-   * If there isn't enough space according to the cached read index, we read
-   * the real m_read_index and at the same time we move the cached_read_index
-   * forward to ensure it is kept as much up to date as possible.
-   *
-   * This means that we often manage to avoid reading the m_read_index which
-   * is very often going to be a cache miss since it is updated by the
-   * executing thread very often.
-   */
-  const Uint32 self = selfptr->m_thr_no;
-  struct thr_repository* rep = g_thr_repository;
-  Uint32 cached_read_index = q->m_cached_read_index;
-  Uint32 write_index = q->m_write_index;
-  const Uint32 jbb_instance = self % NUM_JOB_BUFFERS_PER_THREAD;
-  Uint32 congestion_level = get_free_level(cached_read_index, write_index);
-  if (likely(congestion_level <= dstptr->m_congestion_level[jbb_instance] ||
-             congestion_level < thr_job_queue::LEVEL_1_CONGESTION))
-  {
-    return;
-  }
-  Uint32 read_index = q->m_read_index;
-  q->m_cached_read_index = read_index;
-  congestion_level = get_free_level(read_index, write_index);
-
-  if (unlikely(congestion_level > dstptr->m_congestion_level[jbb_instance] &&
-               congestion_level >= thr_job_queue::LEVEL_1_CONGESTION))
-  {
-    dstptr->m_congestion_level[jbb_instance] = congestion_level;
-    if (congestion_level == thr_job_queue::LEVEL_1_CONGESTION)
-    {
-      rep->m_first_congestion_level++;
-    }
-    else if (congestion_level == thr_job_queue::LEVEL_2_CONGESTION)
-    {
-      rep->m_second_congestion_level++;
-    }
-    else
-    {
-      require(false);
-    }
-  }
-}
-
 void
 sendprioa(Uint32 self, const SignalHeader *s, const uint32 *data,
           const Uint32 secPtr[3])
@@ -9108,11 +9547,8 @@ sendprioa(Uint32 self, const SignalHeader *s, const uint32 *data,
   }
 
   lock(&dstptr->m_jba.m_write_lock);
-  const bool buf_used = insert_signal(q,
-                                      s,
-                                      data,
-                                      secPtr,
-                                      selfptr->m_next_buffer);
+  const bool buf_used =
+      insert_prioa_signal(q, s, data, secPtr, selfptr->m_next_buffer);
   unlock(&dstptr->m_jba.m_write_lock);
   if (selfptr != dstptr)
   {
@@ -9267,7 +9703,7 @@ sendprioa_STOP_FOR_CRASH(const struct thr_data *selfptr, Uint32 dst)
       loop_count = 0;
     }
   }
-  insert_signal(q, &signalT.header, signalT.theData, NULL, &dummy_buffer);
+  insert_prioa_signal(q, &signalT.header, signalT.theData, NULL, &dummy_buffer);
   unlock(&dstptr->m_jba.m_write_lock);
   {
     loop_count = 0;
@@ -9319,14 +9755,15 @@ thr_init(struct thr_repository* rep, struct thr_data *selfptr, unsigned int cnt,
   selfptr->m_thr_no = thr_no;
   selfptr->m_next_jbb_no = 0;
   selfptr->m_max_signals_per_jb = MAX_SIGNALS_PER_JB;
-  selfptr->m_max_exec_signals = 0;
-  selfptr->m_max_extra_signals = 0;
+  selfptr->m_total_extra_signals =
+      compute_max_signals_to_execute(thr_job_queue::RESERVED);
   selfptr->m_first_free = 0;
   selfptr->m_first_unused = 0;
   selfptr->m_send_instance_no = 0;
   selfptr->m_send_instance = NULL;
   selfptr->m_nosend = 1;
   selfptr->m_local_signals_mask.clear();
+  selfptr->m_congested_threads_mask.clear();
   selfptr->m_wake_threads_mask.clear();
   selfptr->m_jbb_estimated_queue_size_in_words = 0;
   selfptr->m_ldm_multiplier = 1;
@@ -9348,7 +9785,6 @@ thr_init(struct thr_repository* rep, struct thr_data *selfptr, unsigned int cnt,
     selfptr->m_jba.m_cached_read_index = 0;
     selfptr->m_jba.m_write_index = 0;
     selfptr->m_jba.m_pending_signals = 0;
-    selfptr->m_jba.m_size = thr_job_queue::SIZE;
     thr_job_buffer *buffer = seize_buffer(rep, thr_no, true);
     selfptr->m_jba.m_buffers[0] = buffer;
     selfptr->m_jba.m_current_write_buffer = buffer;
@@ -9375,19 +9811,25 @@ thr_init(struct thr_repository* rep, struct thr_data *selfptr, unsigned int cnt,
     BaseString::snprintf(buf, sizeof(buf), "jbblock(%u)", i);
     register_lock(&selfptr->m_jbb[i].m_write_lock, buf);
 
-    thr_job_buffer *buffer = seize_buffer(rep, thr_no, true);
-    selfptr->m_congestion_level[i] = thr_job_queue::NO_CONGESTION;
     selfptr->m_jbb[i].m_read_index = 0;
     selfptr->m_jbb[i].m_write_index = 0;
-    selfptr->m_jbb[i].m_current_write_buffer = buffer;
-    selfptr->m_jbb[i].m_current_write_buffer_len = 0;
     selfptr->m_jbb[i].m_pending_signals = 0;
     selfptr->m_jbb[i].m_cached_read_index = 0;
-    selfptr->m_jbb[i].m_size = thr_job_queue::SIZE;
-    selfptr->m_jbb[i].m_buffers[0] = buffer;
+
+    /**
+     * Initially no job_buffers are assigned and 'len' set to 'full',
+     * such that we will not write into the null-buffer.
+     * First write into the buffer will detect current as 'full',
+     * and assign a real job_buffer.
+     */
+    selfptr->m_jbb[i].m_buffers[0] = nullptr;
+    selfptr->m_jbb[i].m_current_write_buffer = nullptr;
+    selfptr->m_jbb[i].m_current_write_buffer_len = thr_job_buffer::SIZE;
+
+    // jbb_read_state is inited to an empty sentinel -> no signals
+    selfptr->m_jbb_read_state[i].m_read_buffer = &empty_job_buffer;
 
     selfptr->m_jbb_read_state[i].m_read_index = 0;
-    selfptr->m_jbb_read_state[i].m_read_buffer = buffer;
     selfptr->m_jbb_read_state[i].m_read_pos = 0;
     selfptr->m_jbb_read_state[i].m_read_end = 0;
     selfptr->m_jbb_read_state[i].m_write_index = 0;
@@ -9633,26 +10075,11 @@ compute_jb_pages(struct EmulatorData * ed)
     tot += num_main_threads *
            cnt *
            thr_job_queue::SIZE;
-    /**
-     * Add one buffer also for all communication links not used. This
-     * ensures that we don't need any special if-statements to check if
-     * the job buffer exists or not. Since the communication link is
-     * never used, it will never have anything there to check and we
-     * can avoid the extra if-statement in the read_all_jbb_state.
-     *
-     * So for those links where we cannot communicate we add one extra
-     * job buffer.
-     */
-    tot += num_receive_threads * (num_receive_threads - 1);
-    tot += num_tc_threads * num_receive_threads;
-    tot += (num_lqh_threads - 1) *
-             (num_receive_threads + num_lqh_threads - 1);
-    tot += num_receive_threads;
   }
 
   /**
    * Each thread keeps a available free page in 'm_next_buffer'
-   * in case it is required by insert_signal() into JBA or JBB.
+   * in case it is required by insert_*_signal() into JBA or JBB.
    */
   perthread += 1;
 
@@ -9692,11 +10119,11 @@ ThreadConfig::ThreadConfig()
    * We take great care within struct thr_repository to optimize
    * cache line placement of the different members. This all
    * depends on that the base address of thr_repository itself
-   * is cache line alligned.
+   * is cache line aligned.
    *
    * So we allocate a char[] sufficient large to hold the
    * thr_repository object, with added bytes for placing
-   * g_thr_repository on a CL-alligned offset withing it.
+   * g_thr_repository on a CL-alligned offset within it.
    */
   g_thr_repository_mem = new char[sizeof(thr_repository)+NDB_CL];
   const int alligned_offs = NDB_CL_PADSZ((UintPtr)g_thr_repository_mem);
@@ -9738,6 +10165,9 @@ ThreadConfig::init()
   require(glob_num_threads <= MAX_BLOCK_THREADS);
   glob_num_job_buffers_per_thread =
       MIN(glob_num_threads, NUM_JOB_BUFFERS_PER_THREAD);
+  glob_num_writers_per_job_buffers =
+      (glob_num_threads + NUM_JOB_BUFFERS_PER_THREAD-1) /
+       NUM_JOB_BUFFERS_PER_THREAD;
   if (glob_num_job_buffers_per_thread < glob_num_threads)
   {
     glob_use_write_lock_mutex = true;
@@ -9884,9 +10314,9 @@ mt_epoll_add_trp(Uint32 self, NodeId node_id, TrpId trp_id)
   (void)node_id;
   struct thr_repository* rep = g_thr_repository;
   struct thr_data *selfptr = &rep->m_thread[self];
-  Uint32 thr_no = selfptr->m_thr_no;
+  unsigned thr_no = selfptr->m_thr_no;
   require(thr_no >= first_receiver_thread_no);
-  Uint32 recv_thread_idx = thr_no - first_receiver_thread_no;
+  unsigned recv_thread_idx = thr_no - first_receiver_thread_no;
   TransporterReceiveHandleKernel *recvdata =
     g_trp_receive_handle_ptr[recv_thread_idx];
   if (recv_thread_idx != g_trp_to_recv_thr_map[trp_id])
@@ -9910,7 +10340,7 @@ mt_is_recv_thread_for_new_trp(Uint32 self,
   (void)node_id;
   struct thr_repository* rep = g_thr_repository;
   struct thr_data *selfptr = &rep->m_thread[self];
-  Uint32 thr_no = selfptr->m_thr_no;
+  unsigned thr_no = selfptr->m_thr_no;
   require(thr_no >= first_receiver_thread_no);
   Uint32 recv_thread_idx = thr_no - first_receiver_thread_no;
   if (recv_thread_idx != g_trp_to_recv_thr_map[trp_id])
@@ -10281,7 +10711,7 @@ FastScheduler::dumpSignalMemory(Uint32 thr_no, FILE* out)
   /*
    * We want to dump the signal buffers from last executed to first executed.
    * So we first need to find the correct sequence to output signals in, stored
-   * in this arrray.
+   * in this array.
    *
    * We will check any buffers in the cyclic m_free_fifo. In addition,
    * we also need to scan the already executed part of the current
@@ -10375,7 +10805,7 @@ FastScheduler::dumpSignalMemory(Uint32 thr_no, FILE* out)
   /* Use the next signal id as the smallest (oldest).
    *
    * Subtracting two signal ids with the smallest makes
-   * them comparable using standard comparision of Uint32,
+   * them comparable using standard comparison of Uint32,
    * there the biggest value is the newest.
    * For example,
    *   (m_signal_id_counter - smallest_signal_id) == UINT32_MAX

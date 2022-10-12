@@ -39,6 +39,7 @@
 #include <gmock/gmock.h>
 
 #include "harness_assert.h"
+#include "my_compiler.h"
 #include "mysqlrouter/utils.h"
 #include "router_component_test.h"
 
@@ -105,7 +106,7 @@ class EventlogSubscription {
    *
    * Starts subscription to Router-generated log events coming from Eventlog,
    * and forwards their payload in form of one-line XML strings to
-   * `user_handler`. This hander can be changed mid-flight if desired, please
+   * `user_handler`. This handler can be changed mid-flight if desired, please
    * see `set_user_handler()` documentation.
    *
    * @param user_handler user-defined handler that will be called every time a
@@ -169,7 +170,7 @@ class EventlogSubscription {
    * @throws std::runtime_error on subscription failure
    */
   void subscribe_to_eventlog() {
-    // On Windows 10 (and probly many others), 'Application' is that thing you
+    // On Windows 10 (and probably many others), 'Application' is that thing you
     // see in Event Viewer program, under 'Windows Logs' tree (next to
     // 'Security', 'Setup', 'System', etc)
     const wchar_t *channel = L"Application";
@@ -261,18 +262,22 @@ class EventlogSubscription {
     try {
       switch (action) {
         case EvtSubscribeActionError:
-// (DWORD)(event) is what the docs say to do. However, DWORD is unsigned long
-// (32-bit) while `event` is void* (64-bit), so this triggers two warnings:
-//   warning C4311: 'type cast': pointer truncation from 'EVT_HANDLE' to 'DWORD'
-//   warning C4302: 'type cast': truncation from 'EVT_HANDLE' to 'DWORD'
-// So we disable them here
-#pragma warning(push)
-#pragma warning(disable : 4311 4302)
+          // (DWORD)(event) is what the docs say to do. However, DWORD is
+          // unsigned long (32-bit) while `event` is void* (64-bit), so this
+          // triggers two warnings:
+          //   warning C4311: 'type cast': pointer truncation from 'EVT_HANDLE'
+          //   to 'DWORD' warning C4302: 'type cast': truncation from
+          //   'EVT_HANDLE' to 'DWORD'
+          // So we disable them here
+          MY_COMPILER_DIAGNOSTIC_PUSH()
+          MY_COMPILER_MSVC_DIAGNOSTIC_IGNORE(4311)
+          MY_COMPILER_MSVC_DIAGNOSTIC_IGNORE(4302)
+          MY_COMPILER_CLANG_DIAGNOSTIC_IGNORE("-Wvoid-pointer-to-int-cast")
           throw std::runtime_error(
               "Eventlog callback received an error: %lu\n" +
               std::to_string(
                   (DWORD)(event)));  // c-style cast perscribed by docs
-#pragma warning(pop)
+          MY_COMPILER_DIAGNOSTIC_POP()
           break;
 
         case EvtSubscribeActionDeliver:
@@ -328,7 +333,7 @@ class EventlogSubscription {
     //   </Event>
     //
     // clang-format on
-    // Note that the above example is nicely formated - the actual XML string
+    // Note that the above example is nicely formatted - the actual XML string
     // we get from EvtRenderEventXml() is just a single line.
     constexpr DWORD buf_size = 16 * 1024;
     wchar_t buf[buf_size];  // one-line XML will show up here
@@ -510,8 +515,8 @@ TEST_F(RouterEventlogTest, wrapper_running_as_unknown) {
   // Error message will be different depending on whether MySQLRouter service
   // is registered on this machine or not.
   constexpr char expected_message_registered[] =
-      "Starting service failed (are you trying to run Router "
-      "as a service from command-line?): The service process "
+      "Starting service failed (are you trying to run a service from "
+      "command-line?): The service process "
       "could not connect to the service controller.";
   constexpr char expected_message_not_registered[] =
       "Could not find service 'MySQLRouter'!\nUse --install-service or "
@@ -552,11 +557,11 @@ TEST_F(RouterEventlogTest, wrapper_running_as_unknown) {
  */
 TEST_F(RouterEventlogTest, wrapper_running_as_service) {
   // This test is a stub that we might implement one day. Two prerequisites
-  // must be fullfilled to implement it:
+  // must be fulfilled to implement it:
   // - we'd need to register Router as a Service
   // - have some error message to test on. Right now, the moment between
   //   launching as a service and entering main() is very narrow, and there's
-  //   nothing inbetween that logs.
+  //   nothing in between that logs.
 }
 
 /**
@@ -629,7 +634,7 @@ TEST_F(RouterEventlogTest, wrapper_running_as_process) {
  */
 TEST_F(RouterEventlogTest, application_running_as_service_preconfig) {
   // This test is a stub that we might implement one day. A prerequisite must
-  // be fullfilled to implement it:
+  // be fulfilled to implement it:
   // - we'd need to register Router as a Service
 }
 

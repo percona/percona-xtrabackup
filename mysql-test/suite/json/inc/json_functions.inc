@@ -3504,7 +3504,12 @@ DROP PROCEDURE p;
 CREATE TABLE t1 (pk INT AUTO_INCREMENT KEY, f1 INT, fj JSON);
 INSERT INTO t1 VALUES(1, NULL, JSON_OBJECT('aaa','bbb'));
 INSERT INTO t1 VALUES(2, NULL, JSON_OBJECT('bbb','aaa'));
+# Disable warnings due to differences between the old optimizer and the
+# hypergraph optimizer. The hypergraph optimizer removes "fj" from the sort key,
+# and does not raise a warning about "sorting of non-scalar JSON values".
+--disable_warnings
 SELECT * FROM t1 ORDER BY f1, pk, fj;
+--enable_warnings
 
 DROP TABLE t1;
 
@@ -3665,6 +3670,7 @@ let $dump_table= SELECT *, JSON_STORAGE_SIZE(j1) ss1,
 let $query= UPDATE t SET j1 = JSON_SET(j1, '\$.a', 'x'),
                          j2 = JSON_SET(j2, '\$.a', 'y'),
                          j1 = JSON_SET(j1, '\$.b', 'z');
+--skip_if_hypergraph  # Depends on the query plan.
 --eval EXPLAIN FORMAT=JSON $query
 SET optimizer_trace="enabled=on";
 --eval $query
@@ -3683,6 +3689,7 @@ eval $show_trace;
 let $query= UPDATE t SET j1 = JSON_SET(j1, '\$.a', 's'),
                          j2 = JSON_SET(j2, '\$.a', 'abcdefghi'),
                          j1 = JSON_SET(j1, '\$.b', 't');
+--skip_if_hypergraph  # Depends on the query plan.
 --eval EXPLAIN FORMAT=JSON $query
 SET optimizer_trace="enabled=on";
 --eval $query
@@ -3690,6 +3697,7 @@ SET optimizer_trace="enabled=off";
 eval $show_trace;
 --eval $dump_table
 --let $query= UPDATE t SET j1 = JSON_SET(j1, '\$.x.y.z', 'abc', '\$.b', 'X')
+--skip_if_hypergraph  # Depends on the query plan.
 --eval EXPLAIN FORMAT=JSON $query
 SET optimizer_trace="enabled=on";
 --eval $query
@@ -3697,6 +3705,7 @@ SET optimizer_trace="enabled=off";
 eval $show_trace;
 --eval $dump_table
 --let $query= UPDATE t SET j1 = JSON_REPLACE(j1, '\$.x', 'abc', '\$.b', 'Y')
+--skip_if_hypergraph  # Depends on the query plan.
 --eval EXPLAIN FORMAT=JSON $query
 SET optimizer_trace="enabled=on";
 --eval $query
@@ -3704,6 +3713,7 @@ SET optimizer_trace="enabled=off";
 eval $show_trace;
 --eval $dump_table
 --let $query= UPDATE t SET j1 = JSON_SET(j1, '\$.x', 'abc', '\$.b', 'Z')
+--skip_if_hypergraph  # Depends on the query plan.
 --eval EXPLAIN FORMAT=JSON $query
 SET optimizer_trace="enabled=on";
 --eval $query
@@ -3712,6 +3722,7 @@ eval $show_trace;
 --eval $dump_table
 # No partial update here since input column is different from target column.
 --let $query= UPDATE t SET j1 = JSON_SET(j2, '\$.a', 'ABC')
+--skip_if_hypergraph  # Depends on the query plan.
 --eval EXPLAIN FORMAT=JSON $query
 SET optimizer_trace="enabled=on";
 --eval $query
@@ -3720,6 +3731,7 @@ eval $show_trace;
 --eval $dump_table
 # No partial update here since JSON_ARRAY doesn't support partial update.
 --let $query= UPDATE t SET j1 = JSON_ARRAY(j1, j1)
+--skip_if_hypergraph  # Depends on the query plan.
 --eval EXPLAIN FORMAT=JSON $query
 SET optimizer_trace="enabled=on";
 --eval $query
@@ -3729,6 +3741,7 @@ eval $show_trace;
 # No partial update of j1, but j2 should be partially updated.
 let $query= UPDATE t SET j1 = JSON_SET(j2, '\$.a', 1),
                          j2 = JSON_SET(j2, '\$.a', 1);
+--skip_if_hypergraph  # Depends on the query plan.
 --eval EXPLAIN FORMAT=JSON $query
 SET optimizer_trace="enabled=on";
 --eval $query
@@ -3898,6 +3911,7 @@ ANALYZE TABLE t1, t2;
 let $query= UPDATE t1, t2
                    SET t1.j = JSON_SET(t1.j, '\$.a', t2.j->'\$.b')
                    WHERE t1.id = t2.id;
+--skip_if_hypergraph  # Depends on the query plan.
 --replace_regex /("used_columns": )\[(?:[^\]]*\r?\n)*\s*\]/\1"filtered due to bug#22472365"/
 --eval EXPLAIN FORMAT=JSON $query
 SET optimizer_trace="enabled=on";
@@ -3910,6 +3924,7 @@ SELECT trace->'$**.json_partial_update'
 let $query= UPDATE t1, t2 SET t1.j = JSON_SET(t1.j, '\$.a', t2.x),
                               t2.j = JSON_SET(t2.j, '\$.b', t1.x)
                           WHERE t1.id = t2.id;
+--skip_if_hypergraph  # Depends on the query plan.
 --eval EXPLAIN FORMAT=JSON $query
 SET optimizer_trace="enabled=on";
 --eval $query
@@ -3919,6 +3934,7 @@ SELECT trace->'$**.json_partial_update'
 --eval $dump_t1
 --eval $dump_t2
 let $query= UPDATE t1, t2 SET t1.j = '[123]', t2.j = JSON_SET(t2.j, '\$.b', 99);
+--skip_if_hypergraph  # Depends on the query plan.
 --replace_regex /("used_columns": )\[(?:[^\]]*\r?\n)*\s*\]/\1"filtered due to bug#22472365"/
 --eval EXPLAIN FORMAT=JSON $query
 SET optimizer_trace="enabled=on";
@@ -3980,6 +3996,7 @@ let $dump_table= SELECT *, JSON_STORAGE_SIZE(j) ss,
 --eval $dump_table
 ANALYZE TABLE t;
 --let $query= UPDATE t SET j = JSON_REMOVE(j, '\$.x.b', '\$[1][2]')
+--skip_if_hypergraph  # Depends on the query plan.
 --eval EXPLAIN FORMAT=JSON $query
 --eval $query
 --eval $dump_table

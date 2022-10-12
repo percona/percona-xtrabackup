@@ -714,8 +714,22 @@ bool start_slave_cmd(THD *thd) {
         command = "START SLAVE SQL_THREAD FOR CHANNEL";
 
       my_error(ER_SLAVE_CHANNEL_OPERATION_NOT_ALLOWED, MYF(0), command,
-               mi->get_channel(), command);
+               mi->get_channel());
 
+      goto err;
+    }
+    /*
+      START SLAVE for channel group_replication_applier is disallowed while
+      Group Replication is running.
+    */
+    if (mi &&
+        channel_map.is_group_replication_channel_name(mi->get_channel(),
+                                                      true) &&
+        is_group_replication_running()) {
+      const char *command =
+          "START SLAVE FOR CHANNEL while Group Replication is running";
+      my_error(ER_SLAVE_CHANNEL_OPERATION_NOT_ALLOWED, MYF(0), command,
+               mi->get_channel());
       goto err;
     }
 
@@ -798,8 +812,23 @@ bool stop_slave_cmd(THD *thd) {
         command = "STOP SLAVE SQL_THREAD FOR CHANNEL";
 
       my_error(ER_SLAVE_CHANNEL_OPERATION_NOT_ALLOWED, MYF(0), command,
-               mi->get_channel(), command);
+               mi->get_channel());
 
+      channel_map.unlock();
+      return true;
+    }
+    /*
+      STOP SLAVE for channel group_replication_applier is disallowed while
+      Group Replication is running.
+    */
+    if (mi &&
+        channel_map.is_group_replication_channel_name(mi->get_channel(),
+                                                      true) &&
+        is_group_replication_running()) {
+      const char *command =
+          "STOP SLAVE FOR CHANNEL while Group Replication is running";
+      my_error(ER_SLAVE_CHANNEL_OPERATION_NOT_ALLOWED, MYF(0), command,
+               mi->get_channel());
       channel_map.unlock();
       return true;
     }
@@ -4813,34 +4842,6 @@ static int exec_relay_log_event(THD *thd, Relay_log_info *rli,
   }
 
   if (ev) {
-    if (rli->is_row_format_required()) {
-      bool info_error{false};
-      binary_log::Log_event_basic_info log_event_info;
-      std::tie(info_error, log_event_info) = extract_log_event_basic_info(ev);
-
-      if (info_error ||
-          rli->transaction_parser.feed_event(log_event_info, true)) {
-        /* purecov: begin inspected */
-        LogErr(WARNING_LEVEL,
-               ER_RPL_SLAVE_SQL_THREAD_DETECTED_UNEXPECTED_EVENT_SEQUENCE);
-        /* purecov: end */
-      }
-
-      if (info_error || rli->transaction_parser.check_row_logging_constraints(
-                            log_event_info)) {
-        rli->report(
-            ERROR_LEVEL,
-            ER_RPL_SLAVE_APPLY_LOG_EVENT_FAILED_INVALID_NON_ROW_FORMAT,
-            ER_THD(thd,
-                   ER_RPL_SLAVE_APPLY_LOG_EVENT_FAILED_INVALID_NON_ROW_FORMAT),
-            rli->mi->get_channel());
-        rli->abort_slave = true;
-        mysql_mutex_unlock(&rli->data_lock);
-        delete ev;
-        return 1;
-      }
-    }
-
     enum enum_slave_apply_event_and_update_pos_retval exec_res;
 
     ptr_ev = &ev;
@@ -7586,18 +7587,6 @@ QUEUE_EVENT_RESULT queue_event(Master_info *mi, const char *buf,
     LogErr(WARNING_LEVEL,
            ER_RPL_SLAVE_IO_THREAD_DETECTED_UNEXPECTED_EVENT_SEQUENCE,
            mi->get_master_log_name(), mi->get_master_log_pos());
-  }
-
-  if (rli->is_row_format_required()) {
-    if (info_error ||
-        mi->transaction_parser.check_row_logging_constraints(log_event_info)) {
-      mi->report(ERROR_LEVEL,
-                 ER_RPL_SLAVE_QUEUE_EVENT_FAILED_INVALID_NON_ROW_FORMAT,
-                 ER_THD(current_thd,
-                        ER_RPL_SLAVE_QUEUE_EVENT_FAILED_INVALID_NON_ROW_FORMAT),
-                 mi->get_channel());
-      goto err;
-    }
   }
 
   switch (event_type) {

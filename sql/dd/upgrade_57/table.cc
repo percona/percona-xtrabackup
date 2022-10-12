@@ -1507,9 +1507,11 @@ static bool migrate_table_to_dd(THD *thd, const String_type &schema_name,
   }
 
   // Create table share for tables and views.
-  if (create_table_share_for_upgrade(thd, path, &share, &frm_context,
-                                     schema_name.c_str(), table_name.c_str(),
-                                     is_fix_view_cols_and_deps)) {
+  int r = create_table_share_for_upgrade(
+      thd, path, &share, &frm_context, schema_name.c_str(), table_name.c_str(),
+      is_fix_view_cols_and_deps);
+  if (r == -2) return false;  // No error, ignoring file
+  if (r != 0) {
     LogErr(ERROR_LEVEL, ER_CANT_CREATE_TABLE_SHARE_FROM_FRM,
            table_name.c_str());
     return true;
@@ -1918,7 +1920,11 @@ bool migrate_all_frm_to_dd(THD *thd, const char *dbname,
       file.erase(file.size() - 4, 4);
       // Construct the schema name from its canonical format.
       filename_to_tablename(dbname, schema_name, sizeof(schema_name));
-      filename_to_tablename(file.c_str(), table_name, sizeof(table_name));
+
+      bool has_invalid_name = false;
+      filename_to_tablename(file.c_str(), table_name, sizeof(table_name), false,
+                            &has_invalid_name);
+      if (has_invalid_name) error = true;
 
       /*
         Check that schema- and table names do not break the selected l_c_t_n

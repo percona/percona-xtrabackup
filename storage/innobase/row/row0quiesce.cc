@@ -326,7 +326,7 @@ static dberr_t row_quiesce_write_dropped_col_metadata(
   }
 
   /* Write elements for enum column type.
-  [4]     bytes : numner of elements
+  [4]     bytes : number of elements
   For each element
     [4]     bytes : element name length (len+1)
     [len+1] bytes : element name */
@@ -1123,9 +1123,23 @@ dberr_t row_quiesce_set_state(
                 " FTS auxiliary tables will not be flushed.");
   }
 
+  if (srv_thread_is_active(srv_threads.m_trx_recovery_rollback)) {
+    /* We should wait until rollback after recovery end,
+    to lock the table consistently. */
+    srv_threads.m_trx_recovery_rollback.wait();
+  }
+  if (trx_purge_state() != PURGE_STATE_DISABLED) {
+    /* We should stop purge to lock the table consistently. */
+    trx_purge_stop();
+  }
+
   row_mysql_lock_data_dictionary(trx, UT_LOCATION_HERE);
 
   dict_table_x_lock_indexes(table);
+
+  if (trx_purge_state() != PURGE_STATE_DISABLED) {
+    trx_purge_run();
+  }
 
   switch (state) {
     case QUIESCE_START:

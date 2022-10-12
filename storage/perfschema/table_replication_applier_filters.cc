@@ -161,9 +161,7 @@ void table_replication_applier_filters::make_row(
   memcpy(m_row.filter_name, rpl_pfs_filter->get_filter_name(),
          m_row.filter_name_length);
 
-  if (!rpl_pfs_filter->get_filter_rule().is_empty()) {
-    m_row.filter_rule.copy(rpl_pfs_filter->get_filter_rule());
-  }
+  m_row.filter_rule.copy(rpl_pfs_filter->get_filter_rule());
 
   m_row.configured_by =
       rpl_pfs_filter->get_rpl_filter_statistics()->get_configured_by();
@@ -194,10 +192,12 @@ int table_replication_applier_filters::read_row_values(TABLE *table,
     if (read_all || bitmap_is_set(table->read_set, f->field_index())) {
       switch (f->field_index()) {
         case 0: /* channel_name */
-          set_field_char_utf8(f, m_row.channel_name, m_row.channel_name_length);
+          set_field_char_utf8mb4(f, m_row.channel_name,
+                                 m_row.channel_name_length);
           break;
         case 1: /* filter_name */
-          set_field_char_utf8(f, m_row.filter_name, m_row.filter_name_length);
+          set_field_char_utf8mb4(f, m_row.filter_name,
+                                 m_row.filter_name_length);
           break;
         case 2: /* filter_rule */
           if (!m_row.filter_rule.is_empty())

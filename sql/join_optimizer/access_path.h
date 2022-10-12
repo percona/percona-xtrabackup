@@ -40,6 +40,7 @@
 #include "sql/mem_root_array.h"
 #include "sql/sql_array.h"
 #include "sql/sql_class.h"
+#include "sql/table.h"
 
 template <class T>
 class Bounds_checked_array;
@@ -351,9 +352,6 @@ struct AccessPath {
   /// information in EXPLAIN ANALYZE queries.
   RowIterator *iterator = nullptr;
 
-  /// Expected number of output rows, -1.0 for unknown.
-  double num_output_rows{-1.0};
-
   /// Expected cost to read all of this access path once; -1.0 for unknown.
   double cost{-1.0};
 
@@ -423,7 +421,7 @@ struct AccessPath {
   /// never overlap with filter_predicates, and so we can reuse the same
   /// memory using an alias (a union would not be allowed, since OverflowBitset
   /// is a class with non-trivial default constructor), even though the meaning
-  /// is entirely separate. If N = num_where_predictes in the hypergraph, then
+  /// is entirely separate. If N = num_where_predicates in the hypergraph, then
   /// bits 0..(N-1) belong to filter_predicates, and the rest to
   /// applied_sargable_join_predicates.
   OverflowBitset &applied_sargable_join_predicates() {
@@ -839,7 +837,14 @@ struct AccessPath {
     return u.update_rows;
   }
 
+  double num_output_rows() const { return m_num_output_rows; }
+
+  void set_num_output_rows(double val) { m_num_output_rows = val; }
+
  private:
+  /// Expected number of output rows, -1.0 for unknown.
+  double m_num_output_rows{-1.0};
+
   // We'd prefer if this could be an std::variant, but we don't have C++17 yet.
   // It is private to force all access to be through the type-checking
   // accessors.
@@ -870,7 +875,6 @@ struct AccessPath {
     struct {
       TABLE *table;
       TABLE_REF *ref;
-      bool use_order;
     } eq_ref;
     struct {
       TABLE *table;
@@ -1099,11 +1103,12 @@ struct AccessPath {
       table_map tables_to_get_rowid_for;
 
       // If filesort is nullptr: A new filesort will be created at the
-      // end of optimization, using this order and flags. Otherwise: Ignored.
+      // end of optimization, using this order and flags. Otherwise: Only
+      // used by EXPLAIN.
       ORDER *order;
+      ha_rows limit;
       bool remove_duplicates;
       bool unwrap_rollup;
-      bool use_limit;
       bool force_sort_rowids;
     } sort;
     struct {
@@ -1144,6 +1149,8 @@ struct AccessPath {
       // Large, and has nontrivial destructors, so split out
       // into its own allocation.
       MaterializePathParameters *param;
+      /** The total cost of executing the queries that we materialize.*/
+      double subquery_cost;
     } materialize;
     struct {
       AccessPath *table_path;
@@ -1205,13 +1212,13 @@ static_assert(std::is_trivially_destructible<AccessPath>::value,
               "on the MEM_ROOT and not wrapped in unique_ptr_destroy_only"
               "(because multiple candidates during planning could point to "
               "the same access paths, and refcounting would be expensive)");
-static_assert(sizeof(AccessPath) <= 136,
+static_assert(sizeof(AccessPath) <= 144,
               "We are creating a lot of access paths in the join "
               "optimizer, so be sure not to bloat it without noticing. "
-              "(96 bytes for the base, 40 bytes for the variant.)");
+              "(96 bytes for the base, 48 bytes for the variant.)");
 
 inline void CopyBasicProperties(const AccessPath &from, AccessPath *to) {
-  to->num_output_rows = from.num_output_rows;
+  to->set_num_output_rows(from.num_output_rows());
   to->cost = from.cost;
   to->init_cost = from.init_cost;
   to->init_once_cost = from.init_once_cost;
@@ -1270,14 +1277,12 @@ inline AccessPath *NewRefOrNullAccessPath(THD *thd, TABLE *table,
 }
 
 inline AccessPath *NewEQRefAccessPath(THD *thd, TABLE *table, TABLE_REF *ref,
-                                      bool use_order,
                                       bool count_examined_rows) {
   AccessPath *path = new (thd->mem_root) AccessPath;
   path->type = AccessPath::EQ_REF;
   path->count_examined_rows = count_examined_rows;
   path->eq_ref().table = table;
   path->eq_ref().ref = ref;
-  path->eq_ref().use_order = use_order;
   return path;
 }
 
@@ -1317,7 +1322,7 @@ inline AccessPath *NewConstTableAccessPath(THD *thd, TABLE *table,
   AccessPath *path = new (thd->mem_root) AccessPath;
   path->type = AccessPath::CONST_TABLE;
   path->count_examined_rows = count_examined_rows;
-  path->num_output_rows = 1.0;
+  path->set_num_output_rows(1.0);
   path->cost = 0.0;
   path->init_cost = 0.0;
   path->init_once_cost = 0.0;
@@ -1411,7 +1416,7 @@ inline AccessPath *NewFilterAccessPath(THD *thd, AccessPath *child,
 // Not inline, because it needs access to filesort internals
 // (which are forward-declared in this file).
 AccessPath *NewSortAccessPath(THD *thd, AccessPath *child, Filesort *filesort,
-                              bool count_examined_rows);
+                              ORDER *order, bool count_examined_rows);
 
 inline AccessPath *NewAggregateAccessPath(THD *thd, AccessPath *child,
                                           bool rollup) {
@@ -1440,6 +1445,7 @@ inline AccessPath *NewLimitOffsetAccessPath(THD *thd, AccessPath *child,
                                             bool count_all_rows,
                                             bool reject_multiple_rows,
                                             ha_rows *send_records_override) {
+  void EstimateLimitOffsetCost(AccessPath * path);
   AccessPath *path = new (thd->mem_root) AccessPath;
   path->type = AccessPath::LIMIT_OFFSET;
   path->immediate_update_delete_table = child->immediate_update_delete_table;
@@ -1449,32 +1455,8 @@ inline AccessPath *NewLimitOffsetAccessPath(THD *thd, AccessPath *child,
   path->limit_offset().count_all_rows = count_all_rows;
   path->limit_offset().reject_multiple_rows = reject_multiple_rows;
   path->limit_offset().send_records_override = send_records_override;
-
-  if (child->num_output_rows >= 0.0) {
-    path->num_output_rows =
-        offset >= child->num_output_rows
-            ? 0.0
-            : (std::min<double>(child->num_output_rows, limit) - offset);
-  }
-
-  if (child->init_cost < 0.0) {
-    // We have nothing better, since we don't know how much is startup cost.
-    path->cost = child->cost;
-  } else if (child->num_output_rows < 1e-6) {
-    path->cost = path->init_cost = child->init_cost;
-  } else {
-    const double fraction_start_read =
-        std::min(1.0, double(offset) / child->num_output_rows);
-    const double fraction_full_read =
-        std::min(1.0, double(limit) / child->num_output_rows);
-    path->cost = child->init_cost +
-                 fraction_full_read * (child->cost - child->init_cost);
-    path->init_cost = child->init_cost +
-                      fraction_start_read * (child->cost - child->init_cost);
-  }
-  path->init_once_cost = child->init_once_cost;
   path->ordering_state = child->ordering_state;
-
+  EstimateLimitOffsetCost(path);
   return path;
 }
 
@@ -1483,7 +1465,7 @@ inline AccessPath *NewFakeSingleRowAccessPath(THD *thd,
   AccessPath *path = new (thd->mem_root) AccessPath;
   path->type = AccessPath::FAKE_SINGLE_ROW;
   path->count_examined_rows = count_examined_rows;
-  path->num_output_rows = 1.0;
+  path->set_num_output_rows(1.0);
   path->cost = 0.0;
   path->init_cost = 0.0;
   path->init_once_cost = 0.0;
@@ -1496,10 +1478,12 @@ inline AccessPath *NewZeroRowsAccessPath(THD *thd, AccessPath *child,
   path->type = AccessPath::ZERO_ROWS;
   path->zero_rows().child = child;
   path->zero_rows().cause = cause;
-  path->num_output_rows = 0.0;
+  path->set_num_output_rows(0.0);
   path->cost = 0.0;
   path->init_cost = 0.0;
   path->init_once_cost = 0.0;
+  path->num_output_rows_before_filter = 0.0;
+  path->cost_before_filter = 0.0;
   return path;
 }
 
@@ -1512,7 +1496,7 @@ inline AccessPath *NewZeroRowsAggregatedAccessPath(THD *thd,
   AccessPath *path = new (thd->mem_root) AccessPath;
   path->type = AccessPath::ZERO_ROWS_AGGREGATED;
   path->zero_rows_aggregated().cause = cause;
-  path->num_output_rows = 1.0;
+  path->set_num_output_rows(1.0);
   path->cost = 0.0;
   path->init_cost = 0.0;
   return path;
@@ -1572,7 +1556,12 @@ inline AccessPath *NewMaterializeAccessPath(
   param->unit = unit;
   param->ref_slice = ref_slice;
   param->rematerialize = rematerialize;
-  param->limit_rows = limit_rows;
+  param->limit_rows = (table == nullptr || table->is_union_or_table()
+                           ? limit_rows
+                           :
+                           // INTERSECT, EXCEPT: Enforced by TableScanIterator,
+                           // see its constructor
+                           HA_POS_ERROR);
   param->reject_multiple_rows = reject_multiple_rows;
 
 #ifndef NDEBUG
@@ -1586,6 +1575,7 @@ inline AccessPath *NewMaterializeAccessPath(
   path->type = AccessPath::MATERIALIZE;
   path->materialize().table_path = table_path;
   path->materialize().param = param;
+  path->materialize().subquery_cost = -1.0;
   if (rematerialize) {
     path->safe_for_rowid = AccessPath::SAFE_IF_SCANNED_ONCE;
   } else {
@@ -1624,12 +1614,13 @@ inline AccessPath *NewAppendAccessPath(
 }
 
 inline AccessPath *NewWindowAccessPath(THD *thd, AccessPath *child,
+                                       Window *window,
                                        Temp_table_param *temp_table_param,
                                        int ref_slice, bool needs_buffering) {
   AccessPath *path = new (thd->mem_root) AccessPath;
   path->type = AccessPath::WINDOW;
   path->window().child = child;
-  path->window().window = nullptr;
+  path->window().window = window;
   path->window().temp_table = nullptr;
   path->window().temp_table_param = temp_table_param;
   path->window().ref_slice = ref_slice;
@@ -1780,6 +1771,14 @@ Mem_root_array<TABLE *> CollectTables(THD *thd, AccessPath *root_path);
 void ExpandFilterAccessPaths(THD *thd, AccessPath *path, const JOIN *join,
                              const Mem_root_array<Predicate> &predicates,
                              unsigned num_where_predicates);
+
+/**
+  Extracts the Item expression from the given “filter_predicates” corresponding
+  to the given “mask”.
+ */
+Item *ConditionFromFilterPredicates(const Mem_root_array<Predicate> &predicates,
+                                    OverflowBitset mask,
+                                    int num_where_predicates);
 
 /// Like ExpandFilterAccessPaths(), but expands only the single access path
 /// at “path”.

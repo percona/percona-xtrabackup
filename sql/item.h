@@ -5387,8 +5387,9 @@ class Item_empty_string : public Item_partition_func_safe_string {
  public:
   Item_empty_string(const char *header, size_t length,
                     const CHARSET_INFO *cs = nullptr)
-      : Item_partition_func_safe_string(Name_string(header, strlen(header)), 0,
-                                        cs ? cs : &my_charset_utf8_general_ci) {
+      : Item_partition_func_safe_string(
+            Name_string(header, strlen(header)), 0,
+            cs ? cs : &my_charset_utf8mb3_general_ci) {
     max_length = static_cast<uint32>(length * collation.collation->mbmaxlen);
   }
   void make_field(Send_field *field) override;
@@ -7024,7 +7025,6 @@ void convert_and_print(const String *from_str, String *to_str,
                        const CHARSET_INFO *to_cs);
 
 std::string ItemToString(const Item *item);
-void ExtractConditions(Item *condition, std::vector<Item *> *condition_parts);
 
 inline size_t CountVisibleFields(const mem_root_deque<Item *> &fields) {
   return std::count_if(fields.begin(), fields.end(),

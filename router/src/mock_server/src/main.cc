@@ -23,6 +23,7 @@
 */
 
 #include <array>
+#include <csignal>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -37,6 +38,8 @@
 #include "mysql/harness/loader.h"
 #include "mysql/harness/loader_config.h"
 #include "mysql/harness/logging/registry.h"
+#include "mysql/harness/process_state_component.h"
+#include "mysql/harness/signal_handler.h"
 #include "mysql/harness/stdx/filesystem.h"
 #include "router_config.h"  // MYSQL_ROUTER_VERSION
 
@@ -64,6 +67,8 @@ struct MysqlServerMockConfig {
   std::string ssl_crl;
   std::string ssl_crlpath;
   std::string ssl_cipher;
+
+  bool core_file{false};
 };
 
 static void init_DIM() {
@@ -115,7 +120,13 @@ class MysqlServerMockFrontend {
   bool is_print_and_exit() { return do_print_and_exit_; }
 
   void run() {
-    std::unique_ptr<mysql_harness::Loader> loader_;
+    signal_handler_.register_ignored_signals_handler();
+    signal_handler_.block_all_nonfatal_signals();
+    signal_handler_.register_fatal_signal_handler(config_.core_file);
+    signal_handler_.spawn_signal_handler_thread();
+#ifdef _WIN32
+    signal_handler_.register_ctrl_c_handler();
+#endif
 
     init_DIM();
     std::unique_ptr<mysql_harness::LoaderConfig> loader_config(
@@ -124,7 +135,6 @@ class MysqlServerMockFrontend {
     mysql_harness::DIM &dim = mysql_harness::DIM::instance();
     mysql_harness::logging::Registry &registry = dim.get_LoggingRegistry();
 
-    mysql_harness::Config config;
     const auto log_level = config_.verbose
                                ? mysql_harness::logging::LogLevel::kDebug
                                : mysql_harness::logging::LogLevel::kWarning;
@@ -229,14 +239,50 @@ class MysqlServerMockFrontend {
         [&]() { return loader_config.release(); },
         std::default_delete<mysql_harness::LoaderConfig>());
 
+    std::unique_ptr<mysql_harness::Loader> loader_;
     try {
-      loader_.reset(new mysql_harness::Loader("server-mock", *loader_config));
+      loader_ = std::make_unique<mysql_harness::Loader>("server-mock",
+                                                        *loader_config);
     } catch (const std::runtime_error &err) {
       throw std::runtime_error(std::string("init-loader failed: ") +
                                err.what());
     }
 
     log_debug("Starting");
+
+#if !defined(_WIN32)
+    //
+    // reopen the logfile on SIGHUP.
+    //
+
+    static const char kSignalHandlerServiceName[]{"signal_handler"};
+
+    loader_->waitable_services().emplace_back(kSignalHandlerServiceName);
+
+    // as the LogReopener depends on the loggers being started, it must be
+    // initialized after Loader::start_all() has been called.
+    loader_->after_all_started([&]() {
+      signal_handler_.add_sig_handler(SIGTERM, [&](int /* sig */) {
+        mysql_harness::ProcessStateComponent::get_instance()
+            .request_application_shutdown(
+                mysql_harness::ShutdownPending::Reason::REQUESTED);
+      });
+
+      signal_handler_.add_sig_handler(SIGINT, [&](int /* sig */) {
+        mysql_harness::ProcessStateComponent::get_instance()
+            .request_application_shutdown(
+                mysql_harness::ShutdownPending::Reason::REQUESTED);
+      });
+
+      mysql_harness::on_service_ready(kSignalHandlerServiceName);
+    });
+
+    // after the first plugin finished, stop the log-reopener
+    loader_->after_first_finished([&]() {
+      signal_handler_.remove_sig_handler(SIGTERM);
+      signal_handler_.remove_sig_handler(SIGINT);
+    });
+#endif
 
     loader_->start();
   }
@@ -341,6 +387,20 @@ class MysqlServerMockFrontend {
         CmdOption::OptionNames({"--logging-folder"}), "logging folder",
         CmdOptionValueReq::required, "directory",
         [this](const std::string &value) { config_.logging_folder = value; });
+    arg_handler_.add_option(
+        CmdOption::OptionNames({"--core-file"}),
+        "Write a core file if mysqlrouter dies.", CmdOptionValueReq::optional,
+        "", [this](const std::string &value) {
+          if (value.empty() || value == "1") {
+            config_.core_file = true;
+          } else if (value == "0") {
+            config_.core_file = false;
+          } else {
+            throw std::runtime_error(
+                "Value for parameter '--core-file' needs to be "
+                "one of: ['0', '1']");
+          }
+        });
   }
 
   CmdArgHandler arg_handler_;
@@ -350,14 +410,14 @@ class MysqlServerMockFrontend {
 
   std::string program_name_;
   mysql_harness::Path origin_dir_;
+
+  mysql_harness::SignalHandler signal_handler_;
 };
 
 int main(int argc, char *argv[]) {
   MysqlServerMockFrontend frontend;
 
 #ifdef _WIN32
-  register_ctrl_c_handler();
-
   WSADATA wsaData;
   int result;
   result = WSAStartup(MAKEWORD(2, 2), &wsaData);

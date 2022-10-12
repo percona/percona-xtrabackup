@@ -44,4 +44,3 @@ FOREACH(test ${TESTS})
     LINK_LIBRARIES binlogstandalone_static gunit_small
     COMPILE_DEFINITIONS "${DISABLE_PSI_DEFINITIONS}")
 ENDFOREACH()
-

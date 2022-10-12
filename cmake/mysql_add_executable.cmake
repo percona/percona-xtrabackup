@@ -120,6 +120,9 @@ FUNCTION(MYSQL_ADD_EXECUTABLE target_arg)
   IF(ARG_COMPONENT STREQUAL "Router")
     ADD_DEPENDENCIES(mysqlrouter_all ${target})
   ENDIF()
+  IF(NOT ARG_EXCLUDE_FROM_ALL)
+    ADD_DEPENDENCIES(executable_all ${target})
+  ENDIF()
 
   IF(ARG_INCLUDE_DIRECTORIES)
     TARGET_INCLUDE_DIRECTORIES(${target} PRIVATE ${ARG_INCLUDE_DIRECTORIES})
@@ -181,6 +184,10 @@ FUNCTION(MYSQL_ADD_EXECUTABLE target_arg)
   IF(COMPRESS_DEBUG_SECTIONS)
     MY_TARGET_LINK_OPTIONS(${target}
       "LINKER:--compress-debug-sections=zlib")
+  ENDIF()
+
+  IF(HAVE_BUILD_ID_SUPPORT)
+    MY_TARGET_LINK_OPTIONS(${target} "LINKER:--build-id=sha1")
   ENDIF()
 
   # tell CPack where to install

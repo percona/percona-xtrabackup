@@ -740,7 +740,6 @@ JOIN t1 AS table2
 ON table2 .col_int_key = table1 .col_int_key
 );
 field1	( SELECT COUNT( col_int_key )
-FROM t1
 )
 0	4
 1	4
@@ -748,6 +747,7 @@ FROM t1
 8	4
 8	4
 8	4
+FROM t1
 select * from information_schema.optimizer_trace;
 QUERY	TRACE	MISSING_BYTES_BEYOND_MAX_MEM_SIZE	INSUFFICIENT_PRIVILEGES
 SELECT *
@@ -2195,7 +2195,7 @@ EXPLAIN SELECT c1, c2 FROM t1 ORDER BY c1 DESC LIMIT 1	{
                 "table": "`t1`",
                 "table_scan": {
                   "rows": 1000,
-                  "cost": 1
+                  "cost": NN
                 } /* table_scan */
               }
             ] /* rows_estimation */
@@ -2212,14 +2212,14 @@ EXPLAIN SELECT c1, c2 FROM t1 ORDER BY c1 DESC LIMIT 1	{
                       "rows_to_scan": 1000,
                       "access_type": "scan",
                       "resulting_rows": 1000,
-                      "cost": 101,
+                      "cost": NN,
                       "chosen": true
                     }
                   ] /* considered_access_paths */
                 } /* best_access_path */,
                 "condition_filtering_pct": 100,
                 "rows_for_plan": 1000,
-                "cost_for_plan": 101,
+                "cost_for_plan": NN,
                 "chosen": true
               }
             ] /* considered_execution_plans */

@@ -250,6 +250,6 @@ bool build_processlist_query(const POS &pos, THD *thd, bool verbose) {
   assert(!thd->is_error());
 
   if (query_expression2->contextualize(&pc)) return true;
-
+  if (pc.finalize_query_expression()) return true;
   return false;
 }
