@@ -1,4 +1,5 @@
 . inc/common.sh
+require_server_version_higher_than 8.0.29
 
 start_server
 
@@ -17,7 +18,7 @@ xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only --target-dir=$top
 vlog "===> xtrabackup --stats --datadir=$topdir/backup"
 run_cmd_expect_failure $XB_BIN $XB_ARGS --stats --datadir=$topdir/backup
 
-if ! grep -q "Cannot create redo log files" $OUTFILE
+if ! grep -q "Cannot find correct redo log files" $OUTFILE
 then
     die "Cannot find the expected error message from xtrabackup --stats"
 fi
