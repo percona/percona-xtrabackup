@@ -264,7 +264,7 @@ ulonglong xtrabackup_encrypt_chunk_size = 0;
 size_t redo_memory = 0;
 ulint redo_frames = 0;
 size_t real_redo_memory = 0;
-ulint real_redo_frames = 0;
+ulint real_redo_frames = UINT64_MAX;
 
 ulint xtrabackup_rebuild_threads = 1;
 
