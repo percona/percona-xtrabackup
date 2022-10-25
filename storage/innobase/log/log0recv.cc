@@ -1139,8 +1139,8 @@ static
     }
 
     if (IF_XB(log.m_files_ctx.m_files_ruleset >
-              Log_files_ruleset::PRE_8_0_30) &&
-        !file.contains(checkpoint_in_file.m_checkpoint_lsn)) {
+                  Log_files_ruleset::PRE_8_0_30 &&) !file
+            .contains(checkpoint_in_file.m_checkpoint_lsn)) {
       const auto file_path = file_handle.file_path();
       ib::error(ER_IB_MSG_RECOVERY_CHECKPOINT_OUTSIDE_LOG_FILE,
                 ulonglong{checkpoint_in_file.m_checkpoint_lsn},
@@ -3846,8 +3846,29 @@ bool meb_scan_log_recs(
 
 #ifdef XTRABACKUP
     /**
-     * 8.0.30 records LOG_BLOCK_EPOCH_NO at 8th by of log block header
-     * while pre-8.0.30 we recorded LOG_BLOCK_CHECKPOINT_NO
+     * Key changes on 8.0.30 (log format v6):
+     *
+     * - It records LOG_BLOCK_EPOCH_NO at 8th by of log block header while
+     * pre-8.0.30 we recorded LOG_BLOCK_CHECKPOINT_NO at the same position (we
+     * store this information at recv_sys->scanned_epoch_no). When we have two
+     * checkpoints on the same block on 8.0.29, LOG_BLOCK_CHECKPOINT_NO will be
+     * increased by two, then log_block_epoch_no_is_valid will indentify this
+     * gap (it only accepts scanned_epoch_no + 1) and will consider the block as
+     * completed without parsing it. Thus we need to parse differently depending
+     * on the version of redo log format.
+     * - LOG_BLOCK_FLUSH_BIT_MASK is no longer necessary and only kept for
+     * reading old log files.
+     * - FIELD_CHECKPOINT_OFFSET is no longer stored on log file header. Instead
+     * only the m_checkpoint_lsn is written.
+     * - File containing an LSN is now find by log.m_files.find and offsets are
+     * now calculated by file->offset(lsn). File m_start_lsn & m_end_lsn are
+     * used to for both operations. Previously we had a continious offset and
+     * had to calculated based on log file size and nr of logs in which file a
+     * particular offset will fall into. In order to find an offset we required
+     * to discover one know pair of LSN/Offset. This was done by
+     * FIELD_CHECKPOINT_OFFSET and FIELD_CHECKPOINT_LSN. Thus we have to
+     * implement special handling for following redo logs on previous versions.
+     * check redo_log.cc read_log_seg_pre8030 & scan_log_recs_pre8030.
      */
     if (scanned_lsn + data_len > recv_sys->scanned_lsn) {
       if (xtrabackup_original_log_format >= Log_format::VERSION_8_0_30 &&

@@ -502,7 +502,7 @@ namespace ib {
 
 #if !defined(UNIV_HOTBACKUP) && !defined(UNIV_NO_ERR_MSGS)
 
-void logger::log_event(std::string msg, IF_XB(const char *const module)) {
+void logger::log_event(std::string msg IF_XB(, const char *const module)) {
   LogEvent()
       .type(LOG_TYPE_ERROR)
       .prio(m_level)
@@ -510,7 +510,7 @@ void logger::log_event(std::string msg, IF_XB(const char *const module)) {
       .subsys(module)
       .verbatim(msg.c_str());
 }
-logger::~logger() { log_event(m_oss.str(), IF_XB(m_module)); }
+logger::~logger() { log_event(m_oss.str() IF_XB(, m_module)); }
 
 /*
 MSVS complains: Warning C4722: destructor never returns, potential memory leak.

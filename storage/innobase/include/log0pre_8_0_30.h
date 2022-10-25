@@ -125,6 +125,14 @@ bool files_validate_format(const Log_files_context &files_ctx,
                            const ut::vector<Log_file_id_and_header> &files,
                            Log_format &format);
 
+#ifdef XTRABACKUP
+/** Find the latest checkpoint in ib_logfile0.
+@param[in]      file_handle     handle for ib_logfile0 log file
+@param[in/out]  checkpoint      the latest checkpoint found (if any)
+@return true if any checkpoint has been found */
+bool recv_find_max_checkpoint(Log_file_handle &file_handle,
+                              Checkpoint_header &chkp_header);
+#endif  // XTRABACKUP
 }  // namespace log_pre_8_0_30
 
 #endif /* log0pre_8_0_30_h */

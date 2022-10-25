@@ -33,6 +33,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "common.h"
 #include "file_utils.h"
 #include "log0encryption.h"
+#include "log0pre_8_0_30.h"
 #include "os0event.h"
 #include "sql_thd_internal_api.h"
 #include "xb0xb.h"
@@ -43,6 +44,8 @@ extern ds_ctxt_t *ds_redo;
 constexpr size_t HEADER_BLOCK_SIZE = 4096;
 static bool archive_first_block_zero = false;
 std::atomic<bool> Redo_Log_Reader::m_error;
+lsn_t Redo_Log_Reader::checkpoint_lsn_start;
+os_offset_t Redo_Log_Reader::checkpoint_offset_start;
 
 Redo_Log_Reader::Redo_Log_Reader() {
   log_hdr_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
@@ -54,33 +57,52 @@ Redo_Log_Reader::Redo_Log_Reader() {
 }
 
 bool Redo_Log_Reader::find_start_checkpoint_lsn() {
-  /* Look for the latest checkpoint */
-  Log_checkpoint_location checkpoint;
+  if (log_sys->m_files.ctx().m_files_ruleset == Log_files_ruleset::CURRENT) {
+    /* Look for the latest checkpoint */
+    Log_checkpoint_location checkpoint;
 
-  if (!recv_find_max_checkpoint(*log_sys, checkpoint)) {
-    xb::error() << "recv_find_max_checkpoint() failed.";
-    return (false);
+    if (!recv_find_max_checkpoint(*log_sys, checkpoint)) {
+      xb::error() << "recv_find_max_checkpoint() failed.";
+      return (false);
+    }
+
+    /* Redo log file header is never encrypted. */
+    Encryption_metadata unused_encryption_metadata;
+
+    auto file_handle =
+        Log_file::open(log_sys->m_files_ctx, checkpoint.m_checkpoint_file_id,
+                       Log_file_access_mode::READ_ONLY,
+                       unused_encryption_metadata, Log_file_type::NORMAL);
+    if (!file_handle.is_open()) {
+      xb::error() << "Failed to open redo log file id "
+                  << checkpoint.m_checkpoint_file_id;
+      return false;
+    }
+    log_scanned_lsn = checkpoint.m_checkpoint_lsn;
+    checkpoint_lsn_start = checkpoint.m_checkpoint_lsn;
+
+    /* Copy the header into log_hdr_buf */
+    file_handle.read(0, LOG_FILE_HDR_SIZE, log_hdr_buf);
+  } else {
+    const auto logfile0 = log_sys->m_files.file(0);
+    auto file_handle = logfile0->open(Log_file_access_mode::READ_ONLY);
+    if (!file_handle.is_open()) {
+      xb::error() << "Failed to open redo log file id 0";
+      return false;
+    }
+    log_pre_8_0_30::Checkpoint_header chkp_header = {};
+    if (!log_pre_8_0_30::recv_find_max_checkpoint(file_handle, chkp_header)) {
+      xb::error() << "recv_find_max_checkpoint() failed.";
+      return (false);
+    }
+
+    log_scanned_lsn = chkp_header.m_checkpoint_lsn;
+    checkpoint_lsn_start = chkp_header.m_checkpoint_lsn;
+    checkpoint_offset_start = chkp_header.m_checkpoint_offset;
+
+    /* Copy the header into log_hdr_buf */
+    file_handle.read(0, LOG_FILE_HDR_SIZE, log_hdr_buf);
   }
-
-  /* Redo log file header is never encrypted. */
-  Encryption_metadata unused_encryption_metadata;
-
-  auto file_handle =
-      Log_file::open(log_sys->m_files_ctx, checkpoint.m_checkpoint_file_id,
-                     Log_file_access_mode::READ_ONLY,
-                     unused_encryption_metadata, Log_file_type::NORMAL);
-
-  if (!file_handle.is_open()) {
-    xb::error() << "Failed to open redo log file id "
-                << checkpoint.m_checkpoint_file_id;
-    return false;
-  }
-
-  /* Copy the header into log_hdr_buf */
-  file_handle.read(0, LOG_FILE_HDR_SIZE, log_hdr_buf);
-
-  log_scanned_lsn = checkpoint.m_checkpoint_lsn;
-  checkpoint_lsn_start = checkpoint.m_checkpoint_lsn;
 
   return (true);
 }
@@ -143,7 +165,63 @@ static bool reopen_log_files(lsn_t desired_lsn) {
   return true;
 }
 
-lsn_t Redo_Log_Reader::read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
+lsn_t Redo_Log_Reader::read_log_seg_pre8030(log_t &log, byte *buf,
+                                            lsn_t start_lsn, lsn_t end_lsn) {
+  const size_t n_files = log_files_number_of_existing_files(log.m_files);
+  const auto logfile0 = log.m_files.file(0);
+  const os_offset_t file_size = logfile0->m_size_in_bytes;
+
+  do {
+    lsn_t source_offset = log_pre_8_0_30::compute_real_offset_for_lsn(
+        n_files, file_size, checkpoint_lsn_start, checkpoint_offset_start,
+        start_lsn);
+
+    Log_file_id file_id = source_offset / file_size;
+
+    auto file = log.m_files.file(file_id);
+
+    auto file_handle = file->open(Log_file_access_mode::READ_ONLY);
+
+    if (!file_handle.is_open()) {
+      // file not found
+      m_error = true;
+      return 0;
+    }
+
+    ut_a(end_lsn - start_lsn <= ULINT_MAX);
+
+    ulint len;
+
+    len = (ulint)(end_lsn - start_lsn);
+
+    ut_ad(len != 0);
+
+    source_offset %= file->m_size_in_bytes;
+    source_offset = ut_uint64_align_down(source_offset, OS_FILE_LOG_BLOCK_SIZE);
+
+    if (source_offset + len > file_size) {
+      /* If the above condition is true then len
+      (which is ulint) is > the expression below,
+      so the typecast is ok */
+      len = (ulint)(file_size - source_offset);
+    }
+
+    ++log.n_log_ios;
+
+    const dberr_t err =
+        log_data_blocks_read(file_handle, source_offset, len, buf);
+    ut_a(err == DB_SUCCESS);
+
+    start_lsn += len;
+    buf += len;
+
+  } while (start_lsn != end_lsn);
+  ut_a(start_lsn == end_lsn);
+
+  return end_lsn;
+}
+
+lsn_t Redo_Log_Reader::read_log_seg_8030(log_t &log, byte *buf, lsn_t start_lsn,
                                     lsn_t end_lsn) {
   ut_a(start_lsn < end_lsn);
 
@@ -172,10 +250,7 @@ lsn_t Redo_Log_Reader::read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
   }
 
   do {
-    os_offset_t source_offset;
-
-    source_offset = file->offset(start_lsn);
-
+    os_offset_t source_offset = file->offset(start_lsn);
     ut_a(end_lsn - start_lsn <= ULINT_MAX);
 
     os_offset_t len = end_lsn - start_lsn;
@@ -226,6 +301,15 @@ lsn_t Redo_Log_Reader::read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
   return end_lsn;
 }
 
+lsn_t Redo_Log_Reader::read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
+                                    lsn_t end_lsn) {
+  if (log.m_files.ctx().m_files_ruleset == Log_files_ruleset::CURRENT) {
+        return(read_log_seg_8030(log, buf, start_lsn, end_lsn));
+  } else {
+        return(read_log_seg_pre8030(log, buf, start_lsn, end_lsn));
+  }
+}
+
 ssize_t Redo_Log_Reader::read_logfile(bool is_last, bool *finished) {
   log_t &log = *log_sys;
 
@@ -261,9 +345,130 @@ ssize_t Redo_Log_Reader::read_logfile(bool is_last, bool *finished) {
   return (len);
 }
 
-ssize_t Redo_Log_Reader::scan_log_recs(byte *buf, bool is_last, lsn_t start_lsn,
-                                       lsn_t *read_upto_lsn,
-                                       lsn_t checkpoint_lsn, bool *finished) {
+ssize_t Redo_Log_Reader::scan_log_recs_pre8030(byte *buf, bool is_last,
+                                               lsn_t start_lsn,
+                                               lsn_t *read_upto_lsn,
+                                               lsn_t checkpoint_lsn,
+                                               bool *finished) {
+  lsn_t scanned_lsn{start_lsn};
+  lsn_t contiguous_lsn =
+      ut_uint64_align_down(start_lsn, OS_FILE_LOG_BLOCK_SIZE);
+  const size_t n_files = log_files_number_of_existing_files(log_sys->m_files);
+  const auto logfile0 = log_sys->m_files.file(0);
+  const os_offset_t file_size = logfile0->m_size_in_bytes;
+  const lsn_t lsn_real_capacity = n_files * (file_size - LOG_FILE_HDR_SIZE);
+  const byte *log_block{buf};
+
+  *finished = false;
+
+  ulint scanned_checkpoint_no{0};
+
+  while (log_block < buf + RECV_SCAN_SIZE && !*finished) {
+    auto no = log_block_get_hdr_no(log_block);
+    auto scanned_no = log_block_convert_lsn_to_hdr_no(scanned_lsn);
+    auto checksum_is_ok = log_block_checksum_is_ok(log_block);
+
+    if (no != scanned_no && checksum_is_ok) {
+      auto blocks_in_group =
+          log_block_convert_lsn_to_hdr_no(lsn_real_capacity) - 1;
+
+      if ((no < scanned_no && ((scanned_no - no) % blocks_in_group) == 0) ||
+          no == 0 ||
+          /* Log block numbers wrap around at 0x3FFFFFFF */
+          ((scanned_no | 0x40000000UL) - no) % blocks_in_group == 0) {
+        /* old log block, do nothing */
+        *finished = true;
+        break;
+      }
+
+      xb::error() << "log block numbers mismatch:";
+      xb::error() << "expected log block no. " << scanned_no << ", but got no. "
+                  << no << " from the log file.";
+
+      if ((no - scanned_no) % blocks_in_group == 0) {
+        xb::error() << " it looks like InnoDB log has wrapped"
+                       " around before xtrabackup could"
+                       " process all records due to either"
+                       " log copying being too slow, or "
+                       " log files being too small.";
+      }
+
+      return (-1);
+
+    } else if (!checksum_is_ok) {
+      /* Garbage or an incompletely written log block */
+      xb::warn() << "Log block checksum mismatch (block no " << no << " at lsn "
+                 << scanned_lsn << "): expected "
+                 << log_block_get_checksum(log_block)
+                 << ", calculated checksum "
+                 << log_block_calc_checksum(log_block);
+      xb::warn() << "this is possible when the "
+                    "log block has not been fully written by the "
+                    "server, will retry later.";
+      *finished = true;
+      break;
+    }
+
+    if (log_block_get_flush_bit(log_block)) {
+      /* This block was a start of a log flush operation:
+      we know that the previous flush operation must have
+      been completed for all log groups before this block
+      can have been flushed to any of the groups. Therefore,
+      we know that log data is contiguous up to scanned_lsn
+      in all non-corrupt log groups. */
+
+      if (scanned_lsn > contiguous_lsn) {
+        contiguous_lsn = scanned_lsn;
+      }
+    }
+
+    auto data_len = log_block_get_data_len(log_block);
+
+    if ((scanned_checkpoint_no > 0) &&
+        (log_block_get_checkpoint_no(log_block) < scanned_checkpoint_no) &&
+        (scanned_checkpoint_no - log_block_get_checkpoint_no(log_block) >
+         0x80000000UL)) {
+      /* Garbage from a log buffer flush which was made
+      before the most recent database recovery */
+
+      *finished = true;
+      break;
+    }
+
+    scanned_lsn = scanned_lsn + data_len;
+    scanned_checkpoint_no = log_block_get_checkpoint_no(log_block);
+
+    if (data_len < OS_FILE_LOG_BLOCK_SIZE) {
+      /* Log data for this group ends here */
+
+      *finished = true;
+    } else {
+      log_block += OS_FILE_LOG_BLOCK_SIZE;
+    }
+  }
+
+  *read_upto_lsn = scanned_lsn;
+
+  ssize_t write_size;
+
+  if (!*finished) {
+    write_size = RECV_SCAN_SIZE;
+  } else {
+    write_size =
+        ut_uint64_align_up(scanned_lsn, OS_FILE_LOG_BLOCK_SIZE) - start_lsn;
+    if (!is_last && scanned_lsn % OS_FILE_LOG_BLOCK_SIZE) {
+      write_size -= OS_FILE_LOG_BLOCK_SIZE;
+    }
+  }
+
+  return (write_size);
+}
+
+ssize_t Redo_Log_Reader::scan_log_recs_8030(byte *buf, bool is_last,
+                                            lsn_t start_lsn,
+                                            lsn_t *read_upto_lsn,
+                                            lsn_t checkpoint_lsn,
+                                            bool *finished) {
   lsn_t scanned_lsn{start_lsn};
   const byte *log_block{buf};
 
@@ -346,6 +551,18 @@ ssize_t Redo_Log_Reader::scan_log_recs(byte *buf, bool is_last, lsn_t start_lsn,
   }
 
   return (write_size);
+}
+
+ssize_t Redo_Log_Reader::scan_log_recs(byte *buf, bool is_last, lsn_t start_lsn,
+                                       lsn_t *read_upto_lsn,
+                                       lsn_t checkpoint_lsn, bool *finished) {
+  if (log_sys->m_files.ctx().m_files_ruleset == Log_files_ruleset::CURRENT) {
+    return (scan_log_recs_8030(buf, is_last, start_lsn, read_upto_lsn,
+                               checkpoint_lsn, finished));
+  } else {
+    return (scan_log_recs_pre8030(buf, is_last, start_lsn, read_upto_lsn,
+                                  checkpoint_lsn, finished));
+  }
 }
 
 void Redo_Log_Reader::seek_logfile(lsn_t lsn) { log_scanned_lsn = lsn; }
@@ -1021,6 +1238,10 @@ bool Redo_Log_Data_Manager::start() {
    * in any situation (with or without --lock-ddl-per-table).
    */
   redo_catchup_completed = true;
+
+  if (opt_lock_ddl) {
+    ut_ad(reader.get_scanned_lsn() >= backup_redo_log_flushed_lsn);
+  }
 
   debug_sync_point("xtrabackup_pause_after_redo_catchup");
 
