@@ -125,9 +125,20 @@ static bool reopen_log_files(lsn_t desired_lsn) {
   log.m_log_flags = log_flags;
   log.m_log_uuid = log_uuid;
   log.m_files = std::move(files);
-  auto file = log.m_files.find(desired_lsn);
-  if (file == log.m_files.end()) return false;
-  log_encryption_read(log, *file);
+  if (log.m_files.ctx().m_files_ruleset == Log_files_ruleset::CURRENT) {
+    auto file = log.m_files.find(desired_lsn);
+    if (file == log.m_files.end()) return false;
+    if (log_encryption_read(log, *file) != DB_SUCCESS) {
+      xb::error() << "log_encryption_read failed on file ID " << file->m_id;
+      return (false);
+    };
+  } else {
+    const auto logfile0 = log.m_files.file(0);
+    if (log_encryption_read(log, *logfile0) != DB_SUCCESS) {
+      xb::error() << "log_encryption_read failed on file ID 0";
+      return (false);
+    };
+  }
 
   return true;
 }
@@ -922,15 +933,41 @@ bool Redo_Log_Data_Manager::init() {
   if (log_sys_init(false, flushed_lsn, flushed_lsn) != DB_SUCCESS) {
     return (false);
   }
-
-  Log_checkpoint_location checkpoint;
-  if (!recv_find_max_checkpoint(*log_sys, checkpoint)) {
-    xb::error() << " recv_find_max_checkpoint() failed.";
-    return (false);
+  lsn_t checkpoint_lsn;
+  if (log_sys->m_files.ctx().m_files_ruleset == Log_files_ruleset::CURRENT) {
+    Log_checkpoint_location checkpoint;
+    if (!recv_find_max_checkpoint(*log_sys, checkpoint)) {
+      xb::error() << " recv_find_max_checkpoint() failed.";
+      return (false);
+    }
+    checkpoint_lsn = checkpoint.m_checkpoint_lsn;
+    auto file = log_sys->m_files.find(checkpoint_lsn);
+    if (file == log_sys->m_files.end()) {
+      xb::error() << " Cannot find file with checkpoint " << checkpoint_lsn;
+      return (false);
+    }
+    if (log_encryption_read(*log_sys, *file) != DB_SUCCESS) {
+      xb::error() << "log_encryption_read failed on file ID " << file->m_id;
+      return (false);
+    };
+  } else {
+    const auto logfile0 = log_sys->m_files.file(0);
+    auto file_handle = logfile0->open(Log_file_access_mode::READ_ONLY);
+    if (!file_handle.is_open()) {
+      xb::error() << "Failed to open redo log file id 0";
+      return false;
+    }
+    log_pre_8_0_30::Checkpoint_header chkp_header = {};
+    if (!log_pre_8_0_30::recv_find_max_checkpoint(file_handle, chkp_header)) {
+      xb::error() << "recv_find_max_checkpoint() failed.";
+      return (false);
+    }
+    checkpoint_lsn = chkp_header.m_checkpoint_lsn;
+    if (log_encryption_read(*log_sys, *logfile0) != DB_SUCCESS) {
+      xb::error() << "log_encryption_read failed on file ID 0";
+      return (false);
+    };
   }
-  auto file = log_sys->m_files.find(checkpoint.m_checkpoint_lsn);
-
-  log_encryption_read(*log_sys, *file);
 
   ut_a(log_sys != nullptr);
 
