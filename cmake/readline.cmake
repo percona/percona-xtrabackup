@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2021, Oracle and/or its affiliates.
+# Copyright (c) 2009, 2022, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -90,7 +90,7 @@ MACRO (FIND_CURSES)
  ENDIF()
 ENDMACRO()
 
-SET(CURRENT_LIBEDIT_DIRECTORY "extra/libedit/libedit-20191231-3.1")
+SET(CURRENT_LIBEDIT_DIRECTORY "extra/libedit/libedit-20210910-3.1")
 
 MACRO (MYSQL_USE_BUNDLED_EDITLINE)
   SET(WITH_EDITLINE "bundled" CACHE STRING "By default use bundled editline")

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2021, Oracle and/or its affiliates.
+Copyright (c) 2014, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -1049,8 +1049,6 @@ share_error:
 	m_upd_buf = NULL;
 	m_upd_buf_size = 0;
 
-	/* Get pointer to a table object in InnoDB dictionary cache. */
-	ib_table = m_part_share->get_table_part(0);
 
 	m_pcur_parts = NULL;
 	m_clust_pcur_parts = NULL;
@@ -1080,42 +1078,47 @@ share_error:
 
 	MONITOR_INC(MONITOR_TABLE_OPEN);
 
-	bool	no_tablespace;
 
-	/* TODO: Should we do this check for every partition during ::open()? */
 	/* TODO: refactor this in ha_innobase so it can increase code reuse. */
-	if (dict_table_is_discarded(ib_table)) {
+	for (uint part_id = 0; part_id < m_tot_parts; part_id++) {
+		bool	no_tablespace;
+		ib_table = m_part_share->get_table_part(part_id);
+		if (dict_table_is_discarded(ib_table)) {
 
-		ib_senderrf(thd,
-			IB_LOG_LEVEL_WARN, ER_TABLESPACE_DISCARDED,
-			table->s->table_name.str);
+			ib_senderrf(thd,
+				IB_LOG_LEVEL_WARN, ER_TABLESPACE_DISCARDED,
+				table->s->table_name.str);
 
-		/* Allow an open because a proper DISCARD should have set
-		all the flags and index root page numbers to FIL_NULL that
-		should prevent any DML from running but it should allow DDL
-		operations. */
+			/* Allow an open because a proper DISCARD should have set
+			all the flags and index root page numbers to FIL_NULL that
+			should prevent any DML from running but it should allow DDL
+			operations. */
 
-		no_tablespace = false;
+			no_tablespace = false;
 
-	} else if (ib_table->ibd_file_missing) {
+		} else if (ib_table->ibd_file_missing) {
 
-		ib_senderrf(
-			thd, IB_LOG_LEVEL_WARN,
-			ER_TABLESPACE_MISSING, norm_name);
+			ib_senderrf(
+				thd, IB_LOG_LEVEL_WARN,
+				ER_TABLESPACE_MISSING, norm_name);
 
-		/* This means we have no idea what happened to the tablespace
-		file, best to play it safe. */
+			/* This means we have no idea what happened to the tablespace
+			file, best to play it safe. */
 
-		no_tablespace = true;
-	} else {
-		no_tablespace = false;
+			no_tablespace = true;
+		} else {
+			no_tablespace = false;
+		}
+
+		if (!thd_tablespace_op(thd) && no_tablespace) {
+			set_my_errno(ENOENT);
+			close();
+			DBUG_RETURN(HA_ERR_NO_SUCH_TABLE);
+		}
 	}
 
-	if (!thd_tablespace_op(thd) && no_tablespace) {
-                set_my_errno(ENOENT);
-		close();
-		DBUG_RETURN(HA_ERR_NO_SUCH_TABLE);
-	}
+	/* Get pointer to a table object in InnoDB dictionary cache. */
+	ib_table = m_part_share->get_table_part(0);
 
 	m_prebuilt = row_create_prebuilt(ib_table, table->s->reclength);
 
@@ -1346,6 +1349,7 @@ share_error:
 		close();  // Frees all the above.
 		DBUG_RETURN(HA_ERR_OUT_OF_MEM);
 	}
+	m_reuse_mysql_template = false;
 	info(HA_STATUS_NO_LOCK | HA_STATUS_VARIABLE | HA_STATUS_CONST);
 
 	DBUG_RETURN(0);
@@ -1579,6 +1583,7 @@ ha_innopart::update_partition(
 	m_row_read_type_parts[part_id] = m_prebuilt->row_read_type;
 	if (m_prebuilt->sql_stat_start == 0) {
 		clear_bit(m_sql_stat_start_parts, part_id);
+		m_reuse_mysql_template = true;
 	}
 	m_last_part = part_id;
 	DBUG_VOID_RETURN;
@@ -4190,6 +4195,7 @@ ha_innopart::start_stmt(
 		memset(m_sql_stat_start_parts, 0,
 		       UT_BITS_IN_BYTES(m_tot_parts));
 	}
+	m_reuse_mysql_template = false;
 	return(error);
 }
 
@@ -4323,6 +4329,7 @@ ha_innopart::external_lock(
 		memset(m_sql_stat_start_parts, 0,
 		       UT_BITS_IN_BYTES(m_tot_parts));
 	}
+	m_reuse_mysql_template = false;
 	return(error);
 }
 

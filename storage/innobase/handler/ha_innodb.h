@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -473,6 +473,12 @@ protected:
 	exists for readability only, called from reset(). The name reset()
 	doesn't give any clue that it is called at the end of a statement. */
 	int end_stmt();
+
+	/** Can reuse the template. Mainly used for partition.
+	@retval true Can reuse the mysql_template */
+	virtual bool can_reuse_mysql_template() {
+		return(false);
+	}
 
 
 	/** The multi range read session object */

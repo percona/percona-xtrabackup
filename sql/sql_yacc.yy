@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -84,6 +84,7 @@ Note: YYTHD is passed as an argument to yyparse(), and subsequently to yylex().
 #include "item_json_func.h"
 #include "sql_plugin.h"                      // plugin_is_ready
 #include "parse_tree_hints.h"
+#include "sql_show_processlist.h"
 
 /* this is to get the bison compilation windows warnings out */
 #ifdef _MSC_VER
@@ -5448,12 +5449,12 @@ sub_part_field_item:
 part_func_expr:
           bit_expr
           {
+            LEX *lex= Lex;
+            lex->safe_to_cache_query = true;
             ITEMIZE($1, &$1);
 
-            LEX *lex= Lex;
             bool not_corr_func;
             not_corr_func= !lex->safe_to_cache_query;
-            lex->safe_to_cache_query= 1;
             if (not_corr_func)
             {
               my_syntax_error(ER(ER_WRONG_EXPR_IN_PARTITION_FUNC_ERROR));
@@ -5741,9 +5742,10 @@ part_value_expr_item:
           }
         | bit_expr
           {
+            LEX *lex= Lex;
+            lex->safe_to_cache_query = true;
             ITEMIZE($1, &$1);
 
-            LEX *lex= Lex;
             partition_info *part_info= lex->part_info;
             Item *part_expr= $1;
 
@@ -6400,6 +6402,12 @@ field_def:
           opt_gcol_attribute_list
           {
             $$= $1;
+            /* column of type SERIAL cannot set as generated */
+            if (Lex->type & SERIAL_FLAG)
+            {
+                my_error(ER_WRONG_USAGE, MYF(0), "SERIAL", "generated column");
+                MYSQL_YYABORT;
+            }
             if (Lex->charset)
             {
               Lex->charset= merge_charset_and_collation(Lex->charset, $2);
@@ -6767,7 +6775,7 @@ type:
           {
             $$=MYSQL_TYPE_LONGLONG;
             Lex->type|= (AUTO_INCREMENT_FLAG | NOT_NULL_FLAG | UNSIGNED_FLAG |
-              UNIQUE_FLAG);
+              UNIQUE_FLAG | SERIAL_FLAG);
           }
         | JSON_SYM
           {
@@ -12066,7 +12074,12 @@ show_param:
             }
           }
         | opt_full PROCESSLIST_SYM
-          { Lex->sql_command= SQLCOM_SHOW_PROCESSLIST;}
+          {
+            THD *thd= YYTHD;
+            LEX *lex= thd->lex;
+            PT_statement *stmt = NEW_PTN PT_show_processlist(@$, lex->verbose /* $1 */);
+            MAKE_CMD(stmt);
+          }
         | opt_var_type VARIABLES opt_wild_or_where_for_show
           {
             THD *thd= YYTHD;
@@ -14450,7 +14463,7 @@ grant_ident:
             if (lex->copy_db_to(&lex->current_select()->db, &dummy))
               MYSQL_YYABORT;
             if (lex->grant == GLOBAL_ACLS)
-              lex->grant = DB_ACLS & ~GRANT_ACL;
+              lex->grant = DB_OP_ACLS;
             else if (lex->columns.elements)
             {
               my_message(ER_ILLEGAL_GRANT_FOR_TABLE,
@@ -14463,7 +14476,7 @@ grant_ident:
             LEX *lex= Lex;
             lex->current_select()->db = $1.str;
             if (lex->grant == GLOBAL_ACLS)
-              lex->grant = DB_ACLS & ~GRANT_ACL;
+              lex->grant = DB_OP_ACLS;
             else if (lex->columns.elements)
             {
               my_message(ER_ILLEGAL_GRANT_FOR_TABLE,
@@ -14491,7 +14504,7 @@ grant_ident:
                                                         TL_OPTION_UPDATING))
               MYSQL_YYABORT;
             if (lex->grant == GLOBAL_ACLS)
-              lex->grant =  TABLE_ACLS & ~GRANT_ACL;
+              lex->grant =  TABLE_OP_ACLS;
           }
         ;
 

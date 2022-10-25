@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2021, Oracle and/or its affiliates.
+Copyright (c) 1996, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -1996,13 +1996,6 @@ trx_commit_in_memory(
 		}
 	}
 
-	if (trx->rsegs.m_redo.rseg != NULL) {
-		trx_rseg_t*	rseg = trx->rsegs.m_redo.rseg;
-		mutex_enter(&rseg->mutex);
-		ut_ad(rseg->trx_ref_count > 0);
-		--rseg->trx_ref_count;
-		mutex_exit(&rseg->mutex);
-	}
 
 	if (mtr != NULL) {
 		if (trx->rsegs.m_redo.insert_undo != NULL) {
@@ -2063,6 +2056,24 @@ trx_commit_in_memory(
 		master thread, purge thread or page_cleaner thread might
 		have some work to do. */
 		srv_active_wake_master_thread();
+	}
+
+	/* Do not decrement the reference count before this point.
+	There is a potential issue where a thread attempting to truncate
+	an undo tablespace may end up truncating this undo space
+	before this thread can complete the cleanup.
+	While truncating an undo space, the server tries to find if any
+	transaction is actively using the undo log being truncated. A
+	non-zero reference count ensures that the thread attempting to
+	truncate the undo tablespace cannot be successful as the undo log
+	cannot be truncated until it is empty. */
+	if (trx->rsegs.m_redo.rseg != NULL) {
+		trx_rseg_t*	rseg = trx->rsegs.m_redo.rseg;
+		mutex_enter(&rseg->mutex);
+		ut_ad(rseg->trx_ref_count > 0);
+		--rseg->trx_ref_count;
+		mutex_exit(&rseg->mutex);
+		trx->rsegs.m_redo.rseg = NULL;
 	}
 
 	/* Free all savepoints, starting from the first. */

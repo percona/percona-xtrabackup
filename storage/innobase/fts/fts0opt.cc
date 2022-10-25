@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2007, 2021, Oracle and/or its affiliates.
+Copyright (c) 2007, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -2644,6 +2644,9 @@ fts_optimize_request_sync_table(
 	msg->ptr = table_id;
 
 	ib_wqueue_add(fts_optimize_wq, msg, msg->heap);
+	DBUG_EXECUTE_IF("fts_optimize_wq_count_check",
+	    if (ib_wqueue_get_count(fts_optimize_wq) > 1000) {
+	    DBUG_SUICIDE(); });
 }
 
 /**********************************************************************//**

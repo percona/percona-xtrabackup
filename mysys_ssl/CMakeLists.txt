@@ -1,4 +1,4 @@
-# Copyright (c) 2012, 2021, Oracle and/or its affiliates.
+# Copyright (c) 2012, 2022, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -38,6 +38,7 @@ SET(MYSYS_SSL_SOURCES
     mf_tempdir.cc
     my_default.cc
     my_getopt.cc
+    my_kdf.cc
     my_aes.cc
     my_sha1.cc
     my_md5.cc

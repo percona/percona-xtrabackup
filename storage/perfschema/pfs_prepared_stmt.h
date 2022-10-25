@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2022, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -29,8 +29,8 @@
 */
 
 #include "pfs_stat.h"
-#include "include/mysql/psi/psi.h"
-#include "include/mysql/psi/mysql_ps.h"
+#include "mysql/psi/psi.h"
+#include "mysql/psi/mysql_ps.h"
 #include "pfs_program.h"
 
 #define PS_NAME_LENGTH NAME_LEN

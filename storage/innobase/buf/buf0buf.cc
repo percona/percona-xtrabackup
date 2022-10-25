@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2021, Oracle and/or its affiliates.
+Copyright (c) 1995, 2022, Oracle and/or its affiliates.
 Copyright (c) 2008, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -6306,7 +6306,7 @@ assert_s_latched:
 
 	buf_pool_mutex_exit(buf_pool);
 
-	ut_a(buf_LRU_validate());
+	buf_LRU_validate_instance(buf_pool);
 	ut_a(buf_flush_validate(buf_pool));
 
 	return(TRUE);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2022, Oracle and/or its affiliates.
  
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -188,6 +188,7 @@
 #cmakedefine HAVE_ULONG 1
 #cmakedefine HAVE_U_INT32_T 1
 #cmakedefine HAVE_STRUCT_TIMESPEC
+#cmakedefine HAVE_TM_GMTOFF 1
 
 /* Support for tagging symbols with __attribute__((visibility("hidden"))) */
 #cmakedefine HAVE_VISIBILITY_HIDDEN 1
@@ -232,6 +233,7 @@
 #cmakedefine IPV6_V6ONLY @IPV6_V6ONLY@
 /* This should mean case insensitive file system */
 #cmakedefine FN_NO_CASE_SENSE 1
+#cmakedefine APPLE_ARM 1
 
 /*
  * From main CMakeLists.txt

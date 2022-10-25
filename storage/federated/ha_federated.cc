@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2004, 2022, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -3451,6 +3451,23 @@ int ha_federated::execute_simple_query(const char *query, int len)
     DBUG_RETURN(stash_remote_error());
   }
   DBUG_RETURN(0);
+}
+
+
+int ha_federated::rnd_pos_by_record(uchar *record) {
+  int error;
+  assert(table_flags() & HA_PRIMARY_KEY_REQUIRED_FOR_POSITION);
+
+  error = ha_rnd_init(false);
+  if (error != 0) return error;
+
+  if (stored_result) {
+    position(record);
+    error = ha_rnd_pos(record, ref);
+  }
+
+  ha_rnd_end();
+  return error;
 }
 
 struct st_mysql_storage_engine federated_storage_engine=
