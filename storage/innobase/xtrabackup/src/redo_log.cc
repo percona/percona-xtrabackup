@@ -905,8 +905,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
 }
 
 bool Redo_Log_Data_Manager::init() {
-  /*XB30 srv_redo_log_capacity */
-  srv_redo_log_capacity = srv_redo_log_capacity_used = 1024 * 1024 * 1024;
+  srv_redo_log_capacity = srv_redo_log_capacity_used = 0;
   error = true;
   event = os_event_create();
 

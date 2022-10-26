@@ -742,7 +742,6 @@ block.
 @return whether the checksum matches */
 bool log_block_checksum_is_ok(const byte *block);
 
-#ifdef XTRABACKUP
 /** Checks if a given log data block could be considered a next valid block,
 with regards to the epoch_no it has stored in its header, during the recovery.
 @param[in]  log_block_epoch_no  epoch_no of the log data block to check
@@ -766,7 +765,6 @@ struct Log_checkpoint_location {
 @param[out]     checkpoint      the latest checkpoint found (if any)
 @return true iff any checkpoint has been found */
 bool recv_find_max_checkpoint(log_t &log, Log_checkpoint_location &checkpoint);
-#endif /* XTRABACUP */
 
 /** Reads a specified log segment to a buffer.
 @param[in,out]  log   redo log

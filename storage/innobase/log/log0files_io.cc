@@ -1178,8 +1178,8 @@ static dberr_t log_check_file(const Log_files_context &ctx, Log_file_id file_id,
     return DB_ERROR;
   }
 
-  /* PXB logs redo log doesn't care about server redo log size
-  restrictions */
+  /* PXB redo logs do not care about server redo log size restrictions and PXB
+  has a single redo file and it can be > 4G size */
 #ifndef XTRABACKUP
   if (size_in_bytes < LOG_FILE_MIN_SIZE) {
     ib::error(ER_IB_MSG_LOG_FILE_TOO_SMALL, file_path.c_str(),

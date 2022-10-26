@@ -380,7 +380,6 @@ void log_crash_safe_validate(log_t &log);
 
 #endif /* !UNIV_HOTBACKUP */
 
-#ifdef XTRABACKUP
 /** Checks if the redo log directory exists, can be listed and contains
 at least one redo log file.
 @remarks Redo log file is recognized only by looking at the file name,
@@ -394,6 +393,14 @@ call
 @retval DB_NOT_FOUND  if the log directory does not exist */
 dberr_t log_sys_check_directory(const Log_files_context &ctx, std::string &path,
                                 bool &found_files);
-#endif
+#ifdef XTRABACKUP
+/** This version is used to recreate the log files in the same format that
+PXB read. i.e. if PXB is processing redo from 8.0.19 or below (v3), then
+it has to recreate log files with v3 header. If PXB is processing redo from
+8.0.20 above (v4), it has to recreate log files with v4 header.
+We cannot reuse log_sys->format for this purpose because it is dellocated and
+re-initialized during PXB prepare */
+extern Log_format log_detected_format;
+#endif /* XTRABACKUP */
 
 #endif /* !log0log_h */
