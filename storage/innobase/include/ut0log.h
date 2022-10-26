@@ -153,14 +153,14 @@ class logger {
   @param[in]    msg    message to be logged
   @param[in]    module  module that generates the event
   */
-  void log_event(std::string msg, IF_XB(const char *const module));
+  void log_event(std::string msg IF_XB(, const char *const module));
 
   /** Constructor.
   @param[in]    level           Logging level
   @param[in]    err             Error message code.
   @param[in]    module          module that generates the event */
-  logger(loglevel level, int err, IF_XB(const char *module))
-      : m_err(err), m_level(level), IF_XB(m_module(module)) {
+  logger(loglevel level, int err IF_XB(, const char *module))
+      : m_err(err), m_level(level) IF_XB(, m_module(module)) {
     /* Note: Dummy argument to avoid the warning:
 
     "format not a string literal and no format arguments"
@@ -180,17 +180,17 @@ class logger {
   @param[in]    module          module that generates the event
   @param[in]    args            Variable length argument list */
   template <class... Args>
-  explicit logger(loglevel level, int err, IF_XB(const char *module),
+  explicit logger(loglevel level, int err IF_XB(, const char *module),
                   Args &&... args)
-      : m_err(err), m_level(level), IF_XB(m_module(module)) {
+      : m_err(err), m_level(level) IF_XB(, m_module(module)) {
     m_oss << msg(err, std::forward<Args>(args)...);
   }
 
   /** Constructor
   @param[in]    level           Log error level
   @param[in]    module          Module that generates the event */
-  explicit logger(loglevel level, IF_XB(const char *module))
-      : m_err(ER_IB_MSG_0), m_level(level), IF_XB(m_module(module)) {}
+  explicit logger(loglevel level IF_XB(, const char *module))
+      : m_err(ER_IB_MSG_0), m_level(level) IF_XB(, m_module(module)) {}
 
 #endif /* !UNIV_NO_ERR_MSGS */
 };

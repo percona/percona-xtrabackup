@@ -92,6 +92,15 @@ class Redo_Log_Reader {
                         lsn_t *read_upto_lsn, lsn_t checkpoint_lsn,
                         bool *finished);
 
+  ssize_t scan_log_recs_pre8030(byte *buf, bool is_last, lsn_t start_lsn,
+                        lsn_t *read_upto_lsn, lsn_t checkpoint_lsn,
+                        bool *finished);
+
+  ssize_t scan_log_recs_8030(byte *buf, bool is_last, lsn_t start_lsn,
+                        lsn_t *read_upto_lsn, lsn_t checkpoint_lsn,
+                        bool *finished);
+
+
   /** Read specified log segment into a buffer.
   @param[in,out] log            redo log
   @param[in,out] buf            buffer where to read
@@ -102,8 +111,17 @@ class Redo_Log_Reader {
   static lsn_t read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
                             const lsn_t end_lsn);
 
+  static lsn_t read_log_seg_pre8030(log_t &log, byte *buf, lsn_t start_lsn,
+                                    const lsn_t end_lsn);
+
+  static lsn_t read_log_seg_8030(log_t &log, byte *buf, lsn_t start_lsn,
+                                 const lsn_t end_lsn);
+
   /** checkpoint LSN at the backup start. */
-  lsn_t checkpoint_lsn_start{0};
+  static lsn_t checkpoint_lsn_start;
+
+  /** offset of checkpoint_lsn_start */
+  static os_offset_t checkpoint_offset_start;
 
   /** last scanned LSN. */
   lsn_t log_scanned_lsn{0};

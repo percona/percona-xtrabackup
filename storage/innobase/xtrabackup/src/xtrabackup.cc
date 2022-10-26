@@ -199,6 +199,7 @@ char *xtrabackup_tables_exclude = NULL;
 lsn_t xtrabackup_start_checkpoint;
 
 bool xtrabackup_register_redo_log_consumer = false;
+std::atomic<bool> redo_log_consumer_can_advance = false;
 
 typedef std::list<xb_regex_t> regex_list_t;
 static regex_list_t regex_include_list;
@@ -506,7 +507,7 @@ extern TYPELIB innodb_flush_method_typelib;
 #include "sslopt-vars.h"
 
 bool redo_catchup_completed = false;
-Log_format original_log_format;
+Log_format xtrabackup_original_log_format;
 extern struct rand_struct sql_rand;
 extern mysql_mutex_t LOCK_sql_rand;
 bool xb_generated_redo = false;
@@ -5116,7 +5117,7 @@ static bool xtrabackup_init_temp_log(void) {
   }
 
   log_format = (Log_format)mach_read_from_4(log_buf + LOG_HEADER_FORMAT);
-  original_log_format = log_format;
+  xtrabackup_original_log_format = log_format;
   if (log_format == Log_format::VERSION_8_0_28 ||
       log_format == Log_format::VERSION_8_0_19) {
     // We interpret v4 & v5 as v6 by writing proper start lsn header later in
@@ -6198,7 +6199,8 @@ static bool xtrabackup_replace_log_file(const char *redo_path,
   memset(log_buf + LOG_HEADER_CREATOR, ' ', 4);
 
   /* restore original log format */
-  mach_write_to_4(log_buf + LOG_HEADER_FORMAT, to_int(original_log_format));
+  mach_write_to_4(log_buf + LOG_HEADER_FORMAT,
+                  to_int(xtrabackup_original_log_format));
   success = os_file_write(write_request, src_path, src_file, log_buf, 0,
                           LOG_FILE_HDR_SIZE);
   if (!success) {

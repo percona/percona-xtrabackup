@@ -1671,6 +1671,9 @@ void log_status_get(MYSQL *conn) {
   ut_ad(!have_unsafe_ddl_tables || tables_locked || instance_locked ||
         opt_no_lock || opt_lock_ddl_per_table);
 
+  if (xtrabackup_register_redo_log_consumer)
+    redo_log_consumer_can_advance.store(false);
+
   const char *query =
       "SELECT server_uuid, local, replication, "
       "storage_engines FROM performance_schema.log_status";

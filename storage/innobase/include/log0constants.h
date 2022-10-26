@@ -294,6 +294,10 @@ unexpected end of the log during recovery in similar way as hdr_no does.
 the start_lsn divided by OS_FILE_LOG_BLOCK_SIZE, and then divided by the
 LOG_BLOCK_MAX_NO. */
 constexpr uint32_t LOG_BLOCK_EPOCH_NO = 8;
+#ifdef XTRABACKUP
+/** same offset is used for this in pre8030 */
+constexpr uint32_t LOG_BLOCK_CHECKPOINT_NO = 8;
+#endif  // XTRABACKUP
 
 /** Size of the log block's header in bytes. */
 constexpr uint32_t LOG_BLOCK_HDR_SIZE = 12;

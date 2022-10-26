@@ -451,6 +451,15 @@ Log_uuid log_generate_uuid();
 
 /* Definition of inline functions. */
 
+inline bool log_block_get_flush_bit(const byte *log_block) {
+  if (LOG_BLOCK_FLUSH_BIT_MASK &
+      mach_read_from_4(log_block + LOG_BLOCK_HDR_NO)) {
+    return (true);
+  }
+
+  return (false);
+}
+
 /** Gets a log block number stored in the header. The number corresponds
 to lsn range for data stored in the block.
 
@@ -517,6 +526,13 @@ inline void log_block_set_first_rec_group(byte *log_block, uint32_t offset) {
 @return epoch number */
 inline uint32_t log_block_get_epoch_no(const byte *log_block) {
   return mach_read_from_4(log_block + LOG_BLOCK_EPOCH_NO);
+}
+
+/** Gets a log block checkpoint_no. For details: @see LOG_BLOCK_CHECKPOINT_NO.
+@param[in]	log_block	log block
+@return epoch number */
+inline uint32_t log_block_get_checkpoint_no(const byte *log_block) {
+  return mach_read_from_4(log_block + LOG_BLOCK_CHECKPOINT_NO);
 }
 
 /** Sets a log block epoch_no. For details: @see LOG_BLOCK_EPOCH_NO.

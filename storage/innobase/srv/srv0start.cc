@@ -1889,12 +1889,16 @@ dberr_t srv_start(bool create_new_db, lsn_t to_lsn) {
   err = srv_sys_space.open_or_create(false, create_new_db, &sum_of_new_sizes,
                                      &flushed_lsn);
 
+  /* 8.0.28 server when it recreated log files, didn't write correct flushed_lsn
+  to ibdata. Only a shutdown will update FIL_PAGE_FLUSHED_LSN to ibdata1 */
+#ifndef XTRABACKUP
   if (flushed_lsn < LOG_START_LSN) {
     ut_ad(!create_new_db);
     /* Data directory hasn't been initialized yet. */
     ib::error(ER_IB_MSG_DATA_DIRECTORY_NOT_INITIALIZED_OR_CORRUPTED);
     return DB_ERROR;
   }
+#endif
 
   /* FIXME: This can be done earlier, but we now have to wait for
   checking of system tablespace. */

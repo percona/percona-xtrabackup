@@ -131,6 +131,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 /* UT_DELETE_ARRAY */
 #include "ut0new.h"
 
+#include "xb0xb.h"
+
 // clang-format off
 /**
 @page PAGE_INNODB_REDO_LOG Innodb redo log
@@ -1594,7 +1596,10 @@ static
 
 dberr_t log_sys_init(bool expect_no_files, lsn_t flushed_lsn,
                      lsn_t &new_files_lsn) {
-  ut_a(log_is_data_lsn(flushed_lsn));
+  // Before 8.0.30, it is possible that ibdata1 was written lsn < LOG_START_LSN
+  // This can happen on redo log resize
+  ut_a(log_is_data_lsn(flushed_lsn) IF_XB(|| xtrabackup_original_log_format <=
+                                                 Log_format::VERSION_8_0_30));
   ut_a(log_sys == nullptr);
 
   new_files_lsn = 0;
