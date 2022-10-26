@@ -1561,17 +1561,10 @@ fil_space_is_being_truncated(
 	bool flag = true;
 	fil_space_t* space;
 	mutex_enter(&fil_system->mutex);
-<<<<<<< HEAD
-	fil_space_t* space = fil_space_get_by_id(id);
-	mark_for_truncate = space ? space->is_being_truncated : false;
-||||||| 89713bf41c3
-	mark_for_truncate = fil_space_get_by_id(id)->is_being_truncated;
-=======
 	space = fil_space_get_space(id);
 	if (space != NULL) {
 		flag = space->is_being_truncated;
         }
->>>>>>> mysql-5.7.40
 	mutex_exit(&fil_system->mutex);
 	return(flag);
 }
