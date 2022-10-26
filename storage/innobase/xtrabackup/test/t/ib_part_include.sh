@@ -27,6 +27,9 @@ vlog "Backup taken"
 
 mysql -e 'SELECT * FROM INFORMATION_SCHEMA.TABLES\G'
 
+# test does not work --stats work with --tables-file
+run_cmd_expect_failure $XB_BIN $XB_ARGS --stats --tables='test.test$' --datadir=$topdir/backup
+
 stop_server
 
 # Restore partial backup

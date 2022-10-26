@@ -5120,7 +5120,7 @@ static bool xtrabackup_init_temp_log(void) {
   original_log_format = log_format;
   if (log_format == Log_format::VERSION_8_0_28 ||
       log_format == Log_format::VERSION_8_0_19) {
-    // We interpret v4 & v5 as v6 by writting proper start lsn header later in
+    // We interpret v4 & v5 as v6 by writing proper start lsn header later in
     // this function
     log_format = Log_format::VERSION_8_0_30;
   }

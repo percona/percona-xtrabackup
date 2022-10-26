@@ -792,7 +792,7 @@ with regards to the epoch_no it has stored in its header, during the recovery.
 @return true iff the provided log block has valid epoch_no */
 #ifndef XTRABACKUP
 static
-#endif /* XTRABACK */
+#endif /* XTRABACKUP */
     bool
     log_block_epoch_no_is_valid(uint32_t log_block_epoch_no,
                                 uint32_t last_epoch_no) {
@@ -1054,20 +1054,6 @@ static dberr_t recv_log_recover_pre_8_0_30(log_t &log) {
 
   return log_start(log, checkpoint_lsn, checkpoint_lsn, nullptr);
 }
-
-#ifndef XTRABACKUP
-/** Describes location of a single checkpoint. */
-struct Log_checkpoint_location {
-  /** File containing checkpoint header and checkpoint lsn. */
-  Log_file_id m_checkpoint_file_id{0};
-
-  /** Checkpoint header number. */
-  Log_checkpoint_header_no m_checkpoint_header_no{};
-
-  /** Checkpoint LSN. */
-  lsn_t m_checkpoint_lsn{0};
-};
-#endif
 
 /** Find the latest checkpoint in the given log file.
 @param[in]      file_handle     handle for the opened redo log file
