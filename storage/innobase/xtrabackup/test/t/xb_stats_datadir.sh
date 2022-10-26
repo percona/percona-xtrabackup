@@ -4,6 +4,7 @@
 ################################################################################
 
 . inc/common.sh
+require_server_version_higher_than 8.0.29
 
 logdir=${TEST_VAR_ROOT}/logs
 mkdir $logdir

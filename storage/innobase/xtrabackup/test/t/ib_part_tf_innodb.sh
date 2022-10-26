@@ -8,6 +8,7 @@
 
 . inc/common.sh
 . inc/ib_part.sh
+require_server_version_higher_than 8.0.29
 
 start_server --innodb_file_per_table --innodb_directories=$TEST_VAR_ROOT/remote
 

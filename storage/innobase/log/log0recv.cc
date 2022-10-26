@@ -4284,7 +4284,7 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
       ut_ad(0);
       recv_sys->found_corrupt_log = true;
       return DB_ERROR;
-}
+  }
 
   ut_a(log.m_format == Log_format::CURRENT);
 

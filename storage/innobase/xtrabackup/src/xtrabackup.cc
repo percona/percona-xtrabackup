@@ -4903,13 +4903,13 @@ static void xtrabackup_stats_func(int argc, char **argv) {
   ut::vector<Log_file_id> listed_files;
   const dberr_t err = log_list_existing_files(log_files_ctx, listed_files);
 
-  if (err != DB_SUCCESS) {
-    xb::error() << "Cannot find log files ";
-    xb::error() << "to use the statistics feature, you need a "
-                   "clean copy of the database including "
-                   "correctly sized log files, so you need to "
-                   "start server once after prepare to use "
-                   "functionality on a backup.";
+  if (err != DB_SUCCESS || listed_files.size() == 0) {
+    xb::error()
+        << "Cannot find correct redo log files, To use the statistics feature, "
+           "you need a clean copy of the database version 8.0.30 or higher "
+           "and with correctly sized log files, so if it is backup directory "
+           "start server once after prepare to use --stats functionality ";
+
     exit(EXIT_FAILURE);
   }
 
