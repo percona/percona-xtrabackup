@@ -105,9 +105,6 @@ class Redo_Log_Reader {
   /** checkpoint LSN at the backup start. */
   lsn_t checkpoint_lsn_start{0};
 
-  /** checkpoint number at the backup start. */
-  lsn_t checkpoint_no_start{0};
-
   /** last scanned LSN. */
   lsn_t log_scanned_lsn{0};
 

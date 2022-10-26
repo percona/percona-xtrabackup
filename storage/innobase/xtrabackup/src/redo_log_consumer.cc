@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2019,2022 Percona LLC and/or its affiliates.
+Copyright (c) 2022 Percona LLC and/or its affiliates.
 
 Redo consumer interface.
 

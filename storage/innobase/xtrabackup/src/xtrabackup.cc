@@ -1581,8 +1581,7 @@ Disable with --skip-innodb-checksums.",
     {"register_redo_log_consumer", OPT_REGISTER_REDO_LOG_CONSUMER,
      "Register a redo log consumer in the start of the backup. If this option "
      "is enabled, it will block the server from purging redo log if PXB redo "
-     "follow thread is still copying it, causing stall in writes on the "
-     "server.",
+     "follow thread is still copying it and will stall DMLs on the server.",
      &xtrabackup_register_redo_log_consumer,
      &xtrabackup_register_redo_log_consumer, 0, GET_BOOL, NO_ARG, false, 0, 0,
      0, 0, 0},
