@@ -507,7 +507,6 @@ extern TYPELIB innodb_flush_method_typelib;
 #include "sslopt-vars.h"
 
 bool redo_catchup_completed = false;
-Log_format xtrabackup_original_log_format;
 extern struct rand_struct sql_rand;
 extern mysql_mutex_t LOCK_sql_rand;
 bool xb_generated_redo = false;
@@ -5116,15 +5115,15 @@ static bool xtrabackup_init_temp_log(void) {
     goto error;
   }
 
-  log_format = (Log_format)mach_read_from_4(log_buf + LOG_HEADER_FORMAT);
-  xtrabackup_original_log_format = log_format;
+  log_format =
+      static_cast<Log_format>(mach_read_from_4(log_buf + LOG_HEADER_FORMAT));
+  log_detected_format = log_format;
   if (log_format == Log_format::VERSION_8_0_28 ||
       log_format == Log_format::VERSION_8_0_19) {
     // We interpret v4 & v5 as v6 by writing proper start lsn header later in
     // this function
     log_format = Log_format::VERSION_8_0_30;
   }
-  log_detected_format = log_format;
 
   if (ut_memcmp(log_buf + LOG_HEADER_CREATOR, (byte *)LOG_HEADER_CREATOR_PXB,
                 (sizeof LOG_HEADER_CREATOR_PXB) - 1) != 0) {
@@ -6199,8 +6198,7 @@ static bool xtrabackup_replace_log_file(const char *redo_path,
   memset(log_buf + LOG_HEADER_CREATOR, ' ', 4);
 
   /* restore original log format */
-  mach_write_to_4(log_buf + LOG_HEADER_FORMAT,
-                  to_int(xtrabackup_original_log_format));
+  mach_write_to_4(log_buf + LOG_HEADER_FORMAT, to_int(log_detected_format));
   success = os_file_write(write_request, src_path, src_file, log_buf, 0,
                           LOG_FILE_HDR_SIZE);
   if (!success) {

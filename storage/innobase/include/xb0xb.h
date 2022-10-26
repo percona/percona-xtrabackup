@@ -31,7 +31,6 @@ extern bool opt_page_tracking;
 extern char *xtrabackup_incremental;
 extern lsn_t incremental_start_checkpoint_lsn;
 extern lsn_t xtrabackup_start_checkpoint;
-extern Log_format xtrabackup_original_log_format;
 extern bool use_dumped_tablespace_keys;
 extern bool xb_generated_redo;
 

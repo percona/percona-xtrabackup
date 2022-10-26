@@ -3857,7 +3857,7 @@ bool meb_scan_log_recs(
      * check redo_log.cc read_log_seg_pre8030 & scan_log_recs_pre8030.
      */
     if (scanned_lsn + data_len > recv_sys->scanned_lsn) {
-      if (xtrabackup_original_log_format >= Log_format::VERSION_8_0_30 &&
+      if (log_detected_format >= Log_format::VERSION_8_0_30 &&
           recv_sys->scanned_epoch_no > 0 &&
           !log_block_epoch_no_is_valid(block_header.m_epoch_no,
                                        recv_sys->scanned_epoch_no)) {

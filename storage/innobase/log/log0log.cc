@@ -1598,8 +1598,8 @@ dberr_t log_sys_init(bool expect_no_files, lsn_t flushed_lsn,
                      lsn_t &new_files_lsn) {
   // Before 8.0.30, it is possible that ibdata1 was written lsn < LOG_START_LSN
   // This can happen on redo log resize
-  ut_a(log_is_data_lsn(flushed_lsn) IF_XB(|| xtrabackup_original_log_format <=
-                                                 Log_format::VERSION_8_0_30));
+  ut_a(log_is_data_lsn(flushed_lsn)
+           IF_XB(|| log_detected_format <= Log_format::VERSION_8_0_30));
   ut_a(log_sys == nullptr);
 
   new_files_lsn = 0;
@@ -1863,6 +1863,16 @@ dberr_t log_sys_init(bool expect_no_files, lsn_t flushed_lsn,
     ut_a(result == 0);
     srv_redo_log = false;
   }
+
+#ifdef XTRABACKUP
+  /**
+   *  Adjust log_detected_format on backup. For prepare we do it at
+   * xtrabackup_init_temp_log
+   */
+  if (srv_backup_mode) {
+    log_detected_format = static_cast<Log_format>(format);
+  }
+#endif  // XTRABACKUP
 
   return DB_SUCCESS;
 }
