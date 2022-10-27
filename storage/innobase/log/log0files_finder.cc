@@ -82,6 +82,9 @@ static bool log_files_validate_format(
                 file_path.c_str(), REFMAN "upgrading-downgrading.html");
       return false;
     }
+#ifndef XTRABACKUP
+    /* xtrabackup can handle redo version < 8030. This check
+    is not relevant */
     if (curr_format_int < to_int(Log_format::VERSION_8_0_30)) {
       /* Format of redo file is too old for the configured ruleset. */
       const auto file_path = log_file_path(files_ctx, file.m_id);
@@ -89,6 +92,11 @@ static bool log_files_validate_format(
                 ulong{curr_format_int});
       return false;
     }
+
+    /* This can happen when PXB generates new redo files. xtrabackup file
+    can have older version (v4) and newly generated redo files can have v6.
+    A crash at this moment and resume can make the below check fail. We
+    disable this for PXB */
     if (curr_format_int != first_file_format_int) {
       /* Two existing redo files have different format. */
       const auto first_file_path = log_file_path(files_ctx, files.front().m_id);
@@ -98,8 +106,18 @@ static bool log_files_validate_format(
                 ulong{curr_format_int});
       return false;
     }
+#endif /* XTRABACKUP */
   }
+
   format = static_cast<Log_format>(first_file_format_int);
+#ifdef XTRABACKUP
+  if (xb_log_detected_format < Log_format::VERSION_8_0_30 &&
+      format < Log_format::VERSION_8_0_30) {
+    /* we already renamed the file to ib_redo format and fixed the start_lsn.
+    So it is safe for innodb recovery */
+    format = Log_format::VERSION_8_0_30;
+  }
+#endif /* XTRABACKUP */
   return true;
 }
 
