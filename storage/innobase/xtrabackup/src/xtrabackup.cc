@@ -5117,7 +5117,19 @@ static bool xtrabackup_init_temp_log(void) {
 
   log_format =
       static_cast<Log_format>(mach_read_from_4(log_buf + LOG_HEADER_FORMAT));
-  log_detected_format = log_format;
+  xb_log_detected_format = log_format;
+
+  if (log_format < Log_format::VERSION_8_0_1) {
+    xb::error() << "Unsupported redo log format " << to_int(log_format);
+    xb::error()
+        << "This version of Percona XtraBackup can only perform backups and "
+           "restores against MySQL 8.0 and Percona Server 8.0, please use "
+           "Percona "
+           "Xtrabackup 2.4 for this database.";
+
+    goto error;
+  }
+
   if (log_format == Log_format::VERSION_8_0_28 ||
       log_format == Log_format::VERSION_8_0_19) {
     // We interpret v4 & v5 as v6 by writing proper start lsn header later in
@@ -5137,16 +5149,6 @@ static bool xtrabackup_init_temp_log(void) {
     goto skip_modify;
   }
 
-  if (log_format < Log_format::VERSION_8_0_1) {
-    xb::error() << "Unsupported redo log format " << to_int(log_format);
-    xb::error()
-        << "This version of Percona XtraBackup can only perform backups and "
-           "restores against MySQL 8.0 and Percona Server 8.0, please use "
-           "Percona "
-           "Xtrabackup 2.4 for this database.";
-
-    goto error;
-  }
 
   checkpoint_found = false;
 
@@ -6198,7 +6200,7 @@ static bool xtrabackup_replace_log_file(const char *redo_path,
   memset(log_buf + LOG_HEADER_CREATOR, ' ', 4);
 
   /* restore original log format */
-  mach_write_to_4(log_buf + LOG_HEADER_FORMAT, to_int(log_detected_format));
+  mach_write_to_4(log_buf + LOG_HEADER_FORMAT, to_int(xb_log_detected_format));
   success = os_file_write(write_request, src_path, src_file, log_buf, 0,
                           LOG_FILE_HDR_SIZE);
   if (!success) {

@@ -35,7 +35,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ut0byte.h"
 #include "log0types.h"
 
-extern Log_format log_detected_format;
+extern Log_format xb_log_detected_format;
  
 /** The following function is used to store data in one byte.
 @param[in]      b       pointer to byte where to store
@@ -239,7 +239,7 @@ else the storage is 5-byte.
 @param[in]	n	ulint integer (< 2^32) to be stored
 @return compressed size in bytes */
 static inline ulint mach_write_compressed(byte *b, ulint n) {
-  switch (log_detected_format) {
+  switch (xb_log_detected_format) {
     case Log_format::VERSION_5_7_9:
     case Log_format::LEGACY:
       ut_a(0);
@@ -314,7 +314,7 @@ static inline uint32_t mach_get_compressed_size_v4(ulint n) {
 @param[in]	n	uint32_t integer (< 2^32) to be stored
 @return compressed size in bytes */
 static inline uint32_t mach_get_compressed_size(ulint n) {
-  switch (log_detected_format) {
+  switch (xb_log_detected_format) {
     case Log_format::VERSION_5_7_9:
     case Log_format::LEGACY:
       ut_a(0);
@@ -417,7 +417,7 @@ ulint mach_read_compressed_v4(const byte *b) {
 @param[in]	b	pointer to memory from where to read
 @return read integer (< 2^32) */
 static inline ulint mach_read_compressed(const byte *b) {
-  switch (log_detected_format) {
+  switch (xb_log_detected_format) {
     case Log_format::VERSION_5_7_9:
     case Log_format::LEGACY:
       ut_a(0);
@@ -528,7 +528,7 @@ static inline uint32_t mach_read_next_compressed_v4(const byte **b) {
 advanced by the number of bytes consumed
 @return unsigned value */
 static inline uint32_t mach_read_next_compressed(const byte **b) {
-  switch (log_detected_format) {
+  switch (xb_log_detected_format) {
     case Log_format::VERSION_5_7_9:
     case Log_format::LEGACY:
       ut_a(0);
@@ -793,7 +793,7 @@ static inline uint64_t mach_read_next_much_compressed_v4(const byte **b) {
 advanced by the number of bytes consumed
 @return unsigned value */
 static inline uint64_t mach_read_next_much_compressed(const byte **b) {
-  switch (log_detected_format) {
+  switch (xb_log_detected_format) {
     case Log_format::VERSION_5_7_9:
     case Log_format::LEGACY:
       ut_a(0);
