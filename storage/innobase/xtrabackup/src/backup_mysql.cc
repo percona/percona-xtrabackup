@@ -189,6 +189,12 @@ xb_mysql_connect()
 	xb_mysql_query(connection, "SET NAMES utf8",
 		       false, true);
 
+	if (xb_mysql_numrows(connection, "SELECT @@wsrep_sync_wait", false) >
+				0) {
+		xb_mysql_query(connection, "SET SESSION wsrep_sync_wait=0", false,
+				true);
+	}
+
 	return(connection);
 }
 
