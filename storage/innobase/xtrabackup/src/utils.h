@@ -46,6 +46,10 @@ unsigned long get_version_number(std::string version_str);
 
 unsigned long host_total_memory();
 unsigned long host_free_memory();
+
+/** Generates uuid
+@return uuid string */
+std::string generate_uuid();
 }  // namespace utils
 }  // namespace xtrabackup
 #endif  // XTRABACKUP_UTILS_H

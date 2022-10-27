@@ -143,6 +143,24 @@ fi
     xtrabackup --copy-back --generate-new-master-key \
          $copyback_options \
          --target-dir=$topdir/backup
+
+    # PXB-2874 - Check tablespace encryption uuid and key id
+    FILE=$mysql_datadir/test/t1.ibd
+    MASTER_KEY_ID=$(xxd -s 10393 -l4 $FILE |  awk '{print $3}')
+
+    if [[ "${MASTER_KEY_ID}" != "0001" ]];
+    then
+      die "File: ${FILE} has master key id: ${MASTER_KEY_ID} while it should be 0001"
+    fi
+
+    NEW_UUID=$(xxd -p -s 10397 -l36 $FILE | xxd -r -p | tr -d '\0')
+    OLD_UUID=$(xxd -p -s 10397 -l36 $topdir/backup/test/t1.ibd | xxd -r -p | tr -d '\0')
+
+    if [[ "${NEW_UUID}" = "${OLD_UUID}" ]];
+    then
+      die "File: ${FILE} has same UUID as backup file: ${NEW_UUID}. PXB should have generated a new UUID"
+    fi
+
     if grep -q "Could not find the data corresponding to Data ID: 'MySQLReplicationKey__1'" $OUTFILE
     then
       die "Cannot read uuid from backup-my.cnf file"

@@ -25,10 +25,15 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #else
 #include <proc/sysinfo.h>
 #endif
-
+#include <boost/uuid/uuid.hpp>             // uuid class
+#include <boost/uuid/uuid_generators.hpp>  // generators
+#include <boost/uuid/uuid_io.hpp>          // streaming operators etc.
+#include <sstream>
 #include "common.h"
 #include "msg.h"
 #include "xtrabackup.h"
+
+static boost::uuids::random_generator gen = boost::uuids::random_generator();
 
 namespace xtrabackup {
 namespace utils {
@@ -145,6 +150,13 @@ unsigned long host_free_memory() {
   return kb_main_available * 1024;
 }
 #endif
+
+std::string generate_uuid() {
+  boost::uuids::uuid uuid = gen();
+  std::ostringstream uuid_ss;
+  uuid_ss << uuid;
+  return uuid_ss.str();
+}
 
 }  // namespace utils
 }  // namespace xtrabackup
