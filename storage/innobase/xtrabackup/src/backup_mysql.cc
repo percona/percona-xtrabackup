@@ -576,14 +576,6 @@ bool get_mysql_vars(MYSQL *connection) {
         my_strdup(PSI_NOT_INSTRUMENTED, innodb_directories_var, MYF(MY_FAE));
   }
 
-  if (!check_if_param_set("innodb_log_files_in_group") &&
-      innodb_log_files_in_group_var) {
-    char *endptr;
-
-    innobase_log_files_in_group =
-        strtol(innodb_log_files_in_group_var, &endptr, 10);
-    ut_ad(*endptr == 0);
-  }
 
   if (!check_if_param_set("innodb_log_file_size") && innodb_log_file_size_var) {
     char *endptr;
@@ -1686,6 +1678,9 @@ void log_status_get(MYSQL *conn) {
   ut_ad(!have_unsafe_ddl_tables || tables_locked || instance_locked ||
         opt_no_lock || opt_lock_ddl_per_table);
 
+  if (xtrabackup_register_redo_log_consumer)
+    redo_log_consumer_can_advance.store(false);
+
   const char *query =
       "SELECT server_uuid, local, replication, "
       "storage_engines FROM performance_schema.log_status";
@@ -2060,7 +2055,6 @@ bool write_backup_config_file() {
     << innodb_checksum_algorithm_names[srv_checksum_algorithm] << "\n"
     << "innodb_log_checksums=" << srv_log_checksums << "\n"
     << "innodb_data_file_path=" << innobase_data_file_path << "\n"
-    << "innodb_log_files_in_group=" << srv_n_log_files << "\n"
     << "innodb_log_file_size=" << innobase_log_file_size << "\n"
     << "innodb_page_size=" << srv_page_size << "\n"
     << "innodb_undo_directory=" << srv_undo_dir << "\n"

@@ -911,15 +911,16 @@ static bool reencrypt_redo_header(const char *dir, const char *filename,
   xb::info() << "Encrypting " << fullpath << " header with new master key";
 
   memset(encrypt_info, 0, Encryption::INFO_SIZE);
-  space.id = dict_sys_t::s_log_space_first_id;
-  bool found = xb_fetch_tablespace_key(space.id, space.encryption_key,
-                                       space.encryption_iv);
+  space.id = dict_sys_t::s_log_space_id;
+  byte key[Encryption::KEY_LEN];
+  byte iv[Encryption::KEY_LEN];
+  bool found = xb_fetch_tablespace_key(space.id, key, iv);
   ut_a(found);
-  space.encryption_type = Encryption::AES;
-  space.encryption_klen = Encryption::KEY_LEN;
+  Encryption::set_or_generate(Encryption::AES, key, iv,
+                              space.m_encryption_metadata);
 
-  if (!Encryption::fill_encryption_info(
-          space.encryption_key, space.encryption_iv, encrypt_info, true)) {
+  if (!Encryption::fill_encryption_info(space.m_encryption_metadata, true,
+                                        encrypt_info)) {
     my_close(fd, MYF(MY_FAE));
     return (false);
   }
@@ -969,16 +970,17 @@ static bool reencrypt_datafile_header(const char *dir, const char *filepath,
   memset(encrypt_info, 0, Encryption::INFO_SIZE);
 
   space.id = page_get_space_id(page);
-  bool found = xb_fetch_tablespace_key(space.id, space.encryption_key,
-                                       space.encryption_iv);
+  byte key[Encryption::KEY_LEN];
+  byte iv[Encryption::KEY_LEN];
+  bool found = xb_fetch_tablespace_key(space.id, key, iv);
   ut_a(found);
-  space.encryption_type = Encryption::AES;
-  space.encryption_klen = Encryption::KEY_LEN;
+  Encryption::set_or_generate(Encryption::AES, key, iv,
+                              space.m_encryption_metadata);
 
   const page_size_t page_size(fsp_header_get_page_size(page));
 
-  if (!Encryption::fill_encryption_info(
-          space.encryption_key, space.encryption_iv, encrypt_info, true)) {
+  if (!Encryption::fill_encryption_info(space.m_encryption_metadata, true,
+                                        encrypt_info)) {
     my_close(fd, MYF(MY_FAE));
     return (false);
   }
@@ -1048,7 +1050,7 @@ static bool copy_or_move_file(const char *src_file_path,
 }
 
 static void backup_thread_func(datadir_thread_ctxt_t *ctx, bool prep_mode,
-                               FILE *rsync_tmpfile) {
+                               FILE *rsync_tmpfile, Backup_context &context) {
   bool ret = true;
   datadir_entry_t entry;
   THD *thd = nullptr;
@@ -1097,6 +1099,9 @@ static void backup_thread_func(datadir_thread_ctxt_t *ctx, bool prep_mode,
         goto cleanup;
       }
     }
+    if (context.redo_mgr->is_error()) {
+      goto cleanup;
+    }
   }
 
 cleanup:
@@ -1110,7 +1115,7 @@ cleanup:
   ctx->ret = ret;
 }
 
-bool backup_files(const char *from, bool prep_mode) {
+bool backup_files(const char *from, bool prep_mode, Backup_context &context) {
   char rsync_tmpfile_name[FN_REFLEN];
   FILE *rsync_tmpfile = NULL;
   bool ret = true;
@@ -1134,7 +1139,7 @@ bool backup_files(const char *from, bool prep_mode) {
 
   run_data_threads(from,
                    std::bind(backup_thread_func, std::placeholders::_1,
-                             prep_mode, rsync_tmpfile),
+                             prep_mode, rsync_tmpfile, context),
                    xtrabackup_parallel, "backup");
 
   if (opt_rsync) {
@@ -1209,15 +1214,17 @@ bool backup_files(const char *from, bool prep_mode) {
     }
   }
 
-  xb::info() << "Finished " << (prep_mode ? "a prep copy of" : "backing up")
-             << " non-InnoDB tables and files";
-
 out:
   if (rsync_tmpfile != NULL) {
     fclose(rsync_tmpfile);
   }
 
-  return (ret);
+  if (ret && !context.redo_mgr->is_error()) {
+    xb::info() << "Finished " << (prep_mode ? "a prep copy of" : "backing up")
+               << " non-InnoDB tables and files";
+    return true;
+  }
+  return false;
 }
 
 void Myrocks_datadir::scan_dir(const std::string &dir,
@@ -1474,7 +1481,7 @@ static bool backup_rocksdb_checkpoint(Backup_context &context, bool final) {
 @return true if success. */
 bool backup_start(Backup_context &context) {
   if (!opt_no_lock) {
-    if (!backup_files(MySQL_datadir_path.path().c_str(), true)) {
+    if (!backup_files(MySQL_datadir_path.path().c_str(), true, context)) {
       return (false);
     }
 
@@ -1486,8 +1493,7 @@ bool backup_start(Backup_context &context) {
     }
   }
 
-
-  if (!backup_files(MySQL_datadir_path.path().c_str(), false)) {
+  if (!backup_files(MySQL_datadir_path.path().c_str(), false, context)) {
     return (false);
   }
 
@@ -1974,7 +1980,7 @@ files match given list of file extensions.
 bool rm_for_cleanup_full_backup(const char **ext_list,
                                 const datadir_entry_t &entry, void *arg) {
   char path[FN_REFLEN];
-
+  const char *keep_folder_list[] = {"#innodb_redo/", NULL};
   if (entry.db_name.empty()) {
     return (true);
   }
@@ -1982,7 +1988,7 @@ bool rm_for_cleanup_full_backup(const char **ext_list,
   fn_format(path, entry.rel_path.c_str(), entry.datadir.c_str(), "",
             MY_UNPACK_FILENAME | MY_SAFE_PATH);
 
-  if (entry.is_empty_dir) {
+  if (entry.is_empty_dir && !filename_matches(path, keep_folder_list)) {
     if (rmdir(path) != 0) {
       return (false);
     }
@@ -2310,7 +2316,7 @@ bool copy_back(int argc, char **argv) {
     ds_data = NULL;
   }
 
-  /* copy redo logs */
+  /* create #innodb_redo */
 
   dst_dir = (srv_log_group_home_dir && *srv_log_group_home_dir)
                 ? srv_log_group_home_dir
@@ -2318,16 +2324,17 @@ bool copy_back(int argc, char **argv) {
 
   ds_data = ds_create(dst_dir, DS_TYPE_LOCAL);
 
-  for (long i = 0; i < innobase_log_files_in_group; i++) {
-    char filename[30];
-    sprintf(filename, "ib_logfile%ld", i);
+  if (directory_exists(LOG_DIRECTORY_NAME, false)) {
+    char errbuf[MYSYS_STRERROR_SIZE];
+    dst_dir = (srv_log_group_home_dir && *srv_log_group_home_dir)
+                  ? srv_log_group_home_dir
+                  : mysql_data_home;
+    std::string dest_redo_dir =
+        std::string(dst_dir) + FN_DIRSEP + LOG_DIRECTORY_NAME;
+    if (mkdirp(dest_redo_dir.c_str(), 0777, MYF(0)) < 0) {
+      xb::error() << "Can not create directory " << dest_redo_dir << ": "
+                  << my_strerror(errbuf, sizeof(errbuf), my_errno());
 
-    if (!file_exists(filename)) {
-      continue;
-    }
-
-    if (!(ret = copy_or_move_file(filename, filename, dst_dir, 1,
-                                  FILE_PURPOSE_REDO_LOG))) {
       goto cleanup;
     }
   }
@@ -2408,7 +2415,7 @@ bool copy_back(int argc, char **argv) {
                          "copy-back");
   if (!ret) goto cleanup;
 
-  /* copy buufer pool dump */
+  /* copy buffer pool dump */
   if (innobase_buffer_pool_filename) {
     const char *src_name;
     char path[FN_REFLEN];

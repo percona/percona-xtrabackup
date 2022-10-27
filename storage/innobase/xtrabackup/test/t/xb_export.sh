@@ -264,9 +264,9 @@ mysql -e "delete from test;" incremental_sample
 
 stop_server
 
-cd $topdir/backup/full
-cp -r * $mysql_datadir
-cd -
+rm -rf $mysql_datadir
+xtrabackup --datadir=$mysql_datadir --copy-back \
+	--target-dir=$topdir/backup/full
 
 start_server $mysql_extra_args
 

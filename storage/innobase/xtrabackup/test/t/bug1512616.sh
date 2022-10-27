@@ -23,7 +23,7 @@ rm -rf ${TEST_VAR_ROOT}/dir
 
 xtrabackup --move-back --target-dir=$topdir/backup
 
-if [ ! -f ${TEST_VAR_ROOT}/dir/logs/ib_logfile0 ] ; then
+if [ ! -d ${TEST_VAR_ROOT}/dir/logs/#innodb_redo] ; then
 	die "Log files were not moved to correct place!"
 fi
 

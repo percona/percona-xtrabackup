@@ -24,7 +24,11 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <unordered_set>
 #include <vector>
 
+#include "redo_log.h"
 #include "xtrabackup.h"
+
+// Forward declaration
+class Redo_Log_Data_Manager;
 
 /* mysql flavor and version */
 enum mysql_flavor_t {
@@ -143,6 +147,7 @@ class Myrocks_checkpoint {
 struct Backup_context {
   Myrocks_checkpoint myrocks_checkpoint;
   std::unordered_set<std::string> rocksdb_files;
+  Redo_Log_Data_Manager *redo_mgr;
 };
 
 /* server capabilities */

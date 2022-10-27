@@ -35,7 +35,6 @@ run_cmd_expect_failure xtrabackup --backup --target-dir=$topdir/inc \
 	--incremental-basedir=$topdir/full 2>&1 \
 	| tee $topdir/inc.log
 grep "Redo logging is disabled, cannot take consistent backup" $topdir/inc.log || die "missing error message"
-rm -r $topdir/inc
 rm -r $topdir/full
 rm  $topdir/inc.log
 mysql -e "alter instance enable innodb redo_log"

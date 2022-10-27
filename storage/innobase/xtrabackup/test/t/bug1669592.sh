@@ -21,10 +21,7 @@ xtrabackup --backup --target-dir=$topdir/backup-inc --incremental-basedir=$topdi
 xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
 xtrabackup --prepare --incremental-dir=$topdir/backup-inc --target-dir=$topdir/backup
 
-test -f $topdir/backup/ib_logfile0 || die "Log files are not found in full backup directory"
-
-# force MySQL to check system tablespace for consistency
-rm -rf $topdir/backup/ib_logfile*
+test -d $topdir/backup/#innodb_redo || die "redo directory are not found in full backup directory"
 
 stop_server
 

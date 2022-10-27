@@ -274,7 +274,7 @@ static bool get_one_option(int optid,
 static int stream_one_file(File file, xb_wstream_file_t *xbfile) {
   uchar *buf;
   size_t bytes;
-  size_t offset;
+  [[maybe_unused]] size_t offset;
 
   posix_fadvise(file, 0, 0, POSIX_FADV_SEQUENTIAL);
   offset = my_tell(file, MYF(MY_WME));

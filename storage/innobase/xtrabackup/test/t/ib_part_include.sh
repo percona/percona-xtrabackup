@@ -8,6 +8,7 @@
 
 . inc/common.sh
 . inc/ib_part.sh
+require_server_version_higher_than 8.0.29
 
 start_server --innodb_file_per_table --innodb_directories=$TEST_VAR_ROOT/remote 
 
@@ -27,16 +28,8 @@ vlog "Backup taken"
 
 mysql -e 'SELECT * FROM INFORMATION_SCHEMA.TABLES\G'
 
-# also test xtrabackup --stats work with --tables-file
-xtrabackup --stats --tables='test.test$' --datadir=$topdir/backup
-
-COUNT=`xtrabackup --stats --tables='test.test$' --datadir=$topdir/backup \
-       | grep table: | grep -v "mysql/" | awk '{print $2}' | sort -u | wc -l`
-
-if [ $COUNT != 5 ] ; then
-	vlog "xtrabackup --stats does not work"
-	exit -1
-fi
+# test does not work --stats work with --tables-file
+run_cmd_expect_failure $XB_BIN $XB_ARGS --stats --tables='test.test$' --datadir=$topdir/backup
 
 stop_server
 
@@ -44,5 +37,19 @@ stop_server
 ib_part_restore $TEST_VAR_ROOT/remote $mysql_datadir
 
 start_server
+# also test xtrabackup --stats work with --tables-file
 
 ib_part_assert_checksum $checksum_a
+
+mysql -e "set global innodb_fast_shutdown=0"
+shutdown_server
+
+xtrabackup --stats --tables='test.test$' --datadir=$mysql_datadir
+COUNT=`xtrabackup --stats --tables='test.test$' --datadir=$mysql_datadir \
+       | grep table: | grep -v "mysql/" | awk '{print $2}' | sort -u | wc -l`
+
+if [ $COUNT != 5 ] ; then
+	vlog "xtrabackup --stats does not work"
+	exit -1
+fi
+

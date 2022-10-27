@@ -168,7 +168,7 @@ static int local_write_sparse(ds_file_t *file, const void *buf, size_t len,
                               [[maybe_unused]] bool punch_hole_supported) {
   auto local_file = ((ds_local_file_t *)file->ptr);
   File fd = local_file->fd;
-  ulonglong seek = 0;
+  [[maybe_unused]] ulonglong seek = 0;
 
   const uchar *ptr = static_cast<const uchar *>(buf);
 

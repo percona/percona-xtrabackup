@@ -928,15 +928,8 @@ static trx_undo_rec_t *trx_roll_pop_top_rec_of_trx_low(
   if (trx == trx_roll_crash_recv_trx && trx_roll_max_undo_no > 1000) {
     ulint progress_pct = 100 - (ulint)((undo_no * 100) / trx_roll_max_undo_no);
     if (progress_pct != trx_roll_progress_printed_pct) {
-      if (trx_roll_progress_printed_pct == 0) {
-        fprintf(stderr,
-                "\nInnoDB: Progress in percents:"
-                " %lu",
-                (ulong)progress_pct);
-      } else {
-        fprintf(stderr, " %lu", (ulong)progress_pct);
-      }
-      fflush(stderr);
+      ib::info() << "Transaction id " << trx->id
+                 << " rollback progress: " << progress_pct << "%";
       trx_roll_progress_printed_pct = progress_pct;
     }
   }

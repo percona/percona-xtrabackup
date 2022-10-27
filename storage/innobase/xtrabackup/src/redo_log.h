@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2019 Percona LLC and/or its affiliates.
+Copyright (c) 2019,2022 Percona LLC and/or its affiliates.
 
 Data sink interface.
 
@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <vector>
 
 #include "datasink.h"
+#include "redo_log_consumer.h"
 
 #define redo_log_read_buffer_size ((srv_log_buffer_size) / 2)
 
@@ -42,10 +43,6 @@ class Redo_Log_Reader {
   @param[out] lsn               start checkpoint lsn
   @return true if success. */
   bool find_start_checkpoint_lsn();
-
-  /** Check if redo logs are disabled during the backup.
-  @return true if redo logs are disabled */
-  bool validate_redo_log_file();
 
   /** Get log header. */
   byte *get_header() const;
@@ -72,6 +69,9 @@ class Redo_Log_Reader {
   /** Seek logfile to specified lsn. */
   void seek_logfile(lsn_t lsn);
 
+  /** Whether there was an error. */
+  bool is_error() const;
+
  private:
   /** log header buffer. */
   ut::aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> log_hdr_buf;
@@ -83,32 +83,51 @@ class Redo_Log_Reader {
   @param[in,out] buf            buffer where to read
   @param[in]     start_lsn      read area start
   @param[in]     end_lsn        read area end
-  @param[in,out] contiguous_lsn it is known that log contain
-                                contiguous log data up to this lsn
   @param[out]    read_upto_lsn  scanning succeeded up to this lsn
   @param[in]     checkpoint_lsn checkpoint lsn
   @param[in] finished           true if there is no more data to read
                                 for now
   @return scanned length or -1 if error. */
   ssize_t scan_log_recs(byte *buf, bool is_last, lsn_t start_lsn,
-                        lsn_t *contiguous_lsn, lsn_t *read_upto_lsn,
-                        lsn_t checkpoint_lsn, bool *finished);
+                        lsn_t *read_upto_lsn, lsn_t checkpoint_lsn,
+                        bool *finished);
+
+  ssize_t scan_log_recs_pre8030(byte *buf, bool is_last, lsn_t start_lsn,
+                        lsn_t *read_upto_lsn, lsn_t checkpoint_lsn,
+                        bool *finished);
+
+  ssize_t scan_log_recs_8030(byte *buf, bool is_last, lsn_t start_lsn,
+                        lsn_t *read_upto_lsn, lsn_t checkpoint_lsn,
+                        bool *finished);
+
 
   /** Read specified log segment into a buffer.
   @param[in,out] log            redo log
   @param[in,out] buf            buffer where to read
   @param[in]     start_lsn      read area start
-  @param[in]     end_lsn        read area end */
-  void read_log_seg(log_t &log, byte *buf, lsn_t start_lsn, lsn_t end_lsn);
+  @param[in]     end_lsn        read area end
+  @return lsn up to which data was available on disk (ideally end_lsn)
+  */
+  static lsn_t read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
+                            const lsn_t end_lsn);
+
+  static lsn_t read_log_seg_pre8030(log_t &log, byte *buf, lsn_t start_lsn,
+                                    const lsn_t end_lsn);
+
+  static lsn_t read_log_seg_8030(log_t &log, byte *buf, lsn_t start_lsn,
+                                 const lsn_t end_lsn);
 
   /** checkpoint LSN at the backup start. */
-  lsn_t checkpoint_lsn_start{0};
+  static lsn_t checkpoint_lsn_start;
 
-  /** checkpoint number at the backup start. */
-  lsn_t checkpoint_no_start{0};
+  /** offset of checkpoint_lsn_start */
+  static os_offset_t checkpoint_offset_start;
 
   /** last scanned LSN. */
   lsn_t log_scanned_lsn{0};
+
+  /** error flag. */
+  static std::atomic<bool> m_error;
 };
 
 /** Redo log parser. */
@@ -349,6 +368,12 @@ class Redo_Log_Data_Manager {
 
   /** error flag. */
   std::atomic<bool> error;
+
+  /** redo log consumer */
+  Redo_Log_Consumer redo_log_consumer;
+
+  /** MySQL connection to register redo log consumer */
+  MYSQL *redo_log_consumer_cnx = nullptr;
 
   enum {
     ARCHIVED_LOG_NONE,

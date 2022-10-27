@@ -7,6 +7,12 @@ MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb-flush-log-at-trx-commit=0
 sync-binlog=0
 "
+if is_server_version_higher_than 8.0.29
+then
+  MYSQLD_EXTRA_MY_CNF_OPTS="${MYSQLD_EXTRA_MY_CNF_OPTS:-""}
+  innodb-redo-log-capacity=512M
+  "
+fi
 start_server
 backupdir="${topdir}/full"
 backupdir2="${topdir}/full2"
@@ -55,6 +61,13 @@ done
 
 #stop inserting data
 kill -SIGKILL ${insert_pid}
+
+# avoid race condition when we trx is running and backup get it without it been
+# completed, having to roll it back and when we record db state it is completed.
+while mysql -e 'SHOW PROCESSLIST' | grep 'INSERT INTO pxb_2710 SELECT NULL FROM pxb_2710 LIMIT 10000' ; do
+  vlog "waiting for INSERT to complete"
+  sleep 1;
+done
 
 # resume and wait for backup to complete
 vlog "Resuming xtrabackup"

@@ -110,9 +110,8 @@ xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$topdir/backup
 stop_server
 
 # Restore
-rm -rf $mysql_datadir/ibdata1 $mysql_datadir/ib_logfile* \
-    $mysql_datadir/test/*.ibd
-cp -r $topdir/backup/* $mysql_datadir
+rm -rf $mysql_datadir
+xtrabackup --move-back --target-dir=$topdir/backup
 
 start_server
 

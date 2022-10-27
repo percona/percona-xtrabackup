@@ -1,6 +1,6 @@
 /******************************************************
 XtraBackup: hot backup tool for InnoDB
-(c) 2009-2021 Percona LLC and/or its affiliates
+(c) 2009-2022 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -46,6 +46,8 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <mysql_version.h>
 #include <mysqld.h>
 #include <sql_bitmap.h>
+#include "log0files_io.h"
+#include "log0types.h"
 #include "row0quiesce.h"
 
 #include <fcntl.h>
@@ -73,6 +75,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <sql_locale.h>
 #include <srv0srv.h>
 #include <srv0start.h>
+#include "sql/xa/transaction_cache.h"
 
 #include <clone0api.h>
 #include <mysql.h>
@@ -197,6 +200,9 @@ char *xtrabackup_tables_file = NULL;
 char *xtrabackup_tables_exclude = NULL;
 
 lsn_t xtrabackup_start_checkpoint;
+
+bool xtrabackup_register_redo_log_consumer = false;
+std::atomic<bool> redo_log_consumer_can_advance = false;
 
 typedef std::list<xb_regex_t> regex_list_t;
 static regex_list_t regex_include_list;
@@ -508,6 +514,7 @@ extern TYPELIB innodb_flush_method_typelib;
 bool redo_catchup_completed = false;
 extern struct rand_struct sql_rand;
 extern mysql_mutex_t LOCK_sql_rand;
+bool xb_generated_redo = false;
 
 static void check_all_privileges();
 static bool validate_options(const char *file, int argc, char **argv);
@@ -534,7 +541,7 @@ datafiles_iter_t *datafiles_iter_new() {
 
   mutex_create(LATCH_ID_XTRA_DATAFILES_ITER_MUTEX, &it->mutex);
 
-  Fil_iterator::for_each_file(false, [&](fil_node_t *file) {
+  Fil_iterator::for_each_file([&](fil_node_t *file) {
     it->nodes.push_back(file);
     return (DB_SUCCESS);
   });
@@ -722,6 +729,7 @@ enum options_xtrabackup {
   OPT_XTRA_PLUGIN_DIR,
   OPT_XTRA_PLUGIN_LOAD,
   OPT_GENERATE_NEW_MASTER_KEY,
+  OPT_REGISTER_REDO_LOG_CONSUMER,
 
   OPT_SSL_SSL,
   OPT_SSL_KEY,
@@ -1575,6 +1583,14 @@ Disable with --skip-innodb-checksums.",
      &opt_rocksdb_wal_dir, &opt_rocksdb_wal_dir, 0, GET_STR_ALLOC, REQUIRED_ARG,
      0, 0, 0, 0, 0, 0},
 
+    {"register_redo_log_consumer", OPT_REGISTER_REDO_LOG_CONSUMER,
+     "Register a redo log consumer in the start of the backup. If this option "
+     "is enabled, it will block the server from purging redo log if PXB redo "
+     "follow thread is still copying it and will stall DMLs on the server.",
+     &xtrabackup_register_redo_log_consumer,
+     &xtrabackup_register_redo_log_consumer, 0, GET_BOOL, NO_ARG, false, 0, 0,
+     0, 0, 0},
+
     {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
 
 uint xb_server_options_count = array_elements(xb_server_options);
@@ -2091,9 +2107,9 @@ static bool innodb_init_param(void) {
   srv_adaptive_flushing = false;
   /* --------------------------------------------------*/
 
-  srv_n_log_files = (ulint)innobase_log_files_in_group;
+  srv_log_n_files = (ulint)innobase_log_files_in_group;
   srv_log_file_size = (ulint)innobase_log_file_size;
-  xb::info() << "innodb_log_files_in_group = " << srv_n_log_files;
+  xb::info() << "innodb_log_files_in_group = " << srv_log_n_files;
   xb::info() << "innodb_log_file_size = " << srv_log_file_size;
 
   srv_log_buffer_size = (ulint)innobase_log_buffer_size;
@@ -2168,7 +2184,7 @@ static bool innodb_init_param(void) {
 
   srv_force_recovery = (ulint)innobase_force_recovery;
 
-  dblwr::enabled = false;
+  dblwr::g_mode = dblwr::Mode::OFF;
 
   if (!innobase_use_checksums) {
     srv_checksum_algorithm = SRV_CHECKSUM_ALGORITHM_NONE;
@@ -2537,7 +2553,7 @@ static dberr_t dict_load_from_spaces_sdi() {
 
   std::vector<space_id_t> space_ids;
 
-  Fil_space_iterator::for_each_space(false, [&](fil_space_t *space) {
+  Fil_space_iterator::for_each_space([&](fil_space_t *space) {
     space_ids.push_back(space->id);
     return (DB_SUCCESS);
   });
@@ -2595,6 +2611,14 @@ static bool innodb_init(bool init_dd, bool for_apply_log) {
       to_lsn = incremental_last_lsn < incremental_to_lsn ? incremental_to_lsn
                                                          : incremental_last_lsn;
     }
+  }
+
+  /* If pxb created redo log files (final prepare), the LSNs will be out of
+  backup end_LSN. So we cannot use this LSN to verify that if we have applied
+  to the target end_LSN (to_lsn). Unset it and let it apply to last recorded
+  redo LSN in new redo files */
+  if (xb_generated_redo && xtrabackup_incremental_dir == nullptr) {
+    to_lsn = LSN_MAX;
   }
 
   err = srv_start(false, to_lsn);
@@ -2958,7 +2982,7 @@ static bool regex_list_check_match(const regex_list_t &list, const char *name) {
 static bool find_filter_in_hashtable(const char *name, hash_table_t *table,
                                      xb_filter_entry_t **result) {
   xb_filter_entry_t *found = NULL;
-  HASH_SEARCH(name_hash, table, ut_fold_string(name), xb_filter_entry_t *,
+  HASH_SEARCH(name_hash, table, ut::hash_string(name), xb_filter_entry_t *,
               found, (void)0, !strcmp(found->name, name));
 
   if (found && result) {
@@ -3749,9 +3773,9 @@ static xb_filter_entry_t *xb_add_filter(
   entry = xb_new_filter_entry(name);
 
   if (*hash == nullptr) {
-    *hash = hash_create(1000);
+    *hash = ut::new_<hash_table_t>(1000);
   }
-  HASH_INSERT(xb_filter_entry_t, name_hash, *hash, ut_fold_string(entry->name),
+  HASH_INSERT(xb_filter_entry_t, name_hash, *hash, ut::hash_string(entry->name),
               entry);
 
   return entry;
@@ -3802,7 +3826,7 @@ static void xb_register_filter_entry(
     dbname[p - name] = 0;
 
     if (*databases_hash) {
-      HASH_SEARCH(name_hash, (*databases_hash), ut_fold_string(dbname),
+      HASH_SEARCH(name_hash, (*databases_hash), ut::hash_string(dbname),
                   xb_filter_entry_t *, db_entry, (void)0,
                   !strcmp(db_entry->name, dbname));
     }
@@ -3973,7 +3997,7 @@ static void xb_filter_hash_free(hash_table_t *hash) {
   for (i = 0; i < hash_get_n_cells(hash); i++) {
     xb_filter_entry_t *table;
 
-    table = static_cast<xb_filter_entry_t *>(HASH_GET_FIRST(hash, i));
+    table = static_cast<xb_filter_entry_t *>(hash_get_first(hash, i));
 
     while (table) {
       xb_filter_entry_t *prev_table = table;
@@ -3982,13 +4006,13 @@ static void xb_filter_hash_free(hash_table_t *hash) {
           HASH_GET_NEXT(name_hash, prev_table));
 
       HASH_DELETE(xb_filter_entry_t, name_hash, hash,
-                  ut_fold_string(prev_table->name), prev_table);
+                  ut::hash_string(prev_table->name), prev_table);
       ut::free(prev_table);
     }
   }
 
   /* free hash */
-  hash_table_free(hash);
+  ut::delete_(hash);
 }
 
 static void xb_regex_list_free(regex_list_t *list) {
@@ -4140,7 +4164,7 @@ static void init_mysql_environment() {
   table_cache_instances = Table_cache_manager::DEFAULT_MAX_TABLE_CACHES;
 
   table_def_init();
-  transaction_cache_init();
+  xa::Transaction_cache::initialize();
 
   mdl_init();
   component_infrastructure_init();
@@ -4149,7 +4173,7 @@ static void init_mysql_environment() {
 static void cleanup_mysql_environment() {
   Global_THD_manager::destroy_instance();
 
-  transaction_cache_free();
+  xa::Transaction_cache::dispose();
   table_def_free();
   mdl_destroy();
   Srv_session::module_deinit();
@@ -4299,7 +4323,7 @@ void xtrabackup_backup_func(void) {
 
   dict_persist_init();
 
-  srv_n_log_files = (ulint)innobase_log_files_in_group;
+  srv_log_n_files = (ulint)innobase_log_files_in_group;
   srv_log_file_size = (ulint)innobase_log_file_size;
 
   clone_init();
@@ -4399,7 +4423,6 @@ void xtrabackup_backup_func(void) {
                << " threads for parallel data files transfer";
   }
 
-
   auto it = datafiles_iter_new();
   if (it == NULL) {
     xb::error() << "datafiles_iter_new() failed.";
@@ -4433,7 +4456,7 @@ void xtrabackup_backup_func(void) {
       break;
     }
     if (redo_mgr.is_error()) {
-      xb::error() << "log copyiing failed.";
+      xb::error() << "log copying failed.";
       exit(EXIT_FAILURE);
     }
     mutex_exit(&count_mutex);
@@ -4459,6 +4482,7 @@ void xtrabackup_backup_func(void) {
   }
 
   Backup_context backup_ctxt;
+  backup_ctxt.redo_mgr = &redo_mgr;
   if (!backup_start(backup_ctxt)) {
     exit(EXIT_FAILURE);
   }
@@ -4466,14 +4490,17 @@ void xtrabackup_backup_func(void) {
   if (opt_debug_sleep_before_unlock) {
     xb::info() << "Debug sleep for " << opt_debug_sleep_before_unlock
                << " seconds";
-    std::this_thread::sleep_for(std::chrono::seconds(opt_debug_sleep_before_unlock));
+    std::this_thread::sleep_for(
+        std::chrono::seconds(opt_debug_sleep_before_unlock));
+  }
+
+  if (redo_mgr.is_error()) {
+    xb::error() << "log copying failed.";
+    exit(EXIT_FAILURE);
   }
 
   if (!redo_mgr.stop_at(log_status.lsn, log_status.lsn_checkpoint)) {
-    exit(EXIT_FAILURE);
-  }
-  if (redo_mgr.is_error()) {
-    xb::error() << "log copyiing failed.";
+    xb::error() << "Error stopping copy thread at LSN " << log_status.lsn;
     exit(EXIT_FAILURE);
   }
 
@@ -4634,7 +4661,8 @@ static bool xtrabackup_stats_level(dict_index_t *index, ulint level) {
     page_cur_move_to_next(&cursor);
 
     node_ptr = page_cur_get_rec(&cursor);
-    offsets = rec_get_offsets(node_ptr, index, offsets, ULINT_UNDEFINED, &heap);
+    offsets = rec_get_offsets(node_ptr, index, offsets, ULINT_UNDEFINED,
+                              UT_LOCATION_HERE, &heap);
     block = btr_node_ptr_get_child(node_ptr, index, offsets, &mtr);
     page = buf_block_get_frame(block);
   }
@@ -4668,8 +4696,9 @@ loop:
         break;
       }
 
-      local_offsets = rec_get_offsets(cur.rec, index, local_offsets,
-                                      ULINT_UNDEFINED, &local_heap);
+      local_offsets =
+          rec_get_offsets(cur.rec, index, local_offsets, ULINT_UNDEFINED,
+                          UT_LOCATION_HERE, &local_heap);
       n_fields = rec_offs_n_fields(local_offsets);
 
       for (i = 0; i < n_fields; i++) {
@@ -4838,8 +4867,6 @@ static void stat_with_rec(dict_table_t *table, THD *thd,
 }
 
 static void xtrabackup_stats_func(int argc, char **argv) {
-  ulint n;
-
   /* cd to datadir */
 
   if (my_setwd(mysql_real_data_home, MYF(MY_WME))) {
@@ -4856,8 +4883,7 @@ static void xtrabackup_stats_func(int argc, char **argv) {
   srv_read_only_mode = true;
 
   init_mysql_environment();
-  if(!xtrabackup::components::keyring_init_offline())
-  {
+  if (!xtrabackup::components::keyring_init_offline()) {
     xb::error() << "failed to init keyring component";
     exit(EXIT_FAILURE);
   }
@@ -4888,25 +4914,19 @@ static void xtrabackup_stats_func(int argc, char **argv) {
 
   /* Check if the log files have been created, otherwise innodb_init()
   will crash when called with srv_read_only == true */
-  for (n = 0; n < srv_n_log_files; n++) {
-    char logname[FN_REFLEN];
-    bool exists;
-    os_file_type_t type;
+  auto log_files_ctx =
+      Log_files_context{srv_log_group_home_dir, Log_files_ruleset::CURRENT};
+  ut::vector<Log_file_id> listed_files;
+  const dberr_t err = log_list_existing_files(log_files_ctx, listed_files);
 
-    snprintf(logname, sizeof(logname), "%s%c%s%lu", srv_log_group_home_dir,
-             OS_PATH_SEPARATOR, "ib_logfile", (ulong)n);
-    Fil_path::normalize(logname);
+  if (err != DB_SUCCESS || listed_files.size() == 0) {
+    xb::error()
+        << "Cannot find correct redo log files, To use the statistics feature, "
+           "you need a clean copy of the database version 8.0.30 or higher "
+           "and with correctly sized log files, so if it is backup directory "
+           "start server once after prepare to use --stats functionality ";
 
-    if (!os_file_status(logname, &exists, &type) || !exists ||
-        type != OS_FILE_TYPE_FILE) {
-      xb::error() << "Cannot find log file " << logname;
-      xb::error() << "to use the statistics feature, you need a "
-                     "clean copy of the database including "
-                     "correctly sized log files, so you need to "
-                     "execute with --prepare twice to use this "
-                     "functionality on a backup.";
-      exit(EXIT_FAILURE);
-    }
+    exit(EXIT_FAILURE);
   }
 
   xb::info() << "Starting 'read-only' InnoDB instance to gather "
@@ -4915,6 +4935,9 @@ static void xtrabackup_stats_func(int argc, char **argv) {
              << " bytes for buffer pool (set by "
              << ((estimate_memory) ? "--use-free-memory-pct" : "--use-memory")
              << " parameter)";
+
+  srv_redo_log_capacity = 1024 * 1024 * 1024;  // default 1G
+  srv_redo_log_capacity_used = 0;
 
   if (innodb_init(true, false)) exit(EXIT_FAILURE);
 
@@ -5009,16 +5032,9 @@ static void xtrabackup_stats_func(int argc, char **argv) {
 static void update_log_temp_checkpoint(byte *buf, lsn_t lsn) {
   /* Overwrite the both checkpoint area. */
 
-  lsn_t lsn_offset;
-
-  lsn_offset = LOG_FILE_HDR_SIZE +
-               (lsn - ut_uint64_align_down(lsn, OS_FILE_LOG_BLOCK_SIZE));
 
   mach_write_to_8(buf + LOG_CHECKPOINT_1 + LOG_CHECKPOINT_LSN, lsn);
-  mach_write_to_8(buf + LOG_CHECKPOINT_1 + LOG_CHECKPOINT_OFFSET, lsn_offset);
-
   mach_write_to_8(buf + LOG_CHECKPOINT_2 + LOG_CHECKPOINT_LSN, lsn);
-  mach_write_to_8(buf + LOG_CHECKPOINT_2 + LOG_CHECKPOINT_OFFSET, lsn_offset);
 
   log_block_set_checksum(buf, log_block_calc_checksum_crc32(buf));
   log_block_set_checksum(buf + LOG_CHECKPOINT_1,
@@ -5031,24 +5047,23 @@ static bool xtrabackup_init_temp_log(void) {
   pfs_os_file_t src_file = XB_FILE_UNDEFINED;
   char src_path[FN_REFLEN];
   char dst_path[FN_REFLEN];
+  char redo_folder[FN_REFLEN];
+  MY_STAT stat_info;
   bool success;
-  uint32_t log_format;
-
+  Log_format log_format;
   ulint field;
   byte *log_buf;
 
   uint64_t file_size;
 
-  lsn_t max_no;
   lsn_t max_lsn = 0;
-  lsn_t checkpoint_no;
+  lsn_t checkpoint_lsn = 0;
+  lsn_t start_lsn = 0;
 
   bool checkpoint_found;
 
   IORequest read_request(IORequest::READ);
   IORequest write_request(IORequest::WRITE);
-
-  max_no = 0;
 
   log_buf = static_cast<byte *>(
       ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, UNIV_PAGE_SIZE_MAX * 128));
@@ -5057,57 +5072,47 @@ static bool xtrabackup_init_temp_log(void) {
   }
 
   if (!xtrabackup_incremental_dir) {
-    sprintf(dst_path, "%s/ib_logfile0", xtrabackup_target_dir);
+    sprintf(dst_path, "%s/%s/#ib_redo0", xtrabackup_target_dir,
+            LOG_DIRECTORY_NAME);
     sprintf(src_path, "%s/%s", xtrabackup_target_dir, XB_LOG_FILENAME);
+    sprintf(redo_folder, "%s/%s", xtrabackup_target_dir, LOG_DIRECTORY_NAME);
   } else {
-    sprintf(dst_path, "%s/ib_logfile0", xtrabackup_incremental_dir);
+    sprintf(dst_path, "%s/%s/#ib_redo0", xtrabackup_incremental_dir,
+            LOG_DIRECTORY_NAME);
     sprintf(src_path, "%s/%s", xtrabackup_incremental_dir, XB_LOG_FILENAME);
+    sprintf(redo_folder, "%s/%s", xtrabackup_incremental_dir,
+            LOG_DIRECTORY_NAME);
+  }
+
+  /* create #innodb_redo dir if not exist */
+  if (!my_stat(redo_folder, &stat_info, MYF(0)) &&
+      (my_mkdir(redo_folder, 0777, MYF(0)) < 0)) {
+    xb::error() << "cannot mkdir: " << my_errno() << " " << redo_folder;
+    exit(EXIT_FAILURE);
   }
 
   Fil_path::normalize(dst_path);
   Fil_path::normalize(src_path);
-retry:
+
   src_file = os_file_create_simple_no_error_handling(
       0, src_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, srv_read_only_mode,
       &success);
+
   if (!success) {
     /* The following call prints an error message */
     os_file_get_last_error(true);
 
     xb::warn() << "cannot open " << src_path << " will try to find.";
 
-    /* check if ib_logfile0 may be xtrabackup_logfile */
-    src_file = os_file_create_simple_no_error_handling(
-        0, dst_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, srv_read_only_mode,
-        &success);
-    if (!success) {
-      os_file_get_last_error(true);
-      xb::fatal_or_error(UT_LOCATION_HERE) << "cannot find " << src_path;
+    success = xb_log_files_validate_creators(!xtrabackup_incremental_dir
+                                                 ? xtrabackup_target_dir
+                                                 : xtrabackup_incremental_dir);
 
-      goto error;
-    }
-
-    success = os_file_read(read_request, dst_path, src_file, log_buf, 0,
-                           LOG_FILE_HDR_SIZE);
-    if (!success) {
-      goto error;
-    }
-
-    if (ut_memcmp(log_buf + LOG_HEADER_CREATOR, (byte *)"xtrabkup",
-                  (sizeof "xtrabkup") - 1) == 0) {
-      xb::info() << "'ib_logfile0' seems to be 'xtrabackup_logfile'. will "
-                    "retry.";
-
-      os_file_close(src_file);
-      src_file = XB_FILE_UNDEFINED;
-
-      /* rename and try again */
-      success = os_file_rename(0, dst_path, src_path);
-      if (!success) {
-        goto error;
+    if (success) {
+      if (log_buf != NULL) {
+        ut::free(log_buf);
       }
-
-      goto retry;
+      return false;
     }
 
     xb::fatal_or_error(UT_LOCATION_HERE) << "cannot find " << src_path;
@@ -5120,9 +5125,6 @@ retry:
 
   file_size = os_file_get_size(src_file);
 
-  /* TODO: We should skip the following modifies, if it is not the first time.
-   */
-
   /* read log file header */
   success = os_file_read(read_request, dst_path, src_file, log_buf, 0,
                          LOG_FILE_HDR_SIZE);
@@ -5130,11 +5132,12 @@ retry:
     goto error;
   }
 
-  log_format = mach_read_from_4(log_buf + LOG_HEADER_FORMAT);
-  log_detected_format = log_format;
+  log_format =
+      static_cast<Log_format>(mach_read_from_4(log_buf + LOG_HEADER_FORMAT));
+  xb_log_detected_format = log_format;
 
-  if (ut_memcmp(log_buf + LOG_HEADER_CREATOR, (byte *)"xtrabkup",
-                (sizeof "xtrabkup") - 1) != 0) {
+  if (ut_memcmp(log_buf + LOG_HEADER_CREATOR, (byte *)LOG_HEADER_CREATOR_PXB,
+                (sizeof LOG_HEADER_CREATOR_PXB) - 1) != 0) {
     if (xtrabackup_incremental_dir) {
       xb::error() << "xtrabackup_logfile was already used "
                      "to '--prepare'.";
@@ -5145,8 +5148,8 @@ retry:
     goto skip_modify;
   }
 
-  if (log_format < LOG_HEADER_FORMAT_8_0_1) {
-    xb::error() << "Unsupported redo log format " << log_format;
+  if (log_format < Log_format::VERSION_8_0_1) {
+    xb::error() << "Unsupported redo log format " << to_int(log_format);
     xb::error()
         << "This version of Percona XtraBackup can only perform backups and "
            "restores against MySQL 8.0 and Percona Server 8.0, please use "
@@ -5163,13 +5166,7 @@ retry:
        field += LOG_CHECKPOINT_2 - LOG_CHECKPOINT_1) {
     /* InnoDB using CRC32 by default since 5.7.9+ */
     if (log_block_get_checksum(log_buf + field) ==
-            log_block_calc_checksum_crc32(log_buf + field) &&
-        (mach_read_from_4(log_buf + LOG_HEADER_FORMAT) ==
-             LOG_HEADER_FORMAT_CURRENT ||
-         mach_read_from_4(log_buf + LOG_HEADER_FORMAT) ==
-             LOG_HEADER_FORMAT_8_0_19 ||
-         mach_read_from_4(log_buf + LOG_HEADER_FORMAT) ==
-             LOG_HEADER_FORMAT_8_0_3)) {
+        log_block_calc_checksum_crc32(log_buf + field)) {
       if (!innodb_checksum_algorithm_specified) {
         srv_checksum_algorithm = SRV_CHECKSUM_ALGORITHM_CRC32;
       }
@@ -5177,11 +5174,10 @@ retry:
       goto not_consistent;
     }
 
-    checkpoint_no = mach_read_from_8(log_buf + field + LOG_CHECKPOINT_NO);
+    checkpoint_lsn = mach_read_from_8(log_buf + field + LOG_CHECKPOINT_LSN);
 
-    if (checkpoint_no >= max_no) {
-      max_no = checkpoint_no;
-      max_lsn = mach_read_from_8(log_buf + field + LOG_CHECKPOINT_LSN);
+    if (checkpoint_lsn >= max_lsn) {
+      max_lsn = checkpoint_lsn;
       checkpoint_found = true;
     }
   not_consistent:;
@@ -5192,7 +5188,10 @@ retry:
     goto error;
   }
 
-  mach_write_to_4(log_buf + LOG_HEADER_FORMAT, log_format);
+  /* write start_lsn header */
+  start_lsn = ut_uint64_align_down(max_lsn, OS_FILE_LOG_BLOCK_SIZE);
+  mach_write_to_8(log_buf + LOG_HEADER_START_LSN, start_lsn);
+
   update_log_temp_checkpoint(log_buf, max_lsn);
 
   success = os_file_write(write_request, src_path, src_file, log_buf, 0,
@@ -5265,14 +5264,13 @@ retry:
   innobase_log_files_in_group_save = innobase_log_files_in_group;
   srv_log_group_home_dir_save = srv_log_group_home_dir;
   innobase_log_file_size_save = innobase_log_file_size;
-
   srv_log_group_home_dir = NULL;
   innobase_log_file_size = file_size;
   innobase_log_files_in_group = 1;
 
   srv_thread_concurrency = 0;
 
-  /* rename 'xtrabackup_logfile' to 'ib_logfile0' */
+  /* rename 'xtrabackup_logfile' to '#ib_redo0' */
   success = os_file_rename(0, src_path, dst_path);
   if (!success) {
     goto error;
@@ -5347,7 +5345,7 @@ static bool xb_space_create_file(
 
   ut_ad(!fsp_is_system_or_temp_tablespace(space_id));
   ut_ad(!srv_read_only_mode);
-  ut_a(space_id < dict_sys_t::s_log_space_first_id);
+  ut_a(space_id < dict_sys_t::s_log_space_id);
   ut_a(fsp_flags_is_valid(flags));
 
   /* Create the subdirectories in the path, if they are
@@ -5594,7 +5592,7 @@ static pfs_os_file_t xb_delta_open_matching_space(
   table->name = ((char *)table) + sizeof(xb_filter_entry_t);
   strcpy(table->name, dest_space_name);
   HASH_INSERT(xb_filter_entry_t, name_hash, inc_dir_tables_hash,
-              ut_fold_string(table->name), table);
+              ut::hash_string(table->name), table);
 
   if (space_id != SPACE_UNKNOWN && !fsp_is_ibd_tablespace(space_id)) {
     /* since undo tablespaces cannot be renamed, we must either open existing
@@ -6002,7 +6000,7 @@ static bool rm_if_not_found(
   /* Truncate ".ibd" */
   name[strlen(name) - 4] = '\0';
 
-  HASH_SEARCH(name_hash, inc_dir_tables_hash, ut_fold_string(name),
+  HASH_SEARCH(name_hash, inc_dir_tables_hash, ut::hash_string(name),
               xb_filter_entry_t *, table, (void)0, !strcmp(table->name, name));
 
   if (!table) {
@@ -6140,38 +6138,58 @@ static bool xtrabackup_apply_deltas() {
                             xtrabackup_apply_delta, NULL);
 }
 
-static bool xtrabackup_close_temp_log(bool clear_flag) {
-  pfs_os_file_t src_file = XB_FILE_UNDEFINED;
-  char src_path[FN_REFLEN];
-  char dst_path[FN_REFLEN];
-  bool success;
+/* replace log file in redo directory to xtrabackup_log
+@in redo_path  path of redo direcotry
+@in log_files_ctx log_files_ctxt
+@in clear_flag  remove log_creator and log_format
+@return false if failed and true if successful
+*/
+static bool xtrabackup_replace_log_file(const char *redo_path,
+                                        const Log_files_context &log_files_ctx,
+                                        bool clear_flag) {
   byte log_buf[UNIV_PAGE_SIZE_MAX];
   IORequest read_request(IORequest::READ);
   IORequest write_request(IORequest::WRITE);
+  char src_path[FN_REFLEN];
+  char dst_path[FN_REFLEN];
+  bool success;
+  pfs_os_file_t src_file = XB_FILE_UNDEFINED;
+  /* rename '#ib_redoN' to 'xtrabackup_logfile' */
+  ut::vector<Log_file_id> listed_files;
 
-  if (!xtrabackup_logfile_is_renamed) return (false);
+  const dberr_t err = log_list_existing_files(log_files_ctx, listed_files);
+  if (err != DB_SUCCESS) {
+    xb::error() << "Failed to find log files in redo directory ";
+    goto error;
+  }
 
-  /* rename 'ib_logfile0' to 'xtrabackup_logfile' */
+  if (listed_files.size() != 1) {
+    xb::error() << "Found more than one file in redo directory ";
+    goto error;
+  }
+
   if (!xtrabackup_incremental_dir) {
-    sprintf(dst_path, "%s/ib_logfile0", xtrabackup_target_dir);
+    sprintf(dst_path, "%s/%s/%s%ld", xtrabackup_target_dir, LOG_DIRECTORY_NAME,
+            LOG_FILE_BASE_NAME, listed_files.back());
     sprintf(src_path, "%s/%s", xtrabackup_target_dir, XB_LOG_FILENAME);
   } else {
-    sprintf(dst_path, "%s/ib_logfile0", xtrabackup_incremental_dir);
+    sprintf(dst_path, "%s/%s/%s%ld", xtrabackup_incremental_dir,
+            LOG_DIRECTORY_NAME, LOG_FILE_BASE_NAME, listed_files.back());
     sprintf(src_path, "%s/%s", xtrabackup_incremental_dir, XB_LOG_FILENAME);
   }
 
   Fil_path::normalize(dst_path);
   Fil_path::normalize(src_path);
 
-  success = os_file_rename(0, dst_path, src_path);
-  if (!success) {
-    goto error;
+  if (!os_file_rename(0, dst_path, src_path)) {
+    return false;
   }
   xtrabackup_logfile_is_renamed = false;
 
-  if (!clear_flag) return (false);
+  if (!clear_flag) {
+    return true;
+  }
 
-  /* clear LOG_HEADER_CREATOR field */
   src_file = os_file_create_simple_no_error_handling(
       0, src_path, OS_FILE_OPEN, OS_FILE_READ_WRITE, srv_read_only_mode,
       &success);
@@ -6185,8 +6203,8 @@ static bool xtrabackup_close_temp_log(bool clear_flag) {
     goto error;
   }
 
+  /* clear LOG_HEADER_CREATOR field */
   memset(log_buf + LOG_HEADER_CREATOR, ' ', 4);
-
   success = os_file_write(write_request, src_path, src_file, log_buf, 0,
                           LOG_FILE_HDR_SIZE);
   if (!success) {
@@ -6195,15 +6213,68 @@ static bool xtrabackup_close_temp_log(bool clear_flag) {
 
   src_file = XB_FILE_UNDEFINED;
 
-  innobase_log_files_in_group = innobase_log_files_in_group_save;
-  srv_log_group_home_dir = srv_log_group_home_dir_save;
-  innobase_log_file_size = innobase_log_file_size_save;
+  return true;
 
-  return (false);
 error:
   if (src_file != XB_FILE_UNDEFINED) os_file_close(src_file);
-  xb::error() << "xtrabackup_close_temp_log() failed.";
-  return (true); /*ERROR*/
+  xb::error() << "xtrabackup_replace_log_file() failed.";
+  return false; /*ERROR*/
+}
+
+/* Replace the redo log file in redo directory to xtrabackup_log and clear the
+redo directory
+@in clear_flag clear the log_format and log_creator in redo log
+@return true if any error occured or false  */
+static bool xtrabackup_close_temp_log(bool clear_flag) {
+  char redo_folder[FN_REFLEN];
+  const char *backup_dir = !xtrabackup_incremental_dir
+                               ? xtrabackup_target_dir
+                               : xtrabackup_incremental_dir;
+
+  Log_files_context log_files_ctx =
+      Log_files_context{backup_dir, Log_files_ruleset::CURRENT};
+  sprintf(redo_folder, "%s/%s", backup_dir, LOG_DIRECTORY_NAME);
+
+  bool valid = xb_log_files_validate_creators(backup_dir);
+
+  if (!valid) {
+    xb::error()
+        << "Unable to validate the redo log files at the end of prepare";
+    return (true);
+  }
+
+  if (xb_generated_redo && !clear_flag) {
+    xb::info() << "prepare generated new redo log files. Skipping rename. ";
+    return (false);
+  }
+
+  if (xtrabackup_logfile_is_renamed) {
+    if (!xtrabackup_replace_log_file(redo_folder, log_files_ctx, clear_flag)) {
+      xb::error() << "failed to replace redo log file to " << XB_LOG_FILENAME;
+      return (true);
+    }
+    innobase_log_files_in_group = innobase_log_files_in_group_save;
+    srv_log_group_home_dir = srv_log_group_home_dir_save;
+    innobase_log_file_size = innobase_log_file_size_save;
+  }
+
+  /* remove #innodb_redo dir if exist */
+  if (!os_file_scan_directory(
+          redo_folder,
+          [](const char *path, const char *file_name) {
+            if (strcmp(file_name, ".") == 0 || strcmp(file_name, "..") == 0) {
+              return;
+            }
+            const auto to_remove =
+                std::string{path} + OS_PATH_SEPARATOR + file_name;
+            unlink(to_remove.c_str());
+          },
+          false)) {
+    xb::error() << "Error removing directory : " << redo_folder;
+    return (true);
+  }
+
+  return (false);
 }
 
 /*********************************************************************/ /**
@@ -6229,8 +6300,7 @@ static bool xb_export_cfg_write_index_fields(
 
     mach_write_to_4(ptr, field->fixed_len);
 
-    if (cfg_version >= IB_EXPORT_CFG_VERSION_V4)
-    {
+    if (cfg_version >= IB_EXPORT_CFG_VERSION_V4) {
       ptr += sizeof(uint32_t);
       /* In IB_EXPORT_CFG_VERSION_V4 we also write the is_ascending boolean. */
       mach_write_to_4(ptr, field->is_ascending);
@@ -6858,8 +6928,10 @@ static bool xb_export_cfg_write(
     fil_space_t *space = fil_space_get(table->space);
     ut_ad(space != NULL && FSP_FLAGS_GET_ENCRYPTION(space->flags));
 
-    memcpy(table->encryption_key, space->encryption_key, Encryption::KEY_LEN);
-    memcpy(table->encryption_iv, space->encryption_iv, Encryption::KEY_LEN);
+    memcpy(table->encryption_key, space->m_encryption_metadata.m_key,
+           Encryption::KEY_LEN);
+    memcpy(table->encryption_iv, space->m_encryption_metadata.m_iv,
+           Encryption::KEY_LEN);
   }
 
   srv_get_encryption_data_filename(table, name, sizeof(name));
@@ -7021,6 +7093,8 @@ skip_check:
   /* temporally dummy value to avoid crash */
   srv_page_size_shift = 14;
   srv_page_size = (1 << srv_page_size_shift);
+  srv_redo_log_capacity = 1024 * 1024 * 1024;  // default 1G
+  srv_redo_log_capacity_used = 0;
   os_event_global_init();
   sync_check_init(srv_max_n_threads);
 #ifdef UNIV_DEBUG
@@ -7092,7 +7166,7 @@ skip_check:
                   << "with error code " << err;
       goto error_cleanup;
     }
-    inc_dir_tables_hash = hash_create(1000);
+    inc_dir_tables_hash = ut::new_<hash_table_t>(1000);
 
     if (!xtrabackup_apply_deltas()) {
       xb_data_files_close();
@@ -7323,65 +7397,6 @@ skip_check:
   sync_check_close();
   os_event_global_destroy();
 
-  /* start InnoDB once again to create log files */
-
-  if (!xtrabackup_apply_log_only) {
-    /* xtrabackup_incremental_dir is used to indicate that
-    we are going to apply incremental backup. Here we already
-    applied incremental backup and are about to do final prepare
-    of the full backup */
-    xtrabackup_incremental_dir = NULL;
-
-    if (innodb_init_param()) {
-      goto error;
-    }
-
-    srv_apply_log_only = false;
-
-    /* increase IO threads */
-    if (srv_n_file_io_threads < 10) {
-      srv_n_read_io_threads = 4;
-      srv_n_write_io_threads = 4;
-    }
-
-    srv_shutdown_state = SRV_SHUTDOWN_NONE;
-
-    /* PXB-2792 - Ensure we don't have ib_logfile's */
-    char logfilename[10000];
-    size_t dirnamelen;
-    dirnamelen = strlen(srv_log_group_home_dir);
-    ut_a(dirnamelen < (sizeof logfilename) - 10 - sizeof "ib_logfile");
-    memcpy(logfilename, srv_log_group_home_dir, dirnamelen);
-    /* Add a path separator if needed. */
-    if (dirnamelen && logfilename[dirnamelen - 1] != OS_PATH_SEPARATOR) {
-      logfilename[dirnamelen++] = OS_PATH_SEPARATOR;
-    }
-    for (unsigned i = 0; i < srv_n_log_files; i++) {
-      sprintf(logfilename + dirnamelen, "ib_logfile%u", i);
-
-      my_delete(logfilename, MYF(0));
-    }
-    /* We don't need bigger buffer pool on the second start, lowering
-     * memory footprint */
-    xtrabackup_use_memory = 128 * 1024 * 1024;
-    srv_buf_pool_size = (ulint)xtrabackup_use_memory;
-    srv_buf_pool_size = buf_pool_size_align(srv_buf_pool_size);
-    if (innodb_init(false, false)) goto error;
-
-    if (innodb_end()) goto error;
-    /*
-     * we cannot generate encrypted redo log without keyring access.
-     * For redo log, we only have un-encrypted key/iv but don't have original
-     * encrypted version. Copy it from xtrabackup_logfile to the newly created
-     * redo log file header.
-     */
-    if (use_dumped_tablespace_keys && srv_redo_log_encrypt) {
-      if (!copy_redo_encryption_info()) goto error_cleanup;
-    }
-
-    innodb_free_param();
-  }
-
   xb_keyring_shutdown();
 
   Tablespace_map::instance().serialize();
@@ -7402,7 +7417,6 @@ error_cleanup:
 
   xb_filters_free();
 
-error:
   exit(EXIT_FAILURE);
 }
 
@@ -8022,8 +8036,7 @@ void setup_error_messages() {
   my_default_lc_messages->errmsgs->read_texts();
 }
 
-void xb_set_plugin_dir()
-{
+void xb_set_plugin_dir() {
   if (opt_xtra_plugin_dir != NULL) {
     strncpy(opt_plugin_dir, opt_xtra_plugin_dir, FN_REFLEN);
   } else {

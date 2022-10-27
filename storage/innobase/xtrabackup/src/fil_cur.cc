@@ -236,11 +236,11 @@ xb_fil_cur_result_t xb_fil_cur_open(
   cursor->decrypt = static_cast<byte *>(
       ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, cursor->page_size));
 
-  memcpy(cursor->encryption_key, node->space->encryption_key,
+  memcpy(cursor->encryption_key, node->space->m_encryption_metadata.m_key,
          sizeof(cursor->encryption_key));
-  memcpy(cursor->encryption_iv, node->space->encryption_iv,
+  memcpy(cursor->encryption_iv, node->space->m_encryption_metadata.m_iv,
          sizeof(cursor->encryption_iv));
-  cursor->encryption_klen = node->space->encryption_klen;
+  cursor->encryption_klen = node->space->m_encryption_metadata.m_key_len;
   cursor->block_size = node->block_size;
 
   return (XB_FIL_CUR_SUCCESS);

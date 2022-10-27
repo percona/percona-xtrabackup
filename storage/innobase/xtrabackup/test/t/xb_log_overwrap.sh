@@ -11,6 +11,8 @@ load_dbase_schema sakila
 load_dbase_data sakila
 mkdir $topdir/backup
 
+#avoid log wrap before we do the first scan
+innodb_wait_for_flush_all
 run_cmd_expect_failure $XB_BIN $XB_ARGS --datadir=$mysql_datadir --backup \
     --lock-ddl=false --innodb_log_file_size=4M --target-dir=$topdir/backup \
     --debug-sync="xtrabackup_copy_logfile_pause" &
