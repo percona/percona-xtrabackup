@@ -171,14 +171,18 @@ MYSQL *xb_mysql_connect() {
 
   xb_mysql_query(connection, "SET SESSION wait_timeout=2147483", false, true);
 
-  if (xb_mysql_numrows(connection, "SELECT @@wsrep_sync_wait", false) > 0) {
+  if (xb_mysql_numrows(connection,
+                       "SHOW GLOBAL VARIABLES LIKE 'wsrep_sync_wait'",
+                       false) > 0) {
     xb_mysql_query(connection, "SET SESSION wsrep_sync_wait=0", false, true);
   }
 
-  if (xb_mysql_numrows(connection, "SELECT @@group-replication-consistency",
-                       false) > 0) {
+  if (xb_mysql_numrows(
+          connection,
+          "SELECT * FROM performance_schema.replication_group_members",
+          false) > 0) {
     xb_mysql_query(connection,
-                   "SET SESSION group-replication-consistency=EVENTUAL", false,
+                   "SET SESSION group_replication_consistency=EVENTUAL", false,
                    true);
   }
 
