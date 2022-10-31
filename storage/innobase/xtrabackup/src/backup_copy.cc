@@ -695,6 +695,13 @@ bool copy_file(ds_ctxt_t *datasink, const char *src_file_path,
     }
   }
 
+  /* empty file */
+  if (cursor.statinfo.st_size == 0 && res == XB_FIL_CUR_EOF) {
+    if (file_purpose == FILE_PURPOSE_OTHER) {
+      if (ds_write(dstfile, cursor.buf, cursor.buf_read)) goto error;
+    }
+  }
+
   if (res == XB_FIL_CUR_ERROR) {
     goto error;
   }
@@ -1390,6 +1397,7 @@ static void par_copy_rocksdb_files(const Myrocks_datadir::const_iterator &start,
   for (auto it = start; it != end; it++) {
     if (ends_with(it->path.c_str(), ".qp") ||
         ends_with(it->path.c_str(), ".lz4") ||
+        ends_with(it->path.c_str(), ".zst") ||
         ends_with(it->path.c_str(), ".xbcrypt")) {
       continue;
     }
@@ -2046,6 +2054,7 @@ bool should_skip_file_on_copy_back(const char *filepath) {
       xtrabackup::components::XTRABACKUP_KEYRING_KMS_CONFIG,
       ".qp",
       ".lz4",
+      ".zst",
       ".pmap",
       ".tmp",
       ".xbcrypt",
@@ -2567,6 +2576,18 @@ bool decrypt_decompress_file(const char *filepath, uint thread_n) {
     needs_action = true;
   }
 
+  if (opt_decompress &&
+      (ends_with(filepath, ".zst") ||
+       (ends_with(filepath, ".zst.xbcrypt") && opt_decrypt))) {
+    cmd << " | zstd -d ";
+    dest_filepath[strlen(dest_filepath) - 4] = 0;
+    if (needs_action) {
+      message << " and ";
+    }
+    message << "decompressing";
+    needs_action = true;
+  }
+
   cmd << " > " << SQUOTE(dest_filepath);
   message << " " << filepath;
 
@@ -2601,7 +2622,8 @@ static void decrypt_decompress_thread_func(datadir_thread_ctxt_t *ctxt) {
 
     if (!ends_with(entry.path.c_str(), ".qp") &&
         !ends_with(entry.path.c_str(), ".xbcrypt") &&
-        !ends_with(entry.path.c_str(), ".lz4")) {
+        !ends_with(entry.path.c_str(), ".lz4") &&
+        !ends_with(entry.path.c_str(), ".zst")) {
       continue;
     }
 

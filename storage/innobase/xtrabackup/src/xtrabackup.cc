@@ -251,8 +251,10 @@ bool xtrabackup_stream = false;
 
 const char *xtrabackup_compress_alg = NULL;
 xtrabackup_compress_t xtrabackup_compress = XTRABACKUP_COMPRESS_NONE;
+ds_type_t xtrabackup_compress_ds;
 uint xtrabackup_compress_threads;
 ulonglong xtrabackup_compress_chunk_size = 0;
+uint xtrabackup_compress_zstd_level = 1;
 
 const char *xtrabackup_encrypt_algo_names[] = {"NONE", "AES128", "AES192",
                                                "AES256", NullS};
@@ -613,6 +615,7 @@ enum options_xtrabackup {
   OPT_XTRA_COMPRESS,
   OPT_XTRA_COMPRESS_THREADS,
   OPT_XTRA_COMPRESS_CHUNK_SIZE,
+  OPT_XTRA_COMPRESS_ZSTD_LEVEL,
   OPT_XTRA_ENCRYPT,
   OPT_XTRA_ENCRYPT_KEY,
   OPT_XTRA_ENCRYPT_KEY_FILE,
@@ -884,8 +887,8 @@ struct my_option xb_client_options[] = {
 
     {"compress", OPT_XTRA_COMPRESS,
      "Compress individual backup files using the specified compression "
-     "algorithm. Supported algorithms are 'quicklz' and 'lz4'. The default "
-     "algorithm is 'quicklz'.",
+     "algorithm. Supported algorithms are 'quicklz', 'lz4' and 'zstd'. The "
+     "default algorithm is 'quicklz'.",
      (G_PTR *)&xtrabackup_compress_alg, (G_PTR *)&xtrabackup_compress_alg, 0,
      GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
@@ -901,6 +904,12 @@ struct my_option xb_client_options[] = {
      (G_PTR *)&xtrabackup_compress_chunk_size,
      (G_PTR *)&xtrabackup_compress_chunk_size, 0, GET_ULL, REQUIRED_ARG,
      (1 << 16), 1024, ULLONG_MAX, 0, 0, 0},
+
+    {"compress-zstd-level", OPT_XTRA_COMPRESS_ZSTD_LEVEL,
+     "Zstandard compression level. from 1 - 19. The default value is 1.",
+     (G_PTR *)&xtrabackup_compress_zstd_level,
+     (G_PTR *)&xtrabackup_compress_zstd_level, 0, GET_UINT, REQUIRED_ARG, 1, 1,
+     19, 0, 0, 0},
 
     {"encrypt", OPT_XTRA_ENCRYPT,
      "Encrypt individual backup files using the "
@@ -1600,6 +1609,7 @@ uint xb_server_options_count = array_elements(xb_server_options);
 datasink_t datasink_decrypt;
 datasink_t datasink_decompress;
 datasink_t datasink_decompress_lz4;
+datasink_t datasink_decompress_zstd;
 
 #ifndef __WIN__
 static int debug_sync_resumed;
@@ -1830,10 +1840,16 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
     case OPT_XTRA_COMPRESS:
       if (argument == NULL) {
         xtrabackup_compress = XTRABACKUP_COMPRESS_QUICKLZ;
+        xtrabackup_compress_ds = DS_TYPE_COMPRESS_QUICKLZ;
       } else if (strcasecmp(argument, "quicklz") == 0) {
         xtrabackup_compress = XTRABACKUP_COMPRESS_QUICKLZ;
+        xtrabackup_compress_ds = DS_TYPE_COMPRESS_QUICKLZ;
       } else if (strcasecmp(argument, "lz4") == 0) {
         xtrabackup_compress = XTRABACKUP_COMPRESS_LZ4;
+        xtrabackup_compress_ds = DS_TYPE_COMPRESS_LZ4;
+      } else if (strcasecmp(argument, "zstd") == 0) {
+        xtrabackup_compress = XTRABACKUP_COMPRESS_ZSTD;
+        xtrabackup_compress_ds = DS_TYPE_COMPRESS_ZSTD;
       } else {
         xb::error() << "Invalid --compress argument: " << argument;
         return 1;
@@ -3543,10 +3559,7 @@ static void xtrabackup_init_datasinks(void) {
       ds_redo = ds_data = ds;
     }
 
-    ds = ds_create(xtrabackup_target_dir,
-                   xtrabackup_compress == XTRABACKUP_COMPRESS_LZ4
-                       ? DS_TYPE_COMPRESS_LZ4
-                       : DS_TYPE_COMPRESS_QUICKLZ);
+    ds = ds_create(xtrabackup_target_dir, xtrabackup_compress_ds);
     xtrabackup_add_datasink(ds);
     ds_set_pipe(ds, ds_data);
 
@@ -3556,10 +3569,7 @@ static void xtrabackup_init_datasinks(void) {
     } else {
       if (ds_data != ds_redo) {
         ds_data = ds;
-        ds = ds_create(xtrabackup_target_dir,
-                       xtrabackup_compress == XTRABACKUP_COMPRESS_LZ4
-                           ? DS_TYPE_COMPRESS_LZ4
-                           : DS_TYPE_COMPRESS_QUICKLZ);
+        ds = ds_create(xtrabackup_target_dir, xtrabackup_compress_ds);
         xtrabackup_add_datasink(ds);
         ds_set_pipe(ds, ds_redo);
         ds_redo = ds;
