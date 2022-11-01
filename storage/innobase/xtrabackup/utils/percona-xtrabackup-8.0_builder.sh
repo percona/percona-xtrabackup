@@ -96,7 +96,7 @@ get_sources(){
         echo "Sources will not be downloaded"
         return 0
     fi
-    git clone "$REPO"
+    git clone --depth 1 --branch $BRANCH "$REPO"
     retval=$?
     if [ $retval != 0 ]
     then
