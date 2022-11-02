@@ -95,7 +95,7 @@ add_raven_yum_repo(){
     else
         version="8"
     fi
-    yum -y install https://pkgs.dyn.su/el${version}/base/x86_64/raven-release.el${version}.noarch.rpm
+    yum -y install https://pkgs.dyn.su/el${version}/base/x86_64/raven-release-1.0-3.el${version}.noarch.rpm
     yum -y update --enablerepo=raven
     return
 }
