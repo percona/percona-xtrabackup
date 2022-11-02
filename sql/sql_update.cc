@@ -621,7 +621,7 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
   {  // Start of scope for Modification_plan
     ha_rows rows;
     if (range_scan)
-      rows = range_scan->num_output_rows;
+      rows = range_scan->num_output_rows();
     else if (!conds && !need_sort && limit != HA_POS_ERROR)
       rows = limit;
     else {
@@ -669,7 +669,7 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
             thd, {table}, /*keep_buffers=*/false, order, limit,
             /*remove_duplicates=*/false,
             /*force_sort_rowids=*/true, /*unwrap_rollup=*/false));
-        path = NewSortAccessPath(thd, path, fsort.get(),
+        path = NewSortAccessPath(thd, path, fsort.get(), order,
                                  /*count_examined_rows=*/false);
         iterator = CreateIteratorFromAccessPath(
             thd, path, &join, /*eligible_for_batch_mode=*/true);
@@ -2375,7 +2375,7 @@ bool Query_result_update::start_execution(THD *thd) {
   return false;
 }
 
-void Query_result_update::cleanup(THD *thd) {
+void Query_result_update::cleanup() {
   assert(CountHiddenFields(*values) == 0);
   for (TABLE_LIST *tr = update_tables; tr != nullptr; tr = tr->next_local) {
     tr->table = nullptr;
@@ -2396,7 +2396,8 @@ void Query_result_update::cleanup(THD *thd) {
     }
   }
   tmp_table_param = nullptr;
-  thd->check_for_truncated_fields = CHECK_FIELD_IGNORE;  // Restore this setting
+  current_thd->check_for_truncated_fields =
+      CHECK_FIELD_IGNORE;  // Restore this setting
   main_table = nullptr;
   // Reset state and statistics members:
   unupdated_check_opt_tables.clear();

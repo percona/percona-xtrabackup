@@ -7241,7 +7241,7 @@ OBSOLETE_ER_SQL_MODE_NO_EFFECT
   eng "'%s' mode no longer has any effect. Use STRICT_ALL_TABLES or STRICT_TRANS_TABLES instead."
 
 ER_AGGREGATE_ORDER_FOR_UNION
-  eng "Expression #%u of ORDER BY contains aggregate function and applies to a UNION"
+  eng "Expression #%u of ORDER BY contains aggregate function and applies to a UNION, EXCEPT or INTERSECT"
 
 ER_AGGREGATE_ORDER_NON_AGG_QUERY
   eng "Expression #%u of ORDER BY contains aggregate function and applies to the result of a non-aggregated query"
@@ -9805,6 +9805,36 @@ ER_CREATE_SELECT_WITH_GIPK_DISALLOWED_IN_SBR
 
 ER_DA_EXPIRE_LOGS_DAYS_IGNORED
   eng "The option expire_logs_days cannot be used together with option binlog_expire_logs_seconds. To set one, first unset the other by setting it to 0."
+
+ER_CTE_RECURSIVE_NOT_UNION
+  eng "Recursive table reference in EXCEPT or INTERSECT operand is not allowed."
+
+ER_COMMAND_BACKEND_FAILED_TO_FETCH_SECURITY_CTX
+  eng "Error when trying to fetch information from security context object, when trying to connect the server."
+
+ER_COMMAND_SERVICE_BACKEND_FAILED
+  eng "Error in command service backend interface, because of : "%s""
+
+ER_CLIENT_FILE_PRIVILEGE_FOR_REPLICATION_CHECKS
+  eng "The PRIVILEGE_CHECKS_USER for channel '%.192s' would need FILE privilege to execute a LOAD DATA INFILE statement replicated in statement format. Consider using binlog_format=ROW on master. If the replicated events are trusted, recover from the failure by temporarily granting FILE to the PRIVILEGE_CHECKS_USER."
+
+ER_GROUP_REPLICATION_FORCE_MEMBERS_COMMAND_FAILURE
+  eng "The 'SET GLOBAL group_replication_force_members=%s' command encountered a failure. %s"
+
+ER_WARN_DEPRECATED_IDENT
+  eng "Using %s as unquoted identifier is deprecated, please use quotes or rename the identifier."
+
+ER_INTERSECT_ALL_MAX_DUPLICATES_EXCEEDED
+  eng "Max number of duplicate rows in INTERSECT ALL exceeded."
+
+ER_TP_QUERY_THRS_PER_GRP_EXCEEDS_TXN_THR_LIMIT
+  eng "Query threads count(%u) exceeds transaction threads limit(%u) per group. Please use query threads count per group smaller or equal to max transaction threads limit per group"
+
+ER_BAD_TIMESTAMP_FORMAT
+  eng "Invalid timestamp format in %s udf"
+
+ER_SHAPE_PRIDICTION_UDF
+  eng "SHAPE_PREDICTION UDF %s got error because of %s."
 
 #
 #  End of 8.0 error messages (server-to-client).

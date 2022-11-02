@@ -39,6 +39,7 @@
 
 #include "ndb_stacktrace.h"
 #include "ndbd.hpp"
+#include "main.hpp"
 
 #include <TransporterRegistry.hpp>
 
@@ -49,10 +50,11 @@
 #include <sys/processor.h>
 #endif
 
-#include <EventLogger.hpp>
-#include <OutputStream.hpp>
-#include <LogBuffer.hpp>
 #include <NdbGetRUsage.h>
+#include <ndb_openssl_evp.h>
+#include <EventLogger.hpp>
+#include <LogBuffer.hpp>
+#include <OutputStream.hpp>
 
 #define JAM_FILE_ID 484
 
@@ -188,13 +190,13 @@ compute_acc_32kpages(const ndb_mgm_configuration_iterator * p)
   if (accmem)
   {
     accmem /= GLOBAL_PAGE_SIZE;
-    
+
     Uint32 lqhInstances = 1;
     if (globalData.isNdbMtLqh)
     {
       lqhInstances = globalData.ndbMtLqhWorkers;
     }
-    
+
     accmem += lqhInstances * (32 / 4); // Added as safety in Configuration.cpp
   }
   return Uint32(accmem);
@@ -251,7 +253,7 @@ compute_acc_32kpages(const ndb_mgm_configuration_iterator * p)
  * This is a resource that is used for the disk page buffer. It cannot
  * be overallocated. Its size is calculated based on the config variable
  * DiskPageBufferMemory.
- * 
+ *
  * RG_SCHEMA_TRANS_MEMORY:
  * This is a resource that is set to a minimum of 2 MByte. It can be
  * overallocated at any size as long as there is still memory
@@ -589,7 +591,7 @@ init_global_memory_manager(EmulatorData &ed, Uint32 *watchCounter)
   {
     /**
      * Request extra undo buffer memory to be allocated when
-     * InitialLogFileGroup is specifed in config.
+     * InitialLogFileGroup is specified in config.
      *
      *  - Use default size or the value specified by the
      *    undo_buffer_size= key.
@@ -743,6 +745,8 @@ ndbd_exit(int code)
   // Don't allow negative return code
   if (code < 0)
     code = 255;
+
+  NdbSleep_MilliSleep(1);
 
 // gcov will not produce results when using _exit
 #ifdef HAVE_GCOV
@@ -1203,6 +1207,43 @@ ndbd_run(bool foreground, int report_fd,
 
   log_memusage("Global memory pools allocated");
 
+  const ndb_mgm_configuration_iterator *p =
+      globalEmulatorData.theConfiguration->getOwnConfigIterator();
+  require(p != nullptr);
+
+  bool have_password_option = g_filesystem_password_state.have_password_option();
+  Uint32 encrypted_file_system = 0;
+  ndb_mgm_get_int_parameter(p, CFG_DB_ENCRYPTED_FILE_SYSTEM,
+                            &encrypted_file_system);
+  if (have_password_option && encrypted_file_system == 0)
+  {
+    g_eventLogger->warning("Data node is not configured with "
+        "EncryptedFileSystem=1, filesystem password will be ignored");
+  }
+  if (!have_password_option && encrypted_file_system == 1)
+  {
+    g_eventLogger->info("Data node configured to have encryption "
+                         "but password not provided");
+    ndbd_exit(-1);
+  }
+
+  if (have_password_option && encrypted_file_system == 1)
+  {
+    const char *pwd = g_filesystem_password_state.get_password();
+    size_t pwd_size = g_filesystem_password_state.get_password_length();
+    if(pwd_size <=0)
+    {
+      g_eventLogger->info("Invalid filesystem password, "
+          "empty password not allowed");
+      ndbd_exit(-1);
+    }
+
+    memcpy(globalData.filesystemPassword, pwd, pwd_size);
+    globalData.filesystemPassword[pwd_size] = '\0';
+    globalData.filesystemPasswordLength = pwd_size;
+    require(globalData.filesystemPasswordLength> 0);
+  }
+
   /**
     Initialise the data of the run-time environment, this prepares the
     data setup for the various threads that need to communicate using
@@ -1365,8 +1406,7 @@ ndbd_run(bool foreground, int report_fd,
   ndbd_exit(0);
 }
 
-
-extern "C" bool opt_core;
+extern bool opt_core;
 
 // instantiated and updated in NdbcntrMain.cpp
 extern Uint32 g_currentStartPhase;

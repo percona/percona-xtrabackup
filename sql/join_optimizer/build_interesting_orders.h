@@ -110,9 +110,23 @@ void BuildInterestingOrders(
 
 // Build an ORDER * that we can give to Filesort. It is only suitable for
 // sort-ahead, since it assumes no temporary tables have been inserted.
-// Call ReplaceOrderItemsWithTempTableFields() on the ordering if you wish
-// to use it after the temporary table.
+// It can however be used after temporary tables if
+// ReplaceOrderItemsWithTempTableFields() is called on it, and
+// FinalizePlanForQueryBlock() takes care of this for us.
 ORDER *BuildSortAheadOrdering(THD *thd, const LogicalOrderings *orderings,
                               Ordering ordering);
+
+/**
+  Creates a reduced ordering for the ordering or grouping specified by
+  "ordering_idx". It is assumed that the ordering happens after all joins and
+  filters, so that all functional dependencies are active. All parts of the
+  ordering that are made redundant by functional dependencies, are removed.
+
+  The returned ordering may be empty if all elements are redundant. This happens
+  if all elements are constants, or have predicates that ensure they are
+  constant.
+ */
+Ordering ReduceFinalOrdering(THD *thd, const LogicalOrderings &orderings,
+                             int ordering_idx);
 
 #endif  // SQL_JOIN_OPTIMIZER_BUILD_INTERESTING_ORDERS_H_

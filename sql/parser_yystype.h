@@ -328,6 +328,7 @@ enum class Explain_format_type {
   DEFAULT,
   TRADITIONAL,
   JSON,
+  JSON_WITH_EXECUTE,
   TREE,
   TREE_WITH_EXECUTE
 };
@@ -336,6 +337,8 @@ struct Bipartite_name {
   LEX_CSTRING prefix;  ///< prefix is optional: prefix.str can be nullptr
   LEX_CSTRING name;
 };
+
+enum class Set_operator { UNION, EXCEPT, INTERSECT };
 
 // Compatibility with Bison 2.3:
 #ifndef YYSTYPE_IS_DECLARED
@@ -474,6 +477,10 @@ union YYSTYPE {
   PT_query_expression *query_expression;
   PT_derived_table *derived_table;
   PT_query_expression_body *query_expression_body;
+  struct {
+    PT_query_expression_body *body;
+    bool is_parenthesized;
+  } query_expression_body_opt_parens;
   PT_query_primary *query_primary;
   PT_subquery *subquery;
   PT_key_part_specification *key_part;
@@ -494,7 +501,7 @@ union YYSTYPE {
   } column_row_value_list_pair;
   struct {
     PT_item_list *column_list;
-    PT_query_primary *insert_query_expression;
+    PT_query_expression_body *insert_query_expression;
   } insert_query_expression;
   struct {
     Item *offset;
@@ -586,7 +593,7 @@ union YYSTYPE {
     Mem_root_array<PT_create_table_option *> *opt_create_table_options;
     PT_partition *opt_partitioning;
     On_duplicate on_duplicate;
-    PT_query_primary *opt_query_expression;
+    PT_query_expression_body *opt_query_expression;
   } create_table_tail;
   Lock_strength lock_strength;
   Locked_row_action locked_row_action;
@@ -609,10 +616,14 @@ union YYSTYPE {
     Item *where;
   } wild_or_where;
   Show_cmd_type show_cmd_type;
+  struct Histogram_param {
+    int num_buckets;
+    LEX_STRING data;
+  } histogram_param;
   struct {
     Sql_cmd_analyze_table::Histogram_command command;
     List<String> *columns;
-    int num_buckets;
+    Histogram_param *param;
   } histogram;
   Acl_type acl_type;
   Mem_root_array<LEX_CSTRING> *lex_cstring_list;
@@ -701,6 +712,7 @@ union YYSTYPE {
   } insert_update_values_reference;
   my_thread_id query_id;
   Bipartite_name bipartite_name;
+  Set_operator query_operator;
 };
 
 static_assert(sizeof(YYSTYPE) <= 32, "YYSTYPE is too big");

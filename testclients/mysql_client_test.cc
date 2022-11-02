@@ -47,6 +47,7 @@
 #include "my_macros.h"
 #include "my_time.h"  // SECS_PER_HOUR, SECS_PER_MIN
 #include "mysql_client_fw.cc"
+#include "template_utils.h"
 
 #include <list>
 #include <sstream>
@@ -402,7 +403,7 @@ static void test_prepare_simple() {
   /* update */
   my_stpcpy(query,
             "UPDATE test_prepare_simple SET id=? "
-            "WHERE id=? AND CONVERT(name USING utf8)= ?");
+            "WHERE id=? AND CONVERT(name USING utf8mb4)= ?");
   stmt = mysql_simple_prepare(mysql, query);
   check_stmt(stmt);
 
@@ -432,7 +433,7 @@ static void test_prepare_simple() {
   /* select */
   my_stpcpy(query,
             "SELECT * FROM test_prepare_simple WHERE id=? "
-            "AND CONVERT(name USING utf8)= ?");
+            "AND CONVERT(name USING utf8mb4)= ?");
   stmt = mysql_simple_prepare(mysql, query);
   check_stmt(stmt);
 
@@ -1988,7 +1989,7 @@ static void test_select() {
 
   my_stpcpy(query,
             "SELECT * FROM test_select WHERE id= ? "
-            "AND CONVERT(name USING utf8) =?");
+            "AND CONVERT(name USING utf8mb4) =?");
   stmt = mysql_simple_prepare(mysql, query);
   check_stmt(stmt);
 
@@ -2051,7 +2052,7 @@ static void test_ps_conj_query_block() {
 
   my_stpcpy(query,
             "select id1, value1 from t1 where id1= ? or "
-            "CONVERT(value1 USING utf8)= ?");
+            "CONVERT(value1 USING utf8mb4)= ?");
   stmt = mysql_simple_prepare(mysql, query);
   check_stmt(stmt);
 
@@ -2136,7 +2137,7 @@ session_id  char(9) NOT NULL, \
 
   my_stpcpy(query,
             "SELECT * FROM test_select WHERE "
-            "CONVERT(session_id USING utf8)= ?");
+            "CONVERT(session_id USING utf8mb4)= ?");
   stmt = mysql_simple_prepare(mysql, query);
   check_stmt(stmt);
 
@@ -2970,7 +2971,7 @@ static void test_simple_delete() {
   /* insert by prepare */
   my_stpcpy(query,
             "DELETE FROM test_simple_delete WHERE col1= ? AND "
-            "CONVERT(col2 USING utf8)= ? AND col3= 100");
+            "CONVERT(col2 USING utf8mb4)= ? AND col3= 100");
   stmt = mysql_simple_prepare(mysql, query);
   check_stmt(stmt);
 
@@ -4401,6 +4402,78 @@ static void test_field_flags() {
   mysql_free_result(result);
 }
 
+/* Test BINARY flag not set for BIT aggregate functions */
+
+static void test_bug33781442() {
+  int rc;
+  MYSQL_RES *result;
+  MYSQL_FIELD *field;
+
+  myheader("test_bit_flags");
+
+  rc = mysql_query(mysql, "CREATE TABLE test_bit_flags(data BIT(32))");
+  myquery(rc);
+
+  /* Check BINARY_FLAG not set for BIT field */
+  rc = mysql_query(mysql, "SELECT data FROM test_bit_flags");
+  myquery(rc);
+
+  result = mysql_use_result(mysql);
+  mytest(result);
+
+  mysql_field_seek(result, 0);
+  field = mysql_fetch_field(result);
+  DIE_UNLESS((field->flags & BINARY_FLAG) == 0);
+
+  mysql_free_result(result);
+
+  /* Check BINARY_FLAG not set for aggregate on BIT field */
+  rc = mysql_query(mysql, "SELECT MAX(data) FROM test_bit_flags");
+  myquery(rc);
+
+  result = mysql_use_result(mysql);
+  mytest(result);
+
+  mysql_field_seek(result, 0);
+  field = mysql_fetch_field(result);
+  DIE_UNLESS(field->type == MYSQL_TYPE_BIT);
+  DIE_UNLESS((field->flags & BINARY_FLAG) == 0);
+
+  mysql_free_result(result);
+
+  /* Check BINARY_FLAG not set for union on BIT fields */
+  rc = mysql_query(
+      mysql,
+      "SELECT data FROM test_bit_flags UNION SELECT data FROM test_bit_flags");
+  myquery(rc);
+
+  result = mysql_use_result(mysql);
+  mytest(result);
+
+  mysql_field_seek(result, 0);
+  field = mysql_fetch_field(result);
+  DIE_UNLESS(field->type == MYSQL_TYPE_BIT);
+  DIE_UNLESS((field->flags & BINARY_FLAG) == 0);
+
+  mysql_free_result(result);
+
+  /* Check BINARY_FLAG not set for CASE using BIT field */
+  rc = mysql_query(mysql,
+                   "SELECT CASE WHEN data IS NOT NULL THEN data ELSE NULL END "
+                   "FROM test_bit_flags;");
+  myquery(rc);
+
+  result = mysql_use_result(mysql);
+  mytest(result);
+
+  mysql_field_seek(result, 0);
+  field = mysql_fetch_field(result);
+  DIE_UNLESS(field->type == MYSQL_TYPE_BIT);
+  DIE_UNLESS((field->flags & BINARY_FLAG) == 0);
+
+  mysql_free_result(result);
+}
+
 /* Test mysql_stmt_close for open stmts */
 
 static void test_stmt_close() {
@@ -4777,7 +4850,7 @@ static void test_multi_stmt() {
   stmt1 = mysql_simple_prepare(mysql,
                                "DELETE FROM test_multi_table "
                                "WHERE id= ? AND "
-                               "CONVERT(name USING utf8)=?");
+                               "CONVERT(name USING utf8mb4)=?");
   check_stmt(stmt1);
 
   verify_param_count(stmt1, 2);
@@ -9590,8 +9663,8 @@ static void test_derived() {
   myquery(rc);
 
   rc = mysql_query(mysql,
-                   "create table t1 (id  int(8), primary key (id)) \
-ENGINE=InnoDB DEFAULT CHARSET=utf8");
+                   "create table t1 (id  int(8), primary key (id)) "
+                   "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
   myquery(rc);
 
   rc = mysql_query(mysql, "insert into t1 values (1)");
@@ -9641,22 +9714,22 @@ static void test_xjoin() {
 
   rc = mysql_query(mysql,
                    "create table t3 (id int(8), param1_id int(8), param2_id "
-                   "int(8)) ENGINE=InnoDB DEFAULT CHARSET=utf8");
+                   "int(8)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
   myquery(rc);
 
   rc = mysql_query(mysql,
                    "create table t1 ( id int(8), name_id int(8), value "
-                   "varchar(10)) ENGINE=InnoDB DEFAULT CHARSET=utf8");
+                   "varchar(10)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
   myquery(rc);
 
   rc = mysql_query(mysql,
                    "create table t2 (id int(8), name_id int(8), value "
-                   "varchar(10)) ENGINE=InnoDB DEFAULT CHARSET=utf8;");
+                   "varchar(10)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
   myquery(rc);
 
   rc = mysql_query(mysql,
                    "create table t4(id int(8), value varchar(10)) "
-                   "ENGINE=InnoDB DEFAULT CHARSET=utf8");
+                   "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
   myquery(rc);
 
   rc = mysql_query(mysql, "insert into t3 values (1, 1, 1), (2, 2, null)");
@@ -10152,7 +10225,7 @@ static void test_ps_i18n() {
   const char *stmt_text;
   MYSQL_BIND bind_array[2];
 
-  /* Represented as numbers to keep UTF8 tools from clobbering them. */
+  /* Represented as numbers to keep text editors from clobbering them. */
   const char *koi8 = "\xee\xd5\x2c\x20\xda\xc1\x20\xd2\xd9\xc2\xc1\xcc\xcb\xd5";
   const char *cp1251 =
       "\xcd\xf3\x2c\x20\xe7\xe0\x20\xf0\xfb\xe1\xe0\xeb\xea\xf3";
@@ -12118,7 +12191,7 @@ static void test_conversion() {
   rc = mysql_real_query(mysql, stmt_text, (ulong)strlen(stmt_text));
   myquery(rc);
   stmt_text =
-      "SET character_set_connection=utf8, character_set_client=utf8, "
+      "SET character_set_connection=utf8mb4, character_set_client=utf8mb4, "
       " character_set_results=latin1";
   rc = mysql_real_query(mysql, stmt_text, (ulong)strlen(stmt_text));
   myquery(rc);
@@ -13668,7 +13741,7 @@ static void test_bug21246() {
 
 static void test_client_character_set() {
   MY_CHARSET_INFO cs;
-  const char *csname = "utf8";
+  const char *csname = "utf8mb3";
   const char *csdefault = mysql_character_set_name(mysql);
   int rc;
 
@@ -13679,6 +13752,7 @@ static void test_client_character_set() {
 
   mysql_get_character_set_info(mysql, &cs);
   DIE_UNLESS(!strcmp(cs.csname, "utf8mb3"));
+  /* cs.name is collation name. */
   DIE_UNLESS(!strcmp(cs.name, "utf8mb3_general_ci"));
   /* Restore the default character set */
   rc = mysql_set_character_set(mysql, csdefault);
@@ -14553,7 +14627,7 @@ static void test_bug14845() {
   rc = mysql_query(mysql,
                    "create table t1 (id int(11) default null, "
                    "name varchar(20) default null)"
-                   "engine=MyISAM DEFAULT CHARSET=utf8");
+                   "engine=MyISAM DEFAULT CHARSET=utf8mb4");
   myquery(rc);
   rc = mysql_query(mysql, "insert into t1 values (1,'abc'),(2,'def')");
   myquery(rc);
@@ -14790,13 +14864,13 @@ static void test_bug15613() {
   myquery(rc);
   mysql_query(mysql, "drop table if exists t1");
   rc = mysql_query(mysql,
-                   "create table t1 (t text character set utf8, "
-                   "tt tinytext character set utf8, "
-                   "mt mediumtext character set utf8, "
-                   "lt longtext character set utf8, "
+                   "create table t1 (t text character set utf8mb4, "
+                   "tt tinytext character set utf8mb4, "
+                   "mt mediumtext character set utf8mb4, "
+                   "lt longtext character set utf8mb4, "
                    "vl varchar(255) character set latin1,"
                    "vb varchar(255) character set binary,"
-                   "vu varchar(255) character set utf8)");
+                   "vu varchar(255) character set utf8mb4)");
   myquery(rc);
 
   stmt = mysql_stmt_init(mysql);
@@ -14809,13 +14883,13 @@ static void test_bug15613() {
   if (!opt_silent) {
     printf(
         "Field lengths (client character set is latin1):\n"
-        "text character set utf8:\t\t%lu\n"
-        "tinytext character set utf8:\t\t%lu\n"
-        "mediumtext character set utf8:\t\t%lu\n"
-        "longtext character set utf8:\t\t%lu\n"
+        "text character set utf8mb4:\t\t%lu\n"
+        "tinytext character set utf8mb4:\t\t%lu\n"
+        "mediumtext character set utf8mb4:\t\t%lu\n"
+        "longtext character set utf8mb4:\t\t%lu\n"
         "varchar(255) character set latin1:\t%lu\n"
         "varchar(255) character set binary:\t%lu\n"
-        "varchar(255) character set utf8:\t%lu\n",
+        "varchar(255) character set utf8mb4:\t%lu\n",
         field[0].length, field[1].length, field[2].length, field[3].length,
         field[4].length, field[5].length, field[6].length);
   }
@@ -15771,21 +15845,21 @@ static void test_bug27876() {
   int rc;
   MYSQL_RES *result;
 
-  uchar utf8_func[] = {0xd1, 0x84, 0xd1, 0x83, 0xd0, 0xbd, 0xd0,
-                       0xba, 0xd1, 0x86, 0xd0, 0xb8, 0xd0, 0xb9,
-                       0xd0, 0xba, 0xd0, 0xb0, 0x00};
+  uchar utf8mb3_func[] = {0xd1, 0x84, 0xd1, 0x83, 0xd0, 0xbd, 0xd0,
+                          0xba, 0xd1, 0x86, 0xd0, 0xb8, 0xd0, 0xb9,
+                          0xd0, 0xba, 0xd0, 0xb0, 0x00};
 
-  uchar utf8_param[] = {0xd0, 0xbf, 0xd0, 0xb0, 0xd1, 0x80, 0xd0, 0xb0,
-                        0xd0, 0xbc, 0xd0, 0xb5, 0xd1, 0x82, 0xd1, 0x8a,
-                        0xd1, 0x80, 0x5f, 0xd0, 0xb2, 0xd0, 0xb5, 0xd1,
-                        0x80, 0xd1, 0x81, 0xd0, 0xb8, 0xd1, 0x8f, 0x00};
+  uchar utf8mb3_param[] = {0xd0, 0xbf, 0xd0, 0xb0, 0xd1, 0x80, 0xd0, 0xb0,
+                           0xd0, 0xbc, 0xd0, 0xb5, 0xd1, 0x82, 0xd1, 0x8a,
+                           0xd1, 0x80, 0x5f, 0xd0, 0xb2, 0xd0, 0xb5, 0xd1,
+                           0x80, 0xd1, 0x81, 0xd0, 0xb8, 0xd1, 0x8f, 0x00};
 
   char query[500];
 
   DBUG_TRACE;
   myheader("test_bug27876");
 
-  rc = mysql_query(mysql, "set names utf8");
+  rc = mysql_query(mysql, "set names utf8mb3");
   myquery(rc);
 
   rc = mysql_query(mysql, "select version()");
@@ -15794,24 +15868,27 @@ static void test_bug27876() {
   mytest(result);
   mysql_free_result(result);
 
-  sprintf(query, "DROP FUNCTION IF EXISTS %s", (char *)utf8_func);
+  sprintf(query, "DROP FUNCTION IF EXISTS %s",
+          pointer_cast<char *>(utf8mb3_func));
   rc = mysql_query(mysql, query);
   myquery(rc);
 
   sprintf(query,
           "CREATE FUNCTION %s( %s VARCHAR(25))"
           " RETURNS VARCHAR(25) DETERMINISTIC RETURN %s",
-          (char *)utf8_func, (char *)utf8_param, (char *)utf8_param);
+          pointer_cast<char *>(utf8mb3_func),
+          pointer_cast<char *>(utf8mb3_param),
+          pointer_cast<char *>(utf8mb3_param));
   rc = mysql_query(mysql, query);
   myquery(rc);
-  sprintf(query, "SELECT %s(VERSION())", (char *)utf8_func);
+  sprintf(query, "SELECT %s(VERSION())", pointer_cast<char *>(utf8mb3_func));
   rc = mysql_query(mysql, query);
   myquery(rc);
   result = mysql_store_result(mysql);
   mytest(result);
   mysql_free_result(result);
 
-  sprintf(query, "DROP FUNCTION %s", (char *)utf8_func);
+  sprintf(query, "DROP FUNCTION %s", pointer_cast<char *>(utf8mb3_func));
   rc = mysql_query(mysql, query);
   myquery(rc);
 
@@ -16353,7 +16430,7 @@ static void test_bug30472() {
 
   /* Switch client character set. */
 
-  DIE_IF(mysql_set_character_set(&con, "utf8"));
+  DIE_IF(mysql_set_character_set(&con, "utf8mb3"));
 
   /* Retrieve character set information. */
 
@@ -16397,11 +16474,11 @@ static void test_bug30472() {
 
   /* Change connection-default character set in the client. */
 
-  mysql_options(&con, MYSQL_SET_CHARSET_NAME, "utf8");
+  mysql_options(&con, MYSQL_SET_CHARSET_NAME, "utf8mb3");
 
   /*
     Call mysql_change_user() in order to check that new connection will
-    have UTF8 character set on the client and on the server.
+    have utf8mb3 character set on the client and on the server.
   */
 
   DIE_IF(mysql_change_user(&con, opt_user, opt_password,
@@ -16413,7 +16490,7 @@ static void test_bug30472() {
       &con, character_set_name_4, character_set_client_4,
       character_set_results_4, collation_connnection_4);
 
-  /* Check that we have UTF8 on the server and on the client. */
+  /* Check that we have utf8mb3 on the server and on the client. */
 
   DIE_UNLESS(strcmp(character_set_name_4, "utf8mb3") == 0);
   DIE_UNLESS(strcmp(character_set_client_4, "utf8mb3") == 0);
@@ -17147,7 +17224,7 @@ static void test_wl4166_4() {
   const char *stmt_text;
   MYSQL_BIND bind_array[2];
 
-  /* Represented as numbers to keep UTF8 tools from clobbering them. */
+  /* Represented as numbers to keep text editors from clobbering them. */
   const char *koi8 = "\xee\xd5\x2c\x20\xda\xc1\x20\xd2\xd9\xc2\xc1\xcc\xcb\xd5";
   const char *cp1251 =
       "\xcd\xf3\x2c\x20\xe7\xe0\x20\xf0\xfb\xe1\xe0\xeb\xea\xf3";
@@ -17623,7 +17700,7 @@ static void test_bug41078() {
 
   DBUG_TRACE;
 
-  rc = mysql_query(mysql, "SET NAMES UTF8");
+  rc = mysql_query(mysql, "SET NAMES UTF8MB3");
   myquery(rc);
 
   stmt = mysql_simple_prepare(mysql, "SELECT ?");
@@ -17677,7 +17754,7 @@ static void test_bug45010() {
   DBUG_TRACE;
   myheader("test_bug45010");
 
-  rc = mysql_query(mysql, "set names utf8");
+  rc = mysql_query(mysql, "set names utf8mb3");
   myquery(rc);
 
   /* \x80 (-128) could be used as a index of ident_map. */
@@ -18306,7 +18383,7 @@ static void test_bug12337762() {
                    "create table charset_tab("
                    "txt1 varchar(32) character set Latin1,"
                    "txt2 varchar(32) character set Latin1 collate latin1_bin,"
-                   "txt3 varchar(32) character set utf8 collate utf8mb3_bin"
+                   "txt3 varchar(32) character set utf8mb3 collate utf8mb3_bin"
                    ")");
 
   DIE_UNLESS(rc == 0);
@@ -19696,13 +19773,15 @@ static void test_bug21199582() {
       sprintf(query,
               "create procedure p3(INOUT p1 Integer) BEGIN select c from "
               "abcd;insert into abcd values(4,'d');"
-              "select id from abcd;SET NAMES 'utf8';set autocommit = ON;SET p1 "
+              "select id from abcd;SET NAMES 'utf8mb3';"
+              "set autocommit = ON;SET p1 "
               "= 9999;END");
     } else {
       sprintf(query,
               "create procedure p3(INOUT p1 Integer) BEGIN select id from "
               "abcd;insert into abcd values(4,'d');"
-              "select id from abcd;SET NAMES 'utf8';set autocommit = ON;SET p1 "
+              "select id from abcd;SET NAMES 'utf8mb3';"
+              "set autocommit = ON;SET p1 "
               "= 9999;END");
     }
 
@@ -20572,7 +20651,7 @@ static void test_bug25701141() {
                    "pretty CHAR(20) DEFAULT NULL,"
                    "CONSTRAINT UNIQUE KEY unique_serial (serial) USING HASH,"
                    "INDEX pretty_index USING HASH (pretty)"
-                   ") ENGINE = InnoDB CHARSET = utf8 COLLATE = utf8mb3_bin");
+                   ") ENGINE = InnoDB CHARSET = utf8mb3 COLLATE = utf8mb3_bin");
   myquery(rc);
 
   my_stpcpy(query, "INSERT IGNORE INTO t1 SET `serial`=?, `pretty`=?");
@@ -23074,6 +23153,12 @@ static void test_bug34007830() {
   /* wait until connection times-out */
   printf("Waiting for 10s\n");
   sleep(10);
+#ifdef _WIN32
+  // On Windows, it (empirically) takes up to 2 minutes for a socket to
+  // gracefully close after closesocket is called - so we wait longer.
+  printf("Waiting for a further 120s on Windows\n");
+  sleep(120);
+#endif  // _WIN32
 
   /* send query #2 */
   if (!send_query(lmysql, "SELECT 2")) {
@@ -23083,6 +23168,119 @@ static void test_bug34007830() {
   printf("Test successfully completed\n");
 
   mysql_close(lmysql);
+}
+
+static void test_bug33535746() {
+  DBUG_TRACE;
+  myheader("test_bug33535746");
+
+  int rc;
+
+  rc = mysql_query(mysql, "create table t1 (id int primary key)");
+  myquery(rc);
+
+  rc = mysql_query(mysql, "insert into t1 values(1)");
+  myquery(rc);
+
+  const char *query = "select id from t1";
+
+  MYSQL_STMT *stmt = mysql_stmt_init(mysql);
+  DIE_UNLESS(stmt != nullptr);
+
+  ulong length[1];
+  bool is_null[1] = {false};
+  int32 id;
+
+  MYSQL_BIND bind[1];
+  memset(bind, 0, sizeof(bind));
+
+  bind[0].buffer_type = MYSQL_TYPE_LONG;
+  bind[0].buffer = (void *)&id;
+  bind[0].is_null = &is_null[0];
+  bind[0].length = &length[0];
+  bind[0].buffer_length = (ulong)sizeof(id);
+
+  ulong type;
+
+  rc = mysql_stmt_prepare(stmt, query, (ulong)strlen(query));
+  check_execute(stmt, rc);
+
+  // First execution without cursor
+
+  rc = mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  mysql_stmt_bind_result(stmt, bind);
+
+  int row_count = 0;
+
+  while (!(rc = mysql_stmt_fetch(stmt))) row_count++;
+
+  DIE_UNLESS(rc == MYSQL_NO_DATA);
+
+  assert(row_count == 1);
+
+  // Second execution with cursor
+
+  type = (ulong)CURSOR_TYPE_READ_ONLY;
+
+  mysql_stmt_attr_set(stmt, STMT_ATTR_CURSOR_TYPE, &type);
+
+  rc = mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  mysql_stmt_bind_result(stmt, bind);
+
+  row_count = 0;
+
+  while (!(rc = mysql_stmt_fetch(stmt))) row_count++;
+
+  DIE_UNLESS(rc == MYSQL_NO_DATA);
+
+  assert(row_count == 1);
+
+  // Third execution without cursor
+
+  type = (ulong)CURSOR_TYPE_NO_CURSOR;
+
+  mysql_stmt_attr_set(stmt, STMT_ATTR_CURSOR_TYPE, &type);
+
+  rc = mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  mysql_stmt_bind_result(stmt, bind);
+
+  row_count = 0;
+
+  while (!(rc = mysql_stmt_fetch(stmt))) row_count++;
+
+  DIE_UNLESS(rc == MYSQL_NO_DATA);
+
+  assert(row_count == 1);
+
+  // Fourth execution with cursor
+
+  type = (ulong)CURSOR_TYPE_READ_ONLY;
+
+  mysql_stmt_attr_set(stmt, STMT_ATTR_CURSOR_TYPE, &type);
+
+  rc = mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  mysql_stmt_bind_result(stmt, bind);
+
+  row_count = 0;
+
+  while (!(rc = mysql_stmt_fetch(stmt))) row_count++;
+
+  DIE_UNLESS(rc == MYSQL_NO_DATA);
+
+  assert(row_count == 1);
+
+  mysql_stmt_close(stmt);
+
+  rc = mysql_query(mysql, "drop table t1");
+  myquery(rc);
 }
 
 static struct my_tests_st my_tests[] = {
@@ -23136,6 +23334,7 @@ static struct my_tests_st my_tests[] = {
     {"test_prepare_syntax", test_prepare_syntax},
     {"test_field_names", test_field_names},
     {"test_field_flags", test_field_flags},
+    {"test_bug33781442", test_bug33781442},
     {"test_long_data_str", test_long_data_str},
     {"test_long_data_str1", test_long_data_str1},
     {"test_long_data_bin", test_long_data_bin},
@@ -23396,6 +23595,7 @@ static struct my_tests_st my_tests[] = {
     {"test_bug32915973", test_bug32915973},
     {"test_wl13075", test_wl13075},
     {"test_bug34007830", test_bug34007830},
+    {"test_bug33535746", test_bug33535746},
     {nullptr, nullptr}};
 
 static struct my_tests_st *get_my_tests() { return my_tests; }

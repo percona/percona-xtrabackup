@@ -28,11 +28,14 @@
 #include <stdlib.h> // abort()
 #include <string.h>
 
+#include <limits>
 #include <new>
 
 #include "openssl/conf.h"
+#include "openssl/crypto.h"
 #include "openssl/err.h"
 #include "openssl/evp.h"
+#include "openssl/opensslv.h"
 #include "openssl/rand.h"
 #include <openssl/ssl.h>
 
@@ -42,12 +45,15 @@
 #include "openssl/engine.h"
 #endif
 
+// clang-format off
 #ifndef REQUIRE
 #define REQUIRE(r) do { if (unlikely(!(r))) { fprintf(stderr, "\nYYY: %s: %u: %s: r = %d\n", __FILE__, __LINE__, __func__, (r)); require((r)); } } while (0)
 #endif
 
 #define RETURN(rv) return(rv)
 //#define RETURN(rv) abort()
+//#define RETURN(r) do { fprintf(stderr, "\nYYY: %s: %u: %s: r = %d\n", __FILE__, __LINE__, __func__, (r)); require(false); return (r); } while (0)
+// clang-format on
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
 static unsigned long ndb_openssl_id()
@@ -238,8 +244,8 @@ int ndb_openssl_evp::set_aes_256_xts(bool padding, size_t data_unit_size)
     return -1;
   }
 
-  require(EVP_CIPHER_key_length(EVP_aes_256_xts()) == XTS_KEY_LEN);
-  require(EVP_CIPHER_iv_length(EVP_aes_256_xts()) == XTS_IV_LEN);
+  require(EVP_CIPHER_key_length(EVP_aes_256_xts()) == XTS_KEYS_LEN);
+  require(EVP_CIPHER_iv_length(EVP_aes_256_xts()) == XTS_SEQNUM_LEN);
   require(EVP_CIPHER_block_size(EVP_aes_256_xts()) == XTS_BLOCK_LEN);
 
   m_evp_cipher = EVP_aes_256_xts();
@@ -249,6 +255,84 @@ int ndb_openssl_evp::set_aes_256_xts(bool padding, size_t data_unit_size)
   return 0;
 }
 
+size_t ndb_openssl_evp::get_needed_key_iv_pair_count(
+    ndb_off_t estimated_data_size) const
+{
+  if (m_data_unit_size == 0)
+  {
+    // Stream mode with CBC always uses one key-iv pair.
+    return 1;
+  }
+  if (estimated_data_size == 0)
+  {
+    /*
+     * Zero is just an estimate. Assume some small amount of data will appear
+     * and use one key-iv pair.
+     */
+    return 1;
+  }
+  if (estimated_data_size == -1)
+  {
+    /*
+     * -1 indicates indefinite size, assume "infinite" size and likewise return
+     * SIZE_T_MAX to indicate an indefinite "infinite" value of key_iv pairs
+     * needed.
+     */
+    return SIZE_T_MAX;
+  }
+
+  require(estimated_data_size > 0);
+  require(m_data_unit_size <= MAX_DATA_UNIT_SIZE);
+  const Uint64 data_size = estimated_data_size;
+
+  Uint64 key_iv_pairs;
+  if (m_evp_cipher == EVP_aes_256_cbc())
+  {
+    key_iv_pairs = ndb_ceil_div(data_size, Uint64{m_data_unit_size});
+  }
+  else if (m_evp_cipher == EVP_aes_256_xts())
+  {
+    /*
+     * For XTS we store key1 and key2 in the key_iv_pair, while the sequence
+     * number will be calculated from data position. Per design of XTS it is
+     * safe to encrypt different blocks with same keys but with different
+     * sequence numbers.
+     *
+     * In calls to OpenSSL functions such as EVP_EncryptInit_ex the whole
+     * key_iv pair (keys1 + keys2) is passed in as key and the sequence number
+     * is passed in as IV.
+     */
+    static_assert(MAX_DATA_UNIT_SIZE <= UINT64_MAX >> XTS_SEQNUM_LEN);
+    const Uint64 data_size_per_key_iv_pair =
+        Uint64{m_data_unit_size} << XTS_SEQNUM_LEN;
+    key_iv_pairs = ndb_ceil_div(data_size, data_size_per_key_iv_pair);
+  }
+  else
+  {
+    // Unknown cipher
+    require((m_evp_cipher == EVP_aes_256_cbc()) ||
+            (m_evp_cipher == EVP_aes_256_xts()));
+    abort(); // In case we in future forget to add new cipher in require above.
+  }
+
+  if (m_mix_key_iv_pair)
+  {
+    /*
+     * In mix key iv pair mode, all keys can combine with all ivs to form
+     * unique pairs.
+     * The number of key-iv pairs we need to generate is the square root of
+     * unique key-iv pairs needed.
+     */
+    key_iv_pairs = ceil(sqrt(double(key_iv_pairs)));
+  }
+  require(key_iv_pairs > 0);
+
+  if constexpr (SIZE_T_MAX < UINT64_MAX) // 32 bit platforms
+  {
+    if (key_iv_pairs > SIZE_T_MAX) return SIZE_T_MAX;
+  }
+  return key_iv_pairs;
+}
 
 int ndb_openssl_evp::generate_salt256(byte salt[SALT_LEN])
 {
@@ -332,6 +416,41 @@ int ndb_openssl_evp::derive_and_add_key_iv_pair(const byte pwd[],
   return 0;
 }
 
+int ndb_openssl_evp::add_key_iv_pairs(const byte key_pairs[],
+                                      size_t pair_count,
+                                      size_t pair_size)
+{
+  if (pair_size != KEY_LEN + IV_LEN) RETURN(-1);
+
+  if (m_key_iv_set == nullptr)
+  {
+    if (m_has_key_iv)
+    {
+      RETURN(-1);
+    }
+    if (pair_count != 1)
+    {
+      RETURN(-1);
+    }
+    memcpy(m_key_iv, key_pairs, pair_size);
+    m_has_key_iv = true;
+    return 0;
+  }
+
+  size_t off = 0;
+  for (size_t i = 0; i < pair_count; i++)
+  {
+    byte *key_iv;
+    if (m_key_iv_set->get_next_key_iv_slot(&key_iv) == -1)
+    {
+      RETURN(-1);
+    }
+    memcpy(key_iv, key_pairs + off, pair_size);
+    off += pair_size;
+    require(m_key_iv_set->commit_next_key_iv_slot() != -1);
+  }
+  return 0;
+}
 
 int ndb_openssl_evp::remove_all_key_iv_pairs()
 {
@@ -349,7 +468,15 @@ int ndb_openssl_evp::remove_all_key_iv_pairs()
   return -1;
 }
 
-
+int ndb_openssl_evp::generate_key(ndb_openssl_evp::byte* key, size_t key_len)
+{
+  int r = RAND_bytes(key, key_len);
+  if (r != 1)
+  {
+    return -1;
+  }
+  return 0;
+}
 
 ndb_openssl_evp::key256_iv256_set::key256_iv256_set()
 : m_key_iv_count(0)
@@ -371,7 +498,7 @@ int ndb_openssl_evp::key256_iv256_set::clear()
 
 int ndb_openssl_evp::key256_iv256_set::get_next_key_iv_slot(byte **key_iv)
 {
-  if (m_key_iv_count >= MAX_SALT_COUNT)
+  if (m_key_iv_count >= MAX_KEY_IV_COUNT)
   {
     return -1;
   }
@@ -383,7 +510,7 @@ int ndb_openssl_evp::key256_iv256_set::get_next_key_iv_slot(byte **key_iv)
 
 int ndb_openssl_evp::key256_iv256_set::commit_next_key_iv_slot()
 {
-  if (m_key_iv_count >= MAX_SALT_COUNT)
+  if (m_key_iv_count >= MAX_KEY_IV_COUNT)
   {
     return -1;
   }
@@ -396,6 +523,7 @@ int ndb_openssl_evp::key256_iv256_set::commit_next_key_iv_slot()
 int ndb_openssl_evp::key256_iv256_set::get_key_iv_pair(
                        size_t index, const byte **key, const byte **iv) const
 {
+  if (m_key_iv_count == 0) RETURN(-1);
   size_t i = index % m_key_iv_count;
   size_t reuse = i / m_key_iv_count;
   *key = &m_key_iv[i].m_key_iv[0];
@@ -408,6 +536,7 @@ int ndb_openssl_evp::key256_iv256_set::get_key_iv_pair(
 int ndb_openssl_evp::key256_iv256_set::get_key_iv_mixed_pair(
                       size_t index, const byte **key, const byte **iv) const
 {
+  if (m_key_iv_count == 0) RETURN(-1);
   size_t iv_index = index % m_key_iv_count;
   size_t key_index = index / m_key_iv_count % m_key_iv_count;
   size_t reuse = index / m_key_iv_count / m_key_iv_count;
@@ -463,7 +592,7 @@ int ndb_openssl_evp::operation::set_context(const ndb_openssl_evp* context)
   return 0;
 }
 
-int ndb_openssl_evp::operation::setup_key_iv(off_t input_position,
+int ndb_openssl_evp::operation::setup_key_iv(ndb_off_t input_position,
                                              const byte **key,
                                              const byte **iv,
                                              byte xts_seq_num[16])
@@ -554,7 +683,7 @@ int ndb_openssl_evp::operation::setup_key_iv(off_t input_position,
 }
 
 
-int ndb_openssl_evp::operation::setup_decrypt_key_iv(off_t position,
+int ndb_openssl_evp::operation::setup_decrypt_key_iv(ndb_off_t position,
                                                      const byte* iv_)
 {
   require(m_op_mode == DECRYPT || m_op_mode == NO_OP);
@@ -608,7 +737,7 @@ int ndb_openssl_evp::operation::setup_decrypt_key_iv(off_t position,
 }
 
 
-int ndb_openssl_evp::operation::setup_encrypt_key_iv(off_t position)
+int ndb_openssl_evp::operation::setup_encrypt_key_iv(ndb_off_t position)
 {
   require(m_op_mode == ENCRYPT || m_op_mode == NO_OP);
   size_t data_unit_size = m_context->m_data_unit_size;
@@ -658,8 +787,8 @@ int ndb_openssl_evp::operation::setup_encrypt_key_iv(off_t position)
 }
 
 
-int ndb_openssl_evp::operation::encrypt_init(off_t output_position,
-                                             off_t input_position)
+int ndb_openssl_evp::operation::encrypt_init(ndb_off_t output_position,
+                                             ndb_off_t input_position)
 {
   require(m_op_mode == NO_OP);
   if (m_context->m_data_unit_size == 0)
@@ -830,8 +959,8 @@ int ndb_openssl_evp::operation::encrypt_end()
 }
 
 
-int ndb_openssl_evp::operation::decrypt_init(off_t output_position,
-                                             off_t input_position)
+int ndb_openssl_evp::operation::decrypt_init(ndb_off_t output_position,
+                                             ndb_off_t input_position)
 {
   require(m_op_mode == NO_OP);
   if (m_context->m_data_unit_size == 0)
@@ -848,8 +977,8 @@ int ndb_openssl_evp::operation::decrypt_init(off_t output_position,
   return 0; 
 }
 
-int ndb_openssl_evp::operation::decrypt_init_reverse(off_t output_position,
-                                                     off_t input_position)
+int ndb_openssl_evp::operation::decrypt_init_reverse(ndb_off_t output_position,
+                                                     ndb_off_t input_position)
 {
   require(m_op_mode == NO_OP);
   m_op_mode = DECRYPT;
@@ -1049,7 +1178,7 @@ int ndb_openssl_evp::operation::decrypt_reverse(output_reverse_iterator* out,
     }
   }
 
-  off_t in_position = m_at_padding_end
+  ndb_off_t in_position = m_at_padding_end
     ? (output_position / CBC_BLOCK_LEN + 1 - inl / CBC_BLOCK_LEN) *
                                                              CBC_BLOCK_LEN
     : (output_position - inl);
@@ -1099,6 +1228,114 @@ int ndb_openssl_evp::operation::decrypt_end()
   m_op_mode = NO_OP;
   return 0;
 }
+
+bool ndb_openssl_evp::is_aeskw256_supported()
+{
+#ifndef EVP_CIPHER_CTX_FLAG_WRAP_ALLOW
+  /*
+   * EVP_CIPHER_CTX_FLAG_WRAP_ALLOW and EVP_aes_256_wrap should have been
+   * defined in openssl/evp.h.
+   */
+  return false;
+#else
+  return true;
+#endif
+}
+
+#ifndef EVP_CIPHER_CTX_FLAG_WRAP_ALLOW
+int ndb_openssl_evp::wrap_keys_aeskw256(byte *,
+                                        size_t *,
+                                        const byte *,
+                                        size_t,
+                                        const byte *,
+                                        size_t)
+{
+  return -1; // Not supported before OpenSSL 1.0.2
+}
+#else
+int ndb_openssl_evp::wrap_keys_aeskw256(byte *wrapped,
+                                        size_t *wrapped_size,
+                                        const byte *keys,
+                                        size_t keys_size,
+                                        const byte *wrapping_key,
+                                        size_t wrapping_key_size)
+{
+  EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+  EVP_CIPHER_CTX_set_flags(ctx, EVP_CIPHER_CTX_FLAG_WRAP_ALLOW);
+  if (wrapping_key_size != (size_t)EVP_CIPHER_key_length(EVP_aes_256_wrap()))
+  {
+    RETURN(-1);
+  }
+  if (*wrapped_size < keys_size + AESKW_EXTRA) RETURN(-1);
+  if (EVP_EncryptInit_ex(ctx, EVP_aes_256_wrap(), nullptr, wrapping_key, nullptr) != 1)
+  {
+    RETURN(-1);
+  }
+  int outl;
+  if (EVP_EncryptUpdate(ctx, wrapped, &outl, keys, keys_size) != 1)
+  {
+    RETURN(-1);
+  }
+  require(size_t(outl) <= *wrapped_size);
+  int outl2;
+  if (EVP_EncryptFinal_ex(ctx, wrapped + outl, &outl2) != 1)
+  {
+    RETURN(-1);
+  }
+  require(outl2 == 0);
+  *wrapped_size = outl;
+  EVP_CIPHER_CTX_free(ctx);
+  return 0;
+}
+#endif
+
+#ifndef EVP_CIPHER_CTX_FLAG_WRAP_ALLOW
+int ndb_openssl_evp::unwrap_keys_aeskw256(byte *,
+                                          size_t *,
+                                          const byte *,
+                                          size_t,
+                                          const byte *,
+                                          size_t)
+{
+  return -1; // Not supported before OpenSSL 1.0.2
+}
+#else
+int ndb_openssl_evp::unwrap_keys_aeskw256(byte *keys,
+                                          size_t *keys_size,
+                                          const byte *wrapped,
+                                          size_t wrapped_size,
+                                          const byte *wrapping_key,
+                                          size_t wrapping_key_size)
+{
+  EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+  EVP_CIPHER_CTX_set_flags(ctx, EVP_CIPHER_CTX_FLAG_WRAP_ALLOW);
+  if (wrapping_key_size != (size_t)EVP_CIPHER_key_length(EVP_aes_256_wrap()))
+  {
+    RETURN(-1);
+  }
+  if (wrapped_size < AESKW_EXTRA) RETURN(-1);
+  if (*keys_size < wrapped_size - AESKW_EXTRA) RETURN(-1);
+  if (EVP_DecryptInit_ex(ctx, EVP_aes_256_wrap(), nullptr, wrapping_key, nullptr) != 1)
+  {
+    RETURN(-1);
+  }
+  int outl;
+  if (EVP_DecryptUpdate(ctx, keys, &outl, wrapped, wrapped_size) != 1)
+  {
+    RETURN(-1);
+  }
+  require(size_t(outl) <= *keys_size); // Potential write beyond buffer
+  int outl2;
+  if (EVP_DecryptFinal_ex(ctx, keys + outl, &outl2) != 1)
+  {
+    RETURN(-1);
+  }
+  require(outl2 == 0);
+  *keys_size = outl;
+  EVP_CIPHER_CTX_free(ctx);
+  return 0;
+}
+#endif
 
 #ifdef TEST_NDB_OPENSSL_EVP
 

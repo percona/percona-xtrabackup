@@ -25,12 +25,12 @@
 #ifndef SOCKETINPUTSTREAM2_HPP
 #define SOCKETINPUTSTREAM2_HPP
 
-#include <NdbTCP.h>
+#include "portlib/ndb_socket.h"
 #include <BaseString.hpp>
 #include <UtilBuffer.hpp>
 
 class SocketInputStream2 {
-  NDB_SOCKET_TYPE m_socket;
+  ndb_socket_t m_socket;
   unsigned m_read_timeout;
   UtilBuffer m_buffer;
   size_t m_buffer_read_pos;
@@ -41,7 +41,7 @@ class SocketInputStream2 {
   bool add_buffer(char* buf, ssize_t len);
 
 public:
-  SocketInputStream2(NDB_SOCKET_TYPE socket,
+  SocketInputStream2(ndb_socket_t socket,
                      unsigned read_timeout = 60) :
     m_socket(socket),
     m_read_timeout(read_timeout),

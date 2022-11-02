@@ -766,7 +766,7 @@ err_with_rollback:
 err:
   THD_STAGE_INFO(thd, stage_end);
   lex->link_first_table_back(view, link_to_local);
-  unit->cleanup(thd, true);
+  unit->cleanup(true);
 
   return res || thd->is_error();
 }
@@ -832,7 +832,7 @@ bool is_updatable_view(THD *thd, TABLE_LIST *view) {
     UNION
   */
   if (updatable_view &&
-      !lex->query_block->master_query_expression()->is_union() &&
+      !lex->query_block->master_query_expression()->is_set_operation() &&
       !(lex->query_block->table_list.first)->next_local &&
       find_table_in_global_list(lex->query_tables->next_global,
                                 lex->query_tables->db,
@@ -1635,6 +1635,11 @@ bool parse_view_definition(THD *thd, TABLE_LIST *view_ref) {
   // Updatability is not decided yet
   assert(!view_ref->is_updatable());
 
+  // another level of nesting would exceed the max supported nesting level
+  if (view_ref->query_block->nest_level >= MAX_SELECT_NESTING) {
+    my_error(ER_TOO_HIGH_LEVEL_OF_NESTING_FOR_SELECT, MYF(0));
+    return true;
+  }
   // Link query expression of view into the outer query
   view_lex->unit->include_down(old_lex, view_ref->query_block);
   //  Set hints specified in created view to allow printing them in view body.

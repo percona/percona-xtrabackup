@@ -29,6 +29,7 @@
 #include <ndb_limits.h>
 #include <ndb_lib_move_data.hpp>
 #include <ndb_rand.h>
+#include "portlib/NdbTick.h"
 
 #define CHK1(b) \
   if (!(b)) { \

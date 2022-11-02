@@ -233,32 +233,32 @@ void set_field_double(Field *f, double value);
 double get_field_double(Field *f);
 
 /**
-  Helper, assign a value to a @code char utf8 @endcode field.
+  Helper, assign a value to a @code char utf8mb4 @endcode field.
   @param f the field to set
   @param str the string to assign
   @param len the length of the string to assign
 */
-void set_field_char_utf8(Field *f, const char *str, uint len);
+void set_field_char_utf8mb4(Field *f, const char *str, uint len);
 
 /**
-  Helper, read a value from a @code char utf8 @endcode field.
+  Helper, read a value from a @code char utf8mb4 @endcode field.
   @param f the field to read
   @param[out] val the field value
   @param[out] len field value length
   @return the field value
 */
-char *get_field_char_utf8(Field *f, char *val, uint *len);
+char *get_field_char_utf8mb4(Field *f, char *val, uint *len);
 
 /**
-  Helper, read a value from a @code char utf8 @endcode field.
+  Helper, read a value from a @code char utf8mb4 @endcode field.
   @param f the field to read
   @param[out] val the field value
   @return the field value
 */
-String *get_field_char_utf8(Field *f, String *val);
+String *get_field_char_utf8mb4(Field *f, String *val);
 
 /**
-  Helper, assign a value to a @code varchar utf8 @endcode field.
+  Helper, assign a value to a @code varchar utf8mb4 @endcode field.
   @param f the field to set
   @param cs the string character set
   @param str the string to assign
@@ -268,36 +268,21 @@ void set_field_varchar(Field *f, const CHARSET_INFO *cs, const char *str,
                        uint len);
 
 /**
-  Helper, assign a value to a @code varchar utf8 @endcode field.
-  @param f the field to set
-  @param str the string to assign
-*/
-void set_field_varchar_utf8(Field *f, const char *str);
-
-/**
-  Helper, assign a value to a @code varchar utf8 @endcode field.
-  @param f the field to set
-  @param str the string to assign
-  @param len the length of the string to assign
-*/
-void set_field_varchar_utf8(Field *f, const char *str, size_t len);
-
-/**
-  Helper, read a value from a @code varchar utf8 @endcode field.
+  Helper, read a value from a @code varchar utf8mb4 @endcode field.
   @param f the field to read
   @param[out] val the field value
   @return the field value
 */
-String *get_field_varchar_utf8(Field *f, String *val);
+String *get_field_varchar_utf8mb4(Field *f, String *val);
 
 /**
-  Helper, read a value from a @code varchar utf8 @endcode field.
+  Helper, read a value from a @code varchar utf8mb4 @endcode field.
   @param f the field to read
   @param[out] val the field value
   @param[out] len field value length
   @return the field value
 */
-char *get_field_varchar_utf8(Field *f, char *val, uint *len);
+char *get_field_varchar_utf8mb4(Field *f, char *val, uint *len);
 
 /**
   Helper, assign a value to a @code varchar utf8mb4 @endcode field.
@@ -608,7 +593,7 @@ struct PFS_event_name_row {
 
   /** Set a table field from the row. */
   inline void set_field(Field *f) {
-    set_field_varchar_utf8(f, m_name, m_name_length);
+    set_field_varchar_utf8mb4(f, m_name, m_name_length);
   }
 };
 
@@ -883,6 +868,8 @@ struct PFS_statement_stat_row {
     Expressed in DISPLAY units (picoseconds).
   */
   ulonglong m_cpu_time;
+  ulonglong m_max_controlled_memory;
+  ulonglong m_max_total_memory;
   ulonglong m_count_secondary;
 
   /** Build a row from a memory buffer. */
@@ -910,6 +897,8 @@ struct PFS_statement_stat_row {
       m_no_index_used = stat->m_no_index_used;
       m_no_good_index_used = stat->m_no_good_index_used;
       m_cpu_time = stat->m_cpu_time * NANOSEC_TO_PICOSEC;
+      m_max_controlled_memory = stat->m_max_controlled_memory;
+      m_max_total_memory = stat->m_max_total_memory;
       m_count_secondary = stat->m_count_secondary;
     } else {
       m_timer1_row.reset();
@@ -934,6 +923,8 @@ struct PFS_statement_stat_row {
       m_no_index_used = 0;
       m_no_good_index_used = 0;
       m_cpu_time = 0;
+      m_max_controlled_memory = 0;
+      m_max_total_memory = 0;
       m_count_secondary = 0;
     }
   }
@@ -1006,13 +997,9 @@ struct PFS_error_stat_row {
 
 /** Row fragment for connection statistics. */
 struct PFS_connection_stat_row {
-  ulonglong m_current_connections;
-  ulonglong m_total_connections;
+  PFS_connection_stat m_stat;
 
-  inline void set(const PFS_connection_stat *stat) {
-    m_current_connections = stat->m_current_connections;
-    m_total_connections = stat->m_total_connections;
-  }
+  inline void set(const PFS_connection_stat *stat) { m_stat = *stat; }
 
   /** Set a table field from the row. */
   void set_field(uint index, Field *f);
@@ -1078,6 +1065,19 @@ struct PFS_memory_stat_row {
 
   /** Build a row from a memory buffer. */
   inline void set(const PFS_memory_monitoring_stat *stat) { m_stat = *stat; }
+
+  /** Set a table field from the row. */
+  void set_field(uint index, Field *f);
+};
+
+struct PFS_session_all_memory_stat_row {
+  size_t m_controlled_size;
+  size_t m_max_controlled_size;
+  size_t m_total_size;
+  size_t m_max_total_size;
+
+  /** Build a row from a memory buffer. */
+  void set(const PFS_session_all_memory_stat *stat);
 
   /** Set a table field from the row. */
   void set_field(uint index, Field *f);

@@ -24,6 +24,7 @@ var common_responses = common_stmts.prepare_statement_responses(
       "router_select_cluster_instance_addresses_v2",
       "router_start_transaction",
       "router_commit",
+      "router_clusterset_present",
     ],
     options);
 
@@ -43,13 +44,19 @@ var common_responses_regex = common_stmts.prepare_statement_responses_regex(
     ],
     options);
 
+if (mysqld.global.blocked === undefined) {
+  mysqld.global.blocked = 0;
+}
+
 ({
   stmts: function(stmt) {
+    mysqld.global.blocked = 0;
     var res;
     if (common_responses.hasOwnProperty(stmt)) {
       return common_responses[stmt];
     }
     if (stmt === router_select_schema_version.stmt) {
+      mysqld.global.blocked = 1;
       router_select_schema_version.exec_time = 2000.0;
       return router_select_schema_version;
     } else if (

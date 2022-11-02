@@ -25,7 +25,8 @@
 #ifndef SOCKET_CLIENT_HPP
 #define SOCKET_CLIENT_HPP
 
-#include <NdbTCP.h>
+#include "portlib/ndb_socket.h"
+
 class SocketAuthenticator;
 
 class SocketClient
@@ -42,10 +43,10 @@ public:
   }
   int bind(const char* local_hostname,
            unsigned short local_port);
-  NDB_SOCKET_TYPE connect(const char* server_hostname,
-                          unsigned short server_port);
+  ndb_socket_t connect(const char* server_hostname,
+                       unsigned short server_port);
 
-  NDB_SOCKET_TYPE m_sockfd;
+  ndb_socket_t m_sockfd;
 };
 
 #endif // SOCKET_ClIENT_HPP

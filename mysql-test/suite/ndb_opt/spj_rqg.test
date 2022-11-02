@@ -3081,6 +3081,331 @@ eval explain format=tree $query;
 eval $query;
 
 
+--echo ##################
+--echo #
+--echo # Bug#34379950 Pushed join execution fails with:
+--echo #      error 4800 'Required argument is NULL'
+--echo #
+--echo ##################
+
+################
+# Generated query plan is: t1, t3s, t2s, t1s
+# Initially find that  t1, t3s, t2s can be pushed
+#
+#  t1s not pushed due to:
+#    'col_varchar_256_unique' does not have same datatype as ref'ed column 'table3s.col_char_16_key'
+#
+#  t3s later fails the final 'validate_join_nest-check' and is removed.
+#   : Can't push semi joined table 'table3s' as child of 'table1',
+#     some tables in embedding join-nest(s) are not part of pushed join
+#
+#  t2s had the pushed condition 'table2s.pk = table3s.col_int_key' (t3s referred as a parameter)
+#  Thus the t2s pushed condition can't be pushed either as it referred t3s.
+
+let $query=
+SELECT
+  table1.pk
+FROM v AS table1
+WHERE table1.col_int_unique IN (
+  SELECT table3s.col_int_key
+  FROM q AS table1s
+    RIGHT JOIN d AS table2s
+      RIGHT JOIN w AS table3s ON table2s.pk = table3s.col_int_key
+    ON table1s.col_varchar_256_unique = table3s.col_char_16_key
+);
+
+--replace_regex /  \(cost=.*//
+eval explain format=tree $query;
+--sorted_result
+eval $query;
+
+
+--echo ##################
+--echo # Bug#34486874 Error 4829:
+--echo #      'FirstInner/Upper has to be an ancestor or a sibling'
+--echo ##################
+
+#  Join plan is: (Tables renamed acording to join order)
+#    t0, t1, (t2, t3, t4), (t5)
+#
+#  - t5 is joined with both t3 and t1
+#  - t5 refers t3 as first parent (Note: t3 not in t5's upper nests)
+#  - The remaining t5 parent 't1' is recorded as an required ancestor of t3
+#    -- t1 was not recorded as an nest ancestor in the first_inner-table t2 !!
+#
+#  - t4 required dependencies are then collected by adding ancestors
+#    - Add t4.ancestors.
+#    - Add further ancestors noted in the first_inner-table t2
+#       -- as t1 was not recorded above, it is missed out from
+#          required t4 dependencies
+#  -> t0 is set up as the t4 parent, instead of t1.
+#
+#  - t3 is later joined with t1, which is set as parent
+#
+#  There is a requirement that all out-of-nest dependencies has
+#  to be resolved such they all join with a common upper-parent,
+#  which was broken by the above.
+#
+#   -> Error 4829 ....
+#
+let $query=
+SELECT
+  table1.pk, table2.pk, table3.pk, table4.pk, table5.pk, table6.pk
+FROM (j AS table1
+  JOIN w AS table2 ON table1.col_int = table2.col_int AND
+                      table1.col_int_key = table2.col_int_key AND
+                      table1.col_int_unique = table2.col_int_unique
+  JOIN n AS table3 ON table2.pk = table3.col_int_key
+  RIGHT JOIN c AS table4
+    JOIN g AS table5 ON table4.col_int_key = table5.col_int_key
+  ON table2.pk = table5.col_int_key)
+  LEFT JOIN s AS table6 ON table1.col_int_key = table6.col_int_key AND
+                           table5.col_int_unique = table6.col_int_unique;
+
+--replace_regex /  \(cost=.*//
+eval explain format=tree $query;
+--sorted_result
+eval $query;
+
+
+###########
+# Another query challenging the fix for the same bug#
+#
+let $query=
+SELECT
+  table1.pk, table2.pk, table3.pk, table4.pk, table5.pk
+FROM d AS table1
+  LEFT JOIN v AS table2
+    INNER JOIN q AS table3 ON table2.col_int_key = table3.col_int_key AND
+                              table2.col_int_unique = table3.col_int_unique
+  ON table1.col_int_key = table2.col_int_key AND
+     table1.col_int_unique = table2.col_int_unique
+  RIGHT JOIN p AS table4
+    RIGHT JOIN q AS table5 ON table4.col_int_key = table5.col_int_key AND
+                              table4.col_int_unique = table5.col_int_unique OR
+                             table4.pk = table5.col_int_key
+  ON table1.col_int_key = table5.col_int_key AND
+     table1.col_int_unique = table5.col_int_unique;
+
+--replace_regex /  \(cost=.*//
+eval explain format=tree $query;
+--sorted_result
+eval $query;
+
+
+#########
+# Guard against regression introduced in one of the attempted patch:
+#  -> Got error 4806 'Multiple 'parents' specified in linkedValues
+#
+let $query=
+SELECT
+  table1.pk, table2.pk, table3.pk, table4.pk, table5.pk
+FROM j AS table1
+  JOIN j AS table2 ON table1.col_int_key = table2.col_int_key
+  LEFT JOIN w AS table3 ON table2.pk = table3.col_int_key
+  LEFT JOIN w AS table4
+    JOIN x AS table5 ON table4.col_int_unique = table5.pk
+  ON table1.col_int = table5.col_int AND
+     table3.col_int_key = table4.col_int_key AND
+     table1.col_int_unique = table5.col_int_unique;
+
+--replace_regex /  \(cost=.*//
+eval explain format=tree $query;
+--sorted_result
+eval $query;
+
+
+########
+# Yet another regression guard
+let $query=
+SELECT
+  table1.pk, table2.pk, table3.pk, table4.pk
+FROM y AS table1
+  RIGHT JOIN n AS table2
+    JOIN w AS table3 ON table2.col_int = table3.col_int AND
+                        table2.col_int_key = table3.col_int_key AND
+                        table2.col_int_unique = table3.col_int_unique
+  ON table1.col_int = table3.col_int_unique
+  INNER JOIN l AS table4 ON table4.col_int IS NULL OR
+                            table1.col_int_unique = table4.col_int_key;
+
+--replace_regex /  \(cost=.*//
+eval explain format=tree $query;
+--sorted_result
+eval $query;
+
+
+--echo ##################
+--echo #
+--echo # Bug#34508948 Allow more conditions to be pushed down
+--echo #
+--echo ##################
+
+##########
+# In order to push a condition as part of pushed join, all tables
+# refererd from the pushed condition need to be ancestors of the table
+# having the pushed condition.
+#
+# In test case below t3 will have the filter:
+#   WHERE t1.pk = 8 OR t1.col_varchar_256_key = t3.col_varchar_256
+#
+# While, the t3 join condition is:
+#   ON table3.col_int_key = table1.col_int
+#
+# As only t1 is refererd by the join condition, t1 becomes the natural
+# ancestor of t3 in the pushed join. However, SPJ allows us to add extra
+# 'proxy' ancestors when they have common ancestors. Thus, by detecting that
+# t2 also has t1 as an ancestor, it can be forced as an ancestor of t3, such
+# that t3 get the ancestor set [t1,t2] -> t3 condition becomes pushable
+#
+let $query=
+SELECT STRAIGHT_JOIN
+  table1.pk, table2.pk, table3.pk
+FROM p AS table1
+  JOIN g AS table2 ON table2.col_int_unique = table1.col_int_unique
+  JOIN n AS table3 ON table3.col_int_key = table1.col_int
+WHERE table3.pk = 8 OR table3.col_varchar_256_key = table2.col_varchar_256;
+
+--replace_regex /  \(cost=.*//
+eval explain format=tree $query;
+--sorted_result
+eval $query;
+
+
+##########
+# ~Same query with t2 join condition changed from an unique-key lookup
+# on 't2.col_int_unique' to use the non-unique 'table2.col_int_key'.
+# Forcing t2 as an proxy-ancestor to t3 would result in a t3 lookup for
+# each t2 row matching 'table2.col_int_key = table1.col_int_key'.
+# Depending on the fanout of this join condition, it could result in
+# a prohibitive increase in t3 accesses.
+# Thus, we intentionally do not add tables having a non-unique access
+# as extra ancestors -> t3 condition not pushable
+#
+let $query=
+SELECT STRAIGHT_JOIN
+  table1.pk, table2.pk, table3.pk
+FROM p AS table1
+  JOIN g AS table2 ON table2.col_int_key = table1.col_int_key
+  JOIN n AS table3 ON table3.col_int_key = table1.col_int
+WHERE table3.pk = 8 OR table3.col_varchar_256_key = table2.col_varchar_256;
+
+--replace_regex /  \(cost=.*//
+eval explain format=tree $query;
+--sorted_result
+eval $query;
+
+
+##############
+# ~Same query again, this time t2 is outer joined with an unique-lookup
+#
+# Query plan is: t1, (outer join t2), t3 'with filter'.
+#
+# The outer joined table2 is referred from the filter:
+#  t3.pk = 8 OR t3.col_varchar_256_key = t2.col_varchar_256
+#
+# As t3 is inner joined with t1, t2 is *not* in t3's scope of
+# 'embedding_nests'.
+# Pushing the filter condition, would have required adding
+# t2 as an ancestor of t3, which would implicitely add a not-null
+# requirement on t2 as well - Effectively changing the outer join
+# semantic to an inner join.
+#
+# -> Do NOT push the filter condition!
+#
+let $query=
+SELECT STRAIGHT_JOIN
+  table1.pk, table2.pk, table3.pk
+FROM p AS table1
+  LEFT JOIN g AS table2 ON table2.col_int_unique = table1.col_int_unique
+  JOIN n AS table3 ON table3.col_int_key = table1.col_int
+WHERE table3.pk = 8 OR table3.col_varchar_256_key = table2.col_varchar_256;
+
+--replace_regex /  \(cost=.*//
+eval explain format=tree $query;
+--sorted_result
+eval $query;
+
+
+#######
+# Some other random queries picked up from RQG testing. Which
+# demonstrate the enhanced condition pushdown as well as
+# protecting agains some cases where we found a too eager
+# condition pushdown
+
+let $query=
+SELECT
+  table1.pk, table2.pk, table3.pk, table4.pk
+FROM c AS table1
+  RIGHT JOIN a AS table2
+    RIGHT JOIN d AS table3 ON table2.pk = table3.col_int
+    RIGHT JOIN d AS table4 ON table3.col_int_key = table4.col_int_key AND
+                              table2.col_int_unique = table4.col_int_unique
+  ON table1.pk = table2.col_int_unique
+WHERE table1.col_int_unique > 9;
+
+--replace_regex /  \(cost=.*//
+eval explain format=tree $query;
+--sorted_result
+eval $query;
+
+
+let $query=
+SELECT table3.col_char_16_unique AS field1
+FROM d AS table1
+  JOIN m AS table2 ON table1.col_int_unique = table2.pk
+  JOIN m AS table3 ON table1.pk = table3.col_int_unique
+  RIGHT JOIN j AS table4 ON table3.col_int_key = table4.col_int AND
+                            table2.col_int_unique = table4.col_int_key
+WHERE table2.col_int = 76;
+
+--replace_regex /  \(cost=.*//
+eval explain format=tree $query;
+--sorted_result
+eval $query;
+
+
+let $query=
+SELECT
+  table2.col_int_key AS field1
+FROM d AS table1
+  JOIN f AS table2
+    LEFT JOIN m AS table3
+      RIGHT JOIN e AS table4 ON table3.col_int_key = table4.col_int_unique
+    ON table2.pk = table3.col_int
+  ON table1.col_int_unique = table2.col_int_key
+  JOIN h AS table5 ON table4.col_int_key = table5.col_int_key AND
+                      table2.col_int_unique = table5.col_int_unique;
+
+--replace_regex /  \(cost=.*//
+eval explain format=tree $query;
+--sorted_result
+eval $query;
+
+
+let $query=
+SELECT
+  #table2.col_char_16_unique AS field1
+  table1.pk, table2.pk, table3.pk, table4.pk, table5.pk, table6.pk
+FROM a AS table1
+  JOIN k AS table2 ON table1.col_int_unique = table2.col_int
+  RIGHT JOIN r AS table3 ON table1.col_varchar_10_key = table3.col_varchar_10_key
+  RIGHT JOIN w AS table4
+    JOIN l AS table5
+      RIGHT JOIN v AS table6 ON table5.col_varchar_10_unique = table6.col_varchar_10_unique
+    ON table4.pk = table6.col_int_unique
+  ON table2.col_int_key = table5.col_int_key AND
+     table3.col_int_unique = table4.col_int_unique
+WHERE table4.pk >= 3;
+
+--replace_regex /  \(cost=.*//
+eval explain format=tree $query;
+--sorted_result
+eval $query;
+
+# end bug#34508948
+################
+
 ######################################################
 DROP TABLE a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z;
 

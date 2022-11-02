@@ -71,6 +71,7 @@ Vendor:         %{mysql_vendor}
 BuildRequires:  bison >= 2.1
 BuildRequires:  cmake
 BuildRequires:  cyrus-sasl-devel
+BuildRequires:  elfutils
 BuildRequires:  gcc
 BuildRequires:  gcc-c++
 BuildRequires:  libaio-devel
@@ -525,7 +526,7 @@ mkdir debug
            -DWITH_MEB=%{with_meb} \
            -DWITH_ROUTER=%{with_router} \
 %if 0%{?cluster:1}
-           -DWITH_NDBCLUSTER=1 \
+           -DWITH_NDB=1 \
 %endif
 %if 0%{?ndb_nodejs_path:1}
            -DNDB_NODEJS_PATH=%{ndb_nodejs_path} \
@@ -564,7 +565,7 @@ mkdir release
            -DWITH_MEB=%{with_meb} \
            -DWITH_ROUTER=%{with_router} \
 %if 0%{?cluster:1}
-           -DWITH_NDBCLUSTER=1 \
+           -DWITH_NDB=1 \
 %endif
 %if 0%{?ndb_nodejs_path:1}
            -DNDB_NODEJS_PATH=%{ndb_nodejs_path} \
@@ -898,6 +899,7 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_bindir}/ndb_print_sys_file
 %attr(755, root, root) %{_bindir}/ndb_redo_log_reader
 %attr(755, root, root) %{_bindir}/ndb_restore
+%attr(755, root, root) %{_bindir}/ndb_secretsfile_reader
 %attr(755, root, root) %{_bindir}/ndb_select_all
 %attr(755, root, root) %{_bindir}/ndb_select_count
 %attr(755, root, root) %{_bindir}/ndb_show_tables
@@ -926,6 +928,7 @@ rm -r $(readlink var) var
 %attr(644, root, root) %{_mandir}/man1/ndb_print_schema_file.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_print_sys_file.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_restore.1*
+%attr(644, root, root) %{_mandir}/man1/ndb_secretsfile_reader.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_select_all.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_select_count.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_show_tables.1*
@@ -997,6 +1000,8 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_mysql_system_variable_set.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_table_access.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_component_deinit.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_mysql_command_services.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/test_services_command_services.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_udf_reg_3_func.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_udf_reg_avg_func.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_udf_reg_int_func.so
@@ -1057,6 +1062,7 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/udf_example.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_mysqlx_global_reset.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_sensitive_system_variables.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_status_var_reader.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/auth.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/auth_test_plugin.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_ldap_sasl_client.so
@@ -1083,6 +1089,8 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_mysql_system_variable_set.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_table_access.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_component_deinit.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_mysql_command_services.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/test_services_command_services.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_udf_reg_3_func.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_udf_reg_avg_func.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_udf_reg_int_func.so
@@ -1142,6 +1150,7 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/test_services_host_application_signal.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_mysqlx_global_reset.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_sensitive_system_variables.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_status_var_reader.so
 
 %if 0%{?cluster}
 %files management-server
@@ -1217,6 +1226,10 @@ rm -r $(readlink var) var
 %endif # with_router
 
 %changelog
+* Mon June 07 2022 Murthy Sidagam <venkata.sidagam@oracle.com> - 8.0.31-1
+- Added component_test_mysql_command_services.so test component
+- Added test_services_command_services.so test plugin
+
 * Mon Jan 03 2022 Harin Vadodaria <harin.vadodaria@oracle.com> - 8.0.29-1
 - Added component_test_sensitive_system_variables
 

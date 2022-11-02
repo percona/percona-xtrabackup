@@ -25,7 +25,7 @@
 #ifndef MGMAPI_INTERNAL_H
 #define MGMAPI_INTERNAL_H
 
-#include <portlib/NdbTCP.h>
+#include "portlib/ndb_socket.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -58,7 +58,7 @@ extern "C" {
    * and all other node types are clients or have static server ports.
    *
    * @param handle the NDB management handle.
-   * @param nodeid the node which has openened the ports
+   * @param nodeid the node which has opened the ports
    * @param ports pointer to an array of ndb_mgm_dynamic_port structs
    * @param num_ports the number of ndb_mgm_dynamic_ports passed
    * @return 0 on success. < 0 on error.
@@ -75,7 +75,7 @@ extern "C" {
    * @param node1 the node1 id
    * @param node2 the node2 id
    * @param param the parameter (e.g. CFG_CONNECTION_SERVER_PORT)
-   * @param value where to store the retreived value. In the case of 
+   * @param value where to store the retrieved value. In the case of 
    * error, value is not changed.
    * @return 0 on success. < 0 on error.
    */
@@ -93,7 +93,7 @@ extern "C" {
    *
    * @note the socket is now able to be used as a transporter connection
    */
-  NDB_SOCKET_TYPE ndb_mgm_convert_to_transporter(NdbMgmHandle *handle);
+  ndb_socket_t ndb_mgm_convert_to_transporter(NdbMgmHandle *handle);
 
   int ndb_mgm_disconnect_quiet(NdbMgmHandle handle);
 
@@ -107,7 +107,7 @@ extern "C" {
                                 struct ndb_mgm_configuration* config);
 
 
-  NDB_SOCKET_TYPE _ndb_mgm_get_socket(NdbMgmHandle handle);
+  ndb_socket_t _ndb_mgm_get_socket(NdbMgmHandle handle);
 
   /**
    * Get configuration

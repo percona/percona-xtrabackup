@@ -375,7 +375,7 @@ class Pushed_lex_guard {
   }
   ~Pushed_lex_guard() {
     // Clean up this statement context and restore the old one:
-    m_thd->lex->cleanup(m_thd, true);
+    m_thd->lex->cleanup(true);
     lex_end(m_thd->lex);
 
     m_thd->lex = m_old_lex;

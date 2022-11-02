@@ -185,7 +185,7 @@ struct Pool {
   /** Upper limit of used space */
   Element *m_last;
 
-  /** Priority queue ordered on the pointer addresse. */
+  /** Priority queue ordered on the pointer addresses. */
   pqueue_t m_pqueue;
 
   /** Lock strategy to use */
@@ -277,8 +277,6 @@ struct PoolManager {
         ut_ad(n_pools <= m_pools.size());
 
         m_pools.push_back(pool);
-
-        ib::info(ER_IB_MSG_NUM_POOLS, m_pools.size());
 
         added = true;
       }

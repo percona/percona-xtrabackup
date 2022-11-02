@@ -113,6 +113,8 @@ AsyncFile::openReq(Request * request)
 
   const Uint32 page_size = request->par.open.page_size;
   const Uint64 data_size = request->par.open.file_size;
+  
+  const bool is_data_size_estimated = (flags & FsOpenReq::OM_SIZE_ESTIMATED);
 
   // Validate some flag combination.
 
@@ -217,7 +219,7 @@ AsyncFile::openReq(Request * request)
 #if defined(VM_TRACE) || !defined(NDEBUG)
       /*
        * LCP/0/T13F7.ctl has been seen with zero size, open flags OM_READWRITE |
-       * OM_APPEND Likely a partial read or failed read will be catched by
+       * OM_APPEND Likely a partial read or failed read will be caught by
        * application level, and file ignored. Are there ever files that can be
        * empty in ndb_x_fs? Else we could treat zero file as no file, must then
        * remove I guess to not trick create_if_none?
@@ -257,7 +259,6 @@ AsyncFile::openReq(Request * request)
     int rc;
     if (created)
     {
-      int key_count;
       size_t key_data_unit_size;
       size_t file_block_size;
       if (page_size == 0 || use_gz)
@@ -266,11 +267,6 @@ AsyncFile::openReq(Request * request)
         const bool use_cbc = (enc_cipher == ndb_ndbxfrm1::cipher_cbc);
         const bool use_xts = (enc_cipher == ndb_ndbxfrm1::cipher_xts);
         key_data_unit_size = ((use_enc && use_xts) ? xts_data_unit_size : 0);
-        /*
-         * For XTS we currently use maximal set of keys since we do not know
-         * how big the file will be.
-         */
-        key_count = (use_xts ? ndb_openssl_evp::MAX_SALT_COUNT : 1);
         /*
          * For compressed files we use 512 byte file block size to be
          * compatible with old compressed files (AZ31 format).
@@ -282,26 +278,20 @@ AsyncFile::openReq(Request * request)
       }
       else
       {
-        Uint64 page_count = data_size / page_size;
-        if (page_count >= ndb_openssl_evp::MAX_SALT_COUNT *
-                            ndb_openssl_evp::MAX_SALT_COUNT)
-          key_count = ndb_openssl_evp::MAX_SALT_COUNT;
-        else if (page_count <= 1)
-          key_count = 1;
-        else
-        {
-          key_count = sqrt(double(page_count)) + 1;
-        }
         key_data_unit_size = page_size;
         file_block_size = page_size;
       }
-      if (m_open_flags & FsOpenReq::OM_APPEND)
+      if ((m_open_flags & FsOpenReq::OM_APPEND) && !is_data_size_estimated)
         require(!ndbxfrm_file::is_definite_size(data_size));
-      int kdf_iter_count = 0;
+      
+      if(is_data_size_estimated)
+       require(FsOpenReq::OM_APPEND & flags);
+      
+      int kdf_iter_count = 0; // Use AESKW (assume OM_ENCRYPT_KEY)
       if ((m_open_flags & FsOpenReq::OM_ENCRYPT_KEY_MATERIAL_MASK) ==
           FsOpenReq::OM_ENCRYPT_PASSWORD)
       {
-        kdf_iter_count = ndb_openssl_evp::DEFAULT_KDF_ITER_COUNT;
+        kdf_iter_count = -1; // Use PBKDF2 let ndb_ndbxfrm decide iter count
       }
       rc = m_xfile.create(
           m_file,
@@ -310,12 +300,11 @@ AsyncFile::openReq(Request * request)
           pwd_len,
           kdf_iter_count,
           enc_cipher,
-          ((key_count == 1) ? ndb_ndbxfrm1::key_selection_mode_same
-                            : ndb_ndbxfrm1::key_selection_mode_mix_pair),
-          key_count,
+          -1,
           key_data_unit_size,
           file_block_size,
-          data_size);
+          data_size,
+          is_data_size_estimated);
       if (rc < 0) NDBFS_SET_REQUEST_ERROR(request, get_last_os_error());
     }
     else
@@ -328,7 +317,7 @@ AsyncFile::openReq(Request * request)
       m_file.close();
       goto remove_if_created;
     }
-    if (ndbxfrm_file::is_definite_size(data_size) &&
+    if (ndbxfrm_file::is_definite_size(data_size) && !is_data_size_estimated &&
         size_t(m_xfile.get_data_size()) != data_size)
     {
       NDBFS_SET_REQUEST_ERROR(request, FsRef::fsErrInvalidFileSize);
@@ -340,7 +329,7 @@ AsyncFile::openReq(Request * request)
   // Verify file size (OM_CHECK_SIZE)
   if (flags & FsOpenReq::OM_CHECK_SIZE)
   {
-    ndb_file::off_t file_data_size = m_xfile.get_size();
+    ndb_off_t file_data_size = m_xfile.get_size();
     if (file_data_size == -1)
     {
       NDBFS_SET_REQUEST_ERROR(request, get_last_os_error());
@@ -397,8 +386,8 @@ AsyncFile::openReq(Request * request)
   if (flags & FsOpenReq::OM_SPARSE_INIT)
   {
     {
-      off_t file_data_size = m_xfile.get_size();
-      off_t data_size = request->par.open.file_size;
+      ndb_off_t file_data_size = m_xfile.get_size();
+      ndb_off_t data_size = request->par.open.file_size;
       require(file_data_size == data_size);  // Currently do not support neither
                                              // gz or enc on redo-log file
     }
@@ -414,8 +403,8 @@ AsyncFile::openReq(Request * request)
 
   if (flags & FsOpenReq::OM_INIT)
   {
-    off_t file_data_size = m_xfile.get_size();
-    off_t data_size = request->par.open.file_size;
+    ndb_off_t file_data_size = m_xfile.get_size();
+    ndb_off_t data_size = request->par.open.file_size;
     require(file_data_size == data_size);
 
     m_file.set_autosync(16 * 1024 * 1024);
@@ -427,7 +416,7 @@ AsyncFile::openReq(Request * request)
     }
 
     // Initialise blocks
-    ndb_file::off_t off = 0;
+    ndb_off_t off = 0;
     FsReadWriteReq req[1];
 
     Uint32 index = 0;
@@ -455,7 +444,7 @@ AsyncFile::openReq(Request * request)
     require(page_cnt > 0);
     while (off < file_data_size)
     {
-      ndb_file::off_t size = 0;
+      ndb_off_t size = 0;
       Uint32 cnt = 0;
       while (cnt < page_cnt && (off + size) < file_data_size)
       {
@@ -491,7 +480,7 @@ AsyncFile::openReq(Request * request)
         cnt++;
         size += request->par.open.page_size;
       }
-      ndb_file::off_t save_size = size;
+      ndb_off_t save_size = size;
       byte* buf = (byte*)m_page_ptr.p;
       while (size > 0)
       {
@@ -592,7 +581,7 @@ AsyncFile::openReq(Request * request)
   // Read file size
   if (flags & FsOpenReq::OM_READ_SIZE)
   {
-    ndb_file::off_t file_data_size = m_xfile.get_size();
+    ndb_off_t file_data_size = m_xfile.get_size();
     if (file_data_size == -1)
     {
       NDBFS_SET_REQUEST_ERROR(request, get_last_os_error());
@@ -745,12 +734,12 @@ AsyncFile::readReq( Request * request)
      * is, current_data_offset zero always corresponds to
      * current_file_offset zero.
      */
-    off_t current_data_offset = request->par.readWrite.pages[0].offset;
+    ndb_off_t current_data_offset = request->par.readWrite.pages[0].offset;
     /*
      * Assumes size-preserving transform is used, currently either raw or
      * encrypted.
      */
-    off_t current_file_offset = current_data_offset;
+    ndb_off_t current_file_offset = current_data_offset;
     for (int i = 0; i < request->par.readWrite.numberOfPages; i++)
     {
       if (current_data_offset != request->par.readWrite.pages[i].offset)
@@ -857,12 +846,13 @@ AsyncFile::readReq( Request * request)
   // Only one page supported.
   require(request->par.readWrite.numberOfPages == 1);
   {
-    off_t offset = request->par.readWrite.pages[0].offset;
+    ndb_off_t offset = request->par.readWrite.pages[0].offset;
     size_t size  = request->par.readWrite.pages[0].size;
     char * buf   = request->par.readWrite.pages[0].buf;
 
     size_t bytes_read = 0;
-    if (offset != (off_t)m_next_read_pos && offset < m_xfile.get_data_size())
+    if (offset != (ndb_off_t)m_next_read_pos &&
+        offset < m_xfile.get_data_size())
     {
       // read out of sync
       request->par.readWrite.pages[0].size = 0;
@@ -901,7 +891,7 @@ AsyncFile::readReq( Request * request)
       return;
     }
     m_next_read_pos += request->par.readWrite.pages[0].size;
-    require((off_t)m_next_read_pos <= m_xfile.get_data_size());
+    require((ndb_off_t)m_next_read_pos <= m_xfile.get_data_size());
     if (bytes_read != size)
     {
       DEBUG(g_eventLogger->info("Warning partial read %d != %d on %s",
@@ -1008,12 +998,12 @@ AsyncFile::writeReq(Request * request)
    * is, current_data_offset zero always corresponds to
    * current_file_offset zero.
    */
-  off_t current_data_offset = request->par.readWrite.pages[0].offset;
+  ndb_off_t current_data_offset = request->par.readWrite.pages[0].offset;
   /*
    * Assumes size-preserving transform is used, currently either raw or
    * encrypted.
    */
-  off_t current_file_offset = current_data_offset;
+  ndb_off_t current_file_offset = current_data_offset;
   for (Uint32 i = 0; i < cnt; i++)
   {
     if (current_data_offset != request->par.readWrite.pages[i].offset)
@@ -1053,7 +1043,7 @@ AsyncFile::writeReq(Request * request)
           /*
            * If encryption produced a full page of zeros crash since reader can
            * not distinguish between sparse page and encrypted page that
-           * happend to result in an all zeros page (should be a quite rare
+           * happened to result in an all zeros page (should be a quite rare
            * event).
            */
           require((q - p) < GLOBAL_PAGE_SIZE);
@@ -1106,7 +1096,7 @@ void AsyncFile::syncReq(Request *request)
 
 bool AsyncFile::check_odirect_request(const char* buf,
                                            size_t sz,
-                                           off_t offset)
+                                           ndb_off_t offset)
 {
   if (m_open_flags & FsOpenReq::OM_DIRECT)
   {

@@ -4034,15 +4034,16 @@ bool check_column_grant_in_table_ref(THD *thd, TABLE_LIST *table_ref,
     return false;
   } else if (table_ref->is_view() || table_ref->field_translation) {
     /* View or derived information schema table. */
-    ulong view_privs;
+    ulong view_privs = 0;
     grant = &(table_ref->grant);
     db_name = table_ref->db;
     table_name = table_ref->table_name;
     if (table_ref->belong_to_view &&
         thd->lex->sql_command == SQLCOM_SHOW_FIELDS) {
       if (sctx->get_active_roles()->size() > 0) {
-        view_privs = sctx->table_acl({db_name, strlen(db_name)},
-                                     {table_name, strlen(table_name)});
+        if (!grant->grant_table) view_privs = grant->privilege;
+        view_privs |= sctx->table_acl({db_name, strlen(db_name)},
+                                      {table_name, strlen(table_name)});
         DBUG_PRINT("info", ("Found role privileges for %s.%s : %lu", db_name,
                             table_name, view_privs));
       } else
@@ -4234,11 +4235,14 @@ bool has_any_routine_acl(Security_context *sctx, const LEX_CSTRING &db) {
 
   @param thd The thread handler
   @param db The name of the database
+  @param check_table_grant false by default, Access is granted for "show
+  databases" and "show tables in database" when user has table level grant.
 
   @retval 1 Access is denied
   @retval 0 Otherwise
 */
-bool check_grant_db(THD *thd, const char *db) {
+bool check_grant_db(THD *thd, const char *db,
+                    const bool check_table_grant /* = false */) {
   DBUG_TRACE;
   Security_context *sctx = thd->security_context();
   LEX_CSTRING priv_user = sctx->priv_user();
@@ -4264,7 +4268,8 @@ bool check_grant_db(THD *thd, const char *db) {
     GRANT_TABLE *grant_table = key_and_value.second.get();
     if (grant_table->hash_key.compare(0, key.size(), key) == 0 &&
         grant_table->host.compare_hostname(sctx->host().str, sctx->ip().str) &&
-        ((grant_table->privs | grant_table->cols) & TABLE_OP_ACLS)) {
+        ((grant_table->privs | grant_table->cols) &
+         (check_table_grant ? TABLE_OP_ACLS : TABLE_ACLS))) {
       error = false; /* Found match. */
       DBUG_PRINT("info", ("Detected table level acl in column_priv_hash"));
       break;
@@ -5316,7 +5321,7 @@ bool sp_revoke_privileges(THD *thd, const char *sp_db, const char *sp_name,
       */
       next_it = next(it);
       GRANT_NAME *grant_proc = it->second.get();
-      if (!my_strcasecmp(&my_charset_utf8_bin, grant_proc->db, sp_db) &&
+      if (!my_strcasecmp(&my_charset_utf8mb3_bin, grant_proc->db, sp_db) &&
           !my_strcasecmp(system_charset_info, grant_proc->tname, sp_name)) {
         LEX_USER lex_user;
         lex_user.user.str = grant_proc->user;

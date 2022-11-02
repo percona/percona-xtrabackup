@@ -70,8 +70,8 @@ class IPListTest : public ::testing::Test {
   I_P_ListCountedPushBack<int>::Type::Iterator m_int_list_iter;
 
  private:
-  // Declares (but does not define) copy constructor and assignment operator.
-  GTEST_DISALLOW_COPY_AND_ASSIGN_(IPListTest);
+  IPListTest(IPListTest const &) = delete;
+  IPListTest &operator=(IPListTest const &) = delete;
 };
 
 // Allow construction of test messages via the << operator.

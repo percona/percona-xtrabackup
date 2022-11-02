@@ -5132,10 +5132,10 @@ ER_GRP_RPL_FLOW_CTRL_MAX_QUOTA_SMALLER_THAN_MIN_QUOTAS
 ER_GRP_RPL_INVALID_SSL_RECOVERY_STRING
   eng "The given value for recovery ssl option 'group_replication_%s' is invalid as its length is beyond the limit"
 
-ER_GRP_RPL_SUPPORTS_ONLY_ONE_FORCE_MEMBERS_SET
+OBSOLETE_ER_GRP_RPL_SUPPORTS_ONLY_ONE_FORCE_MEMBERS_SET
   eng "There is one group_replication_force_members operation already ongoing"
 
-ER_GRP_RPL_FORCE_MEMBERS_SET_UPDATE_NOT_ALLOWED
+OBSOLETE_ER_GRP_RPL_FORCE_MEMBERS_SET_UPDATE_NOT_ALLOWED
   eng "group_replication_force_members can only be updated when Group Replication is running and a majority of the members are unreachable"
 
 ER_GRP_RPL_GRP_COMMUNICATION_INIT_WITH_CONF
@@ -9683,13 +9683,13 @@ ER_GRP_RPL_MISSING_GRP_RPL_ACTION_COORDINATOR
   eng "Message received without a proper group coordinator module."
 
 ER_GRP_RPL_JOIN_WHEN_GROUP_ACTION_RUNNING
-  eng "A member cannot join the group while a group configuration operation is running."
+  eng "A member cannot join the group while a group configuration operation '%s' is running initiated by '%s'."
 
 ER_GRP_RPL_JOINER_EXIT_WHEN_GROUP_ACTION_RUNNING
-  eng "A member is joining the group while a group configuration operation is occurring. The member will now leave the group"
+  eng "A member is joining the group while a group configuration operation '%s' is running initiated by '%s'. The member will now leave the group."
 
 ER_GRP_RPL_CHANNEL_THREAD_WHEN_GROUP_ACTION_RUNNING
-  eng "Can't start slave %s when group replication is running a group configuration operation."
+  eng "Can't start %s for channel '%s' when group replication is running a group configuration operation '%s' initiated by '%s'."
 
 ER_GRP_RPL_APPOINTED_PRIMARY_NOT_PRESENT
   eng "A primary election was invoked but the requested primary member is not in the group. Request ignored."
@@ -9816,7 +9816,7 @@ ER_WARN_REMOVED_SQL_MODE
 ER_IB_MSG_FAILED_TO_ALLOCATE_WAIT
   eng "Failed to allocate memory for a pool of size %zu bytes. Will wait for %zu seconds for a thread to free a resource."
 
-ER_IB_MSG_NUM_POOLS
+OBSOLETE_ER_IB_MSG_NUM_POOLS
  eng "Number of pools: %zu"
 
 ER_IB_MSG_USING_UNDO_SPACE
@@ -10563,7 +10563,7 @@ ER_WARN_LOG_PRIVILEGE_CHECKS_USER_CORRUPT
 ER_WARN_LOG_PRIVILEGE_CHECKS_USER_NEEDS_RPL_APPLIER_PRIV
   eng "PRIVILEGE_CHECKS_USER for replication channel '%.192s' was set to `%.64s`@`%.255s`, but this user does not have REPLICATION_APPLIER privilege. Correct this before starting the replication threads."
 
-ER_FILE_PRIVILEGE_FOR_REPLICATION_CHECKS
+ER_OBSOLETE_FILE_PRIVILEGE_FOR_REPLICATION_CHECKS
   eng "The PRIVILEGE_CHECKS_USER for channel '%.192s' would need FILE privilege to execute a LOAD DATA INFILE statement replicated in statement format. Consider using binlog_format=ROW on master. If the replicated events are trusted, recover from the failure by temporarily granting FILE to the PRIVILEGE_CHECKS_USER."
 
 ER_RPL_SLAVE_SQL_THREAD_STARTING_WITH_PRIVILEGE_CHECKS
@@ -10596,7 +10596,7 @@ ER_CANT_PROCESS_EXPRESSION_FOR_GENERATED_COLUMN_TO_DD
 ER_RPL_SLAVE_QUEUE_EVENT_FAILED_INVALID_NON_ROW_FORMAT
   eng "The queue event failed for channel '%s' as an invalid event according to REQUIRE_ROW_FORMAT was found."
 
-ER_RPL_SLAVE_APPLY_LOG_EVENT_FAILED_INVALID_NON_ROW_FORMAT
+ER_OBSOLETE_REQUIRE_ROW_FORMAT_VIOLATION
   eng "The application of relay events failed for channel '%s' as an invalid event according to REQUIRE_ROW_FORMAT was found."
 
 ER_LOG_PRIV_CHECKS_REQUIRE_ROW_FORMAT_NOT_SET
@@ -11245,7 +11245,7 @@ ER_NOTE_KEYRING_COMPONENT_STORE_FAILED
   eng "Error writing data for Data ID: '%s', Auth ID: '%s'. Either data already exists with same identifier or keyring backend encountered an error."
 
 ER_NOTE_KEYRING_COMPONENT_REMOVE_FAILED
-  eng "Error removing data for Data ID: '%s', Auth ID: '%s'. Either data already exists with same identifier or keyring backend encountered an error."
+  eng "Error removing data for Data ID: '%s', Auth ID: '%s'. Either data does not exists with same identifier or keyring backend encountered an error."
 
 ER_NOTE_KEYRING_COMPONENT_GENERATE_FAILED
   eng "Error generating data for Data ID: '%s', Auth ID: '%s'. Either data already exists with same identifier or keyring backend encountered an error."
@@ -11900,6 +11900,51 @@ ER_RES_GRP_SWITCH_FAILED_UNABLE_TO_APPLY_RES_GRP
 
 ER_IB_MSG_CLEAR_INSTANT_DROP_COLUMN_METADATA
   eng "Failed to clear instant drop column metadata for table %s"
+
+ER_COMPONENT_KEYRING_OCI_OPEN_KEY_FILE
+  eng "Cannot open signing key file %s."
+
+ER_COMPONENT_KEYRING_OCI_CREATE_PRIVATE_KEY
+  eng "Out of memory! Cannot create private key."
+
+ER_COMPONENT_KEYRING_OCI_READ_KEY_FILE
+  eng "Cannot read signing key file %s."
+
+ER_NOTE_COMPONENT_KEYRING_OCI_MISSING_NAME_OR_TYPE
+  eng "Incomplete key: missing Name/Type for the Key: %s."
+
+ER_WARN_COMPONENT_KEYRING_OCI_DUPLICATE_KEY
+  eng "Duplicate key found in keyring with Name: %s and Owner: %s."
+
+ER_KEYRING_OCI_PARSE_JSON
+  eng "Error parsing JSON response %s."
+
+ER_KEYRING_OCI_INVALID_JSON
+  eng "Invalid JSON response!"
+
+ER_KEYRING_OCI_HTTP_REQUEST
+  eng "HTTP request failed with error: '%s'"
+
+ER_THREAD_POOL_SYSVAR_CHANGE
+  eng "Variable thread_pool.%s was updated: %s"
+
+ER_STACK_BACKTRACE
+  eng "%s"
+
+ER_IB_MSG_BUF_POOL_RESIZE_COMPLETE_CUR_CODE
+  eng "Status code %u: Completed"
+
+ER_IB_MSG_BUF_POOL_RESIZE_PROGRESS_UPDATE
+  eng "Status code %u: %u%% complete"
+
+ER_IB_MSG_BUF_POOL_RESIZE_CODE_STATUS
+  eng "Status code %u: %s"
+
+ER_THREAD_POOL_QUERY_THREADS_PER_GROUP_INVALID
+  eng "Invalid value set to thread_pool_query_threads_per_group. Valid value range is %u - %u."
+
+ER_THREAD_POOL_QUERY_THRS_PER_GRP_EXCEEDS_TXN_THR_LIMIT
+  eng "Query threads count(%u) exceeds transaction threads limit(%u) per group. Please use query threads count per group smaller or equal to max transaction threads limit per group"
 
 # DO NOT add server-to-client messages here;
 # they go in messages_to_clients.txt

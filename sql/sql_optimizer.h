@@ -684,6 +684,7 @@ class JOIN {
   bool clear_fields(table_map *save_nullinfo);
   void restore_fields(table_map save_nullinfo);
 
+ private:
   /**
     Return whether the caller should send a row even if the join
     produced no rows if:
@@ -700,6 +701,7 @@ class JOIN {
             query_block->having_value != Item::COND_FALSE);
   }
 
+ public:
   bool generate_derived_keys();
   void finalize_derived_keys();
   bool get_best_combination();
@@ -995,6 +997,7 @@ class JOIN {
    */
   void create_access_paths();
 
+ public:
   /**
     Create access paths with the knowledge that there are going to be zero rows
     coming from tables (before aggregation); typically because we know that
@@ -1004,6 +1007,7 @@ class JOIN {
    */
   void create_access_paths_for_zero_rows();
 
+ private:
   void create_access_paths_for_index_subquery();
 
   /** @{ Helpers for create_access_paths. */
@@ -1200,5 +1204,15 @@ double find_worst_seeks(const TABLE *table, double num_rows,
   needs to keep the comparison after the ref lookup.
  */
 bool ref_lookup_subsumes_comparison(Field *field, Item *right_item);
+
+/**
+  Checks if we need to create iterators for this query. We usually have to. The
+  exception is if a secondary engine is used, and that engine will offload the
+  query execution to an external executor using #JOIN::override_executor_func.
+  In this case, the external executor will use its own execution structures and
+  we don't need to bother with creating the iterators needed by the MySQL
+  executor.
+ */
+bool IteratorsAreNeeded(const THD *thd, AccessPath *root_path);
 
 #endif /* SQL_OPTIMIZER_INCLUDED */

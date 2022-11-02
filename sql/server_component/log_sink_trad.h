@@ -36,6 +36,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include "log_builtins_internal.h"
 #include "my_compiler.h"
 
+ssize_t parse_trad_field(const char *parse_from, const char **token_end,
+                         const char *buf_end);
+
 log_service_error log_sink_trad_parse_log_line(const char *line_start,
                                                size_t line_length);
 

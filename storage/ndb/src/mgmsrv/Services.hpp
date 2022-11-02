@@ -66,7 +66,7 @@ private:
   unsigned int m_vBuild;
 
 public:
-  MgmApiSession(class MgmtSrvr & mgm, NDB_SOCKET_TYPE sock, Uint64 session_id);
+  MgmApiSession(class MgmtSrvr & mgm, ndb_socket_t sock, Uint64 session_id);
   ~MgmApiSession() override;
   void runSession() override;
 
@@ -157,7 +157,7 @@ public:
     m_mgmsrv(mgm),
     m_next_session_id(1) {}
 
-  SocketServer::Session * newSession(NDB_SOCKET_TYPE socket) override{
+  SocketServer::Session * newSession(ndb_socket_t socket) override{
     return new MgmApiSession(m_mgmsrv, socket, m_next_session_id++);
   }
 };

@@ -233,9 +233,15 @@ static Field *create_tmp_field_from_item(Item *item, TABLE *table) {
 
   switch (item->result_type()) {
     case REAL_RESULT:
-      new_field = new (*THR_MALLOC)
-          Field_double(item->max_length, maybe_null, item->item_name.ptr(),
-                       item->decimals, false, true);
+      if (item->data_type() == MYSQL_TYPE_FLOAT) {
+        new_field = new (*THR_MALLOC)
+            Field_float(item->max_length, maybe_null, item->item_name.ptr(),
+                        item->decimals, false);
+      } else {
+        new_field = new (*THR_MALLOC)
+            Field_double(item->max_length, maybe_null, item->item_name.ptr(),
+                         item->decimals, false, true);
+      }
       break;
     case INT_RESULT:
       /*
@@ -889,8 +895,10 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
     (1) unique key is too long, or
     (2) number of key parts in distinct key is too big, or
     (3) the caller has requested it.
+    (4) we have INTERSECT or EXCEPT, i.e. not UNION.
   */
-  bool unique_constraint_via_hash_field = false;
+  bool unique_constraint_via_hash_field =
+      param->m_operation != Temp_table_param::TTP_UNION_OR_TABLE;
 
   /*
     When loose index scan is employed as access method, it already
@@ -925,21 +933,26 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
   // (They should have been a struct, but we cannot, since the reg_field
   // array ends up in the TABLE object, which expects a flat array.)
   // blob_field is a separate array, which indexes into these.
-  Field **reg_field = own_root.ArrayAlloc<Field *>(field_count + 2, nullptr);
+  const uint extra_fields = 1 + (param->needs_set_counter() ? 1 : 0);
+  Field **reg_field =
+      own_root.ArrayAlloc<Field *>(field_count + extra_fields + 1, nullptr);
   Field **default_field =
-      own_root.ArrayAlloc<Field *>(field_count + 1, nullptr);
-  Field **from_field = own_root.ArrayAlloc<Field *>(field_count + 1, nullptr);
-  Item **from_item = own_root.ArrayAlloc<Item *>(field_count + 1, nullptr);
+      own_root.ArrayAlloc<Field *>(field_count + extra_fields, nullptr);
+  Field **from_field =
+      own_root.ArrayAlloc<Field *>(field_count + extra_fields, nullptr);
+  Item **from_item =
+      own_root.ArrayAlloc<Item *>(field_count + extra_fields, nullptr);
   uint *blob_field = own_root.ArrayAlloc<uint>(field_count + 2);
   if (reg_field == nullptr || default_field == nullptr ||
       from_field == nullptr || from_item == nullptr || blob_field == nullptr)
     return nullptr;
 
-  // Leave the first place to be prepared for hash_field
-  reg_field++;
-  default_field++;
-  from_field++;
-  from_item++;
+  // Leave the first place(s) to be prepared for hash_field (and counter, if
+  // needed
+  reg_field += extra_fields;
+  default_field += extra_fields;
+  from_field += extra_fields;
+  from_item += extra_fields;
   table->init_tmp_table(thd, share, &own_root, param->table_charset,
                         table_alias, reg_field, blob_field, false);
 
@@ -1290,7 +1303,9 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
       share->key_info = param->keyinfo;
       share->key_parts = param->keyinfo->user_defined_key_parts;
     }
-  } else if (distinct && share->fields != param->hidden_field_count) {
+  } else if ((distinct ||
+              param->m_operation != Temp_table_param::TTP_UNION_OR_TABLE) &&
+             share->fields != param->hidden_field_count) {
     /*
       Create an unique key or an unique constraint over all columns
       that should be in the result.  In the temporary table, there are
@@ -1299,7 +1314,10 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
     */
     DBUG_PRINT("info", ("hidden_field_count: %d", param->hidden_field_count));
     share->keys = 1;
-    share->is_distinct = true;
+    share->is_distinct =
+        distinct || param->m_operation == Temp_table_param::TTP_INTERSECT ||
+        param->m_operation == Temp_table_param::TTP_EXCEPT;
+
     if (!unique_constraint_via_hash_field) {
       param->keyinfo->table = table;
       param->keyinfo->is_visible = true;
@@ -1348,6 +1366,35 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
   }
 
   if (unique_constraint_via_hash_field) {
+    if (param->needs_set_counter()) {
+      // EXCEPT and INTERSECT implementation
+      Field_longlong *set_counter = new (&share->mem_root)
+          Field_longlong(sizeof(ulonglong), false, "<set counter>", true);
+      if (set_counter == nullptr) {
+        /* purecov: begin inspected */
+        assert(thd->is_fatal_error());
+        return nullptr;  // Got OOM
+                         /* purecov: end */
+      }
+      // Mark set_counter as NOT NULL
+      set_counter->set_flag(NOT_NULL_FLAG);
+      // Register set counter as a hidden field.
+      register_hidden_field(table, &default_field[0], &from_field[0],
+                            share->blob_field, set_counter);
+      // Repoint arrays
+      table->field--;
+      default_field--;
+      from_field--;
+      from_item--;
+      share->reclength += set_counter->pack_length();
+      share->fields = ++fieldnr;
+      param->hidden_field_count++;
+      share->field--;
+      table->set_set_counter(
+          set_counter, param->m_operation == Temp_table_param::TTP_EXCEPT);
+      table->set_distinct(param->m_last_operation_is_distinct);
+    }
+
     Field_longlong *field = new (&share->mem_root)
         Field_longlong(sizeof(ulonglong), false, "<hash_field>", true);
     if (!field) {
@@ -2258,7 +2305,12 @@ static void trace_tmp_table(Opt_trace_context *trace, const TABLE *table) {
   TABLE_SHARE *s = table->s;
   Opt_trace_object trace_tmp(trace, "tmp_table_info");
   if (strlen(table->alias) != 0)
-    trace_tmp.add_utf8_table(table->pos_in_table_list);
+    if (table->pos_in_table_list != nullptr &&
+        strlen(table->pos_in_table_list->table_name) > 0) {
+      trace_tmp.add_utf8_table(table->pos_in_table_list);
+    } else {
+      trace_tmp.add_alnum("table", table->alias);
+    }
   else
     trace_tmp.add_alnum("table", "intermediate_tmp_table");
   QEP_TAB *tab = table->reginfo.qep_tab;

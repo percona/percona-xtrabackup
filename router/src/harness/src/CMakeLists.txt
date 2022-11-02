@@ -89,7 +89,9 @@ SET(harness_source
   logging/logger_plugin.cc
 # logging/logging.cc       empty file
   logging/registry.cc
+  log_reopen.cc
   random_generator.cc
+  signal_handler.cc
   sd_notify.cc
   socket_operations.cc
   tcp_address.cc
@@ -101,6 +103,8 @@ SET(harness_source
   keyring/keyring_memory.cc
   keyring/keyring_file.cc
   keyring/master_key_file.cc
+  process_state_component.cc
+  log_reopen_component.cc
   )
 
 IF(WIN32)
@@ -152,6 +156,8 @@ CONFIGURE_FILE(plugin.h.in ${MySQLRouter_BINARY_DIR}/${INSTALL_INCLUDE_DIR}/plug
 # create harness library - static version
 ADD_LIBRARY(harness-archive STATIC
   ${harness_source} ${GENERATED_SOURCES_STATIC})
+ADD_DEPENDENCIES(mysqlrouter_all harness-archive)
+
 TARGET_LINK_LIBRARIES(harness-archive ${common_libraries})
 TARGET_INCLUDE_DIRECTORIES(harness-archive PUBLIC
   ../include ${CMAKE_CURRENT_BINARY_DIR}/src_STATIC)
@@ -163,6 +169,7 @@ ENDIF()
 # create harness library - dynamic version
 ADD_LIBRARY(harness-library SHARED
   ${harness_source} ${GENERATED_SOURCES_SHARED})
+ADD_DEPENDENCIES(mysqlrouter_all harness-library)
 
 # mysys is need for my_print_stacktrace
 TARGET_LINK_LIBRARIES(harness-library ${common_libraries} mysys)
@@ -221,6 +228,7 @@ ADD_LIBRARY(harness_stdx SHARED
   stdx/filesystem.cc
   stdx/io/file_handle.cc
 )
+ADD_DEPENDENCIES(mysqlrouter_all harness_stdx)
 TARGET_SOURCES(harness_stdx
   INTERFACE
   ${CMAKE_CURRENT_SOURCE_DIR}/../include/mysql/harness/stdx/bit.h
@@ -255,6 +263,7 @@ ADD_LIBRARY(harness_tls SHARED
   tls_error.cc
   tls_server_context.cc
   )
+ADD_DEPENDENCIES(mysqlrouter_all harness_tls)
 
 IF(TARGET copy_openssl_dlls)
   ADD_DEPENDENCIES(harness_tls copy_openssl_dlls)

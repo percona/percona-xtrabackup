@@ -764,18 +764,21 @@ size_t explain_filename(THD *thd, const char *from, char *to, size_t to_length,
       from                      The file name in my_charset_filename.
       to                OUT     The table name in system_charset_info.
       to_length                 The size of the table name buffer.
+      stay_quiet                Silence the errors.
+      has_errors        OUT     True, if there are errors.
 
   RETURN
     Table name length.
 */
 
 size_t filename_to_tablename(const char *from, char *to, size_t to_length,
-                             bool stay_quiet) {
+                             bool stay_quiet, bool *has_errors) {
   uint errors;
   size_t res;
   DBUG_TRACE;
   DBUG_PRINT("enter", ("from '%s'", from));
 
+  if (has_errors != nullptr) *has_errors = false;
   if (strlen(from) >= tmp_file_prefix_length &&
       !memcmp(from, tmp_file_prefix, tmp_file_prefix_length)) {
     /* Temporary table name. */
@@ -785,6 +788,7 @@ size_t filename_to_tablename(const char *from, char *to, size_t to_length,
                      to_length, &errors);
     if (errors)  // Old 5.0 name
     {
+      if (has_errors != nullptr) *has_errors = true;
       if (!stay_quiet) {
         LogErr(ERROR_LEVEL, ER_INVALID_OR_OLD_TABLE_OR_DB_NAME, from);
       }
@@ -2591,7 +2595,8 @@ static bool adjust_fk_children_for_parent_drop(
  *
  * @return True if invalid, false otherwise.
  */
-static bool validate_secondary_engine_option(const Alter_info &alter_info,
+static bool validate_secondary_engine_option(THD *thd,
+                                             const Alter_info &alter_info,
                                              const HA_CREATE_INFO &create_info,
                                              const TABLE &table) {
   // Validation necessary only for tables with a secondary engine defined.
@@ -2603,8 +2608,12 @@ static bool validate_secondary_engine_option(const Alter_info &alter_info,
   // The only table option that may be changed is SECONDARY_ENGINE.
   constexpr uint64_t supported_table_options = HA_CREATE_USED_SECONDARY_ENGINE;
 
-  if (alter_info.flags & ~supported_alter_operations ||
-      create_info.used_fields & ~supported_table_options) {
+  // Do not report an error if:
+  //  (a) Current DDL is setting the secondary engine, OR
+  //  (b) Secondary engine supports DDLs
+  if ((alter_info.flags & ~supported_alter_operations ||
+       create_info.used_fields & ~supported_table_options) &&
+      !ha_secondary_engine_supports_ddl(thd, table.s->secondary_engine)) {
     my_error(ER_SECONDARY_ENGINE_DDL, MYF(0));
     return true;
   }
@@ -2613,6 +2622,16 @@ static bool validate_secondary_engine_option(const Alter_info &alter_info,
   if (create_info.secondary_engine.str != nullptr) {
     my_error(ER_SECONDARY_ENGINE, MYF(0),
              "Table already has a secondary engine defined");
+    return true;
+  }
+
+  // Check if this statement sets the primary engine. In this case we have to
+  // reject the DDL.
+  if ((alter_info.flags & Alter_info::ALTER_OPTIONS) &&
+      (create_info.used_fields & HA_CREATE_USED_ENGINE)) {
+    my_error(ER_SECONDARY_ENGINE, MYF(0),
+             "Cannot change the primary engine of a table with a defined "
+             "secondary engine");
     return true;
   }
 
@@ -4298,9 +4317,8 @@ static bool check_duplicate_key(THD *thd, const char *error_schema_name,
 }
 
 /**
-  Check if there is a collation change from the old field to the new
-  create field. If so, scan the indexes of the new table (including
-  the added ones), and check if the field is referred by any index.
+  Scan the indexes of the new table (including the added ones), and check
+  if the field is referred by any index.
 
   @param field          Field in old table.
   @param new_field      Field in new table (create field).
@@ -4309,13 +4327,10 @@ static bool check_duplicate_key(THD *thd, const char *error_schema_name,
   @retval true           Field changes collation, and is indexed.
   @retval false          Otherwise.
  */
-static bool is_collation_change_for_indexed_field(
-    const Field &field, const Create_field &new_field,
-    Alter_inplace_info *ha_alter_info) {
+static bool is_field_part_of_index(const Field &field [[maybe_unused]],
+                                   const Create_field &new_field,
+                                   Alter_inplace_info *ha_alter_info) {
   assert(new_field.field == &field);
-
-  // No need to check indexes if the collation stays the same.
-  if (field.charset() == new_field.charset) return false;
 
   const KEY *new_key_end =
       ha_alter_info->key_info_buffer + ha_alter_info->key_count;
@@ -4336,6 +4351,22 @@ static bool is_collation_change_for_indexed_field(
     }
   }
 
+  return false;
+}
+
+/**
+  Scan the fields used in partition expressions of the new table (including
+  the added ones), and check if the field is used by a partitioning
+  expression.
+ */
+static bool is_field_part_of_partition_expression(
+    const Field &field, Alter_inplace_info *ha_alter_info) {
+  if (ha_alter_info->modified_part_info == nullptr) return false;
+  for (Field **ptr = ha_alter_info->modified_part_info->full_part_field_array;
+       *ptr; ptr++) {
+    if (*ptr == &field) return true;
+    assert((*ptr)->field_index() != field.field_index());
+  }
   return false;
 }
 
@@ -10567,13 +10598,31 @@ bool mysql_rename_table(THD *thd, handlerton *base, const char *old_db,
                                                  &to_table_def))
     return true;
 
-  // Tables with a defined secondary engine cannot be renamed, except if the
-  // renaming is only temporary, which may happen if e.g. ALGORITHM=COPY is
-  // used.
+  Table_ddl_hton_notification_guard notification_guard{
+      thd,
+      &(thd->lex->query_block->get_table_list()->mdl_request.key),
+      ha_ddl_type::HA_RENAME_DDL,
+      old_db,
+      old_name,
+      new_db,
+      new_name};
+
+  if (notification_guard.notify()) return true;
+
+  // Tables with a defined secondary engine cannot be renamed, except if:
+  //   (a) The renaming is only temporary, which may happen if e.g.,
+  //   ALGORITHM=COPY is used, OR
+  //   (b) The secondary storage engine supports DDL.
   if (from_table_def->options().exists("secondary_engine") &&
       !(flags & FN_IS_TMP)) {
-    my_error(ER_SECONDARY_ENGINE_DDL, MYF(0));
-    return true;
+    LEX_CSTRING secondary_engine;
+    from_table_def->options().get("secondary_engine", &secondary_engine,
+                                  thd->mem_root);
+
+    if (!ha_secondary_engine_supports_ddl(thd, secondary_engine)) {
+      my_error(ER_SECONDARY_ENGINE_DDL, MYF(0));
+      return true;
+    }
   }
 
   // Set schema id, table name and hidden attribute.
@@ -11909,17 +11958,19 @@ static bool fill_alter_inplace_info(THD *thd, TABLE *table,
           break;
         case IS_EQUAL_PACK_LENGTH:
           /*
-            New column type differs from the old one, but has compatible packed
-            data representation. Depending on storage engine, such a change can
-            be carried out by simply updating data dictionary without changing
-            actual data (for example, VARCHAR(300) is changed to VARCHAR(400)).
+             New column type differs from the old one, but has compatible packed
+             data representation. Depending on storage engine, such a change can
+             be carried out by simply updating data dictionary without changing
+             actual data (for example, VARCHAR(300) is changed to VARCHAR(400)).
 
-            If the collation has changed, and there is an index on the column,
-            we must mark this as a change in stored column type, which is
-            usually rejected as inplace operation by the SE.
-          */
-          if (is_collation_change_for_indexed_field(*field, *new_field,
-                                                    ha_alter_info)) {
+             If the collation has changed, and the column is part of an index
+             or it is part of a partition expression, we must mark this as a
+             change in stored column type, which is usually rejected as inplace
+             operation by the SE.
+           */
+          if (field->charset() != new_field->charset &&
+              (is_field_part_of_index(*field, *new_field, ha_alter_info) ||
+               is_field_part_of_partition_expression(*field, ha_alter_info))) {
             ha_alter_info->handler_flags |=
                 Alter_inplace_info::ALTER_STORED_COLUMN_TYPE;
           } else {
@@ -15893,38 +15944,6 @@ static bool simple_rename_or_index_change(
 }
 
 /**
-  Auxiliary class implementing RAII principle for getting permission for/
-  notification about finished ALTER TABLE from interested storage engines.
-
-  @see handlerton::notify_alter_table for details.
-*/
-
-class Alter_table_hton_notification_guard {
- public:
-  Alter_table_hton_notification_guard(THD *thd, const MDL_key *key)
-      : m_hton_notified(false), m_thd(thd), m_key(*key) {}
-
-  bool notify() {
-    if (!ha_notify_alter_table(m_thd, &m_key, HA_NOTIFY_PRE_EVENT)) {
-      m_hton_notified = true;
-      return false;
-    }
-    my_error(ER_LOCK_REFUSED_BY_ENGINE, MYF(0));
-    return true;
-  }
-
-  ~Alter_table_hton_notification_guard() {
-    if (m_hton_notified)
-      (void)ha_notify_alter_table(m_thd, &m_key, HA_NOTIFY_POST_EVENT);
-  }
-
- private:
-  bool m_hton_notified;
-  THD *m_thd;
-  const MDL_key m_key;
-};
-
-/**
   Check if we are changing the SRID specification on a geometry column that
   has a spatial index. If that is the case, reject the change since allowing
   geometries with different SRIDs in a spatial index will make the index
@@ -16303,8 +16322,8 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
     If we are about to ALTER non-temporary table we need to get permission
     from/notify interested storage engines.
   */
-  Alter_table_hton_notification_guard notification_guard(
-      thd, &table_list->mdl_request.key);
+  Table_ddl_hton_notification_guard notification_guard{
+      thd, &table_list->mdl_request.key, HA_ALTER_DDL};
 
   if (!is_temporary_table(table_list) && notification_guard.notify())
     return true;
@@ -16368,7 +16387,7 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
       return true;
   }
 
-  if (validate_secondary_engine_option(*alter_info, *create_info,
+  if (validate_secondary_engine_option(thd, *alter_info, *create_info,
                                        *table_list->table))
     return true;
 
@@ -18465,7 +18484,7 @@ static int copy_data_between_tables(
         thd, {from}, /*keep_buffers=*/false, order, HA_POS_ERROR,
         /*remove_duplicates=*/false, /*force_sort_rowids=*/true,
         /*unwrap_rollup=*/false));
-    path = NewSortAccessPath(thd, path, fsort.get(),
+    path = NewSortAccessPath(thd, path, fsort.get(), order,
                              /*count_examined_rows=*/false);
   }
 

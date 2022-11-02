@@ -22,8 +22,8 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
-#include <ndb_global.h>
-#include <NdbTCP.h>
+#include "ndb_global.h"
+#include "portlib/NdbTCP.h"
 
 #include <string.h>
 
@@ -159,7 +159,7 @@ Ndb_inet_ntop(int af,
 {
   // Function assume there is at least some space in "dst" since there
   // are no way to return failure without writing into "dst". Check
-  // that noone seem to call function with too small "dst_size"
+  // that no one seem to call function with too small "dst_size"
   assert(dst);
   assert(dst_size > 0);
 
@@ -231,7 +231,7 @@ Ndb_inet_ntop(int af,
  * This function takes a string splits it into the address/hostname part
  * and port/service part.
  * If string contains space, it is expected that the part preceding space is
- * host address or name and the succeding part is service port.
+ * host address or name and the succeeding part is service port.
  * It does not do deep verification that passed string makes sense.
  * It is quite optimistic only checking for []: (ipv6-address) and
  * single : (ipv4-address or hostname).
@@ -603,71 +603,5 @@ TAPTEST(NdbGetInAddr)
 
   return 1; // OK
 }
-#endif
 
-#ifndef HAVE_POLL
-static inline
-int ndb_socket_nfds(ndb_socket_t s, int nfds)
-{
-#ifdef _WIN32
-  (void)s;
-#else
-  if(s.fd > nfds)
-    return s.fd;
-#endif
-  return nfds;
-}
-#endif
-
-#define my_FD_SET(sock,set)   FD_SET(ndb_socket_get_native(sock), set)
-#define my_FD_ISSET(sock,set) FD_ISSET(ndb_socket_get_native(sock), set)
-
-
-int Ndb_check_socket_hup(NDB_SOCKET_TYPE sock)
-{
-#ifdef HAVE_POLL
-  struct pollfd pfd[1];
-
-  pfd[0].fd= sock.fd; // FIXME: THIS IS A BUG
-  pfd[0].events= POLLHUP | POLLIN | POLLOUT | POLLNVAL;
-  pfd[0].revents= 0;
-  (void)poll(pfd, 1, 0);
-  if(pfd[0].revents & (POLLHUP|POLLERR))
-    return 1;
-
-  return 0;
-#else /* HAVE_POLL */
-  fd_set readfds, writefds, errorfds;
-  struct timeval tv= {0,0};
-  int s_err;
-  ndb_socket_len_t s_err_size= sizeof(s_err);
-
-  FD_ZERO(&readfds);
-  FD_ZERO(&writefds);
-  FD_ZERO(&errorfds);
-
-  my_FD_SET(sock, &readfds);
-  my_FD_SET(sock, &writefds);
-  my_FD_SET(sock, &errorfds);
-
-  if(select(ndb_socket_nfds(sock,0)+1,
-            &readfds, &writefds, &errorfds, &tv)<0)
-  {
-    return 1;
-  }
-
-  if(my_FD_ISSET(sock,&errorfds))
-    return 1;
-
-  s_err=0;
-  if (ndb_getsockopt(sock, SOL_SOCKET, SO_ERROR, &s_err, &s_err_size) != 0)
-    return(1);
-
-  if (s_err)
-  {                                             /* getsockopt could succeed */
-    return(1);                                 /* but return an error... */
-  }
-
-  return 0;
-#endif /* HAVE_POLL */
-}
+#endif /* TEST_NDBGETINADDR */

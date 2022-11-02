@@ -6058,9 +6058,9 @@ SELECT * FROM v1 ORDER BY f2, f0 LIMIT 30	{
 }	0	0
 EXPLAIN FORMAT=tree SELECT * FROM v1 ORDER BY f2, f0 LIMIT 30;
 EXPLAIN
--> Limit: 30 row(s)  (cost=61.11..61.11 rows=30)
-    -> Sort: v1.f2, v1.f0, limit input to 30 row(s) per chunk  (cost=61.11..61.11 rows=100)
-        -> Table scan on v1  (cost=13.75 rows=100)
+-> Limit: 30 row(s)  (cost=89.58..89.58 rows=30)
+    -> Sort: v1.f2, v1.f0, limit input to 30 row(s) per chunk  (cost=89.58..89.58 rows=30)
+        -> Table scan on v1  (cost=61.15..64.86 rows=100)
             -> Materialize  (cost=61.11..61.11 rows=100)
                 -> Limit: 100 row(s)  (cost=51.11 rows=100)
                     -> Sort: t1.f1, t1.f0, limit input to 100 row(s) per chunk  (cost=51.11 rows=500)
@@ -6997,6 +6997,7 @@ GROUP BY 1 ORDER BY 2,1 LIMIT 5	{
                 {
                   "creating_tmp_table": {
                     "tmp_table_info": {
+                      "table": "<temporary>",
                       "in_plan_at_position": 1,
                       "columns": 2,
                       "row_length": 18,
@@ -8509,7 +8510,7 @@ ORDER BY d1.f2 DESC LIMIT 30	{
               {
                 "creating_tmp_table": {
                   "tmp_table_info": {
-                    "table": " `d1`",
+                    "table": "d1",
                     "in_plan_at_position": 1,
                     "columns": 3,
                     "row_length": 210,

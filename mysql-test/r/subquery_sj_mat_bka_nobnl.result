@@ -11892,7 +11892,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 3	MATERIALIZED	<derived6>	NULL	ALL	NULL	NULL	NULL	NULL	32	100.00	NULL
 7	DERIVED	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
 8	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	No tables used
-NULL	UNION RESULT	<union7,8>	NULL	ALL	NULL	NULL	NULL	NULL	NULL	NULL	Using temporary
+9	UNION RESULT	<union7,8>	NULL	ALL	NULL	NULL	NULL	NULL	NULL	NULL	Using temporary
 6	DERIVED	sq2_alias1	NULL	ALL	NULL	NULL	NULL	NULL	15	100.00	NULL
 6	DERIVED	sq2_alias2	NULL	ref	col_int_key	col_int_key	5	test.sq2_alias1.pk	2	100.00	NULL
 2	DERIVED	<derived5>	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	NULL
@@ -13816,7 +13816,7 @@ test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1 WHERE EXISTS ( SELECT alias1.f2 FROM t2 LEFT JOIN t1 ON 1 LEFT JOIN t1 AS alias1 ON 1 );
 EXPLAIN
 -> Nested loop inner join  (cost=12.30 rows=54)
-    -> Constant row from <subquery2>  (cost=0.00..0.00 rows=1)
+    -> Constant row from <subquery2>  (cost=6.65..6.65 rows=1)
         -> Materialize with deduplication  (cost=6.65..6.65 rows=18)
             -> Nested loop left join  (cost=4.85 rows=18)
                 -> Nested loop left join  (cost=1.55 rows=6)

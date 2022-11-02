@@ -7948,7 +7948,7 @@ runBug16895311_create(NDBT_Context* ctx, NDBT_Step* step)
     (void)pDic->dropTable(bug.tabname);
     NdbDictionary::Table tab;
     tab.setName(bug.tabname);
-    const char* csname = "utf8_unicode_ci";
+    const char* csname = "utf8mb3_unicode_ci";
     bug.cs = get_charset_by_name(csname, MYF(0));
     require(bug.cs != 0);
     // can hit too small xfrm buffer in 2 ways
@@ -9343,7 +9343,7 @@ int runTestStartNode(NDBT_Context* ctx, NDBT_Step* step){
  * The test loops for more than 2048 times to ensure that we come
  * to a situation with a large number of parts in each LCP and in
  * particular for the last one that we are to restore. The number
- * 2058 is somewhat arbitrarily choosen to ensure this.
+ * 2058 is somewhat arbitrarily chosen to ensure this.
  *
  * The test case is hardcoded to make those special LCPs in node 2.
  *
@@ -9958,7 +9958,7 @@ int runCreateCharKeyTable(NDBT_Context* ctx, NDBT_Step* step)
     {
       ndbout_c("Using non case-sensitive charset");
       charsetName = "latin1_swedish_ci";
-//    charsetName = "utf8_unicode_ci";
+//    charsetName = "utf8mb3_unicode_ci";
     }
     else
     {
@@ -10407,7 +10407,7 @@ int runChangePkCharKeyTable(NDBT_Context* ctx, NDBT_Step* step)
         /**
          * For case-sensitive collations, we must use correct case
          * when specifying keys.
-         * For case-insenstive collations, we do not need to, so use
+         * For case-insensitive collations, we do not need to, so use
          * the 'to' case for the key, and the 'to' value.
          */
         const char toCaseKey = ((cycle? 'A' : 'a') + i);

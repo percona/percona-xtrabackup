@@ -3708,6 +3708,29 @@ bool Item_func_min_max::resolve_type(THD *thd) {
   return reject_geometry_args(arg_count, args, this);
 }
 
+/*
+  "rank" the temporal types, to get consistent results for cases like
+  greatest(year, date) vs. greatest(date, year)
+  We compare as 'date' regardless of the order of the arguments.
+ */
+static int temporal_rank(enum_field_types type) {
+  switch (type) {
+    case MYSQL_TYPE_DATETIME:
+      return 5;
+    case MYSQL_TYPE_TIMESTAMP:
+      return 4;
+    case MYSQL_TYPE_DATE:
+      return 3;
+    case MYSQL_TYPE_TIME:
+      return 2;
+    case MYSQL_TYPE_YEAR:
+      return 1;
+    default:
+      assert(false);
+      return 0;
+  }
+}
+
 bool Item_func_min_max::resolve_type_inner(THD *thd) {
   if (param_type_uses_non_param(thd)) return true;
   aggregate_type(make_array(args, arg_count));
@@ -3726,7 +3749,8 @@ bool Item_func_min_max::resolve_type_inner(THD *thd) {
           most general and detailed data type to which other temporal types can
           be converted without loss of information.
         */
-        if (!temporal_item || args[i]->data_type() == MYSQL_TYPE_DATETIME)
+        if (!temporal_item || (temporal_rank(args[i]->data_type()) >
+                               temporal_rank(temporal_item->data_type())))
           temporal_item = args[i];
       }
     }
@@ -3757,6 +3781,11 @@ bool Item_func_min_max::resolve_type_inner(THD *thd) {
                               "LEAST and GREATEST operators");
   if (data_type() == MYSQL_TYPE_JSON) set_data_type(MYSQL_TYPE_VARCHAR);
   return false;
+}
+
+bool Item_func_min_max::compare_as_dates() const {
+  return temporal_item != nullptr &&
+         is_temporal_type_with_date(temporal_item->data_type());
 }
 
 bool Item_func_min_max::cmp_datetimes(longlong *value) {
@@ -7741,6 +7770,12 @@ bool Item_func_match::fix_fields(THD *thd, Item **ref) {
     }
     allows_multi_table_search &= allows_search_on_non_indexed_columns(
         ((Item_field *)item)->field->table);
+    // MATCH should only operate on fields, so don't let constant propagation
+    // replace them with constants. (Only relevant to MyISAM, which allows any
+    // type of column in the MATCH clause. InnoDB requires the columns to have a
+    // full-text index, which again requires the column type to be a string
+    // type, and constant propagation is already disabled for strings.)
+    item->disable_constant_propagation(nullptr);
   }
 
   /*
@@ -9279,7 +9314,7 @@ longlong Item_func_can_access_view::val_int() {
   OFF.
   Do *not* skip hidden tables, columns, indexes and index elements,
   when SHOW EXTENDED command are run. GIPK and key column are skipped
-  even for SHOW EXTENED command.
+  even for SHOW EXTENDED command.
 
   Syntax:
     longlong IS_VISIBLE_DD_OBJECT(type_of_hidden_table [, is_object_hidden

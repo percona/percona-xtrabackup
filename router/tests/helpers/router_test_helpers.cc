@@ -221,7 +221,7 @@ bool wait_for_port_ready(uint16_t port, std::chrono::milliseconds timeout,
   return status >= 0;
 }
 
-inline bool is_port_available_fallback(const uint16_t port) {
+bool is_port_bindable(const uint16_t port) {
   net::io_context io_ctx;
   net::ip::tcp::acceptor acceptor(io_ctx);
 
@@ -246,7 +246,7 @@ inline bool is_port_available_fallback(const uint16_t port) {
   return true;
 }
 
-bool is_port_available(const uint16_t port) {
+bool is_port_unused(const uint16_t port) {
 #if defined(__linux__)
   const std::string netstat_cmd{"netstat -tnl"};
 #elif defined(_WIN32)
@@ -264,7 +264,7 @@ bool is_port_available(const uint16_t port) {
   if (std::system(cmd.c_str()) != 0) {
     // netstat command failed, do the check by trying to bind to the port
     // instead
-    return is_port_available_fallback(port);
+    return is_port_bindable(port);
   }
 
   std::ifstream file{filename};
@@ -305,19 +305,19 @@ static bool wait_for_port(const bool available, const uint16_t port,
   using clock_type = std::chrono::steady_clock;
   const auto end = clock_type::now() + timeout;
   do {
-    if (available == is_port_available(port)) return true;
+    if (available == is_port_unused(port)) return true;
     std::this_thread::sleep_for(step);
   } while (clock_type::now() < end);
   return false;
 }
 
-bool wait_for_port_not_available(const uint16_t port,
-                                 std::chrono::milliseconds timeout) {
+bool wait_for_port_used(const uint16_t port,
+                        std::chrono::milliseconds timeout) {
   return wait_for_port(/*available*/ false, port, timeout);
 }
 
-bool wait_for_port_available(const uint16_t port,
-                             std::chrono::milliseconds timeout) {
+bool wait_for_port_unused(const uint16_t port,
+                          std::chrono::milliseconds timeout) {
   return wait_for_port(/*available*/ true, port, timeout);
 }
 
@@ -508,7 +508,7 @@ void connect_client_and_query_port(unsigned router_port, std::string &out_port,
   out_port = std::string((*result)[0]);
 }
 
-// Wait for the nth occurence of the log_regex in the log_file with the timeout
+// Wait for the nth occurrence of the log_regex in the log_file with the timeout
 // If it's found returns the full line containing the log_regex
 // If the timeout has been reached returns unexpected
 static std::optional<std::string> wait_log_line(
@@ -541,7 +541,7 @@ std::optional<std::chrono::time_point<std::chrono::system_clock>>
 get_log_timestamp(const std::string &log_file, const std::string &log_regex,
                   const unsigned occurence,
                   const std::chrono::milliseconds timeout) {
-  // first wait for the nth occurence of the pattern
+  // first wait for the nth occurrence of the pattern
   const auto log_line = wait_log_line(log_file, log_regex, occurence, timeout);
   if (!log_line) {
     return std::nullopt;

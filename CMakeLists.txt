@@ -520,32 +520,51 @@ ELSE()
   MARK_AS_ADVANCED(MYSQL_PROJECT_NAME)
 ENDIF()
 
-# Remember if WITH_NDBCLUSTER was specified by user
+# Handle upgrade of old cmake cache
+IF(DEFINED WITH_PLUGIN_NDBCLUSTER)
+  IF(NOT WITH_NDBCLUSTER)
+    IF(WITH_PLUGIN_NDBCLUSTER OR WITH_NDBCLUSTER_STORAGE_ENGINE)
+      MESSAGE(FATAL_ERROR
+        "Old broken config, WITH_NDBCLUSTER_STORAGE_ENGINE have changed "
+        "meaning, to build MySQL Cluster please add -DWITH_NDB=ON and "
+        "-UWITH_PLUGIN_NDBCLUSTER")
+    ENDIF()
+  ENDIF()
+ENDIF()
+
+# Allow WITH_NDBCLUSTER, makes it possible to bisect between
+# old and new source code and use cmake -DWITH_NDBCLUSTER=xx for both.
+# If both WITH_NDB and WITH_NDBCLUSTER is set they must be equal.
+# Else WITH_NDB is set as WITH_NDBCLUSTER.
+# WITH_NDBCLUSTER is unset and not cached to not intefere with
+# legacy logic in MYSQL_ADD_PLUGIN.
 IF(DEFINED WITH_NDBCLUSTER)
   SET(HAVE_WITH_NDBCLUSTER 1)
-ENDIF()
-OPTION(WITH_NDBCLUSTER "Build MySQL Cluster" OFF)
-OPTION(WITH_NDBCLUSTER_STORAGE_ENGINE
-  "Legacy and deprecated alias for WITH_NDBCLUSTER" OFF)
-OPTION(WITH_PLUGIN_NDBCLUSTER
-  "Legacy and deprecated alias for WITH_NDBCLUSTER" OFF)
-MARK_AS_ADVANCED(WITH_NDBCLUSTER_STORAGE_ENGINE WITH_PLUGIN_NDBCLUSTER)
-IF(NOT HAVE_WITH_NDBCLUSTER)
-  # Unless user has used WITH_NDBCLUSTER also look at
-  # some of the legacy variables
-  IF(WITH_PLUGIN_NDBCLUSTER)
-    MESSAGE(WARNING "WITH_PLUGIN_NDBCLUSTER is deprecated and will be "
-      "removed in a future release. Please use WITH_NDBCLUSTER instead.")
-    SET(WITH_NDBCLUSTER ON)
+  IF(DEFINED WITH_NDB)
+    # The extra NOTs are needed to normalize the boolean values else for
+    # example ON is not treated equal to 1.
+    IF(NOT (NOT WITH_NDB) EQUAL (NOT WITH_NDBCLUSTER))
+      MESSAGE(FATAL_ERROR
+        "WITH_NDB=${WITH_NDB} do not match WITH_NDBCLUSTER=${WITH_NDBCLUSTER}")
+    ENDIF()
+    SET(WITH_NDB_DEFAULT OFF)
+  ELSEIF(WITH_NDBCLUSTER)
+    MESSAGE(WARNING "WITH_NDBCLUSTER option is deprecated, please use "
+      "WITH_NDB instead. For backward compatibility WITH_NDBCLUSTER=ON sets "
+      "WITH_NDB=ON")
+    SET(WITH_NDB_DEFAULT ON)
+  ELSE()
+    SET(WITH_NDB_DEFAULT OFF)
   ENDIF()
-  IF(WITH_NDBCLUSTER_STORAGE_ENGINE)
-    MESSAGE(WARNING "WITH_NDBCLUSTER_STORAGE_ENGINE is deprecated and "
-      "will be removed in a future release. Please use WITH_NDBCLUSTER "
-      "instead.")
-    SET(WITH_NDBCLUSTER ON)
-  ENDIF()
+  # Unset WITH_NDBCLUSTER to not intefere with MYSQL_ADD_PLUGIN logic.
+  # It will be added to cache at end of this file.
+  UNSET(WITH_NDBCLUSTER CACHE)
+ELSE()
+  SET(WITH_NDB_DEFAULT OFF)
 ENDIF()
-IF(WITH_NDBCLUSTER)
+
+OPTION(WITH_NDB "Build MySQL Cluster" ${WITH_NDB_DEFAULT})
+IF(WITH_NDB)
   MESSAGE(STATUS "Building MySQL Cluster")
 ENDIF()
 
@@ -710,6 +729,7 @@ MESSAGE(STATUS "SIZEOF_VOIDP ${SIZEOF_VOIDP}")
 # even if we have configured for 64bit build....
 SET(CMAKE_SIZEOF_VOID_P ${SIZEOF_VOIDP})
 
+
 INCLUDE(compile_flags)
 INCLUDE(install_layout)
 
@@ -751,6 +771,22 @@ ENDIF()
 
 IF(WITH_DEFAULT_COMPILER_OPTIONS)
   INCLUDE(${CMAKE_SOURCE_DIR}/cmake/build_configurations/compiler_options.cmake)
+ENDIF()
+
+# Assume, for now at least, that we want build-id for all kinds of Linux builds.
+IF(LINUX)
+  OPTION(WITH_BUILD_ID "Add --build-id=sha1 to all executables." ON)
+  IF(WITH_BUILD_ID)
+    SET(HAVE_BUILD_ID_SUPPORT 1)
+    FIND_PROGRAM(READELF_EXECUTABLE
+      NAMES eu-readelf readelf
+      )
+    IF(NOT READELF_EXECUTABLE)
+      MESSAGE(WARNING "Cannot find eu-readelf or readelf")
+      MESSAGE(FATAL_ERROR
+        "Install the 'elfutils' package, or do cmake -DWITH_BUILD_ID=OFF")
+    ENDIF()
+  ENDIF()
 ENDIF()
 
 INCLUDE(CMakePushCheckState)
@@ -1043,13 +1079,6 @@ MACRO(DISABLE_MISSING_PROFILE_WARNING)
   ENDIF()
 ENDMACRO()
 
-# Disable -Werror=maybe-uninitialized for googlemock matchers.
-MACRO(DISABLE_GOOGLEMOCK_UNINITIALIZED_WARNING)
-  IF(MY_COMPILER_IS_GNU AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 12)
-    ADD_COMPILE_FLAGS(${ARGN} COMPILE_FLAGS "-Wno-maybe-uninitialized")
-  ENDIF()
-ENDMACRO()
-
 MACRO(MY_SANITIZER_CHECK SAN_OPT ADD_OPTIMIZATION RESULT)
   MY_CHECK_C_COMPILER_FLAG("${SAN_OPT}" C_RESULT)
   MY_CHECK_CXX_COMPILER_FLAG("${SAN_OPT}" CXX_RESULT)
@@ -1230,17 +1259,6 @@ IF(USE_LD_LLD)
   CMAKE_POP_CHECK_STATE()
 ENDIF()
 
-# Use gold on x86 if available and not explicitly disabled.
-# LTO build fails with gold, so turn it off by default.
-IF(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64"
-    AND NOT WIN32
-    AND NOT WITH_LTO
-    AND NOT CMAKE_COMPILER_FLAG_WITH_LTO)
-  OPTION(USE_LD_GOLD "Use GNU gold linker" ON)
-ELSE()
-  OPTION(USE_LD_GOLD "Use GNU gold linker" OFF)
-ENDIF()
-
 IF(LINUX_STANDALONE)
   # ON by default in pushbuild, but only for standalone builds.
   # The comression does not play well with some RPM/DEB packaging.
@@ -1299,9 +1317,7 @@ ENDIF()
 
 # Enable "-Og -fno-inline" for ordinary Debug builds.
 # Note that this may optimize away local stack variables.
-# Do not enable it for WITH_NDBCLUSTER, several build breaks at
-# this optimization level.
-IF(UNIX AND MY_COMPILER_IS_GNU_OR_CLANG AND NOT WITH_NDBCLUSTER
+IF(UNIX AND MY_COMPILER_IS_GNU_OR_CLANG
     AND NOT CMAKE_COMPILER_FLAG_WITH_SANITIZE AND NOT WITH_VALGRIND)
   # ON by default in pushbuild, to save time running Debug test suites.
   # man clang:
@@ -1360,29 +1376,21 @@ ELSE()
   SET(LINK_RANDOMIZE OFF)
 ENDIF()
 
-IF (USE_LD_GOLD AND NOT (C_LD_LLD_RESULT AND CXX_LD_LLD_RESULT))
-  CMAKE_PUSH_CHECK_STATE(RESET)
-  SET(CMAKE_REQUIRED_LIBRARIES "-fuse-ld=gold")
-  CHECK_C_SOURCE_COMPILES("int main() {}" C_LD_GOLD_RESULT)
-  CHECK_CXX_SOURCE_COMPILES("int main() {}" CXX_LD_GOLD_RESULT)
-  IF (C_LD_GOLD_RESULT AND CXX_LD_GOLD_RESULT AND NOT SOLARIS)
-    STRING_APPEND(CMAKE_C_LINK_FLAGS " -fuse-ld=gold")
-    STRING_APPEND(CMAKE_CXX_LINK_FLAGS " -fuse-ld=gold")
-
-    # Seemingly --gc-sections causes problems with randomization, so only
-    # turn it on if we are not making a randomized build.
-    IF (NOT LINK_RANDOMIZE)
-      STRING_APPEND(CMAKE_C_LINK_FLAGS " -Wl,--gc-sections")
-      STRING_APPEND(CMAKE_CXX_LINK_FLAGS " -Wl,--gc-sections")
-    ENDIF()
-  ENDIF()
-  CMAKE_POP_CHECK_STATE()
+IF(CMAKE_C_LINK_FLAGS MATCHES "-fuse-ld=gold" OR
+    CMAKE_CXX_LINK_FLAGS MATCHES "-fuse-ld=gold" OR
+    CMAKE_EXE_LINKER_FLAGS MATCHES "-fuse-ld=gold")
+  MESSAGE(WARNING "-fuse-ld=gold is not supported")
+  STRING(REPLACE
+    "-fuse-ld=gold" "" CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS}")
+  STRING(REPLACE
+    "-fuse-ld=gold" "" CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS}")
+  STRING(REPLACE
+    "-fuse-ld=gold" "" CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
 ENDIF()
 
 # Fedora 34, RHEL9: undefined reference to symbol 'crc32_z@@ZLIB_1.2.9'
 IF(LINUX_FEDORA_34 OR LINUX_RHEL9)
-  IF(NOT CMAKE_CXX_LINK_FLAGS MATCHES "-fuse-ld=lld" AND
-      NOT CMAKE_CXX_LINK_FLAGS MATCHES "-fuse-ld=gold")
+  IF(NOT CMAKE_CXX_LINK_FLAGS MATCHES "-fuse-ld=lld")
     STRING_APPEND(CMAKE_CXX_LINK_FLAGS " -Wl,--copy-dt-needed-entries")
   ENDIF()
 ENDIF()
@@ -1405,23 +1413,18 @@ ENDIF()
 # faster. The overhead of generating the index is small in LLD.
 OPTION(ADD_GDB_INDEX "Generate a .gdb_index section in the binaries." OFF)
 
-IF(ADD_GDB_INDEX AND
-    (CMAKE_CXX_LINK_FLAGS MATCHES "-fuse-ld=lld" OR
-      CMAKE_CXX_LINK_FLAGS MATCHES "-fuse-ld=gold"))
+IF(ADD_GDB_INDEX AND CMAKE_EXE_LINKER_FLAGS MATCHES "-fuse-ld=lld")
   # -fuse-ld=lld is not enough to ensure that ld.lld will actually be used.
   # On some platforms we need an extra check for -Wl,--gdb-index
   CMAKE_PUSH_CHECK_STATE()
-  IF(CMAKE_CXX_LINK_FLAGS MATCHES "-fuse-ld=lld")
-    SET(CMAKE_REQUIRED_LIBRARIES "-fuse-ld=lld -Wl,--gdb-index")
-  ELSE()
-    SET(CMAKE_REQUIRED_LIBRARIES "-fuse-ld=gold -Wl,--gdb-index")
-  ENDIF()
+  SET(CMAKE_REQUIRED_LIBRARIES "-fuse-ld=lld -Wl,--gdb-index")
   CHECK_CXX_SOURCE_COMPILES("int main() {}" CXX_LD_GDB_INDEX_RESULT)
   CMAKE_POP_CHECK_STATE()
 
   IF(CXX_LD_GDB_INDEX_RESULT)
-    STRING_APPEND(CMAKE_C_LINK_FLAGS " -Wl,--gdb-index")
-    STRING_APPEND(CMAKE_CXX_LINK_FLAGS " -Wl,--gdb-index")
+    STRING_APPEND(CMAKE_EXE_LINKER_FLAGS " -Wl,--gdb-index")
+    STRING_APPEND(CMAKE_MODULE_LINKER_FLAGS " -Wl,--gdb-index")
+    STRING_APPEND(CMAKE_SHARED_LINKER_FLAGS " -Wl,--gdb-index")
     # gdb sometimes reports "incomplete type" after linking with
     # --gdb-index. This flag makes the index contain enough
     # information to avoid the problem.
@@ -1459,12 +1462,6 @@ IF(REPRODUCIBLE_BUILD)
 
   STRING_APPEND(CMAKE_C_FLAGS   " ${DEBUG_PREFIX_FLAGS}")
   STRING_APPEND(CMAKE_CXX_FLAGS " ${DEBUG_PREFIX_FLAGS}")
-
-  # DEB/RPM will want to set build id.
-  IF(INSTALL_LAYOUT MATCHES "STANDALONE" OR INSTALL_LAYOUT MATCHES "TARGZ")
-    STRING_APPEND(CMAKE_C_LINK_FLAGS " -Wl,--build-id=none")
-    STRING_APPEND(CMAKE_CXX_LINK_FLAGS " -Wl,--build-id=none")
-  ENDIF()
 
   SET(BISON_NO_LINE_OPT "--no-lines")
 
@@ -2150,6 +2147,9 @@ ADD_CUSTOM_TARGET(component_all)
 # Utility target to generate all sources from .proto files.
 ADD_CUSTOM_TARGET(protobuf_generated_all)
 
+# Utility target to generate everything created by MYSQL_ADD_EXECUTABLE().
+ADD_CUSTOM_TARGET(executable_all)
+
 # Utility target to generate sources needed for clang-tidy.
 # Example usage:
 #
@@ -2192,7 +2192,7 @@ IF(NOT WITHOUT_SERVER)
   CONFIGURE_PLUGINS()
 ELSE()
   IF(EXISTS "${CMAKE_SOURCE_DIR}/storage/ndb")
-    # We may still want Cluster client libraries, use -DWITH_NDBCLUSTER=1
+    # We may still want Cluster client libraries, use -DWITH_NDB=1
     ADD_SUBDIRECTORY(storage/ndb)
   ENDIF()
 ENDIF()
@@ -2324,6 +2324,76 @@ INCLUDE(${CMAKE_BINARY_DIR}/info_macros.cmake)
 # Source: This can be done during the cmake phase, all information is
 # available, but should be repeated on each "make" just in case someone
 # does "cmake ; make ; git pull ; make".
+<<<<<<< HEAD
+=======
+CREATE_INFO_SRC(${CMAKE_BINARY_DIR}/Docs)
+MY_ADD_CUSTOM_TARGET(INFO_SRC ALL
+  COMMAND ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/cmake/info_src.cmake
+  BYPRODUCTS ${CMAKE_BINARY_DIR}/Docs/INFO_SRC
+  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+  COMMENT "Generating Docs/INFO_SRC"
+)
+
+IF(HAVE_BUILD_ID_SUPPORT AND NOT WITHOUT_SERVER)
+  # Show it by default in pushuild, but not for developers.
+  IF(DEFINED ENV{PB2WORKDIR})
+    OPTION(SHOW_BUILD_ID "Show mysqld build id as final target" ON)
+  ELSE()
+    OPTION(SHOW_BUILD_ID "Show mysqld build id as final target" OFF)
+  ENDIF()
+
+  IF(SHOW_BUILD_ID)
+    # Show build id in the build log, after everything else has bee built.
+    ADD_CUSTOM_TARGET(show_build_id ALL
+      COMMAND $<TARGET_FILE:mysqld> --help | grep BuildID
+      COMMENT "Showing mysqld build id"
+      VERBATIM
+      )
+    ADD_DEPENDENCIES(show_build_id mysqld)
+    # Build all kinds of binaries first.
+    ADD_DEPENDENCIES(show_build_id
+      component_all
+      executable_all
+      plugin_all
+      unittest_all
+      )
+    IF(WITH_ROUTER)
+      ADD_DEPENDENCIES(show_build_id mysqlrouter_all)
+    ENDIF()
+    # Other "ALL" targets.
+    ADD_DEPENDENCIES(show_build_id
+      GenSysSchemaC
+      # INFO_BIN see below
+      run_libmysql_api_test
+      )
+  ENDIF()
+ENDIF()
+
+UNSET(MYSQLD_EXECUTABLE_FOR_INFO_BIN)
+IF(HAVE_BUILD_ID_SUPPORT AND NOT WITHOUT_SERVER)
+  SET(MYSQLD_EXECUTABLE_FOR_INFO_BIN
+    "-DMYSQLD_EXECUTABLE=$<TARGET_FILE:mysqld>")
+ENDIF()
+
+# Build flags: This must be postponed to the make phase.
+MY_ADD_CUSTOM_TARGET(INFO_BIN ALL
+  COMMAND ${CMAKE_COMMAND}
+  ${MYSQLD_EXECUTABLE_FOR_INFO_BIN}
+  -DCMAKE_BUILD_TYPE=$<CONFIG>
+  -P ${CMAKE_SOURCE_DIR}/cmake/info_bin.cmake
+  BYPRODUCTS ${CMAKE_BINARY_DIR}/Docs/INFO_BIN
+  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+  COMMENT "Generating Docs/INFO_BIN"
+)
+# Adding $<TARGET_FILE:mysqld> seems to a dependency on 'mysqld'.
+# Add an explicit one anyways.
+IF(MYSQLD_EXECUTABLE_FOR_INFO_BIN)
+  ADD_DEPENDENCIES(INFO_BIN mysqld)
+  IF(TARGET show_build_id)
+    ADD_DEPENDENCIES(show_build_id INFO_BIN)
+  ENDIF()
+ENDIF()
+>>>>>>> mysql-8.0.31
 
 # Packaging
 IF(WIN32)
@@ -2540,3 +2610,9 @@ MESSAGE(STATUS "CMAKE_CXX_LINK_FLAGS: ${CMAKE_CXX_LINK_FLAGS}")
 MESSAGE(STATUS "CMAKE_EXE_LINKER_FLAGS ${CMAKE_EXE_LINKER_FLAGS}")
 MESSAGE(STATUS "CMAKE_MODULE_LINKER_FLAGS ${CMAKE_MODULE_LINKER_FLAGS}")
 MESSAGE(STATUS "CMAKE_SHARED_LINKER_FLAGS ${CMAKE_SHARED_LINKER_FLAGS}")
+
+# If user provided WITH_NDBCLUSTER keep it in cache
+IF(HAVE_WITH_NDBCLUSTER)
+  SET(WITH_NDBCLUSTER ${WITH_NDB} CACHE BOOL
+    "Deprecated legacy option for MySQL Cluster")
+ENDIF()

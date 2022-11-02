@@ -23,6 +23,7 @@
 #ifndef ANGEL_HPP
 #define ANGEL_HPP
 
+#include "util/ndb_opts.h"
 #include <util/BaseString.hpp>
 
 #define JAM_FILE_ID 491
@@ -42,7 +43,6 @@ angel_run(const char* progname,
 
 void
 angel_stop(void);
-
 
 #undef JAM_FILE_ID
 

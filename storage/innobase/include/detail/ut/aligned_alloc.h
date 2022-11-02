@@ -494,9 +494,9 @@ struct Aligned_alloc : public allocator_traits<false> {
 
     PFS-wise this allocation routine will be storing the information that PFS
     needs to do its own work:
-     * Owning thread
-     * Total length of bytes allocated
-     * Key
+     - Owning thread
+     - Total length of bytes allocated
+     - Key
 
     Memory layout representation looks like the following:
 
@@ -595,7 +595,7 @@ struct Aligned_alloc_pfs : public allocator_traits<true> {
     // When computing total number of bytes allocated. we must not only account
     // for the size that we have requested (total_len) but we also need
     // to account for extra memory Aligned_alloc_impl may have allocated in
-    // order to be able to accomodate the request. Amount of extra memory
+    // order to be able to accommodate the request. Amount of extra memory
     // allocated corresponds to the offset value returned by Aligned_alloc_impl.
     const auto datalen = total_len + ret.second;
     // The point of this allocator variant is to trace the memory allocations

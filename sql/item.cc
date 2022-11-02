@@ -250,7 +250,7 @@ String *Item::val_str_ascii(String *str) {
   String *res = val_str(&str_value);
   if (!res) return nullptr;
 
-  if (!(res->charset()->state & MY_CS_NONASCII))
+  if (my_charset_is_ascii_based(res->charset()))
     str = res;
   else {
     if ((null_value = str->copy(res->ptr(), res->length(), collation.collation,
@@ -902,6 +902,10 @@ bool Item_field::is_valid_for_pushdown(uchar *arg) {
   TABLE_LIST *derived_table = dti->m_derived_table;
   if (table_ref == derived_table) {
     assert(field->table == derived_table->table);
+    // For set operations, if there is result type mismatch for this
+    // expression across query blocks, we do not do condition pushdown
+    // as the resulting type for the condition involving such an expression
+    // would be different across query blocks.
     // If the expression in the derived table for this column has a subquery
     // or has non-deterministic result or is a trigger field, condition is
     // not pushed down.
@@ -924,9 +928,15 @@ bool Item_field::is_valid_for_pushdown(uchar *arg) {
     // does not print the original expression which leads to an incorrect clone.
     Query_expression *derived_query_expression =
         derived_table->derived_query_expression();
+    Item_result result_type = INVALID_RESULT;
     for (Query_block *qb = derived_query_expression->first_query_block();
          qb != nullptr; qb = qb->next_query_block()) {
       Item *item = qb->get_derived_expr(field->field_index());
+      if (result_type == INVALID_RESULT) {
+        result_type = item->result_type();
+      } else if (result_type != item->result_type()) {
+        return true;
+      }
       bool has_trigger_field = false;
       bool has_system_var = false;
       WalkItem(item, enum_walk::PREFIX,
@@ -1262,7 +1272,7 @@ Item *Item_num::safe_charset_converter(THD *thd, const CHARSET_INFO *tocs) {
     so conversion is needed only in case of "tricky" character
     sets like UCS2. If tocs is not "tricky", return the item itself.
   */
-  if (!(tocs->state & MY_CS_NONASCII)) return this;
+  if (my_charset_is_ascii_based(tocs)) return this;
 
   uint conv_errors;
   char buf[64], buf2[64];
@@ -2296,10 +2306,10 @@ static bool left_is_superset(DTCollation *left, DTCollation *right) {
       left->derivation == right->derivation)
     return true;
   /* Allow convert from ASCII */
-  if (right->repertoire == MY_REPERTOIRE_ASCII &&
+  if ((right->collation->state & MY_CS_PUREASCII) &&
       (left->derivation < right->derivation ||
        (left->derivation == right->derivation &&
-        !(left->repertoire == MY_REPERTOIRE_ASCII))))
+        !(left->collation->state & MY_CS_PUREASCII))))
     return true;
   /* Disallow conversion otherwise */
   return false;
@@ -2309,14 +2319,25 @@ static bool left_is_superset(DTCollation *left, DTCollation *right) {
   Aggregate two collations together taking
   into account their coercibility (aka derivation):.
 
-  0 == DERIVATION_EXPLICIT  - an explicitly written COLLATE clause @n
-  1 == DERIVATION_NONE      - a mix of two different collations @n
-  2 == DERIVATION_IMPLICIT  - a column @n
-  3 == DERIVATION_COERCIBLE - a string constant.
+  DERIVATION_EXPLICIT  - an explicitly written COLLATE clause @n
+  DERIVATION_NONE      - a mix of two different collations @n
+  DERIVATION_IMPLICIT  - a column @n
+  DERIVATION_SYSCONST  - a system function @n
+  DERIVATION_COERCIBLE - a string constant @n
+  DERIVATION_NUMERIC   - a numeric constant coerced to a character string @n
+  DERIVATION_IGNORABLE - a NULL value.
+
+  These are ordered by strength from highest (DERIVATION_EXPLICIT) to
+  lowest (DERIVATION_IGNORABLE), and a low enum value means higher strength.
+
+  Note that MySQL supports more coercibility types than the SQL standard,
+  which only has explicit, implicit and none collation derivations.
+  Explicit collation derivation are applied by specifying a COLLATE clause
+  to a character string expression.
 
   The most important rules are:
   -# If collations are the same:
-  chose this collation, and the strongest derivation.
+  choose this collation, and the strongest derivation.
   -# If collations are different:
   - Character sets may differ, but only if conversion without
   data loss is possible. The caller provides flags whether
@@ -2345,10 +2366,14 @@ static bool left_is_superset(DTCollation *left, DTCollation *right) {
   @retval false If the two collations can be aggregated, possibly with
   DERIVATION_NONE to indicate that they need a third explicit collation as a
   tiebreaker.
-
 */
 
 bool DTCollation::aggregate(DTCollation &dt, uint flags) {
+  // With two EXPLICIT derivations, collations must be equal:
+  if (collation != dt.collation && derivation == DERIVATION_EXPLICIT &&
+      dt.derivation == DERIVATION_EXPLICIT) {
+    return true;
+  }
   if (!my_charset_same(collation, dt.collation)) {
     /*
        We do allow to use binary strings (like BLOBS)
@@ -2536,8 +2561,8 @@ bool agg_item_set_converter(DTCollation &coll, const char *fname, Item **args,
     */
     if ((*arg)->collation.derivation == DERIVATION_NUMERIC &&
         (*arg)->collation.repertoire == MY_REPERTOIRE_ASCII &&
-        !((*arg)->collation.collation->state & MY_CS_NONASCII) &&
-        !(coll.collation->state & MY_CS_NONASCII))
+        my_charset_is_ascii_based((*arg)->collation.collation) &&
+        my_charset_is_ascii_based(coll.collation))
       continue;
 
     Item *conv = (*arg)->safe_charset_converter(thd, coll.collation);
@@ -4918,12 +4943,13 @@ static void mark_as_dependent(THD *thd, Query_block *last, Query_block *current,
   current->mark_as_dependent(last, false);
   if (thd->lex->is_explain()) {
     /*
-      UNION's result has select_number == INT_MAX which is printed as -1 and
-      this is confusing. Instead, the number of the first SELECT in the UNION
+      For set operations, the number of the first SELECT in the UNION
       is printed as names in ORDER BY are resolved against select list of the
       first SELECT.
     */
-    uint sel_nr = (last->select_number < INT_MAX)
+    uint sel_nr = (last->master_query_expression()
+                       ->find_blocks_query_term(last)
+                       ->term_type() == QT_QUERY_BLOCK)
                       ? last->select_number
                       : last->master_query_expression()
                             ->first_query_block()
@@ -6167,9 +6193,11 @@ void Item::init_make_field(Send_field *tmp_field,
   tmp_field->table_name = empty_name;
   tmp_field->col_name = item_name.ptr();
   tmp_field->charsetnr = collation.collation->number;
-  tmp_field->flags =
-      (m_nullable ? 0 : NOT_NULL_FLAG) |
-      (my_binary_compare(charset_for_protocol()) ? BINARY_FLAG : 0);
+  tmp_field->flags = (m_nullable ? 0 : NOT_NULL_FLAG);
+  if (field_type_arg != MYSQL_TYPE_BIT) {
+    tmp_field->flags |=
+        (my_binary_compare(charset_for_protocol()) ? BINARY_FLAG : 0);
+  }
   tmp_field->type = field_type_arg;
   tmp_field->length = max_length;
   tmp_field->decimals = decimals;
@@ -8275,7 +8303,7 @@ void Item_ref::print(const THD *thd, String *str,
   if (ref == nullptr)  // Unresolved reference: print reference
     return Item_ident::print(thd, str, query_type);
 
-  if (m_alias_of_expr && (*ref)->type() != Item::CACHE_ITEM &&
+  if (!const_item() && m_alias_of_expr && (*ref)->type() != Item::CACHE_ITEM &&
       ref_type() != VIEW_REF && table_name == nullptr && item_name.ptr()) {
     Simple_cstring str1 = (*ref)->real_item()->item_name;
     append_identifier(thd, str, str1.ptr(), str1.length());
@@ -10254,7 +10282,14 @@ bool Item_aggregate_type::join_types(THD *thd, Item *item) {
       geometry_type = Field::GEOM_GEOMETRY;
   } else
     aggregate_num_type(merge_type, args, 2);
+
+  // Note: when called to join the types of a set operation's select list, the
+  // below line is correct only if we have no INTERSECT or EXCEPT in the query
+  // tree. We will recompute this value correctly during prepare_query_term. We
+  // cannot do it correctly here while traversing the leaf query block due to
+  // the recursive nature of the problem.
   set_nullable(is_nullable() || item->is_nullable());
+
   set_typelib(item);
   DBUG_PRINT("info", ("become type: %d  len: %u  dec: %u", (int)data_type(),
                       max_length, (uint)decimals));

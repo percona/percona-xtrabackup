@@ -131,7 +131,7 @@ public:
 
     0  No more data
     1  More rows available
-    >1 Error occured
+    >1 Error occurred
   */
   virtual int read_row(VirtualScanContext* ctx, Row& row, Uint32 row_number) const = 0;
 
@@ -175,14 +175,14 @@ int index_seek(const std::map<int, int> &index,
   if(iter == index.cend()) return -1;
 
   /* Check for exact match */
-  if(! (seek.inclusive && (iter->first == key)))
+  if(! (seek.inclusive() && (iter->first == key)))
   {
     /* Exact match failed. Check for bounded ranges */
-    if(seek.high || seek.low)
+    if(seek.high() || seek.low())
     {
-      if(seek.high && iter->first == key) iter++;
-      else if(seek.low)
-      {
+      if (seek.high() && iter->first == key) {
+        iter++;
+      } else if (seek.low()) {
         if(iter == index.cbegin()) return -1; // nothing lower than first rec
         iter--;
       }
@@ -342,7 +342,7 @@ int NdbInfoScanVirtual::nextResult()
     DBUG_RETURN(1);  // More rows
   }
 
-  // Error occured
+  // Error occurred
   m_state = End;
   DBUG_RETURN(result);
 }
@@ -1203,7 +1203,7 @@ class BackupIdTable : public VirtualTable
       return false;
     }
 
-    // Sucessful read, assign return value
+    // Successful read, assign return value
     *backup_id = nextid->u_64_value();
     *fragment = frag->u_32_value();
     *rowid = row->u_64_value();

@@ -65,7 +65,7 @@ private:
    * m_send_socket is used to send
    * theSocket (in base class) is used for receive
    */
-  NDB_SOCKET_TYPE m_send_socket;
+  ndb_socket_t m_send_socket;
 
   /**
    * overloads TCP_Transporter::send_is_possible

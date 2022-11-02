@@ -77,6 +77,7 @@
 #include "sql/item_row.h"
 #include "sql/item_subselect.h"
 #include "sql/item_sum.h"  // Item_sum
+#include "sql/join_optimizer/bit_utils.h"
 #include "sql/join_optimizer/join_optimizer.h"
 #include "sql/mdl.h"  // MDL_SHARED_READ
 #include "sql/mem_root_array.h"
@@ -435,10 +436,10 @@ bool Query_block::prepare(THD *thd, mem_root_deque<Item *> *insert_field_list) {
     undone in favour of materialization, when optimizing a later statement
     using the view)
   */
-  if (unit->item &&                      // This is a subquery
-      this != unit->fake_query_block &&  // A real query block
-                                         // Not normalizing a view
-      !thd->lex->is_view_context_analysis()) {
+  if (unit->item &&  // This is a subquery
+                     // A real query block
+                     // Not normalizing a view
+      unit->is_leaf_block(this) && !thd->lex->is_view_context_analysis()) {
     // Query block represents a subquery within an IN/ANY/ALL/EXISTS predicate
     if (resolve_subquery(thd)) return true;
   }
@@ -690,9 +691,10 @@ bool Query_block::prepare_values(THD *thd) {
   // resolving subqueries. This should, like the resolving of m_having_clause
   // above, be refactored such that there is less duplication of code from
   // Query_block::prepare.
-  if (unit->item &&                      // This is a subquery
-      this != unit->fake_query_block &&  // A real query block
-                                         // Not normalizing a view
+  if (unit->item &&  // This is a subquery
+                     // A real query block
+                     // Not normalizing a view
+      (unit->is_simple() || this != unit->query_term()->query_block()) &&
       !thd->lex->is_view_context_analysis()) {
     // Query block represents a subquery within an IN/ANY/ALL/EXISTS predicate
     if (resolve_subquery(thd)) return true;
@@ -734,16 +736,9 @@ bool Query_block::apply_local_transforms(THD *thd, bool prune) {
   if (derived_table_count) delete_unused_merged_columns(&top_join_list);
 
   for (Query_expression *unit = first_inner_query_expression(); unit;
-       unit = unit->next_query_expression()) {
-    for (Query_block *sl = unit->first_query_block(); sl;
-         sl = sl->next_query_block()) {
-      // Prune all subqueries, regardless of passed argument
-      if (sl->apply_local_transforms(thd, true)) return true;
-    }
-    if (unit->fake_query_block &&
-        unit->fake_query_block->apply_local_transforms(thd, false))
-      return true;
-  }
+       unit = unit->next_query_expression())
+    for (auto qt : unit->query_terms<>())
+      if (qt->query_block()->apply_local_transforms(thd, true)) return true;
 
   // Convert all outer joins to inner joins if possible
   if (simplify_joins(thd, &top_join_list, true, false, &m_where_cond))
@@ -976,9 +971,10 @@ bool Item_in_subselect::subquery_allows_materialization(
   if (substype() != Item_subselect::IN_SUBS) {
     // Subq-mat cannot handle 'outer_expr > {ANY|ALL}(subq)'...
     cause = "not an IN predicate";
-  } else if (query_block->is_part_of_union()) {
-    // Subquery must be a single query specification clause (not a UNION)
-    cause = "in UNION";
+  } else if (query_block->is_part_of_set_operation()) {
+    // Subquery must be a single query specification clause (not a UNION,
+    // INTERSECT or EXCEPT).
+    cause = "in UNION, INTERSECT or EXCEPT";
   } else if (!query_block->master_query_expression()
                   ->first_query_block()
                   ->leaf_tables) {
@@ -1437,7 +1433,7 @@ bool Query_block::resolve_subquery(THD *thd) {
     semi-join (which is done in flatten_subqueries()). The requirements are:
       0. Semi-join is enabled (cf. hints)
       1. Subquery predicate is an IN/=ANY or EXISTS predicate
-      2. Subquery is a single query block (not a UNION)
+      2. Subquery is a single query block (not a UNION, EXCEPT or INTERSECT)
       3. Subquery is not grouped (explicitly or implicitly)
          3x: outer aggregated expression are not accepted
       4. Subquery does not use HAVING
@@ -1447,7 +1443,10 @@ bool Query_block::resolve_subquery(THD *thd) {
          Semijoin transformations of subqueries in ON cause the
          join nests to no longer be acceptable as a join tree, which
          disturbs the hypergraph optimizer, so we disable them
-         for that case (6x).
+         for that case (6x). However, we enable them when secondary
+         engine optimization is ON because it is easy to reject a
+         possible wrong plan when its not supporting nested loop
+         joins.
       7. Parent query block accepts semijoins (i.e we are not in a subquery of
       a single table UPDATE/DELETE (TODO: We should handle this at some
       point by switching to multi-table UPDATE/DELETE)
@@ -1462,26 +1461,37 @@ bool Query_block::resolve_subquery(THD *thd) {
       15. Antijoins are supported, or it's not an antijoin (it's a semijoin).
       16. OFFSET starts from the first row and LIMIT is not 0.
   */
+  SecondaryEngineFlags engine_flags = 0;
+  if (const handlerton *secondary_engine = SecondaryEngineHandlerton(thd);
+      secondary_engine != nullptr) {
+    engine_flags = secondary_engine->secondary_engine_flags;
+  }
   if (semijoin_enabled(thd) &&                                     // 0
       predicate != nullptr &&                                      // 1
-      !is_part_of_union() &&                                       // 2
+      !is_part_of_set_operation() &&                               // 2
       no_aggregates &&                                             // 3,3x,4,5
       (outer->resolve_place == Query_block::RESOLVE_CONDITION ||   // 6a
        (outer->resolve_place == Query_block::RESOLVE_JOIN_NEST &&  // 6a
-        !thd->lex->using_hypergraph_optimizer)) &&                 // 6x
-      outer->condition_context == enum_condition_context::ANDS &&  // 6b
-      outer->sj_candidates &&                                      // 7
-      leaf_table_count > 0 &&                                      // 8
-      predicate->strategy ==                                       //  9
-          Subquery_strategy::UNSPECIFIED &&                        //  9
-      outer->leaf_table_count > 0 &&                               // 10
-      !((active_options() | outer->active_options()) &             // 11
-        SELECT_STRAIGHT_JOIN) &&                                   // 11
-      !(outer->active_options() & SELECT_NO_SEMI_JOIN) &&          // 12
-      deterministic &&                                             // 13
-      predicate->choose_semijoin_or_antijoin() &&                  // 14
-      (!cannot_do_antijoin || !predicate->can_do_aj) &&            // 15
-      is_row_count_valid_for_semi_join()) {                        // 16
+        (!thd->lex->using_hypergraph_optimizer ||
+         (thd->secondary_engine_optimization() ==
+              Secondary_engine_optimization::SECONDARY &&
+          !Overlaps(
+              engine_flags,
+              MakeSecondaryEngineFlags(
+                  SecondaryEngineFlag::SUPPORTS_NESTED_LOOP_JOIN)))))) &&  // 6x
+      outer->condition_context == enum_condition_context::ANDS &&          // 6b
+      outer->sj_candidates &&                                              // 7
+      leaf_table_count > 0 &&                                              // 8
+      predicate->strategy ==                                               //  9
+          Subquery_strategy::UNSPECIFIED &&                                //  9
+      outer->leaf_table_count > 0 &&                                       // 10
+      !((active_options() | outer->active_options()) &                     // 11
+        SELECT_STRAIGHT_JOIN) &&                                           // 11
+      !(outer->active_options() & SELECT_NO_SEMI_JOIN) &&                  // 12
+      deterministic &&                                                     // 13
+      predicate->choose_semijoin_or_antijoin() &&                          // 14
+      (!cannot_do_antijoin || !predicate->can_do_aj) &&                    // 15
+      is_row_count_valid_for_semi_join()) {                                // 16
     DBUG_PRINT("info", ("Subquery is semi-join conversion candidate"));
 
     /* Notify in the subquery predicate where it belongs in the query graph */
@@ -1504,8 +1514,9 @@ bool Query_block::resolve_subquery(THD *thd) {
     Applicability constraints have numbers which are the same as in the list of
     the previous block. Reasons may be different though.
       1. Subquery predicate is an IN/=ANY or EXISTS predicate
-      2. Subquery is a single query block (not a UNION); this is because
-      a certain secondary engine has no support for UNION DISTINCT
+      2. Subquery is a single query block (not a UNION, INTERSECT or EXCEPT);
+         this is because a certain secondary engine has no support for setop
+         DISTINCT
       3. If this is [NOT] EXISTS, there is no aggregation; see
       transform_table_subquery_to_join_with_derived()
       6. Subquery predicate is
@@ -1529,7 +1540,7 @@ bool Query_block::resolve_subquery(THD *thd) {
   */
 
   if (!choice_made && try_convert_to_derived && predicate != nullptr &&  // 1
-      !is_part_of_union() &&                                             // 2
+      !is_part_of_set_operation() &&                                     // 2
       (in_predicate != nullptr || no_aggregates) &&                      // 3
       outer->resolve_place == Query_block::RESOLVE_CONDITION &&          // 6a
       outer->condition_context != enum_condition_context::NEITHER &&     // 6b
@@ -3548,6 +3559,11 @@ bool Query_block::merge_derived(THD *thd, TABLE_LIST *derived_table) {
   cond_count += derived_query_block->cond_count;
   between_count += derived_query_block->between_count;
 
+  // Remove tables from old query block:
+  derived_query_block->leaf_tables = nullptr;
+  derived_query_block->leaf_table_count = 0;
+  derived_query_block->table_list.clear();
+
   // Propagate schema table indication:
   // @todo: Add to BASE options instead
   if (derived_query_block->active_options() & OPTION_SCHEMA_TABLE)
@@ -3589,7 +3605,7 @@ bool Query_block::merge_derived(THD *thd, TABLE_LIST *derived_table) {
       An ORDER BY clause is moved to an outer query block
       - if the outer query block allows ordering, and
       - that refers to this view/derived table only, and
-      - is not part of a UNION, and
+      - is not part of a set operation (UNION, EXCEPT, INTERSECT), and
       - may have a WHERE clause but is not grouped or aggregated and is not
         itself ordered.
      Otherwise the ORDER BY clause is ignored.
@@ -3610,7 +3626,7 @@ bool Query_block::merge_derived(THD *thd, TABLE_LIST *derived_table) {
     if ((lex->sql_command == SQLCOM_SELECT ||
          lex->sql_command == SQLCOM_UPDATE ||
          lex->sql_command == SQLCOM_DELETE) &&
-        !(master_query_expression()->is_union() || is_grouped() ||
+        !(master_query_expression()->is_set_operation() || is_grouped() ||
           is_distinct() || is_ordered() ||
           get_table_list()->next_local != nullptr)) {
       order_list.push_back(&derived_query_block->order_list);
@@ -4482,9 +4498,9 @@ bool setup_order(THD *thd, Ref_item_array ref_item_array, TABLE_LIST *tables,
 
   thd->where = "order clause";
 
-  const bool for_union =
-      select->master_query_expression()->is_union() &&
-      select == select->master_query_expression()->fake_query_block;
+  const bool for_set_operation =
+      select->master_query_expression()->is_set_operation() &&
+      select == select->master_query_expression()->query_term()->query_block();
   const bool is_aggregated = select->is_grouped();
 
   for (uint number = 1; order; order = order->next, number++) {
@@ -4497,10 +4513,10 @@ bool setup_order(THD *thd, Ref_item_array ref_item_array, TABLE_LIST *tables,
         but MySQL has some limited support for them. The limitations are
         checked below:
 
-        1. A UNION query is not aggregated, so ordering by a set function
-           is always wrong.
+        1. A set operation query is not aggregated, so ordering by a set
+           function is always wrong.
       */
-      if (for_union) {
+      if (for_set_operation) {
         my_error(ER_AGGREGATE_ORDER_FOR_UNION, MYF(0), number);
         return true;
       }
@@ -4517,8 +4533,9 @@ bool setup_order(THD *thd, Ref_item_array ref_item_array, TABLE_LIST *tables,
         return true;
       }
     }
-    if (for_union && (*order->item)->has_wf()) {
-      // Window function in ORDER BY of UNION not supported, SQL2014 4.16.3
+    if (for_set_operation && (*order->item)->has_wf()) {
+      // Window function in ORDER BY of set operation not supported,
+      // SQL2014 4.16.3
       my_error(ER_AGGREGATE_ORDER_FOR_UNION, MYF(0), number);
       return true;
     }
@@ -4579,12 +4596,15 @@ bool Query_block::setup_order_final(THD *thd) {
     return false;
   }
 
-  if ((master_query_expression()->is_union() ||
-       master_query_expression()->fake_query_block) &&
-      this != master_query_expression()->fake_query_block && !has_limit()) {
-    // Part of UNION which requires global ordering may skip local order
-    empty_order_list(this);
-    return false;
+  if (!master_query_expression()->is_simple()) {
+    std::pair<bool, bool> result =
+        master_query_expression()->query_term()->redundant_order_by(this, 0);
+    assert(result.first);  // that we found the block
+    if (result.second) {
+      // Part of set operation which requires global ordering may skip local
+      // order
+      empty_order_list(this);
+    }
   }
 
   for (ORDER *ord = order_list.first; ord; ord = ord->next) {
@@ -5252,7 +5272,7 @@ void Query_block::delete_unused_merged_columns(
 /**
   Add item to the hidden part of select list.
 
-  @param item  item to add
+  @param item  the item to add
 
   @return Pointer to reference to the added item
 */
@@ -5320,6 +5340,16 @@ bool Query_block::resolve_table_value_constructor_values(THD *thd) {
       if (item->type() == Item::DEFAULT_VALUE_ITEM) {
         my_error(ER_TABLE_VALUE_CONSTRUCTOR_CANNOT_HAVE_DEFAULT, MYF(0));
         return true;
+      }
+
+      /*
+        In case this item is or contains a parameter, propagate a default
+        data type for the expression. Note that there is no context available
+        here that can give us a good default value (like what is done when
+        a VALUES clause is used directly with an INSERT statement).
+      */
+      if (item->data_type() == MYSQL_TYPE_INVALID) {
+        if (item->propagate_type(thd, item->default_data_type())) return true;
       }
 
       if (row_index == 0) {
@@ -6533,7 +6563,11 @@ bool Query_block::replace_subquery_in_expr(THD *thd, Item::Css_info *subquery,
   if (!(*expr)->has_subquery()) return false;
 
   Item_singlerow_subselect::Scalar_subquery_replacement info(
-      subquery->item, *tr->table->field, this, subquery->m_add_coalesce);
+      subquery->item,
+      // make sure to not replace with one of the hidden fields, if present,
+      // e.g. for INTERSECT:
+      tr->table->field[tr->table->hidden_field_count], this,
+      subquery->m_add_coalesce);
 
   // ROLLUP wrappers might have been added to the expression at this point. Take
   // care to transform the inner item and keep the rollup wrappers as is.
@@ -7094,7 +7128,7 @@ bool Query_block::transform_subquery_to_derived(
   Lifted_fields_map lifted_where_fields;
   bool added_cardinality_check = false;
   if (lifted_where_cond != nullptr) {
-    assert(!subs_query_expression->is_union());
+    assert(!subs_query_expression->is_set_operation());
     if (subs_query_expression->first_query_block()
             ->decorrelate_derived_scalar_subquery_pre(
                 thd, tl, lifted_where_cond, &lifted_where_fields,
@@ -7238,6 +7272,7 @@ static bool extract_correlated_condition(THD *thd, Item **cond,
   large cartesian products in the subquery.
 
   @param        thd           session context
+  @param        subquery      the subquery under consideration
   @param[out]   lifted_where  set of predicates lifted out of WHERE
   @returns true for error else false
  */
@@ -7620,8 +7655,8 @@ bool Query_block::transform_scalar_subqueries_to_join_with_derived(THD *thd) {
     Item *lifted_where = nullptr;
     if (subquery.m_correlation_map != 0) {
       // We have a correlated subquery. Check if we can handle it or not (only
-      // applicable for subqueries without unions)
-      if (!subs_query_expression->is_union()) {
+      // applicable for subqueries without set operations)
+      if (!subs_query_expression->is_set_operation()) {
         if (subs_query_expression->first_query_block()
                 ->supported_correlated_scalar_subquery(thd, &subquery,
                                                        &lifted_where))
