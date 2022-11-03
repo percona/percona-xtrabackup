@@ -229,6 +229,7 @@ install_deps() {
     CURPLACE=$(pwd)
     if [ "$OS" == "rpm" ]
     then
+        yum -y install git wget
         yum install -y https://repo.percona.com/yum/percona-release-latest.noarch.rpm
         if [ $RHEL = 9 ]; then
             yum -y install yum-utils
@@ -237,10 +238,11 @@ install_deps() {
             yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
         else
             add_percona_yum_repo
-            add_raven_yum_repo ${RHEL}
+            wget https://jenkins.percona.com/downloads/rpm/procps-ng-devel-3.3.15-6.el8.x86_64.rpm
+            yum -y install ./procps-ng-devel-3.3.15-6.el8.x86_64.rpm
+            rm procps-ng-devel-3.3.15-6.el8.x86_64.rpm
         fi
         percona-release enable tools testing
-        yum -y install git wget 
         if [ ${RHEL} = 8 -o ${RHEL} = 9 ]; then
             PKGLIST+=" binutils-devel python3-pip python3-setuptools"
             PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make gcc"
