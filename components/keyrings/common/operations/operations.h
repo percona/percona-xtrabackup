@@ -631,12 +631,8 @@ class Keyring_operations {
   */
   bool generate(const meta::Metadata &metadata, const data::Type type,
                 size_t length) {
-<<<<<<< HEAD
-    Data_extension generated_data(keyring_common::data::Data{"", type});
-=======
->>>>>>> mysql-8.0.31
     if (!metadata.valid()) return true;
-    data::Data g_data(type);
+    data::Data g_data(keyring_common::data::Data{"", type});
     Data_extension generated_data(g_data);
     if (cache_.get(metadata, generated_data)) return true;
     if ((*backend_).generate(metadata, generated_data, length)) return true;

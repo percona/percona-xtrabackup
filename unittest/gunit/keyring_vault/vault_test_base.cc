@@ -38,7 +38,7 @@
     return;
   }
 
-  system_charset_info = &my_charset_utf8_general_ci;
+  system_charset_info = &my_charset_utf8mb3_general_ci;
 
   ASSERT_FALSE(generate_credential_file(
       get_vault_env()->get_default_conf_file_name(),
