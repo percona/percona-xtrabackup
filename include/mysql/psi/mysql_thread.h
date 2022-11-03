@@ -1320,14 +1320,14 @@ static inline void inline_mysql_thread_set_psi_THD(THD *thd)
 }
 #endif /* __cplusplus */
 
+#endif /* HAVE_PSI_THREAD_INTERFACE */
+
 static inline void mysql_thread_set_peer_port(uint port MY_ATTRIBUTE ((unused))) {
 #ifdef HAVE_PSI_THREAD_INTERFACE
   struct PSI_thread *psi = PSI_THREAD_CALL(get_thread)();
   PSI_THREAD_CALL(set_thread_peer_port)(psi, port);
 #endif
 }
-
-#endif
 
 #endif /* DISABLE_MYSQL_THREAD_H */
 
