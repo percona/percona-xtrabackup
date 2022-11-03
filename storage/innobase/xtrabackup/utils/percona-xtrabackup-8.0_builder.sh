@@ -229,27 +229,29 @@ install_deps() {
     CURPLACE=$(pwd)
     if [ "$OS" == "rpm" ]
     then
+        yum -y install git wget yum-utils
         yum install -y https://repo.percona.com/yum/percona-release-latest.noarch.rpm
         if [ $RHEL = 9 ]; then
-            yum -y install yum-utils
             yum-config-manager --enable ol9_distro_builder
             yum-config-manager --enable ol9_codeready_builder
             yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
         else
             add_percona_yum_repo
-            add_raven_yum_repo ${RHEL}
         fi
         percona-release enable tools testing
-        yum -y install git wget 
         if [ ${RHEL} = 8 -o ${RHEL} = 9 ]; then
             PKGLIST+=" binutils-devel python3-pip python3-setuptools"
             PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make gcc"
             PKGLIST+=" rpm-build libgcrypt-devel ncurses-devel readline-devel openssl-devel gcc-c++"
-            PKGLIST+=" vim-common rpmlint patchelf python3-sphinx python3-wheel procps-ng-devel"
+            PKGLIST+=" vim-common rpmlint patchelf python3-sphinx python3-wheel"
             if [ $RHEL = 9 ]; then
-                PKGLIST+=" rsync"
+                PKGLIST+=" rsync procps-ng-devel"
+            else
+                yum-config-manager --enable powertools
+                wget https://jenkins.percona.com/downloads/rpm/procps-ng-devel-3.3.15-6.el8.x86_64.rpm
+                yum -y install ./procps-ng-devel-3.3.15-6.el8.x86_64.rpm
+                rm procps-ng-devel-3.3.15-6.el8.x86_64.rpm
             fi
-            dnf config-manager --set-enabled powertools
             until yum -y install ${PKGLIST}; do
                 echo "waiting"
                 sleep 1
