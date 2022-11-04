@@ -803,6 +803,11 @@ IF(WITHOUT_SERVER)
   MESSAGE(FATAL_ERROR "This branch does not support -DWITHOUT_SERVER=ON configuration.")
 ENDIF()
 
+IF(WITH_XTRABACKUP)
+  SET(WITH_NDB 0)
+  SET(WITH_NDBCLUSTER_STORAGE_ENGINE 0)
+ENDIF()
+
 # Add macros
 INCLUDE(add_custom_target)
 INCLUDE(pkg-config)
