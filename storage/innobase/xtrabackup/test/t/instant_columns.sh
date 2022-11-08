@@ -1,6 +1,5 @@
 require_debug_server
-require_server_version_higher_than 8.0.28
-is_server_version_higher_than 8.0.29 && die "This test should be modified after 8.0.30"
+require_server_version_higher_than 8.0.30
 # run instant tests.
 # pass 1 as first parameter if we are expected to abort the backup
 function run_instant_test()
@@ -113,9 +112,4 @@ echo "DROP TABLE t1" | $MYSQL $MYSQL_ARGS -Ns test
 }
 
 vlog "XTRADB: ${XTRADB_VERSION}"
-if is_xtradb;
-then
-  run_instant_test 0
-else
-  run_instant_test 1
-fi
+run_instant_test 0
