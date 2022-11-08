@@ -311,6 +311,7 @@ function start_server_with_id()
     fi
     local attempts=0
     local max_attempts=5
+    local new_instance=no
 
     vlog "Starting server with id=$id..."
 
@@ -368,8 +369,6 @@ user=root
 ${XB_EXTRA_MY_CNF_OPTS:-}
 EOF
 
-        local new_instance
-
         # Create datadir and call mysql_install_db if it doesn't exist
         if [ ! -d "$MYSQLD_DATADIR" ]
         then
@@ -382,8 +381,6 @@ EOF
                 vlog "Skiping mysql_install_db of node $id for SST"
             fi
             new_instance=yes
-        else
-            new_instance=no
         fi
 
         # Start the server
