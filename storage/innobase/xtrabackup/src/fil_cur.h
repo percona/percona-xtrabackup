@@ -26,6 +26,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #define FIL_CUR_H
 
 #include <my_dir.h>
+#include "file_utils.h"
 #include "read_filt.h"
 
 struct xb_fil_cur_t {
@@ -80,12 +81,6 @@ struct xb_fil_cur_t {
   /*!< encryption iv */
 };
 
-typedef enum {
-  XB_FIL_CUR_SUCCESS,
-  XB_FIL_CUR_SKIP,
-  XB_FIL_CUR_ERROR,
-  XB_FIL_CUR_EOF
-} xb_fil_cur_result_t;
 
 /************************************************************************
 Open a source file cursor and initialize the associated read filter.

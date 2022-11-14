@@ -18,9 +18,13 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #ifndef FILE_UTILS_H
 #define FILE_UTILS_H
+#include <my_dir.h>
+#include <my_io.h>
+#include <cstring>
+#include <string>
+#include "datasink.h"
 
-#include "my_inttypes.h"
-
+typedef unsigned char byte;
 /** Return a safer suffix of file_name, or "." if it has no safer
 suffix. Check for fully specified file names and other atrocities.
 Warn the user if we do not return file_name.
@@ -35,4 +39,97 @@ bool is_path_separator(char c);
 
 int mkdirp(const char *pathname, int Flags, myf MyFlags);
 
+/**
+  Gets relative path from a file.
+
+  @param [in]     file       path to file
+
+  @return relative path
+*/
+const char *get_relative_path(const char *path);
+
+/** Check if the file has the specified suffix
+@param[in]    sfx             suffix to look for
+@param[in]    path            Filename to check
+@return true if it has the ".ibd" suffix. */
+bool file_has_suffix(const std::string &sfx, const std::string &path);
+
+/** Check if the file has compression suffix
+@param[in]    path            Filename to check
+@return true if it has the any compression suffix. */
+bool is_compressed_suffix(const std::string &path);
+
+/** Check if the file has encryption suffix
+@param[in]    path            Filename to check
+@return true if it has the  encryption suffix. */
+bool is_encrypted_suffix(const std::string &path);
+
+/** Check if the file has encryption & compression suffix
+@param[in]    path            Filename to check
+@return true if it has the encryption & compression suffix. */
+bool is_encrypted_and_compressed_suffix(const std::string &path);
+
+/** Check if the file has qpress encryption
+@param[in]    path            Filename to check
+@return true if it has qpress encryption suffix. */
+bool is_qpress_file(const std::string &path);
+
+/* Holds the state of a data file read result */
+typedef enum {
+  XB_FIL_CUR_SUCCESS,
+  XB_FIL_CUR_SKIP,
+  XB_FIL_CUR_ERROR,
+  XB_FIL_CUR_EOF
+} xb_fil_cur_result_t;
+
+/* Holds the state needed to copy single data file. */
+struct datafile_cur_t {
+  File fd;
+  char rel_path[FN_REFLEN];
+  char abs_path[FN_REFLEN];
+  MY_STAT statinfo;
+  uint thread_n;
+  byte *orig_buf;
+  byte *buf;
+  uint64_t buf_size;
+  uint64_t buf_read;
+  uint64_t buf_offset;
+};
+
+/**
+  Opens a data file.
+
+  @param [in]     file        path to file
+  @param [in/out] cursor      cursor containing file metadata.
+  @param [in]     read_only   open the file for read only
+  @param [in]     buffer_size size of read buffer
+
+  @return false in case of error, true otherwise
+*/
+bool datafile_open(const char *file, datafile_cur_t *cursor, bool read_only,
+                   uint buffer_size);
+
+/** Closes file description from datafile_cur_t. */
+void datafile_close(datafile_cur_t *cursor);
+
+/**
+  Reads file content into cursor->buf.
+
+  @param [in/out] cursor     cursor containing file metadata.
+
+  @return false in case of error, true otherwise
+*/
+xb_fil_cur_result_t datafile_read(datafile_cur_t *cursor);
+
+/**
+  Restore sparseness of a file.
+
+  @param [in]       file          path to file
+  @param [in]       buffer_size   size of read buffer
+  @param [in/out]   error         error message in case of error
+
+  @return false in case of error, true otherwise
+*/
+bool restore_sparseness(const char *src_file_path, uint buffer_size,
+                        char error[512]);
 #endif

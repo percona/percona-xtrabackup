@@ -516,6 +516,30 @@ static void *extract_worker_thread_func(void *arg) {
       ctxt->filehash.erase(entry->path);
       file_entry_free(entry);
       pthread_mutex_unlock(ctxt->mutex);
+      /*
+       * no need for mutex here. At this point, we are guarantee that all other
+       * threads have completed its work with this file
+       */
+      if (opt_decompress && ctxt->ds_ctxt->fs_support_punch_hole &&
+          (is_compressed_suffix(chunk.path) ||
+           is_encrypted_and_compressed_suffix(chunk.path))) {
+        char path[FN_REFLEN] = {0};
+        memcpy(path, chunk.path, strlen(chunk.path));
+        unsigned short int qpress_offset = is_qpress_file(path) ? 1 : 0;
+
+        if (is_compressed_suffix(path))
+          path[strlen(path) - 4 + qpress_offset] = 0;
+        if (is_encrypted_and_compressed_suffix(path))
+          path[strlen(path) - 12 + qpress_offset] = 0;
+
+        char error[512];
+        if (!restore_sparseness(path, XBSTREAM_BUFFER_SIZE, error)) {
+          msg("%s: restore_sparseness failed for file %s: %s\n", my_progname,
+              chunk.path, error);
+          res = XB_STREAM_READ_ERROR;
+          break;
+        }
+      }
 
       continue;
     }
