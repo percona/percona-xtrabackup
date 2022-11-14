@@ -157,10 +157,12 @@ main () {
                     url="https://jenkins.percona.com/downloads/ps-5.7.34-debug/"
                 fi
             fi
-            if [[ ${short_version} -lt "31" ]]; then
-                tarball="Percona-Server-${VERSION}-Linux.${arch}.ssl$(ssl_version).tar.gz"
+            if [[ ${short_version} -gt "36" ]]; then
+                tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc2.17${SUFFIX}.tar.gz"
             elif [[ ${short_version} -ge "31" ]]; then
                 tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc2.12${SUFFIX}.tar.gz"
+            elif [[ ${short_version} -lt "31" ]]; then
+                tarball="Percona-Server-${VERSION}-Linux.${arch}.ssl$(ssl_version).tar.gz"
             fi
             ;;
         *)
