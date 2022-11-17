@@ -55,14 +55,10 @@ xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only \
     --target-dir=$FULL_DIR $mysqld_additional_args
 vlog "Log applied to backup"
 
-xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only \
+xtrabackup --datadir=$mysql_datadir --prepare \
     --target-dir=$FULL_DIR --incremental-dir=$DELTA_DIR \
     $mysqld_additional_args
-vlog "Delta applied to backup"
-
-xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$FULL_DIR \
-    $mysqld_additional_args
-vlog "Data prepared for restore"
+vlog "Full Applied Delta applied to backup"
 
 # removing rows
 ${MYSQL} ${MYSQL_ARGS} -e "delete from t2;" incremental_sample

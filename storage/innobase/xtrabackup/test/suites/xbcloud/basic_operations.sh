@@ -47,11 +47,9 @@ run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf get \
         ${inc_backup_name} | \
     xbstream -xv -C $topdir/downloaded_inc
 
-xtrabackup --prepare --apply-log-only \
+xtrabackup --prepare \
 	   --target-dir=$topdir/downloaded_full \
 	   --incremental-dir=$topdir/downloaded_inc
-
-xtrabackup --prepare --target-dir=$topdir/downloaded_full
 
 # test partial download
 

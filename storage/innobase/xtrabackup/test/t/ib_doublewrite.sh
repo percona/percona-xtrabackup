@@ -80,13 +80,8 @@ vlog "Log applied to full backup"
 vlog "##############"
 vlog "# PREPARE #2 #"
 vlog "##############"
-xtrabackup_no_defaults_file --prepare --apply-log-only --incremental-dir=$inc_backup_dir \
+xtrabackup_no_defaults_file --prepare --incremental-dir=$inc_backup_dir \
     --target-dir=$full_backup_dir
-vlog "Delta applied to full backup"
-vlog "##############"
-vlog "# PREPARE #3 #"
-vlog "##############"
-xtrabackup_no_defaults_file --prepare --target-dir=$full_backup_dir
 vlog "Data prepared for restore"
 
 # Destroying mysql data

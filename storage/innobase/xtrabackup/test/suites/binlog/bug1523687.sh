@@ -16,10 +16,8 @@ xtrabackup --backup --incremental-basedir=$topdir/full --target-dir=$topdir/inc
 
 xtrabackup --prepare --apply-log-only --target-dir=$topdir/full
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full \
+xtrabackup --prepare --target-dir=$topdir/full \
 				      --incremental-dir=$topdir/inc
-
-xtrabackup --prepare --target-dir=$topdir/full
 
 # verify that following files overwritten in full backup directory with the
 # corresponding files from incremental directory

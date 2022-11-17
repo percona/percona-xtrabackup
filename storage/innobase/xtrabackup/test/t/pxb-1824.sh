@@ -62,9 +62,8 @@ stop_server
 xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
 xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc \
 	   --target-dir=$topdir/backup
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc1 \
+xtrabackup --prepare --incremental-dir=$topdir/inc1 \
 	   --target-dir=$topdir/backup
-xtrabackup --prepare --target-dir=$topdir/backup
 
 lsn1=$(grep -q flushed_lsn $topdir/backup/xtrabackup_checkpoints)
 lsn2=$(grep -q flushed_lsn $topdir/inc1/xtrabackup_checkpoints)

@@ -50,9 +50,8 @@ rm -r $mysql_datadir
 
 vlog "Applying log"
 xtrabackup --prepare --apply-log-only --target-dir=$topdir/full_backup
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc_backup \
+xtrabackup --prepare --incremental-dir=$topdir/inc_backup \
     --target-dir=$topdir/full_backup
-xtrabackup --prepare --target-dir=$topdir/full_backup
 
 vlog "Restoring MySQL datadir"
 mkdir -p $mysql_datadir

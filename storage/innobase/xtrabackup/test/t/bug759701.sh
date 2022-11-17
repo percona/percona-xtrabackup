@@ -36,12 +36,9 @@ vlog "Preparing backup"
 xtrabackup --prepare --apply-log-only --target-dir=$full_backup_dir
 vlog "Log applied to full backup"
 
-xtrabackup --prepare --apply-log-only --incremental-dir=$inc_backup_dir \
+xtrabackup --prepare --incremental-dir=$inc_backup_dir \
     --target-dir=$full_backup_dir
-vlog "Delta applied to full backup"
-
-xtrabackup --prepare --target-dir=$full_backup_dir
-vlog "Data prepared for restore"
+vlog "Last Delta applied to full backup"
 
 # Destroying mysql data
 stop_server

@@ -26,12 +26,8 @@ vlog "Preparing full backup"
 xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup/full
 
 # The following would fail before the bugfix
-vlog "Applying incremental delta"
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/backup/delta --target-dir=$topdir/backup/full
-
-vlog "Preparing full backup"
-xtrabackup --prepare --target-dir=$topdir/backup/full
-vlog "Data prepared for restore"
+vlog "apply final incremental"
+xtrabackup --prepare --incremental-dir=$topdir/backup/delta --target-dir=$topdir/backup/full
 
 stop_server
 rm -r $mysql_datadir/*

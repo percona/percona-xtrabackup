@@ -61,12 +61,9 @@ vlog "Preparing backup"
 xtrabackup --prepare --apply-log-only --target-dir=$topdir/full
 vlog "Log applied to full backup"
 
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc \
+xtrabackup --prepare --incremental-dir=$topdir/inc \
     --target-dir=$topdir/full
 vlog "Delta applied to full backup"
-
-xtrabackup --prepare --target-dir=$topdir/full
-vlog "Data prepared for restore"
 
 ls -al $topdir/full/test/*
 

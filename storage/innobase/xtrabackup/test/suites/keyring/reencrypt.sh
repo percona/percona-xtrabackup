@@ -72,12 +72,8 @@ ${XB_BIN} --prepare --apply-log-only --incremental-dir=$topdir/inc1 \
 	  --keyring-file-data=$keyring_file_plugin \
 	  --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
-${XB_BIN} --prepare --apply-log-only --incremental-dir=$topdir/inc2 \
+${XB_BIN} --prepare --incremental-dir=$topdir/inc2 \
 	  --target-dir=$topdir/backup \
-	  --keyring-file-data=$keyring_file_plugin \
-	  --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
-
-${XB_BIN} --prepare --target-dir=$topdir/backup \
 	  --keyring-file-data=$keyring_file_plugin \
 	  --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 

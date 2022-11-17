@@ -143,12 +143,9 @@ incremental_sample`
       --apply-log-only --target-dir=$topdir/full
   vlog "Log applied to backup"
   xtrabackup --datadir=$mysql_datadir --prepare \
-      --apply-log-only --target-dir=$topdir/full \
+      --target-dir=$topdir/full \
       --incremental-dir=$topdir/delta
-  vlog "Delta applied to backup"
-  xtrabackup --datadir=$mysql_datadir --prepare \
-      --target-dir=$topdir/full
-  vlog "Data prepared for restore"
+  vlog "Prepared and Delta applied to backup"
 
   # removing rows
   ${MYSQL} ${MYSQL_ARGS} -e "delete from test;" incremental_sample

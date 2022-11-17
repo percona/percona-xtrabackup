@@ -64,12 +64,9 @@ function test_bug_1028949()
       --target-dir=$FULL_DIR
   vlog "Log applied to backup"
 
-  xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only \
+  xtrabackup --datadir=$mysql_datadir --prepare  \
       --target-dir=$FULL_DIR --incremental-dir=$DELTA_DIR
-  vlog "Delta applied to backup"
-
-  xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$FULL_DIR
-  vlog "Data prepared for restore"
+  vlog "Prepared with Delta applied to backup"
 
   # removing rows
   for i in $PAGE_SIZES;

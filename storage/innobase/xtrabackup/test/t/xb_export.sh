@@ -213,9 +213,6 @@ mkdir -p $topdir/backup/full
 
 xtrabackup --datadir=$mysql_datadir --backup --target-dir=$topdir/backup/full
 
-xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only \
-    --target-dir=$topdir/backup/full
-
 xtrabackup --datadir=$mysql_datadir --prepare \
     --target-dir=$topdir/backup/full
 

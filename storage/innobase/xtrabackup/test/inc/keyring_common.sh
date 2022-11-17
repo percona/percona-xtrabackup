@@ -99,7 +99,7 @@ EOF
   xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc1 \
        --target-dir=$topdir/backup $prepare_options
 
-  xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc2 \
+  xtrabackup --prepare --incremental-dir=$topdir/inc2 \
        --target-dir=$topdir/backup $prepare_options
 
   xtrabackup --prepare --export --target-dir=$topdir/backup \

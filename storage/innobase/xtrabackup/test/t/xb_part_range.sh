@@ -78,12 +78,8 @@ vlog "Preparing backup"
 xtrabackup --no-defaults --datadir=$mysql_datadir --prepare --apply-log-only \
     --target-dir=$topdir/backup/full
 vlog "Log applied to backup"
-xtrabackup --no-defaults --datadir=$mysql_datadir --prepare --apply-log-only \
-    --target-dir=$topdir/backup/full --incremental-dir=$topdir/backup/delta
-vlog "Delta applied to backup"
 xtrabackup --no-defaults --datadir=$mysql_datadir --prepare \
-    --target-dir=$topdir/backup/full
-vlog "Data prepared for restore"
+    --target-dir=$topdir/backup/full --incremental-dir=$topdir/backup/delta
 
 # removing rows
 vlog "Table cleared"
