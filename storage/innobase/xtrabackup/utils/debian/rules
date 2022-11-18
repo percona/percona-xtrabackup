@@ -37,6 +37,9 @@ endif
 override_dh_auto_build:
 	make -j$(NCPU)
 
+override_dh_builddeb:
+	dh_builddeb -- -Zgzip
+
 override_dh_install:
 	dh_install
 	mkdir -p debian/percona-xtrabackup-80/usr/lib/private/
