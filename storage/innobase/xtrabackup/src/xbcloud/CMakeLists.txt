@@ -49,6 +49,7 @@ MYSQL_ADD_EXECUTABLE(xbcloud
   http.cc
   azure.cc
   s3.cc
+  s3_ec2.cc
   ../xbcrypt_common.cc
   swift.cc)
 
