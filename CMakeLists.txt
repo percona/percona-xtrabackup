@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2021, Oracle and/or its affiliates.
+# Copyright (c) 2006, 2022, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -355,6 +355,38 @@ MACRO (MY_CHECK_CXX_COMPILER_FLAG FLAG RESULT)
   SET(CMAKE_REQUIRED_FLAGS "${SAVE_CMAKE_REQUIRED_FLAGS}")
 ENDMACRO()
 
+# Check whether a specific warning option is supported.
+# Intended use is primarily to silence warnings from third-party code.
+# If *our* code has warnings with gcc[56789] or clang[345678] the
+# code should be fixed, rather than silencing the compiler warnings.
+#
+# Returns the corresponding "-Wno-<option>" if supported, 0 otherwise.
+# WARNING_OPTION should be as found in clang/gcc documentation.
+# Note: Sun Studio accepts/ignores anything starting with "-W".
+#       Visual Studio has a few /W options, but are totally different.
+# Hence we check for gcc/clang only.
+# No return value for functions in cmake, so we use an output argument.
+FUNCTION(MY_CHECK_CXX_COMPILER_WARNING WARNING_OPTION RETURN_VALUE)
+  # Strip off possible leading -Wno- or -W
+  STRING(REGEX REPLACE "^-Wno-" "" WARNING_OPTION ${WARNING_OPTION})
+  STRING(REGEX REPLACE "^-W" "" WARNING_OPTION ${WARNING_OPTION})
+  # Use HAVE_CXX_W_warning_option as cache variable.
+  STRING(REPLACE "-" "_" VAR_NAME ${WARNING_OPTION})
+  STRING(REPLACE "=" "_" VAR_NAME ${VAR_NAME})
+  STRING(REPLACE "c++" "cpp" VAR_NAME ${VAR_NAME})
+  SET(VAR_NAME "HAVE_CXX_W_${VAR_NAME}")
+  IF(MY_COMPILER_IS_GNU_OR_CLANG)
+    MY_CHECK_CXX_COMPILER_FLAG("-W${WARNING_OPTION}" ${VAR_NAME})
+  ELSE()
+    SET(${VAR_NAME} 0 CACHE INTERNAL "-W${WARNING_OPTION} not supported")
+  ENDIF()
+  IF(${VAR_NAME})
+    SET(${RETURN_VALUE} "-Wno-${WARNING_OPTION}" PARENT_SCOPE)
+  ELSE()
+    SET(${RETURN_VALUE} 0 PARENT_SCOPE)
+  ENDIF()
+ENDFUNCTION()
+
 MACRO(MY_SANITIZER_CHECK SAN_OPT RESULT)
   MY_CHECK_C_COMPILER_FLAG("${SAN_OPT}" C_RESULT)
   MY_CHECK_CXX_COMPILER_FLAG("${SAN_OPT}" CXX_RESULT)
@@ -564,6 +596,15 @@ ENDIF()
 # Run platform tests
 INCLUDE(configure.cmake)
 
+IF(APPLE)
+  # Homebrew default location is
+  IF(APPLE_ARM)
+    SET(HOMEBREW_HOME "/opt/homebrew/opt")
+  ELSE()
+    SET(HOMEBREW_HOME "/usr/local/opt")
+  ENDIF()
+ENDIF()
+
 # Common defines and includes
 ADD_DEFINITIONS(-DHAVE_CONFIG_H)
 INCLUDE_DIRECTORIES(
@@ -572,13 +613,7 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_CURRENT_BINARY_DIR}/libbinlogevents/include
   ${CMAKE_SOURCE_DIR}/libbinlogevents/export)
 # Add bundled or system zlib.
-MYSQL_CHECK_ZLIB_WITH_COMPRESS()
-IF(BUILD_BUNDLED_ZLIB)
-  INCLUDE_DIRECTORIES(SYSTEM
-    ${CMAKE_CURRENT_SOURCE_DIR}/zlib
-    ${CMAKE_CURRENT_BINARY_DIR}/zlib
-    )
-ENDIF()
+MYSQL_CHECK_ZLIB()
 # Add openssl.
 MYSQL_CHECK_SSL()
 # Add system/bundled editline.

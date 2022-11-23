@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -132,7 +132,6 @@ using std::max;
    (LP)->sql_command == SQLCOM_DROP_FUNCTION ? \
    "FUNCTION" : "PROCEDURE")
 
-static bool execute_sqlcom_select(THD *thd, TABLE_LIST *all_tables);
 static void sql_kill(THD *thd, my_thread_id id, bool only_kill_query);
 
 const LEX_STRING command_name[]={
@@ -1488,6 +1487,8 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
     if (parser_state.init(thd, thd->query().str, thd->query().length))
       break;
 
+    parser_state.m_input.m_has_digest = true;
+
     mysql_parse(thd, &parser_state);
 
     while (!thd->killed && (parser_state.m_lip.found_semicolon != NULL) &&
@@ -1935,6 +1936,7 @@ done:
   thd->proc_info= 0;
   thd->lex->sql_command= SQLCOM_END;
 
+  DEBUG_SYNC(thd, "processlist_wait");
   /* Performance Schema Interface instrumentation, end */
   MYSQL_END_STATEMENT(thd->m_statement_psi, thd->get_stmt_da());
   thd->m_statement_psi= NULL;
@@ -3572,9 +3574,8 @@ end_with_restore_list:
         */
         DBUG_PRINT("debug", ("first_table->grant.privilege: %lx",
                              first_table->grant.privilege));
-        if (check_some_access(thd, SHOW_CREATE_TABLE_ACLS, first_table) ||
-            (first_table->grant.privilege & SHOW_CREATE_TABLE_ACLS) == 0)
-        {
+        if (check_some_access(thd, TABLE_OP_ACLS, first_table) ||
+            (first_table->grant.privilege & TABLE_OP_ACLS) == 0) {
           my_error(ER_TABLEACCESS_DENIED_ERROR, MYF(0),
                    "SHOW", thd->security_context()->priv_user().str,
                    thd->security_context()->host_or_ip().str,
@@ -3638,17 +3639,6 @@ end_with_restore_list:
     }
   }
   break;
-  case SQLCOM_SHOW_PROCESSLIST:
-    if (!thd->security_context()->priv_user().str[0] &&
-        check_global_access(thd,PROCESS_ACL))
-      break;
-    mysqld_list_processes(
-      thd,
-      (thd->security_context()->check_access(PROCESS_ACL) ?
-         NullS :
-        thd->security_context()->priv_user().str),
-      lex->verbose);
-    break;
   case SQLCOM_SHOW_PRIVILEGES:
     res= mysqld_show_privileges(thd);
     break;
@@ -4061,9 +4051,9 @@ end_with_restore_list:
       if (lex->type == TYPE_ENUM_PROCEDURE ||
           lex->type == TYPE_ENUM_FUNCTION)
       {
-        uint grants= lex->all_privileges 
-		   ? (PROC_ACLS & ~GRANT_ACL) | (lex->grant & GRANT_ACL)
-		   : lex->grant;
+        uint grants = lex->all_privileges
+                          ? (PROC_OP_ACLS) | (lex->grant & GRANT_ACL)
+                          : lex->grant;
         if (check_grant_routine(thd, grants | GRANT_ACL, all_tables,
                                 lex->type == TYPE_ENUM_PROCEDURE, 0))
 	  goto error;
@@ -4843,6 +4833,7 @@ end_with_restore_list:
   case SQLCOM_UNINSTALL_PLUGIN:
   case SQLCOM_SHUTDOWN:
   case SQLCOM_ALTER_INSTANCE:
+  case SQLCOM_SHOW_PROCESSLIST:
     assert(lex->m_sql_cmd != NULL);
     res= lex->m_sql_cmd->execute(thd);
     break;
@@ -4879,6 +4870,7 @@ end_with_restore_list:
       user->alter_status= thd->lex->alter_password;
 
       if (user->uses_identified_by_clause &&
+          !user->uses_identified_with_clause &&
           !thd->lex->mqh.specified_limits &&
           !user->alter_status.update_account_locked_column &&
           !user->alter_status.update_password_expired_column &&
@@ -5115,7 +5107,7 @@ finish:
   DBUG_RETURN(res || thd->is_error());
 }
 
-static bool execute_sqlcom_select(THD *thd, TABLE_LIST *all_tables)
+bool execute_sqlcom_select(THD *thd, TABLE_LIST *all_tables)
 {
   LEX	*lex= thd->lex;
   bool statement_timer_armed= false;
@@ -7054,6 +7046,7 @@ extern int MYSQLparse(class THD *thd); // from sql_yacc.cc
       ... handle error
     }
 
+    parser_state.m_input.m_has_digest= true;
     parser_state.m_input.m_compute_digest= true;
     
     rc= parse_sql(the, &parser_state, ctx);
@@ -7103,22 +7096,32 @@ bool parse_sql(THD *thd,
   parser_state->m_digest_psi= NULL;
   parser_state->m_lip.m_digest= NULL;
 
-  if (thd->m_digest != NULL)
-  {
-    /* Start Digest */
-    parser_state->m_digest_psi= MYSQL_DIGEST_START(thd->m_statement_psi);
-
-    if (parser_state->m_input.m_compute_digest ||
-       (parser_state->m_digest_psi != NULL))
+  /*
+    Only consider statements that are supposed to have a digest,
+    like top level queries.
+  */
+  if (parser_state->m_input.m_has_digest) {
+    /*
+      For these statements,
+      see if the digest computation is required.
+    */
+    if (thd->m_digest != NULL)
     {
-      /*
-        If either:
-        - the caller wants to compute a digest
-        - the performance schema wants to compute a digest
-        set the digest listener in the lexer.
-      */
-      parser_state->m_lip.m_digest= thd->m_digest;
-      parser_state->m_lip.m_digest->m_digest_storage.m_charset_number= thd->charset()->number;
+      /* Start Digest */
+      parser_state->m_digest_psi= MYSQL_DIGEST_START(thd->m_statement_psi);
+
+      if (parser_state->m_input.m_compute_digest ||
+         (parser_state->m_digest_psi != NULL))
+      {
+        /*
+          If either:
+          - the caller wants to compute a digest
+          - the performance schema wants to compute a digest
+          set the digest listener in the lexer.
+        */
+        parser_state->m_lip.m_digest= thd->m_digest;
+        parser_state->m_lip.m_digest->m_digest_storage.m_charset_number= thd->charset()->number;
+      }
     }
   }
 

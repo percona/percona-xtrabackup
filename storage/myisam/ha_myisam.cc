@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -83,12 +83,6 @@ static MYSQL_SYSVAR_SET(recover_options, myisam_recover_options,
   "Syntax: myisam-recover-options[=option[,option...]], where option can be "
   "DEFAULT, BACKUP, FORCE, QUICK, or OFF",
   NULL, NULL, 0, &myisam_recover_typelib);
-
-static MYSQL_THDVAR_ULONG(repair_threads, PLUGIN_VAR_RQCMDARG,
-  "If larger than 1, when repairing a MyISAM table all indexes will be "
-  "created in parallel, with one thread per index. The value of 1 "
-  "disables parallel repair", NULL, NULL,
-  1, 1, ULONG_MAX, 1);
 
 static MYSQL_THDVAR_ULONGLONG(sort_buffer_size, PLUGIN_VAR_RQCMDARG,
   "The buffer that is allocated when sorting the index when doing "
@@ -178,13 +172,7 @@ static void mi_check_print_msg(MI_CHECK *param,	const char* msg_type,
     TODO: switch from protocol to push_warning here. The main reason we didn't
     it yet is parallel repair. Due to following trace:
     mi_check_print_msg/push_warning/sql_alloc/my_pthread_getspecific_ptr.
-
-    Also we likely need to lock mutex here (in both cases with protocol and
-    push_warning).
   */
-  if (param->need_print_msg_lock)
-    mysql_mutex_lock(&param->print_msg_mutex);
-
   protocol->start_row();
   protocol->store(name, length, system_charset_info);
   protocol->store(param->op_name, system_charset_info);
@@ -193,9 +181,6 @@ static void mi_check_print_msg(MI_CHECK *param,	const char* msg_type,
   if (protocol->end_row())
     sql_print_error("Failed on my_net_write, writing to stderr instead: %s\n",
 		    msgbuf);
-
-  if (param->need_print_msg_lock)
-    mysql_mutex_unlock(&param->print_msg_mutex);
 
   return;
 }
@@ -1146,31 +1131,13 @@ int ha_myisam::repair(THD *thd, MI_CHECK &param, bool do_optimize)
       local_testflag|= T_STATISTICS;
       param.testflag|= T_STATISTICS;		// We get this for free
       statistics_done=1;
-      if (THDVAR(thd, repair_threads)>1)
-      {
-        char buf[40];
-        /* TODO: respect myisam_repair_threads variable */
-        my_snprintf(buf, 40, "Repair with %d threads", my_count_bits(key_map));
-        thd_proc_info(thd, buf);
-        /*
-          The new file is created with the right stats, so we can skip
-          copying file stats from old to new.
-        */
-        error = mi_repair_parallel(&param, file, fixed_name,
-                                   param.testflag & T_QUICK, TRUE);
-        thd_proc_info(thd, "Repair done"); // to reset proc_info, as
-                                      // it was pointing to local buffer
-      }
-      else
-      {
-        thd_proc_info(thd, "Repair by sorting");
-        /*
-          The new file is created with the right stats, so we can skip
-          copying file stats from old to new.
-        */
-        error = mi_repair_by_sort(&param, file, fixed_name,
-                                  param.testflag & T_QUICK, TRUE);
-      }
+      thd_proc_info(thd, "Repair by sorting");
+      /*
+        The new file is created with the right stats, so we can skip
+        copying file stats from old to new.
+      */
+      error= mi_repair_by_sort(&param, file, fixed_name,
+                               param.testflag & T_QUICK, TRUE);
     }
     else
     {
@@ -2407,7 +2374,6 @@ static struct st_mysql_sys_var* myisam_sysvars[]= {
   MYSQL_SYSVAR(data_pointer_size),
   MYSQL_SYSVAR(max_sort_file_size),
   MYSQL_SYSVAR(recover_options),
-  MYSQL_SYSVAR(repair_threads),
   MYSQL_SYSVAR(sort_buffer_size),
   MYSQL_SYSVAR(use_mmap),
   MYSQL_SYSVAR(mmap_size),

@@ -1,7 +1,7 @@
 #ifndef ITEM_STRFUNC_INCLUDED
 #define ITEM_STRFUNC_INCLUDED
 
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -64,7 +64,9 @@ public:
   Item_str_func(const POS &pos, Item *a, Item *b, Item *c, Item *d, Item* e)
     :Item_func(pos, a, b, c, d, e)
   {decimals=NOT_FIXED_DEC; }
-
+  Item_str_func(const POS &pos, Item *a, Item *b, Item *c, Item *d, Item* e, Item* f)
+    :Item_func(pos, a, b, c, d, e, f)
+  {decimals=NOT_FIXED_DEC; }
   Item_str_func(List<Item> &list) :Item_func(list) {decimals=NOT_FIXED_DEC; }
   Item_str_func(const POS &pos, PT_item_list *opt_list)
     :Item_func(pos, opt_list)
@@ -185,7 +187,15 @@ public:
   Item_func_aes_encrypt(const POS &pos, Item *a, Item *b, Item *c)
     :Item_str_func(pos, a, b, c)
   {}
-
+  Item_func_aes_encrypt(const POS &pos, Item *a, Item *b, Item *c, Item *d)
+    :Item_str_func(pos, a, b, c, d)
+  {}
+  Item_func_aes_encrypt(const POS &pos, Item *a, Item *b, Item *c, Item *d, Item *e)
+    :Item_str_func(pos, a, b, c, d, e)
+  {}
+  Item_func_aes_encrypt(const POS& pos, Item* a, Item* b, Item* c, Item* d, Item* e, Item* f)
+    :Item_str_func(pos, a, b, c, d, e, f)
+  {}
   virtual bool itemize(Parse_context *pc, Item **res);
   String *val_str(String *);
   void fix_length_and_dec();
@@ -202,7 +212,15 @@ public:
   Item_func_aes_decrypt(const POS &pos, Item *a, Item *b, Item *c)
     :Item_str_func(pos, a, b, c)
   {}
-
+  Item_func_aes_decrypt(const POS &pos, Item *a, Item *b, Item *c, Item *d)
+    :Item_str_func(pos, a, b, c, d)
+  {}
+  Item_func_aes_decrypt(const POS &pos, Item *a, Item *b, Item *c, Item *d, Item *e)
+    :Item_str_func(pos, a, b, c, d, e)
+  {}
+  Item_func_aes_decrypt(const POS& pos, Item* a, Item* b, Item* c, Item* d, Item* e, Item* f)
+    :Item_str_func(pos, a, b, c, d, e, f)
+  {}
   virtual bool itemize(Parse_context *pc, Item **res);
   String *val_str(String *);
   void fix_length_and_dec();
@@ -1325,6 +1343,10 @@ public:
   String *val_str(String *);
   bool check_gcol_func_processor(uchar *int_arg)
   { return true; }
+  // set RAND_TABLE_BIT in the used_tables_cache
+  table_map get_initial_pseudo_tables() const { return RAND_TABLE_BIT; }
+  // uuid is not constant and so non-cacheable
+  bool const_item() const { return (used_tables() == 0); }
 };
 
 class Item_func_gtid_subtract: public Item_str_ascii_func

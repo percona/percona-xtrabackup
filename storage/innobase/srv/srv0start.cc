@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2021, Oracle and/or its affiliates.
+Copyright (c) 1996, 2022, Oracle and/or its affiliates.
 Copyright (c) 2008, Google Inc.
 Copyright (c) 2009, Percona Inc.
 
@@ -2471,6 +2471,12 @@ files_checked:
 		if (!srv_read_only_mode) {
 			trx_sys_file_format_tag_init();
 		}
+	}
+
+	if (!create_new_db) {
+		/* Check and reset any no-redo rseg slot on disk used by
+		pre-5.7.2 redo resg with no data to purge. */
+		trx_rseg_reset_pending();
 	}
 
 	if (!create_new_db && sum_of_new_sizes > 0) {

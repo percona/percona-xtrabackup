@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2021, Oracle and/or its affiliates.
+Copyright (c) 1995, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -676,7 +676,10 @@ retry:
 
 		/* Read the first page of the tablespace */
 
-		buf2 = static_cast<byte*>(ut_malloc_nokey(2 * UNIV_PAGE_SIZE));
+		const ulint buf2_size = recv_recovery_is_on()
+			? (2 * UNIV_PAGE_SIZE) : UNIV_PAGE_SIZE;
+		buf2 = static_cast<byte*>(
+			ut_malloc_nokey(buf2_size + UNIV_PAGE_SIZE));
 
 		/* Align the memory for file i/o if we might have O_DIRECT
 		set */
@@ -686,8 +689,7 @@ retry:
 		IORequest	request(IORequest::READ);
 
 		success = os_file_read(
-			request,
-			node->handle, page, 0, UNIV_PAGE_SIZE);
+			request, node->handle, page, 0, buf2_size);
 
 		space_id = fsp_header_get_space_id(page);
 		flags = fsp_header_get_flags(page);
@@ -755,6 +757,20 @@ retry:
 			space->size_in_header = size;
 			space->free_limit = free_limit;
 			space->free_len = free_len;
+
+			/* Set estimated value for space->compression_type
+			during recovery process. */
+			if (recv_recovery_is_on()
+			    && (Compression::is_compressed_page(
+					page + page_size.physical())
+			        || Compression::is_compressed_encrypted_page(
+					page + page_size.physical()))) {
+				ut_ad(buf2_size >= (2 * UNIV_PAGE_SIZE));
+				Compression::meta_t header;
+				Compression::deserialize_header(
+					page + page_size.physical(), &header);
+				space->compression_type = header.m_algorithm;
+			}
 		}
 
 		ut_free(buf2);
@@ -773,7 +789,7 @@ retry:
 		}
 
 		if (node->size == 0) {
-			ulint	extent_size;
+			uint64_t	extent_size;
 
 			extent_size = page_size.physical() * FSP_EXTENT_SIZE;
 
@@ -1534,19 +1550,23 @@ fil_space_get_flags(
 	return(flags);
 }
 
-/** Check if table is mark for truncate.
+/** Check if tablespace exists and is marked for truncation.
 @param[in]	id	space id
+@return true if tablespace is missing.
 @return true if tablespace is marked for truncate. */
 bool
 fil_space_is_being_truncated(
 	ulint id)
 {
-	bool	mark_for_truncate;
+	bool flag = true;
+	fil_space_t* space;
 	mutex_enter(&fil_system->mutex);
-	fil_space_t* space = fil_space_get_by_id(id);
-	mark_for_truncate = space ? space->is_being_truncated : false;
+	space = fil_space_get_space(id);
+	if (space != NULL) {
+		flag = space->is_being_truncated;
+        }
 	mutex_exit(&fil_system->mutex);
-	return(mark_for_truncate);
+	return(flag);
 }
 
 /** Open each fil_node_t of a named fil_space_t if not already open.
@@ -5289,7 +5309,7 @@ retry:
 	}
 
 	page_size_t	pageSize(space->flags);
-	const ulint	page_size = pageSize.physical();
+	const os_offset_t	page_size = pageSize.physical();
 	fil_node_t*	node = UT_LIST_GET_LAST(space->chain);
 
 	if (!node->being_extended) {
@@ -7463,6 +7483,7 @@ truncate_t::truncate(
 			ib::error() << "Failed to open tablespace file "
 				<< path << ".";
 
+			mutex_exit(&fil_system->mutex);
 			ut_free(path);
 
 			return(DB_ERROR);

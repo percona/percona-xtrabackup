@@ -1,7 +1,7 @@
 #ifndef SQL_USER_CACHE_INCLUDED
 #define SQL_USER_CACHE_INCLUDED
 
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,6 +33,7 @@
 #include "partitioned_rwlock.h"         // Partitioned_rwlock
 
 #include "prealloced_array.h"
+#include "log_event.h"
 
 /* Forward Declarations */
 class String;
@@ -180,7 +181,7 @@ public:
   }
 
 
-  void print_grant(String *str);
+  void print_grant(THD *thd, String *str);
 
   void set_data(ACL_PROXY_USER *grant)
   {
@@ -203,6 +204,12 @@ public:
                                const LEX_CSTRING &proxied_user,
                                bool with_grant,
                                const char *grantor);
+
+  size_t get_user_length() const { return user ? strlen(user) : 0; }
+
+  size_t get_proxied_user_length() const {
+    return proxied_user ? strlen(proxied_user) : 0;
+  }
 };
 
 #ifndef NO_EMBEDDED_ACCESS_CHECKS

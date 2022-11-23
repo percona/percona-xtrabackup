@@ -1,7 +1,7 @@
 #ifndef AUTH_COMMON_INCLUDED
 #define AUTH_COMMON_INCLUDED
 
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -678,7 +678,8 @@ bool check_grant_routine(THD *thd, ulong want_access,
                          TABLE_LIST *procs, bool is_proc, bool no_error);
 bool check_routine_level_acl(THD *thd, const char *db, const char *name,
                              bool is_proc);
-bool check_grant_db(THD *thd,const char *db);
+bool check_grant_db(THD *thd, const char *db,
+                    const bool check_table_grant = false);
 bool acl_check_proxy_grant_access(THD *thd, const char *host, const char *user,
                                   bool with_grant);
 void get_privilege_desc(char *to, uint max_length, ulong access);

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2006, 2021, Oracle and/or its affiliates.
+Copyright (c) 2006, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -70,6 +70,14 @@ ib_wqueue_add(
 	void*		item,		/*!< in: work item */
 	mem_heap_t*	heap);		/*!< in: memory heap to use for
 					allocating the list node */
+
+/****************************************************************//**
+read total number of work item to the queue.
+@return total count of work item in the queue */
+uint64_t
+ib_wqueue_get_count(
+/*==========*/
+	ib_wqueue_t *wq);		/*!< in: work queue */
 
 /********************************************************************
 Check if queue is empty. */

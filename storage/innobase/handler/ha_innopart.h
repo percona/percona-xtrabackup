@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2021, Oracle and/or its affiliates.
+Copyright (c) 2014, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -694,6 +694,9 @@ private:
 	/** New partitions during ADD/REORG/... PARTITION. */
 	Altered_partitions*	m_new_partitions;
 
+	/** Can reuse the template for the previous partition. */
+	bool			m_reuse_mysql_template;
+
 	/** Clear used ins_nodes and upd_nodes. */
 	void
 	clear_ins_upd_nodes();
@@ -1331,5 +1334,9 @@ protected:
 	info_low(
 		uint	flag,
 		bool	is_analyze);
+
+	bool can_reuse_mysql_template() {
+		return(m_reuse_mysql_template);
+	}
 };
 #endif /* ha_innopart_h */

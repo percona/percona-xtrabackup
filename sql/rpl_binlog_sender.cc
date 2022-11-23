@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -836,7 +836,7 @@ int Binlog_sender::check_start_file()
   char *name_ptr= NULL;
   File file;
   IO_CACHE cache;
-  const char *errmsg;
+  std::string errmsg;
   my_off_t size;
 
   if (m_start_file[0] != '\0')
@@ -880,9 +880,8 @@ int Binlog_sender::check_start_file()
                                            gtid_state->get_server_sidno(),
                                            subset_sidno))
     {
-      errmsg= ER(ER_SLAVE_HAS_MORE_GTIDS_THAN_MASTER);
       global_sid_lock->unlock();
-      set_fatal_error(errmsg);
+      set_fatal_error(ER(ER_SLAVE_HAS_MORE_GTIDS_THAN_MASTER));
       return 1;
     }
     /*
@@ -913,9 +912,9 @@ int Binlog_sender::check_start_file()
     */
     if (!gtid_state->get_lost_gtids()->is_subset(m_exclude_gtid))
     {
-      mysql_bin_log.report_missing_purged_gtids(m_exclude_gtid, &errmsg);
+      mysql_bin_log.report_missing_purged_gtids(m_exclude_gtid, errmsg);
       global_sid_lock->unlock();
-      set_fatal_error(errmsg);
+      set_fatal_error(errmsg.c_str());
       return 1;
     }
     global_sid_lock->unlock();
@@ -923,9 +922,9 @@ int Binlog_sender::check_start_file()
     if (mysql_bin_log.find_first_log_not_in_gtid_set(index_entry_name,
                                                      m_exclude_gtid,
                                                      &first_gtid,
-                                                     &errmsg))
+                                                     errmsg))
     {
-      set_fatal_error(errmsg);
+      set_fatal_error(errmsg.c_str());
       return 1;
     }
     name_ptr= index_entry_name;
@@ -965,9 +964,10 @@ int Binlog_sender::check_start_file()
     return 1;
   }
 
-  if ((file= open_binlog_file(&cache, m_linfo.log_file_name, &errmsg)) < 0)
+  const char *bl_errmsg= NULL;
+  if ((file= open_binlog_file(&cache, m_linfo.log_file_name, &bl_errmsg)) < 0)
   {
-    set_fatal_error(errmsg);
+    set_fatal_error(bl_errmsg);
     return 1;
   }
 
@@ -1000,7 +1000,7 @@ void Binlog_sender::init_checksum_alg()
 
   entry= (user_var_entry*) my_hash_search(&m_thd->user_vars,
                                           (uchar*) name.str, name.length);
-  if (entry)
+  if (entry && entry->ptr())
   {
     m_slave_checksum_alg=
       static_cast<enum_binlog_checksum_alg>(find_type((char*) entry->ptr(), &binlog_checksum_typelib, 1) - 1);

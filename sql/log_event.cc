@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -4772,6 +4772,7 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
       Parser_state parser_state;
       if (!parser_state.init(thd, thd->query().str, thd->query().length))
       {
+        parser_state.m_input.m_has_digest = true;
         assert(thd->m_digest == NULL);
         thd->m_digest= & thd->m_digest_state;
         assert(thd->m_statement_psi == NULL);
@@ -6688,7 +6689,7 @@ int Rotate_log_event::do_update_pos(Relay_log_info *rli)
       !is_relay_log_event() &&
       !in_group)
   {
-    if (!is_mts_db_partitioned(rli) && server_id != ::server_id)
+    if (!is_mts_db_partitioned(rli) && (server_id != ::server_id || rli->replicate_same_server_id))
     {
       // force the coordinator to start a new binlog segment.
       static_cast<Mts_submode_logical_clock*>

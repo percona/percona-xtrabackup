@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -136,6 +136,7 @@
 #define FIELD_IS_DROPPED (1<< 26)       /* Intern: Field is being dropped */
 #define EXPLICIT_NULL_FLAG (1<< 27)     /* Field is explicitly specified as
                                            NULL by the user */
+#define SERIAL_FLAG (1<< 28)            /* Field is "SERIAL" */
 
 #define REFRESH_GRANT		1	/* Refresh grant tables */
 #define REFRESH_LOG		2	/* Start on new log file */

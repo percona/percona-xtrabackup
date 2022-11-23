@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2021, Oracle and/or its affiliates.
+Copyright (c) 1996, 2022, Oracle and/or its affiliates.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify
@@ -92,6 +92,9 @@ ib_warn_row_too_big(const dict_table_t*	table);
 #include "sync0sync.h"
 #include "trx0undo.h"
 #include "ut0new.h"
+#ifdef UNIV_DEBUG
+#include "trx0purge.h"
+#endif /* !UNIV_DEBUG */
 
 #include <vector>
 #include <algorithm>
@@ -7166,3 +7169,39 @@ dict_table_extent_size(
 
 	return(pages_in_extent);
 }
+
+/** @return number of base columns of virtual column in foreign key column
+@param[in]      vcol    in-memory virtual column
+@param[in]      foreign in-memory Foreign key constraint */
+uint32_t dict_vcol_base_is_foreign_key(dict_v_col_t *vcol,
+                                   dict_foreign_t *foreign) {
+
+	const dict_table_t *table = foreign->foreign_table;
+	uint32_t foreign_col_count = 0;
+
+	for (uint32_t i = 0; i < foreign->n_fields; i++) {
+		const char *foreign_col_name = foreign->foreign_col_names[i];
+		for (uint32_t j = 0; j < vcol->num_base; j++) {
+			if (innobase_strcasecmp(foreign_col_name,
+			    dict_table_get_col_name(table,
+			    vcol->base_col[j]->ind)) == 0) {
+				foreign_col_count++;
+			}
+		}
+	}
+	return foreign_col_count;
+}
+
+#ifndef UNIV_HOTBACKUP
+#ifdef UNIV_DEBUG
+/** Validate no active background threads to cause purge or rollback
+operations. */
+void
+dict_validate_no_purge_rollback_threads() {
+	/* No concurrent background threads to access to the table */
+	ut_ad(trx_purge_state() == PURGE_STATE_STOP
+	      || trx_purge_state() == PURGE_STATE_DISABLED);
+	ut_ad(!trx_rollback_or_clean_is_active);
+}
+#endif /* UNIV_DEBUG */
+#endif /* !UNIV_HOTBACKUP */

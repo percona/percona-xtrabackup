@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2021, Oracle and/or its affiliates.
+Copyright (c) 1996, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -207,6 +207,12 @@ trx_roll_savepoints_free(
 	trx_named_savept_t*	savep);	/*!< in: free all savepoints > this one;
 					if this is NULL, free all savepoints
 					of trx */
+/*******************************************************************//**
+Waits for rollback after recovery end. */
+UNIV_INLINE
+void
+trx_rollback_or_clean_wait();
+
 /** Rollback node states */
 enum roll_node_state {
 	ROLL_NODE_NONE = 0,		/*!< Unknown state */

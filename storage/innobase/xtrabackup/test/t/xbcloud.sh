@@ -23,8 +23,10 @@ secure-file-priv=$TEST_VAR_ROOT
 require_server_version_higher_than 5.7.0
 is_galera && skip_test "skipping"
 
-[ "${XBCLOUD_CREDENTIALS:-unset}" == "unset" ] && \
+if [[ "${XBCLOUD_CREDENTIALS:-unset}" == "unset" || \
+ -z "${XBCLOUD_CREDENTIALS}" ]] ; then
     skip_test "Requires XBCLOUD_CREDENTIALS"
+fi
 
 start_server --innodb_file_per_table
 

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2021, Oracle and/or its affiliates.
+Copyright (c) 1995, 2022, Oracle and/or its affiliates.
 Copyright (c) 2009, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -2248,10 +2248,10 @@ logs_empty_and_mark_files_at_shutdown(void)
 
 	ib::info() << "Starting shutdown...";
 
-	while (srv_fast_shutdown == 0 && trx_rollback_or_clean_is_active) {
+	if (srv_fast_shutdown == 0) {
 		/* we should wait until rollback after recovery end
 		for slow shutdown */
-		os_thread_sleep(100000);
+		trx_rollback_or_clean_wait();
 	}
 
 	/* Wait until the master thread and all other operations are idle: our

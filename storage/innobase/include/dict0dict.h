@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2021, Oracle and/or its affiliates.
+Copyright (c) 1996, 2022, Oracle and/or its affiliates.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify
@@ -371,6 +371,12 @@ dict_table_analyze_index_lock(
 void
 dict_table_analyze_index_unlock(
 	dict_table_t*	table);
+#ifdef UNIV_DEBUG
+/** Validate no active background threads to cause purge or rollback
+operations. */
+void
+dict_validate_no_purge_rollback_threads();
+#endif /* UNIV_DEBUG */
 #endif /* !UNIV_HOTBACKUP */
 /**********************************************************************//**
 Adds system columns to a table object. */
@@ -2150,6 +2156,10 @@ bool
 dict_table_is_partition(
         const dict_table_t*     table);
 
+/** @return true if all base column of virtual column is foreign key column
+@param[in]	vcol	in-memory virtul column
+@param[in]	foreign	in-memory Foreign key constraint */
+uint32_t dict_vcol_base_is_foreign_key(dict_v_col_t *vcol, dict_foreign_t *foreign);
 
 #endif /* !UNIV_HOTBACKUP */
 

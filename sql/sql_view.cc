@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2004, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1372,8 +1372,9 @@ bool parse_view_definition(THD *thd, TABLE_LIST *view_ref)
   thd->variables.sql_mode&= ~(MODE_PIPES_AS_CONCAT | MODE_ANSI_QUOTES |
                               MODE_IGNORE_SPACE | MODE_NO_BACKSLASH_ESCAPES);
 
-  if (thd->m_digest != NULL)
-    thd->m_digest->reset(thd->m_token_array, max_digest_length);
+  // Do not pollute the current statement
+  // with a digest of the view definition
+  assert(! parser_state.m_input.m_has_digest);
 
   // Parse the query text of the view
   result= parse_sql(thd, &parser_state, view_ref->view_creation_ctx);
@@ -1697,6 +1698,11 @@ bool parse_view_definition(THD *thd, TABLE_LIST *view_ref)
   // Updatability is not decided yet
   assert(!view_ref->is_updatable());
 
+  // another level of nesting would exceed the max supported nesting level
+  if (view_ref->select_lex->nest_level >= (int) MAX_SELECT_NESTING) {
+    my_error(ER_TOO_HIGH_LEVEL_OF_NESTING_FOR_SELECT, MYF(0));
+    DBUG_RETURN(true);
+  }
   // Link query expression of view into the outer query
   view_lex->unit->include_down(old_lex, view_ref->select_lex);
 

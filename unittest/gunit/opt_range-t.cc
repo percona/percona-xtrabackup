@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -2064,6 +2064,25 @@ TEST_F(OptRangeTest, AppendRange)
   uchar value= 42;
   append_range(&out, &kp, &value, &value, NEAR_MIN | NEAR_MAX);
   EXPECT_STREQ("42 < my_field < 42", out.c_ptr());
+}
+
+TEST_F(OptRangeTest, CloneSpatialKey) {
+  Fake_RANGE_OPT_PARAM param(thd(), &m_alloc, 2, false);
+  Mock_SEL_ARG key1(SEL_ARG::KEY_RANGE, 2, 0);
+  Mock_SEL_ARG key2(SEL_ARG::MAYBE_KEY, 1, 0);
+  // dummy field
+  Mock_field_long field1("geom1");
+  key1.field = &field1;
+  key1.left = &null_element;
+  key1.next_key_part = NULL;
+  key1.min_flag |= GEOM_FLAG;
+  key1.rkey_func_flag = HA_READ_MBR_CONTAIN;
+  // check if tree is cloned along with gis flag.
+  SEL_ARG *cloned_key1 = key_and(&param, &key1, &key2, CLONE_KEY2_MAYBE);
+  EXPECT_NE(cloned_key1, &key1);
+  EXPECT_EQ(cloned_key1->rkey_func_flag, key1.rkey_func_flag);
+  key1.use_count = 0;
+  key2.use_count = 0;
 }
 
 }

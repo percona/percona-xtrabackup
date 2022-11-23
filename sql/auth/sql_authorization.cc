@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -608,6 +608,11 @@ bool check_one_table_access(THD *thd, ulong privilege, TABLE_LIST *all_tables)
 bool check_single_table_access(THD *thd, ulong privilege, 
                                TABLE_LIST *all_tables, bool no_errors)
 {
+  if (all_tables->is_derived()) {
+    all_tables->set_privileges(privilege);
+    return false;
+  }
+
   Security_context *backup_ctx= thd->security_context();
 
   /* we need to switch to the saved context (if any) */
@@ -2539,13 +2544,16 @@ static bool check_grant_db_routine(THD *thd, const char *db, HASH *hash)
 
 
 /*
-  Check if a user has the right to access a database
-  Access is accepted if he has a grant for any table/routine in the database
-  Return 1 if access is denied
+  Check if a user has the right to access a database.
+  Access is accepted if the user has a database operations related grant
+  (i.e. not including the GRANT_ACL) for any table/column/routine in the
+  database. Return 1 if access is denied
+  check_table_grant is false by default, Access is granted for "show databases"
+  and "show tables in database" when user has table level grant.
 */
 
-bool check_grant_db(THD *thd,const char *db)
-{
+bool check_grant_db(THD *thd, const char *db,
+                    const bool check_table_grant /* = false */) {
   Security_context *sctx= thd->security_context();
   LEX_CSTRING priv_user= sctx->priv_user();
   char helping [NAME_LEN+USERNAME_LENGTH+2];
@@ -2574,11 +2582,11 @@ bool check_grant_db(THD *thd,const char *db)
       my_hash_element(&column_priv_hash,
                       idx);
     if (len < grant_table->key_length &&
-        !memcmp(grant_table->hash_key,helping,len) &&
-        grant_table->host.compare_hostname(sctx->host().str,
-                                           sctx->ip().str))
-    {
-      error= FALSE; /* Found match. */
+        !memcmp(grant_table->hash_key, helping, len) &&
+        grant_table->host.compare_hostname(sctx->host().str, sctx->ip().str) &&
+        ((grant_table->privs | grant_table->cols) &
+         (check_table_grant ? TABLE_OP_ACLS : TABLE_ACLS))) {
+      error = FALSE; /* Found match. */
       break;
     }
   }
@@ -2589,7 +2597,6 @@ bool check_grant_db(THD *thd,const char *db)
 
   return error;
 }
-
 
 /****************************************************************************
   Check routine level grants
@@ -2837,13 +2844,14 @@ static int show_routine_grants(THD* thd, LEX_USER *lex_user, HASH *hash,
         global.append('.');
         append_identifier(thd, &global, grant_proc->tname,
                           strlen(grant_proc->tname));
-        global.append(STRING_WITH_LEN(" TO '"));
-        global.append(lex_user->user.str, lex_user->user.length,
-                      system_charset_info);
-        global.append(STRING_WITH_LEN("'@'"));
+        global.append(STRING_WITH_LEN(" TO "));
+        String user_str(lex_user->user.str, lex_user->user.length,
+                        system_charset_info);
+        append_query_string(thd, system_charset_info, &user_str, &global);
+        global.append(STRING_WITH_LEN("@"));
         // host and lex_user->host are equal except for case
-        global.append(host, strlen(host), system_charset_info);
-        global.append('\'');
+        String host_str(host, strlen(host), system_charset_info);
+        append_query_string(thd, system_charset_info, &host_str, &global);
         if (proc_access & GRANT_ACL)
           global.append(STRING_WITH_LEN(" WITH GRANT OPTION"));
         protocol->start_row();
@@ -2873,7 +2881,7 @@ show_proxy_grants(THD *thd, LEX_USER *user, char *buff, size_t buffsize)
     {
       String global(buff, buffsize, system_charset_info);
       global.length(0);
-      proxy->print_grant(&global);
+      proxy->print_grant(thd, &global);
       protocol->start_row();
       protocol->store(global.ptr(), global.length(), global.charset());
       if (protocol->end_row())
@@ -2996,13 +3004,14 @@ bool mysql_show_grants(THD *thd,LEX_USER *lex_user)
         }
       }
     }
-    global.append (STRING_WITH_LEN(" ON *.* TO '"));
-    global.append(lex_user->user.str, lex_user->user.length,
-                  system_charset_info);
-    global.append (STRING_WITH_LEN("'@'"));
-    global.append(lex_user->host.str,lex_user->host.length,
-                  system_charset_info);
-    global.append ('\'');
+    global.append (STRING_WITH_LEN(" ON *.* TO "));
+    String user_str(lex_user->user.str, lex_user->user.length,
+                    system_charset_info);
+    append_query_string(thd, system_charset_info, &user_str, &global);
+    global.append(STRING_WITH_LEN("@"));
+    String host_str(lex_user->host.str, lex_user->host.length,
+                    system_charset_info);
+    append_query_string(thd, system_charset_info, &host_str, &global);
     if (want_access & GRANT_ACL)
       global.append(STRING_WITH_LEN(" WITH GRANT OPTION"));
     protocol->start_row();
@@ -3040,7 +3049,7 @@ bool mysql_show_grants(THD *thd,LEX_USER *lex_user)
         db.length(0);
         db.append(STRING_WITH_LEN("GRANT "));
 
-        if (test_all_bits(want_access,(DB_ACLS & ~GRANT_ACL)))
+        if (test_all_bits(want_access, (DB_OP_ACLS)))
           db.append(STRING_WITH_LEN("ALL PRIVILEGES"));
         else if (!(want_access & ~GRANT_ACL))
           db.append(STRING_WITH_LEN("USAGE"));
@@ -3048,8 +3057,7 @@ bool mysql_show_grants(THD *thd,LEX_USER *lex_user)
         {
           int found=0, cnt;
           ulong j,test_access= want_access & ~GRANT_ACL;
-          for (cnt=0, j = SELECT_ACL; j <= DB_ACLS; cnt++,j <<= 1)
-          {
+          for (cnt = 0, j = SELECT_ACL; j <= DB_OP_ACLS; cnt++, j <<= 1) {
             if (test_access & j)
             {
               if (found)
@@ -3061,13 +3069,14 @@ bool mysql_show_grants(THD *thd,LEX_USER *lex_user)
         }
         db.append (STRING_WITH_LEN(" ON "));
         append_identifier(thd, &db, acl_db->db, strlen(acl_db->db));
-        db.append (STRING_WITH_LEN(".* TO '"));
-        db.append(lex_user->user.str, lex_user->user.length,
-                  system_charset_info);
-        db.append (STRING_WITH_LEN("'@'"));
+        db.append (STRING_WITH_LEN(".* TO "));
+        String user_str(lex_user->user.str, lex_user->user.length,
+                        system_charset_info);
+        append_query_string(thd, system_charset_info, &user_str, &db);
+        db.append(STRING_WITH_LEN("@"));
         // host and lex_user->host are equal except for case
-        db.append(host, strlen(host), system_charset_info);
-        db.append ('\'');
+        String host_str(host, strlen(host), system_charset_info);
+        append_query_string(thd, system_charset_info, &host_str, &db);
         if (want_access & GRANT_ACL)
           db.append(STRING_WITH_LEN(" WITH GRANT OPTION"));
         protocol->start_row();
@@ -3111,7 +3120,7 @@ bool mysql_show_grants(THD *thd,LEX_USER *lex_user)
         global.length(0);
         global.append(STRING_WITH_LEN("GRANT "));
 
-        if (test_all_bits(table_access, (TABLE_ACLS & ~GRANT_ACL)))
+        if (test_all_bits(table_access, (TABLE_OP_ACLS)))
           global.append(STRING_WITH_LEN("ALL PRIVILEGES"));
         else if (!test_access)
           global.append(STRING_WITH_LEN("USAGE"));
@@ -3121,8 +3130,8 @@ bool mysql_show_grants(THD *thd,LEX_USER *lex_user)
           int found= 0;
           ulong j;
 
-          for (counter= 0, j= SELECT_ACL; j <= TABLE_ACLS; counter++, j<<= 1)
-          {
+          for (counter = 0, j = SELECT_ACL; j <= TABLE_OP_ACLS;
+               counter++, j <<= 1) {
             if (test_access & j)
             {
               if (found)
@@ -3175,13 +3184,14 @@ bool mysql_show_grants(THD *thd,LEX_USER *lex_user)
         global.append('.');
         append_identifier(thd, &global, grant_table->tname,
                           strlen(grant_table->tname));
-        global.append(STRING_WITH_LEN(" TO '"));
-        global.append(lex_user->user.str, lex_user->user.length,
-                      system_charset_info);
-        global.append(STRING_WITH_LEN("'@'"));
+        global.append(STRING_WITH_LEN(" TO "));
+        String user_str(lex_user->user.str, lex_user->user.length,
+                        system_charset_info);
+        append_query_string(thd, system_charset_info, &user_str, &global);
+        global.append(STRING_WITH_LEN("@"));
         // host and lex_user->host are equal except for case
-        global.append(host, strlen(host), system_charset_info);
-        global.append('\'');
+        String host_str(host, strlen(host), system_charset_info);
+        append_query_string(thd, system_charset_info, &host_str, &global);
         if (table_access & GRANT_ACL)
           global.append(STRING_WITH_LEN(" WITH GRANT OPTION"));
         protocol->start_row();
@@ -4271,8 +4281,7 @@ static bool check_show_access(THD *thd, TABLE_LIST *table)
                      &thd->col_access, NULL, FALSE, FALSE))
       return TRUE;
 
-    if (!thd->col_access && check_grant_db(thd, dst_db_name))
-    {
+    if (!(thd->col_access & DB_OP_ACLS) && check_grant_db(thd, dst_db_name)) {
       my_error(ER_DBACCESS_DENIED_ERROR, MYF(0),
                thd->security_context()->priv_user().str,
                thd->security_context()->priv_host().str,

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2021, Oracle and/or its affiliates.
+Copyright (c) 1994, 2022, Oracle and/or its affiliates.
 Copyright (c) 2008, Google Inc.
 Copyright (c) 2012, Facebook Inc.
 
@@ -456,10 +456,11 @@ btr_cur_optimistic_latch_leaves(
 				dict_index_get_space(cursor->index),
 				left_page_no);
 
-			cursor->left_block = btr_block_get(
+			cursor->left_block = buf_page_get_gen(
 				page_id,
 				dict_table_page_size(cursor->index->table),
-				mode, cursor->index, mtr);
+				mode, NULL, BUF_GET_POSSIBLY_FREED,
+				__FILE__, __LINE__, mtr);
 		} else {
 			cursor->left_block = NULL;
 		}
