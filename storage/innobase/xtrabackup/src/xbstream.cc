@@ -536,8 +536,6 @@ static void *extract_worker_thread_func(void *arg) {
         if (!restore_sparseness(path, XBSTREAM_BUFFER_SIZE, error)) {
           msg("%s: restore_sparseness failed for file %s: %s\n", my_progname,
               chunk.path, error);
-          res = XB_STREAM_READ_ERROR;
-          break;
         }
       }
 

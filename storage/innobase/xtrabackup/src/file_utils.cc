@@ -213,18 +213,42 @@ xb_fil_cur_result_t datafile_read(datafile_cur_t *cursor) {
 bool restore_sparseness(const char *src_file_path, uint buffer_size,
                         char error[512]) {
   datafile_cur_t cursor;
-  xb_fil_cur_result_t res;
   size_t page_size = 0;
-
+  size_t seek = 0;
   if (!file_has_suffix("ibd", src_file_path)) return true;
 
   if (!datafile_open(src_file_path, &cursor, false, buffer_size)) {
     strcpy(error, "Cannot open file");
     return false;
   }
+  auto punch_hole_func = [&](const auto page) {
+    if (fil_page_get_type(page) == FIL_PAGE_COMPRESSED ||
+        fil_page_get_type(page) == FIL_PAGE_COMPRESSED_AND_ENCRYPTED) {
+#ifdef UNIV_DEBUG
+      assert(page_size % (size_t)cursor.statinfo.st_blksize == 0);
+#endif
+      size_t compressed_len = ut_calc_align(
+          mach_read_from_2(page + FIL_PAGE_COMPRESS_SIZE_V1) + FIL_PAGE_DATA,
+          cursor.statinfo.st_blksize);
+      if (compressed_len < page_size) {
+#ifdef HAVE_FALLOC_PUNCH_HOLE_AND_KEEP_SIZE
+        int ret =
+            fallocate(cursor.fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
+                      seek + compressed_len, page_size - compressed_len);
+        if (ret != 0) {
+          strcpy(error, "fallocate returned ");
+          std::string err = std::to_string(errno);
+          strcat(error, err.c_str());
+          return false;
+        }
+#endif  // HAVE_FALLOC_PUNCH_HOLE_AND_KEEP_SIZE
+      }
+    }
+    return true;
+  };
 
-  while ((res = datafile_read(&cursor)) == XB_FIL_CUR_SUCCESS) {
-    size_t offset = 0;
+  while (datafile_read(&cursor) == XB_FIL_CUR_SUCCESS) {
+    size_t buf_offset = 0;
     if (cursor.buf_offset == cursor.buf_read) {
       const uint32_t flags = fsp_header_get_flags(cursor.buf);
       const ulint ssize = FSP_FLAGS_GET_PAGE_SSIZE(flags);
@@ -236,30 +260,11 @@ bool restore_sparseness(const char *src_file_path, uint buffer_size,
     }
 
     for (ulint i = 0; i < cursor.buf_read / page_size; ++i) {
-      const auto page = cursor.buf + offset;
-      if (fil_page_get_type(page) == FIL_PAGE_COMPRESSED ||
-          fil_page_get_type(page) == FIL_PAGE_COMPRESSED_AND_ENCRYPTED) {
-#ifdef UNIV_DEBUG
-        assert(page_size % (size_t)cursor.statinfo.st_blksize == 0);
-#endif
-        size_t compressed_len = ut_calc_align(
-            mach_read_from_2(page + FIL_PAGE_COMPRESS_SIZE_V1) + FIL_PAGE_DATA,
-            cursor.statinfo.st_blksize);
-        if (compressed_len < page_size) {
-#ifdef HAVE_FALLOC_PUNCH_HOLE_AND_KEEP_SIZE
-          int ret =
-              fallocate(cursor.fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
-                        offset + compressed_len, page_size - compressed_len);
-          if (ret != 0) {
-            strcpy(error, "fallocate returned ");
-            std::string err = std::to_string(errno);
-            strcat(error, err.c_str());
-            return false;
-          }
-#endif  // HAVE_FALLOC_PUNCH_HOLE_AND_KEEP_SIZE
-        }
-      }
-      offset += page_size;
+      const auto page = cursor.buf + buf_offset;
+      if (!punch_hole_func(page)) return false;
+
+      buf_offset += page_size;
+      seek += page_size;
     }
   }
   datafile_close(&cursor);

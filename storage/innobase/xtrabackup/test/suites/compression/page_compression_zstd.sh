@@ -1,9 +1,9 @@
 . inc/page_compression_common.sh
 
 prepare_data
-vlog "Taking backup with no compression"
-take_backup "--compress=lz4"
-decompress "--decompress"
+vlog "Taking backup with ZSTD compression"
+take_backup "--compress=zstd --read-buffer-size=1M"
+decompress "--decompress --read-buffer-size=1M"
 restore_and_verify
 
 vlog "Testing restore with xbstream"

@@ -1,9 +1,9 @@
 . inc/page_compression_common.sh
 
 prepare_data
-vlog "Taking backup with no compression"
-take_backup "--compress=lz4"
-decompress "--decompress"
+vlog "Taking backup with LZ4 compression"
+take_backup "--compress=lz4 --read-buffer-size=1M"
+decompress "--decompress --read-buffer-size=1M"
 
 vlog "Testing restore with xbstream"
 rm -rf $topdir/backup && mkdir $topdir/backup

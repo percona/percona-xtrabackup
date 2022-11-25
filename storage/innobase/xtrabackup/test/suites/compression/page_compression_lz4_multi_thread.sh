@@ -1,9 +1,9 @@
 . inc/page_compression_common.sh
 
 prepare_data
-vlog "Taking backup with no compression"
-take_backup "--parallel=2  --compress=lz4 --compress-threads=2"
-decompress "--decompress --parallel=2"
+vlog "Taking backup with LZ4 compression and multi thread"
+take_backup "--parallel=2  --compress=lz4 --compress-threads=2 --read-buffer-size=1M"
+decompress "--decompress --parallel=2 --read-buffer-size=1M"
 
 vlog "Testing restore with xbstream"
 rm -rf $topdir/backup && mkdir $topdir/backup
