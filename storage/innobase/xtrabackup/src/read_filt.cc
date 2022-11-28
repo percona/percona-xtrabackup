@@ -252,7 +252,7 @@ static void rf_page_tracking_get_next_batch(xb_fil_cur_t *cursor,
   we do full scan full_scan_tables is populated during the first scan of redo */
 
   if (ctxt->space_id == dict_sys_t::s_dict_space_id ||
-      full_scan_tables[ctxt->space_id] == true) {
+      full_scan_tables.find(ctxt->space_id) != full_scan_tables.end()) {
     *read_batch_start = ctxt->offset;
     if (ctxt->offset >= ctxt->data_file_size) {
       *read_batch_len = 0;
