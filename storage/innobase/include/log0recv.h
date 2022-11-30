@@ -59,6 +59,11 @@ struct recv_addr_t;
  * pagetracking*/
 extern std::unordered_set<space_id_t> full_scan_tables;
 
+/* count of tablespaces that will require full table scan. This is calculated
+ * after full_scan_tables is fully populated and should never changed. */
+
+extern size_t full_scan_tables_count;
+
 namespace xtrabackup {
 struct recv_sys_t {
   struct mem_block_t {

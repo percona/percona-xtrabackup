@@ -1237,6 +1237,7 @@ bool Redo_Log_Data_Manager::start() {
    * in any situation (with or without --lock-ddl-per-table).
    */
   redo_catchup_completed = true;
+  full_scan_tables_count = full_scan_tables.size();
 
   if (opt_lock_ddl) {
     ut_ad(reader.get_scanned_lsn() >= backup_redo_log_flushed_lsn);

@@ -111,6 +111,8 @@ This set is populated by the redo first scan phase (by a single thread) and
 after the initial parsing is over, we only use it for reads. Hence, it is not
 required to protect with mutex. */
 std::unordered_set<space_id_t> full_scan_tables;
+
+size_t full_scan_tables_count = 0;
 #endif /* XTRABACKUP */
 
 #ifdef UNIV_HOTBACKUP
