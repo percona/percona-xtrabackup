@@ -252,7 +252,8 @@ static void rf_page_tracking_get_next_batch(xb_fil_cur_t *cursor,
   we do full scan full_scan_tables is populated during the first scan of redo */
 
   if (ctxt->space_id == dict_sys_t::s_dict_space_id ||
-      full_scan_tables[ctxt->space_id] == true) {
+      full_scan_tables.find(ctxt->space_id) != full_scan_tables.end()) {
+    ut_ad(full_scan_tables_count == full_scan_tables.size());
     *read_batch_start = ctxt->offset;
     if (ctxt->offset >= ctxt->data_file_size) {
       *read_batch_len = 0;
@@ -260,6 +261,7 @@ static void rf_page_tracking_get_next_batch(xb_fil_cur_t *cursor,
     }
     *read_batch_len = ctxt->data_file_size - ctxt->offset;
   } else {
+    ut_ad(full_scan_tables_count == full_scan_tables.size());
     /* if no page changed for given space return */
     if (!changed_page_tracking->count(ctxt->space_id)) {
 #ifdef UNIV_DEBUG

@@ -57,7 +57,12 @@ struct recv_addr_t;
 #ifdef XTRABACKUP
 /** map of tablespace_id, that would be full scan during backup with
  * pagetracking*/
-extern std::map<space_id_t, bool> full_scan_tables;
+extern std::unordered_set<space_id_t> full_scan_tables;
+
+/* count of tablespaces that will require full table scan. This is calculated
+ * after full_scan_tables is fully populated and should never changed. */
+
+extern size_t full_scan_tables_count;
 
 namespace xtrabackup {
 struct recv_sys_t {

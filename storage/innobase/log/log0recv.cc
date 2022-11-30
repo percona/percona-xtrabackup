@@ -105,8 +105,14 @@ rolling back incomplete transactions. */
 volatile bool recv_recovery_on;
 volatile lsn_t backup_redo_log_flushed_lsn;
 #ifdef XTRABACKUP
-/** map of space_id, that would be full scan during backup with pagetracking */
-std::map<space_id_t, bool> full_scan_tables;
+/* List of tablespaces that should be copied fully. Even if page tracking is
+active, the tablespaces in this list will be fully copied to backup directory.
+This set is populated by the redo first scan phase (by a single thread) and
+after the initial parsing is over, we only use it for reads. Hence, it is not
+required to protect with mutex. */
+std::unordered_set<space_id_t> full_scan_tables;
+
+size_t full_scan_tables_count = 0;
 #endif /* XTRABACKUP */
 
 #ifdef UNIV_HOTBACKUP
@@ -1843,7 +1849,7 @@ static byte *recv_parse_or_apply_log_rec_body(
           // re-copying the datafiles.
           if (opt_page_tracking && xtrabackup_incremental != nullptr &&
               recv_sys->recovered_lsn > incremental_start_checkpoint_lsn) {
-            full_scan_tables[space_id] = true;
+            full_scan_tables.insert(space_id);
           }
           /* offline backup */
           xb::info() << "Last flushed lsn: " << backup_redo_log_flushed_lsn
@@ -1888,7 +1894,7 @@ static byte *recv_parse_or_apply_log_rec_body(
           tablespace. */
           if (opt_page_tracking && xtrabackup_incremental != nullptr &&
               recv_sys->recovered_lsn > incremental_start_checkpoint_lsn) {
-            full_scan_tables[space_id] = true;
+            full_scan_tables.insert(space_id);
           }
 #endif /* XTRABACKUP */
 
