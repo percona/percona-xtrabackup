@@ -46,7 +46,7 @@ Description: Debug symbols for Percona XtraBackup
 
 Package: percona-xtrabackup-test-24
 Architecture: any
-Depends: mysql-client, percona-xtrabackup-24, python, ${misc:Depends}
+Depends: mysql-client, percona-xtrabackup-24, ${misc:Depends}
 Description: Test suite for Percona XtraBackup
  Test suite for Percona XtraBackup. Install this package if you intend
  to run XtraBackup's test suite.
