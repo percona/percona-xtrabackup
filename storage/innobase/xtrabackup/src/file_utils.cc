@@ -5,11 +5,50 @@
 #include "my_dir.h"
 #include "my_io.h"
 #include "my_thread_local.h"
-/* fsp_header_get_flags / FSP_FLAGS_GET_PAGE_SSIZE / fil_page_get_type
- * FIL_PAGE_COMPRESSED / FIL_PAGE_COMPRESSED_AND_ENCRYPTED
- * FIL_PAGE_COMPRESS_SIZE_V1 / FIL_PAGE_DATA */
-#include <fsp0fsp.h>
-#include "univ.i"
+
+using page_type_t = size_t;
+/** Return the value of the PAGE_SSIZE field */
+constexpr uint32_t FSP_FLAGS_GET_PAGE_SSIZE(uint32_t flags) {
+  return (flags & XB_FSP_FLAGS_MASK_PAGE_SSIZE) >> XB_FSP_FLAGS_POS_PAGE_SSIZE;
+}
+
+/** The following function is used to fetch data from 4 consecutive
+bytes. The most significant byte is at the lowest address.
+@param[in]      b       pointer to 4 bytes to read
+@return 32 bit integer */
+static inline uint32_t mach_read_from_4(const byte *b) {
+#ifdef UNIV_DEBUG
+  assert(b);
+#endif  // UNIV_DEBUG
+  return ((static_cast<uint32_t>(b[0]) << 24) |
+          (static_cast<uint32_t>(b[1]) << 16) |
+          (static_cast<uint32_t>(b[2]) << 8) | static_cast<uint32_t>(b[3]));
+}
+
+inline uint16_t mach_read_from_2(const byte *b) {
+  return (((unsigned long)(b[0]) << 8) | (unsigned long)(b[1]));
+}
+
+/** Read the flags from the tablespace header page.
+@param[in]      page    first page of a tablespace
+@return the contents of FSP_SPACE_FLAGS */
+inline uint32_t fsp_header_get_flags(const page_t *page) {
+  return (mach_read_from_4(XB_FSP_HEADER_OFFSET + XB_FSP_SPACE_FLAGS + page));
+}
+
+/** Get the file page type.
+@param[in]      page            File page
+@return page type */
+inline page_type_t fil_page_get_type(const byte *page) {
+  return (static_cast<page_type_t>(mach_read_from_2(page + XB_FIL_PAGE_TYPE)));
+}
+
+/** Calculates the smallest multiple of m that is not smaller than n
+ when m is a power of two.  In other words, rounds n up to m * k.
+ @param n in: number to round up
+ @param m in: alignment, must be a power of two
+ @return n rounded up to the smallest possible integer multiple of m */
+#define ut_calc_align(n, m) (((n) + ((m)-1)) & ~((m)-1))
 
 #if defined _WIN32 || defined __CYGWIN__ || defined __EMX__ || \
     defined __MSDOS__ || defined __DJGPP__
@@ -222,14 +261,15 @@ bool restore_sparseness(const char *src_file_path, uint buffer_size,
     return false;
   }
   auto punch_hole_func = [&](const auto page) {
-    if (fil_page_get_type(page) == FIL_PAGE_COMPRESSED ||
-        fil_page_get_type(page) == FIL_PAGE_COMPRESSED_AND_ENCRYPTED) {
+    if (fil_page_get_type(page) == XB_FIL_PAGE_COMPRESSED ||
+        fil_page_get_type(page) == XB_FIL_PAGE_COMPRESSED_AND_ENCRYPTED) {
 #ifdef UNIV_DEBUG
       assert(page_size % (size_t)cursor.statinfo.st_blksize == 0);
 #endif
-      size_t compressed_len = ut_calc_align(
-          mach_read_from_2(page + FIL_PAGE_COMPRESS_SIZE_V1) + FIL_PAGE_DATA,
-          cursor.statinfo.st_blksize);
+      size_t compressed_len =
+          ut_calc_align(mach_read_from_2(page + XB_FIL_PAGE_COMPRESS_SIZE_V1) +
+                            XB_FIL_PAGE_DATA,
+                        cursor.statinfo.st_blksize);
       if (compressed_len < page_size) {
 #ifdef HAVE_FALLOC_PUNCH_HOLE_AND_KEEP_SIZE
         int ret =
@@ -253,9 +293,9 @@ bool restore_sparseness(const char *src_file_path, uint buffer_size,
       const uint32_t flags = fsp_header_get_flags(cursor.buf);
       const ulint ssize = FSP_FLAGS_GET_PAGE_SSIZE(flags);
       if (ssize == 0) {
-        page_size = UNIV_PAGE_SIZE_ORIG;
+        page_size = XB_UNIV_PAGE_SIZE_ORIG;
       } else {
-        page_size = ((UNIV_ZIP_SIZE_MIN >> 1) << ssize);
+        page_size = ((XB_UNIV_ZIP_SIZE_MIN >> 1) << ssize);
       }
     }
 

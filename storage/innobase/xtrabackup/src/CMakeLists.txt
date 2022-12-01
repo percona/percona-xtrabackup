@@ -204,7 +204,6 @@ TARGET_LINK_LIBRARIES(xbstream
   mysys
   crc
   ${LZ4_LIBRARY}
-  mysqlclient
   )
 
 ########################################################################
