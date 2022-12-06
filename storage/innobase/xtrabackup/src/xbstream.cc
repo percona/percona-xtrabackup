@@ -75,6 +75,9 @@ static bool opt_decompress = 0;
 static uint opt_decompress_threads = 1;
 static bool opt_absolute_names = 0;
 
+static const int compression_prefix_len = 4;
+static const int compression_and_encryption_prefix_len = 12;
+
 enum { OPT_DECOMPRESS = 256, OPT_DECOMPRESS_THREADS, OPT_ENCRYPT_THREADS };
 
 static struct my_option my_long_options[] = {
@@ -526,11 +529,11 @@ static void *extract_worker_thread_func(void *arg) {
         char path[FN_REFLEN] = {0};
         memcpy(path, chunk.path, strlen(chunk.path));
         unsigned short int qpress_offset = is_qpress_file(path) ? 1 : 0;
-
         if (is_compressed_suffix(path))
-          path[strlen(path) - 4 + qpress_offset] = 0;
+          path[strlen(path) - compression_prefix_len + qpress_offset] = 0;
         if (is_encrypted_and_compressed_suffix(path))
-          path[strlen(path) - 12 + qpress_offset] = 0;
+          path[strlen(path) - compression_and_encryption_prefix_len +
+               qpress_offset] = 0;
 
         char error[512];
         if (!restore_sparseness(path, XBSTREAM_BUFFER_SIZE, error)) {

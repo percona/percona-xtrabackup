@@ -230,5 +230,4 @@ TARGET_LINK_LIBRARIES(xbcrypt
   ${GCRYPT_LIBS}
   mysys
   crc
-  mysqlclient
   )

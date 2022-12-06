@@ -160,7 +160,9 @@ void datafile_close(datafile_cur_t *cursor);
 xb_fil_cur_result_t datafile_read(datafile_cur_t *cursor);
 
 /**
-  Restore sparseness of a file.
+  Restore sparseness of a file. This is used by xtrabackup & xbstream when
+  --decompress options is used. This will restore sparseness (punch hole) on
+  IBD files that have page compression (COMPRESSION="xxx")
 
   @param [in]       file          path to file
   @param [in]       buffer_size   size of read buffer
