@@ -63,6 +63,9 @@ constexpr uint32_t XB_UNIV_PAGE_SIZE_ORIG = 1 << 14U;
 /** Smallest compressed page size */
 constexpr uint32_t XB_UNIV_ZIP_SIZE_MIN = 1 << 10U;
 
+/** Maximum page size InnoDB currently supports. */
+constexpr size_t XB_UNIV_PAGE_SIZE_MAX = 1 << 16U;
+
 /** Return a safer suffix of file_name, or "." if it has no safer
 suffix. Check for fully specified file names and other atrocities.
 Warn the user if we do not return file_name.

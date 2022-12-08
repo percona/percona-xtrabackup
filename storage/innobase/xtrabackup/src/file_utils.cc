@@ -261,8 +261,7 @@ bool restore_sparseness(const char *src_file_path, uint buffer_size,
     return false;
   }
   auto punch_hole_func = [&](const auto page) {
-    if (fil_page_get_type(page) == XB_FIL_PAGE_COMPRESSED ||
-        fil_page_get_type(page) == XB_FIL_PAGE_COMPRESSED_AND_ENCRYPTED) {
+    if (fil_page_get_type(page) == XB_FIL_PAGE_COMPRESSED) {
 #ifdef UNIV_DEBUG
       assert(page_size % (size_t)cursor.statinfo.st_blksize == 0);
 #endif
@@ -297,6 +296,12 @@ bool restore_sparseness(const char *src_file_path, uint buffer_size,
       } else {
         page_size = ((XB_UNIV_ZIP_SIZE_MIN >> 1) << ssize);
       }
+#ifdef UNIV_DEBUG
+      /* Check this is a valid page size. We might get compressed min page size
+       * and uncompressed max page size here */
+      assert(page_size >= XB_UNIV_ZIP_SIZE_MIN &&
+             page_size <= XB_UNIV_PAGE_SIZE_MAX);
+#endif
     }
 
     for (ulint i = 0; i < cursor.buf_read / page_size; ++i) {

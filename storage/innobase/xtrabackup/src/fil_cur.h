@@ -47,8 +47,10 @@ struct xb_fil_cur_t {
                                otherwise */
   bool is_ibd;                 /*!< true for IBD tablespace tablespace,
                                false otherwise */
-  bool is_compressable;        /*!< true for uncompressed and unencrypted
-                               tablespaces */
+  bool is_encrypted; /*!< true for encrypted tables. Used to determine with we
+                     should compress a table when using --compress during
+                     backup. Encrypted tables are not compressed and copied
+                     as it is. */
   xb_read_filt_t *read_filter; /*!< read filter */
   xb_read_filt_ctxt_t read_filter_ctxt;
   /*!< read filter context */
