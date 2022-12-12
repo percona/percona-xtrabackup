@@ -234,7 +234,7 @@ static int decompress_write(ds_file_t *file, const void *buf, size_t len) {
         thd->from_to_free = NULL;
       }
 
-      xb_a(threads[i].to_len > 0);
+      if (threads[i].to_len <= 0) return 1;
 
       if (!res) {
         /* Don't stop iteration on failure here because the locks are global

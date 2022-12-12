@@ -9,6 +9,8 @@
 
 // 1.5.0 final
 
+#include <stdio.h>
+#include <stdlib.h>
 #include "quicklz.h"
 
 #if QLZ_VERSION_MAJOR != 1 || QLZ_VERSION_MINOR != 5 || QLZ_VERSION_REVISION != 0
@@ -818,6 +820,10 @@ size_t qlz_decompress(const char *source, void *destination, qlz_state_decompres
 		{
 			reset_table_decompress(state);
 			dsiz = qlz_decompress_core((const unsigned char *)source, (unsigned char *)destination, dsiz, state, (const unsigned char *)destination);
+			if(0 == dsiz)
+			{
+				fprintf(stderr, "Error: compressed file was corrupted - header data size and actual data size mismatch - can’t decompress \n");
+			}
 		}
 		else
 		{
@@ -833,6 +839,10 @@ size_t qlz_decompress(const char *source, void *destination, qlz_state_decompres
 		if((*source & 1) == 1)
 		{
 			dsiz = qlz_decompress_core((const unsigned char *)source, dst, dsiz, state, (const unsigned char *)state->stream_buffer);
+			if(0 == dsiz)
+			{
+				fprintf(stderr, "Error: compressed file was corrupted - header data size and actual data size mismatch - can’t decompress \n");
+			}
 		}
 		else
 		{
