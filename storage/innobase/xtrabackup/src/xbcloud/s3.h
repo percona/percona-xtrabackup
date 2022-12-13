@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #include "object_store.h"
 #include "xbcloud/http.h"
+#include "xbcloud/s3_ec2.h"
 #include "xbcloud/util.h"
 
 #include <time.h>
@@ -54,6 +55,10 @@ class S3_signer {
                             const std::string &bucket, Http_request &req,
                             time_t t) = 0;
   virtual ~S3_signer() {}
+
+  virtual void update_keys(const std::string &_access_key,
+                           const std::string &_secret_key,
+                           const std::string &_session_token) = 0;
 };
 
 class S3_signerV4 : public S3_signer {
@@ -87,6 +92,13 @@ class S3_signerV4 : public S3_signer {
 
   void sign_request(const std::string &hostname, const std::string &bucket,
                     Http_request &req, time_t t) override;
+  void update_keys(const std::string &_access_key,
+                   const std::string &_secret_key,
+                   const std::string &_session_token) override {
+    access_key = _access_key;
+    secret_key = _secret_key;
+    session_token = _session_token;
+  }
 };
 
 class S3_signerV2 : public S3_signer {
@@ -111,6 +123,10 @@ class S3_signerV2 : public S3_signer {
 
   void sign_request(const std::string &hostname, const std::string &bucket,
                     Http_request &req, time_t t) override;
+
+  void update_keys(const std::string &_access_key,
+                   const std::string &_secret_key,
+                   const std::string &_session_token) override {}
 };
 
 class S3_client {
@@ -125,7 +141,7 @@ class S3_client {
 
  private:
   const Http_client *http_client;
-
+  std::shared_ptr<S3_ec2_instance> ec2_instance;
   s3_api_version_t api_version{S3_V_AUTO};
 
   std::string region;
@@ -200,6 +216,9 @@ class S3_client {
     rtrim_slashes(host);
   }
 
+  void set_ec2_instance(std::shared_ptr<S3_ec2_instance> instance) {
+    ec2_instance = instance;
+  }
   void set_session_token(const std::string &st) { session_token = st; }
 
   void set_storage_class(const std::string &sc) { storage_class = sc; }
@@ -280,6 +299,9 @@ class S3_object_store : public Object_store {
   }
   void set_extra_http_headers(const Http_request::headers_t &headers) {
     extra_http_headers = headers;
+  }
+  void set_ec2_instance(std::shared_ptr<S3_ec2_instance> instance) {
+    s3_client.set_ec2_instance(instance);
   }
   bool probe_api_version_and_lookup(const std::string &bucket) {
     return s3_client.probe_api_version_and_lookup(bucket);

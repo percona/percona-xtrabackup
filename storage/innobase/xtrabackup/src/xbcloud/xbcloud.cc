@@ -44,6 +44,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "msg.h"
 #include "xbcloud/azure.h"
 #include "xbcloud/s3.h"
+#include "xbcloud/s3_ec2.h"
 #include "xbcloud/swift.h"
 #include "xbcloud/util.h"
 #include "xbcrypt_common.h"
@@ -691,15 +692,6 @@ static bool parse_args(int argc, char **argv) {
       msg_ts("Swift auth URL is not specified\n");
       return true;
     }
-  } else if (opt_storage == S3) {
-    if (opt_s3_access_key == nullptr) {
-      msg_ts("S3 access key is not specified\n");
-      return true;
-    }
-    if (opt_s3_secret_key == nullptr) {
-      msg_ts("S3 secret key is not specified\n");
-      return true;
-    }
   } else if (opt_storage == AZURE) {
     if (opt_azure_account == nullptr && !opt_azure_development_storage) {
       msg_ts("Azure account name is not specified\n");
@@ -1242,6 +1234,33 @@ int main(int argc, char **argv) {
     container_name = opt_swift_container;
 
   } else if (opt_storage == S3) {
+    std::shared_ptr<S3_ec2_instance> ec2_instance =
+        std::make_shared<S3_ec2_instance>(&http_client);
+    if (opt_s3_access_key == nullptr && opt_s3_secret_key == nullptr &&
+        opt_s3_session_token == nullptr) {
+      if (ec2_instance->fetch_metadata() &&
+          ec2_instance->get_is_ec2_instance_with_profile()) {
+        opt_s3_access_key =
+            my_strdup(PSI_NOT_INSTRUMENTED,
+                      ec2_instance->get_access_key().c_str(), MYF(MY_FAE));
+        opt_s3_secret_key =
+            my_strdup(PSI_NOT_INSTRUMENTED,
+                      ec2_instance->get_secret_key().c_str(), MYF(MY_FAE));
+        opt_s3_session_token =
+            my_strdup(PSI_NOT_INSTRUMENTED,
+                      ec2_instance->get_session_token().c_str(), MYF(MY_FAE));
+        msg_ts("%s: Using instance metadata for access and secret key\n",
+               my_progname);
+      }
+    }
+    if (opt_s3_access_key == nullptr) {
+      msg_ts("S3 access key is not specified\n");
+      return EXIT_FAILURE;
+    }
+    if (opt_s3_secret_key == nullptr) {
+      msg_ts("S3 secret key is not specified\n");
+      return EXIT_FAILURE;
+    }
     std::string region =
         opt_s3_region != nullptr ? opt_s3_region : default_s3_region;
     std::string access_key =
@@ -1272,6 +1291,10 @@ int main(int argc, char **argv) {
     if (!reinterpret_cast<S3_object_store *>(object_store.get())
              ->probe_api_version_and_lookup(container_name)) {
       return EXIT_FAILURE;
+    }
+    if (ec2_instance->get_is_ec2_instance_with_profile()) {
+      reinterpret_cast<S3_object_store *>(object_store.get())
+          ->set_ec2_instance(ec2_instance);
     }
   } else if (opt_storage == GOOGLE) {
     std::string region =
