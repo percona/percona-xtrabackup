@@ -45,8 +45,8 @@ Usage: $0 [-f] [-g] [-h] [-s suite] [-t test_name] [-d mysql_basedir] [-c build_
 -k          Make a copy of failed var directory
 -t path     Run only a single named test. This option can be passed multiple times.
 -h          Print this help message
--s suite    Select a test suite to run. Possible values: binlog, bitmap, experimental, gr, keyring, rocksdb, pagetracking,  main.
-            Default is 'binlog, main, gr, pagetracking, rocksdb and keyring'.
+-s suite    Select a test suite to run. Possible values: binlog, bitmap, experimental, gr, keyring, compression, rocksdb, pagetracking,  main.
+            Default is 'binlog, main, gr, pagetracking, rocksdb, keyring and compression'.
 -j N        Run tests in N parallel processes.
 -T seconds  Test timeout (default is $TEST_TIMEOUT seconds).
 -x options  Extra options to pass to xtrabackup
@@ -942,8 +942,8 @@ if [ -n "$tname" ]
 then
    tests="$tname"
 else
-   tests="suites/binlog/* suites/pagetracking/* suites/gr/*.sh suites/keyring/*.sh suites/rocksdb/*.sh t/*.sh"
-   suites=" pagetracking binlog gr keyring rocksdb main"
+   tests="suites/binlog/* suites/pagetracking/* suites/gr/*.sh suites/keyring/*.sh suites/compression/*.sh suites/rocksdb/*.sh t/*.sh"
+   suites=" pagetracking binlog gr keyring compression rocksdb main"
 fi
 
 export OUTFILE="$PWD/results/setup"

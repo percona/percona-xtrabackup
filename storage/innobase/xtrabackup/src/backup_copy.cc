@@ -81,7 +81,6 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <version_check_pl.h>
 #endif
 
-using std::min;
 
 /** Possible values for system variable "innodb_checksum_algorithm". */
 extern const char *innodb_checksum_algorithm_names[];
@@ -161,95 +160,6 @@ struct datadir_thread_ctxt_t {
   bool ret;
 };
 
-/************************************************************************
-Holds the state needed to copy single data file. */
-struct datafile_cur_t {
-  File fd;
-  char rel_path[FN_REFLEN];
-  char abs_path[FN_REFLEN];
-  MY_STAT statinfo;
-  uint thread_n;
-  byte *orig_buf;
-  byte *buf;
-  uint64_t buf_size;
-  uint64_t buf_read;
-  uint64_t buf_offset;
-};
-
-static void datafile_close(datafile_cur_t *cursor) {
-  if (cursor->fd != -1) {
-    my_close(cursor->fd, MYF(0));
-  }
-  ut::free(cursor->buf);
-}
-
-static bool datafile_open(const char *file, datafile_cur_t *cursor,
-                          uint thread_n) {
-  memset(cursor, 0, sizeof(datafile_cur_t));
-
-  strncpy(cursor->abs_path, file, sizeof(cursor->abs_path));
-
-  /* Get the relative path for the destination tablespace name, i.e. the
-  one that can be appended to the backup root directory. Non-system
-  tablespaces may have absolute paths for remote tablespaces in MySQL
-  5.6+. We want to make "local" copies for the backup. */
-  strncpy(cursor->rel_path, xb_get_relative_path(nullptr, cursor->abs_path),
-          sizeof(cursor->rel_path));
-
-  cursor->fd = my_open(cursor->abs_path, O_RDONLY, MYF(MY_WME));
-
-  if (cursor->fd == -1) {
-    /* The following call prints an error message */
-    os_file_get_last_error(true);
-
-    xb::error() << "cannot open file " << cursor->abs_path;
-
-    return (false);
-  }
-
-  if (my_fstat(cursor->fd, &cursor->statinfo)) {
-    xb::error() << "cannot stat " << cursor->abs_path;
-
-    datafile_close(cursor);
-
-    return (false);
-  }
-
-  posix_fadvise(cursor->fd, 0, 0, POSIX_FADV_SEQUENTIAL);
-
-  ut_a(opt_read_buffer_size >= UNIV_PAGE_SIZE);
-  cursor->buf_size = opt_read_buffer_size;
-  cursor->buf = static_cast<byte *>(
-      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, cursor->buf_size));
-
-  return (true);
-}
-
-static xb_fil_cur_result_t datafile_read(datafile_cur_t *cursor) {
-  ulint to_read;
-  ulint count;
-
-  xtrabackup_io_throttling();
-
-  to_read =
-      min(cursor->statinfo.st_size - cursor->buf_offset, cursor->buf_size);
-
-  if (to_read == 0) {
-    return (XB_FIL_CUR_EOF);
-  }
-
-  count = my_read(cursor->fd, cursor->buf, to_read, MYF(0));
-  if (count == MY_FILE_ERROR) {
-    return (XB_FIL_CUR_ERROR);
-  }
-
-  posix_fadvise(cursor->fd, cursor->buf_offset, count, POSIX_FADV_DONTNEED);
-
-  cursor->buf_read = count;
-  cursor->buf_offset += count;
-
-  return (XB_FIL_CUR_SUCCESS);
-}
 
 /************************************************************************
 Trim leading slashes from absolute path so it becomes relative */
@@ -652,7 +562,7 @@ bool copy_file(ds_ctxt_t *datasink, const char *src_file_path,
   const char *action;
   page_size_t page_size{0, 0, false};
 
-  if (!datafile_open(src_file_path, &cursor, thread_n)) {
+  if (!datafile_open(src_file_path, &cursor, true, opt_read_buffer_size)) {
     goto error;
   }
 
@@ -693,6 +603,7 @@ bool copy_file(ds_ctxt_t *datasink, const char *src_file_path,
     } else {
       if (ds_write(dstfile, cursor.buf, cursor.buf_read)) goto error;
     }
+    xtrabackup_io_throttling();
   }
 
   /* empty file */
@@ -2591,8 +2502,6 @@ bool decrypt_decompress_file(const char *filepath, uint thread_n) {
   cmd << " > " << SQUOTE(dest_filepath);
   message << " " << filepath;
 
-  free(dest_filepath);
-
   if (needs_action) {
     xb::info() << message.str().c_str();
 
@@ -2607,6 +2516,15 @@ bool decrypt_decompress_file(const char *filepath, uint thread_n) {
       }
     }
   }
+  if (ds_data->fs_support_punch_hole) {
+    char error[512];
+    if (!restore_sparseness(dest_filepath, opt_read_buffer_size, error)) {
+      xb::warn() << "restore_sparseness failed for file: " << dest_filepath
+                 << " Error: " << error;
+    }
+  }
+
+  free(dest_filepath);
 
   return (true);
 }
@@ -2620,10 +2538,8 @@ static void decrypt_decompress_thread_func(datadir_thread_ctxt_t *ctxt) {
       continue;
     }
 
-    if (!ends_with(entry.path.c_str(), ".qp") &&
-        !ends_with(entry.path.c_str(), ".xbcrypt") &&
-        !ends_with(entry.path.c_str(), ".lz4") &&
-        !ends_with(entry.path.c_str(), ".zst")) {
+    if (!is_compressed_suffix(entry.path.c_str()) &&
+        !is_encrypted_suffix(entry.path.c_str())) {
       continue;
     }
 

@@ -3287,11 +3287,11 @@ static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
     goto error;
   }
 
-  /* do not compress already compressed tablespaces */
-  if (cursor.is_compressable) {
-    dstfile = ds_open(ds_data, dst_name, &cursor.statinfo);
-  } else {
+  /* do not compress encrypted tablespaces */
+  if (cursor.is_encrypted) {
     dstfile = ds_open(ds_uncompressed_data, dst_name, &cursor.statinfo);
+  } else {
+    dstfile = ds_open(ds_data, dst_name, &cursor.statinfo);
   }
   if (dstfile == NULL) {
     xb::error() << "cannot open the destination stream for " << dst_name;
@@ -8299,3 +8299,31 @@ int main(int argc, char **argv) {
 
   exit(EXIT_SUCCESS);
 }
+
+/* This section ensures file_utils.h remains consistent with InnoDB Layer */
+static_assert(XB_FIL_PAGE_TYPE == FIL_PAGE_TYPE,
+              "XB_FIL_PAGE_TYPE == FIL_PAGE_TYPE");
+static_assert(XB_FIL_PAGE_DATA == FIL_PAGE_DATA,
+              "XB_FIL_PAGE_DATA == FIL_PAGE_DATA");
+static_assert(XB_FSP_HEADER_OFFSET == FSP_HEADER_OFFSET,
+              "XB_FSP_HEADER_OFFSET == FSP_HEADER_OFFSET");
+static_assert(XB_FSP_SPACE_FLAGS == FSP_SPACE_FLAGS,
+              "XB_FSP_SPACE_FLAGS == FSP_SPACE_FLAGS");
+static_assert(XB_FSP_FLAGS_POS_PAGE_SSIZE == FSP_FLAGS_POS_PAGE_SSIZE,
+              "XB_FSP_FLAGS_POS_PAGE_SSIZE == FSP_FLAGS_POS_PAGE_SSIZE");
+static_assert(XB_FSP_FLAGS_MASK_PAGE_SSIZE == FSP_FLAGS_MASK_PAGE_SSIZE,
+              "XB_FSP_FLAGS_MASK_PAGE_SSIZE == FSP_FLAGS_MASK_PAGE_SSIZE");
+static_assert(XB_FIL_PAGE_COMPRESSED == FIL_PAGE_COMPRESSED,
+              "XB_FIL_PAGE_COMPRESSED == FIL_PAGE_COMPRESSED");
+static_assert(XB_FIL_PAGE_COMPRESSED_AND_ENCRYPTED ==
+                  FIL_PAGE_COMPRESSED_AND_ENCRYPTED,
+              "XB_FIL_PAGE_COMPRESSED_AND_ENCRYPTED == "
+              "FIL_PAGE_COMPRESSED_AND_ENCRYPTED");
+static_assert(XB_FIL_PAGE_COMPRESS_SIZE_V1 == FIL_PAGE_COMPRESS_SIZE_V1,
+              "XB_FIL_PAGE_COMPRESS_SIZE_V1 == FIL_PAGE_COMPRESS_SIZE_V1");
+static_assert(XB_UNIV_PAGE_SIZE_ORIG == UNIV_PAGE_SIZE_ORIG,
+              "XB_UNIV_PAGE_SIZE_ORIG == UNIV_PAGE_SIZE_ORIG");
+static_assert(XB_UNIV_ZIP_SIZE_MIN == UNIV_ZIP_SIZE_MIN,
+              "XB_UNIV_ZIP_SIZE_MIN == UNIV_ZIP_SIZE_MIN");
+static_assert(XB_UNIV_PAGE_SIZE_MAX == UNIV_PAGE_SIZE_MAX,
+              "XB_UNIV_PAGE_SIZE_MAX == UNIV_PAGE_SIZE_MAX");

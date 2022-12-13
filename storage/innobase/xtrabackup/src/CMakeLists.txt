@@ -73,6 +73,7 @@ ADD_SUBDIRECTORY(${CMAKE_SOURCE_DIR}/plugin/keyring_vault "${CMAKE_CURRENT_BINAR
 ADD_COMPILE_FLAGS(
   xtrabackup.cc
   backup_mysql.cc
+  file_utils.cc
   COMPILE_FLAGS -DMYSQL_CLIENT)
 
 MYSQL_ADD_EXECUTABLE(xtrabackup

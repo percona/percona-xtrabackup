@@ -35,7 +35,7 @@ typedef struct ds_ctxt {
   char *root;
   void *ptr;
   struct ds_ctxt *pipe_ctxt;
-  bool fs_support_punch_hole;
+  bool fs_support_punch_hole = false;
 } ds_ctxt_t;
 
 typedef struct {

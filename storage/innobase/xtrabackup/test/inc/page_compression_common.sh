@@ -28,6 +28,8 @@ if grep -q 'PUNCH HOLE support not available' $MYSQLD_ERRFILE ; then
     skip 'punch hole support is not available'
 fi
 
+
+
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 
 CREATE TABLE t1 (c1 BLOB) COMPRESSION='zlib';
@@ -38,7 +40,7 @@ CREATE TABLE t5 (c1 BLOB);
 EOF
 
 for i in {1..5} ; do
-    run_cmd $MYSQL $MYSQL_ARGS test <<EOF
+  run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 INSERT INTO t$i VALUES (REPEAT('x', 5000));
 
 INSERT INTO t$i SELECT * FROM t$i;
@@ -52,54 +54,59 @@ done
 # wait for InnoDB to flush all dirty pages
 innodb_wait_for_flush_all
 
+
 if is_sparse_file $mysql_datadir/test/t1.ibd ; then
     working_compression="yes"
 else
     working_compression="no"
 fi
 
-xtrabackup --backup --target-dir=$topdir/backup --transition-key=123
 
-mkdir $topdir/backuplsn_lz4 $topdir/backuplsn_zstd
-xtrabackup --backup --target-dir=$topdir/tmp --transition-key=123 \
-           --extra-lsndir=$topdir/backuplsn_lz4 \
-           --stream=xbstream --compress=lz4 --compress-threads=2 > $topdir/backup_lz4.xbs
+function take_backup() {
+  extra_args=$1
 
-xtrabackup --backup --target-dir=$topdir/tmp --transition-key=123 \
-           --extra-lsndir=$topdir/backuplsn_zstd \
-           --stream=xbstream --compress=zstd --compress-threads=2 > $topdir/backup_zstd.xbs
 
-if [ $working_compression = "yes" ] ; then
-    for i in {1..4} ; do
-        is_sparse_file $topdir/backup/test/t$i.ibd || die "Backed up t$i.ibd is not sparse"
-        is_multiple_of_page_size $topdir/backup/test/t$i.ibd || die "Backed up t$i.ibd is not mulitple of page_size"
-    done
-fi
+  xtrabackup --backup --target-dir=$topdir/backup --transition-key=123 ${extra_args}
 
-for i in {1..5} ; do
-    run_cmd $MYSQL $MYSQL_ARGS test <<EOF
-INSERT INTO t$i SELECT * FROM t$i;
-INSERT INTO t$i SELECT * FROM t$i;
-INSERT INTO t$i SELECT * FROM t$i;
-INSERT INTO t$i SELECT * FROM t$i;
+  mkdir $topdir/backuplsn
+
+  xtrabackup --backup --target-dir=$topdir/tmp --transition-key=123 \
+           --extra-lsndir=$topdir/backuplsn \
+           --stream=xbstream ${extra_args} > $topdir/backup.xbs
+
+  if [ $working_compression = "yes" ] ; then
+      for i in {1..4} ; do
+          is_sparse_file $topdir/backup/test/t$i.ibd || die "Backed up t$i.ibd is not sparse"
+          is_multiple_of_page_size $topdir/backup/test/t$i.ibd || die "Backed up t$i.ibd is not mulitple of page_size"
+      done
+  fi
+
+  for i in {1..5} ; do
+      run_cmd $MYSQL $MYSQL_ARGS test <<EOF
+  INSERT INTO t$i SELECT * FROM t$i;
+  INSERT INTO t$i SELECT * FROM t$i;
+  INSERT INTO t$i SELECT * FROM t$i;
+  INSERT INTO t$i SELECT * FROM t$i;
 EOF
-done
+  done
 
 # wait for InnoDB to flush all dirty pages
 innodb_wait_for_flush_all
 
 xtrabackup --backup --target-dir=$topdir/backup1 \
-           --incremental-basedir=$topdir/backup --transition-key=123
+           --incremental-basedir=$topdir/backup --transition-key=123 ${extra_args}
 
 xtrabackup --backup --target-dir=$topdir/tmp \
-           --incremental-basedir=$topdir/backuplsn_lz4 --transition-key=123 \
-           --stream=xbstream --compress=lz4 --compress-threads=2 > $topdir/backup1_lz4.xbs
-
-xtrabackup --backup --target-dir=$topdir/tmp \
-           --incremental-basedir=$topdir/backuplsn_zstd --transition-key=123 \
-           --stream=xbstream --compress=zstd --compress-threads=2 > $topdir/backup1_zstd.xbs
+           --incremental-basedir=$topdir/backuplsn --transition-key=123 \
+           --stream=xbstream ${extra_args} > $topdir/backup1.xbs
 
 record_db_state test
+}
+
+function decompress() {
+  xtrabackup $1 --remove-original --target-dir=$topdir/backup
+  xtrabackup $1 --remove-original --target-dir=$topdir/backup1
+}
 
 function restore_and_verify() {
     xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup \
@@ -141,25 +148,3 @@ function restore_and_verify() {
 
     verify_db_state test
 }
-
-restore_and_verify
-
-# LZ4
-vlog "Testing restore with LZ4"
-rm -rf $topdir/backup && mkdir $topdir/backup
-xbstream -x -v -C $topdir/backup --decompress --decompress-threads=2 < $topdir/backup_lz4.xbs
-
-rm -rf $topdir/backup1 && mkdir $topdir/backup1
-xbstream -x -v -C $topdir/backup1 --decompress --decompress-threads=2 < $topdir/backup1_lz4.xbs
-
-restore_and_verify
-
-# ZSTD
-vlog "Testing restore with ZSTD"
-rm -rf $topdir/backup && mkdir $topdir/backup
-xbstream -x -v -C $topdir/backup --decompress --decompress-threads=2 < $topdir/backup_zstd.xbs
-
-rm -rf $topdir/backup1 && mkdir $topdir/backup1
-xbstream -x -v -C $topdir/backup1 --decompress --decompress-threads=2 < $topdir/backup1_zstd.xbs
-
-restore_and_verify

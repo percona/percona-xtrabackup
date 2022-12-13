@@ -40,7 +40,7 @@ Reads the space flags from a given data file and returns the
 page size and whether the file is compressable. */
 static bool xb_get_zip_size(const char *file_name, pfs_os_file_t file,
                             byte *buf, page_size_t &page_size,
-                            bool &is_compressable) {
+                            bool &is_encrypted) {
   IORequest read_request(IORequest::READ | IORequest::NO_COMPRESSION);
   const auto ret =
       os_file_read(read_request, file_name, file, buf, 0, UNIV_PAGE_SIZE_MIN);
@@ -57,20 +57,7 @@ static bool xb_get_zip_size(const char *file_name, pfs_os_file_t file,
     page_size.copy_from(page_size_t(flags));
   }
 
-  if (page_size.is_compressed() || FSP_FLAGS_GET_ENCRYPTION(flags)) {
-    is_compressable = false;
-  } else {
-    const auto ret = os_file_read(read_request, file_name, file, buf, 0,
-                                  page_size.physical() * 2);
-    if (!ret) {
-      return (false);
-    }
-    if (Compression::is_compressed_page(buf + page_size.physical())) {
-      is_compressable = false;
-    } else {
-      is_compressable = true;
-    }
-  }
+  is_encrypted = FSP_FLAGS_GET_ENCRYPTION(flags) ? true : false;
 
   return (true);
 }
@@ -200,7 +187,7 @@ xb_fil_cur_result_t xb_fil_cur_open(
 
   /* Determine the page size */
   if (!xb_get_zip_size(cursor->rel_path, cursor->file, cursor->buf, page_size,
-                       cursor->is_compressable)) {
+                       cursor->is_encrypted)) {
     xb_fil_cur_close(cursor);
     return (XB_FIL_CUR_SKIP);
   } else if (page_size.is_compressed()) {
