@@ -2703,36 +2703,46 @@ static bool xtrabackup_read_info(char *filename) {
   FILE *fp;
   bool r = true;
   char mysql_server_version_str[30] = ""; /* 8.0.20.debug| 8.0.20 */
-  unsigned long mysql_server_version;
+  char xtrabackup_version_str[30] = "";   /* 8.0.20.debug| 8.0.20 */
+  unsigned long xb_server_version;
 
   fp = fopen(filename, "r");
   if (!fp) {
     xb::error() << "cannot open " << filename;
     return (false);
   }
-  /* skip uuid, name, tool_name, tool_command, tool_version, ibbackup_version */
-  for (int i = 0; i < 6; i++) {
+  /* skip uuid, name, tool_name, tool_command, tool_version */
+  for (int i = 0; i < 5; i++) {
     char c;
     do {
       c = fgetc(fp);
     } while (c != '\n');
   }
 
+  if (fscanf(fp, "ibbackup_version = %29s\n", xtrabackup_version_str) != 1) {
+    r = false;
+    goto end;
+  }
+  xb_backup_version =
+      xtrabackup::utils::get_version_number(xtrabackup_version_str);
+
+  DBUG_EXECUTE_IF("simulate_backup_lower_version", xb_backup_version = 80030;);
   if (fscanf(fp, "server_version = %29s\n", mysql_server_version_str) != 1) {
     r = false;
     goto end;
   }
-  mysql_server_version =
+
+  xb_server_version =
       xtrabackup::utils::get_version_number(mysql_server_version_str);
 
-  ut_ad(mysql_server_version > 80000 && mysql_server_version < 90000);
-  if (mysql_server_version < 80019) {
+  ut_ad(xb_server_version > 80000 && xb_server_version < 90000);
+  if (xb_server_version < 80019) {
     cfg_version = IB_EXPORT_CFG_VERSION_V3;
-  } else if (mysql_server_version < 80020) {
+  } else if (xb_server_version < 80020) {
     cfg_version = IB_EXPORT_CFG_VERSION_V4;
-  } else if (mysql_server_version < 80023) {
+  } else if (xb_server_version < 80023) {
     cfg_version = IB_EXPORT_CFG_VERSION_V5;
-  } else if (mysql_server_version < 80029) {
+  } else if (xb_server_version < 80029) {
     cfg_version = IB_EXPORT_CFG_VERSION_V6;
   }
 end:
@@ -5039,10 +5049,8 @@ static void xtrabackup_stats_func(int argc, char **argv) {
 
 /* ================= prepare ================= */
 
-static void update_log_temp_checkpoint(byte *buf, lsn_t lsn) {
+void update_log_temp_checkpoint(byte *buf, lsn_t lsn) {
   /* Overwrite the both checkpoint area. */
-
-
   mach_write_to_8(buf + LOG_CHECKPOINT_1 + LOG_CHECKPOINT_LSN, lsn);
   mach_write_to_8(buf + LOG_CHECKPOINT_2 + LOG_CHECKPOINT_LSN, lsn);
 
@@ -6998,6 +7006,7 @@ static void innodb_free_param() {
 
 static void read_metadata() {
   char metadata_path[FN_REFLEN];
+  char xtrabackup_info_path[FN_REFLEN];
 
   /* cd to target-dir */
   if (my_setwd(xtrabackup_real_target_dir, MYF(MY_WME))) {
@@ -7017,6 +7026,16 @@ static void read_metadata() {
     xb::error() << "failed to read metadata from " << SQUOTE(metadata_path);
     exit(EXIT_FAILURE);
   }
+  /* read xtrabackup_info file to read server version and version of
+   * xtrabackup used during backup */
+  sprintf(xtrabackup_info_path, "%s/%s", xtrabackup_target_dir,
+          XTRABACKUP_INFO);
+
+  if (!xtrabackup_read_info(xtrabackup_info_path)) {
+    xb::error() << "Failed to parse xtrabackup_info from "
+                << SQUOTE(xtrabackup_info_path);
+    exit(EXIT_FAILURE);
+  }
 }
 
 static void xtrabackup_prepare_func(int argc, char **argv) {
@@ -7024,20 +7043,9 @@ static void xtrabackup_prepare_func(int argc, char **argv) {
   datafiles_iter_t *it;
   fil_node_t *node;
   fil_space_t *space;
-  char xtrabackup_info_path[FN_REFLEN];
   IORequest write_request(IORequest::WRITE);
 
   read_metadata();
-
-  /* read xtrabackup_info file only in the case of export since we need the
-   * server version */
-  sprintf(xtrabackup_info_path, "%s/%s", xtrabackup_target_dir,
-          XTRABACKUP_INFO);
-  if (xtrabackup_export && !xtrabackup_read_info(xtrabackup_info_path)) {
-    xb::error() << "failed to read xtrabackup_info from "
-                << SQUOTE(xtrabackup_info_path);
-    exit(EXIT_FAILURE);
-  }
 
   if (!strcmp(metadata_type_str, "full-backuped")) {
     xb::info() << "This target seems to be not prepared yet.";

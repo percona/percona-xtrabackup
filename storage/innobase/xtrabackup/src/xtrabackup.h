@@ -331,4 +331,9 @@ bool xb_process_datadir(const char *path,   /*!<in: datadir path */
                         void *data); /*!<in: additional argument for
                                      callback */
 
+/** update the checkpoint and recalculate the checksum of log header
+@param[in,out]	buf		log header buffer
+@param[in]	lsn		lsn to update */
+void update_log_temp_checkpoint(byte *buf, lsn_t lsn);
+
 #endif /* XB_XTRABACKUP_H */

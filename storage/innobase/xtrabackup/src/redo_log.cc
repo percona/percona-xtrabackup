@@ -81,8 +81,11 @@ bool Redo_Log_Reader::find_start_checkpoint_lsn() {
     log_scanned_lsn = checkpoint.m_checkpoint_lsn;
     checkpoint_lsn_start = checkpoint.m_checkpoint_lsn;
 
+    debug_sync_point("stop_before_copy_log_hdr");
+
     /* Copy the header into log_hdr_buf */
     file_handle.read(0, LOG_FILE_HDR_SIZE, log_hdr_buf);
+
   } else {
     const auto logfile0 = log_sys->m_files.file(0);
     auto file_handle = logfile0->open(Log_file_access_mode::READ_ONLY);
@@ -100,9 +103,13 @@ bool Redo_Log_Reader::find_start_checkpoint_lsn() {
     checkpoint_lsn_start = chkp_header.m_checkpoint_lsn;
     checkpoint_offset_start = chkp_header.m_checkpoint_offset;
 
+    debug_sync_point("stop_before_copy_log_hdr");
+
     /* Copy the header into log_hdr_buf */
     file_handle.read(0, LOG_FILE_HDR_SIZE, log_hdr_buf);
   }
+  /* update the headers to store the current checkpoint LSN */
+  update_log_temp_checkpoint(log_hdr_buf, checkpoint_lsn_start);
 
   return (true);
 }

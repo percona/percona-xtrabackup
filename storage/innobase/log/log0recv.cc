@@ -4142,6 +4142,37 @@ static
   return end_lsn;
 }
 
+#ifdef XTRABACKUP
+/** Determine the LSN of the first block found in the redo file
+@param[in,out]  log     	redo log
+@param[in]  	start_lsn 	current start lsn set
+@param[in,out]  calculated_start_lsn 	lsn found in first block
+*/
+static dberr_t determine_redo_file_start_lsn(log_t &log, lsn_t start_lsn,
+                                             lsn_t &calculated_start_lsn) {
+  auto file = log.m_files.find(start_lsn);
+  auto file_handle = file->open(Log_file_access_mode::READ_ONLY);
+
+  /* read the first redo block and find out header number */
+  const dberr_t err = log_data_blocks_read(file_handle, LOG_FILE_HDR_SIZE,
+                                           OS_FILE_LOG_BLOCK_SIZE, log.buf);
+  if (err != DB_SUCCESS) {
+    xb::error() << "Failed to read redo file first block";
+    return err;
+  }
+  Log_data_block_header block_header;
+
+  if (!log_data_block_header_deserialize(log.buf, block_header)) {
+    xb::error() << "Invalid checksum of redo file first block";
+    return DB_ERROR;
+  }
+  calculated_start_lsn =
+      log_block_convert_hdr_to_lsn_no(block_header.m_hdr_no, start_lsn);
+
+  return DB_SUCCESS;
+}
+#endif  // XTRABACKUP
+
 /** Scans log from a buffer and stores new log data to the parsing buffer.
 Parses and hashes the log records if new data found.
 @param[in,out]  log                     redo log
@@ -4382,6 +4413,22 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
       }
     }
   }
+
+#ifdef XTRABACKUP
+  /* PXB 8.0.30 could set wrong start_lsn in the xtrabackup_log_file. We fix
+  such files, by determining the LSN of the first block found in the file as
+  the START_LSN in the redo file header */
+  if (!srv_backup_mode && !srv_read_only_mode && xb_backup_version == 80030) {
+    lsn_t calculated_start_lsn;
+    const dberr_t err = determine_redo_file_start_lsn(log, checkpoint_lsn,
+                                                      calculated_start_lsn);
+    if (err != DB_SUCCESS) {
+      xb::error() << "Failed to determine start lsn in redo file";
+      return err;
+    }
+    log.m_files.set_lsn(log.m_current_file.m_id, calculated_start_lsn);
+  }
+#endif  // XTRABACKUP
 
   err = recv_recovery_begin(log, checkpoint_lsn, to_lsn);
   if (err != DB_SUCCESS) {
