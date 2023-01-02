@@ -21,7 +21,7 @@ start_server
 
 
 if [[ $ib_full_backup_extra_args =~ 'page-tracking' ]]; then
-  run_cmd ${MYSQL} ${MYSQL_ARGS} -e "INSTALL COMPONENT \"file://component_mysqlbackup\""
+  ${MYSQL} ${MYSQL_ARGS} -e "INSTALL COMPONENT \"file://component_mysqlbackup\""
 fi
 
 load_dbase_schema incremental_sample

@@ -1,6 +1,6 @@
 /******************************************************
 hot backup tool for InnoDB
-(c) 2009-2022 Percona LLC and/or its affiliates
+(c) 2009-2023 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -1455,31 +1455,6 @@ bool backup_start(Backup_context &context) {
   return error. Hence, we have to ensure that checkpoint LSN is greater page
   tracking LSN */
 
-  if (opt_page_tracking) {
-    auto page_tracking_start_lsn =
-        pagetracking::get_pagetracking_start_lsn(mysql_connection);
-    debug_sync_point("xtrabackup_after_wait_page_tracking");
-    while (true) {
-      DBUG_EXECUTE_IF("page_tracking_checkpoint_behind",
-                      log_status.lsn_checkpoint = 1;
-                      DBUG_SET("-d,page_tracking_checkpoint_behind"););
-      if (log_status.lsn_checkpoint >= page_tracking_start_lsn) {
-        xb::info() << "pagetracking: Checkpoint lsn is "
-                   << log_status.lsn_checkpoint
-                   << " and page tracking start lsn is "
-                   << page_tracking_start_lsn;
-        break;
-      } else {
-        xb::info() << "pagetracking: Sleeping for 1 second, waiting for "
-                   << "checkpoint lsn " << log_status.lsn_checkpoint
-                   << " to reach to page tracking start lsn "
-                   << page_tracking_start_lsn;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        log_status_get(mysql_connection);
-      }
-    }
-  }
-
   debug_sync_point("xtrabackup_after_query_log_status");
 
   if (!write_current_binlog_file(mysql_connection)) {
@@ -1508,6 +1483,11 @@ bool backup_start(Backup_context &context) {
   }
 
   return (true);
+}
+
+lsn_t log_status_checkpoint_lsn() {
+  log_status_get(mysql_connection);
+  return log_status.lsn_checkpoint;
 }
 
 /* Finsh the backup. Release all locks. Write down backup metadata.

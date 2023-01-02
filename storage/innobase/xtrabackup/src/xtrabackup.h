@@ -141,7 +141,8 @@ extern longlong xtrabackup_use_memory;
 
 extern bool opt_galera_info;
 extern bool opt_slave_info;
-extern bool opt_page_tracking;
+extern bool xb_full_tracking;
+extern bool xb_inc_tracking;
 extern bool opt_no_lock;
 extern bool opt_safe_slave_backup;
 extern bool opt_rsync;

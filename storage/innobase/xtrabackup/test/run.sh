@@ -54,6 +54,7 @@ Usage: $0 [-f] [-g] [-h] [-s suite] [-t test_name] [-d mysql_basedir] [-c build_
 -r path     Use specified path as root directory for test workers.
 -R          Run xtrabackup and mysqld under Record and Replay
 -D          Use mysqld-debug for debug test run.
+-p	    Install and start page tracking on server at the start
 EOF
 }
 
@@ -864,7 +865,7 @@ NWORKERS=
 DEBUG_WORKER=""
 MYSQL_DEBUG_MODE=off
 
-while getopts "fgkhDR?:t:s:d:c:j:T:x:X:i:r:" options; do
+while getopts "fgkhDR?:t:s:d:c:j:T:x:X:i:r:p:" options; do
         case $options in
             f ) force="yes";;
             t )
@@ -913,12 +914,24 @@ recognized for compatibility";;
                 ;;
 
             x )
-                XB_EXTRA_MY_CNF_OPTS="$OPTARG"
+                XB_EXTRA_MY_CNF_OPTS="${XB_EXTRA_MY_CNF_OPTS:-""}$OPTARG"
                 ;;
 
             X )
                 MYSQLD_EXTRA_MY_CNF_OPTS="$OPTARG"
                 ;;
+
+            p )
+                if [ "$OPTARG" = "full" ]  || [ "$OPTARG" = "both" ] || [ "$OPTAG" = "inc" ];
+		then
+			export WITH_PAGETRACKING=1
+			XB_EXTRA_MY_CNF_OPTS="${XB_EXTRA_MY_CNF_OPTS:-""}
+			page-tracking=$OPTARG"
+		else
+			echo "warning: only use option full/both/inc"
+			exit -1
+		fi
+		;;
 
             r )
                 if [ ! -d $OPTARG ]

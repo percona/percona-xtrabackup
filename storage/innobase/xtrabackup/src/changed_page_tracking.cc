@@ -1,5 +1,5 @@
 /******************************************************
-* Copyright (c) 2022 Percona LLC and/or its affiliates.
+* Copyright (c) 2022,2023 Percona LLC and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 /* Changed page tracking implementation */
 #include "changed_page_tracking.h"
 #include <iostream>
+#include "backup_copy.h"
 #include "backup_mysql.h"
 #include "common.h"
 #include "components/mysqlbackup/backup_comp_constants.h"
@@ -37,34 +38,43 @@ static uint64_t get_uuid_short(MYSQL *connection) {
   return (uuid_short);
 }
 
-/** Read the disk page tracking file and build the changed page tracking map for
-the LSN interval incremental_lsn to checkpoint_lsn_start.
-@param[in] checkpoint_lsn_start  start checkpoint lsn
-@param[in] connection            MySQL connectionn
-@return the built map or nullptr if unable to build for any reason. */
-xb_space_map *init(lsn_t checkpoint_lsn_start, MYSQL *connection)
-{
+static void wait_till_start_lsn_above_checkpoint(lsn_t start_lsn) {
+  debug_sync_point("xtrabackup_after_wait_page_tracking");
+  while (true) {
+    auto current_checkpoint = log_status_checkpoint_lsn();
+    DBUG_EXECUTE_IF("page_tracking_checkpoint_behind", current_checkpoint = 1;
+                    DBUG_SET("-d,page_tracking_checkpoint_behind"););
+    if (current_checkpoint >= start_lsn) {
+      xb::info() << "pagetracking: Checkpoint lsn is "
+                 << log_status.lsn_checkpoint
+                 << " and page tracking start lsn is " << start_lsn;
+      break;
+    } else {
+      xb::info() << "pagetracking: Sleeping for 1 second, waiting for "
+                 << "checkpoint lsn " << log_status.lsn_checkpoint
+                 << " to reach to page tracking start lsn " << start_lsn;
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+  }
+}
+
+xb_space_map *init(lsn_t page_start_lsn, lsn_t page_end_lsn,
+                   MYSQL *connection) {
   const ulong page_tracking_read_buffer_size = ((srv_log_buffer_size) / 2);
-  lsn_t page_start_lsn = incremental_lsn;
-  lsn_t page_end_lsn = checkpoint_lsn_start;
   xb_space_map *space_map = nullptr;
 
   if (page_start_lsn == page_end_lsn) {
-    xb::info() << "pagetracking: incremental backup LSN is same as last "
+    xb::info() << "pagetracking: backup LSN is same as last "
                << "checkpoint LSN " << page_start_lsn
                << " not calling mysql component";
     space_map = new xb_space_map;
     return space_map;
   }
 
-  if (page_start_lsn > page_end_lsn) {
-    xb::error() << "pagetracking: incremental backup LSN " << page_start_lsn
-                << " is larger than the last checkpoint LSN " << page_end_lsn;
-    return nullptr;
-  }
-
   uint64_t backupid = 0;
-  if (!get_changed_pages(page_start_lsn, page_end_lsn, &backupid, connection)) {
+  uint64_t total_pages_changed = 0;
+  if (!get_changed_pages(page_start_lsn, &backupid, &total_pages_changed,
+                         connection)) {
     xb::error() << "pagetracking: Failed to get page tracking file "
                    "from server";
     return nullptr;
@@ -134,6 +144,16 @@ xb_space_map *init(lsn_t checkpoint_lsn_start, MYSQL *connection)
     }
   }
 
+  uint64_t total_pages = 0;
+  for (auto it = space_map->begin(); it != space_map->end(); it++) {
+    total_pages += it->second.pages.size();
+  }
+
+  ut_ad(total_pages_changed >= total_pages);
+
+  xb::info() << "pagetracking: Total pages modified: " << total_pages_changed
+             << " Duplicate: " << total_pages_changed - total_pages;
+
   my_close(file, MYF(MY_FAE));
   return space_map;
 }
@@ -144,6 +164,18 @@ void deinit(xb_space_map *space_map) {
   if (space_map) {
     delete space_map;
   }
+}
+
+/* Get the page tracking start lsn
+@param[in] connection               MySQL connectionn
+@return the page tracking start lsn */
+bool is_started(MYSQL *connection) {
+  std::string udf_get_start_lsn = Backup_comp_constants::udf_get_start_lsn;
+  char *start_lsn_str = read_mysql_one_value(
+      connection, ("SELECT " + udf_get_start_lsn + "()").c_str());
+  lsn_t page_track_start_lsn = strtoll(start_lsn_str, nullptr, 10);
+  free(start_lsn_str);
+  return page_track_start_lsn == 0 ? false : true;
 }
 
 /* Get the page tracking start lsn
@@ -164,17 +196,8 @@ lsn_t get_pagetracking_start_lsn(MYSQL *connection) {
   return page_track_start_lsn;
 }
 
-/** Call the mysqlbackup component mysqlbackup_page_track_get_changed_pages
-to get the pages between the LSN interval incremental_lsn to
-checkpoint_lsn_start. Server writes file with spaceid and page_num in data
-directory
-@param[in]   start_lsn      start LSN incremental_lsn
-@param[in]   end_lsn        end LSN checkpoint_lsn_start
-@param[out]  backupid       current backupid
-@param[in]   connection     MySQL connection handler
-@return true or false if failed for any reason. */
-bool get_changed_pages(lsn_t start_lsn, lsn_t end_lsn, uint64_t *backupid,
-                       MYSQL *connection) {
+bool get_changed_pages(lsn_t start_lsn, uint64_t *backupid,
+                       uint64_t *changed_pages_count, MYSQL *connection) {
   *backupid = get_uuid_short(connection);
 
   if (!is_component_installed(connection)) {
@@ -182,31 +205,49 @@ bool get_changed_pages(lsn_t start_lsn, lsn_t end_lsn, uint64_t *backupid,
         << "pagetracking: Please install mysqlbackup "
            "component.(INSTALL COMPONENT \"file://component_mysqlbackup\") to "
            "use page tracking";
-    return (false);
+    return false;
   }
 
   if (!set_backupid(connection, *backupid)) {
     xb::error() << "pagetracking: unable to set backupid";
-    return (false);
+    return false;
   }
 
   /* validate tracking lsn */
   lsn_t page_track_start_lsn = get_pagetracking_start_lsn(connection);
 
   if (page_track_start_lsn == 0) {
-    return (false);
+    xb::error() << "pagetracking: page starting start LSN is set to 0";
+    return false;
   } else if (page_track_start_lsn > start_lsn) {
-    xb::warn() << "pagetracking: tracking start lsn " << page_track_start_lsn
-               << " is more than increment start lsn " << start_lsn;
-    return (false);
+    xb::error() << "pagetracking: tracking start lsn " << page_track_start_lsn
+                << " is more than requested get pages start lsn " << start_lsn;
+    return false;
   }
 
+  /* This check is only required until PS-8710,MySQL 110663 is fixed */
+  wait_till_start_lsn_above_checkpoint(start_lsn);
+
   /* call component api to generate page tracking file */
-  xb::info() << "pagetracking: calling get pages with start lsn " << start_lsn
-             << " and end lsn " << end_lsn;
+  xb::info() << "pagetracking: calling get pages from start lsn " << start_lsn
+             << "  where current checkpoint LSN "
+             << log_status_checkpoint_lsn();
+
   std::ostringstream query;
+
+  query << "SELECT " << Backup_comp_constants::udf_get_changed_page_count << "("
+        << start_lsn << "," << 0 << ")";
+
+  char *get_pages_count_str =
+      read_mysql_one_value(connection, query.str().c_str());
+  auto get_pages_count = atoi(get_pages_count_str);
+  free(get_pages_count_str);
+  *changed_pages_count = get_pages_count > 0 ? get_pages_count : 0;
+
+  query.str("");
+
   query << "SELECT " << Backup_comp_constants::udf_get_changed_pages << "("
-        << start_lsn << "," << end_lsn << ")";
+        << start_lsn << "," << 0 << ")";
 
   char *get_pages_str = read_mysql_one_value(connection, query.str().c_str());
   auto get_pages = atoi(get_pages_str);
@@ -264,6 +305,11 @@ bool is_component_installed(MYSQL *connection) {
 
   int mysql_component = strtoull(mysql_component_str, NULL, 10);
   free(mysql_component_str);
+  if (mysql_component == 0)
+    xb::error()
+        << "pagetracking: Please install mysqlbackup "
+           "component.(INSTALL COMPONENT \"file://component_mysqlbackup\") to "
+           "use page tracking";
 
   return mysql_component == 0 ? (false) : (true);
 }
@@ -292,11 +338,7 @@ void range_get_next_page(xb_page_set *page_set) {
 @return true on success. */
 bool start(MYSQL *connection, lsn_t *lsn) {
   if (!is_component_installed(connection)) {
-    xb::error()
-        << "pagetracking: Please install mysqlbackup "
-           "component.(INSTALL COMPONENT \"file://component_mysqlbackup\") to "
-           "use page tracking";
-    return (false);
+    return false;
   }
 
   std::string udf_set_page_tracking =
@@ -305,8 +347,75 @@ bool start(MYSQL *connection, lsn_t *lsn) {
       connection, ("SELECT " + udf_set_page_tracking + "(1)").c_str());
 
   *lsn = strtoull(page_tracking_start_str, nullptr, 10);
+  auto current_checkpoint_lsn = log_status_checkpoint_lsn();
+
+  if (!is_started(connection)) {
+    xb::error() << "pagetracking: Failed to start pagetracking";
+    return false;
+  }
+
+  xb::info() << "pagetracking: page tracking start LSN: " << *lsn
+             << " current checkpoint LSN " << current_checkpoint_lsn;
   free(page_tracking_start_str);
 
-  return (true);
+  return true;
 }
+
+/** stop the page tracking
+@param[in]   connection  MySQL connection handler
+@param[out]  lsn         lsn at which pagetracking is stopped
+@return true on success. */
+bool stop(MYSQL *connection, lsn_t *lsn) {
+  if (!is_component_installed(connection)) {
+    return false;
+  }
+
+  std::string udf_set_page_tracking =
+      Backup_comp_constants::udf_set_page_tracking;
+  char *page_tracking_start_str = read_mysql_one_value(
+      connection, ("SELECT " + udf_set_page_tracking + "(0)").c_str());
+  free(page_tracking_start_str);
+
+  *lsn = strtoull(page_tracking_start_str, nullptr, 10);
+
+  if (is_started(connection)) {
+    xb::error() << "pagetracking: Failed to stop pagetracking";
+    return false;
+  }
+
+  xb::info() << "pagetracking: page tracking stop LSN: " << *lsn;
+
+  return true;
+}
+
+/** purge the page tracking
+@param[in]   connection  MySQL connection handler
+@param[in]  lsn         lsn at which pagetracking is stopped
+@return true on success. */
+bool stop_and_purge(MYSQL *connection) {
+  lsn_t stop_lsn;
+
+  stop(connection, &stop_lsn);
+
+  std::string udf_page_track_purge_up_to =
+      Backup_comp_constants::udf_page_track_purge_up_to;
+  char *page_tracking_stop_str =
+      read_mysql_one_value(connection, ("SELECT " + udf_page_track_purge_up_to +
+                                        "(" + std::to_string(stop_lsn) + ")")
+                                           .c_str());
+  free(page_tracking_stop_str);
+
+  auto purge_lsn = strtoull(page_tracking_stop_str, nullptr, 10);
+  if (stop_lsn != purge_lsn) {
+    xb::error()
+        << "pagetracking: could not stop pagetracking. Expected purge LSN "
+        << stop_lsn << " server returned " << purge_lsn;
+    return false;
+  }
+
+  xb::info() << "pagetracking: tracking data purged upto LSN " << stop_lsn;
+
+  return true;
+}
+
 }  // namespace pagetracking

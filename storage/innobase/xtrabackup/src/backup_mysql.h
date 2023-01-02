@@ -78,6 +78,13 @@ struct mysql_variable {
   char **value;
 };
 
+/* ensure LSN is more than current checkpoint LSN
+ @param[in] page_tracking_start_lsn  lsn to check
+ @param[in] conn  mysql connection
+@return nothing
+ */
+void verify_pagetracking_start_lsn(lsn_t page_tracking_start_lsn, MYSQL *conn);
+
 #define ROCKSDB_SUBDIR ".rocksdb"
 
 class Myrocks_datadir {

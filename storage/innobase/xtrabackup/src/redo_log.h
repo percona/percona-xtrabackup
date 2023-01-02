@@ -369,7 +369,7 @@ class Redo_Log_Data_Manager {
   os_event_t event;
 
   /** error flag. */
-  std::atomic<bool> error;
+  std::atomic<bool> error = false;
 
   /** redo log consumer */
   Redo_Log_Consumer redo_log_consumer;

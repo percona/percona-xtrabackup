@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011-2019 Percona LLC and/or its affiliates.
+Copyright (c) 2011-2023 Percona LLC and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -84,5 +84,6 @@ bool decrypt_decompress();
 void version_check();
 #endif
 bool directory_exists(const char *dir, bool create);
+lsn_t log_status_checkpoint_lsn();
 
 #endif

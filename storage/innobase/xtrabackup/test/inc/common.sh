@@ -440,6 +440,10 @@ socket $MYSQLD_SOCKET"
 
     if [ $new_instance = yes ] && [ "${type}" = "standalone" ] ; then
         ${MYSQL} ${MYSQL_ARGS} -e "CREATE DATABASE IF NOT EXISTS test"
+	if [ ! -z ${WITH_PAGETRACKING+x} ]; then
+		${MYSQL} ${MYSQL_ARGS} -e "INSTALL COMPONENT \"file://component_mysqlbackup\""
+		${MYSQL} ${MYSQL_ARGS} -e "SELECT mysqlbackup_page_track_set(1)";
+	fi
     fi
 }
 

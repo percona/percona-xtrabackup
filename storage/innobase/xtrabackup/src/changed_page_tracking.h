@@ -1,6 +1,6 @@
 
 /******************************************************
-Copyright (c) 2021 Percona LLC and/or its affiliates.
+Copyright (c) 2021,2023 Percona LLC and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -44,10 +44,11 @@ typedef std::map<space_id_t, xb_page_set> xb_space_map;
 
 /** Read the disk page tracking file and build the changed page tracking map for
 the LSN interval incremental_lsn to checkpoint_lsn_start.
-@param[in] checkpoint_lsn_start     start checkpoint lsn
-@param[in] connection               MySQL connectionn
+@param[in] page_start_lsn 		page tracking start_lsn
+@param[in] page_end_lsn 		page tracking end_lsn
+@param[in] connection            MySQL connectionn
 @return the built map or nullptr if unable to build for any reason. */
-xb_space_map *init(lsn_t checkpoint_lsn_start, MYSQL *connection);
+xb_space_map *init(lsn_t page_start_lsn, lsn_t page_end_lsn, MYSQL *connection);
 
 /* Get the start page-tracking-lsn
 @param[in] connection               MySQL connectionn
@@ -77,18 +78,34 @@ to get the pages between the LSN interval incremental_lsn to
 checkpoint_lsn_start. Server writes file havinng spaceid and page in data
 directory
 @param[in]  start_lsn      start LSN incremental_lsn
-@param[in]  end_lsn        end LSN checkpoint_lsn_start
 @param[out] backupid       current backupid
+@param[out]  pages_count    total page changes
 @param[in]  connection     MySQL connection handler
 @return true or false if failed for any reason. */
-bool get_changed_pages(lsn_t start_lsn, lsn_t end_lsn, uint64_t *backupid,
-                       MYSQL *connection);
+bool get_changed_pages(lsn_t start_lsn, uint64_t *backupid,
+                       uint64_t *changed_pages_count, MYSQL *connection);
 
 /** Start the page tracking
 @param[in]  connection  MySQL connection handler
 @param[out] lsn         lsn at which pagetracking is started
 @return	true on success. */
 bool start(MYSQL *connection, lsn_t *lsn);
+
+/** stop the page tracking
+@param[in]   connection  MySQL connection handler
+@param[out]  lsn         lsn at which pagetracking is stopped
+@return true on success. */
+bool stop(MYSQL *connection, lsn_t *lsn);
+
+/* check if page tracking is running on server
+@param[in]  connection  MySQL connection handler
+@return	true on success. */
+bool is_started(MYSQL *connection);
+
+/** purge the page tracking
+@param[in]   connection  MySQL connection handler
+@return true on success. */
+bool stop_and_purge(MYSQL *connection);
 
 }  // namespace pagetracking
 

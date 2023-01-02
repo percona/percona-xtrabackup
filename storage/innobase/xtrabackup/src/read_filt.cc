@@ -114,6 +114,37 @@ static void rf_page_tracking_init(xb_read_filt_ctxt_t *ctxt,
   ctxt->filter_batch_end = 0;
 }
 
+#ifdef UNIV_DEBUG
+void verify_skipped_pages(ulint next_page_id, xb_fil_cur_t *cursor) {
+  /* Ensure skipped pages does not have modified pages in pagetracking range */
+  xb_read_filt_ctxt_t *ctxt = &cursor->read_filter_ctxt;
+  while (true) {
+    uint64_t to_read_len = next_page_id * ctxt->page_size - ctxt->offset;
+
+    if (to_read_len == 0) break;
+
+    xb_fil_cur_read_from_offset(cursor, ctxt->offset, to_read_len);
+
+    ulint page_size = cursor->page_size;
+    byte *page;
+    uint i = 0;
+    for (i = 0, page = cursor->buf; i < cursor->buf_npages;
+         i++, page += page_size) {
+      lsn_t page_lsn = mach_read_from_8(page + FIL_PAGE_LSN);
+      if (page_lsn > page_tracking_start_lsn &&
+          page_lsn < page_tracking_end_lsn) {
+        xb::error() << " pagetracking: space_id " << ctxt->space_id
+                    << " page_id " << cursor->buf_page_no << " has LSN "
+                    << page_lsn << " between pagetracking start_lsn: "
+                    << page_tracking_start_lsn
+                    << " end_lsn: " << page_tracking_end_lsn;
+        ut_ad(0);
+      }
+    }
+  }
+}
+#endif  // UNIV_DEBUG
+
 /** Get the next batch of pages for the page tracking based filter.
 @param[in/out] cursor            source file cursor
 @param[out]    read_batch_start  starting read offset for the next pages batch
@@ -124,30 +155,6 @@ static void rf_page_tracking_get_next_batch(xb_fil_cur_t *cursor,
   xb_read_filt_ctxt_t *ctxt = &cursor->read_filter_ctxt;
 
   ulint next_page_id;
-
-#ifdef UNIV_DEBUG
-  auto verify_skipped_pages = [&]() {
-    /* Ensure skipped pages does not have modified pages between last
-    backup lsn and checkpoint LSN */
-    while (true) {
-      uint64_t to_read_len = next_page_id * ctxt->page_size - ctxt->offset;
-
-      if (to_read_len == 0) break;
-
-      xb_fil_cur_read_from_offset(cursor, ctxt->offset, to_read_len);
-
-      ulint page_size = cursor->page_size;
-      byte *page;
-      uint i = 0;
-      for (i = 0, page = cursor->buf; i < cursor->buf_npages;
-           i++, page += page_size) {
-        lsn_t page_lsn = mach_read_from_8(page + FIL_PAGE_LSN);
-        ut_ad(page_lsn <= incremental_lsn ||
-              page_lsn >= incremental_start_checkpoint_lsn);
-      }
-    }
-  };
-#endif
 
   /* we need full scan of mysql tablespaces to identify modified pages from last
    * backup start lsn. This is done because we skip applying logical
@@ -178,7 +185,7 @@ static void rf_page_tracking_get_next_batch(xb_fil_cur_t *cursor,
     if (!changed_page_tracking->count(ctxt->space_id)) {
 #ifdef UNIV_DEBUG
       next_page_id = ctxt->data_file_size / ctxt->page_size;
-      verify_skipped_pages();
+      verify_skipped_pages(next_page_id, cursor);
 #endif
       *read_batch_len = 0;
       return;
@@ -207,7 +214,7 @@ static void rf_page_tracking_get_next_batch(xb_fil_cur_t *cursor,
       next_page_id = *space->current_page_it;
 
 #ifdef UNIV_DEBUG
-      verify_skipped_pages();
+      verify_skipped_pages(next_page_id, cursor);
 #endif
 
       ctxt->offset = next_page_id * ctxt->page_size;

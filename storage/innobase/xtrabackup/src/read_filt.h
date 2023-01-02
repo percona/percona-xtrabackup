@@ -54,5 +54,7 @@ struct xb_read_filt_t {
 
 extern xb_read_filt_t rf_pass_through;
 extern xb_read_filt_t rf_page_tracking;
-
+#ifdef UNIV_DEBUG
+void verify_skipped_pages(ulint next_page_id, xb_fil_cur_t *cursor);
+#endif  // UNIV_DEBUG
 #endif

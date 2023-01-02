@@ -1690,6 +1690,30 @@ void log_status_get(MYSQL *conn) {
   mysql_free_result(result);
 }
 
+void verify_pagetracking_start_lsn(lsn_t page_track_start_lsn, MYSQL *conn) {
+  log_status_get(conn);
+  while (true) {
+    DBUG_EXECUTE_IF("page_tracking_checkpoint_behind",
+                    log_status.lsn_checkpoint = 1;
+                    DBUG_SET("-d,page_tracking_checkpoint_behind"););
+
+    if (log_status.lsn_checkpoint >= page_tracking_start_lsn) {
+      xb::info() << "pagetracking: Checkpoint lsn is "
+                 << log_status.lsn_checkpoint
+                 << " and page tracking start lsn is "
+                 << page_tracking_start_lsn;
+      break;
+    } else {
+      xb::info() << "pagetracking: Sleeping for 1 second, waiting for "
+                 << "checkpoint lsn " << log_status.lsn_checkpoint
+                 << " to reach to page tracking start lsn "
+                 << page_tracking_start_lsn;
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      log_status_get(mysql_connection);
+    }
+  }
+}
+
 /*********************************************************************/ /**
  Retrieves MySQL binlog position and
  saves it in a file. It also prints it to stdout.

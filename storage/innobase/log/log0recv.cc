@@ -1862,8 +1862,8 @@ static byte *recv_parse_or_apply_log_rec_body(
           // redo logging is skipped, PXB will fail to get those changed pages
           // (on disk .ibd but yet not on pagetracking). hence, we rely on
           // re-copying the datafiles.
-          if (opt_page_tracking && xtrabackup_incremental != nullptr &&
-              recv_sys->recovered_lsn > incremental_start_checkpoint_lsn) {
+          if ((xb_full_tracking || xb_inc_tracking) &&
+              recv_sys->recovered_lsn > page_tracking_end_lsn) {
             full_scan_tables.insert(space_id);
           }
         }
@@ -1902,8 +1902,8 @@ static byte *recv_parse_or_apply_log_rec_body(
           incremental backup. This way we would have the latest state of
           tablespace and redo apply will skip all the redo generated on the
           tablespace. */
-          if (opt_page_tracking && xtrabackup_incremental != nullptr &&
-              recv_sys->recovered_lsn > incremental_start_checkpoint_lsn) {
+          if ((xb_full_tracking || xb_inc_tracking) &&
+              recv_sys->recovered_lsn > page_tracking_end_lsn) {
             full_scan_tables.insert(space_id);
           }
 #endif /* XTRABACKUP */
