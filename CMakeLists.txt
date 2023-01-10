@@ -2324,29 +2324,8 @@ INCLUDE(${CMAKE_BINARY_DIR}/info_macros.cmake)
 # Source: This can be done during the cmake phase, all information is
 # available, but should be repeated on each "make" just in case someone
 # does "cmake ; make ; git pull ; make".
-<<<<<<< HEAD
-||||||| fbdaa4def30
-CREATE_INFO_SRC(${CMAKE_BINARY_DIR}/Docs)
-MY_ADD_CUSTOM_TARGET(INFO_SRC ALL
-  COMMAND ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/cmake/info_src.cmake
-  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-)
 
-# Build flags: This must be postponed to the make phase.
-MY_ADD_CUSTOM_TARGET(INFO_BIN ALL
-  COMMAND ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/cmake/info_bin.cmake
-  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-)
-=======
-CREATE_INFO_SRC(${CMAKE_BINARY_DIR}/Docs)
-MY_ADD_CUSTOM_TARGET(INFO_SRC ALL
-  COMMAND ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/cmake/info_src.cmake
-  BYPRODUCTS ${CMAKE_BINARY_DIR}/Docs/INFO_SRC
-  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-  COMMENT "Generating Docs/INFO_SRC"
-)
-
-IF(HAVE_BUILD_ID_SUPPORT AND NOT WITHOUT_SERVER)
+IF(HAVE_BUILD_ID_SUPPORT AND NOT WITHOUT_SERVER AND NOT WITH_XTRABACKUP)
   # Show it by default in pushuild, but not for developers.
   IF(DEFINED ENV{PB2WORKDIR})
     OPTION(SHOW_BUILD_ID "Show mysqld build id as final target" ON)
@@ -2382,11 +2361,12 @@ IF(HAVE_BUILD_ID_SUPPORT AND NOT WITHOUT_SERVER)
 ENDIF()
 
 UNSET(MYSQLD_EXECUTABLE_FOR_INFO_BIN)
-IF(HAVE_BUILD_ID_SUPPORT AND NOT WITHOUT_SERVER)
+IF(HAVE_BUILD_ID_SUPPORT AND NOT WITHOUT_SERVER AND NOT WITH_XTRABACKUP)
   SET(MYSQLD_EXECUTABLE_FOR_INFO_BIN
     "-DMYSQLD_EXECUTABLE=$<TARGET_FILE:mysqld>")
 ENDIF()
 
+IF(NOT WITH_XTRABACKUP)
 # Build flags: This must be postponed to the make phase.
 MY_ADD_CUSTOM_TARGET(INFO_BIN ALL
   COMMAND ${CMAKE_COMMAND}
@@ -2397,6 +2377,8 @@ MY_ADD_CUSTOM_TARGET(INFO_BIN ALL
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   COMMENT "Generating Docs/INFO_BIN"
 )
+ENDIF()
+
 # Adding $<TARGET_FILE:mysqld> seems to a dependency on 'mysqld'.
 # Add an explicit one anyways.
 IF(MYSQLD_EXECUTABLE_FOR_INFO_BIN)
@@ -2405,7 +2387,6 @@ IF(MYSQLD_EXECUTABLE_FOR_INFO_BIN)
     ADD_DEPENDENCIES(show_build_id INFO_BIN)
   ENDIF()
 ENDIF()
->>>>>>> mysql-8.0.31
 
 # Packaging
 IF(WIN32)
