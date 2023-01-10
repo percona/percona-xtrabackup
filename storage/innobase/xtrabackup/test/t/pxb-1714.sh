@@ -1,6 +1,9 @@
 #
 # Instant ALTER TABLE ADD COLUMN breaks the backup
 #
+is_server_version_higher_than 8.0.31 && die "This test should be enabled for ms after 8.0.31"
+require_xtradb
+
 
 . inc/common.sh
 

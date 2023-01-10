@@ -25,7 +25,6 @@ diff -u <( ( ( cd $dir1; find . | grep -Ev $ign_list )
 ./xtrabackup_checkpoints
 ./xtrabackup_info
 ./xtrabackup_logfile
-./xtrabackup_master_key_id
 ./xtrabackup_tablespaces
 EOF
 
@@ -72,7 +71,6 @@ diff -u <( ( ( cd $dir1; find . | grep -Ev $ign_list )
 ./xtrabackup_checkpoints
 ./xtrabackup_info
 ./xtrabackup_logfile
-./xtrabackup_master_key_id
 ./xtrabackup_tablespaces
 EOF
 

@@ -20,7 +20,7 @@ EOF
 chmod +x $topdir/cp
 
 # Calling with $topdir in the path first so the 'fake' cp is used
-PATH=$topdir:$PATH xtrabackup --backup --rsync --target-dir=$topdir/backup
+PATH=$topdir:$PATH $XB_BIN $XB_ARGS --backup --rsync --target-dir=$topdir/backup
 
 stop_server
 
