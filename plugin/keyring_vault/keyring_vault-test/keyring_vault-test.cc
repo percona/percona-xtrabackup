@@ -324,7 +324,7 @@ int main(int argc, char **argv) {
   BOOST_SCOPE_EXIT(void) { mysql_mutex_destroy(&LOCK_keys_in_keyring); }
   BOOST_SCOPE_EXIT_END
 
-  system_charset_info = &my_charset_utf8_general_ci;
+  system_charset_info = &my_charset_utf8mb3_general_ci;
   srand(time(nullptr));
 
   typedef std::vector<char> char_container;
