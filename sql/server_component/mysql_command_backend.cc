@@ -43,7 +43,7 @@ MYSQL_METHODS mysql_methods = {
     csi_connect,       csi_read_query_result, csi_advanced_command,
     csi_read_rows,     csi_use_result,        csi_fetch_row,
     csi_fetch_lengths, csi_flush_use_result,  csi_read_change_user_result,
-#if !defined(MYSQL_SERVER) && !defined(MYSQL_COMPONENT)
+#if (!defined(MYSQL_SERVER) && !defined(MYSQL_COMPONENT)) || defined(XTRABACKUP)
     nullptr,  // csi_list_fields,
     nullptr,  // csi_read_prepare_result,
     nullptr,  // csi_stmt_execute,
@@ -53,7 +53,7 @@ MYSQL_METHODS mysql_methods = {
     nullptr,  // csi_read_statistics,
     nullptr,  // csi_next_result,
     nullptr,  // csi_read_rows_from_cursor
-#endif        // ! MYSQL_SERVER
+#endif        // (! MYSQL_SERVER && ! MYSQL_COMPONENT) || XTRABACKUP
     nullptr,  /* read_query_result_nonblocking */
     nullptr,  /* advanced_command_nonblocking */
     nullptr,  /* read_rows_nonblocking */

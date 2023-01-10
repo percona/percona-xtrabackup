@@ -134,7 +134,7 @@
 /* mysql_command_service_extn */
 #else
 #include "libmysql/client_settings.h"
-#endif
+#endif /* MYSQL_SERVER && ! XTRABACKUP */
 #include "client_extensions_macros.h"
 #include "sql/log_event.h"     /* Log_event_type */
 #include "sql/rpl_constants.h" /* mysql_binlog_XXX() */
@@ -1893,7 +1893,7 @@ void end_server(MYSQL *mysql) {
 #endif  // NDEBUG
 #if defined(MYSQL_SERVER) && !defined(XTRABACKUP)
     slave_io_thread_detach_vio();
-#endif
+#endif /* MYSQL_SERVER && ! XTRABACKUP */
     vio_delete(mysql->net.vio);
     mysql->net.vio = nullptr; /* Marker */
     mysql_prune_stmt_list(mysql);
@@ -3229,7 +3229,7 @@ static MYSQL_METHODS client_methods = {
     cli_fetch_lengths,          /* fetch_lengths */
     cli_flush_use_result,       /* flush_use_result */
     cli_read_change_user_result /* read_change_user_result */
-#ifndef MYSQL_SERVER
+#if !defined(MYSQL_SERVER) || defined(XTRABACKUP)
     ,
     cli_list_fields,         /* list_fields */
     cli_read_prepare_result, /* read_prepare_result */
@@ -3240,7 +3240,7 @@ static MYSQL_METHODS client_methods = {
     cli_read_query_result,   /* next_result */
     cli_read_binary_rows,    /* read_rows_from_cursor */
     free_rows
-#endif
+#endif /* ! MYSQL_SERVER || XTRABACKUP */
     ,
     cli_read_query_result_nonblocking,      /* read_query_result_nonblocking */
     cli_advanced_command_nonblocking,       /* advanced_command_nonblocking */
@@ -3346,12 +3346,12 @@ MYSQL_EXTENSION *mysql_extension_init(MYSQL *mysql [[maybe_unused]]) {
       key_memory_MYSQL, sizeof(struct MYSQL_ASYNC), MYF(MY_WME | MY_ZEROFILL)));
   /* set default value */
   ext->mysql_async_context->async_op_status = ASYNC_OP_UNSET;
-#ifdef MYSQL_SERVER
+#if defined(MYSQL_SERVER) && !defined(XTRABACKUP)
   ext->server_extn = nullptr;
   ext->mcs_extn = static_cast<struct mysql_command_service_extn *>(
       my_malloc(key_memory_MYSQL, sizeof(struct mysql_command_service_extn),
                 MYF(MY_WME | MY_ZEROFILL)));
-#endif
+#endif /* MYSQL_SERVER && ! XTRABACKUP */
   DBUG_PRINT("async",
              ("set state=%d", ext->mysql_async_context->async_query_state));
   return ext;
@@ -3742,96 +3742,6 @@ error:
   before calling mysql_real_connect !
 */
 
-<<<<<<< HEAD
-static bool cli_read_query_result(MYSQL *mysql);
-static net_async_status cli_read_query_result_nonblocking(MYSQL *mysql);
-static MYSQL_RES *cli_use_result(MYSQL *mysql);
-
-int cli_read_change_user_result(MYSQL *mysql) {
-  return cli_safe_read(mysql, nullptr);
-}
-
-net_async_status cli_read_change_user_result_nonblocking(MYSQL *mysql,
-                                                         ulong *ret) {
-  return cli_safe_read_nonblocking(mysql, nullptr, ret);
-}
-
-static MYSQL_METHODS client_methods = {
-    cli_read_query_result,      /* read_query_result */
-    cli_advanced_command,       /* advanced_command */
-    cli_read_rows,              /* read_rows */
-    cli_use_result,             /* use_result */
-    cli_fetch_lengths,          /* fetch_lengths */
-    cli_flush_use_result,       /* flush_use_result */
-    cli_read_change_user_result /* read_change_user_result */
-#if !defined(MYSQL_SERVER) || defined(XTRABACKUP)
-    ,
-    cli_list_fields,         /* list_fields */
-    cli_read_prepare_result, /* read_prepare_result */
-    cli_stmt_execute,        /* stmt_execute */
-    cli_read_binary_rows,    /* read_binary_rows */
-    cli_unbuffered_fetch,    /* unbuffered_fetch */
-    cli_read_statistics,     /* read_statistics */
-    cli_read_query_result,   /* next_result */
-    cli_read_binary_rows,    /* read_rows_from_cursor */
-    free_rows
-#endif
-    ,
-    cli_read_query_result_nonblocking,      /* read_query_result_nonblocking */
-    cli_advanced_command_nonblocking,       /* advanced_command_nonblocking */
-    cli_read_rows_nonblocking,              /* read_rows_nonblocking */
-    cli_flush_use_result_nonblocking,       /* flush_use_result_nonblocking */
-    cli_read_query_result_nonblocking,      /* next_result_nonblocking */
-    cli_read_change_user_result_nonblocking /* read_change_user_result_nonblocking
-                                             */
-};
-
-||||||| fbdaa4def30
-static bool cli_read_query_result(MYSQL *mysql);
-static net_async_status cli_read_query_result_nonblocking(MYSQL *mysql);
-static MYSQL_RES *cli_use_result(MYSQL *mysql);
-
-int cli_read_change_user_result(MYSQL *mysql) {
-  return cli_safe_read(mysql, nullptr);
-}
-
-net_async_status cli_read_change_user_result_nonblocking(MYSQL *mysql,
-                                                         ulong *ret) {
-  return cli_safe_read_nonblocking(mysql, nullptr, ret);
-}
-
-static MYSQL_METHODS client_methods = {
-    cli_read_query_result,      /* read_query_result */
-    cli_advanced_command,       /* advanced_command */
-    cli_read_rows,              /* read_rows */
-    cli_use_result,             /* use_result */
-    cli_fetch_lengths,          /* fetch_lengths */
-    cli_flush_use_result,       /* flush_use_result */
-    cli_read_change_user_result /* read_change_user_result */
-#ifndef MYSQL_SERVER
-    ,
-    cli_list_fields,         /* list_fields */
-    cli_read_prepare_result, /* read_prepare_result */
-    cli_stmt_execute,        /* stmt_execute */
-    cli_read_binary_rows,    /* read_binary_rows */
-    cli_unbuffered_fetch,    /* unbuffered_fetch */
-    cli_read_statistics,     /* read_statistics */
-    cli_read_query_result,   /* next_result */
-    cli_read_binary_rows,    /* read_rows_from_cursor */
-    free_rows
-#endif
-    ,
-    cli_read_query_result_nonblocking,      /* read_query_result_nonblocking */
-    cli_advanced_command_nonblocking,       /* advanced_command_nonblocking */
-    cli_read_rows_nonblocking,              /* read_rows_nonblocking */
-    cli_flush_use_result_nonblocking,       /* flush_use_result_nonblocking */
-    cli_read_query_result_nonblocking,      /* next_result_nonblocking */
-    cli_read_change_user_result_nonblocking /* read_change_user_result_nonblocking
-                                             */
-};
-
-=======
->>>>>>> mysql-8.0.31
 typedef enum my_cs_match_type_enum {
   /* MySQL and OS charsets are fully compatible */
   my_cs_exact,
