@@ -4738,15 +4738,9 @@ dberr_t Fil_shard::space_delete(space_id_t space_id, buf_remove_t buf_remove) {
     tablespace file, the record must have already been
     written to the redo log. */
     log_write_up_to(*log_sys, mtr.commit_lsn(), true);
-<<<<<<< HEAD
-#endif /* UNIV_HOTBACKUP || XTRABACKUP */
-||||||| fbdaa4def30
-#endif /* UNIV_HOTBACKUP */
-=======
 
     DBUG_EXECUTE_IF("space_delete_crash", DBUG_SUICIDE(););
-#endif /* UNIV_HOTBACKUP */
->>>>>>> mysql-8.0.31
+#endif /* UNIV_HOTBACKUP || XTRABACKUP */
 
     char *cfg_name = Fil_path::make_cfg(path);
 
