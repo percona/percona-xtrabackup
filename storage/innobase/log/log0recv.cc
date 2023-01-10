@@ -425,8 +425,16 @@ void recv_sys_create() {
 #endif
 }
 
+<<<<<<< HEAD
 /** Resize the recovery parsing buffer upto log_buffer_size */
 bool recv_sys_resize_buf() {
+||||||| fbdaa4def30
+/** Resize the recovery parsing buffer upto log_buffer_size */
+static bool recv_sys_resize_buf() {
+=======
+/** Resize the recovery parsing buffer up to log_buffer_size */
+static bool recv_sys_resize_buf() {
+>>>>>>> mysql-8.0.31
   ut_ad(recv_sys->buf_len <= srv_log_buffer_size);
 
 #ifndef UNIV_HOTBACKUP
@@ -1745,6 +1753,7 @@ static byte *recv_parse_or_apply_log_rec_body(
         xb::info() << "Last flushed lsn: " << backup_redo_log_flushed_lsn
                    << " undo_delete lsn " << recv_sys->recovered_lsn;
 
+<<<<<<< HEAD
         xb::error(ER_IB_MSG_716)
             << "An undo ddl truncation (could be automatic)"
             << " operation has been"
@@ -1754,6 +1763,131 @@ static byte *recv_parse_or_apply_log_rec_body(
             << " Retry the backup"
             << " operation later or with --lock-ddl";
         exit(EXIT_FAILURE);
+||||||| fbdaa4def30
+      return fil_tablespace_redo_delete(
+          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
+          recv_sys->bytes_to_ignore_before_checkpoint != 0);
+
+    case MLOG_FILE_CREATE:
+
+      return fil_tablespace_redo_create(
+          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
+          recv_sys->bytes_to_ignore_before_checkpoint != 0);
+
+    case MLOG_FILE_RENAME:
+
+      return fil_tablespace_redo_rename(
+          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
+          recv_sys->bytes_to_ignore_before_checkpoint != 0);
+
+    case MLOG_FILE_EXTEND:
+
+      return fil_tablespace_redo_extend(
+          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
+          recv_sys->bytes_to_ignore_before_checkpoint != 0);
+#else  /* !UNIV_HOTBACKUP */
+      // Mysqlbackup does not execute file operations. It cares for all
+      // files to be at their final places when it applies the redo log.
+      // The exception is the restore of an incremental_with_redo_log_only
+      // backup.
+    case MLOG_FILE_DELETE:
+
+      return fil_tablespace_redo_delete(
+          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
+          !recv_sys->apply_file_operations);
+
+    case MLOG_FILE_CREATE:
+
+      return fil_tablespace_redo_create(
+          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
+          !recv_sys->apply_file_operations);
+
+    case MLOG_FILE_RENAME:
+
+      return fil_tablespace_redo_rename(
+          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
+          !recv_sys->apply_file_operations);
+
+    case MLOG_FILE_EXTEND:
+
+      return fil_tablespace_redo_extend(
+          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
+          !recv_sys->apply_file_operations);
+#endif /* !UNIV_HOTBACKUP */
+
+    case MLOG_INDEX_LOAD:
+#ifdef UNIV_HOTBACKUP
+      // While scaning redo logs during a backup operation a
+      // MLOG_INDEX_LOAD type redo log record indicates, that a DDL
+      // (create index, alter table...) is performed with
+      // 'algorithm=inplace'. The affected tablespace must be re-copied
+      // in the backup lock phase. Record it in the index_load_list.
+      if (!recv_recovery_on) {
+        index_load_list.emplace_back(
+            std::pair<space_id_t, lsn_t>(space_id, recv_sys->recovered_lsn));
+=======
+      return fil_tablespace_redo_delete(
+          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
+          recv_sys->bytes_to_ignore_before_checkpoint != 0);
+
+    case MLOG_FILE_CREATE:
+
+      return fil_tablespace_redo_create(
+          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
+          recv_sys->bytes_to_ignore_before_checkpoint != 0);
+
+    case MLOG_FILE_RENAME:
+
+      return fil_tablespace_redo_rename(
+          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
+          recv_sys->bytes_to_ignore_before_checkpoint != 0);
+
+    case MLOG_FILE_EXTEND:
+
+      return fil_tablespace_redo_extend(
+          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
+          recv_sys->bytes_to_ignore_before_checkpoint != 0);
+#else  /* !UNIV_HOTBACKUP */
+      // Mysqlbackup does not execute file operations. It cares for all
+      // files to be at their final places when it applies the redo log.
+      // The exception is the restore of an incremental_with_redo_log_only
+      // backup.
+    case MLOG_FILE_DELETE:
+
+      return fil_tablespace_redo_delete(
+          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
+          !recv_sys->apply_file_operations);
+
+    case MLOG_FILE_CREATE:
+
+      return fil_tablespace_redo_create(
+          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
+          !recv_sys->apply_file_operations);
+
+    case MLOG_FILE_RENAME:
+
+      return fil_tablespace_redo_rename(
+          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
+          !recv_sys->apply_file_operations);
+
+    case MLOG_FILE_EXTEND:
+
+      return fil_tablespace_redo_extend(
+          ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
+          !recv_sys->apply_file_operations);
+#endif /* !UNIV_HOTBACKUP */
+
+    case MLOG_INDEX_LOAD:
+#ifdef UNIV_HOTBACKUP
+      // While scanning redo logs during a backup operation a
+      // MLOG_INDEX_LOAD type redo log record indicates, that a DDL
+      // (create index, alter table...) is performed with
+      // 'algorithm=inplace'. The affected tablespace must be re-copied
+      // in the backup lock phase. Record it in the index_load_list.
+      if (!recv_recovery_on) {
+        index_load_list.emplace_back(
+            std::pair<space_id_t, lsn_t>(space_id, recv_sys->recovered_lsn));
+>>>>>>> mysql-8.0.31
       }
 
       return fil_tablespace_redo_delete(

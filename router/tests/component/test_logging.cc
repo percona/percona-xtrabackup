@@ -874,7 +874,7 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(
         // We can't reliably check if the eventlog logging is working with a
         // component test as this is too operating system intrusive and also
-        // requires admin priviledges to setup and we are supposed to run on pb2
+        // requires admin privileges to setup and we are supposed to run on pb2
         // environment. Let's at least check that this sink type is supported.
         // Level note to eventlog,filelog (TS_FR1_03)
         LoggingConfigOkParams(
@@ -1072,7 +1072,7 @@ INSTANTIATE_TEST_SUITE_P(
             "Configuration error: Log level 'invalid' is not valid. Valid "
             "values are: debug, error, fatal, info, note, system, and warning"),
 
-        // Both level and sinks valuse invalid in the [logger] section
+        // Both level and sinks values invalid in the [logger] section
         /*9*/
         LoggingConfigErrorParams(
             "[logger]\n"
@@ -1127,7 +1127,7 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(
         // We can't reliably check if the eventlog logging is working with a
         // component test as this is too operating system intrusive and also
-        // requires admin priviledges to setup and we are supposed to run on pb2
+        // requires admin privileges to setup and we are supposed to run on pb2
         // environment. Let's at least check that this sink type is supported
         LoggingConfigErrorParams(
             "[logger]\n"
@@ -1696,7 +1696,7 @@ TEST_F(RouterLoggingTest, very_long_router_name_gets_properly_logged) {
   static_assert(
       sizeof(name) > 255,
       "too long");  // log message max length is 256, we want something that
-                    // guarrantees the limit would be exceeded
+                    // guarantees the limit would be exceeded
 
   // launch the router in bootstrap mode
   auto &router = launch_router_for_fail({
@@ -1722,7 +1722,7 @@ TEST_F(RouterLoggingTest, very_long_router_name_gets_properly_logged) {
 }
 
 /**
- * @test verify that debug logs are not written to console during boostrap if
+ * @test verify that debug logs are not written to console during bootstrap if
  * bootstrap configuration file is not provided.
  */
 TEST_F(RouterLoggingTest, is_debug_logs_disabled_if_no_bootstrap_config_file) {
@@ -1749,14 +1749,14 @@ TEST_F(RouterLoggingTest, is_debug_logs_disabled_if_no_bootstrap_config_file) {
       EXIT_SUCCESS, true, false, -1s,
       RouterComponentBootstrapTest::kBootstrapOutputResponder);
 
-  // check if the bootstraping was successful
+  // check if the bootstrapping was successful
   check_exit_code(router, EXIT_SUCCESS);
   EXPECT_THAT(router.get_full_output(),
               testing::Not(testing::HasSubstr("SELECT ")));
 }
 
 /**
- * @test verify that debug logs are written to console during boostrap if
+ * @test verify that debug logs are written to console during bootstrap if
  * log_level is set to DEBUG in bootstrap configuration file.
  */
 TEST_F(RouterLoggingTest, is_debug_logs_enabled_if_bootstrap_config_file) {
@@ -1794,7 +1794,7 @@ TEST_F(RouterLoggingTest, is_debug_logs_enabled_if_bootstrap_config_file) {
       EXIT_SUCCESS, true, false, -1s,
       RouterComponentBootstrapTest::kBootstrapOutputResponder);
 
-  // check if the bootstraping was successful
+  // check if the bootstrapping was successful
   check_exit_code(router, EXIT_SUCCESS);
 
   // check if log output contains the SQL queries.
@@ -1841,7 +1841,7 @@ TEST_F(RouterLoggingTest, is_debug_logs_written_to_file_if_logging_folder) {
       EXIT_SUCCESS, true, false, -1s,
       RouterComponentBootstrapTest::kBootstrapOutputResponder);
 
-  // check if the bootstraping was successful
+  // check if the bootstrapping was successful
   check_exit_code(router, EXIT_SUCCESS);
 
   // check if log output contains the SQL queries.
@@ -1896,7 +1896,7 @@ TEST_F(RouterLoggingTest, bootstrap_normal_logs_written_to_stdout) {
       EXIT_SUCCESS, /*catch_stderr=*/false, false, -1s,
       RouterComponentBootstrapTest::kBootstrapOutputResponder);
 
-  // check if the bootstraping was successful
+  // check if the bootstrapping was successful
   check_exit_code(router, EXIT_SUCCESS);
 
   // check if logs are not written to output
@@ -2200,7 +2200,7 @@ TEST_F(MetadataCacheLoggingTest,
 
 /**
  * @test Checks that the logs rotation works (meaning Router will recreate
- * it's log file when it was moved and HUP singnal was sent to the Router).
+ * its log file when it was moved and HUP signal was sent to the Router).
  */
 TEST_F(MetadataCacheLoggingTest, log_rotation_by_HUP_signal) {
   TempDirectory conf_dir;
@@ -2221,8 +2221,7 @@ TEST_F(MetadataCacheLoggingTest, log_rotation_by_HUP_signal) {
   auto log_file_1 = Path(logging_dir).join("mysqlrouter.log.1");
 
   mysqlrouter::rename_file(log_file.str(), log_file_1.str());
-  const auto pid = static_cast<pid_t>(router.get_pid());
-  ::kill(pid, SIGHUP);
+  ::kill(router.get_pid(), SIGHUP);
 
   // let's wait until something new gets logged (metadata cache TTL has
   // expired), to be sure the default file that we moved is back.
@@ -2257,8 +2256,7 @@ TEST_F(MetadataCacheLoggingTest, log_rotation_by_HUP_signal_no_file_move) {
   const std::string log_content = router.get_logfile_content();
 
   // send the log-rotate signal
-  const auto pid = static_cast<pid_t>(router.get_pid());
-  ::kill(pid, SIGHUP);
+  ::kill(router.get_pid(), SIGHUP);
 
   // wait until something new gets logged;
   std::string log_content_2;
@@ -2347,7 +2345,7 @@ TEST_F(MetadataCacheLoggingTest, log_rotation_read_only) {
   EXPECT_TRUE(retry_for([log_file]() { return log_file.exists(); }, 500ms));
   chmod(log_file.c_str(), S_IRUSR);
 
-  const auto pid = static_cast<pid_t>(router.get_pid());
+  const auto pid = router.get_pid();
   SCOPED_TRACE("// send the log-rotate signal to PID " + std::to_string(pid));
   ::kill(pid, SIGHUP);
 
@@ -2373,9 +2371,11 @@ TEST_F(MetadataCacheLoggingTest, log_rotation_stdout) {
   default_section["logging_folder"] = "";
 
   const auto config = mysql_harness::join(
-      std::vector<std::string>{mysql_harness::ConfigBuilder::build_section(
-                                   "logger", {{"level", "DEBUG"}}),
-                               get_static_routing_section()},
+      std::vector<std::string>{
+          mysql_harness::ConfigBuilder::build_section("logger",
+                                                      {{"level", "DEBUG"}}),
+          mysql_harness::ConfigBuilder::build_section("io", {{"threads", "1"}}),
+          get_static_routing_section()},
       "\n");
 
   auto &router = launch_router(
@@ -2868,7 +2868,7 @@ INSTANTIATE_TEST_SUITE_P(
                                          "destination=" FILENAME "\n",
                                          USER_LOGFILE_NAME, false,
                                          "Illegal destination"),
-        // TS_FR10_03 consolelog destination set to realtive file
+        // TS_FR10_03 consolelog destination set to relative file
         /*17*/
         LoggingConfigFilenameErrorParams("[logger]\n"
                                          "sinks=consolelog\n"
@@ -2876,7 +2876,7 @@ INSTANTIATE_TEST_SUITE_P(
                                          "destination=" REL_PATH "\n",
                                          USER_LOGFILE_NAME, true,
                                          "Illegal destination"),
-        // TS_FR10_04 consolelog destination set to realtive file
+        // TS_FR10_04 consolelog destination set to relative file
         /*18*/
         LoggingConfigFilenameErrorParams("[logger]\n"
                                          "sinks=consolelog\n"
@@ -2884,7 +2884,7 @@ INSTANTIATE_TEST_SUITE_P(
                                          "destination=" ABS_PATH "\n",
                                          USER_LOGFILE_NAME, true,
                                          "Illegal destination"),
-        // TS_FR10_05 consolelog destination set to realtive file
+        // TS_FR10_05 consolelog destination set to relative file
         /*19*/
         LoggingConfigFilenameErrorParams("[logger]\n"
                                          "sinks=consolelog\n"

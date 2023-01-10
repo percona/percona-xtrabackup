@@ -31,10 +31,11 @@
 
 #include <algorithm>
 #include <atomic>
-#include <climits>
+#include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -42,6 +43,7 @@
 #include "lex_string.h"
 #include "m_ctype.h"
 #include "m_string.h"
+#include "mem_root_deque.h"
 #include "my_alloc.h"
 #include "my_base.h"
 #include "my_bitmap.h"
@@ -51,7 +53,6 @@
 #include "my_sqlcommand.h"
 #include "my_sys.h"
 #include "my_thread_local.h"
-#include "mysql/psi/mysql_mutex.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
 #include "sql/auth/auth_acls.h"
@@ -65,25 +66,20 @@
 #include "sql/item.h"
 #include "sql/item_func.h"
 #include "sql/item_subselect.h"
-#include "sql/iterators/row_iterator.h"
 #include "sql/join_optimizer/access_path.h"
 #include "sql/join_optimizer/bit_utils.h"
 #include "sql/join_optimizer/explain_access_path.h"
-#include "sql/join_optimizer/join_optimizer.h"
 #include "sql/key.h"
 #include "sql/mysqld.h"              // stage_explaining
 #include "sql/mysqld_thd_manager.h"  // Global_THD_manager
 #include "sql/opt_costmodel.h"
 #include "sql/opt_explain_format.h"
 #include "sql/opt_trace.h"  // Opt_trace_*
+#include "sql/parse_tree_node_base.h"
 #include "sql/protocol.h"
-#include "sql/range_optimizer/group_index_skip_scan.h"
+#include "sql/query_term.h"
 #include "sql/range_optimizer/group_index_skip_scan_plan.h"
-#include "sql/range_optimizer/index_range_scan_plan.h"
 #include "sql/range_optimizer/path_helpers.h"
-#include "sql/range_optimizer/range_optimizer.h"
-#include "sql/range_optimizer/rowid_ordered_retrieval.h"
-#include "sql/range_optimizer/rowid_ordered_retrieval_plan.h"
 #include "sql/sql_bitmap.h"
 #include "sql/sql_class.h"
 #include "sql/sql_cmd.h"
@@ -98,8 +94,8 @@
 #include "sql/sql_partition.h"  // for make_used_partitions_str()
 #include "sql/sql_select.h"
 #include "sql/table.h"
-#include "sql/table_function.h"    // Table_function
-#include "sql/temp_table_param.h"  // Func_ptr
+#include "sql/table_function.h"  // Table_function
+#include "sql/visible_fields.h"
 #include "sql_string.h"
 #include "template_utils.h"
 
@@ -128,6 +124,8 @@ static const char *plan_not_ready[] = {"Not optimized, outer query is empty",
 
 static bool ExplainIterator(THD *ethd, const THD *query_thd,
                             Query_expression *unit);
+
+namespace {
 
 /**
   A base for all Explain_* classes
@@ -300,6 +298,12 @@ class Explain {
   virtual bool can_walk_clauses() { return !explain_other; }
   virtual enum_parsing_context get_subquery_context(
       Query_expression *unit) const;
+
+ private:
+  /**
+    Returns true if EXPLAIN should not produce any information about subqueries.
+   */
+  virtual bool skip_subqueries() const { return false; }
 };
 
 enum_parsing_context Explain::get_subquery_context(
@@ -352,16 +356,15 @@ class Explain_no_table : public Explain {
   Explain_union_result class outputs EXPLAIN row for UNION
 */
 
-class Explain_union_result : public Explain {
+class Explain_setop_result : public Explain {
  public:
-  Explain_union_result(THD *explain_thd_arg, const THD *query_thd_arg,
-                       Query_block *query_block_arg)
-      : Explain(CTX_UNION_RESULT, explain_thd_arg, query_thd_arg,
-                query_block_arg) {
-    /* it's a UNION: */
-    assert(query_block_arg ==
-           query_block_arg->master_query_expression()->fake_query_block);
-    // Use optimized values from fake_query_block's join
+  Explain_setop_result(THD *explain_thd_arg, const THD *query_thd_arg,
+                       Query_block *query_block_arg, Query_term *qt,
+                       enum_parsing_context ctx)
+      : Explain(ctx, explain_thd_arg, query_thd_arg, query_block_arg),
+        m_query_term(down_cast<Query_term_set_op *>(qt)) {
+    assert(m_query_term->term_type() != QT_QUERY_BLOCK);
+    // Use optimized values from block's join
     order_list = !query_block_arg->join->order.empty();
     // A plan exists so the reads above are safe:
     assert(query_block_arg->join->get_plan_state() != JOIN::NO_PLAN);
@@ -378,6 +381,7 @@ class Explain_union_result : public Explain {
     return true;  // Because we know that we have a plan
   }
   /* purecov: end */
+  Query_term_set_op *m_query_term;
 };
 
 /**
@@ -450,8 +454,6 @@ class Explain_join : public Explain_table_base {
         distinct(distinct_arg),
         join(query_block_arg->join) {
     assert(join->get_plan_state() == JOIN::PLAN_READY);
-    /* it is not UNION: */
-    assert(join->query_block != join->query_expression()->fake_query_block);
     order_list = !join->order.empty();
   }
 
@@ -544,6 +546,43 @@ class Explain_table : public Explain_table_base {
   }
 };
 
+/**
+  This class outputs an empty plan for queries that use a secondary engine. It
+  is only used with the hypergraph optimizer, and only when the traditional
+  format is specified. The traditional format is not supported by the hypergraph
+  optimizer, so only an empty plan is shown, with extra information showing a
+  secondary engine is used.
+ */
+class Explain_secondary_engine final : public Explain {
+ public:
+  Explain_secondary_engine(THD *explain_thd_arg, const THD *query_thd_arg,
+                           Query_block *query_block_arg)
+      : Explain(CTX_JOIN, explain_thd_arg, query_thd_arg, query_block_arg) {}
+
+ protected:
+  bool explain_select_type() override {
+    fmt->entry()->col_select_type.set(enum_explain_type::EXPLAIN_NONE);
+    return false;
+  }
+
+  bool explain_extra() override {
+    StringBuffer<STRING_BUFFER_USUAL_SIZE> buffer;
+    bool error = false;
+    error |= buffer.append(STRING_WITH_LEN("Using secondary engine "));
+    error |= buffer.append(
+        ha_resolve_storage_engine_name(SecondaryEngineHandlerton(query_thd)));
+    error |= buffer.append(
+        STRING_WITH_LEN(". Use EXPLAIN FORMAT=TREE to show the plan."));
+    if (error) return error;
+    return fmt->entry()->col_message.set(buffer);
+  }
+
+ private:
+  bool skip_subqueries() const override { return true; }
+};
+
+}  // namespace
+
 /* Explain class functions ****************************************************/
 
 bool Explain::shallow_explain() {
@@ -565,7 +604,8 @@ bool Explain::shallow_explain() {
 */
 
 bool Explain::mark_subqueries(Item *item, qep_row *destination) {
-  if (item == nullptr || !fmt->is_hierarchical()) return false;
+  if (skip_subqueries() || item == nullptr || !fmt->is_hierarchical())
+    return false;
 
   item->compile(&Item::explain_subquery_checker,
                 reinterpret_cast<uchar **>(&destination),
@@ -614,6 +654,8 @@ enum_parsing_context Explain_no_table::get_subquery_context(
   @retval       true    Error (OOM)
 */
 bool Explain::explain_subqueries() {
+  if (skip_subqueries()) return false;
+
   /*
     Subqueries in empty queries are neither optimized nor executed. They are
     therefore not to be included in the explain output.
@@ -729,8 +771,7 @@ bool Explain::send() {
 }
 
 bool Explain::explain_id() {
-  if (query_block->select_number < INT_MAX)
-    fmt->entry()->col_id.set(query_block->select_number);
+  fmt->entry()->col_id.set(query_block->select_number);
   return false;
 }
 
@@ -796,32 +837,58 @@ bool Explain_no_table::explain_modify_flags() {
 /* Explain_union_result class functions
  * ****************************************/
 
-bool Explain_union_result::explain_id() { return false; }
+bool Explain_setop_result::explain_id() { return Explain::explain_id(); }
 
-bool Explain_union_result::explain_table_name() {
+bool Explain_setop_result::explain_table_name() {
   // Get the last of UNION's selects
-  Query_block *last_query_block = query_block->master_query_expression()
-                                      ->first_query_block()
-                                      ->last_query_block();
+  Query_block *last_query_block =
+      m_query_term->m_children.back()->query_block();
+  ;
   // # characters needed to print select_number of last select
   int last_length = (int)log10((double)last_query_block->select_number) + 1;
 
-  Query_block *sl = query_block->master_query_expression()->first_query_block();
-  size_t len = 6, lastop = 0;
   char table_name_buffer[NAME_LEN];
-  memcpy(table_name_buffer, STRING_WITH_LEN("<union"));
+  const char *op_type;
+  if (context_type == CTX_UNION_RESULT) {
+    op_type = "<union";
+  } else if (context_type == CTX_INTERSECT_RESULT) {
+    op_type = "<intersect";
+  } else if (context_type == CTX_EXCEPT_RESULT) {
+    op_type = "<except";
+  } else {
+    if (order_list) {
+      if (query_block->select_limit != nullptr) {
+        op_type = "<ordered/limited";
+      } else {
+        op_type = "<ordered";
+      }
+    } else if (query_block->select_limit != nullptr) {
+      op_type = "<limited";
+    } else {
+      op_type = "<ordered";
+    }
+  }
+  const size_t op_type_len = strlen(op_type);
+  size_t lastop = 0;
+  size_t len = op_type_len;
+  memcpy(table_name_buffer, op_type, op_type_len);
   /*
     - len + lastop: current position in table_name_buffer
     - 6 + last_length: the number of characters needed to print
       '...,'<last_query_block->select_number>'>\0'
   */
-  for (; sl && len + lastop + 6 + last_length < NAME_CHAR_LEN;
-       sl = sl->next_query_block()) {
+  bool overflow = false;
+  for (auto qt : m_query_term->m_children) {
+    if (len + lastop + op_type_len + last_length >= NAME_CHAR_LEN) {
+      overflow = true;
+      break;
+    }
     len += lastop;
     lastop = snprintf(table_name_buffer + len, NAME_CHAR_LEN - len, "%u,",
-                      sl->select_number);
+                      qt->query_block()->select_number);
   }
-  if (sl || len + lastop >= NAME_CHAR_LEN) {
+
+  if (overflow || len + lastop >= NAME_CHAR_LEN) {
     memcpy(table_name_buffer + len, STRING_WITH_LEN("...,"));
     len += 4;
     lastop = snprintf(table_name_buffer + len, NAME_CHAR_LEN - len, "%u,",
@@ -833,27 +900,27 @@ bool Explain_union_result::explain_table_name() {
   return fmt->entry()->col_table_name.set(table_name_buffer, len);
 }
 
-bool Explain_union_result::explain_join_type() {
+bool Explain_setop_result::explain_join_type() {
   fmt->entry()->col_join_type.set_const(join_type_str[JT_ALL]);
   return false;
 }
 
-bool Explain_union_result::explain_extra() {
+bool Explain_setop_result::explain_extra() {
   if (!fmt->is_hierarchical()) {
     /*
      Currently we always use temporary table for UNION result
     */
     if (push_extra(ET_USING_TEMPORARY)) return true;
-    /*
-      here we assume that the query will return at least two rows, so we
-      show "filesort" in EXPLAIN. Of course, sometimes we'll be wrong
-      and no filesort will be actually done, but executing all selects in
-      the UNION to provide precise EXPLAIN information will hardly be
-      appreciated :)
-    */
-    if (order_list) {
-      return push_extra(ET_USING_FILESORT);
-    }
+  }
+  /*
+    here we assume that the query will return at least two rows, so we
+    show "filesort" in EXPLAIN. Of course, sometimes we'll be wrong
+    and no filesort will be actually done, but executing all selects in
+    the UNION to provide precise EXPLAIN information will hardly be
+    appreciated :)
+  */
+  if (order_list) {
+    return push_extra(ET_USING_FILESORT);
   }
   return Explain::explain_extra();
 }
@@ -1757,10 +1824,6 @@ bool Explain_table::explain_extra() {
           explain_tmptable_and_filesort(need_tmp_table, need_sort));
 }
 
-/******************************************************************************
-  External function implementations
-******************************************************************************/
-
 /**
   Send a message as an "extra" column value
 
@@ -1779,9 +1842,9 @@ bool Explain_table::explain_extra() {
   @return false if success, true if error
 */
 
-bool explain_no_table(THD *explain_thd, const THD *query_thd,
-                      Query_block *query_block, const char *message,
-                      enum_parsing_context ctx) {
+static bool explain_no_table(THD *explain_thd, const THD *query_thd,
+                             Query_block *query_block, const char *message,
+                             enum_parsing_context ctx) {
   DBUG_TRACE;
   const bool ret = Explain_no_table(explain_thd, query_thd, query_block,
                                     message, ctx, HA_POS_ERROR)
@@ -1843,14 +1906,14 @@ bool explain_single_table_modification(THD *explain_thd, const THD *query_thd,
   const bool other = (query_thd != explain_thd);
   bool ret;
 
-  if (explain_thd->lex->explain_format->is_tree()) {
+  if (explain_thd->lex->explain_format->is_iterator_based()) {
     // These kinds of queries don't have a JOIN with an iterator tree.
     return ExplainIterator(explain_thd, query_thd, nullptr);
   }
 
   if (query_thd->lex->using_hypergraph_optimizer) {
     my_error(ER_HYPERGRAPH_NOT_SUPPORTED_YET, MYF(0),
-             "EXPLAIN with non-tree formats");
+             "EXPLAIN with TRADITIONAL format");
     return true;
   }
 
@@ -1931,13 +1994,14 @@ bool explain_single_table_modification(THD *explain_thd, const THD *query_thd,
 
   @param explain_thd thread handle for the connection doing explain
   @param query_thd   thread handle for the connection being explained
-  @param query_block  explain join attached to given query_block
+  @param query_term  explain join attached to given term's query_block
   @param ctx         current explain context
 */
 
 bool explain_query_specification(THD *explain_thd, const THD *query_thd,
-                                 Query_block *query_block,
+                                 Query_term *query_term,
                                  enum_parsing_context ctx) {
+  Query_block *query_block = query_term->query_block();
   Opt_trace_context *const trace = &explain_thd->opt_trace;
   Opt_trace_object trace_wrapper(trace);
   Opt_trace_object trace_exec(trace, "join_explain");
@@ -2002,13 +2066,15 @@ bool explain_query_specification(THD *explain_thd, const THD *query_thd,
       const bool need_order = flags->any(ESP_USING_FILESORT);
       const bool distinct = flags->get(ESC_DISTINCT, ESP_EXISTS);
 
-      if (query_block ==
-          query_block->master_query_expression()->fake_query_block)
-        ret = Explain_union_result(explain_thd, query_thd, query_block).send();
-      else
+      if (query_term->term_type() == QT_QUERY_BLOCK)
         ret = Explain_join(explain_thd, query_thd, query_block, need_tmp_table,
                            need_order, distinct)
                   .send();
+      else {
+        ret = Explain_setop_result(explain_thd, query_thd, query_block,
+                                   query_term, ctx)
+                  .send();
+      }
       break;
     }
     default:
@@ -2034,52 +2100,11 @@ static bool ExplainIterator(THD *ethd, const THD *query_thd,
   }
 
   {
-    vector<string> *token_ptr = nullptr;
-#ifndef NDEBUG
-    vector<string> tokens_for_force_subplan;
-    DBUG_EXECUTE_IF("subplan_tokens", token_ptr = &tokens_for_force_subplan;);
-#endif
-
-    std::string explain;
-    if (unit != nullptr) {
-      int base_level = 0;
-      JOIN *join = unit->first_query_block()->join;
-      const THD::Query_plan *query_plan = &query_thd->query_plan;
-      switch (query_plan->get_command()) {
-        case SQLCOM_INSERT_SELECT:
-        case SQLCOM_INSERT:
-          explain = string("-> Insert into ") +
-                    query_plan->get_lex()->insert_table_leaf->table->alias +
-                    "\n";
-          base_level = 1;
-          break;
-        case SQLCOM_REPLACE_SELECT:
-        case SQLCOM_REPLACE:
-          explain = string("-> Replace into ") +
-                    query_plan->get_lex()->insert_table_leaf->table->alias +
-                    "\n";
-          base_level = 1;
-          break;
-        default:
-          break;
-      }
-      explain +=
-          PrintQueryPlan(base_level, unit->root_access_path(),
-                         unit->is_union() ? nullptr : join,
-                         /*is_root_of_join=*/!unit->is_union(), token_ptr);
-    } else {
-      explain += PrintQueryPlan(0, /*path=*/nullptr, /*join=*/nullptr,
-                                /*is_root_of_join=*/false, token_ptr);
+    std::string explain = PrintQueryPlan(ethd, query_thd, unit);
+    if (explain.empty()) {
+      my_error(ER_INTERNAL_ERROR, MYF(0), "Failed to print query plan");
+      return true;
     }
-    DBUG_EXECUTE_IF("subplan_tokens", {
-      explain += "\nTo force this plan, use:\nSET DEBUG='+d,subplan_tokens";
-      for (const string &token : tokens_for_force_subplan) {
-        explain += ",force_subplan_";
-        explain += token;
-      }
-      explain += "';\n";
-    });
-
     mem_root_deque<Item *> field_list(ethd->mem_root);
     Item *item =
         new Item_string(explain.data(), explain.size(), system_charset_info);
@@ -2125,6 +2150,40 @@ class Query_result_null : public Query_result_interceptor {
 };
 
 /**
+  This code which prints the extended description is not robust
+  against malformed queries, so skip calling this function if we have an error
+  or if explaining other thread (see Explain::can_print_clauses()).
+*/
+void print_query_for_explain(const THD *query_thd, Query_expression *unit,
+                             String *str) {
+  if (unit == nullptr) return;
+
+  /* Only certain statements can be explained.  */
+  if (query_thd->query_plan.get_command() == SQLCOM_SELECT ||
+      query_thd->query_plan.get_command() == SQLCOM_INSERT_SELECT ||
+      query_thd->query_plan.get_command() == SQLCOM_REPLACE_SELECT ||
+      query_thd->query_plan.get_command() == SQLCOM_DELETE ||
+      query_thd->query_plan.get_command() == SQLCOM_DELETE_MULTI ||
+      query_thd->query_plan.get_command() == SQLCOM_UPDATE ||
+      query_thd->query_plan.get_command() == SQLCOM_UPDATE_MULTI)  // (2)
+  {
+    /*
+      The warnings system requires input in utf8, see mysqld_show_warnings().
+    */
+
+    enum_query_type eqt =
+        enum_query_type(QT_TO_SYSTEM_CHARSET | QT_SHOW_SELECT_NUMBER);
+
+    /**
+      For DML statements use QT_NO_DATA_EXPANSION to avoid over-simplification.
+    */
+    if (query_thd->query_plan.get_command() != SQLCOM_SELECT)
+      eqt = enum_query_type(eqt | QT_NO_DATA_EXPANSION);
+
+    unit->print(query_thd, str, eqt);
+  }
+}
+/**
   EXPLAIN handling for SELECT, INSERT/REPLACE SELECT, and multi-table
   UPDATE/DELETE queries
 
@@ -2161,12 +2220,10 @@ bool explain_query(THD *explain_thd, const THD *query_thd,
   DBUG_TRACE;
 
   const bool other = (explain_thd != query_thd);
+  const bool secondary_engine = SecondaryEngineHandlerton(query_thd) != nullptr;
 
   LEX *lex = explain_thd->lex;
-  if (lex->explain_format->is_tree()) {
-    const bool secondary_engine =
-        explain_thd->lex->m_sql_cmd != nullptr &&
-        explain_thd->lex->m_sql_cmd->using_secondary_storage_engine();
+  if (lex->explain_format->is_iterator_based()) {
     if (lex->is_explain_analyze) {
       if (secondary_engine) {
         my_error(ER_NOT_SUPPORTED_YET, MYF(0),
@@ -2197,9 +2254,25 @@ bool explain_query(THD *explain_thd, const THD *query_thd,
     return ExplainIterator(explain_thd, query_thd, unit);
   }
 
-  if (query_thd->lex->using_hypergraph_optimizer) {
+  if (lex->is_explain_analyze) {
+    // With TRADITIONAL, parser would have thrown error. So it must be JSON.
+    my_error(ER_NOT_SUPPORTED_YET, MYF(0), "EXPLAIN ANALYZE with JSON format");
+  }
+
+  // Non-iterator-based formats are not supported with the hypergraph
+  // optimizer. But we still want to be able to use EXPLAIN with no format
+  // specified (implicitly the traditional format) to show if the query is
+  // offloaded to a secondary engine, so we return a fake plan with that
+  // information.
+  const bool fake_explain_for_secondary_engine =
+      query_thd->lex->using_hypergraph_optimizer && secondary_engine &&
+      !lex->explain_format->is_hierarchical();
+
+  if (query_thd->lex->using_hypergraph_optimizer &&
+      !fake_explain_for_secondary_engine) {
+    // With hypergraph, JSON is iterator-based. So it must be TRADITIONAL.
     my_error(ER_HYPERGRAPH_NOT_SUPPORTED_YET, MYF(0),
-             "EXPLAIN with non-tree formats");
+             "EXPLAIN with TRADITIONAL format");
     return true;
   }
 
@@ -2230,39 +2303,17 @@ bool explain_query(THD *explain_thd, const THD *query_thd,
   explain_thd->lex->unit->offset_limit_cnt = 0;
   explain_thd->lex->unit->select_limit_cnt = 0;
 
-  const bool res = mysql_explain_query_expression(explain_thd, query_thd, unit);
-  /*
-    1) The code which prints the extended description is not robust
-       against malformed queries, so skip it if we have an error.
-    2) The code also isn't thread-safe, skip if explaining other thread
-       (see Explain::can_print_clauses())
-    3) Only certain statements can be explained.
-  */
-  if (!res &&    // (1)
-      !other &&  // (2)
-      (query_thd->query_plan.get_command() == SQLCOM_SELECT ||
-       query_thd->query_plan.get_command() == SQLCOM_INSERT_SELECT ||
-       query_thd->query_plan.get_command() == SQLCOM_REPLACE_SELECT ||
-       query_thd->query_plan.get_command() == SQLCOM_DELETE ||
-       query_thd->query_plan.get_command() == SQLCOM_DELETE_MULTI ||
-       query_thd->query_plan.get_command() == SQLCOM_UPDATE ||
-       query_thd->query_plan.get_command() == SQLCOM_UPDATE_MULTI))  // (3)
-  {
+  const bool res =
+      fake_explain_for_secondary_engine
+          ? Explain_secondary_engine(explain_thd, query_thd,
+                                     unit->first_query_block())
+                .send()
+          : mysql_explain_query_expression(explain_thd, query_thd, unit);
+
+  // Skip this if applicable. See print_query_for_explain() comments.
+  if (!res && !other) {
     StringBuffer<1024> str;
-    /*
-      The warnings system requires input in utf8, see mysqld_show_warnings().
-    */
-
-    enum_query_type eqt =
-        enum_query_type(QT_TO_SYSTEM_CHARSET | QT_SHOW_SELECT_NUMBER);
-
-    /**
-      For DML statements use QT_NO_DATA_EXPANSION to avoid over-simplification.
-    */
-    if (query_thd->query_plan.get_command() != SQLCOM_SELECT)
-      eqt = enum_query_type(eqt | QT_NO_DATA_EXPANSION);
-
-    unit->print(explain_thd, &str, eqt);
+    print_query_for_explain(query_thd, unit, &str);
     str.append('\0');
     push_warning(explain_thd, Sql_condition::SL_NOTE, ER_YES, str.ptr());
   }
@@ -2294,11 +2345,11 @@ bool mysql_explain_query_expression(THD *explain_thd, const THD *query_thd,
                                     Query_expression *unit) {
   DBUG_TRACE;
   bool res = false;
-  if (unit->is_union())
-    res = unit->explain(explain_thd, query_thd);
-  else
+  if (unit->is_simple())
     res = explain_query_specification(explain_thd, query_thd,
-                                      unit->first_query_block(), CTX_JOIN);
+                                      unit->query_term(), CTX_JOIN);
+  else
+    res = unit->explain(explain_thd, query_thd);
   assert(res || !explain_thd->is_error());
   res |= explain_thd->is_error();
   return res;

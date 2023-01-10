@@ -75,6 +75,7 @@
 #include "sql/iterators/timing_iterator.h"
 #include "sql/join_optimizer/access_path.h"
 #include "sql/join_optimizer/join_optimizer.h"
+#include "sql/join_optimizer/walk_access_paths.h"
 #include "sql/key.h"
 #include "sql/key_spec.h"
 #include "sql/lock.h"    // mysql_unlock_some_tables
@@ -282,10 +283,12 @@ bool JOIN::optimize(bool finalize_access_paths) {
   DBUG_TRACE;
 
   uint no_jbuf_after = UINT_MAX;
+  Query_block *const set_operand_block =
+      query_expression()->non_simple_result_query_block();
 
   assert(query_block->leaf_table_count == 0 ||
          thd->lex->is_query_tables_locked() ||
-         query_block == query_expression()->fake_query_block);
+         query_block == set_operand_block);
   assert(tables == 0 && primary_tables == 0 && tables_list == (TABLE_LIST *)1);
 
   // to prevent double initialization on EXPLAIN
@@ -395,12 +398,12 @@ bool JOIN::optimize(bool finalize_access_paths) {
       Calculate found rows (ie., keep counting rows even after we hit LIMIT) if
       - LIMIT is set, and
       - This is the outermost query block (for a UNION query, this is the
-        fake query block that contains the limit applied on the final UNION
-        evaluation).
+        block that contains the limit applied on the final UNION
+        evaluation, cf query_term.h for explanation).
      */
     calc_found_rows = m_select_limit != HA_POS_ERROR &&
-                      (!query_expression()->is_union() ||
-                       query_block == query_expression()->fake_query_block);
+                      (!query_expression()->is_set_operation() ||
+                       query_block == set_operand_block);
   }
   if (having_cond || calc_found_rows) m_select_limit = HA_POS_ERROR;
 
@@ -549,8 +552,16 @@ bool JOIN::optimize(bool finalize_access_paths) {
   if (thd->is_error()) return true;
 
   if (thd->lex->using_hypergraph_optimizer) {
-    Item *where_cond_no_in2exists = remove_in2exists_conds(thd, where_cond);
-    Item *having_cond_no_in2exists = remove_in2exists_conds(thd, having_cond);
+    // Get the WHERE and HAVING clauses with the IN-to-EXISTS predicates
+    // removed, so that we can plan both with and without the IN-to-EXISTS
+    // conversion. We need to make a copy of the AND/OR structure because
+    // remove_eq_cond() may leave some items in a degenerate state if the
+    // entire condition can be removed, and this would cause problems in
+    // the replanning, if the same structure was used again.
+    Item *where_cond_no_in2exists =
+        remove_in2exists_conds(thd, where_cond, /*copy=*/true);
+    Item *having_cond_no_in2exists =
+        remove_in2exists_conds(thd, having_cond, /*copy=*/true);
 
     std::string trace_str;
     std::string *trace_ptr = thd->opt_trace.is_started() ? &trace_str : nullptr;
@@ -1337,7 +1348,8 @@ int JOIN::replace_index_subquery() {
   if (!group_list.empty() ||
       !(query_expression()->item &&
         query_expression()->item->substype() == Item_subselect::IN_SUBS) ||
-      primary_tables != 1 || !where_cond || query_expression()->is_union())
+      primary_tables != 1 || !where_cond ||
+      query_expression()->is_set_operation())
     return 0;
 
   // Guaranteed by remove_redundant_subquery_clauses():
@@ -2795,6 +2807,10 @@ static bool can_switch_from_ref_to_range(THD *thd, JOIN_TAB *tab,
                              tab->position()->key->key, tab->prefix_tables(),
                              nullptr, &length, &keyparts, &dep_map,
                              &maybe_null);
+
+    if (thd->is_error()) {
+      return true;
+    }
     if (!maybe_null &&  // 3)
         !dep_map)       // 4)
     {
@@ -6071,7 +6087,7 @@ static ha_rows get_quick_record_count(THD *thd, JOIN_TAB *tab, ha_rows limit) {
         &range_scan);
     tab->set_range_scan(range_scan);
 
-    if (error == 1) return range_scan->num_output_rows;
+    if (error == 1) return range_scan->num_output_rows();
     if (error == -1) {
       tl->table->reginfo.impossible_range = true;
       return 0;
@@ -7293,7 +7309,7 @@ bool add_key_fields(THD *thd, JOIN *join, Key_field **key_fields,
     if (join->group_list.empty() && join->order.empty() &&
         join->query_expression()->item &&
         join->query_expression()->item->substype() == Item_subselect::IN_SUBS &&
-        !join->query_expression()->is_union()) {
+        !join->query_expression()->is_set_operation()) {
       Key_field *save = *key_fields;
       if (add_key_fields(thd, join, key_fields, and_level, cond_arg,
                          usable_tables, sargables))
@@ -7987,12 +8003,23 @@ static void add_loose_index_scan_and_skip_scan_keys(JOIN *join,
   const char *cause;
 
   /* Find the indexes that might be used for skip scan queries. */
-  if (hint_table_state(join->thd, join_tab->table_ref, SKIP_SCAN_HINT_ENUM,
-                       OPTIMIZER_SKIP_SCAN) &&
-      join->where_cond && join->primary_tables == 1 &&
+  if (join->where_cond && join->primary_tables == 1 &&
       join->group_list.empty() &&
       !is_indexed_agg_distinct(join, &indexed_fields) &&
       !join->select_distinct) {
+    bool use_skip_scan =
+        hint_table_state(join->thd, join_tab->table_ref, SKIP_SCAN_HINT_ENUM,
+                         OPTIMIZER_SKIP_SCAN);
+    /*
+      if skip_scan for a table is off, and the hint is applicable to all
+      indexes, skip processing for possible keys. If the hint has index
+      mentioned then skip_scan can be used with other indexes.
+    */
+    if (!use_skip_scan && join_tab->table_ref->opt_hints_table != nullptr &&
+        join_tab->table_ref->opt_hints_table
+            ->get_compound_key_hint(SKIP_SCAN_HINT_ENUM)
+            ->is_key_map_clear_all())
+      return;
     join->where_cond->walk(&Item::collect_item_field_processor,
                            enum_walk::POSTFIX, (uchar *)&indexed_fields);
     Key_map possible_keys;
@@ -8622,7 +8649,15 @@ bool JOIN::attach_join_conditions(plan_idx last_tab) {
     assert(sjm);
     if (sjm->inner_table_index + sjm->table_count - 1 == (uint)last_tab) {
       // we're at last table of sjmat nest
-      auto join_cond = best_ref[mat_tbl]->join_cond();
+      Item *join_cond = best_ref[mat_tbl]->join_cond();
+      TABLE_LIST *tr = best_ref[mat_tbl]->table_ref;
+      while (join_cond == nullptr && tr->embedding != nullptr &&
+             tr->embedding->is_derived()) {
+        // If subquery table(s) come from a derived table
+        join_cond = tr->embedding->join_cond();
+        tr = tr->embedding;
+        assert(tr->is_merged());
+      }
       if (join_cond && attach_join_condition_to_nest(sjm->inner_table_index,
                                                      last_tab, join_cond, true))
         return true;
@@ -9719,7 +9754,7 @@ static bool make_join_query_block(JOIN *join, Item *cond) {
             if (!tab->needed_reg.is_clear_all() &&
                 (tab->table()->quick_keys.is_clear_all() ||
                  (tab->range_scan() &&
-                  (tab->range_scan()->num_output_rows >= 100.0)))) {
+                  (tab->range_scan()->num_output_rows() >= 100.0)))) {
               tab->use_quick = QS_DYNAMIC_RANGE;
               tab->set_type(JT_ALL);
             } else
@@ -10103,11 +10138,8 @@ bool optimize_cond(THD *thd, Item **cond, COND_EQUAL **cond_equal,
   }
   /*
     change field = field to field = const for each found field = const
-    Note: Since we disable multi-equalities in the hypergraph optimizer for now,
-    we also cannot run this optimization; it causes spurious “Impossible WHERE”
-    in e.g. main.select_none.
    */
-  if (*cond && !thd->lex->using_hypergraph_optimizer) {
+  if (*cond) {
     Opt_trace_object step_wrapper(trace);
     step_wrapper.add_alnum("transformation", "constant_propagation");
     {
@@ -11176,4 +11208,39 @@ bool evaluate_during_optimization(const Item *item, const Query_block *select) {
 
   return !item->has_subquery() || (select->active_options() &
                                    OPTION_NO_SUBQUERY_DURING_OPTIMIZATION) == 0;
+}
+
+/// Does this path scan any base tables in a secondary engine?
+static bool ReferencesSecondaryEngineBaseTables(AccessPath *path) {
+  bool found = false;
+  WalkAccessPaths(path, /*join=*/nullptr, WalkAccessPathPolicy::ENTIRE_TREE,
+                  [&found](const AccessPath *subpath, const JOIN *) {
+                    TABLE *table = GetBasicTable(subpath);
+                    if (table != nullptr && table->s->is_secondary_engine()) {
+                      found = true;
+                    }
+                    return found;
+                  });
+  return found;
+}
+
+bool IteratorsAreNeeded(const THD *thd, AccessPath *root_path) {
+  const handlerton *secondary_engine = SecondaryEngineHandlerton(thd);
+
+  // Queries running in the primary engine always need iterators.
+  if (secondary_engine == nullptr) {
+    return true;
+  }
+
+  // If the entire query is optimized away, we create iterators regardless of
+  // whether an external executor is used, since the secondary engine may decide
+  // not to offload the query to the external executor in this case.
+  if (!ReferencesSecondaryEngineBaseTables(root_path)) {
+    return true;
+  }
+
+  // Otherwise, create iterators if the secondary engine does not use an
+  // external executor.
+  return !IsBitSet(static_cast<int>(SecondaryEngineFlag::USE_EXTERNAL_EXECUTOR),
+                   secondary_engine->secondary_engine_flags);
 }

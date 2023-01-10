@@ -370,7 +370,7 @@ bool mysql_create_db(THD *thd, const char *db, HA_CREATE_INFO *create_info) {
   const char *lock_db_name = db;
   if (lower_case_table_names == 2) {
     my_stpcpy(name_buf, db);
-    my_casedn_str(&my_charset_utf8_tolower_ci, name_buf);
+    my_casedn_str(&my_charset_utf8mb3_tolower_ci, name_buf);
     lock_db_name = name_buf;
   }
   if (lock_schema_name(thd, lock_db_name)) return true;
@@ -1442,7 +1442,7 @@ bool mysql_change_db(THD *thd, const LEX_CSTRING &new_db_name,
   }
 
   if (!force_switch && !(db_access & DB_OP_ACLS) &&
-      check_grant_db(thd, new_db_file_name.str)) {
+      check_grant_db(thd, new_db_file_name.str, true)) {
     my_error(ER_DBACCESS_DENIED_ERROR, MYF(0), sctx->priv_user().str,
              sctx->priv_host().str, new_db_file_name.str);
     query_logger.general_log_print(

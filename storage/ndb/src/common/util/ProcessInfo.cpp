@@ -29,7 +29,6 @@
 #include "OwnProcessInfo.hpp"
 #include "signaldata/ProcessInfoRep.hpp"
 #include "BaseString.hpp"
-#include "ndb_net.h"
 #include "ndb_socket.h"
 #include "NdbTCP.h"
 

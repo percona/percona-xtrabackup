@@ -530,7 +530,7 @@ const ReBootstrapOkBasePortTestParam rebootstrap_ok_base_port_test_param[] = {
      /* expected_port_x_ro */ 4},
 
     // create a config with legacy defaults [6446, 6447, 64460, 64470]
-    // bootstrap again on top of that config with specifing conf-base-port
+    // bootstrap again on top of that config with specifying conf-base-port
     // parameter even though the existing conf uses legacy default we change
     // them because the user used conf-base-port, so we should not be using
     // defaults
@@ -1241,7 +1241,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 /**
  * @test
- *       verify that bootstraping via a unix-socket fails over to the
+ *       verify that bootstrapping via a unix-socket fails over to the
  * IP-addresses of the members
  * @test
  *       Group Replication roles:
@@ -1452,7 +1452,7 @@ class RouterBootstrapBootstrapNoGroupReplicationSetup
 
 /**
  * @test
- *       ensure a resonable error message if schema exists, but no
+ *       ensure a reasonable error message if schema exists, but no
  * group-replication is setup.
  */
 TEST_P(RouterBootstrapBootstrapNoGroupReplicationSetup,
@@ -1485,7 +1485,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 /**
  * @test
- *       ensure a resonable error message if metadata schema does not exist.
+ *       ensure a reasonable error message if metadata schema does not exist.
  */
 TEST_F(RouterBootstrapTest, BootstrapNoMetadataSchema) {
   std::vector<Config> config{
@@ -1653,11 +1653,22 @@ TEST_P(ConfUseGrNotificationParamTest, ConfUseGrNotificationParam) {
       GetParam().metadata_schema_version,
       "00000000-0000-0000-0000-0000000000c1");
 
-  const auto base_listening_port = port_pool_.get_next_available();
+  const auto router_port_rw = port_pool_.get_next_available();
+  const auto router_port_ro = port_pool_.get_next_available();
+  const auto router_port_x_rw = port_pool_.get_next_available();
+  const auto router_port_x_ro = port_pool_.get_next_available();
   std::vector<std::string> bootsrtap_params{
-      "--bootstrap=127.0.0.1:" + std::to_string(server_port), "-d",
+      "--bootstrap=127.0.0.1:" + std::to_string(server_port),
+      "-d",
       bootstrap_directory.name(),
-      "--conf-base-port=" + std::to_string(base_listening_port)};
+      "--conf-set-option=routing:bootstrap_rw.bind_port=" +
+          std::to_string(router_port_rw),
+      "--conf-set-option=routing:bootstrap_ro.bind_port=" +
+          std::to_string(router_port_ro),
+      "--conf-set-option=routing:bootstrap_x_rw.bind_port=" +
+          std::to_string(router_port_x_rw),
+      "--conf-set-option=routing:bootstrap_x_ro.bind_port=" +
+          std::to_string(router_port_x_ro)};
 
   bootsrtap_params.insert(bootsrtap_params.end(),
                           GetParam().bootstrap_params.begin(),
@@ -2482,12 +2493,22 @@ TEST_F(RouterBootstrapTest, SSLOptions) {
       {{"localhost", server_port}, {"localhost", server_port2}}, {2, 1, 0},
       "00000000-0000-0000-0000-0000000000c1");
 
-  const auto base_listening_port = port_pool_.get_next_available();
+  const auto router_port_rw = port_pool_.get_next_available();
+  const auto router_port_ro = port_pool_.get_next_available();
+  const auto router_port_x_rw = port_pool_.get_next_available();
+  const auto router_port_x_ro = port_pool_.get_next_available();
   std::vector<std::string> bootsrtap_params{
       "--bootstrap=127.0.0.1:" + std::to_string(server_port),
       "-d",
       bootstrap_directory.name(),
-      "--conf-base-port=" + std::to_string(base_listening_port),
+      "--conf-set-option=routing:bootstrap_rw.bind_port=" +
+          std::to_string(router_port_rw),
+      "--conf-set-option=routing:bootstrap_ro.bind_port=" +
+          std::to_string(router_port_ro),
+      "--conf-set-option=routing:bootstrap_x_rw.bind_port=" +
+          std::to_string(router_port_x_rw),
+      "--conf-set-option=routing:bootstrap_x_ro.bind_port=" +
+          std::to_string(router_port_x_ro),
       "--ssl-mode=disabled",
       "--ssl-cipher=some",
       "--tls-version=TLSv1.2",

@@ -46,7 +46,10 @@ void RouterComponentTest::SetUp() {
 }
 
 void RouterComponentTest::TearDown() {
-  shutdown_all();
+  shutdown_all();  // shutdown all that are still running.
+  wait_for_exit();
+
+  terminate_all_still_alive();  // terminate hanging processes.
   ensure_clean_exit();
 
   if (::testing::Test::HasFailure()) {
@@ -157,9 +160,9 @@ void RouterComponentBootstrapTest::bootstrap_failover(
   }
 
   if (getenv("WITH_VALGRIND")) {
-    // for the boostrap tests that are using this method the "--disable-rest" is
-    // not relevant so we use it for VALGRIND testing as it saves huge amount of
-    // time that generating the certificates takes
+    // for the bootstrap tests that are using this method the "--disable-rest"
+    // is not relevant so we use it for VALGRIND testing as it saves huge amount
+    // of time that generating the certificates takes
     router_cmdline.emplace_back("--disable-rest");
   }
 

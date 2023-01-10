@@ -73,8 +73,8 @@ class SqlListTest : public ::testing::Test {
   List_iterator<int> m_int_list_iter;
 
  private:
-  // Declares (but does not define) copy constructor and assignment operator.
-  GTEST_DISALLOW_COPY_AND_ASSIGN_(SqlListTest);
+  SqlListTest(SqlListTest const &) = delete;
+  SqlListTest &operator=(SqlListTest const &) = delete;
 };
 
 // Tests that we can construct and destruct lists.

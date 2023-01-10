@@ -121,6 +121,7 @@ TEST_F(SelectLexVisitorTest, SelectLex) {
 
   LEX lex;
   query_block.include_down(&lex, &unit);
+  unit.set_query_term(&query_block);
   List<Item> items;
   JOIN join(thd(), &query_block);
   join.where_cond = &where;

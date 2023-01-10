@@ -293,7 +293,7 @@ struct row_import {
   dict_col_t *m_cols; /*!< Column data */
 
   byte **m_col_names; /*!< Column names, we store the
-                      column naems separately becuase
+                      column names separately because
                       there is no field to store the
                       value in dict_col_t */
 
@@ -555,7 +555,7 @@ class AbstractCallback : public PageCallback {
   initialized: the pages >= this limit are, by definition, free;
   note that in a single-table tablespace where size < 64 pages,
   this number is 64, i.e., we have initialized the space about
-  the first extent, but have not physically allocted those pages
+  the first extent, but have not physically allocated those pages
   to the file. @see FSP_LIMIT. */
   page_no_t m_free_limit;
 
@@ -905,7 +905,7 @@ class PageConverter : public AbstractCallback {
   @return DB_SUCCESS or error code */
   dberr_t update_index_page(buf_block_t *block) UNIV_NOTHROW;
 
-  /** Update the BLOB refrences and write UNDO log entries for
+  /** Update the BLOB references and write UNDO log entries for
   rows that can't be purged optimistically.
   @param block block to update
   @retval DB_SUCCESS or error code */
@@ -1374,10 +1374,11 @@ dberr_t row_import::match_table_columns(THD *thd) UNIV_NOTHROW {
     }
   } else {
     if (!(m_table->n_cols == m_n_cols)) {
-      ib_errf(thd, IB_LOG_LEVEL_ERROR, ER_TABLE_SCHEMA_MISMATCH,
-              "Found %u columns in destination table whereas cfg file has %lu"
-              " columns.",
-              (m_table->n_cols - n_sys_cols), (m_n_cols - n_sys_cols));
+      ib_errf(
+          thd, IB_LOG_LEVEL_ERROR, ER_TABLE_SCHEMA_MISMATCH,
+          "Found %u columns in destination table whereas cfg file has " ULINTPF
+          " columns.",
+          (m_table->n_cols - n_sys_cols), (m_n_cols - n_sys_cols));
       err = DB_ERROR;
     }
   }
@@ -2361,7 +2362,7 @@ dberr_t PageConverter::adjust_cluster_record(
   return (err);
 }
 
-/** Update the BLOB refrences and write UNDO log entries for
+/** Update the BLOB references and write UNDO log entries for
 rows that can't be purged optimistically.
 @param block block to update
 @retval DB_SUCCESS or error code */
@@ -2377,8 +2378,16 @@ dberr_t PageConverter::update_records(buf_block_t *block) UNIV_NOTHROW {
   while (!m_rec_iter.end()) {
     rec_t *rec = m_rec_iter.current();
 
-    auto deleted = rec_get_deleted_flag(rec, comp);
+    auto has_version =
+        (comp ? rec_new_is_versioned(rec) : rec_old_is_versioned(rec));
 
+    /* CFG file is required to process records having version */
+
+    if (m_cfg->m_missing && has_version) {
+      return (DB_SCHEMA_MISMATCH);
+    }
+
+    auto deleted = rec_get_deleted_flag(rec, comp);
     /* For the clustered index we have to adjust the BLOB
     reference and the system fields irrespective of the
     delete marked flag. The adjustment of delete marked
@@ -2758,7 +2767,8 @@ static void row_import_discard_changes(
   /* Since we update the index root page numbers on disk after
   we've done a successful import. The table will not be loadable.
   However, we need to ensure that the in memory root page numbers
-  are reset to "NULL". */
+  are reset to "NULL". We assume these indexes were not added to AHI, otherwise
+  the btr_search_drop_page_hash_index() will fail for these indexes. */
 
   for (auto index : table->indexes) {
     index->page = FIL_NULL;
@@ -3239,7 +3249,8 @@ static dberr_t row_import_cfg_read_string(
 
     if (len > OS_FILE_MAX_PATH) {
       ib_errf(thd, IB_LOG_LEVEL_ERROR, ER_INNODB_INDEX_CORRUPT,
-              "Index name length (%lu) is too long,"
+              "Index name length (" ULINTPF
+              ") is too long,"
               " the meta-data is corrupt",
               len);
 
@@ -3398,7 +3409,7 @@ Refer to row_quiesce_write_default_value() for the format details.
   } else {
     ut::delete_arr(str);
 
-    /* Legnth bytes */
+    /* Length bytes */
     if ((str = row_import_read_bytes(file, 4)) == nullptr) {
       return (DB_IO_ERROR);
     }
@@ -4342,7 +4353,7 @@ dberr_t row_import_for_mysql(dict_table_t *table, dd::Table *table_def,
   char *filepath = nullptr;
 
   /* The caller assured that this is not read_only_mode and that no
-  temorary tablespace is being imported. */
+  temporary tablespace is being imported. */
   ut_ad(!srv_read_only_mode);
   ut_ad(!table->is_temporary());
 
@@ -4471,6 +4482,13 @@ dberr_t row_import_for_mysql(dict_table_t *table, dd::Table *table_def,
         IO_BUFFER_SIZE(cfg.m_page_size.physical(), cfg.m_page_size.physical()),
         cfg.m_compression_type, fetchIndexRootPages);
 
+    if (err == DB_SCHEMA_MISMATCH) {
+      ib_errf(trx->mysql_thd, IB_LOG_LEVEL_ERROR, ER_TABLE_SCHEMA_MISMATCH,
+              "CFG file is missing and source table is found to have row "
+              "versions. CFG file is must to IMPORT tables with row versions.");
+      return (row_import_cleanup(prebuilt, trx, err));
+    }
+
     if (err == DB_SUCCESS) {
       err = fetchIndexRootPages.build_row_import(&cfg);
 
@@ -4529,6 +4547,13 @@ dberr_t row_import_for_mysql(dict_table_t *table, dd::Table *table_def,
       table,
       IO_BUFFER_SIZE(cfg.m_page_size.physical(), cfg.m_page_size.physical()),
       cfg.m_compression_type, converter);
+
+  if (err == DB_SCHEMA_MISMATCH) {
+    ib_errf(trx->mysql_thd, IB_LOG_LEVEL_ERROR, ER_TABLE_SCHEMA_MISMATCH,
+            "CFG file is missing and source table is found to have row "
+            "versions. CFG file is must to IMPORT tables with row versions.");
+    return (row_import_cleanup(prebuilt, trx, err));
+  }
 
   DBUG_EXECUTE_IF("ib_import_reset_space_and_lsn_failure",
                   err = DB_TOO_MANY_CONCURRENT_TRXS;);

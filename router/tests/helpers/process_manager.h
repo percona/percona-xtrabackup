@@ -54,7 +54,7 @@ using mysql_harness::Path;
 
 /** @class ProcessManager
  *
- * Manages collecion of the processes
+ * Manages collection of the processes
  * Enables creating, shutting down etc.
  *
  **/
@@ -120,6 +120,11 @@ class ProcessManager {
       return *this;
     }
 
+    Spawner &with_core_dump(bool dump_core) {
+      with_core_ = dump_core;
+      return *this;
+    }
+
     ProcessWrapper &spawn(
         const std::vector<std::string> &params,
         const std::vector<std::pair<std::string, std::string>> &env_vars);
@@ -181,7 +186,8 @@ class ProcessManager {
   Spawner spawner(std::string executable, std::string logging_file = "");
 
   Spawner router_spawner() {
-    return spawner(mysqlrouter_exec_.str(), "mysqlrouter.log");
+    return spawner(mysqlrouter_exec_.str(), "mysqlrouter.log")
+        .with_core_dump(true);
   }
 
   /** @brief Gets path to the directory used as log output directory
@@ -196,6 +202,13 @@ class ProcessManager {
    */
   void shutdown_all(mysql_harness::ProcessLauncher::ShutdownEvent event =
                         mysql_harness::ProcessLauncher::ShutdownEvent::TERM);
+
+  /**
+   * terminate processes with ABRT which are still alive.
+   *
+   * may trigger a core-file if enabled in the process.
+   */
+  void terminate_all_still_alive();
 
   /**
    * ensures all processes exited and checks for crashes.
@@ -253,7 +266,7 @@ class ProcessManager {
    * @param   catch_stderr bool flag indicating if the process' error output
    * stream should be included in the output caught from the process
    * @param   with_sudo    bool flag indicating if the process' should be
-   * execute with sudo priviledges
+   * execute with sudo privileges
    * @param wait_for_notify_ready
    *        if >=0 the method should use the notification socket and the value
    * is the time in milliseconds - how long the it should wait for the process
@@ -263,7 +276,7 @@ class ProcessManager {
    * returning string that should be send back to the process input (if not
    * empty)
    *
-   * @returns handle to the launched proccess
+   * @returns handle to the launched process
    */
   ProcessWrapper &launch_router(
       const std::vector<std::string> &params, int expected_exit_code = 0,
@@ -291,7 +304,7 @@ class ProcessManager {
    * launching command should wait for the process to notify it is ready.
    * Otherwise the caller does not want to wait for the notification.
    *
-   * @returns handle to the launched proccess
+   * @returns handle to the launched process
    */
   ProcessWrapper &launch_mysql_server_mock(
       const std::string &json_file, unsigned port, int expected_exit_code = 0,
@@ -321,8 +334,9 @@ class ProcessManager {
   /** @brief Launches a process.
    *
    * @param command       path to executable
-   * @param params        array of commanline parameters to pass to the
+   * @param params        array of commandline parameters to pass to the
    * executable
+   * @param expected_exit_status expected ExitStatus
    * @param catch_stderr  if true stderr will also be captured (combined with
    * stdout)
    * @param env_vars      environment variables that shoould be passed to the
@@ -331,19 +345,20 @@ class ProcessManager {
    * returning string that should be send back to the process input (if not
    * empty)
    *
-   * @returns handle to the launched proccess
+   * @returns handle to the launched process
    */
   ProcessWrapper &launch_command(
       const std::string &command, const std::vector<std::string> &params,
-      int expected_exit_code, bool catch_stderr,
+      ExitStatus expected_exit_status, bool catch_stderr,
       std::vector<std::pair<std::string, std::string>> env_vars,
       OutputResponder output_responder = kEmptyResponder);
 
   /** @brief Launches a process.
    *
    * @param command       path to executable
-   * @param params        array of commanline parameters to pass to the
+   * @param params        array of commandline parameters to pass to the
    * executable
+   * @param expected_exit_status expected ExitStatus
    * @param catch_stderr  if true stderr will also be captured (combined with
    * stdout)
    * @param wait_notify_ready if >=0 time in milliseconds - how long the
@@ -353,11 +368,11 @@ class ProcessManager {
    * returning string that should be send back to the process input (if not
    * empty)
    *
-   * @returns handle to the launched proccess
+   * @returns handle to the launched process
    */
   ProcessWrapper &launch_command(
       const std::string &command, const std::vector<std::string> &params,
-      int expected_exit_code = 0, bool catch_stderr = true,
+      ExitStatus expected_exit_status = 0, bool catch_stderr = true,
       std::chrono::milliseconds wait_notify_ready =
           std::chrono::milliseconds(-1),
       OutputResponder output_responder = kEmptyResponder);
@@ -443,7 +458,7 @@ class ProcessManager {
    * sections)
    * @param default_section [DEFAULT] section parameters
    * @param name config file name
-   * @param extra_defaults addional parameters to add to [DEFAULT]
+   * @param extra_defaults additional parameters to add to [DEFAULT]
    * @param enable_debug_logging add a logger section with debug level
    *
    * @return path to the created file

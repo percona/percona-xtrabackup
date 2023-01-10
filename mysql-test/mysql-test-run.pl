@@ -642,6 +642,18 @@ sub main {
                               template_path => "include/default_my.cnf",);
     unshift(@$tests, $tinfo);
   }
+  my $secondary_engine_suite = 0;
+  if (defined $::secondary_engine and $secondary_engine_support) {
+    foreach(@$tests) {
+      if ($_->{name} =~ /^$::secondary_engine/) {
+        $secondary_engine_suite = 1;
+        last;
+      }
+    }
+  }
+  if (!$secondary_engine_suite) {
+    $secondary_engine_support = 0;
+  }
 
   my $num_tests = @$tests;
   if ($num_tests == 0) {
@@ -2671,9 +2683,7 @@ sub executable_setup () {
   $exe_mysql_migrate_keyring =
     mtr_exe_exists("$path_client_bindir/mysql_migrate_keyring");
   $exe_mysql_keyring_encryption_test =
-    my_find_bin($bindir,
-                [ "runtime_output_directory", "libexec", "sbin", "bin" ],
-                "mysql_keyring_encryption_test");
+    mtr_exe_exists("$path_client_bindir/mysql_keyring_encryption_test");
 
   # For custom OpenSSL builds, look for the my_openssl executable.
   $exe_openssl =
@@ -3146,6 +3156,7 @@ sub environment_setup {
       ndb_show_tables
       ndb_waiter
       ndbxfrm
+      ndb_secretsfile_reader
     );
 
     foreach my $tool ( @ndb_tools)
@@ -3612,7 +3623,11 @@ sub check_ndbcluster_support ($) {
 
   my $ndbcluster_supported = 0;
   if ($mysqld_variables{'ndb-connectstring'}) {
-    $ndbcluster_supported = 1;
+    $exe_ndbd =
+      my_find_bin($bindir,
+                  [ "runtime_output_directory", "libexec", "sbin", "bin" ],
+                  "ndbd", NOT_REQUIRED);
+    $ndbcluster_supported = $exe_ndbd ? 1 : 0;
   }
 
   if ($opt_skip_ndbcluster && $opt_include_ndbcluster) {

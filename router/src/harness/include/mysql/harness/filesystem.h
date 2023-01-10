@@ -222,7 +222,7 @@ class HARNESS_EXPORT Path {
    * Append a path component to the current path.
    *
    * This function will append a path component to the path using the
-   * apropriate directory separator.
+   * appropriate directory separator.
    *
    * @param other Path component to append to the path.
    */
@@ -274,7 +274,7 @@ class HARNESS_EXPORT Path {
   /**
    * Directory separator string.
    *
-   * @note This is platform-dependent and defined in the apropriate
+   * @note This is platform-dependent and defined in the appropriate
    * source file.
    */
   static const char *const directory_separator;
@@ -282,7 +282,7 @@ class HARNESS_EXPORT Path {
   /**
    * Root directory string.
    *
-   * @note This is platform-dependent and defined in the apropriate
+   * @note This is platform-dependent and defined in the appropriate
    * source file.
    */
   static const char *const root_directory;
@@ -417,6 +417,8 @@ class HARNESS_EXPORT Directory : public Path {
    */
   DirectoryIterator begin();
 
+  DirectoryIterator begin() const { return cbegin(); }
+
   /**
    * Constant iterator to first entry.
    *
@@ -430,6 +432,8 @@ class HARNESS_EXPORT Directory : public Path {
    * @return Returns an iterator pointing *past-the-end* of the entries.
    */
   DirectoryIterator end();
+
+  DirectoryIterator end() const { return cend(); }
 
   /**
    * Constant iterator past-the-end of entries.
@@ -452,7 +456,7 @@ class HARNESS_EXPORT Directory : public Path {
    * Recursively create a list of relative paths from a directory. Path will
    * be relative to the given directory. Empty directories are also listed.
    *
-   * @return Recursive list of paths from a direcotry.
+   * @return Recursive list of paths from a directory.
    */
   std::vector<Path> list_recursive() const;
 
@@ -547,7 +551,7 @@ extern const perm_mode kStrictDirectoryPerm;
  * *
  * @param dir       name (or path) of the directory to create
  * @param mode      permission mode for the created directory
- * @param recursive if true then immitated unix `mkdir -p` recursively
+ * @param recursive if true then imitate unix `mkdir -p` recursively
  *                  creating parent directories if needed
  * @retval 0 operation succeeded
  * @retval -1 operation failed because of wrong parameters

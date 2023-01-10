@@ -2454,7 +2454,7 @@ Suma::execSUB_CREATE_REQ(Signal* signal)
     jam();
 
     /**
-     * We havent started syncing yet
+     * We haven't started syncing yet
      */
     sendSubCreateRef(signal, senderRef, senderData,
                      SubCreateRef::NotStarted);
@@ -3543,7 +3543,7 @@ Suma::execSUB_START_REQ(Signal* signal){
     jam();
 
     /**
-     * We havent started syncing yet
+     * We haven't started syncing yet
      */
     sendSubStartRef(signal,
                     senderRef, senderData, SubStartRef::NotStarted);
@@ -4183,7 +4183,7 @@ Suma::execSUB_STOP_REQ(Signal* signal){
     jam();
 
     /**
-     * We havent started syncing yet
+     * We haven't started syncing yet
      */
     sendSubStopRef(signal,
                    senderRef, senderData, SubStopRef::NotStarted);
@@ -5719,7 +5719,7 @@ Suma::sendSUB_GCP_COMPLETE_REP(Signal* signal)
    * If count match the number of buckets that should be reported
    * complete, send subscription data streams identifiers.
    * If this is not the case fallback on old signal without
-   * the streams identifiers, but that should not happend!
+   * the streams identifiers, but that should not happen!
    */
   if (stream_count == m_gcp_complete_rep_count)
   {
@@ -6205,7 +6205,7 @@ Suma::execSUB_REMOVE_REQ(Signal* signal)
     jam();
 
     /**
-     * We havent started syncing yet
+     * We haven't started syncing yet
      */
     sendSubRemoveRef(signal,  req, SubRemoveRef::NotStarted);
     return;
@@ -7090,25 +7090,23 @@ Suma::out_of_buffer_release(Signal* signal, Uint32 buck)
   ndbrequire(buck < NO_OF_BUCKETS);
   Bucket* bucket = c_buckets + buck;
   Uint32 tail= bucket->m_buffer_tail;
-  
+
   if(tail != RNIL)
   {
     Buffer_page* page= c_page_pool.getPtr(tail);
     bucket->m_buffer_tail = page->m_next_page;
     free_page(tail, page);
-    signal->theData[0] = SumaContinueB::OUT_OF_BUFFER_RELEASE;
-    signal->theData[1] = buck;
-    sendSignal(SUMA_REF, GSN_CONTINUEB, signal, 2, JBB);
-    return;
   }
 
-  /**
-   * Clear head
-   */
-  bucket->m_buffer_head.m_page_id = RNIL;
-  bucket->m_buffer_head.m_page_pos = Buffer_page::DATA_WORDS + 1;
-  
-  buck++;
+  // If the page freed above is the last page, update the head
+  // and continue releasing the next bucket.
+  if (tail == RNIL) {
+    bucket->m_buffer_head.m_page_id = RNIL;
+    bucket->m_buffer_head.m_page_pos = Buffer_page::DATA_WORDS + 1;
+
+    buck++;
+  }
+
   if(buck != c_no_of_buckets)
   {
     signal->theData[0] = SumaContinueB::OUT_OF_BUFFER_RELEASE;

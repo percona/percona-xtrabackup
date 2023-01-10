@@ -38,6 +38,8 @@
 #include "NdbImportUtil.hpp"
 #include "NdbImportCsv.hpp"
 #include "my_byteorder.h"
+#include "portlib/NdbTick.h"
+
 // STL
 #include <map>
 #include <algorithm>

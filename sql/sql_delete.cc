@@ -484,7 +484,7 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
   {
     ha_rows rows;
     if (range_scan)
-      rows = range_scan->num_output_rows;
+      rows = range_scan->num_output_rows();
     else if (!conds && !need_sort && limit != HA_POS_ERROR)
       rows = limit;
     else {
@@ -531,7 +531,7 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
           thd, {table}, /*keep_buffers=*/false, order, HA_POS_ERROR,
           /*remove_duplicates=*/false,
           /*force_sort_rowids=*/true, /*unwrap_rollup=*/false));
-      path = NewSortAccessPath(thd, path, fsort.get(),
+      path = NewSortAccessPath(thd, path, fsort.get(), order,
                                /*count_examined_rows=*/false);
       iterator = CreateIteratorFromAccessPath(thd, path, &join,
                                               /*eligible_for_batch_mode=*/true);

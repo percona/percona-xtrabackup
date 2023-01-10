@@ -405,7 +405,7 @@
   Number |  Hex  | Character Set Name
   -------|-------|-------------------
        8 |  0x08 | @ref my_charset_latin1 "latin1_swedish_ci"
-      33 |  0x21 | @ref my_charset_utf8_general_ci "utf8mb3_general_ci"
+      33 |  0x21 | @ref my_charset_utf8mb3_general_ci "utf8mb3_general_ci"
       63 |  0x3f | @ref my_charset_bin "binary"
 
 
@@ -1356,8 +1356,12 @@ bool Protocol_classic::send_error(uint sql_errno, const char *err_msg,
   return retval;
 }
 
-void Protocol_classic::set_read_timeout(ulong read_timeout) {
+void Protocol_classic::set_read_timeout(ulong read_timeout,
+                                        bool on_full_packet) {
   my_net_set_read_timeout(&m_thd->net, read_timeout);
+  NET_SERVER *ext = static_cast<NET_SERVER *>(m_thd->net.extension);
+  assert(ext);
+  ext->timeout_on_full_packet = on_full_packet;
 }
 
 void Protocol_classic::set_write_timeout(ulong write_timeout) {
@@ -2780,15 +2784,16 @@ static bool parse_query_bind_params(
       assert(has_new_types || stmt_data);
 
       /* check if the packet contains more parameters than expected */
-      if (!has_new_types && i >= stmt_data->param_count) return true;
+      if (!has_new_types && i >= stmt_data->m_param_count) return true;
 
       enum enum_field_types type =
           has_new_types ? params[i].type
-                        : stmt_data->param_array[i]->data_type_source();
+                        : stmt_data->m_param_array[i]->data_type_source();
       if (type == MYSQL_TYPE_BOOL)
         return true;  // unsupported in this version of the Server
-      if (stmt_data && i < stmt_data->param_count && stmt_data->param_array &&
-          stmt_data->param_array[i]->param_state() ==
+      if (stmt_data && i < stmt_data->m_param_count &&
+          stmt_data->m_param_array != nullptr &&
+          stmt_data->m_param_array[i]->param_state() ==
               Item_param::LONG_DATA_VALUE) {
         DBUG_PRINT("info", ("long data"));
         if (!((type >= MYSQL_TYPE_TINY_BLOB) && (type <= MYSQL_TYPE_STRING)))
@@ -2887,12 +2892,12 @@ bool Protocol_classic::parse_packet(union COM_DATA *data,
         query attributes or is not going to send param count for 0 params/QAs
       */
       if (!stmt ||
-          (stmt->param_count < 1 &&
+          (stmt->m_param_count == 0 &&
            (!this->has_client_capability(CLIENT_QUERY_ATTRIBUTES) ||
             !(data->com_stmt_execute.open_cursor & PARAMETER_COUNT_AVAILABLE))))
         break;
       if (parse_query_bind_params(
-              m_thd, stmt->param_count, &data->com_stmt_execute.parameters,
+              m_thd, stmt->m_param_count, &data->com_stmt_execute.parameters,
               &data->com_stmt_execute.has_new_types,
               &data->com_stmt_execute.parameter_count, stmt, &read_pos,
               &packet_left,

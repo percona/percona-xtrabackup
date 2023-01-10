@@ -124,7 +124,7 @@ class MDLTest : public ::testing::Test, public Test_MDL_context_owner {
     m_mdl_context.init(this);
     EXPECT_FALSE(m_mdl_context.has_locks());
     m_charset = system_charset_info;
-    system_charset_info = &my_charset_utf8_bin;
+    system_charset_info = &my_charset_utf8mb3_bin;
     EXPECT_TRUE(system_charset_info != nullptr);
 
     MDL_REQUEST_INIT(&m_global_request, MDL_key::GLOBAL, "", "",
@@ -157,7 +157,8 @@ class MDLTest : public ::testing::Test, public Test_MDL_context_owner {
 
  private:
   CHARSET_INFO *m_charset;
-  GTEST_DISALLOW_COPY_AND_ASSIGN_(MDLTest);
+  MDLTest(MDLTest const &) = delete;
+  MDLTest &operator=(MDLTest const &) = delete;
 
   static ErrorHandlerFunctionPointer m_old_error_handler_hook;
 };
@@ -3832,7 +3833,8 @@ class MDLHtonNotifyTest : public MDLTest {
   void set_refuse_acquire() { m_refuse_acquire = true; }
 
  private:
-  GTEST_DISALLOW_COPY_AND_ASSIGN_(MDLHtonNotifyTest);
+  MDLHtonNotifyTest(MDLHtonNotifyTest const &) = delete;
+  MDLHtonNotifyTest &operator=(MDLHtonNotifyTest const &) = delete;
 
   uint m_pre_acquire_count, m_post_release_count;
   MDL_key m_pre_acquire_key, m_post_release_key;
@@ -3863,7 +3865,8 @@ TEST_F(MDLHtonNotifyTest, NotifyNamespaces) {
       false,  // COLUMN_STATISTICS
       false,  // RESOURCE_GROUPS
       false,  // FOREIGN_KEY
-      false   // CHECK_CONSTRAINT
+      false,  // CHECK_CONSTRAINT
+      false   // RESOURCE_GROUPS_GLOBAL
   };
   static_assert(
       sizeof(notify_or_not) == MDL_key::NAMESPACE_END,
@@ -4581,7 +4584,8 @@ class MDLKeyTest : public ::testing::Test {
   MDLKeyTest() = default;
 
  private:
-  GTEST_DISALLOW_COPY_AND_ASSIGN_(MDLKeyTest);
+  MDLKeyTest(MDLKeyTest const &) = delete;
+  MDLKeyTest &operator=(MDLKeyTest const &) = delete;
 };
 
 // Google Test recommends DeathTest suffix for classes use in death tests.
@@ -4693,7 +4697,7 @@ static void lock_bench(MDL_context &ctx, const Name_vec &names) {
 */
 static void BM_FindTicket(size_t num_iterations) {
   StopBenchmarkTiming();
-  system_charset_info = &my_charset_utf8_bin;
+  system_charset_info = &my_charset_utf8mb3_bin;
   mdl_init();
   MDL_context ctx;
   Mock_MDL_context_owner owner;

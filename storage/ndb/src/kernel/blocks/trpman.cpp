@@ -23,15 +23,16 @@
 */
 
 #include "trpman.hpp"
-#include <TransporterRegistry.hpp>
-#include <signaldata/CloseComReqConf.hpp>
-#include <signaldata/DisconnectRep.hpp>
-#include <signaldata/EnableCom.hpp>
-#include <signaldata/RouteOrd.hpp>
-#include <signaldata/DumpStateOrd.hpp>
+#include "TransporterRegistry.hpp"
+#include "signaldata/CloseComReqConf.hpp"
+#include "signaldata/DisconnectRep.hpp"
+#include "signaldata/EnableCom.hpp"
+#include "signaldata/RouteOrd.hpp"
+#include "signaldata/DumpStateOrd.hpp"
+#include "portlib/NdbTCP.h"
 
-#include <mt.hpp>
-#include <EventLogger.hpp>
+#include "mt.hpp"
+#include "EventLogger.hpp"
 
 #define JAM_FILE_ID 430
 
@@ -117,7 +118,7 @@ Trpman::handles_this_node(Uint32 nodeId, bool all)
 void
 Trpman::execOPEN_COMORD(Signal* signal)
 {
-  // Connect to the specifed NDB node, only QMGR allowed communication
+  // Connect to the specified NDB node, only QMGR allowed communication
   // so far with the node
 
   const BlockReference userRef = signal->theData[0];

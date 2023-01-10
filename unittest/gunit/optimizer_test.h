@@ -249,10 +249,18 @@ static void ResolveQueryBlock(
   query_block->join->fields = &query_block->fields;
   query_block->join->alloc_func_list();
   SetJoinConditions(query_block->top_join_list);
+  count_field_types(query_block, &query_block->join->tmp_table_param,
+                    query_block->fields, /*reset_with_sum_func=*/false,
+                    /*save_sum_fields=*/false);
 
   if (query_block->select_limit != nullptr) {
     query_block->master_query_expression()->select_limit_cnt =
         query_block->select_limit->val_int();
+  }
+
+  if (query_block->offset_limit != nullptr) {
+    query_block->master_query_expression()->offset_limit_cnt =
+        query_block->offset_limit->val_int();
   }
 
   thd->lex->set_current_query_block(saved_current_query_block);
@@ -325,8 +333,11 @@ handlerton *OptimizerTestBase<T>::EnableSecondaryEngine(
   }
   hton->secondary_engine_modify_access_path_cost = nullptr;
 
-  for (const auto &name_and_table : m_fake_tables) {
-    name_and_table.second->file->ht = hton;
+  for (const auto &[name, table] : m_fake_tables) {
+    table->file->ht = hton;
+    static_cast<Fake_TABLE_SHARE *>(table->s)->set_secondary_engine(true);
+    ON_CALL(table->mock_handler, table_type())
+        .WillByDefault(testing::Return("unit test"));
   }
 
   m_thd->lex->m_sql_cmd->use_secondary_storage_engine(hton);

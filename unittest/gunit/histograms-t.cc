@@ -1453,8 +1453,9 @@ void VerifyEquiHeightSerialization(MEM_ROOT *mem_root,
   EXPECT_FALSE(histogram->histogram_to_json(&json_object));
 
   // Deserialization.
+  Error_context ctx;
   Histogram *deserialized_histogram = Histogram::json_to_histogram(
-      mem_root, "db1", "tbl1", "col1", json_object);
+      mem_root, "db1", "tbl1", "col1", json_object, &ctx);
   ASSERT_TRUE(deserialized_histogram != nullptr);
   Equi_height<T> *deserialized_equi_height =
       dynamic_cast<Equi_height<T> *>(deserialized_histogram);
@@ -2149,7 +2150,6 @@ TEST_F(HistogramsTest, MultiByteStrings) {
     character.
   */
   MY_CHARSET_LOADER loader;
-  my_charset_loader_init_mysys(&loader);
   CHARSET_INFO *cs =
       my_collation_get_by_name(&loader, "ucs2_general_ci", MYF(0));
 

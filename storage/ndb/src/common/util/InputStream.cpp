@@ -43,8 +43,8 @@ FileInputStream::gets(char * buf, int bufLen){
   return 0;
 }
 
-SocketInputStream::SocketInputStream(NDB_SOCKET_TYPE socket, 
-				     unsigned read_timeout_ms)
+SocketInputStream::SocketInputStream(ndb_socket_t socket,
+                                     unsigned read_timeout_ms)
   : m_socket(socket) {
   m_startover= true;
   m_timeout_remain= m_timeout_ms = read_timeout_ms;

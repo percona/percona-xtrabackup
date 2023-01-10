@@ -201,7 +201,7 @@ class OverwriteLogLevelTest
  * overwrite works as expected */
 TEST_P(OverwriteLogLevelTest, OverwriteLogLevel) {
   const std::string debug_level_log_entry =
-      ".* main DEBUG .* Ready, signaling notify socket";
+      ".* main DEBUG .* Starting: keepalive.";
 
   const std::string keepalive_section = get_keepalive_section();
   const std::string conf_file =
@@ -277,7 +277,7 @@ TEST_F(RouterConfigOwerwriteTest, OverwriteLoggingFolder) {
 }
 
 /* @test Sunny-day scenario, we check that overwriting an option in the
- * configuration file with a commnad line parameter works */
+ * configuration file with a command line parameter works */
 TEST_F(RouterConfigOwerwriteTest, OverwriteRoutingPort) {
   const auto router_port = port_pool_.get_next_available();
   const auto server_port = port_pool_.get_next_available();
@@ -361,8 +361,8 @@ class OverwriteErrorTest
     : public RouterConfigOwerwriteTest,
       public ::testing::WithParamInterface<OverwriteErrorTestParam> {};
 
-/* @test Check that overwriten option is validated properly if it is used and is
- * not going to be ignored */
+/* @test Check that overwritten option is validated properly if it is used and
+ * is not going to be ignored */
 TEST_P(OverwriteErrorTest, OverwriteError) {
   auto default_section = get_DEFAULT_defaults();
   init_keyring(default_section, conf_dir.name());

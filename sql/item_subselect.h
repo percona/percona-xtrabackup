@@ -725,7 +725,7 @@ class SubqueryWithResult {
   /**
     Cleanup subquery after complete query execution, free all resources.
   */
-  void cleanup(THD *thd);
+  void cleanup();
   bool prepare(THD *thd);
   void fix_length_and_dec(Item_cache **row);
   /**
@@ -837,7 +837,7 @@ class subselect_indexsubquery_engine {
   virtual bool exec(THD *thd);
   virtual void print(const THD *thd, String *str, enum_query_type query_type);
   virtual enum_engine_type engine_type() const { return INDEXSUBQUERY_ENGINE; }
-  virtual void cleanup(THD *) {}
+  virtual void cleanup() {}
   virtual void create_iterators(THD *) {}
 };
 
@@ -893,7 +893,7 @@ class subselect_hash_sj_engine final : public subselect_indexsubquery_engine {
   ~subselect_hash_sj_engine() override;
 
   bool setup(THD *thd, const mem_root_deque<Item *> &tmp_columns);
-  void cleanup(THD *thd) override;
+  void cleanup() override;
   bool exec(THD *thd) override;
   void print(const THD *thd, String *str, enum_query_type query_type) override;
   enum_engine_type engine_type() const override { return HASH_SJ_ENGINE; }
@@ -921,9 +921,11 @@ class subselect_hash_sj_engine final : public subselect_indexsubquery_engine {
 
   @param thd    Thread handle.
   @param conds  Condition; may be nullptr.
+  @param copy   true if a copy of the new condition needs to be returned
+                (used in case of hypergraph optimizer).
   @returns      new condition
  */
-Item *remove_in2exists_conds(THD *thd, Item *conds);
+Item *remove_in2exists_conds(THD *thd, Item *conds, bool copy);
 
 /// Returns whether the Item is an IN-subselect.
 bool IsItemInSubSelect(Item *item);

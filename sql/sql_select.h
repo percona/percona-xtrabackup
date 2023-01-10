@@ -862,7 +862,7 @@ class store_key_hash_item final : public store_key {
 bool set_statement_timer(THD *thd);
 void reset_statement_timer(THD *thd);
 
-void free_underlaid_joins(THD *thd, Query_block *select);
+void free_underlaid_joins(Query_block *select);
 
 void calc_used_field_length(TABLE *table, bool needs_rowid,
                             uint *p_used_fieldlength);
@@ -922,7 +922,8 @@ bool test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER_with_src *order,
                               uint *saved_best_key_parts = nullptr);
 /**
   Calculate properties of ref key: key length, number of used key parts,
-  dependency map, possibility of null.
+  dependency map, possibility of null. After calling this function
+  thd::is_error() needs to be checked, as it can set an error.
 
   @param keyuse               Array of keys to consider
   @param tab                  join_tab to calculate ref parameters for

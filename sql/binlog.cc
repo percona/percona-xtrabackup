@@ -332,20 +332,24 @@ static std::pair<bool, int> check_purge_conditions(const MYSQL_BIN_LOG &log) {
 static time_t calculate_auto_purge_lower_time_bound() {
   if (DBUG_EVALUATE_IF("expire_logs_always", true, false)) return time(nullptr);
 
+  int64 expiration_time = 0;
+  int64 current_time = time(nullptr);
+
   if (binlog_expire_logs_seconds > 0)
-    return time(nullptr) - binlog_expire_logs_seconds;
+    expiration_time = current_time - binlog_expire_logs_seconds;
   else if (expire_logs_days > 0)
-    return time(nullptr) -
-           expire_logs_days * static_cast<time_t>(SECONDS_IN_24H);
+    expiration_time =
+        current_time - expire_logs_days * static_cast<int64>(SECONDS_IN_24H);
+
+  // check for possible overflow conditions (4 bytes time_t)
+  if (expiration_time < std::numeric_limits<time_t>::min())
+    expiration_time = std::numeric_limits<time_t>::min();
 
   // This function should only be called if binlog_expire_logs_seconds
-  // or expire_logs_days are greater than 0. In debug builds assert.
-  // In the event that on production builds there is ever a bug,
-  // that causes the caller to call this function with expire time set
-  // to 0, then do not purge - return 0 and thus file stat time is
-  // always greater than purge time.
-  assert(false); /* purecov: inspected */
-  return 0;      /* purecov: inspected */
+  // or expire_logs_days are greater than 0
+  assert(binlog_expire_logs_seconds > 0 || expire_logs_days > 0);
+
+  return static_cast<time_t>(expiration_time);
 }
 
 /**
@@ -360,9 +364,6 @@ static bool check_auto_purge_conditions() {
 
   // no retention window configured
   if (binlog_expire_logs_seconds == 0 && expire_logs_days == 0) return true;
-
-  // retention window is set, but we are still within the window
-  if (calculate_auto_purge_lower_time_bound() < 0) return true;
 
   // go ahead, validations checked successfully
   return false;
@@ -6412,7 +6413,7 @@ void MYSQL_BIN_LOG::make_log_name(char *buf, const char *log_ident) {
   Check if we are writing/reading to the given log file.
 */
 
-bool MYSQL_BIN_LOG::is_active(const char *log_file_name_arg) {
+bool MYSQL_BIN_LOG::is_active(const char *log_file_name_arg) const {
   return !compare_log_name(log_file_name, log_file_name_arg);
 }
 
@@ -7614,31 +7615,20 @@ void MYSQL_BIN_LOG::report_binlog_write_error() {
          my_strerror(errbuf, sizeof(errbuf), errno));
 }
 
-/**
-  Wait until we get a signal that the binary log has been updated.
-  Applies to master only.
+int MYSQL_BIN_LOG::wait_for_update() {
+  DBUG_TRACE;
+  mysql_mutex_assert_owner(&LOCK_binlog_end_pos);
+  mysql_cond_wait(&update_cond, &LOCK_binlog_end_pos);
+  return 0;
+}
 
-  NOTES
-  @param[in] timeout    a pointer to a timespec;
-                        NULL means to wait w/o timeout.
-  @retval    0          if got signalled on update
-  @retval    non-0      if wait timeout elapsed
-  @note
-    LOCK_binlog_end_pos must be taken before calling this function.
-    LOCK_binlog_end_pos is being released while the thread is waiting.
-    LOCK_binlog_end_pos is released by the caller.
-*/
-
-int MYSQL_BIN_LOG::wait_for_update(const struct timespec *timeout) {
-  int ret = 0;
+int MYSQL_BIN_LOG::wait_for_update(const std::chrono::nanoseconds &timeout) {
   DBUG_TRACE;
 
-  if (!timeout)
-    mysql_cond_wait(&update_cond, &LOCK_binlog_end_pos);
-  else
-    ret = mysql_cond_timedwait(&update_cond, &LOCK_binlog_end_pos,
-                               const_cast<struct timespec *>(timeout));
-  return ret;
+  struct timespec ts;
+  set_timespec_nsec(&ts, timeout.count());
+  mysql_mutex_assert_owner(&LOCK_binlog_end_pos);
+  return mysql_cond_timedwait(&update_cond, &LOCK_binlog_end_pos, &ts);
 }
 
 /**
@@ -8940,14 +8930,19 @@ int MYSQL_BIN_LOG::ordered_commit(THD *thd, bool all, bool skip_commit) {
     sync_error = result.first;
   }
 
-  if (update_binlog_end_pos_after_sync) {
+  if (update_binlog_end_pos_after_sync && flush_error == 0 && sync_error == 0) {
     THD *tmp_thd = final_queue;
     const char *binlog_file = nullptr;
     my_off_t pos = 0;
-    while (tmp_thd->next_to_commit != nullptr)
+
+    while (tmp_thd != nullptr) {
+      if (tmp_thd->commit_error == THD::CE_NONE) {
+        tmp_thd->get_trans_fixed_pos(&binlog_file, &pos);
+      }
       tmp_thd = tmp_thd->next_to_commit;
-    if (flush_error == 0 && sync_error == 0) {
-      tmp_thd->get_trans_fixed_pos(&binlog_file, &pos);
+    }
+
+    if (binlog_file != nullptr && pos > 0) {
       update_binlog_end_pos(binlog_file, pos);
     }
   }
@@ -9201,6 +9196,14 @@ void MYSQL_BIN_LOG::report_missing_gtids(
 
   my_free(missing_gtids);
   my_free(slave_executed_gtids);
+}
+
+void MYSQL_BIN_LOG::signal_update() {
+  DBUG_TRACE;
+  DBUG_EXECUTE_IF("simulate_delay_in_binlog_signal_update",
+                  std::this_thread::sleep_for(std::chrono::milliseconds(120)););
+  mysql_cond_broadcast(&update_cond);
+  return;
 }
 
 void MYSQL_BIN_LOG::update_binlog_end_pos(bool need_lock) {

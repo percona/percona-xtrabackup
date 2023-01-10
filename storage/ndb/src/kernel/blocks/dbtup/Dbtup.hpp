@@ -130,7 +130,7 @@ inline const Uint32* ALIGN_WORD(const void* ptr)
 
           /* DATA STRUCTURE TYPES */
           /* WHEN ATTRIBUTE INFO IS SENT WITH A ATTRINFO-SIGNAL THE         */
-          /* VARIABLE TYPE IS SPECIFYED. THIS MUST BE DONE TO BE ABLE TO    */
+          /* VARIABLE TYPE IS SPECIFIED. THIS MUST BE DONE TO BE ABLE TO    */
           /* NOW HOW MUCH DATA OF A ATTRIBUTE TO READ FROM ATTRINFO.        */
 
           /* WHEN A REQUEST CAN NOT BE EXECUTED BECAUSE OF A ERROR THE      */
@@ -493,7 +493,7 @@ typedef Ptr<Fragoperrec> FragoperrecPtr;
       Current = 2,              // at current before locking
       Blocked = 3,              // at current waiting for ACC lock
       Locked = 4,               // at current and locked or no lock needed
-      Next = 5,                 // looking for next extry
+      Next = 5,                 // looking for next entry
       Last = 6,                 // after last entry
       Aborting = 7,             // lock wait at scan close
       Invalid = 9               // cannot return REF to LQH currently
@@ -753,7 +753,7 @@ struct Fragrecord {
   Uint32 m_max_page_cnt;
   Uint32 m_free_page_id_list;
   DynArr256::Head m_page_map;
-  Page_fifo::Head thFreeFirst;   // pages with atleast 1 free record
+  Page_fifo::Head thFreeFirst;   // pages with at least 1 free record
 
   Uint32 m_lcp_scan_op;
   Local_key m_lcp_keep_list_head;
@@ -1314,6 +1314,12 @@ TupTriggerData_pool c_triggerPool;
       return no;
     }
 
+    Uint32 get_checksum_length() const {
+      if (m_bits & TR_Checksum)
+        return 1;
+      return 0;
+    }
+
     struct {
       Uint16 m_no_of_fixsize;
       Uint16 m_no_of_varsize;
@@ -1492,7 +1498,7 @@ TupTriggerData_pool c_triggerPool;
 
 /* **************************** TABLE_DESCRIPTOR RECORD ******************************** */
 /* THIS VARIABLE IS USED TO STORE TABLE DESCRIPTIONS. A TABLE DESCRIPTION IS STORED AS A */
-/* CONTIGUOS ARRAY IN THIS VARIABLE. WHEN A NEW TABLE IS ADDED A CHUNK IS ALLOCATED IN   */
+/* CONTIGUOUS ARRAY IN THIS VARIABLE. WHEN A NEW TABLE IS ADDED A CHUNK IS ALLOCATED IN  */
 /* THIS RECORD. WHEN ATTRIBUTES ARE ADDED TO THE TABLE, A NEW CHUNK OF PROPER SIZE IS    */
 /* ALLOCATED AND ALL DATA IS COPIED TO THIS NEW CHUNK AND THEN THE OLD CHUNK IS PUT IN   */
 /* THE FREE LIST. EACH TABLE IS DESCRIBED BY A NUMBER OF TABLE DESCRIPTIVE ATTRIBUTES    */
@@ -1768,9 +1774,13 @@ typedef Ptr<HostBuffer> HostBufferPtr;
       return m_first_words + tabPtrP->m_offsets[MM].m_disk_ref_offset;
     }
 
+    static Uint32 get_mm_gci_pos(const Tablerec* tabPtrP) {
+      return Tuple_header::HeaderSize + tabPtrP->get_checksum_length();
+    }
+
     Uint32 *get_mm_gci(const Tablerec* tabPtrP){
       /* Mandatory position even if TR_RowGCI isn't set (happens in restore */
-      return m_data + (tabPtrP->m_bits & Tablerec::TR_Checksum);
+      return m_data + tabPtrP->get_checksum_length();
     }
 
     Uint32 *get_dd_gci(const Tablerec* tabPtrP, Uint32 mm){
@@ -1809,7 +1819,7 @@ typedef Ptr<HostBuffer> HostBufferPtr;
 
     /* Null bits and dynamic columns bits.  Dynamic columns do not have null
        bits so total number of bits will not be more than
-       MAX_ATTRIBUTES_IN_TABLE.  But since bits are splitted on two parts an
+       MAX_ATTRIBUTES_IN_TABLE.  But since bits are split on two parts an
        extra word for padding may be needed.
      */
     ndb_ceil_div(MAX_ATTRIBUTES_IN_TABLE, 32) + 1 +
@@ -2497,7 +2507,7 @@ private:
 // ------------------
 //
 // <---- TUPKEYCONF
-// After successful prepartion to delete the tuple LQH is informed
+// After successful preparation to delete the tuple LQH is informed
 // of this.
 //
 // Interpreted Delete with Read
