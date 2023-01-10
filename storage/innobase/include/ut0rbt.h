@@ -162,7 +162,6 @@ const ib_rbt_node_t *rbt_next(const ib_rbt_t *tree, /*!< in: rb tree */
 const ib_rbt_node_t *rbt_prev(const ib_rbt_t *tree, /*!< in: rb tree */
                               const ib_rbt_node_t * /* in: current node */
                                   current);
-<<<<<<< HEAD
 /**********************************************************************/ /**
  Find the node that has the lowest key that is >= key.
  @return node satisfying the lower bound constraint or NULL */
@@ -177,12 +176,7 @@ const ib_rbt_node_t *rbt_upper_bound(
     /*============*/
     const ib_rbt_t *tree, /*!< in: rb tree */
     const void *key);     /*!< in: key to search */
-/** Search for the key, a node will be retuned in parent.last, whether it
-||||||| fbdaa4def30
-/** Search for the key, a node will be retuned in parent.last, whether it
-=======
 /** Search for the key, a node will be returned in parent.last, whether it
->>>>>>> mysql-8.0.31
  was found or not. If not found then parent.last will contain the
  parent node for the possibly new key otherwise the matching node.
  @return result of last comparison */
