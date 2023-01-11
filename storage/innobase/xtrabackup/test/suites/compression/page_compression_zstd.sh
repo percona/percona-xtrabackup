@@ -1,6 +1,5 @@
 . inc/page_compression_common.sh
 
-prepare_data
 vlog "Taking backup with ZSTD compression"
 take_backup "--compress=zstd --read-buffer-size=1M"
 decompress "--decompress --read-buffer-size=1M"

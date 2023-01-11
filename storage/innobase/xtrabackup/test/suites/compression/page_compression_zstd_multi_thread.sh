@@ -1,6 +1,5 @@
 . inc/page_compression_common.sh
 
-prepare_data
 vlog "Taking backup with ZSTD compression and multi thread"
 take_backup "--parallel=2 --compress=zstd --compress-threads=2 --read-buffer-size=1M"
 decompress "--decompress --parallel=2 --read-buffer-size=1M"

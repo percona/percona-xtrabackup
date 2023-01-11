@@ -1,6 +1,5 @@
 . inc/page_compression_common.sh
 
-prepare_data
 vlog "Taking backup with no compression"
 take_backup ""
 restore_and_verify
