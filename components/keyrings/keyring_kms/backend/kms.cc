@@ -30,6 +30,9 @@
 #include <sstream>
 #include <string>
 
+#include <openssl/hmac.h>
+#include <openssl/sha.h>
+
 #ifdef RAPIDJSON_NO_SIZETYPEDEFINE
 // if we build within the server, it will set RAPIDJSON_NO_SIZETYPEDEFINE
 // globally and require to include my_rapidjson_size_t.h
@@ -59,6 +62,15 @@ const constexpr auto AWS_SIGNATURE_ALGORITHM = "AWS4-HMAC-SHA256";
 const constexpr auto AWS_STORAGE_CLASS_HEADER = "X-Amz-Storage-Class";
 
 namespace aws {
+
+std::vector<unsigned char> sha256_ex(const unsigned char *ptr,
+                                     std::size_t len) {
+  std::vector<unsigned char> md(SHA256_DIGEST_LENGTH);
+
+  SHA256(ptr, len, md.data());
+
+  return md;
+}
 
 std::string hmac_sha256(std::string const &decodedKey, std::string const &msg) {
   std::array<unsigned char, EVP_MAX_MD_SIZE> hash;
