@@ -116,7 +116,6 @@ xb_fil_cur_result_t xb_fil_cur_open(
 {
   page_size_t page_size(0, 0, false);
   ulint page_size_shift;
-  bool success;
 
   /* Initialize these first so xb_fil_cur_close() handles them correctly
   in case of error */
@@ -143,10 +142,7 @@ xb_fil_cur_result_t xb_fil_cur_open(
   srv_close_files has an effect only on IBD tablespaces. */
   if (cursor->is_system || !srv_backup_mode ||
       (srv_close_files && cursor->is_ibd)) {
-    node->handle = os_file_create_simple_no_error_handling(
-        0, node->name, OS_FILE_OPEN, OS_FILE_READ_ONLY, srv_read_only_mode,
-        &success);
-    if (!success) {
+    if (!fil_node_open_file(node)) {
       /* The following call prints an error message */
       os_file_get_last_error(true);
 
@@ -154,8 +150,6 @@ xb_fil_cur_result_t xb_fil_cur_open(
 
       return (XB_FIL_CUR_ERROR);
     }
-
-    fil_node_open_file(node);
   }
 
   ut_ad(node->is_open);
