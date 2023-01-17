@@ -1539,6 +1539,7 @@ static dberr_t srv_init_abort_low(bool create_new_db,
   return (err);
 }
 
+#ifdef XTRABACKUP
 /** At startup load the encryption information from first datafile
 to tablespace object
 @return DB_SUCCESS on succes, others on failure */
@@ -1561,23 +1562,10 @@ static dberr_t srv_sys_enable_encryption() {
   return (err);
 }
 
-dberr_t srv_start(bool create_new_db, lsn_t to_lsn) {
+#endif  // XTRABACKUP
+dberr_t srv_start(bool create_new_db IF_XB(, lsn_t to_lsn)) {
   lsn_t flushed_lsn;
 
-<<<<<<< HEAD
-  /* just for assertions */
-  lsn_t previous_lsn;
-
-||||||| a246bad76b9
-  /* just for assertions */
-  lsn_t previous_lsn;
-
-  page_no_t sum_of_data_file_sizes;
-  page_no_t tablespace_size_in_header;
-=======
-  page_no_t sum_of_data_file_sizes;
-  page_no_t tablespace_size_in_header;
->>>>>>> mysql-8.0.32
   dberr_t err;
   mtr_t mtr;
   purge_pq_t *purge_queue;
@@ -2169,23 +2157,14 @@ dberr_t srv_start(bool create_new_db, lsn_t to_lsn) {
     objects are not fully initialized at this point, the usual mechanism to
     persist dynamic metadata at checkpoint wouldn't work. */
 
-<<<<<<< HEAD
-    if (srv_dict_metadata != nullptr && !srv_dict_metadata->empty()
-#ifdef XTRABACKUP
-        && !srv_apply_log_only
-#endif
-    ) {
-||||||| a246bad76b9
-    if (srv_dict_metadata != nullptr && !srv_dict_metadata->empty()) {
-=======
     DBUG_EXECUTE_IF("log_first_rec_group_test", {
       const lsn_t end_lsn = mtr_commit_mlog_test();
       log_write_up_to(*log_sys, end_lsn, true);
       DBUG_SUICIDE();
     });
 
-    if (srv_dict_metadata != nullptr && !srv_dict_metadata->empty()) {
->>>>>>> mysql-8.0.32
+    if (srv_dict_metadata != nullptr && !srv_dict_metadata->empty()
+                                             IF_XB(&&!srv_apply_log_only)) {
       ut_a(redo_writes_allowed);
 
       /* Open this table in case srv_dict_metadata should be applied to this

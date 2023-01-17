@@ -552,13 +552,7 @@ bool Sql_cmd_show_master_status::execute_inner(THD *thd) {
   return show_master_status(thd);
 }
 
-<<<<<<< HEAD
-bool Sql_cmd_show_profiles::execute_inner(THD *thd MY_ATTRIBUTE((unused))) {
-||||||| a246bad76b9
-bool Sql_cmd_show_profiles::execute_inner(THD *thd) {
-=======
 bool Sql_cmd_show_profiles::execute_inner(THD *thd [[maybe_unused]]) {
->>>>>>> mysql-8.0.32
 #if defined(ENABLED_PROFILING)
   thd->profiling->discard_current_query();
   return thd->profiling->show_profiles();
