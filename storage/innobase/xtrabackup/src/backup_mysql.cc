@@ -92,6 +92,8 @@ char tool_args[2048];
 /* mysql flavor and version */
 mysql_flavor_t server_flavor = FLAVOR_UNKNOWN;
 unsigned long mysql_server_version = 0;
+/* the version of xtrabackup used during the backup */
+unsigned long xb_backup_version = 0;
 
 /* server capabilities */
 bool have_changed_page_bitmaps = false;

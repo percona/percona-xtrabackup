@@ -144,6 +144,14 @@ class Log_files_dict {
   @param[in]  file_id         id of the log file */
   void set_incomplete(Log_file_id file_id);
 
+#ifdef XTRABACKUP
+  /** Changes start_lsn of the file. Updates m_end_lsn accordingly.
+  @param[in]  file_id         id of the log file
+  @param[in]  start_lsn       new_start_lsn
+  */
+  void set_lsn(Log_file_id file_id, lsn_t start_lsn);
+#endif
+
   /** Changes size of the file. Updates m_end_lsn accordingly.
   @param[in]  file_id         id of the log file
   @param[in]  new_size        new size (expressed in bytes) */

@@ -148,6 +148,22 @@ void Log_files_dict::set_incomplete(Log_file_id file_id) {
   it->second.m_full = false;
 }
 
+#ifdef XTRABACKUP
+void Log_files_dict::set_lsn(Log_file_id file_id, lsn_t start_lsn) {
+  const auto it = m_files_by_id.find(file_id);
+  ut_a(it != m_files_by_id.end());
+  auto &meta_info = it->second;
+
+  meta_info.m_start_lsn =
+      ut_uint64_align_down(start_lsn, OS_FILE_LOG_BLOCK_SIZE);
+  ut_a(meta_info.m_start_lsn > 0);
+
+  const bool success = log_file_compute_end_lsn(
+      meta_info.m_start_lsn, meta_info.m_size_in_bytes, meta_info.m_end_lsn);
+  ut_a(success);
+}
+#endif  // XTRABACKUP
+
 void Log_files_dict::set_size(Log_file_id file_id, os_offset_t new_size) {
   const auto it = m_files_by_id.find(file_id);
   ut_a(it != m_files_by_id.end());
