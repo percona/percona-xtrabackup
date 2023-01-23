@@ -113,7 +113,7 @@ echo "DROP TABLE t1" | $MYSQL $MYSQL_ARGS -Ns test
 }
 
 vlog "XTRADB: ${XTRADB_VERSION}"
-if is_xtradb;
+if is_xtradb || is_server_version_higher_than 8.0.31
 then
   run_instant_test 0
 else
