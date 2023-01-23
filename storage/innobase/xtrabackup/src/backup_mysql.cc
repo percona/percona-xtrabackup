@@ -2369,8 +2369,12 @@ void check_dump_innodb_buffer_pool(MYSQL *connection) {
  * @param[in]   connection  MySQL connection handler
  * @return true if tables with row versions > 0 */
 bool print_instant_versioned_tables(MYSQL *connection) {
-  /* PS not affected by INSTANT issues. Upstream only affected on 8.0.29+ */
-  if (server_flavor == FLAVOR_PERCONA_SERVER || mysql_server_version < 80029)
+  /**
+   * PS is not affected by INSTANT issues. Upstream only affected on 8.0.29+.
+   * We considered 8.0.32+ stable and allow INSTANT
+   */
+  if (server_flavor == FLAVOR_PERCONA_SERVER || mysql_server_version < 80029 ||
+      mysql_server_version >= 80032)
     return false;
 
   bool ret = false;

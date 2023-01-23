@@ -1,6 +1,10 @@
-is_server_version_higher_than 8.0.31 && die "This test should be modified after 8.0.31"
 require_debug_server
-require_server_version_higher_than 8.0.28
+if is_xtradb
+then
+  require_server_version_higher_than 8.0.28
+else
+  require_server_version_higher_than 8.0.31
+fi
 # run instant tests.
 # pass 1 as first parameter if we are expected to abort the backup
 function run_instant_test()
