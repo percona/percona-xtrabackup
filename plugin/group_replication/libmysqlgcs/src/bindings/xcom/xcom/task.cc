@@ -163,7 +163,7 @@ GetSystemTimeAsFileTime to get the real start time.
 struct xcom_clock {
   double real_start;        /* System time at init, in seconds */
   uint64_t monotonic_start; /* Performance counter ticks at init */
-  uint64_t freq; /* Performance counter frecuency, in counts per second */
+  uint64_t freq; /* Performance counter frequency, in counts per second */
   double now;    /* The last computed clock */
   int done;
 };
@@ -322,7 +322,7 @@ double task_now() {
 }
 
 #ifdef _WIN32
-int gettimeofday(struct timeval *tp, struct timezone *tzp) {
+int gettimeofday(struct timeval *tp, struct timezone *) {
   static uint64_t const EPOCH = ((uint64_t)116444736000000000ULL);
 
   SYSTEMTIME system_time;
@@ -864,7 +864,7 @@ void remove_and_wakeup(int fd) {
   u_int i = 0;
   IFDBG(D_NONE, FN; NDBG(fd, d));
   while (i < iot.nwait) {
-    if (get_pollfd(&iot.fd, i).fd == fd) {
+    if (static_cast<int>(get_pollfd(&iot.fd, i).fd) == fd) {
       poll_wakeup(i);
     } else {
       i++;
@@ -1223,7 +1223,7 @@ void task_loop() {
 #if 0
 
 /*
-  This was disabled to prevent unecessary build warnings.
+  This was disabled to prevent unnecessary build warnings.
 
   TODO:
   Needs to be assessed whether it should be removed altogether.

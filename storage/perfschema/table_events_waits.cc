@@ -382,7 +382,7 @@ int table_events_waits_common::make_metadata_lock_object_columns(
 
   if (safe_metadata_lock->get_version() == wait->m_weak_version) {
     // TODO: remove code duplication with PFS_column_row::make_row()
-    static_assert(MDL_key::NAMESPACE_END == 18,
+    static_assert(MDL_key::NAMESPACE_END == 19,
                   "Adjust performance schema when changing enum_mdl_namespace");
 
     MDL_key *mdl = &safe_metadata_lock->m_mdl_key;
@@ -512,6 +512,13 @@ int table_events_waits_common::make_metadata_lock_object_columns(
         m_row.m_object_type_length = 16;
         set_schema_name(&m_row.m_object_schema, mdl);
         m_row.m_object_name_length = mdl->name_length();
+        break;
+      case MDL_key::RESOURCE_GROUPS_GLOBAL:
+        m_row.m_object_type = "RESOURCE_GROUPS_GLOBAL";
+        m_row.m_object_type_length = 22;
+        m_row.m_object_schema.reset();
+        m_row.m_object_name_length = 0;
+        m_row.m_index_name_length = 0;
         break;
       case MDL_key::NAMESPACE_END:
       default:
@@ -802,10 +809,10 @@ int table_events_waits_common::read_row_values(TABLE *table, unsigned char *buf,
           }
           break;
         case 3: /* EVENT_NAME */
-          set_field_varchar_utf8(f, m_row.m_name, m_row.m_name_length);
+          set_field_varchar_utf8mb4(f, m_row.m_name, m_row.m_name_length);
           break;
         case 4: /* SOURCE */
-          set_field_varchar_utf8(f, m_row.m_source, m_row.m_source_length);
+          set_field_varchar_utf8mb4(f, m_row.m_source, m_row.m_source_length);
           break;
         case 5: /* TIMER_START */
           if (m_row.m_timer_start != 0) {
@@ -837,24 +844,24 @@ int table_events_waits_common::read_row_values(TABLE *table, unsigned char *buf,
           break;
         case 10: /* OBJECT_NAME */
           if (m_row.m_object_name_length > 0) {
-            set_field_varchar_utf8(f, m_row.m_object_name,
-                                   m_row.m_object_name_length);
+            set_field_varchar_utf8mb4(f, m_row.m_object_name,
+                                      m_row.m_object_name_length);
           } else {
             f->set_null();
           }
           break;
         case 11: /* INDEX_NAME */
           if (m_row.m_index_name_length > 0) {
-            set_field_varchar_utf8(f, m_row.m_index_name,
-                                   m_row.m_index_name_length);
+            set_field_varchar_utf8mb4(f, m_row.m_index_name,
+                                      m_row.m_index_name_length);
           } else {
             f->set_null();
           }
           break;
         case 12: /* OBJECT_TYPE */
           if (m_row.m_object_type_length > 0) {
-            set_field_varchar_utf8(f, m_row.m_object_type,
-                                   m_row.m_object_type_length);
+            set_field_varchar_utf8mb4(f, m_row.m_object_type,
+                                      m_row.m_object_type_length);
           } else {
             f->set_null();
           }
@@ -878,7 +885,7 @@ int table_events_waits_common::read_row_values(TABLE *table, unsigned char *buf,
           break;
         case 16: /* OPERATION */
           operation = &operation_names_map[(int)m_row.m_operation - 1];
-          set_field_varchar_utf8(f, operation->str, operation->length);
+          set_field_varchar_utf8mb4(f, operation->str, operation->length);
           break;
         case 17: /* NUMBER_OF_BYTES (also used for ROWS) */
           if ((m_row.m_operation == OPERATION_TYPE_FILEREAD) ||

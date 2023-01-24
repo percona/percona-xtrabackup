@@ -2105,6 +2105,9 @@ longlong TIME_to_longlong_packed(const MYSQL_TIME &my_time) {
 /**
     Change a daynr to year, month and day. Daynr 0 is returned as date
     00.00.00
+
+    This function is called from mysqld's print_fatal_signal().
+    Do not make changes to this function that make that call unsafe.
 */
 void get_date_from_daynr(int64_t daynr, uint *ret_year, uint *ret_month,
                          uint *ret_day) {
@@ -2130,7 +2133,8 @@ void get_date_from_daynr(int64_t daynr, uint *ret_year, uint *ret_month,
     if (days_in_year == 366) {
       if (day_of_year > 31 + 28) {
         day_of_year--;
-        if (day_of_year == 31 + 28) leap_day = 1; /* Handle leap years leapday */
+        if (day_of_year == 31 + 28)
+          leap_day = 1; /* Handle leap year's leap day */
       }
     }
     *ret_month = 1;
@@ -2515,7 +2519,7 @@ bool datetime_add_nanoseconds_with_round(MYSQL_TIME *ltime, uint nanoseconds,
 }
 
 /**
-  Add nanoseconds to time and round or tuncate as indicated by argument.
+  Add nanoseconds to time and round or truncate as indicated by argument.
 
   @param [in,out] ltime        MYSQL_TIME variable to add to.
   @param          nanoseconds  Nanosecons value.
@@ -2533,7 +2537,7 @@ bool time_add_nanoseconds_adjust_frac(MYSQL_TIME *ltime, uint nanoseconds,
 }
 
 /**
-   Add nanoseconds to datetime and round or tuncate as indicated by argument.
+   Add nanoseconds to datetime and round or truncate as indicated by argument.
 
   @param [in,out] ltime        MYSQL_TIME variable to add to.
   @param          nanoseconds  Nanoseconds value.

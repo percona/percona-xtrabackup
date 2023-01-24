@@ -425,7 +425,7 @@ void recv_sys_create() {
 #endif
 }
 
-/** Resize the recovery parsing buffer upto log_buffer_size */
+/** Resize the recovery parsing buffer up to log_buffer_size */
 bool recv_sys_resize_buf() {
   ut_ad(recv_sys->buf_len <= srv_log_buffer_size);
 
@@ -1739,6 +1739,8 @@ static byte *recv_parse_or_apply_log_rec_body(
   switch (type) {
 #ifndef UNIV_HOTBACKUP
     case MLOG_FILE_DELETE:
+
+#ifdef XTRABACKUP
       /* error out backup if undo truncation happens during backup */
       if (srv_backup_mode && fsp_is_undo_tablespace(space_id) &&
           backup_redo_log_flushed_lsn < recv_sys->recovered_lsn) {
@@ -1755,54 +1757,67 @@ static byte *recv_parse_or_apply_log_rec_body(
             << " operation later or with --lock-ddl";
         exit(EXIT_FAILURE);
       }
+#endif /* XTRABACKUP */
 
       return fil_tablespace_redo_delete(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
-          recv_sys->bytes_to_ignore_before_checkpoint != 0 ||
-              recv_sys->recovered_lsn + parsed_bytes <
-                  backup_redo_log_flushed_lsn);
+          recv_sys->bytes_to_ignore_before_checkpoint !=
+              0 IF_XB(|| recv_sys->recovered_lsn + parsed_bytes <
+                             backup_redo_log_flushed_lsn));
 
     case MLOG_FILE_CREATE:
 
       return fil_tablespace_redo_create(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
-          recv_sys->bytes_to_ignore_before_checkpoint != 0 ||
-              recv_sys->recovered_lsn + parsed_bytes <
-                  backup_redo_log_flushed_lsn);
+          recv_sys->bytes_to_ignore_before_checkpoint !=
+              0 IF_XB(|| recv_sys->recovered_lsn + parsed_bytes <
+                             backup_redo_log_flushed_lsn));
 
     case MLOG_FILE_RENAME:
 
       return fil_tablespace_redo_rename(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
-          recv_sys->bytes_to_ignore_before_checkpoint != 0 ||
-              recv_sys->recovered_lsn + parsed_bytes <
-                  backup_redo_log_flushed_lsn);
+          recv_sys->bytes_to_ignore_before_checkpoint !=
+              0 IF_XB(|| recv_sys->recovered_lsn + parsed_bytes <
+                             backup_redo_log_flushed_lsn));
 
     case MLOG_FILE_EXTEND:
 
       return fil_tablespace_redo_extend(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
-          recv_sys->bytes_to_ignore_before_checkpoint != 0 ||
-              recv_sys->recovered_lsn + parsed_bytes <
-                  backup_redo_log_flushed_lsn);
+          recv_sys->bytes_to_ignore_before_checkpoint !=
+              0 IF_XB(|| recv_sys->recovered_lsn + parsed_bytes <
+                             backup_redo_log_flushed_lsn));
 #endif /* !UNIV_HOTBACKUP */
     case MLOG_INDEX_LOAD:
-#if defined(UNIV_HOTBACKUP) || defined(XTRABACKUP)
+#ifdef UNIV_HOTBACKUP
+      // While scanning redo logs during a backup operation a
+      // MLOG_INDEX_LOAD type redo log record indicates, that a DDL
+      // (create index, alter table...) is performed with
+      // 'algorithm=inplace'. The affected tablespace must be re-copied
+      // in the backup lock phase. Record it in the index_load_list.
+      if (!recv_recovery_on) {
+        index_load_list.emplace_back(
+            std::pair<space_id_t, lsn_t>(space_id, recv_sys->recovered_lsn));
+      }
+#endif /* UNIV_HOTBACKUP */
+
+#ifdef XTRABACKUP
       /* While scaning redo logs during  backup phase a
       MLOG_INDEX_LOAD type redo log record indicates a DDL
       (create index, alter table...)is performed with
       'algorithm=inplace'. This redo log indicates that
 
-      1. The DDL was started after MEB started backing up, in which
-      case MEB will not be able to take a consistent backup and should
+      1. The DDL was started after PXB started backing up, in which
+      case PXB will not be able to take a consistent backup and should
       fail. or
       2. There is a possibility of this record existing in the REDO
       even after the completion of the index create operation. This is
       because of InnoDB does  not checkpointing after the flushing the
       index pages.
 
-      If MEB gets the last_redo_flush_lsn and that is less than the
-      lsn of the current record MEB fails the backup process.
+      If PXB gets the last_redo_flush_lsn and that is less than the
+      lsn of the current record PXB fails the backup process.
       Error out in case of online backup and emit a warning in case
       of offline backup and continue. */
       if (!recv_recovery_on) {
@@ -1858,7 +1873,7 @@ static byte *recv_parse_or_apply_log_rec_body(
           xb::warn(ER_IB_MSG_717);
         }
       }
-#endif /* UNIV_HOTBACKUP || XTRABACKUP */
+#endif /* XTRABACKUP */
       if (end_ptr < ptr + 8) {
         return nullptr;
       }

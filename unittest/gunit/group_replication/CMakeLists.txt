@@ -38,10 +38,6 @@ SET(TESTS
   group_replication_gcs_mysql_network_provider
   )
 
-DISABLE_GOOGLEMOCK_UNINITIALIZED_WARNING(
-  group_replication_gcs_mysql_network_provider-t.cc
-  )
-
 FOREACH(test ${TESTS})
   SET(SRC_FILES ${test}-t.cc)
   IF(WIN32)
@@ -65,4 +61,10 @@ IF(WIN32)
   MY_TARGET_LINK_OPTIONS(
     group_replication_gcs_mysql_network_provider-t "/ignore:4286"
     )
+  # With clang we get 4217 rather than 4286
+  IF(WIN32_CLANG)
+    MY_TARGET_LINK_OPTIONS(
+      group_replication_gcs_mysql_network_provider-t "/ignore:4217"
+      )
+  ENDIF()
 ENDIF()

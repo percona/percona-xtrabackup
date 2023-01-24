@@ -963,7 +963,7 @@ struct rec_cache_t {
 /** Cache position of last inserted or selected record by caching record
 and holding reference to the block where record resides.
 Note: We don't commit mtr and hold it beyond a transaction lifetime as this is
-a special case (intrinsic table) that are not shared accross connection. */
+a special case (intrinsic table) that are not shared across connection. */
 class last_ops_cur_t {
  public:
   /** Constructor */
@@ -1226,6 +1226,20 @@ struct dict_index_t {
   @return number of nullable fields before first INSTANT ADD */
   uint16_t get_instant_nullable() const { return n_instant_nullable; }
 
+  /** Get the nullable fields before any INSTANT ADD/DROP
+  @return number of nullable fields */
+  uint16_t get_nullable_before_instant_add_drop() const {
+    if (has_instant_cols()) {
+      return get_instant_nullable();
+    }
+
+    if (has_row_versions()) {
+      return get_nullable_in_version(0);
+    }
+
+    return n_nullable;
+  }
+
   /** Determine if the index has been committed to the
   data dictionary.
   @return whether the index definition has been committed */
@@ -1414,8 +1428,12 @@ struct dict_index_t {
   }
 
   void destroy_fields_array() {
-    fields_array.clear();
-    std::vector<uint16_t>().swap(fields_array);
+    /* The dict_index_t destructor is never called. The object is "destructed"
+    manually in dict_mem_index_free() and then the memory is just freed. This
+    method is called from the mentioned dict_mem_index_free(). Please note that
+    this vector is never constructed either - we just zero the memory and start
+    using it after calling a "constructor" dict_mem_fill_index_struct(). */
+    fields_array.~vector<uint16_t>();
   }
 
   /** Adds a field definition to an index. NOTE: does not take a copy
@@ -1440,7 +1458,7 @@ struct dict_index_t {
   }
 
   /** Gets the nth physical pos field.
-  @param[in]  pos  physocal position of the field
+  @param[in]  pos  physical position of the field
   @return pointer to the field object. */
   dict_field_t *get_physical_field(size_t pos) const {
     ut_ad(pos < n_def);
@@ -2006,7 +2024,7 @@ struct dict_table_t {
   instant ADD clumns in V1. */
   unsigned n_instant_cols : 10;
 
-  /** Number of total columns (inlcude virtual and non-virtual) */
+  /** Number of total columns (include virtual and non-virtual) */
   unsigned n_t_cols : 10;
 
   /** Number of total columns defined so far. */
@@ -2588,7 +2606,7 @@ detect this and will eventually quit sooner. */
 
   /** Gets the number of system columns in a table.
   For intrinsic table on ROW_ID column is added for all other
-  tables TRX_ID and ROLL_PTR are all also appeneded.
+  tables TRX_ID and ROLL_PTR are all also appended.
   @return number of system (e.g., ROW_ID) columns of a table */
   uint16_t get_n_sys_cols() const {
     ut_ad(magic_n == DICT_TABLE_MAGIC_N);
@@ -2786,7 +2804,7 @@ class PersistentTableMetadata {
 /** Interface for persistent dynamic table metadata. */
 class Persister {
  public:
-  /** Virtual desctructor */
+  /** Virtual destructor */
   virtual ~Persister() = default;
 
   /** Write the dynamic metadata of a table, we can pre-calculate

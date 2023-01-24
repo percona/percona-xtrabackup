@@ -186,7 +186,7 @@ Ndbfs::~Ndbfs()
    */
 
   /**
-   * Post enought Request::end to saturate all unbound threads
+   * Post enough Request::end to saturate all unbound threads
    */
   Request request;
   request.action = Request::end;
@@ -398,7 +398,7 @@ Ndbfs::execREAD_CONFIG_REQ(Signal* signal)
     /**
      * each logpart keeps up to 3 logfiles open at any given time...
      *   (bound)
-     * make sure noIdleFiles is atleast 4 times #logparts
+     * make sure noIdleFiles is at least 4 times #logparts
      * In addition the LCP execution can have up to 4 files open in each
      * LDM thread. In the LCP prepare phase we can have up to 2 files
      * (2 CTL files first, then 1 CTL file and finally 1 CTL file and
@@ -619,7 +619,6 @@ Ndbfs::execFSOPENREQ(Signal* signal)
   const Uint64 file_size = (Uint64{fsOpenReq->file_size_hi} << 32) |
                            fsOpenReq->file_size_lo;
   const Uint32 auto_sync_size = fsOpenReq->auto_sync_size;
-
 #if defined(NAME_BASED_DISABLING_COMPRESS_ENCRYPT_ODIRECT)
   const int name_hash = crc32(0,
                               ((const unsigned char*)file->theFileName.c_str()),
@@ -898,7 +897,7 @@ Ndbfs::readWriteRequest(int action, Signal * signal)
       for (unsigned int i = 0; i < fsRWReq->numberOfPages; i++) {
 	jam();
 	const UintPtr varIndex = fsRWReq->data.listOfPair[i].varIndex;
-	const UintPtr fileOffset = fsRWReq->data.listOfPair[i].fileOffset;
+	const ndb_off_t fileOffset = fsRWReq->data.listOfPair[i].fileOffset;
 	if (varIndex >= tNRR) {
 	  jam();
 	  errorCode = FsRef::fsErrInvalidParameters;
@@ -906,7 +905,7 @@ Ndbfs::readWriteRequest(int action, Signal * signal)
 	}//if
 	request->par.readWrite.pages[i].buf = &tWA[varIndex * tClusterSize];
 	request->par.readWrite.pages[i].size = tPageSize;
-	request->par.readWrite.pages[i].offset = (off_t)(fileOffset*tPageSize);
+	request->par.readWrite.pages[i].offset = (fileOffset*tPageSize);
       }//for
       request->par.readWrite.numberOfPages = fsRWReq->numberOfPages;
       break;
@@ -920,9 +919,9 @@ Ndbfs::readWriteRequest(int action, Signal * signal)
         goto error;
       }//if
       const UintPtr varIndex = fsRWReq->data.arrayOfPages.varIndex;
-      const UintPtr fileOffset = fsRWReq->data.arrayOfPages.fileOffset;
+      const ndb_off_t fileOffset = fsRWReq->data.arrayOfPages.fileOffset;
       
-      request->par.readWrite.pages[0].offset = (off_t)(fileOffset * tPageSize);
+      request->par.readWrite.pages[0].offset = (fileOffset * tPageSize);
       request->par.readWrite.pages[0].size = tPageSize * fsRWReq->numberOfPages;
       request->par.readWrite.numberOfPages = 1;
       request->par.readWrite.pages[0].buf = &tWA[varIndex * tPageSize];
@@ -945,10 +944,10 @@ Ndbfs::readWriteRequest(int action, Signal * signal)
 	  goto error;
 	}//if
         // NDB_FS_RW_PAGES overkill, at most 15 ! Or more via execute direct?
+        const ndb_off_t offset = (tPageOffset + (i * tPageSize));
 	request->par.readWrite.pages[i].buf = &tWA[varIndex * tClusterSize];
 	request->par.readWrite.pages[i].size = tPageSize;
-	request->par.readWrite.pages[i].offset = (off_t)
-          (tPageOffset + (i*tPageSize));
+	request->par.readWrite.pages[i].offset = offset;
       }//for
       request->par.readWrite.numberOfPages = fsRWReq->numberOfPages;
       break;
@@ -966,12 +965,12 @@ Ndbfs::readWriteRequest(int action, Signal * signal)
       }
 
       const Uint32 memoryOffset = fsRWReq->data.memoryAddress.memoryOffset;
-      const Uint32 fileOffset = fsRWReq->data.memoryAddress.fileOffset;
+      const ndb_off_t fileOffset = fsRWReq->data.memoryAddress.fileOffset;
       const Uint32 sz = fsRWReq->data.memoryAddress.size;
 
       request->par.readWrite.pages[0].buf = &tWA[memoryOffset];
       request->par.readWrite.pages[0].size = sz;
-      request->par.readWrite.pages[0].offset = (off_t)(fileOffset);
+      request->par.readWrite.pages[0].offset = fileOffset;
       request->par.readWrite.numberOfPages = 1;
       break;
     }
@@ -1568,7 +1567,7 @@ Ndbfs::report(Request * request, Signal* signal)
 
       // Keep track on max number of opened files
       if (theOpenFiles.size() > m_maxOpenedFiles)
-	m_maxOpenedFiles = theOpenFiles.size();
+        m_maxOpenedFiles = theOpenFiles.size();
 
       fsConf->filePointer = request->theFilePointer;
       fsConf->fileInfo = 0;
@@ -2021,6 +2020,8 @@ void Ndbfs::callFSWRITEREQ(BlockReference ref, FsReadWriteReq* req) const
   Uint32 block = refToMain(ref);
   Uint32 instance = refToInstance(ref);
 
+  ndbrequire(block <= MAX_BLOCK_NO);
+
   SimulatedBlock* main_block = globalData.getBlock(block);
   ndbrequire(main_block != nullptr);
   ndbrequire(instance < NDBMT_MAX_BLOCK_INSTANCES);
@@ -2061,8 +2062,14 @@ static bool check_for_expected_errors(GlobalSignalNumber gsn, AsyncFile* file,
       {
         return true;
       }
+      // D1/DBDIH/S0.sysfile, D1/NDBCNTR/S0.sysfile
+      if (len >= 19 && strncmp(endp - 10, "S0.sysfile", 10) == 0)
+      {
+        return true;
+      }
+
       // D1/DBDIH/P0.sysfile, D1/NDBCNTR/P0.sysfile
-      if (len >= 19 && strncmp(endp - 7, "sysfile", 7) == 0)
+      if (len >= 19 && strncmp(endp - 10, "P0.sysfile", 10) == 0)
       {
         return true;
       }

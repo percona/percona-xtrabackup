@@ -75,6 +75,7 @@
 #include "sql/auth/sql_security_ctx.h"
 #include "sql/conn_handler/connection_handler_manager.h"  // Connection_handler_manager
 #include "sql/current_thd.h"                              // current_thd
+#include "sql/debug_sync.h"                               // DEBUG_SYNC
 #include "sql/derror.h"                                   // ER_THD
 #include "sql/hostname_cache.h"  // Host_errors, inc_host_errors
 #include "sql/log.h"             // query_logger
@@ -1205,7 +1206,7 @@ bool Rsa_authentication_keys::read_key_file(RSA **key_ptr, bool is_priv_key,
         OpenSSL thread's error queue.
       */
       ERR_clear_error();
-
+      fclose(key_file);
       return true;
     }
 
@@ -3796,6 +3797,14 @@ int acl_authenticate(THD *thd, enum_server_command command) {
   static_assert(MYSQL_USERNAME_LENGTH == USERNAME_LENGTH, "");
   assert(command == COM_CONNECT || command == COM_CHANGE_USER);
 
+  mysql_mutex_lock(&thd->LOCK_thd_data);
+
+  DBUG_EXECUTE_IF("before_server_mpvio_initialize", {
+    DBUG_SET("+d,wait_until_thread_kill");
+    const char act[] = "now SIGNAL acl_auth_reached";
+    assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
+  });
+
   server_mpvio_initialize(thd, &mpvio, &charset_adapter);
   /*
     Clear thd->db as it points to something, that will be freed when
@@ -3822,6 +3831,7 @@ int acl_authenticate(THD *thd, enum_server_command command) {
                                      mpvio.protocol->get_packet_length())) {
       login_failed_error(thd, &mpvio, mpvio.auth_info.password_used);
       server_mpvio_update_thd(thd, &mpvio);
+      mysql_mutex_unlock(&thd->LOCK_thd_data);
       goto end;
     }
 
@@ -3858,12 +3868,21 @@ int acl_authenticate(THD *thd, enum_server_command command) {
     res = do_multi_factor_auth(thd, &mpvio);
   }
 
+  DBUG_EXECUTE_IF("before_server_mpvio_update_thd", {
+    DBUG_SET("+d,wait_until_thread_kill");
+    const char act[] = "now SIGNAL acl_auth_reached";
+    assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
+  });
+
   server_mpvio_update_thd(thd, &mpvio);
 
   check_and_update_password_lock_state(mpvio, thd, res);
 #ifdef HAVE_PSI_THREAD_INTERFACE
   PSI_THREAD_CALL(set_connection_type)(thd->get_vio_type());
 #endif /* HAVE_PSI_THREAD_INTERFACE */
+
+  mysql_mutex_unlock(&thd->LOCK_thd_data);
+
   {
     Security_context *sctx = thd->security_context();
     const ACL_USER *acl_user = mpvio.acl_user;
@@ -4064,11 +4083,20 @@ int acl_authenticate(THD *thd, enum_server_command command) {
         goto end;
       }
 
-      if (opt_require_secure_transport &&
+      mysql_mutex_lock(&thd->LOCK_thd_data);
+      DBUG_EXECUTE_IF("before_secure_transport_check", {
+        DBUG_SET("+d,wait_until_thread_kill");
+        const char act[] = "now SIGNAL acl_auth_reached";
+        assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
+      });
+
+      if (opt_require_secure_transport && thd->active_vio != nullptr &&
           !is_secure_transport(thd->active_vio->type)) {
+        mysql_mutex_unlock(&thd->LOCK_thd_data);
         my_error(ER_SECURE_TRANSPORT_REQUIRED, MYF(0));
         goto end;
       }
+      mysql_mutex_unlock(&thd->LOCK_thd_data);
 
       /* checking password_time_expire for connecting user */
       password_time_expired = check_password_lifetime(thd, mpvio.acl_user);
@@ -4151,6 +4179,11 @@ int acl_authenticate(THD *thd, enum_server_command command) {
       goto end;
     }
 
+    DBUG_EXECUTE_IF("wait_until_thread_kill", {
+      DBUG_SET("-d,wait_until_thread_kill");
+      const char act[] = "now WAIT_FOR killed";
+      assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
+    });
     /*
       This is the default access rights for the current database.  It's
       set to 0 here because we don't have an active database yet (and we
@@ -4580,6 +4613,30 @@ class FileCloser {
 */
 
 bool init_rsa_keys(void) {
+  if ((strcmp(auth_rsa_private_key_path, AUTH_DEFAULT_RSA_PRIVATE_KEY) == 0 &&
+       strcmp(auth_rsa_public_key_path, AUTH_DEFAULT_RSA_PUBLIC_KEY) == 0) ||
+      (strcmp(caching_sha2_rsa_private_key_path,
+              AUTH_DEFAULT_RSA_PRIVATE_KEY) == 0 &&
+       strcmp(caching_sha2_rsa_public_key_path, AUTH_DEFAULT_RSA_PUBLIC_KEY) ==
+           0)) {
+    /**
+      Presence of only a private key file and a public temp file implies that
+      server crashed after creating the private key file and could not create a
+      public key file. Hence removing the private key file.
+    */
+    if (access(AUTH_DEFAULT_RSA_PRIVATE_KEY, F_OK) == 0 &&
+        access(AUTH_DEFAULT_RSA_PUBLIC_KEY, F_OK) == -1) {
+      if (access((std::string{AUTH_DEFAULT_RSA_PUBLIC_KEY} + ".temp").c_str(),
+                 F_OK) == 0 &&
+          access((std::string{AUTH_DEFAULT_RSA_PRIVATE_KEY} + ".temp").c_str(),
+                 F_OK) == -1)
+        remove(AUTH_DEFAULT_RSA_PRIVATE_KEY);
+    }
+    // Removing temp files
+    remove((std::string{AUTH_DEFAULT_RSA_PRIVATE_KEY} + ".temp").c_str());
+    remove((std::string{AUTH_DEFAULT_RSA_PUBLIC_KEY} + ".temp").c_str());
+  }
+
   if (!do_auto_rsa_keys_generation()) return true;
 
   if (!(g_sha256_rsa_keys = new Rsa_authentication_keys(
@@ -5071,6 +5128,8 @@ File_IO &File_IO::operator<<(const Sql_string_t &output_string) {
                    reinterpret_cast<const uchar *>(output_string.data()),
                    output_string.length(), MYF(MY_NABP | MY_WME)))
     set_error();
+  else
+    my_sync(m_file, MYF(MY_WME));
 
   close();
   return *this;
@@ -5620,13 +5679,15 @@ bool create_RSA_key_pair(RSA_generator_func &rsa_gen,
                          const Sql_string_t priv_key_filename,
                          const Sql_string_t pub_key_filename,
                          File_creation_func &filecr) {
+  std::string temp_priv_key_filename = priv_key_filename + ".temp";
+  std::string temp_pub_key_filename = pub_key_filename + ".temp";
   bool ret_val = true;
   File_IO *priv_key_file_ostream = nullptr;
   File_IO *pub_key_file_ostream = nullptr;
   MY_MODE file_creation_mode = get_file_perm(USER_READ | USER_WRITE);
   MY_MODE saved_umask = umask(~(file_creation_mode));
 
-  assert(priv_key_filename.size() && pub_key_filename.size());
+  assert(temp_priv_key_filename.size() && temp_pub_key_filename.size());
 
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
   EVP_PKEY *rsa;
@@ -5652,10 +5713,12 @@ bool create_RSA_key_pair(RSA_generator_func &rsa_gen,
     ret_val = false;
     goto end;
   }
+  DBUG_EXECUTE_IF("no_key_files", DBUG_SUICIDE(););
 
-  priv_key_file_ostream = filecr(priv_key_filename, file_creation_mode);
+  priv_key_file_ostream = filecr(temp_priv_key_filename, file_creation_mode);
+  DBUG_EXECUTE_IF("empty_priv_key_temp_file", DBUG_SUICIDE(););
+
   (*priv_key_file_ostream) << rsa_priv_key_write(rsa);
-
   DBUG_EXECUTE_IF("key_file_write_error",
                   { priv_key_file_ostream->set_error(); });
   if (priv_key_file_ostream->get_error()) {
@@ -5663,15 +5726,20 @@ bool create_RSA_key_pair(RSA_generator_func &rsa_gen,
     ret_val = false;
     goto end;
   }
-  if (my_chmod(priv_key_filename.c_str(), USER_READ | USER_WRITE,
+  if (my_chmod(temp_priv_key_filename.c_str(), USER_READ | USER_WRITE,
                MYF(MY_FAE + MY_WME))) {
     LogErr(ERROR_LEVEL, ER_X509_CANT_CHMOD_KEY, priv_key_filename.c_str());
     ret_val = false;
     goto end;
   }
+  DBUG_EXECUTE_IF("valid_priv_key_temp_file", DBUG_SUICIDE(););
 
-  pub_key_file_ostream = filecr(pub_key_filename);
+  pub_key_file_ostream = filecr(temp_pub_key_filename);
+  DBUG_EXECUTE_IF("valid_priv_key_temp_file_empty_pub_key_temp_file",
+                  DBUG_SUICIDE(););
+
   (*pub_key_file_ostream) << rsa_pub_key_write(rsa);
+
   DBUG_EXECUTE_IF("cert_pub_key_write_error",
                   { pub_key_file_ostream->set_error(); });
 
@@ -5680,13 +5748,20 @@ bool create_RSA_key_pair(RSA_generator_func &rsa_gen,
     ret_val = false;
     goto end;
   }
-  if (my_chmod(pub_key_filename.c_str(),
+  if (my_chmod(temp_pub_key_filename.c_str(),
                USER_READ | USER_WRITE | GROUP_READ | OTHERS_READ,
                MYF(MY_FAE + MY_WME))) {
     LogErr(ERROR_LEVEL, ER_X509_CANT_CHMOD_KEY, pub_key_filename.c_str());
     ret_val = false;
     goto end;
   }
+  DBUG_EXECUTE_IF("valid_key_temp_files", DBUG_SUICIDE(););
+
+  rename(temp_priv_key_filename.c_str(), priv_key_filename.c_str());
+  DBUG_EXECUTE_IF("valid_pub_key_temp_file_valid_priv_key_file",
+                  DBUG_SUICIDE(););
+  rename(temp_pub_key_filename.c_str(), pub_key_filename.c_str());
+  DBUG_EXECUTE_IF("valid_key_files", DBUG_SUICIDE(););
 
 end:
   if (rsa)

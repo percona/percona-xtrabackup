@@ -2602,3 +2602,33 @@
    fun:dlerror
    fun:_ZN36mysql_dynamic_loader_scheme_file_imp4loadEPKcPP17mysql_component_t
 }
+
+# AWS SDK 1.9 s2n leaks
+{
+   aws_sdk_1_9_186_aws_tls_init_static_state
+   Memcheck:Leak
+   ...
+   fun:s2n_init
+   ...
+}
+{
+   aws_sdk_1_9_186_aws_s2n_init_deep_stack
+   Memcheck:Leak
+   ...
+   fun:s2n_config_init
+   fun:s2n_config_defaults_init
+   ...
+}
+
+# Suppress https://bugzilla.redhat.com/show_bug.cgi?id=1462258
+
+{
+   suppress_param_points_to_unaddressable_bytes 
+   Memcheck:Param
+   ppoll(sigmask)
+   fun:ppoll
+   fun:ppoll
+   fun:_Z11vio_io_waitP3Vio17enum_vio_io_eventi
+   ...
+}
+

@@ -57,7 +57,7 @@ ENDIF()
 # Change uppercase first letter of Ubuntu/Debian
 string(TOLOWER "${DEB_ID}" DEB_ID)
 
-IF (WITH_NDBCLUSTER)
+IF (WITH_NDB)
   SET (DEB_BASE_PRODUCT "cluster-")
   SET (DEB_BASE_PRODUCTC "Cluster ")
   SET (DEB_BASE_VERSION ${MYSQL_CLUSTER_VERSION})
@@ -109,6 +109,7 @@ usr/lib/mysql/plugin/thread_pool.so
 usr/lib/mysql/plugin/firewall.so
 usr/lib/mysql/plugin/authentication_fido.so
 usr/lib/mysql/plugin/component_keyring_encrypted_file.so
+usr/lib/mysql/plugin/component_keyring_oci.so
 usr/lib/mysql/plugin/component_enterprise_encryption.so
 ")
 
@@ -264,7 +265,7 @@ ENDIF()
 IF (NOT DEFINED DEB_NOROUTER)
   INCLUDE(deb_router.cmake)
 ENDIF()
-IF (WITH_NDBCLUSTER)
+IF (WITH_NDB)
   INCLUDE(deb_ndb.cmake)
 ENDIF()
 if (DEFINED DEB_WITH_DEBUG)

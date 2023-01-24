@@ -48,8 +48,8 @@ function run_test()
         --safe-slave-backup-timeout=15 \
         --target-dir=$topdir/backup
 
-    stop_server_with_id $master_id
-    stop_server_with_id $slave_id
+    shutdown_server_with_id $master_id
+    shutdown_server_with_id $slave_id
 }
 
 run_test

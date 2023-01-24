@@ -168,7 +168,7 @@ dict_persist_t *dict_persist = nullptr;
 /** @brief the data dictionary rw-latch protecting dict_sys
 
 table create, drop, etc. reserve this in X-mode; implicit or
-backround operations purge, rollback, foreign key checks reserve this
+background operations purge, rollback, foreign key checks reserve this
 in S-mode; we cannot trust that MySQL protects implicit or background
 operations a table drop since MySQL does not know of them; therefore
 we need this; NOTE: a transaction which reserves this must keep book
@@ -1844,10 +1844,27 @@ void dict_table_change_id_in_cache(
   ut_ad(dict_sys_mutex_own());
   ut_ad(table->magic_n == DICT_TABLE_MAGIC_N);
 
+#ifdef UNIV_DEBUG
+
+  auto id_fold = ut::hash_uint64(table->id);
+  /* Table with the same id should not exist in cache */
+  {
+    dict_table_t *table2;
+    HASH_SEARCH(id_hash, dict_sys->table_id_hash, id_fold, dict_table_t *,
+                table2, ut_ad(table2->cached), table2->id == new_id);
+    ut_ad(table2 == nullptr);
+
+    if (table2 != nullptr) {
+      return;
+    }
+  }
+#endif /*UNIV_DEBUG*/
+
   /* Remove the table from the hash table of id's */
 
   HASH_DELETE(dict_table_t, id_hash, dict_sys->table_id_hash,
               ut::hash_uint64(table->id), table);
+
   table->id = new_id;
 
   /* Add the table back to the hash table */
@@ -4351,7 +4368,7 @@ static void dict_persist_update_log_margin() {
   /* Every page split needs at most this log margin, if not root split. */
   static const uint32_t log_margin_per_split_no_root = 500;
 
-  /* Extra marge for root split, we always leave this margin,
+  /* Extra margin for root split, we always leave this margin,
   since we don't know exactly it will split root or not */
   static const uint32_t log_margin_per_split_root =
       univ_page_size.physical() / 2 * 3; /* Add 50% margin. */
@@ -4569,16 +4586,17 @@ void dict_table_check_for_dup_indexes(const dict_table_t *table,
 
 /** Converts a database and table name from filesystem encoding (e.g.
 "@code d@i1b/a@q1b@1Kc @endcode", same format as used in  dict_table_t::name)
-in two strings in UTF8 encoding (e.g. dцb and aюbØc). The output buffers must
-be at least MAX_DB_UTF8_LEN and MAX_TABLE_UTF8_LEN bytes.
+in two strings in UTF8MB3 encoding (e.g. dцb and aюbØc). The output buffers must
+be at least MAX_DB_UTF8MB3_LEN and MAX_TABLE_UTF8MB3_LEN bytes.
 @param[in]      db_and_table    database and table names,
                                 e.g. "@code d@i1b/a@q1b@1Kc @endcode"
-@param[out]     db_utf8         database name, e.g. dцb
-@param[in]      db_utf8_size    dbname_utf8 size
-@param[out]     table_utf8      table name, e.g. aюbØc
-@param[in]      table_utf8_size table_utf8 size */
-void dict_fs2utf8(const char *db_and_table, char *db_utf8, size_t db_utf8_size,
-                  char *table_utf8, size_t table_utf8_size) {
+@param[out]     db_utf8mb3         database name, e.g. dцb
+@param[in]      db_utf8mb3_size    db_utf8mb3 size
+@param[out]     table_utf8mb3      table name, e.g. aюbØc
+@param[in]      table_utf8mb3_size table_utf8mb3 size */
+void dict_fs2utf8(const char *db_and_table, char *db_utf8mb3,
+                  size_t db_utf8mb3_size, char *table_utf8mb3,
+                  size_t table_utf8mb3_size) {
   char db[MAX_DATABASE_NAME_LEN + 1];
   ulint db_len;
   uint errors;
@@ -4590,8 +4608,8 @@ void dict_fs2utf8(const char *db_and_table, char *db_utf8, size_t db_utf8_size,
   memcpy(db, db_and_table, db_len);
   db[db_len] = '\0';
 
-  strconvert(&my_charset_filename, db, system_charset_info, db_utf8,
-             db_utf8_size, &errors);
+  strconvert(&my_charset_filename, db, system_charset_info, db_utf8mb3,
+             db_utf8mb3_size, &errors);
 
   /* convert each # to @0023 in table name and store the result in buf */
   const char *table = dict_remove_db_name(db_and_table);
@@ -4615,11 +4633,11 @@ void dict_fs2utf8(const char *db_and_table, char *db_utf8, size_t db_utf8_size,
   buf_p[0] = '\0';
 
   errors = 0;
-  strconvert(&my_charset_filename, buf, system_charset_info, table_utf8,
-             table_utf8_size, &errors);
+  strconvert(&my_charset_filename, buf, system_charset_info, table_utf8mb3,
+             table_utf8mb3_size, &errors);
 
   if (errors != 0) {
-    snprintf(table_utf8, table_utf8_size, "%s", table);
+    snprintf(table_utf8mb3, table_utf8mb3_size, "%s", table);
   }
 }
 
@@ -5902,7 +5920,18 @@ an earlier upgrade. This will update the table_id by adding DICT_MAX_DD_TABLES
 void dict_table_change_id_sys_tables() {
   ut_ad(dict_sys_mutex_own());
 
-  for (uint32_t i = 0; i < SYS_NUM_SYSTEM_TABLES; i++) {
+  /* On upgrading from 5.6 to 5.7, new system table SYS_VIRTUAL is given table
+   id after the last created user table. So, if last user table was created
+   with table_id as 1027, SYS_VIRTUAL would get id 1028. On upgrade to 8.0,
+   all these tables are shifted by 1024. On 5.7, the SYS_FIELDS has table id
+   4, which gets updated to 1028 on upgrade. This would later assert when we
+   try to open the SYS_VIRTUAL table (having id 1028) for upgrade. Hence, we
+   need to upgrade system tables in reverse order to avoid that.
+   These tables are created on boot. And hence this issue can only be caused by
+   a new table being added at a later stage - the SYS_VIRTUAL table being added
+   on upgrading to 5.7. */
+
+  for (int i = SYS_NUM_SYSTEM_TABLES - 1; i >= 0; i--) {
     dict_table_t *system_table = dict_table_get_low(SYSTEM_TABLE_NAME[i]);
 
     ut_a(system_table != nullptr);
@@ -6136,4 +6165,14 @@ uint32_t dict_vcol_base_is_foreign_key(dict_v_col_t *vcol,
   return foreign_col_count;
 }
 
+#ifdef UNIV_DEBUG
+/** Validate no active background threads to cause purge or rollback
+ operations. */
+void dict_validate_no_purge_rollback_threads() {
+  /* No concurrent background threads to access to the table */
+  ut_ad(trx_purge_state() == PURGE_STATE_STOP ||
+        trx_purge_state() == PURGE_STATE_DISABLED);
+  ut_ad(!srv_thread_is_active(srv_threads.m_trx_recovery_rollback));
+}
+#endif /* UNIV_DEBUG */
 #endif /* !UNIV_HOTBACKUP */

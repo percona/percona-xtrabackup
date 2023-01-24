@@ -66,6 +66,9 @@ $MYSQL $MYSQL_ARGS -Ns -e "INSERT INTO tmp1 SELECT * FROM payment" sakila
 $MYSQL $MYSQL_ARGS -Ns -e "DELETE FROM tmp1" sakila
 $MYSQL $MYSQL_ARGS -Ns -e "DROP TABLE tmp1" sakila
 
+# wait for InnoDB to flush all dirty pages
+innodb_wait_for_flush_all
+
 
 # Test 2 - Should pass as keyring file alwady have encryption information
 run_cmd $XB_BIN $XB_ARGS --innodb-log-file-size=8M --xtrabackup-plugin-dir=${plugin_dir} --lock-ddl=false --backup \

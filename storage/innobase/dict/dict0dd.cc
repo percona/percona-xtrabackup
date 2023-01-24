@@ -313,7 +313,7 @@ THD *dd_thd_for_undo(const trx_t *trx) {
 @return true if MDL is necessary, otherwise false */
 bool dd_mdl_for_undo(const trx_t *trx) {
   /* Try best to find a valid THD for checking, in case in background
-  rollback thread, trx doens't hold a mysql_thd */
+  rollback thread, trx doesn't hold a mysql_thd */
   THD *thd = dd_thd_for_undo(trx);
 
   /* There are four cases for the undo to check here:
@@ -1561,7 +1561,7 @@ static dict_table_t *dd_table_open_on_id_low(THD *thd, MDL_ticket **mdl,
       const bool is_part = dd_table_is_partitioned(*dd_table);
 
       /* Verify facts between dd_table and facts we know
-      1) Partiton table or not
+      1) Partition table or not
       2) Table ID matches or not
       3) Table in InnoDB */
       bool same_name = not_table == is_part &&
@@ -2667,9 +2667,9 @@ bool is_dropped(const Alter_inplace_info *ha_alter_info,
 
 void dd_copy_table_columns(const Alter_inplace_info *ha_alter_info,
                            dd::Table &new_table, const dd::Table &old_table,
-                           dict_table_t *dict_table) {
+                           dict_table_t *old_dict_table) {
   bool first_row_version = false;
-  if (dict_table && !dict_table->has_row_versions()) {
+  if (old_dict_table && !old_dict_table->has_row_versions()) {
     first_row_version = true;
   }
 
@@ -2680,20 +2680,18 @@ void dd_copy_table_columns(const Alter_inplace_info *ha_alter_info,
   for (const auto old_col : old_table.columns()) {
     if (old_col->is_se_hidden() && !is_system_column(old_col->name().c_str()) &&
         (strcmp(old_col->name().c_str(), FTS_DOC_ID_COL_NAME) != 0)) {
-      /* Must be an alredy dropped column. */
+      /* Must be an already dropped column. */
       ut_ad(dd_column_is_dropped(old_col));
       continue;
     }
 
     dd::Column *new_col = nullptr;
     std::string new_name;
-    IF_DEBUG(bool renamed = false;)
 
     /* Skip the dropped column */
     if (is_dropped(ha_alter_info, old_col->name().c_str())) {
       continue;
     } else if (is_renamed(ha_alter_info, old_col->name().c_str(), new_name)) {
-      IF_DEBUG(renamed = true;)
       new_col = const_cast<dd::Column *>(
           dd_find_column(&new_table, new_name.c_str()));
     } else {
@@ -2711,14 +2709,11 @@ void dd_copy_table_columns(const Alter_inplace_info *ha_alter_info,
     }
 
     /* If this is first time table is getting row version, add physical pos */
-    if (dict_table && !new_col->is_virtual() && first_row_version) {
-      dict_col_t *col = dict_table->get_col_by_name(new_col->name().c_str());
-      if (col == nullptr) {
-        ut_ad(renamed);
-        col = dict_table->get_col_by_name(old_col->name().c_str());
-      }
-
-      ut_ad(col != nullptr);
+    if (old_dict_table && !new_col->is_virtual() && first_row_version) {
+      /* Even the renamed column would have same phy_pos as old column */
+      dict_col_t *col =
+          old_dict_table->get_col_by_name(old_col->name().c_str());
+      ut_a(col != nullptr);
       new_col->se_private_data().set(s, col->get_phy_pos());
     }
   }
@@ -2981,7 +2976,15 @@ void dd_drop_instant_columns(
 
 #ifdef UNIV_DEBUG
   auto validate_column = [&](Field *column) {
-    if (dd_find_column(new_dd_table, column->field_name) == nullptr) {
+    /* Valid cases are :
+    1. Column is not present in the new table definition
+    2. Column is present but it is a virtual column being added
+    2. Column is present but it is a stored column being added
+    3. Column is present and is not being added, it is a renamed column */
+
+    auto dd_col = dd_find_column(new_dd_table, column->field_name);
+    /* Virtual columns are not part of cols_to_add so they are checked here. */
+    if (dd_col == nullptr || dd_col->is_virtual()) {
       return true;
     }
 
@@ -4211,7 +4214,7 @@ static
     if (dd_table_is_upgraded_instant(dd_table)) {
       /* In instant v1, when a partition is added into table, it won't have any
       instant columns eg :
-      - t1 (c1, c2) with partiton p0, p1.
+      - t1 (c1, c2) with partition p0, p1.
       - INSTANT ADD c3
       - For p0 and p1, n_instant_cols = 2;
       - ADD NEW Partition p2.
@@ -5867,7 +5870,7 @@ template void dd_get_and_save_space_name<dd::Partition>(dict_table_t *,
 @param[in]      norm_name       Table Name
 @param[in]      dd_table        Global DD table or partition object
 @param[in]      thd             thread THD
-@param[in,out]  fk_list         stack of table names which neet to load
+@param[in,out]  fk_list         stack of table names which need to load
 @return ptr to dict_table_t filled, otherwise, nullptr */
 template <typename Table>
 dict_table_t *dd_open_table_one(dd::cache::Dictionary_client *client,

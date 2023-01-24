@@ -156,9 +156,19 @@ static mysql_rwlock_t THR_LOCK_log_stack;
 static mysql_mutex_t THR_LOCK_log_syseventlog;
 
 /**
-  Subsystem initialized and ready to use?
+  When the logger-core was initialized.
+   0: logger-core is not currently available
+  >0: time (micro-seconds since the epoch) the logger-core became available
 */
-bool log_builtins_inited = false;
+static ulonglong log_builtins_inited = 0;
+
+/**
+  When the logger-core was initialized.
+
+  @retval 0  logger-core is not currently available
+  @retval >0 time (micro-seconds since the epoch) the logger became available
+*/
+ulonglong log_builtins_started() { return log_builtins_inited; }
 
 /**
   Name of the interface that log-services implements.
@@ -1293,7 +1303,7 @@ int log_line_submit(log_line *ll) {
       catastrophically wrong, so we'll make sure the information
       (e.g. cause of failure) isn't lost.
     */
-    assert((log_builtins_inited == true) ||
+    assert(log_builtins_inited ||
            (log_line_process_hook_get() == log_line_buffer_event));
     log_line_process_hook(ll);
 
@@ -2010,7 +2020,7 @@ log_error_stack_error log_builtins_error_stack(const char *conf,
       If neither branch was true, we're in set mode, but the set-up
       is invalid (i.e. we're trying to multi-open a singleton). As
       this should have been caught in the check phase, we don't
-      specfically handle it here; the invalid element is skipped and
+      specifically handle it here; the invalid element is skipped and
       not added to the instance list. That way, we'll get as close
       to a working configuration as possible in our attempt to fail
       somewhat gracefully.
@@ -2049,7 +2059,7 @@ done:
     will then attempt to obtain the sys_vars-mutex, so we shouldn't be
     holding it already (as we do in a sys-var's update function).
 
-    Since succesful user-initiated changes come in check/apply pairs,
+    Since successful user-initiated changes come in check/apply pairs,
     this is not an issue. At worst, the check can fail and leave the
     stale entries cached until the next successful apply-phase, when
     they will be discarded as expected. As the server resets the
@@ -2161,7 +2171,7 @@ int log_builtins_exit() {
   log_service_instance_release_all();
   delete log_service_cache;
 
-  log_builtins_inited = false;
+  log_builtins_inited = 0;
   log_error_stage_set(LOG_ERROR_STAGE_BUFFERING);
 
   mysql_rwlock_unlock(&THR_LOCK_log_stack);
@@ -2219,7 +2229,7 @@ int log_builtins_init() {
   if (rr >= 0) {
     log_line_process_hook_set(log_line_buffer_event);
     log_error_stage_set(LOG_ERROR_STAGE_BUFFERING);
-    log_builtins_inited = true;
+    log_builtins_inited = my_micro_time();
     return 0;
   }
 
@@ -3474,7 +3484,7 @@ DEFINE_METHOD(log_service_error, log_builtins_syseventlog_imp::write,
   int ret;
 
   mysql_mutex_lock(&THR_LOCK_log_syseventlog);
-  ret = my_syslog(&my_charset_utf8_bin, level, msg);
+  ret = my_syslog(&my_charset_utf8mb3_bin, level, msg);
   mysql_mutex_unlock(&THR_LOCK_log_syseventlog);
 
   return (ret == 0) ? LOG_SERVICE_SUCCESS : LOG_SERVICE_NOT_AVAILABLE;

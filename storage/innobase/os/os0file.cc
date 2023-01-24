@@ -337,7 +337,7 @@ struct Slot {
   HANDLE handle{INVALID_HANDLE_VALUE};
 
   /** Windows control block for the aio request */
-  OVERLAPPED control{0, 0};
+  OVERLAPPED control{0, 0, {{0, 0}}, nullptr};
 
   /** bytes written/read */
   DWORD n_bytes{0};
@@ -1752,7 +1752,7 @@ static char *os_file_get_parent_dir(const char *path) {
     has_trailing_slash = true;
   }
 
-  /* Reduce repetative slashes. */
+  /* Reduce repetitive slashes. */
   while (last_slash > path && last_slash[-1] == OS_PATH_SEPARATOR) {
     last_slash--;
   }
@@ -1771,7 +1771,7 @@ static char *os_file_get_parent_dir(const char *path) {
       last_slash--;
     }
 
-    /* Reduce repetative slashes. */
+    /* Reduce repetitive slashes. */
     while (last_slash > path && last_slash[-1] == OS_PATH_SEPARATOR) {
       last_slash--;
     }
@@ -2944,7 +2944,7 @@ static bool os_file_status_posix(const char *path, bool *exists,
 @param[in]  path  path name
 @retval true if the path exists and can be used
 @retval false if the path does not exist or if the path is
-unuseable to get to a possibly existing file or directory. */
+unusable to get to a possibly existing file or directory. */
 static bool os_file_exists_posix(const char *path) {
   struct stat statinfo;
 
@@ -3869,7 +3869,7 @@ static bool os_file_status_win32(const char *path, bool *exists,
 @param[in]  path  path name
 @retval true if the path exists and can be used
 @retval false if the path does not exist or if the path is
-unuseable to get to a possibly existing file or directory. */
+unusable to get to a possibly existing file or directory. */
 static bool os_file_exists_win32(const char *path) {
   struct _stat64 statinfo;
 
@@ -4091,9 +4091,7 @@ os_file_t os_file_create_simple_func(const char *name, ulint create_mode,
     ib::info(ER_IB_MSG_796) << "Read only mode set. Unable to"
                                " open file '"
                             << name << "' in RW mode, "
-                            << "trying RO mode",
-        name;
-
+                            << "trying RO mode";
     access = GENERIC_READ;
 
   } else if (access_type == OS_FILE_READ_WRITE) {
@@ -4489,7 +4487,7 @@ bool os_file_delete_if_exists_func(const char *name, bool *exist) {
   name. */
   for (DWORD random_id = GetTickCount(); count < 1000; ++count, ++random_id) {
     random_id &= 0xFFFF;
-    sprintf(name_to_delete, "%s.%04X.d", name, random_id);
+    sprintf(name_to_delete, "%s.%04lX.d", name, random_id);
     if (MoveFile(name, name_to_delete)) break;
     auto err = GetLastError();
     /* We have chosen the "random" value that is already being used. Try another
@@ -6174,7 +6172,7 @@ dberr_t AIO::init_linux_native_aio() {
       we should call it a day and return right away.
       We don't care about any leaks because a failure
       to initialize the io subsystem means that the
-      server (or atleast the innodb storage engine)
+      server (or at least the innodb storage engine)
       is not going to startup. */
       return (DB_IO_ERROR);
     }
@@ -6976,7 +6974,7 @@ AIO *AIO::select_slot_array(IORequest &type, bool read_only,
 
 static dberr_t os_aio_windows_handler(ulint segment, fil_node_t **m1, void **m2,
                                       IORequest *type) {
-  Slot *slot;
+  Slot *slot = nullptr;
   AIO *array{};
 
   const auto segment_offset = AIO::get_array_and_local_segment(array, segment);
@@ -7340,7 +7338,7 @@ class SimulatedAIOHandler {
 
   /** We have to compress the individual pages and punch
   holes in them on a page by page basis when writing to
-  tables that can be compresed at the IO level.
+  tables that can be compressed at the IO level.
   @param[in]    len             Value returned by allocate_buffer */
   void copy_to_buffer(ulint len) {
     Slot *slot = first_slot();

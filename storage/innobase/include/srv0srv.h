@@ -349,7 +349,7 @@ extern FILE *srv_monitor_file;
 This mutex has a very low rank; threads reserving it should not
 acquire any further latches or sleep before releasing this one. */
 extern ib_mutex_t srv_misc_tmpfile_mutex;
-/* Temporary file for miscellanous diagnostic output */
+/* Temporary file for miscellaneous diagnostic output */
 extern FILE *srv_misc_tmpfile;
 #endif /* !UNIV_HOTBACKUP */
 
@@ -985,7 +985,7 @@ void srv_wake_purge_thread_if_not_active(void);
  and wakes up the master thread if it is suspended (not sleeping). Used
  in the MySQL interface. Note that there is a small chance that the master
  thread stays suspended (we do not protect our operation with the kernel
- mutex, for performace reasons). */
+ mutex, for performance reasons). */
 void srv_active_wake_master_thread_low(void);
 static inline void srv_active_wake_master_thread() {
   if (!srv_read_only_mode) {
@@ -1134,13 +1134,17 @@ struct export_var_t {
   char innodb_buffer_pool_load_status[OS_FILE_MAX_PATH +
                                       128];   /*!< Buf pool load status */
   char innodb_buffer_pool_resize_status[512]; /*!< Buf pool resize status */
-  ulint innodb_buffer_pool_pages_total;       /*!< Buffer pool size */
-  ulint innodb_buffer_pool_pages_data;        /*!< Data pages */
-  ulint innodb_buffer_pool_bytes_data;        /*!< File bytes used */
-  ulint innodb_buffer_pool_pages_dirty;       /*!< Dirty data pages */
-  ulint innodb_buffer_pool_bytes_dirty;       /*!< File bytes modified */
-  ulint innodb_buffer_pool_pages_misc;        /*!< Miscellanous pages */
-  ulint innodb_buffer_pool_pages_free;        /*!< Free pages */
+  uint32_t
+      innodb_buffer_pool_resize_status_code; /*!< Buf pool resize status code */
+  uint32_t innodb_buffer_pool_resize_status_progress; /*!< Buf pool resize
+                                                     status progess */
+  ulint innodb_buffer_pool_pages_total;               /*!< Buffer pool size */
+  ulint innodb_buffer_pool_pages_data;                /*!< Data pages */
+  ulint innodb_buffer_pool_bytes_data;                /*!< File bytes used */
+  ulint innodb_buffer_pool_pages_dirty;               /*!< Dirty data pages */
+  ulint innodb_buffer_pool_bytes_dirty; /*!< File bytes modified */
+  ulint innodb_buffer_pool_pages_misc;  /*!< Miscellaneous pages */
+  ulint innodb_buffer_pool_pages_free;  /*!< Free pages */
 #ifdef UNIV_DEBUG
   ulint innodb_buffer_pool_pages_latched;  /*!< Latched pages */
 #endif                                     /* UNIV_DEBUG */

@@ -299,9 +299,7 @@ void Xcom_network_provider_library::gcs_shutdown_socket(int *sock) {
              &dwBytesReturned, nullptr, nullptr);
   }
   if (DisconnectEx != nullptr) {
-    (DisconnectEx(*sock, (LPOVERLAPPED) nullptr, (DWORD)0, (DWORD)0) == TRUE)
-        ? 0
-        : -1;
+    DisconnectEx(*sock, (LPOVERLAPPED) nullptr, (DWORD)0, (DWORD)0);
   } else {
     shutdown(*sock, SOCK_SHUT_RDWR);
   }
@@ -493,7 +491,7 @@ result Xcom_network_provider_library::checked_create_socket(int domain,
 }
 
 /**
-  @brief Retreives a node IPv4 address, if it exists.
+  @brief Retrieves a node IPv4 address, if it exists.
 
   If a node is v4 reachable, means one of two:
   - The raw address is V4

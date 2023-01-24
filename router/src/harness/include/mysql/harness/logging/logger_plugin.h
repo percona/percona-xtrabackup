@@ -35,7 +35,6 @@
 
 constexpr const char *kLoggerPluginName = "logger";
 extern mysql_harness::Plugin HARNESS_EXPORT harness_plugin_logger;
-extern const std::array<const char *, 4> HARNESS_EXPORT sink_supported_options;
 
 /**
  * Creates the logging handler for each plugin from the configuration.

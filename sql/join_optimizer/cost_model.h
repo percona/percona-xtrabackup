@@ -72,7 +72,7 @@ void AddCost(THD *thd, const ContainedSubquery &subquery, double num_rows,
   of any subqueries that may be present and that need evaluation.
  */
 FilterCost EstimateFilterCost(THD *thd, double num_rows, Item *condition,
-                              Query_block *outer_query_block);
+                              const Query_block *outer_query_block);
 
 /**
   A cheaper overload of EstimateFilterCost() that assumes that all
@@ -95,11 +95,17 @@ inline FilterCost EstimateFilterCost(
 
 double EstimateCostForRefAccess(THD *thd, TABLE *table, unsigned key_idx,
                                 double num_output_rows);
-void EstimateSortCost(AccessPath *path, ha_rows limit_rows = HA_POS_ERROR);
+void EstimateSortCost(AccessPath *path);
 void EstimateMaterializeCost(THD *thd, AccessPath *path);
 void EstimateAggregateCost(AccessPath *path, const Query_block *query_block);
 void EstimateDeleteRowsCost(AccessPath *path);
 void EstimateUpdateRowsCost(AccessPath *path);
+
+/// Estimate the costs and row count for a STREAM AccessPath.
+void EstimateStreamCost(AccessPath *path);
+
+/// Estimate the costs and row count for a LIMIT_OFFSET AccessPath.
+void EstimateLimitOffsetCost(AccessPath *path);
 
 inline double FindOutputRowsForJoin(double left_rows, double right_rows,
                                     const JoinPredicate *edge) {
@@ -117,6 +123,8 @@ inline double FindOutputRowsForJoin(double left_rows, double right_rows,
     // we only have selectivity to work with, we don't really have anything
     // better than to estimate it as a normal join and cap the result
     // at selectivity 1.0 (ie., each outer row generates at most one inner row).
+    // Note that this can cause inconsistent row counts; see bug #33550360 and
+    // CostingReceiver::has_semijoin_with_possibly_clamped_child.
     fanout = std::min(fanout, 1.0);
   } else if (edge->expr->type == RelationalExpression::ANTIJOIN) {
     // Antijoin are estimated as simply the opposite of semijoin (see above),

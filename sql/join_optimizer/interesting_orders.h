@@ -260,7 +260,8 @@ class LogicalOrderings {
   }
 
   bool ordering_is_relevant_for_sortahead(int ordering_idx) const {
-    return m_orderings[ordering_idx].type != OrderingWithInfo::UNINTERESTING;
+    return !m_orderings[ordering_idx].ordering.empty() &&
+           m_orderings[ordering_idx].type != OrderingWithInfo::UNINTERESTING;
   }
 
   // Add a functional dependency that may be applied at some point
@@ -401,6 +402,10 @@ class LogicalOrderings {
         m_dfsm_states[b_idx].can_reach_interesting_order & ~ignored_orderings;
     return (a & b) != a || (future_a & future_b) != future_a;
   }
+
+  // See comment in .cc file.
+  Ordering ReduceOrdering(Ordering ordering, bool all_fds,
+                          OrderElement *tmpbuf) const;
 
  private:
   bool m_built = false;
@@ -640,9 +645,6 @@ class LogicalOrderings {
   // Populates ItemInfo::can_be_added_by_fd.
   void FindElementsThatCanBeAddedByFDs();
 
-  // See comment in .cc file.
-  Ordering ReduceOrdering(Ordering ordering, bool all_fds,
-                          OrderElement *tmpbuf) const;
   void PreReduceOrderings(THD *thd);
   void CreateOrderingsFromGroupings(THD *thd);
   void CreateHomogenizedOrderings(THD *thd);

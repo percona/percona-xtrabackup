@@ -46,7 +46,7 @@ class Ndb_mgmd_event_service : public EventLoggerBase
 public:
   struct Event_listener : public EventLoggerBase {
     Event_listener() {}
-    NDB_SOCKET_TYPE m_socket;
+    ndb_socket_t m_socket;
     Uint32 m_parsable;
   };
   
@@ -151,7 +151,7 @@ public:
   /**
    * Get status on a node.
    * address may point to a common area (e.g. from inet_addr)
-   * There is no guarentee that it is preserved across calls.
+   * There is no guarantee that it is preserved across calls.
    * Copy the string if you are not going to use it immediately.
    */
   int status(int nodeId,
@@ -217,7 +217,7 @@ public:
                 unsigned int num_secs_to_wait_for_node = 120);
   
   /**
-   * Backup functionallity
+   * Backup functionality
    */
   int startBackup(Uint32& backupId, int waitCompleted= 2,
                   Uint32 input_backupId= 0, Uint32 backuppoint= 0,
@@ -355,7 +355,7 @@ public:
   int getConnectionDbParameter(int node1, int node2, int param,
 			       int *value, BaseString& msg);
 
-  bool transporter_connect(NDB_SOCKET_TYPE sockfd,
+  bool transporter_connect(ndb_socket_t sockfd,
                            BaseString& errormsg,
                            bool& close_with_reset);
 
@@ -490,7 +490,7 @@ private:
   ndb_mgm_node_type getNodeType(NodeId) const;
 
   /**
-   * Handles the thread wich upon a 'Node is started' event will
+   * Handles the thread which upon a 'Node is started' event will
    * set the node's previous loglevel settings.
    */
   struct NdbThread* _logLevelThread;

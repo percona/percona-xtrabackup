@@ -330,18 +330,6 @@ bool Sql_cmd_dml::prepare(THD *thd) {
   assert(!lex->unit->is_prepared() && !lex->unit->is_optimized() &&
          !lex->unit->is_executed());
 
-  lex->using_hypergraph_optimizer =
-      thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER) &&
-      (lex->sql_command == SQLCOM_SELECT || lex->sql_command == SQLCOM_DO ||
-       lex->sql_command == SQLCOM_CALL ||
-       lex->sql_command == SQLCOM_INSERT_SELECT ||
-       lex->sql_command == SQLCOM_REPLACE_SELECT ||
-       lex->sql_command == SQLCOM_INSERT ||
-       lex->sql_command == SQLCOM_DELETE_MULTI ||
-       lex->sql_command == SQLCOM_DELETE ||
-       lex->sql_command == SQLCOM_UPDATE_MULTI ||
-       lex->sql_command == SQLCOM_UPDATE);
-
   /*
     Constant folding could cause warnings during preparation. Make
     sure they are promoted to errors when strict mode is enabled.
@@ -375,13 +363,25 @@ bool Sql_cmd_dml::prepare(THD *thd) {
     if (thd->is_error())  // @todo - dictionary code should be fixed
       goto err;
     if (error_handler_active) thd->pop_internal_handler();
-    lex->cleanup(thd, false);
+    lex->cleanup(false);
     return true;
   }
   DEBUG_SYNC(thd, "after_open_tables");
 #ifndef NDEBUG
   if (sql_command_code() == SQLCOM_SELECT) DEBUG_SYNC(thd, "after_table_open");
 #endif
+
+  lex->using_hypergraph_optimizer =
+      thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER) &&
+      (lex->sql_command == SQLCOM_SELECT || lex->sql_command == SQLCOM_DO ||
+       lex->sql_command == SQLCOM_CALL ||
+       lex->sql_command == SQLCOM_INSERT_SELECT ||
+       lex->sql_command == SQLCOM_REPLACE_SELECT ||
+       lex->sql_command == SQLCOM_INSERT ||
+       lex->sql_command == SQLCOM_DELETE_MULTI ||
+       lex->sql_command == SQLCOM_DELETE ||
+       lex->sql_command == SQLCOM_UPDATE_MULTI ||
+       lex->sql_command == SQLCOM_UPDATE);
 
   if (lex->set_var_list.elements && resolve_var_assignments(thd, lex))
     goto err; /* purecov: inspected */
@@ -394,7 +394,7 @@ bool Sql_cmd_dml::prepare(THD *thd) {
 
     if (prepare_inner(thd)) goto err;
     if (needs_explicit_preparation() && result != nullptr) {
-      result->cleanup(thd);
+      result->cleanup();
     }
     if (!is_regular()) {
       if (save_cmd_properties(thd)) goto err;
@@ -419,9 +419,9 @@ err:
 
   if (error_handler_active) thd->pop_internal_handler();
 
-  if (result != nullptr) result->cleanup(thd);
+  if (result != nullptr) result->cleanup();
 
-  lex->cleanup(thd, false);
+  lex->cleanup(false);
 
   return true;
 }
@@ -467,6 +467,7 @@ bool Sql_cmd_select::prepare_inner(THD *thd) {
   if (!parameters->has_limit()) {
     parameters->m_use_select_limit = true;
   }
+
   if (unit->is_simple()) {
     Query_block *const select = unit->first_query_block();
     select->context.resolve_in_select_list = true;
@@ -597,12 +598,12 @@ bool Sql_cmd_dml::execute(THD *thd) {
   THD_STAGE_INFO(thd, stage_end);
 
   // Do partial cleanup (preserve plans for EXPLAIN).
-  lex->cleanup(thd, false);
+  lex->cleanup(false);
   lex->clear_values_map();
   lex->set_secondary_engine_execution_context(nullptr);
 
   // Perform statement-specific cleanup for Query_result
-  if (result != nullptr) result->cleanup(thd);
+  if (result != nullptr) result->cleanup();
 
   thd->save_current_query_costs();
 
@@ -627,14 +628,14 @@ err:
   DBUG_PRINT("info", ("report_error: %d", thd->is_error()));
   THD_STAGE_INFO(thd, stage_end);
 
-  lex->cleanup(thd, false);
+  lex->cleanup(false);
   lex->clear_values_map();
   lex->set_secondary_engine_execution_context(nullptr);
 
   // Abort and cleanup the result set (if it has been prepared).
   if (result != nullptr) {
     result->abort_result_set(thd);
-    result->cleanup(thd);
+    result->cleanup();
   }
   if (error_handler_active) thd->pop_internal_handler();
 
@@ -810,14 +811,7 @@ Query_result *Sql_cmd_dml::query_result() const {
 void Sql_cmd_dml::set_query_result(Query_result *result_arg) {
   result = result_arg;
   Query_expression *unit = lex->unit;
-  if (unit->fake_query_block != nullptr)
-    unit->fake_query_block->set_query_result(result);
-  else {
-    for (Query_block *sl = unit->first_query_block(); sl;
-         sl = sl->next_query_block()) {
-      sl->set_query_result(result);
-    }
-  }
+  unit->query_term()->query_block()->set_query_result(result);
   unit->set_query_result(result);
 }
 
@@ -929,13 +923,10 @@ bool Sql_cmd_select::check_privileges(THD *thd) {
     return true;
 
   Query_expression *const unit = lex->unit;
-  for (Query_block *sl = unit->first_query_block(); sl;
-       sl = sl->next_query_block()) {
-    if (sl->check_column_privileges(thd)) return true;
-  }
-  if (unit->fake_query_block != nullptr) {
-    if (unit->fake_query_block->check_column_privileges(thd)) return true;
-  }
+
+  for (auto qt : unit->query_terms<>())
+    if (qt->query_block()->check_column_privileges(thd)) return true;
+
   return false;
 }
 
@@ -1716,7 +1707,18 @@ void JOIN::destroy() {
     for (TABLE_LIST *tl = query_block->leaf_tables; tl; tl = tl->next_leaf) {
       TABLE *table = tl->table;
       if (table != nullptr) {
-        table->set_keyread(false);
+        // For prepared statements, a derived table's temp table handler
+        // gets cleaned up at the end of prepare and it is setup again
+        // during optimization. However, if optimization for a derived
+        // table query block fails for some reason (E.g. Secondary engine
+        // rejects all the plans), handler is not setup for the rest of
+        // the derived tables. So we need to call set_keyread() only
+        // when handler is initialized.
+        // TODO(Chaithra): This should be moved to a more suitable place,
+        // perhaps TableRowIterator's destructor ?
+        if (table->file != nullptr) {
+          table->set_keyread(false);
+        }
         table->sorting_iterator = nullptr;
         table->duplicate_removal_iterator = nullptr;
       }
@@ -1797,6 +1799,8 @@ void JOIN::cleanup_item_list(const mem_root_deque<Item *> &items) const {
   Optimize a query block and all inner query expressions
 
   @param thd    thread handler
+  @param finalize_access_paths
+                if true, finalize access paths, cf. FinalizePlanForQueryBlock
   @returns false if success, true if error
 */
 
@@ -2102,7 +2106,14 @@ void calc_length_and_keyparts(Key_use *keyuse, JOIN_TAB *tab, const uint key,
     }
     keyuse++;
   } while (keyuse->table_ref == tab->table_ref && keyuse->key == key);
-  assert(keyparts > 0);
+  if (keyparts <= 0) {
+    assert(false);
+    my_error(ER_INTERNAL_ERROR, MYF(0),
+             "Key not found");  // In debug build we assert, but in release we
+                                // guard against a potential server exit with an
+                                // error
+    return;
+  }
   *length_out = length;
   *keyparts_out = keyparts;
 }
@@ -2233,6 +2244,9 @@ bool create_ref_for_key(JOIN *join, JOIN_TAB *j, Key_use *org_keyuse,
   } else /* not ftkey */
     calc_length_and_keyparts(org_keyuse, j, key, used_tables, chosen_keyuses,
                              &length, &keyparts, nullptr, nullptr);
+  if (thd->is_error()) {
+    return true;
+  }
   /* set up fieldref */
   if (init_ref(thd, keyparts, length, (int)key, &j->ref())) {
     return true;
@@ -3180,7 +3194,7 @@ bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
         if (tab->position()->filter_effect != COND_FILTER_STALE_NO_CONST) {
           double rows_w_const_cond = qep_tab->position()->rows_fetched;
           qep_tab->position()->rows_fetched =
-              tab->range_scan()->num_output_rows;
+              tab->range_scan()->num_output_rows();
           if (tab->position()->filter_effect != COND_FILTER_STALE) {
             // Constant condition moves to filter_effect:
             if (tab->position()->rows_fetched == 0)  // avoid division by zero
@@ -3465,9 +3479,7 @@ void JOIN::join_free() {
   if (can_unlock && lock && thd->lock && !thd->locked_tables_mode &&
       !(query_block->active_options() & SELECT_NO_UNLOCK) &&
       !query_block->subquery_in_having &&
-      (query_block == (thd->lex->unit->fake_query_block
-                           ? thd->lex->unit->fake_query_block
-                           : thd->lex->query_block))) {
+      (query_block == thd->lex->unit->query_term()->query_block())) {
     /*
       TODO: unlock tables even if the join isn't top level select in the
       tree.
@@ -3927,19 +3939,18 @@ bool JOIN::make_sum_func_list(const mem_root_deque<Item *> &fields,
 /**
   Free joins of subselect of this select.
 
-  @param thd      thread handle
   @param select   pointer to Query_block which subselects joins we will free
 
   @todo when the final use of this function (from SET statements) is removed,
   this function can be deleted.
 */
 
-void free_underlaid_joins(THD *thd, Query_block *select) {
+void free_underlaid_joins(Query_block *select) {
   for (Query_expression *query_expression =
            select->first_inner_query_expression();
        query_expression;
        query_expression = query_expression->next_query_expression())
-    query_expression->cleanup(thd, false);
+    query_expression->cleanup(false);
 }
 
 /**
@@ -4056,7 +4067,8 @@ bool CreateFramebufferTable(
     the window's frame buffer now that we know the window needs
     buffering.
   */
-  Temp_table_param *par = new (thd->mem_root) Temp_table_param(tmp_table_param);
+  Temp_table_param *par =
+      new (thd->mem_root) Temp_table_param(thd->mem_root, tmp_table_param);
   par->m_window_frame_buffer = true;
 
   // Don't include temporary fields that originally came from

@@ -80,7 +80,7 @@ class Condition_pushdown {
     TABLE_LIST *m_derived_table;
     Query_block *m_derived_query_block;
     bool is_set_operation() const {
-      return m_derived_table->derived_query_expression()->is_union();
+      return m_derived_table->derived_query_expression()->is_set_operation();
     }
 
     Derived_table_info(TABLE_LIST *derived_table, Query_block *query_block)

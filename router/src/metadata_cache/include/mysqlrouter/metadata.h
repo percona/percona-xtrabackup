@@ -28,7 +28,9 @@
 #include "mysqlrouter/metadata_cache_export.h"
 
 #include <atomic>
+#include <chrono>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -49,7 +51,7 @@ class METADATA_CACHE_EXPORT MetaData {
  public:
   using JsonAllocator = rapidjson::CrtAllocator;
   using JsonDocument = rapidjson::Document;
-  // username as key, password hash and priviliges as value
+  // username as key, password hash and privileges as value
   using auth_credentials_t =
       std::map<std::string, std::pair<std::string, JsonDocument>>;
 
@@ -90,6 +92,9 @@ class METADATA_CACHE_EXPORT MetaData {
   virtual auth_credentials_t fetch_auth_credentials(
       const mysqlrouter::TargetCluster &target_cluster,
       const std::string &cluster_type_specific_id) = 0;
+
+  virtual std::optional<std::chrono::seconds>
+  get_periodic_stats_update_frequency() noexcept = 0;
 
   MetaData() = default;
   // disable copy as it isn't needed right now. Feel free to enable

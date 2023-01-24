@@ -45,7 +45,7 @@ SocketAuthSimple::~SocketAuthSimple()
     free(m_username);
 }
 
-bool SocketAuthSimple::client_authenticate(NDB_SOCKET_TYPE sockfd)
+bool SocketAuthSimple::client_authenticate(ndb_socket_t sockfd)
 {
   SocketOutputStream s_output(sockfd);
   SocketInputStream  s_input(sockfd);
@@ -68,7 +68,7 @@ bool SocketAuthSimple::client_authenticate(NDB_SOCKET_TYPE sockfd)
   return false;
 }
 
-bool SocketAuthSimple::server_authenticate(NDB_SOCKET_TYPE sockfd)
+bool SocketAuthSimple::server_authenticate(ndb_socket_t sockfd)
 {
   SocketOutputStream s_output(sockfd);
   SocketInputStream  s_input(sockfd);

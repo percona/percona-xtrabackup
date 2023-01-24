@@ -1,11 +1,30 @@
 set -eu
 
+### save a copy of backup directory
+function save_backup()
+{
+  local targetdir=$1
+  local backupdir=$(mktemp -d ${topdir}/backup.XXXXX)
+  vlog "saving copy of $targetdir to ${backupdir}"
+  run_cmd cp -R "${targetdir}/" ${backupdir}
+}
+
 function xtrabackup()
 {
   if [ -z ${WITH_RR+x} ]; then
     run_cmd $XB_BIN $XB_ARGS "$@"
   else
     run_cmd rr $XB_BIN $XB_ARGS "$@"
+  fi
+
+#### for --backup, copy backup director into var if -k option is passed
+  if [ ! -z "${KEEP_VAR}" ]
+  then
+    if [[ $@ =~ "--backup" &&  $@ =~ target-dir=([^ ]+) ]]
+    then
+      local targetdir="${BASH_REMATCH[1]}"
+      save_backup $targetdir
+    fi
   fi
 }
 
@@ -19,7 +38,7 @@ function mysql()
     run_cmd $MYSQL $MYSQL_ARGS "$@"
 }
 
-function vlog
+function vlog()
 {
     echo "`date +"%F %T"`: `basename "$0"`: $@" >&2
 }
@@ -311,6 +330,7 @@ function start_server_with_id()
     fi
     local attempts=0
     local max_attempts=5
+    local new_instance=no
 
     vlog "Starting server with id=$id..."
 
@@ -368,8 +388,6 @@ user=root
 ${XB_EXTRA_MY_CNF_OPTS:-}
 EOF
 
-        local new_instance
-
         # Create datadir and call mysql_install_db if it doesn't exist
         if [ ! -d "$MYSQLD_DATADIR" ]
         then
@@ -382,8 +400,6 @@ EOF
                 vlog "Skiping mysql_install_db of node $id for SST"
             fi
             new_instance=yes
-        else
-            new_instance=no
         fi
 
         # Start the server

@@ -289,6 +289,35 @@ bool all_tables_not_ok(THD *thd, TABLE_LIST *tables) {
          !rpl_filter->tables_ok(thd->db().str, tables);
 }
 
+bool is_normal_transaction_boundary_stmt(enum_sql_command sql_cmd) {
+  switch (sql_cmd) {
+    case SQLCOM_BEGIN:
+    case SQLCOM_COMMIT:
+    case SQLCOM_SAVEPOINT:
+    case SQLCOM_ROLLBACK:
+    case SQLCOM_ROLLBACK_TO_SAVEPOINT:
+      return true;
+    default:
+      return false;
+  }
+
+  return false;
+}
+
+bool is_xa_transaction_boundary_stmt(enum_sql_command sql_cmd) {
+  switch (sql_cmd) {
+    case SQLCOM_XA_START:
+    case SQLCOM_XA_END:
+    case SQLCOM_XA_COMMIT:
+    case SQLCOM_XA_ROLLBACK:
+      return true;
+    default:
+      return false;
+  }
+
+  return false;
+}
+
 /**
   Checks whether the event for the given database, db, should
   be ignored or not. This is done by checking whether there are
@@ -313,27 +342,12 @@ inline bool check_database_filters(THD *thd, const char *db,
                                    enum_sql_command sql_cmd) {
   DBUG_TRACE;
   assert(thd->slave_thread);
-  if (!db) return true;
+  if (!db || is_normal_transaction_boundary_stmt(sql_cmd) ||
+      is_xa_transaction_boundary_stmt(sql_cmd))
+    return true;
+
   Rpl_filter *rpl_filter = thd->rli_slave->rpl_filter;
-
-  bool need_increase_counter = true;
-  switch (sql_cmd) {
-    case SQLCOM_BEGIN:
-    case SQLCOM_COMMIT:
-    case SQLCOM_SAVEPOINT:
-    case SQLCOM_ROLLBACK:
-    case SQLCOM_ROLLBACK_TO_SAVEPOINT:
-      return true;
-    case SQLCOM_XA_START:
-    case SQLCOM_XA_END:
-    case SQLCOM_XA_COMMIT:
-    case SQLCOM_XA_ROLLBACK:
-      need_increase_counter = false;
-    default:
-      break;
-  }
-
-  bool db_ok = rpl_filter->db_ok(db, need_increase_counter);
+  auto db_ok{rpl_filter->db_ok(db)};
   /*
     No filters exist in ignore/do_db ? Then, just check
     wild_do_table filtering for 'DATABASE' related
@@ -405,6 +419,65 @@ bool stmt_causes_implicit_commit(const THD *thd, uint mask) {
     default:
       return true;
   }
+}
+
+/**
+  @brief Iterates over all post replication filter actions registered and
+  executes them.
+
+  All actions registered will be executed at most once. They are executed in
+  the order that they were registered. Shall there be an error while iterating
+  through the list of actions and executing them, then the process stops and an
+  error is returned immediately. This means that in that case, some actions may
+  have executed successfully and some not. In other words, this procedure is
+  not atomic.
+
+  This function will consume all actions from the list if there is no error.
+  This means that actions run only once per statement. Should there be any
+  sub-statements then actions only run on the top level statement execution.
+
+  @param thd The thread context.
+  @return true If there was an error while executing the registered actions.
+  @return false If all actions executed successfully.
+*/
+static bool run_post_replication_filters_actions(THD *thd) {
+  DBUG_TRACE;
+  auto &actions{thd->rpl_thd_ctx.post_filters_actions()};
+  for (auto &action : actions) {
+    if (action()) return true;
+  }
+  actions.clear();
+  return false;
+}
+
+/**
+  @brief This function determines if the current statement parsed violates the
+  require_row_format check.
+
+  Given a parsed context within the THD object, this function will infer
+  whether the require row format check is violated or not. If it is, this
+  function returns true, false otherwise. Note that this function can be called
+  from both, normal sessions and replication applier, execution paths.
+
+  @param thd The session context holding the parsed statement.
+  @return true if there was a require row format validation failure.
+  @return false if the check was successful, meaning no require row format
+  validation failure.
+*/
+static bool check_and_report_require_row_format_violation(THD *thd) {
+  DBUG_TRACE;
+  assert(thd != nullptr);
+  auto perform_check{thd->slave_thread
+                         ? thd->rli_slave->is_row_format_required()
+                         : thd->variables.require_row_format};
+  if (!perform_check) return false;
+
+  if (is_require_row_format_violation(thd)) {
+    if (thd->slave_thread) thd->is_slave_error = true;
+    my_error(ER_CLIENT_QUERY_FAILURE_INVALID_NON_ROW_FORMAT, MYF(0));
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -2135,7 +2208,7 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
 
       mysqld_list_fields(thd, &table_list, fields);
 
-      thd->lex->cleanup(thd, true);
+      thd->lex->cleanup(true);
       /* No need to rollback statement transaction, it's not started. */
       assert(thd->get_transaction()->is_empty(Transaction_ctx::STMT));
       close_thread_tables(thd);
@@ -2385,6 +2458,7 @@ done:
   thd->set_proc_info(nullptr);
   thd->lex->sql_command = SQLCOM_END;
 
+  DEBUG_SYNC(thd, "processlist_wait");
   /* Performance Schema Interface instrumentation, end */
   MYSQL_END_STATEMENT(thd->m_statement_psi, thd->get_stmt_da());
   thd->m_statement_psi = nullptr;
@@ -2557,6 +2631,7 @@ int prepare_schema_table(THD *thd, LEX *lex, Table_ident *table_ident,
 */
 
 bool alloc_query(THD *thd, const char *packet, size_t packet_length) {
+  DBUG_TRACE;
   /* Remove garbage at start and end of query */
   while (packet_length > 0 && my_isspace(thd->charset(), packet[0])) {
     packet++;
@@ -2575,7 +2650,8 @@ bool alloc_query(THD *thd, const char *packet, size_t packet_length) {
   query[packet_length] = '\0';
 
   thd->set_query(query, packet_length);
-
+  DBUG_PRINT("thd_query", ("thd->thread_id():%u thd:%p query:%s",
+                           thd->thread_id(), thd, query));
   return false;
 }
 
@@ -3098,7 +3174,7 @@ int mysql_execute_command(THD *thd, bool first_level) {
   Opt_trace_array trace_command_steps(&thd->opt_trace, "steps");
 
   if (lex->m_sql_cmd && lex->m_sql_cmd->owner())
-    lex->m_sql_cmd->owner()->trace_parameter_types();
+    lex->m_sql_cmd->owner()->trace_parameter_types(thd);
 
   assert(thd->get_transaction()->cannot_safely_rollback(
              Transaction_ctx::STMT) == false);
@@ -3114,12 +3190,9 @@ int mysql_execute_command(THD *thd, bool first_level) {
       return 0;
   }
 
-  if (thd->variables.require_row_format) {
-    if (evaluate_command_row_only_restrictions(thd)) {
-      my_error(ER_CLIENT_QUERY_FAILURE_INVALID_NON_ROW_FORMAT, MYF(0));
-      return -1;
-    }
-  }
+  if (check_and_report_require_row_format_violation(thd) ||
+      run_post_replication_filters_actions(thd))
+    return -1;
 
   /*
     End a active transaction so that this command will have it's
@@ -4820,7 +4893,7 @@ finish:
     }
   }
 
-  lex->cleanup(thd, true);
+  lex->cleanup(true);
 
   /* Free tables */
   THD_STAGE_INFO(thd, stage_closing_tables);
@@ -5614,7 +5687,7 @@ bool Query_block::find_common_table_expr(THD *thd, Table_ident *table_name,
       If no match in the WITH clause of 'select', maybe this is a subquery, so
       look up in the outer query's WITH clause:
     */
-  } while (cte == nullptr && (select = unit->outer_query_block()));
+  } while (cte == nullptr && (select = select->outer_query_block()));
 
   if (cte == nullptr) return false;
   *found = true;
@@ -5641,15 +5714,14 @@ bool Query_block::find_common_table_expr(THD *thd, Table_ident *table_name,
   auto wc_save = wc->enter_parsing_definition(tl);
 
   /*
-    The proper outer context for the CTE, is not the query block where the CTE
-    reference is; neither is it the outer query block of this. It is the query
-    block which immediately contains the query expression where the CTE
-    definition is. Indeed, per the standard, evaluation of the CTE happens
-    as first step of evaluation of the said query expression; so the CTE may
-    not contain references into the said query expression.
+    The outer context for the CTE is the current context of the query block
+    that immediately contains the query expression that contains the CTE
+    definition, which is the same as the outer context of the query block
+    belonging to that query expression. Unless the CTE is contained in
+    the outermost query expression, in which case there is no outer context.
   */
-  thd->lex->push_context(unit->outer_query_block()
-                             ? &unit->outer_query_block()->context
+  thd->lex->push_context(select->outer_query_block() != nullptr
+                             ? select->context.outer_context
                              : nullptr);
   assert(thd->lex->will_contextualize);
   if (node->contextualize(pc)) return true;
@@ -6221,62 +6293,6 @@ void Query_block::set_lock_for_tables(thr_lock_type lock_type) {
 }
 
 /**
-  Create a fake Query_block for a unit.
-
-    The method create a fake Query_block object for a unit.
-    This object is created for any union construct containing a union
-    operation and also for any single select union construct of the form
-    @verbatim
-    (SELECT ... ORDER BY order_list [LIMIT n]) ORDER BY ...
-    @endverbatim
-    or of the form
-    @verbatim
-    (SELECT ... ORDER BY LIMIT n) ORDER BY ...
-    @endverbatim
-
-  @param thd       thread handle
-
-  @note
-    The object is used to retrieve rows from the temporary table
-    where the result on the union is obtained.
-
-  @retval
-    1     on failure to create the object
-  @retval
-    0     on success
-*/
-
-bool Query_expression::add_fake_query_block(THD *thd) {
-  Query_block *first_qb = first_query_block();
-  DBUG_TRACE;
-  assert(!fake_query_block);
-
-  if (!(fake_query_block = thd->lex->new_empty_query_block()))
-    return true; /* purecov: inspected */
-  fake_query_block->include_standalone(this, &fake_query_block);
-  fake_query_block->select_number = INT_MAX;
-  fake_query_block->linkage = GLOBAL_OPTIONS_TYPE;
-  fake_query_block->select_limit = nullptr;
-
-  fake_query_block->set_context(first_qb->context.outer_context);
-
-  /* allow item list resolving in fake select for ORDER BY */
-  fake_query_block->context.resolve_in_select_list = true;
-
-  if (!is_union()) {
-    /*
-      This works only for
-      (SELECT ... ORDER BY list [LIMIT n]) ORDER BY order_list [LIMIT m],
-      (SELECT ... LIMIT n) ORDER BY order_list [LIMIT m]
-      just before the parser starts processing order_list
-    */
-    fake_query_block->no_table_names_allowed = true;
-  }
-  thd->lex->pop_context();
-  return false;
-}
-
-/**
   Push a new name resolution context for a JOIN ... ON clause to the
   context stack of a query block.
 
@@ -6434,7 +6450,8 @@ static void sql_kill(THD *thd, my_thread_id id, bool only_kill_query) {
 
 /**
   This class implements callback function used by killall_non_super_threads
-  to kill all threads that do not have the SUPER privilege
+  to kill all threads that do not have either SYSTEM_VARIABLES_ADMIN +
+  CONNECTION_ADMIN privileges or legacy SUPER privilege
 */
 
 class Kill_non_super_conn : public Do_THD_Impl {
@@ -6446,9 +6463,10 @@ class Kill_non_super_conn : public Do_THD_Impl {
  public:
   Kill_non_super_conn(THD *thd) : m_client_thd(thd) {
     assert(m_client_thd->security_context()->check_access(SUPER_ACL) ||
-           m_client_thd->security_context()
-               ->has_global_grant(STRING_WITH_LEN("SYSTEM_VARIABLES_ADMIN"))
-               .first);
+           (m_client_thd->is_connection_admin() &&
+            m_client_thd->security_context()
+                ->has_global_grant(STRING_WITH_LEN("SYSTEM_VARIABLES_ADMIN"))
+                .first));
     m_is_client_regular_user = !m_client_thd->is_system_user();
   }
 

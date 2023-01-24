@@ -23,9 +23,9 @@
 */
 
 #define OPTEXPORT
+#include "unhex.h"
 #include "util/require.h"
 #include <ndb_opts.h>
-
 #include <errno.h>
 #include <ndb_version.h>
 #include "my_alloc.h"
@@ -33,31 +33,46 @@
 #include "portlib/ndb_password.h"
 #include "portlib/NdbMem.h"
 
-static const char *load_default_groups[]= { "mysql_cluster", 0 };
+using usage_fn = void (*)(void);
+
+static const char *load_default_groups[]= { "mysql_cluster", nullptr };
 
 static void default_ndb_opt_short(void)
 {
-  ndb_short_usage_sub(NULL);
+  ndb_short_usage_sub(nullptr);
 }
 
-extern "C"     /* declaration only */
-void ndb_usage(void (*usagefunc)(void), const char *load_default_groups[],
+/* declaration only */
+void ndb_usage(usage_fn,
+               const char *load_default_groups[],
                struct my_option *my_long_options);
+
 
 static void default_ndb_opt_usage(void)
 {
   struct my_option my_long_options[] =
     {
-      NDB_STD_OPTS("ndbapi_program")
+      NdbStdOpt::usage,
+      NdbStdOpt::help,
+      NdbStdOpt::version,
+      NdbStdOpt::ndb_connectstring,
+      NdbStdOpt::mgmd_host,
+      NdbStdOpt::connectstring,
+      NdbStdOpt::ndb_nodeid,
+      NdbStdOpt::optimized_node_selection,
+      NdbStdOpt::charsets_dir,
+      NdbStdOpt::connect_retry_delay,
+      NdbStdOpt::connect_retries,
+      NDB_STD_OPT_DEBUG
+      NdbStdOpt::end_of_options,
     };
 
   ndb_usage(default_ndb_opt_short, load_default_groups, my_long_options);
 }
 
-static void (*g_ndb_opt_short_usage)(void)= default_ndb_opt_short;
-static void (*g_ndb_opt_usage)(void)= default_ndb_opt_usage;
+static usage_fn g_ndb_opt_short_usage = default_ndb_opt_short;
+static usage_fn g_ndb_opt_usage = default_ndb_opt_usage;
 
-extern "C"
 void ndb_opt_set_usage_funcs(void (*short_usage)(void),
                              void (*usage)(void))
 {
@@ -78,7 +93,6 @@ const char* ndb_progname(void)
   return "<unknown program>";
 }
 
-extern "C"
 void ndb_short_usage_sub(const char* extra)
 {
   printf("Usage: %s [OPTIONS]%s%s\n", ndb_progname(),
@@ -86,8 +100,7 @@ void ndb_short_usage_sub(const char* extra)
          (extra)?extra:"");
 }
 
-extern "C"
-void ndb_usage(void (*usagefunc)(void), const char *load_default_groups[],
+void ndb_usage(usage_fn usagefunc, const char *load_default_groups[],
                struct my_option *my_long_options)
 {
   (*usagefunc)();
@@ -104,7 +117,6 @@ void empty_long_usage_extra_func()
 {
 }
 
-extern "C"
 bool
 ndb_std_get_one_option(int optid, const struct my_option *opt, char *argument)
 {
@@ -131,7 +143,6 @@ ndb_std_get_one_option(int optid, const struct my_option *opt, char *argument)
   return 0;
 }
 
-extern "C"
 void ndb_std_print_version()
 {
 #ifndef NDEBUG
@@ -143,7 +154,6 @@ void ndb_std_print_version()
          NDB_VERSION_STRING,suffix,SYSTEM_TYPE,MACHINE_TYPE);
 }
 
-extern "C"
 bool ndb_is_load_default_arg_separator(const char* arg)
 {
   /*
@@ -208,7 +218,7 @@ int Ndb_opts::handle_options(bool (*get_opt_fn)
 void Ndb_opts::set_usage_funcs(void (*short_fn)(void),
                                void (*long_fn)(void))
 {
-  short_usage_fn = short_fn;
+  if(short_fn) short_usage_fn = short_fn;
   if(long_fn) long_usage_extra_fn = long_fn;
 }
 
@@ -255,6 +265,16 @@ bool ndb_option::post_process_options()
   return failed;
 }
 
+void ndb_option::reset_options()
+{
+  ndb_option* p = m_first;
+  while (p != nullptr)
+  {
+    p->reset();
+    p = p->m_next;
+  }
+}
+
 void ndb_option::push_back()
 {
   if (m_next != nullptr ||
@@ -299,8 +319,10 @@ void ndb_option::erase()
 // ndb_password_state
 
 ndb_password_state::ndb_password_state(const char prefix[],
-                                       const char prompt[])
+                                       const char prompt[],
+                                       kind_t kind)
 : m_password(nullptr),
+  m_kind(kind),
   m_status(NO_PASSWORD),
   m_option_count(0),
   m_password_length(0),
@@ -312,20 +334,78 @@ ndb_password_state::ndb_password_state(const char prefix[],
   }
   else if (prefix != nullptr)
   {
-    m_prompt.assfmt("Enter %s password: ", prefix);
+    m_prompt.assfmt("Enter %s %s: ", prefix, kind_str());
   }
   else
   {
-    m_prompt.assign("Enter password: ");
+    m_prompt.assfmt("Enter %s: ", kind_str());
   }
 }
-
-void ndb_password_state::set_password(const char src[], size_t len)
+void ndb_password_state::reset()
 {
-  require(len <= MAX_PWD_LEN);
-  memcpy(m_password_buffer, src, len);
+  m_password = nullptr;
+  m_status = NO_PASSWORD;
+  m_option_count = 0;
+  m_password_length = 0;
+  clear_password();
+}
+
+static unsigned char unhex_char(unsigned char ch)
+{
+  if (ch <= '9') return ch - '0';
+  return (ch - 'A' + 10) & 0xF;
+}
+
+int ndb_password_state::set_key(const char src[], size_t len)
+{
+  // Note, src maybe m_password_buffer
+  require(is_key());
+  if (len % 2 == 1)
+  {
+    set_error(ERR_ODD_HEX_LENGTH);
+    return ERR_ODD_HEX_LENGTH;
+  }
+  if (len > 2 * MAX_KEY_LEN)
+  {
+    set_error(ERR_TOO_LONG);
+    return ERR_TOO_LONG;
+  }
+  for (size_t i = 0, j = 0; i < len; i++)
+  {
+    unsigned char ch = src[i];
+    if (!isxdigit(ch))
+    {
+      set_error(ERR_BAD_CHAR);
+      return ERR_BAD_CHAR;
+    }
+    if (i % 2 == 0)
+    {
+      m_password_buffer[j] = unhex_char(ch) << 4;
+    }
+    else
+    {
+      m_password_buffer[j] |= unhex_char(ch);
+      j++;
+    }
+  }
+  m_password_length = len / 2;
+  set_status(PENDING_PASSWORD);
+  return PENDING_PASSWORD;
+}
+
+int ndb_password_state::set_password(const char src[], size_t len)
+{
+  require(is_password());
+  if (len > MAX_PWD_LEN)
+  {
+    set_error(ERR_TOO_LONG);
+    return ERR_TOO_LONG;
+  }
+  if (src != m_password_buffer) memcpy(m_password_buffer, src, len);
   m_password_buffer[len] = 0;
   m_password_length = len;
+  set_status(PENDING_PASSWORD);
+  return PENDING_PASSWORD;
 }
 
 void ndb_password_state::clear_password()
@@ -335,72 +415,77 @@ void ndb_password_state::clear_password()
 
 int ndb_password_state::get_from_tty()
 {
-  int r = ndb_get_password_from_tty(m_prompt.c_str(),
-                                    m_password_buffer,
-                                    MAX_PWD_LEN);
+  int r = ndb_get_password_from_tty(
+        m_prompt.c_str(), m_password_buffer, sizeof(m_password_buffer));
   if (r >= 0)
   {
-    m_password_length = r;
-    m_password_buffer[r] = 0;
+    if (is_password())
+    {
+      return set_password(m_password_buffer, r);
+    }
+    else
+    {
+      return set_key(m_password_buffer, r);
+    }
   }
-  else switch (ndb_get_password_error(r))
+
+  clear_password();
+  switch (ndb_get_password_error(r))
   {
   default:
     abort();
     break;
   case ndb_get_password_error::system_error:
     set_error(ERR_BAD_TTY);
-    break;
+    return ERR_BAD_TTY;
   case ndb_get_password_error::too_long:
     set_error(ERR_TOO_LONG);
-    break;
+    return ERR_TOO_LONG;
   case ndb_get_password_error::bad_char:
     set_error(ERR_BAD_CHAR);
-    break;
+    return ERR_BAD_CHAR;
   case ndb_get_password_error::no_end:
     set_error(ERR_NO_END);
-    break;
-  }
-  if (r < 0)
-  {
-    clear_password();
+    return ERR_NO_END;
   }
   return r;
 }
 
 int ndb_password_state::get_from_stdin()
 {
-  int r = ndb_get_password_from_stdin(m_prompt.c_str(),
-                                      m_password_buffer,
-                                      MAX_PWD_LEN);
+  int r = ndb_get_password_from_stdin(
+        m_prompt.c_str(), m_password_buffer, sizeof(m_password_buffer));
   if (r >= 0)
   {
-    m_password_length = r;
-    m_password_buffer[r] = 0;
+    if (is_password())
+    {
+      return set_password(m_password_buffer, r);
+    }
+    else
+    {
+      return set_key(m_password_buffer, r);
+    }
   }
-  else switch (ndb_get_password_error(r))
+
+  clear_password();
+  switch (ndb_get_password_error(r))
   {
   default:
     abort();
     break;
   case ndb_get_password_error::system_error:
     set_error(ERR_BAD_STDIN);
-    break;
+    return ERR_BAD_STDIN;
   case ndb_get_password_error::too_long:
     set_error(ERR_TOO_LONG);
-    break;
+    return ERR_TOO_LONG;
   case ndb_get_password_error::bad_char:
     set_error(ERR_BAD_CHAR);
-    break;
+    return ERR_BAD_CHAR;
   case ndb_get_password_error::no_end:
     set_error(ERR_NO_END);
-    break;
+    return ERR_NO_END;
   }
-  if (r < 0)
-  {
-    clear_password();
-  }
-  return r;
 }
 
 BaseString ndb_password_state::get_error_message() const
@@ -409,43 +494,94 @@ BaseString ndb_password_state::get_error_message() const
   switch (m_status)
   {
   case NO_PASSWORD:
+  case PENDING_PASSWORD:
   case HAVE_PASSWORD:
     // No error
     break;
   case ERR_MULTIPLE_SOURCES:
-    msg.assfmt("Multiple options for same password used.  Select one of "
-               "--%s-password and --%s-password-from-stdin.",
-               m_prefix.c_str(), m_prefix.c_str());
+    msg.assfmt(
+        "Multiple options for same %s used.  Select one of "
+        "--%s-%s and --%s-%s-from-stdin.",
+        kind_str(),
+        m_prefix.c_str(),
+        kind_str(),
+        m_prefix.c_str(),
+        kind_str());
     break;
   case ERR_BAD_STDIN:
-    msg.assfmt("Failed to read %s password from stdin (errno %d).", m_prefix.c_str(), errno);
+    msg.assfmt("Failed to read %s %s from stdin (errno %d).",
+               m_prefix.c_str(),
+               kind_str(),
+               errno);
     break;
   case ERR_BAD_TTY:
-    msg.assfmt("Failed to read %s password from tty (errno %d).", m_prefix.c_str(), errno);
+    msg.assfmt("Failed to read %s %s from tty (errno %d).",
+               m_prefix.c_str(),
+               kind_str(),
+               errno);
     break;
   case ERR_BAD_CHAR:
-    msg.assfmt("%s password has some bad character.", m_prefix.c_str());
+    msg.assfmt("%s %s has some bad character.", m_prefix.c_str(), kind_str());
     break;
   case ERR_TOO_LONG:
-    msg.assfmt("%s password too long.", m_prefix.c_str());
+    msg.assfmt("%s %s too long.", m_prefix.c_str(), kind_str());
     break;
   case ERR_NO_END:
-    msg.assfmt("%s password has no end.", m_prefix.c_str());
+    msg.assfmt("%s %s has no end.", m_prefix.c_str(), kind_str());
+    break;
+  case ERR_ODD_HEX_LENGTH:
+    msg.assfmt(
+        "%s %s need even number of hex digits.", m_prefix.c_str(), kind_str());
     break;
   default:
-    msg.assfmt("Unknown error for %s password.", m_prefix.c_str());
+    msg.assfmt("Unknown error for %s %s.", m_prefix.c_str(), kind_str());
   }
   return msg;
 }
 
 void ndb_password_state::commit_password()
 {
-  require(m_status == NO_PASSWORD);
+  require(m_status == PENDING_PASSWORD);
   require(m_password_length <= MAX_PWD_LEN);
   m_password = m_password_buffer;
   m_status = HAVE_PASSWORD;
 }
 
+const ndb_password_state::byte *ndb_password_state::get_key() const
+{
+  require(is_key());
+  return reinterpret_cast<const byte *>(m_password);
+}
+
+size_t ndb_password_state::get_key_length() const
+{
+  require(is_key());
+  return m_password_length;
+}
+
+bool ndb_password_state::verify_option_name(const char opt_name[],
+                                            const char extra[]) const
+{
+  if (opt_name == nullptr) return false;
+  const char *part = opt_name;
+  size_t part_length = get_prefix_length();
+  if (strncmp(part, get_prefix(), part_length) != 0) return false;
+  part += part_length;
+  if (part[0] != '-') return false;
+  part++;
+  part_length = strlen(kind_str());
+  if (strncmp(part, kind_str(), part_length) != 0) return false;
+  part += part_length;
+  if (extra != nullptr && strcmp(part, extra) != 0) return false;
+  if (extra == nullptr && part[0] != '\0') return false;
+  return true;
+}
+
+void ndb_password_state::remove_option_usage()
+{
+  require(m_option_count > 0);
+  m_option_count--;
+}
 
 // ndb_password_option
 
@@ -458,12 +594,7 @@ bool ndb_password_option::get_option(int /*optid*/,
                                      const my_option *opt,
                                      char *arg)
 {
-  require(opt->name != nullptr &&
-          strncmp(opt->name,
-                  m_password_state.get_prefix(),
-                  m_password_state.get_prefix_length()) == 0 &&
-          strcmp(opt->name + m_password_state.get_prefix_length(),
-                 "-password") == 0);
+  require(m_password_state.verify_option_name(opt->name));
   if (m_password_source != ndb_password_state::PS_NONE)
   {
     erase();
@@ -483,7 +614,7 @@ bool ndb_password_option::get_option(int /*optid*/,
     return false;
   }
   size_t arg_len = strlen(arg);
-  if (arg_len <= ndb_password_state::MAX_PWD_LEN)
+  if (m_password_state.is_password())
   {
     m_password_state.set_password(arg, arg_len);
     m_password_source = ndb_password_state::PS_ARG;
@@ -492,7 +623,11 @@ bool ndb_password_option::get_option(int /*optid*/,
   }
   else
   {
-    m_password_state.set_error(ndb_password_state::ERR_TOO_LONG);
+    require(m_password_state.is_key());
+    m_password_state.set_key(arg, arg_len);
+    m_password_source = ndb_password_state::PS_ARG;
+    m_password_state.add_option_usage();
+    push_back();
   }
   NdbMem_SecureClear(arg, arg_len + 1);
   bool failed = (m_password_source != ndb_password_state::PS_ARG);
@@ -501,15 +636,12 @@ bool ndb_password_option::get_option(int /*optid*/,
 
 bool ndb_password_option::post_process()
 {
-  if (m_password_state.is_in_error())
-  {
-    return true;
-  }
   require(m_password_source != ndb_password_state::PS_NONE);
   if (m_password_state.m_option_count > 1)
   {
     m_password_state.set_error(ndb_password_state::ERR_MULTIPLE_SOURCES);
     m_password_state.clear_password();
+    require(m_password_state.is_in_error());
     return true;
   }
   if (m_password_source == ndb_password_state::PS_TTY)
@@ -518,11 +650,24 @@ bool ndb_password_option::post_process()
     if (r < 0)
     {
       m_password_state.clear_password();
+      require(m_password_state.is_in_error());
+      return true;
+    }
+  }
+  if (m_password_source != ndb_password_state::PS_NONE)
+  {
+    if (m_password_state.is_in_error())
+    {
       return true;
     }
   }
   m_password_state.commit_password();
   return false;
+}
+
+void ndb_password_option::reset()
+{
+  m_password_source = ndb_password_state::PS_NONE;
 }
 
 ndb_password_from_stdin_option::ndb_password_from_stdin_option(
@@ -536,12 +681,7 @@ bool ndb_password_from_stdin_option::get_option(int /*optid*/,
                                                 const my_option *opt,
                                                 char *arg)
 {
-  require(opt->name != nullptr &&
-          strncmp(opt->name,
-                  m_password_state.get_prefix(),
-                  m_password_state.get_prefix_length()) == 0 &&
-          strcmp(opt->name + m_password_state.get_prefix_length(),
-                 "-password-from-stdin") == 0);
+  require(m_password_state.verify_option_name(opt->name, "-from-stdin"));
   if (m_password_source != ndb_password_state::PS_NONE)
   {
     erase();
@@ -560,15 +700,12 @@ bool ndb_password_from_stdin_option::get_option(int /*optid*/,
 
 bool ndb_password_from_stdin_option::post_process()
 {
-  if (m_password_state.is_in_error())
-  {
-    return true;
-  }
   require(m_password_source != ndb_password_state::PS_NONE);
   if (m_password_state.m_option_count > 1)
   {
     m_password_state.set_error(ndb_password_state::ERR_MULTIPLE_SOURCES);
     m_password_state.clear_password();
+    require(m_password_state.is_in_error());
     return true;
   }
   if (m_password_source == ndb_password_state::PS_STDIN)
@@ -577,9 +714,23 @@ bool ndb_password_from_stdin_option::post_process()
     if (r < 0)
     {
       m_password_state.clear_password();
+      require(m_password_state.is_in_error());
+      return true;
+    }
+  }
+  if (m_password_source != ndb_password_state::PS_NONE)
+  {
+    if (m_password_state.is_in_error())
+    {
       return true;
     }
   }
   m_password_state.commit_password();
   return false;
+}
+
+void ndb_password_from_stdin_option::reset()
+{
+  opt_value  = false,
+  m_password_source = ndb_password_state::PS_NONE;
 }

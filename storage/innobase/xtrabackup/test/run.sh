@@ -523,7 +523,7 @@ function copy_worker_var_dir()
       if [ "$worker" = "$keep_worker_number" ]
       then
           local tname=`basename $tpath .sh`
-          local debug_dir=$(mktemp -d -p $TEST_BASEDIR/results/debug/ -t ${tname}.XXXXXX)
+          local debug_dir=$(mktemp -d  $TEST_BASEDIR/results/debug/${tname}.XXXXXX)
           cp -R ${worker_outfiles[$worker]} ${debug_dir}
           cp -R $TEST_BASEDIR/var/w${worker} ${debug_dir}
       fi

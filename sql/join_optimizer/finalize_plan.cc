@@ -309,12 +309,9 @@ static void UpdateReferencesToMaterializedItems(
 
     // Set up a Filesort object for this sort.
     Mem_root_array<TABLE *> tables = CollectTables(thd, path);
-    const ha_rows limit_rows = path->sort().use_limit
-                                   ? join->query_expression()->select_limit_cnt
-                                   : HA_POS_ERROR;
     path->sort().filesort = new (thd->mem_root)
         Filesort(thd, std::move(tables),
-                 /*keep_buffers=*/false, path->sort().order, limit_rows,
+                 /*keep_buffers=*/false, path->sort().order, path->sort().limit,
                  path->sort().remove_duplicates, path->sort().force_sort_rowids,
                  path->sort().unwrap_rollup);
     join->filesorts_to_cleanup.push_back(path->sort().filesort);
@@ -385,6 +382,7 @@ static void DelayedCreateTemporaryTable(THD *thd, Query_block *query_block,
         path->materialize().param->table =
             path->materialize().table_path->table_scan().table = table;
       }
+
       EstimateMaterializeCost(thd, path);
     }
     *last_window_temp_table = nullptr;
@@ -532,11 +530,19 @@ static Item *AddCachesAroundConstantConditions(Item *item) {
 bool FinalizePlanForQueryBlock(THD *thd, Query_block *query_block) {
   assert(query_block->join->needs_finalize);
 
-  Query_block *old_query_block = thd->lex->current_query_block();
-  thd->lex->set_current_query_block(query_block);
-
   AccessPath *const root_path = query_block->join->root_access_path();
   assert(root_path != nullptr);
+
+  // If the query is offloaded to an external executor, we don't need to create
+  // the internal temporary tables or filesort objects, or rewrite the Item tree
+  // to point into them.
+  if (!IteratorsAreNeeded(thd, root_path)) {
+    query_block->join->needs_finalize = false;
+    return false;
+  }
+
+  Query_block *old_query_block = thd->lex->current_query_block();
+  thd->lex->set_current_query_block(query_block);
 
   // If we have a sort node (e.g. for GROUP BY) with a materialization under it,
   // we need to make sure that what we sort on is included in the

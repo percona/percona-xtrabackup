@@ -47,7 +47,7 @@ SERVICE_TYPE_NO_CONST(pfs_plugin_table_v1) * pfs_table{};
 SERVICE_TYPE_NO_CONST(pfs_plugin_column_tiny_v1) * pfs_col_tinyint{};
 SERVICE_TYPE_NO_CONST(pfs_plugin_column_integer_v1) * pfs_col_integer{};
 SERVICE_TYPE_NO_CONST(pfs_plugin_column_bigint_v1) * pfs_col_bigint{};
-SERVICE_TYPE_NO_CONST(pfs_plugin_column_string_v1) * pfs_col_string{};
+SERVICE_TYPE_NO_CONST(pfs_plugin_column_string_v2) * pfs_col_string{};
 
 static bool pfs_initialized{false};
 
@@ -65,7 +65,7 @@ static constexpr const char *SVC_PFS_COLUMN_BIGINT =
     "pfs_plugin_column_bigint_v1";
 
 static constexpr const char *SVC_PFS_COLUMN_STRING =
-    "pfs_plugin_column_string_v1";
+    "pfs_plugin_column_string_v2";
 
 /** PFS table with metadata of redo log files. */
 class Log_files_pfs_table {
@@ -185,8 +185,8 @@ class Log_files_pfs_table {
         const auto file_name =
             log_file_path(log_sys->m_files_ctx, m_rows_array[row_index].m_id);
 
-        pfs_col_string->set_varchar_utf8(field,
-                                         is_null ? nullptr : file_name.c_str());
+        pfs_col_string->set_varchar_utf8mb4(
+            field, is_null ? nullptr : file_name.c_str());
         break;
       }
       case 2: { /* START_LSN */

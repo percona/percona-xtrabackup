@@ -163,7 +163,6 @@ static mysql_service_status_t keyring_kmip_init() {
 
   g_component_callbacks.reset(
       new keyring_common::service_implementation::Component_callbacks());
-  g_keyring_kmip_inited = true;
 
   return false;
 }

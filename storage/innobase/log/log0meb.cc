@@ -1227,7 +1227,7 @@ static bool terminate_consumer(bool rapid) {
       consumer is still active. It may be waiting on the queue.
 
       If this call is from session end, then an error message is recorded
-      and the comsumer sees it after dequeueing a block. It will skip all
+      and the consumer sees it after dequeueing a block. It will skip all
       blocks, but still terminate on the final block only.
     */
     mutex_exit(&redo_log_archive_admin_mutex);
@@ -1725,7 +1725,6 @@ static bool redo_log_consumer_advance(innodb_session_t *session, lsn_t lsn) {
   }
 
   log_meb_consumer->set_consumed_lsn(lsn);
-
   return false;
 }
 

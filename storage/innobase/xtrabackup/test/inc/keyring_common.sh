@@ -81,6 +81,9 @@ ALTER INSTANCE ROTATE INNODB MASTER KEY;
 INSERT INTO t1 SELECT * FROM t1;
 EOF
 
+  # wait for InnoDB to flush all dirty pages
+  innodb_wait_for_flush_all
+
   $MYSQL $MYSQL_ARGS -e 'START TRANSACTION; INSERT INTO t1 SELECT * FROM t1; SELECT SLEEP(200000);' test &
   uncommitted_id=$!
 

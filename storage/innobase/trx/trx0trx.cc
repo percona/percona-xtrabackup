@@ -852,7 +852,7 @@ static trx_t *trx_resurrect_insert(
   start time here.*/
   if (trx->state.load(std::memory_order_relaxed) == TRX_STATE_ACTIVE ||
       trx->state.load(std::memory_order_relaxed) == TRX_STATE_PREPARED) {
-    trx->start_time.store(std::chrono::system_clock::now(),
+    trx->start_time.store(std::chrono::system_clock::from_time_t(time(nullptr)),
                           std::memory_order_relaxed);
   }
 
@@ -962,7 +962,7 @@ static void trx_resurrect_update(
   start time here.*/
   if (trx->state.load(std::memory_order_relaxed) == TRX_STATE_ACTIVE ||
       trx->state.load(std::memory_order_relaxed) == TRX_STATE_PREPARED) {
-    trx->start_time.store(std::chrono::system_clock::now(),
+    trx->start_time.store(std::chrono::system_clock::from_time_t(time(nullptr)),
                           std::memory_order_relaxed);
   }
 
@@ -1325,7 +1325,7 @@ static void trx_start_low(
       trx->ddl_operation = thd_is_dd_update_stmt(trx->mysql_thd);
     }
   } else {
-    trx->start_time.store(std::chrono::system_clock::now(),
+    trx->start_time.store(std::chrono::system_clock::from_time_t(time(nullptr)),
                           std::memory_order_relaxed);
   }
 
@@ -1772,7 +1772,7 @@ static void trx_update_mod_tables_timestamp(trx_t *trx) /*!< in: transaction */
 
   /* consider using trx->start_time if calling time() is too
   expensive here */
-  const auto now = std::chrono::system_clock::now();
+  const auto now = std::chrono::system_clock::from_time_t(time(nullptr));
 
   trx_mod_tables_t::const_iterator end = trx->mod_tables.end();
 
@@ -3140,7 +3140,7 @@ static bool get_table_name_info(st_handler_tablename *table,
 /**
   Get prepared transaction info from InnoDB data structure.
 
-  @param[in,out]  txn_list  Handler layer tansaction list.
+  @param[in,out]  txn_list  Handler layer transaction list.
   @param[in]      trx       Innodb transaction info.
   @param[in]      mem_root  Mem_root for space allocation.
 
@@ -3410,7 +3410,7 @@ void trx_set_rw_mode(trx_t *trx) /*!< in/out: transaction that is RW */
   In this process it has acquired trx_sys->mutex as it plan to
   move trx from ro list to rw list. If in future, some other thread
   looks at this trx object while it is being promoted then ensure
-  that both threads are synced by acquring trx->mutex to avoid decision
+  that both threads are synced by acquiring trx->mutex to avoid decision
   based on in-consistent view formed during promotion. */
 
   trx_assign_rseg_durable(trx);

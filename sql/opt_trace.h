@@ -655,10 +655,7 @@ class Opt_trace_struct {
      @param  select_number  number of query_block
   */
   Opt_trace_struct &add_select_number(uint select_number) {
-    return unlikely(select_number >= INT_MAX) ?
-                                              // Clearer than any huge number.
-               add_alnum("select#", "fake")
-                                              : add("select#", select_number);
+    return add("select#", select_number);
   }
   /**
      Add a value to the structure.

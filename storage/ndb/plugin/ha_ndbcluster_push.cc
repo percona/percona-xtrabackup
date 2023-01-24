@@ -188,7 +188,7 @@ bool ndb_pushed_join::match_definition(int type,  // NdbQueryOperationDef::Type,
   }
 
   /**
-   * There may be referrences to Field values from tables outside the scope of
+   * There may be references to Field values from tables outside the scope of
    * our pushed join which are supplied as paramValues().
    * If any of these are NULL values, join can't be pushed.
    *
@@ -238,7 +238,7 @@ static bool is_endian_sensible_type(const Field *field) {
     case MYSQL_TYPE_TINY:
     // Year is also a 'tiny', single byte
     case MYSQL_TYPE_YEAR:
-    // Odly enough, The int24 is *not* stored in an endian sensible format
+    // Oddly enough, The int24 is *not* stored in an endian sensible format
     case MYSQL_TYPE_INT24:
     // The (deprecated) Time type was handled as an int24.
     case MYSQL_TYPE_TIME:
@@ -265,7 +265,7 @@ NdbQuery *ndb_pushed_join::make_query_instance(
   const NdbQueryParamValue *paramValues = keyFieldParams;
 
   /**
-   * There may be referrences to Field values from tables outside the scope of
+   * There may be references to Field values from tables outside the scope of
    * our pushed join: These are expected to be supplied as paramValues()
    * after the keyFieldParams[].
    */
@@ -279,7 +279,7 @@ NdbQuery *ndb_pushed_join::make_query_instance(
       new (extendedParams + i) NdbQueryParamValue(keyFieldParams[i]);
     }
 
-    // There may be referrences to Field values from tables outside the scope of
+    // There may be references to Field values from tables outside the scope of
     // our pushed join: These are expected to be supplied as paramValues()
     for (uint i = 0; i < outer_fields; i++) {
       Field *field = m_referred_fields[i];
@@ -430,7 +430,7 @@ uint ndb_pushed_builder_ctx::get_table_no(const Item *key_item) const {
 }
 
 /**
- * Get a ndb_table_access_map containg all tables [first..last]
+ * Get a ndb_table_access_map containing all tables [first..last]
  */
 static ndb_table_access_map get_tables_in_range(uint first, uint last) {
   ndb_table_access_map table_map;
@@ -464,6 +464,38 @@ ndb_table_access_map ndb_pushed_builder_ctx::get_table_map(
 }
 
 /**
+ *  Find the ancestor tables required on nest level
+ */
+ndb_table_access_map ndb_pushed_builder_ctx::required_ancestors(
+    const pushed_tables *table) const {
+  ndb_table_access_map ancestors;
+
+  for (uint i = table->m_first_inner; i <= table->m_last_inner; i++) {
+    if (m_join_scope.contain(i)) {
+      ancestors.add(m_tables[i].m_ancestors);
+    }
+  }
+  ancestors.intersect(m_tables[table->m_first_inner].m_ancestor_nests);
+  return ancestors;
+}
+
+/**
+ * Get all parent tables possibly referable from the key_parent[].
+ * Note that when 'equality sets' are applied by the optimizer,
+ * each key reference may have multiple alternative parents.
+ */
+ndb_table_access_map ndb_pushed_builder_ctx::get_all_key_parents(
+    uint tab_no) const {
+  ndb_table_access_map all_key_parents;
+  const AQP::Table_access *table = m_plan.get_table_access(tab_no);
+  for (uint key_part_no = 0; key_part_no < table->get_no_of_key_fields();
+       key_part_no++) {
+    all_key_parents.add(m_tables[tab_no].m_key_parents[key_part_no]);
+  }
+  return all_key_parents;
+}
+
+/**
  * Main entry point to build a pushed join having 'join_root'
  * as it first operation.
  *
@@ -479,7 +511,7 @@ ndb_table_access_map ndb_pushed_builder_ctx::get_table_map(
  *  2) Determine the parent to be used among the set of possible
  *     parents. This is decided based on simple heuristic where
  *     the goal is to employ filters as soon as possible, and utilize
- *     the parallelism of the SPJ block whenever considdered optimal.
+ *     the parallelism of the SPJ block whenever considered optimal.
  *
  *  3) Build the pushed query.
  *
@@ -620,7 +652,7 @@ bool ndb_pushed_builder_ctx::is_pushable_with_root() {
    * join query starting with root.
    * As part of analyzing the outer join and semi join structure,
    * we use the join- and semi-join-nest structures set up by the optimizer,
-   * available trough the Abstract Query Plan (AQP) interface.
+   * available through the Abstract Query Plan (AQP) interface.
    * See further documentation of how the nest structure is
    * represented in m_tables[] in ha_ndbcluster_push.h.
    */
@@ -805,7 +837,7 @@ bool ndb_pushed_builder_ctx::is_pushable_with_root() {
  *     a single parent common to all key fields in the 'REF'
  *
  * In order to increase pushability we use the COND_EQUAL sets
- * to resolve cases (2) above) where multiple parents are refered.
+ * to resolve cases (2) above) where multiple parents are referred.
  * If needed to make a child pushable, we replace parent
  * references with another from the COND_EQUAL sets which make
  * it pushable .
@@ -903,10 +935,13 @@ bool ndb_pushed_builder_ctx::is_pushable_as_child(AQP::Table_access *table) {
              ("Table:%d, Checking %d REF keys", tab_no, no_of_key_fields));
 
   /**
-   * Calculate the set of possible parents for each non-const_item KEY_PART
-   * from the table. In addition to the parent table directly referred
-   * by the KEY_PART, any tables in *same join nest*, available by usage of
-   * equality sets are also added as a possible parent.
+   * Calculate the set of all-possible-parents (all_parents)for each
+   * non-const_item KEY_PART from the table. In addition to the parent table
+   * directly referred by the KEY_PART, any tables in *same join nest*,
+   * available by usage of equality sets are also included as 'parents'
+   *
+   * The subset 'depend_parents' is also calculated as the set of upper most
+   * key_parents needed to be available as ancestors of this table.
    *
    * The set of 'key_parents[]' are saved for later usage by ::optimize_*(),
    * which will select the actual parent to be used for each table.
@@ -915,6 +950,7 @@ bool ndb_pushed_builder_ctx::is_pushable_as_child(AQP::Table_access *table) {
    * This is used for checking whether table is pushable.
    */
   ndb_table_access_map all_parents;
+  ndb_table_access_map depend_parents;
   ndb_table_access_map *key_parents = new (m_thd_ndb->get_thd()->mem_root)
       ndb_table_access_map[no_of_key_fields];
   m_tables[tab_no].m_key_parents = key_parents;
@@ -943,6 +979,20 @@ bool ndb_pushed_builder_ctx::is_pushable_as_child(AQP::Table_access *table) {
       // Save the found key_parents[], aggregate total set of parents referable.
       key_parents[key_part_no] = field_parents;
       all_parents.add(field_parents);
+
+      if (!field_parents.is_clear_all()) {  // Key refers a parent field
+#ifndef NDEBUG
+        // Verify requirement that all field_parents are from within same nest
+        {
+          const uint last = field_parents.last_table(tab_no);
+          ndb_table_access_map nest(m_tables[last].m_inner_nest);
+          nest.add(last);
+          assert(nest.contain(field_parents));
+        }
+#endif
+        const uint first = field_parents.first_table();
+        depend_parents.add(first);
+      }
     } else {
       EXPLAIN_NO_PUSH(
           "Can't push table '%s' as child, "
@@ -971,7 +1021,6 @@ bool ndb_pushed_builder_ctx::is_pushable_as_child(AQP::Table_access *table) {
    * evaluate later. The existence of such conditions may effect the join
    * pushability of tables, so we need to try to push conditions first.
    */
-  ndb_table_access_map parents_of_condition;
   const Item *pending_cond = table->get_condition();
   if (pending_cond != nullptr &&
       m_thd_ndb->get_thd()->optimizer_switch_flag(
@@ -980,20 +1029,67 @@ bool ndb_pushed_builder_ctx::is_pushable_as_child(AQP::Table_access *table) {
      * Calculate full set of possible ancestors for this table in
      * the query tree. Note that they do not become mandatory ancestors
      * before being added to the m_ancestors bitmap (Further below)
+     *
+     * 1) All possible key parents, previously calculated as 'all_parents',
+     *    as well as all nest-level required_ancestors() are initial parent
+     *    candidates. (Note that no table-level m_ancestors are set yet)
+     *
+     * 2) For all tables being a 'possible_ancestor' of this table:
+     *    a) Add the key_parents[] referred from such tables as well.
+     *    b) Add any enforced 'm_ancestors'.
+     *
+     * 3) Add tables requiring existing ancestors as its own ancestors:
+     *    For all preceeding table *not* yet being a 'possible_ancestor', if:
+     *    a) Table is a member of the ancestor nests (I.e. the set of nests
+     *       already being referred) ): Do not add new nest dependencies
+     *    AND
+     *    b) Table access is a 'single-row-lookup' ): Else we get a
+     *       multiplicative access-fanout on all tables getting it as an
+     *       ancestor.
+     *
+     *    Then we can add this table as a possible ancestor, if EITHER:
+     *    c) All referred key_parents[] are possible_ancestors.
+     *    d) All required_ancestors are possible_ancestors.
+     *    -> I.e. Table will always be joined with these ancestors, still
+     *       providing the existing possible_ancestor as grand-ancestors.
      */
-    ndb_table_access_map all_ancestors(all_parents);
-    for (uint i = tab_no - 1; i > root_no; i--) {
-      if (all_ancestors.contain(i)) {
-        AQP::Table_access *ancestor = m_plan.get_table_access(i);
 
-        for (uint key_part_no = 0;
-             key_part_no < ancestor->get_no_of_key_fields(); key_part_no++) {
-          all_ancestors.add(m_tables[i].m_key_parents[key_part_no]);
-          assert(m_join_scope.contain(all_ancestors));
-        }
-        all_ancestors.add(m_tables[i].m_ancestors);  // Add enforced ancestors
+    // 1) Start with all parent candidates for this 'table'
+    ndb_table_access_map possible_ancestors(all_parents);
+    possible_ancestors.add(required_ancestors(&m_tables[tab_no]));
+
+    // 2) For all possible_ancestor tables, add its ancestors as well:
+    for (uint i = tab_no - 1; i > root_no; i--) {
+      if (possible_ancestors.contain(i)) {
+        const ndb_table_access_map all_key_parents(get_all_key_parents(i));
+        possible_ancestors.add(all_key_parents);          // 2a)
+        possible_ancestors.add(m_tables[i].m_ancestors);  // 2b)
       }
     }
+
+    // 3) Add tables requiring existing ancestors as its own ancestors:
+    const ndb_table_access_map ancestor_nests(
+        m_tables[tab_no].ancestor_nests());
+    for (uint i = root_no + 1; i < tab_no; i++) {
+      if (m_join_scope.contain(i) &&         // Table is pushed
+          !possible_ancestors.contain(i) &&  // Not already an ancestor
+          ancestor_nests.contain(i) &&       // 3a) In ancestor-nests of table
+          !m_scan_operations.contain(i)) {   // 3b) Is a single-row access type
+
+        // 3c) All referred key_parents[] are possible_ancestors.
+        const ndb_table_access_map all_key_parents(get_all_key_parents(i));
+        if (possible_ancestors.contain(all_key_parents)) {
+          possible_ancestors.add(i);
+        }
+        // 3d) All required_ancestors are possible_ancestors.
+        if (!m_tables[i].m_ancestors.is_clear_all() &&
+            possible_ancestors.contain(m_tables[i].m_ancestors)) {
+          possible_ancestors.add(i);
+        }
+      }
+    }
+    assert(m_join_scope.contain(possible_ancestors));
+
     /**
      * Calculate the set of tables where the referred Field values may be
      * handled as either constant or parameter values from a pushed condition.
@@ -1033,7 +1129,7 @@ bool ndb_pushed_builder_ctx::is_pushable_as_child(AQP::Table_access *table) {
     table_map param_expr_tables(0);
     if (ndbd_support_param_cmp(m_thd_ndb->ndb->getMinDbNodeVersion())) {
       for (uint i = root_no; i < tab_no; i++) {
-        if (all_ancestors.contain(i)) {
+        if (possible_ancestors.contain(i)) {
           const TABLE *table = m_plan.get_table_access(i)->get_table();
           param_expr_tables |= table->pos_in_table_list->map();
         }
@@ -1057,9 +1153,11 @@ bool ndb_pushed_builder_ctx::is_pushable_as_child(AQP::Table_access *table) {
       /* Force an ancestor dependency on tables referred as a parameter. */
       table_map used_tables(handler->m_cond.m_pushed_cond->used_tables());
       used_tables &= param_expr_tables;
-      parents_of_condition = get_table_map(used_tables);
+      const ndb_table_access_map parents_of_condition(
+          get_table_map(used_tables));
       m_tables[tab_no].m_ancestors.add(parents_of_condition);
       all_parents.add(parents_of_condition);
+      depend_parents.add(parents_of_condition);
     }
   }
   if (pending_cond != nullptr) {
@@ -1072,90 +1170,38 @@ bool ndb_pushed_builder_ctx::is_pushable_as_child(AQP::Table_access *table) {
     }
   }
 
-  const ndb_table_access_map inner_nest(m_tables[tab_no].m_inner_nest);
-  if (!inner_nest.contain(all_parents)) {  // Is not a plain inner-join
-
-    ndb_table_access_map depend_parents;
-
-    /**
-     * Some key_parents[] could have dependencies outside of embedding_nests.
-     * Calculate the actual nest dependencies and check join pushability.
-     */
-    for (uint i = 0; i < no_of_key_fields; i++) {
-      if (!key_parents[i].is_clear_all()) {  // Key refers a parent field
-#ifndef NDEBUG
-        // Verify requirement that all field_parents are from within same nest
-        {
-          const uint last = key_parents[i].last_table(tab_no);
-          ndb_table_access_map nest(m_tables[last].m_inner_nest);
-          nest.add(last);
-          assert(nest.contain(key_parents[i]));
-        }
-#endif
-        const uint first = key_parents[i].first_table();
-        depend_parents.add(first);
-      }
-    }
-
-    /* We will also depend on any parents referred from the pushed conditions.
-     */
-    depend_parents.add(parents_of_condition);
-
-    /**
-     * In the (unlikely) case of parent references to tables not
-     * in our embedding join nests at all, we have to make sure that we do
-     * not cause extra dependencies to be added between the referred join nests.
-     */
-    const ndb_table_access_map embedding_nests(
-        m_tables[tab_no].embedding_nests());
-    if (unlikely(!embedding_nests.contain(depend_parents))) {
-      if (!is_outer_nests_referable(table, depend_parents)) {
-        return false;
-      }
-    }
-
-    /**
-     * Calculate contribution to the 'nest dependency', which is the ancestor
-     * dependencies to tables not being part of this inner_nest themself.
-     * These ancestor dependencies are set as the required 'm_ancestors'
-     * on the 'first_inner' table in each nest, and later used to enforce
-     * ::optimize_query_plan() to use these tables as (grand-)parents
-     */
-    const uint first_inner = m_tables[tab_no].m_first_inner;
-    // Only interested in the upper-nest-level dependencies:
-    depend_parents.intersect(m_tables[first_inner].embedding_nests());
-
-    // Can these outer parent dependencies co-exists with existing
-    // ancestor dependencies?
-    if (!depend_parents.is_clear_all() &&
-        !m_tables[first_inner].m_ancestors.is_clear_all()) {
-      ndb_table_access_map nest_dependencies(depend_parents);
-      nest_dependencies.add(m_tables[first_inner].m_ancestors);
-
-      uint ancestor_no = first_inner;
-      while (!embedding_nests.contain(nest_dependencies)) {
-        ancestor_no = nest_dependencies.last_table(ancestor_no - 1);
-        nest_dependencies.clear_bit(ancestor_no);
-
-        // If remaining dependencies are unavailable from parent, we can't push
-        if (!m_tables[ancestor_no].embedding_nests().contain(
-                nest_dependencies)) {
-          const AQP::Table_access *const parent =
-              m_plan.get_table_access(ancestor_no);
-          EXPLAIN_NO_PUSH(
-              "Can't push table '%s' as child of '%s', "
-              "as it would make the parent table '%s' "
-              "depend on table(s) outside of its join-nest",
-              table->get_table()->alias, m_join_root->get_table()->alias,
-              parent->get_table()->alias);
-          return false;
-        }
-      }
-    }
-    m_tables[first_inner].m_ancestors.add(depend_parents);
-    assert(!m_tables[first_inner].m_ancestors.contain(first_inner));
-    assert(!m_tables[first_inner].m_ancestors.is_overlapping(inner_nest));
+  /**
+   * Set up the join-nest ancestor dependencies required by the set of
+   * 'depend_tables' refered from this table. That is: the 'real'
+   * outer-join nest dependencies, represented in m_ancestor_nests.
+   */
+  if (!set_ancestor_nests(table, depend_parents)) {
+    return false;
   }
+
+  /**
+   * Calculate contribution to the required_ancestors() dependencies,
+   * from this table. Each 'required_ancestor'-table need to be an
+   * ancestor table when constructing the SPJ query-tree.
+   * These ancestor dependencies are set as the required 'm_ancestors'
+   * on each table, and the nest-level ancestors are provided
+   * by required_ancestors(), and later used to enforce
+   * ::optimize_query_plan() to use these tables as (grand-)parents
+   */
+  const uint first_inner = m_tables[tab_no].m_first_inner;
+  // Only interested in the upper-nest-level dependencies:
+  depend_parents.intersect(m_tables[first_inner].ancestor_nests());
+  m_tables[tab_no].m_ancestors.add(depend_parents);
+
+  // Our ancestor_nests need to cover required parents and ancestors
+  assert(m_tables[tab_no].ancestor_nests().contain(depend_parents));
+  assert(m_tables[tab_no].ancestor_nests().contain(
+      required_ancestors(&m_tables[tab_no])));
+
+  // required_ancestors only cares about tables outside of inner_nest
+  assert(!required_ancestors(&m_tables[tab_no]).contain(first_inner));
+  assert(!required_ancestors(&m_tables[tab_no])
+              .is_overlapping(m_tables[tab_no].m_inner_nest));
 
   m_join_scope.add(tab_no);
   return true;
@@ -1253,7 +1299,7 @@ bool ndb_pushed_builder_ctx::is_pushable_as_child(AQP::Table_access *table) {
  *      extra NULL extended rows.
  *
  * Note that ::is_pushable_as_child_scan() can only check these conditions for
- * tables preceeding it in the query plan. ::validate_join_nest() will later
+ * tables preceding it in the query plan. ::validate_join_nest() will later
  * do similar checks when we have completed a nest level. The later check
  * would be sufficient, however we prefer to 'fail fast'.
  *
@@ -1279,16 +1325,27 @@ bool ndb_pushed_builder_ctx::is_pushable_within_nest(
   }
 
   if (unlikely(m_has_pending_cond.is_overlapping(nest))) {  // 1b,1c:
-    // Other (lookup tables) withing nest has unpushed condition
+    // Other (lookup tables) within nest has unpushed condition
     ndb_table_access_map pending_conditions(m_has_pending_cond);
     pending_conditions.intersect(nest);
     // Report the closest violating table, may be multiple.
     const uint violating = pending_conditions.last_table(tab_no);
-    EXPLAIN_NO_PUSH(
-        "Can't push %s joined table '%s' as child of '%s', "
-        "condition on its dependant table '%s' is not pushed down",
-        nest_type, table->get_table()->alias, m_join_root->get_table()->alias,
-        m_plan.get_table_access(violating)->get_table()->alias);
+    const TABLE *violating_table =
+        m_plan.get_table_access(violating)->get_table();
+    if (violating_table != nullptr) {
+      EXPLAIN_NO_PUSH(
+          "Can't push %s joined table '%s' as child of '%s', "
+          "condition on its dependant table '%s' is not pushed down",
+          nest_type, table->get_table()->alias, m_join_root->get_table()->alias,
+          violating_table->alias);
+    } else {
+      // The violating table was optimized away, e.g. 'zero rows'
+      EXPLAIN_NO_PUSH(
+          "Can't push %s joined table '%s' as child of '%s', "
+          "a condition on a dependant table is not pushed down",
+          nest_type, table->get_table()->alias,
+          m_join_root->get_table()->alias);
+    }
     return false;
   }
 
@@ -1311,12 +1368,24 @@ bool ndb_pushed_builder_ctx::is_pushable_within_nest(
     unpushed_tables.subtract(m_join_scope);
     // Report the closest unpushed table, may be multiple.
     const uint violating = unpushed_tables.last_table(tab_no);
-    EXPLAIN_NO_PUSH(
-        "Can't push %s joined table '%s' as child of '%s', "
-        "table '%s' in its dependant join-nest(s) is not part of the "
-        "pushed join",
-        nest_type, table->get_table()->alias, m_join_root->get_table()->alias,
-        m_plan.get_table_access(violating)->get_table()->alias);
+    const TABLE *violating_table =
+        m_plan.get_table_access(violating)->get_table();
+    if (violating_table != nullptr) {
+      EXPLAIN_NO_PUSH(
+          "Can't push %s joined table '%s' as child of '%s', "
+          "table '%s' in its dependant join-nest(s) is not part of the "
+          "pushed join",
+          nest_type, table->get_table()->alias, m_join_root->get_table()->alias,
+          violating_table->alias);
+    } else {
+      // The violating table was optimized away, e.g. 'zero rows'
+      EXPLAIN_NO_PUSH(
+          "Can't push %s joined table '%s' as child of '%s', "
+          "a table in its dependant join-nest(s) is not part of the "
+          "pushed join",
+          nest_type, table->get_table()->alias,
+          m_join_root->get_table()->alias);
+    }
     return false;
   }
   return true;
@@ -1393,7 +1462,7 @@ bool ndb_pushed_builder_ctx::is_pushable_as_child_scan(
        * Note that the check below is a bit too strict, we check:
        *  'Are there any unpushed tables outside of our embedding nests',
        *  instead of 'Do we refer tables from nests outside embedding nests,
-       *  having unpushed tables'. As we alread know 'all_parents' are not
+       *  having unpushed tables'. As we already know 'all_parents' are not
        *  contained in 'embedding'.
        * The outcome should be the same except if we have parent refs to
        * multiple non-embedded nests. (very unlikely)
@@ -1463,12 +1532,15 @@ bool ndb_pushed_builder_ctx::is_pushable_as_child_scan(
 
 /***************************************************************
  *
- * is_outer_nests_referable()
+ * set_ancestor_nests()
  *
- * In the (unlikely) case of parent references to tables not
- * in our embedding join nests, we have to make sure that we do
- * not cause extra dependencies to be added between the join nests.
- * (Which would have changed the join semantic specified in query)
+ * Check the ancestor dependencies required by a set of 'depend_parents'
+ * tables for not conflicting with previous ancestor dependencies already
+ * required. If not conflicting, set the ancestors required by this
+ * table.
+ *
+ * Note that if we unintentionally add equality dependencies between
+ * join nests, we could changed the join semantic specified in query
  *
  * If this table has multiple dependencies, it can only be added to
  * the set of pushed tables if the dependent tables themself
@@ -1486,72 +1558,66 @@ bool ndb_pushed_builder_ctx::is_pushable_as_child_scan(
  *
  * Algorithm:
  * 1. Calculate the minimum set of 'dependencies' for the
- *    key_parents[].
+ *    key_parents[]. (Supplied as argument)
  *
  * 2. Check the 'dependencies' set, starting at the last (the
  *    table closest to this table). Check that it either already
  *    exists a dependency between each such table and the remaining
- *    dependant tables, or that we are allowed to add the required
+ *    dependent tables, or that we are allowed to add the required
  *    dependencies.
  ***************************************************************/
-bool ndb_pushed_builder_ctx::is_outer_nests_referable(
+bool ndb_pushed_builder_ctx::set_ancestor_nests(
     const AQP::Table_access *table, const ndb_table_access_map depend_parents) {
   DBUG_TRACE;
 
   const uint tab_no = table->get_access_no();
   const uint first_inner = m_tables[tab_no].m_first_inner;
-  // Check that embedding nests does not already contain dependent parents
-  assert(!m_tables[tab_no].embedding_nests().contain(depend_parents));
 
   /**
    * Include nest-level ancestor dependencies already enforced.
    */
   ndb_table_access_map dependencies(depend_parents);
-  dependencies.add(m_tables[first_inner].m_ancestors);
+  dependencies.add(required_ancestors(&m_tables[tab_no]));
 
   /**
    * Check that all parents we depend on are available from within the
-   * embedding nests. This include upper_nests previously extended
+   * ancestor_nests. This include m_ancestor_nests previously extended
    * with previous references to tables not in the direct line of
-   * upper nests. Which then become a part of later embedded_nests being
+   * upper nests. Which then become a part of later ancestor_nests being
    * referrable.
    */
-  {
-    const uint parent_no = dependencies.last_table(tab_no - 1);
-    dependencies.clear_bit(parent_no);
+  const uint parent_no = dependencies.last_table(tab_no - 1);
+  dependencies.clear_bit(parent_no);
 
-    // If remaining dependencies are unavailable from parent, we can't push
-    if (!m_tables[parent_no].embedding_nests().contain(dependencies)) {
-      const AQP::Table_access *const parent =
-          m_plan.get_table_access(parent_no);
-      EXPLAIN_NO_PUSH(
-          "Can't push table '%s' as child of '%s', "
-          "as it would make the parent table '%s' "
-          "depend on table(s) outside of its join-nest",
-          table->get_table()->alias, m_join_root->get_table()->alias,
-          parent->get_table()->alias);
-      return false;
-    }
+  // If remaining dependencies are unavailable from parent, we can't push
+  if (!m_tables[parent_no].ancestor_nests().contain(dependencies)) {
+    const AQP::Table_access *const parent = m_plan.get_table_access(parent_no);
+    EXPLAIN_NO_PUSH(
+        "Can't push table '%s' as child of '%s', "
+        "as it would make the parent table '%s' "
+        "depend on table(s) outside of its join-nest",
+        table->get_table()->alias, m_join_root->get_table()->alias,
+        parent->get_table()->alias);
+    return false;
+  }
 
+  /**
+   * Allow all tables in the referred parents nest to become
+   * part of the set of later referrable ancestor_nests.
+   */
+  if (parent_no >= first_inner) {  // Inner joined with parent
+    m_tables[tab_no].m_ancestor_nests = m_tables[first_inner].m_ancestor_nests;
+  } else {  // Outer joins with parent
     /**
-     * Allow all tables in the referred parents nest to become
-     * part of the set of later referrable upper_nests.
+     * Referring an outer-joined parent: We verified above above that all
+     * remaining depend_tables are available as 'ancestors' of the
+     * selected parent - which also becomes ancestors of this table,
+     * including all tables in the parent inner-nest.
      */
-    if (unlikely(parent_no < first_inner)) {
-      // referred nest is not embedded within current inner_nest
-      assert(m_tables[parent_no].m_last_inner < tab_no);
-
-      /**
-       * Referring the outer-joined parent, introduce the requirement
-       * that all our upper_nest table either has to be in the same
-       * inner_nest as the parent, or be in the parents upper_nest.
-       * Rebuild our upper_nests to reflect this.
-       */
-      ndb_table_access_map new_upper_nests(m_tables[parent_no].m_upper_nests);
-      new_upper_nests.add(full_inner_nest(parent_no, tab_no));
-      m_tables[first_inner].m_upper_nests = new_upper_nests;
-      m_tables[tab_no].m_upper_nests = new_upper_nests;
-    }
+    ndb_table_access_map ancestor_nests(m_tables[parent_no].m_ancestor_nests);
+    ancestor_nests.add(full_inner_nest(parent_no, tab_no));
+    m_tables[tab_no].m_ancestor_nests = ancestor_nests;
+    m_tables[first_inner].m_ancestor_nests = ancestor_nests;
   }
   return true;
 }
@@ -1654,7 +1720,7 @@ void ndb_pushed_builder_ctx::validate_join_nest(ndb_table_access_map inner_nest,
  *
  * All other pushed tables are checked for dependencies on the table
  * being removed, and possible cascade-removed if they can no longer
- * be part of the pushed join without the romoved table(s).
+ * be part of the pushed join without the removed table(s).
  **********************************************************************/
 void ndb_pushed_builder_ctx::remove_pushable(const AQP::Table_access *table) {
   DBUG_TRACE;
@@ -1665,25 +1731,40 @@ void ndb_pushed_builder_ctx::remove_pushable(const AQP::Table_access *table) {
 
   // Cascade remove of tables depending on 'me'
   for (uint tab_no = me + 1; tab_no < m_plan.get_access_count(); tab_no++) {
+    table = m_plan.get_table_access(tab_no);
+
     if (m_join_scope.contain(tab_no)) {
-      table = m_plan.get_table_access(tab_no);
       ndb_table_access_map *key_parents = m_tables[tab_no].m_key_parents;
 
       for (uint i = 0; i < table->get_no_of_key_fields(); i++) {
         if (!key_parents[i].is_clear_all()) {
           // Was referring some parent field(s) (not const, or params)
-          // Remove parent referrences not in join_scope any more
+          // Remove parent references not in join_scope any more
           key_parents[i].intersect(m_join_scope);
 
           if (key_parents[i].is_clear_all()) {
-            // All preceeding parent tables removed from join_scope.
+            // All preceding parent tables removed from join_scope.
             m_join_scope.clear_bit(tab_no);  // Cascade remove of this table
             break;
           }
         }
       }
     }
-    m_tables[tab_no].m_ancestors.intersect(m_join_scope);
+
+    if (m_join_scope.contain(tab_no)) {
+      // Check if parents referred from pushed condition are still pushed.
+      ha_ndbcluster *handler =
+          down_cast<ha_ndbcluster *>(table->get_table()->file);
+      if (handler->m_cond.m_pushed_cond != nullptr) {
+        table_map used_tables(handler->m_cond.m_pushed_cond->used_tables());
+        ndb_table_access_map parents_of_condition = get_table_map(used_tables);
+        parents_of_condition.subtract(m_const_scope);
+        if (!m_join_scope.contain(parents_of_condition)) {
+          // Some tables referred from pushed condition removed from join_scope
+          m_join_scope.clear_bit(tab_no);  // Cascade remove of this table
+        }
+      }
+    }
   }
 }  // ndb_pushed_builder_ctx::remove_pushable
 
@@ -1695,7 +1776,7 @@ void ndb_pushed_builder_ctx::remove_pushable(const AQP::Table_access *table) {
  *
  * @param[in] table The table access operation to which the key item belongs.
  * @param[in] key_item The key_item to examine
- * @param[in] key_part Metatdata about the key item.
+ * @param[in] key_part Metadata about the key item.
  * @param[out] field_parents The set of possible parents for 'key_item'
  * ('join_root' if keys are constant).
  * @return True if at least one possible parent was found. (False means that
@@ -1737,7 +1818,7 @@ bool ndb_pushed_builder_ctx::is_field_item_pushable(
   }
 
   /**
-   * Below this point 'key_item_field' is a candidate for refering a parent
+   * Below this point 'key_item_field' is a candidate for referring a parent
    * table in a pushed join. It should either directly refer a parent common to
    * all FIELD_ITEMs, or refer a grandparent of this common parent. There are
    * different cases which should be handled:
@@ -1811,7 +1892,7 @@ bool ndb_pushed_builder_ctx::is_field_item_pushable(
     assert(field_parents.is_clear_all());
 
     /**
-     * Field referrence is a 'paramValue' to a column value evaluated
+     * Field reference is a 'paramValue' to a column value evaluated
      * prior to the root of this pushed join candidate. Some restrictions
      * applies to when a field reference is allowed in a pushed join:
      */
@@ -1821,7 +1902,7 @@ bool ndb_pushed_builder_ctx::is_field_item_pushable(
        * EQRefIterator may optimize away key reads if the key
        * for a requested row is the same as the previous.
        * Thus, iff this is the root of a pushed lookup join
-       * we do not want it to contain childs with references
+       * we do not want it to contain children with references
        * to columns 'outside' the the pushed joins, as these
        * may still change between calls to
        * EQRefIterator::Read() independent of the root key
@@ -1845,7 +1926,7 @@ bool ndb_pushed_builder_ctx::is_field_item_pushable(
    * 1) The table referred by key_item was not in the query_scope we were
    *    allowed to join with, and no substitutes existed.
    * 2) The referred table was not pushed, (and reported as such).
-   *    Thus, we could not push the tables refering it either.
+   *    Thus, we could not push the tables referring it either.
    */
   const ndb_table_access_map all_query_scopes =
       get_table_map(table->get_tables_in_all_query_scopes());
@@ -1908,14 +1989,14 @@ bool ndb_pushed_builder_ctx::is_const_item_pushable(
  * Decide the final execution order for the pushed joins. That mainly
  * involves deciding which table to be used as the 'm_parent'.
  *
- * The m_parent is choosen based on the available m_key_parents[]
+ * The m_parent is chosen based on the available m_key_parents[]
  * which were set up by ::is_pushable_as_child(), and possibly later
  * modified (reduced) by ::validate_join_nest().
  *
  * When multiple parent candidates are available, we choose the one
  * closest to the root, which will result in the most 'bushy' tree
  * structure and the highest possible parallelism. Note that SPJ block
- * will build its own execution plan (based on whats being set up here)
+ * will build its own execution plan (based on what's being set up here)
  * which possible sequentialize the execution of these parallel branches.
  * (See WL#11164)
  */
@@ -1933,7 +2014,7 @@ int ndb_pushed_builder_ctx::optimize_query_plan() {
      * Calculate the set of possible parents for the table, where:
      *  - 'common' are those we may refer (possibly through the EQ-sets)
      *     such that all FIELD_ITEMs are from the same parent.
-     *  - 'extended' are those parents refered from some of the
+     *  - 'extended' are those parents referred from some of the
      *     FIELD_ITEMs, and having the rest of the referred FIELD_ITEM
      *     tables available as 'grandparent refs'
      *     (The SPJ block can handle field references to any ancestor
@@ -1960,7 +2041,7 @@ int ndb_pushed_builder_ctx::optimize_query_plan() {
         common_parents.intersect(key_parents[i]);
 
         /**
-         * 'Extended' parents are refered from some 'FIELD_ITEM', and contain
+         * 'Extended' parents are referred from some 'FIELD_ITEM', and contain
          * all parents directly referred, or available as 'depend_parents'.
          * The later excludes those before the first (grand-)parent
          * available from all 'field_parents' (first_grandparent).
@@ -1980,7 +2061,7 @@ int ndb_pushed_builder_ctx::optimize_query_plan() {
     const int first_key_parent = depend_parents.first_table(root_no);
 
     /**
-     * Previous childs might already have enforced some ancestors to be
+     * Previous children might already have enforced some ancestors to be
      * available through this table due to some ancestors being referred by
      * them, add these.
      */
@@ -1989,12 +2070,12 @@ int ndb_pushed_builder_ctx::optimize_query_plan() {
     /**
      * Same goes for nest-level dependencies: The 'first' in each nest
      * may enforce ancestor dependencies on the members of the nest.
-     * Add enforcement of these upto the 'first' parent referred by
+     * Add enforcement of these up to the 'first' parent referred by
      * the 'key_parents[]'.
      */
     int first_in_nest = table.m_first_inner;
     while (first_key_parent < first_in_nest) {
-      depend_parents.add(m_tables[first_in_nest].m_ancestors);
+      depend_parents.add(required_ancestors(&m_tables[first_in_nest]));
       first_in_nest = m_tables[first_in_nest].m_first_upper;
     }
 
@@ -2002,7 +2083,7 @@ int ndb_pushed_builder_ctx::optimize_query_plan() {
      * All 'depend_parents' has to be fulfilled, starting from the 'last',
      * closest to this tab_no. The 'depend_parents' not directly referred
      * as a parent from this table, will be fulfilled by adding them as required
-     * ancestors of the choosen parent, see below.
+     * ancestors of the chosen parent, see below.
      * Find the first dependency to fulfill:
      */
     const uint depends_on_parent = depend_parents.last_table(tab_no - 1);
@@ -2034,23 +2115,19 @@ int ndb_pushed_builder_ctx::optimize_query_plan() {
     table.m_parent = parent_no;
 
     /**
-     * If parent is in an upper nest(s), the join-nest itself become
-     * dependent on any ancestors outside of the nests.
-     * Such nest-level dependencies are recorded in the first_inner
-     * of the join-nests.
+     * Record the ancestors this table now depends on.
+     * Will be included in later required_ancestors() calculations
+     * for other tables depending on nests which 'table' is included in.
      */
-    for (uint first_in_nest = table.m_first_inner; first_in_nest > parent_no;
-         first_in_nest = m_tables[first_in_nest].m_first_upper) {
-      depend_parents.intersect(m_tables[first_in_nest].m_upper_nests);
-      m_tables[first_in_nest].m_ancestors.add(depend_parents);
-    }
+    table.m_ancestors.add(parent_no);
+    table.m_ancestors.add(depend_parents);
 
     /**
      * Any remaining ancestor dependencies for this table has to be
      * added to the selected parent in order to be taken into account
      * for parent calculation for its ancestors.
      */
-    depend_parents.clear_bit(parent_no);
+    depend_parents.intersect(m_tables[parent_no].ancestor_nests());
     m_tables[parent_no].m_ancestors.add(depend_parents);
   }
 
@@ -2082,7 +2159,7 @@ void ndb_pushed_builder_ctx::collect_key_refs(const AQP::Table_access *table,
    * If there are any key_fields with 'current_parents' different from
    * our selected 'parent', we have to find substitutes for
    * those key_fields within the equality set.
-   * When using the Hypergraph optimizer we cant use the Item_equal's.
+   * When using the Hypergraph optimizer we can't use the Item_equal's.
    **/
   const bool use_item_equal =
       !m_thd_ndb->get_thd()->lex->using_hypergraph_optimizer;
@@ -2265,7 +2342,7 @@ int ndb_pushed_builder_ctx::build_key(const AQP::Table_access *table,
           if (unlikely(m_fld_refs >= ndb_pushed_join::MAX_REFERRED_FIELDS)) {
             DBUG_PRINT("info", ("Too many Field refs ( >= MAX_REFERRED_FIELDS) "
                                 "encountered"));
-            return -1;  // TODO, handle gracefull -> continue?
+            return -1;  // TODO, handle gracefully -> continue?
           }
           m_referred_fields[m_fld_refs++] = field_item->field;
           op_key[map[i]] = m_builder->paramValue();
@@ -2424,7 +2501,7 @@ int ndb_pushed_builder_ctx::build_query() {
        * 't1, outer join (t2), outer join (t3)'.
        *
        * Such queries need to set the join nest dependencies, such that
-       * the NdbQuery interface is able to correcly generate NULL extended
+       * the NdbQuery interface is able to correctly generate NULL extended
        * rows.
        *
        * Below we add these nest dependencies even when not strictly required.
@@ -2473,6 +2550,7 @@ int ndb_pushed_builder_ctx::build_query() {
         const Item_field *item_field =
             handler->m_cond.get_param_item(ndb_param);
         const uint referred_table_no = get_table_no(item_field);
+        assert(m_join_scope.contain(referred_table_no));
         const NdbQueryOperationDef *const ancestor_op =
             m_tables[referred_table_no].m_op;
 

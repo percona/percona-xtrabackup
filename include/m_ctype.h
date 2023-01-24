@@ -28,11 +28,9 @@
   A better implementation of the UNIX ctype(3) library.
 */
 
-#ifndef __cplusplus
-#include <stdbool.h>
-#endif
 #include <stddef.h>
 #include <sys/types.h>
+#include <cstdint>
 
 #include "my_compiler.h"
 #include "my_inttypes.h"
@@ -105,30 +103,47 @@ extern MY_UNI_CTYPE my_uni_ctype[256];
 #define MY_SEQ_INTTAIL 1
 #define MY_SEQ_SPACES 2
 
-/* My charsets_list flags */
-#define MY_CS_COMPILED 1 /* compiled-in sets               */
-#define MY_CS_CONFIG 2   /* sets that have a *.conf file   */
-#define MY_CS_INDEX 4    /* sets listed in the Index file  */
-#define MY_CS_LOADED 8   /* sets that are currently loaded */
-#define MY_CS_BINSORT 16 /* if binary sort order           */
-#define MY_CS_PRIMARY 32 /* if primary collation           */
-#define MY_CS_STRNXFRM                                                         \
-  64                                   /*                                      \
-                                         if _not_ set, sort_order will         \
-                                         give same result as strnxfrm --       \
-                                         all new collations should have this   \
-                                         flag set, do not check it in new code \
-                                       */
-#define MY_CS_UNICODE 128              /* is a charset is BMP Unicode    */
-#define MY_CS_READY 256                /* if a charset is initialized    */
-#define MY_CS_AVAILABLE 512            /* If either compiled-in or loaded*/
-#define MY_CS_CSSORT 1024              /* if case sensitive sort order   */
-#define MY_CS_HIDDEN 2048              /* don't display in SHOW          */
-#define MY_CS_PUREASCII 4096           /* if a charset is pure ascii     */
-#define MY_CS_NONASCII 8192            /* if not ASCII-compatible        */
-#define MY_CS_UNICODE_SUPPLEMENT 16384 /* Non-BMP Unicode characters */
-#define MY_CS_LOWER_SORT 32768         /* If use lower case as weight   */
-#define MY_CHARSET_UNDEFINED 0
+/* CHARSET_INFO::state flags */
+/* clang-format off */
+static constexpr uint32_t
+       MY_CHARSET_UNDEFINED     = 0;       // for unit testing
+static constexpr uint32_t
+       MY_CS_COMPILED           = 1 << 0;  // compiled-in charsets
+static constexpr uint32_t
+       MY_CS_CONFIG_UNUSED      = 1 << 1;  // unused bitmask
+static constexpr uint32_t
+       MY_CS_INDEX_UNUSED       = 1 << 2;  // unused bitmask
+static constexpr uint32_t
+       MY_CS_LOADED             = 1 << 3;  // charsets that are currently loaded
+static constexpr uint32_t
+       MY_CS_BINSORT            = 1 << 4;  // if binary sort order
+static constexpr uint32_t
+       MY_CS_PRIMARY            = 1 << 5;  // if primary collation
+static constexpr uint32_t
+       MY_CS_STRNXFRM           = 1 << 6;  // if _not_ set, sort_order will
+                                           // give same result as strnxfrm --
+                                           // all new collations should have
+                                           // this flag set,
+                                           // do not check it in new code
+static constexpr uint32_t
+       MY_CS_UNICODE            = 1 << 7;  // if a charset is BMP Unicode
+static constexpr uint32_t
+       MY_CS_READY              = 1 << 8;  // if a charset is initialized
+static constexpr uint32_t
+       MY_CS_AVAILABLE          = 1 << 9;  // if either compiled-in or loaded
+static constexpr uint32_t
+       MY_CS_CSSORT             = 1 << 10; // if case sensitive sort order
+static constexpr uint32_t
+       MY_CS_HIDDEN             = 1 << 11; // don't display in SHOW
+static constexpr uint32_t
+       MY_CS_PUREASCII          = 1 << 12; // if a charset is pure ascii
+static constexpr uint32_t
+       MY_CS_NONASCII           = 1 << 13; // if not ASCII-compatible
+static constexpr uint32_t
+       MY_CS_UNICODE_SUPPLEMENT = 1 << 14; // Non-BMP Unicode characters
+static constexpr uint32_t
+       MY_CS_LOWER_SORT         = 1 << 15; // if use lower case as weight
+/* clang-format on */
 
 /* Character repertoire flags */
 #define MY_REPERTOIRE_ASCII 1     /* Pure ASCII            U+0000..U+007F */
@@ -151,21 +166,29 @@ typedef struct {
 } my_match_t;
 
 struct CHARSET_INFO;
-#ifndef __cplusplus
-typedef struct CHARSET_INFO CHARSET_INFO;
-#endif
 extern MYSQL_PLUGIN_IMPORT CHARSET_INFO *system_charset_info;
 
-typedef struct MY_CHARSET_LOADER {
-  uint errcode;
-  char errarg[192];
-  void *(*once_alloc)(size_t);
-  void *(*mem_malloc)(size_t);
-  void *(*mem_realloc)(void *, size_t);
-  void (*mem_free)(void *);
-  void (*reporter)(enum loglevel, uint errcode, ...);
-  int (*add_collation)(CHARSET_INFO *cs);
-} MY_CHARSET_LOADER;
+struct MY_CHARSET_LOADER {
+  uint errcode{0};
+  char errarg[192]{};
+
+  virtual ~MY_CHARSET_LOADER() = default;
+
+  // Memory management. By default we use mysys allocation functions.
+  virtual void *once_alloc(size_t);
+  virtual void *mem_malloc(size_t);
+  virtual void *mem_realloc(void *, size_t);
+  virtual void mem_free(void *);
+
+  // Error reporting. By default all warnings/errors are ignored.
+  // Set the global pointer my_charset_error_reporter to override this
+  // behaviour.
+  void reporter(enum loglevel, uint, const char *);
+  void reporter(enum loglevel, uint, int, const char *);
+
+  // Inserts a new charset/collation into the global all_charsets array.
+  virtual int add_collation(CHARSET_INFO *);
+};
 
 extern int (*my_string_stack_guard)(int);
 
@@ -417,10 +440,10 @@ extern MYSQL_PLUGIN_IMPORT CHARSET_INFO my_charset_utf8mb4_0900_bin;
 
 extern CHARSET_INFO my_charset_latin1_bin;
 extern CHARSET_INFO my_charset_utf32_unicode_ci;
-extern MYSQL_PLUGIN_IMPORT CHARSET_INFO my_charset_utf8_general_ci;
-extern CHARSET_INFO my_charset_utf8_tolower_ci;
-extern CHARSET_INFO my_charset_utf8_unicode_ci;
-extern CHARSET_INFO my_charset_utf8_bin;
+extern MYSQL_PLUGIN_IMPORT CHARSET_INFO my_charset_utf8mb3_general_ci;
+extern CHARSET_INFO my_charset_utf8mb3_tolower_ci;
+extern CHARSET_INFO my_charset_utf8mb3_unicode_ci;
+extern CHARSET_INFO my_charset_utf8mb3_bin;
 extern CHARSET_INFO my_charset_utf8mb4_bin;
 extern MYSQL_PLUGIN_IMPORT CHARSET_INFO my_charset_utf8mb4_general_ci;
 
@@ -613,7 +636,13 @@ bool my_propagate_simple(const CHARSET_INFO *cs, const uchar *str, size_t len);
 bool my_propagate_complex(const CHARSET_INFO *cs, const uchar *str, size_t len);
 
 uint my_string_repertoire(const CHARSET_INFO *cs, const char *str, size_t len);
-bool my_charset_is_ascii_based(const CHARSET_INFO *cs);
+/**
+  Detect whether a character set is ASCII compatible.
+*/
+static inline bool my_charset_is_ascii_based(const CHARSET_INFO *cs) {
+  return (cs->state & MY_CS_NONASCII) ? false : true;
+}
+
 bool my_charset_is_8bit_pure_ascii(const CHARSET_INFO *cs);
 uint my_charset_repertoire(const CHARSET_INFO *cs);
 

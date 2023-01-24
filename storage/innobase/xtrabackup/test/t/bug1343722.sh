@@ -19,10 +19,7 @@ mysql -e 'INSERT INTO t (a) SELECT a FROM t' test
 mysql -e 'INSERT INTO t (a) SELECT a FROM t' test
 
 # Try to backup server 2, but use server 1's connection socket
-xtrabackup --backup --socket=$socket --target-dir=$topdir/backup 2>&1 |
-    grep 'has different values'
+xtrabackup --backup --socket=$socket --target-dir=$topdir/backup 2>&1 | tee $topdir/pxb1343722.log
 
-if [[ ${PIPESTATUS[0]} != 0 ]]
-then
-    die "xtrabackup failed"
-fi
+run_cmd grep 'has different values' $topdir/pxb1343722.log
+

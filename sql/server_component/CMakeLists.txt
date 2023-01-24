@@ -34,6 +34,7 @@ SET(MYSQL_SERVER_COMPONENT_SOURCES
   log_sink_buffer.cc
   log_sink_perfschema.cc
   log_sink_trad.cc
+  log_source_backtrace.cc
   mysql_cond_service.cc
   mysql_connection_attributes_iterator_imp.cc
   mysql_current_thread_reader_imp.cc
@@ -60,6 +61,12 @@ SET(MYSQL_SERVER_COMPONENT_SOURCES
   transaction_delegate_control_imp.cc
   mysql_audit_print_service_longlong_data_source_imp.cc
   mysql_audit_print_service_double_data_source_imp.cc
+  mysql_command_services_imp.cc
+  mysql_command_consumer_imp.cc
+  mysql_command_delegates.cc
+  mysql_command_backend.cc
+  mysql_status_variable_reader_imp.cc
+  storing_auto_thd.cc
   )
 
 # This static library is used to build mysqld binary and in some unit test cases
