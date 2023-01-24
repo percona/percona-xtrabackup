@@ -127,6 +127,7 @@ EOF
   xtrabackup --copy-back --target-dir=$topdir/backup
 
 if [[ "${KEYRING_TYPE}" = "component" ]] || [[ "${KEYRING_TYPE}" = "both" ]]; then
+  cp ${instance_local_manifest}  $mysql_datadir
   cp ${keyring_component_cnf} $mysql_datadir
 fi
 
@@ -172,6 +173,7 @@ fi
     if [[ "${KEYRING_TYPE}" = "component" ]] || [[ "${KEYRING_TYPE}" = "both" ]];
     then
       vlog "copying component config back to datadir"
+      cp ${instance_local_manifest}  $mysql_datadir
       cp ${keyring_component_cnf} $mysql_datadir
     fi
     start_server
@@ -260,6 +262,7 @@ function keyring_extra_tests()
   xtrabackup --copy-back --target-dir=$topdir/backup1
   if [[ "${KEYRING_TYPE}" = "component" ]] || [[ "${KEYRING_TYPE}" = "both" ]];
   then
+    cp ${instance_local_manifest}  $mysql_datadir
     cp ${keyring_component_cnf} $mysql_datadir
   fi
   start_server

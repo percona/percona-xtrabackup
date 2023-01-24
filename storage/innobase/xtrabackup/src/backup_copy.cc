@@ -298,20 +298,8 @@ comparing its name to the list of known data file types and checking
 if passes the rules for partial backup.
 @return true if file backed up or skipped successfully. */
 static bool datafile_copy_backup(const char *filepath, uint thread_n) {
-  const char *ext_list[] = {"MYD",
-                            "MYI",
-                            "MAD",
-                            "MAI",
-                            "MRG",
-                            "ARM",
-                            "ARZ",
-                            "CSM",
-                            "CSV",
-                            "opt",
-                            "sdi",
-                            "mysqld.my",
-                            "mysqld-debug.my",
-                            NULL};
+  const char *ext_list[] = {"MYD", "MYI", "MAD", "MAI", "MRG", "ARM",
+                            "ARZ", "CSM", "CSV", "opt", "sdi", NULL};
 
   /* Get the name and the path for the tablespace. node->name always
   contains the path (which may be absolute for remote tablespaces in
