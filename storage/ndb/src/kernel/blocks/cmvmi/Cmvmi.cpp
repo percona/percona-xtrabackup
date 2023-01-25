@@ -26,7 +26,7 @@
 #include "Cmvmi.hpp"
 
 #include <cstring>
-
+#include <signal.h>
 #include <Configuration.hpp>
 #include <kernel_types.h>
 #include <NdbOut.hpp>
@@ -73,6 +73,10 @@
 #define ZREPORT_MEMORY_USAGE 1000
 
 extern int simulate_error_during_shutdown;
+
+#ifdef ERROR_INSERT
+extern int simulate_error_during_error_reporting;
+#endif
 
 // Index pages used by ACC instances
 Uint32 g_acc_pages_used[1 + MAX_NDBMT_LQH_WORKERS];
@@ -225,8 +229,17 @@ void Cmvmi::execNDB_TAMPER(Signal* signal)
 
   if(ERROR_INSERTED(9006)){
     g_eventLogger->info("Activating error 9006 for SEGV of all nodes");
-    int *invalid_ptr = (int*) 123;
-    printf("%u", *invalid_ptr); // SEGV
+    /*
+     * Disable this injected crash to generate core files. We can not use the
+     * CRASH_INSERTION macro here since it modifies the node start type in an
+     * unwanted way when testing fix for Bug #24945638 STOPONERROR = 0 WITH
+     * UNCONTROLLED EXIT RESTARTS IN SAME WAY AS PREVIOUS RESTART.
+     * Instead we explicitly turn off core file generation by directly
+     * modifying the opt_core variable of main.cpp.
+     */
+    extern bool opt_core;
+    opt_core = false;
+    raise(SIGSEGV);
   }
 #endif
 
@@ -2264,6 +2277,37 @@ Cmvmi::execDUMP_STATE_ORD(Signal* signal)
     globalEmulatorData.theWatchDog->setKillSwitch(val);
     return;
   }
+
+  if (arg == DumpStateOrd::CmvmiSetWatchdogInterval)
+  {
+    Uint32 val = 6000;
+    const ndb_mgm_configuration_iterator * p =
+      m_ctx.m_config.getOwnConfigIterator();
+    ndb_mgm_get_int_parameter(p, CFG_DB_WATCHDOG_INTERVAL,
+                              &val);
+
+    if (signal->length() >= 2)
+    {
+      val = signal->theData[1];
+    }
+    g_eventLogger->info("Cmvmi : Setting watchdog interval to %u",
+                        val);
+    update_watch_dog_timer(val);
+  }
+
+#ifdef ERROR_INSERT
+  if (arg == DumpStateOrd::CmvmiSetErrorHandlingError)
+  {
+    Uint32 val = 0;
+    if (signal->length() >= 2)
+    {
+      val = signal->theData[1];
+    }
+    g_eventLogger->info("Cmvmi : Setting ErrorHandlingError to %u",
+                        val);
+    simulate_error_during_error_reporting = val;
+  }
+#endif
 
 #ifdef ERROR_INSERT
   if (arg == 9004 && signal->getLength() == 2)

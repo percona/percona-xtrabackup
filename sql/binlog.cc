@@ -80,7 +80,9 @@
 #include "mysqld_error.h"
 #include "partition_info.h"
 #include "prealloced_array.h"
+#include "scope_guard.h"
 #include "sql/binlog/global.h"
+#include "sql/binlog/group_commit/bgc_ticket_manager.h"  // Bgc_ticket_manager
 #include "sql/binlog/recovery.h"  // binlog::Binlog_recovery
 #include "sql/binlog/tools/iterators.h"
 #include "sql/binlog_ostream.h"
@@ -2790,6 +2792,21 @@ static int binlog_savepoint_set(handlerton *, THD *thd, void *sv) {
   return error;
 }
 
+bool MYSQL_BIN_LOG::is_current_stmt_binlog_enabled_and_caches_empty(
+    const THD *thd) const {
+  DBUG_TRACE;
+  if (!(thd->variables.option_bits & OPTION_BIN_LOG) ||
+      !mysql_bin_log.is_open()) {
+    // thd_get_cache_mngr requires binlog to option to be enabled
+    return false;
+  }
+  binlog_cache_mngr *const cache_mngr = thd_get_cache_mngr(thd);
+  if (cache_mngr == nullptr) {
+    return true;
+  }
+  return cache_mngr->is_binlog_empty();
+}
+
 static int binlog_savepoint_rollback(handlerton *, THD *thd, void *sv) {
   DBUG_TRACE;
   binlog_cache_mngr *const cache_mngr = thd_get_cache_mngr(thd);
@@ -3561,7 +3578,8 @@ void MYSQL_BIN_LOG::init_pthread_objects() {
   if (!is_relay_log) {
     Commit_stage_manager::get_instance().init(
         m_key_LOCK_flush_queue, m_key_LOCK_sync_queue, m_key_LOCK_commit_queue,
-        m_key_LOCK_done, m_key_COND_done, m_key_COND_flush_queue);
+        m_key_LOCK_done, m_key_LOCK_wait_for_group_turn, m_key_COND_done,
+        m_key_COND_flush_queue, m_key_COND_wait_for_group_turn);
   }
 }
 
@@ -6522,7 +6540,7 @@ int MYSQL_BIN_LOG::new_file_impl(
   mysql_mutex_assert_owner(&LOCK_index);
 
   if (DBUG_EVALUATE_IF("expire_logs_always", 0, 1) &&
-      (error = ha_flush_logs())) {
+      (error = ha_flush_logs(true))) {
     goto end;
   }
 
@@ -8056,6 +8074,12 @@ TC_LOG::enum_result MYSQL_BIN_LOG::commit(THD *thd, bool all) {
                        (ulonglong)thd, YESNO(all), (ulonglong)xid,
                        (ulonglong)cache_mngr));
 
+  Scope_guard guard_applier_wait_enabled(
+      [&thd]() { thd->disable_low_level_commit_ordering(); });
+
+  if (is_current_stmt_binlog_enabled_and_caches_empty(thd)) {
+    thd->enable_low_level_commit_ordering();
+  }
   /*
     No cache manager means nothing to log, but we still have to commit
     the transaction.
@@ -8798,6 +8822,14 @@ int MYSQL_BIN_LOG::ordered_commit(THD *thd, bool all, bool skip_commit) {
   int flush_error = 0, sync_error = 0;
   my_off_t total_bytes = 0;
   bool do_rotate = false;
+
+  CONDITIONAL_SYNC_POINT_FOR_TIMESTAMP("before_assign_session_to_bgc_ticket");
+  thd->rpl_thd_ctx.binlog_group_commit_ctx().assign_ticket();
+
+  DBUG_EXECUTE_IF("syncpoint_before_wait_on_ticket_3",
+                  binlog::Bgc_ticket_manager::instance().push_new_ticket(););
+  DBUG_EXECUTE_IF("begin_new_bgc_ticket",
+                  binlog::Bgc_ticket_manager::instance().push_new_ticket(););
 
   DBUG_EXECUTE_IF("crash_commit_before_log", DBUG_SUICIDE(););
   init_thd_variables(thd, all, skip_commit);
@@ -9616,8 +9648,8 @@ void THD::add_to_binlog_accessed_dbs(const char *db_param) {
     inside your statement).
 */
 
-static bool has_write_table_with_auto_increment(TABLE_LIST *tables) {
-  for (TABLE_LIST *table = tables; table; table = table->next_global) {
+static bool has_write_table_with_auto_increment(Table_ref *tables) {
+  for (Table_ref *table = tables; table; table = table->next_global) {
     /* we must do preliminary checks as table->table may be NULL */
     if (!table->is_placeholder() && table->table->found_next_number_field &&
         (table->lock_descriptor().type >= TL_WRITE_ALLOW_WRITE))
@@ -9643,10 +9675,10 @@ static bool has_write_table_with_auto_increment(TABLE_LIST *tables) {
 */
 
 static bool has_write_table_with_auto_increment_and_query_block(
-    TABLE_LIST *tables) {
+    Table_ref *tables) {
   bool has_query_block = false;
   bool has_auto_increment_tables = has_write_table_with_auto_increment(tables);
-  for (TABLE_LIST *table = tables; table; table = table->next_global) {
+  for (Table_ref *table = tables; table; table = table->next_global) {
     if (!table->is_placeholder() &&
         (table->lock_descriptor().type <= TL_READ_NO_INSERT)) {
       has_query_block = true;
@@ -9666,8 +9698,8 @@ static bool has_write_table_with_auto_increment_and_query_block(
   @return true if the table exists, fais if does not.
 */
 
-static bool has_write_table_auto_increment_not_first_in_pk(TABLE_LIST *tables) {
-  for (TABLE_LIST *table = tables; table; table = table->next_global) {
+static bool has_write_table_auto_increment_not_first_in_pk(Table_ref *tables) {
+  for (Table_ref *table = tables; table; table = table->next_global) {
     /* we must do preliminary checks as table->table may be NULL */
     if (!table->is_placeholder() && table->table->found_next_number_field &&
         (table->lock_descriptor().type >= TL_WRITE_ALLOW_WRITE) &&
@@ -9690,12 +9722,12 @@ static bool has_nondeterministic_default(const TABLE *table) {
 }
 
 /**
-  Checks if a TABLE_LIST contains a table that has been opened for writing, and
-  that has a column with a non-deterministic DEFAULT expression.
+  Checks if a Table_ref contains a table that has been opened for writing,
+  and that has a column with a non-deterministic DEFAULT expression.
 */
 static bool has_write_table_with_nondeterministic_default(
-    const TABLE_LIST *tables) {
-  for (const TABLE_LIST *table = tables; table != nullptr;
+    const Table_ref *tables) {
+  for (const Table_ref *table = tables; table != nullptr;
        table = table->next_global) {
     /* we must do preliminary checks as table->table may be NULL */
     if (!table->is_placeholder() &&
@@ -9710,12 +9742,12 @@ static bool has_write_table_with_nondeterministic_default(
   Checks if we have reads from ACL tables in table list.
 
   @param  thd       Current thread
-  @param  tl_list   TABLE_LIST used by current command.
+  @param  tl_list   Table_ref used by current command.
 
   @returns true, if we statement is unsafe, otherwise false.
 */
-static bool has_acl_table_read(THD *thd, const TABLE_LIST *tl_list) {
-  for (const TABLE_LIST *tl = tl_list; tl != nullptr; tl = tl->next_global) {
+static bool has_acl_table_read(THD *thd, const Table_ref *tl_list) {
+  for (const Table_ref *tl = tl_list; tl != nullptr; tl = tl->next_global) {
     if (is_acl_table_in_non_LTM(tl, thd->locked_tables_mode) &&
         (tl->lock_descriptor().type == TL_READ_DEFAULT ||
          tl->lock_descriptor().type == TL_READ_HIGH_PRIORITY))
@@ -9858,7 +9890,7 @@ const char *get_locked_tables_mode_name(
   @retval -1 One of the error conditions above applies (1, 2, 4, 5, 6 or 9).
 */
 
-int THD::decide_logging_format(TABLE_LIST *tables) {
+int THD::decide_logging_format(Table_ref *tables) {
   DBUG_TRACE;
   DBUG_PRINT("info", ("query: %s", query().str));
   DBUG_PRINT("info", ("variables.binlog_format: %lu", variables.binlog_format));
@@ -10017,7 +10049,7 @@ int THD::decide_logging_format(TABLE_LIST *tables) {
       Get the capabilities vector for all involved storage engines and
       mask out the flags for the binary log.
     */
-    for (TABLE_LIST *table = tables; table; table = table->next_global) {
+    for (Table_ref *table = tables; table; table = table->next_global) {
       if (table->is_placeholder()) {
         /*
           Detect if this is a CREATE TEMPORARY or DROP of a
@@ -10376,7 +10408,7 @@ int THD::decide_logging_format(TABLE_LIST *tables) {
         In case the number of databases exceeds MAX_DBS_IN_EVENT_MTS maximum
         the list gathering breaks since it won't be sent to the slave.
       */
-      for (TABLE_LIST *table = tables; table; table = table->next_global) {
+      for (Table_ref *table = tables; table; table = table->next_global) {
         if (table->is_placeholder()) continue;
 
         assert(table->table);
@@ -10408,7 +10440,7 @@ int THD::decide_logging_format(TABLE_LIST *tables) {
         Generate a warning for UPDATE/DELETE statements that modify a
         BLACKHOLE table, as row events are not logged in row format.
       */
-      for (TABLE_LIST *table = tables; table; table = table->next_global) {
+      for (Table_ref *table = tables; table; table = table->next_global) {
         if (table->is_placeholder()) continue;
         if (table->table->file->ht->db_type == DB_TYPE_BLACKHOLE_DB &&
             table->lock_descriptor().type >= TL_WRITE_ALLOW_WRITE) {
@@ -10440,7 +10472,7 @@ int THD::decide_logging_format(TABLE_LIST *tables) {
          mysql_bin_log.is_open(), (variables.option_bits & OPTION_BIN_LOG),
          variables.binlog_format, binlog_filter->db_ok(m_db.str)));
 
-    for (TABLE_LIST *table = tables; table; table = table->next_global) {
+    for (Table_ref *table = tables; table; table = table->next_global) {
       if (!table->is_placeholder() && table->table->no_replicate &&
           gtid_state->warn_or_err_on_modify_gtid_table(this, table))
         break;
@@ -10857,7 +10889,9 @@ class Row_data_memory {
   size_t max_row_length(TABLE *table, const uchar *data,
                         ulonglong value_options = 0) {
     TABLE_SHARE *table_s = table->s;
-    Replicated_columns_view fields{table, Replicated_columns_view::OUTBOUND};
+    cs::util::ReplicatedColumnsView fields{table};
+    fields.add_filter(
+        cs::util::ColumnFilterFactory::ColumnFilterType::outbound_func_index);
     /*
       The server stores rows using "records".  A record is a sequence of bytes
       which contains values or pointers to values for all fields (columns).  The

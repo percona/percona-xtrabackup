@@ -87,6 +87,7 @@ IF(NOT WITH_XTRABACKUP)
   IF(DEBUG_EXTNAME)
     SET(DEBUG_SERVER "--debug-server")
   ENDIF()
+<<<<<<< HEAD
   
   IF(CMAKE_BUILD_TYPE)
     IF(CMAKE_BUILD_TYPE_UPPER STREQUAL "DEBUG")
@@ -156,5 +157,95 @@ IF(NOT WITH_XTRABACKUP)
   --let $max_indexes = ${MAX_INDEXES}\n")
       MESSAGE(STATUS "mysql-test/include/max_indexes.inc adjusted")
     ENDIF()
+||||||| a246bad76b9
+ENDIF()
+
+# On windows do: 'cmake --build . --config debug --target test-mtr'
+# On unix do: 'make test-mtr'
+ADD_CUSTOM_TARGET(test-mtr
+  COMMAND perl ./mysql-test-run.pl --force --parallel=4 --suite=main
+          ${VS_CONFIG} ${DEBUG_SERVER} ${EXP}
+)
+
+## We could do something like this, but the 'test' target generated
+## by cmake is really for unit testing: all output is muted by default,
+## even in case of test failure.
+## ADD_EXECUTABLE(perl IMPORTED)
+## ADD_TEST(xxx perl ./mysql-test-run.pl --force
+##          ${VS_CONFIG} ${DEBUG_SERVER} ${EXP})
+
+
+# Process .in files with includes in collections/
+
+MACRO(PROCESS_COLLECTION_INCLUDE collin collection)
+  FILE(STRINGS ${collin} inlines)
+  FOREACH(line ${inlines})
+    IF(${line} MATCHES "#include .*")
+      STRING(REPLACE "#include " "collections/" incfile ${line})
+      FILE(READ ${incfile} contents)
+      FILE(APPEND ${collection} "${contents}")
+    ELSE()
+      FILE(APPEND ${collection} "${line}\n")
+    ENDIF()
+  ENDFOREACH()
+ENDMACRO()
+
+# For internal testing in PB2, append collections files
+IF(DEFINED ENV{PB2WORKDIR})
+  FILE(GLOB infiles "collections/*.in")
+  FOREACH(collin ${infiles})
+    STRING(REPLACE ".in" "" collection ${collin})
+    STRING(REPLACE ".in" ".done" colldone ${collin})
+    # Only generate file once
+    IF(NOT EXISTS ${colldone})
+      PROCESS_COLLECTION_INCLUDE(${collin} ${collection})
+      FILE(APPEND ${colldone} "${collin}\n")
+    ENDIF()
+  ENDFOREACH()
+ENDIF()
+
+# With different MAX_INDEXES values, server might behave differently in
+# certain cases. 'max_indexes.inc' file should be updated accordingly to
+# reflect the current MAX_INDEXES value. This file helps MTR to decide on
+# which tests should be skipped.
+# NOTE: While committing a patch please make sure that the file is unmodified
+# and should show the default MAX_INDEXES (i.e. 64U).
+IF (MAX_INDEXES)
+  IF(NOT (${MAX_INDEXES} EQUAL 64U))
+    FILE(WRITE include/max_indexes.inc
+         "# Warning: This is an auto-generated file. Please do not modify it.
+--let $max_indexes = ${MAX_INDEXES}\n")
+    MESSAGE(STATUS "mysql-test/include/max_indexes.inc adjusted")
+=======
+ENDIF()
+
+# On windows do: 'cmake --build . --config debug --target test-mtr'
+# On unix do: 'make test-mtr'
+ADD_CUSTOM_TARGET(test-mtr
+  COMMAND perl ./mysql-test-run.pl --force --parallel=4 --suite=main
+          ${VS_CONFIG} ${DEBUG_SERVER} ${EXP}
+)
+
+## We could do something like this, but the 'test' target generated
+## by cmake is really for unit testing: all output is muted by default,
+## even in case of test failure.
+## ADD_EXECUTABLE(perl IMPORTED)
+## ADD_TEST(xxx perl ./mysql-test-run.pl --force
+##          ${VS_CONFIG} ${DEBUG_SERVER} ${EXP})
+
+
+# With different MAX_INDEXES values, server might behave differently in
+# certain cases. 'max_indexes.inc' file should be updated accordingly to
+# reflect the current MAX_INDEXES value. This file helps MTR to decide on
+# which tests should be skipped.
+# NOTE: While committing a patch please make sure that the file is unmodified
+# and should show the default MAX_INDEXES (i.e. 64U).
+IF (MAX_INDEXES)
+  IF(NOT (${MAX_INDEXES} EQUAL 64U))
+    FILE(WRITE include/max_indexes.inc
+         "# Warning: This is an auto-generated file. Please do not modify it.
+--let $max_indexes = ${MAX_INDEXES}\n")
+    MESSAGE(STATUS "mysql-test/include/max_indexes.inc adjusted")
+>>>>>>> mysql-8.0.32
   ENDIF()
 ENDIF()

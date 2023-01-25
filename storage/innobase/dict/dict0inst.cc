@@ -38,7 +38,7 @@ static void populate_to_be_instant_columns_low(
     const TABLE *new_table, Columns &cols_to_add, Columns &cols_to_drop);
 
 template <typename Table>
-bool Instant_ddl_impl<Table>::is_instant_add_possible(
+bool Instant_ddl_impl<Table>::is_instant_add_drop_possible(
     const Alter_inplace_info *ha_alter_info, const TABLE *table,
     const TABLE *altered_table, const dict_table_t *dict_table) {
   Columns cols_to_add;
@@ -46,7 +46,8 @@ bool Instant_ddl_impl<Table>::is_instant_add_possible(
   populate_to_be_instant_columns_low(ha_alter_info, table, altered_table,
                                      cols_to_add, cols_to_drop);
 
-  if (cols_to_add.empty()) {
+  if (cols_to_add.empty() && cols_to_drop.empty()) {
+    ut_ad(0);
     return true;
   }
 
@@ -105,83 +106,91 @@ bool Instant_ddl_impl<Table>::is_instant_add_possible(
   return true;
 }
 
-template bool Instant_ddl_impl<dd::Table>::is_instant_add_possible(
+template bool Instant_ddl_impl<dd::Table>::is_instant_add_drop_possible(
     const Alter_inplace_info *ha_alter_info, const TABLE *table,
     const TABLE *altered_table, const dict_table_t *dict_table);
 
-template bool Instant_ddl_impl<dd::Partition>::is_instant_add_possible(
+template bool Instant_ddl_impl<dd::Partition>::is_instant_add_drop_possible(
     const Alter_inplace_info *ha_alter_info, const TABLE *table,
     const TABLE *altered_table, const dict_table_t *dict_table);
 
 template <typename Table>
-void Instant_ddl_impl<Table>::commit_instant_add_col_low() {
+bool Instant_ddl_impl<Table>::commit_instant_add_col_low() {
   ut_ad(!m_dict_table->is_temporary());
 
-  ut_ad(is_instant_add_possible(m_ha_alter_info, m_old_table, m_altered_table,
-                                m_dict_table));
+  ut_a(is_instant_add_drop_possible(m_ha_alter_info, m_old_table,
+                                    m_altered_table, m_dict_table));
 
   /* To remember old default values if exist */
   dd_copy_table_columns(m_ha_alter_info, m_new_dd_tab->table(),
                         m_old_dd_tab->table(), m_dict_table);
 
   /* Then add all new default values */
-  dd_add_instant_columns(&m_old_dd_tab->table(), &m_new_dd_tab->table(),
-                         m_dict_table, m_cols_to_add);
+  if (dd_add_instant_columns(&m_old_dd_tab->table(), &m_new_dd_tab->table(),
+                             m_dict_table, m_cols_to_add))
+    return true;
 
   /* Keep the metadata for newly added virtual columns if exist */
   dd_update_v_cols(&m_new_dd_tab->table(), m_dict_table->id);
+
+  return false;
 }
 
-template void Instant_ddl_impl<dd::Table>::commit_instant_add_col_low();
-template void Instant_ddl_impl<dd::Partition>::commit_instant_add_col_low();
+template bool Instant_ddl_impl<dd::Table>::commit_instant_add_col_low();
+template bool Instant_ddl_impl<dd::Partition>::commit_instant_add_col_low();
 
 template <>
-void Instant_ddl_impl<dd::Table>::commit_instant_add_col() {
-  commit_instant_add_col_low();
+bool Instant_ddl_impl<dd::Table>::commit_instant_add_col() {
+  return commit_instant_add_col_low();
 }
 
 template <>
-void Instant_ddl_impl<dd::Partition>::commit_instant_add_col() {
+bool Instant_ddl_impl<dd::Partition>::commit_instant_add_col() {
   if (dd_part_is_first(m_new_dd_tab)) {
-    commit_instant_add_col_low();
+    if (commit_instant_add_col_low()) return true;
   }
+  return false;
 }
 
 template <typename Table>
-void Instant_ddl_impl<Table>::commit_instant_drop_col_low() {
+bool Instant_ddl_impl<Table>::commit_instant_drop_col_low() {
   ut_ad(!m_dict_table->is_temporary());
+
+  ut_a(is_instant_add_drop_possible(m_ha_alter_info, m_old_table,
+                                    m_altered_table, m_dict_table));
 
   /* Copy columns metadata */
   dd_copy_table_columns(m_ha_alter_info, m_new_dd_tab->table(),
                         m_old_dd_tab->table(), m_dict_table);
 
   /* Update metadata of columns to be dropped */
-  dd_drop_instant_columns(&m_old_dd_tab->table(), &m_new_dd_tab->table(),
-                          m_dict_table, m_cols_to_drop
+  return dd_drop_instant_columns(&m_old_dd_tab->table(), &m_new_dd_tab->table(),
+                                 m_dict_table, m_cols_to_drop
 #ifdef UNIV_DEBUG
-                          ,
-                          m_cols_to_add, m_ha_alter_info
+                                 ,
+                                 m_cols_to_add, m_ha_alter_info
 #endif
   );
 }
 
-template void Instant_ddl_impl<dd::Table>::commit_instant_drop_col_low();
-template void Instant_ddl_impl<dd::Partition>::commit_instant_drop_col_low();
+template bool Instant_ddl_impl<dd::Table>::commit_instant_drop_col_low();
+template bool Instant_ddl_impl<dd::Partition>::commit_instant_drop_col_low();
 
 template <>
-void Instant_ddl_impl<dd::Table>::commit_instant_drop_col() {
-  commit_instant_drop_col_low();
+bool Instant_ddl_impl<dd::Table>::commit_instant_drop_col() {
+  return commit_instant_drop_col_low();
 }
 
 template <>
-void Instant_ddl_impl<dd::Partition>::commit_instant_drop_col() {
+bool Instant_ddl_impl<dd::Partition>::commit_instant_drop_col() {
   if (dd_part_is_first(m_new_dd_tab)) {
-    commit_instant_drop_col_low();
+    if (commit_instant_drop_col_low()) return true;
   }
+  return false;
 }
 
 template <typename Table>
-void Instant_ddl_impl<Table>::commit_instant_ddl() {
+bool Instant_ddl_impl<Table>::commit_instant_ddl() {
   Instant_Type type =
       static_cast<Instant_Type>(m_ha_alter_info->handler_trivial_ctx);
 
@@ -232,12 +241,12 @@ void Instant_ddl_impl<Table>::commit_instant_ddl() {
 
       if (!m_cols_to_drop.empty()) {
         /* INSTANT DROP */
-        commit_instant_drop_col();
+        if (commit_instant_drop_col()) return true;
       }
 
       if (!m_cols_to_add.empty()) {
         /* INSTANT ADD */
-        commit_instant_add_col();
+        if (commit_instant_add_col()) return true;
       }
 
       /* Update the current row version in dictionary cache */
@@ -267,10 +276,11 @@ void Instant_ddl_impl<Table>::commit_instant_ddl() {
       dd_set_autoinc(m_new_dd_tab->table().se_private_data(), *m_autoinc);
     }
   }
+  return false;
 }
 
-template void Instant_ddl_impl<dd::Table>::commit_instant_ddl();
-template void Instant_ddl_impl<dd::Partition>::commit_instant_ddl();
+template bool Instant_ddl_impl<dd::Table>::commit_instant_ddl();
+template bool Instant_ddl_impl<dd::Partition>::commit_instant_ddl();
 
 static void populate_to_be_instant_columns_low(
     const Alter_inplace_info *ha_alter_info, const TABLE *old_table,

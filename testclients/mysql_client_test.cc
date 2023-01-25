@@ -36,7 +36,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
+#include <thread>
 
 #include "my_byteorder.h"
 #include "my_compiler.h"
@@ -20956,6 +20959,86 @@ static void test_bug31048553() {
   mysql_close(mysql_local);
 }
 
+static void test_34556764() {
+  MYSQL *mysql_local;
+  uint ssl_mode = SSL_MODE_DISABLED;
+  uint protocol = MYSQL_PROTOCOL_TCP;
+  bool use_server_public_key = true;
+  net_async_status status;
+  myheader("test_34556764");
+  if (mysql_query(
+          mysql,
+          "CREATE USER u34556764_1 IDENTIFIED WITH 'sha256_password' BY "
+          "'abcd'")) {
+    fprintf(stderr, "\n Create user failed with error %s ", mysql_error(mysql));
+    exit(1);
+  }
+
+  if (mysql_query(
+          mysql,
+          "CREATE USER u34556764_2 IDENTIFIED WITH 'caching_sha2_password' BY "
+          "'abcd'")) {
+    fprintf(stderr, "\n Create user failed with error %s ", mysql_error(mysql));
+    exit(1);
+  }
+
+  if (!(mysql_local = mysql_client_init(nullptr))) {
+    myerror("mysql_client_init() failed");
+    exit(1);
+  }
+
+  mysql_options(mysql_local, MYSQL_OPT_PROTOCOL, &protocol);
+  mysql_options(mysql_local, MYSQL_OPT_SSL_MODE, &ssl_mode);
+
+  do {
+    status = mysql_real_connect_nonblocking(
+        mysql_local, opt_host, "u34556764_1", "abcd", nullptr, opt_port,
+        nullptr, CLIENT_MULTI_STATEMENTS);
+  } while (status == NET_ASYNC_NOT_READY);
+  if (status == NET_ASYNC_ERROR) {
+    fprintf(stdout, "\n mysql_real_connect_nonblocking() failed. Error: [%s]",
+            mysql_error(mysql_local));
+    exit(1);
+  } else {
+    fprintf(stdout, "\n asynchronous connection estalished");
+  }
+  mysql_close(mysql_local);
+
+  if (!(mysql_local = mysql_client_init(nullptr))) {
+    myerror("mysql_client_init() failed");
+    exit(1);
+  }
+
+  mysql_options(mysql_local, MYSQL_OPT_PROTOCOL, &protocol);
+  mysql_options(mysql_local, MYSQL_OPT_SSL_MODE, &ssl_mode);
+  mysql_options(mysql_local, MYSQL_OPT_GET_SERVER_PUBLIC_KEY,
+                &use_server_public_key);
+
+  do {
+    status = mysql_real_connect_nonblocking(
+        mysql_local, opt_host, "u34556764_2", "abcd", nullptr, opt_port,
+        nullptr, CLIENT_MULTI_STATEMENTS);
+  } while (status == NET_ASYNC_NOT_READY);
+  if (status == NET_ASYNC_ERROR) {
+    fprintf(stdout, "\n mysql_real_connect_nonblocking() failed. Error: [%s]",
+            mysql_error(mysql_local));
+    exit(1);
+  } else {
+    fprintf(stdout, "\n asynchronous connection estalished");
+  }
+  mysql_close(mysql_local);
+
+  if (mysql_query(mysql, "DROP USER u34556764_1")) {
+    fprintf(stderr, "\n Drop user failed with error %s ", mysql_error(mysql));
+    exit(1);
+  }
+
+  if (mysql_query(mysql, "DROP USER u34556764_2")) {
+    fprintf(stderr, "\n Drop user failed with error %s ", mysql_error(mysql));
+    exit(1);
+  }
+}
+
 static void test_wl11381() {
   MYSQL *mysql_local;
   MYSQL_RES *result;
@@ -22539,14 +22622,14 @@ static void test_bug31691060_2() {
   rc = mysql_stmt_execute(stmt);
   check_execute(stmt, rc);
 
-  int count = 0;
-  while (mysql_stmt_fetch(stmt) == 0) count++;
+  while (mysql_stmt_fetch(stmt) == 0) {
+  }
 
   mysql_stmt_execute(stmt);
   check_execute(stmt, rc);
 
-  count = 0;
-  while (mysql_stmt_fetch(stmt) == 0) count++;
+  while (mysql_stmt_fetch(stmt) == 0) {
+  }
 
   rc = mysql_stmt_close(stmt);
 }
@@ -23111,7 +23194,7 @@ static bool send_query(MYSQL *mysql_con, const char *query) {
     return false;
   }
   MYSQL_RES *result = mysql_store_result(mysql_con);
-  if (result == NULL) {
+  if (result == nullptr) {
     printf("No result-set\n");
   } else {
     MYSQL_ROW row = mysql_fetch_row(result);
@@ -23218,7 +23301,7 @@ static void test_bug33535746() {
 
   DIE_UNLESS(rc == MYSQL_NO_DATA);
 
-  assert(row_count == 1);
+  DIE_UNLESS(row_count == 1);
 
   // Second execution with cursor
 
@@ -23281,6 +23364,103 @@ static void test_bug33535746() {
 
   rc = mysql_query(mysql, "drop table t1");
   myquery(rc);
+}
+
+static void test_wl13128() {
+  DBUG_TRACE;
+  myheader("test_wl13128");
+
+  MYSQL *lmysql;
+  int rc;
+
+  lmysql = mysql_client_init(nullptr);
+  DIE_UNLESS(lmysql);
+
+  if (!mysql_real_connect(lmysql, opt_host, opt_user, opt_password, current_db,
+                          opt_port, opt_unix_socket, CLIENT_NO_SCHEMA)) {
+    fprintf(stderr, "Failed to connect to the database\n");
+    DIE_UNLESS(0);
+  }
+
+  rc = mysql_query(lmysql, "SELECT 1");
+  myquery(rc);
+
+  mysql_free_result(mysql_store_result(lmysql));
+
+  DIE_UNLESS(1 == mysql_warning_count(lmysql));
+
+  mysql_close(lmysql);
+}
+
+static void test_bug25584097() {
+  DBUG_TRACE;
+  myheader("test_bug25584097");
+  int rc;
+
+  class test_bug25584097_thd {
+    unsigned long thread_id{0};
+    std::condition_variable cnd;
+    std::mutex mtx;
+
+   public:
+    void run() {
+      int rc;
+      MYSQL *lmysql;
+      MYSQL_STMT *stmt;
+      const char *sqlstmt = "select sleep(300)";
+      unsigned long ct = (unsigned long)CURSOR_TYPE_READ_ONLY;
+
+      printf("child thread start\n");
+      lmysql = mysql_client_init(nullptr);
+      DIE_UNLESS(lmysql);
+
+      if (!mysql_real_connect(lmysql, opt_host, opt_user, opt_password,
+                              current_db, opt_port, opt_unix_socket, 0)) {
+        fprintf(stderr, "Failed to connect to the database\n");
+        DIE_UNLESS(0);
+      }
+
+      {
+        std::unique_lock lk(mtx);
+        thread_id = mysql_thread_id(lmysql);
+      }
+      stmt = mysql_stmt_init(lmysql);
+      DIE_UNLESS(stmt != nullptr);
+      rc = mysql_stmt_prepare(stmt, sqlstmt, (unsigned long)strlen(sqlstmt));
+      DIE_UNLESS(rc == 0);
+      rc = mysql_stmt_attr_set(stmt, STMT_ATTR_CURSOR_TYPE, (const void *)&ct);
+      DIE_UNLESS(rc == 0);
+      printf("child thread ready to exec\n");
+      cnd.notify_one();
+      rc = mysql_stmt_execute(stmt);
+      DIE_UNLESS(rc != 0);
+      printf("child thread cleaning up\n");
+      rc = mysql_stmt_close(stmt);
+      DIE_UNLESS(rc == 0);
+      mysql_close(lmysql);
+      printf("child thread ending\n");
+      mysql_thread_end();
+    }
+
+    unsigned long wait_to_kill() {
+      std::unique_lock lk(mtx);
+      cnd.wait(lk, [this] { return thread_id != 0; });
+      return thread_id;
+    }
+  } foo;
+
+  std::thread thd(&test_bug25584097_thd::run, &foo);
+  printf("Waiting for the child thread\n");
+  unsigned long thd_to_kill = foo.wait_to_kill();
+  sleep(2);
+
+  printf("Killing the child thread\n");
+  char cmd[50];
+  sprintf(cmd, "KILL %lu", thd_to_kill);
+  rc = mysql_query(mysql, cmd);
+  myquery(rc);
+  printf("Wating for the child thread to finish\n");
+  thd.join();
 }
 
 static struct my_tests_st my_tests[] = {
@@ -23596,6 +23776,9 @@ static struct my_tests_st my_tests[] = {
     {"test_wl13075", test_wl13075},
     {"test_bug34007830", test_bug34007830},
     {"test_bug33535746", test_bug33535746},
+    {"test_wl13128", test_wl13128},
+    {"test_bug25584097", test_bug25584097},
+    {"test_34556764", test_34556764},
     {nullptr, nullptr}};
 
 static struct my_tests_st *get_my_tests() { return my_tests; }

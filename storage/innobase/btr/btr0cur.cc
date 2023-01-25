@@ -684,7 +684,6 @@ void btr_cur_search_to_nth_level(
 
   DBUG_TRACE;
 
-  btr_search_t *info;
   mem_heap_t *heap = nullptr;
   ulint offsets_[REC_OFFS_NORMAL_SIZE];
   ulint *offsets = offsets_;
@@ -767,15 +766,13 @@ void btr_cur_search_to_nth_level(
   cursor->flag = BTR_CUR_BINARY;
   cursor->index = index;
 
-  info = btr_search_get_info(index);
-
 #ifdef UNIV_SEARCH_PERF_STAT
   info->n_searches++;
 #endif
   /* Use of AHI is disabled for intrinsic table as these tables re-use
   the index-id and AHI validation is based on index-id. */
   if (rw_lock_get_writer(btr_get_search_latch(index)) == RW_LOCK_NOT_LOCKED &&
-      latch_mode <= BTR_MODIFY_LEAF && info->last_hash_succ &&
+      latch_mode <= BTR_MODIFY_LEAF && index->search_info->last_hash_succ &&
       !index->disable_ahi && !estimate
 #ifdef PAGE_CUR_LE_OR_EXTENDS
       && mode != PAGE_CUR_LE_OR_EXTENDS
@@ -785,7 +782,7 @@ void btr_cur_search_to_nth_level(
       btr_search_enabled below, and btr_search_guess_on_hash()
       will have to check it again. */
       && UNIV_LIKELY(btr_search_enabled) && !modify_external &&
-      btr_search_guess_on_hash(index, info, tuple, mode, latch_mode, cursor,
+      btr_search_guess_on_hash(tuple, mode, latch_mode, cursor,
                                has_search_latch, mtr)) {
 
     /* Search using the hash index succeeded */
@@ -957,10 +954,10 @@ search_loop:
 retry_page_get:
   ut_ad(n_blocks < BTR_MAX_LEVELS);
   tree_savepoints[n_blocks] = mtr_set_savepoint(mtr);
-  block =
-      buf_page_get_gen(page_id, page_size, rw_latch,
-                       (height == ULINT_UNDEFINED ? info->root_guess : nullptr),
-                       fetch, {file, line}, mtr);
+  block = buf_page_get_gen(
+      page_id, page_size, rw_latch,
+      (height == ULINT_UNDEFINED ? index->search_info->root_guess : nullptr),
+      fetch, {file, line}, mtr);
 
   tree_blocks[n_blocks] = block;
 
@@ -1129,7 +1126,7 @@ retry_page_get:
       rtr_get_mbr_from_tuple(tuple, &cursor->rtr_info->mbr);
     }
 
-    info->root_guess = block;
+    index->search_info->root_guess = block;
   }
 
   if (height == 0) {
@@ -1656,7 +1653,7 @@ retry_page_get:
     btr_search_build_page_hash_index() before building a
     page hash index, while holding search latch. */
     if (btr_search_enabled && !index->disable_ahi) {
-      btr_search_info_update(index, cursor);
+      btr_search_info_update(cursor);
     }
     ut_ad(cursor->up_match != ULINT_UNDEFINED || mode != PAGE_CUR_GE);
     ut_ad(cursor->up_match != ULINT_UNDEFINED || mode != PAGE_CUR_LE);
@@ -1730,7 +1727,7 @@ void btr_cur_search_to_nth_level_with_no_latch(dict_index_t *index, ulint level,
   Page_fetch fetch;
   page_cur_t *page_cursor;
   ulint root_height = 0; /* remove warning */
-  ulint n_blocks = 0;
+  ulint n_blocks [[maybe_unused]] = 0;
 
   mem_heap_t *heap = nullptr;
   ulint offsets_[REC_OFFS_NORMAL_SIZE];
@@ -2174,7 +2171,7 @@ void btr_cur_open_at_index_side_with_no_latch(bool from_left,
   page_cur_t *page_cursor;
   ulint height;
   rec_t *node_ptr;
-  ulint n_blocks = 0;
+  ulint n_blocks [[maybe_unused]] = 0;
   mem_heap_t *heap = nullptr;
   ulint offsets_[REC_OFFS_NORMAL_SIZE];
   ulint *offsets = offsets_;
@@ -3336,7 +3333,6 @@ dberr_t btr_cur_update_in_place(ulint flags, btr_cur_t *cursor, ulint *offsets,
   rec_t *rec;
   roll_ptr_t roll_ptr = 0;
   bool was_delete_marked;
-  bool is_hashed;
 
   rec = btr_cur_get_rec(cursor);
   index = cursor->index;
@@ -3394,9 +3390,7 @@ dberr_t btr_cur_update_in_place(ulint flags, btr_cur_t *cursor, ulint *offsets,
   was_delete_marked =
       rec_get_deleted_flag(rec, page_is_comp(buf_block_get_frame(block)));
 
-  is_hashed = (block->index != nullptr);
-
-  if (is_hashed) {
+  if (block->ahi.index.load() != nullptr) {
     /* TO DO: Can we skip this if none of the fields
     index->search_info->curr_n_fields
     are being updated? */
@@ -3411,16 +3405,10 @@ dberr_t btr_cur_update_in_place(ulint flags, btr_cur_t *cursor, ulint *offsets,
       /* Remove possible hash index pointer to this record */
       btr_search_update_hash_on_delete(cursor);
     }
-
-    rw_lock_x_lock(btr_get_search_latch(index), UT_LOCATION_HERE);
   }
 
-  assert_block_ahi_valid(block);
+  block->ahi.validate();
   row_upd_rec_in_place(rec, index, offsets, update, page_zip);
-
-  if (is_hashed) {
-    rw_lock_x_unlock(btr_get_search_latch(index));
-  }
 
   btr_cur_update_in_place_log(flags, rec, index, update, trx_id, roll_ptr, mtr);
 
@@ -3443,6 +3431,61 @@ func_exit:
   }
 
   return (err);
+}
+
+/** If default value of INSTANT ADD column is to be materialize in updated row.
+@param[in]  index  record descriptor
+@param[in]  rec    record
+@return true if instant add column(s) to be materialized. */
+bool materialize_instant_default(const dict_index_t *index, const rec_t *rec) {
+#ifdef UNIV_DEBUG
+  if (rec_new_is_versioned(rec)) {
+    uint8_t v = rec_get_instant_row_version_new(rec);
+    if (v == 0) {
+      ut_ad(index->has_instant_cols());
+    } else {
+      ut_ad(index->has_row_versions());
+    }
+  }
+#endif
+
+  /* For upgraded table with INSTANT ADD column done in previous implementaion,
+  don't materialize INSTANT columns for existing rows during update. The reason
+  is, earlier INSTANT ADD column is allowed even if after adding that column,
+  max size of a possible row may cross the row_size_limit. This creates an issue
+  with the UPDATE/ROLLBACK. Let's say during UPDATE all INSTANT ADD COLS are
+  materialized, updated row is fitting the row_size_limit. But if a rollback is
+  done and INSTANT columns are kept materialised row may exceed row_size_limit.
+  Thus ROLLBACK will fail. So for these rows, we keep the old behavior.
+  NOTE: Any new row inserted after upgrade will have all INSTANT columns
+  materialized and have version=0.
+  NOTE: In new implementation an INSTANT ADD/DROP will fail if max possible size
+  of a row crosses row_size_limit. So new rows with materialized INSTANT columns
+  will always be within row_size_limit.
+  Thus the above mentioned issue isn't there for rows inserted post upgrade. */
+
+  /* If the record is versioned, the old instant add defaults must already have
+  been materialized. */
+  if (rec_new_is_versioned(rec)) {
+    return true;
+  }
+
+  /* If table has version (i.e. INSTANT ADD/DROP is done), this is gauranteed
+  that the maximum row will fit within the limit or else INSTANT ADD/DROP would
+  have failed. So it is safe to materialize it. */
+  if (index->has_row_versions()) {
+    return true;
+  }
+
+  /* The record is not versioned. If the index has instant default from older
+  version, we must not materialize it. */
+  if (index->has_instant_cols()) {
+    return false;
+  }
+
+  /* The record is not versioned and the index doesn't have instant default from
+  older version. It is safe to materialize it. */
+  return true;
 }
 
 dberr_t btr_cur_optimistic_update(ulint flags, btr_cur_t *cursor,
@@ -3541,17 +3584,13 @@ dberr_t btr_cur_optimistic_update(ulint flags, btr_cur_t *cursor,
   /* We checked above that there are no externally stored fields. */
   ut_a(!new_entry->has_ext());
 
-  /* For upgraded instant table, don't materialize instant default */
-  bool materialize_instant_default =
-      !(index->has_instant_cols() && !index->has_row_versions());
-
   /* The page containing the clustered index record
   corresponding to new_entry is latched in mtr.
   Thus the following call is safe. */
   row_upd_index_replace_new_col_vals_index_pos(new_entry, index, update, false,
                                                *heap);
 
-  if (!materialize_instant_default) {
+  if (!materialize_instant_default(index, rec)) {
     new_entry->ignore_trailing_default(index);
   }
 
@@ -3806,10 +3845,6 @@ dberr_t btr_cur_pessimistic_update(ulint flags, btr_cur_t *cursor,
 
   rec = btr_cur_get_rec(cursor);
 
-  /* For upgraded instant table, don't materialize instant default */
-  bool materialize_instant_default =
-      !(index->has_instant_cols() && !index->has_row_versions());
-
   *offsets = rec_get_offsets(rec, index, *offsets, ULINT_UNDEFINED,
                              UT_LOCATION_HERE, offsets_heap);
 
@@ -3825,7 +3860,7 @@ dberr_t btr_cur_pessimistic_update(ulint flags, btr_cur_t *cursor,
   row_upd_index_replace_new_col_vals_index_pos(new_entry, index, update, false,
                                                entry_heap);
 
-  if (!materialize_instant_default) {
+  if (!materialize_instant_default(index, rec)) {
     new_entry->ignore_trailing_default(index);
   }
 
@@ -3891,7 +3926,7 @@ dberr_t btr_cur_pessimistic_update(ulint flags, btr_cur_t *cursor,
 
     /* During rollback of a record in table having INSTANT fields, it is
     possible to have an external field now which wasn't there before update */
-    ut_ad(big_rec_vec == nullptr || index->table->has_row_versions());
+    ut_ad(big_rec_vec == nullptr || materialize_instant_default(index, rec));
 
     ut_ad(index->is_clustered());
     ut_ad((flags & ~BTR_KEEP_POS_FLAG) ==

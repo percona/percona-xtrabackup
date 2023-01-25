@@ -4024,9 +4024,10 @@ static Sys_var_ulong Sys_server_id(
     "server_id",
     "Uniquely identifies the server instance in the community of "
     "replication partners",
-    GLOBAL_VAR(server_id), CMD_LINE(REQUIRED_ARG, OPT_SERVER_ID),
-    VALID_RANGE(0, UINT_MAX32), DEFAULT(1), BLOCK_SIZE(1), NO_MUTEX_GUARD,
-    NOT_IN_BINLOG, ON_CHECK(nullptr), ON_UPDATE(fix_server_id));
+    PERSIST_AS_READONLY GLOBAL_VAR(server_id),
+    CMD_LINE(REQUIRED_ARG, OPT_SERVER_ID), VALID_RANGE(0, UINT_MAX32),
+    DEFAULT(1), BLOCK_SIZE(1), NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(nullptr),
+    ON_UPDATE(fix_server_id));
 
 static Sys_var_charptr Sys_server_uuid(
     "server_uuid", "Uniquely identifies the server instance in the universe",
@@ -6311,7 +6312,7 @@ static Sys_var_deprecated_alias Sys_slave_skip_errors("slave_skip_errors",
 static Sys_var_ulonglong Sys_relay_log_space_limit(
     "relay_log_space_limit", "Maximum space to use for all relay logs",
     READ_ONLY GLOBAL_VAR(relay_log_space_limit), CMD_LINE(REQUIRED_ARG),
-    VALID_RANGE(0, ULONG_MAX), DEFAULT(0), BLOCK_SIZE(1));
+    VALID_RANGE(0, ULLONG_MAX), DEFAULT(0), BLOCK_SIZE(1));
 
 static Sys_var_uint Sys_sync_relaylog_period(
     "sync_relay_log",
@@ -7674,3 +7675,15 @@ static Sys_var_bool Sys_persist_sensitive_variables_in_plaintext(
         GLOBAL_VAR(opt_persist_sensitive_variables_in_plaintext),
     CMD_LINE(OPT_ARG), DEFAULT(true), NO_MUTEX_GUARD, NOT_IN_BINLOG,
     ON_CHECK(nullptr), ON_UPDATE(nullptr), nullptr, sys_var::PARSE_EARLY);
+
+static const char *explain_format_names[] = {
+    "TRADITIONAL", "TRADITIONAL_STRICT", "TREE", "JSON", NullS};
+static Sys_var_enum Sys_explain_format(
+    "explain_format",
+    "The default format in which the EXPLAIN statement displays information. "
+    "Valid values are TRADITIONAL (default), TREE, JSON and TRADITIONAL_STRICT."
+    " TRADITIONAL_STRICT is only used internally by the mtr test suite, and is "
+    "not meant to be used anywhere else.",
+    SESSION_VAR(explain_format), CMD_LINE(OPT_ARG), explain_format_names,
+    DEFAULT(static_cast<ulong>(Explain_format_type::TRADITIONAL)),
+    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(nullptr), ON_UPDATE(nullptr));

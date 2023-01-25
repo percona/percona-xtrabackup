@@ -41,7 +41,6 @@ IF(NOT WITHOUT_SERVER)
   # Add the ndbcluster plugin
   #
   SET(NDBCLUSTER_SOURCES
-    ../../sql/abstract_query_plan.cc
     plugin/ha_ndbcluster.cc
     plugin/ha_ndbcluster_cond.cc
     plugin/ha_ndbcluster_push.cc
@@ -51,6 +50,7 @@ IF(NOT WITHOUT_SERVER)
     plugin/ha_ndb_ddl_fk.cc
     plugin/ha_ndbinfo.cc
     plugin/ha_ndbinfo_sql.cc
+    plugin/ha_query_plan.cc
     plugin/ndb_local_connection.cc
     plugin/ndb_share.cc
     plugin/ndb_thd.cc
@@ -161,7 +161,7 @@ FOREACH(warning
 ENDFOREACH()
 
 IF(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
-  MESSAGE(FATAL_ERROR "Only 64-bit build of NDB is supported")
+  MESSAGE(WARNING "Only 64-bit build of NDB is supported")
 ENDIF()
 
 INCLUDE(${CMAKE_CURRENT_SOURCE_DIR}/ndb_configure.cmake)

@@ -187,9 +187,8 @@ static rw_lock_debug_t *rw_lock_debug_create(void) {
 static void rw_lock_debug_free(rw_lock_debug_t *info) { ut::free(info); }
 #endif /* UNIV_DEBUG */
 
-void rw_lock_create_func(rw_lock_t *lock, IF_DEBUG(latch_level_t level,
-                                                   const char *cmutex_name, )
-                                              ut::Location clocation) {
+void rw_lock_create_func(rw_lock_t *lock,
+                         IF_DEBUG(latch_id_t id, ) ut::Location clocation) {
 #if !defined(UNIV_PFS_RWLOCK)
   /* It should have been created in pfs_rw_lock_create_func() */
   new (lock) rw_lock_t();
@@ -198,10 +197,6 @@ void rw_lock_create_func(rw_lock_t *lock, IF_DEBUG(latch_level_t level,
 
   /* If this is the very first time a synchronization object is
   created, then the following call initializes the sync system. */
-
-#ifdef UNIV_DEBUG
-  UT_NOT_USED(cmutex_name);
-#endif
 
   lock->lock_word = X_LOCK_DECR;
   lock->waiters = false;
@@ -213,10 +208,9 @@ void rw_lock_create_func(rw_lock_t *lock, IF_DEBUG(latch_level_t level,
 #ifdef UNIV_DEBUG
   lock->m_rw_lock = true;
 
-  lock->m_id = sync_latch_get_id(sync_latch_get_name(level));
+  lock->m_id = id;
   ut_a(lock->m_id != LATCH_ID_NONE);
 
-  lock->level = level;
 #endif /* UNIV_DEBUG */
 
   lock->clocation = clocation;
@@ -252,22 +246,27 @@ void rw_lock_create_func(rw_lock_t *lock, IF_DEBUG(latch_level_t level,
  rw-lock is checked to be in the non-locked state. */
 void rw_lock_free_func(rw_lock_t *lock) /*!< in/out: rw-lock */
 {
+  /* We did an in-place new in rw_lock_create_func() */
+  lock->~rw_lock_t();
+}
+
+rw_lock_t::~rw_lock_t() {
   os_rmb;
-  ut_ad(rw_lock_validate(lock));
-  ut_a(lock->lock_word == X_LOCK_DECR);
+  ut_ad(rw_lock_validate(this));
+  ut_a(lock_word == X_LOCK_DECR);
 
   mutex_enter(&rw_lock_list_mutex);
 
-  os_event_destroy(lock->event);
+  os_event_destroy(event);
 
-  os_event_destroy(lock->wait_ex_event);
+  os_event_destroy(wait_ex_event);
 
-  UT_LIST_REMOVE(rw_lock_list, lock);
+  UT_LIST_REMOVE(rw_lock_list, this);
 
   mutex_exit(&rw_lock_list_mutex);
 
-  /* We did an in-place new in rw_lock_create_func() */
-  lock->~rw_lock_t();
+  ut_ad(magic_n == MAGIC_N);
+  ut_d(magic_n = 0);
 }
 
 void rw_lock_s_lock_spin(rw_lock_t *lock, ulint pass, ut::Location location) {
@@ -644,7 +643,6 @@ void rw_lock_sx_lock_func(rw_lock_t *lock, ulint pass, ut::Location location) {
   ulint i = 0;
   sync_array_t *sync_arr;
   uint64_t count_os_wait = 0;
-  ulint spin_wait_count = 0;
 
   ut_ad(rw_lock_validate(lock));
   ut_ad(!rw_lock_own(lock, RW_LOCK_S));
@@ -660,8 +658,6 @@ lock_loop:
     return;
 
   } else {
-    ++spin_wait_count;
-
     /* Spin waiting for the lock_word to become free */
     os_rmb;
     while (i < srv_n_spin_wait_rounds && lock->lock_word <= X_LOCK_HALF_DECR) {
@@ -765,18 +761,63 @@ void rw_lock_add_debug_info(rw_lock_t *lock, ulint pass, ulint lock_type,
 
   rw_lock_debug_mutex_exit();
 
-  if (pass == 0 && lock_type != RW_LOCK_X_WAIT) {
-    /* Recursive x while holding SX
-    (lock_type == RW_LOCK_X && lock_word == -X_LOCK_HALF_DECR)
-    is treated as not-relock (new lock). */
+  const auto lock_word = lock->lock_word.load();
 
-    if ((lock_type == RW_LOCK_X && lock->lock_word < -X_LOCK_HALF_DECR) ||
-        (lock_type == RW_LOCK_SX &&
-         (lock->lock_word < 0 || lock->sx_recursive == 1))) {
+  /*
+  The lock->lock_word and lock->sx_recursive already have been updated to
+  reflect current acquisition before calling this function. We'd like to call
+  sync_check_relock() for recursive acquisition of X or SX, which doesn't really
+  have to wait, because the thread already has relevant access right.
+
+  There are 4 cases to consider:
+
+  1. We already held at least one X, and requested X again.
+  This means lock_type == RW_LOCK_X and lock_word < -X_LOCK_HALF_DECR.
+  Actually, we can even say that lock_word <= -X_LOCK_DECR, as values between
+  -X_LOCK_DECR and -X_LOCK_HALF_DECR only happen while waiting for X and there
+  are still some S granted, which we know can't be true as we hold at least one
+  X.
+  */
+  if (lock_type == RW_LOCK_X && lock_word < -X_LOCK_HALF_DECR) {
+    ut_a(lock_word <= -X_LOCK_DECR);
+  }
+  const bool case1 = lock_type == RW_LOCK_X && lock_word <= -X_LOCK_DECR;
+
+  /*
+  2. We already held at least one X, and requested SX.
+  This means lock_type == RW_LOCK_SX and lock_word < 0.
+  Actually, we can even say that lock_word <= -X_LOCK_HALF_DECR, because values
+  between -X_LOCK_HALF_DECR and 0 only happen while waiting for X and there are
+  still some S granted, which we know can't be true as we hold at least one X.
+  */
+  if (lock_type == RW_LOCK_SX && lock_word < 0) {
+    ut_a(lock_word <= -X_LOCK_HALF_DECR);
+  }
+  const bool case2 = lock_type == RW_LOCK_SX && lock_word <= -X_LOCK_HALF_DECR;
+
+  /*
+  3. We already held at least one SX, and requested SX again.
+  This means lock_type == RW_LOCK_SX and 2 <= lock->sx_recursive.
+  Note that first SX has set lock->sx_recursive to 1, and second incremented
+  it. Also note, that cases 2 and 3 are not mutually exclusive.
+  */
+  const bool case3 = lock_type == RW_LOCK_SX && 2 <= lock->sx_recursive;
+
+  /*
+  4. We already held at least one SX (but no X), and requested X now.
+  This would manifest as
+  lock_type == RW_LOCK_X and lock_word == -X_LOCK_HALF_DECR.
+  This might have to wait for other threads to release their S, and thus is
+  blocking and constitutes an escalation, and thus ...
+  THIS IS NOT CONSIDERED TO BE A RELOCK!
+  */
+
+  if (pass == 0 && lock_type != RW_LOCK_X_WAIT) {
+    if (case1 || case2 || case3) {
+      sync_check_relock(lock);
+    } else {
       sync_check_lock_validate(lock);
       sync_check_lock_granted(lock);
-    } else {
-      sync_check_relock(lock);
     }
   }
 }

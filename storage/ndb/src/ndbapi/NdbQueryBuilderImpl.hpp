@@ -133,7 +133,7 @@ public:
     if (unlikely(m_array != m_local)) {
       delete[] m_array;
     }
-    m_array = NULL;
+    m_array = nullptr;
     m_size = 0;
   }
 
@@ -147,7 +147,7 @@ public:
     Uint32 reqSize = m_size+count;
     if(unlikely(reqSize >= m_avail)) {
       if (unlikely(m_memoryExhausted)) {
-        return NULL;
+        return nullptr;
       }
 #if defined(TEST_Uint32Buffer)
       Uint32 newSize = reqSize; // -> Always expand on next alloc
@@ -157,7 +157,7 @@ public:
 //    ndbout << "Uint32Buffer::alloc() Extend buffer from: " << m_avail
 //           << ", to: " << newSize << endl;
       Uint32* newBuf = new Uint32[newSize];
-      if (likely(newBuf!=NULL)) {
+      if (likely(newBuf!=nullptr)) {
         assert(newBuf);
         memcpy (newBuf, m_array, m_size*sizeof(Uint32));
         if (m_array != m_local) {
@@ -168,7 +168,7 @@ public:
       } else {
         m_size = m_avail;
         m_memoryExhausted = true;
-        return NULL;
+        return nullptr;
       }
     }
     Uint32* extend = &m_array[m_size];
@@ -191,7 +191,7 @@ public:
       m_array[m_size++] = src;
     } else {
       Uint32* dst = alloc(1);
-      if (likely(dst!=NULL))
+      if (likely(dst!=nullptr))
         *dst = src;
     }
   }
@@ -204,7 +204,7 @@ public:
     Uint32 len = src.getSize();
     if (likely(len > 0)) {
       Uint32* dst = alloc(len);
-      if (likely(dst!=NULL)) {
+      if (likely(dst!=nullptr)) {
         memcpy(dst, src.addr(), len*sizeof(Uint32));
       }
     }
@@ -219,7 +219,7 @@ public:
         static_cast<Uint32>((len + sizeof(Uint32)-1 - m_bytesLeft) 
                             / sizeof(Uint32));
       Uint32* dst = alloc(wordCount);
-      if (likely(dst!=NULL)) {
+      if (likely(dst!=nullptr)) {
         // Copy src 
         Uint8* const start = reinterpret_cast<Uint8*>(dst) - m_bytesLeft;
         memcpy(start, src, len);
@@ -236,10 +236,10 @@ public:
   { m_bytesLeft = 0; }
 
   Uint32* addr(Uint32 idx=0) {
-    return (likely(!m_memoryExhausted && m_size>idx)) ?&m_array[idx] :NULL;
+    return (likely(!m_memoryExhausted && m_size>idx)) ?&m_array[idx] :nullptr;
   }
   const Uint32* addr(Uint32 idx=0) const {
-    return (likely(!m_memoryExhausted && m_size>idx)) ?&m_array[idx] :NULL;
+    return (likely(!m_memoryExhausted && m_size>idx)) ?&m_array[idx] :nullptr;
   }
 
   /** Get the idx'th element. Make sure there is space for 'count' elements.*/
@@ -338,7 +338,7 @@ public:
 
   const NdbQueryOperationDefImpl& getParentOperation(Uint32 i
                                                      [[maybe_unused]]) const
-  { assert(i==0 && m_parent!=NULL);
+  { assert(i==0 && m_parent!=nullptr);
     return *m_parent;
   }
 
@@ -425,13 +425,13 @@ public:
   { return *m_params[ix]; }
 
   virtual const NdbIndexImpl* getIndex() const
-  { return NULL; }
+  { return nullptr; }
 
   virtual const NdbQueryOperandImpl* const* getKeyOperands() const
-  { return NULL; } 
+  { return nullptr; } 
 
   virtual const IndexBound* getBounds() const
-  { return NULL; } 
+  { return nullptr; } 
 
   /** 
    * True if this is a prunable scan and there are NdbQueryParamOperands in the
@@ -819,7 +819,7 @@ protected:
   virtual ~NdbQueryOperandImpl(){}
 
   NdbQueryOperandImpl(Kind kind)
-    : m_column(0),
+    : m_column(nullptr),
       m_kind(kind)
   {}
 
@@ -908,7 +908,7 @@ public:
   Uint32 getSizeInBytes() const
   { return m_converted.len; }
   const void* getAddr() const
-  { return likely(m_converted.buffer==NULL) ? &m_converted.val : m_converted.buffer; }
+  { return likely(m_converted.buffer==nullptr) ? &m_converted.val : m_converted.buffer; }
 
   NdbQueryOperand& getInterface() override
   { return m_interface; }
@@ -963,7 +963,7 @@ protected:
     */
   class ConvertedValue {
   public:
-    ConvertedValue()  : len(0), buffer(NULL) {}
+    ConvertedValue()  : len(0), buffer(nullptr) {}
     ~ConvertedValue() {
       if (buffer) delete[] ((char*)buffer);
     }

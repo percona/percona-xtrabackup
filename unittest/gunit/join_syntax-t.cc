@@ -39,8 +39,8 @@ using my_testing::Server_initializer;
 class JoinSyntaxTest : public ParserTest {};
 
 void check_name_resolution_tables(std::initializer_list<const char *> aliases,
-                                  SQL_I_List<TABLE_LIST> tables) {
-  TABLE_LIST *table_list = tables.first;
+                                  SQL_I_List<Table_ref> tables) {
+  Table_ref *table_list = tables.first;
   for (auto alias : aliases) {
     ASSERT_FALSE(table_list == nullptr);
     EXPECT_STREQ(alias, table_list->alias)
@@ -52,12 +52,12 @@ void check_name_resolution_tables(std::initializer_list<const char *> aliases,
 
 TEST_F(JoinSyntaxTest, CrossJoin) {
   Query_block *query_block = parse("SELECT * FROM t1 JOIN t2 JOIN t3");
-  check_name_resolution_tables({"t1", "t2", "t3"}, query_block->table_list);
+  check_name_resolution_tables({"t1", "t2", "t3"}, query_block->m_table_list);
 }
 
 TEST_F(JoinSyntaxTest, CrossJoinOn) {
   Query_block *query_block = parse("SELECT * FROM t1 JOIN t2 JOIN t3 ON 1");
-  check_name_resolution_tables({"t1", "t2", "t3"}, query_block->table_list);
+  check_name_resolution_tables({"t1", "t2", "t3"}, query_block->m_table_list);
 }
 
 }  // namespace join_syntax_unittest

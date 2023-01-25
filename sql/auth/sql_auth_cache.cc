@@ -94,7 +94,6 @@
 
 using std::make_unique;
 using std::min;
-using std::move;
 using std::string;
 using std::unique_ptr;
 
@@ -1697,7 +1696,7 @@ void notify_flush_event(THD *thd) {
     @retval false Success
     @retval true failure
 */
-static bool reload_roles_cache(THD *thd, TABLE_LIST *tablelst) {
+static bool reload_roles_cache(THD *thd, Table_ref *tablelst) {
   DBUG_TRACE;
   assert(tablelst);
   sql_mode_t old_sql_mode = thd->variables.sql_mode;
@@ -1823,7 +1822,7 @@ void clean_user_cache() {
     true   Error
 */
 
-static bool acl_load(THD *thd, TABLE_LIST *tables) {
+static bool acl_load(THD *thd, Table_ref *tables) {
   TABLE *table;
   unique_ptr_destroy_only<RowIterator> iterator;
   bool return_val = true;
@@ -1999,7 +1998,7 @@ void acl_free(bool end /*= false*/) {
 }
 
 bool check_engine_type_for_acl_table(THD *thd, bool mdl_locked) {
-  TABLE_LIST tables[ACL_TABLES::LAST_ENTRY];
+  Table_ref tables[ACL_TABLES::LAST_ENTRY];
   uint flags = mdl_locked
                    ? MYSQL_OPEN_HAS_MDL_LOCK | MYSQL_LOCK_IGNORE_TIMEOUT |
                          MYSQL_OPEN_IGNORE_FLUSH
@@ -2050,7 +2049,7 @@ class Acl_ignore_error_handler : public Internal_error_handler {
 
 /**
   Helper function that checks the sanity of tables object present in
-  the TABLE_LIST object. it logs a warning message when a table is
+  the Table_ref object. it logs a warning message when a table is
   missing
 
   @param thd        Handle of current thread.
@@ -2060,7 +2059,7 @@ class Acl_ignore_error_handler : public Internal_error_handler {
     false       OK.
     true        Error.
 */
-bool check_acl_tables_intact(THD *thd, TABLE_LIST *tables) {
+bool check_acl_tables_intact(THD *thd, Table_ref *tables) {
   Acl_table_intact table_intact(thd, WARNING_LEVEL);
   bool result_acl = false;
 
@@ -2095,7 +2094,7 @@ bool check_acl_tables_intact(THD *thd, TABLE_LIST *tables) {
     true        Unable to open the table(s).
 */
 bool check_acl_tables_intact(THD *thd, bool mdl_locked) {
-  TABLE_LIST tables[ACL_TABLES::LAST_ENTRY];
+  Table_ref tables[ACL_TABLES::LAST_ENTRY];
   Acl_ignore_error_handler acl_ignore_handler;
   uint flags = mdl_locked
                    ? MYSQL_OPEN_HAS_MDL_LOCK | MYSQL_LOCK_IGNORE_TIMEOUT |
@@ -2185,23 +2184,23 @@ bool acl_reload(THD *thd, bool mdl_locked) {
     To avoid deadlocks we should obtain table locks before obtaining
     acl_cache->lock mutex.
   */
-  TABLE_LIST tables[6] = {
-      TABLE_LIST("mysql", "user", TL_READ, MDL_SHARED_READ_ONLY),
+  Table_ref tables[6] = {
+      Table_ref("mysql", "user", TL_READ, MDL_SHARED_READ_ONLY),
       /*
-        For a TABLE_LIST element that is inited with a lock type TL_READ
+        For a Table_ref element that is inited with a lock type TL_READ
         the type MDL_SHARED_READ_ONLY of MDL is requested for.
         Acquiring strong MDL lock allows to avoid deadlock and timeout errors
         from SE level.
       */
-      TABLE_LIST("mysql", "db", TL_READ, MDL_SHARED_READ_ONLY),
+      Table_ref("mysql", "db", TL_READ, MDL_SHARED_READ_ONLY),
 
-      TABLE_LIST("mysql", "proxies_priv", TL_READ, MDL_SHARED_READ_ONLY),
+      Table_ref("mysql", "proxies_priv", TL_READ, MDL_SHARED_READ_ONLY),
 
-      TABLE_LIST("mysql", "global_grants", TL_READ, MDL_SHARED_READ_ONLY),
+      Table_ref("mysql", "global_grants", TL_READ, MDL_SHARED_READ_ONLY),
 
-      TABLE_LIST("mysql", "role_edges", TL_READ, MDL_SHARED_READ_ONLY),
+      Table_ref("mysql", "role_edges", TL_READ, MDL_SHARED_READ_ONLY),
 
-      TABLE_LIST("mysql", "default_roles", TL_READ, MDL_SHARED_READ_ONLY)};
+      Table_ref("mysql", "default_roles", TL_READ, MDL_SHARED_READ_ONLY)};
 
   tables[0].next_local = tables[0].next_global = tables + 1;
   tables[1].next_local = tables[1].next_global = tables + 2;
@@ -2213,7 +2212,7 @@ bool acl_reload(THD *thd, bool mdl_locked) {
       tables[3].open_type = tables[4].open_type = tables[5].open_type =
           OT_BASE_ONLY;
   tables[3].open_strategy = tables[4].open_strategy = tables[5].open_strategy =
-      TABLE_LIST::OPEN_IF_EXISTS;
+      Table_ref::OPEN_IF_EXISTS;
 
   if (open_and_lock_tables(thd, tables, flags)) {
     /*
@@ -2235,7 +2234,7 @@ bool acl_reload(THD *thd, bool mdl_locked) {
   old_acl_users = acl_users;
   old_acl_dbs = acl_dbs;
   old_acl_proxy_users = acl_proxy_users;
-  old_acl_restrictions = move(acl_restrictions);
+  old_acl_restrictions = std::move(acl_restrictions);
   swap_role_cache();
   roles_init();
 
@@ -2249,7 +2248,7 @@ bool acl_reload(THD *thd, bool mdl_locked) {
   // acl_load() overwrites global_acl_memory, so we need to free it.
   // However, we can't do that immediately, because acl_load() might fail,
   // and then we'd need to keep it.
-  old_mem = move(global_acl_memory);
+  old_mem = std::move(global_acl_memory);
   delete acl_wild_hosts;
   acl_wild_hosts = nullptr;
   delete acl_check_hosts;
@@ -2270,8 +2269,8 @@ bool acl_reload(THD *thd, bool mdl_locked) {
     acl_users = old_acl_users;
     acl_dbs = old_acl_dbs;
     acl_proxy_users = old_acl_proxy_users;
-    global_acl_memory = move(old_mem);
-    acl_restrictions = move(old_acl_restrictions);
+    global_acl_memory = std::move(old_mem);
+    acl_restrictions = std::move(old_acl_restrictions);
     // Revert to the old role caches
     swap_role_cache();
     // Old caches must be pointing to the global role caches right now
@@ -2494,7 +2493,7 @@ end_unlock:
     @retval true Error
 */
 
-static bool grant_load(THD *thd, TABLE_LIST *tables) {
+static bool grant_load(THD *thd, Table_ref *tables) {
   bool return_val = true;
   int error;
   TABLE *t_table = nullptr, *c_table = nullptr;
@@ -2600,23 +2599,23 @@ end_index_init:
     @retval true An error has occurred.
 */
 
-static bool grant_reload_procs_priv(TABLE_LIST *table) {
+static bool grant_reload_procs_priv(Table_ref *table) {
   DBUG_TRACE;
 
   /* Save a copy of the current hash if we need to undo the grant load */
   unique_ptr<
       malloc_unordered_multimap<string, unique_ptr_destroy_only<GRANT_NAME>>>
-      old_proc_priv_hash(move(proc_priv_hash));
+      old_proc_priv_hash(std::move(proc_priv_hash));
   unique_ptr<
       malloc_unordered_multimap<string, unique_ptr_destroy_only<GRANT_NAME>>>
-      old_func_priv_hash(move(func_priv_hash));
+      old_func_priv_hash(std::move(func_priv_hash));
   bool return_val = false;
 
   if ((return_val = grant_load_procs_priv(table->table))) {
     /* Error; Reverting to old hash */
     DBUG_PRINT("error", ("Reverting to old privileges"));
-    proc_priv_hash = move(old_proc_priv_hash);
-    func_priv_hash = move(old_func_priv_hash);
+    proc_priv_hash = std::move(old_proc_priv_hash);
+    func_priv_hash = std::move(old_func_priv_hash);
   }
 
   return return_val;
@@ -2653,17 +2652,17 @@ bool grant_reload(THD *thd, bool mdl_locked) {
   /* Don't do anything if running with --skip-grant-tables */
   if (!initialized) return false;
 
-  TABLE_LIST tables[3] = {
+  Table_ref tables[3] = {
 
       /*
         Acquiring strong MDL lock allows to avoid deadlock and timeout errors
         from SE level.
       */
-      TABLE_LIST("mysql", "tables_priv", TL_READ, MDL_SHARED_READ_ONLY),
+      Table_ref("mysql", "tables_priv", TL_READ, MDL_SHARED_READ_ONLY),
 
-      TABLE_LIST("mysql", "columns_priv", TL_READ, MDL_SHARED_READ_ONLY),
+      Table_ref("mysql", "columns_priv", TL_READ, MDL_SHARED_READ_ONLY),
 
-      TABLE_LIST("mysql", "procs_priv", TL_READ, MDL_SHARED_READ_ONLY)};
+      Table_ref("mysql", "procs_priv", TL_READ, MDL_SHARED_READ_ONLY)};
 
   tables[0].next_local = tables[0].next_global = tables + 1;
   tables[1].next_local = tables[1].next_global = tables + 2;
@@ -2683,13 +2682,13 @@ bool grant_reload(THD *thd, bool mdl_locked) {
   {
     unique_ptr<
         malloc_unordered_multimap<string, unique_ptr_destroy_only<GRANT_TABLE>>>
-        old_column_priv_hash(move(column_priv_hash));
+        old_column_priv_hash(std::move(column_priv_hash));
 
     /*
       Create a new memory pool but save the current memory pool to make an
       undo operation possible in case of failure.
     */
-    old_mem = move(memex);
+    old_mem = std::move(memex);
     init_sql_alloc(key_memory_acl_memex, &memex, ACL_ALLOC_BLOCK_SIZE);
     /*
       tables[2].table i.e. procs_priv can be null if we are working with
@@ -2699,10 +2698,11 @@ bool grant_reload(THD *thd, bool mdl_locked) {
                        grant_reload_procs_priv(
                            &tables[2])))) {  // Error. Revert to old hash
       DBUG_PRINT("error", ("Reverting to old privileges"));
-      column_priv_hash = move(old_column_priv_hash); /* purecov: deadcode */
+      column_priv_hash =
+          std::move(old_column_priv_hash); /* purecov: deadcode */
       memex.Clear();
-      memex = move(old_mem); /* purecov: deadcode */
-    } else {                 // Reload successful
+      memex = std::move(old_mem); /* purecov: deadcode */
+    } else {                      // Reload successful
       old_column_priv_hash.reset();
       old_mem.Clear();
       grant_version++;
@@ -3265,13 +3265,13 @@ Acl_map::~Acl_map() {
 Acl_map::Acl_map(const Acl_map &&map) { operator=(map); }
 
 Acl_map &Acl_map::operator=(Acl_map &&map) {
-  m_db_acls = move(map.m_db_acls);
+  m_db_acls = std::move(map.m_db_acls);
   m_global_acl = map.m_global_acl;
   m_reference_count = map.m_reference_count.load();
-  m_table_acls = move(map.m_table_acls);
-  m_sp_acls = move(map.m_sp_acls);
-  m_func_acls = move(map.m_func_acls);
-  m_with_admin_acls = move(map.m_with_admin_acls);
+  m_table_acls = std::move(map.m_table_acls);
+  m_sp_acls = std::move(map.m_sp_acls);
+  m_func_acls = std::move(map.m_func_acls);
+  m_with_admin_acls = std::move(map.m_with_admin_acls);
   m_version = map.m_version;
   m_restrictions = map.m_restrictions;
   map.m_reference_count = 0;
@@ -3380,7 +3380,7 @@ uint64 l_cache_flusher_global_version;
   @return Always 0 with the intention that this causes the hash_search
   function to iterate every single element in the hash.
 */
-static int cache_flusher(const uchar *ptr) {
+static int cache_flusher(const uchar *ptr, void *arg [[maybe_unused]]) {
   DBUG_TRACE;
   const Acl_hash_entry *entry = reinterpret_cast<const Acl_hash_entry *>(ptr);
   if (entry != nullptr) {
@@ -3399,7 +3399,7 @@ void Acl_cache::flush_cache() {
   l_cache_flusher_global_version = version();
   do {
     entry = static_cast<Acl_hash_entry *>(
-        lf_hash_random_match(&m_cache, pins, &cache_flusher, 0));
+        lf_hash_random_match(&m_cache, pins, &cache_flusher, 0, nullptr));
     if (entry &&
         !lf_hash_delete(&m_cache, pins, entry->key, entry->key_length)) {
       // Hash element is removed from cache; safe to delete
@@ -3664,7 +3664,7 @@ bool reload_acl_caches(THD *thd, bool mdl_locked) {
     MDLs and thus, no need to acquire MDLs.
   */
   if (!mdl_locked) {
-    TABLE_LIST tables[ACL_TABLES::LAST_ENTRY];
+    Table_ref tables[ACL_TABLES::LAST_ENTRY];
     acl_tables_setup_for_read(tables);
     /*
       Ideally, we can just call lock_table_names() here because all we want

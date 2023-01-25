@@ -4381,6 +4381,15 @@ Backup::execBACKUP_REQ(Signal* signal)
 {
   jamEntry();
   BackupReq * req = (BackupReq*)signal->getDataPtr();
+
+  if (ERROR_INSERTED(10054) && (getOwnNodeId() == getMasterNodeId()))
+  {
+    // Don't allow this signal to be sent from any other node,
+    // only from the same local node
+    // BACKUP_REQ is sent bt MGMD to Master so this will cause
+    // a node failure
+    addSignalScopeImpl(GSN_BACKUP_REQ, Local);
+  }
   
   const Uint32 senderData = req->senderData;
   const BlockReference senderRef = signal->senderBlockRef();
@@ -15102,13 +15111,9 @@ Backup::calculate_row_change_count(BackupRecordPtr ptr)
 Uint64
 Backup::get_total_memory()
 {
-  Resource_limit res_limit;
-  m_ctx.m_mm.get_resource_limit(RG_DATAMEM, res_limit);
-  const Uint32 pages_used = res_limit.m_curr;
-  const Uint64 dm_used = Uint64(pages_used) * Uint64(sizeof(GlobalPage));
-  const Uint64 num_ldms = getLqhWorkers() != 0 ?
-                         (Uint64)getLqhWorkers() : (Uint64)1;
-  const Uint64 total_memory = dm_used / num_ldms;
+  Dbtup* tup = (Dbtup*)globalData.getBlock(DBTUP, instance());
+  const Uint64 pages_allocated = tup->get_pages_allocated();
+  const Uint64 total_memory = pages_allocated * sizeof(GlobalPage);
   return total_memory;
 }
 

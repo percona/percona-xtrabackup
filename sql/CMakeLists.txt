@@ -397,6 +397,7 @@ SET(SQL_SHARED_SOURCES
   item_cmpfunc.cc
   item_create.cc
   item_func.cc
+  item_gtid_func.cc
   item_pfs_func.cc
   item_json_func.cc
   item_regexp_func.cc
@@ -501,7 +502,6 @@ SET(SQL_SHARED_SOURCES
   regexp/regexp_facade.cc
   resourcegroups/thread_resource_control.cc
   resourcegroups/platform/thread_attrs_api_common.cc
-  resourcegroups/resource_group.cc
   resourcegroups/resource_group_mgr.cc
   resourcegroups/resource_group_sql_cmd.cc
   rpl_group_replication.cc
@@ -665,14 +665,14 @@ IF(WITH_LOCK_ORDER)
   FIND_PACKAGE(FLEX REQUIRED)
 
   BISON_TARGET(debug_lo_parser
-    debug_lo_parser.yy
-    ${CMAKE_BINARY_DIR}/sql/debug_lo_parser.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/debug_lo_parser.yy
+    ${CMAKE_CURRENT_BINARY_DIR}/debug_lo_parser.cc
     COMPILE_FLAGS "--name-prefix=LOCK_ORDER_ ${BISON_NO_LINE_OPT}"
     DEFINES_FILE ${CMAKE_BINARY_DIR}/sql/debug_lo_parser.h
     )
   FLEX_TARGET(debug_lo_scanner
-    debug_lo_scanner.ll
-    ${CMAKE_BINARY_DIR}/sql/debug_lo_scanner.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/debug_lo_scanner.ll
+    ${CMAKE_CURRENT_BINARY_DIR}/debug_lo_scanner.cc
     COMPILE_FLAGS "--prefix=LOCK_ORDER_"
     DEFINES_FILE ${CMAKE_BINARY_DIR}/sql/debug_lo_scanner.h
     )
@@ -692,6 +692,12 @@ IF(WITH_LOCK_ORDER)
     ${FLEX_debug_lo_scanner_OUTPUTS}
     debug_lock_order.cc
     )
+
+  # Bison output uses undefined symbols for clang >= v15
+  IF(MY_COMPILER_IS_CLANG AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 15)
+    ADD_COMPILE_FLAGS(${CMAKE_BINARY_DIR}/sql/debug_lo_parser.cc
+                      COMPILE_FLAGS "-Wno-unused-but-set-variable")
+  ENDIF()
 
   IF(MY_COMPILER_IS_GNU_OR_CLANG)
     ADD_COMPILE_FLAGS(${FLEX_debug_lo_scanner_OUTPUTS}
@@ -890,6 +896,11 @@ IF(MY_COMPILER_IS_GNU_OR_CLANG)
   ADD_COMPILE_FLAGS(${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
                     ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
                     COMPILE_FLAGS "-Wno-undef -Wno-unused-label")
+  IF(MY_COMPILER_IS_CLANG AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 15)
+    ADD_COMPILE_FLAGS(${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
+                      ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
+                      COMPILE_FLAGS "-Wno-unused-but-set-variable")
+  ENDIF()
   # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=98753
   IF(MY_COMPILER_IS_GNU AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11)
     ADD_COMPILE_FLAGS(
@@ -979,12 +990,21 @@ SET(BINLOG_SOURCE
   basic_ostream.cc
   binlog/global.cc
   binlog/recovery.cc
+  binlog/group_commit/bgc_ticket_manager.cc
+  binlog/group_commit/bgc_ticket.cc
+  binlog/group_commit/atomic_bgc_ticket.cc
+  binlog/group_commit/atomic_bgc_ticket_guard.cc
   binlog/monitoring/context.cc
   binlog/tools/iterators.cc
   binlog.cc
   binlog_istream.cc
   binlog_ostream.cc
   binlog_reader.cc
+  changestreams/misc/replicated_columns_view.cc
+  changestreams/misc/replicated_columns_view_with_gipk_on_source.cc
+  changestreams/misc/column_filters/column_filter_inbound_func_indexes.cc
+  changestreams/misc/column_filters/column_filter_inbound_gipk.cc
+  changestreams/misc/column_filters/column_filter_outbound_func_indexes.cc
   log_event.cc
   rpl_commit_stage_manager.cc
   rpl_filter.cc
@@ -1105,6 +1125,292 @@ MARK_AS_ADVANCED(DEBUG_EXTNAME)
 
 INCLUDE(${CMAKE_SOURCE_DIR}/cmake/bison.cmake)
 
+<<<<<<< HEAD
+||||||| a246bad76b9
+# macOS has problems with enabling LTO for shared libs, so we only set it
+# as target property for mysqld.
+IF(APPLE AND WITH_LTO)
+  SET_TARGET_PROPERTIES(mysqld PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
+ENDIF()
+
+IF(APPLE)
+  # Add CoreServices framework since some dloadable plugins may need it
+  FIND_LIBRARY(CORESERVICES NAMES CoreServices)
+  IF(CORESERVICES)
+    TARGET_LINK_LIBRARIES(mysqld ${CORESERVICES})
+  ENDIF()
+  IF(APPLE_XCODE)
+    MY_ADD_COMPILE_DEFINITIONS(mysqld.cc COMPILE_DEFINITIONS APPLE_XCODE)
+  ENDIF()
+ENDIF()
+
+SET_TARGET_PROPERTIES(mysqld PROPERTIES ENABLE_EXPORTS TRUE)
+
+IF(WITH_LTO OR CMAKE_COMPILER_FLAG_WITH_LTO)
+  # We get ODR violations because of multiple bison parsers.
+  MY_CHECK_CXX_COMPILER_WARNING("error=odr" HAS_WARN_FLAG)
+  IF(HAS_WARN_FLAG)
+    MY_TARGET_LINK_OPTIONS(mysqld "${HAS_WARN_FLAG}")
+  ENDIF()
+ENDIF()
+
+GET_TARGET_PROPERTY(mysqld_link_flags mysqld LINK_FLAGS)
+IF(NOT mysqld_link_flags)
+  SET(mysqld_link_flags)
+ENDIF()
+
+IF(UNIX_INSTALL_RPATH_ORIGIN_PRIV_LIBDIR OR LINUX_INSTALL_RPATH_ORIGIN)
+  # Because of INSTALL_DEBUG_TARGET which does INSTALL(FILES ...)
+  IF(UNIX AND NOT APPLE AND CMAKE_BUILD_TYPE_UPPER STREQUAL "DEBUG")
+    STRING_APPEND(mysqld_link_flags
+      " -Wl,-rpath,'\$ORIGIN/../${INSTALL_PRIV_LIBDIR}'")
+    SET_TARGET_PROPERTIES(mysqld
+      PROPERTIES LINK_FLAGS "${mysqld_link_flags}")
+    MESSAGE(STATUS "LINK_FLAGS for mysqld ${mysqld_link_flags}")
+  ENDIF()
+
+  # Insert absolute INSTALL_RPATH before $ORIGIN values.
+  # This is done in order to support setuid executables, needed by:
+  # https://dev.mysql.com/doc/refman/8.0/en/resource-groups.html
+
+  # Note: for Fedora RPM, this gives ERROR 0008: file '/usr/sbin/mysqld'
+  #       contains the $ORIGIN specifier at the wrong position.
+  IF(INSTALL_LAYOUT STREQUAL "DEB" OR INSTALL_LAYOUT STREQUAL "RPM")
+    GET_TARGET_PROPERTY(CURRENT_RPATH_mysqld mysqld INSTALL_RPATH)
+    LIST(INSERT CURRENT_RPATH_mysqld 0
+      "${CMAKE_INSTALL_PREFIX}/${INSTALL_PRIV_LIBDIR}")
+    SET_TARGET_PROPERTIES(mysqld
+      PROPERTIES INSTALL_RPATH "${CURRENT_RPATH_mysqld}")
+  ENDIF()
+ENDIF()
+
+# Remove profiling data collected during build.
+IF(FPROFILE_GENERATE)
+  ADD_CUSTOM_COMMAND(TARGET mysqld POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E remove_directory ${FPROFILE_DIR}
+    COMMENT "Removing profile data in ${FPROFILE_DIR}"
+    )
+ENDIF()
+
+IF(MSVC)
+  # Set module definition file.
+  SET_TARGET_PROPERTIES(mysqld
+    PROPERTIES LINK_FLAGS
+    "${mysqld_link_flags} /DEF:${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/mysqld.def")
+
+  SET(_PLATFORM  x64)
+
+  MYSQL_ADD_EXECUTABLE(create_def create_def.cc SKIP_INSTALL)
+
+  # Build mysql_fix_privilege_tables.h
+  ADD_CUSTOM_COMMAND(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/mysqld.def
+    COMMAND create_def
+    "$<TARGET_FILE:binlog>"
+    "$<TARGET_FILE:binlogevents_static>"
+    "$<TARGET_FILE:mysys>"
+    "$<TARGET_FILE:mytime>"
+    "$<TARGET_FILE:rpl>"
+    "$<TARGET_FILE:slave>"
+    "$<TARGET_FILE:sql_main>"
+    "$<TARGET_FILE:strings>"
+    "$<TARGET_FILE:vio>"
+    > mysqld.def
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}"
+    DEPENDS create_def binlog binlogevents_static mysys mytime rpl slave sql_main strings vio
+  )
+  MY_ADD_CUSTOM_TARGET(GenMysqldDef ALL
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/mysqld.def)
+
+  ADD_DEPENDENCIES(sql_main GenError)
+  ADD_DEPENDENCIES(mysqld GenMysqldDef)
+ENDIF()
+
+SET_TARGET_PROPERTIES(mysqld PROPERTIES ENABLE_EXPORTS TRUE)
+TARGET_LINK_LIBRARIES(mysqld
+  sql_main sql_gis binlog rpl master slave sql_dd mysys
+  minchassis binlogevents_static ${ICU_LIBRARIES})
+
+# Add dependency on ldap library, to ensure it is not unloaded
+# when we shutdown the authentication plugin.
+# For Valgrind, we need it to enable our suppressions.
+# For OpenSSL in the 1.0.x series, we need it for clean shutdown.
+IF(WITH_VALGRIND)
+  SET(LINK_MYSQLD_LDAP_LIBRARY 1)
+ENDIF()
+IF(WITH_SSL STREQUAL "system" AND
+    "${OPENSSL_VERSION_MAJOR}.${OPENSSL_VERSION_MINOR}" VERSION_LESS "1.1")
+  SET(LINK_MYSQLD_LDAP_LIBRARY 1)
+ENDIF()
+IF(WITH_AUTHENTICATION_LDAP AND LINK_MYSQLD_LDAP_LIBRARY)
+  TARGET_LINK_LIBRARIES(mysqld ${LDAP_LIBRARY})
+ENDIF()
+
+IF(SOLARIS)
+  TARGET_LINK_LIBRARIES(mysqld mtmalloc)
+ENDIF()
+
+# Remove transitive link dependencies when linking plugins
+SET_TARGET_PROPERTIES(mysqld PROPERTIES INTERFACE_LINK_LIBRARIES "")
+
+IF(TARGET copy_jemalloc_dll)
+  ADD_DEPENDENCIES(mysqld copy_jemalloc_dll)
+ENDIF()
+
+# See DEBUG_EXTNAME above: mysqld may already have name mysqld-debug,
+# and the rename is a no-op. If it is called 'mysqld' we rename it.
+INSTALL_DEBUG_TARGET(mysqld
+  DESTINATION ${INSTALL_SBINDIR}
+  RENAME mysqld-debug${CMAKE_EXECUTABLE_SUFFIX}
+)
+
+# We have already included cmake/bison.cmake, and done FIND_PACKAGE(BISON)
+=======
+# macOS has problems with enabling LTO for shared libs, so we only set it
+# as target property for mysqld.
+IF(APPLE AND WITH_LTO)
+  SET_TARGET_PROPERTIES(mysqld PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
+ENDIF()
+
+IF(APPLE)
+  # Add CoreServices framework since some dloadable plugins may need it
+  FIND_LIBRARY(CORESERVICES NAMES CoreServices)
+  IF(CORESERVICES)
+    TARGET_LINK_LIBRARIES(mysqld ${CORESERVICES})
+  ENDIF()
+  IF(APPLE_XCODE)
+    MY_ADD_COMPILE_DEFINITIONS(mysqld.cc COMPILE_DEFINITIONS APPLE_XCODE)
+  ENDIF()
+ENDIF()
+
+SET_TARGET_PROPERTIES(mysqld PROPERTIES ENABLE_EXPORTS TRUE)
+
+IF(WITH_LTO OR CMAKE_COMPILER_FLAG_WITH_LTO)
+  # We get ODR violations because of multiple bison parsers.
+  MY_CHECK_CXX_COMPILER_WARNING("error=odr" HAS_WARN_FLAG)
+  IF(HAS_WARN_FLAG)
+    MY_TARGET_LINK_OPTIONS(mysqld "${HAS_WARN_FLAG}")
+  ENDIF()
+  # We may get errors in boost/geometry/srs/projections/proj/ob_tran.hpp
+  # and several other boost files.
+  MY_CHECK_CXX_COMPILER_WARNING("error=maybe-uninitialized" HAS_WARN_FLAG)
+  IF(HAS_WARN_FLAG)
+    MY_TARGET_LINK_OPTIONS(mysqld "${HAS_WARN_FLAG}")
+  ENDIF()
+ENDIF()
+
+GET_TARGET_PROPERTY(mysqld_link_flags mysqld LINK_FLAGS)
+IF(NOT mysqld_link_flags)
+  SET(mysqld_link_flags)
+ENDIF()
+
+IF(UNIX_INSTALL_RPATH_ORIGIN_PRIV_LIBDIR OR LINUX_INSTALL_RPATH_ORIGIN)
+  # Because of INSTALL_DEBUG_TARGET which does INSTALL(FILES ...)
+  IF(UNIX AND NOT APPLE AND CMAKE_BUILD_TYPE_UPPER STREQUAL "DEBUG")
+    STRING_APPEND(mysqld_link_flags
+      " -Wl,-rpath,'\$ORIGIN/../${INSTALL_PRIV_LIBDIR}'")
+    SET_TARGET_PROPERTIES(mysqld
+      PROPERTIES LINK_FLAGS "${mysqld_link_flags}")
+    MESSAGE(STATUS "LINK_FLAGS for mysqld ${mysqld_link_flags}")
+  ENDIF()
+
+  # Insert absolute INSTALL_RPATH before $ORIGIN values.
+  # This is done in order to support setuid executables, needed by:
+  # https://dev.mysql.com/doc/refman/8.0/en/resource-groups.html
+
+  # Note: for Fedora RPM, this gives ERROR 0008: file '/usr/sbin/mysqld'
+  #       contains the $ORIGIN specifier at the wrong position.
+  IF(INSTALL_LAYOUT STREQUAL "DEB" OR INSTALL_LAYOUT STREQUAL "RPM")
+    GET_TARGET_PROPERTY(CURRENT_RPATH_mysqld mysqld INSTALL_RPATH)
+    LIST(INSERT CURRENT_RPATH_mysqld 0
+      "${CMAKE_INSTALL_PREFIX}/${INSTALL_PRIV_LIBDIR}")
+    SET_TARGET_PROPERTIES(mysqld
+      PROPERTIES INSTALL_RPATH "${CURRENT_RPATH_mysqld}")
+  ENDIF()
+ENDIF()
+
+# Remove profiling data collected during build.
+IF(FPROFILE_GENERATE)
+  ADD_CUSTOM_COMMAND(TARGET mysqld POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E remove_directory ${FPROFILE_DIR}
+    COMMENT "Removing profile data in ${FPROFILE_DIR}"
+    )
+ENDIF()
+
+IF(MSVC)
+  # Set module definition file.
+  SET_TARGET_PROPERTIES(mysqld
+    PROPERTIES LINK_FLAGS
+    "${mysqld_link_flags} /DEF:${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/mysqld.def")
+
+  SET(_PLATFORM  x64)
+
+  MYSQL_ADD_EXECUTABLE(create_def create_def.cc SKIP_INSTALL)
+
+  # Build mysql_fix_privilege_tables.h
+  ADD_CUSTOM_COMMAND(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/mysqld.def
+    COMMAND create_def
+    "$<TARGET_FILE:binlog>"
+    "$<TARGET_FILE:binlogevents_static>"
+    "$<TARGET_FILE:mysys>"
+    "$<TARGET_FILE:mytime>"
+    "$<TARGET_FILE:rpl>"
+    "$<TARGET_FILE:slave>"
+    "$<TARGET_FILE:sql_main>"
+    "$<TARGET_FILE:strings>"
+    "$<TARGET_FILE:vio>"
+    > mysqld.def
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}"
+    DEPENDS create_def binlog binlogevents_static mysys mytime rpl slave sql_main strings vio
+  )
+  MY_ADD_CUSTOM_TARGET(GenMysqldDef ALL
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/mysqld.def)
+
+  ADD_DEPENDENCIES(sql_main GenError)
+  ADD_DEPENDENCIES(mysqld GenMysqldDef)
+ENDIF()
+
+SET_TARGET_PROPERTIES(mysqld PROPERTIES ENABLE_EXPORTS TRUE)
+TARGET_LINK_LIBRARIES(mysqld
+  sql_main sql_gis binlog rpl master slave sql_dd mysys
+  minchassis binlogevents_static ${ICU_LIBRARIES})
+
+# Add dependency on ldap library, to ensure it is not unloaded
+# when we shutdown the authentication plugin.
+# For Valgrind, we need it to enable our suppressions.
+# For OpenSSL in the 1.0.x series, we need it for clean shutdown.
+IF(WITH_VALGRIND)
+  SET(LINK_MYSQLD_LDAP_LIBRARY 1)
+ENDIF()
+IF(WITH_SSL STREQUAL "system" AND
+    "${OPENSSL_VERSION_MAJOR}.${OPENSSL_VERSION_MINOR}" VERSION_LESS "1.1")
+  SET(LINK_MYSQLD_LDAP_LIBRARY 1)
+ENDIF()
+IF(WITH_AUTHENTICATION_LDAP AND LINK_MYSQLD_LDAP_LIBRARY)
+  TARGET_LINK_LIBRARIES(mysqld ${LDAP_LIBRARY})
+ENDIF()
+
+IF(SOLARIS)
+  TARGET_LINK_LIBRARIES(mysqld mtmalloc)
+ENDIF()
+
+# Remove transitive link dependencies when linking plugins
+SET_TARGET_PROPERTIES(mysqld PROPERTIES INTERFACE_LINK_LIBRARIES "")
+
+IF(TARGET copy_jemalloc_dll)
+  ADD_DEPENDENCIES(mysqld copy_jemalloc_dll)
+ENDIF()
+
+# See DEBUG_EXTNAME above: mysqld may already have name mysqld-debug,
+# and the rename is a no-op. If it is called 'mysqld' we rename it.
+INSTALL_DEBUG_TARGET(mysqld
+  DESTINATION ${INSTALL_SBINDIR}
+  RENAME mysqld-debug${CMAKE_EXECUTABLE_SUFFIX}
+)
+
+# We have already included cmake/bison.cmake, and done FIND_PACKAGE(BISON)
+>>>>>>> mysql-8.0.32
 IF(BISON_FOUND)
   SET(USE_BISON_RESULTS_FROM_MAKE_DIST_DEFAULT OFF)
 ELSE()
@@ -1135,7 +1441,7 @@ IF(USE_BISON_RESULTS_FROM_MAKE_DIST)
   ENDFOREACH()
 ELSE()
   BISON_TARGET(mysql_parser
-    sql_yacc.yy
+    ${CMAKE_CURRENT_SOURCE_DIR}/sql_yacc.yy
     ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
     COMPILE_FLAGS
     "--name-prefix=MYSQL --yacc ${BISON_FLAGS_WARNINGS} ${BISON_NO_LINE_OPT}"
@@ -1143,7 +1449,7 @@ ELSE()
     )
 
   BISON_TARGET(hints_parser
-    sql_hints.yy
+    ${CMAKE_CURRENT_SOURCE_DIR}/sql_hints.yy
     ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
     COMPILE_FLAGS
     "--name-prefix=HINT_PARSER_ --yacc ${BISON_FLAGS_WARNINGS} ${BISON_NO_LINE_OPT}"

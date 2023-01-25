@@ -195,6 +195,7 @@ void deinit_keyring_services(SERVICE_TYPE(registry) *) { return; }
 }  // namespace encryption
 }  // namespace innobase
 
+<<<<<<< HEAD
 constexpr char Encryption::KEY_MAGIC_V1[];
 constexpr char Encryption::KEY_MAGIC_V2[];
 constexpr char Encryption::KEY_MAGIC_V3[];
@@ -203,6 +204,15 @@ constexpr char Encryption::KEY_MAGIC_EMPTY[];
 constexpr char Encryption::MASTER_KEY_PREFIX[];
 constexpr char Encryption::DEFAULT_MASTER_KEY[];
 
+||||||| a246bad76b9
+constexpr char Encryption::KEY_MAGIC_V1[];
+constexpr char Encryption::KEY_MAGIC_V2[];
+constexpr char Encryption::KEY_MAGIC_V3[];
+constexpr char Encryption::MASTER_KEY_PREFIX[];
+constexpr char Encryption::DEFAULT_MASTER_KEY[];
+
+=======
+>>>>>>> mysql-8.0.32
 /** Minimum length needed for encryption */
 constexpr size_t MIN_ENCRYPTION_LEN = 2 * MY_AES_BLOCK_SIZE + FIL_PAGE_DATA;
 /** Key type */

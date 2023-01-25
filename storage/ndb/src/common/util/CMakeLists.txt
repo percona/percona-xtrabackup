@@ -69,7 +69,6 @@ ADD_CONVENIENCE_LIBRARY(ndbgeneral
   random.cpp
   require.cpp
   socket_io.cpp
-  uucode.cpp
   version.cpp
 )
 SET(NDBGENERAL_LIBS ndbtrace ndbportlib ${ZLIB_LIBRARY} mysys)
@@ -93,6 +92,7 @@ FOREACH(tests
     LogBuffer
     testSimpleProperties
     testProp
+    testConfigValues
     )
   NDB_ADD_TEST("${tests}-t" "${tests}.cpp" LIBS ndbmgmapi ndbgeneral ndbportlib)
 ENDFOREACH(tests)

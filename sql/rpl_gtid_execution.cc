@@ -336,7 +336,7 @@ bool is_already_logged_transaction(const THD *thd) {
 
   @param  thd     The calling thread.
 */
-static inline void skip_statement(const THD *thd [[maybe_unused]]) {
+static inline void skip_statement(THD *thd) {
   DBUG_TRACE;
 
   DBUG_PRINT("info", ("skipping statement '%s'. "
@@ -344,6 +344,12 @@ static inline void skip_statement(const THD *thd [[maybe_unused]]) {
                       "thd->thread_id=%u",
                       thd->query().str, thd->variables.gtid_next.type,
                       thd->lex->sql_command, thd->thread_id()));
+
+  /*
+    Despite the transaction was skipped, there is still the need
+    to notify that its session ticket was consumed.
+  */
+  Commit_stage_manager::get_instance().finish_session_ticket(thd);
 
 #ifndef NDEBUG
   const Gtid_set *executed_gtids = gtid_state->get_executed_gtids();
@@ -396,8 +402,8 @@ bool gtid_reacquire_ownership_if_anonymous(THD *thd) {
  */
 static bool is_stmt_taking_table_wr_locks(const THD *thd) {
   DBUG_TRACE;
-  TABLE_LIST *tables = thd->lex->query_tables;
-  for (TABLE_LIST *table = tables; table; table = table->next_global) {
+  Table_ref *tables = thd->lex->query_tables;
+  for (Table_ref *table = tables; table; table = table->next_global) {
     if (table->lock_descriptor().type >= TL_WRITE_ALLOW_WRITE) {
       return true;
     }

@@ -113,7 +113,7 @@
 #include "sql/sql_lex.h"
 #include "sql/sql_locale.h"  // my_locale_by_name
 #include "sql/sql_show.h"    // grant_types
-#include "sql/strfunc.h"     // hexchar_to_int
+#include "sql/strfunc.h"
 #include "sql/system_variables.h"
 #include "sql/table.h"
 #include "sql/val_int_compare.h"  // Integer_value
@@ -1119,8 +1119,11 @@ bool Item_func_concat::resolve_type(THD *thd) {
   if (agg_arg_charsets_for_string_result(collation, args, arg_count))
     return true;
 
-  for (uint i = 0; i < arg_count; i++)
+  for (uint i = 0; i < arg_count; i++) {
+    // Set compare context for use in substitutions
+    args[i]->cmp_context = STRING_RESULT;
     char_length += args[i]->max_char_length(collation.collation);
+  }
 
   set_data_type_string(char_length);
   set_nullable(is_nullable() || max_length > thd->variables.max_allowed_packet);
@@ -1176,9 +1179,11 @@ bool Item_func_concat_ws::resolve_type(THD *thd) {
   assert(arg_count >= 2);
   char_length = (ulonglong)args[0]->max_char_length(collation.collation) *
                 (arg_count - 2);
-  for (uint i = 1; i < arg_count; i++)
+  for (uint i = 1; i < arg_count; i++) {
+    // Set compare context for use in substitutions
+    args[i]->cmp_context = STRING_RESULT;
     char_length += args[i]->max_char_length(collation.collation);
-
+  }
   set_data_type_string(char_length);
   set_nullable(is_nullable() || max_length > thd->variables.max_allowed_packet);
   return false;
@@ -3091,30 +3096,43 @@ String *Item_func_set_collation::val_str(String *str) {
   return str;
 }
 
-bool Item_func_set_collation::resolve_type(THD *) {
+bool Item_func_set_collation::resolve_type(THD *thd) {
   CHARSET_INFO *set_collation;
-  const char *colname;
   String tmp;
   assert(args[1]->basic_const_item());
   String *str = args[1]->val_str(&tmp);
-  colname = str->c_ptr();
-  if (colname == binary_keyword)
+  const char *colname = str->c_ptr();
+  if (colname == binary_keyword) {
     set_collation = get_charset_by_csname(args[0]->collation.collation->csname,
                                           MY_CS_BINSORT, MYF(0));
-  else {
-    if (!(set_collation = mysqld_collation_get_by_name(colname))) return true;
+    if (set_collation == nullptr) {
+      my_error(ER_COLLATION_CHARSET_MISMATCH, MYF(0), colname,
+               args[0]->collation.collation->csname);
+      return true;
+    }
+  } else {
+    set_collation = mysqld_collation_get_by_name(colname);
+    if (set_collation == nullptr) return true;
   }
 
-  if (set_collation == nullptr ||
-      (!my_charset_same(args[0]->collation.collation, set_collation) &&
-       args[0]->collation.derivation != DERIVATION_NUMERIC)) {
+  if (args[0]->data_type() == MYSQL_TYPE_INVALID &&
+      args[0]->propagate_type(
+          thd, Type_properties(MYSQL_TYPE_VARCHAR, set_collation))) {
+    return true;
+  }
+
+  if (!my_charset_same(args[0]->collation.collation, set_collation) &&
+      args[0]->collation.derivation != DERIVATION_NUMERIC) {
     my_error(ER_COLLATION_CHARSET_MISMATCH, MYF(0), colname,
              args[0]->collation.collation->csname);
     return true;
   }
+
   collation.set(set_collation, DERIVATION_EXPLICIT,
                 args[0]->collation.repertoire);
+
   set_data_type_string(args[0]->max_char_length());
+
   return false;
 }
 
@@ -4297,66 +4315,6 @@ String *mysql_generate_uuid(String *str) {
 String *Item_func_uuid::val_str(String *str) {
   assert(fixed == 1);
   return mysql_generate_uuid(str);
-}
-
-bool Item_func_gtid_subtract::resolve_type(THD *thd) {
-  if (param_type_is_default(thd, 0, -1)) return true;
-
-  collation.set(default_charset(), DERIVATION_COERCIBLE, MY_REPERTOIRE_ASCII);
-  /*
-    In the worst case, the string grows after subtraction. This
-    happens when a GTID in args[0] is split by a GTID in args[1],
-    e.g., UUID:1-6 minus UUID:3-4 becomes UUID:1-2,5-6.  The worst
-    case is UUID:1-100 minus UUID:9, where the two characters ":9" in
-    args[1] yield the five characters "-8,10" in the result.
-  */
-  set_data_type_string(
-      args[0]->max_length +
-      max<ulonglong>(args[1]->max_length - binary_log::Uuid::TEXT_LENGTH, 0) *
-          5 / 2);
-  return false;
-}
-
-String *Item_func_gtid_subtract::val_str_ascii(String *str) {
-  DBUG_TRACE;
-
-  assert(fixed);
-
-  null_value = false;
-
-  String *str1 = args[0]->val_str_ascii(&buf1);
-  if (str1 == nullptr) {
-    return error_str();
-  }
-  String *str2 = args[1]->val_str_ascii(&buf2);
-  if (str2 == nullptr) {
-    return error_str();
-  }
-
-  const char *charp1 = str1->c_ptr_safe();
-  assert(charp1 != nullptr);
-  const char *charp2 = str2->c_ptr_safe();
-  assert(charp2 != nullptr);
-
-  enum_return_status status;
-
-  Sid_map sid_map(nullptr /*no rwlock*/);
-  // compute sets while holding locks
-  Gtid_set set1(&sid_map, charp1, &status);
-  if (status == RETURN_STATUS_OK) {
-    Gtid_set set2(&sid_map, charp2, &status);
-    size_t length;
-    // subtract, save result, return result
-    if (status == RETURN_STATUS_OK) {
-      set1.remove_gtid_set(&set2);
-      if (!str->mem_realloc((length = set1.get_string_length()) + 1)) {
-        set1.to_string(str->ptr());
-        str->length(length);
-        return str;
-      }
-    }
-  }
-  return error_str();
 }
 
 /**

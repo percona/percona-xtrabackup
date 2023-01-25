@@ -33,11 +33,12 @@ class I_Kerberos_client {
   virtual bool obtain_store_credentials() = 0;
   virtual std::string get_user_name() = 0;
   virtual ~I_Kerberos_client() {}
-
-  static I_Kerberos_client *create(const std::string &spn,
-                                   MYSQL_PLUGIN_VIO *vio,
-                                   const std::string &upn,
-                                   const std::string &password,
-                                   const std::string &kdc_host);
 };
+
+I_Kerberos_client *Kerberos_client_create_factory(bool gssapi,
+                                                  const std::string &spn,
+                                                  MYSQL_PLUGIN_VIO *vio,
+                                                  const std::string &upn,
+                                                  const std::string &password,
+                                                  const std::string &kdc_host);
 #endif  // KERBEROS_CLIENT_INTERFACE

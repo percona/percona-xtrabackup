@@ -177,7 +177,7 @@ bool Window::check_window_functions1(THD *thd, Query_block *select) {
 }
 
 static Item_cache *make_result_item(Item *value) {
-  Item *order_expr = *down_cast<Item_ref *>(value)->ref;
+  Item *order_expr = down_cast<Item_ref *>(value)->ref_item();
   Item_cache *result = nullptr;
   Item_result result_type = order_expr->result_type();
 
@@ -664,7 +664,7 @@ bool Window::setup_ordering_cached_items(THD *thd, Query_block *select,
 }
 
 bool Window::resolve_window_ordering(THD *thd, Ref_item_array ref_item_array,
-                                     TABLE_LIST *tables,
+                                     Table_ref *tables,
                                      mem_root_deque<Item *> *fields, ORDER *o,
                                      bool partition_order) {
   DBUG_TRACE;
@@ -1081,7 +1081,7 @@ void Window::eliminate_unused_objects(List<Window> *windows) {
 }
 
 bool Window::setup_windows1(THD *thd, Query_block *select,
-                            Ref_item_array ref_item_array, TABLE_LIST *tables,
+                            Ref_item_array ref_item_array, Table_ref *tables,
                             mem_root_deque<Item *> *fields,
                             List<Window> *windows) {
   // Only possible at resolution time.
@@ -1408,6 +1408,7 @@ void Window::reset_execution_state(Reset_level level) {
   m_aggregates_primed = false;
   m_first_rowno_in_range_frame = 1;
   m_last_rowno_in_range_frame = 0;
+  m_first_rowno_in_rows_frame = 1;
   m_row_has_fields_in_out_table = 0;
 }
 
@@ -1545,9 +1546,10 @@ void Window::apply_temp_table(THD *thd, const Func_ptr_array &items_to_copy) {
       thd->change_item_tree(left_ptr, new_item);
 
       Item_cache *cache = FindCacheInComparator(cmp);
-      cache->store(FindReplacementOrReplaceMaterializedItems(
+      Item *new_cache_item = FindReplacementOrReplaceMaterializedItems(
           thd, cache->get_example()->real_item(), items_to_copy,
-          /*need_exact_match=*/true));
+          /*need_exact_match=*/true);
+      thd->change_item_tree(cache->get_example_ptr(), new_cache_item);
     }
   }
 }

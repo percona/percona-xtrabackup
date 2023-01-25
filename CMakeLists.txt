@@ -593,7 +593,9 @@ ENDIF()
 # So if you do a 'git pull' you may end up with a developer sandbox
 # that no longer works as expected (CMakeCache.txt and other
 # generated/configured files may contain data which is no longer valid)
+SET(THIS_IS_AN_IN_SOURCE_BUILD FALSE)
 IF(${REALPATH_CMAKE_SOURCE_DIR} STREQUAL ${REALPATH_CMAKE_BINARY_DIR})
+  SET(THIS_IS_AN_IN_SOURCE_BUILD TRUE)
   IF(FORCE_INSOURCE_BUILD)
     MESSAGE(WARNING "This is an in-source build")
   ELSE()
@@ -1695,7 +1697,6 @@ SET(SYSTEM_LIBRARIES
   LZ4       # Homebrew  lz4
   PROTOBUF  # Homebrew  protobuf
   SSL       # Homebrew  openssl@1.1
-# ZLIB      # Xcode                  Min required version is now 1.2.12
   ZSTD      # Homebrew  zstd
   FIDO      # Homebrew  libfido2
   )
@@ -2246,6 +2247,12 @@ IF(NOT WITHOUT_SERVER AND WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
       IF(HAS_WARN_FLAG)
         MY_TARGET_LINK_OPTIONS(server_unittest_library "${HAS_WARN_FLAG}")
       ENDIF()
+      # We may get errors in boost/geometry/srs/projections/proj/ob_tran.hpp
+      # and several other boost files.
+      MY_CHECK_CXX_COMPILER_WARNING("error=maybe-uninitialized" HAS_WARN_FLAG)
+      IF(HAS_WARN_FLAG)
+        MY_TARGET_LINK_OPTIONS(server_unittest_library "${HAS_WARN_FLAG}")
+      ENDIF()
     ENDIF()
   ELSE()
     SET(DUMMY_SOURCE_FILE ${CMAKE_BINARY_DIR}/server_unittest_library.c)
@@ -2336,7 +2343,7 @@ IF(HAVE_BUILD_ID_SUPPORT AND NOT WITHOUT_SERVER AND NOT WITH_XTRABACKUP)
   IF(SHOW_BUILD_ID)
     # Show build id in the build log, after everything else has bee built.
     ADD_CUSTOM_TARGET(show_build_id ALL
-      COMMAND $<TARGET_FILE:mysqld> --help | grep BuildID
+      COMMAND $<TARGET_FILE:mysqld> --no-defaults --help | grep BuildID
       COMMENT "Showing mysqld build id"
       VERBATIM
       )

@@ -159,8 +159,8 @@ SET SESSION sql_log_bin= 1;
 --let $rpl_connection_name= server_1
 --source include/rpl_connection.inc
 
-SET DEBUG_SYNC= 'now SIGNAL waiting';
 SET @@GLOBAL.DEBUG= @debug_save;
+SET DEBUG_SYNC= 'now SIGNAL waiting';
 
 
 --echo
@@ -168,8 +168,8 @@ SET @@GLOBAL.DEBUG= @debug_save;
 --echo # 10. Signal to continue T1 and T2 on server2.
 --let $rpl_connection_name= server2
 --source include/rpl_connection.inc
-SET DEBUG_SYNC= 'now SIGNAL signal.after_before_message_send_after_applier_prepare_continue';
 SET @@GLOBAL.DEBUG= @debug_save;
+SET DEBUG_SYNC= 'now SIGNAL signal.after_before_message_send_after_applier_prepare_continue';
 
 
 --echo
@@ -240,6 +240,8 @@ DROP TABLE t3;
 SET SESSION sql_log_bin= 0;
 DROP USER "recovery_user";
 SET SESSION sql_log_bin= 1;
+
+--disconnect server_1_2
 
 --let $rpl_connection_name= server2
 --source include/rpl_connection.inc

@@ -37,7 +37,6 @@ innodb.truncate                                   : WL#12034 Enable again once s
 innodb.subpartition                               : WL#12034 Enable again once shared tablespaces are allowed in partitioned table.
 innodb.ddl_crash_alter_table_partition_tablespace : WL#12034 Enable again once shared tablespaces are allowed in partitioned table.
 innodb.innodb_bug14676111                         : BUG#18200831 The test has never worked correctly
-innodb.log_first_rec_group                        : Bug#29692047 Disable for now until we can find a better way to test this.
 innodb.fts_exec_interrupt                         : Bug#28534199 The test is unstable and should be rewritten
 innodb.slow_shutdown                              : Bug#31763837 mtr hits this debug assert post test run cleanup
 innodb.upgrade_fts_aux                            : Bug#33034679 Test needs an upgrade of its 5.7 data files
@@ -91,6 +90,7 @@ rpl_gtid.rpl_start_replica_until_pos_with_gtid_only      : Bug#33119241 START RE
 # rpl_nogtid suite tests
 rpl_nogtid.rpl_perfschema_applier_xa_status_check : BUG#27914287 Disabled until the WL#9075 (Performance Schema, XA Transactions) be implemented
 rpl_nogtid.rpl_binlog_format_errors               : BUG#29776083 EXPLICIT BINLOG INJECTION WITH SELF LOGGING ENGINES IS BROKEN
+rpl_nogtid.rpl_gipk_cross_version_schema_changes  : BUG#34668313 Fix rpl_gipk_cross_version_schema_changes & binlog_mysqlbinlog_source_gipk_info
 
 # rpl suite tests
 rpl.rpl_io_thd_wait_for_disk_space_stress : BUG#23581287 Disabled until bug is fixed.
@@ -112,6 +112,7 @@ group_replication.gr_join_with_suspect_member : BUG#31704262 XCOM CREATES NODES 
 group_replication.gr_leave_with_suspect_member : BUG#31704262 XCOM CREATES NODES WITH PAST GHOST VIEWS
 group_replication.gr_majority_loss_restored_after_timeout : BUG#31704262 XCOM CREATES NODES WITH PAST GHOST VIEWS
 group_replication.gr_primary_mode_group_operations_joining_during_election @windows : BUG#33679225 Disabled until bug is fixed
+group_replication.gr_primary_mode_group_operations_net_partition_4 @windows : BUG#34673762 Disabled until bug is fixed
 group_replication.gr_suspect_member_resumes_after_crash_join_retries : BUG#32458239 GR_SUSPECT_MEMBER_RESUMES_AFTER_CRASH_JOIN_RETRIES IS NOT STABLE
 group_replication.gr_xa_commit_failure_before_gtid_externalization @windows : BUG#34155238 Disabled until bug is fixed
 group_replication.gr_xa_commit_one_phase_failure_before_gtid_externalization @windows : BUG#34155238 Disabled until bug is fixed

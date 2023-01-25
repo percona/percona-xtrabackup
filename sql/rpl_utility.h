@@ -45,7 +45,7 @@ struct MY_BITMAP;
 
 #include "map_helpers.h"
 #include "prealloced_array.h"  // Prealloced_array
-#include "sql/table.h"         // TABLE_LIST
+#include "sql/table.h"         // Table_ref
 
 class Log_event;
 class Relay_log_info;
@@ -247,8 +247,8 @@ class Hash_slave_rows {
 class table_def {
  public:
   /**
-    No-op constructor. Instances of RPL_TABLE_LIST are created by first
-    allocating memory, then placement-new-ing an RPL_TABLE_LIST object
+    No-op constructor. Instances of RPL_Table_ref are created by first
+    allocating memory, then placement-new-ing an RPL_Table_ref object
     containing an uninitialized table_def object which is only conditionally
     initialized. See Table_map_log_event::do_apply_event().
   */
@@ -275,6 +275,17 @@ class table_def {
     @return The number of fields that there is type data for.
    */
   ulong size() const { return m_size; }
+
+  /**
+    Return the number of fields there is type data for minus
+    the GIPK field if this field does not exist in the replica.
+
+    @return The number of fields there is a type minus the GIPK
+   */
+  ulong filtered_size(bool replica_has_gipk) const {
+    if (m_is_gipk_on_table && !replica_has_gipk) return m_size - 1;
+    return m_size;
+  }
 
   /*
     Returns internal binlog type code for one field,
@@ -416,7 +427,7 @@ class table_def {
     @retval 0  if the table definition is compatible with @c table
   */
   bool compatible_with(THD *thd, Relay_log_info *rli, TABLE *table,
-                       TABLE **conv_table_var) const;
+                       TABLE **conv_table_var);
 
   /**
    Create a virtual in-memory temporary table structure.
@@ -436,12 +447,46 @@ class table_def {
    @param thd Thread to allocate memory from.
    @param rli Relay log info structure, for error reporting.
    @param target_table Target table for fields.
+   @param replica_has_gipk Does the replica table contain a GIPK
 
    @return A pointer to a temporary table with memory allocated in the
    thread's memroot, NULL if the table could not be created
    */
   TABLE *create_conversion_table(THD *thd, Relay_log_info *rli,
-                                 TABLE *target_table) const;
+                                 TABLE *target_table,
+                                 bool replica_has_gipk) const;
+
+  /**
+    Evaluates if the source table might contain a GIPK
+
+    @note for servers of older versions that do not fully support GIPK, this
+    sets the info that is a guess based on available information replication
+    has.
+
+    In the case when the replica has a GIPK, the source is from an old
+    version that does not indicate if it has a GIPK or not, and the source
+    either has extra columns, or the replica has two more more extra columns
+    true is returned.
+    This function does not report an error.
+
+    @param thd   The thread object associated to the application
+    @param table The table in the replica.
+
+    @return true if this table definition is found to be incompatible with the
+    table, false otherwise.
+  */
+  bool compute_source_table_gipk_info(THD &thd, TABLE *table);
+
+  /**
+    Checks if the table contains a GIPK
+
+    @note for servers of older versions that do not fully support GIPK, this
+    method returns a guess based on available information replication has.
+
+    @return true if we believe the table to contain a GIPK, false otherwise
+   */
+  bool is_gipk_present_on_source_table() const;
+
 #endif
 
  private:
@@ -454,19 +499,21 @@ class table_def {
   uchar *m_memory;
   mutable int m_json_column_count;  // Number of JSON columns
   bool *m_is_array;
+  bool m_is_gipk_set;
+  bool m_is_gipk_on_table;
 };
 
 #ifdef MYSQL_SERVER
 /**
-   Extend the normal table list with a few new fields needed by the
+   Extend the normal Table_ref with a few new fields needed by the
    slave thread, but nowhere else.
  */
-struct RPL_TABLE_LIST : public TABLE_LIST {
-  RPL_TABLE_LIST(const char *db_name_arg, size_t db_length_arg,
-                 const char *table_name_arg, size_t table_name_length_arg,
-                 const char *alias_arg, enum thr_lock_type lock_type_arg)
-      : TABLE_LIST(db_name_arg, db_length_arg, table_name_arg,
-                   table_name_length_arg, alias_arg, lock_type_arg) {}
+struct RPL_Table_ref : public Table_ref {
+  RPL_Table_ref(const char *db_name_arg, size_t db_length_arg,
+                const char *table_name_arg, size_t table_name_length_arg,
+                const char *alias_arg, enum thr_lock_type lock_type_arg)
+      : Table_ref(db_name_arg, db_length_arg, table_name_arg,
+                  table_name_length_arg, alias_arg, lock_type_arg) {}
 
   bool m_tabledef_valid;
   table_def m_tabledef;
@@ -628,6 +675,38 @@ bool is_require_row_format_violation(const THD *thd);
  */
 void rename_fields_use_old_replica_source_terms(
     THD *thd, mem_root_deque<Item *> &field_list);
+
+/**
+  Checks if the immediate_server_version supports GIPKs or not
+
+  @param thd The THD context to check the version
+
+  @return true if the source server supports GIPK, false otherwise
+ */
+bool is_immediate_server_gipk_ready(THD &thd);
+
+/**
+  Returns if the replicated table contains a GIPK or not
+
+  @note for servers of older versions that do not fully support GIPK, this
+  method returns a guess based on available information replication has.
+
+  @param rli    The relay log object associated to the channel
+  @param table  The table to check for the GIPK
+
+  @return true if we believe the table has a GIPK, false otherwise.
+ */
+bool does_source_table_contain_gipk(Relay_log_info const *rli, TABLE *table);
+
+/**
+  @brief Returns a string representation for a given version
+
+  @param version a version represented using a integer
+
+  @return a string for the given version or "unknown"
+          if version is undefined or unknown.
+*/
+std::string decimal_numeric_version_to_string(uint32 version);
 
 #endif  // MYSQL_SERVER
 

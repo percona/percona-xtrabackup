@@ -1649,8 +1649,8 @@ sp_head *sp_setup_routine(THD *thd, enum_sp_type type, sp_name *name,
   @retval true  Not found
 */
 
-bool sp_exist_routines(THD *thd, TABLE_LIST *routines, bool is_proc) {
-  TABLE_LIST *routine;
+bool sp_exist_routines(THD *thd, Table_ref *routines, bool is_proc) {
+  Table_ref *routine;
   bool sp_object_found;
   DBUG_TRACE;
   for (routine = routines; routine; routine = routine->next_global) {
@@ -1717,7 +1717,7 @@ static bool sp_add_used_routine(Query_tables_list *prelocking_ctx,
                                 Query_arena *arena, const uchar *key,
                                 size_t key_length, size_t db_length,
                                 const char *name, size_t name_length,
-                                TABLE_LIST *belong_to_view) {
+                                Table_ref *belong_to_view) {
   if (prelocking_ctx->sroutines == nullptr) {
     prelocking_ctx->sroutines.reset(
         new malloc_unordered_map<std::string, Sroutine_hash_entry *>(
@@ -1792,7 +1792,7 @@ bool sp_add_used_routine(Query_tables_list *prelocking_ctx, Query_arena *arena,
                          size_t db_length, const char *name, size_t name_length,
                          bool lowercase_db,
                          Sp_name_normalize_type name_normalize_type,
-                         bool own_routine, TABLE_LIST *belong_to_view) {
+                         bool own_routine, Table_ref *belong_to_view) {
   // Length of routine name components needs to be checked earlier.
   assert(db_length <= NAME_LEN && name_length <= NAME_LEN);
 
@@ -1917,7 +1917,7 @@ void sp_remove_not_own_routines(Query_tables_list *prelocking_ctx) {
 void sp_update_stmt_used_routines(
     THD *thd, Query_tables_list *prelocking_ctx,
     malloc_unordered_map<std::string, Sroutine_hash_entry *> *src,
-    TABLE_LIST *belong_to_view) {
+    Table_ref *belong_to_view) {
   for (const auto &key_and_value : *src) {
     Sroutine_hash_entry *rt = key_and_value.second;
     (void)sp_add_used_routine(prelocking_ctx, thd->stmt_arena,
@@ -1943,7 +1943,7 @@ void sp_update_stmt_used_routines(
 
 void sp_update_stmt_used_routines(THD *thd, Query_tables_list *prelocking_ctx,
                                   SQL_I_List<Sroutine_hash_entry> *src,
-                                  TABLE_LIST *belong_to_view) {
+                                  Table_ref *belong_to_view) {
   for (Sroutine_hash_entry *rt = src->first; rt; rt = rt->next)
     (void)sp_add_used_routine(prelocking_ctx, thd->stmt_arena,
                               pointer_cast<const uchar *>(rt->m_key),
@@ -2132,90 +2132,6 @@ static bool create_string(
   buf->append(body, bodylen);
   thd->variables.sql_mode = old_sql_mode;
   return true;
-}
-
-/**
-  The function loads sp_head struct for information schema purposes
-  (used for I_S ROUTINES & PARAMETERS tables).
-
-  @param[in]      thd               thread handler
-  @param[in]      db_name           DB name.
-  @param[in]      routine           dd::Routine object.
-  @param[out]     free_sp_head      returns 1 if we need to free sp_head struct
-                                    otherwise returns 0
-
-  @return     Pointer on sp_head struct
-    @retval   NULL                  error
-*/
-
-sp_head *sp_load_for_information_schema(THD *thd, LEX_CSTRING db_name,
-                                        const dd::Routine *routine,
-                                        bool *free_sp_head) {
-  sp_head *sp;
-  enum_sp_type type = is_dd_routine_type_function(routine)
-                          ? enum_sp_type::FUNCTION
-                          : enum_sp_type::PROCEDURE;
-  *free_sp_head = false;
-  sp_cache **spc = (type == enum_sp_type::FUNCTION) ? &thd->sp_func_cache
-                                                    : &thd->sp_proc_cache;
-  sp_name sp_name_obj(
-      db_name,
-      {const_cast<char *>(routine->name().c_str()), routine->name().length()},
-      true);
-  sp_name_obj.init_qname(thd);
-
-  if ((sp = sp_cache_lookup(spc, &sp_name_obj))) {
-    return sp;
-  }
-
-  // Create stored program creation context from routine object.
-  Stored_program_creation_ctx *creation_ctx =
-      Stored_routine_creation_ctx::create_routine_creation_ctx(routine);
-  if (creation_ctx == nullptr) return nullptr;
-
-  // Prepare stored routine return type string.
-  dd::String_type return_type_str;
-  prepare_return_type_string_from_dd_routine(thd, routine, &return_type_str);
-
-  // Prepare stored routine parameter's string.
-  dd::String_type params_str;
-  prepare_params_string_from_dd_routine(thd, routine, &params_str);
-
-  // Dummy Routine body.
-  LEX_CSTRING sr_body;
-  if (type == enum_sp_type::FUNCTION)
-    sr_body = {STRING_WITH_LEN("RETURN NULL")};
-  else
-    sr_body = {STRING_WITH_LEN("BEGIN END")};
-
-  // Dummy stored routine definer.
-  const LEX_CSTRING definer_user = EMPTY_CSTR;
-  const LEX_CSTRING definer_host = EMPTY_CSTR;
-
-  // Dummy st_sp_chistics object.
-  struct st_sp_chistics sp_chistics;
-  memset(&sp_chistics, 0, sizeof(st_sp_chistics));
-
-  String defstr;
-  defstr.set_charset(creation_ctx->get_client_cs());
-  if (!create_string(thd, &defstr, type, db_name.str, db_name.length,
-                     routine->name().c_str(), routine->name().length(),
-                     params_str.c_str(), params_str.length(),
-                     return_type_str.c_str(), return_type_str.length(),
-                     sr_body.str, sr_body.length, &sp_chistics, definer_user,
-                     definer_host, routine->sql_mode(), false))
-    return nullptr;
-
-  LEX *old_lex = thd->lex, newlex;
-  thd->lex = &newlex;
-  newlex.thd = thd;
-  newlex.set_current_query_block(nullptr);
-  sp = sp_compile(thd, &defstr, routine->sql_mode(), creation_ctx);
-  *free_sp_head = true;
-  thd->lex->sphead = nullptr;
-  lex_end(thd->lex);
-  thd->lex = old_lex;
-  return sp;
 }
 
 /**

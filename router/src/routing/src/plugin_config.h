@@ -95,7 +95,11 @@ class ROUTING_PLUGIN_EXPORT RoutingPluginConfig
   std::string dest_ssl_crl_dir;  //!< directory of CRL files
   std::string dest_ssl_curves;   //!< allowed TLS curves
 
-  unsigned int unreachable_destination_refresh_interval;
+  bool connection_sharing;  //!< if connection sharing is allowed.
+  std::chrono::milliseconds
+      connection_sharing_delay;  //!< delay before an idling connection is
+                                 //!< moved to the pool and connection sharing
+                                 //!< is allowed.
 };
 
 #endif  // PLUGIN_CONFIG_ROUTING_INCLUDED

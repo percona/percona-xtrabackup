@@ -644,8 +644,7 @@ static void log_sys_create() {
   log.sn_lock_inst = static_cast<rw_lock_t *>(
       ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, sizeof(*log.sn_lock_inst)));
   new (log.sn_lock_inst) rw_lock_t;
-  rw_lock_create_func(log.sn_lock_inst, SYNC_LOG_SN, "log.sn_lock_inst",
-                      UT_LOCATION_HERE);
+  rw_lock_create_func(log.sn_lock_inst, LATCH_ID_LOG_SN, UT_LOCATION_HERE);
 #endif /* UNIV_DEBUG */
 
   /* Allocate buffers. */
@@ -714,8 +713,7 @@ dberr_t log_start(log_t &log, lsn_t checkpoint_lsn, lsn_t start_lsn,
   block = static_cast<byte *>(log.buf) + block_lsn % log.buf_size;
 
   Log_data_block_header block_header;
-  block_header.m_epoch_no = log_block_convert_lsn_to_epoch_no(block_lsn);
-  block_header.m_hdr_no = log_block_convert_lsn_to_epoch_no(block_lsn);
+  block_header.set_lsn(block_lsn);
   block_header.m_data_len = start_lsn - block_lsn;
 
   if (first_block != nullptr) {
@@ -1276,8 +1274,13 @@ static void log_allocate_buffer(log_t &log) {
   ut_a(srv_log_buffer_size <= INNODB_LOG_BUFFER_SIZE_MAX);
   ut_a(srv_log_buffer_size >= 4 * UNIV_PAGE_SIZE);
 
+#ifdef UNIV_PFS_MEMORY
   log.buf.alloc_withkey(ut::make_psi_memory_key(log_buffer_memory_key),
                         ut::Count{srv_log_buffer_size});
+#else
+  log.buf.alloc_withkey(ut::make_psi_memory_key(PSI_NOT_INSTRUMENTED),
+                        ut::Count{srv_log_buffer_size});
+#endif
 }
 
 static void log_deallocate_buffer(log_t &log) { log.buf.dealloc(); }

@@ -23,7 +23,11 @@
 ADD_DEFINITIONS(-DSSL_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/mysql-test/std_data/")
 ADD_DEFINITIONS(-DCMAKE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 FOREACH(test_file
+    test_routing_direct.cc
     test_routing_reuse.cc
+    test_routing_sharing.cc
+    test_routing_sharing_constrained_pools.cc
+    test_routing_sharing_restart.cc
     )
 ADD_TEST_FILE(${CMAKE_CURRENT_SOURCE_DIR}/${test_file}
   MODULE "integration"
@@ -32,6 +36,7 @@ ADD_TEST_FILE(${CMAKE_CURRENT_SOURCE_DIR}/${test_file}
   LIB_DEPENDS
   mysqlxclient
   mysqlxmessages
+  mysql_protocol
   ${PROTOBUF_LIBRARY}
   )
 ENDFOREACH()

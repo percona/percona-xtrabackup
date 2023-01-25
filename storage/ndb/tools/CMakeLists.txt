@@ -69,9 +69,10 @@ IF(MSVC)
 ENDIF()
 
 BISON_TARGET(ndb_import
-  NdbImportCsvGram.ypp
+  ${CMAKE_CURRENT_SOURCE_DIR}/NdbImportCsvGram.ypp
   ${CMAKE_CURRENT_BINARY_DIR}/NdbImportCsvGram.cpp
-  COMPILE_FLAGS "--name-prefix=NdbImportCsv_yy --yacc ${BISON_FLAGS_WARNINGS}"
+  COMPILE_FLAGS
+  "--name-prefix=NdbImportCsv_yy --yacc ${BISON_FLAGS_WARNINGS} ${BISON_NO_LINE_OPT}"
   DEFINES_FILE ${CMAKE_CURRENT_BINARY_DIR}/NdbImportCsvGram.hpp
   )
 
@@ -221,12 +222,12 @@ NDB_ADD_EXECUTABLE(ndb_secretsfile_reader
         LINK_LIBRARIES ndbmgmapi ndbgeneral ndbportlib
         )
 
-IF(NOT WIN32 AND NOT SOLARIS)
-  IF (HAVE_NCURSESW_1 OR
-      HAVE_NCURSESW_2 OR
-      HAVE_NCURSESW_3 OR
-      HAVE_NCURSESW_4 OR
-      HAVE_NCURSESW_5)
+IF(NOT WIN32)
+  IF(HAVE_NCURSESW_CURSES_H OR
+     HAVE_NCURSESW_H OR
+     HAVE_NCURSES_H OR
+     HAVE_NCURSES_CURSES_H)
+
     MESSAGE(STATUS "-- Adding ndb_top executable")
     FIND_LIBRARY(NCURSESW_LIB
       NAMES ncursesw)

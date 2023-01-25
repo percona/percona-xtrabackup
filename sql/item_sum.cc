@@ -515,8 +515,20 @@ bool Item_sum::resolve_type(THD *thd) {
   @see Item_cond::fix_fields()
   @see Item_cond::remove_const_cond()
  */
-bool Item_sum::clean_up_after_removal(uchar *arg [[maybe_unused]]) {
-  assert(arg != nullptr);
+bool Item_sum::clean_up_after_removal(uchar *arg) {
+  Cleanup_after_removal_context *const ctx =
+      pointer_cast<Cleanup_after_removal_context *>(arg);
+
+  if (ctx->is_stopped(this)) return false;
+
+  // Remove item on upward traversal, not downward:
+  if (marker == MARKER_NONE) {
+    marker = MARKER_TRAVERSAL;
+    return false;
+  }
+  assert(marker == MARKER_TRAVERSAL);
+  marker = MARKER_NONE;
+
   /*
     Don't do anything if
     1) this is an unresolved item (This may happen if an
@@ -2823,8 +2835,16 @@ bool Item_sum_hybrid::compute() {
   */
   if (m_want_first != m_nulls_first) {
     // Cases (2) and (3): same structure as Item_first_last_value::compute
+
+    const bool visiting_first_in_frame =
+        (m_window->optimizable_row_aggregates() &&
+         m_window->rowno_being_visited() ==
+             m_window->first_rowno_in_rows_frame()) ||
+        !m_window->optimizable_row_aggregates();
+
     if ((m_window->needs_buffering() &&
-         (((m_window->rowno_in_frame() == 1 && m_want_first) ||
+         (((m_window->rowno_in_frame() == 1 && m_want_first &&
+            visiting_first_in_frame) ||
            (m_window->is_last_row_in_frame() && !m_want_first)) ||
           m_window->rowno_being_visited() == 0 /* No FROM; one const row */)) ||
         (!m_window->needs_buffering() &&
@@ -2890,8 +2910,11 @@ bool Item_sum_hybrid::compute() {
         (!m_window->needs_buffering())) {
       value->store_and_cache(args[0]);
       null_value = value->null_value;
-      const int64 frame_start =
-          (m_window->rowno_being_visited() - m_window->rowno_in_frame() + 1);
+
+      const int64 frame_start = m_window->optimizable_row_aggregates()
+                                    ? m_window->first_rowno_in_rows_frame()
+                                    : (m_window->rowno_being_visited() -
+                                       m_window->rowno_in_frame() + 1);
 
       if (!value->null_value &&
           m_window->rowno_being_visited() > m_saved_last_value_at) {
@@ -2999,10 +3022,8 @@ bool Item_sum_hybrid::get_time(MYSQL_TIME *ltime) {
 String *Item_sum_hybrid::val_str(String *str) {
   assert(fixed == 1);
   if (m_is_window_function) {
-    if (wf_common_init()) return nullptr;
-    bool ret = false;
-    m_optimize ? ret = compute() : add();
-    if (ret) return nullptr;
+    if (wf_common_init()) return error_str();
+    if (m_optimize ? compute() : add()) return error_str();
   }
   if (null_value) return nullptr;
 
@@ -4452,7 +4473,8 @@ bool Item_func_group_concat::fix_fields(THD *thd, Item **ref) {
   for (uint i = 0; i < m_field_arg_count; i++) {
     Item *item = args[i];
     fields.push_back(item);
-    if (item->const_item() && item->is_null()) {
+    if (item->const_item() && !thd->lex->is_view_context_analysis() &&
+        item->is_null()) {
       // "is_null()" may cause error:
       if (thd->is_error()) return true;
       always_null = true;
@@ -5134,7 +5156,6 @@ bool Item_first_last_value::compute() {
   }
   return null_value || current_thd->is_error();
 }
-
 longlong Item_first_last_value::val_int() {
   if (wf_common_init()) return 0;
 
@@ -6181,14 +6202,36 @@ bool Item_func_grouping::fix_fields(THD *thd, Item **ref) {
 longlong Item_func_grouping::val_int() {
   longlong result = 0;
   for (uint i = 0; i < arg_count; i++) {
-    Item *real_item = args[i];
-    while (real_item->type() == REF_ITEM)
-      real_item = *((down_cast<Item_ref *>(real_item))->ref);
+    Item *real_item = args[i]->real_item();
     if (has_rollup_result(real_item)) {
       result += 1ULL << (arg_count - (i + 1));
     }
   }
   return result;
+}
+
+/**
+  Used by Distinct_check::check_query to determine whether an
+  error should be returned if the GROUPING item from the ORDER
+  is not present in the select list.
+
+  @retval
+    true  if error
+  @retval
+    false on success
+*/
+bool Item_func_grouping::aggregate_check_distinct(uchar *arg) {
+  assert(fixed);
+  Distinct_check *dc = reinterpret_cast<Distinct_check *>(arg);
+
+  /**
+    If the GROUPING function in ORDER BY is not in the SELECT list, it
+    might not be functionally dependent on all selected expressions, and thus
+    might produce random order in combination with DISTINCT; so we reject
+    it.
+  */
+  if (dc->is_stopped(this)) return false;
+  return true;
 }
 
 /**

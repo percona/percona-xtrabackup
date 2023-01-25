@@ -65,7 +65,9 @@ class MySQLRoutingContext {
                       unsigned long long max_connect_errors,
                       SslMode client_ssl_mode, TlsServerContext *client_ssl_ctx,
                       SslMode server_ssl_mode,
-                      DestinationTlsContext *dest_tls_context)
+                      DestinationTlsContext *dest_tls_context,
+                      bool connection_sharing,
+                      std::chrono::milliseconds connection_sharing_delay)
       : protocol_(protocol),
         name_(std::move(name)),
         net_buffer_length_(net_buffer_length),
@@ -77,7 +79,9 @@ class MySQLRoutingContext {
         client_ssl_ctx_{client_ssl_ctx},
         server_ssl_mode_{server_ssl_mode},
         destination_tls_context_{dest_tls_context},
-        blocked_endpoints_{max_connect_errors} {}
+        blocked_endpoints_{max_connect_errors},
+        connection_sharing_{connection_sharing},
+        connection_sharing_delay_{connection_sharing_delay} {}
 
   BlockedEndpoints &blocked_endpoints() { return blocked_endpoints_; }
   const BlockedEndpoints &blocked_endpoints() const {
@@ -155,6 +159,16 @@ class MySQLRoutingContext {
     return shared_quarantine_handler_;
   }
 
+  const SharedQuarantineHandler &shared_quarantine() const {
+    return shared_quarantine_handler_;
+  }
+
+  bool connection_sharing() const { return connection_sharing_; }
+
+  std::chrono::milliseconds connection_sharing_delay() const {
+    return connection_sharing_delay_;
+  }
+
  private:
   /** protocol type. */
   BaseProtocol::Type protocol_;
@@ -201,6 +215,10 @@ class MySQLRoutingContext {
   SharedQuarantineHandler shared_quarantine_handler_;
 
   BlockedEndpoints blocked_endpoints_;
+
+  bool connection_sharing_;
+
+  std::chrono::milliseconds connection_sharing_delay_;
 
  public:
   /** @brief Number of active routes */

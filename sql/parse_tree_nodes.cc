@@ -148,31 +148,32 @@ PT_joined_table *PT_table_reference::add_cross_join(PT_cross_join *cj) {
 }
 
 bool PT_joined_table::contextualize_tabs(Parse_context *pc) {
-  if (tr1 != nullptr) return false;  // already done
+  if (m_left_table_ref != nullptr) return false;  // already done
 
-  bool was_right = m_type & JTT_RIGHT;
-  if (was_right)  // rewrite to LEFT
-  {
+  bool was_right_join = m_type & JTT_RIGHT;
+  // rewrite to LEFT JOIN
+  if (was_right_join) {
     m_type =
         static_cast<PT_joined_table_type>((m_type & ~JTT_RIGHT) | JTT_LEFT);
-    std::swap(tab1_node, tab2_node);
+    std::swap(m_left_pt_table, m_right_pt_table);
   }
 
-  if (tab1_node->contextualize(pc) || tab2_node->contextualize(pc)) return true;
+  if (m_left_pt_table->contextualize(pc) || m_right_pt_table->contextualize(pc))
+    return true;
 
-  tr1 = tab1_node->value;
-  tr2 = tab2_node->value;
+  m_left_table_ref = m_left_pt_table->m_table_ref;
+  m_right_table_ref = m_right_pt_table->m_table_ref;
 
-  if (tr1 == nullptr || tr2 == nullptr) {
-    error(pc, join_pos);
+  if (m_left_table_ref == nullptr || m_right_table_ref == nullptr) {
+    error(pc, m_join_pos);
     return true;
   }
 
   if (m_type & JTT_LEFT) {
-    tr2->outer_join = true;
-    if (was_right) {
-      tr2->join_order_swapped = true;
-      tr2->query_block->set_right_joins();
+    m_right_table_ref->outer_join = true;
+    if (was_right_join) {
+      m_right_table_ref->join_order_swapped = true;
+      m_right_table_ref->query_block->set_right_joins();
     }
   }
 
@@ -497,9 +498,6 @@ bool PT_set_variable::contextualize(Parse_context *pc) {
   if (super::contextualize(pc) || itemize_safe(pc, &m_opt_expr)) {
     return true;
   }
-
-  THD *const thd = pc->thd;
-  LEX *const lex = thd->lex;
   const bool is_1d_name = m_opt_prefix.str == nullptr;
 
   /*
@@ -526,7 +524,14 @@ bool PT_set_variable::contextualize(Parse_context *pc) {
     3. Process SP local variable assignment:
   */
 
+  THD *const thd = pc->thd;
+  LEX *const lex = thd->lex;
   if (is_1d_name) {
+    // Remove deprecation warning when FULL is used as keyword.
+    if (thd->get_stmt_da()->has_sql_condition(ER_WARN_DEPRECATED_IDENT)) {
+      thd->get_stmt_da()->reset_condition_info(thd);
+    }
+
     sp_variable *spv = find_sp_variable(*pc, m_name);
     if (spv != nullptr) {
       if (m_opt_expr == nullptr) {
@@ -756,12 +761,11 @@ Sql_cmd *PT_select_stmt::make_cmd(THD *thd) {
   @return Matching table, NULL if error.
 */
 
-static TABLE_LIST *multi_delete_table_match(TABLE_LIST *tbl,
-                                            TABLE_LIST *tables) {
-  TABLE_LIST *match = nullptr;
+static Table_ref *multi_delete_table_match(Table_ref *tbl, Table_ref *tables) {
+  Table_ref *match = nullptr;
   DBUG_TRACE;
 
-  for (TABLE_LIST *elem = tables; elem; elem = elem->next_local) {
+  for (Table_ref *elem = tables; elem; elem = elem->next_local) {
     int cmp;
 
     if (tbl->is_fqtn && elem->is_alias) continue; /* no match */
@@ -803,15 +807,15 @@ static TABLE_LIST *multi_delete_table_match(TABLE_LIST *tbl,
 */
 
 static bool multi_delete_link_tables(Parse_context *pc,
-                                     SQL_I_List<TABLE_LIST> *delete_tables) {
+                                     SQL_I_List<Table_ref> *delete_tables) {
   DBUG_TRACE;
 
-  TABLE_LIST *tables = pc->select->table_list.first;
+  Table_ref *tables = pc->select->get_table_list();
 
-  for (TABLE_LIST *target_tbl = delete_tables->first; target_tbl;
+  for (Table_ref *target_tbl = delete_tables->first; target_tbl;
        target_tbl = target_tbl->next_local) {
     /* All tables in aux_tables must be found in FROM PART */
-    TABLE_LIST *walk = multi_delete_table_match(target_tbl, tables);
+    Table_ref *walk = multi_delete_table_match(target_tbl, tables);
     if (!walk) return true;
     if (!walk->is_derived()) {
       target_tbl->table_name = walk->table_name;
@@ -865,11 +869,11 @@ Sql_cmd *PT_delete::make_cmd(THD *thd) {
     return nullptr;
 
   if (is_multitable()) {
-    select->table_list.save_and_clear(&delete_tables);
+    select->m_table_list.save_and_clear(&delete_tables);
     lex->query_tables = nullptr;
     lex->query_tables_last = &lex->query_tables;
   } else {
-    select->top_join_list.push_back(select->get_table_list());
+    select->m_table_nest.push_back(select->get_table_list());
   }
   Yacc_state *const yyps = &pc.thd->m_parser_state->m_yacc;
   yyps->m_lock_type = TL_READ_DEFAULT;
@@ -879,7 +883,7 @@ Sql_cmd *PT_delete::make_cmd(THD *thd) {
     if (contextualize_array(&pc, &join_table_list)) return nullptr;
     pc.select->context.table_list =
         pc.select->context.first_name_resolution_table =
-            pc.select->table_list.first;
+            pc.select->get_table_list();
   }
 
   if (opt_where_clause != nullptr &&
@@ -930,7 +934,7 @@ Sql_cmd *PT_update::make_cmd(THD *thd) {
   // Ensure we're resetting parsing context of the right select
   assert(select->parsing_place == CTX_UPDATE_VALUE);
   select->parsing_place = CTX_NONE;
-  const bool is_multitable = select->table_list.elements > 1;
+  const bool is_multitable = select->m_table_list.elements > 1;
   lex->sql_command = is_multitable ? SQLCOM_UPDATE_MULTI : SQLCOM_UPDATE;
 
   /*
@@ -1041,9 +1045,9 @@ Sql_cmd *PT_insert::make_cmd(THD *thd) {
       The following work only with the local list, the global list
       is created correctly in this case
     */
-    SQL_I_List<TABLE_LIST> save_list;
+    SQL_I_List<Table_ref> save_list;
     Query_block *const save_query_block = pc.select;
-    save_query_block->table_list.save_and_clear(&save_list);
+    save_query_block->m_table_list.save_and_clear(&save_list);
 
     if (insert_query_expression->contextualize(&pc)) return nullptr;
 
@@ -1053,7 +1057,7 @@ Sql_cmd *PT_insert::make_cmd(THD *thd) {
       The following work only with the local list, the global list
       is created correctly in this case
     */
-    save_query_block->table_list.push_front(&save_list);
+    save_query_block->m_table_list.push_front(&save_list);
 
     lex->bulk_insert_row_cnt = 0;
   } else {
@@ -1070,7 +1074,7 @@ Sql_cmd *PT_insert::make_cmd(THD *thd) {
   // which can be referred to from ON DUPLICATE KEY UPDATE. Naming the derived
   // table columns is deferred to Sql_cmd_insert_base::prepare_inner, as this
   // requires the insert table to be resolved.
-  TABLE_LIST *values_table{nullptr};
+  Table_ref *values_table{nullptr};
   if (opt_values_table_alias != nullptr && opt_values_column_list != nullptr) {
     if (!strcmp(opt_values_table_alias, table_ident->table.str)) {
       my_error(ER_NONUNIQ_TABLE, MYF(0), opt_values_table_alias);
@@ -1093,7 +1097,7 @@ Sql_cmd *PT_insert::make_cmd(THD *thd) {
                opt_on_duplicate_column_list->elements());
 
     lex->duplicates = DUP_UPDATE;
-    TABLE_LIST *first_table = lex->query_block->table_list.first;
+    Table_ref *first_table = lex->query_block->get_table_list();
     /* Fix lock for ON DUPLICATE KEY UPDATE */
     if (first_table->lock_descriptor().type == TL_WRITE_CONCURRENT_DEFAULT)
       first_table->set_lock({TL_WRITE_DEFAULT, THR_DEFAULT});
@@ -1178,7 +1182,7 @@ bool PT_query_specification::contextualize(Parse_context *pc) {
     if (contextualize_array(pc, &from_clause)) return true;
     pc->select->context.table_list =
         pc->select->context.first_name_resolution_table =
-            pc->select->table_list.first;
+            pc->select->get_table_list();
   }
 
   if (itemize_safe(pc, &opt_where_clause) ||
@@ -1296,9 +1300,10 @@ bool PT_table_factor_function::contextualize(Parse_context *pc) {
   auto ti = new (pc->mem_root) Table_ident(alias, jtf);
   if (ti == nullptr) return true;
 
-  value = pc->select->add_table_to_list(pc->thd, ti, m_table_alias.str, 0,
-                                        TL_READ, MDL_SHARED_READ);
-  if (value == nullptr || pc->select->add_joined_table(value)) return true;
+  m_table_ref = pc->select->add_table_to_list(pc->thd, ti, m_table_alias.str, 0,
+                                              TL_READ, MDL_SHARED_READ);
+  if (m_table_ref == nullptr || pc->select->add_joined_table(m_table_ref))
+    return true;
 
   return false;
 }
@@ -1344,15 +1349,16 @@ bool PT_derived_table::contextualize(Parse_context *pc) {
   Table_ident *ti = new (pc->mem_root) Table_ident(unit);
   if (ti == nullptr) return true;
 
-  value = pc->select->add_table_to_list(pc->thd, ti, m_table_alias, 0, TL_READ,
-                                        MDL_SHARED_READ);
-  if (value == nullptr) return true;
-  if (column_names.size()) value->set_derived_column_names(&column_names);
+  m_table_ref = pc->select->add_table_to_list(pc->thd, ti, m_table_alias, 0,
+                                              TL_READ, MDL_SHARED_READ);
+  if (m_table_ref == nullptr) return true;
+  if (column_names.size()) m_table_ref->set_derived_column_names(&column_names);
   if (m_lateral) {
     // Mark the unit as LATERAL, by turning on one bit in the map:
-    value->derived_query_expression()->m_lateral_deps = OUTER_REF_TABLE_BIT;
+    m_table_ref->derived_query_expression()->m_lateral_deps =
+        OUTER_REF_TABLE_BIT;
   }
-  if (pc->select->add_joined_table(value)) return true;
+  if (pc->select->add_joined_table(m_table_ref)) return true;
 
   return false;
 }
@@ -1364,7 +1370,7 @@ bool PT_table_factor_joined_table::contextualize(Parse_context *pc) {
   if (outer_query_block->init_nested_join(pc->thd)) return true;
 
   if (m_joined_table->contextualize(pc)) return true;
-  value = m_joined_table->value;
+  m_table_ref = m_joined_table->m_table_ref;
 
   if (outer_query_block->end_nested_join() == nullptr) return true;
 
@@ -1813,7 +1819,7 @@ bool PT_foreign_key_definition::contextualize(Table_ddl_parse_context *pc) {
     if (pc->alter_info->new_db_name.str) {
       db = orig_db = pc->alter_info->new_db_name;
     } else {
-      TABLE_LIST *child_table = lex->query_block->get_table_list();
+      Table_ref *child_table = lex->query_block->get_table_list();
       db = orig_db = LEX_CSTRING{child_table->db, child_table->db_length};
     }
   }
@@ -2038,9 +2044,9 @@ bool PT_create_union_option::contextualize(Table_ddl_parse_context *pc) {
   LEX *const lex = thd->lex;
   const Yacc_state *yyps = &thd->m_parser_state->m_yacc;
 
-  TABLE_LIST **exclude_merge_engine_tables = lex->query_tables_last;
-  SQL_I_List<TABLE_LIST> save_list;
-  lex->query_block->table_list.save_and_clear(&save_list);
+  Table_ref **exclude_merge_engine_tables = lex->query_tables_last;
+  SQL_I_List<Table_ref> save_list;
+  lex->query_block->m_table_list.save_and_clear(&save_list);
   if (pc->select->add_tables(thd, tables, TL_OPTION_UPDATING, yyps->m_lock_type,
                              yyps->m_mdl_type))
     return true;
@@ -2048,8 +2054,8 @@ bool PT_create_union_option::contextualize(Table_ddl_parse_context *pc) {
     Move the union list to the merge_list and exclude its tables
     from the global list.
   */
-  pc->create_info->merge_list = lex->query_block->table_list;
-  lex->query_block->table_list = save_list;
+  pc->create_info->merge_list = lex->query_block->m_table_list;
+  lex->query_block->m_table_list = save_list;
   /*
     When excluding union list from the global list we assume that
     elements of the former immediately follow elements which represent
@@ -2125,14 +2131,14 @@ bool PT_locking_clause::contextualize(Parse_context *pc) {
 }
 
 using Local_tables_iterator =
-    IntrusiveListIterator<TABLE_LIST, &TABLE_LIST::next_local>;
+    IntrusiveListIterator<Table_ref, &Table_ref::next_local>;
 
-/// A list interface over the TABLE_LIST::next_local pointer.
+/// A list interface over the Table_ref::next_local pointer.
 using Local_tables_list = IteratorContainer<Local_tables_iterator>;
 
 bool PT_query_block_locking_clause::set_lock_for_tables(Parse_context *pc) {
-  Local_tables_list local_tables(pc->select->table_list.first);
-  for (TABLE_LIST *table_list : local_tables)
+  Local_tables_list local_tables(pc->select->get_table_list());
+  for (Table_ref *table_list : local_tables)
     if (!table_list->is_derived()) {
       if (table_list->lock_descriptor().type != TL_READ_DEFAULT) {
         my_error(ER_DUPLICATE_TABLE_LOCK, MYF(0), table_list->alias);
@@ -2181,11 +2187,11 @@ Sql_cmd *PT_create_table_stmt::make_cmd(THD *thd) {
 
   Parse_context pc(thd, lex->current_query_block());
 
-  TABLE_LIST *table = pc.select->add_table_to_list(
+  Table_ref *table = pc.select->add_table_to_list(
       thd, table_name, nullptr, TL_OPTION_UPDATING, TL_WRITE, MDL_SHARED);
   if (table == nullptr) return nullptr;
 
-  table->open_strategy = TABLE_LIST::OPEN_FOR_CREATE;
+  table->open_strategy = Table_ref::OPEN_FOR_CREATE;
 
   lex->create_info = &m_create_info;
   Table_ddl_parse_context pc2(thd, pc.select, &m_alter_info);
@@ -2200,12 +2206,12 @@ Sql_cmd *PT_create_table_stmt::make_cmd(THD *thd) {
   lex->name.str = nullptr;
   lex->name.length = 0;
 
-  TABLE_LIST *qe_tables = nullptr;
+  Table_ref *qe_tables = nullptr;
 
   if (opt_like_clause != nullptr) {
     pc2.create_info->options |= HA_LEX_CREATE_TABLE_LIKE;
-    TABLE_LIST **like_clause_table = &lex->query_tables->next_global;
-    TABLE_LIST *src_table = pc.select->add_table_to_list(
+    Table_ref **like_clause_table = &lex->query_tables->next_global;
+    Table_ref *src_table = pc.select->add_table_to_list(
         thd, opt_like_clause, nullptr, 0, TL_READ, MDL_SHARED_READ);
     if (!src_table) return nullptr;
     /* CREATE TABLE ... LIKE is not allowed for views. */
@@ -2224,7 +2230,7 @@ Sql_cmd *PT_create_table_stmt::make_cmd(THD *thd) {
     }
 
     if (opt_partitioning) {
-      TABLE_LIST **exclude_part_tables = lex->query_tables_last;
+      Table_ref **exclude_part_tables = lex->query_tables_last;
       if (opt_partitioning->contextualize(&pc)) return nullptr;
       /*
         Remove all tables used in PARTITION clause from the global table
@@ -2249,7 +2255,7 @@ Sql_cmd *PT_create_table_stmt::make_cmd(THD *thd) {
     }
 
     if (opt_query_expression) {
-      TABLE_LIST **query_expression_tables = &lex->query_tables->next_global;
+      Table_ref **query_expression_tables = &lex->query_tables->next_global;
       /*
         In CREATE TABLE t ... SELECT the table_list initially contains
         here a table entry for the destination table `t'.
@@ -2263,9 +2269,9 @@ Sql_cmd *PT_create_table_stmt::make_cmd(THD *thd) {
         The following work only with the local list, the global list
         is created correctly in this case
       */
-      SQL_I_List<TABLE_LIST> save_list;
+      SQL_I_List<Table_ref> save_list;
       Query_block *const save_query_block = pc.select;
-      save_query_block->table_list.save_and_clear(&save_list);
+      save_query_block->m_table_list.save_and_clear(&save_list);
 
       if (opt_query_expression->contextualize(&pc)) return nullptr;
       if (pc.finalize_query_expression()) return nullptr;
@@ -2274,7 +2280,7 @@ Sql_cmd *PT_create_table_stmt::make_cmd(THD *thd) {
         The following work only with the local list, the global list
         is created correctly in this case
       */
-      save_query_block->table_list.push_front(&save_list);
+      save_query_block->m_table_list.push_front(&save_list);
       qe_tables = *query_expression_tables;
     }
   }
@@ -2303,7 +2309,7 @@ bool PT_table_locking_clause::set_lock_for_tables(Parse_context *pc) {
   for (Table_ident *table_ident : m_tables) {
     Query_block *select = pc->select;
 
-    TABLE_LIST *table_list = select->find_table_by_name(table_ident);
+    Table_ref *table_list = select->find_table_by_name(table_ident);
 
     THD *thd = pc->thd;
 
@@ -2326,10 +2332,10 @@ bool PT_show_table_base::make_table_base_cmd(THD *thd, bool *temporary) {
   lex->sql_command = m_sql_command;
 
   // Create empty query block and add user specified table.
-  TABLE_LIST **query_tables_last = lex->query_tables_last;
+  Table_ref **query_tables_last = lex->query_tables_last;
   Query_block *schema_query_block = lex->new_empty_query_block();
   if (schema_query_block == nullptr) return true;
-  TABLE_LIST *tbl = schema_query_block->add_table_to_list(
+  Table_ref *tbl = schema_query_block->add_table_to_list(
       thd, m_table_ident, nullptr, 0, TL_READ, MDL_SHARED_READ);
   if (tbl == nullptr) return true;
   lex->query_tables_last = query_tables_last;
@@ -2354,7 +2360,7 @@ bool PT_show_table_base::make_table_base_cmd(THD *thd, bool *temporary) {
                                                : SCH_TMP_TABLE_KEYS;
     if (make_schema_query_block(thd, query_block, schema_table)) return true;
 
-    TABLE_LIST *table_list = query_block->table_list.first;
+    Table_ref *table_list = query_block->get_table_list();
     table_list->schema_query_block = schema_query_block;
     table_list->schema_table_reformed = true;
   } else {
@@ -2376,7 +2382,7 @@ bool PT_show_table_base::make_table_base_cmd(THD *thd, bool *temporary) {
 
     if (sel == nullptr) return true;
 
-    TABLE_LIST *table_list = sel->table_list.first;
+    Table_ref *table_list = sel->get_table_list();
     table_list->schema_query_block = schema_query_block;
   }
 
@@ -3067,8 +3073,8 @@ static bool init_alter_table_stmt(Table_ddl_parse_context *pc,
   pc->create_info->row_type = ROW_TYPE_NOT_USED;
 
   pc->alter_info->new_db_name =
-      LEX_CSTRING{lex->query_block->table_list.first->db,
-                  lex->query_block->table_list.first->db_length};
+      LEX_CSTRING{lex->query_block->get_table_list()->db,
+                  lex->query_block->get_table_list()->db_length};
   lex->no_write_to_binlog = false;
   pc->create_info->storage_media = HA_SM_DEFAULT;
 
@@ -3479,30 +3485,40 @@ Sql_cmd *PT_explain::make_cmd(THD *thd) {
   LEX *const lex = thd->lex;
   switch (m_format) {
     case Explain_format_type::TRADITIONAL:
-      lex->explain_format = new (thd->mem_root) Explain_format_traditional;
+    case Explain_format_type::TRADITIONAL_STRICT:
+      /*
+        With no format specified:
+        - With ANALYZE, convert TRADITIONAL[_STRICT] to TREE unconditionally.
+        - With hypergraph, convert TRADITIONAL to TREE. Don't convert
+          TRADITIONAL_STRICT, because it's purpose is to prevent exactly this
+          silent conversion with hypergraph. TRADITIONAL_STRICT will throw an
+          error, later.
+      */
+      if (!m_explicit_format &&
+          (m_analyze ||
+           (thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER) &&
+            m_format == Explain_format_type::TRADITIONAL))) {
+        lex->explain_format = new (thd->mem_root) Explain_format_tree;
+      } else {
+        lex->explain_format = new (thd->mem_root) Explain_format_traditional;
+      }
       break;
-    case Explain_format_type::JSON:
-    case Explain_format_type::JSON_WITH_EXECUTE: {
+    case Explain_format_type::JSON: {
       lex->explain_format = new (thd->mem_root) Explain_format_JSON(
           thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER)
               ? Explain_format_JSON::FormatVersion::kIteratorBased
               : Explain_format_JSON::FormatVersion::kLinear);
-      lex->is_explain_analyze =
-          (m_format == Explain_format_type::JSON_WITH_EXECUTE);
       break;
     }
     case Explain_format_type::TREE:
       lex->explain_format = new (thd->mem_root) Explain_format_tree;
-      break;
-    case Explain_format_type::TREE_WITH_EXECUTE:
-      lex->explain_format = new (thd->mem_root) Explain_format_tree;
-      lex->is_explain_analyze = true;
       break;
     default:
       assert(false);
       lex->explain_format = new (thd->mem_root) Explain_format_traditional;
   }
   if (lex->explain_format == nullptr) return nullptr;  // OOM
+  lex->is_explain_analyze = m_analyze;
 
   Sql_cmd *ret = m_explainable_stmt->make_cmd(thd);
   if (ret == nullptr) return nullptr;  // OOM
@@ -3606,11 +3622,11 @@ bool PT_table_factor_table_ident::contextualize(Parse_context *pc) {
   THD *thd = pc->thd;
   Yacc_state *yyps = &thd->m_parser_state->m_yacc;
 
-  value = pc->select->add_table_to_list(
+  m_table_ref = pc->select->add_table_to_list(
       thd, table_ident, opt_table_alias, 0, yyps->m_lock_type, yyps->m_mdl_type,
       opt_key_definition, opt_use_partition, nullptr, pc);
-  if (value == nullptr) return true;
-  if (pc->select->add_joined_table(value)) return true;
+  if (m_table_ref == nullptr) return true;
+  if (pc->select->add_joined_table(m_table_ref)) return true;
   return false;
 }
 
@@ -3619,31 +3635,33 @@ bool PT_table_reference_list_parens::contextualize(Parse_context *pc) {
     return true;
 
   assert(table_list.size() >= 2);
-  value = pc->select->nest_last_join(pc->thd, table_list.size());
-  return value == nullptr;
+  m_table_ref = pc->select->nest_last_join(pc->thd, table_list.size());
+  return m_table_ref == nullptr;
 }
 
 bool PT_joined_table::contextualize(Parse_context *pc) {
   if (super::contextualize(pc) || contextualize_tabs(pc)) return true;
 
-  if (m_type & JTT_NATURAL) tr1->add_join_natural(tr2);
+  if (m_type & JTT_NATURAL)
+    m_left_table_ref->add_join_natural(m_right_table_ref);
 
-  if (m_type & JTT_STRAIGHT) tr2->straight = true;
+  if (m_type & JTT_STRAIGHT) m_right_table_ref->straight = true;
 
   return false;
 }
 
 bool PT_cross_join::contextualize(Parse_context *pc) {
   if (super::contextualize(pc)) return true;
-  value = pc->select->nest_last_join(pc->thd);
-  return value == nullptr;
+  m_table_ref = pc->select->nest_last_join(pc->thd);
+  return m_table_ref == nullptr;
 }
 
 bool PT_joined_table_on::contextualize(Parse_context *pc) {
   if (this->contextualize_tabs(pc)) return true;
 
-  if (push_new_name_resolution_context(pc, this->tr1, this->tr2)) {
-    this->error(pc, this->join_pos);
+  if (push_new_name_resolution_context(pc, this->m_left_table_ref,
+                                       this->m_right_table_ref)) {
+    this->error(pc, this->m_join_pos);
     return true;
   }
 
@@ -3657,21 +3675,21 @@ bool PT_joined_table_on::contextualize(Parse_context *pc) {
   }
   assert(sel == pc->select);
 
-  add_join_on(this->tr2, on);
+  add_join_on(this->m_right_table_ref, on);
   pc->thd->lex->pop_context();
   assert(sel->parsing_place == CTX_ON);
   sel->parsing_place = CTX_NONE;
-  value = pc->select->nest_last_join(pc->thd);
-  return value == nullptr;
+  m_table_ref = pc->select->nest_last_join(pc->thd);
+  return m_table_ref == nullptr;
 }
 
 bool PT_joined_table_using::contextualize(Parse_context *pc) {
   if (super::contextualize(pc)) return true;
 
-  tr1->add_join_natural(tr2);
-  value = pc->select->nest_last_join(pc->thd);
-  if (value == nullptr) return true;
-  value->join_using_fields = using_fields;
+  m_left_table_ref->add_join_natural(m_right_table_ref);
+  m_table_ref = pc->select->nest_last_join(pc->thd);
+  if (m_table_ref == nullptr) return true;
+  m_table_ref->join_using_fields = using_fields;
 
   return false;
 }
@@ -3702,6 +3720,12 @@ bool PT_table_locking_clause::raise_error(int error) {
 bool PT_set_scoped_system_variable::contextualize(Parse_context *pc) {
   if (super::contextualize(pc) || itemize_safe(pc, &m_opt_expr)) {
     return true;
+  }
+
+  // Remove deprecation warning when FULL is used as keyword.
+  THD *thd = pc->thd;
+  if (thd->get_stmt_da()->has_sql_condition(ER_WARN_DEPRECATED_IDENT)) {
+    thd->get_stmt_da()->reset_condition_info(thd);
   }
 
   const bool is_1d_name = m_opt_prefix.str == nullptr;
@@ -3752,6 +3776,12 @@ bool PT_set_system_variable::contextualize(Parse_context *pc) {
     return true;
   }
 
+  // Remove deprecation warning when FULL is used as keyword.
+  THD *thd = pc->thd;
+  if (thd->get_stmt_da()->has_sql_condition(ER_WARN_DEPRECATED_IDENT)) {
+    thd->get_stmt_da()->reset_condition_info(thd);
+  }
+
   /*
     This is `@@[scope.][prefix.]name, so reject @@[scope].{NEW | OLD}.name:
   */
@@ -3760,7 +3790,7 @@ bool PT_set_system_variable::contextualize(Parse_context *pc) {
     return true;
   }
 
-  return add_system_variable_assignment(pc->thd, m_opt_prefix, m_name, m_scope,
+  return add_system_variable_assignment(thd, m_opt_prefix, m_name, m_scope,
                                         m_opt_expr);
 }
 

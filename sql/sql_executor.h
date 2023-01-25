@@ -142,7 +142,7 @@ class SJ_TMP_TABLE {
 */
 class Semijoin_mat_exec {
  public:
-  Semijoin_mat_exec(TABLE_LIST *sj_nest, bool is_scan, uint table_count,
+  Semijoin_mat_exec(Table_ref *sj_nest, bool is_scan, uint table_count,
                     uint mat_table_index, uint inner_table_index)
       : sj_nest(sj_nest),
         is_scan(is_scan),
@@ -152,7 +152,7 @@ class Semijoin_mat_exec {
         table_param(),
         table(nullptr) {}
   ~Semijoin_mat_exec() = default;
-  TABLE_LIST *const sj_nest;     ///< Semi-join nest for this materialization
+  Table_ref *const sj_nest;      ///< Semi-join nest for this materialization
   const bool is_scan;            ///< true if executing a scan, false if lookup
   const uint table_count;        ///< Number of tables in the sj-nest
   const uint mat_table_index;    ///< Index in join_tab for materialized table
@@ -228,7 +228,7 @@ bool copy_funcs(Temp_table_param *, const THD *thd,
   @retval false ref key copied successfully
   @retval true  error detected during copying of key
 */
-bool construct_lookup_ref(THD *thd, TABLE *table, TABLE_REF *ref);
+bool construct_lookup(THD *thd, TABLE *table, Index_lookup *ref);
 
 /** Help function when we get some an error from the table handler. */
 int report_handler_error(TABLE *table, int error);
@@ -254,7 +254,7 @@ bool setup_sum_funcs(THD *thd, Item_sum **func_ptr);
 bool make_group_fields(JOIN *main_join, JOIN *curr_join);
 bool check_unique_constraint(TABLE *table);
 ulonglong unique_hash(const Field *field, ulonglong *hash);
-int read_const(TABLE *table, TABLE_REF *ref);
+int read_const(TABLE *table, Index_lookup *ref);
 
 class QEP_TAB : public QEP_shared_owner {
  public:
@@ -350,7 +350,7 @@ class QEP_TAB : public QEP_shared_owner {
 
  public:
   /// Pointer to table reference
-  TABLE_LIST *table_ref;
+  Table_ref *table_ref;
 
   /* Variables for semi-join duplicate elimination */
   SJ_TMP_TABLE *flush_weedout_table;
@@ -551,13 +551,13 @@ AccessPath *MoveCompositeIteratorsFromTablePath(AccessPath *path,
 AccessPath *GetAccessPathForDerivedTable(THD *thd, QEP_TAB *qep_tab,
                                          AccessPath *table_path);
 AccessPath *GetAccessPathForDerivedTable(
-    THD *thd, TABLE_LIST *table_ref, TABLE *table, bool rematerialize,
+    THD *thd, Table_ref *table_ref, TABLE *table, bool rematerialize,
     Mem_root_array<const AccessPath *> *invalidators, bool need_rowid,
     AccessPath *table_path);
 
 void ConvertItemsToCopy(const mem_root_deque<Item *> &items, Field **fields,
                         Temp_table_param *param);
-std::string RefToString(const TABLE_REF &ref, const KEY *key,
+std::string RefToString(const Index_lookup &ref, const KEY *key,
                         bool include_nulls);
 
 bool MaterializeIsDoingDeduplication(TABLE *table);
@@ -568,12 +568,12 @@ bool MaterializeIsDoingDeduplication(TABLE *table);
   condition_parts. E.g. if you have ((a AND b) AND c), condition_parts
   will contain [a, b, c], plus whatever it contained before the call.
  */
-void ExtractConditions(Item *condition,
+bool ExtractConditions(Item *condition,
                        Mem_root_array<Item *> *condition_parts);
 
 AccessPath *create_table_access_path(THD *thd, TABLE *table,
                                      AccessPath *range_scan,
-                                     TABLE_LIST *table_ref, POSITION *position,
+                                     Table_ref *table_ref, POSITION *position,
                                      bool count_examined_rows);
 
 /**
@@ -583,7 +583,7 @@ AccessPath *create_table_access_path(THD *thd, TABLE *table,
   Returns nullptr on failure.
  */
 unique_ptr_destroy_only<RowIterator> init_table_iterator(
-    THD *thd, TABLE *table, AccessPath *range_scan, TABLE_LIST *table_ref,
+    THD *thd, TABLE *table, AccessPath *range_scan, Table_ref *table_ref,
     POSITION *position, bool ignore_not_found_rows, bool count_examined_rows);
 
 /**

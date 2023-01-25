@@ -4644,7 +4644,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 2	DERIVED	table2	NULL	index	NULL	PRIMARY	4	NULL	1	100.00	Using index
 2	DERIVED	table1	NULL	ALL	NULL	NULL	NULL	NULL	1	100.00	Using where; Using join buffer (hash join)
 Warnings:
-Note	1003	/* select#1 */ select `test`.`alias1`.`col_decimal_10_8` AS `field1`,`derived_1_2`.`SQ1_field1` AS `field2`,grouping(rollup_group_item(`rollup_group_item(log(alias1.col_int),2)`,2)) AS `field3` from `test`.`t1` `alias1` join `test`.`t1` `alias2` left join (/* select#2 */ select sum(`test`.`table1`.`col_smallint`) AS `SQ1_field1` from `test`.`t1` `table2` left join `test`.`t1` `table1` on(true) where true) `derived_1_2` on(true) semi join (`test`.`t1`) where (cast(`test`.`alias2`.`pk` as double) = cast(`test`.`t1`.`col_char_255` as double)) group by `field1`,`field2`,log(`test`.`alias1`.`col_int`) with rollup order by `test`.`alias1`.`col_datetime`,`test`.`alias1`.`col_decimal_10_8`,`derived_1_2`.`SQ1_field1`,log(`test`.`alias1`.`col_int`)
+Note	1003	/* select#1 */ select `test`.`alias1`.`col_decimal_10_8` AS `field1`,`derived_1_2`.`SQ1_field1` AS `field2`,grouping(rollup_group_item(`rollup_group_item(log(alias1.col_int),2)`,2)) AS `field3` from `test`.`t1` `alias1` join `test`.`t1` `alias2` left join (/* select#2 */ select sum(`test`.`table1`.`col_smallint`) AS `SQ1_field1` from `test`.`t1` `table2` left join `test`.`t1` `table1` on(true) where true) `derived_1_2` on(true) semi join (`test`.`t1`) where (cast(`test`.`alias2`.`pk` as double) = cast(`test`.`t1`.`col_char_255` as double)) group by `field1`,`field2`,log(`test`.`alias1`.`col_int`) with rollup order by `test`.`alias1`.`col_datetime`,`field1`,`field2`,log(`test`.`alias1`.`col_int`)
 set sql_mode=default;
 DROP TABLE t1;
 #
@@ -4665,4 +4665,26 @@ ERROR 42000: In aggregated query without GROUP BY, expression #2 of SELECT list 
 SELECT SUM(f1), SUM(f1) OVER (), f1, (SELECT MIN(f1) FROM t1) sq FROM t1 ORDER BY f1;
 ERROR 42000: In aggregated query without GROUP BY, expression #2 of SELECT list contains nonaggregated column 'test.t1.f1'; this is incompatible with sql_mode=only_full_group_by
 DROP TABLE t1;
+#
+# Bug#33910786 Scalar subquery transformation combined with
+# WHERE clause optimization lead to reject_multiple_rows being
+# ineffective
+#
+CREATE TABLE t(i INT);
+INSERT INTO t VALUES (1);
+ANALYZE TABLE t;
+Table	Op	Msg_type	Msg_text
+test.t	analyze	status	OK
+SELECT 1 AS one FROM t WHERE 1=(SELECT 1 UNION SELECT 2);
+ERROR 21000: Subquery returns more than 1 row
+EXPLAIN FORMAT=tree SELECT 1 AS one FROM t WHERE 1=(SELECT 1 UNION SELECT 2);
+EXPLAIN
+-> Nested loop inner join  (cost=0.80 rows=2)
+    -> Table scan on t  (cost=0.35 rows=1)
+    -> Constant row from derived_1_2  (cost=0.55..0.55 rows=1)
+        -> Union materialize with deduplication  (cost=0.20..0.20 rows=2)
+            -> Rows fetched before execution  (cost=0.00..0.00 rows=1)
+            -> Rows fetched before execution  (cost=0.00..0.00 rows=1)
+
+DROP TABLE t;
 SET optimizer_switch='subquery_to_derived=default';

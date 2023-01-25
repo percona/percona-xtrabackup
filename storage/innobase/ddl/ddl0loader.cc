@@ -310,19 +310,19 @@ dberr_t Loader::load() noexcept {
 
   if (!sync) {
     auto fn = [=](PSI_thread_seqnum seqnum) -> dberr_t {
+#ifdef UNIV_PFS_THREAD
       Runnable runnable{ddl_thread_key, seqnum};
+#else
+      Runnable runnable{PSI_NOT_INSTRUMENTED, seqnum};
+#endif /* UNIV_PFS_THREAD */
 
-      auto old_thd = current_thd;
-
-      current_thd = m_ctx.thd();
+      current_thd = nullptr;
 
       const auto err = runnable(&Task_queue::execute, m_taskq);
 
       if (err != DB_SUCCESS) {
         m_taskq->signal();
       }
-
-      current_thd = old_thd;
 
       return err;
     };

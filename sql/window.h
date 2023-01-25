@@ -600,6 +600,12 @@ class Window {
   */
   int64 m_last_rowno_in_range_frame;
 
+  /**
+    Execution state. Only used for ROWS frame optimized MIN/MAX.
+    The (1-based) number in the partition of first row in the current frame.
+  */
+  int64 m_first_rowno_in_rows_frame;
+
   /*------------------------------------------------------------------------
    *
    * Window function special behaviour toggles. These boolean flag influence
@@ -970,7 +976,7 @@ class Window {
     @return false if success, true if error
   */
   static bool setup_windows1(THD *thd, Query_block *select,
-                             Ref_item_array ref_item_array, TABLE_LIST *tables,
+                             Ref_item_array ref_item_array, Table_ref *tables,
                              mem_root_deque<Item *> *fields,
                              List<Window> *windows);
   /**
@@ -1006,7 +1012,7 @@ class Window {
     @returns false if success, true if error
   */
   bool resolve_window_ordering(THD *thd, Ref_item_array ref_item_array,
-                               TABLE_LIST *tables,
+                               Table_ref *tables,
                                mem_root_deque<Item *> *fields, ORDER *o,
                                bool partition_order);
   /**
@@ -1276,7 +1282,7 @@ class Window {
     See #m_is_last_row_in_frame
   */
   bool is_last_row_in_frame() const {
-    return m_is_last_row_in_frame || m_query_block->table_list.elements == 0;
+    return m_is_last_row_in_frame || m_query_block->m_table_list.elements == 0;
   }
 
   /**
@@ -1312,6 +1318,17 @@ class Window {
     See #m_rowno_in_partition
   */
   void set_rowno_in_partition(int64 rowno) { m_rowno_in_partition = rowno; }
+
+  /**
+    See #m_first_rowno_in_rows_frame
+  */
+  void set_first_rowno_in_rows_frame(int64 rowno) {
+    m_first_rowno_in_rows_frame = rowno;
+  }
+
+  int64 first_rowno_in_rows_frame() const {
+    return m_first_rowno_in_rows_frame;
+  }
 
   /**
     See #m_first_rowno_in_range_frame

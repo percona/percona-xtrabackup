@@ -79,6 +79,9 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "srv0start.h"
 #include "sync0sync.h"
 #include "ut0new.h"
+
+#include "scope_guard.h"
+
 #endif /* !UNIV_HOTBACKUP */
 
 #ifdef UNIV_DEBUG
@@ -749,7 +752,7 @@ static void buf_block_init(
 
   /* This function should only be executed at database startup or by
   buf_pool_resize(). Either way, adaptive hash index must not exist. */
-  assert_block_ahi_empty_on_init(block);
+  block->ahi.assert_empty_on_init();
 
   block->frame = frame;
 
@@ -765,7 +768,7 @@ static void buf_block_init(
 
   ut_d(block->page.file_page_was_freed = false);
 
-  block->index = nullptr;
+  block->ahi.index = nullptr;
   block->made_dirty_with_no_latch = false;
 
   ut_d(block->page.in_page_hash = false);
@@ -788,17 +791,17 @@ static void buf_block_init(
   since buffer block rwlock will be registered later in
   pfs_register_buffer_block(). */
 
-  rw_lock_create(PFS_NOT_INSTRUMENTED, &block->lock, SYNC_LEVEL_VARYING);
+  rw_lock_create(PFS_NOT_INSTRUMENTED, &block->lock, LATCH_ID_BUF_BLOCK_LOCK);
 
   ut_d(rw_lock_create(PFS_NOT_INSTRUMENTED, &block->debug_latch,
-                      SYNC_NO_ORDER_CHECK));
+                      LATCH_ID_BUF_BLOCK_DEBUG));
 
 #else /* PFS_SKIP_BUFFER_MUTEX_RWLOCK || PFS_GROUP_BUFFER_SYNC */
 
-  rw_lock_create(buf_block_lock_key, &block->lock, SYNC_LEVEL_VARYING);
+  rw_lock_create(buf_block_lock_key, &block->lock, LATCH_ID_BUF_BLOCK_LOCK);
 
   ut_d(rw_lock_create(buf_block_debug_latch_key, &block->debug_latch,
-                      SYNC_NO_ORDER_CHECK));
+                      LATCH_ID_BUF_BLOCK_DEBUG));
 
 #endif /* PFS_SKIP_BUFFER_MUTEX_RWLOCK || PFS_GROUP_BUFFER_SYNC */
 
@@ -1540,6 +1543,15 @@ static bool buf_page_realloc(buf_pool_t *buf_pool, buf_block_t *block) {
 
   ut_ad(mutex_own(&buf_pool->LRU_list_mutex));
 
+  /* Try allocating from the buf_pool->free list if it is not empty. This
+  method is executed during withdrawing phase of BufferPool resize only. It is
+  better to not block other user threads as much as possible. So, the main
+  strategy is to passively reserve and use blocks that are already on the free
+  list. Otherwise, if we were to call `buf_LRU_get_free_block` instead of
+  `buf_LRU_get_free_only`, we would have to release the LRU mutex before the
+  call and this would cause a need to break the reallocation loop in
+  `buf_pool_withdraw_blocks`, which would render withdrawing even more
+  inefficient. */
   new_block = buf_LRU_get_free_only(buf_pool);
 
   if (new_block == nullptr) {
@@ -1631,13 +1643,12 @@ static bool buf_page_realloc(buf_pool_t *buf_pool, buf_block_t *block) {
 
     /* This code should only be executed by buf_pool_resize(),
     while the adaptive hash index is disabled. */
-    assert_block_ahi_empty(block);
-    assert_block_ahi_empty_on_init(new_block);
-    ut_ad(!block->index);
-    new_block->index = nullptr;
+    block->ahi.assert_empty();
+    new_block->ahi.assert_empty_on_init();
+    ut_ad(!block->ahi.index);
+    new_block->ahi.index = nullptr;
     new_block->n_hash_helps = 0;
-    new_block->n_fields = 1;
-    new_block->left_side = true;
+    new_block->ahi.recommended_prefix_info = {0, 1, true};
 
     rw_lock_x_unlock(hash_lock);
     mutex_exit(&block->mutex);
@@ -1827,7 +1838,6 @@ static bool buf_pool_withdraw_blocks(buf_pool_t *buf_pool) {
   buf_block_t *block;
   ulint loop_count = 0;
   ulint i = buf_pool_index(buf_pool);
-  ulint lru_len;
 
   ib::info(ER_IB_MSG_56) << "buffer pool " << i
                          << " : start to withdraw the last "
@@ -1835,8 +1845,6 @@ static bool buf_pool_withdraw_blocks(buf_pool_t *buf_pool) {
 
   /* Minimize buf_pool->zip_free[i] lists */
   buf_buddy_condense_free(buf_pool);
-
-  lru_len = UT_LIST_GET_LEN(buf_pool->LRU);
 
   mutex_enter(&buf_pool->free_list_mutex);
   while (UT_LIST_GET_LEN(buf_pool->withdraw) < buf_pool->withdraw_target) {
@@ -1865,33 +1873,12 @@ static bool buf_pool_withdraw_blocks(buf_pool_t *buf_pool) {
 
       block = next_block;
     }
-
-    /* reserve free_list length */
-    if (UT_LIST_GET_LEN(buf_pool->withdraw) < buf_pool->withdraw_target) {
-      ulint scan_depth;
-      ulint n_flushed = 0;
-
-      /* cap scan_depth with current LRU size. */
-      scan_depth = std::min(std::max(buf_pool->withdraw_target -
-                                         UT_LIST_GET_LEN(buf_pool->withdraw),
-                                     static_cast<ulint>(srv_LRU_scan_depth)),
-                            lru_len);
-      mutex_exit(&buf_pool->free_list_mutex);
-
-      buf_flush_do_batch(buf_pool, BUF_FLUSH_LRU, scan_depth, 0, &n_flushed);
-      buf_flush_wait_batch_end(buf_pool, BUF_FLUSH_LRU);
-
-      if (n_flushed) {
-        MONITOR_INC_VALUE_CUMULATIVE(MONITOR_LRU_BATCH_FLUSH_TOTAL_PAGE,
-                                     MONITOR_LRU_BATCH_FLUSH_COUNT,
-                                     MONITOR_LRU_BATCH_FLUSH_PAGES, n_flushed);
-      }
-    } else {
-      mutex_exit(&buf_pool->free_list_mutex);
-    }
+    mutex_exit(&buf_pool->free_list_mutex);
 
     /* relocate blocks/buddies in withdrawn area */
     ulint count2 = 0;
+    auto loop_start_time = std::chrono::steady_clock::now();
+    uint32_t remove_loop_count = 0;
 
     mutex_enter(&buf_pool->LRU_list_mutex);
     for (auto bpage : buf_pool->LRU.removable()) {
@@ -1935,6 +1922,16 @@ static bool buf_pool_withdraw_blocks(buf_pool_t *buf_pool) {
         not reallocated yet */
       } else {
         mutex_exit(block_mutex);
+      }
+
+      if ((remove_loop_count++) % 1000 == 0) {
+        const auto timeout = get_srv_fatal_semaphore_wait_threshold() / 2;
+        const auto time_diff =
+            std::chrono::steady_clock::now() - loop_start_time;
+        if (time_diff > timeout) {
+          /* avoids crash at srv_fatal_semaphore_wait_threshold */
+          break;
+        }
       }
     }
 
@@ -2169,24 +2166,14 @@ static void buf_pool_resize() {
     os_wmb;
   }
 
-  /* disable AHI if needed */
-  bool btr_search_disabled = false;
-
   buf_resize_status_progress_reset();
   buf_resize_status(BUF_POOL_RESIZE_DISABLE_AHI,
                     "Disabling adaptive hash index.");
 
-  btr_search_s_lock_all(UT_LOCATION_HERE);
-  if (btr_search_enabled) {
-    btr_search_s_unlock_all();
-    btr_search_disabled = true;
-  } else {
-    btr_search_s_unlock_all();
-  }
+  /* disable AHI if needed */
+  const bool btr_search_was_enabled = btr_search_disable();
 
-  btr_search_disable(true);
-
-  if (btr_search_disabled) {
+  if (btr_search_was_enabled) {
     ib::info(ER_IB_MSG_60) << "disabled adaptive hash index.";
   }
 
@@ -2600,7 +2587,7 @@ withdraw_retry:
   }
 
   /* enable AHI if needed */
-  if (btr_search_disabled) {
+  if (btr_search_was_enabled) {
     btr_search_enable();
     ib::info(ER_IB_MSG_70) << "Re-enabled adaptive hash index.";
   }
@@ -2659,17 +2646,14 @@ void buf_resize_thread() {
 
 /** Clears the adaptive hash index on all pages in the buffer pool. */
 void buf_pool_clear_hash_index(void) {
-  ulint p;
-
-  ut_ad(btr_search_own_all(RW_LOCK_X));
   ut_ad(!buf_pool_resizing);
   ut_ad(!btr_search_enabled);
 
   DEBUG_SYNC_C("purge_wait_for_btr_search_latch");
 
-  for (p = 0; p < srv_buf_pool_instances; p++) {
-    buf_pool_t *buf_pool = buf_pool_from_array(p);
-    buf_chunk_t *chunks = buf_pool->chunks;
+  for (ulong p = 0; p < srv_buf_pool_instances; p++) {
+    buf_pool_t *const buf_pool = buf_pool_from_array(p);
+    buf_chunk_t *const chunks = buf_pool->chunks;
     buf_chunk_t *chunk = chunks + buf_pool->n_chunks;
 
     while (--chunk >= chunks) {
@@ -2677,40 +2661,59 @@ void buf_pool_clear_hash_index(void) {
       ulint i = chunk->size;
 
       for (; i--; block++) {
-        dict_index_t *index = block->index;
-        assert_block_ahi_valid(block);
+        block->ahi.validate();
 
-        /* We can set block->index = NULL
-        and block->n_pointers = 0
-        when btr_search_own_all(RW_LOCK_X);
-        see the comments in buf0buf.h */
-
-        if (!index) {
+        /* As AHI is disabled, blocks can't be added to AHI, but can only be
+        removed from it, so once block->ahi.index becomes nullptr, it can't
+        become non-null again. */
+        if (block->ahi.index.load() == nullptr) {
+          /* The block is already not in AHI, and it can't be added before the
+          AHI is re-enabled, so there's nothing to be done here. */
           continue;
         }
 
+        /* This latch will prevent block state transitions. It is important for
+        us to not change blocks that are kept in private in
+        BUF_BLOCK_REMOVE_HASH state by some concurrently executed
+        buf_LRU_free_page(). */
+        mutex_enter(&block->mutex);
+        auto block_mutex_guard =
+            create_scope_guard([block]() { mutex_exit(&block->mutex); });
+
+        block->ahi.validate();
+
         switch (buf_block_get_state(block)) {
           case BUF_BLOCK_FILE_PAGE:
+            /* When the page is in the Buffer Pool, it can't be removed from AHI
+            (by the btr_search_drop_page_hash_index()) while AHI is disabled,
+            unless it is called from buf_LRU_free_page(). If it was freed using
+            buf_LRU_free_page(), then the state would not be
+            BUF_BLOCK_FILE_PAGE, but it could have already been re-assigned to
+            some different page (ABA problem on state). The index would be
+            nullptr then and only then. */
+            if (block->ahi.index.load() == nullptr) {
+              continue;
+            }
             break;
           case BUF_BLOCK_REMOVE_HASH:
-            /* It is possible that a parallel thread
-            might have set this state. It means AHI
-            for this block is being removed. After
-            this function, AHI entries would anyway
-            be removed. So its Ok to reset block
-            index/pointers here otherwise it would
-            be pointing to removed AHI entries. */
-            break;
+            /* It is possible that a parallel thread might have set this state.
+            It means AHI for this block is being removed. We will wait for this
+            block to be removed from AHI by waiting for the index's AHI
+            reference counter to drop to zero. */
+            continue;
           default:
             /* No other state should have AHI */
-            ut_ad(block->index == nullptr);
-            ut_ad(block->n_pointers == 0);
+            ut_ad(block->ahi.index == nullptr);
+            ut_ad(block->ahi.n_pointers == 0);
         }
 
 #if defined UNIV_AHI_DEBUG || defined UNIV_DEBUG
-        block->n_pointers = 0;
+        block->ahi.n_pointers = 0;
 #endif /* UNIV_AHI_DEBUG || UNIV_DEBUG */
-        block->index = nullptr;
+        /* It is important to have the index reset to nullptr after the
+        n_pointers is set to 0, so it synchronizes correctly with check in
+        buf_block_t::ahi_t::validate(). */
+        btr_search_set_block_not_cached(block);
       }
     }
   }
@@ -3348,14 +3351,12 @@ static inline void buf_block_init_low(
 {
   /* No adaptive hash index entries may point to a previously
   unused (and now freshly allocated) block. */
-  assert_block_ahi_empty_on_init(block);
-  block->index = nullptr;
+  block->ahi.assert_empty_on_init();
+  block->ahi.index = nullptr;
   block->made_dirty_with_no_latch = false;
 
   block->n_hash_helps = 0;
-  block->n_fields = 1;
-  block->n_bytes = 0;
-  block->left_side = true;
+  block->ahi.recommended_prefix_info = {0, 1, true};
   ut_a(block->page.get_space() != nullptr);
 }
 #endif /* !UNIV_HOTBACKUP */
@@ -6775,13 +6776,13 @@ size_t buf_pool_pending_io_writes_count() {
   }
   return pending_io_writes;
 }
-
-void buf_pool_wait_for_no_pending_io_reads() {
+void buf_pool_wait_for_no_pending_io() {
   uint32_t sleep_time_us = 100;
   uint32_t sleep_time_since_info_emitted_us = 0;
   constexpr uint32_t MAX_SLEEP_TIME_US = 1000 * 1000;
   while (true) {
-    const size_t pending_io = buf_pool_pending_io_reads_count();
+    const size_t pending_io =
+        buf_pool_pending_io_reads_count() + buf_pool_pending_io_writes_count();
     if (pending_io == 0) {
       break;
     }

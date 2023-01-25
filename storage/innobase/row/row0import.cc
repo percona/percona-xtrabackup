@@ -1662,6 +1662,14 @@ dberr_t row_import::match_instant_metadata_in_target_table(THD *thd) {
     /* Search for this column in target table */
     dict_col_t *target_col = m_table->get_col_by_name(col_name);
 
+    if (target_col == nullptr) {
+      ib_errf(thd, IB_LOG_LEVEL_ERROR, ER_TABLE_SCHEMA_MISMATCH,
+              "Instant metadata didn't match for dropped column");
+      return DB_ERROR;
+    }
+
+    ut_a(target_col != nullptr);
+
     if (!cfg_col->is_version_added_match(target_col) ||
         !cfg_col->is_version_dropped_match(target_col) ||
         (cfg_col->ind != target_col->ind) ||
@@ -1893,7 +1901,7 @@ dberr_t row_import::adjust_instant_metadata_in_taregt_table(
 
     /* INSTANT DROP column */
     if (cfg_col->is_instant_dropped()) {
-      ut_ad(col_name.find("_dropped_v") != std::string::npos);
+      ut_ad(dict_col_t::is_instant_dropped_name(col_name));
 
       /* This columns must have already been added to table cache in
       add_instant_dropped_columns() */
@@ -3791,7 +3799,7 @@ dict_col_t structure, along with the column name.
 
       if (col->is_instant_dropped()) {
         const char *col_name = (const char *)cfg->m_col_names[i];
-        ut_ad(strstr(col_name, "_dropped_v") != nullptr);
+        ut_ad(dict_col_t::is_instant_dropped_name(std::string(col_name)));
 
         /* Read dropped col dd::Column metadata and add it to dd::Table */
         dberr_t err = row_import_read_dropped_col_metadata(table_def, file, thd,

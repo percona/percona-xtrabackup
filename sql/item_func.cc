@@ -1994,21 +1994,20 @@ void Item_typecast_decimal::print(const THD *thd, String *str,
 }
 
 String *Item_typecast_real::val_str(String *str) {
-  double res = val_real();
-  if (null_value) return nullptr;
-
-  str->set_real(res, decimals, collation.collation);
-  return str;
+  return val_string_from_real(str);
 }
 
 double Item_typecast_real::val_real() {
   double res = args[0]->val_real();
   null_value = args[0]->null_value;
   if (null_value) return 0.0;
-  if (data_type() == MYSQL_TYPE_FLOAT &&
-      ((res > std::numeric_limits<float>::max()) ||
-       res < std::numeric_limits<float>::lowest()))
-    return raise_float_overflow();
+  if (data_type() == MYSQL_TYPE_FLOAT) {
+    if (res > std::numeric_limits<float>::max() ||
+        res < std::numeric_limits<float>::lowest()) {
+      return raise_float_overflow();
+    }
+    res = static_cast<float>(res);
+  }
   return check_float_overflow(res);
 }
 
@@ -5073,259 +5072,6 @@ longlong Item_master_pos_wait::val_int() {
   return Item_source_pos_wait::val_int();
 }
 
-bool Item_wait_for_executed_gtid_set::itemize(Parse_context *pc, Item **res) {
-  if (skip_itemize(res)) return false;
-  if (super::itemize(pc, res)) return true;
-  /*
-    It is unsafe because the return value depends on timing. If the timeout
-    happens, the return value is different from the one in which the function
-    returns with success.
-  */
-  pc->thd->lex->set_stmt_unsafe(LEX::BINLOG_STMT_UNSAFE_SYSTEM_FUNCTION);
-  pc->thd->lex->safe_to_cache_query = false;
-  return false;
-}
-
-/**
-  Wait until the given gtid_set is found in the executed gtid_set independent
-  of the slave threads.
-*/
-longlong Item_wait_for_executed_gtid_set::val_int() {
-  DBUG_TRACE;
-  assert(fixed);
-  THD *thd = current_thd;
-
-  null_value = false;
-
-  String *gtid_text = args[0]->val_str(&value);
-  if (gtid_text == nullptr) {
-    /*
-      Usually, an argument that is NULL causes an SQL function to return NULL,
-      however since this is a function with side-effects, a NULL value is
-      treated as an error.
-    */
-    if (!thd->is_error()) {
-      my_error(ER_MALFORMED_GTID_SET_SPECIFICATION, MYF(0), "NULL");
-    }
-    return error_int();
-  }
-
-  // Waiting for a GTID in a slave thread could cause the slave to
-  // hang/deadlock.
-  // @todo: Return error instead of NULL
-  if (thd->slave_thread) {
-    return error_int();
-  }
-
-  Gtid_set wait_for_gtid_set(global_sid_map, nullptr);
-
-  global_sid_lock->rdlock();
-  if (global_gtid_mode.get() == Gtid_mode::OFF) {
-    global_sid_lock->unlock();
-    my_error(ER_GTID_MODE_OFF, MYF(0), "use WAIT_FOR_EXECUTED_GTID_SET");
-    return error_int();
-  }
-
-  if (wait_for_gtid_set.add_gtid_text(gtid_text->c_ptr_safe()) !=
-      RETURN_STATUS_OK) {
-    global_sid_lock->unlock();
-    // Error has already been generated.
-    return error_int();
-  }
-
-  // Cannot wait for a GTID that the thread owns since that would
-  // immediately deadlock.
-  if (thd->owned_gtid.sidno > 0 &&
-      wait_for_gtid_set.contains_gtid(thd->owned_gtid)) {
-    char buf[Gtid::MAX_TEXT_LENGTH + 1];
-    thd->owned_gtid.to_string(global_sid_map, buf);
-    global_sid_lock->unlock();
-    my_error(ER_CANT_WAIT_FOR_EXECUTED_GTID_SET_WHILE_OWNING_A_GTID, MYF(0),
-             buf);
-    return error_int();
-  }
-
-  gtid_state->begin_gtid_wait();
-
-  double timeout = (arg_count == 2) ? args[1]->val_real() : 0;
-  if (timeout < 0) {
-    if (thd->is_strict_mode()) {
-      my_error(ER_WRONG_ARGUMENTS, MYF(0), "WAIT_FOR_EXECUTED_GTID_SET.");
-    } else {
-      push_warning_printf(thd, Sql_condition::SL_WARNING, ER_WRONG_ARGUMENTS,
-                          ER_THD(thd, ER_WRONG_ARGUMENTS),
-                          "WAIT_FOR_EXECUTED_GTID_SET.");
-    }
-    gtid_state->end_gtid_wait();
-    global_sid_lock->unlock();
-    return error_int();
-  }
-
-  bool result = gtid_state->wait_for_gtid_set(thd, &wait_for_gtid_set, timeout);
-  global_sid_lock->unlock();
-  gtid_state->end_gtid_wait();
-
-  return result;
-}
-
-Item_master_gtid_set_wait::Item_master_gtid_set_wait(const POS &pos, Item *a)
-    : Item_int_func(pos, a) {
-  push_deprecated_warn(current_thd, "WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS",
-                       "WAIT_FOR_EXECUTED_GTID_SET");
-}
-
-Item_master_gtid_set_wait::Item_master_gtid_set_wait(const POS &pos, Item *a,
-                                                     Item *b)
-    : Item_int_func(pos, a, b) {
-  push_deprecated_warn(current_thd, "WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS",
-                       "WAIT_FOR_EXECUTED_GTID_SET");
-}
-
-Item_master_gtid_set_wait::Item_master_gtid_set_wait(const POS &pos, Item *a,
-                                                     Item *b, Item *c)
-    : Item_int_func(pos, a, b, c) {
-  push_deprecated_warn(current_thd, "WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS",
-                       "WAIT_FOR_EXECUTED_GTID_SET");
-}
-
-bool Item_master_gtid_set_wait::itemize(Parse_context *pc, Item **res) {
-  if (skip_itemize(res)) return false;
-  if (super::itemize(pc, res)) return true;
-  pc->thd->lex->set_stmt_unsafe(LEX::BINLOG_STMT_UNSAFE_SYSTEM_FUNCTION);
-  pc->thd->lex->safe_to_cache_query = false;
-  return false;
-}
-
-longlong Item_master_gtid_set_wait::val_int() {
-  assert(fixed);
-  DBUG_TRACE;
-  int event_count = 0;
-
-  null_value = false;
-
-  String *gtid = args[0]->val_str(&value);
-  if (gtid == nullptr) {
-    return error_int();
-  }
-
-  THD *thd = current_thd;
-  Master_info *mi = nullptr;
-  double timeout = (arg_count >= 2) ? args[1]->val_real() : 0;
-  if (timeout < 0) {
-    if (thd->is_strict_mode()) {
-      my_error(ER_WRONG_ARGUMENTS, MYF(0),
-               "WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS.");
-    } else {
-      push_warning_printf(thd, Sql_condition::SL_WARNING, ER_WRONG_ARGUMENTS,
-                          ER_THD(thd, ER_WRONG_ARGUMENTS),
-                          "WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS.");
-    }
-    return error_int();
-  }
-
-  if (thd->slave_thread) {
-    return error_int();
-  }
-
-  channel_map.rdlock();
-
-  /* If replication channel is mentioned */
-  if (arg_count == 3) {
-    String *channel_str;
-    if (!(channel_str = args[2]->val_str(&value))) {
-      channel_map.unlock();
-      return error_int();
-    }
-    mi = channel_map.get_mi(channel_str->ptr());
-  } else {
-    if (channel_map.get_num_instances() > 1) {
-      channel_map.unlock();
-      mi = nullptr;
-      my_error(ER_SLAVE_MULTIPLE_CHANNELS_CMD, MYF(0));
-      return error_int();
-    } else
-      mi = channel_map.get_default_channel_mi();
-  }
-
-  if ((mi != nullptr) &&
-      mi->rli->m_assign_gtids_to_anonymous_transactions_info.get_type() >
-          Assign_gtids_to_anonymous_transactions_info::enum_type::AGAT_OFF) {
-    my_error(ER_CANT_SET_ANONYMOUS_TO_GTID_AND_WAIT_UNTIL_SQL_THD_AFTER_GTIDS,
-             MYF(0));
-    channel_map.unlock();
-    return error_int();
-  }
-  if (global_gtid_mode.get() == Gtid_mode::OFF) {
-    channel_map.unlock();
-    return error_int();
-  }
-  gtid_state->begin_gtid_wait();
-
-  if (mi != nullptr) mi->inc_reference();
-
-  channel_map.unlock();
-
-  bool null_result = false;
-
-  if (mi != nullptr && mi->rli != nullptr) {
-    event_count = mi->rli->wait_for_gtid_set(thd, gtid, timeout);
-    if (event_count == -2) {
-      null_result = true;
-    }
-  } else {
-    /*
-      Replication has not been set up, we should return NULL;
-     */
-    null_result = true;
-  }
-  if (mi != nullptr) mi->dec_reference();
-
-  gtid_state->end_gtid_wait();
-
-  return null_result ? error_int() : event_count;
-}
-
-/**
-  Return 1 if both arguments are Gtid_sets and the first is a subset
-  of the second.  Generate an error if any of the arguments is not a
-  Gtid_set.
-*/
-longlong Item_func_gtid_subset::val_int() {
-  DBUG_TRACE;
-
-  assert(fixed);
-
-  null_value = false;
-
-  // Evaluate strings without lock
-  String *string1 = args[0]->val_str(&buf1);
-  if (string1 == nullptr) {
-    return error_int();
-  }
-  String *string2 = args[1]->val_str(&buf2);
-  if (string2 == nullptr) {
-    return error_int();
-  }
-
-  const char *charp1 = string1->c_ptr_safe();
-  assert(charp1 != nullptr);
-  const char *charp2 = string2->c_ptr_safe();
-  assert(charp2 != nullptr);
-  int ret = 1;
-  enum_return_status status;
-
-  Sid_map sid_map(nullptr /*no rwlock*/);
-  // compute sets while holding locks
-  const Gtid_set sub_set(&sid_map, charp1, &status);
-  if (status == RETURN_STATUS_OK) {
-    const Gtid_set super_set(&sid_map, charp2, &status);
-    if (status == RETURN_STATUS_OK) {
-      ret = sub_set.is_subset(&super_set) ? 1 : 0;
-    }
-  }
-  return ret;
-}
-
 /**
   Enables a session to wait on a condition until a timeout or a network
   disconnect occurs.
@@ -6885,8 +6631,11 @@ static int get_var_with_binlog(THD *thd, enum_sql_command sql_command,
     LEX *sav_lex = thd->lex, lex_tmp;
     thd->lex = &lex_tmp;
     lex_start(thd);
+    Item *source = new Item_null();
+    if (source == nullptr) return 1;
+    source->collation.set(Item::default_charset());
     tmp_var_list.push_back(new (thd->mem_root) set_var_user(
-        new Item_func_set_user_var(name, new Item_null())));
+        new Item_func_set_user_var(name, source)));
     /* Create the variable */
     if (sql_set_variables(thd, &tmp_var_list, false)) {
       thd->lex = sav_lex;
@@ -8038,6 +7787,54 @@ void Item_func_match::set_hints(JOIN *join, uint ft_flag, ha_rows ft_limit,
     hints->set_hint_limit(ft_limit);
 }
 
+NonAggregatedFullTextSearchVisitor::NonAggregatedFullTextSearchVisitor(
+    std::function<bool(Item_func_match *)> func)
+    : m_func(std::move(func)) {}
+
+bool NonAggregatedFullTextSearchVisitor::operator()(Item *item) {
+  if (is_stopped(item)) {
+    // Inside a skipped subtree.
+    return false;
+  }
+
+  switch (item->type()) {
+    case Item::SUM_FUNC_ITEM:
+      // We're only visiting non-aggregated expressions, so skip subtrees under
+      // aggregate functions.
+      stop_at(item);
+      return false;
+    case Item::REF_ITEM:
+      switch (down_cast<Item_ref *>(item)->ref_type()) {
+        case Item_ref::REF:
+        case Item_ref::OUTER_REF:
+        case Item_ref::AGGREGATE_REF:
+          // Skip all these. REF means the expression is already handled
+          // elsewhere in the SELECT list. OUTER_REF is already handled in an
+          // outer query block. AGGREGATE_REF means it's aggregated, and we're
+          // only interested in non-aggregated expressions.
+          stop_at(item);
+          break;
+        case Item_ref::VIEW_REF:
+          // These are references to items in the SELECT list of a query block
+          // that has been merged into this one. Might not be in the SELECT list
+          // of the query block it was merged into, so we need to look into its
+          // sub-items.
+          break;
+      }
+      return false;
+    case Item::FUNC_ITEM:
+      if (down_cast<Item_func *>(item)->functype() == Item_func::FT_FUNC) {
+        if (m_func(down_cast<Item_func_match *>(item))) {
+          return true;
+        }
+        stop_at(item);
+      }
+      return false;
+    default:
+      return false;
+  }
+}
+
 /***************************************************************************
   System variables
 ****************************************************************************/
@@ -8234,7 +8031,7 @@ bool Item_func_sp::init_result_field(THD *thd) {
   assert(m_sp == nullptr);
   assert(sp_result_field == nullptr);
 
-  Internal_error_handler_holder<View_error_handler, TABLE_LIST> view_handler(
+  Internal_error_handler_holder<View_error_handler, Table_ref> view_handler(
       thd, context->view_error_handler, context->view_error_handler_arg);
   m_sp = sp_find_routine(thd, enum_sp_type::FUNCTION, m_name,
                          &thd->sp_func_cache, true);
@@ -8360,7 +8157,7 @@ bool Item_func_sp::val_json(Json_wrapper *result) {
 bool Item_func_sp::execute() {
   THD *thd = current_thd;
 
-  Internal_error_handler_holder<View_error_handler, TABLE_LIST> view_handler(
+  Internal_error_handler_holder<View_error_handler, Table_ref> view_handler(
       thd, context->view_error_handler, context->view_error_handler_arg);
 
   // Bind to an instance of the stored function:
@@ -8526,7 +8323,7 @@ bool Item_func_sp::fix_fields(THD *thd, Item **ref) {
       Check whether user has execute privilege or not
      */
 
-    Internal_error_handler_holder<View_error_handler, TABLE_LIST> view_handler(
+    Internal_error_handler_holder<View_error_handler, Table_ref> view_handler(
         thd, context->view_error_handler, context->view_error_handler_arg);
 
     bool res = check_routine_access(thd, EXECUTE_ACL, m_name->m_db.str,
@@ -8554,9 +8351,9 @@ bool Item_func_sp::fix_fields(THD *thd, Item **ref) {
   if (Item_func::fix_fields(thd, ref)) return true;
 
   for (uint i = 0; i < arg_count; i++) {
-    if (args[0]->data_type() == MYSQL_TYPE_INVALID) {
+    if (args[i]->data_type() == MYSQL_TYPE_INVALID) {
       sp_variable *var = sp_ctx->find_variable(i);
-      if (args[0]->propagate_type(
+      if (args[i]->propagate_type(
               thd,
               is_numeric_type(var->type)
                   ? Type_properties(var->type, var->field_def.is_unsigned)
@@ -8795,7 +8592,7 @@ static bool check_table_and_trigger_access(Item **args, bool check_trigger_acl,
                    false, true))
     return false;
 
-  TABLE_LIST table_list;
+  Table_ref table_list;
   table_list.db = schema_name_ptr->ptr();
   table_list.db_length = schema_name_ptr->length();
   table_list.table_name = table_name_ptr->ptr();
@@ -9294,7 +9091,7 @@ longlong Item_func_can_access_view::val_int() {
   //
   // Check for ACL's
   //
-  TABLE_LIST table_list;
+  Table_ref table_list;
   table_list.db = schema_name_ptr->ptr();
   table_list.db_length = schema_name_ptr->length();
   table_list.table_name = table_name_ptr->ptr();

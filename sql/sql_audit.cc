@@ -309,6 +309,7 @@ inline const CHARSET_INFO *thd_get_audit_query(THD *thd,
   } else {
     query->str = thd->query().str;
     query->length = thd->query().length;
+    DBUG_PRINT("print_query", ("%.*s\n", (int)query->length, query->str));
     return thd->charset();
   }
 }
@@ -491,7 +492,7 @@ int mysql_audit_notify(THD *thd, mysql_event_parse_subclass_t subclass,
 
   @retval true - generate event, otherwise not.
 */
-inline bool generate_table_access_event(THD *thd, TABLE_LIST *table) {
+inline bool generate_table_access_event(THD *thd, Table_ref *table) {
   /* Discard views or derived tables. */
   if (table->is_view_or_derived()) return false;
 
@@ -543,7 +544,7 @@ inline static void set_table_access_subclass(
 */
 static int mysql_audit_notify(THD *thd,
                               mysql_event_table_access_subclass_t subclass,
-                              const char *subclass_name, TABLE_LIST *table) {
+                              const char *subclass_name, Table_ref *table) {
   LEX_CSTRING str;
   mysql_event_table_access event;
 
@@ -570,7 +571,7 @@ static int mysql_audit_notify(THD *thd,
                                     subclass_name, &event);
 }
 
-int mysql_audit_table_access_notify(THD *thd, TABLE_LIST *table) {
+int mysql_audit_table_access_notify(THD *thd, Table_ref *table) {
   mysql_event_table_access_subclass_t subclass;
   const char *subclass_name;
   int ret;

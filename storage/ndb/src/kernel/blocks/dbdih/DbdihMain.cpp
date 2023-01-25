@@ -992,7 +992,7 @@ void Dbdih::execCOPY_GCIREQ(Signal* signal)
     ndbrequire(c_copyGCISlave.m_expectedNextWord == tstart);
     isdone = (tstart + CopyGCIReq::DATA_SIZE) >= Sysfile::SYSFILE_SIZE32_v1;
 
-    arrGuard(tstart + CopyGCIReq::DATA_SIZE, sizeof(cdata)/4);
+    ndbrequire(tstart <= (sizeof(cdata)/4 - CopyGCIReq::DATA_SIZE));
     for(Uint32 i = 0; i<CopyGCIReq::DATA_SIZE; i++)
       cdata[tstart+i] = copyGCI->data[i];
     cdata_size_in_words = tstart + CopyGCIReq::DATA_SIZE;
@@ -2720,7 +2720,7 @@ void Dbdih::execSTART_MECONF(Signal* signal)
   {
     jam();
     v2_format = false;
-    arrGuard(startWord + StartMeConf::DATA_SIZE, sizeof(cdata)/4);
+    ndbrequire(startWord <= (sizeof(cdata)/4 - StartMeConf::DATA_SIZE));
     for(Uint32 i = 0; i < StartMeConf::DATA_SIZE; i++)
     {
       cdata[startWord+i] = startMe->data[i];
@@ -13110,7 +13110,6 @@ Dbdih::find_next_log_part(TabRecord *primTabPtrP, Uint32 & next_log_part)
  */
 void Dbdih::execCREATE_FRAGMENTATION_REQ(Signal * signal)
 {
-  LOCAL_SIGNAL(signal);
   jamEntry();
   CreateFragmentationReq * const req = 
     (CreateFragmentationReq*)signal->getDataPtr();
@@ -13649,7 +13648,7 @@ void Dbdih::execCREATE_FRAGMENTATION_REQ(Signal * signal)
         ReplicaRecordPtr replicaPtr;
         getFragstore(primTabPtr.p, fragNo, fragPtr);
         Uint32 log_part_id = fragPtr.p->m_log_part_id;
-	fragments[count++] = log_part_id;
+	      fragments[count++] = log_part_id;
         fragments[count++] = fragPtr.p->preferredPrimary;
 
         /* Calculate current primary replica node double array */
@@ -13664,8 +13663,10 @@ void Dbdih::execCREATE_FRAGMENTATION_REQ(Signal * signal)
             Uint32 node_index = replicaNo;
             inc_node_or_group(node_index, NGPtr.p->nodeCount);
             ndbrequire(node_index < noOfReplicas);
-            (*next_replica_node)[NGPtr.i][log_part_id] = node_index;
-            tmp_next_replica_node_set[NGPtr.i][log_part_id] = true;
+            Uint32 tmp_log_part_id = (m_use_classic_fragmentation) ? 
+                    log_part_id : 0;
+            (*next_replica_node)[NGPtr.i][tmp_log_part_id] = node_index;
+            tmp_next_replica_node_set[NGPtr.i][tmp_log_part_id] = true;
             break;
           }
         }
@@ -13867,7 +13868,7 @@ void Dbdih::execCREATE_FRAGMENTATION_REQ(Signal * signal)
             primary_node = NGPtr.p->nodesInGroup[node_index];
             inc_node_or_group(node_index, NGPtr.p->nodeCount);
             ndbrequire(node_index < noOfReplicas);
-            (*next_replica_node)[NGPtr.i][logPart] = node_index;
+            (*next_replica_node)[NGPtr.i][logPartIndex] = node_index;
           }
           else
           {
@@ -13875,7 +13876,7 @@ void Dbdih::execCREATE_FRAGMENTATION_REQ(Signal * signal)
             Uint32 node_index = c_next_replica_node[NGPtr.i][logPartIndex];
             primary_node = NGPtr.p->nodesInGroup[node_index];
             inc_node_or_group(node_index, NGPtr.p->nodeCount);
-            c_next_replica_node[NGPtr.i][logPart] = node_index;
+            c_next_replica_node[NGPtr.i][logPartIndex] = node_index;
           }
           ndbrequire(primary_node < MAX_NDB_NODES);
           fragments[count++] = logPart;
@@ -26897,6 +26898,12 @@ void Dbdih::setNodeActiveStatus()
 void Dbdih::setNodeGroups()
 {
   DEB_MULTI_TRP(("setNodeGroups"));
+  /*
+   * Remember the current next nodegroup and try keep it even if nodegroups
+   * moves around in c_node_group list.
+   */
+  Uint32 next_nodegroup_id = c_node_groups[c_nextNodeGroup];
+
   NodeGroupRecordPtr NGPtr;
   NodeRecordPtr sngNodeptr;
   Uint32 Ti;
@@ -26906,6 +26913,7 @@ void Dbdih::setNodeGroups()
     NGPtr.p->nodeCount = 0;
     NGPtr.p->nodegroupIndex = RNIL;
   }//for
+  ndbrequire(cnoOfNodeGroups == 0 || c_nextNodeGroup < cnoOfNodeGroups);
   cnoOfNodeGroups = 0;
   for (sngNodeptr.i = 1; sngNodeptr.i <= m_max_node_id; sngNodeptr.i++)
   {
@@ -26927,6 +26935,13 @@ void Dbdih::setNodeGroups()
       ndbrequire(NGPtr.p->nodeCount <= cnoReplicas);
       add_nodegroup(NGPtr);
       DEB_MULTI_TRP(("Node %u into node group %u", sngNodeptr.i, NGPtr.i));
+      /*
+       * If the next nodegroup has moved in nodegroup list (can happen if an
+       * earlier nodegroup is dropped) we make sure that the next nodegroup
+       * remains.
+       */
+      if (NGPtr.i == next_nodegroup_id)
+        c_nextNodeGroup = NGPtr.p->nodegroupIndex;
       break;
     case Sysfile::NS_NotDefined:
     case Sysfile::NS_Configured:
@@ -26938,6 +26953,17 @@ void Dbdih::setNodeGroups()
       return;
     }//switch
   }//for
+  /*
+   * If setNodeGroups was called when completing drop nodegroup and the dropped
+   * nodegroup was the one referred to by c_nextNodeGroup and that was the last
+   * nodegroup we wrap to use the first nodegroup as the next.
+   * If the dropped nodegroup was in the middle we assume that the new
+   * nodegroup at that position is the nodegroup that would been next after
+   * the dropped and we can keep c_nextNodeGroup as is.
+   */
+  if (c_nextNodeGroup >= cnoOfNodeGroups)
+    c_nextNodeGroup = 0;
+
   sngNodeptr.i = getOwnNodeId();
   ptrCheckGuard(sngNodeptr, MAX_NDB_NODES, nodeRecord);
   NGPtr.i = sngNodeptr.p->nodeGroup;

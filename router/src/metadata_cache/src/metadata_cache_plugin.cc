@@ -46,7 +46,6 @@
 #include "mysqlrouter/utils.h"
 #include "plugin_config.h"
 
-using metadata_cache::LookupResult;
 IMPORT_LOG_FUNCTIONS()
 
 static const mysql_harness::AppInfo *g_app_info;
@@ -143,12 +142,11 @@ class MetadataServersStateListener
   }
 
   void notify_instances_changed(
-      const LookupResult & /*instances*/,
-      const metadata_cache::metadata_servers_list_t &metadata_servers,
+      const metadata_cache::ClusterTopology &cluster_topology,
       const bool md_servers_reachable, const uint64_t view_id) override {
     if (!md_servers_reachable) return;
 
-    if (metadata_servers.empty()) {
+    if (cluster_topology.metadata_servers.empty()) {
       // This happens for example when the router could connect to one of the
       // metadata servers but failed to fetch metadata because the connection
       // went down while querying metadata
@@ -160,7 +158,7 @@ class MetadataServersStateListener
 
     // need to convert from ManagedInstance to uri string
     std::vector<std::string> metadata_servers_str;
-    for (auto &md_server : metadata_servers) {
+    for (auto &md_server : cluster_topology.metadata_servers) {
       mysqlrouter::URI uri;
       uri.scheme = "mysql";
       uri.host = md_server.address();
@@ -202,7 +200,7 @@ static void start(mysql_harness::PluginFuncEnv *env) {
         (!config.metadata_cache_dynamic_state ||
          config.metadata_cache_dynamic_state->get_metadata_servers().empty())) {
       throw std::runtime_error(
-          "list of metadata-servers is empty: 'bootstrap_server_addresses' is the configuration file is empty or not set and "s +
+          "list of metadata-servers is empty: 'bootstrap_server_addresses' in the configuration file is empty or not set and "s +
           (!config.metadata_cache_dynamic_state
                ? "no known 'dynamic_config'-file"
                : "list of 'cluster-metadata-servers' in 'dynamic_config'-file "

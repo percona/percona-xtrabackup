@@ -25,7 +25,7 @@
 # in [logger] section as follows:
 #
 # [logger]
-# fillename=@ROUTER_INSTALL_LOGDIR@/mysqlrouter.log
+# filename=@ROUTER_INSTALL_LOGDIR@/mysqlrouter.log
 #
 
 @ROUTER_INSTALL_LOGDIR@/mysqlrouter.log {

@@ -81,19 +81,14 @@ inline std::string tls_content_type_to_string(TlsContentType v) {
 
 class TlsSwitchable {
  public:
-  using ssl_ctx_gettor_type = std::function<SSL_CTX *()>;
+  using ssl_ctx_gettor_type = std::function<SSL_CTX *(const std::string &id)>;
 
-  TlsSwitchable(SslMode ssl_mode, ssl_ctx_gettor_type ssl_ctx_gettor)
-      : ssl_mode_{ssl_mode}, ssl_ctx_gettor_{std::move(ssl_ctx_gettor)} {}
+  TlsSwitchable(SslMode ssl_mode) : ssl_mode_{ssl_mode} {}
 
   [[nodiscard]] SslMode ssl_mode() const { return ssl_mode_; }
 
-  [[nodiscard]] SSL_CTX *get_ssl_ctx() const { return ssl_ctx_gettor_(); }
-
  private:
   SslMode ssl_mode_;
-
-  ssl_ctx_gettor_type ssl_ctx_gettor_;
 };
 
 class RoutingConnectionBase {
@@ -107,6 +102,14 @@ class RoutingConnectionBase {
   virtual uint64_t increment_error_count(
       BlockedEndpoints &blocked_endpoints) = 0;
 };
+
+template <class Protocol>
+struct IsTransportSecure : std::false_type {};
+
+#ifdef NET_TS_HAS_UNIX_SOCKET
+template <>
+struct IsTransportSecure<local::stream_protocol> : std::true_type {};
+#endif
 
 /**
  * basic connection which wraps a net-ts Protocol.
@@ -132,76 +135,37 @@ class BasicConnection : public ConnectionBase {
 
   net::io_context &io_ctx() override { return sock_.get_executor().context(); }
 
+  stdx::expected<void, std::error_code> set_io_context(
+      net::io_context &new_ctx) override {
+    // nothing to do.
+    if (sock_.get_executor() == new_ctx.get_executor()) return {};
+
+    return sock_.release().and_then(
+        [this, &new_ctx](
+            auto native_handle) -> stdx::expected<void, std::error_code> {
+          socket_type new_sock(new_ctx);
+
+          auto assign_res = new_sock.assign(ep_.protocol(), native_handle);
+          if (!assign_res) return assign_res;
+
+          std::swap(sock_, new_sock);
+
+          return {};
+        });
+  }
+
   void async_recv(recv_buffer_type &buf,
                   std::function<void(std::error_code ec, size_t transferred)>
                       completion) override {
-    if (sock_.native_non_blocking()) {
-      auto read_res =
-          net::read(sock_, net::dynamic_buffer(buf), net::transfer_at_least(1));
-
-      if (!read_res) {
-        auto ec = read_res.error();
-
-        if (ec == make_error_condition(std::errc::operation_would_block)) {
-          net::async_read(sock_, net::dynamic_buffer(buf),
-                          net::transfer_at_least(1), std::move(completion));
-          return;
-        } else {
-          net::post(sock_.get_executor().context(),
-                    [completion = std::move(completion), ec]() {
-                      completion(ec, 0);
-                    });
-          return;
-        }
-      } else {
-        net::post(sock_.get_executor().context(),
-                  [completion = std::move(completion),
-                   transferred = read_res.value()]() {
-                    completion(std::error_code{}, transferred);
-                  });
-        return;
-      }
-
-    } else {
-      net::async_read(sock_, net::dynamic_buffer(buf),
-                      net::transfer_at_least(1), std::move(completion));
-    }
+    net::async_read(sock_, net::dynamic_buffer(buf), net::transfer_at_least(1),
+                    std::move(completion));
   }
 
   void async_send(recv_buffer_type &buf,
                   std::function<void(std::error_code ec, size_t transferred)>
                       completion) override {
-    if (sock_.native_non_blocking()) {
-      auto write_res = net::write(sock_, net::dynamic_buffer(buf),
-                                  net::transfer_at_least(1));
-
-      if (!write_res) {
-        auto ec = write_res.error();
-
-        if (ec == make_error_condition(std::errc::operation_would_block)) {
-          net::async_write(sock_, net::dynamic_buffer(buf),
-                           net::transfer_at_least(1), std::move(completion));
-          return;
-        } else {
-          net::post(sock_.get_executor().context(),
-                    [completion = std::move(completion), ec]() {
-                      completion(ec, 0);
-                    });
-          return;
-        }
-      } else {
-        net::post(sock_.get_executor().context(),
-                  [completion = std::move(completion),
-                   transferred = write_res.value()]() {
-                    completion(std::error_code{}, transferred);
-                  });
-        return;
-      }
-
-    } else {
-      net::async_write(sock_, net::dynamic_buffer(buf),
-                       net::transfer_at_least(1), std::move(completion));
-    }
+    net::async_write(sock_, net::dynamic_buffer(buf), net::transfer_at_least(1),
+                     std::move(completion));
   }
 
   void async_wait_send(
@@ -240,6 +204,21 @@ class BasicConnection : public ConnectionBase {
     oss << ep_;
 
     return oss.str();
+  }
+
+  template <class GettableSocketOption>
+  stdx::expected<void, std::error_code> get_option(
+      GettableSocketOption &opt) const {
+    return sock_.get_option(opt);
+  }
+
+  /**
+   * check if the underlying transport is secure.
+   *
+   * - unix-socket, shared-memory, ... are secure.
+   */
+  [[nodiscard]] bool is_secure_transport() const override {
+    return IsTransportSecure<Protocol>::value;
   }
 
  protected:
@@ -296,22 +275,21 @@ class TlsSwitchableConnection {
  public:
   TlsSwitchableConnection(std::unique_ptr<ConnectionBase> conn,
                           std::unique_ptr<RoutingConnectionBase> routing_conn,
-                          TlsSwitchable tls_switchable,
+                          SslMode ssl_mode,
                           std::unique_ptr<ProtocolStateBase> state)
       : conn_{std::move(conn)},
         routing_conn_{std::move(routing_conn)},
-        tls_switchable_{std::move(tls_switchable)},
+        ssl_mode_{std::move(ssl_mode)},
         channel_{std::make_unique<Channel>()},
         protocol_{std::move(state)} {}
 
   TlsSwitchableConnection(std::unique_ptr<ConnectionBase> conn,
                           std::unique_ptr<RoutingConnectionBase> routing_conn,
-                          TlsSwitchable tls_switchable,
-                          std::unique_ptr<Channel> channel,
+                          SslMode ssl_mode, std::unique_ptr<Channel> channel,
                           std::unique_ptr<ProtocolStateBase> state)
       : conn_{std::move(conn)},
         routing_conn_{std::move(routing_conn)},
-        tls_switchable_{std::move(tls_switchable)},
+        ssl_mode_{std::move(ssl_mode)},
         channel_{std::move(channel)},
         protocol_{std::move(state)} {}
 
@@ -364,9 +342,7 @@ class TlsSwitchableConnection {
 
   [[nodiscard]] const Channel *channel() const { return channel_.get(); }
 
-  [[nodiscard]] const TlsSwitchable &tls_switchable() const {
-    return tls_switchable_;
-  }
+  [[nodiscard]] SslMode ssl_mode() const { return ssl_mode_; }
 
   [[nodiscard]] bool is_open() const { return conn_ && conn_->is_open(); }
 
@@ -395,10 +371,6 @@ class TlsSwitchableConnection {
     return conn_->endpoint();
   }
 
-  [[nodiscard]] SSL_CTX *get_ssl_ctx() const {
-    return tls_switchable_.get_ssl_ctx();
-  }
-
   [[nodiscard]] uint64_t reset_error_count(
       BlockedEndpoints &blocked_endpoints) {
     return routing_conn_->reset_error_count(blocked_endpoints);
@@ -423,13 +395,22 @@ class TlsSwitchableConnection {
 
   std::unique_ptr<ConnectionBase> &connection() { return conn_; }
 
+  /**
+   * check if the channel is secure.
+   *
+   * - if TLS is enabled, it the transport is secure
+   * - if transport is secure, the channel is secure
+   */
+  [[nodiscard]] bool is_secure_transport() const {
+    return conn_->is_secure_transport() || channel_->ssl();
+  }
+
  private:
   // tcp/unix-socket
   std::unique_ptr<ConnectionBase> conn_;
   std::unique_ptr<RoutingConnectionBase> routing_conn_;
 
-  // tls-state
-  TlsSwitchable tls_switchable_;
+  SslMode ssl_mode_;
 
   // socket buffers
   std::unique_ptr<Channel> channel_;
@@ -486,11 +467,11 @@ class ProtocolSplicerBase {
   }
 
   [[nodiscard]] SslMode source_ssl_mode() const {
-    return client_conn().tls_switchable().ssl_mode();
+    return client_conn().ssl_mode();
   }
 
   [[nodiscard]] SslMode dest_ssl_mode() const {
-    return server_conn().tls_switchable().ssl_mode();
+    return server_conn().ssl_mode();
   }
 
   [[nodiscard]] Channel *client_channel() { return client_conn().channel(); }

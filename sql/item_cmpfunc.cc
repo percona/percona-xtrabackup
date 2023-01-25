@@ -93,6 +93,9 @@
 using std::max;
 using std::min;
 
+static const enum_walk walk_options =
+    enum_walk::PREFIX | enum_walk::POSTFIX | enum_walk::SUBQUERY;
+
 static bool convert_constant_item(THD *, Item_field *, Item **, bool *);
 static longlong get_year_value(THD *thd, Item ***item_arg, Item **cache_arg,
                                const Item *warn_item, bool *is_null);
@@ -679,47 +682,48 @@ bool Item_func_like::resolve_type(THD *thd) {
   // Function returns 0 or 1
   max_length = 1;
 
-  /*
-    For dynamic parameters, assign character string data type.
-    When assigning character set and collation, If one argument is a string,
-    use its collation, if there are no string arguments, use the default
-    (connection) collation.
-  */
-  Item *base_item = nullptr;
-  for (uint i = 0; i < arg_count; i++) {
-    if (is_string_type(args[i]->data_type())) {
-      base_item = args[i];
-      break;
-    }
-  }
-  const CHARSET_INFO *charset = base_item != nullptr
-                                    ? base_item->collation.collation
-                                    : Item::default_charset();
+  // Determine the common character set for all arguments
+  if (agg_arg_charsets_for_comparison(cmp.cmp_collation, args, arg_count))
+    return true;
+
   for (uint i = 0; i < arg_count; i++) {
     if (args[i]->data_type() == MYSQL_TYPE_INVALID &&
-        args[i]->propagate_type(thd,
-                                Type_properties(MYSQL_TYPE_VARCHAR, charset)))
+        args[i]->propagate_type(
+            thd,
+            Type_properties(MYSQL_TYPE_VARCHAR, cmp.cmp_collation.collation))) {
       return true;
+    }
   }
 
   if (reject_geometry_args(arg_count, args, this)) return true;
 
-  /*
-    See agg_item_charsets() in item.cc for comments
-    on character set and collation aggregation.
-  */
-  if (args[0]->result_type() == STRING_RESULT &&
-      args[1]->result_type() == STRING_RESULT) {
-    if (agg_arg_charsets_for_comparison(cmp.cmp_collation, args, 2))
-      return true;
-  } else if (args[1]->result_type() == STRING_RESULT) {
-    cmp.cmp_collation = args[1]->collation;
-  } else {
-    cmp.cmp_collation = args[0]->collation;
-  }
-  // LIKE is always carried out as string operation
+  // LIKE is always carried out as a string operation
   args[0]->cmp_context = STRING_RESULT;
   args[1]->cmp_context = STRING_RESULT;
+
+  if (arg_count > 2) {
+    args[2]->cmp_context = STRING_RESULT;
+
+    // ESCAPE clauses that vary per row are not valid:
+    if (!args[2]->const_for_execution()) {
+      my_error(ER_WRONG_ARGUMENTS, MYF(0), "ESCAPE");
+      return true;
+    }
+  }
+  /*
+    If the escape item is const, evaluate it now, so that the range optimizer
+    can try to optimize LIKE 'foo%' into a range query.
+
+    TODO: If we move this into escape_is_evaluated(), which is called later,
+          we might be able to optimize more cases.
+  */
+  if (!escape_was_used_in_parsing() || args[2]->const_item()) {
+    escape_is_const = true;
+    if (!(thd->lex->context_analysis_only & CONTEXT_ANALYSIS_ONLY_VIEW)) {
+      if (eval_escape_clause(thd)) return true;
+      if (check_covering_prefix_keys(thd)) return true;
+    }
+  }
 
   return false;
 }
@@ -2153,9 +2157,8 @@ bool Item_in_optimizer::fix_left(THD *thd, Item **) {
   return false;
 }
 
-bool Item_in_optimizer::fix_fields(THD *thd, Item **ref) {
-  assert(fixed == 0);
-  if (fix_left(thd, ref)) return true;
+bool Item_in_optimizer::fix_fields(THD *thd, Item **) {
+  assert(!fixed);
   if (args[0]->is_nullable()) set_nullable(true);
 
   if (!args[1]->fixed && args[1]->fix_fields(thd, args + 1)) return true;
@@ -5566,32 +5569,8 @@ bool Item_cond::fix_fields(THD *thd, Item **ref) {
     /*
       Make a note if the expression has been created by IN to EXISTS
       transformation. If so we cannot remove the entire condition.
-      We also cannot remove if the expression has a Item_view_ref.
-      For Ex:
-      SELECT 1 FROM (SELECT (SELECT a FROM t1) as b FROM t1) as dt
-      WHERE (FALSE AND b = 1) OR ( b = 2 );
-      The false condition in the WHERE triggers removal of 'b'.
-      But 'b' is referenced again. Removing a subquery which is
-      part of a projection list is forbidden for the same reason.
-      However for the above case when derived table "dt" gets merged
-      with the outer query block, "b" will not be part of the projection
-      list of the outer query block. So the check fails.
-      We add a check here for Item_view_refs as only in such a case
-      the original expression of an alias might not be part of
-      projection list.
      */
-    bool view_ref_with_subquery = false;
-    if (item->has_subquery()) {
-      WalkItem(item, enum_walk::PREFIX | enum_walk::SUBQUERY,
-               [&view_ref_with_subquery](Item *inner_item) {
-                 if (inner_item->type() == Item::REF_ITEM &&
-                     down_cast<Item_ref *>(inner_item)->ref_type() ==
-                         Item_ref::VIEW_REF)
-                   view_ref_with_subquery = true;
-                 return false;
-               });
-    }
-    if (item->created_by_in2exists() || view_ref_with_subquery) {
+    if (item->created_by_in2exists()) {
       remove_condition = false;
       can_remove_cond = false;
     }
@@ -5630,7 +5609,7 @@ bool Item_cond::fix_fields(THD *thd, Item **ref) {
         continue;
       }
       Cleanup_after_removal_context ctx(select);
-      item->walk(&Item::clean_up_after_removal, enum_walk::SUBQUERY_POSTFIX,
+      item->walk(&Item::clean_up_after_removal, walk_options,
                  pointer_cast<uchar *>(&ctx));
       li.remove();
       continue;
@@ -5660,7 +5639,7 @@ bool Item_cond::fix_fields(THD *thd, Item **ref) {
     li.rewind();
     while ((item = li++)) {
       Cleanup_after_removal_context ctx(select);
-      item->walk(&Item::clean_up_after_removal, enum_walk::SUBQUERY_POSTFIX,
+      item->walk(&Item::clean_up_after_removal, walk_options,
                  pointer_cast<uchar *>(&ctx));
       li.remove();
     }
@@ -6379,38 +6358,12 @@ bool Item_func_like::check_covering_prefix_keys(THD *thd) {
 }
 
 bool Item_func_like::fix_fields(THD *thd, Item **ref) {
-  assert(fixed == 0);
-
-  Condition_context CCT(thd->lex->current_query_block());
+  assert(!fixed);
 
   args[0]->real_item()->set_can_use_prefix_key();
 
-  if (Item_bool_func2::fix_fields(thd, ref)) {
-    fixed = false;
+  if (Item_bool_func::fix_fields(thd, ref)) {
     return true;
-  }
-
-  if (param_type_is_default(thd, 0, arg_count)) return true;
-
-  // ESCAPE clauses that vary per row are not valid:
-  if (arg_count > 2 && !args[2]->const_for_execution()) {
-    my_error(ER_WRONG_ARGUMENTS, MYF(0), "ESCAPE");
-    return true;
-  }
-
-  /*
-    If the escape item is const, evaluate it now, so that the range optimizer
-    can try to optimize LIKE 'foo%' into a range query.
-
-    TODO: If we move this into escape_is_evaluated(), which is called later,
-    it could be that we could optimize more cases.
-  */
-  if (!escape_was_used_in_parsing() || args[2]->const_item()) {
-    escape_is_const = true;
-    if (!(thd->lex->context_analysis_only & CONTEXT_ANALYSIS_ONLY_VIEW)) {
-      if (eval_escape_clause(thd)) return true;
-      if (check_covering_prefix_keys(thd)) return true;
-    }
   }
 
   return false;
@@ -6770,41 +6723,34 @@ bool Item_func_comparison::cast_incompatible_args(uchar *) {
   return cmp.inject_cast_nodes();
 }
 
-Item_equal::Item_equal(Item_field *f1, Item_field *f2)
-    : Item_bool_func(),
-      const_item(nullptr),
-      eval_item(nullptr),
-      cond_false(false),
-      compare_as_dates(false) {
+Item_equal::Item_equal(Item_field *f1, Item_field *f2) : Item_bool_func() {
   fields.push_back(f1);
   fields.push_back(f2);
 }
 
-Item_equal::Item_equal(Item *c, Item_field *f)
-    : Item_bool_func(), eval_item(nullptr), cond_false(false) {
+Item_equal::Item_equal(Item *c, Item_field *f) : Item_bool_func() {
   fields.push_back(f);
-  const_item = c;
+  m_const_arg = c;
   compare_as_dates = f->is_temporal_with_date();
 }
 
-Item_equal::Item_equal(Item_equal *item_equal)
-    : Item_bool_func(), eval_item(nullptr), cond_false(false) {
+Item_equal::Item_equal(Item_equal *item_equal) : Item_bool_func() {
   List_iterator_fast<Item_field> li(item_equal->fields);
   Item_field *item;
   while ((item = li++)) {
     fields.push_back(item);
   }
-  const_item = item_equal->const_item;
+  m_const_arg = item_equal->m_const_arg;
   compare_as_dates = item_equal->compare_as_dates;
   cond_false = item_equal->cond_false;
 }
 
 bool Item_equal::compare_const(THD *thd, Item *c) {
   if (compare_as_dates) {
-    cmp.set_datetime_cmp_func(this, &c, &const_item);
+    cmp.set_datetime_cmp_func(this, &c, &m_const_arg);
     cond_false = cmp.compare();
   } else {
-    Item_func_eq *func = new Item_func_eq(c, const_item);
+    Item_func_eq *func = new Item_func_eq(c, m_const_arg);
     if (func == nullptr) return true;
     if (func->set_cmp_func()) return true;
     func->quick_fix_field();
@@ -6818,9 +6764,9 @@ bool Item_equal::compare_const(THD *thd, Item *c) {
 
 bool Item_equal::add(THD *thd, Item *c, Item_field *f) {
   if (cond_false) return false;
-  if (!const_item) {
+  if (m_const_arg == nullptr) {
     assert(f);
-    const_item = c;
+    m_const_arg = c;
     compare_as_dates = f->is_temporal_with_date();
     return false;
   }
@@ -6829,8 +6775,8 @@ bool Item_equal::add(THD *thd, Item *c, Item_field *f) {
 
 bool Item_equal::add(THD *thd, Item *c) {
   if (cond_false) return false;
-  if (!const_item) {
-    const_item = c;
+  if (m_const_arg == nullptr) {
+    m_const_arg = c;
     return false;
   }
   return compare_const(thd, c);
@@ -6877,7 +6823,7 @@ bool Item_equal::contains(const Field *field) const {
 
 bool Item_equal::merge(THD *thd, Item_equal *item) {
   fields.concat(&item->fields);
-  Item *c = item->const_item;
+  Item *c = item->m_const_arg;
   if (c) {
     /*
       The flag cond_false will be set to 1 after this, if
@@ -6979,7 +6925,7 @@ float Item_equal::get_filtering_effect(THD *thd, table_map filter_for_table,
   bool found_comparable = false;
 
   // Is there a constant that this multiple equality is equal to?
-  if (const_item) found_comparable = true;
+  if (m_const_arg != nullptr) found_comparable = true;
 
   List_iterator<Item_field> it(fields);
 
@@ -7031,7 +6977,7 @@ float Item_equal::get_filtering_effect(THD *thd, table_map filter_for_table,
             cases.
           */
           if (cur_filter >= 1.0) cur_filter = 1.0f;
-        } else if (const_item) {
+        } else if (m_const_arg != nullptr) {
           /*
             If index statistics is not available, see if we can use any
             available histogram statistics.
@@ -7040,14 +6986,14 @@ float Item_equal::get_filtering_effect(THD *thd, table_map filter_for_table,
               cur_field->field->table->s->find_histogram(
                   cur_field->field->field_index());
           if (histogram != nullptr) {
-            std::array<Item *, 2> items{{cur_field, const_item}};
+            std::array<Item *, 2> items{{cur_field, m_const_arg}};
             double selectivity;
             if (!histogram->get_selectivity(
                     items.data(), items.size(),
                     histograms::enum_operator::EQUALS_TO, &selectivity)) {
               if (unlikely(thd->opt_trace.is_started())) {
                 Item_func_eq *eq_func =
-                    new (thd->mem_root) Item_func_eq(cur_field, const_item);
+                    new (thd->mem_root) Item_func_eq(cur_field, m_const_arg);
                 write_histogram_to_trace(thd, eq_func, selectivity);
               }
               cur_filter = static_cast<float>(selectivity);
@@ -7074,14 +7020,14 @@ void Item_equal::update_used_tables() {
     not_null_tables_cache |= item->not_null_tables();
     add_accum_properties(item);
   }
-  if (const_item != nullptr) used_tables_cache |= const_item->used_tables();
+  if (m_const_arg != nullptr) used_tables_cache |= m_const_arg->used_tables();
 }
 
 longlong Item_equal::val_int() {
   Item_field *item_field;
   if (cond_false) return 0;
   List_iterator_fast<Item_field> it(fields);
-  Item *item = const_item ? const_item : it++;
+  Item *item = m_const_arg != nullptr ? m_const_arg : it++;
   eval_item->store_value(item);
   if ((null_value = item->null_value)) return 0;
   while ((item_field = it++)) {
@@ -7128,9 +7074,9 @@ void Item_equal::print(const THD *thd, String *str,
   str->append(func_name());
   str->append('(');
 
-  if (const_item != nullptr) const_item->print(thd, str, query_type);
+  if (m_const_arg != nullptr) m_const_arg->print(thd, str, query_type);
 
-  bool first = (const_item == nullptr);
+  bool first = (m_const_arg == nullptr);
   for (auto &item_field : fields) {
     if (!first) str->append(STRING_WITH_LEN(", "));
     item_field.print(thd, str, query_type);
@@ -7144,11 +7090,11 @@ bool Item_equal::eq(const Item *item, bool binary_cmp) const {
     return false;
   }
   const Item_equal *item_eq = down_cast<const Item_equal *>(item);
-  if ((const_item != nullptr) != (item_eq->const_item != nullptr)) {
+  if ((m_const_arg != nullptr) != (item_eq->m_const_arg != nullptr)) {
     return false;
   }
-  if (const_item != nullptr &&
-      !const_item->eq(item_eq->const_item, binary_cmp)) {
+  if (m_const_arg != nullptr &&
+      !m_const_arg->eq(item_eq->m_const_arg, binary_cmp)) {
     return false;
   }
 
@@ -7165,6 +7111,17 @@ bool Item_equal::eq(const Item *item, bool binary_cmp) const {
   return true;
 }
 
+longlong Item_func_match_predicate::val_int() {
+  // Reimplement Item_func_match::val_int() instead of forwarding to it. Even
+  // though args[0] is usually an Item_func_match, it could in some situations
+  // be replaced with a reference to a field in a temporary table holding the
+  // result of the MATCH function. And since the conversion from double to
+  // integer in Field_double::val_int() is different from the conversion in
+  // Item_func_match::val_int(), just returning args[0]->val_int() would give
+  // wrong results when the argument has been materialized.
+  return args[0]->val_real() != 0;
+}
+
 longlong Item_func_trig_cond::val_int() {
   if (trig_var == nullptr) {
     // We don't use trigger conditions for IS_NOT_NULL_COMPL / FOUND_MATCH in
@@ -7179,8 +7136,8 @@ longlong Item_func_trig_cond::val_int() {
   return *trig_var ? args[0]->val_int() : 1;
 }
 
-void Item_func_trig_cond::get_table_range(TABLE_LIST **first_table,
-                                          TABLE_LIST **last_table) const {
+void Item_func_trig_cond::get_table_range(Table_ref **first_table,
+                                          Table_ref **last_table) const {
   *first_table = nullptr;
   *last_table = nullptr;
   if (m_join == nullptr) return;
@@ -7245,7 +7202,7 @@ void Item_func_trig_cond::print(const THD *thd, String *str,
       assert(0);
   }
   if (m_join != nullptr) {
-    TABLE_LIST *first_table, *last_table;
+    Table_ref *first_table, *last_table;
     get_table_range(&first_table, &last_table);
     str->append("(");
     str->append(first_table->table->alias);
@@ -7368,7 +7325,7 @@ Item_field *Item_equal::get_subst_item(const Item_field *field) {
 */
 
 Item *Item_equal::equality_substitution_transformer(uchar *arg) {
-  TABLE_LIST *sj_nest = reinterpret_cast<TABLE_LIST *>(arg);
+  Table_ref *sj_nest = reinterpret_cast<Table_ref *>(arg);
   List_iterator<Item_field> it(fields);
   List<Item_field> added_fields;
   Item_field *item;
@@ -7403,7 +7360,7 @@ Item *Item_equal::equality_substitution_transformer(uchar *arg) {
     @see JOIN::update_equalities_for_sjm() for why this is needed.
 */
 Item *Item_func_eq::equality_substitution_transformer(uchar *arg) {
-  TABLE_LIST *sj_nest = reinterpret_cast<TABLE_LIST *>(arg);
+  Table_ref *sj_nest = reinterpret_cast<Table_ref *>(arg);
 
   // Skip if equality can be processed during materialization
   if (((used_tables() & ~INNER_TABLE_BIT) & ~sj_nest->sj_inner_tables) == 0) {
@@ -7498,12 +7455,12 @@ bool Item_eq_base::contains_only_equi_join_condition() const {
   // engine. So for now, we reject these.
   if (left_arg->type() == Item::REF_ITEM &&
       down_cast<Item_ref *>(left_arg)->ref_type() == Item_ref::VIEW_REF &&
-      (*(down_cast<Item_ref *>(left_arg)->ref))->used_tables() == 0)
+      down_cast<Item_ref *>(left_arg)->ref_item()->used_tables() == 0)
     return false;
 
   if (right_arg->type() == Item::REF_ITEM &&
       down_cast<Item_ref *>(right_arg)->ref_type() == Item_ref::VIEW_REF &&
-      (*(down_cast<Item_ref *>(right_arg)->ref))->used_tables() == 0)
+      down_cast<Item_ref *>(right_arg)->ref_item()->used_tables() == 0)
     return false;
 
   return true;

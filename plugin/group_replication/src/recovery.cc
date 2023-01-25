@@ -163,8 +163,7 @@ void Recovery_module::leave_group_on_recovery_failure() {
   leave_group_on_failure::mask leave_actions;
   leave_actions.set(leave_group_on_failure::HANDLE_EXIT_STATE_ACTION, true);
   leave_group_on_failure::leave(leave_actions, ER_GRP_RPL_FATAL_REC_PROCESS,
-                                PSESSION_USE_THREAD, nullptr,
-                                exit_state_action_abort_log_message);
+                                nullptr, exit_state_action_abort_log_message);
 }
 
 /*
@@ -303,6 +302,14 @@ int Recovery_module::recovery_thread_handle() {
 single_member_online:
 
   /* Step 4 */
+  if (!recovery_aborted && !error) {
+    /*
+      Recovery through `group_replication_recovery` is complete,
+      enable the guarantee that the binlog commit order will
+      follow the order instructed by GR.
+    */
+    Commit_stage_manager::enable_manual_session_tickets();
+  }
 
   /**
     If recovery fails or is aborted, it never makes sense to awake the applier,

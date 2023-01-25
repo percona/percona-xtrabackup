@@ -40,6 +40,7 @@
 #include <atomic>
 #include <cassert>
 #include <cstdio>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -64,6 +65,7 @@
 #include "sql/item_subselect.h"
 #include "sql/iterators/row_iterator.h"
 #include "sql/join_optimizer/access_path.h"
+#include "sql/join_optimizer/bit_utils.h"
 #include "sql/join_optimizer/explain_access_path.h"
 #include "sql/join_optimizer/join_optimizer.h"
 #include "sql/join_optimizer/materialize_path_parameters.h"
@@ -94,7 +96,7 @@
 #include "sql/visible_fields.h"
 #include "sql/window.h"  // Window
 #include "template_utils.h"
-using std::move;
+
 using std::vector;
 
 class Item_rollup_group_item;
@@ -352,9 +354,9 @@ static bool create_tmp_table_for_set_op(THD *thd, Query_term *qt,
   Query_term_set_op *const parent = qt->parent();
   const bool distinct = parent->m_last_distinct > 0;
 
-  auto tl = new (thd->mem_root) TABLE_LIST();
+  auto tl = new (thd->mem_root) Table_ref();
   if (tl == nullptr) return true;
-  qt->set_result_table_list(tl);
+  qt->set_result_table(tl);
 
   char *buffer = new (thd->mem_root) char[64 + 1];
   if (buffer == nullptr) return true;
@@ -365,20 +367,20 @@ static bool create_tmp_table_for_set_op(THD *thd, Query_term *qt,
           /*instantiate_tmp_table*/ parent->m_is_materialized, parent))
     return true;
   qt->setop_query_result_union()->table->pos_in_table_list =
-      &qt->result_table_list();
-  qt->result_table_list().db = "";
+      &qt->result_table();
+  qt->result_table().db = "";
   // We set the table_name and alias to an empty string here: this avoids
   // giving the user likely unwanted information about the name of the temporary
   // table e.g. as:
   //    Note  1276  Field or reference '<union temporary>.a' of SELECT #3 was
   //                resolved in SELECT #1
   // We prefer just "reference 'a'" in such a case.
-  qt->result_table_list().table_name = "";
-  qt->result_table_list().alias = "";
-  qt->result_table_list().table = qt->setop_query_result_union()->table;
-  qt->result_table_list().query_block = qt->query_block();
-  qt->result_table_list().set_tableno(0);
-  qt->result_table_list().set_privileges(SELECT_ACL);
+  qt->result_table().table_name = "";
+  qt->result_table().alias = "";
+  qt->result_table().table = qt->setop_query_result_union()->table;
+  qt->result_table().query_block = qt->query_block();
+  qt->result_table().set_tableno(0);
+  qt->result_table().set_privileges(SELECT_ACL);
 
   return false;
 }
@@ -572,7 +574,7 @@ bool Query_expression::prepare_query_term(THD *thd, Query_term *qt,
         auto f = new (thd->mem_root) mem_root_deque<Item *>(thd->mem_root);
         if (f == nullptr) return true;
         qts->set_fields(f);
-        if (qts->query_block()->table_list.first->table->fill_item_list(f))
+        if (qts->query_block()->get_table_list()->table->fill_item_list(f))
           return true;
       }
     } break;
@@ -649,9 +651,10 @@ bool Query_expression::prepare_query_term(THD *thd, Query_term *qt,
 
     auto pb = parent->query_block();
     // Parent's input is this tmp table
-    TABLE_LIST &input_to_parent = qt->result_table_list();
-    pb->table_list.link_in_list(&input_to_parent, &input_to_parent.next_local);
-    if (pb->table_list.first->table->fill_item_list(il))
+    Table_ref &input_to_parent = qt->result_table();
+    pb->m_table_list.link_in_list(&input_to_parent,
+                                  &input_to_parent.next_local);
+    if (pb->get_table_list()->table->fill_item_list(il))
       return true;  // purecov: inspected
     pb->fields = *il;
   }
@@ -1017,7 +1020,7 @@ bool Query_expression::optimize(THD *thd, TABLE *materialize_destination,
 
     estimated_cost += query_block->join->best_read;
 
-    // TABLE_LIST::fetch_number_of_rows() expects to get the number of rows
+    // Table_ref::fetch_number_of_rows() expects to get the number of rows
     // from all earlier query blocks from the query result, so we need to update
     // it as we go. In particular, this is used when optimizing a recursive
     // SELECT in a CTE, so that it knows how many rows the non-recursive query
@@ -1141,6 +1144,19 @@ bool Query_expression::optimize(THD *thd, TABLE *materialize_destination,
     }
   }
 
+  // When done with the outermost query expression, and if max_join_size is in
+  // effect, estimate the total number of row accesses in the query, and error
+  // out if it exceeds max_join_size.
+  if (outer_query_block() == nullptr &&
+      !Overlaps(thd->variables.option_bits, OPTION_BIG_SELECTS) &&
+      !thd->lex->is_explain() &&
+      EstimateRowAccesses(m_root_access_path, /*num_evaluations=*/1.0,
+                          std::numeric_limits<double>::infinity()) >
+          static_cast<double>(thd->variables.max_join_size)) {
+    my_error(ER_TOO_BIG_SELECT, MYF(0));
+    return true;
+  }
+
   return false;
 }
 
@@ -1192,7 +1208,7 @@ static AccessPath *add_materialized_access_path(
     Mem_root_array<MaterializePathParameters::QueryBlock> &query_blocks,
     TABLE *dest, ha_rows limit = HA_POS_ERROR) {
   AccessPath *path = qt->query_block()->join->root_access_path();
-  path = NewMaterializeAccessPath(thd, move(query_blocks),
+  path = NewMaterializeAccessPath(thd, std::move(query_blocks),
                                   /*invalidators=*/nullptr, dest, path,
                                   /*cte=*/nullptr, /*unit=*/nullptr,
                                   /*ref_slice=*/-1,
@@ -1287,7 +1303,7 @@ AccessPath *make_set_op_access_path(
             qts->query_block()->setup_materialize_query_block(path, dest);
         Mem_root_array<MaterializePathParameters::QueryBlock> query_blocks(
             thd->mem_root);
-        query_blocks.push_back(move(param));
+        query_blocks.push_back(std::move(param));
         path = add_materialized_access_path(thd, parent, query_blocks, dest);
       }
     } break;
@@ -1302,7 +1318,7 @@ AccessPath *make_set_op_access_path(
           qts->query_block()->setup_materialize_query_block(path, dest);
       Mem_root_array<MaterializePathParameters::QueryBlock> query_blocks(
           thd->mem_root);
-      query_blocks.push_back(move(param));
+      query_blocks.push_back(std::move(param));
       path = add_materialized_access_path(thd, parent, query_blocks, dest);
     } break;
 
@@ -1388,7 +1404,7 @@ Query_term_set_op::setup_materialize_set_op(THD *thd, TABLE *dst_table,
     param.m_total_operands = m_children.size();
     param.disable_deduplication_by_hash_field =
         (has_mixed_distinct_operators() && !activate_deduplication);
-    query_blocks.push_back(move(param));
+    query_blocks.push_back(std::move(param));
 
     if (idx == m_last_distinct && idx > 0 && union_distinct_only)
       // The rest will be done by appending.
@@ -1568,7 +1584,7 @@ bool Query_expression::explain(THD *explain_thd, const THD *query_thd) {
 
 bool Common_table_expr::clear_all_references() {
   bool reset_tables = false;
-  for (TABLE_LIST *tl : references) {
+  for (Table_ref *tl : references) {
     if (tl->table &&
         tl->derived_query_expression()->uncacheable & UNCACHEABLE_DEPENDENT) {
       reset_tables = true;
@@ -1580,7 +1596,7 @@ bool Common_table_expr::clear_all_references() {
     */
   }
   if (!reset_tables) return false;
-  for (TABLE_LIST *tl : tmp_tables) {
+  for (Table_ref *tl : tmp_tables) {
     if (tl->is_derived()) continue;  // handled above
     if (tl->table->empty_result_table()) return true;
     // This loop has found all recursive clones (only readers).
@@ -1589,8 +1605,8 @@ bool Common_table_expr::clear_all_references() {
     Above, emptying all clones is necessary, to rewind every handler (cursor) to
     the table's start. Setting materialized=false on all is also important or
     the writer would skip materialization, see loop at start of
-    TABLE_LIST::materialize_derived()). There is one "recursive table" which we
-    don't find here: it's the UNION DISTINCT tmp table. It's reset in
+    Table_ref::materialize_derived()). There is one "recursive table"
+    which we don't find here: it's the UNION DISTINCT tmp table. It's reset in
     unit::execute() of the unit which is the body of the CTE.
   */
   return false;
@@ -1860,7 +1876,7 @@ void Query_expression::destroy() {
         qt->setop_query_result_union()->table != nullptr) {
       // Destroy materialized result set for a set operation
       free_tmp_table(qt->setop_query_result_union()->table);
-      qt->result_table_list().table = nullptr;
+      qt->result_table().table = nullptr;
     }
     qt->query_block()->destroy();
   }
@@ -1987,7 +2003,7 @@ void Query_expression::change_to_access_path_without_in2exists(THD *thd) {
 
   @param list List of tables to search in
 */
-static void cleanup_tmp_tables(TABLE_LIST *list) {
+static void cleanup_tmp_tables(Table_ref *list) {
   for (auto tl = list; tl; tl = tl->next_local) {
     if (tl->merge_underlying_list) {
       // Find a materialized view inside another view.
@@ -2017,7 +2033,7 @@ static void cleanup_tmp_tables(TABLE_LIST *list) {
 
    @param list List of tables to search in
 */
-static void destroy_tmp_tables(TABLE_LIST *list) {
+static void destroy_tmp_tables(Table_ref *list) {
   for (auto tl = list; tl; tl = tl->next_local) {
     if (tl->merge_underlying_list) {
       // Find a materialized view inside another view.

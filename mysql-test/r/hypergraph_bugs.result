@@ -20,9 +20,8 @@ EXPLAIN
     -> Nested loop left join  (cost=0.91..0.91 rows=0.3)
         -> Filter: (t1.a = 5)  (cost=0.55..0.55 rows=0.3)
             -> Table scan on t1  (cost=0.08..0.25 rows=3)
-        -> Filter: (t1.a = 5)  (cost=0.36..0.36 rows=0.01)
-            -> Filter: (t2.a = 5)  (cost=0.35..0.35 rows=0.1)
-                -> Table scan on t2  (cost=0.25..0.25 rows=1)
+        -> Filter: ((t2.a = 5) and (t1.a = 5))  (cost=0.36..0.36 rows=0.01)
+            -> Table scan on t2  (cost=0.25..0.25 rows=1)
     -> Table scan on t3  (cost=0.25..0.25 rows=1)
 
 SELECT
@@ -182,3 +181,218 @@ x	y	x	y	m
 2	20	NULL	NULL	NULL
 3	30	NULL	NULL	NULL
 DROP TABLE t;
+#
+# Bug#34534373: Heatwave offload issue - Sees inner tables of
+#               a semijoin when it should not
+#
+CREATE TABLE t1 (f1 INTEGER);
+EXPLAIN FORMAT=tree
+SELECT 1
+FROM t1 LEFT JOIN (SELECT * FROM t1 AS t2
+WHERE f1 IN (SELECT f1+1 FROM t1 AS t3)) AS dt
+ON t1.f1=dt.f1;
+EXPLAIN
+-> Nested loop left join  (rows=1)
+    -> Table scan on t1  (rows=1)
+    -> Filter: (t1.f1 = t2.f1)  (rows=0.01)
+        -> Nested loop semijoin  (rows=0.1)
+            -> Table scan on t2  (rows=1)
+            -> Filter: (t2.f1 = (t3.f1 + 1))  (rows=0.1)
+                -> Table scan on t3  (rows=1)
+
+DROP TABLE t1;
+#
+# Bug#34534373: Row estimates for joins ignores histograms.
+#
+CREATE TABLE num (n INT);
+INSERT INTO num VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9);
+CREATE TABLE t1 (a INT);
+INSERT INTO t1 SELECT k%25 FROM
+(SELECT num1.n+num2.n*10 k FROM num num1, num num2) d1;
+CREATE TABLE t2 (b INT);
+INSERT INTO t2 SELECT k%25 FROM
+(SELECT num1.n+num2.n*10 k FROM num num1, num num2, num num3) d1;
+ANALYZE TABLE t1,t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+EXPLAIN ANALYZE SELECT 1 FROM t1,t2 WHERE a=b;
+EXPLAIN
+-> Inner hash join (t1.a = t2.b)  (rows=10000) (actual rows=4000 loops=1)
+    -> Table scan on t2  (rows=1000) (actual rows=1000 loops=1)
+    -> Hash
+        -> Table scan on t1  (rows=100) (actual rows=100 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 x1, t1 x2 WHERE x1.a=x2.a;
+EXPLAIN
+-> Inner hash join (x1.a = x2.a)  (rows=1000) (actual rows=400 loops=1)
+    -> Table scan on x1  (rows=100) (actual rows=100 loops=1)
+    -> Hash
+        -> Table scan on x2  (rows=100) (actual rows=100 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t2 x1, t2 x2 WHERE x1.b=x2.b;
+EXPLAIN
+-> Inner hash join (x1.b = x2.b)  (rows=100000) (actual rows=40000 loops=1)
+    -> Table scan on x1  (rows=1000) (actual rows=1000 loops=1)
+    -> Hash
+        -> Table scan on x2  (rows=1000) (actual rows=1000 loops=1)
+
+CREATE INDEX ix1 ON t1(a);
+EXPLAIN ANALYZE SELECT 1 FROM t1,t2 WHERE a=b;
+EXPLAIN
+-> Nested loop inner join  (rows=4000) (actual rows=4000 loops=1)
+    -> Table scan on t2  (rows=1000) (actual rows=1000 loops=1)
+    -> Index lookup on t1 using ix1 (a=t2.b)  (rows=4) (actual rows=4 loops=1000)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 x1, t1 x2 WHERE x1.a=x2.a;
+EXPLAIN
+-> Nested loop inner join  (rows=400) (actual rows=400 loops=1)
+    -> Table scan on x2  (rows=100) (actual rows=100 loops=1)
+    -> Index lookup on x1 using ix1 (a=x2.a)  (rows=4) (actual rows=4 loops=100)
+
+CREATE INDEX ix2 ON t2(b);
+EXPLAIN ANALYZE SELECT 1 FROM t1,t2 WHERE a=b;
+EXPLAIN
+-> Nested loop inner join  (rows=4000) (actual rows=4000 loops=1)
+    -> Table scan on t1  (rows=100) (actual rows=100 loops=1)
+    -> Index lookup on t2 using ix2 (b=t1.a)  (rows=40) (actual rows=40 loops=100)
+
+DROP INDEX ix1 ON t1;
+EXPLAIN ANALYZE SELECT 1 FROM t1,t2 WHERE a=b;
+EXPLAIN
+-> Nested loop inner join  (rows=4000) (actual rows=4000 loops=1)
+    -> Table scan on t1  (rows=100) (actual rows=100 loops=1)
+    -> Index lookup on t2 using ix2 (b=t1.a)  (rows=40) (actual rows=40 loops=100)
+
+EXPLAIN ANALYZE SELECT 1 FROM t2 x1, t2 x2 WHERE x1.b=x2.b;
+EXPLAIN
+-> Nested loop inner join  (rows=40000) (actual rows=40000 loops=1)
+    -> Table scan on x2  (rows=1000) (actual rows=1000 loops=1)
+    -> Index lookup on x1 using ix2 (b=x2.b)  (rows=40) (actual rows=40 loops=1000)
+
+DROP INDEX ix2 ON t2;
+ANALYZE TABLE t1 UPDATE HISTOGRAM ON a;
+Table	Op	Msg_type	Msg_text
+test.t1	histogram	status	Histogram statistics created for column 'a'.
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+EXPLAIN ANALYZE SELECT 1 FROM t1,t2 WHERE a=b;
+EXPLAIN
+-> Inner hash join (t1.a = t2.b)  (rows=4000) (actual rows=4000 loops=1)
+    -> Table scan on t2  (rows=1000) (actual rows=1000 loops=1)
+    -> Hash
+        -> Table scan on t1  (rows=100) (actual rows=100 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 x1, t1 x2 WHERE x1.a=x2.a;
+EXPLAIN
+-> Inner hash join (x1.a = x2.a)  (rows=400) (actual rows=400 loops=1)
+    -> Table scan on x1  (rows=100) (actual rows=100 loops=1)
+    -> Hash
+        -> Table scan on x2  (rows=100) (actual rows=100 loops=1)
+
+ANALYZE TABLE t2 UPDATE HISTOGRAM ON b;
+Table	Op	Msg_type	Msg_text
+test.t2	histogram	status	Histogram statistics created for column 'b'.
+ANALYZE TABLE t2;
+Table	Op	Msg_type	Msg_text
+test.t2	analyze	status	OK
+EXPLAIN ANALYZE SELECT 1 FROM t1,t2 WHERE a=b;
+EXPLAIN
+-> Inner hash join (t1.a = t2.b)  (rows=4000) (actual rows=4000 loops=1)
+    -> Table scan on t2  (rows=1000) (actual rows=1000 loops=1)
+    -> Hash
+        -> Table scan on t1  (rows=100) (actual rows=100 loops=1)
+
+ANALYZE TABLE t1 DROP HISTOGRAM ON a;
+Table	Op	Msg_type	Msg_text
+test.t1	histogram	status	Histogram statistics removed for column 'a'.
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+EXPLAIN ANALYZE SELECT 1 FROM t1,t2 WHERE a=b;
+EXPLAIN
+-> Inner hash join (t1.a = t2.b)  (rows=4000) (actual rows=4000 loops=1)
+    -> Table scan on t2  (rows=1000) (actual rows=1000 loops=1)
+    -> Hash
+        -> Table scan on t1  (rows=100) (actual rows=100 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t2 x1, t2 x2 WHERE x1.b=x2.b;
+EXPLAIN
+-> Inner hash join (x1.b = x2.b)  (rows=40000) (actual rows=40000 loops=1)
+    -> Table scan on x1  (rows=1000) (actual rows=1000 loops=1)
+    -> Hash
+        -> Table scan on x2  (rows=1000) (actual rows=1000 loops=1)
+
+DROP TABLE num, t1, t2;
+#
+# Bug#34682561: Assertion `!eq_items.is_empty()' failed
+#               in make_join_hypergraph.cc
+#
+CREATE TABLE t1 (f1 INTEGER, f2 INTEGER);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+EXPLAIN FORMAT=tree SELECT f1 FROM t1
+WHERE EXISTS (SELECT t2.f1
+FROM (t1 AS t2 JOIN t1 AS t3 ON (t3.f1 = t2.f2))
+LEFT JOIN t1 AS t4 ON TRUE
+WHERE t4.f1 = t3.f1 OR t3.f2 >= t2.f2)
+GROUP BY f1;
+EXPLAIN
+-> Group (no aggregates)  (rows=0.1)
+    -> Nested loop semijoin  (rows=0.1)
+        -> Sort: t1.f1  (rows=1)
+            -> Table scan on t1  (rows=1)
+        -> Filter: (((t3.f1 = t2.f2) and (t2.f2 = t4.f1)) or (t3.f2 >= t3.f1))  (rows=0.1)
+            -> Nested loop left join  (rows=0.1)
+                -> Nested loop inner join  (rows=0.1)
+                    -> Table scan on t2  (rows=1)
+                    -> Filter: (t3.f1 = t2.f2)  (rows=0.1)
+                        -> Table scan on t3  (rows=1)
+                -> Table scan on t4  (rows=1)
+
+SELECT f1 FROM t1
+WHERE EXISTS (SELECT t2.f1
+FROM (t1 AS t2 JOIN t1 AS t3 ON (t3.f1 = t2.f2))
+LEFT JOIN t1 AS t4 ON TRUE
+WHERE t4.f1 = t3.f1 OR t3.f2 >= t2.f2)
+GROUP BY f1;
+f1
+DROP TABLE t1;
+#
+# Bug#34717171: Hypergraph :Assertion `false' failed
+#               in join_optimizer.cc
+#
+CREATE TABLE t1 (pk INT PRIMARY KEY AUTO_INCREMENT, x INT);
+CREATE TABLE t2 (x INT);
+INSERT INTO t1 VALUES (), (), (), (), (), (), (), (), (), ();
+INSERT INTO t2 VALUES (), (), (), (), (), (), (), (), (), ();
+ANALYZE TABLE t1,t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+EXPLAIN FORMAT=tree WITH subq AS (
+SELECT * FROM t2
+WHERE x IN (SELECT t1.pk FROM t1, t2 AS t3 WHERE t1.x = t3.x)
+)
+SELECT 1 FROM subq LEFT JOIN t2 AS t4 ON TRUE WHERE subq.x = t4.x;
+EXPLAIN
+-> Hash semijoin (t2.x = t1.pk)  (rows=10)
+    -> Inner hash join (t2.x = t4.x)  (rows=10)
+        -> Table scan on t2  (rows=10)
+        -> Hash
+            -> Table scan on t4  (rows=10)
+    -> Hash
+        -> Inner hash join (t1.x = t3.x)  (rows=10)
+            -> Index scan on t1 using PRIMARY  (rows=10)
+            -> Hash
+                -> Table scan on t3  (rows=10)
+
+WITH subq AS (
+SELECT * FROM t2
+WHERE x IN (SELECT t1.pk FROM t1, t2 AS t3 WHERE t1.x = t3.x)
+)
+SELECT 1 FROM subq LEFT JOIN t2 AS t4 ON TRUE WHERE subq.x = t4.x;
+1
+DROP TABLE t1,t2;

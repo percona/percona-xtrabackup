@@ -40,6 +40,7 @@
 
 #include "my_config.h"  // HAVE_EPOLL
 #include "mysql/harness/net_ts/executor.h"
+#include "mysql/harness/net_ts/impl/callstack.h"
 #include "mysql/harness/net_ts/impl/kqueue_io_service.h"
 #include "mysql/harness/net_ts/impl/linux_epoll_io_service.h"
 #include "mysql/harness/net_ts/impl/poll_io_service.h"
@@ -75,6 +76,17 @@ class io_context : public execution_context {
         io_service_open_res_{io_service_->open()} {}
 
   explicit io_context(int /* concurrency_hint */) : io_context() {}
+
+  ~io_context() {
+    active_ops_.release_all();
+    cancelled_ops_.clear();
+    // Make sure the services are destroyed before our internal fields. The
+    // services own the timers that can indirectly call our methods when
+    // destructed. See UT NetTS_io_context.pending_timer_on_destroy for an
+    // example.
+    destroy();
+  }
+
   io_context(const io_context &) = delete;
   io_context &operator=(const io_context &) = delete;
 
@@ -106,7 +118,7 @@ class io_context : public execution_context {
       stopped_ = true;
     }
 
-    io_service_->notify();
+    notify_io_service_if_not_running_in_this_thread();
   }
 
   bool stopped() const noexcept {
@@ -237,7 +249,7 @@ class io_context : public execution_context {
     deferred_work_.post(std::forward<Func>(f), a);
 
     // wakeup the possibly blocked io-thread.
-    io_service()->notify();
+    notify_io_service_if_not_running_in_this_thread();
   }
 
   template <class Clock, class Duration>
@@ -398,6 +410,31 @@ class io_context : public execution_context {
       return extract_first(fd, [](auto const &) { return true; });
     }
 
+    void release_all() {
+      // We expect that this method is called before AsyncOps destructor, to
+      // make sure that ops_ map is empty when the destructor executes. If the
+      // ops_ is not empty when destructed, the destructor of its element can
+      // trigger a method that will try to access that map (that is destructed).
+      // Example: we have an AsyncOp that captures some Socket object with a
+      // smart pointer. When the destructor of this AsyncOp is called, it can
+      // also call the destructor of that Socket, which in turn will call
+      // socket.close(), causing the Socket to unregister its operations in
+      // its respective io_context object which is us (calls extract_first()).
+      std::list<element_type> ops_to_delete;
+      {
+        std::lock_guard<std::mutex> lk(mtx_);
+        for (auto &fd_ops : ops_) {
+          for (auto &fd_op : fd_ops.second) {
+            ops_to_delete.push_back(std::move(fd_op));
+          }
+        }
+        ops_.clear();
+        // It is important that we release the mtx_ here before the
+        // ops_to_delete go out of scope and are deleted. AsyncOp destructor can
+        // indirectly call extract_first which would lead to a deadlock.
+      }
+    }
+
    private:
     template <class Pred>
     element_type extract_first(native_handle_type fd, Pred &&pred) {
@@ -450,7 +487,7 @@ class io_context : public execution_context {
     {
       auto res = io_service_->add_fd_interest(fd, wt);
       if (!res) {
-#if !defined(NDEBUG)
+#if 0
         // fd may be -1 or so
         std::cerr << "!! add_fd_interest(" << fd << ", ..."
                   << ") " << res.error() << " " << res.error().message()
@@ -468,7 +505,7 @@ class io_context : public execution_context {
       }
     }
 
-    io_service_->notify();
+    notify_io_service_if_not_running_in_this_thread();
   }
 
   class timer_queue_base : public execution_context::service {
@@ -784,7 +821,7 @@ class io_context : public execution_context {
     queue.push(timer, std::forward<Op>(op));
 
     // wakeup the blocked poll_one() to handle possible timer events.
-    io_service_->notify();
+    notify_io_service_if_not_running_in_this_thread();
   }
 
   /**
@@ -799,7 +836,7 @@ class io_context : public execution_context {
     const auto count = use_service<timer_queue<Timer>>(*this).cancel(timer);
     if (count) {
       // if a timer was canceled, interrupt the io-service
-      io_service_->notify();
+      notify_io_service_if_not_running_in_this_thread();
     }
     return count;
   }
@@ -855,6 +892,8 @@ class io_context : public execution_context {
 
   void is_running(bool v) { is_running_ = v; }
   bool is_running() const { return is_running_; }
+
+  void notify_io_service_if_not_running_in_this_thread();
 };
 }  // namespace net
 
@@ -947,34 +986,6 @@ inline io_context::count_type io_context::poll_one() {
   return do_one(lk, 0ms);
 }
 
-/**
- * cancel all async-ops of a file-descriptor.
- */
-inline stdx::expected<void, std::error_code> io_context::cancel(
-    native_handle_type fd) {
-  bool need_notify{false};
-  {
-    // check all async-ops
-    std::lock_guard<std::mutex> lk(mtx_);
-
-    while (auto op = active_ops_.extract_first(fd)) {
-      op->cancel();
-
-      cancelled_ops_.push_back(std::move(op));
-
-      need_notify = true;
-    }
-  }
-
-  // wakeup the loop to deliver the cancelled fds
-  if (true || need_notify) {
-    io_service_->remove_fd(fd);
-    io_service_->notify();
-  }
-
-  return {};
-}
-
 class io_context::executor_type {
  public:
   executor_type(const executor_type &rhs) noexcept = default;
@@ -985,11 +996,7 @@ class io_context::executor_type {
   ~executor_type() = default;
 
   bool running_in_this_thread() const noexcept {
-    // TODO: check if this task is running in this thread. Currently, it is
-    // "yes", as we don't allow post()ing to other threads
-
-    // track call-chain
-    return true;
+    return impl::Callstack<io_context>::contains(io_ctx_) != nullptr;
   }
   io_context &context() const noexcept { return *io_ctx_; }
 
@@ -1073,6 +1080,35 @@ inline io_context::executor_type io_context::get_executor() noexcept {
   return executor_type(*this);
 }
 
+/**
+ * cancel all async-ops of a file-descriptor.
+ */
+inline stdx::expected<void, std::error_code> io_context::cancel(
+    native_handle_type fd) {
+  bool need_notify{false};
+  {
+    // check all async-ops
+    std::lock_guard<std::mutex> lk(mtx_);
+
+    while (auto op = active_ops_.extract_first(fd)) {
+      op->cancel();
+
+      cancelled_ops_.push_back(std::move(op));
+
+      need_notify = true;
+    }
+  }
+
+  // wakeup the loop to deliver the cancelled fds
+  if (true || need_notify) {
+    io_service_->remove_fd(fd);
+
+    notify_io_service_if_not_running_in_this_thread();
+  }
+
+  return {};
+}
+
 template <class Clock, class Duration>
 inline io_context::count_type io_context::do_one_until(
     std::unique_lock<std::mutex> &lk,
@@ -1094,9 +1130,17 @@ inline io_context::count_type io_context::do_one_until(
   return do_one(lk, rel_time_ms);
 }
 
+inline void io_context::notify_io_service_if_not_running_in_this_thread() {
+  if (impl::Callstack<io_context>::contains(this) == nullptr) {
+    io_service_->notify();
+  }
+}
+
 // precond: lk MUST be locked
 inline io_context::count_type io_context::do_one(
     std::unique_lock<std::mutex> &lk, std::chrono::milliseconds timeout) {
+  impl::Callstack<io_context>::Context ctx(this);
+
   timer_queue_base *timer_q{nullptr};
 
   monitor mon(*this);

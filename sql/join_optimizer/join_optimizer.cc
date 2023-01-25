@@ -177,6 +177,7 @@ class CostingReceiver {
       string *trace)
       : m_thd(thd),
         m_query_block(query_block),
+        m_access_paths(thd->mem_root),
         m_graph(&graph),
         m_orderings(orderings),
         m_sort_ahead_orderings(sort_ahead_orderings),
@@ -307,7 +308,7 @@ class CostingReceiver {
     (in HasSeen()); if there's an entry here, that subset will induce
     a connected subgraph of the join hypergraph.
    */
-  std::unordered_map<NodeMap, AccessPathSet> m_access_paths;
+  mem_root_unordered_map<NodeMap, AccessPathSet> m_access_paths;
 
   /**
     How many subgraph pairs we've seen so far. Used to give up
@@ -364,7 +365,7 @@ class CostingReceiver {
   const Mem_root_array<FullTextIndexInfo> *m_fulltext_searches;
 
   /// A map of tables that are referenced by a MATCH function (those tables that
-  /// have TABLE_LIST::is_fulltext_searched() == true). It is used for
+  /// have Table_ref::is_fulltext_searched() == true). It is used for
   /// preventing hash joins involving tables that are full-text searched.
   NodeMap m_fulltext_tables = 0;
 
@@ -510,6 +511,7 @@ class CostingReceiver {
   bool ProposeRefAccess(TABLE *table, int node_idx, unsigned key_idx,
                         double force_num_output_rows_after_filter, bool reverse,
                         table_map allowed_parameter_tables, int ordering_idx);
+  bool ProposeAllUniqueIndexLookupsWithConstantKey(int node_idx, bool *found);
   bool RedundantThroughSargable(
       OverflowBitset redundant_against_sargable_predicates,
       const AccessPath *left_path, const AccessPath *right_path, NodeMap left,
@@ -672,12 +674,32 @@ bool CostingReceiver::FoundSingleNode(int node_idx) {
       ~SecondaryEngineCostingFlag::HAS_MULTIPLE_BASE_TABLES;
 
   TABLE *table = m_graph->nodes[node_idx].table;
-  TABLE_LIST *tl = table->pos_in_table_list;
+  Table_ref *tl = table->pos_in_table_list;
 
   if (m_trace != nullptr) {
     *m_trace += StringPrintf("\nFound node %s [rows=%llu]\n",
                              m_graph->nodes[node_idx].table->alias,
                              table->file->stats.records);
+  }
+
+  // First look for unique index lookups that use only constants.
+  {
+    bool found_eq_ref = false;
+    if (ProposeAllUniqueIndexLookupsWithConstantKey(node_idx, &found_eq_ref)) {
+      return true;
+    }
+
+    // If we found an unparameterized EQ_REF path, we can skip looking for
+    // alternative access methods, like parameterized or non-unique index
+    // lookups, index range scans or table scans, as they are unlikely to be any
+    // better. Returning early to reduce time spent planning the query, which is
+    // especially beneficial for point selects.
+    if (found_eq_ref) {
+      if (m_trace != nullptr) {
+        TraceAccessPaths(TableBitmap(node_idx));
+      }
+      return false;
+    }
   }
 
   // We run the range optimizer before anything else, because we can use
@@ -697,7 +719,7 @@ bool CostingReceiver::FoundSingleNode(int node_idx) {
         m_range_optimizer_mem_root.ClearForReuse();
       }
     });
-    if (!tl->is_recursive_reference()) {
+    if (!tl->is_recursive_reference() && m_graph->num_where_predicates > 0) {
       // Note that true error returns in itself is not enough to fail the query;
       // the range optimizer could be out of RAM easily enough, which is
       // nonfatal. That just means we won't be using it for this table.
@@ -804,11 +826,8 @@ bool CostingReceiver::FoundSingleNode(int node_idx) {
       // possible subsets of table parameters that may be useful, to make sure
       // we don't miss any such paths.
       table_map want_parameter_tables = 0;
-      for (unsigned pred_idx = 0;
-           pred_idx < m_graph->nodes[node_idx].sargable_predicates.size();
-           ++pred_idx) {
-        const SargablePredicate &sp =
-            m_graph->nodes[node_idx].sargable_predicates[pred_idx];
+      for (const SargablePredicate &sp :
+           m_graph->nodes[node_idx].sargable_predicates) {
         if (sp.field->table == table &&
             sp.field->part_of_key.is_set(order_info.key_idx) &&
             !Overlaps(sp.other_side->used_tables(),
@@ -1716,9 +1735,9 @@ void CostingReceiver::ProposeIndexMerge(
   }
 }
 
-// Specifies a mapping in a TABLE_REF between an index keypart and a condition,
-// with the intention to satisfy the condition with the index keypart (ref
-// access). Roughly comparable to Key_use in the non-hypergraph optimizer.
+// Specifies a mapping in an Index_lookup between an index keypart and a
+// condition, with the intention to satisfy the condition with the index keypart
+// (ref access). Roughly comparable to Key_use in the non-hypergraph optimizer.
 struct KeypartForRef {
   // The condition we are pushing down (e.g. t1.f1 = 3).
   Item *condition;
@@ -1795,18 +1814,9 @@ bool CostingReceiver::ProposeRefAccess(
       }
       Item_func_eq *item = down_cast<Item_func_eq *>(
           m_graph->predicates[sp.predicate_index].condition);
-      if (sp.field->eq(keyinfo.field) &&
-          comparable_in_index(item, sp.field, Field::itRAW, item->functype(),
-                              sp.other_side) &&
-          !(sp.field->cmp_type() == STRING_RESULT &&
-            sp.field->match_collation_to_optimize_range() &&
-            sp.field->charset() != item->compare_collation())) {
-        // x = const. (And true const; no execution of queries
-        // or stored procedures during optimization.)
-        if ((sp.other_side->const_for_execution() &&
-             !sp.other_side->has_subquery() &&
-             !sp.other_side->is_expensive()) ||
-            sp.other_side->used_tables() == OUTER_REF_TABLE_BIT) {
+      if (sp.field->eq(keyinfo.field)) {
+        // x = const.
+        if (sp.is_constant) {
           matched_this_keypart = true;
           keyparts[keypart_idx].field = sp.field;
           keyparts[keypart_idx].condition = item;
@@ -1869,8 +1879,9 @@ bool CostingReceiver::ProposeRefAccess(
     }
   }
 
-  // Create TABLE_REF for this ref, and set it up based on the chosen keyparts.
-  TABLE_REF *ref = new (m_thd->mem_root) TABLE_REF;
+  // Create Index_lookup for this ref, and set it up based on the chosen
+  // keyparts.
+  Index_lookup *ref = new (m_thd->mem_root) Index_lookup;
   if (init_ref(m_thd, matched_keyparts, length, key_idx, ref)) {
     return true;
   }
@@ -1946,7 +1957,12 @@ bool CostingReceiver::ProposeRefAccess(
     applied_predicates.SetBit(i);
 
     const KeypartForRef &keypart = keyparts[keypart_idx];
-    if (ref_lookup_subsumes_comparison(keypart.field, keypart.val)) {
+    bool subsumes;
+    if (ref_lookup_subsumes_comparison(m_thd, keypart.field, keypart.val,
+                                       &subsumes)) {
+      return true;
+    }
+    if (subsumes) {
       if (m_trace != nullptr) {
         *m_trace += StringPrintf(" - %s is subsumed by ref access on %s.%s\n",
                                  ItemToString(pred.condition).c_str(),
@@ -2053,6 +2069,81 @@ bool CostingReceiver::ProposeRefAccess(
   return false;
 }
 
+/**
+  Do we have a sargable predicate which checks if "field" is equal to a
+  constant?
+ */
+bool HasConstantEqualityForField(
+    const Mem_root_array<SargablePredicate> &sargable_predicates,
+    const Field *field) {
+  return std::any_of(sargable_predicates.begin(), sargable_predicates.end(),
+                     [field](const SargablePredicate &sp) {
+                       return sp.is_constant && field->eq(sp.field);
+                     });
+}
+
+/**
+  Proposes all possible unique index lookups using only constants on the given
+  table. This is done before exploring any other plans for the table, in order
+  to allow early return for point selects, which do not benefit from using other
+  access methods.
+
+  @param node_idx    The table to propose index lookups for.
+  @param[out] found  Set to true if a unique index lookup is proposed.
+  @return True on error.
+ */
+bool CostingReceiver::ProposeAllUniqueIndexLookupsWithConstantKey(int node_idx,
+                                                                  bool *found) {
+  const Mem_root_array<SargablePredicate> &sargable_predicates =
+      m_graph->nodes[node_idx].sargable_predicates;
+
+  if (sargable_predicates.empty()) {
+    return false;
+  }
+
+  TABLE *const table = m_graph->nodes[node_idx].table;
+  if (table->pos_in_table_list->is_recursive_reference() ||
+      Overlaps(table->file->ha_table_flags(), HA_NO_INDEX_ACCESS)) {
+    return false;
+  }
+
+  for (const ActiveIndexInfo &index_info : *m_active_indexes) {
+    if (index_info.table != table) {
+      continue;
+    }
+
+    const KEY *const key = &table->key_info[index_info.key_idx];
+
+    // EQ_REF is only possible on UNIQUE non-FULLTEXT indexes.
+    if (!Overlaps(key->flags, HA_NOSAME) || Overlaps(key->flags, HA_FULLTEXT)) {
+      continue;
+    }
+
+    const size_t num_key_parts = key->user_defined_key_parts;
+    if (num_key_parts > sargable_predicates.size()) {
+      // There are not enough predicates to satisfy this key with constants.
+      continue;
+    }
+
+    if (std::all_of(key->key_part, key->key_part + num_key_parts,
+                    [&sargable_predicates](const KEY_PART_INFO &key_part) {
+                      return HasConstantEqualityForField(sargable_predicates,
+                                                         key_part.field);
+                    })) {
+      *found = true;
+      if (ProposeRefAccess(
+              table, node_idx, index_info.key_idx,
+              /*force_num_output_rows_after_filter=*/-1.0, /*reverse=*/false,
+              /*allowed_parameter_tables=*/0,
+              m_orderings->RemapOrderingIndex(index_info.forward_order))) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 void CostingReceiver::ProposeAccessPathForIndex(
     int node_idx, OverflowBitset applied_predicates,
     OverflowBitset subsumed_predicates,
@@ -2150,7 +2241,7 @@ bool CostingReceiver::ProposeTableScan(
 
   // See if this is an information schema table that must be filled in before
   // we scan.
-  TABLE_LIST *tl = table->pos_in_table_list;
+  Table_ref *tl = table->pos_in_table_list;
   if (tl->schema_table != nullptr && tl->schema_table->fill_table) {
     // TODO(sgunders): We don't need to allocate materialize_path on the
     // MEM_ROOT.
@@ -2514,7 +2605,7 @@ bool CostingReceiver::ProposeFullTextIndexScan(
     TABLE *table, int node_idx, Item_func_match *match, int predicate_idx,
     int ordering_idx, double force_num_output_rows_after_filter) {
   const unsigned key_idx = match->key;
-  TABLE_REF *ref = new (m_thd->mem_root) TABLE_REF;
+  Index_lookup *ref = new (m_thd->mem_root) Index_lookup;
   if (init_ref(m_thd, /*keyparts=*/1, /*length=*/0, key_idx, ref)) {
     return true;
   }
@@ -2698,6 +2789,7 @@ void CostingReceiver::ApplyPredicatesForBaseTable(
         materialize_cost += cost.cost_to_materialize;
       } else {
         path->cost += cost.cost_if_not_materialized;
+        path->init_cost += cost.init_cost_if_not_materialized;
       }
       if (IsBitSet(i, applied_predicates)) {
         // We already factored in this predicate when calculating
@@ -2733,7 +2825,7 @@ void CostingReceiver::ApplyPredicatesForBaseTable(
  */
 bool LateralDependenciesAreSatisfied(int node_idx, NodeMap tables,
                                      const JoinHypergraph &graph) {
-  const TABLE_LIST *table_ref = graph.nodes[node_idx].table->pos_in_table_list;
+  const Table_ref *table_ref = graph.nodes[node_idx].table->pos_in_table_list;
 
   if (table_ref->is_derived()) {
     const NodeMap lateral_deps = GetNodeMapFromTableMap(
@@ -2762,8 +2854,8 @@ bool LateralDependenciesAreSatisfied(int node_idx, NodeMap tables,
   AccessPathSet, or even try to build it incrementally.
  */
 NodeMap FindReachableTablesFrom(NodeMap tables, const JoinHypergraph &graph) {
-  const vector<Node> &nodes = graph.graph.nodes;
-  const vector<Hyperedge> &edges = graph.graph.edges;
+  const Mem_root_array<Node> &nodes = graph.graph.nodes;
+  const Mem_root_array<Hyperedge> &edges = graph.graph.edges;
 
   NodeMap reachable = 0;
   for (int node_idx : BitsSetIn(tables)) {
@@ -4478,7 +4570,6 @@ AccessPath *CostingReceiver::ProposeAccessPath(
     if (!IsEmpty(path->filter_predicates)) {
       assert(path->num_output_rows() <= path->num_output_rows_before_filter);
       assert(path->cost_before_filter <= path->cost);
-      assert(path->init_cost <= path->cost_before_filter);
     }
   }
 
@@ -4861,168 +4952,12 @@ bool IsMaterializationPath(const AccessPath *path) {
 }
 
 /**
-  Goes through an item tree and collects all the sub-items that should be
-  materialized if full-text search is used in combination with sort-based
-  aggregation.
-
-  This means all expressions in the SELECT list, GROUP BY clause, ORDER BY
-  clause and HAVING clause that are possible to evaluate before aggregation.
-
-  The reason why this materialization is needed, is that
-  Item_func_match::val_real() can only be evaluated if the underlying scan is
-  positioned on the row for which the full-text search score is to be retrieved.
-  In the sort-based aggregation performed by AggregateIterator, the rows are
-  returned with the underlying scan positioned on some other row (typically one
-  in the next group). Even though AggregateIterator restores the contents of the
-  record buffers to what they had when the scan was positioned on that row, it
-  is not enough; the handler needs to be repositioned to make Item_func_match
-  give the correct result. To avoid this, we materialize the results of the
-  MATCH functions before they are seen by AggregateIterator.
-
-  The most important thing to materialize is the MATCH function, but
-  AggregateIterator is not currently prepared for reading some data from a
-  materialized source and other data directly from the base tables, so we have
-  to materialize all expressions that are to be used as input to
-  AggregateIterator.
-
-  The old optimizer does not have special code for materializing MATCH
-  functions. In most cases it does not need it, because it usually performs
-  aggregation by materializing all expressions (not only MATCH) in the SELECT
-  list, the GROUP BY clause and the ORDER BY clause anyway. It does not,
-  however, materialize the non-aggregated expressions in the HAVING clause, so
-  calls to the MATCH function in the HAVING clause may give wrong results with
-  the old optimizer.
-
-  The old optimizer uses the same sort-based aggregation as the hypergraph
-  optimizer for ROLLUP. The lack of materialization of MATCH expressions leads
-  to wrong results also when MATCH is used in the SELECT list or the ORDER BY
-  clause of a ROLLUP query.
-
-  The materialization performed by this function makes the hypergraph optimizer
-  produce correct results for the above mentioned cases where the old optimizer
-  produces wrong results.
- */
-void CollectItemsToMaterializeForFullTextAggregation(
-    Item *root, mem_root_deque<Item *> *items) {
-  // Walk through the item and materialize those sub-expressions that don't
-  // depend on aggregation. We use CompileItem instead of WalkItem, because the
-  // former allows skipping sub-trees. This is useful, so that we don't need to
-  // materialize every sub-expression if a non-leaf item can be materialized.
-  // We don't use the transformation capability of CompileItem, hence the
-  // transformer argument is a simple identity function.
-  CompileItem(
-      root,
-      [items](Item *item) {
-        if (item->has_aggregation()) {
-          // Since we materialize before aggregation, we cannot materialize
-          // items that depend on an aggregated value. But we can look inside
-          // the item and materialize those parts of the tree that don't depend
-          // on aggregation.
-          return true;
-        } else if (item->has_rollup_expr()) {
-          // Similarly, we cannot materialize items depending on rollup items,
-          // but we can possibly materialize items inside the rollup item, so
-          // keep looking.
-          return true;
-        } else if (item->type() == Item::REF_ITEM) {
-          // Skip past Item_ref and look at its "real" item.
-          return true;
-        } else if (item->const_for_execution()) {
-          // Constant items don't need materialization (and often they are
-          // materialized/cached in an Item_cache anyways), so we skip such
-          // items and also skip their sub-items.
-          return false;
-        } else {
-          // Otherwise, we have an expression that does not depend on
-          // aggregation to have happened, so we materialize the full expression
-          // and don't look further inside of it.
-          items->push_back(item);
-          return false;
-        }
-      },
-      [](Item *item) { return item; });
-}
-
-/**
-  Creates a temporary table which materializes the results of all full-text
-  functions that need to be accessible after aggregation. This is needed for
-  sort-based aggregation on full-text searched tables if the full-text search
-  score is accessed in the SELECT list, GROUP BY clause, ORDER BY clause or
-  HAVING clause. See #CollectItemsToMaterializeForFullTextAggregation() for more
-  details.
-
-  @param thd the session object
-  @param query_block the query block
-  @param[out] temp_table the created temporary table,
-    or nullptr if there are no MATCH functions that need materialization
-  @param[out] temp_table_param the parameters of the created temporary table
-
-  @returns false on success, true if an error was raised
- */
-bool CreateTemporaryTableForFullTextFunctions(
-    THD *thd, Query_block *query_block, TABLE **temp_table,
-    Temp_table_param **temp_table_param) {
-  JOIN *join = query_block->join;
-
-  mem_root_deque<Item *> items_to_materialize(thd->mem_root);
-
-  // Materialize all non-aggregate expressions in the SELECT list and
-  // GROUP BY clause.
-  for (Item *item : *join->fields) {
-    CollectItemsToMaterializeForFullTextAggregation(item,
-                                                    &items_to_materialize);
-  }
-
-  // Materialize all non-aggregate expressions in the HAVING clause.
-  if (join->having_cond != nullptr) {
-    CollectItemsToMaterializeForFullTextAggregation(join->having_cond,
-                                                    &items_to_materialize);
-  }
-
-  // Materialize all non-aggregate expressions in the ORDER BY clause.
-  for (ORDER *order = join->order.order; order != nullptr;
-       order = order->next) {
-    CollectItemsToMaterializeForFullTextAggregation(*order->item,
-                                                    &items_to_materialize);
-  }
-
-  // If we didn't find any full-text functions that needed materialization, we
-  // don't need a temporary table.
-  if (std::none_of(items_to_materialize.begin(), items_to_materialize.end(),
-                   [](Item *item) {
-                     return contains_function_of_type(item, Item_func::FT_FUNC);
-                   })) {
-    *temp_table = nullptr;
-    return false;
-  }
-
-  *temp_table_param = new (thd->mem_root) Temp_table_param;
-  if (*temp_table_param == nullptr) return true;
-  count_field_types(query_block, *temp_table_param, items_to_materialize,
-                    /*reset_with_sum_func=*/false, /*save_sum_fields=*/false);
-
-  *temp_table =
-      create_tmp_table(thd, *temp_table_param, items_to_materialize,
-                       /*group=*/nullptr, /*distinct=*/false,
-                       /*save_sum_fields=*/false, query_block->active_options(),
-                       /*rows_limit=*/HA_POS_ERROR, "<temporary>");
-  if (*temp_table == nullptr) return true;
-
-  // We made a new table, so make sure it gets properly cleaned up
-  // at the end of execution.
-  join->temp_tables.push_back(
-      JOIN::TemporaryTableToCleanup{*temp_table, *temp_table_param});
-
-  return false;
-}
-
-/**
   Is this DELETE target table a candidate for being deleted from immediately,
   while scanning the result of the join? It only checks if it is a candidate for
   immediate delete. Whether it actually ends up being deleted from immediately,
   depends on the plan that is chosen.
  */
-bool IsImmediateDeleteCandidate(const TABLE_LIST *table_ref,
+bool IsImmediateDeleteCandidate(const Table_ref *table_ref,
                                 const Query_block *query_block) {
   assert(table_ref->is_deleted());
 
@@ -5048,7 +4983,7 @@ void AddFieldsToTmpSet(Item *item, TABLE *table) {
   immediate update. Whether it actually ends up being updated immediately,
   depends on the plan that is chosen.
  */
-bool IsImmediateUpdateCandidate(const TABLE_LIST *table_ref, int node_idx,
+bool IsImmediateUpdateCandidate(const Table_ref *table_ref, int node_idx,
                                 const JoinHypergraph &graph,
                                 table_map target_tables) {
   assert(table_ref->is_updated());
@@ -5131,7 +5066,7 @@ bool IsImmediateUpdateCandidate(const TABLE_LIST *table_ref, int node_idx,
  */
 table_map FindUpdateDeleteTargetTables(const Query_block *query_block) {
   table_map target_tables = 0;
-  for (TABLE_LIST *tl = query_block->leaf_tables; tl != nullptr;
+  for (Table_ref *tl = query_block->leaf_tables; tl != nullptr;
        tl = tl->next_leaf) {
     if (tl->is_updated() || tl->is_deleted()) {
       target_tables |= tl->map();
@@ -5159,7 +5094,7 @@ table_map FindImmediateUpdateDeleteCandidates(const JoinHypergraph &graph,
   table_map candidates = 0;
   for (unsigned node_idx = 0; node_idx < graph.nodes.size(); ++node_idx) {
     const JoinHypergraph::Node &node = graph.nodes[node_idx];
-    const TABLE_LIST *tl = node.table->pos_in_table_list;
+    const Table_ref *tl = node.table->pos_in_table_list;
     if (Overlaps(tl->map(), target_tables)) {
       if (is_delete ? IsImmediateDeleteCandidate(tl, graph.query_block())
                     : IsImmediateUpdateCandidate(tl, node_idx, graph,
@@ -5303,6 +5238,68 @@ uint64_t FindSargableFullTextPredicates(const JoinHypergraph &graph) {
   return fulltext_predicates;
 }
 
+// Inject casts into comparisons of expressions with incompatible types.
+// For example, int_col = string_col is rewritten to
+// CAST(int_col AS DOUBLE) = CAST(string_col AS DOUBLE)
+bool InjectCastNodes(JoinHypergraph *graph) {
+  // Inject cast nodes into the WHERE clause.
+  for (Predicate &predicate :
+       make_array(graph->predicates.data(), graph->num_where_predicates)) {
+    if (predicate.condition->walk(&Item::cast_incompatible_args,
+                                  enum_walk::POSTFIX, nullptr)) {
+      return true;
+    }
+  }
+
+  // Inject cast nodes into the join conditions.
+  for (JoinPredicate &edge : graph->edges) {
+    RelationalExpression *expr = edge.expr;
+    if (expr->join_predicate_first != expr->join_predicate_last) {
+      // The join predicates have been lifted to the WHERE clause, and casts are
+      // already injected into the WHERE clause.
+      continue;
+    }
+    for (Item_eq_base *item : expr->equijoin_conditions) {
+      if (item->walk(&Item::cast_incompatible_args, enum_walk::POSTFIX,
+                     nullptr)) {
+        return true;
+      }
+    }
+    for (Item *item : expr->join_conditions) {
+      if (item->walk(&Item::cast_incompatible_args, enum_walk::POSTFIX,
+                     nullptr)) {
+        return true;
+      }
+    }
+  }
+
+  // Inject cast nodes to the expressions in the SELECT list.
+  const JOIN *join = graph->join();
+  for (Item *item : *join->fields) {
+    if (item->walk(&Item::cast_incompatible_args, enum_walk::POSTFIX,
+                   nullptr)) {
+      return true;
+    }
+  }
+
+  // Also GROUP BY expressions and HAVING, to be consistent everywhere.
+  for (ORDER *ord = join->group_list.order; ord != nullptr; ord = ord->next) {
+    if ((*ord->item)
+            ->walk(&Item::cast_incompatible_args, enum_walk::POSTFIX,
+                   nullptr)) {
+      return true;
+    }
+  }
+  if (join->having_cond != nullptr) {
+    if (join->having_cond->walk(&Item::cast_incompatible_args,
+                                enum_walk::POSTFIX, nullptr)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 // Checks if any of the full-text indexes are covering for a table. If the query
 // only needs the document ID and the rank, there is no need to access table
 // rows. Index-only access can only be used if there is an FTS_DOC_ID column in
@@ -5351,38 +5348,27 @@ AccessPath *CreateZeroRowsForEmptyJoin(JOIN *join, const char *cause) {
 
 /**
   Creates an AGGREGATE AccessPath, possibly with an intermediary STREAM node if
-  one is needed.
-
-  If the caller has already determined that an intermediary STREAM node is
-  needed, it can pass a TABLE and Temp_table_param describing what to
-  materialize. (This is only used by full-text search, which needs a temporary
-  table of a different shape than what we get from
-  FinalizePlanForQueryBlock()/DelayedCreateTemporaryTable(). See
-  CreateTemporaryTableForFullTextFunctions().)
-
-  Otherwise, we check if "path" has any other property that makes streaming
-  necessary, and add a STREAM node if needed. The creation of the temporary
-  table does not happen here, but is left for FinalizePlanForQueryBlock().
+  one is needed. The creation of the temporary table does not happen here, but
+  is left for FinalizePlanForQueryBlock().
  */
 AccessPath CreateStreamingAggregationPath(THD *thd, AccessPath *path,
-                                          const Query_block *query_block,
-                                          bool rollup, TABLE *table,
-                                          Temp_table_param *param) {
-  assert((table == nullptr) == (param == nullptr));
-
+                                          JOIN *join, bool rollup,
+                                          string *trace) {
   AccessPath *child_path = path;
+  const Query_block *query_block = join->query_block;
 
   // Create a streaming node, if one is needed. It is needed for aggregation of
-  // some full-text queries (in which case a temporary table is supplied by the
-  // caller). It is also needed if the query contains an EQ_REF path which
-  // caches the previous result, because EQRefIterator's caching assumes
-  // table->record[0] is left untouched between two calls to Read(), but
-  // AggregateIterator may change it when it switches between groups. Adding a
-  // STREAM object ensures that the EQRefIterator and the AggregateIterator work
-  // on different TABLE objects.
-  if (table != nullptr || HasEqRefWithCache(path)) {
-    child_path = NewStreamingAccessPath(thd, path, query_block->join, param,
-                                        table, /*ref_slice=*/-1);
+  // some full-text queries, because AggregateIterator doesn't preserve the
+  // position of the underlying scans. It is also needed if the query contains
+  // an EQ_REF path which caches the previous result, because EQRefIterator's
+  // caching assumes table->record[0] is left untouched between two calls to
+  // Read(), but AggregateIterator may change it when it switches between
+  // groups. Adding a STREAM object ensures that the EQRefIterator and the
+  // AggregateIterator work on different TABLE objects.
+  if (join->contains_non_aggregated_fts() || HasEqRefWithCache(path)) {
+    child_path = NewStreamingAccessPath(
+        thd, path, join, /*temp_table_param=*/nullptr, /*table=*/nullptr,
+        /*ref_slice=*/-1);
     CopyBasicProperties(*path, child_path);
   }
 
@@ -5390,7 +5376,7 @@ AccessPath CreateStreamingAggregationPath(THD *thd, AccessPath *path,
   aggregate_path.type = AccessPath::AGGREGATE;
   aggregate_path.aggregate().child = child_path;
   aggregate_path.aggregate().rollup = rollup;
-  EstimateAggregateCost(&aggregate_path, query_block);
+  EstimateAggregateCost(&aggregate_path, query_block, trace);
   return aggregate_path;
 }
 
@@ -5454,12 +5440,15 @@ void ApplyHavingCondition(THD *thd, Item *having_cond, Query_block *query_block,
     filter_path.set_num_output_rows(
         root_path->num_output_rows() *
         EstimateSelectivity(thd, having_cond, trace));
-    filter_path.init_cost = root_path->init_cost;
+
+    const FilterCost filter_cost = EstimateFilterCost(
+        thd, root_path->num_output_rows(), having_cond, query_block);
+
+    filter_path.init_cost =
+        root_path->init_cost + filter_cost.init_cost_if_not_materialized;
+
     filter_path.init_once_cost = root_path->init_once_cost;
-    filter_path.cost =
-        root_path->cost + EstimateFilterCost(thd, root_path->num_output_rows(),
-                                             having_cond, query_block)
-                              .cost_if_not_materialized;
+    filter_path.cost = root_path->cost + filter_cost.cost_if_not_materialized;
     filter_path.num_output_rows_before_filter = filter_path.num_output_rows();
     filter_path.cost_before_filter = filter_path.cost;
     // TODO(sgunders): Collect and apply functional dependencies from
@@ -5505,8 +5494,6 @@ AccessPath MakeSortPathForDistinct(
   EstimateSortCost(&sort_path);
   return sort_path;
 }
-
-}  // namespace
 
 JoinHypergraph::Node *FindNodeWithTable(JoinHypergraph *graph, TABLE *table) {
   for (JoinHypergraph::Node &node : graph->nodes) {
@@ -5629,45 +5616,43 @@ Prealloced_array<AccessPath *, 4> ApplyDistinctAndOrder(
       // derived from DISTINCT clause, because the DISTINCT clause might
       // help us elide the sort for ORDER BY later, if the DISTINCT clause
       // is broader than the ORDER BY clause.
-      bool found_usable_sort = false;
       for (const SortAheadOrdering &sort_ahead_ordering :
            sort_ahead_orderings) {
+        LogicalOrderings::StateIndex ordering_state = orderings.ApplyFDs(
+            orderings.SetOrder(sort_ahead_ordering.ordering_idx), fd_set);
         // A broader DISTINCT could help elide ORDER BY. Not vice versa. Note
         // that ORDER BY would generally be subset of DISTINCT, but not always.
         // E.g. using ANY_VALUE() in ORDER BY would allow it to be not part of
         // DISTINCT.
-        if (grouping.size() <
-            orderings.ordering(sort_ahead_ordering.ordering_idx).size()) {
+        if (sort_ahead_ordering.ordering_idx == distinct_ordering_idx) {
+          // The ordering derived from DISTINCT. Always propose this one,
+          // regardless of whether it also satisfies the ORDER BY ordering.
+        } else if (grouping.size() <
+                   orderings.ordering(sort_ahead_ordering.ordering_idx)
+                       .size()) {
+          // This sort-ahead ordering is too wide and may cause duplicates to be
+          // returned. Don't propose it.
           continue;
-        }
-        LogicalOrderings::StateIndex ordering_state = orderings.ApplyFDs(
-            orderings.SetOrder(sort_ahead_ordering.ordering_idx), fd_set);
-        if (!orderings.DoesFollowOrder(ordering_state, distinct_ordering_idx)) {
+        } else if (order_by_ordering_idx == -1) {
+          // There is no ORDER BY to satisfy later, so there is no point in
+          // trying to find a sort that satisfies both DISTINCT and ORDER BY.
+          continue;
+        } else if (!orderings.DoesFollowOrder(ordering_state,
+                                              distinct_ordering_idx) ||
+                   !orderings.DoesFollowOrder(ordering_state,
+                                              order_by_ordering_idx)) {
+          // The ordering does not satisfy both of the orderings that are
+          // interesting to us. So it's no better than the distinct_ordering_idx
+          // one. Don't propose it.
           continue;
         }
 
-        found_usable_sort = true;
         // The force_sort_rowids flag is only set for UPDATE and DELETE,
         // which don't have any syntax for specifying DISTINCT.
         assert(!force_sort_rowids);
         AccessPath sort_path = MakeSortPathForDistinct(
             thd, root_path, sort_ahead_ordering.ordering_idx,
             aggregation_is_unordered, orderings, ordering_state);
-        receiver.ProposeAccessPath(&sort_path, &new_root_candidates,
-                                   /*obsolete_orderings=*/0, "");
-      }
-      if (!found_usable_sort) {
-        // All the interesting orders have been checked without finding a
-        // match for the distinct ordering index, and no access paths have
-        // been created. This can happen if distinct_ordering_idx > max
-        // interesting orders, which fails on a bounds check even if a
-        // matching order is present. Go ahead with creating a sort access
-        // path using distinct_ordering_idx.
-        LogicalOrderings::StateIndex ordering_state = orderings.ApplyFDs(
-            orderings.SetOrder(distinct_ordering_idx), fd_set);
-        AccessPath sort_path = MakeSortPathForDistinct(
-            thd, root_path, distinct_ordering_idx, aggregation_is_unordered,
-            orderings, ordering_state);
         receiver.ProposeAccessPath(&sort_path, &new_root_candidates,
                                    /*obsolete_orderings=*/0, "");
       }
@@ -5929,8 +5914,6 @@ static int FindBestOrderingForWindow(
   return best_ordering_idx;
 }
 
-namespace {
-
 AccessPath *MakeSortPathAndApplyWindows(
     THD *thd, JOIN *join, AccessPath *root_path, int ordering_idx, ORDER *order,
     const LogicalOrderings &orderings,
@@ -6152,6 +6135,28 @@ static Prealloced_array<AccessPath *, 4> ApplyWindowFunctions(
 }
 
 /**
+  Find out if "value" has a type which is compatible with "field" so that it can
+  be used for an index lookup if there is an index on "field".
+ */
+static bool CompatibleTypesForIndexLookup(Item_func_eq *eq_item, Field *field,
+                                          Item *value) {
+  if (!comparable_in_index(eq_item, field, Field::itRAW, eq_item->functype(),
+                           value)) {
+    // The types are not comparable in the index, so it's not sargable.
+    return false;
+  }
+
+  if (field->cmp_type() == STRING_RESULT &&
+      field->match_collation_to_optimize_range() &&
+      field->charset() != eq_item->compare_collation()) {
+    // The collations don't match, so it's not sargable.
+    return false;
+  }
+
+  return true;
+}
+
+/**
   Find out whether “item” is a sargable condition; if so, add it to:
 
    - The list of sargable predicate for the tables (hypergraph nodes)
@@ -6170,8 +6175,7 @@ static void PossiblyAddSargableCondition(THD *thd, Item *item,
                                          int predicate_index,
                                          bool is_join_condition,
                                          JoinHypergraph *graph, string *trace) {
-  if (item->type() != Item::FUNC_ITEM ||
-      down_cast<Item_func *>(item)->functype() != Item_bool_func2::EQ_FUNC) {
+  if (!is_function_of_type(item, Item_func::EQ_FUNC)) {
     return;
   }
   Item_func_eq *eq_item = down_cast<Item_func_eq *>(item);
@@ -6179,8 +6183,9 @@ static void PossiblyAddSargableCondition(THD *thd, Item *item,
     return;
   }
   for (unsigned arg_idx = 0; arg_idx < 2; ++arg_idx) {
-    Item *left = eq_item->arguments()[arg_idx];
-    Item *right = eq_item->arguments()[1 - arg_idx];
+    Item **args = eq_item->arguments();
+    Item *left = args[arg_idx];
+    Item *right = args[1 - arg_idx];
     if (left->type() != Item::FIELD_ITEM) {
       continue;
     }
@@ -6190,12 +6195,21 @@ static void PossiblyAddSargableCondition(THD *thd, Item *item,
     }
     if (field->part_of_key.is_clear_all()) {
       // Not part of any key, so not sargable. (It could be part of a prefix
-      // keys, though, but we include them for now.)
+      // key, though, but we include them for now.)
       continue;
     }
     JoinHypergraph::Node *node = FindNodeWithTable(graph, field->table);
     if (node == nullptr) {
       // A field in a different query block, so not sargable for us.
+      continue;
+    }
+
+    // If the equality comes from a multiple equality, we have already verified
+    // that the types of the arguments match exactly. For other equalities, we
+    // need to check more thoroughly if the types are compatible.
+    if (eq_item->source_multiple_equality != nullptr) {
+      assert(CompatibleTypesForIndexLookup(eq_item, field, right));
+    } else if (!CompatibleTypesForIndexLookup(eq_item, field, right)) {
       continue;
     }
 
@@ -6228,7 +6242,19 @@ static void PossiblyAddSargableCondition(THD *thd, Item *item,
       graph->sargable_join_predicates.emplace(eq_item, predicate_index);
     }
 
-    node->sargable_predicates.push_back({predicate_index, field, right});
+    // Remember if this predicate is field = const. Don't consider items with
+    // subqueries or stored procedures constant, as we don't want to execute
+    // them during optimization.
+    const bool is_constant =
+        (right->const_for_execution() && !right->has_subquery() &&
+         !right->is_expensive()) ||
+        right->used_tables() == OUTER_REF_TABLE_BIT;
+
+    node->sargable_predicates.push_back(
+        {predicate_index, field, right, is_constant});
+
+    // No need to check the opposite order. We have no indexes on constants.
+    if (is_constant) break;
   }
 }
 
@@ -6288,8 +6314,7 @@ static void CacheCostInfoForJoinConditions(THD *thd,
       properties.selectivity = EstimateSelectivity(thd, cond, trace);
       properties.contained_subqueries.init(thd->mem_root);
       FindContainedSubqueries(
-          thd, cond, query_block,
-          [&properties](const ContainedSubquery &subquery) {
+          cond, query_block, [&properties](const ContainedSubquery &subquery) {
             properties.contained_subqueries.push_back(subquery);
           });
 
@@ -6315,8 +6340,7 @@ static void CacheCostInfoForJoinConditions(THD *thd,
       properties.selectivity = EstimateSelectivity(thd, cond, trace);
       properties.contained_subqueries.init(thd->mem_root);
       FindContainedSubqueries(
-          thd, cond, query_block,
-          [&properties](const ContainedSubquery &subquery) {
+          cond, query_block, [&properties](const ContainedSubquery &subquery) {
             properties.contained_subqueries.push_back(subquery);
           });
       edge.expr->properties_for_join_conditions.push_back(
@@ -6417,8 +6441,8 @@ AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
         break;
       }
     }
-    for (TABLE_LIST *tl = query_block->leaf_tables;
-         tl != nullptr && !need_rowid; tl = tl->next_leaf) {
+    for (Table_ref *tl = query_block->leaf_tables; tl != nullptr && !need_rowid;
+         tl = tl->next_leaf) {
       if (SortWillBeOnRowId(tl->table)) {
         need_rowid = true;
       }
@@ -6473,6 +6497,8 @@ AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
                          &group_by_ordering_idx, &distinct_ordering_idx,
                          &active_indexes, &fulltext_searches, trace);
 
+  if (InjectCastNodes(&graph)) return nullptr;
+
   // Run the actual join optimizer algorithm. This creates an access path
   // for the join as a whole (with lowest possible cost, and thus also
   // hopefully optimal execution time), with all pushable predicates applied.
@@ -6491,8 +6517,15 @@ AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
       immediate_update_delete_candidates, need_rowid, EngineFlags(thd),
       thd->variables.optimizer_max_subgraph_pairs, secondary_engine_cost_hook,
       trace);
-  if (EnumerateAllConnectedPartitions(graph.graph, &receiver) &&
-      !thd->is_error() && join->zero_result_cause == nullptr) {
+  if (graph.edges.empty()) {
+    // Fast path for single-table queries. No need to run the join enumeration
+    // when there is no join. Just visit the only node directly.
+    assert(graph.nodes.size() == 1);
+    if (receiver.FoundSingleNode(0) && thd->is_error()) {
+      return nullptr;
+    }
+  } else if (EnumerateAllConnectedPartitions(graph.graph, &receiver) &&
+             !thd->is_error() && join->zero_result_cause == nullptr) {
     SimplifyQueryGraph(thd, thd->variables.optimizer_max_subgraph_pairs, &graph,
                        trace);
 
@@ -6589,6 +6622,7 @@ AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
     *trace += "Adding final predicates\n";
   }
   FunctionalDependencySet fd_set = receiver.active_fds_at_root();
+  bool has_final_predicates = false;
   for (size_t i = 0; i < graph.num_where_predicates; ++i) {
     // Apply any predicates that don't belong to any
     // specific table, or which are nondeterministic.
@@ -6596,10 +6630,22 @@ AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
                   TablesBetween(0, graph.nodes.size())) ||
         Overlaps(graph.predicates[i].total_eligibility_set, RAND_TABLE_BIT)) {
       fd_set |= graph.predicates[i].functional_dependencies;
+      has_final_predicates = true;
     }
   }
 
-  {
+  // Add the final predicates to the root candidates, and expand FILTER access
+  // paths for all predicates (not only the final ones) in the entire access
+  // path tree of the candidates.
+  //
+  // It is an unnecessary step if there are no FILTER access paths to expand.
+  // It's not so expensive that it's worth spending a lot of effort to find out
+  // if it can be skipped, but let's skip it if our only candidate is an EQ_REF
+  // with no filter predicates, so that we don't waste time in point selects.
+  if (has_final_predicates ||
+      !(root_candidates.size() == 1 &&
+        root_candidates[0]->type == AccessPath::EQ_REF &&
+        IsEmpty(root_candidates[0]->filter_predicates))) {
     Prealloced_array<AccessPath *, 4> new_root_candidates(PSI_NOT_INSTRUMENTED);
     for (const AccessPath *root_path : root_candidates) {
       for (bool materialize_subqueries : {false, true}) {
@@ -6681,25 +6727,6 @@ AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
       *trace += "Applying aggregation for GROUP BY\n";
     }
 
-    // Create a temporary table for materializing the results of full-text
-    // functions, if needed.
-    //
-    // The full-text MATCH function requires the handler to be positioned on the
-    // row that holds the value to perform the full-text search on. It is not
-    // enough to have all the required column values in the record buffer. Since
-    // sort-based aggregation has moved off the original row when a group is
-    // returned, we add a temporary table which materializes the results of any
-    // calls to MATCH that will be needed after aggregation, and stream the rows
-    // through this table before aggregation.
-    TABLE *fulltext_table = nullptr;
-    Temp_table_param *fulltext_param = nullptr;
-    if (query_block->has_ft_funcs()) {
-      if (CreateTemporaryTableForFullTextFunctions(
-              thd, query_block, &fulltext_table, &fulltext_param)) {
-        return nullptr;
-      }
-    }
-
     Prealloced_array<AccessPath *, 4> new_root_candidates(PSI_NOT_INSTRUMENTED);
     for (AccessPath *root_path : root_candidates) {
       const bool rollup = (join->rollup_state != JOIN::RollupState::NONE);
@@ -6710,8 +6737,7 @@ AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
 
       if (!group_needs_sort) {
         AccessPath aggregate_path =
-            CreateStreamingAggregationPath(thd, root_path, query_block, rollup,
-                                           fulltext_table, fulltext_param);
+            CreateStreamingAggregationPath(thd, root_path, join, rollup, trace);
         receiver.ProposeAccessPath(&aggregate_path, &new_root_candidates,
                                    /*obsolete_orderings=*/0, "sort elided");
         continue;
@@ -6756,8 +6782,7 @@ AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
         }
 
         AccessPath aggregate_path =
-            CreateStreamingAggregationPath(thd, sort_path, query_block, rollup,
-                                           fulltext_table, fulltext_param);
+            CreateStreamingAggregationPath(thd, sort_path, join, rollup, trace);
         receiver.ProposeAccessPath(&aggregate_path, &new_root_candidates,
                                    /*obsolete_orderings=*/0, description);
       }

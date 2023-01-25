@@ -20,38 +20,63 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
+#ifndef UNITTEST_GUNIT_OPTIMIZER_TEST_H
+#define UNITTEST_GUNIT_OPTIMIZER_TEST_H
+
+#include <assert.h>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 #include <string.h>
+#include <initializer_list>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include "lex_string.h"
+#include "mem_root_deque.h"
 #include "my_alloc.h"
+#include "my_sqlcommand.h"
+#include "my_table_map.h"
+#include "sql/field.h"
+#include "sql/handler.h"
 #include "sql/item.h"
+#include "sql/item_subselect.h"
+#include "sql/join_optimizer/bit_utils.h"
 #include "sql/nested_join.h"
 #include "sql/query_options.h"
 #include "sql/sql_class.h"
 #include "sql/sql_cmd.h"
+#include "sql/sql_const.h"
+#include "sql/sql_executor.h"
 #include "sql/sql_lex.h"
+#include "sql/sql_list.h"
+#include "sql/sql_opt_exec_shared.h"
 #include "sql/sql_optimizer.h"
+#include "sql/sql_select.h"
+#include "sql/table.h"
+#include "sql/visible_fields.h"
+#include "template_utils.h"
 #include "unittest/gunit/fake_table.h"
 #include "unittest/gunit/handler-t.h"
+#include "unittest/gunit/mock_field_long.h"
 #include "unittest/gunit/parsertest.h"
 #include "unittest/gunit/test_utils.h"
 
-static Query_block *ParseAndResolve(
+inline Query_block *ParseAndResolve(
     const char *query, bool nullable, const Server_initializer &initializer,
     std::unordered_map<string, Fake_TABLE *> *fake_tables);
-static void ResolveQueryBlock(
+inline void ResolveQueryBlock(
     THD *thd, Query_block *query_block, bool nullable,
     std::unordered_map<string, Fake_TABLE *> *fake_tables);
-static void ResolveFieldToFakeTable(
+inline void ResolveFieldToFakeTable(
     Item *item, const std::unordered_map<string, Fake_TABLE *> &fake_tables);
-static void ResolveAllFieldsToFakeTable(
-    const mem_root_deque<TABLE_LIST *> &join_list,
+inline void ResolveAllFieldsToFakeTable(
+    const mem_root_deque<Table_ref *> &join_list,
     const std::unordered_map<string, Fake_TABLE *> &fake_tables);
-static void SetJoinConditions(const mem_root_deque<TABLE_LIST *> &join_list);
+inline void SetJoinConditions(const mem_root_deque<Table_ref *> &join_list);
 
-static void DestroyFakeTables(
+inline void DestroyFakeTables(
     const std::unordered_map<string, Fake_TABLE *> &fake_tables) {
   for (const auto &[name, table] : fake_tables) {
     destroy(table);
@@ -78,11 +103,7 @@ struct Table {
 }  // namespace optimizer_test
 
 // Base class for the optimizer unit tests (both old and new optimizer).
-// Its a type parameter, so that it can be used as a base class for both
-// non-parameterized tests (::testing::Test) and parameterized tests
-// (::testing::TestWithParam).
-template <typename Parent>
-class OptimizerTestBase : public Parent {
+class OptimizerTestBase : public ::testing::Test {
  public:
   void SetUp() override {
     m_initializer.SetUp();
@@ -112,7 +133,12 @@ class OptimizerTestBase : public Parent {
   std::unordered_map<std::string, Fake_TABLE *> m_fake_tables;
 };
 
-static Query_block *ParseAndResolve(
+// Template for parameterized optimizer tests.
+template <class T>
+class OptimizerTestWithParam : public OptimizerTestBase,
+                               public ::testing::WithParamInterface<T> {};
+
+inline Query_block *ParseAndResolve(
     const char *query, bool nullable, const Server_initializer &initializer,
     std::unordered_map<string, Fake_TABLE *> *fake_tables) {
   Query_block *query_block = ::parse(&initializer, query, 0);
@@ -120,7 +146,7 @@ static Query_block *ParseAndResolve(
   return query_block;
 }
 
-static void ResolveQueryBlock(
+inline void ResolveQueryBlock(
     THD *thd, Query_block *query_block, bool nullable,
     std::unordered_map<string, Fake_TABLE *> *fake_tables) {
   Query_block *const saved_current_query_block =
@@ -134,7 +160,7 @@ static void ResolveQueryBlock(
 
   // Create fake TABLE objects for all tables mentioned in the query.
   int num_tables = 0;
-  for (TABLE_LIST *tl = query_block->get_table_list(); tl != nullptr;
+  for (Table_ref *tl = query_block->get_table_list(); tl != nullptr;
        tl = tl->next_global) {
     // If we already have created a fake table with this name (for example to
     // get columns of specific types), use that one. Otherwise, create a new one
@@ -159,7 +185,7 @@ static void ResolveQueryBlock(
   }
 
   // Find all Item_field objects, and resolve them to fields in the fake tables.
-  ResolveAllFieldsToFakeTable(query_block->top_join_list, *fake_tables);
+  ResolveAllFieldsToFakeTable(query_block->m_table_nest, *fake_tables);
 
   // Also in any conditions and subqueries within the WHERE condition.
   if (query_block->where_cond() != nullptr) {
@@ -172,7 +198,7 @@ static void ResolveQueryBlock(
         ResolveFieldToFakeTable(item_subselect->left_expr, *fake_tables);
         Query_block *child_query_block =
             item_subselect->unit->first_query_block();
-        ResolveAllFieldsToFakeTable(child_query_block->top_join_list,
+        ResolveAllFieldsToFakeTable(child_query_block->m_table_nest,
                                     *fake_tables);
         if (child_query_block->where_cond() != nullptr) {
           ResolveFieldToFakeTable(child_query_block->where_cond(),
@@ -218,7 +244,7 @@ static void ResolveQueryBlock(
   switch (thd->lex->sql_command) {
     case SQLCOM_DELETE:
     case SQLCOM_DELETE_MULTI:
-      for (TABLE_LIST *tl = query_block->leaf_tables; tl != nullptr;
+      for (Table_ref *tl = query_block->leaf_tables; tl != nullptr;
            tl = tl->next_leaf) {
         if (tl->updating) {
           tl->set_deleted();
@@ -231,7 +257,7 @@ static void ResolveQueryBlock(
       for (Item *item : query_block->visible_fields()) {
         update_tables |= item->used_tables();
       }
-      for (TABLE_LIST *tl = query_block->leaf_tables; tl != nullptr;
+      for (Table_ref *tl = query_block->leaf_tables; tl != nullptr;
            tl = tl->next_leaf) {
         if (Overlaps(tl->map(), update_tables)) {
           tl->set_updated();
@@ -248,7 +274,7 @@ static void ResolveQueryBlock(
   query_block->join->having_cond = query_block->having_cond();
   query_block->join->fields = &query_block->fields;
   query_block->join->alloc_func_list();
-  SetJoinConditions(query_block->top_join_list);
+  SetJoinConditions(query_block->m_table_nest);
   count_field_types(query_block, &query_block->join->tmp_table_param,
                     query_block->fields, /*reset_with_sum_func=*/false,
                     /*save_sum_fields=*/false);
@@ -266,7 +292,7 @@ static void ResolveQueryBlock(
   thd->lex->set_current_query_block(saved_current_query_block);
 }
 
-static void ResolveFieldToFakeTable(
+inline void ResolveFieldToFakeTable(
     Item *item_arg,
     const std::unordered_map<string, Fake_TABLE *> &fake_tables) {
   WalkItem(item_arg, enum_walk::POSTFIX, [&](Item *item) {
@@ -296,30 +322,29 @@ static void ResolveFieldToFakeTable(
   });
 }
 
-static void ResolveAllFieldsToFakeTable(
-    const mem_root_deque<TABLE_LIST *> &join_list,
+inline void ResolveAllFieldsToFakeTable(
+    const mem_root_deque<Table_ref *> &join_list,
     const std::unordered_map<string, Fake_TABLE *> &fake_tables) {
-  for (TABLE_LIST *tl : join_list) {
+  for (Table_ref *tl : join_list) {
     if (tl->join_cond() != nullptr) {
       ResolveFieldToFakeTable(tl->join_cond(), fake_tables);
     }
     if (tl->nested_join != nullptr) {
-      ResolveAllFieldsToFakeTable(tl->nested_join->join_list, fake_tables);
+      ResolveAllFieldsToFakeTable(tl->nested_join->m_tables, fake_tables);
     }
   }
 }
 
-static void SetJoinConditions(const mem_root_deque<TABLE_LIST *> &join_list) {
-  for (TABLE_LIST *tl : join_list) {
+inline void SetJoinConditions(const mem_root_deque<Table_ref *> &join_list) {
+  for (Table_ref *tl : join_list) {
     tl->set_join_cond_optim(tl->join_cond());
     if (tl->nested_join != nullptr) {
-      SetJoinConditions(tl->nested_join->join_list);
+      SetJoinConditions(tl->nested_join->m_tables);
     }
   }
 }
 
-template <typename T>
-handlerton *OptimizerTestBase<T>::EnableSecondaryEngine(
+inline handlerton *OptimizerTestBase::EnableSecondaryEngine(
     bool aggregation_is_unordered) {
   auto hton = new (m_thd->mem_root) Fake_handlerton;
   hton->flags = HTON_SUPPORTS_SECONDARY_ENGINE;
@@ -345,8 +370,7 @@ handlerton *OptimizerTestBase<T>::EnableSecondaryEngine(
   return hton;
 }
 
-template <typename T>
-void OptimizerTestBase<T>::SetUpJoinTabs(
+inline void OptimizerTestBase::SetUpJoinTabs(
     Query_block *query_block, int num_tables,
     std::vector<optimizer_test::Table> tables) {
   // This is done during optimization. We prepare JOIN_TABs to be used
@@ -367,14 +391,13 @@ void OptimizerTestBase<T>::SetUpJoinTabs(
   }
 }
 
-template <typename T>
-void OptimizerTestBase<T>::SetUpQEPTabs(
+inline void OptimizerTestBase::SetUpQEPTabs(
     Query_block *query_block, int num_tables,
     std::vector<optimizer_test::Table> tables) {
   // Usually set up by the optimizer at the end of optimization to be used by
   // the executor.
   JOIN *join = query_block->join;
-  join->qep_tab = m_thd->mem_root->template ArrayAlloc<QEP_TAB>(join->tables);
+  join->qep_tab = m_thd->mem_root->ArrayAlloc<QEP_TAB>(join->tables);
   std::string tbl_name;
   for (int i = 0; i < num_tables; i++) {
     QEP_TAB *qep_tab = &join->qep_tab[i];
@@ -389,3 +412,5 @@ void OptimizerTestBase<T>::SetUpQEPTabs(
     qep_tab->set_type(JT_ALL);
   }
 }
+
+#endif  // UNITTEST_GUNIT_OPTIMIZER_TEST_H

@@ -134,9 +134,9 @@ static store_key *get_store_key(THD *thd, Item *val, table_map used_tables,
                                 uint maybe_null);
 
 using Global_tables_iterator =
-    IntrusiveListIterator<TABLE_LIST, &TABLE_LIST::next_global>;
+    IntrusiveListIterator<Table_ref, &Table_ref::next_global>;
 
-/// A list interface over the TABLE_LIST::next_global pointer.
+/// A list interface over the Table_ref::next_global pointer.
 using Global_tables_list = IteratorContainer<Global_tables_iterator>;
 
 /**
@@ -244,7 +244,7 @@ void reset_statement_timer(THD *thd) {
  */
 static bool reads_not_secondary_columns(const LEX *lex) {
   // Check all read base tables.
-  const TABLE_LIST *tl = lex->query_tables;
+  const Table_ref *tl = lex->query_tables;
   // For INSERT INTO SELECT statements, the table to insert into does not have
   // to have a secondary engine. This table is always first in the list.
   if (lex->sql_command == SQLCOM_INSERT_SELECT && tl != nullptr)
@@ -372,16 +372,7 @@ bool Sql_cmd_dml::prepare(THD *thd) {
 #endif
 
   lex->using_hypergraph_optimizer =
-      thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER) &&
-      (lex->sql_command == SQLCOM_SELECT || lex->sql_command == SQLCOM_DO ||
-       lex->sql_command == SQLCOM_CALL ||
-       lex->sql_command == SQLCOM_INSERT_SELECT ||
-       lex->sql_command == SQLCOM_REPLACE_SELECT ||
-       lex->sql_command == SQLCOM_INSERT ||
-       lex->sql_command == SQLCOM_DELETE_MULTI ||
-       lex->sql_command == SQLCOM_DELETE ||
-       lex->sql_command == SQLCOM_UPDATE_MULTI ||
-       lex->sql_command == SQLCOM_UPDATE);
+      thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER);
 
   if (lex->set_var_list.elements && resolve_var_assignments(thd, lex))
     goto err; /* purecov: inspected */
@@ -829,7 +820,7 @@ void Sql_cmd_dml::set_query_result(Query_result *result_arg) {
   is always returned in an embedded build.
 */
 static bool check_locking_clause_access(THD *thd, Global_tables_list tables) {
-  for (TABLE_LIST *table_ref : tables)
+  for (Table_ref *table_ref : tables)
     if (table_ref->lock_descriptor().type == TL_WRITE) {  // i.e. FOR UPDATE
       bool access_is_granted = false;
       /*
@@ -891,7 +882,7 @@ bool Sql_cmd_select::precheck(THD *thd) {
     3) Performs access check for the locking clause, if present.
 
   */
-  TABLE_LIST *tables = lex->query_tables;
+  Table_ref *tables = lex->query_tables;
 
   if (check_file_acl && check_global_access(thd, FILE_ACL)) return true;
 
@@ -933,8 +924,8 @@ bool Sql_cmd_select::check_privileges(THD *thd) {
 bool Sql_cmd_dml::check_all_table_privileges(THD *thd) {
   // Check for all possible DML privileges
 
-  const TABLE_LIST *const first_not_own_table = thd->lex->first_not_own_table();
-  for (TABLE_LIST *tr = lex->query_tables; tr != first_not_own_table;
+  const Table_ref *const first_not_own_table = thd->lex->first_not_own_table();
+  for (Table_ref *tr = lex->query_tables; tr != first_not_own_table;
        tr = tr->next_global) {
     if (tr->is_internal())  // No privilege check required for internal tables
       continue;
@@ -958,9 +949,9 @@ bool Sql_cmd_dml::check_all_table_privileges(THD *thd) {
         return true;
     } else {
       // This is a view, set handler for transformation of errors
-      Internal_error_handler_holder<View_error_handler, TABLE_LIST>
-          view_handler(thd, true, tr);
-      for (TABLE_LIST *t = tr; t->referencing_view; t = t->referencing_view) {
+      Internal_error_handler_holder<View_error_handler, Table_ref> view_handler(
+          thd, true, tr);
+      for (Table_ref *t = tr; t->referencing_view; t = t->referencing_view) {
         if (check_single_table_access(thd, want_privilege, t, false))
           return true;
       }
@@ -977,10 +968,10 @@ const MYSQL_LEX_CSTRING *Sql_cmd_dml::get_eligible_secondary_engine() const {
   // have a secondary tables, and they are all in the same secondary
   // storage engine.
   const LEX_CSTRING *secondary_engine = nullptr;
-  const TABLE_LIST *tl = lex->query_tables;
+  const Table_ref *tl = lex->query_tables;
 
   if (lex->sql_command == SQLCOM_INSERT_SELECT && tl != nullptr) {
-    // If table from TABLE_LIST is either view or derived table then
+    // If table from Table_ref is either view or derived table then
     // do not perform INSERT AS SELECT.
     if (tl->is_view_or_derived()) return nullptr;
     // For INSERT INTO SELECT statements, the table to insert into does not have
@@ -1113,7 +1104,7 @@ static bool sj_table_is_included(JOIN *join, JOIN_TAB *join_tab) {
   /* Check if this table is functionally dependent on the tables that
      are within the same outer join nest
   */
-  TABLE_LIST *embedding = join_tab->table_ref->embedding;
+  Table_ref *embedding = join_tab->table_ref->embedding;
   if (join_tab->type() == JT_EQ_REF) {
     table_map depends_on = 0;
     uint idx;
@@ -1704,7 +1695,7 @@ void JOIN::destroy() {
     }
   } else if (thd->lex->using_hypergraph_optimizer) {
     // Same, for hypergraph queries.
-    for (TABLE_LIST *tl = query_block->leaf_tables; tl; tl = tl->next_leaf) {
+    for (Table_ref *tl = query_block->leaf_tables; tl; tl = tl->next_leaf) {
       TABLE *table = tl->table;
       if (table != nullptr) {
         // For prepared statements, a derived table's temp table handler
@@ -1855,7 +1846,9 @@ bool Query_block::check_column_privileges(THD *thd) {
                    pointer_cast<uchar *>(thd)))
       return true;
   }
-  if (join_list && check_privileges_for_join(thd, join_list)) return true;
+  if (m_current_table_nest &&
+      check_privileges_for_join(thd, m_current_table_nest))
+    return true;
   if (where_cond() != nullptr &&
       where_cond()->walk(&Item::check_column_privileges, enum_walk::PREFIX,
                          pointer_cast<uchar *>(thd)))
@@ -1904,10 +1897,10 @@ bool Query_block::check_column_privileges(THD *thd) {
   @returns false if success, true if error (insufficient privileges)
 */
 
-bool check_privileges_for_join(THD *thd, mem_root_deque<TABLE_LIST *> *tables) {
+bool check_privileges_for_join(THD *thd, mem_root_deque<Table_ref *> *tables) {
   thd->want_privilege = SELECT_ACL;
 
-  for (TABLE_LIST *table_ref : *tables) {
+  for (Table_ref *table_ref : *tables) {
     if (table_ref->join_cond() != nullptr &&
         table_ref->join_cond()->walk(&Item::check_column_privileges,
                                      enum_walk::PREFIX,
@@ -1915,7 +1908,7 @@ bool check_privileges_for_join(THD *thd, mem_root_deque<TABLE_LIST *> *tables) {
       return true;
 
     if (table_ref->nested_join != nullptr &&
-        check_privileges_for_join(thd, &table_ref->nested_join->join_list))
+        check_privileges_for_join(thd, &table_ref->nested_join->m_tables))
       return true;
   }
 
@@ -2089,7 +2082,7 @@ void calc_length_and_keyparts(Key_use *keyuse, JOIN_TAB *tab, const uint key,
       on 'a'),
       - it references only tables earlier in the plan.
       Moreover, the execution layer is limited to maximum one ref_or_null
-      keypart, as TABLE_REF::null_ref_key is only one byte.
+      keypart, as Index_lookup::null_ref_key is only one byte.
     */
     if (!(~used_tables & keyuse->used_tables) && keyparts == keyuse->keypart &&
         !(found_part_ref_or_null & keyuse->optimize)) {
@@ -2119,7 +2112,7 @@ void calc_length_and_keyparts(Key_use *keyuse, JOIN_TAB *tab, const uint key,
 }
 
 bool init_ref(THD *thd, unsigned keyparts, unsigned length, unsigned keyno,
-              TABLE_REF *ref) {
+              Index_lookup *ref) {
   ref->key_parts = keyparts;
   ref->key_length = length;
   ref->key = keyno;
@@ -2142,7 +2135,7 @@ bool init_ref_part(THD *thd, unsigned part_no, Item *val, bool *cond_guard,
                    bool null_rejecting, table_map const_tables,
                    table_map used_tables, bool nullable,
                    const KEY_PART_INFO *key_part_info, uchar *key_buff,
-                   TABLE_REF *ref) {
+                   Index_lookup *ref) {
   ref->items[part_no] = val;  // Save for cond removal
   ref->cond_guards[part_no] = cond_guard;
   // Set ref as "null rejecting" only if either side is really nullable:
@@ -2210,7 +2203,7 @@ bool init_ref_part(THD *thd, unsigned part_no, Item *val, bool *cond_guard,
   used for index look up via one of the access methods {JT_FT,
   JT_CONST, JT_REF_OR_NULL, JT_REF, JT_EQ_REF} for the plan operator
   'j'. Generally the function sets up the structure j->ref (of type
-  TABLE_REF), and the access method j->type.
+  Index_lookup), and the access method j->type.
 
   @note We cannot setup fields used for ref access before we have sorted
         the items within multiple equalities according to the final order of
@@ -2270,7 +2263,7 @@ bool create_ref_for_key(JOIN *join, JOIN_TAB *j, Key_use *org_keyuse,
 
     return false;
   }
-  // Set up TABLE_REF based on chosen Key_use-s.
+  // Set up Index_lookup based on chosen Key_use-s.
   for (uint part_no = 0; part_no < keyparts; part_no++) {
     Key_use *keyuse = chosen_keyuses[part_no];
     bool nullable = keyinfo->key_part[part_no].null_bit;
@@ -2772,7 +2765,7 @@ void QEP_TAB::push_index_cond(const JOIN_TAB *join_tab, uint keyno,
        key'.
        @see Item_in_optimizer::val_int()
        @see subselect_iterator_engine::exec()
-       @see TABLE_REF::cond_guards
+       @see Index_lookup::cond_guards
        @see setup_join_buffering
     5. The join type is not CONST or SYSTEM. The reason for excluding
        these join types, is that these are optimized to only read the
@@ -2888,7 +2881,8 @@ void QEP_TAB::push_index_cond(const JOIN_TAB *join_tab, uint keyno,
 
   @details
     Setup execution structures for one semi-join materialization nest:
-    - Create the materialization temporary table, including TABLE_LIST object.
+    - Create the materialization temporary table, including Table_ref
+  object.
     - Create a list of Item_field objects per column in the temporary table.
     - Create a keyuse array describing index lookups into the table
       (for MaterializeLookup)
@@ -2900,7 +2894,7 @@ bool JOIN::setup_semijoin_materialized_table(JOIN_TAB *tab, uint tableno,
                                              POSITION *inner_pos,
                                              POSITION *sjm_pos) {
   DBUG_TRACE;
-  TABLE_LIST *const emb_sj_nest = inner_pos->table->emb_sj_nest;
+  Table_ref *const emb_sj_nest = inner_pos->table->emb_sj_nest;
   Semijoin_mat_optimize *const sjm_opt = &emb_sj_nest->nested_join->sjm;
   Semijoin_mat_exec *const sjm_exec = tab->sj_mat_exec();
   const uint field_count = emb_sj_nest->nested_join->sj_inner_exprs.size();
@@ -2949,7 +2943,7 @@ bool JOIN::setup_semijoin_materialized_table(JOIN_TAB *tab, uint tableno,
           !table->hash_field) ||
          inner_pos->sj_strategy == SJ_OPT_MATERIALIZE_SCAN);
 
-  auto tl = new (thd->mem_root) TABLE_LIST("", name, TL_IGNORE);
+  auto tl = new (thd->mem_root) Table_ref("", name, TL_IGNORE);
   if (tl == nullptr) return true; /* purecov: inspected */
   tl->table = table;
 
@@ -3105,7 +3099,7 @@ bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
 
     JOIN_TAB *const tab = join->best_ref[i];
     TABLE *const table = qep_tab->table();
-    TABLE_LIST *const table_ref = qep_tab->table_ref;
+    Table_ref *const table_ref = qep_tab->table_ref;
     /*
      Need to tell handlers that to play it safe, it should fetch all
      columns of the primary key of the tables: this is because MySQL may
@@ -3233,9 +3227,16 @@ bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
         For performance reasons, we do not recalculate the filter for
         non-EXPLAIN queries; thus, EXPLAIN CONNECTION may show 100%
         for a query.
+
+        Also calculate the proper value if max_join_size is in effect and there
+        is a limit, since it's needed in order to calculate how many rows to
+        read from the base table if rows are filtered before the limit is
+        applied.
       */
       tab->position()->filter_effect =
-          join->thd->lex->is_explain()
+          (join->thd->lex->is_explain() ||
+           (join->m_select_limit != HA_POS_ERROR &&
+            !Overlaps(join->thd->variables.option_bits, OPTION_BIG_SELECTS)))
               ? calculate_condition_filter(
                     tab,
                     (tab->ref().key != -1) ? tab->position()->key : nullptr,
@@ -3288,7 +3289,7 @@ void JOIN_TAB::set_table(TABLE *t) {
   m_qs->set_table(t);
 }
 
-void JOIN_TAB::init_join_cond_ref(TABLE_LIST *tl) {
+void JOIN_TAB::init_join_cond_ref(Table_ref *tl) {
   m_join_cond_ref = tl->join_cond_optim_ref();
 }
 
@@ -3355,7 +3356,7 @@ void QEP_shared_owner::qs_cleanup() {
     table()->file->ha_index_or_rnd_end();
     free_io_cache(table());
     filesort_free_buffers(table(), true);
-    TABLE_LIST *const table_ref = table()->pos_in_table_list;
+    Table_ref *const table_ref = table()->pos_in_table_list;
     if (table_ref) {
       table_ref->derived_keys_ready = false;
       table_ref->derived_key_list.clear();
@@ -3527,7 +3528,7 @@ void JOIN::cleanup() {
       cleanup_table(table);
     }
   } else if (thd->lex->using_hypergraph_optimizer) {
-    for (TABLE_LIST *tl = query_block->leaf_tables; tl; tl = tl->next_leaf) {
+    for (Table_ref *tl = query_block->leaf_tables; tl; tl = tl->next_leaf) {
       cleanup_table(tl->table);
     }
     for (JOIN::TemporaryTableToCleanup cleanup : temp_tables) {
@@ -3535,6 +3536,19 @@ void JOIN::cleanup() {
     }
   }
 
+  if (rollup_state != RollupState::NONE) {
+    for (size_t i = 0; i < fields->size(); i++) {
+      Item *inner = unwrap_rollup_group(query_block->base_ref_items[i]);
+      if (inner->type() == Item::SUM_FUNC_ITEM) {
+        Item_sum *sum = down_cast<Item_sum *>(inner);
+        if (sum->is_rollup_sum_wrapper()) {
+          // unwrap sum switcher to restore original Item_sum
+          inner = down_cast<Item_rollup_sum_switcher *>(sum)->unwrap_sum();
+        }
+      }
+      query_block->base_ref_items[i] = inner;
+    }
+  }
   /* Restore ref array to original state */
   set_ref_item_slice(REF_SLICE_SAVED_BASE);
 }

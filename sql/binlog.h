@@ -167,6 +167,8 @@ class MYSQL_BIN_LOG : public TC_LOG {
   PSI_mutex_key m_key_LOCK_flush_queue;
   /** The PFS instrumentation key for @ LOCK_sync_queue. */
   PSI_mutex_key m_key_LOCK_sync_queue;
+  /** The PFS instrumentation key for @ LOCK_wait_for_group_turn. */
+  PSI_mutex_key m_key_LOCK_wait_for_group_turn;
   /** The PFS instrumentation key for @ COND_done. */
   PSI_mutex_key m_key_COND_done;
   /** The PFS instrumentation key for @ COND_flush_queue. */
@@ -181,6 +183,8 @@ class MYSQL_BIN_LOG : public TC_LOG {
   PSI_cond_key m_key_update_cond;
   /** The instrumentation key to use for @ prep_xids_cond. */
   PSI_cond_key m_key_prep_xids_cond;
+  /** The PFS instrumentation key for @ COND_wait_for_group_turn. */
+  PSI_cond_key m_key_COND_wait_for_group_turn;
   /** The instrumentation key to use for opening the log file. */
   PSI_file_key m_key_file_log;
   /** The instrumentation key to use for opening the log index file. */
@@ -266,6 +270,17 @@ class MYSQL_BIN_LOG : public TC_LOG {
   int new_file_without_locking(
       Format_description_log_event *extra_description_event);
 
+  /**
+    Checks whether binlog caches are disabled (binlog does not cache data) or
+    empty in case binloggging is enabled in the current call to this function.
+    This function may be safely called in case binlogging is disabled.
+    @retval true binlog local caches are empty or disabled and binlogging is
+    enabled
+    @retval false binlog local caches are enabled and contain data or binlogging
+    is disabled
+  */
+  bool is_current_stmt_binlog_enabled_and_caches_empty(const THD *thd) const;
+
  private:
   int new_file_impl(bool need_lock,
                     Format_description_log_event *extra_description_event);
@@ -336,10 +351,12 @@ class MYSQL_BIN_LOG : public TC_LOG {
       PSI_mutex_key key_LOCK_flush_queue, PSI_mutex_key key_LOCK_log,
       PSI_mutex_key key_LOCK_binlog_end_pos, PSI_mutex_key key_LOCK_sync,
       PSI_mutex_key key_LOCK_sync_queue, PSI_mutex_key key_LOCK_xids,
-      PSI_cond_key key_COND_done, PSI_cond_key key_COND_flush_queue,
-      PSI_cond_key key_update_cond, PSI_cond_key key_prep_xids_cond,
-      PSI_file_key key_file_log, PSI_file_key key_file_log_index,
-      PSI_file_key key_file_log_cache, PSI_file_key key_file_log_index_cache) {
+      PSI_mutex_key key_LOCK_wait_for_group_turn, PSI_cond_key key_COND_done,
+      PSI_cond_key key_COND_flush_queue, PSI_cond_key key_update_cond,
+      PSI_cond_key key_prep_xids_cond,
+      PSI_cond_key key_COND_wait_for_group_turn, PSI_file_key key_file_log,
+      PSI_file_key key_file_log_index, PSI_file_key key_file_log_cache,
+      PSI_file_key key_file_log_index_cache) {
     m_key_COND_done = key_COND_done;
     m_key_COND_flush_queue = key_COND_flush_queue;
 
@@ -360,6 +377,9 @@ class MYSQL_BIN_LOG : public TC_LOG {
     m_key_file_log_index = key_file_log_index;
     m_key_file_log_cache = key_file_log_cache;
     m_key_file_log_index_cache = key_file_log_index_cache;
+
+    m_key_LOCK_wait_for_group_turn = key_LOCK_wait_for_group_turn;
+    m_key_COND_wait_for_group_turn = key_COND_wait_for_group_turn;
   }
 
  public:
