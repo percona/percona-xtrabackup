@@ -29,6 +29,7 @@ keyring-file-data=${keyring_file}
 "
 fi
 
+instance_local_manifest=""
 keyring_component_cnf=${TEST_VAR_ROOT}/component_keyring_file.cnf
 
 if [[ "${KEYRING_TYPE}" = "plugin" ]]; then
@@ -44,6 +45,7 @@ function configure_keyring_file_component()
   else
     binary="mysqld"
   fi
+  instance_local_manifest="${TEST_VAR_ROOT}/${binary}.my"
   cat <<EOF > "${MYSQLD_DATADIR}/${binary}.my"
 {
     "components": "file://component_keyring_file"
@@ -55,6 +57,7 @@ EOF
   "read_only": false
 }
 EOF
+cp "${MYSQLD_DATADIR}/${binary}.my" ${instance_local_manifest}
 cp "${MYSQLD_DATADIR}/component_keyring_file.cnf" ${keyring_component_cnf}
 }
 

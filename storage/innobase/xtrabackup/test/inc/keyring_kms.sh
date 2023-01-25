@@ -9,6 +9,7 @@ if [ -z ${KEYRING_TYPE+x} ]; then
   KEYRING_TYPE="component"
 fi
 
+instance_local_manifest=""
 keyring_component_cnf=${TEST_VAR_ROOT}/component_keyring_kms.cnf
 keyring_args="--component-keyring-config=${keyring_component_cnf}"
 
@@ -27,6 +28,7 @@ function configure_keyring_file_component()
   else
     binary="mysqld"
   fi
+  instance_local_manifest="${TEST_VAR_ROOT}/${binary}.my"
   cat <<EOF > "${MYSQLD_DATADIR}/${binary}.my"
 {
     "components": "file://component_keyring_kms"
@@ -42,6 +44,7 @@ EOF
   "kms_key": "${KMS_KEY}"
 }
 EOF
+cp "${MYSQLD_DATADIR}/${binary}.my" ${instance_local_manifest}
 cp "${MYSQLD_DATADIR}/component_keyring_kms.cnf" ${keyring_component_cnf}
 }
 
