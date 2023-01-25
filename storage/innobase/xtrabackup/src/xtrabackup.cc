@@ -888,7 +888,8 @@ struct my_option xb_client_options[] = {
     {"compress", OPT_XTRA_COMPRESS,
      "Compress individual backup files using the specified compression "
      "algorithm. Supported algorithms are 'quicklz', 'lz4' and 'zstd'. The "
-     "default algorithm is 'quicklz'.",
+     "default algorithm is 'quicklz'. Please note: quicklz is deprecated. "
+     "Consider using ZSTD or LZ4.",
      (G_PTR *)&xtrabackup_compress_alg, (G_PTR *)&xtrabackup_compress_alg, 0,
      GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
@@ -3569,6 +3570,13 @@ static void xtrabackup_init_datasinks(void) {
       ds_redo = ds_data = ds;
     }
 
+    /* Deprecation of qpress warning */
+    if (xtrabackup_compress == XTRABACKUP_COMPRESS_QUICKLZ) {
+      xb::warn()
+          << "--compress using quicklz is deprecated and the ability to "
+             "take backups using this compression algorithm will be removed in "
+             "a future release. Please use ZSTD or LZ4 instead.";
+    }
     ds = ds_create(xtrabackup_target_dir, xtrabackup_compress_ds);
     xtrabackup_add_datasink(ds);
     ds_set_pipe(ds, ds_data);
