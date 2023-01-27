@@ -2273,7 +2273,7 @@ ENDIF()
 # It is referenced by some of the directories below, so we insert it here.
 ADD_SUBDIRECTORY(scripts)
 
-IF(NOT WITHOUT_SERVER)
+IF(NOT WITHOUT_SERVER AND NOT WITH_XTRABACKUP )
   ADD_SUBDIRECTORY(mysql-test)
   IF(WITH_INTERNAL)
     ADD_SUBDIRECTORY(internal)
