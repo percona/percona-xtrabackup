@@ -175,8 +175,9 @@ MACRO(GET_XTRABACKUP_VERSION)
     ENDIF()
   ELSEIF (EXISTS ${CMAKE_SOURCE_DIR}/Docs/INFO_SRC)
     EXECUTE_PROCESS(
-      COMMAND grep "^short: " Docs/INFO_SRC
-      COMMAND sed -e "s/short: //"
+      COMMAND grep "^commit: " Docs/INFO_SRC
+      COMMAND sed -e "s/commit: //"
+      COMMAND cut -c 1-8
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
       OUTPUT_VARIABLE XB_REVISION
       RESULT_VARIABLE RESULT
