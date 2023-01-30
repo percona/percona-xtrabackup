@@ -7,9 +7,7 @@ require_server_version_higher_than 5.7.10
 
 . inc/keyring_file.sh
 
-keyring_file=${TEST_VAR_ROOT}/keyring_file
-
-start_server --early-plugin-load=keyring_file.so --keyring-file-data=$keyring_file --server-id=10
+start_server --early-plugin-load=keyring_file.so --keyring-file-data=$keyring_file_plugin --server-id=10
 
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 
@@ -33,7 +31,7 @@ EOF
 innodb_wait_for_flush_all
 
 xtrabackup --backup --target-dir=$topdir/backup \
-	   --keyring-file-data=$keyring_file --server-id=10
+	   --keyring-file-data=$keyring_file_plugin --server-id=10
 
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 
@@ -45,7 +43,7 @@ EOF
 
 xtrabackup --backup --incremental-basedir=$topdir/backup \
 	   --target-dir=$topdir/inc1 \
-	   --keyring-file-data=$keyring_file --server-id=10
+	   --keyring-file-data=$keyring_file_plugin --server-id=10
 
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 
@@ -57,24 +55,24 @@ EOF
 
 xtrabackup --backup --incremental-basedir=$topdir/inc1 \
 	   --target-dir=$topdir/inc2 \
-	   --keyring-file-data=$keyring_file --server-id=10
+	   --keyring-file-data=$keyring_file_plugin --server-id=10
 
 ${XB_BIN} --prepare --apply-log-only --target-dir=$topdir/backup \
-	  --keyring-file-data=$keyring_file \
+	  --keyring-file-data=$keyring_file_plugin \
 	  --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
 ${XB_BIN} --prepare --apply-log-only --incremental-dir=$topdir/inc1 \
 	  --target-dir=$topdir/backup \
-	  --keyring-file-data=$keyring_file \
+	  --keyring-file-data=$keyring_file_plugin \
 	  --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
 ${XB_BIN} --prepare --apply-log-only --incremental-dir=$topdir/inc2 \
 	  --target-dir=$topdir/backup \
-	  --keyring-file-data=$keyring_file \
+	  --keyring-file-data=$keyring_file_plugin \
 	  --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
 ${XB_BIN} --prepare --export --target-dir=$topdir/backup \
-	  --keyring-file-data=$keyring_file \
+	  --keyring-file-data=$keyring_file_plugin \
 	  --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
@@ -85,7 +83,7 @@ EOF
 
 stop_server
 
-start_server --early-plugin-load=keyring_file.so --keyring-file-data=$keyring_file --server-id=20
+start_server --early-plugin-load=keyring_file.so --keyring-file-data=$keyring_file_plugin --server-id=20
 
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 

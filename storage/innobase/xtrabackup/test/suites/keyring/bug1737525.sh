@@ -114,7 +114,7 @@ xtrabackup --datadir=$mysql_datadir --prepare \
 vlog "Copying files to their original locations"
 xtrabackup --copy-back \
     --target-dir=$full_backup_dir \
-    --keyring-file-data=$keyring_file
+    --keyring-file-data=$keyring_file_plugin
 vlog "Data restored"
 
 start_server
