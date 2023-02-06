@@ -1,6 +1,6 @@
 . inc/xbcloud_common.sh
 is_xbcloud_credentials_set
-
+is_minio_server && skip_test "Storage Class is not supported on MinIO servers"
 write_credentials
 
 storage_class_folder=${now}-${uuid}-storage_class
