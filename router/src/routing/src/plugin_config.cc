@@ -53,6 +53,8 @@ using namespace std::string_view_literals;
 IMPORT_LOG_FUNCTIONS()
 
 using StringOption = mysql_harness::StringOption;
+using BoolOption = mysql_harness::BoolOption;
+using DoubleOption = mysql_harness::DoubleOption;
 
 template <class T>
 using IntOption = mysql_harness::IntOption<T>;
@@ -472,11 +474,25 @@ RoutingPluginConfig::RoutingPluginConfig(
                      StringOption{});
   GET_OPTION_CHECKED(dest_ssl_curves, section, "server_ssl_curves",
                      StringOption{});
-  auto unreachable_destination_refresh_interval_op =
-      IntOption<uint32_t>{1, 65535};
-  GET_OPTION_CHECKED(unreachable_destination_refresh_interval, section,
-                     "unreachable_destination_refresh_interval",
-                     unreachable_destination_refresh_interval_op);
+
+  if (get_option(section, "unreachable_destination_refresh_interval",
+                 StringOption{}) != "") {
+    log_warning(
+        "Option 'unreachable_destination_refresh_interval' is deprecated and "
+        "has no effect. Please configure "
+        "[destination_status].error_quarantine_interval instead.");
+  }
+
+  GET_OPTION_CHECKED(connection_sharing, section, "connection_sharing",
+                     BoolOption{});
+
+  static_assert(mysql_harness::str_in_collection(routing_supported_options,
+                                                 "connection_sharing_delay"));
+  connection_sharing_delay =
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::duration<double, std::chrono::seconds::period>(
+              get_option(section, "connection_sharing_delay",
+                         DoubleOption{0})));
 
   using namespace std::string_literals;
 
@@ -540,13 +556,11 @@ std::string RoutingPluginConfig::get_default(const std::string &option) const {
       {"net_buffer_length", std::to_string(routing::kDefaultNetBufferLength)},
       {"thread_stack_size",
        std::to_string(mysql_harness::kDefaultStackSizeInKiloBytes)},
-      {"unreachable_destination_refresh_interval",
-       std::to_string(
-           routing::kDefaultUnreachableDestinationRefreshInterval.count())},
       {"client_ssl_mode", ""},
       {"server_ssl_mode", "as_client"},
       {"server_ssl_verify", "disabled"},
-
+      {"connection_sharing", "0"},
+      {"connection_sharing_delay", "1"},
   };
 
   const auto it = defaults.find(option);

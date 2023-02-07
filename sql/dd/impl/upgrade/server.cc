@@ -171,9 +171,9 @@ dd::String_type Syntax_error_handler::reason = "";
 const uint Syntax_error_handler::MAX_SERVER_CHECK_FAILS = 50;
 
 bool Syntax_error_handler::handle_condition(
-    THD *, uint sql_errno, const char *, Sql_condition::enum_severity_level *,
-    const char *msg) {
-  if (sql_errno == ER_PARSE_ERROR) {
+    THD *, uint sql_errno, const char *,
+    Sql_condition::enum_severity_level *level, const char *msg) {
+  if (sql_errno == ER_PARSE_ERROR && *level == Sql_condition::SL_ERROR) {
     parse_error_count++;
     if (m_global_counter) (*m_global_counter)++;
     is_parse_error = true;
@@ -251,25 +251,62 @@ class MySQL_check {
     Schema_MDL_locker mdl_handler(thd);
     dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
     const dd::Schema *sch = nullptr;
-    std::vector<const dd::Table *> tables;
+    std::vector<String_type> tables;
     dd::Stringstream_type t_list;
 
     if (mdl_handler.ensure_locked(schema) ||
         thd->dd_client()->acquire(schema, &sch) ||
-        thd->dd_client()->fetch_schema_components(sch, &tables)) {
+        thd->dd_client()->fetch_schema_component_names<Abstract_table>(
+            sch, &tables)) {
       LogErr(ERROR_LEVEL, ER_DD_UPGRADE_FAILED_TO_FETCH_TABLES);
       return (true);
     }
 
+    char schema_name_buf[NAME_LEN + 1];
+    const char *converted_schema_name = sch->name().c_str();
+    if (lower_case_table_names == 2) {
+      my_stpcpy(schema_name_buf, converted_schema_name);
+      my_casedn_str(system_charset_info, schema_name_buf);
+      converted_schema_name = schema_name_buf;
+    }
+
     bool first = true;
-    std::for_each(tables.begin(), tables.end(), [&](const dd::Table *table) {
-      if (table->type() != dd::enum_table_type::BASE_TABLE ||
-          table->hidden() != dd::Abstract_table::HT_VISIBLE)
-        return;
-      if (!first) t_list << ", ";
-      first = false;
-      t_list << escape_str(sch->name()) << "." << escape_str(table->name());
-    });
+    for (const dd::String_type &table : tables) {
+      char table_name_buf[NAME_LEN + 1];
+      const char *converted_table_name = table.c_str();
+      if (lower_case_table_names == 2) {
+        my_stpcpy(table_name_buf, converted_table_name);
+        my_casedn_str(system_charset_info, table_name_buf);
+        converted_table_name = table_name_buf;
+      }
+
+      MDL_request table_request;
+      MDL_REQUEST_INIT(&table_request, MDL_key::TABLE, converted_schema_name,
+                       converted_table_name, MDL_SHARED, MDL_EXPLICIT);
+
+      if (thd->mdl_context.acquire_lock(&table_request,
+                                        thd->variables.lock_wait_timeout)) {
+        return true;
+      }
+      dd::cache::Dictionary_client::Auto_releaser table_releaser(
+          thd->dd_client());
+      const dd::Abstract_table *table_obj = nullptr;
+      if (thd->dd_client()->acquire(converted_schema_name, converted_table_name,
+                                    &table_obj))
+        return true;
+
+      if (table_obj->type() != dd::enum_table_type::BASE_TABLE ||
+          table_obj->hidden() != dd::Abstract_table::HT_VISIBLE) {
+        thd->mdl_context.release_lock(table_request.ticket);
+        continue;
+      }
+      if (!first)
+        t_list << ", ";
+      else
+        first = false;
+      t_list << escape_str(sch->name()) << "." << escape_str(table_obj->name());
+      thd->mdl_context.release_lock(table_request.ticket);
+    }
 
     tables_list = t_list.str();
     return false;

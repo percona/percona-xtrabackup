@@ -695,7 +695,7 @@ ER_READING_TABLE_FAILED
 ER_DES_FILE_WRONG_KEY
   eng "load_des_file:  Found wrong key_number: %c"
 
-ER_CANT_SET_PERSISTED
+OBSOLETE_ER_CANT_SET_PERSISTED
   eng "Failed to set persisted options."
 
 ER_JSON_PARSE_ERROR
@@ -4736,10 +4736,10 @@ ER_GRP_RPL_ADD_GTID_INFO_WITHOUT_REMOTE_GTID_FAILED
 ER_GRP_RPL_FETCH_VIEW_CHANGE_LOG_EVENT_FAILED
   eng "Failed to fetch View_change_log_event containing required info for certification"
 
-ER_GRP_RPL_CONTACT_WITH_SRV_FAILED
+OBSOLETE_ER_GRP_RPL_CONTACT_WITH_SRV_FAILED
   eng "Error when contacting the server to ensure the proper logging of a group change in the binlog"
 
-ER_GRP_RPL_SRV_WAIT_TIME_OUT
+OBSOLETE_ER_GRP_RPL_SRV_WAIT_TIME_OUT
   eng "Timeout when waiting for the server to execute local transactions in order assure the group change proper logging"
 
 ER_GRP_RPL_FETCH_LOG_EVENT_FAILED
@@ -4937,7 +4937,7 @@ ER_GRP_RPL_UNABLE_TO_ENSURE_EXECUTION_REC
 ER_GRP_RPL_WHILE_SENDING_MSG_REC
   eng "Error while sending message in the group replication incremental recovery process."
 
-ER_GRP_RPL_READ_UNABLE_FOR_SUPER_READ_ONLY
+OBSOLETE_ER_GRP_RPL_READ_UNABLE_FOR_SUPER_READ_ONLY
   eng "Unable to read the server value for the super_read_only variable."
 
 ER_GRP_RPL_READ_UNABLE_FOR_READ_ONLY_SUPER_READ_ONLY
@@ -6074,8 +6074,8 @@ ER_IB_MSG_179
 ER_IB_MSG_180
   eng "%s"
 
-ER_IB_MSG_181
-  eng "%s"
+ER_IB_LONG_AHI_DISABLE_WAIT
+  eng "Waited for %u secs for hash index ref_count (%zu) to drop to 0. index: \"%s\" table: \"%s\""
 
 ER_IB_MSG_182
   eng "%s"
@@ -10269,10 +10269,10 @@ ER_SERVER_BINLOG_UNSAFE_SYSTEM_FUNCTION
 ER_SERVER_UPGRADE_HELP_TABLE_STATUS
   eng "Upgrade of help tables %s."
 
-ER_GRP_RPL_SRV_GTID_WAIT_ERROR
+OBSOLETE_ER_GRP_RPL_SRV_GTID_WAIT_ERROR
   eng "Error when waiting for the server to execute local transactions in order assure the group change proper logging"
 
-ER_GRP_DELAYED_VCLE_LOGGING
+OBSOLETE_ER_GRP_DELAYED_VCLE_LOGGING
   eng "Unable to log the group change View log event in its exaction position in the log. This will not however affect the group replication recovery process or the overall plugin process."
 
 OBSOLETE_ER_CANNOT_GRANT_ROLES_TO_ANONYMOUS_USER
@@ -11886,16 +11886,16 @@ ER_CONDITIONAL_DEBUG
 ER_IB_MSG_PARSE_OLD_REDO_INDEX_VERSION
   eng "Recovery: Generating index information for INSTANT DDL Table in 8.0.29 format"
 
-ER_RES_GRP_FAILED_TO_SWITCH_RESOURCE_GROUP
+OBSOLETE_ER_RES_GRP_FAILED_TO_SWITCH_RESOURCE_GROUP
   eng "Failed to switch resource group. %s".
 
-ER_RES_GRP_SWITCH_FAILED_COULD_NOT_ACQUIRE_GLOBAL_LOCK
+OBSOLETE_ER_RES_GRP_SWITCH_FAILED_COULD_NOT_ACQUIRE_GLOBAL_LOCK
   eng "Failed to switch resource group. Could not acquire resource groups global lock."
 
-ER_RES_GRP_SWITCH_FAILED_COULD_NOT_ACQUIRE_LOCK
+OBSOLETE_ER_RES_GRP_SWITCH_FAILED_COULD_NOT_ACQUIRE_LOCK
   eng "Failed to switch resource group. Could not acquire lock on resource group %s."
 
-ER_RES_GRP_SWITCH_FAILED_UNABLE_TO_APPLY_RES_GRP
+OBSOLETE_ER_RES_GRP_SWITCH_FAILED_UNABLE_TO_APPLY_RES_GRP
   eng "Failed to switch resource group. Unable to apply resource group controller %s."
 
 ER_IB_MSG_CLEAR_INSTANT_DROP_COLUMN_METADATA
@@ -11945,6 +11945,132 @@ ER_THREAD_POOL_QUERY_THREADS_PER_GROUP_INVALID
 
 ER_THREAD_POOL_QUERY_THRS_PER_GRP_EXCEEDS_TXN_THR_LIMIT
   eng "Query threads count(%u) exceeds transaction threads limit(%u) per group. Please use query threads count per group smaller or equal to max transaction threads limit per group"
+
+ER_IB_MSG_INVALID_PAGE_TYPE
+  eng "Found page type mismatch. Expected %u, found %u, in page: space_id=%lu page_no= %lu"
+
+ER_IB_PARALLEL_READER_WORKER_INFO
+  eng "preader: space_id=%zu, table=%s, index=%s, scan_ctx=%zu, ctx=%zu, thread_id=%zu, n_threads=%zu"
+
+ER_IB_BULK_LOAD_SUBTREE_INFO
+  eng "bulkload: space_id=%zu, table=%s, index=%s, height=%zu, n_extents=%zu, n_pages=%zu"
+
+ER_IB_BULK_FLUSHER_INFO
+  eng "bulkflusher: sleep_count=%zu, sleep_duration=%zu milliseconds, total_sleep=%zu milliseconds, pages_flushed=%zu"
+
+ER_IB_BUFFER_POOL_OVERUSE
+  eng "%s: Over 67 percent of the buffer pool (curr_size=%zu MB) is occupied by lock heaps or the adaptive hash index or BUF_BLOCK_MEMORY pages. Check that your transactions do not set too many row locks. Maybe you should make the buffer pool bigger?. Starting the InnoDB Monitor to print diagnostics."
+
+ER_IB_BUFFER_POOL_FULL
+  eng "%s: Over 95 percent of the buffer pool (curr_size=%zu MB) is occupied by lock heaps or the adaptive hash index or BUF_BLOCK_MEMORY pages. Check that your transactions do not set too many row locks. Maybe you should make the buffer pool bigger?. We intentionally generate a seg fault to print a stack trace on Linux!";
+
+ER_IB_DUPLICATE_KEY
+  eng "%s: table=%s, index=%s, n_uniq=%zu, n_fields=%zu, lhs=(%s), rhs=(%s)"
+
+ER_REPLICATION_INCOMPATIBLE_TABLE_WITH_GIPK
+  eng "Failed to apply row event with %d columns, originating from a server of version %s on table '%-.192s.%-.192s', which has %d columns, one of which is a generated implicit primary key. Replication is unsupported when the source server is older than 8.0.30, the replica table has a generated implicit primary key, and there is a difference in column count, not counting the replica's generated implicit primary key. Align the table schemas on source and replica, and restart replication."
+
+ER_BULK_EXECUTOR_INFO
+  eng "Bulk executor: %s"
+
+ER_BULK_LOADER_INFO
+  eng "Bulk loader: %s"
+
+ER_BULK_LOADER_FILE_CONTAINS_LESS_LINES_THAN_IGNORE_CLAUSE_LOG
+  eng "The first file being loaded contained less lines than the ignore clause"
+
+ER_BULK_READER_INFO
+  eng "Bulk reader: %s"
+
+ER_BULK_READER_LIBCURL_INIT_FAILED_LOG
+  eng "Bulk reader failed to initialize libcurl"
+
+ER_BULK_READER_LIBCURL_ERROR_LOG
+  eng "Bulk reader got libcurl error: %s"
+
+ER_BULK_READER_SERVER_ERROR_LOG
+  eng "Bulk reader got error response from server: %ld"
+
+ER_BULK_READER_COMMUNICATION_ERROR_LOG
+  eng "Bulk reader got error in communication with source server, check the error log for additional details"
+
+ER_BULK_PARSER_MISSING_ENCLOSED_BY_LOG
+  eng "Missing ENCLOSED BY character at row %ld in file %s. Add OPTIONALLY to the ENCLOSED BY clause to allow this input."
+
+ER_BULK_PARSER_ROW_BUFFER_MAX_TOTAL_COLS_EXCEEDED_LOG
+  eng "The number of input columns that need to be buffered for parsing exceeded predefined buffer max size for file '%s'."
+
+ER_BULK_PARSER_COPY_BUFFER_SIZE_EXCEEDED_LOG
+  eng "The column data that needed to be copied due to escaped characters exceeded the size of the internal copy buffer for file '%s'."
+
+ER_BULK_PARSER_UNEXPECTED_END_OF_INPUT_LOG
+  eng "Unexpected end of input found at row %ld in file '%s'. Data for some columns is missing."
+
+ER_BULK_PARSER_UNEXPECTED_ROW_TERMINATOR_LOG
+  eng "Unexpected row terminator found at row %ld in file '%s'. Data for some columns is missing."
+
+ER_BULK_PARSER_UNEXPECTED_CHAR_AFTER_ENDING_ENCLOSED_BY_LOG
+  eng "Unexpected characters after ending ENCLOSED BY character found at row %ld in file '%s'."
+
+ER_BULK_PARSER_UNEXPECTED_CHAR_AFTER_NULL_ESCAPE_LOG
+  eng "Unexpected characters after NULL escape (\N) found at row %ld in file '%s'."
+
+ER_BULK_PARSER_UNEXPECTED_CHAR_AFTER_COLUMN_TERMINATOR_LOG
+  eng "Unexpected characters after column terminator found at row %ld in file '%s'."
+
+ER_BULK_PARSER_INCOMPLETE_ESCAPE_SEQUENCE_LOG
+  eng "Unexpected end of input found at row %ld in file '%s' resulting in incomplete escape sequence."
+
+ER_LOAD_BULK_DATA_WRONG_VALUE_FOR_FIELD_LOG
+  eng "Incorrect %-.32s value: '%-.128s' for column '%-.192s' at row %ld in file '%-.192s'"
+
+ER_LOAD_BULK_DATA_WARN_NULL_TO_NOTNULL_LOG
+  eng "NULL supplied to NOT NULL column '%s' at row %ld in file '%-.192s'"
+
+ER_IB_BULK_LOAD_THREAD_FAIL
+   eng "%s: LOAD BULK DATA thread failure (err=%lu), table=%s, index=%s"
+
+ER_IB_BULK_LOAD_MERGE_FAIL
+   eng "%s: Failed to merge sub-trees in LOAD BULK DATA, table=%s, index=%s, details=%s"
+
+ER_IB_LOAD_BULK_CONCURRENCY_REDUCED
+   eng "LOAD BULK DATA: Buffer pool size is %zu. Reducing concurrency from %zu to %zu. table=%s."
+
+ER_PLUGIN_EXCEPTION_OPERATION_FAILED
+   eng "C++ Exception caught while %s the %s plugin: [%s]"
+
+ER_REQUIRE_TABLE_PRIMARY_KEY_CHECK_GENERATE_WITH_GR_IN_REPO
+   eng "Replication configuration appears to be corrupted. On Group Replication channel '%s', setting REQUIRE_TABLE_PRIMARY_KEY_CHECK to 'GENERATE' is not allowed. Run RESET REPLICA ALL to reset it."
+
+ER_CHECK_TABLE_INSTANT_VERSION_BIT_SET
+   eng "Record has both instant and version bit set."
+
+ER_GRP_RPL_PAXOS_SINGLE_LEADER_DIFF_FROM_OLD_GRP
+  eng "This member is configured with a group_replication_paxos_single_leader option value of 1 and it is trying to join a group with Communication Protocol Version below 8.0.27. In order to join this group, group_replication_paxos_single_leader value must be configured to the value 0. This member will now exit the group."
+
+ER_IB_WRN_IGNORE_REDO_LOG_CAPACITY
+  eng "Ignored the innodb-redo-log-capacity option in the Innodb read-only mode. Server is using active redo log files."
+
+ER_IB_PRIMARY_KEY_IS_INSTANT
+  eng "Unexpected INSTANLY Added / Dropped column: '%s' at position %lu for Table '%s', Index '%s' while getting Primary Key for row logging"
+
+ER_THREAD_POOL_IDLE_CONNECTION_CLOSED
+   eng "%s"
+
+ER_IB_HIDDEN_NAME_CONFLICT
+   eng "Column name %s and internally generated INSTANT DROP column name %s is causing a conflict."
+
+ER_IB_DICT_INVALID_COLUMN_POSITION
+   eng "Field number: %llu too large, Total fields in Record: %zu."
+
+ER_IB_DICT_LOG_TABLE_INFO
+   eng "%s"
+
+ER_IB_INDEX_LOADER_DONE
+   eng "Loader::build_all(): Completed building %zu indexes for old_table=%s, new_table=%s, err=%zu."
+
+ER_IB_INDEX_BUILDER_DONE
+   eng "Builder::finish(): Completed building index=%s of table=%s, err=%zu."
 
 # DO NOT add server-to-client messages here;
 # they go in messages_to_clients.txt

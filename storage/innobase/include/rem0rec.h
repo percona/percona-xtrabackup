@@ -153,14 +153,17 @@ static inline void rec_set_deleted_flag_new(rec_t *rec,
                                             bool flag);
 
 /** The following function is used to set the instant bit.
-@param[in,out]  rec     new-style physical record
-@param[in]      flag    set the bit to this flag */
-static inline void rec_set_instant_flag_new(rec_t *rec, bool flag);
+@param[in,out]  rec     new-style physical record */
+static inline void rec_new_set_instant(rec_t *rec);
 
 /** The following function is used to set the row version bit.
-@param[in,out]  rec     new-style (COMPACT/DYNAMIC) physical record
-@param[in]      flag    set the bit to this flag */
-static inline void rec_new_set_versioned(rec_t *rec, bool flag);
+@param[in,out]  rec     new-style (COMPACT/DYNAMIC) physical record */
+static inline void rec_new_set_versioned(rec_t *rec);
+
+/** The following function is used to reset the instant bit and the row version
+bit.
+@param[in,out]  rec     new-style (COMPACT/DYNAMIC) physical record */
+static inline void rec_new_reset_instant_version(rec_t *rec);
 
 /** The following function is used to set the instant bit.
 @param[in,out]  rec     old-style (REDUNDANT) physical record
@@ -429,8 +432,7 @@ void rec_deserialize_init_offsets(const rec_t *rec, const dict_index_t *index,
 @see rec_deserialize_init_offsets() */
 void rec_serialize_dtuple(rec_t *rec, const dict_index_t *index,
                           const dfield_t *fields, ulint n_fields,
-                          const dtuple_t *v_entry,
-                          uint8_t rec_version = MAX_ROW_VERSION);
+                          const dtuple_t *v_entry, uint8_t rec_version);
 
 /** Copies the first n fields of a physical record to a new physical record in
 a buffer.
@@ -680,6 +682,15 @@ constexpr ulint REC_MAX_DATA_SIZE = 16384;
 @return true, if version is to be stored */
 bool is_store_version(const dict_index_t *index, size_t n_tuple_fields);
 
+/* A temp record, generated for a REDUNDANT row record, will have info bits
+iff table has INSTANT ADD columns. And if record has row version, then it will
+also be stored on temp record header. Following function finds the number of
+more bytes needed in record header to store this info.
+@param[in]  index record descriptor
+@param[in]  valid_version true if record has version
+@return number of bytes NULL pointer should be adjusted. */
+size_t get_extra_bytes_for_temp_redundant(const dict_index_t *index,
+                                          bool valid_version);
 #include "rem0rec.ic"
 
 #endif

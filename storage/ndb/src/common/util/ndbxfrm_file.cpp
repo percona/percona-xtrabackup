@@ -83,6 +83,7 @@ void ndbxfrm_file::reset()
   m_append = false;
   m_encrypted = false;
   m_compressed = false;
+  m_have_data_crc32 = false;
   openssl_evp.reset();
   m_file_format = FF_UNKNOWN;
   memset(m_encryption_keys, 0, sizeof(m_encryption_keys));
@@ -138,6 +139,7 @@ int ndbxfrm_file::open(ndb_file &file, const byte *pwd_key,
   m_payload_start = 0;
   m_encrypted = false;
   m_compressed = false;
+  m_have_data_crc32 = false;
   m_file_format = FF_UNKNOWN;
   // m_encryption_keys
   m_data_block_size = 0;
@@ -533,6 +535,18 @@ int ndbxfrm_file::close(bool abort)
       }
     }
   }
+  else if (!abort && m_file_op == OP_READ_FORW)
+  {
+    if (m_data_pos != m_data_size)
+    {
+      // Whole file was not consumed
+      return -1;
+    }
+    if (m_have_data_crc32 && m_data_crc32 != m_crc32)
+    {
+      return -1;
+    }
+  }
   m_encrypted = false;
   m_compressed = false;
   m_file_op = OP_NONE;
@@ -656,8 +670,15 @@ int ndbxfrm_file::read_header(ndbxfrm_input_iterator *in,
     m_encrypted = false;
     *trailer_max_size = 12 + 511;
   }
-  else if (ndb_ndbxfrm1::header::detect_header(in, &header_size) == 0)
+  else if (int ret = ndb_ndbxfrm1::header::detect_header(in, &header_size);
+           (ret == -1) || (ret == 0))
   {
+    m_file_format = FF_NDBXFRM1;
+    if (ret == -1)
+    {
+      // File magic was found, but other parts of header was bad.
+      RETURN(-1);
+    }
     if (header_size > in->size())
     {
       RETURN(-1);
@@ -671,7 +692,6 @@ int ndbxfrm_file::read_header(ndbxfrm_input_iterator *in,
     {
       RETURN(-1);
     }
-    m_file_format = FF_NDBXFRM1;
     ndbxfrm_header.get_file_block_size(&m_file_block_size);
     ndbxfrm_header.get_trailer_max_size(trailer_max_size);
     m_compressed = (ndbxfrm_header.get_compression_method() != 0);
@@ -850,8 +870,9 @@ int ndbxfrm_file::read_trailer(ndbxfrm_input_reverse_iterator *rin,
     {
       RETURN(-1);
     }
-    az31.get_data_size(&m_data_size);
-    az31.get_data_crc32(&m_data_crc32);
+    if (az31.get_data_size(&m_data_size) != 0 ) RETURN(-1);
+    if (az31.get_data_crc32(&m_data_crc32) != 0) RETURN(-1);
+    m_have_data_crc32 = true;
     {
       size_t trailer_size = in_begin - rin->cbegin();
       require(trailer_size > 0);
@@ -881,10 +902,20 @@ int ndbxfrm_file::read_trailer(ndbxfrm_input_reverse_iterator *rin,
     {
       RETURN(-1);
     }
+
     Uint64 data_size = 0;
-    Uint32 data_crc32 = 0;
     require(ndbxfrm_trailer.get_data_size(&data_size) == 0);
     m_data_size = data_size;
+
+    Uint32 data_crc32 = 0;
+    if(ndbxfrm_trailer.get_data_crc32(&data_crc32) == 0)
+    {
+      m_have_data_crc32 = true;
+    }
+    else
+    {
+      m_have_data_crc32 = false;
+    }
     m_data_crc32 = data_crc32;
   }
   else
@@ -1444,13 +1475,17 @@ int ndbxfrm_file::read_forward(ndbxfrm_output_iterator *out)
     }
     if (m_file_buffer.read_size() == 0 && m_file_buffer.last())
     {
-      m_data_pos += out->begin() - out_begin;
+      const size_t n = out->begin() - out_begin;
+      m_crc32 = crc32(m_crc32, out_begin, n);
+      m_data_pos += n;
       out->set_last();
       return 0;
     }
     if (out->empty())
     {
-      m_data_pos += out->begin() - out_begin;
+      const size_t n = out->begin() - out_begin;
+      m_crc32 = crc32(m_crc32, out_begin, n);
+      m_data_pos += n;
       return 1;
     }
   }
@@ -1474,7 +1509,7 @@ int ndbxfrm_file::read_forward(ndbxfrm_output_iterator *out)
           size_t block_size = m_file_block_size == 0 ? NDB_O_DIRECT_WRITE_BLOCKSIZE : m_file_block_size;
           size = f_out.size() / block_size * block_size;
         }
-        if (m_file_pos + size > (uintmax_t)m_payload_end)
+        if (m_file_pos + uintmax_t{size} > uintmax_t(m_payload_end))
         {
           size = m_payload_end - m_file_pos;
         }
@@ -1575,17 +1610,23 @@ int ndbxfrm_file::read_forward(ndbxfrm_output_iterator *out)
 
     if (out->last())
     {
-      m_data_pos += out->begin() - out_begin;
+      const size_t n = out->begin() - out_begin;
+      m_crc32 = crc32(m_crc32, out_begin, n);
+      m_data_pos += n;
       return 0;
     }
     if (out->empty())
     {
-      m_data_pos += out->begin() - out_begin;
+      const size_t n = out->begin() - out_begin;
+      m_crc32 = crc32(m_crc32, out_begin, n);
+      m_data_pos += n;
       return 1;
     }
   } while (progress);
   assert(progress);
-  m_data_pos += out->begin() - out_begin;
+  const size_t n = out->begin() - out_begin;
+  m_crc32 = crc32(m_crc32, out_begin, n);
+  m_data_pos += n;
   return 2;
 }
 
@@ -1641,7 +1682,7 @@ int ndbxfrm_file::read_backward(ndbxfrm_output_reverse_iterator *out)
               (m_file_block_size == 0) ? NDB_O_DIRECT_WRITE_BLOCKSIZE : m_file_block_size;
           size = f_out.size() / block_size * block_size;
         }
-        if ((uintmax_t)m_file_pos < m_payload_start + size)
+        if (uintmax_t(m_file_pos) < m_payload_start + uintmax_t{size})
         {
           size = m_file_pos - m_payload_start;
         }

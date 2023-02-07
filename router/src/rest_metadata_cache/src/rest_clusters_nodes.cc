@@ -34,8 +34,6 @@
 #include "mysqlrouter/metadata_cache.h"
 #include "mysqlrouter/rest_api_utils.h"
 
-constexpr const char RestClustersNodes::path_regex[];
-
 static const char *server_mode_to_string(metadata_cache::ServerMode mode) {
   switch (mode) {
     case metadata_cache::ServerMode::ReadOnly:
@@ -60,12 +58,12 @@ bool RestClustersNodes::on_handle_request(
   {
     rapidjson::Document::AllocatorType &allocator = json_doc.GetAllocator();
 
-    metadata_cache::LookupResult res =
+    const auto &res =
         metadata_cache::MetadataCacheAPI::instance()->get_cluster_nodes();
 
     rapidjson::Value items(rapidjson::kArrayType);
 
-    for (auto &inst : res.instance_vector) {
+    for (auto &inst : res) {
       rapidjson::Value o(rapidjson::kObjectType);
 
       o.AddMember("replicasetName",

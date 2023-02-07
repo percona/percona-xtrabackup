@@ -1486,8 +1486,8 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
   param->func_count = param->items_to_copy->size();
   assert(param->func_count <= copy_func_count);  // Used <= allocated
   sort_copy_func(thd->lex->current_query_block(), param->items_to_copy);
-  uchar *bitmaps = static_cast<uchar *>(
-      share->mem_root.Alloc(bitmap_buffer_size(field_count + 1) * 3));
+  uchar *bitmaps = static_cast<uchar *>(share->mem_root.Alloc(
+      bitmap_buffer_size(field_count + extra_fields) * 3));
   if (bitmaps == nullptr) return nullptr;
   setup_tmp_table_column_bitmaps(table, bitmaps);
 
@@ -2612,7 +2612,7 @@ bool create_ondisk_from_heap(THD *thd, TABLE *wtable, int error,
 
   share.db_plugin = ha_lock_engine(thd, innodb_hton);
 
-  TABLE_LIST *const wtable_list = wtable->pos_in_table_list;
+  Table_ref *const wtable_list = wtable->pos_in_table_list;
   Derived_refs_iterator ref_it(wtable_list);
 
   if (wtable_list) {

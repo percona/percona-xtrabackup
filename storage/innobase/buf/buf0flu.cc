@@ -1216,13 +1216,6 @@ static void buf_flush_write_block_low(buf_page_t *bpage, buf_flush_t flush_type,
     }
   }
 
-  DBUG_EXECUTE_IF("log_first_rec_group_test", {
-    recv_no_ibuf_operations = false;
-    const lsn_t end_lsn = mtr_commit_mlog_test();
-    log_write_up_to(*log_sys, end_lsn, true);
-    DBUG_SUICIDE();
-  });
-
   switch (buf_page_get_state(bpage)) {
     case BUF_BLOCK_POOL_WATCH:
     case BUF_BLOCK_ZIP_PAGE: /* The page should be dirty. */
@@ -1822,6 +1815,7 @@ static ulint buf_flush_LRU_list_batch(buf_pool_t *buf_pool, ulint max) {
 
     free_len = UT_LIST_GET_LEN(buf_pool->free);
     lru_len = UT_LIST_GET_LEN(buf_pool->LRU);
+    withdraw_depth = buf_get_withdraw_depth(buf_pool);
   }
 
   buf_pool->lru_hp.set(nullptr);
@@ -3267,10 +3261,22 @@ static void buf_flush_page_coordinator_thread() {
     /* We consider server active if either we have just discovered a first
     activity after a period of inactive server, or we are after the period
     of active server in which case, it could be just the beginning of the
-    next period, so there is no reason to consider it idle yet. */
+    next period, so there is no reason to consider it idle yet.
+    The withdrawing blocks process when shrinking the buffer pool always
+    needs the page_cleaner activity. So, we consider server is active
+    during the withdrawing blocks process also. */
 
-    const bool is_server_active =
-        was_server_active || srv_check_activity(last_activity);
+    bool is_withdrawing = false;
+    for (ulint i = 0; i < srv_buf_pool_instances; i++) {
+      buf_pool_t *buf_pool = buf_pool_from_array(i);
+      if (buf_get_withdraw_depth(buf_pool) > 0) {
+        is_withdrawing = true;
+        break;
+      }
+    }
+
+    const bool is_server_active = is_withdrawing || was_server_active ||
+                                  srv_check_activity(last_activity);
 
     /* The page_cleaner skips sleep if the server is
     idle and there are no pending IOs in the buffer pool

@@ -80,6 +80,10 @@ this program; if not, write to the Free Software Foundation, Inc.,
 /* Forward declaration. */
 struct ib_rbt_t;
 
+/** Format of INSTANTLY DROPPED column names. */
+constexpr char INSTANT_DROP_SUFFIX_8_0_29[] = "_dropped_v";
+constexpr char INSTANT_DROP_PREFIX_8_0_32[] = "!hidden!_dropped_";
+
 /** index/table name used while applying REDO logs during recovery */
 constexpr char RECOVERY_INDEX_TABLE_NAME[] = "LOG_DUMMY";
 
@@ -419,6 +423,16 @@ reasonably unique temporary file name.
 char *dict_mem_create_temporary_tablename(mem_heap_t *heap, const char *dbtab,
                                           table_id_t id);
 
+static inline bool is_valid_row_version(const uint8_t version) {
+  /* NOTE : 0 is also a valid row versions for rows which are inserted after
+  upgrading from earlier INSTANT implemenation */
+  if (version <= MAX_ROW_VERSION) {
+    return true;
+  }
+
+  return false;
+}
+
 /** Initialize dict memory variables */
 void dict_mem_init(void);
 
@@ -580,7 +594,7 @@ struct dict_col_t {
   }
 
   void set_version_added(uint8_t version) {
-    ut_ad(version == UINT8_UNDEFINED || version <= MAX_ROW_VERSION);
+    ut_ad(version == UINT8_UNDEFINED || is_valid_row_version(version));
     version_added = version;
   }
 
@@ -609,7 +623,7 @@ struct dict_col_t {
   }
 
   void set_version_dropped(uint8_t version) {
-    ut_ad(version == UINT8_UNDEFINED || version <= MAX_ROW_VERSION);
+    ut_ad(version == UINT8_UNDEFINED || is_valid_row_version(version));
     version_dropped = version;
   }
 
@@ -723,7 +737,7 @@ struct dict_col_t {
   @param[in]    version row version
   @return true if the column is dropped before or in the version. */
   bool is_dropped_in_or_before(uint8_t version) const {
-    ut_ad(version <= MAX_ROW_VERSION);
+    ut_ad(is_valid_row_version(version));
 
     if (!is_instant_dropped()) {
       return false;
@@ -736,7 +750,7 @@ struct dict_col_t {
   @param[in]    version row version
   @return true if column is added after the current row version. */
   bool is_added_after(uint8_t version) const {
-    ut_ad(version <= MAX_ROW_VERSION);
+    ut_ad(is_valid_row_version(version));
 
     if (!is_instant_added()) {
       return false;
@@ -749,7 +763,7 @@ struct dict_col_t {
   @param[in]      version         row version
   return true if column is visible in version. */
   bool is_visible_in_version(uint8_t version) const {
-    ut_ad(version <= MAX_ROW_VERSION);
+    ut_ad(is_valid_row_version(version));
     return (!is_added_after(version) && !is_dropped_in_or_before(version));
   }
 
@@ -768,6 +782,16 @@ struct dict_col_t {
 #endif /* !UNIV_HOTBACKUP */
 
     return true;
+  }
+
+  /** Check if a column name resembles format for dropped column.
+  param[in] type                column name
+  @return true if column name resembles dropped column. */
+  static bool is_instant_dropped_name(const std::string col_name) {
+    if (col_name.find(INSTANT_DROP_SUFFIX_8_0_29) != std::string::npos ||
+        col_name.find(INSTANT_DROP_PREFIX_8_0_32) != std::string::npos)
+      return true;
+    return false;
   }
 #endif /* UNIV_DEBUG */
 };
@@ -1409,7 +1433,7 @@ struct dict_index_t {
 
   /** Return nullable in a specific row version */
   uint32_t get_nullable_in_version(uint8_t version) const {
-    ut_ad(version <= MAX_ROW_VERSION);
+    ut_ad(is_valid_row_version(version));
 
     return nullables[version];
   }

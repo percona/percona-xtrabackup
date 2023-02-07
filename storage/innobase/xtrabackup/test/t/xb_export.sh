@@ -1,10 +1,7 @@
 . inc/common.sh
-is_server_version_higher_than 8.0.31 && die "This test should be enabled for ms after 8.0.31"
-require_xtradb
-
-if ! is_xtradb && ! is_server_version_higher_than 5.6.0
+if ! is_xtradb
 then
-    skip_test "Requires XtraDB or MySQL 5.6+"
+  require_server_version_higher_than 8.0.31
 fi
 
 function init_schema() {

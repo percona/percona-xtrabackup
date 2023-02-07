@@ -5497,6 +5497,30 @@ static bool check_plugin_enabled(MYSQL *mysql, mysql_async_auth *ctx) {
   return false;
 }
 
+static void reset_async_auth_data(mysql_async_auth &ctx) {
+  ctx.mysql = nullptr;
+  ctx.non_blocking = false;
+  ctx.data = nullptr;
+  ctx.data_len = 0;
+  ctx.data_plugin = nullptr;
+  ctx.db = nullptr;
+  ctx.auth_plugin_name = nullptr;
+  ctx.auth_plugin = nullptr;
+  memset(&ctx.mpvio, 0, sizeof(MCPVIO_EXT));
+  ctx.pkt_length = 0;
+  ctx.res = 0;
+  ctx.change_user_buff = nullptr;
+  ctx.change_user_buff_len = 0;
+  ctx.client_auth_plugin_state = 0;
+  ctx.state_function = nullptr;
+  ctx.current_factor_index = 0;
+  memset(ctx.sha2_auth.encrypted_password, 0,
+         sizeof(ctx.sha2_auth.encrypted_password));
+  ctx.sha2_auth.public_key = nullptr;
+  memset(ctx.sha2_auth.scramble_pkt, 0, sizeof(ctx.sha2_auth.scramble_pkt));
+  ctx.sha2_auth.cipher_length = 0;
+}
+
 /**
   Client side of the plugin driver authentication.
 
@@ -5518,7 +5542,7 @@ int run_plugin_auth(MYSQL *mysql, char *data, uint data_len,
   DBUG_TRACE;
   mysql_state_machine_status status;
   mysql_async_auth ctx;
-  memset(&ctx, 0, sizeof(ctx));
+  reset_async_auth_data(ctx);
 
   ctx.mysql = mysql;
   ctx.data = data;
@@ -5811,11 +5835,12 @@ static mysql_state_machine_status authsm_handle_change_user_result(
     ctx->state_function = authsm_run_second_authenticate_user;
   } else if (is_auth_next_factor_packet(mysql)) {
     ctx->state_function = authsm_init_multi_auth;
+  } else if (is_OK_packet(mysql, ctx->pkt_length)) {
+    read_ok_ex(mysql, ctx->pkt_length);
+    ctx->state_function = authsm_finish_auth;
   } else {
-    if (is_OK_packet(mysql, ctx->pkt_length)) {
-      read_ok_ex(mysql, ctx->pkt_length);
-      ctx->state_function = authsm_finish_auth;
-    }
+    set_mysql_error(mysql, CR_MALFORMED_PACKET, unknown_sqlstate);
+    return STATE_MACHINE_FAILED;
   }
 
   return STATE_MACHINE_CONTINUE;
@@ -6140,6 +6165,11 @@ MYSQL *STDCALL mysql_real_connect(MYSQL *mysql, const char *host,
   else
     ctx.passwd = passwd;
   ctx.unix_socket = unix_socket;
+  if (0 != (client_flag & CLIENT_NO_SCHEMA)) {
+    fprintf(stderr,
+            "WARNING: CLIENT_NO_SCHEMA is deprecated and will be removed in a "
+            "future version.\n");
+  }
   mysql->options.client_flag |= client_flag;
   ctx.client_flag = mysql->options.client_flag;
   ctx.ssl_state = SSL_NONE;
@@ -9208,7 +9238,7 @@ const char *STDCALL mysql_info(MYSQL *mysql) {
 #if defined(CLIENT_PROTOCOL_TRACING)
     return "protocol tracing enabled";
 #else
-    return NULL;
+    return nullptr;
 #endif
   }
   return mysql->info;

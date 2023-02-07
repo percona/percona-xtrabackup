@@ -83,14 +83,14 @@ include/start_group_replication.inc
 ############################################################
 # 09. Signal to continue T3 on server1.
 [connection server_1]
-SET DEBUG_SYNC= 'now SIGNAL waiting';
 SET @@GLOBAL.DEBUG= @debug_save;
+SET DEBUG_SYNC= 'now SIGNAL waiting';
 
 ############################################################
 # 10. Signal to continue T1 and T2 on server2.
 [connection server2]
-SET DEBUG_SYNC= 'now SIGNAL signal.after_before_message_send_after_applier_prepare_continue';
 SET @@GLOBAL.DEBUG= @debug_save;
+SET DEBUG_SYNC= 'now SIGNAL signal.after_before_message_send_after_applier_prepare_continue';
 
 ############################################################
 # 11. Check members state on server1.

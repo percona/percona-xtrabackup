@@ -27,7 +27,6 @@
 #include <stdint.h>
 
 #include <algorithm>
-#include <memory>
 #include <new>
 #include <string>
 #include <type_traits>
@@ -60,7 +59,6 @@ using hypergraph::NodeMap;
 using std::fill;
 using std::max;
 using std::min;
-using std::move;
 using std::string;
 using std::swap;
 using std::vector;
@@ -302,7 +300,7 @@ double GetCardinality(NodeMap tables_to_join, const JoinHypergraph &graph,
     active_components &= ~(uint64_t{1} << right_component);
     return active_components == 0b1;
   };
-  ConnectComponentsThroughJoins(graph, cycles, move(func), components,
+  ConnectComponentsThroughJoins(graph, cycles, std::move(func), components,
                                 in_component);
 
   // In rare situations, we could be left in a situation where an edge
@@ -393,12 +391,11 @@ double GetCardinalitySingleJoin(NodeMap left, NodeMap right, double left_rows,
  */
 OnlineCycleFinder FindJoinDependencies(const Hypergraph &graph,
                                        MEM_ROOT *mem_root) {
-  const vector<Hyperedge> &edges = graph.edges;
+  const Mem_root_array<Hyperedge> &edges = graph.edges;
   OnlineCycleFinder cycles(mem_root, edges.size() / 2);
-  for (size_t edge1_idx = 0; edge1_idx < graph.edges.size() / 2; ++edge1_idx) {
+  for (size_t edge1_idx = 0; edge1_idx < edges.size() / 2; ++edge1_idx) {
     const Hyperedge edge1 = edges[edge1_idx * 2];
-    for (size_t edge2_idx = 0; edge2_idx < graph.edges.size() / 2;
-         ++edge2_idx) {
+    for (size_t edge2_idx = 0; edge2_idx < edges.size() / 2; ++edge2_idx) {
       const Hyperedge edge2 = edges[edge2_idx * 2];
       if (edge1_idx != edge2_idx && IsSubjoin(edge1, edge2)) {
         bool added_cycle [[maybe_unused]] =
@@ -545,7 +542,7 @@ bool GraphIsJoinable(const JoinHypergraph &graph,
     }
     return false;
   };
-  ConnectComponentsThroughJoins(graph, cycles, move(func), components,
+  ConnectComponentsThroughJoins(graph, cycles, std::move(func), components,
                                 in_component);
   return num_in_component0 == graph.nodes.size();
 }

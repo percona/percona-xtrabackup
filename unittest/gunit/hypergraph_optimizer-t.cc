@@ -196,7 +196,7 @@ void SortNodes(JoinHypergraph *graph) {
 
 }  // namespace
 
-using MakeHypergraphTest = OptimizerTestBase<::testing::Test>;
+using MakeHypergraphTest = OptimizerTestBase;
 
 TEST_F(MakeHypergraphTest, SingleTable) {
   Query_block *query_block =
@@ -799,7 +799,7 @@ TEST_F(MakeHypergraphTest, MultipleEqualitiesCauseCycle) {
   // Build multiple equalities from the WHERE condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   JoinHypergraph graph(m_thd->mem_root, query_block);
@@ -850,7 +850,7 @@ TEST_F(MakeHypergraphTest, CyclesGetConsistentSelectivities) {
   // Build multiple equalities from the WHERE condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   JoinHypergraph graph(m_thd->mem_root, query_block);
@@ -877,7 +877,7 @@ TEST_F(MakeHypergraphTest, MultiEqualityPredicateAppliedOnce) {
   // Build multiple equalities from the WHERE condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   JoinHypergraph graph(m_thd->mem_root, query_block);
@@ -930,7 +930,7 @@ TEST_F(MakeHypergraphTest, MultiEqualityPredicateNoRedundantJoinCondition) {
   // Build multiple equalities from the WHERE condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   JoinHypergraph graph(m_thd->mem_root, query_block);
@@ -983,7 +983,7 @@ TEST_F(MakeHypergraphTest, MultiEqualityPredicateNoRedundantJoinCondition2) {
   // Build multiple equalities from the WHERE condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   JoinHypergraph graph(m_thd->mem_root, query_block);
@@ -1047,7 +1047,7 @@ TEST_F(MakeHypergraphTest, ConflictRulesWithManyTables) {
   // Build multiple equalities from the WHERE condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   JoinHypergraph graph(m_thd->mem_root, query_block);
@@ -1085,7 +1085,7 @@ TEST_F(MakeHypergraphTest, HyperpredicatesDoNotBlockExtraCycleEdges) {
   // Build (trivial!) multiple equalities from the ON conditions.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   JoinHypergraph graph(m_thd->mem_root, query_block);
@@ -1136,7 +1136,7 @@ TEST_F(MakeHypergraphTest, Flattening) {
   // Build multiple equalities from the WHERE condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
   EXPECT_EQ("(multiple equal(t1.y, t4.y) and multiple equal(t2.x, t3.x, t4.x))",
             ItemToString(query_block->where_cond()));
@@ -1203,7 +1203,7 @@ TEST_F(MakeHypergraphTest, PredicatePromotionOnMultipleEquals) {
   // Build multiple equalities from the WHERE condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   JoinHypergraph graph(m_thd->mem_root, query_block);
@@ -1284,7 +1284,7 @@ TEST_F(MakeHypergraphTest, MultipleEqualityPushedFromJoinConditions) {
   // Build multiple equalities from the WHERE condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   JoinHypergraph graph(m_thd->mem_root, query_block);
@@ -1337,7 +1337,7 @@ TEST_F(MakeHypergraphTest, UnpushableMultipleEqualityCausesCycle) {
   // Build multiple equalities from the WHERE condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   JoinHypergraph graph(m_thd->mem_root, query_block);
@@ -1421,7 +1421,7 @@ TEST_F(MakeHypergraphTest, UnpushableMultipleEqualityWithSameTableTwice) {
   // Build multiple equalities from the WHERE condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   JoinHypergraph graph(m_thd->mem_root, query_block);
@@ -1477,6 +1477,47 @@ TEST_F(MakeHypergraphTest, UnpushableMultipleEqualityWithSameTableTwice) {
   EXPECT_TRUE(found_predicate);
 }
 
+TEST_F(MakeHypergraphTest, EqualityPropagationExpandsTopConjunction) {
+  // The WHERE clause of the query is a subjunction in which the second leg is
+  // found to be always false during equality propagation and removed.
+  Query_block *query_block = ParseAndResolve(
+      "SELECT 1 FROM t1, t2 WHERE "
+      "(t1.x = t2.x AND t1.x < 10) OR (t1.y = t2.y AND t1.y < t2.y)",
+      /*nullable=*/false);
+
+  // Build multiple equalities from the WHERE condition.
+  COND_EQUAL *cond_equal = nullptr;
+  EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
+                             &query_block->m_table_nest,
+                             &query_block->cond_value));
+
+  JoinHypergraph graph(m_thd->mem_root, query_block);
+  string trace;
+  bool always_false = false;
+  EXPECT_FALSE(MakeJoinHypergraph(m_thd, &trace, &graph, &always_false));
+  EXPECT_FALSE(always_false);
+
+  SCOPED_TRACE(trace);  // Prints out the trace on failure.
+
+  EXPECT_EQ(graph.graph.nodes.size(), graph.nodes.size());
+  EXPECT_EQ(graph.graph.edges.size(), 2 * graph.edges.size());
+
+  SortNodes(&graph);
+
+  ASSERT_EQ(2, graph.nodes.size());
+  EXPECT_STREQ("t1", graph.nodes[0].table->alias);
+  EXPECT_STREQ("t2", graph.nodes[1].table->alias);
+
+  // Expect to find a simple equijoin condition and a table filter. The table
+  // filter used to be part of the join condition, but it should not be.
+  ASSERT_EQ(1, graph.edges.size());
+  EXPECT_EQ("(t1.x = t2.x)",
+            ItemsToString(graph.edges[0].expr->equijoin_conditions));
+  EXPECT_EQ("(none)", ItemsToString(graph.edges[0].expr->join_conditions));
+  ASSERT_EQ(1, graph.num_where_predicates);
+  EXPECT_EQ("(t1.x < 10)", ItemToString(graph.predicates[0].condition));
+}
+
 // Sets up a nonsensical query, but the point is that the multiple equality
 // on the antijoin can be resolved to either t1.x or t2.x, and it should choose
 // the same as is already there due to the inequality in order to not create
@@ -1484,8 +1525,7 @@ TEST_F(MakeHypergraphTest, UnpushableMultipleEqualityWithSameTableTwice) {
 //
 // We test with the inequality referring to both tables in turn, to make sure
 // that we're not just getting lucky.
-using MakeHypergraphMultipleEqualParamTest =
-    OptimizerTestBase<::testing::TestWithParam<int>>;
+using MakeHypergraphMultipleEqualParamTest = OptimizerTestWithParam<int>;
 
 TEST_P(MakeHypergraphMultipleEqualParamTest,
        MultipleEqualityOnAntijoinGetsIdeallyResolved) {
@@ -1501,7 +1541,7 @@ TEST_P(MakeHypergraphMultipleEqualParamTest,
   // Build multiple equalities from the WHERE condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   JoinHypergraph graph(m_thd->mem_root, query_block);
@@ -1903,6 +1943,42 @@ TEST_F(HypergraphOptimizerTest, JoinConditionToRef) {
                   root->num_output_rows());
 }
 
+TEST_F(HypergraphOptimizerTest, PreferWidestEqRefKey) {
+  Query_block *query_block =
+      ParseAndResolve("SELECT 1 FROM t1 WHERE t1.x = 1 AND t1.y = 2",
+                      /*nullable=*/true);
+
+  Fake_TABLE *t1 = m_fake_tables["t1"];
+
+  // Create three unique indexes.
+  const int key_x =
+      t1->create_index(t1->field[0], /*column2=*/nullptr, /*unique=*/true);
+  const int key_xy =
+      t1->create_index(t1->field[0], t1->field[1], /*unique=*/true);
+  const int key_y =
+      t1->create_index(t1->field[1], /*column2=*/nullptr, /*unique=*/true);
+
+  EXPECT_EQ(0, key_x);
+  EXPECT_EQ(1, key_xy);
+  EXPECT_EQ(2, key_y);
+
+  t1->file->stats.records = 10000;
+  t1->file->stats.data_file_length = 1e6;
+
+  string trace;
+  AccessPath *root = FindBestQueryPlan(m_thd, query_block, &trace);
+  SCOPED_TRACE(trace);  // Prints out the trace on failure.
+  // Prints out the query plan on failure.
+  SCOPED_TRACE(PrintQueryPlan(0, root, query_block->join,
+                              /*is_root_of_join=*/true));
+
+  // Expect that we use the widest key. That is, we should pick an EQ_REF on the
+  // (x, y) index with no filter, not an EQ_REF on the single-column indexes
+  // with a filter on top.
+  ASSERT_EQ(AccessPath::EQ_REF, root->type);
+  EXPECT_EQ(key_xy, root->eq_ref().ref->key);
+}
+
 // Verify that we can push ref access into a hash join's hash table.
 TEST_F(HypergraphOptimizerTest, RefIntoHashJoin) {
   Query_block *query_block = ParseAndResolve(
@@ -1986,7 +2062,7 @@ TEST_F(HypergraphOptimizerTest, MultiEqualitySargable) {
   // Build multiple equalities from the WHERE condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   // The logical plan should be t1/t2/t3, with index lookups on t2 and t3.
@@ -2031,7 +2107,7 @@ TEST_F(HypergraphOptimizerTest, DoNotApplyBothSargableJoinAndFilterJoin) {
   // Build multiple equalities from the WHERE condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   // The logical plan should be to hash-join t2/t3, then nestloop-join
@@ -2164,6 +2240,47 @@ TEST_F(HypergraphOptimizerTest, SargableJoinPredicateSelectivity) {
           /* Rows from t2: */ t2->file->stats.records * COND_FILTER_EQUALITY *
           /* Rows from t3: */ t3->file->stats.records * COND_FILTER_EQUALITY,
       root->num_output_rows());
+}
+
+TEST_F(HypergraphOptimizerTest, SargableJoinPredicateWithTypeMismatch) {
+  // Give t1.x a different type than t2.x.
+  Mock_field_varstring t1_x(/*share=*/nullptr, /*name=*/"x",
+                            /*char_len=*/100, /*is_nullable=*/true);
+  Fake_TABLE *t1 = new (m_thd->mem_root) Fake_TABLE(&t1_x);
+  m_fake_tables["t1"] = t1;
+
+  Query_block *query_block = ParseAndResolve(
+      "SELECT 1 FROM t1, t2 WHERE t1.x = t2.x", /*nullable=*/true);
+
+  // Add an index on t2(x) to make the join predicate sargable.
+  Fake_TABLE *t2 = m_fake_tables["t2"];
+  t2->create_index(t2->field[0], /*column2=*/nullptr, /*unique=*/true);
+
+  // Set up sizes to make index access on t2 preferable.
+  t1->file->stats.records = 100;
+  t1->file->stats.data_file_length = 1e5;
+  t2->file->stats.records = 100000;
+  t2->file->stats.data_file_length = 1e7;
+
+  string trace;
+  AccessPath *root = FindBestQueryPlan(m_thd, query_block, &trace);
+  SCOPED_TRACE(trace);  // Prints out the trace on failure.
+  // Prints out the query plan on failure.
+  SCOPED_TRACE(PrintQueryPlan(0, root, query_block->join,
+                              /*is_root_of_join=*/true));
+
+  // Expect NLJ(t1, EQ_REF(t2)). Because of the type mismatch between t1.x and
+  // t2.x, a filter is needed on top of the EQ_REF to make sure no false matches
+  // are returned.
+  ASSERT_EQ(AccessPath::NESTED_LOOP_JOIN, root->type);
+  ASSERT_EQ(AccessPath::FILTER, root->nested_loop_join().inner->type);
+  EXPECT_EQ("(cast(t1.x as double) = cast(t2.x as double))",
+            ItemToString(root->nested_loop_join().inner->filter().condition));
+  ASSERT_EQ(AccessPath::EQ_REF,
+            root->nested_loop_join().inner->filter().child->type);
+  EXPECT_STREQ(
+      "t2",
+      root->nested_loop_join().inner->filter().child->eq_ref().table->alias);
 }
 
 TEST_F(HypergraphOptimizerTest, AntiJoinGetsSameEstimateWithAndWithoutIndex) {
@@ -2320,6 +2437,28 @@ TEST_F(HypergraphOptimizerTest, InnerNestloopShouldBeLeftDeep) {
   // We don't verify the plan in itself.
 }
 
+TEST_F(HypergraphOptimizerTest, CombineFilters) {
+  Query_block *query_block = ParseAndResolve(
+      "SELECT 1 FROM t1 WHERE t1.x = 1 HAVING RAND() > 0.5", /*nullable=*/true);
+  ASSERT_NE(nullptr, query_block);
+
+  string trace;
+  AccessPath *root = FindBestQueryPlanAndFinalize(m_thd, query_block, &trace);
+  SCOPED_TRACE(trace);  // Prints out the trace on failure.
+  ASSERT_NE(nullptr, root);
+  // Prints out the query plan on failure.
+  SCOPED_TRACE(PrintQueryPlan(0, root, query_block->join,
+                              /*is_root_of_join=*/true));
+
+  // We should see a single filter which combines the WHERE clause and the
+  // HAVING clause. Not two filters stacked on top of each other.
+  ASSERT_EQ(AccessPath::FILTER, root->type);
+  EXPECT_EQ(AccessPath::TABLE_SCAN, root->filter().child->type);
+
+  EXPECT_EQ("((t1.x = 1) and (rand() > 0.5))",
+            ItemToString(root->filter().condition));
+}
+
 TEST_F(HypergraphOptimizerTest, InsertCastsInSelectExpressions) {
   Mock_field_datetime t1_x;
   Mock_field_long t1_y(/*is_unsigned=*/false);
@@ -2436,7 +2575,7 @@ static string PrintSargablePredicate(const SargablePredicate &sp,
 // Verify that when we add a cycle in the graph due to a multiple equality,
 // that join predicate also becomes sargable.
 using HypergraphOptimizerCyclePredicatesSargableTest =
-    OptimizerTestBase<::testing::TestWithParam<const char *>>;
+    OptimizerTestWithParam<const char *>;
 
 TEST_P(HypergraphOptimizerCyclePredicatesSargableTest,
        CyclePredicatesSargable) {
@@ -2452,7 +2591,7 @@ TEST_P(HypergraphOptimizerCyclePredicatesSargableTest,
   // Build multiple equalities from the WHERE condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   string trace;
@@ -2600,7 +2739,7 @@ TEST_F(HypergraphOptimizerTest, StraightJoinWithMoreTables) {
   // placed at the end in the final where condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   m_fake_tables["t1"]->file->stats.records = 100;
@@ -2778,7 +2917,7 @@ TEST_F(HypergraphOptimizerTest, CycleFromMultipleEquality) {
   // Build multiple equalities from the WHERE condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   string trace;
@@ -2853,7 +2992,7 @@ TEST_F(HypergraphOptimizerTest, SubsumedSargableInDoubleCycle) {
   // Build multiple equalities from the WHERE condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   string trace;
@@ -2986,11 +3125,11 @@ TEST_F(HypergraphOptimizerTest, SemiJoinPredicateNotRedundant2) {
   // t2.x = t3.x = t4.x = t5.x
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
   EXPECT_EQ(1, cond_equal->current_level.size());
   const Item_equal *eq = cond_equal->current_level.head();
-  EXPECT_EQ(nullptr, eq->get_const());
+  EXPECT_EQ(nullptr, eq->const_arg());
   EXPECT_EQ(4, eq->get_fields().size());
 
   string trace;
@@ -3050,11 +3189,11 @@ TEST_F(HypergraphOptimizerTest, SemijoinToInnerWithSargable) {
   // t1.x = t2.x = t3.x
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
   EXPECT_EQ(1, cond_equal->current_level.size());
   const Item_equal *eq = cond_equal->current_level.head();
-  EXPECT_EQ(nullptr, eq->get_const());
+  EXPECT_EQ(nullptr, eq->const_arg());
   EXPECT_EQ(3, eq->get_fields().size());
 
   string trace;
@@ -3118,7 +3257,7 @@ TEST_F(HypergraphOptimizerTest, HyperpredicatesConsistentRowEstimates) {
   // Build two multiple equalities: t1.x = t2.x = t3.x and t2.y = t3.y = t4.y.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
   EXPECT_EQ(2, cond_equal->current_level.size());
 
@@ -3202,56 +3341,72 @@ TEST_F(HypergraphOptimizerTest, SwitchesOrderToMakeSafeForRowid) {
   EXPECT_STREQ("t1", inner->ref().table->alias);
 }
 
+// Test that a hash join can combine predicates from multiple edges in a cyclic
+// hypergraph, and create a wider hash join key than what it gets from the
+// single edge. (Previously, the eligible join predicates from other edges in
+// the cycle were instead added as post-join filters.)
 TEST_F(HypergraphOptimizerTest, MultiPredicateHashJoin) {
-  Query_block *query_block = ParseAndResolve(
-      "SELECT 1 FROM t1, t2, t3 "
-      "WHERE t1.x = t2.x AND t2.y = t3.y AND t1.z = t3.z",
-      /*nullable=*/true);
+  // Test both regular equality and NULL-safe equality. Either kind of equality
+  // can be used in the hash join key.
+  for (const char *eq_op : {"=", "<=>"}) {
+    const string query = StringPrintf(
+        "SELECT 1 FROM t1, t2, t3 "
+        "WHERE t1.x %s t2.x AND t2.y %s t3.y AND t1.z %s t3.z",
+        eq_op, eq_op, eq_op);
+    SCOPED_TRACE(query);
+    Query_block *query_block = ParseAndResolve(query.data(),
+                                               /*nullable=*/true);
 
-  // Sizes that make (t1 HJ t2) HJ t3 the preferred join order.
-  m_fake_tables["t1"]->file->stats.records = 90000;
-  m_fake_tables["t1"]->file->stats.data_file_length = 9e7;
-  m_fake_tables["t2"]->file->stats.records = 100;
-  m_fake_tables["t2"]->file->stats.data_file_length = 1e3;
-  m_fake_tables["t3"]->file->stats.records = 3000;
-  m_fake_tables["t3"]->file->stats.data_file_length = 3e5;
+    // Sizes that make (t1 HJ t2) HJ t3 the preferred join order.
+    m_fake_tables["t1"]->file->stats.records = 90000;
+    m_fake_tables["t1"]->file->stats.data_file_length = 9e7;
+    m_fake_tables["t2"]->file->stats.records = 100;
+    m_fake_tables["t2"]->file->stats.data_file_length = 1e3;
+    m_fake_tables["t3"]->file->stats.records = 3000;
+    m_fake_tables["t3"]->file->stats.data_file_length = 3e5;
 
-  string trace;
-  AccessPath *root = FindBestQueryPlan(m_thd, query_block, &trace);
-  SCOPED_TRACE(trace);  // Prints out the trace on failure.
-  // Prints out the query plan on failure.
-  SCOPED_TRACE(PrintQueryPlan(0, root, query_block->join,
-                              /*is_root_of_join=*/true));
+    string trace;
+    AccessPath *root = FindBestQueryPlan(m_thd, query_block, &trace);
+    SCOPED_TRACE(trace);  // Prints out the trace on failure.
+    // Prints out the query plan on failure.
+    SCOPED_TRACE(PrintQueryPlan(0, root, query_block->join,
+                                /*is_root_of_join=*/true));
 
-  // The top-level path should be a HASH_JOIN with two equi-join predicates. In
-  // earlier versions, the hash join had only one of the predicates, and the
-  // other predicate was in a FILTER on top of it.
-  ASSERT_EQ(AccessPath::HASH_JOIN, root->type);
-  EXPECT_EQ(0, root->hash_join().join_predicate->expr->join_conditions.size());
-  {
-    vector<string> equijoin_conditions;
-    for (Item_eq_base *item :
-         root->hash_join().join_predicate->expr->equijoin_conditions) {
-      equijoin_conditions.push_back(ItemToString(item));
+    // The top-level path should be a HASH_JOIN with two equi-join predicates.
+    // In earlier versions, the hash join had only one of the predicates, and
+    // the other predicate was in a FILTER on top of it.
+    ASSERT_EQ(AccessPath::HASH_JOIN, root->type);
+    EXPECT_EQ(0,
+              root->hash_join().join_predicate->expr->join_conditions.size());
+    {
+      vector<string> equijoin_conditions;
+      for (Item_eq_base *item :
+           root->hash_join().join_predicate->expr->equijoin_conditions) {
+        equijoin_conditions.push_back(ItemToString(item));
+      }
+      EXPECT_THAT(equijoin_conditions,
+                  UnorderedElementsAre(StringPrintf("(t2.y %s t3.y)", eq_op),
+                                       StringPrintf("(t1.z %s t3.z)", eq_op)));
     }
-    EXPECT_THAT(equijoin_conditions,
-                UnorderedElementsAre("(t2.y = t3.y)", "(t1.z = t3.z)"));
-  }
 
-  ASSERT_EQ(AccessPath::HASH_JOIN, root->hash_join().outer->type);
-  ASSERT_EQ(AccessPath::TABLE_SCAN, root->hash_join().inner->type);
-  EXPECT_STREQ("t3", root->hash_join().inner->table_scan().table->alias);
+    ASSERT_EQ(AccessPath::HASH_JOIN, root->hash_join().outer->type);
+    ASSERT_EQ(AccessPath::TABLE_SCAN, root->hash_join().inner->type);
+    EXPECT_STREQ("t3", root->hash_join().inner->table_scan().table->alias);
 
-  EXPECT_EQ(0, root->hash_join()
-                   .outer->hash_join()
-                   .join_predicate->expr->join_conditions.size());
-  {
-    const Mem_root_array<Item_eq_base *> &equijoin_conditions =
-        root->hash_join()
-            .outer->hash_join()
-            .join_predicate->expr->equijoin_conditions;
-    ASSERT_EQ(1, equijoin_conditions.size());
-    EXPECT_EQ("(t1.x = t2.x)", ItemToString(equijoin_conditions[0]));
+    EXPECT_EQ(0, root->hash_join()
+                     .outer->hash_join()
+                     .join_predicate->expr->join_conditions.size());
+    {
+      const Mem_root_array<Item_eq_base *> &equijoin_conditions =
+          root->hash_join()
+              .outer->hash_join()
+              .join_predicate->expr->equijoin_conditions;
+      ASSERT_EQ(1, equijoin_conditions.size());
+      EXPECT_EQ(StringPrintf("(t1.x %s t2.x)", eq_op),
+                ItemToString(equijoin_conditions[0]));
+    }
+
+    ClearFakeTables();
   }
 }
 
@@ -3275,7 +3430,7 @@ TEST_F(HypergraphOptimizerTest, HashJoinWithSubqueryPredicate) {
 
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   // Sizes that make t1 HJ (t2 HJ t3) the preferred join order.
@@ -3340,8 +3495,7 @@ std::ostream &operator<<(std::ostream &os, const FullTextParam &param) {
 
 }  // namespace
 
-using HypergraphFullTextTest =
-    OptimizerTestBase<::testing::TestWithParam<FullTextParam>>;
+using HypergraphFullTextTest = OptimizerTestWithParam<FullTextParam>;
 
 TEST_P(HypergraphFullTextTest, FullTextSearch) {
   SCOPED_TRACE(GetParam().query);
@@ -4924,7 +5078,7 @@ TEST_F(HypergraphOptimizerTest, PropagationInNonEqualities) {
 
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
   m_fake_tables["t1"]->file->stats.records = 100;
   m_fake_tables["t2"]->file->stats.records = 10000;
@@ -4962,7 +5116,7 @@ TEST_F(HypergraphOptimizerTest, PropagateEqualityToZeroRows) {
 
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   string trace;
@@ -4982,7 +5136,7 @@ TEST_F(HypergraphOptimizerTest, PropagateEqualityToZeroRowsAggregated) {
 
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
 
   string trace;
@@ -5602,7 +5756,7 @@ TEST_F(HypergraphSecondaryEngineTest, SemiJoinWithOuterJoinMultipleEqual) {
   // Build multiple equalities from the join condition.
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
-                             &query_block->top_join_list,
+                             &query_block->m_table_nest,
                              &query_block->cond_value));
   string trace;
   AccessPath *root = FindBestQueryPlanAndFinalize(m_thd, query_block, &trace);
@@ -5695,7 +5849,7 @@ std::ostream &operator<<(std::ostream &os, const RejectionParam &param) {
 }  // namespace
 
 using HypergraphSecondaryEngineRejectionTest =
-    OptimizerTestBase<::testing::TestWithParam<RejectionParam>>;
+    OptimizerTestWithParam<RejectionParam>;
 
 TEST_P(HypergraphSecondaryEngineRejectionTest, RejectPathType) {
   const RejectionParam &param = GetParam();
@@ -6254,7 +6408,7 @@ TEST(ConflictDetectorTest, CountPlansLargeOperatorSet) {
   initializer.TearDown();
 }
 
-class CSETest : public OptimizerTestBase<::testing::Test> {
+class CSETest : public OptimizerTestBase {
  protected:
   string TestCSE(const string &expression);
 };
@@ -6413,6 +6567,16 @@ static void BM_FindBestQueryPlanPointSelect(size_t num_iterations) {
   t1->file->stats.records = 100000;
   t1->file->stats.data_file_length = 1e8;
 
+  // Build multiple equalities from the WHERE clause.
+  COND_EQUAL *cond_equal = nullptr;
+  EXPECT_FALSE(optimize_cond(thd, query_block->where_cond_ref(), &cond_equal,
+                             &query_block->m_table_nest,
+                             &query_block->cond_value));
+  EXPECT_EQ(1, cond_equal->current_level.size());
+  EXPECT_TRUE(is_function_of_type(query_block->where_cond(),
+                                  Item_func::MULT_EQUAL_FUNC));
+  query_block->join->where_cond = query_block->where_cond();
+
   const size_t mem_root_size_after_resolving = thd->mem_root->allocated_size();
 
   {
@@ -6420,11 +6584,14 @@ static void BM_FindBestQueryPlanPointSelect(size_t num_iterations) {
     // optimizer, so that this memory can be freed after each iteration without
     // interfering with the data structures allocated during resolving above.
     MEM_ROOT optimize_mem_root;
-    Swap_mem_root_guard mem_root_guard(thd, &optimize_mem_root);
+    Query_arena arena_backup;
+    Query_arena arena{&optimize_mem_root, Query_arena::STMT_PREPARED};
+    thd->swap_query_arena(arena, &arena_backup);
 
     StartBenchmarkTiming();
 
     for (size_t i = 0; i < num_iterations; ++i) {
+      assert(query_block->join->where_cond == query_block->where_cond());
       AccessPath *path = FindBestQueryPlan(thd, query_block, /*trace=*/nullptr);
       assert(path != nullptr);
       assert(path->type == AccessPath::EQ_REF);
@@ -6436,10 +6603,15 @@ static void BM_FindBestQueryPlanPointSelect(size_t num_iterations) {
 
       query_block->cleanup(/*full=*/false);
       query_block->join->set_root_access_path(nullptr);
+      thd->rollback_item_tree_changes();
+      cleanup_items(arena.item_list());
+      arena.free_items();
       optimize_mem_root.ClearForReuse();
     }
 
     StopBenchmarkTiming();
+
+    thd->swap_query_arena(arena_backup, &arena);
   }
 
   // Check that all the allocations in FindBestQueryPlan() used

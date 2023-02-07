@@ -210,9 +210,7 @@ class page_size_t {
     }
   }
 
-  /* Disable implicit copying. */
-  void operator=(const page_size_t &) = delete;
-
+  page_size_t &operator=(const page_size_t &) = default;
   page_size_t(const page_size_t &) = default;
 
  private:

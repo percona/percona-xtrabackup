@@ -397,6 +397,7 @@ SET(SQL_SHARED_SOURCES
   item_cmpfunc.cc
   item_create.cc
   item_func.cc
+  item_gtid_func.cc
   item_pfs_func.cc
   item_json_func.cc
   item_regexp_func.cc
@@ -501,7 +502,6 @@ SET(SQL_SHARED_SOURCES
   regexp/regexp_facade.cc
   resourcegroups/thread_resource_control.cc
   resourcegroups/platform/thread_attrs_api_common.cc
-  resourcegroups/resource_group.cc
   resourcegroups/resource_group_mgr.cc
   resourcegroups/resource_group_sql_cmd.cc
   rpl_group_replication.cc
@@ -665,14 +665,14 @@ IF(WITH_LOCK_ORDER)
   FIND_PACKAGE(FLEX REQUIRED)
 
   BISON_TARGET(debug_lo_parser
-    debug_lo_parser.yy
-    ${CMAKE_BINARY_DIR}/sql/debug_lo_parser.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/debug_lo_parser.yy
+    ${CMAKE_CURRENT_BINARY_DIR}/debug_lo_parser.cc
     COMPILE_FLAGS "--name-prefix=LOCK_ORDER_ ${BISON_NO_LINE_OPT}"
     DEFINES_FILE ${CMAKE_BINARY_DIR}/sql/debug_lo_parser.h
     )
   FLEX_TARGET(debug_lo_scanner
-    debug_lo_scanner.ll
-    ${CMAKE_BINARY_DIR}/sql/debug_lo_scanner.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/debug_lo_scanner.ll
+    ${CMAKE_CURRENT_BINARY_DIR}/debug_lo_scanner.cc
     COMPILE_FLAGS "--prefix=LOCK_ORDER_"
     DEFINES_FILE ${CMAKE_BINARY_DIR}/sql/debug_lo_scanner.h
     )
@@ -692,6 +692,12 @@ IF(WITH_LOCK_ORDER)
     ${FLEX_debug_lo_scanner_OUTPUTS}
     debug_lock_order.cc
     )
+
+  # Bison output uses undefined symbols for clang >= v15
+  IF(MY_COMPILER_IS_CLANG AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 15)
+    ADD_COMPILE_FLAGS(${CMAKE_BINARY_DIR}/sql/debug_lo_parser.cc
+                      COMPILE_FLAGS "-Wno-unused-but-set-variable")
+  ENDIF()
 
   IF(MY_COMPILER_IS_GNU_OR_CLANG)
     ADD_COMPILE_FLAGS(${FLEX_debug_lo_scanner_OUTPUTS}
@@ -890,6 +896,11 @@ IF(MY_COMPILER_IS_GNU_OR_CLANG)
   ADD_COMPILE_FLAGS(${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
                     ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
                     COMPILE_FLAGS "-Wno-undef -Wno-unused-label")
+  IF(MY_COMPILER_IS_CLANG AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 15)
+    ADD_COMPILE_FLAGS(${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
+                      ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
+                      COMPILE_FLAGS "-Wno-unused-but-set-variable")
+  ENDIF()
   # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=98753
   IF(MY_COMPILER_IS_GNU AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11)
     ADD_COMPILE_FLAGS(
@@ -979,12 +990,21 @@ SET(BINLOG_SOURCE
   basic_ostream.cc
   binlog/global.cc
   binlog/recovery.cc
+  binlog/group_commit/bgc_ticket_manager.cc
+  binlog/group_commit/bgc_ticket.cc
+  binlog/group_commit/atomic_bgc_ticket.cc
+  binlog/group_commit/atomic_bgc_ticket_guard.cc
   binlog/monitoring/context.cc
   binlog/tools/iterators.cc
   binlog.cc
   binlog_istream.cc
   binlog_ostream.cc
   binlog_reader.cc
+  changestreams/misc/replicated_columns_view.cc
+  changestreams/misc/replicated_columns_view_with_gipk_on_source.cc
+  changestreams/misc/column_filters/column_filter_inbound_func_indexes.cc
+  changestreams/misc/column_filters/column_filter_inbound_gipk.cc
+  changestreams/misc/column_filters/column_filter_outbound_func_indexes.cc
   log_event.cc
   rpl_commit_stage_manager.cc
   rpl_filter.cc
@@ -1103,8 +1123,7 @@ ENDIF()
 OPTION(DEBUG_EXTNAME "Build server as mysqld-debug (debug builds only)" OFF)
 MARK_AS_ADVANCED(DEBUG_EXTNAME)
 
-INCLUDE(${CMAKE_SOURCE_DIR}/cmake/bison.cmake)
-
+# We have already included cmake/bison.cmake, and done FIND_PACKAGE(BISON)
 IF(BISON_FOUND)
   SET(USE_BISON_RESULTS_FROM_MAKE_DIST_DEFAULT OFF)
 ELSE()
@@ -1135,7 +1154,7 @@ IF(USE_BISON_RESULTS_FROM_MAKE_DIST)
   ENDFOREACH()
 ELSE()
   BISON_TARGET(mysql_parser
-    sql_yacc.yy
+    ${CMAKE_CURRENT_SOURCE_DIR}/sql_yacc.yy
     ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
     COMPILE_FLAGS
     "--name-prefix=MYSQL --yacc ${BISON_FLAGS_WARNINGS} ${BISON_NO_LINE_OPT}"
@@ -1143,7 +1162,7 @@ ELSE()
     )
 
   BISON_TARGET(hints_parser
-    sql_hints.yy
+    ${CMAKE_CURRENT_SOURCE_DIR}/sql_hints.yy
     ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
     COMPILE_FLAGS
     "--name-prefix=HINT_PARSER_ --yacc ${BISON_FLAGS_WARNINGS} ${BISON_NO_LINE_OPT}"

@@ -410,6 +410,7 @@ dberr_t log_files_next_checkpoint(log_t &log, lsn_t next_checkpoint_lsn) {
 
   log_limits_mutex_enter(log);
   log_update_limits_low(log);
+  log_update_exported_variables(log);
   log.dict_max_allowed_checkpoint_lsn = 0;
   log_limits_mutex_exit(log);
 
@@ -528,8 +529,7 @@ dberr_t log_files_write_first_data_block_low(log_t &log,
 
   /* Write the first empty log block to the log buffer. */
   Log_data_block_header block_header;
-  block_header.m_epoch_no = log_block_convert_lsn_to_epoch_no(block_lsn);
-  block_header.m_hdr_no = log_block_convert_lsn_to_hdr_no(block_lsn);
+  block_header.set_lsn(block_lsn);
   block_header.m_first_rec_group = block_header.m_data_len = data_end;
 
   byte block[OS_FILE_LOG_BLOCK_SIZE] = {};
@@ -1191,8 +1191,6 @@ void log_update_concurrency_margin(log_t &log) {
 
 void log_update_limits_low(log_t &log) {
   ut_ad(srv_is_being_started || log_limits_mutex_own(log));
-
-  log_update_exported_variables(log);
 
   log_update_concurrency_margin(log);
 

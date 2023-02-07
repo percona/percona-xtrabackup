@@ -103,11 +103,13 @@ ENDFOREACH()
 SET(TESTS
   test_net_ts_buffer.cc
   test_net_ts_executor.cc
+  test_net_ts_impl_callstack.cc
   test_net_ts_impl_file.cc
   test_net_ts_impl_io_service_base.cc
   test_net_ts_impl_kqueue_io_service.cc
   test_net_ts_impl_linux_epoll_io_service.cc
   test_net_ts_impl_netif.cc
+  test_net_ts_impl_poll_io_service.cc
   test_net_ts_impl_resolver.cc
   test_net_ts_impl_socket.cc
   test_net_ts_internet.cc
@@ -134,8 +136,9 @@ SET(TESTS
   test_stdx_bit.cc
   test_stdx_expected.cc
   test_stdx_flags.cc
-  test_stdx_monitor.cc
   test_stdx_io_file_handle.cc
+  test_stdx_monitor.cc
+  test_stdx_ranges.cc
 )
 
 FOREACH(TEST ${TESTS})
@@ -177,3 +180,7 @@ ADD_DEPENDENCIES(mysqlrouter_all net_ts_forward)
 MYSQL_ADD_EXECUTABLE(acl_cli acl_cli.cc SKIP_INSTALL)
 TARGET_LINK_LIBRARIES(acl_cli harness-library)
 ADD_DEPENDENCIES(mysqlrouter_all acl_cli)
+
+MYSQL_ADD_EXECUTABLE(linux_timestamping linux_timestamping.cc SKIP_INSTALL)
+TARGET_LINK_LIBRARIES(linux_timestamping harness_net_ts harness_stdx)
+ADD_DEPENDENCIES(mysqlrouter_all linux_timestamping)

@@ -132,7 +132,7 @@ class user_var_entry;
 struct LEX;
 struct LEX_USER;
 struct TABLE;
-struct TABLE_LIST;
+class Table_ref;
 struct timeval;
 struct User_level_lock;
 struct YYLTYPE;
@@ -189,6 +189,13 @@ extern char empty_c_string[1];
   (yes, the sum is deliberately inaccurate)
 */
 constexpr size_t PREALLOC_NUM_HA = 15;
+
+#ifndef NDEBUG
+// Used to sample certain debug flags when a query is read but before the reply
+// is sent.
+enum class TDM { ANY, ON, ZERO, NOT_AVAILABLE };
+inline thread_local TDM expected_from_debug_flag = TDM::ANY;
+#endif /* not defined NDEBUG */
 
 /**
   To be used for pool-of-threads (implemented differently on various OSs)
@@ -1480,7 +1487,7 @@ class THD : public MDL_context_owner,
 
   ulong max_client_packet_length;
 
-  collation_unordered_map<std::string, unique_ptr_my_free<TABLE_LIST>>
+  collation_unordered_map<std::string, unique_ptr_my_free<Table_ref>>
       handler_tables_hash{&my_charset_latin1,
                           key_memory_THD_handler_tables_hash};
   /*
@@ -1518,7 +1525,31 @@ class THD : public MDL_context_owner,
   */
   mysql_cond_t COND_thr_lock;
 
+  /// @brief Enables ordering in ha_commit_low. Used in binlog::commit
+  /// @note Additional requirements need to be met
+  /// in order to invoke commit ordering in ha_commit_low
+  /// @see is_ha_commit_low_invoking_commit_order
+  void enable_low_level_commit_ordering();
+
+  /// @brief Enables ordering in ha_commit_low. Used in binlog::commit
+  /// @note Additional requirements need to be met
+  /// in order to invoke commit ordering in ha_commit_low
+  /// @see is_ha_commit_low_invoking_commit_order
+  void disable_low_level_commit_ordering();
+
+  /// @brief Obtains flag indicating whether additional ordering in the
+  /// ha_commit_low function is enabled. If not, ordering will take place in
+  /// binlog::commit
+  /// @details Accessor for the m_is_low_level_commit_ordering_enabled
+  /// @return When true, ha_commit_low may order this transaction
+  bool is_low_level_commit_ordering_enabled() const;
+
  private:
+  /// @brief Flag indicating whether additional ordering in the ha_commit_low
+  /// function is enabled. If disabled, ordering will take place in
+  /// binlog::commit. It is set up in binlog::commit
+  bool m_is_low_level_commit_ordering_enabled = false;
+
   /**
     Type of current query: COM_STMT_PREPARE, COM_QUERY, etc.
     Set from first byte of the packet in do_command()
@@ -1733,6 +1764,17 @@ class THD : public MDL_context_owner,
   bool is_current_stmt_binlog_log_replica_updates_disabled() const;
 
   /**
+    Checks whether binlog caches are disabled (binlog does not cache data) or
+    empty in case binloggging is enabled in the current call to this function.
+    This function may be safely called in case binlogging is disabled.
+    @retval true binlog local caches are empty or disabled and binlogging is
+    enabled
+    @retval false binlog local caches are enabled and contain data or binlogging
+    is disabled
+  */
+  bool is_current_stmt_binlog_enabled_and_caches_empty() const;
+
+  /**
     Determine if binloging is enabled in row format and write set extraction is
     enabled for this session
     @retval true  if is enable
@@ -1845,6 +1887,8 @@ class THD : public MDL_context_owner,
   NET net;        // client connection descriptor
   String packet;  // dynamic buffer for network I/O
  public:
+  const NET *get_net() const { return &net; }
+
   void set_skip_readonly_check() { skip_readonly_check = true; }
 
   bool is_cmd_skip_readonly() const { return skip_readonly_check; }
@@ -2775,7 +2819,7 @@ class THD : public MDL_context_owner,
   */
   bool m_audited;
 
-  THD(bool enable_plugins = true);
+  explicit THD(bool enable_plugins = true);
 
   /*
     The THD dtor is effectively split in two:
@@ -4203,7 +4247,7 @@ class THD : public MDL_context_owner,
     locked_tables_mode = mode_arg;
   }
   void leave_locked_tables_mode();
-  int decide_logging_format(TABLE_LIST *tables);
+  int decide_logging_format(Table_ref *tables);
   /**
     is_dml_gtid_compatible() and is_ddl_gtid_compatible() check if the
     statement that is about to be processed will safely get a

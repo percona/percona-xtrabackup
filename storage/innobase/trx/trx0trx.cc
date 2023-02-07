@@ -1755,7 +1755,8 @@ static void trx_flush_log_if_needed(lsn_t lsn, /*!< in: lsn up to which logs are
   DEBUG_SYNC_C("trx_flush_log_if_needed");
 
   if (trx->ddl_operation || trx->ddl_must_flush) {
-    log_write_up_to(*log_sys, lsn, true);
+    auto wait_stats = log_write_up_to(*log_sys, lsn, true);
+    MONITOR_INC_WAIT_STATS(MONITOR_TRX_ON_LOG_, wait_stats);
   } else {
     trx_flush_log_if_needed_low(lsn);
   }

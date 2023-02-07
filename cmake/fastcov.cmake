@@ -21,19 +21,32 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 # Targets below assume we have gcc and gcov version >= 9
+
+# There is no coverage for the NDBCLUSTER plugin, so disable it.
+# Alternatively: use -DWITH_NDB=1, and run cluster test suites also.
+
+# The default mtr test suite has limited coverage of replication,
+# and of some plugins.
+
 # cmake <path> -DWITH_DEBUG=1 -DWITH_SYSTEM_LIBS=1 -DENABLE_GCOV=1
+#              -DWITH_NDBCLUSTER_STORAGE_ENGINE=0
 # make
 # make fastcov-clean
 # <run some tests>
 # make fastcov-report
 # make fastcov-html
+# open in browser:  ${CMAKE_BINARY_DIR}/code_coverage/index.html
 
 FIND_PROGRAM(FASTCOV_EXECUTABLE NAMES fastcov.py fastcov)
 
-IF(NOT FASTCOV_EXECUTABLE OR
-    NOT CMAKE_COMPILER_IS_GNUCXX OR
+IF(NOT FASTCOV_EXECUTABLE)
+  MESSAGE(WARNING "Could not find fastcov.py or fastcov")
+  RETURN()
+ENDIF()
+
+IF(NOT CMAKE_COMPILER_IS_GNUCXX OR
     CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
-  MESSAGE(WARNING "You should upgrade to gcc version >= 9 and fastcov")
+  MESSAGE(WARNING "You should upgrade to gcc version >= 9")
   RETURN()
 ENDIF()
 
@@ -43,6 +56,12 @@ IF(ALTERNATIVE_GCC)
   FIND_PROGRAM(GCOV_EXECUTABLE gcov
     NO_DEFAULT_PATH
     PATHS "${GCC_B_PREFIX}")
+  # Ensure that fastcov can find tools in PATH.
+  IF(GCOV_EXECUTABLE)
+    SET(FASTCOV_PATH_PREFIX
+      ${CMAKE_COMMAND} -E env "PATH=${GCC_B_PREFIX}:$ENV{PATH}"
+      )
+  ENDIF()
 ENDIF()
 
 FIND_PROGRAM(GCOV_EXECUTABLE NAMES gcov)
@@ -74,47 +93,63 @@ IF(GCOV_VERSION AND GCOV_VERSION VERSION_LESS 9)
     "At least version 9 is required")
 ENDIF()
 
-# Add symlinks for files which contain #line 1 "foo.c" rather than full path.
-# extra/duktape/duktape-2.3.0/src/duktape.c has #line directives for:
-FILE(GLOB DUKTAPE_SRC_INPUT
-  "${CMAKE_SOURCE_DIR}/extra/duktape/duktape-2.3.0/src-input/*.c")
-FOREACH(FILE ${DUKTAPE_SRC_INPUT})
-  GET_FILENAME_COMPONENT(filename "${FILE}" NAME)
-  EXECUTE_PROCESS(
-    COMMAND ${CMAKE_COMMAND} -E create_symlink ${FILE} ${filename}
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+IF(WITH_ROUTER)
+  # extra/duktape/duktape-2.7.0/src/duktape.c has ~140 #line directives.
+  # Just create some empty files, to make fastcov happy.
+  SET(DUKTAPE_SOURCE_DIR ${CMAKE_SOURCE_DIR}/extra/duktape/duktape-2.7.0)
+  EXECUTE_PROCESS(COMMAND
+    grep "\#line [12] " ${DUKTAPE_SOURCE_DIR}/src/duktape.c
+    OUTPUT_VARIABLE DUKTAPE_LINES
+    OUTPUT_STRIP_TRAILING_WHITESPACE
     )
-ENDFOREACH()
+  STRING(REPLACE "\n" ";" DUKTAPE_LINES "${DUKTAPE_LINES}")
+  FOREACH(LINE ${DUKTAPE_LINES})
+    STRING(REGEX MATCH "#line [12] \"(.*)\"" XXX ${LINE})
+    SET(DUK_SOURCE_FILE ${CMAKE_MATCH_1})
+    IF(CMAKE_GENERATOR MATCHES "Ninja")
+      FILE(WRITE ${CMAKE_BINARY_DIR}/${DUK_SOURCE_FILE} "")
+    ELSE()
+      FILE(WRITE
+        ${CMAKE_BINARY_DIR}/router/src/mock_server/src/${DUK_SOURCE_FILE} "")
+    ENDIF()
+  ENDFOREACH()
+ENDIF(WITH_ROUTER)
 
-FOREACH(FILE
-    # InnoDB generated parsers are checked in as source.
-    ${CMAKE_SOURCE_DIR}/storage/innobase/fts/fts0blex.cc
-    ${CMAKE_SOURCE_DIR}/storage/innobase/fts/fts0blex.l
-    ${CMAKE_SOURCE_DIR}/storage/innobase/fts/fts0pars.cc
-    ${CMAKE_SOURCE_DIR}/storage/innobase/fts/fts0pars.y
-    ${CMAKE_SOURCE_DIR}/storage/innobase/fts/fts0tlex.cc
-    ${CMAKE_SOURCE_DIR}/storage/innobase/fts/fts0tlex.l
-    ${CMAKE_SOURCE_DIR}/storage/innobase/pars/lexyy.cc
-    ${CMAKE_SOURCE_DIR}/storage/innobase/pars/pars0grm.cc
-    ${CMAKE_SOURCE_DIR}/storage/innobase/pars/pars0grm.y
-    ${CMAKE_SOURCE_DIR}/storage/innobase/pars/pars0lex.l
-    # MySQL parsers
-    ${CMAKE_SOURCE_DIR}/sql/debug_lo_parser.yy
-    ${CMAKE_SOURCE_DIR}/sql/debug_lo_scanner.ll
-    ${CMAKE_SOURCE_DIR}/sql/sql_hints.yy
-    ${CMAKE_SOURCE_DIR}/sql/sql_yacc.yy
-    )
-  GET_FILENAME_COMPONENT(filename "${FILE}" NAME)
-  EXECUTE_PROCESS(
-    COMMAND ${CMAKE_COMMAND} -E create_symlink ${FILE} ${filename}
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    )
-ENDFOREACH()
+# We may be running gcov in-source.
+IF(NOT THIS_IS_AN_IN_SOURCE_BUILD)
+  FOREACH(FILE
+      # InnoDB generated parsers are checked in as source.
+      ${CMAKE_SOURCE_DIR}/storage/innobase/fts/fts0blex.cc
+      ${CMAKE_SOURCE_DIR}/storage/innobase/fts/fts0blex.l
+      ${CMAKE_SOURCE_DIR}/storage/innobase/fts/fts0pars.cc
+      ${CMAKE_SOURCE_DIR}/storage/innobase/fts/fts0pars.y
+      ${CMAKE_SOURCE_DIR}/storage/innobase/fts/fts0tlex.cc
+      ${CMAKE_SOURCE_DIR}/storage/innobase/fts/fts0tlex.l
+      ${CMAKE_SOURCE_DIR}/storage/innobase/pars/lexyy.cc
+      ${CMAKE_SOURCE_DIR}/storage/innobase/pars/pars0grm.cc
+      ${CMAKE_SOURCE_DIR}/storage/innobase/pars/pars0grm.y
+      ${CMAKE_SOURCE_DIR}/storage/innobase/pars/pars0lex.l
+      )
+    GET_FILENAME_COMPONENT(filename "${FILE}" NAME)
+    IF(CMAKE_GENERATOR MATCHES "Ninja")
+      EXECUTE_PROCESS(
+        COMMAND ${CMAKE_COMMAND} -E create_symlink ${FILE} ${filename}
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        )
+    ELSE()
+      EXECUTE_PROCESS(
+        COMMAND ${CMAKE_COMMAND} -E create_symlink ${FILE} ${filename}
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/storage/innobase
+        )
+    ENDIF()
+  ENDFOREACH()
+ENDIF()
 
 # Ignore std, boost and 3rd-party code when doing coverage analysis.
 SET(FASTCOV_EXCLUDE_LIST "--exclude")
 FOREACH(FASTCOV_EXCLUDE
     "/usr/include"
+    "/usr/lib"
     "${BOOST_INCLUDE_DIR}"
     "${BOOST_PATCHES_DIR}"
     ${GMOCK_INCLUDE_DIRS}
@@ -126,12 +161,14 @@ FOREACH(FASTCOV_EXCLUDE
 ENDFOREACH()
 
 ADD_CUSTOM_TARGET(fastcov-clean
-  COMMAND ${FASTCOV_EXECUTABLE} --gcov ${GCOV_EXECUTABLE} --zerocounters
+  COMMAND ${FASTCOV_PATH_PREFIX}
+          ${FASTCOV_EXECUTABLE} --gcov ${GCOV_EXECUTABLE} --zerocounters
   COMMENT "Running ${FASTCOV_EXECUTABLE} --zerocounters"
   VERBATIM
   )
 ADD_CUSTOM_TARGET(fastcov-report
-  COMMAND ${FASTCOV_EXECUTABLE} --gcov ${GCOV_EXECUTABLE}
+  COMMAND ${FASTCOV_PATH_PREFIX}
+          ${FASTCOV_EXECUTABLE} --gcov ${GCOV_EXECUTABLE}
           ${FASTCOV_EXCLUDE_LIST} --lcov -o report.info
   COMMENT "Running ${FASTCOV_EXECUTABLE} --lcov -o report.info"
   VERBATIM

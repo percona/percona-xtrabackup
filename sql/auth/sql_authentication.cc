@@ -155,20 +155,19 @@ struct MEM_ROOT;
   "Authentication method switch" --> [ Client does not know requested auth method ] DISCONNECT
   "Authentication method switch" --> "Authentication exchange continuation"
 
+  "Authentication exchange continuation" --> "Server Response"
   "Authentication exchange continuation" --> [ No more factors to authenticate] OK
   "Authentication exchange continuation" --> ERR
 
   "Server Response" --> "Authenticate 2nd Factor"
-  "Client Response" --> "Authentication exchange continuation"
-
-  "Authentication exchange continuation" --> [ No more factors to authenticate] OK
-  "Authentication exchange continuation" --> ERR
-
   "Server Response" --> "Authenticate 3rd Factor"
-  "Client Response" --> "Authentication exchange continuation"
 
-  "Authentication exchange continuation" --> OK
-  "Authentication exchange continuation" --> ERR
+  "Authenticate 2nd Factor" --> "MFA Authentication Client Response"
+
+  "Authenticate 3rd Factor" --> "MFA Authentication Client Response"
+
+  "MFA Authentication Client Response" --> "Authentication exchange continuation"
+  "MFA Authentication Client Response" --> [ Client does not know requested auth method ] DISCONNECT
 
   @enduml
 
@@ -3420,6 +3419,8 @@ static int do_auth_once(THD *thd, const LEX_CSTRING &auth_plugin_name,
   10.Z authentication method packets are exchanged
   11.The server responds with an @ref page_protocol_basic_ok_packet
 
+  @note At any point, if the Nth Authentication Method fails, the server can return ERR and disconnect.
+    And the client can just disconnect.
 
   @startuml
   Client -> Server: Connect
@@ -3478,6 +3479,8 @@ static int do_multi_factor_auth(THD *thd, MPVIO_EXT *mpvio) {
       mpvio->auth_info.current_auth_factor = 1;
     else if (af->get_factor() == nthfactor::THIRD_FACTOR)
       mpvio->auth_info.current_auth_factor = 2;
+    /* reset cached_client_reply for 2nd and 3rd factors */
+    mpvio->cached_client_reply.pkt = nullptr;
     plugin_ref plugin = my_plugin_lock_by_name(thd, af->plugin_name(),
                                                MYSQL_AUTHENTICATION_PLUGIN);
     if (plugin) {
@@ -3797,14 +3800,6 @@ int acl_authenticate(THD *thd, enum_server_command command) {
   static_assert(MYSQL_USERNAME_LENGTH == USERNAME_LENGTH, "");
   assert(command == COM_CONNECT || command == COM_CHANGE_USER);
 
-  mysql_mutex_lock(&thd->LOCK_thd_data);
-
-  DBUG_EXECUTE_IF("before_server_mpvio_initialize", {
-    DBUG_SET("+d,wait_until_thread_kill");
-    const char act[] = "now SIGNAL acl_auth_reached";
-    assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
-  });
-
   server_mpvio_initialize(thd, &mpvio, &charset_adapter);
   /*
     Clear thd->db as it points to something, that will be freed when
@@ -3831,7 +3826,6 @@ int acl_authenticate(THD *thd, enum_server_command command) {
                                      mpvio.protocol->get_packet_length())) {
       login_failed_error(thd, &mpvio, mpvio.auth_info.password_used);
       server_mpvio_update_thd(thd, &mpvio);
-      mysql_mutex_unlock(&thd->LOCK_thd_data);
       goto end;
     }
 
@@ -3868,20 +3862,12 @@ int acl_authenticate(THD *thd, enum_server_command command) {
     res = do_multi_factor_auth(thd, &mpvio);
   }
 
-  DBUG_EXECUTE_IF("before_server_mpvio_update_thd", {
-    DBUG_SET("+d,wait_until_thread_kill");
-    const char act[] = "now SIGNAL acl_auth_reached";
-    assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
-  });
-
   server_mpvio_update_thd(thd, &mpvio);
 
   check_and_update_password_lock_state(mpvio, thd, res);
 #ifdef HAVE_PSI_THREAD_INTERFACE
   PSI_THREAD_CALL(set_connection_type)(thd->get_vio_type());
 #endif /* HAVE_PSI_THREAD_INTERFACE */
-
-  mysql_mutex_unlock(&thd->LOCK_thd_data);
 
   {
     Security_context *sctx = thd->security_context();
@@ -4083,20 +4069,22 @@ int acl_authenticate(THD *thd, enum_server_command command) {
         goto end;
       }
 
-      mysql_mutex_lock(&thd->LOCK_thd_data);
       DBUG_EXECUTE_IF("before_secure_transport_check", {
-        DBUG_SET("+d,wait_until_thread_kill");
-        const char act[] = "now SIGNAL acl_auth_reached";
+        const char act[] = "now SIGNAL kill_now WAIT_FOR killed";
         assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
       });
 
-      if (opt_require_secure_transport && thd->active_vio != nullptr &&
-          !is_secure_transport(thd->active_vio->type)) {
-        mysql_mutex_unlock(&thd->LOCK_thd_data);
+      /*
+        The assumption here is that thd->active_vio and thd->net.vio are both
+        the same at this point. We should not use thd->active_vio at any cost,
+        as a KILL command can shutdown the active_vio i.e., making it a nullptr
+        which would cause issues. Instead we check the net.vio type.
+      */
+      if (opt_require_secure_transport && thd->get_net()->vio != nullptr &&
+          !is_secure_transport(thd->get_net()->vio->type)) {
         my_error(ER_SECURE_TRANSPORT_REQUIRED, MYF(0));
         goto end;
       }
-      mysql_mutex_unlock(&thd->LOCK_thd_data);
 
       /* checking password_time_expire for connecting user */
       password_time_expired = check_password_lifetime(thd, mpvio.acl_user);
@@ -4179,11 +4167,6 @@ int acl_authenticate(THD *thd, enum_server_command command) {
       goto end;
     }
 
-    DBUG_EXECUTE_IF("wait_until_thread_kill", {
-      DBUG_SET("-d,wait_until_thread_kill");
-      const char act[] = "now WAIT_FOR killed";
-      assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
-    });
     /*
       This is the default access rights for the current database.  It's
       set to 0 here because we don't have an active database yet (and we

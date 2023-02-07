@@ -95,7 +95,7 @@ struct ndb_ndbxfrm1
 
   static const char magic[8];
   static constexpr Uint64 native_endian_marker = 0xFEDCBA9876543210;
-  static constexpr Uint64 reverse_endian_marker = 0x0123456789ABCDEF;
+  static constexpr Uint64 reverse_endian_marker = 0x1032547698BADCFE;
 
   static void toggle_endian32(Uint32* x, size_t n = 1);
   static void toggle_endian64(Uint64* x, size_t n = 1);
@@ -336,6 +336,7 @@ private:
     Uint32 m_encrypt_key_data_unit_size;
     Uint32 m_encrypt_krm_keying_material_position_in_octets;
     Uint32 m_encrypt_krm_key_count;
+    Uint32 m_zeros02[1];
 
     int toggle_endian();
     int validate() const;
@@ -448,7 +449,7 @@ void ndb_ndbxfrm1::toggle_endian32(Uint32* x, size_t n)
   {
     swap(p[0], p[3]);
     swap(p[1], p[2]);
-    p += sizeof(*p);
+    p += 4;
     n--;
   }
 }
@@ -464,7 +465,7 @@ void ndb_ndbxfrm1::toggle_endian64(Uint64* x, size_t n)
     swap(p[1], p[6]);
     swap(p[2], p[5]);
     swap(p[3], p[4]);
-    p += sizeof(*p);
+    p += 8;
     n--;
   }
 }

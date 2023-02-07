@@ -56,18 +56,18 @@ class Intrusive_list_indexer {
   SQL_I_List<T> m_list;
 };
 
-typedef Intrusive_list_indexer<TABLE_LIST> Table_list_indexer;
+typedef Intrusive_list_indexer<Table_ref> Table_list_indexer;
 
 using Local_tables_iterator =
-    IntrusiveListIterator<TABLE_LIST, &TABLE_LIST::next_local>;
+    IntrusiveListIterator<Table_ref, &Table_ref::next_local>;
 
-/// A list interface over the TABLE_LIST::next_local pointer.
+/// A list interface over the Table_ref::next_local pointer.
 using Local_tables_list = IteratorContainer<Local_tables_iterator>;
 
 TEST_F(LockingClauseSyntaxTest, LegacyForUpdate) {
   Query_block *term = parse("SELECT * FROM t0, t1, t2 FOR UPDATE");
 
-  for (auto table : Local_tables_list(term->table_list.first)) {
+  for (auto table : Local_tables_list(term->get_table_list())) {
     EXPECT_EQ(TL_WRITE, table->lock_descriptor().type);
     EXPECT_EQ(THR_WAIT, table->lock_descriptor().action);
   }
@@ -76,7 +76,7 @@ TEST_F(LockingClauseSyntaxTest, LegacyForUpdate) {
 TEST_F(LockingClauseSyntaxTest, LegacyShared) {
   Query_block *term = parse("SELECT * FROM t0, t1, t2 LOCK IN SHARE MODE");
 
-  for (auto table : Local_tables_list(term->table_list.first)) {
+  for (auto table : Local_tables_list(term->get_table_list())) {
     EXPECT_EQ(TL_READ_WITH_SHARED_LOCKS, table->lock_descriptor().type);
     EXPECT_EQ(THR_WAIT, table->lock_descriptor().action);
   }
@@ -103,7 +103,7 @@ TEST_F(LockingClauseSyntaxTest, NameResolution) {
       "FOR SHARE OF t7, t8 "
       "FOR SHARE OF t9, t10 NOWAIT ");
 
-  Table_list_indexer tables(term->table_list);
+  Table_list_indexer tables(term->m_table_list);
 
   EXPECT_EQ(TL_WRITE, tables[0]->lock_descriptor().type);
   EXPECT_EQ(THR_WAIT, tables[0]->lock_descriptor().action);

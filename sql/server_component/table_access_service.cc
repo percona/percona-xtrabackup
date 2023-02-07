@@ -519,7 +519,7 @@ class Table_access_impl {
 
  private:
   /** Array of size m_max_count. */
-  TABLE_LIST *m_table_array;
+  Table_ref *m_table_array;
   /** Array of size m_max_count. */
   Table_state *m_table_state_array;
   size_t m_current_count;
@@ -555,7 +555,7 @@ class TA_key_impl {
   TA_key_impl();
   ~TA_key_impl() {}
 
-  void key_copy(uchar *record);
+  void key_copy(uchar *record, uint key_length);
 
  public:
   /* Metadata */
@@ -564,7 +564,7 @@ class TA_key_impl {
 
   /* Data */
   uchar m_key[MAX_KEY_LENGTH];
-  size_t m_key_length;
+  uint m_key_length;
 };
 
 TA_key_impl::TA_key_impl() {
@@ -574,7 +574,10 @@ TA_key_impl::TA_key_impl() {
   m_key_length = 0;
 }
 
-void TA_key_impl::key_copy(uchar *record) {
+void TA_key_impl::key_copy(uchar *record, uint key_length) {
+  /* Actual key may be a prefix */
+  assert(key_length <= m_key_info->key_length);
+  m_key_length = key_length;
   ::key_copy(m_key, record, m_key_info, m_key_length);
 }
 
@@ -610,7 +613,7 @@ Table_access_impl::Table_access_impl(THD *thd, size_t count)
   */
   Global_THD_manager::get_instance()->add_thd(m_child_thd);
 
-  m_table_array = new TABLE_LIST[m_max_count];
+  m_table_array = new Table_ref[m_max_count];
   m_table_state_array = new Table_state[m_max_count];
 }
 
@@ -704,21 +707,21 @@ size_t Table_access_impl::add_table(const char *schema_name,
       table_name, table_name_length, cs, &errors);
   state->m_table_name[state->m_table_name_length] = '\0';
 
-  TABLE_LIST *current = &m_table_array[m_current_count];
+  Table_ref *current = &m_table_array[m_current_count];
 
   // FIXME : passing alias = table_name to force MDL key init.
-  *current = TABLE_LIST(state->m_schema_name, state->m_schema_name_length,
-                        state->m_table_name, state->m_table_name_length,
-                        state->m_table_name, lock_type);
+  *current = Table_ref(state->m_schema_name, state->m_schema_name_length,
+                       state->m_table_name, state->m_table_name_length,
+                       state->m_table_name, lock_type);
   assert(current->mdl_request.key.length() != 0);
 
   current->next_local = nullptr;
   current->next_global = nullptr;
   current->open_type = OT_BASE_ONLY;  // TODO: VIEWS ?
-  current->open_strategy = TABLE_LIST::OPEN_IF_EXISTS;
+  current->open_strategy = Table_ref::OPEN_IF_EXISTS;
 
   if (m_current_count > 0) {
-    TABLE_LIST *prev = &m_table_array[m_current_count - 1];
+    Table_ref *prev = &m_table_array[m_current_count - 1];
     prev->next_local = current;
     prev->next_global = current;
   }
@@ -1058,8 +1061,6 @@ int impl_index_read_map(Table_access /* api_ta */, TA_table api_table,
   assert(num_parts > 0);
   assert(num_parts <= key->m_key_info->actual_key_parts);
 
-  key->key_copy(table->record[0]);
-
   /*
     NUM_PARTS | KEY_PART_MAP
     ------------------------
@@ -1071,8 +1072,12 @@ int impl_index_read_map(Table_access /* api_ta */, TA_table api_table,
   */
   key_part_map map = make_prev_keypart_map(num_parts);
 
-  result = table->file->ha_index_read_idx_map(
-      table->record[0], key->m_key_index, key->m_key, map, HA_READ_KEY_EXACT);
+  uint key_len = calculate_key_len(table, key->m_key_index, map);
+
+  key->key_copy(table->record[0], key_len);
+
+  result = table->file->ha_index_read_map(table->record[0], key->m_key, map,
+                                          HA_READ_KEY_EXACT);
 
   if (result == 0) {
     if (table->record[1]) {

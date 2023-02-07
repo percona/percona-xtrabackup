@@ -1,6 +1,7 @@
 #
 # Test upgrade of keyring file plugin to component
 #
+skip_test "Disabled until PXB-2969 is fixed"
 if is_server_version_lower_than 8.0.24
 then
   skip_test "Requires server version higher than 8.0.24"

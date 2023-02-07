@@ -47,12 +47,6 @@ LIST(APPEND ALL_KEYRING_COMPONENT_COMMON_TESTS
   ${CMAKE_SOURCE_DIR}/components/keyrings/common/encryption/aes.cc
   )
 
-IF(WIN32)
-  LIST(APPEND ALL_KEYRING_COMPONENT_COMMON_TESTS
-    ${CMAKE_SOURCE_DIR}/sql/nt_servc.cc
-    )
-ENDIF()
-
 SET(KEYRING_COMPONENT_LIBS
   keyring_common
   ${SSL_LIBRARIES}
@@ -64,26 +58,22 @@ IF(COMPONENT_COMPILE_VISIBILITY)
 ENDIF()
 
 MYSQL_ADD_EXECUTABLE(merge_component_keyring_common_tests-t
- ${ALL_KEYRING_COMPONENT_COMMON_TESTS}
- ${COMPILE_OPTIONS_ARG}
- ENABLE_EXPORTS
- ADD_TEST merge_component_keyring_common_tests
- LINK_LIBRARIES
- ${KEYRING_COMPONENT_LIBS}
- gunit_large
- server_unittest_library
+  ${ALL_KEYRING_COMPONENT_COMMON_TESTS}
+  ${COMPILE_OPTIONS_ARG}
+  ENABLE_EXPORTS
+  ADD_TEST merge_component_keyring_common_tests
+  LINK_LIBRARIES
+  ${KEYRING_COMPONENT_LIBS} ${GTEST_LIBRARIES} gtest_main
  )
 
 FOREACH(test ${KEYRING_COMPONENT_COMMON_TESTS})
-  MYSQL_ADD_EXECUTABLE(${test}-t ${test}-t.cc
+  MYSQL_ADD_EXECUTABLE(keyring_common_${test}-t ${test}-t.cc
     ${COMPILE_OPTIONS_ARG}
     ENABLE_EXPORTS
     SKIP_INSTALL
     EXCLUDE_FROM_ALL
     LINK_LIBRARIES
-    ${KEYRING_COMPONENT_LIBS}
-    gunit_large
-    server_unittest_library
+    ${KEYRING_COMPONENT_LIBS} ${GTEST_LIBRARIES} gtest_main
     )
 ENDFOREACH()
 

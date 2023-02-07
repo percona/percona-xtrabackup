@@ -70,6 +70,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "log0buf.h"
 #include "log0chkp.h"
 #include "log0recv.h"
+#include "log0write.h"
 #include "mem0mem.h"
 #include "mtr0mtr.h"
 
@@ -1538,6 +1539,7 @@ static dberr_t srv_init_abort_low(bool create_new_db,
   return (err);
 }
 
+#ifdef XTRABACKUP
 /** At startup load the encryption information from first datafile
 to tablespace object
 @return DB_SUCCESS on succes, others on failure */
@@ -1560,11 +1562,9 @@ static dberr_t srv_sys_enable_encryption() {
   return (err);
 }
 
-dberr_t srv_start(bool create_new_db, lsn_t to_lsn) {
+#endif  // XTRABACKUP
+dberr_t srv_start(bool create_new_db IF_XB(, lsn_t to_lsn)) {
   lsn_t flushed_lsn;
-
-  /* just for assertions */
-  lsn_t previous_lsn;
 
   dberr_t err;
   mtr_t mtr;
@@ -1841,7 +1841,7 @@ dberr_t srv_start(bool create_new_db, lsn_t to_lsn) {
   ulint start = (srv_read_only_mode) ? 0 : 2;
 
   /* Sequence number displayed in the thread os name. */
-  PSI_thread_seqnum pfs_seqnum;
+  PSI_thread_seqnum pfs_seqnum [[maybe_unused]];
 
   for (ulint t = 0; t < srv_n_file_io_threads; ++t) {
     IB_thread thread;
@@ -1994,25 +1994,6 @@ dberr_t srv_start(bool create_new_db, lsn_t to_lsn) {
     }
 
     srv_create_sdi_indexes();
-
-    buf_pool_wait_for_no_pending_io_reads();
-
-    previous_lsn = log_get_lsn(*log_sys);
-
-    log_stop_background_threads(*log_sys);
-
-    buf_flush_sync_all_buf_pools();
-
-    flushed_lsn = log_get_lsn(*log_sys);
-
-    ut_a(flushed_lsn == previous_lsn);
-
-    err = fil_write_flushed_lsn(flushed_lsn);
-    ut_a(err == DB_SUCCESS);
-
-    log_start_background_threads(*log_sys);
-
-    ut_a(buf_are_flush_lists_empty_validate());
 
     /* We always create the legacy double write buffer to preserve the
     expected page ordering of the system tablespace.
@@ -2176,11 +2157,14 @@ dberr_t srv_start(bool create_new_db, lsn_t to_lsn) {
     objects are not fully initialized at this point, the usual mechanism to
     persist dynamic metadata at checkpoint wouldn't work. */
 
+    DBUG_EXECUTE_IF("log_first_rec_group_test", {
+      const lsn_t end_lsn = mtr_commit_mlog_test();
+      log_write_up_to(*log_sys, end_lsn, true);
+      DBUG_SUICIDE();
+    });
+
     if (srv_dict_metadata != nullptr && !srv_dict_metadata->empty()
-#ifdef XTRABACKUP
-        && !srv_apply_log_only
-#endif
-    ) {
+                                             IF_XB(&&!srv_apply_log_only)) {
       ut_a(redo_writes_allowed);
 
       /* Open this table in case srv_dict_metadata should be applied to this
@@ -2275,7 +2259,7 @@ dberr_t srv_start(bool create_new_db, lsn_t to_lsn) {
         }
       }
 
-      buf_pool_wait_for_no_pending_io_reads();
+      buf_pool_wait_for_no_pending_io();
 
       if (redo_writes_allowed) {
         /* Create checkpoint to ensure that the checkpoint header is flushed
@@ -2369,7 +2353,7 @@ dberr_t srv_start(bool create_new_db, lsn_t to_lsn) {
       log_start_background_threads(*log_sys);
 
     } else if (recv_sys->is_cloned_db || recv_sys->is_meb_db) {
-      buf_pool_wait_for_no_pending_io_reads();
+      buf_pool_wait_for_no_pending_io();
 
       /* Reset creator for log */
 
@@ -3027,7 +3011,7 @@ static void srv_shutdown_page_cleaners() {
 
   srv_shutdown_set_state(SRV_SHUTDOWN_FLUSH_PHASE);
 
-  buf_pool_wait_for_no_pending_io_reads();
+  buf_pool_wait_for_no_pending_io();
 
   /* At this point only page_cleaner should be active. We wait
   here to let it complete the flushing of the buffer pools
@@ -3274,7 +3258,7 @@ void srv_shutdown() {
 
   /* This must be disabled before closing the buffer pool
   and closing the data dictionary.  */
-  btr_search_disable(true);
+  btr_search_disable();
 
   ibuf_close();
   ddl_log_close();

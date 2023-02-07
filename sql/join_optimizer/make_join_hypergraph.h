@@ -56,6 +56,10 @@ struct SargablePredicate {
   // greater-than.
   Field *field;
   Item *other_side;
+
+  /// True if "other_side" is constant during execution. (And true const; no
+  /// execution of queries or stored procedures during optimization.)
+  bool is_constant;
 };
 
 /**
@@ -70,7 +74,8 @@ struct SargablePredicate {
  */
 struct JoinHypergraph {
   JoinHypergraph(MEM_ROOT *mem_root, const Query_block *query_block)
-      : nodes(mem_root),
+      : graph(mem_root),
+        nodes(mem_root),
         edges(mem_root),
         predicates(mem_root),
         sargable_join_predicates(mem_root),

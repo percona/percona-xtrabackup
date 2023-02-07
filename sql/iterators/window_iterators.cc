@@ -408,7 +408,7 @@ bool bring_back_frame_row(THD *thd, Window *w, int64 rowno,
                        static_cast<int>(reason), fno));
   assert(reason == Window_retrieve_cached_row_reason::MISC_POSITIONS ||
          fno == 0);
-
+  w->set_rowno_being_visited(rowno);
   uchar *fb_rec = w->frame_buffer()->record[0];
 
   assert(rowno != 0);
@@ -521,8 +521,6 @@ bool process_wfs_needing_partition_cardinality(
     THD *thd, Temp_table_param *param, const Window::st_nth &have_nth_value,
     const Window::st_lead_lag &have_lead_lag, const int64 current_row,
     Window *w, Window_retrieve_cached_row_reason current_row_reason) {
-  w->set_rowno_being_visited(current_row);
-
   // Reset state for LEAD/LAG functions
   if (!have_lead_lag.m_offsets.empty()) w->reset_lead_lag();
 
@@ -996,7 +994,6 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
       const int64 n = rowno - lower_limit + 1 - skipped;
 
       w.set_rowno_in_frame(n);
-      w.set_rowno_being_visited(rowno);
 
       const Window_retrieve_cached_row_reason reason =
           (n == 1 ? Window_retrieve_cached_row_reason::FIRST_IN_FRAME
@@ -1103,7 +1100,8 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
     const bool new_last_row =
         (upper_limit <= upper &&
          !unbounded_following /* all added when primed */);
-    const int64 rn_in_frame = upper - lower_limit + 1;
+    const int64 rows_in_frame = upper - lower_limit + 1;
+    w.set_first_rowno_in_rows_frame(lower_limit);
 
     /* possibly subtract: early in partition there may not be any */
     if (remove_previous_first_row) {
@@ -1151,8 +1149,8 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
 
       w.set_inverse(true);
       if (!new_last_row) {
-        w.set_rowno_in_frame(rn_in_frame);
-        if (rn_in_frame > 0)
+        w.set_rowno_in_frame(current_row - lower_limit + 1);
+        if (rows_in_frame > 0)
           w.set_is_last_row_in_frame(true);  // do final comp., e.g. div in AVG
 
         if (copy_funcs(param, thd, CFT_WF_FRAMING)) return true;
@@ -1189,9 +1187,8 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
               thd, &w, upper, Window_retrieve_cached_row_reason::LAST_IN_FRAME))
         return true;
 
-      w.set_rowno_in_frame(rn_in_frame);
-
-      if (rn_in_frame > 0) w.set_is_last_row_in_frame(true);
+      w.set_rowno_in_frame(current_row - lower_limit + 1);
+      if (rows_in_frame > 0) w.set_is_last_row_in_frame(true);
 
       if (copy_funcs(param, thd, CFT_WF_USES_ONLY_ONE_ROW)) return true;
 
@@ -1222,7 +1219,6 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
 
       w.set_rowno_in_frame(upper - lower_limit + 1)
           .set_is_last_row_in_frame(true);  // temporary states for next copy
-      w.set_rowno_being_visited(upper);
 
       if (copy_funcs(param, thd, CFT_WF_FRAMING)) return true;
 
@@ -1339,7 +1335,6 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
              last also until we find something better.
           */
           w.set_is_last_row_in_frame(true);
-          w.set_rowno_being_visited(rowno);
 
           if (copy_funcs(param, thd, CFT_WF_USES_ONLY_ONE_ROW)) return true;
           w.set_is_last_row_in_frame(false);
@@ -1354,7 +1349,6 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
             w.set_rowno_in_frame(w.last_rowno_in_range_frame() -
                                  w.first_rowno_in_range_frame() + 1)
                 .set_is_last_row_in_frame(true);
-            w.set_rowno_being_visited(w.last_rowno_in_range_frame());
             if (copy_funcs(param, thd, CFT_WF_USES_ONLY_ONE_ROW)) return true;
             w.set_is_last_row_in_frame(false);
           }
@@ -1403,7 +1397,6 @@ bool process_buffered_windowing_record(THD *thd, Temp_table_param *param,
         }
         w.set_rowno_in_frame(rowno_in_frame)
             .set_is_last_row_in_frame(true);  // pessimistic assumption
-        w.set_rowno_being_visited(rowno);
 
         if (copy_funcs(param, thd, CFT_WF_FRAMING)) return true;
 
@@ -1518,7 +1511,7 @@ WindowIterator::WindowIterator(THD *thd,
                                Temp_table_param *temp_table_param, JOIN *join,
                                int output_slice)
     : RowIterator(thd),
-      m_source(move(source)),
+      m_source(std::move(source)),
       m_temp_table_param(temp_table_param),
       m_window(temp_table_param->m_window),
       m_join(join),
@@ -1565,7 +1558,7 @@ BufferingWindowIterator::BufferingWindowIterator(
     THD *thd, unique_ptr_destroy_only<RowIterator> source,
     Temp_table_param *temp_table_param, JOIN *join, int output_slice)
     : RowIterator(thd),
-      m_source(move(source)),
+      m_source(std::move(source)),
       m_temp_table_param(temp_table_param),
       m_window(temp_table_param->m_window),
       m_join(join),
@@ -1655,10 +1648,13 @@ int BufferingWindowIterator::Read() {
         example, 1+t.a. But also 1+LEAD. Even though at this point we lack
         data to compute LEAD; the saved value is thus incorrect; later,
         when the row is fully computable, we will re-evaluate the
-        CFT_NON_WF to get a correct value for 1+LEAD.
+        CFT_NON_WF to get a correct value for 1+LEAD. We haven't copied fields
+        yet, so use input file slice: referenced fields are present in input
+        file record.
       */
-      if (copy_funcs(m_temp_table_param, thd(), CFT_HAS_NO_WF)) {
-        return 1;
+      {
+        Switch_ref_item_slice slice_switch(m_join, m_input_slice);
+        if (copy_funcs(m_temp_table_param, thd(), CFT_HAS_NO_WF)) return 1;
       }
 
       bool new_partition = false;

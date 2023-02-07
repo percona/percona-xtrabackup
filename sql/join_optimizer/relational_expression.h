@@ -25,6 +25,7 @@
 
 #include <stdint.h>
 
+#include "sql/item.h"
 #include "sql/join_optimizer/bit_utils.h"
 #include "sql/join_optimizer/node_map.h"
 #include "sql/join_optimizer/overflow_bitset.h"
@@ -34,12 +35,6 @@
 
 struct AccessPath;
 class Item_eq_base;
-
-struct ContainedSubquery {
-  AccessPath *path;
-  bool materializable;
-  int row_width;  // Of the subquery's rows.
-};
 
 // Some information about each predicate that the join optimizer would like to
 // have available in order to avoid computing it anew for each use of that
@@ -76,7 +71,7 @@ struct ConflictRule {
   These are used as an abstract precursor to the join hypergraph;
   they represent the joins in the query block more or less directly,
   without any reordering. (The parser should largely have output a
-  structure like this instead of TABLE_LIST, but we are not there yet.)
+  structure like this instead of Table_ref, but we are not there yet.)
   The only real manipulation we do on them is pushing down conditions,
   identifying equijoin conditions from other join conditions,
   and identifying join conditions that touch given tables (also a form
@@ -125,7 +120,7 @@ struct RelationalExpression {
   hypergraph::NodeMap nodes_in_subtree;
 
   // If type == TABLE.
-  const TABLE_LIST *table;
+  const Table_ref *table;
   Mem_root_array<Item *> join_conditions_pushable_to_this;
   // Tables in the same companion set are those that are inner-joined
   // against each other; we use this to see in what parts of the graph

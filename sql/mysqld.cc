@@ -1085,6 +1085,7 @@ static PSI_mutex_key key_BINLOG_LOCK_binlog_end_pos;
 static PSI_mutex_key key_BINLOG_LOCK_sync;
 static PSI_mutex_key key_BINLOG_LOCK_sync_queue;
 static PSI_mutex_key key_BINLOG_LOCK_xids;
+static PSI_mutex_key key_BINLOG_LOCK_wait_for_group_turn;
 static PSI_rwlock_key key_rwlock_global_sid_lock;
 PSI_rwlock_key key_rwlock_gtid_mode_lock;
 static PSI_rwlock_key key_rwlock_LOCK_system_variables_hash;
@@ -1096,6 +1097,7 @@ static PSI_cond_key key_BINLOG_update_cond;
 static PSI_cond_key key_BINLOG_prep_xids_cond;
 static PSI_cond_key key_COND_manager;
 static PSI_cond_key key_COND_compress_gtid_table;
+static PSI_cond_key key_BINLOG_COND_wait_for_group_turn;
 static PSI_thread_key key_thread_signal_hand;
 static PSI_thread_key key_thread_main;
 static PSI_file_key key_file_casetest;
@@ -4772,10 +4774,12 @@ int init_common_variables() {
       key_BINLOG_LOCK_commit_queue, key_BINLOG_LOCK_done,
       key_BINLOG_LOCK_flush_queue, key_BINLOG_LOCK_log,
       key_BINLOG_LOCK_binlog_end_pos, key_BINLOG_LOCK_sync,
-      key_BINLOG_LOCK_sync_queue, key_BINLOG_LOCK_xids, key_BINLOG_COND_done,
+      key_BINLOG_LOCK_sync_queue, key_BINLOG_LOCK_xids,
+      key_BINLOG_LOCK_wait_for_group_turn, key_BINLOG_COND_done,
       key_BINLOG_COND_flush_queue, key_BINLOG_update_cond,
-      key_BINLOG_prep_xids_cond, key_file_binlog, key_file_binlog_index,
-      key_file_binlog_cache, key_file_binlog_index_cache);
+      key_BINLOG_prep_xids_cond, key_BINLOG_COND_wait_for_group_turn,
+      key_file_binlog, key_file_binlog_index, key_file_binlog_cache,
+      key_file_binlog_index_cache);
 #endif
 
   /*
@@ -5331,12 +5335,26 @@ static PSI_memory_key key_memory_openssl = PSI_NOT_INSTRUMENTED;
 #endif
 
 static void *my_openssl_malloc(size_t size FILE_LINE_ARGS) {
+#ifndef _WIN32
   return my_malloc(key_memory_openssl, size, MYF(MY_WME));
+#else
+  return my_std_malloc(key_memory_openssl, size, MYF(MY_WME));
+#endif  // !_WIN32
 }
 static void *my_openssl_realloc(void *ptr, size_t size FILE_LINE_ARGS) {
+#ifndef _WIN32
   return my_realloc(key_memory_openssl, ptr, size, MYF(MY_WME));
+#else
+  return my_std_realloc(key_memory_openssl, ptr, size, MYF(MY_WME));
+#endif  // !_WIN32
 }
-static void my_openssl_free(void *ptr FILE_LINE_ARGS) { return my_free(ptr); }
+static void my_openssl_free(void *ptr FILE_LINE_ARGS) {
+#ifndef _WIN32
+  return my_free(ptr);
+#else
+  return my_std_free(ptr);
+#endif  // !_WIN32
+}
 
 static void init_ssl() {
 #if defined(HAVE_PSI_MEMORY_INTERFACE)
@@ -6565,15 +6583,6 @@ static int init_server_components() {
   dynamic_plugins_are_initialized =
       true; /* Don't separate from init function */
   delete_optimizer_cost_module();
-
-  LEX_CSTRING plugin_name = {STRING_WITH_LEN("thread_pool")};
-  if (Connection_handler_manager::thread_handling !=
-          Connection_handler_manager::SCHEDULER_ONE_THREAD_PER_CONNECTION ||
-      plugin_is_ready(plugin_name, MYSQL_DAEMON_PLUGIN)) {
-    auto res_grp_mgr = resourcegroups::Resource_group_mgr::instance();
-    res_grp_mgr->disable_resource_group();
-    res_grp_mgr->set_unsupport_reason("Thread pool plugin enabled");
-  }
 
 #ifdef WITH_PERFSCHEMA_STORAGE_ENGINE
   /*
@@ -8068,37 +8077,9 @@ int mysqld_main(int argc, char **argv)
 
   binlog_unsafe_map_init();
 
-  /* If running with --initialize, do not start replication. */
-  if (!opt_initialize) {
-    // Make @@replica_skip_errors show the nice human-readable value.
-    set_replica_skip_errors(&opt_replica_skip_errors);
-    /*
-      Group replication filters should be discarded before init_replica(),
-      otherwise the pre-configured filters will be referenced by group
-      replication channels.
-    */
-    rpl_channel_filters.discard_group_replication_filters();
-
-    /*
-      init_replica() must be called after the thread keys are created.
-    */
-    if (server_id != 0)
-      init_replica(); /* Ignoring errors while configuring replication. */
-
-    /*
-      If the user specifies a per-channel replication filter through a
-      command-line option (or in a configuration file) for a slave
-      replication channel which does not exist as of now (i.e not
-      present in slave info tables yet), then the per-channel
-      replication filter is discarded with a warning.
-      If the user specifies a per-channel replication filter through
-      a command-line option (or in a configuration file) for group
-      replication channels 'group_replication_recovery' and
-      'group_replication_applier' which is disallowed, then the
-      per-channel replication filter is discarded with a warning.
-    */
-    rpl_channel_filters.discard_all_unattached_filters();
-  }
+  ReplicaInitializer replica_initializer(opt_initialize, opt_skip_replica_start,
+                                         rpl_channel_filters,
+                                         &opt_replica_skip_errors);
 
 #ifdef WITH_LOCK_ORDER
   if (!opt_initialize) {
@@ -11653,7 +11634,8 @@ void refresh_status() {
 class Do_THD_reset_status : public Do_THD_Impl {
  public:
   Do_THD_reset_status() {}
-  void operator()(THD *thd) override {
+  void operator()(THD *thd [[maybe_unused]]) override {
+#ifdef HAVE_PSI_THREAD_INTERFACE
     PSI_thread *thread = thd->get_psi();
     if (thread != nullptr) {
       /*
@@ -11667,6 +11649,7 @@ class Do_THD_reset_status : public Do_THD_Impl {
       */
       PSI_THREAD_CALL(aggregate_thread_status)(thread);
     }
+#endif /* HAVE_PSI_THREAD_INTERFACE */
   }
 };
 
@@ -11741,6 +11724,7 @@ static PSI_mutex_info all_server_mutexes[]=
   { &key_BINLOG_LOCK_sync, "MYSQL_BIN_LOG::LOCK_sync", 0, 0, PSI_DOCUMENT_ME},
   { &key_BINLOG_LOCK_sync_queue, "MYSQL_BIN_LOG::LOCK_sync_queue", 0, 0, PSI_DOCUMENT_ME},
   { &key_BINLOG_LOCK_xids, "MYSQL_BIN_LOG::LOCK_xids", 0, 0, PSI_DOCUMENT_ME},
+  { &key_BINLOG_LOCK_wait_for_group_turn, "MYSQL_BIN_LOG::LOCK_wait_for_group_turn", 0, 0, PSI_DOCUMENT_ME},
   { &key_RELAYLOG_LOCK_commit, "MYSQL_RELAY_LOG::LOCK_commit", 0, 0, PSI_DOCUMENT_ME},
   { &key_RELAYLOG_LOCK_index, "MYSQL_RELAY_LOG::LOCK_index", 0, 0, PSI_DOCUMENT_ME},
   { &key_RELAYLOG_LOCK_log, "MYSQL_RELAY_LOG::LOCK_log", 0, 0, PSI_DOCUMENT_ME},
@@ -11900,6 +11884,7 @@ static PSI_cond_info all_server_conds[]=
   { &key_BINLOG_COND_flush_queue, "MYSQL_BIN_LOG::COND_flush_queue", 0, 0, PSI_DOCUMENT_ME},
   { &key_BINLOG_update_cond, "MYSQL_BIN_LOG::update_cond", 0, 0, PSI_DOCUMENT_ME},
   { &key_BINLOG_prep_xids_cond, "MYSQL_BIN_LOG::prep_xids_cond", 0, 0, PSI_DOCUMENT_ME},
+  { &key_BINLOG_COND_wait_for_group_turn, "MYSQL_BIN_LOG::COND_wait_for_group_turn", 0, 0, PSI_DOCUMENT_ME},
   { &key_RELAYLOG_update_cond, "MYSQL_RELAY_LOG::update_cond", 0, 0, PSI_DOCUMENT_ME},
 #if defined(_WIN32)
   { &key_COND_handler_count, "COND_handler_count", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},

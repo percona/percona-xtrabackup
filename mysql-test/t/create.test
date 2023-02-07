@@ -84,9 +84,9 @@ drop table t1;
 # Test that we get warning for this
 drop database if exists mysqltest;
 create database mysqltest;
-create table mysqltest.$test1 (a$1 int, $b int, c$ int);
-insert into mysqltest.$test1 values (1,2,3);
-select a$1, $b, c$ from mysqltest.$test1;
+create table mysqltest.`$test1` (a$1 int, `$b` int, c$ int);
+insert into mysqltest.`$test1` values (1,2,3);
+select a$1, `$b`, c$ from mysqltest.`$test1`;
 create table mysqltest.test2$ (a int);
 drop table mysqltest.test2$;
 drop database mysqltest;
@@ -2369,3 +2369,10 @@ CREATE TABLE t1(a INT) min_rows=18446744073709551615;
 SHOW TABLE STATUS LIKE 't1';
 DROP TABLE t1;
 
+--echo # Bug#34523475: Inconsequent type derivation when using @variable
+
+CREATE TABLE t1 AS SELECT @max_error_count UNION SELECT 'a';
+SHOW CREATE TABLE t1;
+CREATE TABLE t2 AS SELECT @max_error_count UNION SELECT 'a';
+SHOW CREATE TABLE t2;
+DROP TABLE t1, t2;

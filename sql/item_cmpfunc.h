@@ -766,7 +766,7 @@ class Item_func_match_predicate final : public Item_bool_func {
  public:
   explicit Item_func_match_predicate(Item *a) : Item_bool_func(a) {}
 
-  longlong val_int() override { return args[0]->val_int(); }
+  longlong val_int() override;
   enum Functype functype() const override { return MATCH_FUNC; }
   const char *func_name() const override { return "match"; }
   void print(const THD *thd, String *str,
@@ -875,7 +875,7 @@ class Item_func_trig_cond final : public Item_bool_func {
   /// '@<if@>', to distinguish from the if() SQL function
   const char *func_name() const override { return "<if>"; }
   /// Get range of inner tables spanned by associated outer join operation
-  void get_table_range(TABLE_LIST **first_table, TABLE_LIST **last_table) const;
+  void get_table_range(Table_ref **first_table, Table_ref **last_table) const;
   /// Get table_map of inner tables spanned by associated outer join operation
   table_map get_inner_tables() const;
   bool fix_fields(THD *thd, Item **ref) override {
@@ -2560,25 +2560,26 @@ class Item_cond : public Item_bool_func {
   object represents f1=f2= ...=fn to the projection of known fields fi1=...=fik.
 */
 class Item_equal final : public Item_bool_func {
-  List<Item_field> fields; /* list of equal field items                    */
-  Item *const_item;        /* optional constant item equal to fields items */
-  cmp_item *eval_item;
+  /// List of equal field items.
+  List<Item_field> fields;
+  /// Optional constant item equal to all the field items.
+  Item *m_const_arg{nullptr};
+  /// Helper for comparing the fields.
+  cmp_item *eval_item{nullptr};
+  /// Helper for comparing constants.
   Arg_comparator cmp;
-  bool cond_false;
-  bool compare_as_dates;
+  /// Flag set to true if the equality is known to be always false.
+  bool cond_false{false};
+  /// Should constants be compared as datetimes?
+  bool compare_as_dates{false};
 
  public:
-  inline Item_equal()
-      : Item_bool_func(),
-        const_item(nullptr),
-        eval_item(nullptr),
-        cond_false(false) {}
   Item_equal(Item_field *f1, Item_field *f2);
   Item_equal(Item *c, Item_field *f);
-  Item_equal(Item_equal *item_equal);
+  explicit Item_equal(Item_equal *item_equal);
 
-  Item *get_const() const { return const_item; }
-  void set_const(Item *c) { const_item = c; }
+  Item *const_arg() const { return m_const_arg; }
+  void set_const_arg(Item *c) { m_const_arg = c; }
   bool compare_const(THD *thd, Item *c);
   bool add(THD *thd, Item *c, Item_field *f);
   bool add(THD *thd, Item *c);
@@ -2606,7 +2607,7 @@ class Item_equal final : public Item_bool_func {
     return false;
   }
   bool contains_only_equi_join_condition() const override {
-    return get_const() == nullptr;
+    return const_arg() == nullptr;
   }
 
   /**
@@ -2806,5 +2807,34 @@ extern Gt_creator gt_creator;
 extern Lt_creator lt_creator;
 extern Ge_creator ge_creator;
 extern Le_creator le_creator;
+
+/// Returns true if the item is a conjunction.
+inline bool IsAnd(const Item *item) {
+  return item->type() == Item::COND_ITEM &&
+         down_cast<const Item_cond *>(item)->functype() ==
+             Item_func::COND_AND_FUNC;
+}
+
+/**
+  Calls "func" on each term in "condition" if it's a conjunction (and
+  recursively on any conjunction directly contained in it, thereby flattening
+  nested AND structures). Otherwise, calls "func" on "condition". It aborts and
+  returns true as soon as a call to "func" returns true.
+ */
+template <class Func>
+bool WalkConjunction(Item *condition, Func func) {
+  if (condition == nullptr) {
+    return false;
+  } else if (IsAnd(condition)) {
+    for (Item &item : *down_cast<Item_cond_and *>(condition)->argument_list()) {
+      if (WalkConjunction(&item, func)) {
+        return true;
+      }
+    }
+    return false;
+  } else {
+    return func(condition);
+  }
+}
 
 #endif /* ITEM_CMPFUNC_INCLUDED */

@@ -46,6 +46,7 @@ SET(test_files
   test_routing.cc
   test_setup_named_socket_service.cc
   test_setup_tcp_service.cc
+  test_auth_digest.cc
   )
 
 FOREACH(test_file ${test_files})
@@ -76,6 +77,13 @@ ROUTERTEST_GET_TARGET(T "plugin/test_plugin.cc" "routing")
 TARGET_COMPILE_DEFINITIONS(${T}
   PRIVATE ROUTING_PLUGIN_STATIC_DEFINE=1
   )
+
+# gcc12 with -O2 and -flto for Debug build reports
+# error: __builtin_memcpy reading 106 bytes from a region of size 16
+# for socket_name = make_string(MAX_SOCKET_NAME_LEN - 1); in test_plugin.cc
+IF(MY_COMPILER_IS_GNU AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 11)
+  MY_TARGET_LINK_OPTIONS(${T} "-Wno-stringop-overread")
+ENDIF()
 
 ADD_ROUTER_TEST_FILE(
   test_classic_protocol_splicer.cc

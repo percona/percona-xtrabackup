@@ -35,7 +35,6 @@
 #include <vector>
 
 #include "mysql/harness/config_parser.h"
-#include "routing_common_unreachable_destinations.h"
 #include "tcp_address.h"
 
 class MySQLRoutingBase;
@@ -93,6 +92,7 @@ class ROUTING_EXPORT MySQLRoutingAPI {
   std::vector<mysql_harness::TCPAddress> get_destinations() const;
 
   void start_accepting_connections();
+  void restart_accepting_connections();
 
   bool is_accepting_connections() const;
 
@@ -112,8 +112,8 @@ class ROUTING_EXPORT MySQLRoutingComponent {
 
   void init(const mysql_harness::Config &config);
 
-  void init(const std::string &name, std::shared_ptr<MySQLRoutingBase> srv,
-            std::chrono::seconds quarantine_refresh_interval);
+  void register_route(const std::string &name,
+                      std::shared_ptr<MySQLRoutingBase> srv);
 
   void erase(const std::string &name);
 
@@ -137,8 +137,6 @@ class ROUTING_EXPORT MySQLRoutingComponent {
   uint64_t max_total_connections_{0};
 
   MySQLRoutingComponent() = default;
-
-  RoutingCommonUnreachableDestinations routing_common_unreachable_destinations_;
 };
 
 #endif

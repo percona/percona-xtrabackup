@@ -162,6 +162,7 @@ static uint my_end_arg;
 static char *opt_mysql_unix_port = nullptr;
 static char *opt_bind_addr = nullptr;
 static int first_error = 0;
+#include "authentication_kerberos_clientopt-vars.h"
 #include "caching_sha2_passwordopt-vars.h"
 #include "multi_factor_passwordopt-vars.h"
 #include "sslopt-vars.h"
@@ -453,8 +454,8 @@ static struct my_option my_long_options[] = {
     {"mysqld-long-query-time", OPT_LONG_QUERY_TIME,
      "Set long_query_time for the session of this dump. Ommitting flag means "
      "using the server value.",
-     &opt_long_query_time, &opt_long_query_time, 0, GET_ULONG, REQUIRED_ARG, 0,
-     0, LONG_TIMEOUT, nullptr, 0, nullptr},
+     &opt_long_query_time, &opt_long_query_time, nullptr, GET_ULONG,
+     REQUIRED_ARG, 0, 0, LONG_TIMEOUT, nullptr, 0, nullptr},
     {"source-data", OPT_SOURCE_DATA,
      "This causes the binary log position and filename to be appended to the "
      "output. If equal to 1, will print it as a CHANGE MASTER command; if equal"
@@ -659,6 +660,7 @@ static struct my_option my_long_options[] = {
      "be dumped or not.",
      &opt_skip_gipk, &opt_skip_gipk, nullptr, GET_BOOL, NO_ARG, 0, 0, 0,
      nullptr, 0, nullptr},
+#include "authentication_kerberos_clientopt-longopts.h"
     {nullptr, 0, nullptr, nullptr, nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0,
      0, nullptr, 0, nullptr}};
 
@@ -895,6 +897,8 @@ static bool get_one_option(int optid, const struct my_option *opt,
       break;
 #include "sslopt-case.h"
 
+#include "authentication_kerberos_clientopt-case.h"
+
     case 'V':
       print_version();
       exit(0);
@@ -1000,6 +1004,9 @@ static bool get_one_option(int optid, const struct my_option *opt,
       break;
     case (int)OPT_LONG_QUERY_TIME:
       long_query_time_opt_provided = true;
+      break;
+    case 'C':
+      CLIENT_WARN_DEPRECATED("--compress", "--compression-algorithms");
       break;
   }
   return false;
@@ -1592,6 +1599,14 @@ static int connect_to_db(char *host, char *user) {
   set_server_public_key(&mysql_connection);
   set_get_server_public_key_option(&mysql_connection);
   set_password_options(&mysql_connection);
+
+#if defined(_WIN32)
+  char error[256]{0};
+  if (set_authentication_kerberos_client_mode(&mysql_connection, error, 255)) {
+    fprintf(stderr, "%s", error);
+    return 1;
+  }
+#endif /* _WIN32 */
 
   if (opt_compress_algorithm)
     mysql_options(&mysql_connection, MYSQL_OPT_COMPRESSION_ALGORITHMS,
@@ -5599,6 +5614,19 @@ static bool process_set_gtid_purged(MYSQL *mysql_con) {
               "--all-databases --triggers --routines --events. \n");
     }
 
+    if (!opt_single_transaction && !opt_lock_all_tables && !opt_master_data) {
+      fprintf(stderr,
+              "Warning: A dump from a server that has GTIDs "
+              "enabled will by default include the GTIDs "
+              "of all transactions, even those that were "
+              "executed during its extraction and might "
+              "not be represented in the dumped data. "
+              "This might result in an inconsistent data dump. \n"
+              "In order to ensure a consistent backup of the "
+              "database, pass --single-transaction or "
+              "--lock-all-tables or --master-data. \n");
+    }
+
     set_session_binlog(false);
     if (add_set_gtid_purged(mysql_con)) {
       mysql_free_result(gtid_mode_res);
@@ -5879,8 +5907,7 @@ int main(int argc, char **argv) {
 
   if (opt_slave_data && do_stop_slave_sql(mysql)) goto err;
 
-  if ((opt_lock_all_tables || opt_master_data ||
-       (opt_single_transaction && flush_logs)) &&
+  if ((opt_lock_all_tables || opt_master_data || opt_single_transaction) &&
       do_flush_tables_read_lock(mysql))
     goto err;
 
@@ -5888,8 +5915,8 @@ int main(int argc, char **argv) {
     Flush logs before starting transaction since
     this causes implicit commit starting mysql-5.5.
   */
-  if (opt_lock_all_tables || opt_master_data ||
-      (opt_single_transaction && flush_logs) || opt_delete_master_logs) {
+  if (opt_lock_all_tables || opt_master_data || opt_single_transaction ||
+      opt_delete_master_logs) {
     if (flush_logs || opt_delete_master_logs) {
       if (mysql_refresh(mysql, REFRESH_LOG)) {
         DB_error(mysql, "when doing refresh");
@@ -5906,6 +5933,7 @@ int main(int argc, char **argv) {
     if (get_bin_log_name(mysql, bin_log_name, sizeof(bin_log_name))) goto err;
   }
 
+  /* Start the transaction */
   if (opt_single_transaction && start_transaction(mysql)) goto err;
 
   /* Add 'STOP SLAVE to beginning of dump */

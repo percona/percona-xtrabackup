@@ -41,9 +41,9 @@ class MockNG : public GRClusterMetadata {
   /**
    * Objects representing the servers that are part of the topology.
    */
-  metadata_cache::ManagedInstance ms1;
-  metadata_cache::ManagedInstance ms2;
-  metadata_cache::ManagedInstance ms3;
+  metadata_cache::ManagedInstance ms1{GR};
+  metadata_cache::ManagedInstance ms2{GR};
+  metadata_cache::ManagedInstance ms3{GR};
 
   /**
    * Server list for the cluster. Each server object
@@ -55,7 +55,7 @@ class MockNG : public GRClusterMetadata {
   /**
    * The information about the HA topology being managed.
    */
-  metadata_cache::ManagedCluster cluster_info;
+  metadata_cache::ClusterTopology cluster_topology;
 
   metadata_cache::metadata_servers_list_t metadata_servers;
 
@@ -104,7 +104,8 @@ class MockNG : public GRClusterMetadata {
       mysqlrouter::TargetCluster &target_cluster, const unsigned /*router_id*/,
       const metadata_cache::metadata_servers_list_t &metadata_servers,
       bool needs_writable_node, const std::string &group_replication_id,
-      const std::string &clusterset_id, size_t &instance_id) override;
+      const std::string &clusterset_id, bool whole_topology,
+      size_t &instance_id) override;
 
 #if 0  // not used so far
   /**
@@ -115,6 +116,8 @@ class MockNG : public GRClusterMetadata {
    */
   unsigned int fetch_ttl() override;
 #endif
+ private:
+  static constexpr auto GR = metadata_cache::InstanceType::GroupMember;
 };
 
 #endif  // MOCK_METADATA_INCLUDED

@@ -32,12 +32,15 @@
 */
 
 #include "sql/sql_optimizer.h"
+#include "my_base.h"
 #include "sql/sql_optimizer_internal.h"
 
 #include <limits.h>
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <deque>
+#include <limits>
 #include <new>
 #include <string>
 #include <utility>
@@ -110,13 +113,14 @@
 #include "sql_string.h"
 #include "template_utils.h"
 
+using std::ceil;
 using std::max;
 using std::min;
 
 const char *antijoin_null_cond = "<ANTIJOIN-NULL>";
 
 static bool optimize_semijoin_nests_for_materialization(JOIN *join);
-static void calculate_materialization_costs(JOIN *join, TABLE_LIST *sj_nest,
+static void calculate_materialization_costs(JOIN *join, Table_ref *sj_nest,
                                             uint n_tables,
                                             Semijoin_mat_optimize *sjm);
 static bool make_join_query_block(JOIN *join, Item *item);
@@ -125,7 +129,7 @@ static bool list_contains_unique_index(JOIN_TAB *tab,
                                        void *data);
 static bool find_field_in_item_list(Field *field, void *data);
 static bool find_field_in_order_list(Field *field, void *data);
-static TABLE *get_sort_by_table(ORDER *a, ORDER *b, TABLE_LIST *tables);
+static TABLE *get_sort_by_table(ORDER *a, ORDER *b, Table_ref *tables);
 static void trace_table_dependencies(Opt_trace_context *trace,
                                      JOIN_TAB *join_tabs, uint table_count);
 static bool update_ref_and_keys(THD *thd, Key_use_array *keyuse,
@@ -136,7 +140,8 @@ static bool update_ref_and_keys(THD *thd, Key_use_array *keyuse,
 static bool pull_out_semijoin_tables(JOIN *join);
 static void add_loose_index_scan_and_skip_scan_keys(JOIN *join,
                                                     JOIN_TAB *join_tab);
-static ha_rows get_quick_record_count(THD *thd, JOIN_TAB *tab, ha_rows limit);
+static ha_rows get_quick_record_count(THD *thd, JOIN_TAB *tab, ha_rows limit,
+                                      Item *condition);
 static bool only_eq_ref_tables(JOIN *join, ORDER *order, table_map tables,
                                table_map *cached_eq_ref_tables,
                                table_map *eq_ref_tables);
@@ -182,7 +187,7 @@ JOIN::JOIN(THD *thd_arg, Query_block *select)
       where_cond(reinterpret_cast<Item *>(1)),
       having_cond(reinterpret_cast<Item *>(1)),
       having_for_explain(reinterpret_cast<Item *>(1)),
-      tables_list(reinterpret_cast<TABLE_LIST *>(1)),
+      tables_list(reinterpret_cast<Table_ref *>(1)),
       current_ref_item_slice(REF_SLICE_SAVED_BASE),
       with_json_agg(select->json_agg_func_used()) {
   rollup_state = RollupState::NONE;
@@ -245,6 +250,55 @@ static void SaveCondEqualLists(COND_EQUAL *cond_equal) {
   SaveCondEqualLists(cond_equal->upper_levels);
 }
 
+bool JOIN::check_access_path_with_fts() const {
+  // Only relevant to the old optimizer.
+  assert(!thd->lex->using_hypergraph_optimizer);
+
+  assert(query_block->has_ft_funcs());
+  assert(rollup_state != RollupState::NONE);
+
+  // Find all tables referenced from non-aggregated MATCH calls in the SELECT
+  // list or in any hidden items lifted to the SELECT list from other clauses.
+  table_map fulltext_tables = 0;
+  for (Item *field : *fields) {
+    WalkItem(field, enum_walk::PREFIX | enum_walk::POSTFIX,
+             NonAggregatedFullTextSearchVisitor(
+                 [&fulltext_tables](Item_func_match *item) {
+                   fulltext_tables |= item->used_tables();
+                   return false;
+                 }));
+  }
+
+  if (fulltext_tables == 0) return false;
+
+  // See if any of those tables is accessed without materialization between the
+  // table access path and the aggregate access path.
+  bool found = false;
+  WalkAccessPaths(
+      root_access_path(), this, WalkAccessPathPolicy::ENTIRE_QUERY_BLOCK,
+      [fulltext_tables, &found](const AccessPath *path, const JOIN *) {
+        if (path->type == AccessPath::AGGREGATE) {
+          // Does the aggregate path access any of "fulltext_tables" without an
+          // intermediate materialization step? GetUsedTableMap() does not see
+          // through materialization and returns RAND_TABLE_BIT instead of the
+          // actual tables if "path" reads materialized results.
+          found |=
+              Overlaps(fulltext_tables,
+                       GetUsedTableMap(path, /*include_pruned_tables=*/true));
+        }
+        return found;
+      });
+
+  if (found) {
+    my_error(ER_NOT_SUPPORTED_YET, MYF(0),
+             "reading non-aggregated results of the MATCH full-text search "
+             "function after GROUP BY WITH ROLLUP");
+    return true;
+  }
+
+  return false;
+}
+
 /**
   Optimizes one query block into a query execution plan (QEP.)
 
@@ -289,7 +343,7 @@ bool JOIN::optimize(bool finalize_access_paths) {
   assert(query_block->leaf_table_count == 0 ||
          thd->lex->is_query_tables_locked() ||
          query_block == set_operand_block);
-  assert(tables == 0 && primary_tables == 0 && tables_list == (TABLE_LIST *)1);
+  assert(tables == 0 && primary_tables == 0 && tables_list == (Table_ref *)1);
 
   // to prevent double initialization on EXPLAIN
   if (optimized) return false;
@@ -345,7 +399,7 @@ bool JOIN::optimize(bool finalize_access_paths) {
   */
   // if (query_block->materialized_derived_table_count) {
   {  // WL#6570
-    for (TABLE_LIST *tl = query_block->leaf_tables; tl; tl = tl->next_leaf) {
+    for (Table_ref *tl = query_block->leaf_tables; tl; tl = tl->next_leaf) {
       tl->access_path_for_derived = nullptr;
       if (tl->is_view_or_derived()) {
         if (tl->optimize_derived(thd)) return true;
@@ -415,8 +469,8 @@ bool JOIN::optimize(bool finalize_access_paths) {
   }
 
   if (where_cond || query_block->outer_join) {
-    if (optimize_cond(thd, &where_cond, &cond_equal,
-                      &query_block->top_join_list, &query_block->cond_value)) {
+    if (optimize_cond(thd, &where_cond, &cond_equal, &query_block->m_table_nest,
+                      &query_block->cond_value)) {
       error = 1;
       DBUG_PRINT("error", ("Error from optimize_cond"));
       return true;
@@ -630,6 +684,15 @@ bool JOIN::optimize(bool finalize_access_paths) {
   // ----------------------------------------------------------------------------
   //       All of this is never called for the hypergraph join optimizer!
   // ----------------------------------------------------------------------------
+
+  assert(!thd->lex->using_hypergraph_optimizer);
+  // Don't expect to get here if the hypergraph optimizer is enabled via an
+  // optimizer switch. We only check it for regular statements. Prepared
+  // statements and stored programs use the optimizer that was active when the
+  // statement was prepared, and don't check the optimizer switch for each
+  // subsequent execution.
+  assert(!thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER) ||
+         !thd->stmt_arena->is_regular());
 
   // Set up join order and initial access paths
   THD_STAGE_INFO(thd, stage_statistics);
@@ -933,23 +996,17 @@ bool JOIN::optimize(bool finalize_access_paths) {
     need_tmp_before_win = true;
 
   /*
-    If we have full-text columns involved in aggregation, we need to
-    materialize it, as the saving and loading of rows in AggregateIterator
-    does not include FTS information. If we have multiple tables, we'll
-    have a materialization (either because we're aggregating into a temporary
-    table, or because we always materialize before further operations),
-    and if we have a GROUP BY, we'll either have an aggregate-to-table
-    or a sort, which also fixes the issue. However, in the case of a single
-    table and implicit grouping, we need to force the temporary table here.
+    If we have full-text columns involved in aggregation, we may need to
+    materialize them. Materialization is needed if the result of a full-text
+    search (the MATCH function) is accessed after aggregation, as the saving and
+    loading of rows in AggregateIterator does not include FTS information. If we
+    have a GROUP BY, we'll either have an aggregate-to-table or a sort, which
+    fixes the issue. However, in the case of implicit grouping, we need to force
+    the temporary table here.
    */
   if (!need_tmp_before_win && implicit_grouping &&
-      primary_tables - const_tables == 1 && order.empty() &&
-      best_ref[const_tables]->table_ref->is_fulltext_searched()) {
-    for (Item *item : VisibleFields(*fields)) {
-      need_tmp_before_win |=
-          contains_function_of_type(item, Item_func::FT_FUNC);
-      if (need_tmp_before_win) break;
-    }
+      contains_non_aggregated_fts()) {
+    need_tmp_before_win = true;
   }
 
   if (!plan_is_const())  // (2)
@@ -976,7 +1033,7 @@ bool JOIN::optimize(bool finalize_access_paths) {
     // Test if we can use an index instead of sorting
     test_skip_sort();
 
-    if (finalize_table_conditions()) return true;
+    if (finalize_table_conditions(thd)) return true;
   }
 
   if (make_join_readinfo(this, no_jbuf_after))
@@ -1001,6 +1058,12 @@ bool JOIN::optimize(bool finalize_access_paths) {
   // Creating iterators may evaluate a constant hash join condition, which may
   // fail:
   if (thd->is_error()) return true;
+
+  if (rollup_state != RollupState::NONE && query_block->has_ft_funcs()) {
+    if (check_access_path_with_fts()) {
+      return true;
+    }
+  }
 
   /*
     At this stage, we have set up an AccessPath 'plan'. Traverse the
@@ -1100,7 +1163,7 @@ bool JOIN::push_to_engines() {
   DBUG_TRACE;
   assert(m_root_access_path != nullptr);
 
-  for (TABLE_LIST *tl = query_block->leaf_tables; tl; tl = tl->next_leaf) {
+  for (Table_ref *tl = query_block->leaf_tables; tl; tl = tl->next_leaf) {
     const handlerton *hton = tl->table->file->hton_supporting_engine_pushdown();
     if (hton != nullptr) {  // Involved an engine supporting pushdown.
       if (unlikely(hton->push_to_engine(thd, m_root_access_path, this))) {
@@ -1150,7 +1213,7 @@ bool substitute_gc(THD *thd, Query_block *query_block, Item *where_cond,
   Opt_trace_object subst_gc(trace, "substitute_generated_columns");
 
   // Collect all GCs that are a part of a key
-  for (TABLE_LIST *tl = query_block->leaf_tables; tl; tl = tl->next_leaf) {
+  for (Table_ref *tl = query_block->leaf_tables; tl; tl = tl->next_leaf) {
     if (tl->table->s->keys == 0) continue;
     for (uint i = 0; i < tl->table->s->fields; i++) {
       Field *fld = tl->table->field[i];
@@ -1386,7 +1449,7 @@ int JOIN::replace_index_subquery() {
   if (!found_engine) return 0;
 
   /* Remove redundant predicates and cache constant expressions  */
-  if (finalize_table_conditions()) return -1;
+  if (finalize_table_conditions(thd)) return -1;
 
   if (alloc_qep(tables)) return -1; /* purecov: inspected */
   unplug_join_tabs();
@@ -1613,14 +1676,18 @@ void JOIN::test_skip_sort() {
                             // (DISTINCT was rewritten to GROUP BY if skippable)
   {
     /*
-      When there is SQL_BIG_RESULT or a JSON aggregation function,
-      do not sort using index for GROUP BY, and thus force sorting on disk
-      unless a group min-max optimization is going to be used as it is applied
-      now only for one table queries with covering indexes.
+      If the SQL_BIG_RESULT option is set on the query block or a JSON
+      aggregation function is used, check if it is possible to sort using index
+      for GROUP BY and thus avoid materializing the row set to disk, unless:
+
+      1. A group min-max optimization will be used, or
+      2. Some non-aggregated full-text search results must be accessible after
+         aggregation.
     */
     if (!(query_block->active_options() & SELECT_BIG_RESULT || with_json_agg) ||
         (tab->range_scan() &&
-         tab->range_scan()->type == AccessPath::GROUP_INDEX_SKIP_SCAN)) {
+         tab->range_scan()->type == AccessPath::GROUP_INDEX_SKIP_SCAN) ||
+        contains_non_aggregated_fts()) {
       if (simple_group &&    // GROUP BY is possibly skippable
           !select_distinct)  // .. if not preceded by a DISTINCT
       {
@@ -2714,7 +2781,7 @@ fix_ICP:
 bool JOIN::prune_table_partitions() {
   assert(query_block->partitioned_table_count);
 
-  for (TABLE_LIST *tbl = query_block->leaf_tables; tbl; tbl = tbl->next_leaf) {
+  for (Table_ref *tbl = query_block->leaf_tables; tbl; tbl = tbl->next_leaf) {
     // This will try to prune non-static conditions, which can be probed after
     // the tables are locked.
 
@@ -2725,7 +2792,7 @@ bool JOIN::prune_table_partitions() {
     // Look up the join nest hierarchy for the outermost condition:
     Item *cond = where_cond;
     const table_map tbl_map = tbl->map();
-    for (TABLE_LIST *nest = tbl; nest != nullptr; nest = nest->embedding) {
+    for (Table_ref *nest = tbl; nest != nullptr; nest = nest->embedding) {
       if (nest->join_cond_optim() != nullptr &&
           Overlaps(tbl_map, nest->join_cond_optim()->used_tables())) {
         cond = nest->join_cond_optim();
@@ -2866,7 +2933,7 @@ void JOIN::adjust_access_methods() {
   ASSERT_BEST_REF_IN_JOIN_ORDER(this);
   for (uint i = const_tables; i < tables; i++) {
     JOIN_TAB *const tab = best_ref[i];
-    TABLE_LIST *const tl = tab->table_ref;
+    Table_ref *const tl = tab->table_ref;
 
     if (tab->type() == JT_ALL) {
       /*
@@ -2967,7 +3034,7 @@ static JOIN_TAB *alloc_jtab_array(THD *thd, uint table_count) {
     - for full and index scans info of estimated # of records is updated.
     - in a helper function:
       - all heuristics are applied and the final access method type is picked
-        for each join_tab (only test_if_skip_sortorder() could override it)
+        for each join_tab (only test_if_skip_sort_order() could override it)
       - AM consistency is ensured (e.g only range and index merge are allowed
         to have quick select set).
       - if "Impossible WHERE" is detected - appropriate zero_result_cause is
@@ -3062,7 +3129,7 @@ bool JOIN::get_best_combination() {
     if (has_semijoin && sj_is_materialize_strategy(pos->sj_strategy)) {
       assert(outer_target < inner_target);
 
-      TABLE_LIST *const sj_nest = pos->table->emb_sj_nest;
+      Table_ref *const sj_nest = pos->table->emb_sj_nest;
 
       // Handle this many inner tables of materialized semi-join
       remaining_sjm_inner = pos->n_sj_tables;
@@ -3187,7 +3254,7 @@ bool JOIN::get_best_combination() {
   if (query_block->outer_join) make_outerjoin_info();
 
   // sjm is no longer needed, trash it. To reuse it, reset its members!
-  for (TABLE_LIST *sj_nest : query_block->sj_nests) {
+  for (Table_ref *sj_nest : query_block->sj_nests) {
     TRASH(&sj_nest->nested_join->sjm, sizeof(sj_nest->nested_join->sjm));
   }
 
@@ -3556,7 +3623,7 @@ static bool setup_join_buffering(JOIN_TAB *tab, JOIN *join,
 
         @see Item_in_optimizer::val_int()
         @see subselect_iterator_engine::exec()
-        @see TABLE_REF::cond_guards
+        @see Index_lookup::cond_guards
         @see push_index_cond()
 
         @todo: This choice to not use BKA should be done before making
@@ -3886,6 +3953,13 @@ static bool check_simple_equality(THD *thd, Item *left_item, Item *right_item,
         if ((cs != down_cast<Item_func *>(item)->compare_collation()) ||
             !cs->coll->propagate(cs, nullptr, 0))
           return false;
+        // Don't build multiple equalities mixing strings and JSON, not even
+        // when they have the same collation, since string comparison and JSON
+        // comparison are very different.
+        if ((field_item->data_type() == MYSQL_TYPE_JSON) !=
+            (const_item->data_type() == MYSQL_TYPE_JSON)) {
+          return false;
+        }
       }
 
       bool copyfl;
@@ -4343,7 +4417,7 @@ static bool build_equal_items_for_cond(THD *thd, Item *cond, Item **retcond,
 
 bool build_equal_items(THD *thd, Item *cond, Item **retcond,
                        COND_EQUAL *inherited, bool do_inherit,
-                       mem_root_deque<TABLE_LIST *> *join_list,
+                       mem_root_deque<Table_ref *> *join_list,
                        COND_EQUAL **cond_equal_ref) {
   COND_EQUAL *cond_equal = nullptr;
 
@@ -4373,10 +4447,10 @@ bool build_equal_items(THD *thd, Item *cond, Item **retcond,
   *cond_equal_ref = cond_equal;
 
   if (join_list) {
-    for (TABLE_LIST *table : *join_list) {
+    for (Table_ref *table : *join_list) {
       if (table->join_cond_optim()) {
-        mem_root_deque<TABLE_LIST *> *nested_join_list =
-            table->nested_join ? &table->nested_join->join_list : nullptr;
+        mem_root_deque<Table_ref *> *nested_join_list =
+            table->nested_join ? &table->nested_join->m_tables : nullptr;
         Item *join_cond;
         if (build_equal_items(thd, table->join_cond_optim(), &join_cond,
                               inherited, do_inherit, nested_join_list,
@@ -4485,9 +4559,9 @@ static Item *eliminate_item_equal(THD *thd, Item *cond,
                                   Item_equal *item_equal) {
   List<Item> eq_list;
   Item *eq_item = nullptr;
-  if (((Item *)item_equal)->const_item() && !item_equal->val_int())
+  if (item_equal->const_item() && !item_equal->val_int())
     return new Item_func_false();
-  Item *const item_const = item_equal->get_const();
+  Item *const item_const = item_equal->const_arg();
   auto it = item_equal->get_fields().begin();
   if (!item_const) {
     /*
@@ -4507,7 +4581,7 @@ static Item *eliminate_item_equal(THD *thd, Item *cond,
     Item_equal *const upper = item_field->find_item_equal(upper_levels);
     if (upper)  // item_field is in this upper equality
     {
-      if (item_const && upper->get_const())
+      if (item_const && upper->const_arg())
         continue;  // Const at both levels, no need to generate at current level
       /*
         If the upper-level multiple equality contains this item, there is no
@@ -4899,10 +4973,10 @@ static bool propagate_cond_constants(THD *thd, I_List<COND_CMP> *save_list,
     First unused bit in nested_join_map after the call.
 */
 
-uint build_bitmap_for_nested_joins(mem_root_deque<TABLE_LIST *> *join_list,
+uint build_bitmap_for_nested_joins(mem_root_deque<Table_ref *> *join_list,
                                    uint first_unused) {
   DBUG_TRACE;
-  for (TABLE_LIST *table : *join_list) {
+  for (Table_ref *table : *join_list) {
     NESTED_JOIN *nested_join;
     if ((nested_join = table->nested_join)) {
       // We should have a join condition or a semi-join condition or both
@@ -4918,7 +4992,7 @@ uint build_bitmap_for_nested_joins(mem_root_deque<TABLE_LIST *> *join_list,
       if (table->join_cond()) {
         assert(first_unused < sizeof(nested_join_map) * 8);
         nested_join->nj_map = (nested_join_map)1 << first_unused++;
-        nested_join->nj_total = nested_join->join_list.size();
+        nested_join->nj_total = nested_join->m_tables.size();
       } else if (table->is_sj_nest()) {
         NESTED_JOIN *const outer_nest =
             table->embedding ? table->embedding->nested_join : nullptr;
@@ -4928,12 +5002,12 @@ uint build_bitmap_for_nested_joins(mem_root_deque<TABLE_LIST *> *join_list,
           table count.
         */
         if (outer_nest)
-          outer_nest->nj_total += (nested_join->join_list.size() - 1);
+          outer_nest->nj_total += (nested_join->m_tables.size() - 1);
       } else
         assert(false);
 
       first_unused =
-          build_bitmap_for_nested_joins(&nested_join->join_list, first_unused);
+          build_bitmap_for_nested_joins(&nested_join->m_tables, first_unused);
     }
   }
   return first_unused;
@@ -4945,7 +5019,7 @@ void JOIN::update_depend_map() {
   ASSERT_BEST_REF_IN_JOIN_ORDER(this);
   for (uint tableno = 0; tableno < tables; tableno++) {
     JOIN_TAB *const tab = best_ref[tableno];
-    TABLE_REF *const ref = &tab->ref();
+    Index_lookup *const ref = &tab->ref();
     table_map depend_map = 0;
     Item **item = ref->items;
     for (uint i = 0; i < ref->key_parts; i++, item++)
@@ -5015,7 +5089,7 @@ bool JOIN::update_equalities_for_sjm() {
   List_iterator<Semijoin_mat_exec> sj_it(sjm_exec_list);
   Semijoin_mat_exec *sjm_exec;
   while ((sjm_exec = sj_it++)) {
-    TABLE_LIST *const sj_nest = sjm_exec->sj_nest;
+    Table_ref *const sj_nest = sjm_exec->sj_nest;
 
     Item *cond;
     /*
@@ -5279,14 +5353,6 @@ bool JOIN::make_join_plan() {
 
   refine_best_rowcount();
 
-  if (!(thd->variables.option_bits & OPTION_BIG_SELECTS) &&
-      best_read > (double)thd->variables.max_join_size &&
-      !thd->lex->is_explain()) { /* purecov: inspected */
-    my_error(ER_TOO_BIG_SELECT, MYF(0));
-    error = -1;
-    return true;
-  }
-
   positions = nullptr;  // But keep best_positions for get_best_combination
 
   // Generate an execution plan from the found optimal join order.
@@ -5354,7 +5420,7 @@ bool JOIN::init_planner_arrays() {
     Initialize dependencies between tables.
   */
   JOIN_TAB **best_ref_p = best_ref;
-  TABLE_LIST *tl = query_block->leaf_tables;
+  Table_ref *tl = query_block->leaf_tables;
 
   for (JOIN_TAB *tab = join_tab; tl; tab++, tl = tl->next_leaf, best_ref_p++) {
     *best_ref_p = tab;
@@ -5405,7 +5471,7 @@ bool JOIN::init_planner_arrays() {
     if (tl->outer_join_nest()) {
       // tab belongs to a nested join, maybe to several embedding joins
       tab->embedding_map = 0;
-      for (TABLE_LIST *embedding = tl->embedding; embedding;
+      for (Table_ref *embedding = tl->embedding; embedding;
            embedding = embedding->embedding) {
         NESTED_JOIN *const nested_join = embedding->nested_join;
         tab->embedding_map |= nested_join->nj_map;
@@ -5414,7 +5480,7 @@ bool JOIN::init_planner_arrays() {
     } else if (tab->join_cond()) {
       // tab is the only inner table of an outer join
       tab->embedding_map = 0;
-      for (TABLE_LIST *embedding = tl->embedding; embedding;
+      for (Table_ref *embedding = tl->embedding; embedding;
            embedding = embedding->embedding)
         tab->embedding_map |= embedding->nested_join->nj_map;
     }
@@ -5507,7 +5573,7 @@ bool JOIN::extract_const_tables() {
   JOIN_TAB *const tab_end = join_tab + tables;
   for (JOIN_TAB *tab = join_tab; tab < tab_end; tab++) {
     TABLE *const table = tab->table();
-    TABLE_LIST *const tl = tab->table_ref;
+    Table_ref *const tl = tab->table_ref;
     enum enum_const_table_extraction extract_method = extract_const_table;
 
     const bool all_partitions_pruned_away = table->all_partitions_pruned_away;
@@ -5605,7 +5671,7 @@ bool JOIN::extract_func_dependent_tables() {
     for (JOIN_TAB **pos = best_ref + const_tables; *pos; pos++) {
       JOIN_TAB *const tab = *pos;
       TABLE *const table = tab->table();
-      TABLE_LIST *const tl = tab->table_ref;
+      Table_ref *const tl = tab->table_ref;
       /*
         If equi-join condition by a key is null rejecting and after a
         substitution of a const table the key value happens to be null
@@ -5826,30 +5892,56 @@ bool JOIN::estimate_rowcount() {
       Perform range analysis if there are keys it could use (1).
       Don't do range analysis if on the inner side of an outer join (2).
       Do range analysis if on the inner side of a semi-join (3).
+      Do range analysis if embedding a derived table (4).
     */
-    TABLE_LIST *const tl = tab->table_ref;
+    Table_ref *const tl = tab->table_ref;
     if ((!tab->const_keys.is_clear_all() ||
-         !tab->skip_scan_keys.is_clear_all()) &&                 // (1)
-        (!tl->embedding ||                                       // (2)
-         (tl->embedding && tl->embedding->is_sj_or_aj_nest())))  // (3)
+         !tab->skip_scan_keys.is_clear_all()) &&  // (1)
+        (tl->embedding == nullptr ||              // (2)
+         tl->embedding->is_sj_or_aj_nest() ||     // (3)
+         tl->embedding->is_derived()))            // (4)
     {
+      Item *condition = nullptr;
+      bool embedding_derived_range = false;
+      /*
+        For an inner table of an outer join, the join condition is either
+        attached to the actual table, or to the embedding join nest.
+        For tables that are inner-joined or semi-joined, the join condition
+        is taken from the WHERE condition.
+      */
+      if (tl->is_inner_table_of_outer_join()) {
+        for (Table_ref *t = tl; t != nullptr; t = t->embedding) {
+          if (t->join_cond() != nullptr) {
+            condition = t->join_cond();
+            // true if the join condition is from a derived embedding table
+            embedding_derived_range = (t != tl && t->is_derived());
+            break;
+          }
+        }
+        assert(condition != nullptr);
+      } else {
+        condition = where_cond;
+      }
       /*
         This call fills tab->range_scan() with the best QUICK access method
         possible for this table, and only if it's better than table scan.
         It also fills tab->needed_reg.
       */
-      ha_rows records = get_quick_record_count(thd, tab, row_limit);
+      ha_rows records = get_quick_record_count(thd, tab, row_limit, condition);
 
       if (records == 0 && thd->is_error()) return true;
 
       /*
-        Check for "impossible range", but make sure that we do not attempt
-        to mark semi-joined tables as "const" (only semi-joined tables that
-        are functionally dependent can be marked "const", and subsequently
-        pulled out of their semi-join nests).
+        Check for "always false" and mark table as "const". Skip
+        "const" marking (i) of semi-joined tables (only semi-joined
+        tables that are functionally dependent can be marked "const",
+        and subsequently pulled out of their semi-join nests (ii) if
+        the condition used for the range check is of the embedding
+        derived table.
       */
       if (records == 0 && tab->table()->reginfo.impossible_range &&
-          (!(tl->embedding && tl->embedding->is_sj_or_aj_nest()))) {
+          (!(tl->embedding && tl->embedding->is_sj_or_aj_nest())) &&
+          !embedding_derived_range) {
         /*
           Impossible WHERE condition or join condition
           In case of join cond, mark that one empty NULL row is matched.
@@ -5892,7 +5984,7 @@ bool JOIN::estimate_rowcount() {
   even for tables within outer join nests embedded in semi-join nests.
   A table can never be part of multiple semi-join nests, hence no
   ambiguities can ever occur.
-  Note also that the pointer is not set for TABLE_LIST objects that
+  Note also that the pointer is not set for Table_ref objects that
   are outer join nests within semi-join nests.
 */
 
@@ -5903,7 +5995,7 @@ void JOIN::set_semijoin_embedding() {
 
   for (JOIN_TAB *tab = join_tab; tab < tab_end; tab++) {
     tab->emb_sj_nest = nullptr;
-    for (TABLE_LIST *tl = tab->table_ref; tl->embedding; tl = tl->embedding) {
+    for (Table_ref *tl = tab->table_ref; tl->embedding; tl = tl->embedding) {
       if (tl->embedding->is_sj_or_aj_nest()) {
         assert(!tab->emb_sj_nest);
         tab->emb_sj_nest = tl->embedding;
@@ -5942,7 +6034,7 @@ void JOIN::set_semijoin_embedding() {
        BLOB/GEOMETRY columns are allowed.
 */
 
-static void semijoin_types_allow_materialization(TABLE_LIST *sj_nest) {
+static void semijoin_types_allow_materialization(Table_ref *sj_nest) {
   DBUG_TRACE;
 
   assert(sj_nest->nested_join->sj_outer_exprs.size() ==
@@ -6021,7 +6113,7 @@ static bool check_skip_records_in_range_qualification(JOIN_TAB *tab, THD *thd) {
           !select->has_ft_funcs() &&                            // F1.c
           (!select->is_grouped() && !select->is_distinct()) &&  // F1.d
           !select->is_ordered() &&                              // F1.e
-          select->join_list->size() == 1 &&                     // F2
+          select->m_current_table_nest->size() == 1 &&          // F2
           !thd->lex->is_explain());                             // F3
 }
 
@@ -6046,9 +6138,10 @@ static bool check_skip_records_in_range_qualification(JOIN_TAB *tab, THD *thd) {
   is the QUICK_* object used at later (optimization and execution)
   phases.
 
-  @param thd    Session that runs the query.
-  @param tab    JOIN_TAB of source table.
-  @param limit  maximum number of rows to select.
+  @param thd       Session that runs the query.
+  @param tab       JOIN_TAB of source table.
+  @param limit     maximum number of rows to select.
+  @param condition the condition to be used for the range check,
 
   @note
     In case of valid range, a RowIterator object will be constructed and
@@ -6060,12 +6153,13 @@ static bool check_skip_records_in_range_qualification(JOIN_TAB *tab, THD *thd) {
   @retval 0            If impossible query (i.e. certainly no rows will be
                        selected.)
 */
-static ha_rows get_quick_record_count(THD *thd, JOIN_TAB *tab, ha_rows limit) {
+static ha_rows get_quick_record_count(THD *thd, JOIN_TAB *tab, ha_rows limit,
+                                      Item *condition) {
   DBUG_TRACE;
   uchar buff[STACK_BUFF_ALLOC];
   if (check_stack_overrun(thd, STACK_MIN_SIZE, buff))
     return 0;  // Fatal error flag is set
-  TABLE_LIST *const tl = tab->table_ref;
+  Table_ref *const tl = tab->table_ref;
   tab->set_skip_records_in_range(
       check_skip_records_in_range_qualification(tab, thd));
 
@@ -6082,9 +6176,8 @@ static ha_rows get_quick_record_count(THD *thd, JOIN_TAB *tab, ha_rows limit) {
         limit,
         false,  // don't force quick range
         ORDER_NOT_RELEVANT, tab->table(), tab->skip_records_in_range(),
-        tab->join_cond() ? tab->join_cond() : tab->join()->where_cond,
-        &tab->needed_reg, tab->table()->force_index, tab->join()->query_block,
-        &range_scan);
+        condition, &tab->needed_reg, tab->table()->force_index,
+        tab->join()->query_block, &range_scan);
     tab->set_range_scan(range_scan);
 
     if (error == 1) return range_scan->num_output_rows();
@@ -6161,7 +6254,7 @@ static void trace_table_dependencies(Opt_trace_context *trace,
   Opt_trace_object trace_wrapper(trace);
   Opt_trace_array trace_dep(trace, "table_dependencies");
   for (uint i = 0; i < table_count; i++) {
-    TABLE_LIST *table_ref = join_tabs[i].table_ref;
+    Table_ref *table_ref = join_tabs[i].table_ref;
     Opt_trace_object trace_one_table(trace);
     trace_one_table.add_utf8_table(table_ref).add(
         "row_may_be_null", table_ref->table->is_nullable());
@@ -6229,7 +6322,7 @@ static void trace_table_dependencies(Opt_trace_context *trace,
       1. update_ref_and_keys() accumulates info about null-rejecting
          predicates in in Key_field::null_rejecting
       1.1 add_key_part saves these to Key_use.
-      2. create_ref_for_key copies them to TABLE_REF.
+      2. create_ref_for_key copies them to Index_lookup.
       3. add_not_null_conds adds "x IS NOT NULL" to join_tab->m_condition of
          appropriate JOIN_TAB members.
 
@@ -6438,7 +6531,7 @@ static bool optimize_semijoin_nests_for_materialization(JOIN *join) {
   DBUG_TRACE;
   Opt_trace_context *const trace = &join->thd->opt_trace;
 
-  for (TABLE_LIST *sj_nest : join->query_block->sj_nests) {
+  for (Table_ref *sj_nest : join->query_block->sj_nests) {
     /* As a precaution, reset pointers that were used in prior execution */
     sj_nest->nested_join->sjm.positions = nullptr;
 
@@ -6507,7 +6600,7 @@ static bool optimize_semijoin_nests_for_materialization(JOIN *join) {
     false - Otherwise
 */
 
-static bool find_eq_ref_candidate(TABLE_LIST *tl, table_map sj_inner_tables) {
+static bool find_eq_ref_candidate(Table_ref *tl, table_map sj_inner_tables) {
   Key_use *keyuse = tl->table->reginfo.join_tab->keyuse();
 
   if (keyuse) {
@@ -6602,7 +6695,7 @@ static bool pull_out_semijoin_tables(JOIN *join) {
   /* Try pulling out tables from each semi-join nest */
   for (auto sj_list_it = join->query_block->sj_nests.begin();
        sj_list_it != join->query_block->sj_nests.end();) {
-    TABLE_LIST *sj_nest = *sj_list_it;
+    Table_ref *sj_nest = *sj_list_it;
     if (sj_nest->is_aj_nest()) {
       ++sj_list_it;
       continue;
@@ -6615,7 +6708,7 @@ static bool pull_out_semijoin_tables(JOIN *join) {
       t2 cannot be pulled out because t3 depends on it.
     */
     table_map dep_tables = 0;
-    for (TABLE_LIST *tbl : sj_nest->nested_join->join_list) {
+    for (Table_ref *tbl : sj_nest->nested_join->m_tables) {
       if (tbl->dep_tables & sj_nest->nested_join->used_tables)
         dep_tables |= tbl->dep_tables;
     }
@@ -6627,7 +6720,7 @@ static bool pull_out_semijoin_tables(JOIN *join) {
     bool pulled_a_table;
     do {
       pulled_a_table = false;
-      for (TABLE_LIST *tbl : sj_nest->nested_join->join_list) {
+      for (Table_ref *tbl : sj_nest->nested_join->m_tables) {
         if (tbl->table && !(pulled_tables & tbl->map()) &&
             !(dep_tables & tbl->map())) {
           if (find_eq_ref_candidate(
@@ -6648,7 +6741,7 @@ static bool pull_out_semijoin_tables(JOIN *join) {
     } while (pulled_a_table);
 
     /*
-      Move the pulled out TABLE_LIST elements to the parents.
+      Move the pulled out Table_ref elements to the parents.
     */
     sj_nest->nested_join->used_tables &= ~pulled_tables;
     sj_nest->nested_join->not_null_tables &= ~pulled_tables;
@@ -6658,23 +6751,23 @@ static bool pull_out_semijoin_tables(JOIN *join) {
 
     bool remove = false;
     if (pulled_tables) {
-      mem_root_deque<TABLE_LIST *> *upper_join_list =
+      mem_root_deque<Table_ref *> *upper_join_list =
           (sj_nest->embedding != nullptr)
-              ? &sj_nest->embedding->nested_join->join_list
-              : &join->query_block->top_join_list;
+              ? &sj_nest->embedding->nested_join->m_tables
+              : &join->query_block->m_table_nest;
 
       Prepared_stmt_arena_holder ps_arena_holder(join->thd);
 
-      for (auto child_li = sj_nest->nested_join->join_list.begin();
-           child_li != sj_nest->nested_join->join_list.end();) {
-        TABLE_LIST *tbl = *child_li;
+      for (auto child_li = sj_nest->nested_join->m_tables.begin();
+           child_li != sj_nest->nested_join->m_tables.end();) {
+        Table_ref *tbl = *child_li;
         if (tbl->table && !(sj_nest->nested_join->used_tables & tbl->map())) {
           /*
             Pull the table up in the same way as simplify_joins() does:
             update join_list and embedding pointers but keep next[_local]
             pointers.
           */
-          child_li = sj_nest->nested_join->join_list.erase(child_li);
+          child_li = sj_nest->nested_join->m_tables.erase(child_li);
 
           upper_join_list->push_back(tbl);
 
@@ -6845,7 +6938,7 @@ static Key_field *merge_key_fields(Key_field *start, Key_field *new_fields,
 */
 
 static uint get_semi_join_select_list_index(Item_field *item_field) {
-  TABLE_LIST *emb_sj_nest = item_field->table_ref->embedding;
+  Table_ref *emb_sj_nest = item_field->table_ref->embedding;
   if (emb_sj_nest && emb_sj_nest->is_sj_or_aj_nest()) {
     const mem_root_deque<Item *> &items =
         emb_sj_nest->nested_join->sj_inner_exprs;
@@ -6956,7 +7049,7 @@ static bool add_key_field(THD *thd, Key_field **key_fields, uint and_level,
          cond->functype() == Item_func::SP_CROSSES_FUNC);
 
   Field *const field = item_field->field;
-  TABLE_LIST *const tl = item_field->table_ref;
+  Table_ref *const tl = item_field->table_ref;
 
   if (tl->table->reginfo.join_tab == nullptr) {
     /*
@@ -7558,7 +7651,7 @@ bool add_key_fields(THD *thd, JOIN *join, Key_field **key_fields,
       break;
     case Item_func::OPTIMIZE_EQUAL:
       Item_equal *item_equal = (Item_equal *)cond;
-      Item *const_item = item_equal->get_const();
+      Item *const_item = item_equal->const_arg();
       if (const_item) {
         /*
           For each field field1 from item_equal consider the equality
@@ -7605,7 +7698,7 @@ bool add_key_fields(THD *thd, JOIN *join, Key_field **key_fields,
 static bool add_key_part(Key_use_array *keyuse_array, Key_field *key_field) {
   if (key_field->eq_func && !(key_field->optimize & KEY_OPTIMIZE_EXISTS)) {
     const Field *const field = key_field->item_field->field;
-    TABLE_LIST *const tl = key_field->item_field->table_ref;
+    Table_ref *const tl = key_field->item_field->table_ref;
     TABLE *const table = tl->table;
 
     for (uint key = 0; key < table->s->keys; key++) {
@@ -7718,7 +7811,7 @@ static bool add_ft_keys(Key_use_array *keyuse_array, Item *cond,
       !(usable_tables & cond_func->table_ref->map()))
     return false;
 
-  TABLE_LIST *tbl = cond_func->table_ref;
+  Table_ref *tbl = cond_func->table_ref;
   if (!tbl->table->keys_in_use_for_query.is_set(cond_func->key)) return false;
 
   cond_func->set_simple_expression(simple_match_expr);
@@ -7803,18 +7896,17 @@ static bool sort_keyuse(const Key_use &a, const Key_use &b) {
 */
 
 static bool add_key_fields_for_nj(THD *thd, JOIN *join,
-                                  TABLE_LIST *nested_join_table,
-                                  Key_field **end, uint *and_level,
-                                  SARGABLE_PARAM **sargables) {
-  mem_root_deque<TABLE_LIST *> &join_list =
-      nested_join_table->nested_join->join_list;
+                                  Table_ref *nested_join_table, Key_field **end,
+                                  uint *and_level, SARGABLE_PARAM **sargables) {
+  mem_root_deque<Table_ref *> &join_list =
+      nested_join_table->nested_join->m_tables;
   auto li = join_list.begin();
   auto li_end = join_list.end();
   auto li2 = join_list.begin();
   auto li2_end = join_list.end();
   bool have_another = false;
   table_map tables = 0;
-  TABLE_LIST *table;
+  Table_ref *table;
 
   while ((table = (li != li_end) ? *li++ : nullptr) ||
          (have_another && li2 != join_list.end() &&
@@ -7826,8 +7918,8 @@ static bool add_key_fields_for_nj(THD *thd, JOIN *join,
         have_another = true;
         li2 = li;
         li2_end = li_end;
-        li = table->nested_join->join_list.begin();
-        li_end = table->nested_join->join_list.end();
+        li = table->nested_join->m_tables.begin();
+        li_end = table->nested_join->m_tables.end();
       } else {
         if (add_key_fields_for_nj(thd, join, table, end, and_level, sargables))
           return true;
@@ -8200,7 +8292,7 @@ static bool update_ref_and_keys(THD *thd, Key_use_array *keyuse,
   }
 
   /* Process ON conditions for the nested joins */
-  for (TABLE_LIST *tl : query_block->top_join_list) {
+  for (Table_ref *tl : query_block->m_table_nest) {
     if (tl->nested_join &&
         add_key_fields_for_nj(thd, join, tl, &end, &and_level, sargables))
       return true;
@@ -8232,7 +8324,8 @@ static bool update_ref_and_keys(THD *thd, Key_use_array *keyuse,
   if (!keyuse->empty()) {
     Key_use *save_pos, *use;
 
-    std::sort(keyuse->begin(), keyuse->begin() + keyuse->size(), sort_keyuse);
+    std::stable_sort(keyuse->begin(), keyuse->begin() + keyuse->size(),
+                     sort_keyuse);
 
     const Key_use key_end(nullptr, nullptr, 0, 0, 0, 0, 0, 0, false, nullptr,
                           0);
@@ -8372,7 +8465,7 @@ void JOIN::make_outerjoin_info() {
     TABLE *const table = tab->table();
     if (!table) continue;
 
-    TABLE_LIST *const tbl = tab->table_ref;
+    Table_ref *const tbl = tab->table_ref;
     /*
       If 'tbl' is inside a SJ/AJ nest served by materialization, we must
       limit setting first_inner, last_inner and first_upper for join nests
@@ -8396,7 +8489,7 @@ void JOIN::make_outerjoin_info() {
         If this outer join nest is embedded in another join nest,
         link the join-tabs:
       */
-      TABLE_LIST *const outer_join_nest = tbl->outer_join_nest();
+      Table_ref *const outer_join_nest = tbl->outer_join_nest();
       if (outer_join_nest) {
         assert(outer_join_nest->nested_join->first_nested != NO_PLAN_IDX);
         if (!sj_mat_inner ||
@@ -8406,7 +8499,7 @@ void JOIN::make_outerjoin_info() {
           tab->set_first_upper(outer_join_nest->nested_join->first_nested);
       }
     }
-    for (TABLE_LIST *embedding = tbl->embedding; embedding;
+    for (Table_ref *embedding = tbl->embedding; embedding;
          embedding = embedding->embedding) {
       // When reaching the outer tables of the materialized temporary table,
       // the decoration for this table is complete.
@@ -8424,7 +8517,7 @@ void JOIN::make_outerjoin_info() {
         tab->init_join_cond_ref(embedding);
         tab->cond_equal = tbl->cond_equal;
 
-        TABLE_LIST *const outer_join_nest = embedding->outer_join_nest();
+        Table_ref *const outer_join_nest = embedding->outer_join_nest();
         if (outer_join_nest) {
           assert(outer_join_nest->nested_join->first_nested != NO_PLAN_IDX);
           if (!sj_mat_inner ||
@@ -8650,7 +8743,7 @@ bool JOIN::attach_join_conditions(plan_idx last_tab) {
     if (sjm->inner_table_index + sjm->table_count - 1 == (uint)last_tab) {
       // we're at last table of sjmat nest
       Item *join_cond = best_ref[mat_tbl]->join_cond();
-      TABLE_LIST *tr = best_ref[mat_tbl]->table_ref;
+      Table_ref *tr = best_ref[mat_tbl]->table_ref;
       while (join_cond == nullptr && tr->embedding != nullptr &&
              tr->embedding->is_derived()) {
         // If subquery table(s) come from a derived table
@@ -8721,7 +8814,8 @@ bool JOIN::attach_join_conditions(plan_idx last_tab) {
   in sorted order.
 *****************************************************************************/
 
-static Item *part_of_refkey(TABLE *table, TABLE_REF *ref, const Field *field) {
+static Item *part_of_refkey(TABLE *table, Index_lookup *ref,
+                            const Field *field) {
   uint ref_parts = ref->key_parts;
   if (ref_parts) {
     if (ref->has_guarded_conds()) return nullptr;
@@ -8736,14 +8830,24 @@ static Item *part_of_refkey(TABLE *table, TABLE_REF *ref, const Field *field) {
   return nullptr;
 }
 
-bool ref_lookup_subsumes_comparison(Field *field, Item *right_item) {
+bool ref_lookup_subsumes_comparison(THD *thd, Field *field, Item *right_item,
+                                    bool *subsumes) {
+  *subsumes = false;
   right_item = right_item->real_item();
-  if (right_item->type() == Item::FIELD_ITEM)
-    return (field->eq_def(down_cast<Item_field *>(right_item)->field));
-  /* remove equalities injected by IN->EXISTS transformation */
-  else if (right_item->type() == Item::CACHE_ITEM)
-    return down_cast<Item_cache *>(right_item)->eq_def(field);
-  if (right_item->const_for_execution() && !right_item->is_null()) {
+  if (right_item->type() == Item::FIELD_ITEM) {
+    *subsumes = field->eq_def(down_cast<Item_field *>(right_item)->field);
+    return false;
+  } else if (right_item->type() == Item::CACHE_ITEM) {
+    // remove equalities injected by IN->EXISTS transformation
+    *subsumes = down_cast<Item_cache *>(right_item)->eq_def(field);
+    return false;
+  }
+  bool right_is_null = true;
+  if (right_item->const_for_execution()) {
+    right_is_null = right_item->is_null();
+    if (thd->is_error()) return true;
+  }
+  if (!right_is_null) {
     /*
       We can remove all fields except:
       1. String data types:
@@ -8778,7 +8882,7 @@ bool ref_lookup_subsumes_comparison(Field *field, Item *right_item) {
           field->binary()) &&
         !(field->type() == MYSQL_TYPE_FLOAT && field->decimals() > 0))  // 2
     {
-      return !right_item->save_in_field_no_warnings(field, true);
+      *subsumes = !right_item->save_in_field_no_warnings(field, true);
     }
   }
   return false;
@@ -8796,16 +8900,20 @@ bool ref_lookup_subsumes_comparison(Field *field, Item *right_item) {
   In such cases the predicate is known to be 'true' for any rows retrieved
   from that table. Thus it is redundant.
 
+  @param thd         session context
   @param left_item   The Item_field possibly being part of A ref-KEY.
   @param right_item  The equality value specified for 'left_item'.
+  @param[out] redundant true if predicate is redundant, false otherwise
 
-  @return  'true' if the predicate is redundant.
+  @returns false if success, true if error
 
   @note See comments in reduce_cond_for_table() about careful
   usage/modifications of test_if_ref().
 */
 
-static bool test_if_ref(Item_field *left_item, Item *right_item) {
+static bool test_if_ref(THD *thd, Item_field *left_item, Item *right_item,
+                        bool *redundant) {
+  *redundant = false;
   if (left_item->depended_from)
     return false;  // don't even read join_tab of inner subquery!
   Field *field = left_item->field;
@@ -8819,8 +8927,11 @@ static bool test_if_ref(Item_field *left_item, Item *right_item) {
       /* "ref_or_null" implements "x=y or x is null", not "x=y" */
       (join_tab->type() != JT_REF_OR_NULL)) {
     Item *ref_item = part_of_refkey(field->table, &join_tab->ref(), field);
-    return (ref_item && ref_item->eq(right_item, true) &&
-            ref_lookup_subsumes_comparison(field, right_item));
+    if (ref_item != nullptr && ref_item->eq(right_item, true)) {
+      if (ref_lookup_subsumes_comparison(thd, field, right_item, redundant)) {
+        return true;
+      }
+    }
   }
   return false;  // keep predicate
 }
@@ -8845,16 +8956,21 @@ static bool test_if_ref(Item_field *left_item, Item *right_item) {
   Any tables referred in Item_func_trig_cond(FOUND_MATCH) conditions are
   aggregated into this null_extended table_map.
 
+  @param thd            thread handler
   @param cond           The condition to be 'reduced'.
   @param null_extended  table_map of possibly null-extended outer-tables.
-
-  @return               The condition with redundant predicates removed,
+  @param[out] reduced   The condition with redundant predicates removed,
                         possibly nullptr.
+
+  @returns              false if success, true if error
 */
-static Item *reduce_cond_for_table(Item *cond, table_map null_extended) {
+static bool reduce_cond_for_table(THD *thd, Item *cond, table_map null_extended,
+                                  Item **reduced) {
   DBUG_TRACE;
   DBUG_EXECUTE("where",
                print_where(current_thd, cond, "cond term", QT_ORDINARY););
+
+  *reduced = nullptr;
 
   if (cond->type() == Item::COND_ITEM) {
     List<Item> *arguments = down_cast<Item_cond *>(cond)->argument_list();
@@ -8862,7 +8978,10 @@ static Item *reduce_cond_for_table(Item *cond, table_map null_extended) {
     if (down_cast<Item_cond *>(cond)->functype() == Item_func::COND_AND_FUNC) {
       Item *item;
       while ((item = li++)) {
-        Item *upd_item = reduce_cond_for_table(item, null_extended);
+        Item *upd_item;
+        if (reduce_cond_for_table(thd, item, null_extended, &upd_item)) {
+          return true;
+        }
         if (upd_item == nullptr) {
           li.remove();
         } else if (upd_item != item) {
@@ -8871,16 +8990,20 @@ static Item *reduce_cond_for_table(Item *cond, table_map null_extended) {
       }
       switch (arguments->elements) {
         case 0:
-          return nullptr;  // All 'true' -> And-cond true
+          return false;  // All 'true' -> And-cond true
         case 1:
-          return arguments->head();
+          *reduced = arguments->head();
+          return false;
       }
     } else {  // Or list
       Item *item;
       while ((item = li++)) {
-        Item *upd_item = reduce_cond_for_table(item, null_extended);
+        Item *upd_item;
+        if (reduce_cond_for_table(thd, item, null_extended, &upd_item)) {
+          return true;
+        }
         if (upd_item == nullptr) {
-          return nullptr;  // Term 'true' -> entire Or-cond true
+          return false;  // Term 'true' -> entire Or-cond true
         } else if (upd_item != item) {
           li.replace(upd_item);
         }
@@ -8901,14 +9024,15 @@ static Item *reduce_cond_for_table(Item *cond, table_map null_extended) {
       }
 
       Item *cond_arg = func->arguments()[0];
-      Item *upd_arg = reduce_cond_for_table(cond_arg, null_extended);
+      Item *upd_arg;
+      if (reduce_cond_for_table(thd, cond_arg, null_extended, &upd_arg)) {
+        return true;
+      }
       if (upd_arg == nullptr) {
-        return nullptr;
+        return false;
       }
       func->arguments()[0] = upd_arg;
-    }
-
-    else if (func->functype() == Item_func::EQ_FUNC) {
+    } else if (func->functype() == Item_func::EQ_FUNC) {
       /*
         Remove equalities that are guaranteed to be true by use of 'ref' access
         method.
@@ -8931,17 +9055,29 @@ static Item *reduce_cond_for_table(Item *cond, table_map null_extended) {
       */
       Item *left_item = func->arguments()[0]->real_item();
       Item *right_item = func->arguments()[1]->real_item();
-      if ((left_item->type() == Item::FIELD_ITEM &&
-           !(left_item->used_tables() & null_extended) &&
-           test_if_ref(down_cast<Item_field *>(left_item), right_item)) ||
-          (right_item->type() == Item::FIELD_ITEM &&
-           !(right_item->used_tables() & null_extended) &&
-           test_if_ref(down_cast<Item_field *>(right_item), left_item))) {
-        return nullptr;
+      bool redundant = false;
+      if (left_item->type() == Item::FIELD_ITEM &&
+          !(left_item->used_tables() & null_extended) &&
+          test_if_ref(thd, down_cast<Item_field *>(left_item), right_item,
+                      &redundant)) {
+        return true;
+      }
+      if (redundant) {
+        return false;
+      }
+      if (right_item->type() == Item::FIELD_ITEM &&
+          !(right_item->used_tables() & null_extended) &&
+          test_if_ref(thd, down_cast<Item_field *>(right_item), left_item,
+                      &redundant)) {
+        return true;
+      }
+      if (redundant) {
+        return false;
       }
     }
   }
-  return cond;
+  *reduced = cond;
+  return false;
 }
 
 /**
@@ -8955,13 +9091,15 @@ static Item *reduce_cond_for_table(Item *cond, table_map null_extended) {
   for the table. Constant expressions are also cached
   to avoid evaluating them for each row being compared.
 
-  @return False if success, True if error
+  @param thd     thread handler
+
+  @returns false if success, true if error
 
   @note This function is run after conditions have been pushed down to
         individual tables, so transformation is applied to JOIN_TAB::condition
         and not to the WHERE condition.
 */
-bool JOIN::finalize_table_conditions() {
+bool JOIN::finalize_table_conditions(THD *thd) {
   /*
     Unnecessary to reduce conditions for const tables as they are only
     evaluated once.
@@ -8993,7 +9131,9 @@ bool JOIN::finalize_table_conditions() {
     */
     const table_map null_extended =
         query_block->outer_join & ~best_ref[i]->table_ref->map();
-    condition = reduce_cond_for_table(condition, null_extended);
+    if (reduce_cond_for_table(thd, condition, null_extended, &condition)) {
+      return true;
+    }
     if (condition != nullptr) condition->update_used_tables();
 
     /*
@@ -9031,8 +9171,8 @@ bool JOIN::finalize_table_conditions() {
 
   @details
   This function generates keys for all derived tables/views of the query_block
-  to which this join corresponds to with help of the TABLE_LIST:generate_keys
-  function.
+  to which this join corresponds to with help of the
+  Table_ref:generate_keys function.
 
   @return false all keys were successfully added.
   @return true OOM error
@@ -9041,7 +9181,7 @@ bool JOIN::finalize_table_conditions() {
 bool JOIN::generate_derived_keys() {
   assert(query_block->materialized_derived_table_count);
 
-  for (TABLE_LIST *table = query_block->leaf_tables; table;
+  for (Table_ref *table = query_block->leaf_tables; table;
        table = table->next_leaf) {
     table->derived_keys_ready = true;
     /* Process tables that aren't materialized yet. */
@@ -9062,153 +9202,163 @@ void JOIN::finalize_derived_keys() {
   assert(query_block->materialized_derived_table_count);
   ASSERT_BEST_REF_IN_JOIN_ORDER(this);
 
-  bool adjust_key_count = false;
   table_map processed_tables = 0;
 
   for (uint i = 0; i < tables; i++) {
-    JOIN_TAB *tab = best_ref[i];
-    TABLE *table = tab->table();
-    TABLE_LIST *table_ref = tab->table_ref;
+    TABLE *const table = best_ref[i]->table();
+    Table_ref *const tr = best_ref[i]->table_ref;
     /*
-     Save chosen key description if:
-     1) it's a materialized derived table
-     2) it's not yet instantiated
-     3) some keys are defined for it
+      Process the table's key definitions if:
+      1) it is a materialized derived table, and
+      2) it is not yet instantiated, and
+      3) it has some keys defined, and
+      4) it has not yet been processed (may happen if there are more than one
+         local references to the same CTE, which are processed on seeing the
+         first reference).
     */
-    if (table && table_ref->uses_materialization() &&  // (1)
-        !table->is_created() &&                        // (2)
-        table->s->keys > 0)                            // (3)
-    {
+    if (table == nullptr || !tr->uses_materialization() ||  // (1)
+        table->is_created() ||                              // (2)
+        table->s->keys == 0 ||                              // (3)
+        (processed_tables & tr->map())) {                   // (4)
+      continue;
+    }
+    /*
+      Collect all used keys before starting to shuffle them:
+      First create a map from key number to the table using the key:
+    */
+    assert(table->s->keys <= MAX_INDEXES);
+    TABLE *table_map[MAX_INDEXES];
+    for (uint j = 0; j < table->s->keys; j++) {
+      table_map[j] = nullptr;
+    }
+
+    Key_map used_keys;
+
+    // Mark all unique indexes as in use, since they have an effect
+    // (deduplication) whether any expression refers to them or not.
+    // In particular, they are used if we want to materialize a UNION DISTINCT
+    // directly into the derived table.
+    for (uint key_idx = 0; key_idx < table->s->keys; ++key_idx) {
+      if (table->key_info[key_idx].flags & HA_NOSAME) {
+        used_keys.set_bit(key_idx);
+      }
+    }
+    // Same for the hash key used for manual deduplication, if any.
+    // (It always has index 0 if it exists.)
+    if (table->hash_field) {
+      used_keys.set_bit(0);
+    }
+
+    Derived_refs_iterator it(tr);
+
+    while (TABLE *t = it.get_next()) {
+      if (t->pos_in_table_list->query_block != query_block) {
+        continue;
+      }
+      JOIN_TAB *jtab = t->reginfo.join_tab;
+      Key_use *const keyuse = jtab->position()->key;
+      if (keyuse != nullptr) {
+        used_keys.set_bit(keyuse->key);
+        table_map[keyuse->key] = t;
+      } else {
+        jtab->keys().clear_all();
+        jtab->const_keys.clear_all();
+        processed_tables |= t->pos_in_table_list->map();
+      }
+    }
+    /*
+      This call is required to establish the initial value for
+      TABLE_SHARE::first_unused_tmp_key.
+    */
+    (void)table->s->find_first_unused_tmp_key(used_keys);
+
+    // Process keys in increasing key order
+    for (uint j = 0; j < table->s->keys; j++) {
+      TABLE *const t = table_map[j];
+      if (t == nullptr) continue;
+
       /*
-        If there are two local references to the same CTE, and they use
-        the same key, the iteration for the second reference is unnecessary.
-      */
-      if (processed_tables & table_ref->map()) continue;
-
-      adjust_key_count = true;
-
-      Key_map used_keys;
-
-      // Mark all unique indexes as in use, since they have an effect
-      // (deduplication) whether any expression refers to them or not.
-      // In particular, they are used if we want to materialize a UNION DISTINCT
-      // directly into the derived table.
-      for (uint key_idx = 0; key_idx < table->s->keys; ++key_idx) {
-        if (table->key_info[key_idx].flags & HA_NOSAME) {
-          used_keys.set_bit(key_idx);
-        }
-      }
-
-      // Same for the hash key used for manual deduplication, if any. (It always
-      // has index 0 if it exists.)
-      if (table->hash_field) {
-        used_keys.set_bit(0);
-      }
-
-      Key_use *const keyuse = tab->position()->key;
-      if (keyuse == nullptr && used_keys.is_clear_all()) {
-        // Nothing uses any keys.
-        tab->keys().clear_all();
-        tab->const_keys.clear_all();
-        continue;
-      }
-
-      Derived_refs_iterator it(table_ref);
-      while (TABLE *t = it.get_next()) {
-        /*
-          Eliminate possible keys created by this JOIN and which it
-          doesn't use.
-          Collect all keys of this table which are used by any reference in
-          this query block. Any other query block doesn't matter as:
-          - either it was optimized before, so it's not using a key we may
+        Eliminate possible keys created by this JOIN and which it doesn't use.
+        Collect all keys of this table which are used by any reference in
+        this query block. Any other query block doesn't matter as:
+        - either it was optimized before, so it's not using a key we may
           want to drop.
-          - or it was optimized in this same window, so:
-            * either we own the window, then any key we may want to
+        - or it was optimized in this same window, so:
+          * either we own the window, then any key we may want to
             drop is not visible to it.
-            * or it owns the window, then we are using only existing
-            keys.
-          - or it will be optimized after, so it's not using any key yet.
+          * or it owns the window, then we are using only existing keys.
+        - or it will be optimized after, so it's not using any key yet.
 
-          used_keys is a mix of possible used keys and existing used keys.
-        */
-        if (t->pos_in_table_list->query_block == query_block) {
-          JOIN_TAB *jtab = t->reginfo.join_tab;
-          Key_use *keyuse_1 = jtab->position()->key;
-          if (keyuse_1) used_keys.set_bit(keyuse_1->key);
-        }
-      }
-
-      uint new_idx = table->s->find_first_unused_tmp_key(
-          used_keys);  // Also updates table->s->first_unused_tmp_key.
-      if (keyuse == nullptr) {
+        used_keys is a mix of possible used keys and existing used keys.
+      */
+      if (t->pos_in_table_list->query_block != query_block) {
         continue;
       }
+
+      JOIN_TAB *jtab = t->reginfo.join_tab;
+      Key_use *const keyuse = jtab->position()->key;
+      assert(keyuse != nullptr);
+
+      // Also updates table->s->first_unused_tmp_key.
+      uint new_idx = t->s->find_first_unused_tmp_key(used_keys);
 
       const uint old_idx = keyuse->key;
       assert(old_idx != new_idx);
 
       if (old_idx > new_idx) {
-        assert(table->s->owner_of_possible_tmp_keys == query_block);
-        it.rewind();
-        while (TABLE *t = it.get_next()) {
+        assert(t->s->owner_of_possible_tmp_keys == query_block);
+        Derived_refs_iterator it1(tr);
+        while (TABLE *t1 = it1.get_next()) {
           /*
             Unlike the collection of used_keys, references from other query
             blocks must be considered here, as they need a key_info array
             consistent with the to-be-changed table->s->keys.
           */
-          t->move_tmp_key(old_idx, it.is_first());
+          t1->move_tmp_key(old_idx, it1.is_first());
         }
-      } else
+        used_keys.clear_bit(old_idx);
+        used_keys.set_bit(new_idx);
+      } else {
         new_idx = old_idx;  // Index stays at same slot
+      }
 
       /*
         If the key was created by earlier-optimized query blocks, and is
         already used by nonlocal references, those don't need any further
-        update: they are already setup to use it and we're not moving the
-        key.
+        update: they are already setup to use it and we're not moving the key.
         If the key was created by this query block, nonlocal references cannot
         possibly be referencing it.
         In both cases, only local references need to update their Key_use.
       */
-      it.rewind();
-      while (TABLE *t = it.get_next()) {
-        if (t->pos_in_table_list->query_block != query_block) continue;
-        JOIN_TAB *jtab = t->reginfo.join_tab;
-        Key_use *keyuse_1 = jtab->position()->key;
-        if (keyuse_1 && keyuse_1->key == old_idx) {
-          processed_tables |= t->pos_in_table_list->map();
-          const bool key_is_const = jtab->const_keys.is_set(old_idx);
+      Derived_refs_iterator it2(tr);
+      while (TABLE *t2 = it2.get_next()) {
+        if (t2->pos_in_table_list->query_block != query_block) continue;
+        JOIN_TAB *jt2 = t2->reginfo.join_tab;
+        Key_use *ku2 = jt2->position()->key;
+        if (ku2 != nullptr && ku2->key == old_idx) {
+          processed_tables |= t2->pos_in_table_list->map();
+          const bool key_is_const = jt2->const_keys.is_set(old_idx);
           // tab->keys() was never set, so must be set
-          jtab->keys().clear_all();
-          jtab->keys().set_bit(new_idx);
-          jtab->const_keys.clear_all();
-          if (key_is_const) tab->const_keys.set_bit(new_idx);
-          for (Key_use *kit = keyuse_1;
-               kit->table_ref == jtab->table_ref && kit->key == old_idx; kit++)
+          jt2->keys().clear_all();
+          jt2->keys().set_bit(new_idx);
+          jt2->const_keys.clear_all();
+          if (key_is_const) jt2->const_keys.set_bit(new_idx);
+          for (Key_use *kit = ku2;
+               kit->table_ref == jt2->table_ref && kit->key == old_idx; kit++) {
             kit->key = new_idx;
+          }
         }
       }
     }
-  }
 
-  if (!adjust_key_count) return;
+    // Finally, we know how many keys remain in the table.
+    if (table->s->owner_of_possible_tmp_keys != query_block) continue;
 
-  // Finally we know how many keys remain in the table.
-  for (uint i = 0; i < tables; i++) {
-    JOIN_TAB *tab = best_ref[i];
-    TABLE *table = tab->table();
-    TABLE_LIST *table_ref = tab->table_ref;
-    if (table && table_ref->uses_materialization() && !table->is_created() &&
-        table->s->keys > 0) {
-      if (table->s->owner_of_possible_tmp_keys != query_block) continue;
-      /*
-        Release lock. As a bonus, avoid double work when this loop
-        later processes another local reference to the same table (similar to
-        the processed_tables map in the first loop).
-      */
-      table->s->owner_of_possible_tmp_keys = nullptr;
-      Derived_refs_iterator it(table_ref);
-      while (TABLE *t = it.get_next()) t->drop_unused_tmp_keys(it.is_first());
+    // Release lock:
+    table->s->owner_of_possible_tmp_keys = nullptr;
+    it.rewind();
+    while (TABLE *t = it.get_next()) {
+      t->drop_unused_tmp_keys(it.is_first());
     }
   }
 }
@@ -10095,7 +10245,7 @@ ORDER *JOIN::remove_const(ORDER *first_order, Item *cond, bool change,
 */
 
 bool optimize_cond(THD *thd, Item **cond, COND_EQUAL **cond_equal,
-                   mem_root_deque<TABLE_LIST *> *join_list,
+                   mem_root_deque<Table_ref *> *join_list,
                    Item::cond_result *cond_value) {
   DBUG_TRACE;
   Opt_trace_context *const trace = &thd->opt_trace;
@@ -10541,7 +10691,7 @@ ORDER *create_order_from_distinct(THD *thd, Ref_item_array ref_item_array,
   and group and order is compatible, else return 0.
 */
 
-static TABLE *get_sort_by_table(ORDER *a, ORDER *b, TABLE_LIST *tables) {
+static TABLE *get_sort_by_table(ORDER *a, ORDER *b, Table_ref *tables) {
   DBUG_TRACE;
   table_map map = (table_map)0;
 
@@ -10702,6 +10852,15 @@ bool JOIN::fts_index_access(JOIN_TAB *tab) {
   return true;
 }
 
+bool JOIN::contains_non_aggregated_fts() const {
+  return query_block->has_ft_funcs() &&
+         std::any_of(fields->begin(), fields->end(), [](Item *item) {
+           return WalkItem(item, enum_walk::PREFIX | enum_walk::POSTFIX,
+                           NonAggregatedFullTextSearchVisitor(
+                               [](Item_func_match *) { return true; }));
+         });
+}
+
 /**
    For {semijoin,subquery} materialization: calculates various cost
    information, based on a plan in join->best_positions covering the
@@ -10715,7 +10874,7 @@ bool JOIN::fts_index_access(JOIN_TAB *tab) {
    @note that this function modifies join->map2table, which has to be filled
    correctly later.
 */
-static void calculate_materialization_costs(JOIN *join, TABLE_LIST *sj_nest,
+static void calculate_materialization_costs(JOIN *join, Table_ref *sj_nest,
                                             uint n_tables,
                                             Semijoin_mat_optimize *sjm) {
   double mat_cost;           // Estimated cost of materialization
@@ -11243,4 +11402,245 @@ bool IteratorsAreNeeded(const THD *thd, AccessPath *root_path) {
   // external executor.
   return !IsBitSet(static_cast<int>(SecondaryEngineFlag::USE_EXTERNAL_EXECUTOR),
                    secondary_engine->secondary_engine_flags);
+}
+
+/// Constant used to signal that there is no limit in EstimateRowAccesses().
+static constexpr double kNoLimit = std::numeric_limits<double>::infinity();
+
+/**
+  Estimates how many rows that have to be read from the outer table of a join in
+  order to reach the given limit.
+
+  @param join_path  The AccessPath representing the join.
+  @param outer      The AccessPath representing the outer table in the join.
+  @param limit      The maximum number of rows to read from the join result.
+
+  @return The number of rows to read from the outer table before reaching the
+  limit, or kNoLimit if the entire table is expected to be read.
+ */
+static double GetRowsNeededFromOuterTable(const AccessPath *join_path,
+                                          const AccessPath *outer,
+                                          double limit) {
+  const double input_rows = outer->num_output_rows();
+  const double output_rows = join_path->num_output_rows();
+
+  if (input_rows > 0 && output_rows > 0) {
+    const double fanout = output_rows / input_rows;
+    return ceil(limit / fanout);
+  }
+
+  return kNoLimit;
+}
+
+/**
+  Estimates the number of row accesses that will be performed by a nested loop
+  join.
+
+  Nested loop join reads the outer table once, and the inner table once per row
+  in the outer table. If there is a limit on the query, it might not need to
+  read all rows in the outer table.
+
+  @param join_path  The AccessPath representing the nested loop join.
+  @param num_evaluations  The number of times the join will be executed.
+  @param limit  The maximum number of rows to read from the join result.
+  @return An estimate of the number of row accesses.
+ */
+static double EstimateRowAccessesInNestedLoopJoin(const AccessPath *join_path,
+                                                  const AccessPath *outer,
+                                                  const AccessPath *inner,
+                                                  double num_evaluations,
+                                                  double limit) {
+  const double limit_on_outer =
+      GetRowsNeededFromOuterTable(join_path, outer, limit);
+  return EstimateRowAccesses(outer, num_evaluations, limit_on_outer) +
+         EstimateRowAccesses(
+             inner,
+             num_evaluations * min(limit_on_outer, outer->num_output_rows()),
+             kNoLimit);
+}
+
+/**
+  Estimates the number of row accesses performed by the subqueries contained in
+  an item. The returned estimate is pessimistic, as it assumes the contained
+  subqueries are evaluated each time the item is evaluated. If the item for
+  example is an Item_cond_or, say, x=y OR (SELECT ...), the subquery is not
+  evaluated if x=y is true, but the estimate does not take the selectivity of
+  x=y into account.
+
+  @param item The item to check.
+  @param num_evaluations The number of times the item is evaluated.
+  @return An estimate of the number of row accesses.
+ */
+static double EstimateRowAccessesInItem(Item *item, double num_evaluations) {
+  double rows = 0.0;
+  WalkItem(item, enum_walk::PREFIX, [num_evaluations, &rows](Item *subitem) {
+    if (subitem->type() == Item::SUBSELECT_ITEM) {
+      Item_subselect *subselect = down_cast<Item_subselect *>(subitem);
+      Query_block *query_block = subselect->unit->first_query_block();
+      AccessPath *path;
+      if (subselect->unit->root_access_path() != nullptr) {
+        path = subselect->unit->root_access_path();
+      } else {
+        path = subselect->unit->item->root_access_path();
+      }
+      rows += EstimateRowAccesses(
+          path, query_block->is_cacheable() ? 1.0 : num_evaluations, kNoLimit);
+    }
+    return false;
+  });
+  return rows;
+}
+
+double EstimateRowAccesses(const AccessPath *path, double num_evaluations,
+                           double limit) {
+  assert(limit >= 0.0);
+
+  double rows = 0.0;
+  WalkAccessPaths(
+      path, /*join=*/nullptr, WalkAccessPathPolicy::ENTIRE_TREE,
+      [num_evaluations, limit, &rows](const AccessPath *subpath, const JOIN *) {
+        // Count rows accessed in base tables.
+        if (const TABLE *table = GetBasicTable(subpath);
+            table != nullptr && table->s != nullptr &&
+            table->s->tmp_table != INTERNAL_TMP_TABLE &&
+            table->pos_in_table_list != nullptr &&
+            table->pos_in_table_list->is_base_table()) {
+          double num_output_rows = subpath->num_output_rows();
+
+          // Workaround for the old optimizer only: test_if_skip_sort_order()
+          // sets the cardinality of index scans to the same as the query
+          // block's limit, if there is one, so the estimate in the access path
+          // may be too low. Get the cardinality from the handler's statistics
+          // instead.
+          if (subpath->type == AccessPath::INDEX_SCAN &&
+              !current_thd->lex->using_hypergraph_optimizer) {
+            num_output_rows = table->file->stats.records;
+          }
+
+          // Workaround for HeatWave. All access paths in HeatWave currently
+          // have num_output_rows set to zero. Get the handler's estimate
+          // instead.
+          if (num_output_rows == 0 && table->s->is_secondary_engine()) {
+            assert(subpath->type == AccessPath::TABLE_SCAN);
+            num_output_rows = table->file->stats.records;
+          }
+
+          assert(num_output_rows >= 0);
+
+          rows += num_evaluations * min(limit, num_output_rows);
+          return true;  // Done with this subtree.
+        }
+
+        switch (subpath->type) {
+          case AccessPath::LIMIT_OFFSET: {
+            const auto &param = subpath->limit_offset();
+            rows += EstimateRowAccesses(
+                param.child, num_evaluations,
+                min(limit, static_cast<double>(param.limit)));
+            return true;
+          }
+          case AccessPath::AGGREGATE: {
+            // Assume that aggregation needs to read the entire input,
+            // regardless of limit. This might be too pessimistic for explicitly
+            // grouped queries, but let's be conservative for now.
+            rows += EstimateRowAccesses(subpath->aggregate().child,
+                                        num_evaluations, kNoLimit);
+            return true;
+          }
+          case AccessPath::TEMPTABLE_AGGREGATE: {
+            // Temptable aggregation needs to read the entire input.
+            rows += EstimateRowAccesses(
+                subpath->temptable_aggregate().subquery_path, num_evaluations,
+                kNoLimit);
+            return true;
+          }
+          case AccessPath::MATERIALIZE: {
+            // Materialize once per query or once per evaluation.
+            const double num_materializations =
+                subpath->materialize().param->rematerialize ? num_evaluations
+                                                            : 1.0;
+            for (const MaterializePathParameters::QueryBlock &query_block :
+                 subpath->materialize().param->query_blocks) {
+              rows += EstimateRowAccesses(query_block.subquery_path,
+                                          num_materializations, kNoLimit);
+            }
+            return true;
+          }
+          case AccessPath::APPEND: {
+            // UNION ALL can stop reading from children once the limit is
+            // reached.
+            double limit_on_next_child = limit;
+            for (AppendPathParameters child : *subpath->append().children) {
+              if (limit_on_next_child <= 0) break;
+              rows += EstimateRowAccesses(child.path, num_evaluations,
+                                          limit_on_next_child);
+              limit_on_next_child -= child.path->num_output_rows();
+            }
+            return true;
+          }
+          case AccessPath::NESTED_LOOP_JOIN: {
+            rows += EstimateRowAccessesInNestedLoopJoin(
+                subpath, subpath->nested_loop_join().outer,
+                subpath->nested_loop_join().inner, num_evaluations, limit);
+            return true;
+          }
+          case AccessPath::NESTED_LOOP_SEMIJOIN_WITH_DUPLICATE_REMOVAL: {
+            rows += EstimateRowAccessesInNestedLoopJoin(
+                subpath,
+                subpath->nested_loop_semijoin_with_duplicate_removal().outer,
+                subpath->nested_loop_semijoin_with_duplicate_removal().inner,
+                num_evaluations, limit);
+            return true;
+          }
+          case AccessPath::BKA_JOIN: {
+            // BKA join reads each side once.
+            const auto &param = subpath->bka_join();
+            rows += EstimateRowAccesses(param.outer, num_evaluations, kNoLimit);
+            rows += EstimateRowAccesses(param.inner, num_evaluations, kNoLimit);
+            return true;
+          }
+          case AccessPath::HASH_JOIN: {
+            // Hash join reads each side once. If there is a LIMIT clause, it
+            // might not need to read all rows from the outer table.
+            const auto &param = subpath->hash_join();
+            rows += EstimateRowAccesses(
+                param.outer, num_evaluations,
+                GetRowsNeededFromOuterTable(subpath, param.outer, limit));
+            rows += EstimateRowAccesses(param.inner, num_evaluations, kNoLimit);
+            // Subqueries in the non-equijoin conditions may access rows.
+            for (Item *item : param.join_predicate->expr->join_conditions) {
+              rows += EstimateRowAccessesInItem(
+                  item, num_evaluations * subpath->num_output_rows());
+            }
+            return true;
+          }
+          case AccessPath::FILTER: {
+            // Filters may access rows in subqueries. Count them.
+            const auto &param = subpath->filter();
+            const double input_rows = param.child->num_output_rows();
+            const double output_rows = subpath->num_output_rows();
+            const double rows_needed_from_child =
+                (input_rows > 0 && output_rows > 0)
+                    ? limit / (output_rows / input_rows)
+                    : kNoLimit;
+            rows += EstimateRowAccessesInItem(
+                param.condition,
+                num_evaluations * min(param.child->num_output_rows(),
+                                      rows_needed_from_child));
+            rows += EstimateRowAccesses(param.child, num_evaluations,
+                                        rows_needed_from_child);
+            return true;
+          }
+          case AccessPath::SORT: {
+            // SORT needs to read the entire input, regardless of LIMIT.
+            rows += EstimateRowAccesses(subpath->sort().child, num_evaluations,
+                                        kNoLimit);
+            return true;
+          }
+          default:
+            return false;  // Keep traversing.
+        }
+      });
+
+  return rows;
 }

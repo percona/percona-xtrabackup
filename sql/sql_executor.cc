@@ -115,7 +115,6 @@
 using std::make_pair;
 using std::max;
 using std::min;
-using std::move;
 using std::pair;
 using std::string;
 using std::unique_ptr;
@@ -127,7 +126,8 @@ static bool alloc_group_fields(JOIN *join, ORDER *group);
 /// Maximum amount of space (in bytes) to allocate for a Record_buffer.
 static constexpr size_t MAX_RECORD_BUFFER_SIZE = 128 * 1024;  // 128KB
 
-string RefToString(const TABLE_REF &ref, const KEY *key, bool include_nulls) {
+string RefToString(const Index_lookup &ref, const KEY *key,
+                   bool include_nulls) {
   string ret;
 
   if (ref.keypart_hash != nullptr) {
@@ -304,9 +304,7 @@ err:
 */
 
 bool has_rollup_result(Item *item) {
-  while (item->type() == Item::REF_ITEM) {
-    item = *((down_cast<Item_ref *>(item))->ref);
-  }
+  item = item->real_item();
 
   if (is_rollup_group_wrapper(item) &&
       down_cast<Item_rollup_group_item *>(item)->rollup_null()) {
@@ -474,9 +472,9 @@ static bool update_const_equal_items(THD *thd, Item *cond, JOIN_TAB *tab) {
              down_cast<Item_func *>(cond)->functype() ==
                  Item_func::MULT_EQUAL_FUNC) {
     Item_equal *item_equal = (Item_equal *)cond;
-    bool contained_const = item_equal->get_const() != nullptr;
+    bool contained_const = item_equal->const_arg() != nullptr;
     if (item_equal->update_const(thd)) return true;
-    if (!contained_const && item_equal->get_const()) {
+    if (!contained_const && item_equal->const_arg()) {
       /* Update keys for range analysis */
       for (Item_field &item_field : item_equal->get_fields()) {
         const Field *field = item_field.field;
@@ -705,22 +703,11 @@ bool set_record_buffer(TABLE *table, double expected_rows_to_fetch) {
   return false;
 }
 
-void ExtractConditions(Item *condition,
+bool ExtractConditions(Item *condition,
                        Mem_root_array<Item *> *condition_parts) {
-  if (condition == nullptr) {
-    return;
-  }
-  if (condition->type() != Item::COND_ITEM ||
-      down_cast<Item_cond *>(condition)->functype() !=
-          Item_bool_func2::COND_AND_FUNC) {
-    condition_parts->push_back(condition);
-    return;
-  }
-
-  Item_cond_and *and_condition = down_cast<Item_cond_and *>(condition);
-  for (Item &item : *and_condition->argument_list()) {
-    ExtractConditions(&item, condition_parts);
-  }
+  return WalkConjunction(condition, [condition_parts](Item *item) {
+    return condition_parts->push_back(item);
+  });
 }
 
 /**
@@ -751,7 +738,7 @@ Item *CreateConjunction(List<Item> *items) {
   if (items->size() == 1) {
     return items->head();
   }
-  Item *condition = new Item_cond_and(*items);
+  Item_cond_and *condition = new Item_cond_and(*items);
   condition->quick_fix_field();
   condition->update_used_tables();
   condition->apply_is_true();
@@ -847,7 +834,7 @@ static table_map ConvertQepTabMapToTableMap(JOIN *join, qep_tab_map tables) {
 AccessPath *CreateBKAAccessPath(THD *thd, JOIN *join, AccessPath *outer_path,
                                 qep_tab_map left_tables, AccessPath *inner_path,
                                 qep_tab_map right_tables, TABLE *table,
-                                TABLE_LIST *table_list, TABLE_REF *ref,
+                                Table_ref *table_list, Index_lookup *ref,
                                 JoinType join_type) {
   table_map left_table_map = ConvertQepTabMapToTableMap(join, left_tables);
   table_map right_table_map = ConvertQepTabMapToTableMap(join, right_tables);
@@ -1641,7 +1628,7 @@ AccessPath *MoveCompositeIteratorsFromTablePath(
 }
 
 AccessPath *GetAccessPathForDerivedTable(
-    THD *thd, TABLE_LIST *table_ref, TABLE *table, bool rematerialize,
+    THD *thd, Table_ref *table_ref, TABLE *table, bool rematerialize,
     Mem_root_array<const AccessPath *> *invalidators, bool need_rowid,
     AccessPath *table_path) {
   if (table_ref->access_path_for_derived != nullptr) {
@@ -1684,7 +1671,7 @@ AccessPath *GetAccessPathForDerivedTable(
     // into a UNION result table, then from there into our own).
     //
     // We will already have set up a unique index on the table if
-    // required; see TABLE_LIST::setup_materialized_derived_tmp_table().
+    // required; see Table_ref::setup_materialized_derived_tmp_table().
     path = NewMaterializeAccessPath(
         thd, query_expression->release_query_blocks_to_materialize(),
         invalidators, table, table_path, table_ref->common_table_expr(),
@@ -1850,12 +1837,6 @@ AccessPath *GetTableAccessPath(THD *thd, QEP_TAB *qep_tab, QEP_TAB *qep_tabs) {
 #endif
   } else {
     table_path = qep_tab->access_path();
-
-    POSITION *pos = qep_tab->position();
-    if (pos != nullptr) {
-      SetCostOnTableAccessPath(*thd->cost_model(), pos,
-                               /*is_after_filter=*/false, table_path);
-    }
 
     // See if this is an information schema table that must be filled in before
     // we scan.
@@ -2064,7 +2045,7 @@ static AccessPath *CreateHashJoinAccessPath(
     // For inner join, attach the extra conditions as filters after the join.
     // This gives us more detailed output in EXPLAIN ANALYZE since we get an
     // instrumented FilterIterator on top of the join.
-    *join_conditions = move(hash_join_extra_conditions);
+    *join_conditions = std::move(hash_join_extra_conditions);
   } else {
     join_conditions->clear();
 
@@ -2216,7 +2197,7 @@ static void ExtractJoinConditions(const QEP_TAB *current_table,
     }
   }
 
-  *predicates = move(real_predicates);
+  *predicates = std::move(real_predicates);
 }
 
 static bool UseHashJoin(QEP_TAB *qep_tab) {
@@ -2782,11 +2763,13 @@ AccessPath *ConnectJoins(plan_idx upper_first_idx, plan_idx first_idx,
         UseBKA(qep_tab) && !QueryMixesOuterBKAAndBNL(qep_tab->join());
 
     if (is_bka) {
-      TABLE_REF &ref = qep_tab->ref();
+      Index_lookup &ref = qep_tab->ref();
 
       table_path =
           NewMRRAccessPath(thd, qep_tab->table(), &ref,
                            qep_tab->position()->table->join_cache_flags);
+      SetCostOnTableAccessPath(*thd->cost_model(), qep_tab->position(),
+                               /*is_after_filter=*/false, table_path);
 
       for (unsigned key_part_idx = 0; key_part_idx < ref.key_parts;
            ++key_part_idx) {
@@ -2940,7 +2923,7 @@ AccessPath *ConnectJoins(plan_idx upper_first_idx, plan_idx first_idx,
 static table_map get_update_or_delete_target_tables(const JOIN *join) {
   table_map target_tables = 0;
 
-  for (const TABLE_LIST *tr = join->query_block->leaf_tables; tr != nullptr;
+  for (const Table_ref *tr = join->query_block->leaf_tables; tr != nullptr;
        tr = tr->next_leaf) {
     if (tr->updating) {
       target_tables |= tr->map();
@@ -3080,8 +3063,11 @@ AccessPath *JOIN::create_root_access_path_for_join() {
     // (ie., the join left some tables that were supposed to be deduplicated
     // but were not), handle them now at the very end.
     if (unhandled_duplicates != 0) {
+      AccessPath *const child = path;
       path = NewWeedoutAccessPathForTables(thd, unhandled_duplicates, qep_tab,
-                                           primary_tables, path);
+                                           primary_tables, child);
+
+      CopyBasicProperties(*child, path);
     }
   }
 
@@ -3371,9 +3357,11 @@ AccessPath *JOIN::attach_access_paths_for_having_and_limit(AccessPath *path) {
       // We cannot call EstimateFilterCost() in the pre-hypergraph optimizer,
       // as on repeated execution of a prepared query, the condition may contain
       // references to subqueries that are destroyed and not re-optimized yet.
-      path->cost += EstimateFilterCost(thd, path->num_output_rows(),
-                                       having_cond, query_block)
-                        .cost_if_not_materialized;
+      const FilterCost filter_cost = EstimateFilterCost(
+          thd, path->num_output_rows(), having_cond, query_block);
+
+      path->cost += filter_cost.cost_if_not_materialized;
+      path->init_cost += filter_cost.init_cost_if_not_materialized;
     }
   }
 
@@ -3397,7 +3385,7 @@ void JOIN::create_access_paths_for_index_subquery() {
     path = NewFilterAccessPath(thd, path, first_qep_tab->condition());
   }
 
-  TABLE_LIST *const tl = qep_tab->table_ref;
+  Table_ref *const tl = qep_tab->table_ref;
   if (tl && tl->uses_materialization()) {
     if (tl->is_table_function()) {
       path = NewMaterializedTableFunctionAccessPath(thd, first_qep_tab->table(),
@@ -3601,18 +3589,17 @@ int join_read_const_table(JOIN_TAB *tab, POSITION *pos) {
   JOIN *const join = tab->join();
   if (join->where_cond && update_const_equal_items(thd, join->where_cond, tab))
     return 1;
-  TABLE_LIST *tbl;
+  Table_ref *tbl;
   for (tbl = join->query_block->leaf_tables; tbl; tbl = tbl->next_leaf) {
-    TABLE_LIST *embedded;
-    TABLE_LIST *embedding = tbl;
+    Table_ref *embedded;
+    Table_ref *embedding = tbl;
     do {
       embedded = embedding;
       if (embedded->join_cond_optim() &&
           update_const_equal_items(thd, embedded->join_cond_optim(), tab))
         return 1;
       embedding = embedded->embedding;
-    } while (embedding &&
-             embedding->nested_join->join_list.front() == embedded);
+    } while (embedding && embedding->nested_join->m_tables.front() == embedded);
   }
 
   return 0;
@@ -3660,15 +3647,14 @@ static int read_system(TABLE *table) {
   return table->has_row() ? 0 : -1;
 }
 
-int read_const(TABLE *table, TABLE_REF *ref) {
+int read_const(TABLE *table, Index_lookup *ref) {
   int error;
   DBUG_TRACE;
 
   if (!table->is_started())  // If first read
   {
     /* Perform "Late NULLs Filtering" (see internals manual for explanations) */
-    if (ref->impossible_null_ref() ||
-        construct_lookup_ref(current_thd, table, ref))
+    if (ref->impossible_null_ref() || construct_lookup(current_thd, table, ref))
       error = HA_ERR_KEY_NOT_FOUND;
     else {
       error = table->file->ha_index_init(ref->key, false);
@@ -3751,7 +3737,7 @@ AccessPath *QEP_TAB::access_path() {
   assert(table());
   // Only some access methods support reversed access:
   assert(!m_reversed_access || type() == JT_REF || type() == JT_INDEX_SCAN);
-  TABLE_REF *used_ref = nullptr;
+  Index_lookup *used_ref = nullptr;
   AccessPath *path = nullptr;
 
   switch (type()) {
@@ -3811,6 +3797,11 @@ AccessPath *QEP_TAB::access_path() {
       break;
   }
 
+  if (position() != nullptr) {
+    SetCostOnTableAccessPath(*join()->thd->cost_model(), position(),
+                             /*is_after_filter=*/false, path);
+  }
+
   /*
     If we have an item like <expr> IN ( SELECT f2 FROM t2 ), and we were not
     able to rewrite it into a semijoin, the optimizer may rewrite it into
@@ -3852,6 +3843,8 @@ AccessPath *QEP_TAB::access_path() {
         // the AlternativeIterator.
         AccessPath *table_scan_path = NewTableScanAccessPath(
             join()->thd, table(), /*count_examined_rows=*/true);
+        table_scan_path->set_num_output_rows(table()->file->stats.records);
+        table_scan_path->cost = table()->file->table_scan_cost().total_cost();
         path = NewAlternativeAccessPath(join()->thd, path, table_scan_path,
                                         used_ref);
         break;
@@ -3879,6 +3872,13 @@ AccessPath *QEP_TAB::access_path() {
     // sorted results out.
     path = NewSortAccessPath(join()->thd, path, filesort, filesort_pushed_order,
                              /*count_examined_rows=*/true);
+  }
+
+  // If we wrapped the table path in for example a sort or a filter, add cost to
+  // the wrapping path too.
+  if (path->num_output_rows() == -1 && position() != nullptr) {
+    SetCostOnTableAccessPath(*join()->thd->cost_model(), position(),
+                             /*is_after_filter=*/false, path);
   }
 
   return path;
@@ -4097,7 +4097,7 @@ bool check_unique_constraint(TABLE *table) {
   return true;
 }
 
-bool construct_lookup_ref(THD *thd, TABLE *table, TABLE_REF *ref) {
+bool construct_lookup(THD *thd, TABLE *table, Index_lookup *ref) {
   enum enum_check_fields save_check_for_truncated_fields =
       thd->check_for_truncated_fields;
   thd->check_for_truncated_fields = CHECK_FIELD_IGNORE;
@@ -4706,7 +4706,7 @@ bool MaterializeIsDoingDeduplication(TABLE *table) {
  */
 AccessPath *create_table_access_path(THD *thd, TABLE *table,
                                      AccessPath *range_scan,
-                                     TABLE_LIST *table_ref, POSITION *position,
+                                     Table_ref *table_ref, POSITION *position,
                                      bool count_examined_rows) {
   AccessPath *path;
   if (range_scan != nullptr) {
@@ -4725,7 +4725,7 @@ AccessPath *create_table_access_path(THD *thd, TABLE *table,
 }
 
 unique_ptr_destroy_only<RowIterator> init_table_iterator(
-    THD *thd, TABLE *table, AccessPath *range_scan, TABLE_LIST *table_ref,
+    THD *thd, TABLE *table, AccessPath *range_scan, Table_ref *table_ref,
     POSITION *position, bool ignore_not_found_rows, bool count_examined_rows) {
   unique_ptr_destroy_only<RowIterator> iterator;
 

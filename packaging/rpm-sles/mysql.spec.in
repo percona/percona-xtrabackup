@@ -1094,6 +1094,7 @@ rm -r $(readlink var) var
 %attr(644, root, root) %{_mandir}/man1/ndb_print_frag_file.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_print_schema_file.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_print_sys_file.1*
+%attr(644, root, root) %{_mandir}/man1/ndb_redo_log_reader.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_restore.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_secretsfile_reader.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_select_all.1*
@@ -1102,8 +1103,8 @@ rm -r $(readlink var) var
 %attr(644, root, root) %{_mandir}/man1/ndb_size.pl.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_top.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_waiter.1*
-%attr(644, root, root) %{_mandir}/man1/ndb_redo_log_reader.1*
 %attr(644, root, root) %{_mandir}/man1/ndbinfo_select_all.1*
+%attr(644, root, root) %{_mandir}/man1/ndbxfrm.1*
 %endif #cluster
 
 %files devel
@@ -1418,6 +1419,7 @@ rm -r $(readlink var) var
 %{_libdir}/mysqlrouter/private/libmysqlharness_tls.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_connection_pool.so.*
+%{_libdir}/mysqlrouter/private/libmysqlrouter_destination_status.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_http.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_http_auth_backend.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_http_auth_realm.so.*
@@ -1437,7 +1439,7 @@ rm -r $(readlink var) var
 * Tue Jun 28 2022 Samar Pratap Singh <samar.pratap.singh@oracle.com> - 8.0.31-1
 - Added component_keyring_oci
 
-* Mon May 07 2022 Murthy Sidagam <venkata.sidagam@oracle.com> - 8.0.31-1
+* Mon Jun 20 2022 Murthy Sidagam <venkata.sidagam@oracle.com> - 8.0.31-1
 - Added component_test_mysql_command_services.so test component
 - Added test_services_command_services.so test plugin
 

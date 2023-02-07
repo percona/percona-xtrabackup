@@ -73,6 +73,7 @@ FOREACH(test_file
     test_routing_connection.cc
     test_routing_connection_errors.cc
     test_routing_strategy.cc
+    test_routing_sharing.cc
     test_sd_notify.cc
     test_shutdown.cc
     test_state_file.cc
@@ -80,6 +81,7 @@ FOREACH(test_file
     test_metadata_http_auth_backend.cc
     test_socket_close.cc
     test_stacktrace.cc
+    test_destination_status.cc
     )
 add_test_file(${CMAKE_CURRENT_SOURCE_DIR}/${test_file}
   MODULE "component"

@@ -3955,8 +3955,8 @@ test.t1	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT f1, f1 + 1, COUNT(DISTINCT f2) AS x FROM t1 GROUP BY f1 ORDER BY x;
 EXPLAIN
 -> Sort: x
-    -> Stream results  (cost=1.45 rows=6)
-        -> Group aggregate: count(distinct t1.f2)  (cost=1.45 rows=6)
+    -> Stream results  (cost=1.45 rows=2)
+        -> Group aggregate: count(distinct t1.f2)  (cost=1.45 rows=2)
             -> Index scan on t1 using k1  (cost=0.85 rows=6)
 
 SELECT f1, f1 + 1, COUNT(DISTINCT f2) AS x FROM t1 GROUP BY f1 ORDER BY x;
@@ -4414,3 +4414,70 @@ ORDER BY t2.x;
 x
 NULL
 DROP TABLE t1, t2, t3;
+#
+# Bug#34341503: TPC-DS Q18 SF1 result diff old optimizer vs. hypergraph
+#
+CREATE TABLE t1 (
+id INT,
+x INT,
+PRIMARY KEY (id)
+);
+CREATE TABLE t2 (
+id INT
+);
+INSERT INTO t1 VALUES (1, 1), (2, 2);
+INSERT INTO t2 VALUES (1), (2);
+SELECT t1.x
+FROM t1, t2
+WHERE t1.id = t2.id
+GROUP BY t1.x WITH ROLLUP;
+x
+1
+2
+NULL
+DROP TABLE t1, t2;
+#
+# Bug#34463842: Result diff seen with hypergraph off and on
+#
+CREATE TABLE t1 (x INT);
+INSERT INTO t1 VALUES (1), (2);
+CREATE TABLE t2 (pk INT PRIMARY KEY);
+INSERT INTO t2 VALUES (1), (2), (3), (4), (5), (6), (7), (8);
+SELECT t1.x FROM t1, t2 WHERE t1.x = t2.pk
+GROUP BY t1.x
+HAVING (COUNT(*) = 3 AND COUNT(*) > 6) OR t1.x = 2;
+x
+2
+DROP TABLE t1, t2;
+#
+# Bug#34682586: MySQL server crash, segmentation fault: count_field_types
+#
+CREATE TABLE t1 (pk INT PRIMARY KEY, x INT);
+INSERT INTO t1(pk) VALUES (1), (2), (3), (4), (5);
+CREATE TABLE t2 (x INT);
+PREPARE ps FROM
+'SELECT 1 FROM t1, (SELECT DISTINCT x FROM t2) AS ot2
+ WHERE t1.pk = ot2.x GROUP BY ot2.x, t1.x';
+EXECUTE ps;
+1
+EXECUTE ps;
+1
+DEALLOCATE PREPARE ps;
+DROP TABLE t1, t2;
+#
+# Bug#34727088: Assertion `!OrderItemsReferenceUnavailableTables(path, tables)' failed.
+#
+CREATE TABLE t1 (pk INT PRIMARY KEY, x INT);
+INSERT INTO t1 VALUES (1, 1), (2, 2), (3, 3);
+CREATE TABLE t2 (pk INT PRIMARY KEY);
+INSERT INTO t2 VALUES (1), (2), (3), (4), (5);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+SELECT DISTINCT t1.x FROM t1, t2 WHERE t1.x = t2.pk GROUP BY t1.pk;
+x
+1
+2
+3
+DROP TABLE t1, t2;

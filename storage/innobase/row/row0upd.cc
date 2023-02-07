@@ -44,6 +44,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #ifndef UNIV_HOTBACKUP
 #include <algorithm>
 
+#include <debug_sync.h>
 #include "btr0btr.h"
 #include "btr0cur.h"
 #include "buf0lru.h"
@@ -487,22 +488,28 @@ void row_upd_rec_in_place(
   ut_ad(!index->table->skip_alter_undo);
 
   if (rec_offs_comp(offsets)) {
-    bool is_instant = rec_get_instant_flag_new(rec);
-    bool is_versioned = rec_new_is_versioned(rec);
+    /* Keep the INSTANT/VERSION bit of prepared physical record */
+    const bool is_instant = rec_get_instant_flag_new(rec);
+    const bool is_versioned = rec_new_is_versioned(rec);
 
+    /* Set the info_bits from the update vector */
     rec_set_info_bits_new(rec, update->info_bits);
+
+    /* Set the INSTANT/VERSION bit from the values kept */
     if (is_versioned) {
-      rec_new_set_versioned(rec, true);
-      ut_ad(!rec_get_instant_flag_new(rec));
+      rec_new_set_versioned(rec);
     } else if (is_instant) {
       ut_ad(index->table->has_instant_cols());
-      rec_set_instant_flag_new(rec, true);
       ut_ad(!rec_new_is_versioned(rec));
+      rec_new_set_instant(rec);
     } else {
-      rec_new_set_versioned(rec, false);
-      rec_set_instant_flag_new(rec, false);
+      rec_new_reset_instant_version(rec);
     }
+
+    /* Only one of the bit (INSTANT or VERSION) could be set */
+    ut_a(!(rec_get_instant_flag_new(rec) && rec_new_is_versioned(rec)));
   } else {
+    /* INSTANT bit is irrelevant for the record in Redundant format */
     bool is_versioned = rec_old_is_versioned(rec);
     rec_set_info_bits_old(rec, update->info_bits);
     if (is_versioned) {
@@ -2191,7 +2198,7 @@ code or DB_LOCK_WAIT */
   }
 
   ut_ad(trx_can_be_handled_by_current_thread(trx));
-  DEBUG_SYNC_C_IF_THD(trx->mysql_thd, "before_row_upd_sec_index_entry");
+  DEBUG_SYNC(trx->mysql_thd, "before_row_upd_sec_index_entry");
 
   mtr_start(&mtr);
 
@@ -2762,7 +2769,8 @@ static bool row_upd_check_autoinc_counter(const upd_node_t *node, mtr_t *mtr) {
   big_rec_t *big_rec = nullptr;
   btr_pcur_t *pcur;
   btr_cur_t *btr_cur;
-  dberr_t err;
+  dberr_t err = DB_SUCCESS;
+  bool persist_autoinc = false;
   const dtuple_t *rebuilt_old_pk = nullptr;
   trx_id_t trx_id = thr_get_trx(thr)->id;
   trx_t *trx = thr_get_trx(thr);
@@ -2782,11 +2790,17 @@ static bool row_upd_check_autoinc_counter(const upd_node_t *node, mtr_t *mtr) {
   if (dict_index_is_online_ddl(index)) {
     rebuilt_old_pk = row_log_table_get_pk(btr_cur_get_rec(btr_cur), index,
                                           offsets, nullptr, &heap);
+    if (row_log_table_get_error(index) == DB_INDEX_CORRUPT) {
+      err = DB_CORRUPTION;
+
+      mtr->commit();
+      goto func_exit;
+    }
   }
 
   /* Check and log if necessary at the beginning, to prevent any
   further potential deadlock */
-  bool persist_autoinc = row_upd_check_autoinc_counter(node, mtr);
+  persist_autoinc = row_upd_check_autoinc_counter(node, mtr);
 
   /* Try optimistic updating of the record, keeping changes within
   the page; we do not check locks because we assume the x-lock on the
@@ -2998,7 +3012,7 @@ func_exit:
   ulint mode;
 
   ut_ad(trx_can_be_handled_by_current_thread(trx));
-  DEBUG_SYNC_C_IF_THD(trx->mysql_thd, "innodb_row_upd_clust_step_enter");
+  DEBUG_SYNC(trx->mysql_thd, "innodb_row_upd_clust_step_enter");
 
   if (dict_index_is_online_ddl(index)) {
     ut_ad(node->table->id != DICT_INDEXES_ID);
@@ -3154,7 +3168,7 @@ static dberr_t row_upd(upd_node_t *node, /*!< in: row update node */
   }
 
   ut_ad(trx_can_be_handled_by_current_thread(thr_get_trx(thr)));
-  DEBUG_SYNC_C_IF_THD(thr_get_trx(thr)->mysql_thd, "after_row_upd_clust");
+  DEBUG_SYNC(thr_get_trx(thr)->mysql_thd, "after_row_upd_clust");
 
   if (node->index == nullptr ||
       (!node->is_delete && (node->cmpl_info & UPD_NODE_NO_ORD_CHANGE))) {

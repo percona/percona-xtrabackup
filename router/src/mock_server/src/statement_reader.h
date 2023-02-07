@@ -34,7 +34,6 @@
 
 #include <openssl/bio.h>
 
-#include "my_compiler.h"
 #include "mysql/harness/net_ts/buffer.h"
 #include "mysql/harness/net_ts/executor.h"
 #include "mysql/harness/net_ts/io_context.h"
@@ -148,16 +147,18 @@ class ProtocolBase {
               async_send(std::move(compl_handler));
             });
       } else {
-        net::defer([compl_handler = std::move(init.completion_handler),
+        net::defer(client_socket_.get_executor(),
+                   [compl_handler = std::move(init.completion_handler),
                     ec = write_res.error()]() { compl_handler(ec, {}); });
       }
     } else {
       net::dynamic_buffer(send_buffer_).consume(write_res.value());
 
-      net::defer([compl_handler = std::move(init.completion_handler),
+      net::defer(client_socket_.get_executor(),
+                 [compl_handler = std::move(init.completion_handler),
                   transferred = write_res.value()]() {
-        compl_handler({}, transferred);
-      });
+                   compl_handler({}, transferred);
+                 });
     }
 
     return init.result.get();
@@ -355,6 +356,16 @@ class StatementReaderBase {
     std::optional<std::string> cert_issuer;
   };
 
+  StatementReaderBase() = default;
+
+  StatementReaderBase(const StatementReaderBase &) = default;
+  StatementReaderBase(StatementReaderBase &&) = default;
+
+  StatementReaderBase &operator=(const StatementReaderBase &) = default;
+  StatementReaderBase &operator=(StatementReaderBase &&) = default;
+
+  virtual ~StatementReaderBase() = default;
+
   /** @brief Returns the data about the next statement from the
    *         json file. If there is no more statements it returns
    *         empty statement.
@@ -379,11 +390,6 @@ class StatementReaderBase {
   virtual std::chrono::microseconds server_greeting_exec_time() = 0;
 
   virtual void set_session_ssl_info(const SSL *ssl) = 0;
-
-  MY_COMPILER_DIAGNOSTIC_PUSH()
-  MY_COMPILER_CLANG_DIAGNOSTIC_IGNORE("-Wdeprecated")
-  virtual ~StatementReaderBase() = default;
-  MY_COMPILER_DIAGNOSTIC_POP()
 };
 
 }  // namespace server_mock

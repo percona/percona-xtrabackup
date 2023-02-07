@@ -478,6 +478,25 @@ static dd::Column *get_renamed_col(const Alter_inplace_info *ha_alter_info,
   return nullptr;
 }
 
+/** Get the number of columns being added using ALTER TABLE.
+@param[in]      ha_alter_info   inplace alter info
+@return number of columns added using ALTER TABLE */
+static uint32_t get_num_cols_added(const Alter_inplace_info *ha_alter_info) {
+  uint32_t n_cols_added = 0;
+
+  /* create_list is list of old columns (CREATE) and new columns (ALTER .. ADD)
+   */
+  for (const Create_field &new_field : ha_alter_info->alter_info->create_list) {
+    /* field contains column information for old columns (CREATE) */
+    /* field is nullptr for new columns (ALTER .. ADD) */
+    if (new_field.field == nullptr) {
+      n_cols_added++;
+    }
+  }
+
+  return n_cols_added;
+}
+
 /** Copy metadata of dd::Table and dd::Columns from old table to new table.
 This is done during inplce alter table when table is not rebuilt.
 @param[in]      ha_alter_info   inplace alter info
@@ -1021,7 +1040,19 @@ enum_alter_inplace_result ha_innobase::check_if_supported_inplace_alter(
             Alter_info::ALTER_TABLE_ALGORITHM_INPLACE) {
           /* Still fall back to INPLACE since the behaviour is different */
           break;
-        } else if (m_prebuilt->table->current_row_version == MAX_ROW_VERSION) {
+        } else if (!((m_prebuilt->table->n_def +
+                      get_num_cols_added(ha_alter_info)) < REC_MAX_N_FIELDS)) {
+          if (ha_alter_info->alter_info->requested_algorithm ==
+              Alter_info::ALTER_TABLE_ALGORITHM_INSTANT) {
+            my_error(ER_INNODB_INSTANT_ADD_NOT_SUPPORTED_MAX_FIELDS, MYF(0),
+                     m_prebuilt->table->name.m_name);
+            return HA_ALTER_ERROR;
+          }
+          /* INSTANT can't be done any more. Fall back to INPLACE. */
+          break;
+        } else if (!is_valid_row_version(
+                       m_prebuilt->table->current_row_version + 1)) {
+          ut_ad(is_valid_row_version(m_prebuilt->table->current_row_version));
           if (ha_alter_info->alter_info->requested_algorithm ==
               Alter_info::ALTER_TABLE_ALGORITHM_INSTANT) {
             my_error(ER_INNODB_MAX_ROW_VERSION, MYF(0),
@@ -1031,14 +1062,14 @@ enum_alter_inplace_result ha_innobase::check_if_supported_inplace_alter(
 
           /* INSTANT can't be done any more. Fall back to INPLACE. */
           break;
-        } else if (!Instant_ddl_impl<dd::Table>::is_instant_add_possible(
+        } else if (!Instant_ddl_impl<dd::Table>::is_instant_add_drop_possible(
                        ha_alter_info, table, altered_table,
                        m_prebuilt->table)) {
           if (ha_alter_info->alter_info->requested_algorithm ==
               Alter_info::ALTER_TABLE_ALGORITHM_INSTANT) {
-            /* Try to find if after adding columns, any possible row stays
-            within permissible limit. If it doesn't, return error. */
-            my_error(ER_INNODB_INSTANT_ADD_NOT_SUPPORTED_MAX_SIZE, MYF(0));
+            /* Return error if either max possible row size already crosses max
+            permissible row size or may cross it after add. */
+            my_error(ER_INNODB_INSTANT_ADD_DROP_NOT_SUPPORTED_MAX_SIZE, MYF(0));
             return HA_ALTER_ERROR;
           }
 
@@ -1365,6 +1396,16 @@ static void dd_commit_inplace_update_instant_meta(const dict_table_t *table,
                                                   const dd::Table *old_dd_tab,
                                                   dd::Table *new_dd_tab);
 
+/** Update instant metadata in commit phase for partitioned table
+@param[in]      part_share      partition share object to get each
+partitioned table
+@param[in]      n_parts         number of partitions
+@param[in]      old_dd_tab      old dd::Table
+@param[in]      new_dd_tab      new dd::Table */
+static void dd_commit_inplace_update_partition_instant_meta(
+    const Ha_innopart_share *part_share, uint16_t n_parts,
+    const dd::Table *old_dd_tab, dd::Table *new_dd_tab);
+
 /** Allows InnoDB to update internal structures with concurrent
 writes blocked (provided that check_if_supported_inplace_alter()
 did not return HA_ALTER_INPLACE_NO_LOCK).
@@ -1575,7 +1616,7 @@ bool ha_innobase::commit_inplace_alter_table(TABLE *altered_table,
             : nullptr);
 
     /* Execute Instant DDL */
-    executor.commit_instant_ddl();
+    if (executor.commit_instant_ddl()) return true;
   } else if (!(ha_alter_info->handler_flags & ~INNOBASE_INPLACE_IGNORE) ||
              ctx == nullptr) {
     ut_ad(!res);
@@ -4143,9 +4184,7 @@ static void dd_commit_inplace_update_instant_meta(const dict_table_t *table,
   const char *s = dd_table_key_strings[DD_TABLE_INSTANT_COLS];
   if (old_dd_tab->se_private_data().exists(s)) {
     ut_ad(table->is_upgraded_instant());
-    uint32_t value = 0;
-    old_dd_tab->se_private_data().get(s, &value);
-    new_dd_tab->se_private_data().set(s, value);
+    new_dd_tab->se_private_data().set(s, table->get_instant_cols());
   }
 
   /* Copy instant default values of columns if exists */
@@ -4161,6 +4200,49 @@ static void dd_commit_inplace_update_instant_meta(const dict_table_t *table,
     ut_ad(dd_col != nullptr);
 
     dd_write_default_value(col, dd_col);
+  }
+}
+
+/** Update instant metadata in commit phase for partitioned table
+@param[in]      part_share      partition share object to get each
+partitioned table
+@param[in]      n_parts         number of partitions
+@param[in]      old_dd_tab      old dd::Table
+@param[in]      new_dd_tab      new dd::Table */
+static void dd_commit_inplace_update_partition_instant_meta(
+    const Ha_innopart_share *part_share, uint16_t n_parts,
+    const dd::Table *old_dd_tab, dd::Table *new_dd_tab) {
+  if (!dd_table_is_upgraded_instant(*old_dd_tab)) {
+    return;
+  }
+
+  const dict_table_t *table = part_share->get_table_part(0);
+
+  /* In earlier implementation of INSTANT ADD, each partition has INSTANT
+  METADATA 'n_instant_cols' because each partiton could have different values of
+  it. And 'n_instant_cols' of a partition has to be always >= 'n_instant_cols'
+  of table. So while setting table level metadata take the minimum of all the
+  partitions */
+  for (uint16_t i = 1; i < n_parts; ++i) {
+    if (part_share->get_table_part(i)->get_instant_cols() <
+        table->get_instant_cols()) {
+      table = part_share->get_table_part(i);
+    }
+  }
+
+  ut_ad(table->has_instant_cols());
+
+  dd_commit_inplace_update_instant_meta(table, old_dd_tab, new_dd_tab);
+
+  uint16_t i = 0;
+  for (auto part : *new_dd_tab->leaf_partitions()) {
+    if (part_share->get_table_part(i)->has_instant_cols()) {
+      part->se_private_data().set(
+          dd_partition_key_strings[DD_PARTITION_INSTANT_COLS],
+          part_share->get_table_part(i)->get_instant_cols());
+    }
+
+    ++i;
   }
 }
 
@@ -5418,7 +5500,7 @@ bool ha_innobase::prepare_inplace_alter_table_impl(
                                                  this->table, altered_table);
 
     if (type == Instant_Type::INSTANT_ADD_DROP_COLUMN) {
-      ut_a(indexed_table->current_row_version < MAX_ROW_VERSION);
+      ut_a(is_valid_row_version(indexed_table->current_row_version + 1));
     }
 
     return false;
@@ -10118,7 +10200,19 @@ enum_alter_inplace_result ha_innopart::check_if_supported_inplace_alter(
       if (ha_alter_info->alter_info->requested_algorithm ==
           Alter_info::ALTER_TABLE_ALGORITHM_INPLACE) {
         break;
-      } else if (m_prebuilt->table->current_row_version == MAX_ROW_VERSION) {
+      } else if (!((m_prebuilt->table->n_def +
+                    get_num_cols_added(ha_alter_info)) < REC_MAX_N_FIELDS)) {
+        if (ha_alter_info->alter_info->requested_algorithm ==
+            Alter_info::ALTER_TABLE_ALGORITHM_INSTANT) {
+          my_error(ER_INNODB_INSTANT_ADD_NOT_SUPPORTED_MAX_FIELDS, MYF(0),
+                   m_prebuilt->table->name.m_name);
+          return HA_ALTER_ERROR;
+        }
+        /* INSTANT can't be done any more. Fall back to INPLACE. */
+        break;
+      } else if (!is_valid_row_version(m_prebuilt->table->current_row_version +
+                                       1)) {
+        ut_ad(is_valid_row_version(m_prebuilt->table->current_row_version));
         if (ha_alter_info->alter_info->requested_algorithm ==
             Alter_info::ALTER_TABLE_ALGORITHM_INSTANT) {
           my_error(ER_INNODB_MAX_ROW_VERSION, MYF(0),
@@ -10127,13 +10221,13 @@ enum_alter_inplace_result ha_innopart::check_if_supported_inplace_alter(
         }
         /* INSTANT can't be done any more. Fall back to INPLACE. */
         break;
-      } else if (!Instant_ddl_impl<dd::Table>::is_instant_add_possible(
+      } else if (!Instant_ddl_impl<dd::Table>::is_instant_add_drop_possible(
                      ha_alter_info, table, altered_table, m_prebuilt->table)) {
         if (ha_alter_info->alter_info->requested_algorithm ==
             Alter_info::ALTER_TABLE_ALGORITHM_INSTANT) {
-          /* Try to find if after adding columns, any possible row stays
-          within permissible limit. If it doesn't, return error. */
-          my_error(ER_INNODB_INSTANT_ADD_NOT_SUPPORTED_MAX_SIZE, MYF(0));
+          /* Return error if either max possible row size already crosses max
+          permissible row size or may cross it after add. */
+          my_error(ER_INNODB_INSTANT_ADD_DROP_NOT_SUPPORTED_MAX_SIZE, MYF(0));
           return HA_ALTER_ERROR;
         }
 
@@ -10466,7 +10560,7 @@ end:
                 : nullptr);
 
         /* Execute Instant DDL */
-        executor.commit_instant_ddl();
+        if (executor.commit_instant_ddl()) return true;
       } else if (!(ha_alter_info->handler_flags & ~INNOBASE_INPLACE_IGNORE) ||
                  ctx == nullptr) {
         dd_commit_inplace_no_change(ha_alter_info, old_part, new_part, true);
@@ -10486,6 +10580,12 @@ end:
       }
 
       ++i;
+    }
+
+    /* In earlier implementaion, each partition has INSTANT metadata. */
+    if (inplace_instant) {
+      dd_commit_inplace_update_partition_instant_meta(
+          m_part_share, m_tot_parts, old_table_def, new_table_def);
     }
 
 #ifdef UNIV_DEBUG

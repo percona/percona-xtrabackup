@@ -67,8 +67,8 @@ class Opt_trace_context;
 
 /**
    Produces, from the first tmp TABLE object, a clone TABLE object for
-   TABLE_LIST 'tl', to have a single materialization of multiple references to
-   a CTE.
+   Table_ref 'tl', to have a single materialization of multiple references
+   to a CTE.
 
    How sharing of a single tmp table works
    =======================================
@@ -166,7 +166,7 @@ class Opt_trace_context;
    @returns New clone, or NULL if error
 */
 
-TABLE *Common_table_expr::clone_tmp_table(THD *thd, TABLE_LIST *tl) {
+TABLE *Common_table_expr::clone_tmp_table(THD *thd, Table_ref *tl) {
   // Should have been attached to CTE already.
   assert(tl->common_table_expr() == this);
 
@@ -231,7 +231,7 @@ TABLE *Common_table_expr::clone_tmp_table(THD *thd, TABLE_LIST *tl) {
 */
 bool Common_table_expr::substitute_recursive_reference(THD *thd,
                                                        Query_block *sl) {
-  TABLE_LIST *tl = sl->recursive_reference;
+  Table_ref *tl = sl->recursive_reference;
   assert(tl != nullptr && tl->table == nullptr);
   TABLE *t = clone_tmp_table(thd, tl);
   if (t == nullptr) return true; /* purecov: inspected */
@@ -242,7 +242,7 @@ bool Common_table_expr::substitute_recursive_reference(THD *thd,
   return false;
 }
 
-void Common_table_expr::remove_table(TABLE_LIST *tr) {
+void Common_table_expr::remove_table(Table_ref *tr) {
   (void)tmp_tables.erase_value(tr);
 }
 
@@ -256,7 +256,7 @@ void Common_table_expr::remove_table(TABLE_LIST *tr) {
   @returns false if success, true if error
 */
 
-bool TABLE_LIST::resolve_derived(THD *thd, bool apply_semijoin) {
+bool Table_ref::resolve_derived(THD *thd, bool apply_semijoin) {
   DBUG_TRACE;
 
   /*
@@ -459,7 +459,7 @@ bool TABLE_LIST::resolve_derived(THD *thd, bool apply_semijoin) {
   return false;
 }
 
-/// Helper function for TABLE_LIST::setup_materialized_derived()
+/// Helper function for Table_ref::setup_materialized_derived()
 static void swap_column_names_of_unit_and_tmp_table(
     const mem_root_deque<Item *> &unit_items,
     const Create_col_name_list &tmp_table_col_names) {
@@ -492,12 +492,12 @@ bool copy_field_info(THD *thd, Item *orig_expr, Item *cloned_expr) {
   class Field_info {
    public:
     Name_resolution_context *m_field_context{nullptr};
-    TABLE_LIST *m_table_ref{nullptr};
+    Table_ref *m_table_ref{nullptr};
     Query_block *m_depended_from{nullptr};
-    TABLE_LIST *m_cached_table{nullptr};
+    Table_ref *m_cached_table{nullptr};
     Field *m_field{nullptr};
-    Field_info(Name_resolution_context *field_context, TABLE_LIST *table_ref,
-               Query_block *depended_from, TABLE_LIST *cached_table,
+    Field_info(Name_resolution_context *field_context, Table_ref *table_ref,
+               Query_block *depended_from, Table_ref *cached_table,
                Field *field)
         : m_field_context(field_context),
           m_table_ref(table_ref),
@@ -506,21 +506,36 @@ bool copy_field_info(THD *thd, Item *orig_expr, Item *cloned_expr) {
           m_field(field) {}
   };
   mem_root_deque<Field_info> field_info(thd->mem_root);
-
+  Query_block *depended_from = nullptr;
+  Name_resolution_context *context = nullptr;
   // Collect information for fields from the original expression
-  if (WalkItem(orig_expr, enum_walk::POSTFIX, [&field_info](Item *inner_item) {
-        if (inner_item->type() == Item::FIELD_ITEM) {
-          Item_field *field = down_cast<Item_field *>(inner_item);
-          if (field_info.push_back(Field_info(
-                  field->context, field->table_ref, field->depended_from,
-                  field->cached_table, field->field)))
-            return true;
-        }
-        return false;
-      }))
+  if (WalkItem(orig_expr, enum_walk::PREFIX,
+               [&field_info, &depended_from, &context](Item *inner_item) {
+                 if (inner_item->type() == Item::REF_ITEM ||
+                     inner_item->type() == Item::FIELD_ITEM) {
+                   Item_ident *ident = down_cast<Item_ident *>(inner_item);
+                   assert(depended_from == nullptr ||
+                          depended_from == ident->depended_from ||
+                          depended_from == ident->context->query_block);
+                   if (ident->depended_from != nullptr)
+                     depended_from = ident->depended_from;
+                   if (context == nullptr ||
+                       ident->context->query_block->nest_level >=
+                           context->query_block->nest_level)
+                     context = ident->context;
+                 }
+                 if (inner_item->type() == Item::FIELD_ITEM) {
+                   Item_field *field = down_cast<Item_field *>(inner_item);
+                   if (field_info.push_back(
+                           Field_info(context, field->table_ref, depended_from,
+                                      field->cached_table, field->field)))
+                     return true;
+                 }
+                 return false;
+               }))
     return true;
   // Copy the information to the fields in the cloned expression.
-  WalkItem(cloned_expr, enum_walk::POSTFIX, [&field_info](Item *inner_item) {
+  WalkItem(cloned_expr, enum_walk::PREFIX, [&field_info](Item *inner_item) {
     if (inner_item->type() == Item::FIELD_ITEM) {
       assert(!field_info.empty());
       Item_field *field = down_cast<Item_field *>(inner_item);
@@ -544,17 +559,15 @@ bool copy_field_info(THD *thd, Item *orig_expr, Item *cloned_expr) {
   @param thd            Current thread.
   @param item           Item to be reparsed to get a clone.
   @param query_block    query block where expression is being parsed
-  @param is_system_view If this expression is part of a system view
 
   @returns A copy of the original item (unresolved) on success else nullptr.
 */
-static Item *parse_expression(THD *thd, Item *item, Query_block *query_block,
-                              bool is_system_view) {
+static Item *parse_expression(THD *thd, Item *item, Query_block *query_block) {
   // Set up for parsing item
   LEX *const old_lex = thd->lex;
-  LEX *new_lex = new (thd->mem_root) st_lex_local;
+  LEX new_lex;
+  thd->lex = &new_lex;
 
-  thd->lex = new_lex;
   if (lex_start(thd)) {
     thd->lex = old_lex;
     return nullptr;  // OOM
@@ -568,7 +581,10 @@ static Item *parse_expression(THD *thd, Item *item, Query_block *query_block,
   // because for a case when statement gets reprepared during execution, we
   // still need Item_param::print() to print the '?' rather than the actual data
   // specified for the parameter.
-  item->print(thd, &str, QT_NO_DATA_EXPANSION);
+  // The flag QT_TO_ARGUMENT_CHARSET is required for printing character string
+  // literals with correct character set introducer.
+  item->print(thd, &str,
+              enum_query_type(QT_NO_DATA_EXPANSION | QT_TO_ARGUMENT_CHARSET));
   str.append('\0');
 
   Derived_expr_parser_state parser_state;
@@ -579,8 +595,10 @@ static Item *parse_expression(THD *thd, Item *item, Query_block *query_block,
   // THD::parsing_system_view is set if the view being parsed is
   // INFORMATION_SCHEMA system view and is allowed to invoke native function.
   // If not, error ER_NO_ACCESS_TO_NATIVE_FCT is reported.
+  // Since we are cloning a condition here, we set it unconditionally
+  // to avoid the errors.
   bool parsing_system_view_saved = thd->parsing_system_view;
-  thd->parsing_system_view = is_system_view;
+  thd->parsing_system_view = true;
 
   // Set the correct query block to parse the item. In some cases, like
   // fulltext functions, parser needs to add them to ftfunc_list of the
@@ -615,11 +633,6 @@ static Item *parse_expression(THD *thd, Item *item, Query_block *query_block,
   bool result = parse_sql(thd, &parser_state, nullptr);
 
   thd->lex->reparse_derived_table_condition = false;
-  // Delete the vector contents:
-  std::vector<uint>().swap(thd->lex->reparse_derived_table_params_at);
-  // thd->lex is now in a MEM_ROOT, so we need to delete:
-  delete thd->lex->sroutines.release();
-
   // lex_end() would try to destroy sphead if set. So we reset it.
   thd->lex->set_sp_current_parsing_ctx(nullptr);
   thd->lex->sphead = nullptr;
@@ -723,14 +736,13 @@ Item *resolve_expression(THD *thd, Item *item, Query_block *query_block) {
 
   @param thd      Current thread
   @param item     Item for which clone is requested
-  @param is_system_view If the clone is for a system view
 
   @returns
   Cloned object for the item.
 */
 
-Item *Query_block::clone_expression(THD *thd, Item *item, bool is_system_view) {
-  Item *cloned_item = parse_expression(thd, item, this, is_system_view);
+Item *Query_block::clone_expression(THD *thd, Item *item) {
+  Item *cloned_item = parse_expression(thd, item, this);
   if (cloned_item == nullptr) return nullptr;
   if (item->item_name.is_set())
     cloned_item->item_name.set(item->item_name.ptr(), item->item_name.length());
@@ -753,7 +765,7 @@ Item *Query_block::clone_expression(THD *thd, Item *item, bool is_system_view) {
 
   @return false if successful, true if error
 */
-bool TABLE_LIST::setup_materialized_derived(THD *thd)
+bool Table_ref::setup_materialized_derived(THD *thd)
 
 {
   return setup_materialized_derived_tmp_table(thd) ||
@@ -765,7 +777,7 @@ bool TABLE_LIST::setup_materialized_derived(THD *thd)
   @param  thd   THD pointer
   @return false if successful, true if error
 */
-bool TABLE_LIST::setup_materialized_derived_tmp_table(THD *thd)
+bool Table_ref::setup_materialized_derived_tmp_table(THD *thd)
 
 {
   DBUG_TRACE;
@@ -889,7 +901,7 @@ bool Query_expression::check_materialized_derived_query_blocks(THD *thd_arg) {
 
   @return false if successful, true if error
 */
-bool TABLE_LIST::setup_table_function(THD *thd) {
+bool Table_ref::setup_table_function(THD *thd) {
   DBUG_TRACE;
 
   assert(is_table_function());
@@ -969,9 +981,11 @@ bool TABLE_LIST::setup_table_function(THD *thd) {
   5. If the derived query block has any user variable assignments -
   would affect the result of evaluating assignments to user variables
   in SELECT list of the derived table.
+  6. The derived table stems from a scalar to derived table transformation
+  which relies on cardinality check.
 */
 
-bool TABLE_LIST::can_push_condition_to_derived(THD *thd) {
+bool Table_ref::can_push_condition_to_derived(THD *thd) {
   Query_expression const *unit = derived_query_expression();
   return hint_table_state(thd, this, DERIVED_CONDITION_PUSHDOWN_HINT_ENUM,
                           OPTIMIZER_SWITCH_DERIVED_CONDITION_PUSHDOWN) &&  // 1
@@ -979,8 +993,9 @@ bool TABLE_LIST::can_push_condition_to_derived(THD *thd) {
          !is_inner_table_of_outer_join() &&                                // 3
          !(common_table_expr() &&
            (common_table_expr()->references.size() >= 2 ||
-            common_table_expr()->recursive)) &&   // 4
-         (thd->lex->set_var_list.elements == 0);  // 5
+            common_table_expr()->recursive)) &&     // 4
+         (thd->lex->set_var_list.elements == 0) &&  // 5
+         !unit->m_reject_multiple_rows;             // 6
 }
 
 /**
@@ -1024,10 +1039,7 @@ bool Condition_pushdown::make_cond_for_derived() {
     if (derived_query_expression->is_set_operation()) {
       m_cond_to_push =
           derived_query_expression->outer_query_block()->clone_expression(
-              thd, orig_cond_to_push,
-              (m_derived_table->is_system_view ||
-               (m_derived_table->referencing_view &&
-                m_derived_table->referencing_view->is_system_view)));
+              thd, orig_cond_to_push);
       if (m_cond_to_push == nullptr) return true;
       m_cond_to_push->apply_is_true();
     }
@@ -1198,7 +1210,7 @@ Item *Query_block::get_derived_expr(uint field_index) {
   // In some cases (noticed when derived table has multiple query blocks),
   // "field_index" does not always represent the index in the visible
   // field list. So, we adjust the index accordingly.
-  TABLE_LIST *derived_table = master_query_expression()->derived_table;
+  Table_ref *derived_table = master_query_expression()->derived_table;
   uint adjusted_field_index =
       field_index - derived_table->get_hidden_field_count_for_derived();
   for (auto item : visible_fields())
@@ -1391,7 +1403,7 @@ void Condition_pushdown::check_and_remove_sj_exprs(Item *cond) {
   // To check for all the semi-join outer expressions that could be part of
   // the condition.
   if (m_derived_table->join_list) {
-    for (TABLE_LIST *tl : *m_derived_table->join_list) {
+    for (Table_ref *tl : *m_derived_table->join_list) {
       if (tl->is_sj_or_aj_nest()) remove_sj_exprs(cond, tl->nested_join);
     }
   }
@@ -1527,7 +1539,7 @@ bool Condition_pushdown::attach_cond_to_derived(Item *derived_cond,
   @returns false if success, true if error.
 */
 
-bool TABLE_LIST::optimize_derived(THD *thd) {
+bool Table_ref::optimize_derived(THD *thd) {
   DBUG_TRACE;
 
   Query_expression *const unit = derived_query_expression();
@@ -1575,7 +1587,7 @@ bool TABLE_LIST::optimize_derived(THD *thd) {
   @returns false if success, true if error.
 */
 
-bool TABLE_LIST::create_materialized_table(THD *thd) {
+bool Table_ref::create_materialized_table(THD *thd) {
   DBUG_TRACE;
 
   // @todo: Be able to assert !table->is_created() as well
@@ -1638,7 +1650,7 @@ bool TABLE_LIST::create_materialized_table(THD *thd) {
   @returns false if success, true if error.
 */
 
-bool TABLE_LIST::materialize_derived(THD *thd) {
+bool Table_ref::materialize_derived(THD *thd) {
   DBUG_TRACE;
   assert(is_view_or_derived() && uses_materialization());
   assert(table && table->is_created() && !table->materialized);
@@ -1681,7 +1693,7 @@ bool TABLE_LIST::materialize_derived(THD *thd) {
 
   if (!res) {
     /*
-      Here we entirely fix both TABLE_LIST and list of SELECT's as
+      Here we entirely fix both Table_ref and list of SELECT's as
       there were no derived tables
     */
     if (derived_result->flush()) res = true; /* purecov: inspected */
@@ -1694,13 +1706,4 @@ bool TABLE_LIST::materialize_derived(THD *thd) {
   table->set_not_started();
 
   return res;
-}
-
-/**
-   Clean up the query expression for a materialized derived table
-*/
-
-void TABLE_LIST::cleanup_derived() {
-  assert(is_view_or_derived() && uses_materialization());
-  derived_query_expression()->cleanup(false);
 }

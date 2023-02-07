@@ -204,8 +204,9 @@ Relay_log_info::Relay_log_info(bool is_slave_recovery,
       PSI_NOT_INSTRUMENTED, PSI_NOT_INSTRUMENTED, key_RELAYLOG_LOCK_log,
       key_RELAYLOG_LOCK_log_end_pos, key_RELAYLOG_LOCK_sync,
       PSI_NOT_INSTRUMENTED, key_RELAYLOG_LOCK_xids, PSI_NOT_INSTRUMENTED,
-      PSI_NOT_INSTRUMENTED, key_RELAYLOG_update_cond, PSI_NOT_INSTRUMENTED,
-      key_file_relaylog, key_file_relaylog_index, key_file_relaylog_cache,
+      PSI_NOT_INSTRUMENTED, PSI_NOT_INSTRUMENTED, key_RELAYLOG_update_cond,
+      PSI_NOT_INSTRUMENTED, PSI_NOT_INSTRUMENTED, key_file_relaylog,
+      key_file_relaylog_index, key_file_relaylog_cache,
       key_file_relaylog_index_cache);
 #endif
 
@@ -1374,7 +1375,7 @@ void Relay_log_info::clear_tables_to_lock() {
     point.
    */
   uint i = 0;
-  for (TABLE_LIST *ptr = tables_to_lock; ptr; ptr = ptr->next_global, i++)
+  for (Table_ref *ptr = tables_to_lock; ptr; ptr = ptr->next_global, i++)
     ;
   assert(i == tables_to_lock_count);
 #endif
@@ -1394,7 +1395,7 @@ void Relay_log_info::clear_tables_to_lock() {
     */
     if (tables_to_lock->m_conv_table) free_blobs(tables_to_lock->m_conv_table);
 
-    tables_to_lock = static_cast<RPL_TABLE_LIST *>(tables_to_lock->next_global);
+    tables_to_lock = static_cast<RPL_Table_ref *>(tables_to_lock->next_global);
     tables_to_lock_count--;
     my_free(to_free);
   }
@@ -2189,9 +2190,17 @@ bool Relay_log_info::read_info(Rpl_info_handler *from) {
   if (lines >= LINES_IN_RELAY_LOG_INFO_WITH_REQUIRE_TABLE_PRIMARY_KEY_CHECK) {
     if (!!from->get_info(&temp_require_table_primary_key_check, 1)) return true;
   }
-  if (temp_require_table_primary_key_check < PK_CHECK_STREAM ||
-      temp_require_table_primary_key_check > Relay_log_info::PK_CHECK_OFF)
+  if (temp_require_table_primary_key_check < Relay_log_info::PK_CHECK_STREAM ||
+      temp_require_table_primary_key_check > Relay_log_info::PK_CHECK_GENERATE)
     return true;
+  if (temp_require_table_primary_key_check ==
+          Relay_log_info::PK_CHECK_GENERATE &&
+      channel_map.is_group_replication_channel_name(channel)) {
+    LogErr(ERROR_LEVEL,
+           ER_REQUIRE_TABLE_PRIMARY_KEY_CHECK_GENERATE_WITH_GR_IN_REPO,
+           channel);
+    return true;
+  }
   m_require_table_primary_key_check =
       static_cast<Relay_log_info::enum_require_table_primary_key>(
           temp_require_table_primary_key_check);

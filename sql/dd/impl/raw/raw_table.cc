@@ -43,9 +43,9 @@ namespace dd {
 ///////////////////////////////////////////////////////////////////////////
 
 Raw_table::Raw_table(thr_lock_type lock_type, const String_type &name)
-    : m_table_list(STRING_WITH_LEN("mysql"), name.c_str(), name.length(),
-                   name.c_str(), lock_type) {
-  m_table_list.is_dd_ctx_table = true;
+    : m_table_ref(STRING_WITH_LEN("mysql"), name.c_str(), name.length(),
+                  name.c_str(), lock_type) {
+  m_table_ref.is_dd_ctx_table = true;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -75,8 +75,8 @@ bool Raw_table::find_record(const Object_key &key,
     return true;
   }
 
-  rc = table->file->ha_index_read_idx_map(
-      table->record[0], k->index_no, k->key, k->keypart_map,
+  rc = table->file->ha_index_read_map(
+      table->record[0], k->key, k->keypart_map,
       (k->keypart_map == HA_WHOLE_KEY) ? HA_READ_KEY_EXACT : HA_READ_PREFIX);
 
   if (table->file->inited)
@@ -194,9 +194,8 @@ bool Raw_table::find_last_record(const Object_key &key,
     return true;
   }
 
-  rc = table->file->ha_index_read_idx_map(table->record[0], k->index_no, k->key,
-                                          k->keypart_map,
-                                          HA_READ_PREFIX_LAST_OR_PREV);
+  rc = table->file->ha_index_read_map(table->record[0], k->key, k->keypart_map,
+                                      HA_READ_PREFIX_LAST_OR_PREV);
 
   if (table->file->inited)
     table->file->ha_index_end();  // Close the scan over the index

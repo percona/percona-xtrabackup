@@ -1604,9 +1604,11 @@ eval $query;
 
 let $query=
 SELECT
+  # NOTE: NO_BNL is a synonym for NO_HASH_JOIN
+  /*+ JOIN_ORDER(table3,table2,table1,table4,table5) NO_BNL() */
   table3.pk, table2.pk, table1.pk, table4.pk, table5.pk
 FROM u AS table1
-  JOIN q AS table2
+  JOIN q AS table2 USE INDEX FOR JOIN(ix1)
     JOIN h AS table3 ON table2.col_int = table3.col_int
   ON table1.col_int_key = table2.col_int_key
   LEFT JOIN n AS table4
@@ -1848,12 +1850,13 @@ eval $query;
 
 let $query=
 SELECT
+  /*+ JOIN_ORDER(table2,table1,table2s,table1s) */
   table2.pk, table1.pk
 FROM p AS table2
   JOIN o AS table1 ON table1.col_int = table2.col_int
 WHERE table1.col_int_key IN (
   SELECT table2s.col_int_unique AS field3
-  FROM l AS table1s
+  FROM l AS table1s USE INDEX FOR JOIN(PRIMARY)
     JOIN h AS table2s ON table1s.col_int = table2s.col_int
 );
 
@@ -2288,10 +2291,8 @@ FROM f AS table1
        table2.col_int_unique = table5.col_int_key
   ON table1.pk = table3.col_int_unique;
 
-# We do not explain this query as a slightly different query plan
-# might be generated on Windows and Mac.
-#--replace_regex /  \(cost=.*//
-#eval explain format=tree $query;
+--replace_regex /  \(cost=.*//
+eval explain format=tree $query;
 --sorted_result
 eval $query;
 
@@ -2310,10 +2311,8 @@ FROM f AS table1
        table2.col_int_unique = table5.col_int_key
   ON table1.pk = table3.col_int_unique;
 
-# We do not explain this query as a slightly different query plan
-# might be generated on Windows and Mac.
-#--replace_regex /  \(cost=.*//
-#eval explain format=tree $query;
+--replace_regex /  \(cost=.*//
+eval explain format=tree $query;
 --sorted_result
 eval $query;
 
@@ -2447,18 +2446,23 @@ eval $query;
 # 'assert(nest_ctx->m_first_inner == m_table_accesses.size());'
 let $query=
 SELECT
+  /*+ JOIN_ORDER(table2s@subq1, table1s@subq1, table2, table1, table1s@subq2, table2s@subq2)
+      SEMIJOIN(@subq1 MATERIALIZATION)
+  */
   table1.col_varchar_10_unique AS field1, table1.col_char_16 AS field2
 FROM e AS table1
-  LEFT OUTER JOIN c AS table2 ON table1.col_int_key = table2.col_int_key AND table1.col_int_unique = table2.col_int_unique
+  LEFT OUTER JOIN c AS table2 ON table1.col_int_key = table2.col_int_key AND
+                                 table1.col_int_unique = table2.col_int_unique
 WHERE table1.col_varchar_256 IN (
-  SELECT table2s.col_varchar_10 AS field3
+  SELECT /*+ QB_NAME(subq1)*/ table2s.col_varchar_10 AS field3
   FROM (j AS table1s
     JOIN d AS table2s ON table1s.col_int_key = table2s.col_int_key)
   )
 AND table2.col_varchar_10_unique = ANY (
-  SELECT DISTINCT table1s.col_varchar_10 AS field4
+  SELECT /*+ QB_NAME(subq2)*/ DISTINCT table1s.col_varchar_10 AS field4
   FROM e AS table1s
-    JOIN u AS table2s ON table1s.col_int = table2s.col_int AND table1s.col_int_unique = table2s.col_int_unique
+    JOIN u AS table2s ON table1s.col_int = table2s.col_int AND
+                         table1s.col_int_unique = table2s.col_int_unique
 )
 AND table1.col_int_unique <> 2;
 
@@ -2548,6 +2552,7 @@ eval $query;
 # OJA TODO: Unsure if query actually does as claimed above ...
 let $query=
 SELECT
+  /*+ JOIN_ORDER(table6,table5,table3,table4,table7,table2,table1,table8) */
   table3.col_varchar_10 AS field1, 5 + (CHAR_LENGTH(table7.col_varchar_256_key)) AS field2
 FROM k AS table1
   JOIN x AS table2 ON table1.col_int_unique = table2.col_int_unique
@@ -2557,7 +2562,8 @@ FROM k AS table1
     LEFT JOIN h AS table5
       JOIN c AS table6 ON table5.pk = table6.col_int_key
     ON table3.col_int = table5.col_int AND table4.col_int_unique = table6.col_int_unique
-    LEFT JOIN c AS table7 ON table3.col_int_key = table7.col_int_key
+    LEFT JOIN c AS table7 USE INDEX FOR JOIN(ix1)
+                          ON table3.col_int_key = table7.col_int_key
                          AND table5.col_int_unique = table7.col_int_unique
   ON table2.col_int_key = table5.col_int_unique
   JOIN z AS table8 ON table3.pk = table8.col_int_key;
@@ -2711,10 +2717,34 @@ SELECT
 FROM h AS table1
   JOIN s AS table2 ON table1.col_int_unique = table2.col_int_key
 WHERE table1.pk IN (
-  SELECT table2s.col_int_key
+  SELECT /*+ SEMIJOIN(LOOSESCAN)*/ table2s.col_int_key
   FROM p AS table1s
     LEFT JOIN l AS table2s ON table1s.pk = table2s.col_int
   WHERE table2s.col_int = 8
+);
+
+--replace_regex /  \(cost=.*//
+eval explain format=tree $query;
+--sorted_result
+eval $query;
+
+
+# Added as part of investigating bug#34231798.:
+#
+# Above query slightly modified to avoid empty result set, still same plan:
+#  -> Incorrect result if table2 is pushed as child of the
+#     REMOVE_DUPLICATES_ON_INDEX table2s
+#
+let $query=
+SELECT
+  table2.col_int_key
+FROM h AS table1
+  JOIN s AS table2 ON table1.col_int_unique = table2.col_int_key
+WHERE table1.col_int_unique IN (
+  SELECT /*+ SEMIJOIN(LOOSESCAN)*/ table2s.col_int_key
+  FROM p AS table1s
+    LEFT JOIN l AS table2s ON table1s.pk = table2s.col_int
+  WHERE table2s.col_int = 1
 );
 
 --replace_regex /  \(cost=.*//
@@ -3009,17 +3039,45 @@ eval explain format=tree $query;
 eval $query;
 
 
+# Above query slightly modified, still same plan:
+#
+# Added as part of investigating bug#34231798. Added in order to prove
+# that NESTED_LOOP_SEMIJOIN_WITH_DUPLICATE_REMOVAL need a double set
+# of semi_join nests to be set up in ndb_pushed_builder_ctx::construct()
+#
+# Introduced expression '<column>+0' in join condition for table2s to
+# make it unpushable. That should also cause the other semi-joined table1s
+# to be rejected as scanned tables need all tables in the nest
+# to be pushed.
+let $query=
+SELECT table1.pk, table2.pk
+FROM x AS table1
+  JOIN b AS table2 ON table1.col_int_key = table2.pk
+WHERE #table2.col_int_unique != 7 AND
+      table1.col_int_key IN (
+  SELECT
+    table1s.col_int AS field2
+  FROM f AS table1s
+    JOIN g AS table2s ON table1s.col_int_unique+0 = table2s.col_int_unique
+);
+
+--replace_regex /  \(cost=.*//
+eval explain format=tree $query;
+--sorted_result
+eval $query;
+
 # WEEDOUT:
 # Query use 'Remove duplicate ... using temporary table (weedout)'
 # Note that only some of the tables in a weedout are duplicate
-# duplicate eliminated from. Thus the branch is not a full semi-join.
+# eliminated from. Thus the branch is not a full semi-join.
 let $query=
 SELECT
+  /*+ JOIN_ORDER(table2,table2s@subq,table1) SEMIJOIN(@subq DUPSWEEDOUT) */
   table1.pk, table2.pk
 FROM z AS table1
   JOIN b AS table2 ON table1.col_int_key = table2.pk
 WHERE table1.col_int_key IN (
-  SELECT /*+ SEMIJOIN(DUPSWEEDOUT)*/
+  SELECT /*+ QB_NAME(subq) */
     table2s.col_int_key
   FROM q AS table2s
 );
@@ -3405,6 +3463,50 @@ eval $query;
 
 # end bug#34508948
 ################
+
+
+--echo ##################
+--echo #
+--echo # Bug#34231798 Incorrect query result from pushed join with IN-subquery
+--echo #
+--echo ##################
+#
+# Yet another multiple batch induced problem:
+# Semi-join skipping to next row when a match has been found, could result in
+# also skipping results from other non-semi-joined tables depending on the semi-join
+# when results from these tables had to be retrieved over multiple batches.
+# Thus we can not push such dependent scan-tables
+let $query=
+SELECT DISTINCT
+  table2.col_varchar_256_unique
+FROM r AS table1
+  JOIN q AS table2 ON table2.col_int IS NOT NULL
+WHERE table2.col_int IN (SELECT /*+ SEMIJOIN(LOOSESCAN)*/ col_int_key FROM u);
+
+--replace_regex /  \(cost=.*//
+eval explain format=tree $query;
+--sorted_result
+eval $query;
+
+let $query=
+SELECT
+  table2.col_int_key AS field1,
+  table1.col_int_unique AS field2,
+  table2.col_int AS field3
+FROM (q AS table1
+  JOIN h AS table2 ON table1.col_int = table2.col_int_key )
+WHERE ( table2.col_int_unique = ANY (
+  SELECT /*+ SEMIJOIN(LOOSESCAN)*/
+    table2s.col_int_key
+  FROM o AS table1s
+    INNER JOIN l AS table2s ON table1s.col_int = table2s.col_int)
+  AND table2.col_int_unique <= 3);
+
+--replace_regex /  \(cost=.*//
+eval explain format=tree $query;
+--sorted_result
+eval $query;
+
 
 ######################################################
 DROP TABLE a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z;

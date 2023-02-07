@@ -886,6 +886,7 @@ bool Page_load::is_index_locked() noexcept {
 dberr_t Btree_load::page_split(Page_load *page_loader,
                                Page_load *next_page_loader) noexcept {
   ut_ad(page_loader->is_table_compressed());
+  dberr_t err{DB_SUCCESS};
 
   /* 1. Check if we have only one user record on the page. */
   if (page_loader->get_rec_no() <= 1) {
@@ -896,7 +897,7 @@ dberr_t Btree_load::page_split(Page_load *page_loader,
   Page_load new_page_loader(m_index, m_trx_id, FIL_NULL,
                             page_loader->get_level(), m_flush_observer);
 
-  auto err = new_page_loader.init();
+  err = new_page_loader.init();
 
   if (err != DB_SUCCESS) {
     return err;
@@ -1318,6 +1319,5 @@ dberr_t Btree_load::build(Cursor &cursor) noexcept {
       break;
     }
   }
-
   return err == DB_END_OF_INDEX ? DB_SUCCESS : err;
 }

@@ -26,6 +26,15 @@ IF (NOT PROTOBUF_LITE_LIBRARY)
   MESSAGE(FATAL_ERROR "Routing plugin requires protobuf-lite library")
 ENDIF()
 
+ADD_LIBRARY(sql_lexer STATIC
+  sql_lexer.cc
+  ${CMAKE_SOURCE_DIR}/sql/sql_lex_hash.cc
+  )
+TARGET_INCLUDE_DIRECTORIES(sql_lexer
+  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+# generate sql_yacc.h
+ADD_DEPENDENCIES(sql_lexer GenServerSource)
+
 ADD_LIBRARY(routing SHARED
   mysql_routing.cc
   destination.cc
@@ -38,14 +47,51 @@ ADD_LIBRARY(routing SHARED
   mysql_routing_common.cc
   connection_container.cc
   routing_component.cc
-  routing_common_unreachable_destinations.cc
   channel.cc
   destination_ssl_context.cc
   classic_connection.cc
   x_connection.cc
   connection.cc
   blocked_endpoints.cc
+
+  processor.cc
+  classic_auth.cc
+  classic_auth_cleartext.cc
+  classic_auth_caching_sha2.cc
+  classic_auth_forwarder.cc
+  classic_auth_native.cc
+  classic_auth_sha256_password.cc
+  classic_binlog_dump.cc
+  classic_change_user.cc
+  classic_clone.cc
+  classic_command.cc
+  classic_connect.cc
+  classic_flow.cc
+  classic_forwarder.cc
+  classic_frame.cc
+  classic_greeting.cc
+  classic_init_schema.cc
+  classic_kill.cc
+  classic_lazy_connect.cc
+  classic_list_fields.cc
+  classic_ping.cc
+  classic_query.cc
+  classic_quit.cc
+  classic_register_replica.cc
+  classic_reload.cc
+  classic_reset_connection.cc
+  classic_set_option.cc
+  classic_statistics.cc
+  classic_stmt_close.cc
+  classic_stmt_execute.cc
+  classic_stmt_fetch.cc
+  classic_stmt_param_append_data.cc
+  classic_stmt_prepare.cc
+  classic_stmt_reset.cc
+
+  sql_value.cc
 )
+
 TARGET_LINK_LIBRARIES(routing
   PUBLIC
   harness_stdx
@@ -56,6 +102,8 @@ TARGET_LINK_LIBRARIES(routing
   ${PROTOBUF_LITE_LIBRARY}
   metadata_cache
   connection_pool
+  destination_status
+  sql_lexer
   )
 IF(SOLARIS)
   TARGET_LINK_LIBRARIES(routing

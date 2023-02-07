@@ -393,7 +393,6 @@ struct MDL_key {
      - RESOURCE_GROUPS is for resource groups.
      - FOREIGN_KEY is for foreign key names.
      - CHECK_CONSTRAINT is for check constraint names.
-     - RESOURCE_GROUPS_GLOBAL is global lock for resource groups.
     Note that requests waiting for user-level locks get special
     treatment - waiting is aborted if connection to client is lost.
   */
@@ -416,7 +415,6 @@ struct MDL_key {
     RESOURCE_GROUPS,
     FOREIGN_KEY,
     CHECK_CONSTRAINT,
-    RESOURCE_GROUPS_GLOBAL,
     /* This should be the last ! */
     NAMESPACE_END
   };
@@ -874,14 +872,15 @@ class MDL_request {
   /**
     This constructor exists for two reasons:
 
-    - TABLE_LIST objects are sometimes default-constructed. We plan to remove
-      this as there is no practical reason, the call to the default
-      constructor is always followed by either a call to TABLE_LIST::operator=
-      or memberwise assignments.
+    - Table_ref objects are sometimes default-constructed. We plan to
+      remove this as there is no practical reason, the call to the default
+      constructor is always followed by either a call to
+      Table_ref::operator= or memberwise assignments.
 
-    - In some legacy cases TABLE_LIST objects are copy-assigned without
-      intention to copy the TABLE_LIST::mdl_request member. In this cases they
-      are overwritten with an uninitialized MDL_request object. The cases are:
+    - In some legacy cases Table_ref objects are copy-assigned without
+      intention to copy the Table_ref::mdl_request member. In this cases
+      they are overwritten with an uninitialized MDL_request object. The cases
+      are:
 
       - Sql_cmd_handler_open::execute()
       - mysql_execute_command()
