@@ -93,7 +93,7 @@ main () {
                 fi
             ;;
         xtradb80)
-            url="https://www.percona.com/downloads/Percona-Server-8.0/Percona-Server-${VERSION}/binary/tarball"
+            url="https://downloads.percona.com/downloads/Percona-Server-8.0/Percona-Server-${VERSION}/binary/tarball"
             short_version=$(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1)
             if [[ ${PXB_TYPE} == "Debug" ]] || [[ ${PXB_TYPE} == "debug" ]]; then
                 SUFFIX="-debug"
