@@ -87,7 +87,10 @@ extern size_t real_redo_memory;
 extern ulint real_redo_frames;
 
 /** This variables holds the result of all conditions that must be set in order
-to enable estimate memory functionality */
+to enable estimate memory functionality. Used at --prepare */
 extern bool estimate_memory;
+
+/** Parameter to enable estimate memory. Used at --backup */
+extern bool xtrabackup_estimate_memory;
 #define SQUOTE(str) "'" << str << "'"
 #endif
