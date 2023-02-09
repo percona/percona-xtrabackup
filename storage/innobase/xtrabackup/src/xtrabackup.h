@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011-2022 Percona LLC and/or its affiliates.
+Copyright (c) 2011-2023 Percona LLC and/or its affiliates.
 
 Declarations for xtrabackup.cc
 
@@ -26,6 +26,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "changed_page_tracking.h"
 #include "datasink.h"
 #include "mysql.h"
+#include "xb_dict.h"
 #include "xb_regex.h"
 #include "xbstream.h"
 #include "xtrabackup_config.h"
@@ -238,7 +239,8 @@ enum binlog_info_enum {
 void xtrabackup_io_throttling(void);
 bool xb_write_delta_metadata(const char *filename, const xb_delta_info_t *info);
 
-datafiles_iter_t *datafiles_iter_new();
+datafiles_iter_t *datafiles_iter_new(
+    const std::shared_ptr<const xb::dd_tablespaces>);
 fil_node_t *datafiles_iter_next(datafiles_iter_t *it);
 void datafiles_iter_free(datafiles_iter_t *it);
 
@@ -335,5 +337,4 @@ bool xb_process_datadir(const char *path,   /*!<in: datadir path */
 @param[in,out]	buf		log header buffer
 @param[in]	lsn		lsn to update */
 void update_log_temp_checkpoint(byte *buf, lsn_t lsn);
-
 #endif /* XB_XTRABACKUP_H */
