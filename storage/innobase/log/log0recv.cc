@@ -2758,14 +2758,13 @@ static void recv_calculate_hash_heap(mlog_id_t type, space_id_t space_id,
   }
   last_block->free = last_block->free + MEM_SPACE_NEEDED(sizeof(recv_t));
 
-  if (std::find(space->m_pages.begin(), space->m_pages.end(), page_no) ==
-      space->m_pages.end()) {
+  if (space->m_pages.find(page_no) == space->m_pages.end()) {
     if (last_block->len <
         (last_block->free + MEM_SPACE_NEEDED(sizeof(recv_addr_t)))) {
       last_block = xtrabackup::add_new_block(space, sizeof(recv_addr_t));
     }
     last_block->free = last_block->free + MEM_SPACE_NEEDED(sizeof(recv_addr_t));
-    space->m_pages.push_back(page_no);
+    space->m_pages.insert(page_no);
   }
 
   while (rec_end > body) {

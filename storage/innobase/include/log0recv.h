@@ -81,7 +81,7 @@ struct recv_sys_t {
   struct space_page_t {
     /** Default constructor */
     space_page_t() : m_pages(), m_blocks() {}
-    std::vector<page_no_t> m_pages;
+    std::unordered_set<page_no_t> m_pages;
     std::vector<mem_block_t *> m_blocks;
   };
 
