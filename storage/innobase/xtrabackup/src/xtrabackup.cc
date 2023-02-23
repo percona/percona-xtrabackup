@@ -2525,6 +2525,15 @@ dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
 
     ut_a(space != nullptr);
 
+    /* All tables in mysql.ibd should belong to 'mysql' schema. But
+    during upgrade, server leaves the DD tables in a temporary schema
+    'dd_upgrade_80XX". PXB reads DD tables using 'mysql' schema name.
+    For example, 'mysql/tables'. Fix the schema name to 'mysql' */
+    if (space_id == dict_sys_t::s_dict_space_id &&
+        schema_name != MYSQL_SCHEMA_NAME.str) {
+      schema_name = MYSQL_SCHEMA_NAME.str;
+    }
+
     bool implicit = fsp_is_file_per_table(space_id, space->flags);
     if (dd_table_load_on_dd_obj(dc, space_id, *dd_table.get(), ib_table, thd,
                                 &schema_name, implicit) != 0) {
