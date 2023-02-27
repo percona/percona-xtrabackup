@@ -3452,7 +3452,7 @@ static bool recv_single_rec(byte *ptr, byte *end_ptr) {
           recv_sys->missing_ids.insert(space_id);
         }
 #endif /* !UNIV_HOTBACKUP */
-      } else {
+      } else if (xtrabackup_estimate_memory) {
         xtrabackup::recv_calculate_hash_heap(type, space_id, page_no, body,
                                              ptr + len, old_lsn);
       }
@@ -3638,7 +3638,7 @@ static bool recv_multi_rec(byte *ptr, byte *end_ptr) {
             recv_sys->missing_ids.insert(space_id);
           }
 #endif /* !UNIV_HOTBACKUP */
-        } else {
+        } else if (xtrabackup_estimate_memory) {
           xtrabackup::recv_calculate_hash_heap(type, space_id, page_no, body,
                                                ptr + len, old_lsn);
         }

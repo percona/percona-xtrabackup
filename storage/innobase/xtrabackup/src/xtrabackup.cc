@@ -166,6 +166,7 @@ longlong xtrabackup_use_memory = 100 * 1024 * 1024L;
 bool xtrabackup_use_memory_set = false;
 uint xtrabackup_use_free_memory_pct = 0;
 bool estimate_memory = false;
+bool xtrabackup_estimate_memory = false;
 
 bool xtrabackup_create_ib_logfile = false;
 
@@ -597,6 +598,7 @@ enum options_xtrabackup {
   OPT_XTRA_PRINT_PARAM,
   OPT_XTRA_USE_MEMORY,
   OPT_XTRA_USE_FREE_MEMORY_PCT,
+  OPT_XTRA_ESTIMATE_MEMORY,
   OPT_XTRA_THROTTLE,
   OPT_XTRA_LOG_COPY_INTERVAL,
   OPT_XTRA_INCREMENTAL,
@@ -800,6 +802,11 @@ struct my_option xb_client_options[] = {
      (G_PTR *)&xtrabackup_use_free_memory_pct,
      (G_PTR *)&xtrabackup_use_free_memory_pct, 0, GET_UINT, REQUIRED_ARG, 0, 0,
      100, 0, 1, 0},
+    {"estimate-memory", OPT_XTRA_ESTIMATE_MEMORY,
+     "This option enable/disable the estimation of memory required to prepare "
+     "the backup. The estimation happens during backup. (Default OFF)",
+     (G_PTR *)&xtrabackup_estimate_memory, (G_PTR *)&xtrabackup_estimate_memory,
+     0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
     {"throttle", OPT_XTRA_THROTTLE,
      "limit count of IO operations (pairs of read&write) per second to IOS "
      "values (for '--backup')",
@@ -4534,9 +4541,13 @@ void xtrabackup_backup_func(void) {
 
   io_watching_thread_stop = true;
 
-  auto redo_memory_requirements = xtrabackup::recv_backup_heap_used();
-  redo_memory = redo_memory_requirements.first;
-  redo_frames = redo_memory_requirements.second;
+  /* smart memory estimation */
+  if (xtrabackup_estimate_memory) {
+    auto redo_memory_requirements = xtrabackup::recv_backup_heap_used();
+    redo_memory = redo_memory_requirements.first;
+    redo_frames = redo_memory_requirements.second;
+  }
+
   if (!validate_missing_encryption_tablespaces()) {
     exit(EXIT_FAILURE);
   }

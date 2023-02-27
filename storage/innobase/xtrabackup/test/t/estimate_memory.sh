@@ -1,7 +1,13 @@
-# PXB-2710 - Predict memory at --prepare
+if is_server_version_higher_than 8.0.33
+then
+    die "We should check if smart memory is mature to transition to GA."
+fi
 
 . inc/common.sh
 require_debug_pxb_version
+
+
+# PXB-2710 - Predict memory at --prepare
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb-flush-log-at-trx-commit=0
@@ -26,7 +32,7 @@ INSERT INTO pxb_2710 VALUES (NULL);
 EOF
 innodb_wait_for_flush_all
 
-xtrabackup --backup --target-dir=${backupdir} --debug-sync=xtrabackup_pause_after_redo_catchup &
+xtrabackup --backup --estimate-memory --target-dir=${backupdir} --debug-sync=xtrabackup_pause_after_redo_catchup &
 job_pid=$!
 wait_for_xb_to_suspend $pid_file
 xb_pid=`cat $pid_file`
@@ -135,4 +141,35 @@ run_cmd verify_db_state test
 stop_server
 rm -rf $mysql_datadir
 
+# PXB-2980 - Add a parameter to disable memory estimation during backup
+start_server
+backupdir=${topdir}/backup
+vlog "Test 1 - Default to off"
+mkdir ${backupdir}
+xtrabackup --backup --target-dir=${backupdir}
 
+if ! grep -q "redo_memory = 0" ${backupdir}/xtrabackup_checkpoints
+then
+    die "Smart memory was enabled by default."
+fi
+
+vlog "Test 2 - Setting --estimate-memory to off"
+rm -rf ${backupdir}
+mkdir ${backupdir}
+xtrabackup --backup --estimate-memory=OFF --target-dir=${backupdir}
+
+if ! grep -q "redo_memory = 0" ${backupdir}/xtrabackup_checkpoints
+then
+    die "Smart memory was performed even with --estimate-memory=OFF."
+fi
+
+
+vlog "Test 3 - Setting --estimate-memory to on"
+rm -rf ${backupdir}
+mkdir ${backupdir}
+xtrabackup --backup --estimate-memory=ON --target-dir=${backupdir}
+
+if ! egrep -q 'redo_memory = [1-9][0-9]*' ${backupdir}/xtrabackup_checkpoints
+then
+    die "Smart memory was not performed even with --estimate-memory=ON."
+fi
