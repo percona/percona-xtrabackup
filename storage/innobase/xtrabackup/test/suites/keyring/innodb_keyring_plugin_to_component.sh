@@ -34,9 +34,8 @@ prepare_options="--xtrabackup-plugin-dir=${plugin_dir} --keyring-file-data=${top
 xtrabackup --prepare --target-dir=$topdir/backup ${prepare_options}
 rm -rf ${mysql_datadir}
 xtrabackup --copy-back --target-dir=$topdir/backup
-mv $topdir/keyring_file ${TEST_VAR_ROOT}
+mv $topdir/keyring_file ${keyring_file_plugin}
 start_server
-
 run_insert &
 job_id=$!
 sleep 2
@@ -47,7 +46,7 @@ xtrabackup --backup --incremental-basedir=$topdir/full \
 record_db_state test
 stop_server
 
-prepare_options="--xtrabackup-plugin-dir=${plugin_dir} --keyring-file-data=${TEST_VAR_ROOT}/keyring_file"
+prepare_options="--xtrabackup-plugin-dir=${plugin_dir} --keyring-file-data=${keyring_file_plugin}"
 xtrabackup --prepare --apply-log-only --target-dir=$topdir/full ${prepare_options}
 xtrabackup --prepare --incremental-dir=$topdir/inc1 \
      --target-dir=$topdir/full ${prepare_options}
@@ -73,20 +72,18 @@ xtrabackup --backup --incremental-basedir=$topdir/full \
 kill -USR1 $job_id
 wait $job_id
 stop_server
-cp ${TEST_VAR_ROOT}/keyring_file ${TEST_VAR_ROOT}/keyring_file_plugin
-rm ${TEST_VAR_ROOT}/keyring_file
 configure_keyring_file_component
-# backup global and component config files
-#cp ${MYSQL_BASEDIR}/bin/mysqld.my ${MYSQL_BASEDIR}/bin/mysqld.my.backup
-#cp ${MYSQLD_DATADIR}/mysqld.my ${MYSQL_BASEDIR}/bin/mysqld.my
-cp ${MYSQL_BASEDIR}/lib/plugin/component_keyring_file.cnf ${MYSQL_BASEDIR}/lib/plugin/component_keyring_file.cnf.backup
-cp ${MYSQLD_DATADIR}/component_keyring_file.cnf ${MYSQL_BASEDIR}/lib/plugin/component_keyring_file.cnf
+# Copy required plugin file and components
+mkdir $topdir/plugin
+cp $MYSQL_BASEDIR/lib/plugin/keyring_file.so $MYSQL_BASEDIR/lib/plugin/component_keyring_file.so ${MYSQLD_DATADIR}/component_keyring_file.cnf $topdir/plugin
+
 run_cmd ${MYSQLD} --basedir=${MYSQL_BASEDIR} --keyring-migration-to-component \
 --keyring-migration-source=keyring_file.so \
 --keyring-migration-destination=component_keyring_file.so \
---keyring-file-data=${TEST_VAR_ROOT}/keyring_file_plugin
-mv ${MYSQL_BASEDIR}/lib/plugin/component_keyring_file.cnf.backup ${MYSQL_BASEDIR}/lib/plugin/component_keyring_file.cnf
-#mv ${MYSQL_BASEDIR}/bin/mysqld.my.backup ${MYSQL_BASEDIR}/bin/mysqld.my
+--keyring-file-data=${TEST_VAR_ROOT}/keyring_file_plugin \
+--plugin-dir=$topdir/plugin
+
+
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_redo_log_encrypt
 innodb_undo_log_encrypt
@@ -108,12 +105,12 @@ record_db_state test
 stop_server
 
 
-prepare_options="--xtrabackup-plugin-dir=${plugin_dir} --keyring-file-data=${TEST_VAR_ROOT}/keyring_file_plugin"
+prepare_options="--xtrabackup-plugin-dir=${plugin_dir} --keyring-file-data=${keyring_file_plugin}"
 xtrabackup --prepare --apply-log-only --target-dir=$topdir/full ${prepare_options}
 xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc1 \
      --target-dir=$topdir/full ${prepare_options}
 
-prepare_options="--xtrabackup-plugin-dir=${plugin_dir} --component-keyring-config=${keyring_component_cnf} --keyring-file-data=${TEST_VAR_ROOT}/keyring_file"
+prepare_options="--xtrabackup-plugin-dir=${plugin_dir} --component-keyring-config=${keyring_component_cnf} --keyring-file-data=${keyring_file_component}"
 xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc2 \
     --target-dir=$topdir/full ${prepare_options}
 xtrabackup --prepare --incremental-dir=$topdir/inc3 \
@@ -126,5 +123,5 @@ run_cmd verify_db_state test
 stop_server
 rm -rf $mysql_datadir
 rm -rf $topdir/{full,inc1,inc2,inc3}
-rm -f ${TEST_VAR_ROOT}/keyring_file_plugin ${TEST_VAR_ROOT}/keyring_file
+rm -rf ${keyring_file_component} ${keyring_file_plugin} $topdir/plugin
 vlog "-- DONE testing keyring upgrade from plugin to component --"

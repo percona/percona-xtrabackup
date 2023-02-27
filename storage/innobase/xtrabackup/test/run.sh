@@ -512,7 +512,7 @@ function get_version_info()
 function copy_worker_var_dir()
 {
   local keep_worker_number=$1
-  [ -d $TEST_BASEDIR/results/debug/ ] || mkdir $TEST_BASEDIR/results/debug/
+  [ -d $PWD/results/debug/ ] || mkdir $PWD/results/debug/
   for worker_dir in $TEST_BASEDIR/var/w+([0-9])
   do
       [ -d $worker_dir ] || continue
@@ -523,7 +523,7 @@ function copy_worker_var_dir()
       if [ "$worker" = "$keep_worker_number" ]
       then
           local tname=`basename $tpath .sh`
-          local debug_dir=$(mktemp -d  $TEST_BASEDIR/results/debug/${tname}.XXXXXX)
+          local debug_dir=$(mktemp -d  $PWD/results/debug/${tname}.XXXXXX)
           cp -R ${worker_outfiles[$worker]} ${debug_dir}
           cp -R $TEST_BASEDIR/var/w${worker} ${debug_dir}
       fi
