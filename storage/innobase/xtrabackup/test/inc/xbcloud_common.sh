@@ -41,6 +41,17 @@ function write_credentials() {
   echo ${XBCLOUD_CREDENTIALS} | sed 's/ *--/\'$'\n/g' >> $topdir/xbcloud.cnf
 }
 
+function is_minio_server() {
+  if [[ "$XBCLOUD_CREDENTIALS" =~ .*"s3-endpoint".* ]]; then
+    ENDPOINT=$(echo ${XBCLOUD_CREDENTIALS} | awk -F's3-endpoint=' '{print $2}' | awk '{print $1}' | tr -d "'" | tr -d '\\')
+    SERVER=$(curl -sI ${ENDPOINT} | grep Server)
+    if [[ "$SERVER" =~ .*"MinIO".* ]]; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
 function is_ec2_with_profile() {
   TOKEN=`curl -sS --connect-timeout 3 -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"` || \
   return 1
