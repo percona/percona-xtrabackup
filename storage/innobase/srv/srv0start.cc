@@ -2546,13 +2546,20 @@ struct metadata_applier {
   @param[in]      table   table to visit */
   void operator()(dict_table_t *table) const {
     ut_ad(dict_sys->dynamic_metadata != nullptr);
+#ifndef XTRABACKUP
     uint64_t autoinc = table->autoinc;
+#endif /* XTRABACKUP */
     dict_table_load_dynamic_metadata(table);
     /* For those tables which were not opened by
     ha_innobase::open() and not initialized by
     innobase_initialize_autoinc(), the next counter should be
     advanced properly */
+#ifdef XTRABACKUP
+    /* PXB doesn't open tables via ha_innobase::open() */
+    if (table->autoinc != ~0ULL) {
+#else
     if (autoinc != table->autoinc && table->autoinc != ~0ULL) {
+#endif /* XTRABACKUP */
       ++table->autoinc;
     }
   }
