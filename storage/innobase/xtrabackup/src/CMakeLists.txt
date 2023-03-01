@@ -1,4 +1,4 @@
-# Copyright (c) 2013, 2021 Percona LLC and/or its affiliates.
+# Copyright (c) 2013, 2023 Percona LLC and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -74,6 +74,7 @@ ADD_COMPILE_FLAGS(
   xtrabackup.cc
   backup_mysql.cc
   file_utils.cc
+  xb_dict.cc
   COMPILE_FLAGS -DMYSQL_CLIENT)
 
 MYSQL_ADD_EXECUTABLE(xtrabackup
@@ -100,6 +101,7 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   xbcrypt_write.cc
   xbstream_write.cc
   backup_mysql.cc
+  xb_dict.cc
   backup_copy.cc
   keyring_plugins.cc
   keyring_components.cc

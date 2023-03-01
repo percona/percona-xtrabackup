@@ -1,6 +1,6 @@
 /******************************************************
 XtraBackup: hot backup tool for InnoDB
-(c) 2009-2022 Percona LLC and/or its affiliates
+(c) 2009-2023 Percona LLC and/or its affiliates
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -54,6 +54,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <signal.h>
 #include <string.h>
 #include "os0event.h"
+#include "xb_dict.h"
 
 #ifdef __linux__
 #include <sys/prctl.h>
@@ -539,13 +540,26 @@ static inline void xtrabackup_add_datasink(ds_ctxt_t *ds) {
 }
 
 /* ======== Datafiles iterator ======== */
-datafiles_iter_t *datafiles_iter_new() {
+datafiles_iter_t *datafiles_iter_new(
+    const std::shared_ptr<const xb::dd_tablespaces> dd) {
   datafiles_iter_t *it = new datafiles_iter_t();
 
   mutex_create(LATCH_ID_XTRA_DATAFILES_ITER_MUTEX, &it->mutex);
 
   Fil_iterator::for_each_file([&](fil_node_t *file) {
-    it->nodes.push_back(file);
+    auto space_id = file->space->id;
+
+    ut_ad(dd == nullptr || (dd != nullptr && srv_backup_mode && opt_lock_ddl));
+
+    if (dd != nullptr && fsp_is_ibd_tablespace(space_id) &&
+        !fsp_is_system_or_temp_tablespace(space_id) &&
+        !fsp_is_undo_tablespace(space_id) && dd->count(space_id) == 0) {
+      xb::warn() << "Skipping, Tablespace " << file->name
+                 << " space_id: " << space_id << " does not exists"
+                 << " in INFORMATION_SCHEMA.INNODB_TABLESPACES";
+    } else {
+      it->nodes.push_back(file);
+    }
     return (DB_SUCCESS);
   });
 
@@ -2420,7 +2434,8 @@ dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
 
   fil_space_t *space = fil_space_get(space_id);
 
-  if (!fsp_has_sdi(space_id)) {
+  if (fsp_has_sdi(space_id) != DB_SUCCESS) {
+    xb::warn() << "Failed to read SDI from " << space->name;
     return (DB_SUCCESS);
   }
 
@@ -2446,7 +2461,7 @@ dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
       fsp_is_file_per_table(space_id, space->flags)) {
     std::string table_name;
     err = get_id_from_dd_scan(space->name, &sdi_id, table_name, thd);
-    xb::info() << "duplicate SDI found for tablespace " << space->name
+    xb::warn() << "duplicate SDI found for tablespace " << space->name
                << ". To remove duplicate SDI, "
                   "please execute OPTIMIZE TABLE on "
                << table_name.c_str();
@@ -2568,8 +2583,6 @@ static void xb_scan_for_tablespaces() {
   --innodb-undo-directory also. */
   fil_set_scan_dir(Fil_path::remove_quotes(MySQL_undo_path), true);
 
-  xb::info() << "Generating a list of tablespaces";
-
   if (fil_scan_for_tablespaces(true) != DB_SUCCESS) {
     exit(EXIT_FAILURE);
   }
@@ -2596,18 +2609,26 @@ static dberr_t dict_load_from_spaces_sdi() {
   dberr_t err =
       dict_load_tables_from_space_id(dict_sys_t::s_dict_space_id, thd, trx);
 
-  if (err == DB_SUCCESS) {
-    for (auto space_id : space_ids) {
-      if (!fsp_is_ibd_tablespace(space_id) ||
-          space_id == dict_sys_t::s_dict_space_id) {
-        continue;
-      }
-      err = dict_load_tables_from_space_id(space_id, thd, trx);
-      if (err != DB_SUCCESS) {
-        break;
-      }
+  if (err != DB_SUCCESS) {
+    xb::error() << "Failed to load tables from mysql.ibd";
+    goto error;
+  }
+
+  for (auto space_id : space_ids) {
+    if (!fsp_is_ibd_tablespace(space_id) ||
+        space_id == dict_sys_t::s_dict_space_id) {
+      continue;
+    }
+    err = dict_load_tables_from_space_id(space_id, thd, trx);
+    if (err != DB_SUCCESS) {
+      xb::error() << "Failed to load table from tablespace "
+                  << fil_space_get(space_id)->name;
+      err = DB_ERROR;
+      break;
     }
   }
+
+error:
 
   dd_schema_map.clear();
   dd_table_map.clear();
@@ -2665,6 +2686,7 @@ static bool innodb_init(bool init_dd, bool for_apply_log) {
   if (init_dd) {
     err = dict_load_from_spaces_sdi();
     if (err != DB_SUCCESS) {
+      xb::error() << "Failed to load table using tablespace SDI ";
       goto error;
     }
     if (dict_sys->dynamic_metadata == nullptr)
@@ -3387,9 +3409,11 @@ skip:
     write_filter->deinit(&write_filt_ctxt);
   }
 
-  xb::warn() << "We assume the "
-             << "table was dropped during xtrabackup execution "
-             << "and ignore the file.";
+  if (!opt_lock_ddl) {
+    xb::warn() << "We assume the "
+               << "table was dropped during xtrabackup execution "
+               << "and ignore the file.";
+  }
   xb::warn() << "skipping tablespace " << node_name;
   return (false);
 }
@@ -4239,7 +4263,7 @@ void xtrabackup_backup_func(void) {
 
   recv_is_making_a_backup = true;
   bool data_copying_error = false;
-
+  std::shared_ptr<xb::dd_tablespaces> xb_dd_space;
   init_mysql_environment();
 
   if (print_instant_versioned_tables(mysql_connection)) exit(EXIT_FAILURE);
@@ -4270,6 +4294,12 @@ void xtrabackup_backup_func(void) {
   srv_read_only_mode = true;
 
   srv_backup_mode = true;
+
+  if (opt_lock_ddl) {
+    xb_dd_space = xb::build_space_id_set(mysql_connection);
+    ut_ad(xb_dd_space->size());
+  }
+
   /* We can safely close files if we don't allow DDL during the
   backup */
   srv_close_files = xb_close_files || opt_lock_ddl;
@@ -4467,7 +4497,7 @@ void xtrabackup_backup_func(void) {
                << " threads for parallel data files transfer";
   }
 
-  auto it = datafiles_iter_new();
+  auto it = datafiles_iter_new(xb_dd_space);
   if (it == NULL) {
     xb::error() << "datafiles_iter_new() failed.";
     exit(EXIT_FAILURE);
@@ -7244,7 +7274,7 @@ skip_check:
     goto error_cleanup;
   }
 
-  it = datafiles_iter_new();
+  it = datafiles_iter_new(nullptr);
   if (it == NULL) {
     xb::info() << "datafiles_iter_new() failed.";
     exit(EXIT_FAILURE);
@@ -7290,7 +7320,7 @@ skip_check:
     /* flush insert buffer at shutdwon */
     innobase_fast_shutdown = 0;
 
-    it = datafiles_iter_new();
+    it = datafiles_iter_new(nullptr);
     if (it == NULL) {
       xb::error() << "datafiles_iter_new() "
                      "failed.";

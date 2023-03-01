@@ -1,6 +1,6 @@
 /******************************************************
 XtraBackup: hot backup tool for InnoDB
-(c) 2009, 2021 Percona LLC and/or its affiliates.
+(c) 2009, 2023 Percona LLC and/or its affiliates.
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
@@ -33,6 +33,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "common.h"
 #include "fil_cur.h"
 #include "read_filt.h"
+#include "xb0xb.h"
+#include "xb_dict.h"
 #include "xtrabackup.h"
 
 /***********************************************************************
@@ -45,6 +47,7 @@ static bool xb_get_zip_size(const char *file_name, pfs_os_file_t file,
   const auto ret =
       os_file_read(read_request, file_name, file, buf, 0, UNIV_PAGE_SIZE_MIN);
   if (!ret) {
+    xb::warn() << "Failed to read file from server directory " << file_name;
     return (false);
   }
 
