@@ -196,6 +196,8 @@ class Archived_Redo_Log_Reader {
   /** Set start lsn of archived log. */
   void set_start_lsn(lsn_t lsn);
 
+  lsn_t get_start_lsn() const { return archive_start_lsn; }
+
   /** Get log buffer. */
   byte *get_buffer() const;
 
