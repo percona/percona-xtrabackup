@@ -45,7 +45,7 @@ Usage: $0 [-f] [-g] [-h] [-s suite] [-t test_name] [-d mysql_basedir] [-c build_
 -k          Make a copy of failed var directory
 -t path     Run only a single named test. This option can be passed multiple times.
 -h          Print this help message
--s suite    Select a test suite to run. Possible values: binlog, bitmap, experimental, gr, keyring, rocksdb, pagetracking,  main, compression and xbcloud.
+-s suite    Select a test suite to run. Possible values: binlog, experimental, gr, keyring, rocksdb, pagetracking,  main, compression and xbcloud.
             Default is 'binlog, main, gr, pagetracking, rocksdb, keyring, compression and xbcloud'.
 -j N        Run tests in N parallel processes.
 -T seconds  Test timeout (default is $TEST_TIMEOUT seconds).

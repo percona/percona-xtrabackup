@@ -79,7 +79,6 @@ ADD_COMPILE_FLAGS(
 
 MYSQL_ADD_EXECUTABLE(xtrabackup
   xtrabackup.cc
-  changed_page_bitmap.cc
   changed_page_tracking.cc
   datasink.cc
   ds_buffer.cc
