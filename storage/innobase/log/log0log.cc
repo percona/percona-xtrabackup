@@ -1627,8 +1627,18 @@ dberr_t log_sys_init(bool expect_no_files, lsn_t flushed_lsn,
   Log_file_handle::s_on_before_read = [](Log_file_id, Log_file_type file_type,
                                          os_offset_t, os_offset_t read_size) {
     ut_a(file_type == Log_file_type::NORMAL);
+
+#ifdef XTRABACKUP
+    /* If there is an error during startup (ie error loading SDI etc), innodb
+    is not fully inited. An exit at this stage, we don't call innodb_end() and
+    the srv_shutdown_state remains SRV_SHUTDOWN_NONE. PXB opens the redo log
+    files again at the end to rename back to xtrabackup_logfile. Hence the
+    srv_shutdown_state can be SRV_SHUTDOWN_NONE */
+#endif /* XTRABACKUP */
     ut_a(srv_is_being_started ||
-         srv_shutdown_state.load() == SRV_SHUTDOWN_EXIT_THREADS);
+         srv_shutdown_state.load() ==
+             SRV_SHUTDOWN_EXIT_THREADS IF_XB(|| srv_shutdown_state.load() ==
+                                                    SRV_SHUTDOWN_NONE));
 #ifndef UNIV_HOTBACKUP
     srv_stats.data_read.add(read_size);
 #endif /* !UNIV_HOTBACKUP */

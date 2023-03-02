@@ -2434,6 +2434,8 @@ dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
 
   fil_space_t *space = fil_space_get(space_id);
 
+  DBUG_EXECUTE_IF("force_sdi_error", return (DB_ERROR););
+
   if (fsp_has_sdi(space_id) != DB_SUCCESS) {
     xb::warn() << "Failed to read SDI from " << space->name;
     return (DB_SUCCESS);
@@ -6320,7 +6322,8 @@ static bool xtrabackup_close_temp_log(bool clear_flag) {
   }
 
   if (xb_generated_redo && !clear_flag) {
-    xb::info() << "prepare generated new redo log files. Skipping rename. ";
+    xb::info() << "xtrabackup --prepare generated new redo log files. Skipping "
+               << "rename from ib_redo0 to " << XB_LOG_FILENAME;
     return (false);
   }
 
