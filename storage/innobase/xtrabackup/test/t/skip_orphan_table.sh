@@ -72,9 +72,13 @@ run_cmd xtrabackup --backup --lock-ddl=false  --target-dir=${topdir}/backup
 
 vlog "Case#2 prepare should work with orphan ibd copied"
 
-run_cmd xtrabackup --prepare --target-dir=$topdir/backup 2>&1 | tee $topdir/pxb_prepare.log
+run_cmd xtrabackup --prepare --target-dir=$topdir/backup --export 2>&1 | tee $topdir/pxb_prepare.log
 
-grep "Warning.*Failed to read SDI from test/FTS_0000000000000123_BEING_DELETED" $topdir/pxb_prepare.log || die "missing warning during prepare"
+# After PXB-2955, we dont load SDI by default, so orphan IBD without SDI cannot be detected
+# If there is a rollback on the tablespace, PXB will open them and the empty SDI is detected
+# It is hard to get a running trx on this FTS table. Since the orphan is detected at export,
+# (we dont parse SDI yet), the error message is as below now
+grep "cannot find dictionary record of table test/FTS_0000000000000123_BEING_DELETED" $topdir/pxb_prepare.log || die "missing warning during prepare"
 
 stop_server
 rm -rf $mysql_datadir/*

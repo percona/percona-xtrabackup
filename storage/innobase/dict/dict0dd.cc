@@ -73,8 +73,7 @@ Data dictionary interface */
 #include "query_options.h"
 #include "sql/create_field.h"
 #include "sql/mysqld.h"  // lower_case_file_system
-#include "sql_base.h"
-#include "sql_table.h"
+#include "storage/innobase/xtrabackup/src/xb_dict.h"
 #endif /* !UNIV_HOTBACKUP */
 
 const char *DD_instant_col_val_coder::encode(const byte *stream, size_t in_len,
@@ -1123,7 +1122,9 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
 
     table->version = version;
     dict_table_autoinc_lock(table);
-    dict_table_autoinc_initialize(table, autoinc + 1);
+    /* Table autoinc is later incremented (in this function) to next offset (+1)
+    after load from dynamic metadata */
+    dict_table_autoinc_initialize(table, autoinc);
     dict_table_autoinc_unlock(table);
     table->autoinc_persisted = autoinc;
   }
@@ -1189,8 +1190,20 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
 
   mutex_enter(&dict_sys->mutex);
 
-  dict_table_add_to_cache(table, false);
+  dict_table_add_to_cache(table, true);
   table->acquire();
+
+  /* Load autoinc from dynamic meta data */
+  if (dict_sys->dynamic_metadata != nullptr) {
+    dict_table_load_dynamic_metadata(table);
+  }
+
+  /* We do not do the table open via ha_innobase::open().
+  innobase_initialize_autoinc() will NOT be called and the
+  counter is NOT advanced. Hence, advance to next value here */
+  if (table->autoinc != ~0ULL) {
+    ++table->autoinc;
+  }
 
   mutex_exit(&dict_sys->mutex);
 
@@ -1231,14 +1244,33 @@ done:
   return (table_id);
 }
 
-static int dd_table_load_part(table_id_t table_id, const dd::Table &dd_table,
-                              const dd::Partition *dd_part,
-                              dict_table_t *&table, THD *thd,
-                              const dd::String_type *schema_name, bool implicit,
-                              space_id_t space_id) {
+#ifdef XTRABACKUP
+/* Convert dd::Table object to InnoDB Table object. The table can be a
+partitioned table. This function will load one partition/normal table
+at a time. For a given InnoDB "table_id", we return the dict_table_t.
+Note the dict_table_t is added to cache (dict_sys cache) and the table
+is opened (meaning table->n_ref_count is 1). It is responsbility of the
+caller to do "dict_table_close()/dd_table_close()" that will reduce the
+table->n_ref_count to 0. All tables with table->n_ref_count 0 are eligible
+for eviction. Eviction is done in background by master thread.
+@param[in] table_id InnoDB table_id that should be loaded into cache
+@param[in] dd_table Server dd::Table object
+@param[in] dd_part  Incase of partitions, we pass the desired partition here
+@param[in] thd      Server thread context
+@param[in] schema_name schema of the table
+@param[in] implicit true if the table belongs to file_per_table tablespace
+@param[in] space_id space_id of the tablespace
+@return InnoDB dict_table_t object or nullptr */
+static dict_table_t *dd_table_load_part(table_id_t table_id,
+                                        const dd::Table &dd_table,
+                                        const dd::Partition *dd_part, THD *thd,
+                                        const dd::String_type *schema_name,
+                                        bool implicit, space_id_t space_id) {
   ut_ad(table_id != dd::INVALID_OBJECT_ID);
 
   mutex_enter(&dict_sys->mutex);
+
+  dict_table_t *table = nullptr;
 
   HASH_SEARCH(id_hash, dict_sys->table_id_hash, ut::hash_uint64(table_id),
               dict_table_t *, table, ut_ad(table->cached),
@@ -1251,18 +1283,13 @@ static int dd_table_load_part(table_id_t table_id, const dd::Table &dd_table,
   mutex_exit(&dict_sys->mutex);
 
   if (table != nullptr) {
-    return (0);
+    return table;
   }
 
-  table = dd_table_create_on_dd_obj(&dd_table, dd_part, schema_name, implicit,
-                                    space_id);
-
-  if (table != nullptr) {
-    return (0);
-  }
-
-  return (1);
+  return (dd_table_create_on_dd_obj(&dd_table, dd_part, schema_name, implicit,
+                                    space_id));
 }
+#endif /* XTRABACKUP */
 
 int dd_table_open_on_dd_obj(dd::cache::Dictionary_client *client,
                             space_id_t space_id, const dd::Table &dd_table,
@@ -1299,37 +1326,112 @@ int dd_table_open_on_dd_obj(dd::cache::Dictionary_client *client,
   return (1);
 }
 
-int dd_table_load_on_dd_obj(dd::cache::Dictionary_client *client,
-                            space_id_t space_id, const dd::Table &dd_table,
-                            dict_table_t *&table, THD *thd,
-                            const dd::String_type *schema_name, bool implicit) {
-  uint64 table_id = dd_table.se_private_id();
-
-  if (table_id == dd::INVALID_OBJECT_ID) {
+#ifdef XTRABACKUP
+xb_dict_tuple dd_table_load_on_dd_obj(dd::cache::Dictionary_client *client,
+                                      space_id_t space_id,
+                                      const dd::Table &dd_table,
+                                      table_id_t table_id, THD *thd,
+                                      const dd::String_type *schema_name,
+                                      bool implicit) {
+  if (dd_table.se_private_id() == dd::INVALID_OBJECT_ID) {
     /* Partitioned table */
     ut_ad(dd_table_is_partitioned(dd_table));
+    auto end = dd_table.leaf_partitions().end();
 
-    for (auto part : dd_table.leaf_partitions()) {
-      uint64 tid = part->se_private_id();
-      int ret = dd_table_load_part(tid, dd_table, part, table, thd, schema_name,
-                                   implicit, space_id);
-      if (ret != 0) {
-        return ret;
+    if (table_id != 0) {
+      // Load specific partition based on table_id
+      auto i =
+          std::search_n(dd_table.leaf_partitions().begin(), end, 1, table_id,
+                        [](const dd::Partition *p, table_id_t id) {
+                          return (p->se_private_id() == id);
+                        });
+      if (i == end) {
+        // The partition table_id doesn't exist in this Table partitions.
+        ut_ad(0);
+        xb::warn() << "The requested partition table_id " << table_id
+                   << " doesn't exist in the table "
+                   << "[" << schema_name << "/" << dd_table.name() << "]";
+
+        return {1, {}};
+      } else {
+        auto &part = *i;
+
+        uint64 tid = part->se_private_id();
+        dict_table_t *table = dd_table_load_part(
+            tid, dd_table, part, thd, schema_name, implicit, space_id);
+        if (table != nullptr) {
+          return {0, {table}};
+        } else {
+          // Unable to load table. Error
+          // Currently we assume table loading cannot fail
+          ut_ad(0);
+          xb::warn()
+              << "Unable to convert dd::Table to dict_table_t for partition "
+              << part->name() << " in "
+              << "[" << schema_name << "/" << dd_table.name() << "]";
+          return {1, {}};
+        }
       }
-      dd_table_close(table, thd, nullptr, false);
+    } else {
+      // Load all partitions
+      std::vector<dict_table_t *> table_vec;
+      auto close_on_error = [&]() -> void {
+        std::for_each(table_vec.begin(), table_vec.end(),
+                      [&](dict_table_t *table) {
+                        dict_table_close(table, false, false);
+                      });
+      };
+
+      for (auto part : dd_table.leaf_partitions()) {
+        uint64 tid = part->se_private_id();
+
+        dict_table_t *table = dd_table_load_part(
+            tid, dd_table, part, thd, schema_name, implicit, space_id);
+        if (table != nullptr) {
+          table_vec.push_back(table);
+        } else {
+          // Unable to load table. Error
+          // Currently we assume table loading cannot fail
+          ut_ad(0);
+          close_on_error();
+          xb::warn()
+              << "Unable to convert dd::Table to dict_table_t for partition "
+              << part->name() << " in " << schema_name << "/" << dd_table.name()
+              << "]";
+          return {1, {}};
+        }
+      }
+      // return all partitions
+      return {0, table_vec};
     }
-    return 0;
   } else {
-    const dd::Partition *dd_part = nullptr;
-    int ret = dd_table_load_part(table_id, dd_table, dd_part, table, thd,
-                                 schema_name, implicit, space_id);
-    if (ret != 0) {
-      return ret;
+    // Load a NON-Partition table
+    if (table_id == 0) {
+      table_id = dd_table.se_private_id();
     }
-    dd_table_close(table, thd, nullptr, false);
-    return ret;
+
+    const dd::Partition *dd_part = nullptr;
+    dict_table_t *table = dd_table_load_part(table_id, dd_table, dd_part, thd,
+                                             schema_name, implicit, space_id);
+    if (table != nullptr) {
+      return {0, {table}};
+    } else {
+      // Unable to load table. Error
+      // Currently we assume table loading cannot fail
+      ut_ad(0);
+      xb::warn() << "Unable to convert dd::Table to dict_table for table: ["
+                 << schema_name << "/" << dd_table.name() << "]";
+      return {1, {}};
+    }
   }
+
+  // Shouldn't reach here because on success or error, we should have returned
+  // from above
+  ut_ad(0);
+  return {1, {}};
 }
+
+#endif /* XTRABACKUP */
 
 int acquire_uncached_table(THD *thd, dd::cache::Dictionary_client *client,
                            const dd::Table *dd_table, const char *name,
@@ -1681,6 +1783,39 @@ static dict_table_t *dd_table_open_on_id_low(THD *thd, MDL_ticket **mdl,
   return 0;
 }
 
+#ifdef XTRABACKUP
+static dict_table_t *xb_table_open_on_id_low(table_id_t table_id) {
+  ut_ad(!dict_sys_mutex_own());
+
+  // PXB path. Load from SDI during prepare
+  // Table not found in cache. Lets load using SDI from tablespace SDI
+  // we load all tables from that the space_id. Typically, we load single
+  // table at a time.
+  //
+  // There are other paths (stats, export) that load all tables at once
+  // from tablespace (they dont ask for specific table_id). Here we always
+  // for a specific "table_id" from space_id SDI
+  auto result = xb::prepare::dict_load_tables_using_table_id(table_id);
+  dberr_t err = std::get<0>(result);
+  std::vector<dict_table_t *> vec = std::get<1>(result);
+  if (err != DB_SUCCESS) {
+    xb::warn() << "Unable to load table with table_id " << table_id
+               << " InnoDB DB_ Error code is " << err;
+    return nullptr;
+  }
+
+  if (vec.size() != 1) {
+    xb::warn() << "Unexpected number of tabes found with table_id " << table_id
+               << " Expected: 1 Found: " << vec.size();
+    return nullptr;
+  }
+
+  // only one element in vector. The table is already opened
+  // (table->n_ref_count is 1)
+  return vec[0];
+}
+#endif /* XTRABACKUP */
+
 /** Open a persistent InnoDB table based on InnoDB table id, and
 hold Shared MDL lock on it.
 @param[in]      table_id                table identifier
@@ -1707,7 +1842,10 @@ dict_table_t *dd_table_open_on_id(table_id_t table_id, THD *thd,
 
 reopen:
   if (ib_table == nullptr) {
-    if (skip_missing) {
+    if (!xb::prepare::table_exists_in_dd(table_id) && skip_missing) {
+      if (!dict_locked) {
+        dict_sys_mutex_exit();
+      }
       return nullptr;
     }
 #ifndef UNIV_HOTBACKUP
@@ -1735,10 +1873,16 @@ reopen:
         dict_sys_mutex_exit();
       }
     } else {
-      if (!dict_locked) {
-        mutex_exit(&dict_sys->mutex);
+      dict_sys_mutex_exit();
+
+#ifdef XTRABACKUP
+      // PXB path to load a table
+      ib_table = xb_table_open_on_id_low(table_id);
+#endif /* XTRABACKUP */
+
+      if (dict_locked) {
+        dict_sys_mutex_enter();
       }
-      ib_table = nullptr;
     }
 #else  /* !UNIV_HOTBACKUP */
     /* PRELIMINARY TEMPORARY WORKAROUND: is this ever used? */
@@ -6356,13 +6500,6 @@ const rec_t *dd_startscan_system(THD *thd, MDL_ticket **mdl, btr_pcur_t *pcur,
 
   return rec;
 }
-
-/**
-  All DD tables would contain DB_TRX_ID and DB_ROLL_PTR fields
-  before other fields. This offset indicates the position at
-  which the first DD column is located.
-*/
-static const int DD_FIELD_OFFSET = 2;
 
 /** Process one mysql.metadata record and extract schema name and id
 @param[in]	heap		temp memory heap

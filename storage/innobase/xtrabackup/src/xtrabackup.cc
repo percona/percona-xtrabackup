@@ -89,9 +89,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include <api0api.h>
 #include <api0misc.h>
-#include <dict0sdi-decompress.h>
 
-#include "sql/dd/impl/sdi.h"
 #include "sql_thd_internal_api.h"
 
 #define G_PTR uchar *
@@ -210,17 +208,7 @@ static regex_list_t regex_exclude_list;
 static hash_table_t *tables_include_hash = NULL;
 static hash_table_t *tables_exclude_hash = NULL;
 
-/* map of schema name and schema id */
-static std::map<std::string, uint64> dd_schema_map;
-
 static uint32_t cfg_version = IB_EXPORT_CFG_VERSION_V7;
-
-/* map of <schema id, name> and SDI id*/
-static std::map<std::pair<int, std::string>, uint64> dd_table_map;
-
-/* map of <space_id, dd:table> used at --export */
-static std::map<space_id_t, std::shared_ptr<dd::Table>> g_dd_tables;
-
 char *xtrabackup_databases = NULL;
 char *xtrabackup_databases_file = NULL;
 char *xtrabackup_databases_exclude = NULL;
@@ -518,6 +506,10 @@ bool xb_generated_redo = false;
 
 static void check_all_privileges();
 static bool validate_options(const char *file, int argc, char **argv);
+/** all tables in mysql databases. These should be closed at the end.
+We have to keep them open (table->n_ref_count >0) because we don't want
+them to be evicted */
+static std::vector<dict_table_t *> mysql_ibd_tables;
 
 #define CLIENT_WARN_DEPRECATED(opt, new_opt)                              \
   xb::warn() << opt                                                       \
@@ -537,7 +529,7 @@ static inline void xtrabackup_add_datasink(ds_ctxt_t *ds) {
 
 /* ======== Datafiles iterator ======== */
 datafiles_iter_t *datafiles_iter_new(
-    const std::shared_ptr<const xb::dd_tablespaces> dd) {
+    const std::shared_ptr<const xb::backup::dd_space_ids> dd_spaces) {
   datafiles_iter_t *it = new datafiles_iter_t();
 
   mutex_create(LATCH_ID_XTRA_DATAFILES_ITER_MUTEX, &it->mutex);
@@ -545,11 +537,12 @@ datafiles_iter_t *datafiles_iter_new(
   Fil_iterator::for_each_file([&](fil_node_t *file) {
     auto space_id = file->space->id;
 
-    ut_ad(dd == nullptr || (dd != nullptr && srv_backup_mode && opt_lock_ddl));
+    ut_ad(dd_spaces == nullptr ||
+          (dd_spaces != nullptr && srv_backup_mode && opt_lock_ddl));
 
-    if (dd != nullptr && fsp_is_ibd_tablespace(space_id) &&
+    if (dd_spaces != nullptr && fsp_is_ibd_tablespace(space_id) &&
         !fsp_is_system_or_temp_tablespace(space_id) &&
-        !fsp_is_undo_tablespace(space_id) && dd->count(space_id) == 0) {
+        !fsp_is_undo_tablespace(space_id) && dd_spaces->count(space_id) == 0) {
       xb::warn() << "Skipping, Tablespace " << file->name
                  << " space_id: " << space_id << " does not exists"
                  << " in INFORMATION_SCHEMA.INNODB_TABLESPACES";
@@ -2320,246 +2313,6 @@ error:
   return (true);
 }
 
-/** Scan the SDI id from DD table "mysql.tables"
-@param[in]  name       tablespace name database/name
-@param[out] sdi_id     id of table
-@param[out] table_name name of the table
-@param[in]  thd        THD */
-static dberr_t get_id_from_dd_scan(const std::string &name, uint64 *id,
-                                   std::string &table_name, THD *thd) {
-  std::string db_name;
-  uint64 schema_id = 0;
-
-  /* get the database and table_name from space name */
-  dict_name::get_table(name, db_name, table_name);
-
-  ut_ad(db_name.compare("mysql") != 0);
-
-  /* map of schema name and id built from scanning mysql/schemata and map of
-  <schema id, name> and SDI id built from scanning mysql/tables */
-  if (dd_schema_map.size() == 0 && dd_table_map.size() == 0) {
-    dict_table_t *sys_tables = nullptr;
-    btr_pcur_t pcur;
-    const rec_t *rec = nullptr;
-    mtr_t mtr;
-    MDL_ticket *mdl = nullptr;
-    mem_heap_t *heap = mem_heap_create(1000, UT_LOCATION_HERE);
-    mutex_enter(&(dict_sys->mutex));
-
-    mtr_start(&mtr);
-    rec = dd_startscan_system(thd, &mdl, &pcur, &mtr, "mysql/schemata",
-                              &sys_tables);
-    while (rec) {
-      uint64 rec_schema_id;
-      std::string rec_name;
-
-      dd_process_schema_rec(heap, rec, sys_tables, &mtr, &rec_name,
-                            &rec_schema_id);
-      dd_schema_map.insert(std::make_pair(rec_name, rec_schema_id));
-      mem_heap_empty(heap);
-
-      mtr_start(&mtr);
-      rec = (rec_t *)dd_getnext_system_rec(&pcur, &mtr);
-    }
-
-    mtr_commit(&mtr);
-    dd_table_close(sys_tables, thd, &mdl, true);
-    mem_heap_empty(heap);
-
-    mtr_start(&mtr);
-
-    rec = dd_startscan_system(thd, &mdl, &pcur, &mtr, "mysql/tables",
-                              &sys_tables);
-
-    while (rec) {
-      uint64 rec_schema_id;
-      std::string rec_name;
-      uint64 rec_id;
-
-      dd_process_dd_tables_rec(heap, rec, sys_tables, &mtr, &rec_schema_id,
-                               &rec_name, &rec_id);
-      mem_heap_empty(heap);
-
-      auto rec_table_id = std::make_pair(rec_schema_id, rec_name);
-
-      dd_table_map.insert(
-          std::make_pair(std::make_pair(rec_schema_id, rec_name), rec_id));
-
-      mtr_start(&mtr);
-      rec = (rec_t *)dd_getnext_system_rec(&pcur, &mtr);
-    }
-
-    mtr_commit(&mtr);
-    dd_table_close(sys_tables, thd, &mdl, true);
-    mem_heap_free(heap);
-
-    mutex_exit(&(dict_sys->mutex));
-  }
-
-  schema_id = dd_schema_map[db_name];
-
-  ut_ad(schema_id != 0);
-  if (schema_id == 0) {
-    xb::error() << "can't find " << db_name.c_str()
-                << " entry in mysql/schemata for tablespace " << name.c_str();
-    return (DB_NOT_FOUND);
-  }
-
-  *id = dd_table_map[std::make_pair(schema_id, table_name)];
-
-  ut_ad(*id != 0);
-  if (id == 0) {
-    xb::error() << "can't find " << table_name.c_str()
-                << " entry in mysql/tables for tablespace " << name.c_str();
-    return (DB_NOT_FOUND);
-  }
-  return (DB_SUCCESS);
-}
-
-dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
-                                       ib_trx_t trx) {
-  sdi_vector_t sdi_vector;
-  ib_sdi_vector_t ib_vector;
-  ib_vector.sdi_vector = &sdi_vector;
-  uint64 sdi_id = 0;
-
-  fil_space_t *space = fil_space_get(space_id);
-
-  DBUG_EXECUTE_IF("force_sdi_error", return (DB_ERROR););
-
-  if (fsp_has_sdi(space_id) != DB_SUCCESS) {
-    xb::warn() << "Failed to read SDI from " << space->name;
-    return (DB_SUCCESS);
-  }
-
-  uint32_t compressed_buf_len = 1024 * 1024;
-  uint32_t uncompressed_buf_len = 1024 * 1024;
-  byte *compressed_sdi = static_cast<byte *>(
-      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, compressed_buf_len));
-  byte *sdi = static_cast<byte *>(
-      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, uncompressed_buf_len));
-
-  ib_err_t err = ib_sdi_get_keys(space_id, &ib_vector, trx);
-
-  if (err != DB_SUCCESS) {
-    goto error;
-  }
-
-  /* Before 8.0.24 if the table is used in EXCHANGE PARTITION or IMPORT. Even
-  after upgrade to the latest version 8.0.25 (which fixed the duplicate SDI
-  issue), such tables continue to contain duplicate SDI. PXB will scan the DD
-  table "mysql.tables" to determine the correct SDI */
-  if (ib_vector.sdi_vector->m_vec.size() > 2 &&
-      strcmp(space->name, "mysql") != 0 &&
-      fsp_is_file_per_table(space_id, space->flags)) {
-    std::string table_name;
-    err = get_id_from_dd_scan(space->name, &sdi_id, table_name, thd);
-    xb::warn() << "duplicate SDI found for tablespace " << space->name
-               << ". To remove duplicate SDI, "
-                  "please execute OPTIMIZE TABLE on "
-               << table_name.c_str();
-    if (err != DB_SUCCESS) {
-      goto error;
-    }
-  }
-
-  for (sdi_container::iterator it = ib_vector.sdi_vector->m_vec.begin();
-       it != ib_vector.sdi_vector->m_vec.end(); it++) {
-    ib_sdi_key_t ib_key;
-    ib_key.sdi_key = &(*it);
-
-    uint32_t compressed_sdi_len = compressed_buf_len;
-    uint32_t uncompressed_sdi_len = uncompressed_buf_len;
-
-    if (ib_key.sdi_key->type != 1 /* dd::Sdi_type::TABLE */) {
-      continue;
-    }
-
-    /* In case of duplicate SDIs, sdi_id is the latest id according to DD, so we
-    skip other dd::Table SDIs in the IBD file */
-    if (sdi_id != 0 && ib_key.sdi_key->id != sdi_id) {
-      continue;
-    }
-
-    while (true) {
-      err = ib_sdi_get(space_id, &ib_key, compressed_sdi, &compressed_sdi_len,
-                       &uncompressed_sdi_len, trx);
-      if (err == DB_OUT_OF_MEMORY) {
-        compressed_buf_len = compressed_sdi_len;
-        compressed_sdi = static_cast<byte *>(
-            ut::realloc(compressed_sdi, compressed_buf_len));
-        continue;
-      }
-      break;
-    }
-
-    if (err != DB_SUCCESS) {
-      goto error;
-    }
-
-    if (uncompressed_buf_len < uncompressed_sdi_len) {
-      uncompressed_buf_len = uncompressed_sdi_len;
-      sdi = static_cast<byte *>(ut::realloc(sdi, uncompressed_buf_len));
-    }
-
-    Sdi_Decompressor decompressor(static_cast<byte *>(sdi),
-                                  uncompressed_sdi_len, compressed_sdi,
-                                  compressed_sdi_len);
-    decompressor.decompress();
-
-    using Table_Ptr = std::shared_ptr<dd::Table>;
-
-    Table_Ptr dd_table{dd::create_object<dd::Table>()};
-    dd::String_type schema_name;
-
-    bool res = dd::deserialize(
-        thd, dd::Sdi_type((const char *)sdi, uncompressed_sdi_len),
-        dd_table.get(), &schema_name);
-
-    if (res) {
-      err = DB_ERROR;
-      goto error;
-    }
-
-    Table_Ptr g_dd_table = dd_table;
-    if (xtrabackup_export) {
-      g_dd_tables.insert(std::make_pair(space_id, g_dd_table));
-    }
-
-    using Client = dd::cache::Dictionary_client;
-    using Releaser = dd::cache::Dictionary_client::Auto_releaser;
-
-    Client *dc = dd::get_dd_client(thd);
-    Releaser releaser{dc};
-
-    dict_table_t *ib_table = nullptr;
-
-    ut_a(space != nullptr);
-
-    /* All tables in mysql.ibd should belong to 'mysql' schema. But
-    during upgrade, server leaves the DD tables in a temporary schema
-    'dd_upgrade_80XX". PXB reads DD tables using 'mysql' schema name.
-    For example, 'mysql/tables'. Fix the schema name to 'mysql' */
-    if (space_id == dict_sys_t::s_dict_space_id &&
-        schema_name != MYSQL_SCHEMA_NAME.str) {
-      schema_name = MYSQL_SCHEMA_NAME.str;
-    }
-
-    bool implicit = fsp_is_file_per_table(space_id, space->flags);
-    if (dd_table_load_on_dd_obj(dc, space_id, *dd_table.get(), ib_table, thd,
-                                &schema_name, implicit) != 0) {
-      err = DB_ERROR;
-      goto error;
-    }
-  }
-
-error:
-  ut::free(compressed_sdi);
-  ut::free(sdi);
-
-  return (err);
-}
-
 static void xb_scan_for_tablespaces() {
   /* This is the default directory for IBD and IBU files. Put it first
   in the list of known directories. */
@@ -2582,60 +2335,6 @@ static void xb_scan_for_tablespaces() {
   if (fil_scan_for_tablespaces(true) != DB_SUCCESS) {
     exit(EXIT_FAILURE);
   }
-}
-
-static dberr_t dict_load_from_spaces_sdi() {
-  fil_open_ibds();
-
-  my_thread_init();
-
-  THD *thd = create_internal_thd();
-
-  ib_trx_t trx = ib_trx_begin(IB_TRX_READ_COMMITTED, false, false, thd);
-
-  std::vector<space_id_t> space_ids;
-
-  Fil_space_iterator::for_each_space([&](fil_space_t *space) {
-    space_ids.push_back(space->id);
-    return (DB_SUCCESS);
-  });
-
-  /* Load mysql tablespace to open mysql/tables and mysql/schemata which is
-  need to find the right key for tablespace in case of duplicate sdi */
-  dberr_t err =
-      dict_load_tables_from_space_id(dict_sys_t::s_dict_space_id, thd, trx);
-
-  if (err != DB_SUCCESS) {
-    xb::error() << "Failed to load tables from mysql.ibd";
-    goto error;
-  }
-
-  for (auto space_id : space_ids) {
-    if (!fsp_is_ibd_tablespace(space_id) ||
-        space_id == dict_sys_t::s_dict_space_id) {
-      continue;
-    }
-    err = dict_load_tables_from_space_id(space_id, thd, trx);
-    if (err != DB_SUCCESS) {
-      xb::error() << "Failed to load table from tablespace "
-                  << fil_space_get(space_id)->name;
-      err = DB_ERROR;
-      break;
-    }
-  }
-
-error:
-
-  dd_schema_map.clear();
-  dd_table_map.clear();
-
-  ib_trx_commit(trx);
-  ib_trx_release(trx);
-
-  destroy_internal_thd(thd);
-
-  my_thread_end();
-  return err;
 }
 
 static bool innodb_init(bool init_dd, bool for_apply_log) {
@@ -2680,7 +2379,10 @@ static bool innodb_init(bool init_dd, bool for_apply_log) {
   }
 
   if (init_dd) {
-    err = dict_load_from_spaces_sdi();
+    fil_open_ibds();
+
+    dberr_t err;
+    std::tie(err, mysql_ibd_tables) = xb::prepare::dict_load_from_mysql_ibd();
     if (err != DB_SUCCESS) {
       xb::error() << "Failed to load table using tablespace SDI ";
       goto error;
@@ -2721,8 +2423,12 @@ static bool innodb_end(void) {
 
   mutex_free(&master_key_id_mutex);
 
+  for (auto table : mysql_ibd_tables) {
+    dict_table_close(table, false, false);
+  }
   srv_shutdown();
 
+  xb::prepare::clear_dd_cache_maps();
   os_event_global_destroy();
 
   free(internal_innobase_data_file_path);
@@ -4232,7 +3938,7 @@ void xtrabackup_backup_func(void) {
 
   recv_is_making_a_backup = true;
   bool data_copying_error = false;
-  std::shared_ptr<xb::dd_tablespaces> xb_dd_space;
+  std::shared_ptr<xb::backup::dd_space_ids> xb_dd_spaces;
   init_mysql_environment();
 
   if (print_instant_versioned_tables(mysql_connection)) exit(EXIT_FAILURE);
@@ -4265,8 +3971,8 @@ void xtrabackup_backup_func(void) {
   srv_backup_mode = true;
 
   if (opt_lock_ddl) {
-    xb_dd_space = xb::build_space_id_set(mysql_connection);
-    ut_ad(xb_dd_space->size());
+    xb_dd_spaces = xb::backup::build_space_id_set(mysql_connection);
+    ut_ad(xb_dd_spaces->size());
   }
 
   /* We can safely close files if we don't allow DDL during the
@@ -4453,7 +4159,7 @@ void xtrabackup_backup_func(void) {
                << " threads for parallel data files transfer";
   }
 
-  auto it = datafiles_iter_new(xb_dd_space);
+  auto it = datafiles_iter_new(xb_dd_spaces);
   if (it == NULL) {
     xb::error() << "datafiles_iter_new() failed.";
     exit(EXIT_FAILURE);
@@ -4910,6 +4616,8 @@ static void xtrabackup_stats_func(int argc, char **argv) {
   srv_read_only_mode = true;
 
   init_mysql_environment();
+  my_thread_init();
+  THD *thd = create_internal_thd();
   if (!xtrabackup::components::keyring_init_offline()) {
     xb::error() << "failed to init keyring component";
     exit(EXIT_FAILURE);
@@ -4970,9 +4678,6 @@ static void xtrabackup_stats_func(int argc, char **argv) {
   /* gather stats */
 
   {
-    my_thread_init();
-    THD *thd = create_internal_thd();
-
     dict_table_t *sys_tables = nullptr;
     dict_table_t *table = nullptr;
     btr_pcur_t pcur;
@@ -5031,8 +4736,6 @@ static void xtrabackup_stats_func(int argc, char **argv) {
 
     mutex_exit(&(dict_sys->mutex));
 
-    destroy_internal_thd(thd);
-    my_thread_end();
   }
 
   putc('\n', stdout);
@@ -5046,6 +4749,8 @@ static void xtrabackup_stats_func(int argc, char **argv) {
 
   xb_keyring_shutdown();
 
+  destroy_internal_thd(thd);
+  my_thread_end();
   cleanup_mysql_environment();
 }
 
@@ -6554,8 +6259,12 @@ static bool xb_export_cfg_write_index_fields(
       }
       /* Write DD::Column specific info for dropped columns */
       if (col->is_instant_dropped()) {
-        auto dd_search = g_dd_tables.find(table->space);
-        if (dd_search != g_dd_tables.end()) {
+        mutex_exit(&dict_sys->mutex);
+        std::unique_ptr<dd::Table> dd_table =
+            xb::prepare::get_dd_Table(table->space, table->id);
+        mutex_enter(&dict_sys->mutex);
+
+        if (dd_table != nullptr) {
           /* Total metadata to be written
           1 byte for is NULLABLE
           1 byte for is_unsigned
@@ -6568,8 +6277,7 @@ static bool xb_export_cfg_write_index_fields(
           byte _row[METADATA_SIZE];
 
           ut_ad(col->is_instant_dropped());
-          const dd::Table *dd_table = dd_search->second.get();
-          const dd::Column *column = dd_find_column(dd_table, col_name);
+          const dd::Column *column = dd_find_column(dd_table.get(), col_name);
           ut_ad(column != nullptr);
 
           byte *_ptr = _row;
@@ -7068,6 +6776,8 @@ skip_check:
   }
 
   init_mysql_environment();
+  my_thread_init();
+  THD *thd = create_internal_thd();
 
   /* Create logfiles for recovery from 'xtrabackup_logfile', before start InnoDB
    */
@@ -7250,13 +6960,7 @@ skip_check:
       exit(EXIT_FAILURE);
     }
 
-    my_thread_init();
-
-    THD *thd = create_internal_thd();
-
     while ((node = datafiles_iter_next(it)) != NULL) {
-      dict_table_t *table;
-
       space = node->space;
 
       /* treat file_per_table only */
@@ -7264,35 +6968,38 @@ skip_check:
         continue;
       }
 
-      table = dd_table_open_on_name(thd, NULL, space->name, false, true);
-
-      mutex_enter(&(dict_sys->mutex));
-      if (!table) {
+      auto result = xb::prepare::dict_load_from_spaces_sdi(space->id);
+      dberr_t err = std::get<0>(result);
+      auto table_vec = std::get<1>(result);
+      if (err != DB_SUCCESS) {
         xb::error() << "cannot find dictionary record of table " << space->name;
-        goto next_node;
+        ut_ad(table_vec.empty());
+        continue;
       }
 
-      /* Write transfer key for tablespace file */
-      if (!xb_export_cfp_write(table)) {
-        goto next_node;
-      }
+      // It is possible that partition IBD has multiple tables
+      for (auto table : table_vec) {
+        mutex_enter(&(dict_sys->mutex));
+        /* Write transfer key for tablespace file */
+        fil_space_t *sp = fil_space_get(table->space);
+        if (!xb_export_cfp_write(table)) {
+          goto next_node;
+        }
 
-      /* Write MySQL 8.0 .cfg file */
-      if (!xb_export_cfg_write(node, table)) {
-        goto next_node;
-      }
+        /* Write MySQL 8.0 .cfg file */
+        if (!xb_export_cfg_write(&sp->files[0], table)) {
+          goto next_node;
+        }
 
-    next_node:
-      if (table != nullptr) {
-        dd_table_close(table, thd, nullptr, true);
+      next_node:
+        if (table != nullptr) {
+          dd_table_close(table, thd, nullptr, true);
+        }
+        mutex_exit(&(dict_sys->mutex));
       }
-      mutex_exit(&(dict_sys->mutex));
     }
 
     datafiles_iter_free(it);
-
-    destroy_internal_thd(thd);
-    my_thread_end();
   }
 
   /* Check whether the log is applied enough or not. */
@@ -7372,6 +7079,8 @@ skip_check:
 
   xb_keyring_shutdown();
 
+  destroy_internal_thd(thd);
+  my_thread_end();
   Tablespace_map::instance().serialize();
 
   cleanup_mysql_environment();
@@ -7383,6 +7092,8 @@ skip_check:
 error_cleanup:
 
   xb_keyring_shutdown();
+  destroy_internal_thd(thd);
+  my_thread_end();
 
   xtrabackup_close_temp_log(false);
 
@@ -8029,6 +7740,10 @@ int main(int argc, char **argv) {
 
   /* Logs xtrabackup generated timestamps in local timezone instead of UTC */
   opt_log_timestamps = 1;
+  /* This variable determines the size of dict_table_t* cache in InnoDB. This is
+  default and it is sufficient because rollback is single threaded and we only
+  open tables one by one */
+  table_def_size = 4000;
 
   setup_signals();
 

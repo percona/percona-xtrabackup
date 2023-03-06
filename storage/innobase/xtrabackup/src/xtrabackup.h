@@ -238,7 +238,7 @@ void xtrabackup_io_throttling(void);
 bool xb_write_delta_metadata(const char *filename, const xb_delta_info_t *info);
 
 datafiles_iter_t *datafiles_iter_new(
-    const std::shared_ptr<const xb::dd_tablespaces>);
+    const std::shared_ptr<const xb::backup::dd_space_ids>);
 fil_node_t *datafiles_iter_next(datafiles_iter_t *it);
 void datafiles_iter_free(datafiles_iter_t *it);
 

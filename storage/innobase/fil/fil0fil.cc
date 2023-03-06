@@ -377,8 +377,14 @@ struct Char_Ptr_Compare {
 class Tablespace_files {
  public:
   using Names = std::vector<std::string, ut::allocator<std::string>>;
-  using Paths = std::unordered_map<space_id_t, Names>;
+#ifdef XTRABACKUP
+  /** Use std::map instead of std::unorded_map because we want to use
+  parallel threads. Parallel threads operate on part of "map".
+  The need to partition the map into ranges requires order */
+#endif /* XTRABACKUP */
+  using Paths = std::map<space_id_t, Names>;
   using Undo_num2id = std::unordered_map<space_id_t, space_id_t>;
+  using Const_iter = Paths::const_iterator;
 
   /** Default constructor
   @param[in]    dir             Directory that the files are under */
@@ -469,6 +475,13 @@ class Tablespace_files {
   const std::string &path() const { return m_dir.path(); }
 
  private:
+  /** Open IBD tablespaces and load them to cache
+  @param[in]  start   Start of slice
+  @param[in]  end   End of slice
+  @param[in]  thread_id Thread ID */
+  void open_ibds_slice(const Const_iter &start, const Const_iter &end,
+                       size_t thread_id) const;
+
   /* Note:  The file names in m_ibd_paths and m_undo_paths are relative
   to m_real_path. */
 
@@ -2231,14 +2244,70 @@ size_t Tablespace_files::add(space_id_t space_id, const std::string &name) {
   return names->size();
 }
 
-/** Open all known tablespaces. */
-void Tablespace_files::open_ibds() const {
-  for (auto path : m_ibd_paths) {
-    for (auto name : path.second) {
-      fil_open_for_xtrabackup(m_dir.path() + name,
-                              name.substr(0, name.length() - 4));
+/** Open IBD tablespaces and load them into cache fil_space_t*
+@param[in]  start   Start of slice
+@param[in]  end   End of slice
+@param[in]  thread_id Thread ID */
+void Tablespace_files::open_ibds_slice(const Const_iter &start,
+                                       const Const_iter &end,
+                                       size_t thread_id) const {
+  size_t count = 0;
+  bool printed_msg = false;
+  auto start_time = std::chrono::steady_clock::now();
+
+  for (auto it = start; it != end; ++it) {
+    for (auto name : it->second) {
+      dberr_t err = fil_open_for_xtrabackup(m_dir.path() + name,
+                                            name.substr(0, name.length() - 4));
+
+      if (err != DB_SUCCESS && err != DB_TABLESPACE_EXISTS &&
+          err != DB_TABLESPACE_NOT_FOUND && err != DB_TABLESPACE_DELETED) {
+        xb::info() << "Unable to open tablespace " << SQUOTE(name)
+                   << ". Possibly dropped. InnoDB DB_ error code is " << err;
+      }
+    }
+    ++count;
+
+    if (std::chrono::steady_clock::now() - start_time >= PRINT_INTERVAL) {
+      xb::info() << "Thread# " << thread_id << " - Opened " << count << "/"
+                 << std::distance(start, end) << " tablespaces";
+
+      start_time = std::chrono::steady_clock::now();
+
+      printed_msg = true;
     }
   }
+
+  if (printed_msg) {
+    xb::info() << "Thread# " << thread_id << " Opened " << count
+               << " tablespaces";
+  }
+}
+
+/** Open all known tablespaces. */
+void Tablespace_files::open_ibds() const {
+  using std::placeholders::_1;
+  using std::placeholders::_2;
+  using std::placeholders::_3;
+
+  /* Get the number of additional threads needed to scan the files. */
+  size_t n_threads = fil_get_scan_threads(m_ibd_paths.size());
+
+  std::function<void(const Const_iter &, const Const_iter &, size_t)> open =
+      std::bind(&Tablespace_files::open_ibds_slice, this, _1, _2, _3);
+
+  auto begin = std::chrono::high_resolution_clock::now();
+
+  // The parallel for loop. Loads InnoDB tablespaces into cache.
+  par_for(PFS_NOT_INSTRUMENTED, m_ibd_paths, n_threads, open);
+
+  auto end = std::chrono::high_resolution_clock::now();
+  auto elapsed =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
+
+  xb::info() << "Completed loading of " << m_ibd_paths.size()
+             << " tablespaces into cache in " << elapsed.count() * 1e-9
+             << " seconds";
 }
 
 /** Reads data from a space to a buffer. Remember that the possible incomplete
@@ -11435,10 +11504,11 @@ dberr_t fil_open_for_xtrabackup(const std::string &path,
   return (DB_SUCCESS);
 }
 
-/** Open IBD tablespaces.
+/** Open IBD tablespaces and load them to cache
 @param[in]  start   Start of slice
 @param[in]  end   End of slice
-@param[in]  thread_id Thread ID */
+@param[in]  thread_id Thread ID
+@param[in,out]  result  result of the open */
 void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
                                size_t thread_id, bool &result) {
   if (!result) return;

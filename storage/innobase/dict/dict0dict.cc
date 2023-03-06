@@ -1191,6 +1191,10 @@ void dict_table_add_to_cache(dict_table_t *table, bool can_be_evicted) {
   ut_ad(dict_lru_validate());
   ut_ad(dict_sys_mutex_own());
 
+  // In PXB, we always load tables as evictable. We do not have create table
+  // and upgrade from 5.7 scenarios. These paths can load table as non-evictable
+  IF_XB(ut_ad(can_be_evicted);)
+
   table->cached = true;
 
   const auto name_hash_value = ut::hash_string(table->name.m_name);

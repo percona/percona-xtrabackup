@@ -259,6 +259,13 @@ enum dd_index_keys {
   DD_INDEX__LAST
 };
 
+/**
+  All DD tables would contain DB_TRX_ID and DB_ROLL_PTR fields
+  before other fields. This offset indicates the position at
+  which the first DD column is located.
+*/
+const int DD_FIELD_OFFSET = 2;
+
 /** InnoDB private key strings for dd::Index or dd::Partition_index.
 @see dd_index_keys */
 const char *const dd_index_key_strings[DD_INDEX__LAST] = {
@@ -276,6 +283,7 @@ static const dd::String_type data_file_name_key("data_file_name");
 /** Table names needed to process I_S queries. */
 static const dd::String_type dd_tables_name("mysql/tables");
 static const dd::String_type dd_partitions_name("mysql/table_partitions");
+static const dd::String_type dd_index_partitions("mysql/index_partitions");
 static const dd::String_type dd_tablespaces_name("mysql/tablespaces");
 static const dd::String_type dd_indexes_name("mysql/indexes");
 static const dd::String_type dd_columns_name("mysql/columns");
@@ -1173,10 +1181,28 @@ int dd_table_open_on_dd_obj(dd::cache::Dictionary_client *client,
                             dict_table_t *&table, THD *thd,
                             const dd::String_type *schema_name, bool implicit);
 
-int dd_table_load_on_dd_obj(dd::cache::Dictionary_client *client,
-                            space_id_t space_id, const dd::Table &dd_table,
-                            dict_table_t *&table, THD *thd,
-                            const dd::String_type *schema_name, bool implicit);
+#ifdef XTRABACKUP
+/** Used by PXB. Instantiate an InnoDB in-memory table metadata (dict_table_t)
+based on a Global DD object or MYSQL table definition.
+@param[in,out]  client    data dictionary client
+@param[in]  space_id  ID of the tablespace where the table residing
+@param[in]  dd_table  Global DD table object
+@param[in]  table_id  Table_id of the InnoDB table to be loaded. If this is 0,
+                      all partitions will be loaded
+@param[in]  thd   thread THD
+@param[in]  schema_name  table schema name
+@param[in]  implicit  whether it is file per table tablespace
+@return a tuple <a,b>
+a - 0 for succcess, non-zero for error
+b - std::vector<dict_table_t*> object on success or empty on error */
+using xb_dict_tuple = std::tuple<int, std::vector<dict_table_t *>>;
+xb_dict_tuple dd_table_load_on_dd_obj(dd::cache::Dictionary_client *client,
+                                      space_id_t space_id,
+                                      const dd::Table &dd_table,
+                                      table_id_t table_id, THD *thd,
+                                      const dd::String_type *schema_name,
+                                      bool implicit);
+#endif
 
 /** Instantiate an InnoDB in-memory table metadata (dict_table_t)
 based on a Global DD object or MYSQL table definition.
