@@ -2406,6 +2406,7 @@ dberr_t srv_start(bool create_new_db IF_XB(, lsn_t to_lsn)) {
   return (DB_SUCCESS);
 }
 
+#ifndef XTRABACKUP
 /** Applier of dynamic metadata */
 struct metadata_applier {
   /** Default constructor */
@@ -2414,20 +2415,13 @@ struct metadata_applier {
   @param[in]      table   table to visit */
   void operator()(dict_table_t *table) const {
     ut_ad(dict_sys->dynamic_metadata != nullptr);
-#ifndef XTRABACKUP
     uint64_t autoinc = table->autoinc;
-#endif /* XTRABACKUP */
     dict_table_load_dynamic_metadata(table);
     /* For those tables which were not opened by
     ha_innobase::open() and not initialized by
     innobase_initialize_autoinc(), the next counter should be
     advanced properly */
-#ifdef XTRABACKUP
-    /* PXB doesn't open tables via ha_innobase::open() */
-    if (table->autoinc != ~0ULL) {
-#else
     if (autoinc != table->autoinc && table->autoinc != ~0ULL) {
-#endif /* XTRABACKUP */
       ++table->autoinc;
     }
   }
@@ -2439,6 +2433,7 @@ static void apply_dynamic_metadata() {
 
   dict_sys->for_each_table(applier);
 }
+#endif /* XTRABACKUP */
 
 /** On a restart, initialize the remaining InnoDB subsystems so that
 any tables (including data dictionary tables) can be accessed. */
@@ -2491,8 +2486,17 @@ void srv_dict_recover_on_restart() {
 
   trx_clear_resurrected_table_ids();
 
+#ifndef XTRABACKUP
+  /* PXB applies dynamic metadata on table open via this path.
+  dict_load_tables_from_space_id()->dd_table_load_on_dd_obj()->
+  dd_table_load_part()->dd_table_create_on_dd_obj(). In
+  dd_table_create_on_dd_obj(), we will load dynamic metadata
+  and also adjust the autoinc offset. Hence apply_dynamic_metadata()
+  is not necessary in PXB prepare */
+
   /* Do after all DD transactions recovery, to get consistent metadata */
   apply_dynamic_metadata();
+#endif
 
   if (srv_force_recovery < SRV_FORCE_NO_IBUF_MERGE) {
     srv_sys_tablespaces_open = true;

@@ -376,6 +376,7 @@ pid-file=${MYSQLD_PIDFILE}
 replicate-ignore-db=mysql
 replicate-ignore-db=performance_schema
 replicate-ignore-db=sys
+secure-file-priv=""
 innodb_log_file_size=48M
 ${MYSQLD_EXTRA_MY_CNF_OPTS:-}
 #core-file
@@ -1438,11 +1439,12 @@ function grep_general_log()
 function kill_query_pattern()
 {
   local condition=$1
-  run_cmd $MYSQL $MYSQL_ARGS --force --batch  test <<EOF
+  $MYSQL $MYSQL_ARGS --force --batch <<EOF
   select concat('KILL ',id,';') from information_schema.processlist
   where $condition into outfile '$MYSQLD_TMPDIR/killcondition.sql';
   source $MYSQLD_TMPDIR/killcondition.sql;
 EOF
+
   rm -f $MYSQLD_TMPDIR/killcondition.sql
 }
 

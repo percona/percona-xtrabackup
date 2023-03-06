@@ -251,6 +251,12 @@ void dict_table_add_system_columns(dict_table_t *table, mem_heap_t *heap);
 void dict_table_set_big_rows(dict_table_t *table) MY_ATTRIBUTE((nonnull));
 
 /** Adds a table object to the dictionary cache.
+Second parameter of dict_table_add_to_cache() is to make
+a table evictable or not. NEVER use "false". It is meant for "DD" tables.
+In PXB, we handle DD tables (mysql.* tables) to be non-evictable by using
+table->n_ref_count. It is incremented to 1 on load and hence not evictable.
+The DD tables are closed at end of prepare operation. Check
+'mysql_ibd_tables' in xtrabackup.cc
 @param[in,out]  table           table
 @param[in]      can_be_evicted  true if can be evicted */
 void dict_table_add_to_cache(dict_table_t *table, bool can_be_evicted);

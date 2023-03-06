@@ -345,8 +345,13 @@ void par_for(mysql_pfs_key_t pfs_key, const Container &c, size_t n, F &&f,
   workers.reserve(n);
 
   for (size_t i = 0; i < n; ++i) {
-    auto b = c.begin() + (i * slice);
-    auto e = b + slice;
+    auto b = c.begin();
+    // To make it work for std::map, we cannot use c.begin() + (i*slice)
+    // This is because std::map doesn't have a operator +
+
+    std::advance(b, i * slice);
+    auto e = b;
+    std::advance(e, slice);
 
     auto worker = os_thread_create(pfs_key, i, f, b, e, i, args...);
     worker.start();
@@ -354,7 +359,9 @@ void par_for(mysql_pfs_key_t pfs_key, const Container &c, size_t n, F &&f,
     workers.push_back(std::move(worker));
   }
 
-  f(c.begin() + (n * slice), c.end(), n, args...);
+  auto start = c.begin();
+  std::advance(start, n * slice);
+  f(start, c.end(), n, args...);
 
   for (auto &worker : workers) {
     worker.join();
