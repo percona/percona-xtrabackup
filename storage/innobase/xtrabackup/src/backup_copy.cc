@@ -65,6 +65,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "xb0xb.h"
 #include "xtrabackup_version.h"
 #include "xtrabackup_config.h"
+#include "xb_regex.h"
 #ifdef HAVE_VERSION_CHECK
 #include <version_check_pl.h>
 #endif
@@ -75,6 +76,9 @@ using std::min;
 static std::set<std::string> rsync_list;
 /* locations of tablespaces read from .isl files */
 static std::map<std::string, std::string> tablespace_locations;
+
+/* compiled regexp for valid filepath */
+xb_regex_t preg_filepath;
 
 /* the purpose of file copied */
 enum file_purpose_t {
@@ -2171,6 +2175,26 @@ cleanup:
 	return(ret);
 }
 
+/************************************************************************
+Compile is_valid_filename_path regex.
+@return true if compile suceeded, false otherwise. */
+static bool compile_filename_regex() {
+	const char *error_context = "valid_filename_path";
+	/* hypen has to be the last character */
+	const char *pattern = "^[a-zA-Z0-9\\@\\#\\_\\.\\/-]+$";
+	return compile_regex(pattern, error_context, &preg_filepath);
+}
+
+/************************************************************************
+Check if filepath is has only valid characters.
+@return true if valid, false otherwise. */
+static bool is_valid_filename_path(const char *filepath) {
+	size_t nmatch = 1;
+	xb_regmatch_t pmatch[1];
+	int match = xb_regexec(&preg_filepath, filepath, nmatch, pmatch, 0);
+	return (match == REG_NOMATCH) ? false : true;
+}
+
 bool
 decrypt_decompress_file(const char *filepath, uint thread_n)
 {
@@ -2178,6 +2202,12 @@ decrypt_decompress_file(const char *filepath, uint thread_n)
 	char buf[FN_LEN];
 	bool needs_action = false;
 
+	/* validate filepath */
+	if (!is_valid_filename_path(filepath)) {
+		msg_ts("[%02u] Error - File: %s has one or more invalid "
+		        "characters.\n", thread_n, filepath);
+		return false;
+	}
         if (escape_string_for_mysql(&my_charset_utf8mb4_general_ci, buf, 0,
                                     filepath, strlen(filepath)) == (size_t)-1) {
           msg_ts("[%02u] Error escaping file: %s\n", thread_n, filepath);
@@ -2306,6 +2336,12 @@ decrypt_decompress()
 		setenv("XBCRYPT_ENCRYPTION_KEY", xtrabackup_encrypt_key, 1);
 	}
 
+	/* compile regexp */
+	if (!compile_filename_regex()) {
+		msg_ts("Error compiling filename regex\n");
+		return(false);
+	}
+
 	ret = run_data_threads(it, decrypt_decompress_thread_func,
 		xtrabackup_parallel ? xtrabackup_parallel : 1,
 		"decrypt and decompress");
@@ -2319,6 +2355,8 @@ decrypt_decompress()
 	}
 
 	ds_data = NULL;
+
+	xb_regfree(&preg_filepath);
 
 	os_thread_free();
 
