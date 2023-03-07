@@ -1866,11 +1866,6 @@ static byte *recv_parse_or_apply_log_rec_body(
               recv_sys->recovered_lsn > incremental_start_checkpoint_lsn) {
             full_scan_tables.insert(space_id);
           }
-          /* offline backup */
-          xb::info() << "Last flushed lsn: " << backup_redo_log_flushed_lsn
-                     << " load_index lsn " << recv_sys->recovered_lsn;
-
-          xb::warn(ER_IB_MSG_717);
         }
       }
 #endif /* XTRABACKUP */
