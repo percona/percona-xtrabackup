@@ -61,7 +61,7 @@ echo "backup pid is $job_pid"
 run_inserts &
 
 # ER_IB_MSG_LOG_WRITER_WAIT_ON_CONSUMER
-while !grep -q "Redo log writer is waiting for" ${MYSQLD_ERRFILE} ; do
+while ! grep -q "Redo log writer is waiting for" ${MYSQLD_ERRFILE} ; do
 	sleep 1
 	vlog "waiting for redo log writer message in mysql error file"
 done
