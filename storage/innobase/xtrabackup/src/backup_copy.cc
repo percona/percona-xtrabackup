@@ -66,6 +66,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "space_map.h"
 #include "utils.h"
 #include "xb0xb.h"
+#include "xb_regex.h"
 
 #include <cstdlib>
 #include "backup_copy.h"
@@ -98,6 +99,9 @@ extern TYPELIB innodb_flush_method_typelib;
 /* list of files to sync for --rsync mode */
 static std::set<std::string> rsync_list;
 static std::mutex rsync_mutex;
+
+/* compiled regexp for valid filepath */
+xb_regex_t preg_filepath;
 
 /* skip these files on copy-back */
 static std::set<std::string> skip_copy_back_list;
@@ -2422,10 +2426,31 @@ cleanup:
   return (ret);
 }
 
+static bool compile_filename_regex() {
+  const char *error_context = "valid_filename_path";
+  /* hypen has to be the last character */
+  const char *pattern = "^[a-zA-Z0-9\\@\\#\\_\\.\\/-]+$";
+  return compile_regex(pattern, error_context, &preg_filepath);
+}
+
+static bool is_valid_filename_path(const char *filepath) {
+  size_t nmatch = 1;
+  xb_regmatch_t pmatch[1];
+  int match = xb_regexec(&preg_filepath, filepath, nmatch, pmatch, 0);
+  return (match == REG_NOMATCH) ? false : true;
+}
+
 bool decrypt_decompress_file(const char *filepath, uint thread_n) {
   std::stringstream cmd, message;
   char buf[FN_LEN];
   bool needs_action = false;
+
+  /* validate filepath */
+  if (!is_valid_filename_path(filepath)) {
+    xb::error() << "File: " << filepath
+                << " has one or more invalid characters.";
+    return false;
+  }
 
   if (escape_string_for_mysql(&my_charset_utf8mb4_general_ci, buf, 0, filepath,
                               strlen(filepath)) == (size_t)-1) {
@@ -2561,6 +2586,11 @@ bool decrypt_decompress() {
     setenv("XBCRYPT_ENCRYPTION_KEY", xtrabackup_encrypt_key, 1);
   }
 
+  /* compile regexp */
+  if (!compile_filename_regex()) {
+    xb::error() << "Error compiling filename regex";
+    return (false);
+  }
   ret = run_data_threads(".", decrypt_decompress_thread_func,
                          xtrabackup_parallel, "decrypt and decompress");
 
@@ -2572,6 +2602,7 @@ bool decrypt_decompress() {
 
   ds_data = NULL;
 
+  xb_regfree(&preg_filepath);
   sync_check_close();
   os_event_global_destroy();
 
