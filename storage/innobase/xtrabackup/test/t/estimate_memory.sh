@@ -6,7 +6,11 @@ fi
 . inc/common.sh
 require_debug_pxb_version
 
-
+function run_insert() {
+  while true ; do
+    mysql -e "INSERT INTO pxb_2710 VALUES (NULL); SELECT SLEEP(0.5)" test
+  done
+}
 # PXB-2710 - Predict memory at --prepare
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
@@ -144,6 +148,15 @@ rm -rf $mysql_datadir
 # PXB-2980 - Add a parameter to disable memory estimation during backup
 start_server
 backupdir=${topdir}/backup
+run_cmd $MYSQL $MYSQL_ARGS test <<EOF
+CREATE TABLE pxb_2710(a INT PRIMARY KEY AUTO_INCREMENT) ENGINE=InnoDB;
+INSERT INTO pxb_2710 VALUES (NULL);
+EOF
+innodb_wait_for_flush_all
+run_insert &
+insert_pid=$!
+trap "kill -SIGKILL $insert_pid" EXIT
+
 vlog "Test 1 - Default to off"
 mkdir ${backupdir}
 xtrabackup --backup --target-dir=${backupdir}
