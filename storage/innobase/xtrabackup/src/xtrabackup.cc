@@ -45,7 +45,6 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <mysql_com.h>
 #include <mysql_version.h>
 #include <mysqld.h>
-#include <sql_bitmap.h>
 #include "log0files_io.h"
 #include "log0types.h"
 #include "row0quiesce.h"
@@ -103,7 +102,6 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include "backup_copy.h"
 #include "backup_mysql.h"
-#include "changed_page_bitmap.h"
 #include "changed_page_tracking.h"
 #include "crc_glue.h"
 #include "ds_buffer.h"
@@ -184,7 +182,6 @@ lsn_t incremental_flushed_lsn;
 size_t incremental_redo_memory = 0;
 ulint incremental_redo_frames = 0;
 
-xb_page_bitmap *changed_page_bitmap = NULL;
 pagetracking::xb_space_map *changed_page_tracking = nullptr;
 
 char *xtrabackup_incremental_basedir = NULL; /* for --backup */
@@ -968,8 +965,8 @@ struct my_option xb_client_options[] = {
      0, GET_UINT, REQUIRED_ARG, 1, 1, UINT_MAX, 0, 0, 0},
 
     {"incremental-force-scan", OPT_XTRA_INCREMENTAL_FORCE_SCAN,
-     "Perform a full-scan incremental backup even in the presence of changed "
-     "page bitmap data or page tracking is enabled on server",
+     "Perform a full-scan incremental backup even if page tracking is enabled "
+     "on server",
      (G_PTR *)&xtrabackup_incremental_force_scan,
      (G_PTR *)&xtrabackup_incremental_force_scan, 0, GET_BOOL, NO_ARG, 0, 0, 0,
      0, 0, 0},
@@ -3299,17 +3296,8 @@ static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
     return (false);
   }
 
-  if (changed_page_tracking && changed_page_bitmap) {
-    xb::warn() << "Can't use both page bitmap and page tracking "
-               << "together. PXB will use page-tracking.";
-    xb::warn() << "To Disable bitmap on server, "
-               << "use SET GLOBAL innodb_track_changed_pages=OFF";
-  }
-
   if (changed_page_tracking) {
     read_filter = &rf_page_tracking;
-  } else if (changed_page_bitmap) {
-    read_filter = &rf_bitmap;
   } else {
     read_filter = &rf_pass_through;
   }
@@ -4456,10 +4444,6 @@ void xtrabackup_backup_func(void) {
     exit(EXIT_FAILURE);
   }
 
-  /* FLUSH CHANGED_PAGE_BITMAPS call */
-  if (!flush_changed_page_bitmaps()) {
-    exit(EXIT_FAILURE);
-  }
   debug_sync_point("xtrabackup_suspend_at_start");
 
   lsn_t page_tracking_start_lsn = 0;
@@ -4471,22 +4455,13 @@ void xtrabackup_backup_func(void) {
 
   if (xtrabackup_incremental) {
     incremental_start_checkpoint_lsn = redo_mgr.get_start_checkpoint_lsn();
-    if (!xtrabackup_incremental_force_scan) {
-      if (opt_page_tracking) {
-        changed_page_tracking = pagetracking::init(
-            redo_mgr.get_start_checkpoint_lsn(), mysql_connection);
-      } else if (have_changed_page_bitmaps) {
-        changed_page_bitmap =
-            xb_page_bitmap_init(redo_mgr.get_start_checkpoint_lsn());
-      }
+    if (!xtrabackup_incremental_force_scan && opt_page_tracking) {
+      changed_page_tracking = pagetracking::init(
+          redo_mgr.get_start_checkpoint_lsn(), mysql_connection);
     }
+
     if (changed_page_tracking) {
       xb::info() << "Using pagetracking feature for incremental backup";
-    } else if (changed_page_bitmap &&
-               incremental_lsn != redo_mgr.get_start_checkpoint_lsn()) {
-      /* Do not print that bitmaps are used when dummy bitmap
-      is build for an empty LSN range. */
-      xb::info() << "using the changed page bitmap";
     } else {
       xb::info() << "using the full scan for incremental backup";
     }
@@ -4546,13 +4521,6 @@ void xtrabackup_backup_func(void) {
     exit(EXIT_FAILURE);
   }
 
-  if (changed_page_bitmap) {
-    xb::warn()
-        << "Incremental backup using page bitmap is "
-        << "deprecated and will be removed in a future release. Please use "
-        << "--page-tracking";
-    xb_page_bitmap_deinit(changed_page_bitmap);
-  }
   if (changed_page_tracking) {
     pagetracking::deinit(changed_page_tracking);
   }

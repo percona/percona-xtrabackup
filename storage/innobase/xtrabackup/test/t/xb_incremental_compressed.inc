@@ -5,7 +5,7 @@
 #    MYSQLD_EXTRA_MY_CNF_OPTS: an extra arg to be passed for all mysqld invocations.  
 #                       Use this to set special options that influence 
 #                       incremental backups, e.g. turns on log archiving or 
-#                       changed page bitmap output.
+#                       page tracking.
 #    first_inc_suspend_command: if non-empty string, suspends incremental XB
 #                               invocation at start and executes the 
 #                               given command while it's suspended
@@ -79,7 +79,7 @@ ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=$page_size" incremental_sample
   multi_row_insert incremental_sample.test \({10001..12500},12500\)
   multi_row_insert incremental_sample.t2 \({10001..12500},12500\)
 
-  # Rotate bitmap file here and force checkpoint at the same time
+  # Force checkpoint
   shutdown_server
   start_server
 

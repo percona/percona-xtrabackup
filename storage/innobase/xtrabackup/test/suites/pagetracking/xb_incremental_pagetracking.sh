@@ -1,4 +1,4 @@
-# Test for incremental backups that use changed page bitmaps
+# Test for incremental backups that use page tracking
 
 is_64bit || skip_test "Disabled on 32-bit hosts due to LP bug #1359182"
 

@@ -2,7 +2,7 @@
 #    MYSQLD_EXTRA_MY_CNF_OPTS: an extra arg to be passed for all mysqld invocations.  
 #                       Use this to set special options that influence 
 #                       incremental backups, e.g. turns on log archiving or 
-#                       changed page bitmap output.
+#                       page tracking.
 #    ib_inc_extra_args: extra args to be passed to innobackup incremental 
 #                       backup invocations.
 #    ib_full_backup_extra_args: extra args to be passed to xtrabackup backup invocations.
@@ -41,7 +41,7 @@ ${MYSQL} ${MYSQL_ARGS} -e "create table t2 (a int(11) default null, number text 
 multi_row_insert incremental_sample.test \({101..1000},1000\)
 multi_row_insert incremental_sample.t2 \({101..1000},1000\)
 
-# Rotate bitmap file here and force checkpoint at the same time
+# Force checkpoint
 shutdown_server
 start_server
 
