@@ -243,7 +243,7 @@ install_deps() {
             PKGLIST+=" binutils-devel python3-pip python3-setuptools"
             PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make gcc"
             PKGLIST+=" rpm-build libgcrypt-devel ncurses-devel readline-devel openssl-devel gcc-c++"
-            PKGLIST+=" vim-common rpmlint patchelf python3-wheel"
+            PKGLIST+=" vim-common rpmlint patchelf python3-wheel libudev-devel"
             if [ $RHEL = 9 ]; then
                 PKGLIST+=" rsync procps-ng-devel python3-sphinx"
             else
