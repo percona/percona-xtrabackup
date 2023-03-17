@@ -251,6 +251,7 @@ install_deps() {
                 wget https://jenkins.percona.com/downloads/rpm/procps-ng-devel-3.3.15-6.el8.x86_64.rpm
                 yum -y install ./procps-ng-devel-3.3.15-6.el8.x86_64.rpm
                 rm procps-ng-devel-3.3.15-6.el8.x86_64.rpm
+                PKGLIST+=" libarchive"
             fi
             until yum -y install ${PKGLIST}; do
                 echo "waiting"
