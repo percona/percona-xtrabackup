@@ -2528,7 +2528,10 @@ dberr_t dict_load_tables_from_space_id(space_id_t space_id, THD *thd,
     }
 
     Table_Ptr g_dd_table = dd_table;
-    g_dd_tables.insert(std::make_pair(space_id, g_dd_table));
+    if (xtrabackup_export) {
+      g_dd_tables.insert(std::make_pair(space_id, g_dd_table));
+    }
+
     using Client = dd::cache::Dictionary_client;
     using Releaser = dd::cache::Dictionary_client::Auto_releaser;
 
