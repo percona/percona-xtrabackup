@@ -27,7 +27,7 @@ import sys, os
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
 
 # extensions = ['sphinx.ext.extlinks', 'sphinx.ext.todo', 
-              'sphinx.ext.coverage', 'sphinx.ext.ifconfig']
+#            'sphinx.ext.coverage', 'sphinx.ext.ifconfig']
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
