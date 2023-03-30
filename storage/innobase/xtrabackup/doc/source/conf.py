@@ -26,7 +26,7 @@ import sys, os
 # Add any Sphinx extension module names here, as strings. They can be extensions
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
 
-extensions = ['sphinx.ext.extlinks', 'sphinx.ext.todo', 
+# extensions = ['sphinx.ext.extlinks', 'sphinx.ext.todo', 
               'sphinx.ext.coverage', 'sphinx.ext.ifconfig']
 
 # Add any paths that contain templates here, relative to this directory.
@@ -151,7 +151,7 @@ extlinks = {'mysqlbug': ('http://bugs.mysql.com/bug.php?id=%s', '#'),
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
-html_theme = 'percona-theme-1-4'
+# -- html_theme = 'percona-theme-1-4'
 
 
 # Theme options are theme-specific and customize the look and feel of a theme
@@ -160,35 +160,35 @@ html_theme = 'percona-theme-1-4'
 #html_theme_options = {}
 
 # Add any paths that contain custom themes here, relative to this directory.
-html_theme_path = ['.', './percona-theme']
+# -- html_theme_path = ['.', './percona-theme']
 
 # Redirect info for Edit on Github link
-html_context = {
-    'repo_name': '/percona/percona-xtrabackup',
-    'repo_url': 'https://github.com/percona/percona-xtrabackup',
-    'edit_uri': 'edit/8.0/storage/innobase/xtrabackup/doc/source'
-}
+# -- html_context = {
+# --     'repo_name': '/percona/percona-xtrabackup',
+# --     'repo_url': 'https://github.com/percona/percona-xtrabackup',
+# --     'edit_uri': 'edit/8.0/storage/innobase/xtrabackup/doc/source'
+# -- }
 
 # The name for this set of Sphinx documents.  If None, it defaults to
 # "<project> v<release> documentation".
-html_title = ' '.join([project, version, 'Documentation'])
+# -- html_title = ' '.join([project, version, 'Documentation'])
 
 # A shorter title for the navigation bar.  Default is the same as html_title.
-html_short_title = ' '.join([project, version, 'Documentation'])
+# -- html_short_title = ' '.join([project, version, 'Documentation'])
 
 # The name of an image file (relative to this directory) to place at the top
 # of the sidebar.
-html_logo = 'percona-xtrabackup-logo.jpg'
+# -- html_logo = 'percona-xtrabackup-logo.jpg'
 
 # The name of an image file (within the static path) to use as favicon of the
 # docs.  This file should be a Windows icon file (.ico) being 16x16 or 32x32
 # pixels large.
-html_favicon = 'percona_favicon.ico'
+# -- html_favicon = 'percona_favicon.ico'
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ['_static']
+# -- html_static_path = ['_static']
 
 # If not '', a 'Last updated on:' timestamp is inserted at every page bottom,
 # using the given strftime format.
@@ -199,10 +199,10 @@ html_static_path = ['_static']
 #html_use_smartypants = True
 
 # Custom sidebar templates, maps document names to template names.
-html_sidebars = {
-        '**': ['localtoc.html', 'sourcelink.html'],
-        'using/windows': ['windowssidebar.html'],
-}
+# -- html_sidebars = {
+# --         '**': ['localtoc.html', 'sourcelink.html'],
+# --         'using/windows': ['windowssidebar.html'],
+# -- }
 
 # Additional templates that should be rendered to pages, maps page names to
 # template names.
@@ -236,8 +236,8 @@ html_sidebars = {
 
 # Output file base name for HTML help builder.
 #htmlhelp_basename = 'PerconaXtraBackupDocumentation'
-htmlhelp_basename = ''.join([''.join(project.split()),
-                             'Documentation'])
+# -- htmlhelp_basename = ''.join([''.join(project.split()),
+# --                              'Documentation'])
 
 # -- Options for LaTeX output --------------------------------------------------
 
@@ -249,25 +249,25 @@ htmlhelp_basename = ''.join([''.join(project.split()),
 
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, documentclass [howto/manual]).
-latex_documents = [
-  ('index',
-   '.'.join(['-'.join([''.join(project.split()), version]), 'tex']),
-   ' '.join([project, version, 'Documentation']),
-   u'Percona LLC and/or its affiliates', 'manual'),
-]
+# -- latex_documents = [
+# --   ('index',
+# --    '.'.join(['-'.join([''.join(project.split()), version]), 'tex']),
+# --    ' '.join([project, version, 'Documentation']),
+# --    u'Percona LLC and/or its affiliates', 'manual'),
+# -- ]
 
 # The name of an image file (relative to this directory) to place at the top of
 # the title page.
-latex_logo = 'percona-logo-color.png'
+# -- latex_logo = 'percona-logo-color.png'
 
 # For "manual" documents, if this is true, then toplevel headings are parts,
 # not chapters.
-latex_toplevel_sectioning = 'part'
+# -- latex_toplevel_sectioning = 'part'
 
-latex_elements = {
-  'classoptions': ',oneside',
-  'babel': '\\usepackage[english]{babel}'
-}
+# -- #latex_elements = {
+# --   'classoptions': ',oneside',
+# --   'babel': '\\usepackage[english]{babel}'
+# -- }
 
 # If true, show page references after internal links.
 #latex_show_pagerefs = False
