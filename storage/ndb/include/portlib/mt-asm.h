@@ -157,6 +157,35 @@ xcng(volatile unsigned * addr, int val)
 
 #define cpu_pause()  __asm__ __volatile__ ("yield")
 
+#elif defined(__riscv)
+#define NDB_HAVE_MB
+#define NDB_HAVE_RMB
+#define NDB_HAVE_WMB
+#define NDB_HAVE_XCNG
+
+#define mb() asm volatile ("fence iorw, iorw" ::: "memory")
+#define rmb() asm volatile ("fence ir, ir" ::: "memory")
+#define wmb() asm volatile ("fence ow, ow" ::: "memory")
+
+static
+inline
+int
+xcng(volatile unsigned * addr, int val)
+{
+  int prev;
+  __asm__ __volatile__ (
+    "amoswap.d.aqrl %0, %2, %1\n"
+    : "=r" (prev), "+A" (*addr)
+    : "r" (val)
+    : "memory");
+  return prev;
+}
+
+#if defined(HAVE_PAUSE_INSTRUCTION)
+#define NDB_HAVE_PAUSE
+#define cpu_pause() asm volatile ("pause")
+#endif
+
 #else
 #define NDB_NO_ASM "Unsupported architecture (gcc)"
 #endif

@@ -496,6 +496,17 @@ IF(NOT CMAKE_CROSSCOMPILING AND NOT MSVC)
     }
     " HAVE_HMT_PRIORITY_INSTRUCTION)
   ENDIF()
+
+  # Check for RISC-V Zihintpause
+  IF (processor MATCHES "riscv")
+    CHECK_C_SOURCE_COMPILES("
+    int main()
+    {
+      __asm__ __volatile__ (\"pause\");
+      return 0;
+    }
+    " HAVE_PAUSE_INSTRUCTION)
+  ENDIF()
 ENDIF()
   
 INCLUDE (CheckIncludeFileCXX)
