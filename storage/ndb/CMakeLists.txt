@@ -21,6 +21,10 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 # Add both MySQL and NDB cmake repositories to search path
+IF(WITH_XTRABACKUP)
+  OPTION(WITH_NDBCLUSTER_STORAGE_ENGINE "Disable NDB for PXB" OFF)
+ENDIF()
+
 SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
     ${CMAKE_SOURCE_DIR}/cmake
     ${CMAKE_SOURCE_DIR}/storage/ndb/cmake)
