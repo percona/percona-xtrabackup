@@ -1,7 +1,7 @@
 jobs:
 - job: BiDiScan
   pool:
-    vmImage: 'ubuntu-18.04'
+    vmImage: 'ubuntu-latest'
 
   steps:
   - checkout: self
