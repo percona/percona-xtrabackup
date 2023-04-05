@@ -103,94 +103,6 @@ static void rf_pass_through_deinit(
 /*!<in: read filter context */
 {}
 
-/****************************************************************/ /**
- Initialize the changed page bitmap-based read filter.  Assumes that
- the bitmap is already set up in changed_page_bitmap.  */
-static void rf_bitmap_init(
-    /*===========*/
-    xb_read_filt_ctxt_t *ctxt,  /*!<in/out: read filter
-                                context */
-    const xb_fil_cur_t *cursor, /*!<in: read cursor */
-    ulint space_id)             /*!<in: space id  */
-{
-  common_init(ctxt, cursor);
-  ctxt->bitmap_range = xb_page_bitmap_range_init(changed_page_bitmap, space_id);
-  ctxt->filter_batch_end = 0;
-}
-
-/****************************************************************/ /**
- Get the next batch of pages for the bitmap read filter.  */
-static void rf_bitmap_get_next_batch(
-    /*=====================*/
-    xb_fil_cur_t *cursor,       /*!< in/out: source file cursor */
-    uint64_t *read_batch_start, /*!<out: starting read
-                                   offset in bytes for the
-                                   next batch of pages */
-    uint64_t *read_batch_len)   /*!<out: length in
-                                   bytes of the next batch
-                                   of pages */
-{
-  xb_read_filt_ctxt_t *ctxt = &cursor->read_filter_ctxt;
-  ulint start_page_id = ctxt->offset / ctxt->page_size;
-
-  xb_a(ctxt->offset % ctxt->page_size == 0);
-
-  if (start_page_id == ctxt->filter_batch_end) {
-    /* Used up all the previous bitmap range, get some more */
-    ulint next_page_id;
-
-    /* Find the next changed page using the bitmap */
-    next_page_id = xb_page_bitmap_range_get_next_bit(ctxt->bitmap_range, true);
-
-    if (next_page_id == ULINT_UNDEFINED) {
-      *read_batch_len = 0;
-      return;
-    }
-
-    ctxt->offset = next_page_id * ctxt->page_size;
-
-    /* Find the end of the current changed page block by searching
-    for the next cleared bitmap bit */
-    ctxt->filter_batch_end =
-        xb_page_bitmap_range_get_next_bit(ctxt->bitmap_range, false);
-    xb_a(next_page_id < ctxt->filter_batch_end);
-  }
-
-  *read_batch_start = ctxt->offset;
-  if (ctxt->offset >= ctxt->data_file_size) {
-    *read_batch_len = 0;
-    return;
-  }
-  if (ctxt->filter_batch_end == ULINT_UNDEFINED) {
-    /* No more cleared bits in the bitmap, need to copy all the
-    remaining pages.  */
-    *read_batch_len = ctxt->data_file_size - ctxt->offset;
-  } else {
-    *read_batch_len = ctxt->filter_batch_end * ctxt->page_size - ctxt->offset;
-  }
-
-  /* If the page block is larger than the buffer capacity, limit it to
-  buffer capacity.  The subsequent invocations will continue returning
-  the current block in buffer-sized pieces until ctxt->filter_batch_end
-  is reached, trigerring the next bitmap query.  */
-  if (*read_batch_len > ctxt->buffer_capacity) {
-    *read_batch_len = ctxt->buffer_capacity;
-  }
-
-  xb_a(ctxt->offset % ctxt->page_size == 0);
-  xb_a(*read_batch_start % ctxt->page_size == 0);
-  xb_a(*read_batch_len % ctxt->page_size == 0);
-}
-
-/****************************************************************/ /**
- Deinitialize the changed page bitmap-based read filter.  */
-static void rf_bitmap_deinit(
-    /*=============*/
-    xb_read_filt_ctxt_t *ctxt) /*!<in/out: read filter context */
-{
-  xb_page_bitmap_range_deinit(ctxt->bitmap_range);
-}
-
 /** Initialize the page tracking based read filter.  Assumes that
 the space_map is already set up in changed_page_bitmap.
 @param[in/out] ctxt     read filter context
@@ -338,10 +250,6 @@ static void rf_page_tracking_deinit(xb_read_filt_ctxt_t *ctxt
 xb_read_filt_t rf_pass_through = {&rf_pass_through_init,
                                   &rf_pass_through_get_next_batch,
                                   &rf_pass_through_deinit, &common_update};
-
-/* The changed page bitmap-based read filter */
-xb_read_filt_t rf_bitmap = {&rf_bitmap_init, &rf_bitmap_get_next_batch,
-                            &rf_bitmap_deinit, &common_update};
 
 /* The page tracking based read filter */
 xb_read_filt_t rf_page_tracking = {&rf_page_tracking_init,

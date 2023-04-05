@@ -22,7 +22,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #define XB_XTRABACKUP_H
 
 #include <my_getopt.h>
-#include "changed_page_bitmap.h"
 #include "changed_page_tracking.h"
 #include "datasink.h"
 #include "mysql.h"
@@ -79,7 +78,6 @@ extern ds_ctxt_t *ds_meta;
 extern ds_ctxt_t *ds_data;
 extern ds_ctxt_t *ds_uncompressed_data;
 
-extern xb_page_bitmap *changed_page_bitmap;
 extern pagetracking::xb_space_map *changed_page_tracking;
 
 extern ulint xtrabackup_rebuild_threads;

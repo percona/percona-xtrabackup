@@ -96,7 +96,6 @@ unsigned long mysql_server_version = 0;
 unsigned long xb_backup_version = 0;
 
 /* server capabilities */
-bool have_changed_page_bitmaps = false;
 bool have_backup_locks = false;
 bool have_lock_wait_timeout = false;
 bool have_galera_enabled = false;
@@ -441,7 +440,6 @@ bool get_mysql_vars(MYSQL *connection) {
   char *innodb_checksum_algorithm_var = nullptr;
   char *innodb_redo_log_encrypt_var = nullptr;
   char *innodb_undo_log_encrypt_var = nullptr;
-  char *innodb_track_changed_pages_var = nullptr;
   char *server_plugin_dir_var = nullptr;
   char *server_uuid_var = nullptr;
   char *rocksdb_datadir_var = nullptr;
@@ -476,7 +474,6 @@ bool get_mysql_vars(MYSQL *connection) {
       {"innodb_log_checksums", &innodb_log_checksums_var},
       {"innodb_redo_log_encrypt", &innodb_redo_log_encrypt_var},
       {"innodb_undo_log_encrypt", &innodb_undo_log_encrypt_var},
-      {"innodb_track_changed_pages", &innodb_track_changed_pages_var},
       {"server_uuid", &server_uuid_var},
       {"plugin_dir", &server_plugin_dir_var},
       {"rocksdb_datadir", &rocksdb_datadir_var},
@@ -642,11 +639,6 @@ bool get_mysql_vars(MYSQL *connection) {
     strncpy(server_uuid, server_uuid_var, Encryption::SERVER_UUID_LEN);
   }
 
-  if (innodb_track_changed_pages_var != nullptr &&
-      strcasecmp(innodb_track_changed_pages_var, "ON") == 0) {
-    have_changed_page_bitmaps = true;
-  }
-
   if (!check_if_param_set("rocksdb_datadir") && rocksdb_datadir_var &&
       *rocksdb_datadir_var) {
     opt_rocksdb_datadir =
@@ -695,17 +687,6 @@ out:
  Query the server to find out what backup capabilities it supports.
  @return	true on success. */
 bool detect_mysql_capabilities_for_backup() {
-  if (xtrabackup_incremental) {
-    /* INNODB_CHANGED_PAGES are listed in
-    INFORMATION_SCHEMA.PLUGINS in MariaDB, but
-    FLUSH NO_WRITE_TO_BINLOG CHANGED_PAGE_BITMAPS
-    is not supported for versions below 10.1.6
-    (see MDEV-7472) */
-    if (server_flavor == FLAVOR_MARIADB && mysql_server_version < 100106) {
-      have_changed_page_bitmaps = false;
-    }
-  }
-
   /* do some sanity checks */
   if (opt_galera_info && !have_galera_enabled) {
     xb::info() << "--galera-info is specified on the command "
@@ -2139,15 +2120,6 @@ bool select_history() {
     if (!select_incremental_lsn_from_history(&incremental_lsn)) {
       return (false);
     }
-  }
-  return (true);
-}
-
-bool flush_changed_page_bitmaps() {
-  if (xtrabackup_incremental && have_changed_page_bitmaps &&
-      !xtrabackup_incremental_force_scan) {
-    xb_mysql_query(mysql_connection,
-                   "FLUSH NO_WRITE_TO_BINLOG CHANGED_PAGE_BITMAPS", false);
   }
   return (true);
 }

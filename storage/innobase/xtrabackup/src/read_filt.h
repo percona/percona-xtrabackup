@@ -25,7 +25,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #ifndef XB_READ_FILT_H
 #define XB_READ_FILT_H
 
-#include "changed_page_bitmap.h"
 #include "changed_page_tracking.h"
 
 struct xb_fil_cur_t;
@@ -36,14 +35,10 @@ struct xb_read_filt_ctxt_t {
   uint64_t data_file_size;     /*!< data file size */
   uint64_t buffer_capacity;    /*!< read buffer capacity */
   ulint space_id;              /*!< space id */
-  /* The following fields used only in bitmap filter */
-  /* Move these to union if any other filters are added in future */
-  xb_page_bitmap_range *bitmap_range; /*!< changed page bitmap range
-                                      iterator for space_id */
   ulint page_size;                    /*!< page size */
   ulint filter_batch_end;             /*!< the ending page id of the
                                       current changed page block in
-                                      the bitmap */
+                                      the page tracking */
 };
 
 /* The read filter */
@@ -58,7 +53,6 @@ struct xb_read_filt_t {
 };
 
 extern xb_read_filt_t rf_pass_through;
-extern xb_read_filt_t rf_bitmap;
 extern xb_read_filt_t rf_page_tracking;
 
 #endif

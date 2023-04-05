@@ -875,40 +875,11 @@ function grep_count()
 function check_full_scan_inc_backup()
 {
     local xb_performed_full_scan_inc_backup="using the full scan for incremental backup"
-    local xb_performed_bitmap_backup="using the changed page bitmap"
     local xb_performed_pagetracking_inc_backup="using the pagetracking"
 
     if ! grep -q "$xb_performed_full_scan_inc_backup" $OUTFILE ;
     then
         vlog "xtrabackup did not perform a full scan for the incremental backup."
-        exit -1
-    fi
-    if grep -q "$xb_performed_bitmap_backup" $OUTFILE ;
-    then
-        vlog "xtrabackup appeared to use bitmaps instead of full scan for the incremental backup."
-        exit -1
-    fi
-    if grep -q "$xb_performed_pagetracking_inc_backup" $OUTFILE ;
-    then
-        vlog "xtrabackup appeared to use pagtracking instead of full scan for the incremental backup."
-        exit -1
-    fi
-}
-
-function check_bitmap_inc_backup()
-{
-    local xb_performed_full_scan_inc_backup="using the full scan for incremental backup"
-    local xb_performed_bitmap_backup="using the changed page bitmap"
-    local xb_performed_pagetracking_inc_backup="using the pagetracking"
-
-    if ! grep -q "$xb_performed_bitmap_backup" $OUTFILE ;
-    then
-        vlog "xtrabackup did not use bitmaps for the incremental backup."
-        exit -1
-    fi
-    if grep -q "$xb_performed_full_scan_inc_backup" $OUTFILE ;
-    then
-        vlog "xtrabackup used a full scan instead of bitmaps for the incremental backup."
         exit -1
     fi
     if grep -q "$xb_performed_pagetracking_inc_backup" $OUTFILE ;
@@ -921,7 +892,6 @@ function check_bitmap_inc_backup()
 function check_pagetracking_inc_backup()
 {
     local xb_performed_full_scan_inc_backup="using the full scan for incremental backup"
-    local xb_performed_bitmap_backup="using the changed page bitmap"
     local xb_performed_pagetracking_inc_backup="Using pagetracking feature for incremental backup"
 
     if ! grep -q "$xb_performed_pagetracking_inc_backup" $OUTFILE ;
@@ -929,14 +899,9 @@ function check_pagetracking_inc_backup()
         vlog "xtrabackup did not use pagtracking for the incremental backup."
         exit -1
     fi
-    if grep -q "$xb_performed_bitmap_backup" $OUTFILE ;
-    then
-        vlog "xtrabackup used bitmaps for the incremental backup."
-        exit -1
-    fi
     if grep -q "$xb_performed_full_scan_inc_backup" $OUTFILE ;
     then
-        vlog "xtrabackup used a full scan instead of bitmaps for the incremental backup."
+        vlog "xtrabackup used a full scan instead of pagtracking for the incremental backup."
         exit -1
     fi
 }
