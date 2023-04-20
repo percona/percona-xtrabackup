@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2022, Oracle and/or its affiliates.
+# Copyright (c) 2006, 2023, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -22,6 +22,7 @@
 
 ADD_WSHADOW_WARNING()
 DISABLE_MISSING_PROFILE_WARNING()
+MSVC_CPPCHECK_DISABLE()
 
 IF(NOT CMAKE_CROSSCOMPILING)
   MYSQL_ADD_EXECUTABLE(comp_err
@@ -126,20 +127,32 @@ MYSQL_ADD_EXECUTABLE(perror
   LINK_LIBRARIES mysys
   SKIP_INSTALL
   )
-IF(BUILD_BUNDLED_LZ4)
+IF(WITH_LZ4 STREQUAL "bundled")
   MYSQL_ADD_EXECUTABLE(lz4_decompress
     lz4_decompress.cc
     COMPONENT Server
+<<<<<<< HEAD
     LINK_LIBRARIES ${LZ4_LIBRARY} mysys
     SKIP_INSTALL
+||||||| ce0de82d3aa
+    LINK_LIBRARIES ${LZ4_LIBRARY} mysys
+=======
+    LINK_LIBRARIES ext::lz4 mysys
+>>>>>>> mysql-8.0.33
     )
 ENDIF()
 
 MYSQL_ADD_EXECUTABLE(zlib_decompress
   zlib_decompress.cc
   COMPONENT Server
+<<<<<<< HEAD
   LINK_LIBRARIES ${ZLIB_LIBRARY} mysys
     SKIP_INSTALL
+||||||| ce0de82d3aa
+  LINK_LIBRARIES ${ZLIB_LIBRARY} mysys
+=======
+  LINK_LIBRARIES ext::zlib mysys
+>>>>>>> mysql-8.0.33
   )
 
 # All targets below belong to COMPONENT Server and depend on InnoDB.
@@ -161,8 +174,14 @@ MYSQL_ADD_EXECUTABLE(innochecksum
   innochecksum.cc
   COMPONENT Server
   DEPENDENCIES GenError
+<<<<<<< HEAD
   LINK_LIBRARIES mysys innodb_zipdecompress ${LZ4_LIBRARY}
   SKIP_INSTALL
+||||||| ce0de82d3aa
+  LINK_LIBRARIES mysys innodb_zipdecompress ${LZ4_LIBRARY}
+=======
+  LINK_LIBRARIES mysys innodb_zipdecompress ext::lz4 extra::rapidjson
+>>>>>>> mysql-8.0.33
   )
 TARGET_COMPILE_DEFINITIONS(innochecksum PRIVATE UNIV_NO_ERR_MSGS UNIV_LIBRARY)
 IF(MY_COMPILER_IS_GNU_OR_CLANG)
@@ -181,8 +200,14 @@ MYSQL_ADD_EXECUTABLE(ibd2sdi
   ibd2sdi.cc
   COMPONENT Server
   DEPENDENCIES GenError
+<<<<<<< HEAD
   LINK_LIBRARIES mysys innodb_zipdecompress ${LZ4_LIBRARY}
   SKIP_INSTALL
+||||||| ce0de82d3aa
+  LINK_LIBRARIES mysys innodb_zipdecompress ${LZ4_LIBRARY}
+=======
+  LINK_LIBRARIES mysys innodb_zipdecompress ext::lz4 extra::rapidjson
+>>>>>>> mysql-8.0.33
   )
 TARGET_COMPILE_DEFINITIONS(ibd2sdi PRIVATE UNIV_NO_ERR_MSGS UNIV_LIBRARY DISABLE_PSI_MEMORY)
 IF(MY_COMPILER_IS_GNU_OR_CLANG)

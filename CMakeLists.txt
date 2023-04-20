@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2022, Oracle and/or its affiliates.
+# Copyright (c) 2006, 2023, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -316,7 +316,7 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
     IF(LINUX_RHEL)
       MESSAGE(STATUS "This is ${MATCH_FSYS} as found from 'rpm -qf /'")
     ENDIF()
-    IF(LINUX_RHEL AND NOT LINUX_RHEL9)
+    IF(LINUX_RHEL)
       MESSAGE(STATUS "Looking for a devtoolset compiler")
       IF(LINUX_RHEL6)
         SET(ALTERNATIVE_PATHS "/opt/rh/devtoolset-8")
@@ -327,8 +327,8 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
         ELSE()
           SET(ALTERNATIVE_PATHS "/opt/rh/devtoolset-11")
         ENDIF()
-      ELSEIF(LINUX_RHEL8)
-        SET(ALTERNATIVE_PATHS "/opt/rh/gcc-toolset-11")
+      ELSEIF(LINUX_RHEL8 OR LINUX_RHEL9)
+        SET(ALTERNATIVE_PATHS "/opt/rh/gcc-toolset-12")
       ENDIF()
 
       FOREACH(OPT_PATH ${ALTERNATIVE_PATHS})
@@ -385,9 +385,11 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
             SET(DEV_PACKAGES
               "devtoolset-11-gcc devtoolset-11-gcc-c++ devtoolset-11-binutils")
           ENDIF()
-        ELSEIF(LINUX_RHEL8)
+        ELSEIF(LINUX_RHEL8 OR LINUX_RHEL9)
           SET(DEV_PACKAGES
-            "gcc-toolset-11-gcc gcc-toolset-11-gcc-c++ gcc-toolset-11-binutils")
+            "gcc-toolset-12-gcc gcc-toolset-12-gcc-c++ gcc-toolset-12-binutils")
+          STRING_APPEND(DEV_PACKAGES " gcc-toolset-12-annobin-annocheck")
+          STRING_APPEND(DEV_PACKAGES " gcc-toolset-12-annobin-plugin-gcc")
         ENDIF()
         MESSAGE(WARNING
           "Could not find devtoolset compiler/linker in ${ALTERNATIVE_PATHS}")
@@ -838,6 +840,9 @@ INCLUDE(fprofile)
 INCLUDE(gloves)
 INCLUDE(fido2)
 INCLUDE(win_jemalloc)
+INCLUDE(msvc_cppcheck)
+
+MSVC_CPPCHECK()
 
 IF(UNIX)
   OPTION(WITH_VALGRIND "Valgrind instrumentation" OFF)
@@ -1192,6 +1197,11 @@ IF(WITH_ASAN AND WITH_MSAN)
           "Cannot use AddressSanitizer and MemorySanitizer together")
 ENDIF()
 
+IF((WITH_ASAN OR WITH_LSAN) AND (WITH_TCMALLOC OR WITH_JEMALLOC))
+  MESSAGE(FATAL_ERROR
+    "Cannot use tcmalloc/jemalloc with leak sanitizer")
+ENDIF()
+
 IF(WITH_ASAN OR WITH_LSAN OR WITH_UBSAN)
   SET(HANDLE_FATAL_SIGNALS_DEFAULT 0)
 ELSE()
@@ -1209,9 +1219,12 @@ ENDIF()
 # See http://www.cmake.org/Wiki/CTest/Coverage
 OPTION(ENABLE_GCOV "Enable gcov (debug, Linux builds only)" OFF)
 IF (ENABLE_GCOV AND NOT WIN32 AND NOT APPLE)
-  STRING_APPEND(CMAKE_C_FLAGS   " -fprofile-arcs -ftest-coverage -DHAVE_GCOV")
-  STRING_APPEND(CMAKE_CXX_FLAGS " -fprofile-arcs -ftest-coverage -DHAVE_GCOV")
-  STRING_APPEND(CMAKE_EXE_LINKER_FLAGS " -fprofile-arcs -ftest-coverage -lgcov")
+  STRING_APPEND(CMAKE_C_FLAGS
+  " -fprofile-arcs -ftest-coverage -fprofile-update=prefer-atomic -DHAVE_GCOV")
+  STRING_APPEND(CMAKE_CXX_FLAGS
+  " -fprofile-arcs -ftest-coverage -fprofile-update=prefer-atomic -DHAVE_GCOV")
+  STRING_APPEND(CMAKE_EXE_LINKER_FLAGS
+  " -fprofile-arcs -ftest-coverage -fprofile-update=prefer-atomic -lgcov")
 ENDIF()
 
 OPTION(ENABLE_GPROF "Enable gprof (optimized, Linux builds only)" OFF)
@@ -1221,45 +1234,29 @@ IF (ENABLE_GPROF AND NOT WIN32 AND NOT APPLE)
   STRING_APPEND(CMAKE_EXE_LINKER_FLAGS " -pg")
 ENDIF()
 
-# Use lld for Clang if available and not explicitly disabled.
-# Also works for gcc on Debian/Ubuntu. Do 'apt install lld'.
+# Use lld on Linux if available and not explicitly disabled.
+# You need to install the 'lld' RPM/DEB package.
 # LTO build fails with lld, so turn it off by default.
-IF(LINUX AND NOT WITH_LTO AND NOT CMAKE_COMPILER_FLAG_WITH_LTO)
+IF(LINUX AND NOT ALTERNATIVE_LD AND
+    NOT WITH_LTO AND NOT CMAKE_COMPILER_FLAG_WITH_LTO)
   OPTION(USE_LD_LLD "Use llvm lld linker" ON)
 ELSE()
   OPTION(USE_LD_LLD "Use llvm lld linker" OFF)
 ENDIF()
 
-IF(USE_LD_LLD)
-  CMAKE_PUSH_CHECK_STATE(RESET)
-
-  # RPM builds on Fedora use -specs files.
-  # This may cause the test for -fuse-ld=lld to succeed, when it should fail.
-  SET(SAVE_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
-  SET(SAVE_CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
-  STRING(REGEX REPLACE "-specs=/usr/lib/rpm/redhat/.*"  ""
-    CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
-  STRING(REGEX REPLACE "-specs=/usr/lib/rpm/redhat/.*"  ""
-    CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
-
-  SET(CMAKE_REQUIRED_LIBRARIES "-fuse-ld=lld")
-  CHECK_C_SOURCE_COMPILES("int main() {}" C_LD_LLD_RESULT)
-  CHECK_CXX_SOURCE_COMPILES("int main() {}" CXX_LD_LLD_RESULT)
-  IF(C_LD_LLD_RESULT AND CXX_LD_LLD_RESULT)
-    FOREACH(flag
-        CMAKE_C_LINK_FLAGS
-        CMAKE_CXX_LINK_FLAGS
-        CMAKE_EXE_LINKER_FLAGS
-        CMAKE_MODULE_LINKER_FLAGS
-        CMAKE_SHARED_LINKER_FLAGS
-        )
-      STRING_APPEND(${flag} " -fuse-ld=lld")
-    ENDFOREACH()
-  ENDIF()
-  SET(CMAKE_C_FLAGS ${SAVE_CMAKE_C_FLAGS})
-  SET(CMAKE_CXX_FLAGS ${SAVE_CMAKE_CXX_FLAGS})
-  CMAKE_POP_CHECK_STATE()
+# If ALTERNATIVE_LD is set, we must use it.
+IF(ALTERNATIVE_LD AND USE_LD_LLD)
+  MESSAGE(WARNING
+    "The compiler ${ALTERNATIVE_GPP} is not compatible with lld")
+  SET(USE_LD_LLD 0)
+  SET(USE_LD_LLD 0 CACHE INTERNAL "" FORCE)
 ENDIF()
+
+SET(USING_LD_LLD 0)
+IF(USE_LD_LLD)
+  CHECK_ALTERNATIVE_LINKER("lld" USING_LD_LLD)
+ENDIF()
+SET(USING_LD_LLD ${USING_LD_LLD} CACHE INTERNAL "")
 
 IF(LINUX_STANDALONE)
   # ON by default in pushbuild, but only for standalone builds.
@@ -1392,7 +1389,7 @@ ENDIF()
 
 # Fedora 34, RHEL9: undefined reference to symbol 'crc32_z@@ZLIB_1.2.9'
 IF(LINUX_FEDORA_34 OR LINUX_RHEL9)
-  IF(NOT CMAKE_CXX_LINK_FLAGS MATCHES "-fuse-ld=lld")
+  IF(NOT USING_LD_LLD)
     STRING_APPEND(CMAKE_CXX_LINK_FLAGS " -Wl,--copy-dt-needed-entries")
   ENDIF()
 ENDIF()
@@ -1593,6 +1590,14 @@ IF(ENABLE_EXPERIMENT_SYSVARS)
   ADD_DEFINITIONS(-DENABLE_EXPERIMENT_SYSVARS)
 ENDIF()
 
+OPTION(FORCE_COLORED_OUTPUT "Colorize compiler output" OFF)
+IF(FORCE_COLORED_OUTPUT)
+  IF(MY_COMPILER_IS_GNU)
+    ADD_COMPILE_OPTIONS(-fdiagnostics-color=always)
+  ELSEIF(MY_COMPILER_IS_CLANG)
+    ADD_COMPILE_OPTIONS(-fcolor-diagnostics)
+  ENDIF()
+ENDIF()
 
 INCLUDE_DIRECTORIES(
   ${CMAKE_CURRENT_BINARY_DIR}
@@ -1772,10 +1777,11 @@ IF(WITH_CUSTOM_LIBRARIES)
   FILE(GLOB WITH_KERBEROS "${WITH_CUSTOM_LIBRARIES}/krb5*")
   FILE(GLOB WITH_SASL     "${WITH_CUSTOM_LIBRARIES}/cyrus-sasl*")
   FILE(GLOB WITH_LDAP     "${WITH_CUSTOM_LIBRARIES}/openldap*")
-  FOREACH(WITH_OPT WITH_SSL WITH_KERBEROS WITH_SASL WITH_LDAP)
+  FILE(GLOB WITH_CURL     "${WITH_CUSTOM_LIBRARIES}/curl*")
+  FOREACH(WITH_OPT WITH_SSL WITH_KERBEROS WITH_SASL WITH_LDAP WITH_CURL)
     IF(IS_DIRECTORY ${${WITH_OPT}})
       SET(${WITH_OPT} ${${WITH_OPT}} CACHE INTERNAL "" FORCE)
-      MESSAGE(STATUS "${WITH_OPT} ${${WITH_SSL}}")
+      MESSAGE(STATUS "${WITH_OPT} ${${WITH_OPT}}")
     ELSE()
       MESSAGE(WARNING "${WITH_OPT} not found") # This should be FATAL_ERROR
     ENDIF()
@@ -1899,7 +1905,7 @@ ENDIF()
 
 # Add libevent
 MYSQL_CHECK_LIBEVENT()
-SET(LIBEVENT_WARN_GIVEN)
+UNSET(LIBEVENT_WARN_GIVEN)
 WARN_MISSING_SYSTEM_LIBEVENT(LIBEVENT_WARN_GIVEN)
 IF(LIBEVENT_WARN_GIVEN)
   MESSAGE(FATAL_ERROR
@@ -1930,7 +1936,7 @@ ENDIF()
 # Try and set CURL_LIBRARY
 SET(WITH_CURL "system" CACHE STRING "Using system curl by default")
 MYSQL_CHECK_CURL()
-MYSQL_CHECK_CURL_DLLS()
+
 SET(CURL_WARN_GIVEN)
 WARN_MISSING_SYSTEM_CURL(CURL_WARN_GIVEN)
 IF(CURL_WARN_GIVEN)
@@ -1988,36 +1994,6 @@ IF(WITH_AUTHENTICATION_FIDO OR WITH_AUTHENTICATION_CLIENT_PLUGINS)
       "-DWITH_AUTHENTICATION_FIDO=ON, but missing required libraries")
   ENDIF()
 ENDIF()
-
-MACRO(MY_INCLUDE_SYSTEM_DIRECTORIES LIBRARY)
-  IF(${WITH_${LIBRARY}} STREQUAL "bundled")
-    SET(BEFORE_OR_AFTER "BEFORE")
-  ELSE()
-    SET(BEFORE_OR_AFTER "AFTER")
-  ENDIF()
-
-  # ICU headers for WIN32 need extra info about their libs state
-  IF(WIN32 AND ${LIBRARY} STREQUAL "ICU")
-    ADD_DEFINITIONS(-DU_STATIC_IMPLEMENTATION)
-  ENDIF()
-
-  IF(DEFINED ${LIBRARY}_INCLUDE_DIRS)
-    INCLUDE_DIRECTORIES(${BEFORE_OR_AFTER} SYSTEM ${${LIBRARY}_INCLUDE_DIRS})
-  ELSEIF(DEFINED ${LIBRARY}_INCLUDE_DIR)
-    INCLUDE_DIRECTORIES(${BEFORE_OR_AFTER} SYSTEM ${${LIBRARY}_INCLUDE_DIR})
-  ENDIF()
-  IF("${${LIBRARY}_INCLUDE_DIR}" STREQUAL "")
-    IF("${${LIBRARY}_INCLUDE_DIRS}" STREQUAL "")
-      MESSAGE(WARNING "${LIBRARY} is unknown")
-    ENDIF()
-  ENDIF()
-  IF(DEFINED ${LIBRARY}_INCLUDE_DIRS AND DEFINED ${LIBRARY}_INCLUDE_DIR)
-    IF(NOT "${${LIBRARY}_INCLUDE_DIR}" STREQUAL "${${LIBRARY}_INCLUDE_DIRS}")
-      MESSAGE(WARNING
-        "NOT ${${LIBRARY}_INCLUDE_DIR} STREQUAL ${${LIBRARY}_INCLUDE_DIRS}")
-    ENDIF()
-  ENDIF()
-ENDMACRO()
 
 MACRO(MY_TARGET_INCLUDE_SYSTEM_DIRECTORIES TARGET LIBRARY)
   IF(${WITH_${LIBRARY}} STREQUAL "bundled")
@@ -2151,6 +2127,24 @@ ADD_CUSTOM_TARGET(protobuf_generated_all)
 # Utility target to generate everything created by MYSQL_ADD_EXECUTABLE().
 ADD_CUSTOM_TARGET(executable_all)
 
+# We may run clang-tidy on individual .h files. Tell clang to treat them as C++.
+# To generate entries for header files in compile_commands.json:
+# make clang_tidy_prerequisites, see below.
+# cd CMAKE_SOURCE_DIR
+# compdb -p build-clang-tidy list > foo
+# mv foo build-clang-tidy/compile_commands.json
+# cd build-clang-tidy
+# clang-tidy -p . ../include/lex_string.h
+IF(MY_COMPILER_IS_CLANG AND CMAKE_EXPORT_COMPILE_COMMANDS)
+  # See <cmake source root>/Modules/CMakeCXXInformation.cmake
+  SET(CMAKE_CXX_COMPILE_OBJECT
+    "<CMAKE_CXX_COMPILER> <DEFINES> <INCLUDES> <FLAGS> ")
+  STRING_APPEND(CMAKE_CXX_COMPILE_OBJECT " --language=c++ ")
+  STRING_APPEND(CMAKE_CXX_COMPILE_OBJECT " -o <OBJECT> -c <SOURCE>")
+  # We cannot do this, since <FLAGS> will be used for linking as well:
+  # STRING_APPEND(CMAKE_CXX_FLAGS " --language=c++")
+ENDIF()
+
 # Utility target to generate sources needed for clang-tidy.
 # Example usage:
 #
@@ -2174,6 +2168,7 @@ ADD_SUBDIRECTORY(libmysql)
 ADD_SUBDIRECTORY(libbinlogevents)
 ADD_SUBDIRECTORY(libbinlogstandalone)
 ADD_SUBDIRECTORY(libchangestreams)
+ADD_SUBDIRECTORY(sql-common/oci)
 
 IF(NOT WITHOUT_SERVER)
   IF(WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
@@ -2224,7 +2219,7 @@ IF(NOT WITHOUT_SERVER AND WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
       sql_main
       ${MYSQLD_STATIC_PLUGIN_LIBS}
       minchassis
-      ${ICU_LIBRARIES}
+      ext::icu
       # Import some core symbols. Other symbols needed by the unit test
       # executables are pulled in transitively by symbol dependencies.
       #
@@ -2265,7 +2260,7 @@ IF(NOT WITHOUT_SERVER AND WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
     TARGET_LINK_LIBRARIES(server_unittest_library perfschema)
     TARGET_LINK_LIBRARIES(server_unittest_library sql_main)
     TARGET_LINK_LIBRARIES(server_unittest_library minchassis)
-    TARGET_LINK_LIBRARIES(server_unittest_library ${ICU_LIBRARIES})
+    TARGET_LINK_LIBRARIES(server_unittest_library ext::icu)
   ENDIF()
 ENDIF()
 
@@ -2305,12 +2300,34 @@ IF(UNIX)
   ADD_SUBDIRECTORY(man)
 ENDIF()
 
-IF(NOT WITHOUT_SERVER)
+IF(LINUX AND NOT WITHOUT_SERVER)
   ADD_SUBDIRECTORY(packaging/rpm-common)
+<<<<<<< HEAD
   ADD_SUBDIRECTORY(packaging/rpm-oel)
   ADD_SUBDIRECTORY(packaging/rpm-fedora)
   ADD_SUBDIRECTORY(packaging/rpm-sles)
   ADD_SUBDIRECTORY(packaging/rpm-docker)
+||||||| ce0de82d3aa
+  ADD_SUBDIRECTORY(packaging/rpm-oel)
+  ADD_SUBDIRECTORY(packaging/rpm-fedora)
+  ADD_SUBDIRECTORY(packaging/rpm-sles)
+  ADD_SUBDIRECTORY(packaging/rpm-docker)
+  ADD_SUBDIRECTORY(packaging/deb-in)
+=======
+  IF(LINUX_DEB_PLATFORM)
+    ADD_SUBDIRECTORY(packaging/deb-in)
+  ENDIF()
+  IF(LINUX_FEDORA)
+    ADD_SUBDIRECTORY(packaging/rpm-fedora)
+  ENDIF()
+  IF(LINUX_RHEL)
+    ADD_SUBDIRECTORY(packaging/rpm-oel)
+    ADD_SUBDIRECTORY(packaging/rpm-docker)
+  ENDIF()
+  IF(LINUX_SUSE)
+    ADD_SUBDIRECTORY(packaging/rpm-sles)
+  ENDIF()
+>>>>>>> mysql-8.0.33
 ENDIF()
 
 GET_PROPERTY(CWD_DEFINITIONS DIRECTORY PROPERTY COMPILE_DEFINITIONS)
@@ -2375,14 +2392,18 @@ ENDIF()
 
 IF(NOT WITH_XTRABACKUP)
 # Build flags: This must be postponed to the make phase.
-MY_ADD_CUSTOM_TARGET(INFO_BIN ALL
+ADD_CUSTOM_COMMAND(
+  OUTPUT ${CMAKE_BINARY_DIR}/Docs/INFO_BIN
   COMMAND ${CMAKE_COMMAND}
   ${MYSQLD_EXECUTABLE_FOR_INFO_BIN}
   -DCMAKE_BUILD_TYPE=$<CONFIG>
   -P ${CMAKE_SOURCE_DIR}/cmake/info_bin.cmake
-  BYPRODUCTS ${CMAKE_BINARY_DIR}/Docs/INFO_BIN
-  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   COMMENT "Generating Docs/INFO_BIN"
+  DEPENDS ${CMAKE_BINARY_DIR}/CMakeCache.txt
+  )
+MY_ADD_CUSTOM_TARGET(INFO_BIN ALL
+  DEPENDS ${CMAKE_BINARY_DIR}/Docs/INFO_BIN
+  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 ENDIF()
 
@@ -2426,6 +2447,18 @@ IF(WIN32)
 ELSE()
   SET(CPACK_GENERATOR "TGZ")
 ENDIF() 
+<<<<<<< HEAD
+||||||| ce0de82d3aa
+ADD_SUBDIRECTORY(packaging/WiX)
+ADD_SUBDIRECTORY(packaging/solaris)
+=======
+IF(WIN32)
+  ADD_SUBDIRECTORY(packaging/WiX)
+ENDIF()
+IF(SOLARIS)
+  ADD_SUBDIRECTORY(packaging/solaris)
+ENDIF()
+>>>>>>> mysql-8.0.33
 
 # Produce separate tarballs for each INSTALL COMPONENT
 IF(PACK_SEPARATE_COMPONENTS)
@@ -2448,7 +2481,6 @@ IF(NOT INSTALL_LAYOUT MATCHES "RPM")
     PATTERN "glibc*" EXCLUDE
     PATTERN "linuxthreads.txt" EXCLUDE
     PATTERN "myisam.txt" EXCLUDE
-    PATTERN "mysql.info" EXCLUDE
     PATTERN "sp-imp-spec.txt" EXCLUDE
     PATTERN "README.build" EXCLUDE
   )
