@@ -2302,18 +2302,6 @@ ENDIF()
 
 IF(LINUX AND NOT WITHOUT_SERVER)
   ADD_SUBDIRECTORY(packaging/rpm-common)
-<<<<<<< HEAD
-  ADD_SUBDIRECTORY(packaging/rpm-oel)
-  ADD_SUBDIRECTORY(packaging/rpm-fedora)
-  ADD_SUBDIRECTORY(packaging/rpm-sles)
-  ADD_SUBDIRECTORY(packaging/rpm-docker)
-||||||| ce0de82d3aa
-  ADD_SUBDIRECTORY(packaging/rpm-oel)
-  ADD_SUBDIRECTORY(packaging/rpm-fedora)
-  ADD_SUBDIRECTORY(packaging/rpm-sles)
-  ADD_SUBDIRECTORY(packaging/rpm-docker)
-  ADD_SUBDIRECTORY(packaging/deb-in)
-=======
   IF(LINUX_DEB_PLATFORM)
     ADD_SUBDIRECTORY(packaging/deb-in)
   ENDIF()
@@ -2327,7 +2315,6 @@ IF(LINUX AND NOT WITHOUT_SERVER)
   IF(LINUX_SUSE)
     ADD_SUBDIRECTORY(packaging/rpm-sles)
   ENDIF()
->>>>>>> mysql-8.0.33
 ENDIF()
 
 GET_PROPERTY(CWD_DEFINITIONS DIRECTORY PROPERTY COMPILE_DEFINITIONS)
@@ -2447,18 +2434,6 @@ IF(WIN32)
 ELSE()
   SET(CPACK_GENERATOR "TGZ")
 ENDIF() 
-<<<<<<< HEAD
-||||||| ce0de82d3aa
-ADD_SUBDIRECTORY(packaging/WiX)
-ADD_SUBDIRECTORY(packaging/solaris)
-=======
-IF(WIN32)
-  ADD_SUBDIRECTORY(packaging/WiX)
-ENDIF()
-IF(SOLARIS)
-  ADD_SUBDIRECTORY(packaging/solaris)
-ENDIF()
->>>>>>> mysql-8.0.33
 
 # Produce separate tarballs for each INSTALL COMPONENT
 IF(PACK_SEPARATE_COMPONENTS)
