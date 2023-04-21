@@ -1519,7 +1519,6 @@ static dberr_t srv_init_abort_low(bool create_new_db,
   return (err);
 }
 
-<<<<<<< HEAD
 #ifdef XTRABACKUP
 /** At startup load the encryption information from first datafile
 to tablespace object
@@ -1544,24 +1543,12 @@ static dberr_t srv_sys_enable_encryption() {
 }
 
 #endif  // XTRABACKUP
-dberr_t srv_start(bool create_new_db IF_XB(, lsn_t to_lsn)) {
-  lsn_t flushed_lsn;
-||||||| ce0de82d3aa
-dberr_t srv_start(bool create_new_db) {
-  lsn_t flushed_lsn;
-=======
 /** Recreate REDO log files.
 @param[in,out] flushed_lsn flushed_lsn
 @return DB_SUCCESS or error code */
 static dberr_t recreate_redo_files(lsn_t &flushed_lsn) {
   ut_d(log_sys->disable_redo_writes = true);
->>>>>>> mysql-8.0.33
 
-<<<<<<< HEAD
-||||||| ce0de82d3aa
-  page_no_t sum_of_data_file_sizes;
-  page_no_t tablespace_size_in_header;
-=======
   /* Emit a message to the error log. */
   const auto target_size = log_sys->m_capacity.target_physical_capacity();
   const auto target_size_in_M = target_size / (1024 * 1024UL);
@@ -1610,10 +1597,7 @@ static dberr_t recreate_redo_files(lsn_t &flushed_lsn) {
   return DB_SUCCESS;
 }
 
-dberr_t srv_start(bool create_new_db) {
-  page_no_t sum_of_data_file_sizes;
-  page_no_t tablespace_size_in_header;
->>>>>>> mysql-8.0.33
+dberr_t srv_start(bool create_new_db IF_XB(, lsn_t to_lsn)) {
   dberr_t err;
   mtr_t mtr;
   purge_pq_t *purge_queue;
@@ -2037,15 +2021,11 @@ dberr_t srv_start(bool create_new_db) {
       flushed_lsn = new_files_lsn;
     }
 
-<<<<<<< HEAD
-    err = recv_recovery_from_checkpoint_start(*log_sys, flushed_lsn, to_lsn);
-||||||| ce0de82d3aa
-    err = recv_recovery_from_checkpoint_start(*log_sys, flushed_lsn);
-=======
     ut_a(log_sys->m_format <= Log_format::CURRENT);
 
     const bool log_upgrade = log_sys->m_format < Log_format::CURRENT;
 
+    // 8033 merge recreate redo
     if (log_upgrade) {
       if (srv_read_only_mode) {
         ib::error(ER_IB_MSG_LOG_UPGRADE_IN_READ_ONLY_MODE,
@@ -2067,11 +2047,11 @@ dberr_t srv_start(bool create_new_db) {
       }
     }
 
-    err = recv_recovery_from_checkpoint_start(*log_sys, flushed_lsn);
+    err = recv_recovery_from_checkpoint_start(*log_sys,
+                                              flushed_lsn IF_XB(, to_lsn));
     if (err != DB_SUCCESS) {
       return srv_init_abort(err);
     }
->>>>>>> mysql-8.0.33
 
     if (err == DB_SUCCESS) {
       arch_page_sys->post_recovery_init();
@@ -2185,14 +2165,8 @@ dberr_t srv_start(bool create_new_db) {
       DBUG_SUICIDE();
     });
 
-<<<<<<< HEAD
-    if (srv_dict_metadata != nullptr && !srv_dict_metadata->empty()
-                                             IF_XB(&&!srv_apply_log_only)) {
-||||||| ce0de82d3aa
-    if (srv_dict_metadata != nullptr && !srv_dict_metadata->empty()) {
-=======
-    if (!recv_sys->is_cloned_db && !dict_metadata->empty()) {
->>>>>>> mysql-8.0.33
+    if (!recv_sys->is_cloned_db && !dict_metadata->empty()
+                                        IF_XB(&&!srv_apply_log_only)) {
       ut_a(redo_writes_allowed);
 
       /* Open this table in case dict_metadata should be applied to this
@@ -2229,309 +2203,14 @@ dberr_t srv_start(bool create_new_db) {
 
     log_sys->m_allow_checkpoints.store(true, std::memory_order_release);
 
-<<<<<<< HEAD
-    bool log_downsize_requested =
-        log_sys->m_capacity.target_physical_capacity() <
-        log_sys->m_capacity.current_physical_capacity();
-
-    DBUG_EXECUTE_IF("log_force_resize", log_downsize_requested = true;);
-
-    const bool need_to_recreate_log_files =
 #ifdef XTRABACKUP
         /* we have to recreate always in PXB because the ib_redo0 file
         is always full and we cannot reuse it. No circular buffer
         logic from 8.0.30. Recreate this #ib_redo0 file and it will be
         used by transaction rollbacks */
-        (!srv_apply_log_only && !srv_read_only_mode) ||
+    // 8033 merge todo recreate redo
 #endif
-        log_upgrade ||
-        (log_downsize_requested && !srv_force_recovery &&
-         !recv_sys->found_corrupt_log);
-
-    if (need_to_recreate_log_files) {
-      /* Prepare to replace the redo log files. */
-
-      if (log_upgrade) {
-        ut_a(!srv_read_only_mode);
-
-        if (recv_sys->is_cloned_db) {
-          ib::error(ER_IB_MSG_LOG_UPGRADE_CLONED_DB,
-                    ulong{to_int(log_sys->m_format)});
-          return srv_init_abort(DB_ERROR);
-        }
-
-        /* For non-empty redo log, upgrade is rejected, so there is even
-        no attempt to parse it, so no way to discover it's corrupted. */
-        if (recv_sys->found_corrupt_log) {
-          ib::error(ER_IB_MSG_LOG_UPGRADE_CORRUPTION__UNEXPECTED,
-                    ulong{to_int(log_sys->m_format)});
-          ut_d(ut_error);
-          ut_o(return srv_init_abort(DB_ERROR));
-        }
-
-        /* For non-empty redo log, upgrade is rejected, so there is even
-        no way to reconstruct non empty srv_dict_metadata. */
-        if (srv_dict_metadata != nullptr && !srv_dict_metadata->empty()) {
-          ib::error(ER_IB_MSG_LOG_UPGRADE_NON_PERSISTED_DD_METADATA__UNEXPECTED,
-                    ulong{to_int(log_sys->m_format)});
-          ut_d(ut_error);
-          ut_o(return srv_init_abort(DB_ERROR));
-        }
-
-      } else {
-        ut_a(srv_force_recovery == 0);
-        if (srv_read_only_mode) {
-          const os_offset_t min_capacity_in_M =
-              log_sys->m_capacity.current_physical_capacity() / (1024 * 1024UL);
-          ib::error(ER_IB_MSG_LOG_FILES_RESIZE_ON_START_IN_READ_ONLY_MODE,
-                    ulonglong{min_capacity_in_M});
-          return srv_init_abort(DB_ERROR);
-        }
-      }
-
-      buf_pool_wait_for_no_pending_io();
-
-      if (redo_writes_allowed) {
-        /* Create checkpoint to ensure that the checkpoint header is flushed
-        to the newest redo log file, before log_files_remove() is called,
-        because otherwise crash after the first file removal could lead to
-        the state without a checkpoint. */
-        log_make_empty_and_stop_background_threads(*log_sys);
-      }
-
-      flushed_lsn = log_sys->flushed_to_disk_lsn.load();
-
-      ut_ad(buf_pool_pending_io_reads_count() == 0);
-
-      ut_d(log_sys->disable_redo_writes = true);
-
-      {
-        /* Emit a message to the error log. */
-        const auto target_size = srv_redo_log_capacity;
-        const auto target_size_in_M = target_size / (1024 * 1024UL);
-        if (log_upgrade) {
-          ib::info(ER_IB_MSG_LOG_FILES_UPGRADE, ulonglong{target_size_in_M},
-                   ulonglong{flushed_lsn});
-
-        } else {
-          const auto current_size =
-              log_files_size_of_existing_files(log_sys->m_files);
-          const auto current_size_in_M = current_size / (1024 * 1024UL);
-          ib::info(ER_IB_MSG_LOG_FILES_RESIZE_ON_START,
-                   ulonglong{current_size_in_M}, ulonglong{target_size_in_M},
-                   ulonglong{flushed_lsn});
-        }
-      }
-
-      /* Prepare to delete the old redo log files. */
-      buf_flush_sync_all_buf_pools();
-
-      RECOVERY_CRASH(5);
-
-      if (flushed_lsn < log_get_lsn(*log_sys) ||
-          buf_pool_get_oldest_modification_lwm() != 0) {
-        if (log_upgrade) {
-          ib::error(ER_IB_MSG_LOG_UPGRADE_FLUSH_FAILED__UNEXPECTED,
-                    ulong{to_int(log_sys->m_format)});
-        } else {
-          ib::error(ER_IB_MSG_LOG_FILES_RESIZE_ON_START_FAILED__UNEXPECTED,
-                    ulong{to_int(log_sys->m_format)});
-        }
-        ut_d(ut_error);
-        ut_o(return srv_init_abort(DB_ERROR));
-      }
-
-      /* Stamp the LSN to the data files. */
-      err = fil_write_flushed_lsn(flushed_lsn);
-      ut_a(err == DB_SUCCESS);
-
-      RECOVERY_CRASH(6);
-
-      ib::info(ER_IB_MSG_LOG_FILES_REWRITING);
-
-      /* Remove all existing log files. */
-      log_files_remove(*log_sys);
-
-      log_sys_close();
-      ut_a(log_sys == nullptr);
-
-      /* Finish clone file recovery before creating new log files. We
-      roll forward to remove any intermediate files here. */
-      clone_files_recovery(true);
-
-      /* This is to provide the property that data byte at given lsn never
-      changes and avoid the need to rewrite the block with flushed_lsn. */
-      flushed_lsn = ut_uint64_align_up(flushed_lsn, OS_FILE_LOG_BLOCK_SIZE) +
-                    LOG_BLOCK_HDR_SIZE;
-
-      err = log_sys_init(true, flushed_lsn, flushed_lsn);
-
-      if (err != DB_SUCCESS) {
-        return srv_init_abort(err);
-      }
-
-      ut_d(log_sys->disable_redo_writes = false);
-
-      fil_open_system_tablespace_files();
-
-      err = log_start(*log_sys, flushed_lsn, flushed_lsn, nullptr);
-
-      if (err != DB_SUCCESS) {
-        return srv_init_abort(err);
-      }
-
-      log_start_background_threads(*log_sys);
-
-    } else if (recv_sys->is_cloned_db || recv_sys->is_meb_db) {
-||||||| ce0de82d3aa
-    bool log_downsize_requested =
-        log_sys->m_capacity.target_physical_capacity() <
-        log_sys->m_capacity.current_physical_capacity();
-
-    DBUG_EXECUTE_IF("log_force_resize", log_downsize_requested = true;);
-
-    const bool need_to_recreate_log_files =
-        log_upgrade || (log_downsize_requested && !srv_force_recovery &&
-                        !recv_sys->found_corrupt_log);
-
-    if (need_to_recreate_log_files) {
-      /* Prepare to replace the redo log files. */
-
-      if (log_upgrade) {
-        ut_a(!srv_read_only_mode);
-
-        if (recv_sys->is_cloned_db) {
-          ib::error(ER_IB_MSG_LOG_UPGRADE_CLONED_DB,
-                    ulong{to_int(log_sys->m_format)});
-          return srv_init_abort(DB_ERROR);
-        }
-
-        /* For non-empty redo log, upgrade is rejected, so there is even
-        no attempt to parse it, so no way to discover it's corrupted. */
-        if (recv_sys->found_corrupt_log) {
-          ib::error(ER_IB_MSG_LOG_UPGRADE_CORRUPTION__UNEXPECTED,
-                    ulong{to_int(log_sys->m_format)});
-          ut_d(ut_error);
-          ut_o(return srv_init_abort(DB_ERROR));
-        }
-
-        /* For non-empty redo log, upgrade is rejected, so there is even
-        no way to reconstruct non empty srv_dict_metadata. */
-        if (srv_dict_metadata != nullptr && !srv_dict_metadata->empty()) {
-          ib::error(ER_IB_MSG_LOG_UPGRADE_NON_PERSISTED_DD_METADATA__UNEXPECTED,
-                    ulong{to_int(log_sys->m_format)});
-          ut_d(ut_error);
-          ut_o(return srv_init_abort(DB_ERROR));
-        }
-
-      } else {
-        ut_a(srv_force_recovery == 0);
-        if (srv_read_only_mode) {
-          const os_offset_t min_capacity_in_M =
-              log_sys->m_capacity.current_physical_capacity() / (1024 * 1024UL);
-          ib::error(ER_IB_MSG_LOG_FILES_RESIZE_ON_START_IN_READ_ONLY_MODE,
-                    ulonglong{min_capacity_in_M});
-          return srv_init_abort(DB_ERROR);
-        }
-      }
-
-      buf_pool_wait_for_no_pending_io();
-
-      if (redo_writes_allowed) {
-        /* Create checkpoint to ensure that the checkpoint header is flushed
-        to the newest redo log file, before log_files_remove() is called,
-        because otherwise crash after the first file removal could lead to
-        the state without a checkpoint. */
-        log_make_empty_and_stop_background_threads(*log_sys);
-      }
-
-      flushed_lsn = log_sys->flushed_to_disk_lsn.load();
-
-      ut_ad(buf_pool_pending_io_reads_count() == 0);
-
-      ut_d(log_sys->disable_redo_writes = true);
-
-      {
-        /* Emit a message to the error log. */
-        const auto target_size = log_sys->m_capacity.target_physical_capacity();
-        const auto target_size_in_M = target_size / (1024 * 1024UL);
-        if (log_upgrade) {
-          ib::info(ER_IB_MSG_LOG_FILES_UPGRADE, ulonglong{target_size_in_M},
-                   ulonglong{flushed_lsn});
-
-        } else {
-          const auto current_size =
-              log_files_size_of_existing_files(log_sys->m_files);
-          const auto current_size_in_M = current_size / (1024 * 1024UL);
-          ib::info(ER_IB_MSG_LOG_FILES_RESIZE_ON_START,
-                   ulonglong{current_size_in_M}, ulonglong{target_size_in_M},
-                   ulonglong{flushed_lsn});
-        }
-      }
-
-      /* Prepare to delete the old redo log files. */
-      buf_flush_sync_all_buf_pools();
-
-      RECOVERY_CRASH(5);
-
-      if (flushed_lsn < log_get_lsn(*log_sys) ||
-          buf_pool_get_oldest_modification_lwm() != 0) {
-        if (log_upgrade) {
-          ib::error(ER_IB_MSG_LOG_UPGRADE_FLUSH_FAILED__UNEXPECTED,
-                    ulong{to_int(log_sys->m_format)});
-        } else {
-          ib::error(ER_IB_MSG_LOG_FILES_RESIZE_ON_START_FAILED__UNEXPECTED,
-                    ulong{to_int(log_sys->m_format)});
-        }
-        ut_d(ut_error);
-        ut_o(return srv_init_abort(DB_ERROR));
-      }
-
-      /* Stamp the LSN to the data files. */
-      err = fil_write_flushed_lsn(flushed_lsn);
-      ut_a(err == DB_SUCCESS);
-
-      RECOVERY_CRASH(6);
-
-      ib::info(ER_IB_MSG_LOG_FILES_REWRITING);
-
-      /* Remove all existing log files. */
-      log_files_remove(*log_sys);
-
-      log_sys_close();
-      ut_a(log_sys == nullptr);
-
-      /* Finish clone file recovery before creating new log files. We
-      roll forward to remove any intermediate files here. */
-      clone_files_recovery(true);
-
-      /* This is to provide the property that data byte at given lsn never
-      changes and avoid the need to rewrite the block with flushed_lsn. */
-      flushed_lsn = ut_uint64_align_up(flushed_lsn, OS_FILE_LOG_BLOCK_SIZE) +
-                    LOG_BLOCK_HDR_SIZE;
-
-      err = log_sys_init(true, flushed_lsn, flushed_lsn);
-
-      if (err != DB_SUCCESS) {
-        return srv_init_abort(err);
-      }
-
-      ut_d(log_sys->disable_redo_writes = false);
-
-      fil_open_system_tablespace_files();
-
-      err = log_start(*log_sys, flushed_lsn, flushed_lsn, nullptr);
-
-      if (err != DB_SUCCESS) {
-        return srv_init_abort(err);
-      }
-
-      log_start_background_threads(*log_sys);
-
-    } else if (recv_sys->is_cloned_db || recv_sys->is_meb_db) {
-=======
     if (recv_sys->is_cloned_db || recv_sys->is_meb_db) {
->>>>>>> mysql-8.0.33
       buf_pool_wait_for_no_pending_io();
 
       /* Reset creator for log */
@@ -2873,30 +2552,6 @@ void srv_start_threads() {
     return;
   }
 
-<<<<<<< HEAD
-  if (!srv_apply_log_only && !bootstrap &&
-      srv_force_recovery < SRV_FORCE_NO_TRX_UNDO && trx_sys_need_rollback()) {
-    /* Rollback all recovered transactions that are
-    not in committed nor in XA PREPARE state. */
-    srv_threads.m_trx_recovery_rollback = os_thread_create(
-        trx_recovery_rollback_thread_key, 0, trx_recovery_rollback_thread);
-
-    srv_threads.m_trx_recovery_rollback.start();
-  }
-
-||||||| ce0de82d3aa
-  if (!bootstrap && srv_force_recovery < SRV_FORCE_NO_TRX_UNDO &&
-      trx_sys_need_rollback()) {
-    /* Rollback all recovered transactions that are
-    not in committed nor in XA PREPARE state. */
-    srv_threads.m_trx_recovery_rollback = os_thread_create(
-        trx_recovery_rollback_thread_key, 0, trx_recovery_rollback_thread);
-
-    srv_threads.m_trx_recovery_rollback.start();
-  }
-
-=======
->>>>>>> mysql-8.0.33
   /* Create the master thread which does purge and other utility
   operations */
   srv_threads.m_master =
@@ -2928,7 +2583,9 @@ void srv_start_threads() {
 }
 
 void srv_start_threads_after_ddl_recovery() {
-  if (srv_force_recovery < SRV_FORCE_NO_TRX_UNDO && trx_sys_need_rollback()) {
+  if (IF_XB(!srv_apply_log_only &&)
+              srv_force_recovery < SRV_FORCE_NO_TRX_UNDO &&
+      trx_sys_need_rollback()) {
     /* Rollback all recovered transactions that are
     not in committed nor in XA PREPARE state. */
     srv_threads.m_trx_recovery_rollback = os_thread_create(
