@@ -98,14 +98,6 @@ dberr_t log_encryption_read(log_t &log) {
 }
 
 dberr_t log_encryption_read(log_t &log, const Log_file &file) {
-<<<<<<< HEAD
-#ifndef XTRABACKUP
-  ut_a(recv_recovery_on);
-#endif /* XTRABACKUP */
-||||||| 1bfe02bdad6
-  ut_a(recv_recovery_on);
-=======
->>>>>>> mysql-8.0.33
   ut_a(srv_force_recovery < SRV_FORCE_NO_LOG_REDO);
   ut_a(log_sys != nullptr);
 
