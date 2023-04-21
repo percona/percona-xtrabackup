@@ -131,28 +131,16 @@ IF(WITH_LZ4 STREQUAL "bundled")
   MYSQL_ADD_EXECUTABLE(lz4_decompress
     lz4_decompress.cc
     COMPONENT Server
-<<<<<<< HEAD
-    LINK_LIBRARIES ${LZ4_LIBRARY} mysys
-    SKIP_INSTALL
-||||||| 1bfe02bdad6
-    LINK_LIBRARIES ${LZ4_LIBRARY} mysys
-=======
     LINK_LIBRARIES ext::lz4 mysys
->>>>>>> mysql-8.0.33
+    SKIP_INSTALL
     )
 ENDIF()
 
 MYSQL_ADD_EXECUTABLE(zlib_decompress
   zlib_decompress.cc
   COMPONENT Server
-<<<<<<< HEAD
-  LINK_LIBRARIES ${ZLIB_LIBRARY} mysys
-    SKIP_INSTALL
-||||||| 1bfe02bdad6
-  LINK_LIBRARIES ${ZLIB_LIBRARY} mysys
-=======
   LINK_LIBRARIES ext::zlib mysys
->>>>>>> mysql-8.0.33
+  SKIP_INSTALL
   )
 
 # All targets below belong to COMPONENT Server and depend on InnoDB.
@@ -174,14 +162,8 @@ MYSQL_ADD_EXECUTABLE(innochecksum
   innochecksum.cc
   COMPONENT Server
   DEPENDENCIES GenError
-<<<<<<< HEAD
-  LINK_LIBRARIES mysys innodb_zipdecompress ${LZ4_LIBRARY}
-  SKIP_INSTALL
-||||||| 1bfe02bdad6
-  LINK_LIBRARIES mysys innodb_zipdecompress ${LZ4_LIBRARY}
-=======
   LINK_LIBRARIES mysys innodb_zipdecompress ext::lz4 extra::rapidjson
->>>>>>> mysql-8.0.33
+  SKIP_INSTALL
   )
 TARGET_COMPILE_DEFINITIONS(innochecksum PRIVATE UNIV_NO_ERR_MSGS UNIV_LIBRARY)
 IF(MY_COMPILER_IS_GNU_OR_CLANG)
@@ -200,14 +182,8 @@ MYSQL_ADD_EXECUTABLE(ibd2sdi
   ibd2sdi.cc
   COMPONENT Server
   DEPENDENCIES GenError
-<<<<<<< HEAD
-  LINK_LIBRARIES mysys innodb_zipdecompress ${LZ4_LIBRARY}
-  SKIP_INSTALL
-||||||| 1bfe02bdad6
-  LINK_LIBRARIES mysys innodb_zipdecompress ${LZ4_LIBRARY}
-=======
   LINK_LIBRARIES mysys innodb_zipdecompress ext::lz4 extra::rapidjson
->>>>>>> mysql-8.0.33
+  SKIP_INSTALL
   )
 TARGET_COMPILE_DEFINITIONS(ibd2sdi PRIVATE UNIV_NO_ERR_MSGS UNIV_LIBRARY DISABLE_PSI_MEMORY)
 IF(MY_COMPILER_IS_GNU_OR_CLANG)
