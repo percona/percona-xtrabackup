@@ -317,8 +317,8 @@ DEFINE_BOOL_METHOD(mysql_component_sys_variable_imp::register_variable,
         int saved_opt_count = c->m_arg_list_size;
         argv = &c->m_arg_list;
         argc = &c->m_arg_list_size;
-        opt_error =
-            my_handle_options2(argc, argv, opts, nullptr, nullptr, false, true);
+        opt_error = my_handle_options2(argc, argv, opts, nullptr, nullptr,
+                                       false, true, false);
         /* Add back the program name handle_options removes */
         (*argc)++;
         (*argv)--;

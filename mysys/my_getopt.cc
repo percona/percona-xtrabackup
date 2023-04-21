@@ -236,16 +236,11 @@ double getopt_ulonglong2double(ulonglong v) {
   @param [in] ignore_unknown_option When set to true, options are continued to
                                     be read even when unknown options are
                                     encountered.
-<<<<<<< HEAD
-
-  @param [in] validate_only When set to true, options values are not assinged.
-
-||||||| 1bfe02bdad6
-
-=======
   @param [in] boolean_as_int        Parse boolean as integer value.
                                     Mimic the logic of parsing booleans at
   runtime: Instead of parsing
+
+  @param [in] validate_only When set to true, options values are not assinged.
   @code
   bool_val = (str_val == '1' || str_val = 'ON') ?
                 true :
@@ -261,26 +256,14 @@ double getopt_ulonglong2double(ulonglong v) {
                   true :
                   atoi(str_val) != 0)
   @endcode
->>>>>>> mysql-8.0.33
   @return error in case of ambiguous or unknown options,
           0 on success.
 */
-<<<<<<< HEAD
-int my_handle_options(int *argc, char ***argv, const struct my_option *longopts,
-                      my_get_one_option get_one_option,
-                      const char **command_list, bool ignore_unknown_option,
-                      bool validate_only) {
-||||||| 1bfe02bdad6
-int my_handle_options(int *argc, char ***argv, const struct my_option *longopts,
-                      my_get_one_option get_one_option,
-                      const char **command_list, bool ignore_unknown_option) {
-=======
 int my_handle_options2(int *argc, char ***argv,
                        const struct my_option *longopts,
                        my_get_one_option get_one_option,
                        const char **command_list, bool ignore_unknown_option,
-                       bool boolean_as_int) {
->>>>>>> mysql-8.0.33
+                       bool boolean_as_int, bool validate_only) {
   uint argvpos = 0, length;
   bool end_of_options = false, must_be_var, set_maximum_value, option_is_loose;
   char **pos, **pos_end, *optend, *opt_str, key_name[FN_REFLEN];
@@ -625,16 +608,9 @@ int my_handle_options2(int *argc, char ***argv,
                 }
               }
               int error;
-<<<<<<< HEAD
-              if (!validate_only && (error = setval(optp, optp->value, argument,
-                                                    set_maximum_value)))
-||||||| 1bfe02bdad6
-              if ((error =
-                       setval(optp, optp->value, argument, set_maximum_value)))
-=======
-              if ((error = setval(optp, optp->value, argument,
+              if (!validate_only &&
+                  (error = setval(optp, optp->value, argument,
                                   set_maximum_value, boolean_as_int)))
->>>>>>> mysql-8.0.33
                 return error;
               if (get_one_option && get_one_option(optp->id, optp, argument))
                 return EXIT_UNSPECIFIED_ERROR;
@@ -675,15 +651,8 @@ int my_handle_options2(int *argc, char ***argv,
         continue;
       }
       int error;
-<<<<<<< HEAD
-      if (!validate_only &&
-          (error = setval(optp, value, argument, set_maximum_value)))
-||||||| 1bfe02bdad6
-      if ((error = setval(optp, value, argument, set_maximum_value)))
-=======
-      if ((error = setval(optp, value, argument, set_maximum_value,
-                          boolean_as_int)))
->>>>>>> mysql-8.0.33
+      if (!validate_only && (error = setval(optp, value, argument,
+                                            set_maximum_value, boolean_as_int)))
         return error;
       if (get_one_option && get_one_option(optp->id, optp, argument))
         return EXIT_UNSPECIFIED_ERROR;
@@ -721,9 +690,10 @@ done:
 
 int my_handle_options(int *argc, char ***argv, const struct my_option *longopts,
                       my_get_one_option get_one_option,
-                      const char **command_list, bool ignore_unknown_option) {
+                      const char **command_list, bool ignore_unknown_option,
+                      bool validate_only) {
   return my_handle_options2(argc, argv, longopts, get_one_option, command_list,
-                            ignore_unknown_option, false);
+                            ignore_unknown_option, false, validate_only);
 }
 
 /**
