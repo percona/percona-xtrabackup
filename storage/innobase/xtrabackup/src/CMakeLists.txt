@@ -129,7 +129,7 @@ TARGET_LINK_LIBRARIES(xtrabackup
   minchassis
   keyring_common
   ${GCRYPT_LIBS}
-  ${ICU_LIBRARIES}
+  ext::icu
   crc
   )
 
@@ -200,11 +200,11 @@ SET_TARGET_PROPERTIES(xbstream
         )
 
 TARGET_LINK_LIBRARIES(xbstream
-  ${ZSTD_LIBRARY}
+  ext::zstd
   ${GCRYPT_LIBS}
   mysys
   crc
-  ${LZ4_LIBRARY}
+  ext::lz4
   )
 
 ########################################################################

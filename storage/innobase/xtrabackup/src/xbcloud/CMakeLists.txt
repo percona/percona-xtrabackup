@@ -24,7 +24,6 @@ INCLUDE(libev)
 SET(WITH_CURL "system" CACHE STRING "Using system curl by default")
 
 FIND_GCRYPT()
-MYSQL_CHECK_CURL()
 FIND_EV()
 
 # Remove -Wundef from C++ compiler flags since there are several
@@ -61,6 +60,8 @@ TARGET_LINK_LIBRARIES(xbcloud
   ${GCRYPT_LIBS}
   ${LIBEV_LIBRARIES}
   ${CURL_LIBRARIES}
+  extra::rapidjson
+  ext::curl
   mysys
   crc
   )
@@ -89,6 +90,8 @@ IF (WITH_UNIT_TESTS AND CMAKE_VERSION VERSION_GREATER 3.22.1)
       ${GTEST_BOTH_LIBRARIES}
       GTest::gtest
       GTest::gmock
+      extra::rapidjson
+      ext::curl
       mysys
       crc
       )
