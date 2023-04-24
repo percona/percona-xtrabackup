@@ -2213,7 +2213,6 @@ static bool innodb_init_param(void) {
   srv_buf_pool_size = (ulint)xtrabackup_use_memory;
   srv_buf_pool_size = buf_pool_size_align(srv_buf_pool_size);
 
-  srv_n_file_io_threads = (ulint)innobase_file_io_threads;
   srv_n_read_io_threads = (ulint)innobase_read_io_threads;
   srv_n_write_io_threads = (ulint)innobase_write_io_threads;
 
@@ -2701,7 +2700,7 @@ static bool innodb_init(bool init_dd, bool for_apply_log) {
     srv_dict_recover_on_restart();
   }
 
-  srv_start_threads(false);
+  srv_start_threads();
 
   if (srv_thread_is_active(srv_threads.m_trx_recovery_rollback)) {
     srv_threads.m_trx_recovery_rollback.wait();
@@ -3432,18 +3431,6 @@ void io_watching_thread() {
   io_watching_thread_running = false;
 }
 
-/************************************************************************
-I/o-handler thread function. */
-static void io_handler_thread(ulint segment) {
-  while (srv_shutdown_state != SRV_SHUTDOWN_EXIT_THREADS) {
-    fil_aio_wait(segment);
-  }
-
-  /* We count the number of threads in os_thread_exit(). A created
-  thread should always use that to exit and not use return() to exit.
-  The thread actually never comes here because it is exited in an
-  os_event_wait(). */
-}
 
 /**************************************************************************
 Datafiles copying thread.*/
@@ -3654,7 +3641,6 @@ Initializes the I/O and tablespace cache subsystems. */
 static bool xb_fil_io_init(void)
 /*================*/
 {
-  srv_n_file_io_threads = srv_n_read_io_threads;
 
   if (!os_aio_init(srv_n_read_io_threads, srv_n_write_io_threads)) {
     xb::error() << "Cannot initialize AIO sub-system.";
@@ -3678,9 +3664,7 @@ static dberr_t xb_load_tablespaces(void)
   page_no_t sum_of_new_sizes;
   lsn_t flush_lsn;
 
-  for (ulint i = 0; i < srv_n_file_io_threads; i++) {
-    os_thread_create(PFS_NOT_INSTRUMENTED, i, io_handler_thread, i).start();
-  }
+  os_aio_start_threads();
 
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
@@ -3792,9 +3776,6 @@ void xb_data_files_close(void)
 
   fil_close();
 
-  /* Reset srv_file_io_threads to its default value to avoid confusing
-  warning on --prepare in innobase_start_or_create_for_mysql()*/
-  srv_n_file_io_threads = 4;
 
   srv_shutdown_state = SRV_SHUTDOWN_NONE;
 }
@@ -4952,11 +4933,6 @@ static void xtrabackup_stats_func(int argc, char **argv) {
 
   srv_page_size_shift = 14;
   srv_page_size = (1 << srv_page_size_shift);
-
-  if (srv_n_file_io_threads < 10) {
-    srv_n_read_io_threads = 4;
-    srv_n_write_io_threads = 4;
-  }
 
   /* initialize components */
   if (innodb_init_param()) {
@@ -7232,11 +7208,6 @@ skip_check:
 
   srv_apply_log_only = (bool)xtrabackup_apply_log_only;
 
-  /* increase IO threads */
-  if (srv_n_file_io_threads < 10) {
-    srv_n_read_io_threads = 4;
-    srv_n_write_io_threads = 4;
-  }
 
   xb::info() << "Starting InnoDB instance for recovery.";
   xb::info() << "Using " << xtrabackup_use_memory
