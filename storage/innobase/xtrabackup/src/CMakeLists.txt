@@ -119,13 +119,12 @@ TARGET_LINK_LIBRARIES(xtrabackup
   innobase
   sql_dd
   sql_gis
-  sql_main
-  slave
   rpl
+  rpl_source
+  rpl_replica
   mysqlservices
   binlog
   mysqlclient
-  master
   minchassis
   keyring_common
   ${GCRYPT_LIBS}
