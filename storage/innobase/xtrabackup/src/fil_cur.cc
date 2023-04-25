@@ -313,10 +313,13 @@ read_retry:
     }
     return (XB_FIL_CUR_ERROR);
   }
+  Encryption_metadata encryption_metadata;
 
-  read_request.encryption_algorithm(Encryption::AES);
-  read_request.encryption_key(cursor->encryption_key, cursor->encryption_klen,
-                              cursor->encryption_iv);
+  Encryption::set_or_generate(Encryption::AES, cursor->encryption_key,
+                              cursor->encryption_iv, encryption_metadata);
+
+  read_request.get_encryption_info().set(encryption_metadata);
+
   read_request.block_size(cursor->block_size);
 
   npages = n_read >> cursor->page_size_shift;
