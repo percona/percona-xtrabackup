@@ -2551,6 +2551,18 @@ void srv_start_threads() {
     purge_sys->state = PURGE_STATE_DISABLED;
     return;
   }
+#ifdef XTRABACKUP
+  if (!srv_apply_log_only && srv_force_recovery < SRV_FORCE_NO_TRX_UNDO &&
+      trx_sys_need_rollback()) {
+    /* Rollback all recovered transactions that are
+    not in committed nor in XA PREPARE state. */
+    srv_threads.m_trx_recovery_rollback = os_thread_create(
+        trx_recovery_rollback_thread_key, 0, trx_recovery_rollback_thread);
+
+    srv_threads.m_trx_recovery_rollback.start();
+  }
+
+#endif  // XTRABACKUP
 
   /* Create the master thread which does purge and other utility
   operations */
@@ -2583,9 +2595,7 @@ void srv_start_threads() {
 }
 
 void srv_start_threads_after_ddl_recovery() {
-  if (IF_XB(!srv_apply_log_only &&)
-              srv_force_recovery < SRV_FORCE_NO_TRX_UNDO &&
-      trx_sys_need_rollback()) {
+  if (srv_force_recovery < SRV_FORCE_NO_TRX_UNDO && trx_sys_need_rollback()) {
     /* Rollback all recovered transactions that are
     not in committed nor in XA PREPARE state. */
     srv_threads.m_trx_recovery_rollback = os_thread_create(
