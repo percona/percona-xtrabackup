@@ -781,6 +781,8 @@ committed, then we clean up a possible insert undo log. If the
 transaction was not yet committed, then we roll it back.
 Note: this is done in a background thread. */
 void trx_recovery_rollback(THD *thd) {
+  /* PXB does not take MDL to rollback the transactions */
+#ifndef XTRABACKUP
   std::vector<MDL_ticket *> shared_mdl_list;
   ut_ad(!srv_read_only_mode);
 
@@ -826,6 +828,7 @@ void trx_recovery_rollback(THD *thd) {
 
   /* Let the startup thread proceed now */
   os_event_set(recovery_lock_taken);
+#endif  // XTRABACKUP
 
   while (DBUG_EVALUATE_IF("pause_rollback_on_recovery", true, false)) {
     if (srv_shutdown_state.load() >= SRV_SHUTDOWN_RECOVERY_ROLLBACK) {
@@ -836,10 +839,12 @@ void trx_recovery_rollback(THD *thd) {
 
   trx_rollback_or_clean_recovered(true);
 
+#ifndef XTRABACKUP
   // Release MDL locks
   for (auto mdl_ticket : shared_mdl_list) {
     dd_release_mdl(mdl_ticket);
   }
+#endif  // XTRABACKUP
 }
 
 /** Rollback or clean up any incomplete transactions which were
