@@ -38,7 +38,6 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/storage/innobase/xtrabackup/src/crc
   ${CMAKE_CURRENT_BINARY_DIR}/..
   ${GCRYPT_INCLUDE_DIR}
-  ${CURL_INCLUDE_DIRS}
   ${LIBEV_INCLUDE_DIRS}
   )
 
@@ -59,7 +58,6 @@ SET_TARGET_PROPERTIES(xbcloud
 TARGET_LINK_LIBRARIES(xbcloud
   ${GCRYPT_LIBS}
   ${LIBEV_LIBRARIES}
-  ${CURL_LIBRARIES}
   extra::rapidjson
   ext::curl
   mysys
@@ -86,7 +84,6 @@ IF (WITH_UNIT_TESTS AND CMAKE_VERSION VERSION_GREATER 3.22.1)
     TARGET_LINK_LIBRARIES(xbcloud-t
       ${GCRYPT_LIBS}
       ${LIBEV_LIBRARIES}
-      ${CURL_LIBRARIES}
       ${GTEST_BOTH_LIBRARIES}
       GTest::gtest
       GTest::gmock
