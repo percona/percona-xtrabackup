@@ -1569,10 +1569,16 @@ static dberr_t recreate_redo_files(lsn_t &flushed_lsn) {
   tables space in case the shutdown wasn't slow. In such case we should start
   from an lsn at least equal to checkpoint_lsn as pages in the tablespace will
   have lsns larger than flushed_lsn. */
+
+#ifdef XTRABACKUP
+  /* PXB recreats redo log file for rollbackup transactionts */
+  ut_ad(!srv_apply_log_only && !srv_read_only_mode);
+#else
   if (recv_sys->checkpoint_lsn != 0) {
     ut_ad(flushed_lsn <= recv_sys->checkpoint_lsn);
     flushed_lsn = std::max(flushed_lsn, recv_sys->checkpoint_lsn);
   }
+#endif  // XTRABACKUP
 
   /* This is to provide the property that data byte at given lsn never
   changes and avoid the need to rewrite the block with flushed_lsn. */
@@ -2025,7 +2031,6 @@ dberr_t srv_start(bool create_new_db IF_XB(, lsn_t to_lsn)) {
 
     const bool log_upgrade = log_sys->m_format < Log_format::CURRENT;
 
-    // 8033 merge recreate redo
     if (log_upgrade) {
       if (srv_read_only_mode) {
         ib::error(ER_IB_MSG_LOG_UPGRADE_IN_READ_ONLY_MODE,
@@ -2203,14 +2208,9 @@ dberr_t srv_start(bool create_new_db IF_XB(, lsn_t to_lsn)) {
 
     log_sys->m_allow_checkpoints.store(true, std::memory_order_release);
 
-#ifdef XTRABACKUP
-        /* we have to recreate always in PXB because the ib_redo0 file
-        is always full and we cannot reuse it. No circular buffer
-        logic from 8.0.30. Recreate this #ib_redo0 file and it will be
-        used by transaction rollbacks */
-    // 8033 merge todo recreate redo
-#endif
-    if (recv_sys->is_cloned_db || recv_sys->is_meb_db) {
+    if (IF_XB((!srv_apply_log_only && !srv_read_only_mode) ||)
+            recv_sys->is_cloned_db ||
+        recv_sys->is_meb_db) {
       buf_pool_wait_for_no_pending_io();
 
       /* Reset creator for log */
@@ -2221,10 +2221,20 @@ dberr_t srv_start(bool create_new_db IF_XB(, lsn_t to_lsn)) {
 
       ut_ad(buf_pool_pending_io_reads_count() == 0);
 
+#ifdef XTRABACKUP
+      /* we have to recreate always in PXB because the ib_redo0 file
+      is always full and we cannot reuse it. No circular buffer
+      logic from 8.0.30. Recreate this #ib_redo0 file and it will be
+      used by transaction rollbacks */
+      lsn_t redo_log_flushed_lsn = log_sys->flushed_to_disk_lsn.load();
+      recreate_redo_files(redo_log_flushed_lsn);
+#else
+
       err = log_files_reset_creator_and_set_full(*log_sys);
       if (err != DB_SUCCESS) {
         return srv_init_abort(err);
       }
+#endif  // XTRABACKUP
 
       log_start_background_threads(*log_sys);
 
