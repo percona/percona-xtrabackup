@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2002, 2022, Oracle and/or its affiliates.
+   Copyright (c) 2002, 2023, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -150,7 +150,17 @@ extern "C" int handle_options(int *argc, char ***argv,
 extern int my_handle_options(int *argc, char ***argv,
                              const struct my_option *longopts,
                              my_get_one_option, const char **command_list,
+<<<<<<< HEAD
                              bool ignore_unknown_option, bool validate_only);
+||||||| 1bfe02bdad6
+                             bool ignore_unknown_option);
+=======
+                             bool ignore_unknown_option);
+extern int my_handle_options2(int *argc, char ***argv,
+                              const struct my_option *longopts,
+                              my_get_one_option, const char **command_list,
+                              bool ignore_unknown_option, bool boolean_as_int);
+>>>>>>> mysql-8.0.33
 extern void print_cmdline_password_warning();
 extern void my_cleanup_options(const struct my_option *options);
 extern void my_print_help(const struct my_option *options);
