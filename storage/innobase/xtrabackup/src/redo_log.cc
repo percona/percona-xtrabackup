@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2019,2022 Percona LLC and/or its affiliates.
+Copyright (c) 2019,2023 Percona LLC and/or its affiliates.
 
 Redo log handling.
 
@@ -731,29 +731,23 @@ bool Redo_Log_Writer::close_logfile() {
   return (true);
 }
 
-/* set encryption info of redo log on io request */
-static void set_encryption_info(IORequest &req_type) {
-  auto& encryption_metadata = log_sys->m_encryption_metadata;
-  ut_ad(encryption_metadata.m_type != Encryption::NONE);
-  req_type.encryption_algorithm(encryption_metadata.m_type);
-  req_type.encryption_key(encryption_metadata.m_key,
-                          encryption_metadata.m_key_len,
-                          encryption_metadata.m_iv);
-}
 
 bool Redo_Log_Writer::write_buffer(byte *buf, size_t len) {
   byte *write_buf = buf;
 
   if (srv_redo_log_encrypt) {
-    IORequest req_type(IORequestLogWrite);
-    set_encryption_info(req_type);
-    Encryption encryption(req_type.encryption_algorithm());
-    ulint dst_len = len;
-    write_buf =
-        encryption.encrypt_log(req_type, buf, len, scratch_buf, &dst_len);
-    ut_a(len == dst_len);
-  }
+    IORequest req_type(IORequest::WRITE);
+    req_type.get_encryption_info().set(log_sys->m_encryption_metadata);
+    ut_ad(req_type.is_encrypted());
 
+    Encryption encryption(req_type.encryption_algorithm());
+
+    if (!encryption.encrypt_log(buf, len, scratch_buf)) {
+      xb::error() << "Failed to encrypt redo log";
+      return false;
+    }
+    write_buf = scratch_buf;
+  }
   if (ds_write(log_file, write_buf, len)) {
     xb::error() << "write to logfile failed";
     return (false);
@@ -789,10 +783,10 @@ ssize_t Archived_Redo_Log_Reader::read_logfile(bool *finished) {
   }
 
   if (srv_redo_log_encrypt) {
-    IORequest req_type(IORequestLogRead);
-    set_encryption_info(req_type);
+    IORequest req_type(IORequest::READ);
+    req_type.get_encryption_info().set(log_sys->m_encryption_metadata);
     Encryption encryption(req_type.encryption_algorithm());
-    auto err = encryption.decrypt_log(req_type, log_buf, len, scratch_buf);
+    auto err = encryption.decrypt_log(log_buf, len);
     ut_a(err == DB_SUCCESS);
   }
 
@@ -1108,13 +1102,10 @@ void Archived_Redo_Log_Monitor::thread_func() {
         hdr_len -= n_read;
       }
       if (srv_redo_log_encrypt) {
-        ut::aligned_array_pointer<byte, OS_FILE_LOG_BLOCK_SIZE> scratch_buf;
-        scratch_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
-                                  ut::Count{OS_FILE_LOG_BLOCK_SIZE});
-        IORequest req_type(IORequestLogRead);
-        set_encryption_info(req_type);
+        IORequest req_type(IORequest::READ);
+        req_type.get_encryption_info().set(log_sys->m_encryption_metadata);
         Encryption encryption(req_type.encryption_algorithm());
-        auto err = encryption.decrypt_log(req_type, buf, hdr_len, scratch_buf);
+        auto err = encryption.decrypt_log(buf, hdr_len);
         ut_a(err == DB_SUCCESS);
       }
     }

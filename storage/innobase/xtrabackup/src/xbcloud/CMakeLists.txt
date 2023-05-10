@@ -24,7 +24,6 @@ INCLUDE(libev)
 SET(WITH_CURL "system" CACHE STRING "Using system curl by default")
 
 FIND_GCRYPT()
-MYSQL_CHECK_CURL()
 FIND_EV()
 
 # Remove -Wundef from C++ compiler flags since there are several
@@ -39,7 +38,6 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/storage/innobase/xtrabackup/src/crc
   ${CMAKE_CURRENT_BINARY_DIR}/..
   ${GCRYPT_INCLUDE_DIR}
-  ${CURL_INCLUDE_DIRS}
   ${LIBEV_INCLUDE_DIRS}
   )
 
@@ -60,7 +58,8 @@ SET_TARGET_PROPERTIES(xbcloud
 TARGET_LINK_LIBRARIES(xbcloud
   ${GCRYPT_LIBS}
   ${LIBEV_LIBRARIES}
-  ${CURL_LIBRARIES}
+  extra::rapidjson
+  ext::curl
   mysys
   crc
   )
@@ -85,10 +84,11 @@ IF (WITH_UNIT_TESTS AND CMAKE_VERSION VERSION_GREATER 3.22.1)
     TARGET_LINK_LIBRARIES(xbcloud-t
       ${GCRYPT_LIBS}
       ${LIBEV_LIBRARIES}
-      ${CURL_LIBRARIES}
       ${GTEST_BOTH_LIBRARIES}
       GTest::gtest
       GTest::gmock
+      extra::rapidjson
+      ext::curl
       mysys
       crc
       )

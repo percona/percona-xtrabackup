@@ -313,7 +313,6 @@ ulong innobase_large_page_size = 0;
 parameters are declared in mysqld.cc: */
 
 long innobase_buffer_pool_awe_mem_mb = 0;
-long innobase_file_io_threads = 4;
 long innobase_read_io_threads = 4;
 long innobase_write_io_threads = 4;
 long innobase_force_recovery = 0;
@@ -1449,18 +1448,14 @@ Disable with --skip-innodb-checksums.",
      "Number of IOPs the server can do. Tunes the background IO rate",
      (G_PTR *)&srv_io_capacity, (G_PTR *)&srv_io_capacity, 0, GET_ULONG,
      OPT_ARG, 200, 100, ~0UL, 0, 0, 0},
-    {"innodb_file_io_threads", OPT_INNODB_FILE_IO_THREADS,
-     "Number of file I/O threads in InnoDB.",
-     (G_PTR *)&innobase_file_io_threads, (G_PTR *)&innobase_file_io_threads, 0,
-     GET_LONG, REQUIRED_ARG, 4, 4, 64, 0, 1, 0},
     {"innodb_read_io_threads", OPT_INNODB_READ_IO_THREADS,
      "Number of background read I/O threads in InnoDB.",
      (G_PTR *)&innobase_read_io_threads, (G_PTR *)&innobase_read_io_threads, 0,
-     GET_LONG, REQUIRED_ARG, 4, 1, 64, 0, 1, 0},
+     GET_LONG, REQUIRED_ARG, 4, 4, 64, 0, 1, 0},
     {"innodb_write_io_threads", OPT_INNODB_WRITE_IO_THREADS,
      "Number of background write I/O threads in InnoDB.",
      (G_PTR *)&innobase_write_io_threads, (G_PTR *)&innobase_write_io_threads,
-     0, GET_LONG, REQUIRED_ARG, 4, 1, 64, 0, 1, 0},
+     0, GET_LONG, REQUIRED_ARG, 4, 4, 64, 0, 1, 0},
     {"innodb_file_per_table", OPT_INNODB_FILE_PER_TABLE,
      "Stores each InnoDB table to an .ibd file in the database dir.",
      (G_PTR *)&innobase_file_per_table, (G_PTR *)&innobase_file_per_table, 0,
@@ -2213,7 +2208,6 @@ static bool innodb_init_param(void) {
   srv_buf_pool_size = (ulint)xtrabackup_use_memory;
   srv_buf_pool_size = buf_pool_size_align(srv_buf_pool_size);
 
-  srv_n_file_io_threads = (ulint)innobase_file_io_threads;
   srv_n_read_io_threads = (ulint)innobase_read_io_threads;
   srv_n_write_io_threads = (ulint)innobase_write_io_threads;
 
@@ -2701,7 +2695,7 @@ static bool innodb_init(bool init_dd, bool for_apply_log) {
     srv_dict_recover_on_restart();
   }
 
-  srv_start_threads(false);
+  srv_start_threads();
 
   if (srv_thread_is_active(srv_threads.m_trx_recovery_rollback)) {
     srv_threads.m_trx_recovery_rollback.wait();
@@ -3432,18 +3426,6 @@ void io_watching_thread() {
   io_watching_thread_running = false;
 }
 
-/************************************************************************
-I/o-handler thread function. */
-static void io_handler_thread(ulint segment) {
-  while (srv_shutdown_state != SRV_SHUTDOWN_EXIT_THREADS) {
-    fil_aio_wait(segment);
-  }
-
-  /* We count the number of threads in os_thread_exit(). A created
-  thread should always use that to exit and not use return() to exit.
-  The thread actually never comes here because it is exited in an
-  os_event_wait(). */
-}
 
 /**************************************************************************
 Datafiles copying thread.*/
@@ -3654,7 +3636,6 @@ Initializes the I/O and tablespace cache subsystems. */
 static bool xb_fil_io_init(void)
 /*================*/
 {
-  srv_n_file_io_threads = srv_n_read_io_threads;
 
   if (!os_aio_init(srv_n_read_io_threads, srv_n_write_io_threads)) {
     xb::error() << "Cannot initialize AIO sub-system.";
@@ -3678,9 +3659,7 @@ static dberr_t xb_load_tablespaces(void)
   page_no_t sum_of_new_sizes;
   lsn_t flush_lsn;
 
-  for (ulint i = 0; i < srv_n_file_io_threads; i++) {
-    os_thread_create(PFS_NOT_INSTRUMENTED, i, io_handler_thread, i).start();
-  }
+  os_aio_start_threads();
 
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
@@ -3792,9 +3771,6 @@ void xb_data_files_close(void)
 
   fil_close();
 
-  /* Reset srv_file_io_threads to its default value to avoid confusing
-  warning on --prepare in innobase_start_or_create_for_mysql()*/
-  srv_n_file_io_threads = 4;
 
   srv_shutdown_state = SRV_SHUTDOWN_NONE;
 }
@@ -4952,11 +4928,6 @@ static void xtrabackup_stats_func(int argc, char **argv) {
 
   srv_page_size_shift = 14;
   srv_page_size = (1 << srv_page_size_shift);
-
-  if (srv_n_file_io_threads < 10) {
-    srv_n_read_io_threads = 4;
-    srv_n_write_io_threads = 4;
-  }
 
   /* initialize components */
   if (innodb_init_param()) {
@@ -6873,17 +6844,18 @@ static bool xb_export_cfg_write(
 
 /** Write the transfer key to CFP file.
 @param[in]	table		write the data for this table
+@param[in] 	encryption_metadata metadta of encryption
 @param[in]	file		file to write to
 @return DB_SUCCESS or error code. */
 [[nodiscard]] static dberr_t xb_export_write_transfer_key(
-    const dict_table_t *table, FILE *file) {
+    const Encryption_metadata &encryption_metadata, FILE *file) {
   byte key_size[sizeof(uint32_t)];
   byte row[Encryption::KEY_LEN * 3];
   byte *ptr = row;
   byte *transfer_key = ptr;
   lint elen;
-
-  ut_ad(table->encryption_key != NULL && table->encryption_iv != NULL);
+  ut_ad(encryption_metadata.can_encrypt() &&
+        encryption_metadata.m_key != NULL && encryption_metadata.m_iv != NULL);
 
   /* Write the encryption key size. */
   mach_write_to_4(key_size, Encryption::KEY_LEN);
@@ -6908,10 +6880,9 @@ static bool xb_export_cfg_write(
   ptr += Encryption::KEY_LEN;
 
   /* Encrypt tablespace key. */
-  elen = my_aes_encrypt(
-      reinterpret_cast<unsigned char *>(table->encryption_key),
-      Encryption::KEY_LEN, ptr, reinterpret_cast<unsigned char *>(transfer_key),
-      Encryption::KEY_LEN, my_aes_256_ecb, NULL, false);
+  elen = my_aes_encrypt(encryption_metadata.m_key, Encryption::KEY_LEN, ptr,
+                        reinterpret_cast<unsigned char *>(transfer_key),
+                        Encryption::KEY_LEN, my_aes_256_ecb, NULL, false);
 
   if (elen == MY_AES_BAD_DATA) {
     xb::error() << "IO Write error: (" << errno << "," << strerror(errno) << ")"
@@ -6929,8 +6900,7 @@ static bool xb_export_cfg_write(
   ptr += Encryption::KEY_LEN;
 
   /* Encrypt tablespace iv. */
-  elen = my_aes_encrypt(reinterpret_cast<unsigned char *>(table->encryption_iv),
-                        Encryption::KEY_LEN, ptr,
+  elen = my_aes_encrypt(encryption_metadata.m_iv, Encryption::KEY_LEN, ptr,
                         reinterpret_cast<unsigned char *>(transfer_key),
                         Encryption::KEY_LEN, my_aes_256_ecb, NULL, false);
 
@@ -6968,21 +6938,9 @@ static bool xb_export_cfg_write(
   we need save the encryption information into table, otherwise,
   this information will be lost in fil_discard_tablespace along
   with fil_space_free(). */
-  if (table->encryption_key == NULL) {
-    table->encryption_key =
-        static_cast<byte *>(mem_heap_alloc(table->heap, Encryption::KEY_LEN));
 
-    table->encryption_iv =
-        static_cast<byte *>(mem_heap_alloc(table->heap, Encryption::KEY_LEN));
-
-    fil_space_t *space = fil_space_get(table->space);
-    ut_ad(space != NULL && FSP_FLAGS_GET_ENCRYPTION(space->flags));
-
-    memcpy(table->encryption_key, space->m_encryption_metadata.m_key,
-           Encryption::KEY_LEN);
-    memcpy(table->encryption_iv, space->m_encryption_metadata.m_iv,
-           Encryption::KEY_LEN);
-  }
+  fil_space_t *space = fil_space_get(table->space);
+  ut_ad(space != nullptr && FSP_FLAGS_GET_ENCRYPTION(space->flags));
 
   srv_get_encryption_data_filename(table, name, sizeof(name));
 
@@ -6996,7 +6954,7 @@ static bool xb_export_cfg_write(
 
     err = DB_IO_ERROR;
   } else {
-    err = xb_export_write_transfer_key(table, file);
+    err = xb_export_write_transfer_key(space->m_encryption_metadata, file);
 
     if (fflush(file) != 0) {
       char buf[BUFSIZ];
@@ -7019,10 +6977,6 @@ static bool xb_export_cfg_write(
       err = DB_IO_ERROR;
     }
   }
-
-  /* Clean the encryption information */
-  table->encryption_key = NULL;
-  table->encryption_iv = NULL;
 
   return (err);
 }
@@ -7232,11 +7186,6 @@ skip_check:
 
   srv_apply_log_only = (bool)xtrabackup_apply_log_only;
 
-  /* increase IO threads */
-  if (srv_n_file_io_threads < 10) {
-    srv_n_read_io_threads = 4;
-    srv_n_write_io_threads = 4;
-  }
 
   xb::info() << "Starting InnoDB instance for recovery.";
   xb::info() << "Using " << xtrabackup_use_memory

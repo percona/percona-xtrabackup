@@ -41,7 +41,7 @@ MYSQL_ADD_PLUGIN(keyring_vault
                  vault_credentials_parser.cc
                  vault_credentials.cc
                  vault_keyring.cc
-                 LINK_LIBRARIES ${CURL_LIBRARY} ${SSL_LIBRARIES}
+                 LINK_LIBRARIES ${CURL_LIBRARY} ${SSL_LIBRARIES} extra::rapidjson
                  MODULE_ONLY
                  MODULE_OUTPUT_NAME "keyring_vault")
 
