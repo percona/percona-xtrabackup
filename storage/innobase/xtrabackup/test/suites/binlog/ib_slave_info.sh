@@ -104,6 +104,9 @@ run_cmd egrep "MySQL binlog position: $pxb_log_binlog_info_pattern" $topdir/pxb.
 
 run_cmd egrep "MySQL slave binlog position: $pxb_log_slave_info_pattern" $topdir/pxb.log
 
+# PXB-3033 - Execute STOP SLAVE before copying non-InnoDB tables
+grep -A 5 'Slave is safe to backup.' $topdir/pxb.log | grep -q 'Starting to backup non-InnoDB tables and files' || die 'STOP SLAVE in wrong place'
+
 run_cmd egrep -q "$binlog_slave_info_pattern" \
     $topdir/backup/xtrabackup_slave_info
 
