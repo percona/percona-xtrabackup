@@ -49,7 +49,6 @@ append_arg_to_args () {
             --build_deb=*) DEB="$val" ;;
             --get_sources=*) SOURCE="$val" ;;
             --build_tarball=*) TARBALL="$val" ;;
-            --branch=*) BRANCH="$val" ;;
             --install_deps=*) INSTALL="$val" ;;
             --branch=*) BRANCH="$val" ;;
             --repo=*) REPO="$val" ;;
@@ -135,6 +134,8 @@ get_sources(){
     echo "PRODUCT=Percona-XtraBackup-8.0" >> ../percona-xtrabackup-8.0.properties
     echo "PRODUCT_FULL=Percona-XtraBackup-${XB_VERSION_MAJOR}.${XB_VERSION_MINOR}.${XB_VERSION_PATCH}${XB_VERSION_EXTRA}" >> ../percona-xtrabackup-8.0.properties
     echo "PRODUCT_UL_DIR=Percona-XtraBackup-8.0" >> ../percona-xtrabackup-8.0.properties
+    PRODUCT="Percona-XtraBackup-8.0"
+    PRODUCT_FULL="Percona-XtraBackup-${XB_VERSION_MAJOR}.${XB_VERSION_MINOR}.${XB_VERSION_PATCH}${XB_VERSION_EXTRA}"
     if [ -z "${DESTINATION}" ]; then
         export DESTINATION=experimental
     fi 
@@ -173,6 +174,7 @@ get_sources(){
     # create a PXB tar
     cd ${WORKDIR}/percona-xtrabackup
     tar --owner=0 --group=0 --exclude=.bzr --exclude=.git -czf ${PXBDIR}.tar.gz ${PXBDIR}
+    echo "UPLOAD=UPLOAD/experimental/BUILDS/${PRODUCT}/${PRODUCT_FULL}/${BRANCH}/${REVISION}/${BUILD_ID}" >> ../percona-xtrabackup-8.0.properties
     rm -rf ${PXBDIR}
 
     mkdir $WORKDIR/source_tarball
@@ -229,7 +231,7 @@ install_deps() {
     CURPLACE=$(pwd)
     if [ "$OS" == "rpm" ]
     then
-        yum -y install git wget yum-utils
+        yum -y install git wget yum-utils curl
         yum install -y https://repo.percona.com/yum/percona-release-latest.noarch.rpm
         if [ $RHEL = 9 ]; then
             yum-config-manager --enable ol9_distro_builder
@@ -307,13 +309,14 @@ install_deps() {
         fi
     else
         apt-get update
-        DEBIAN_FRONTEND=noninteractive apt-get -y install lsb-release gnupg git wget
+        DEBIAN_FRONTEND=noninteractive apt-get -y install lsb-release gnupg git wget curl
+        export OS_NAME="$(lsb_release -sc)"
         wget https://repo.percona.com/apt/percona-release_latest.$(lsb_release -sc)_all.deb && dpkg -i percona-release_latest.$(lsb_release -sc)_all.deb
         percona-release enable tools testing
         apt-get update
 
         PKGLIST+=" bison cmake devscripts debconf debhelper automake bison ca-certificates libcurl4-openssl-dev"
-        PKGLIST+=" cmake debhelper libaio-dev libncurses-dev libtool libz-dev libsasl2-dev"
+        PKGLIST+=" cmake debhelper libaio-dev libncurses-dev libtool libz-dev libsasl2-dev vim-common"
         PKGLIST+=" libgcrypt-dev libev-dev lsb-release libudev-dev"
         PKGLIST+=" build-essential rsync libdbd-mysql-perl libnuma1 socat libssl-dev patchelf libicu-dev"
         PKGLIST+=" libprocps-dev"
@@ -607,7 +610,7 @@ BRANCH="8.0"
 INSTALL=0
 RPM_RELEASE=1
 DEB_RELEASE=1
-REPO="git://github.com/percona/percona-xtrabackup.git"
+REPO="https://github.com/percona/percona-xtrabackup.git"
 CMAKE_BIN="cmake"
 parse_arguments PICK-ARGS-FROM-ARGV "$@"
 
