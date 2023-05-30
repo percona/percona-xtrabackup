@@ -89,6 +89,15 @@ export CFLAGS=${CFLAGS:-}
 export CXXFLAGS=${CXXFLAGS:-}
 export MAKE_JFLAG=-j4
 
+CMAKE_BIN='cmake'
+
+if [ -f /etc/redhat-release ]; then
+    RHEL=$(rpm --eval %rhel)
+    if [[ "${RHEL}" -lt 8 ]]; then
+        CMAKE_BIN='cmake3'
+    fi
+fi
+
 # Create a temporary working directory
 PRODUCT_FULL="percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER"
 BASEINSTALLDIR="$(cd "$WORKDIR" && TMPDIR="$WORKDIR_ABS" mktemp -d xtrabackup-build.XXXXXX)"
@@ -106,7 +115,7 @@ mkdir "$INSTALLDIR"
 
         # Install the files
         mkdir -p "$INSTALLDIR"
-        cmake -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX="$INSTALLDIR" \
+        $CMAKE_BIN -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX="$INSTALLDIR" \
           -DINSTALL_MYSQLTESTDIR=percona-xtrabackup-${XB_VERSION_MAJOR}.${XB_VERSION_MINOR}-test -DINSTALL_MANDIR=${INSTALLDIR}/man \
           -DDOWNLOAD_BOOST=1 -DWITH_BOOST=${WORKDIR_ABS}/libboost \
           -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock .
