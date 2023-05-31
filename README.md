@@ -1,3 +1,4 @@
+
 ## Percona XtraBackup
 
 ![PXB logo](storage/innobase/xtrabackup/doc/source/percona-xtrabackup-logo.jpg)
@@ -10,15 +11,15 @@ Percona XtraBackup 8.0 can back up data from InnoDB, XtraDB, MyISAM, and MyRocks
 
 Percona XtraBackup 2.4 can back up data from InnoDB, XtraDB, and MyISAM tables on MySQL 5.7 servers, as well as Percona Server for MySQL with XtraDB.
 
-For more information about the Percona XtraBackup components and how to use this product, see the [Percona XtraBackup documentation](https://www.percona.com/doc/percona-xtrabackup).
+For more information about the Percona XtraBackup components and how to use this product, see the [Percona XtraBackup documentation](https://docs.percona.com/percona-xtrabackup/8.0/).
 
 ## Installation
 
 You can install Percona XtraBackup using the following methods:
-- from the Percona repository 
+- Use the [Percona repository](https://docs.percona.com/percona-software-repositories/index.html) 
 - Build from the [source code](https://github.com/percona/percona-xtrabackup)
 
-The installation instructions in the official documentation are [here](https://www.percona.com/doc/percona-xtrabackup/8.0/installation.html).
+The installation instructions in the official documentation are [here](https://docs.percona.com/percona-xtrabackup/8.0/installation.html).
 
 ## Submit a bug report or a feature request
 
@@ -33,11 +34,11 @@ As a general rule of thumb, please try to create a bug report that is:
 
 ## Licensing
 
-Percona is dedicated to **keeping open source open**. Whenever possible, we strive to include permissive licensing for both our software and documentation. For this project, we are using version 2 of the GNU General Public License (GPLv2).
+Percona is dedicated to **keeping open source open**. Whenever possible, we strive to include permissive licensing for both our software and documentation. For this project, we are using version 2 of the GNU General Public License (GPLv2). For the documentation, we use [this license](https://docs.percona.com/percona-xtrabackup/8.0/copyright-and-licensing-information.html).
 
 ## How to get involved
 
-We encourage contributions and are always looking for new members that are as dedicated to serving the community as we are. The [Contributing Guide](https://github.com/percona/percona-xtrabackup/blob/8.0/storage/innobase/xtrabackup/doc/source/contributing.md) contains how you can contribute.
+We encourage contributions and are always looking for members that are as dedicated to serving the community as we are. The [Contributing Guide](https://github.com/percona/pxb-docs/blob/8.0/contributing.md) contains how you can contribute.
 
 ## Contact
 
