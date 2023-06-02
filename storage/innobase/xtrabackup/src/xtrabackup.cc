@@ -1087,9 +1087,10 @@ struct my_option xb_client_options[] = {
      100, 0, 1, 0},
 
     {"safe-slave-backup", OPT_SAFE_SLAVE_BACKUP,
-     "This option stops slave SQL thread at the start of the backup and waits "
-     "to start backup until Slave_open_temp_tables in "
-     "\"SHOW STATUS\" is zero. If there are no open temporary tables, "
+     "This option stops slave SQL thread at the start of the backup if "
+     "lock-ddl=ON or before copying non-InnoDB tables if lock-ddl=OFF and "
+     "waits until Slave_open_temp_tables in \"SHOW STATUS\" is zero. If there "
+     "are no open temporary tables, "
      "the backup will take place, otherwise the SQL thread will be "
      "started and stopped until there are no open temporary tables. "
      "The backup will fail if Slave_open_temp_tables does not become "
@@ -7246,8 +7247,8 @@ bool xb_init() {
 
     history_start_time = time(NULL);
 
-    /* stop slave before taking backup up locks */
-    if (!opt_no_lock && opt_safe_slave_backup) {
+    /* stop slave before taking backup up locks if lock-ddl=ON*/
+    if (!opt_no_lock && opt_lock_ddl && opt_safe_slave_backup) {
       if (!wait_for_safe_slave(mysql_connection)) {
         return (false);
       }
