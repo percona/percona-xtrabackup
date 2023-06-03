@@ -187,7 +187,7 @@ pagetracking::xb_space_map *changed_page_tracking = nullptr;
 char *xtrabackup_incremental_basedir = NULL; /* for --backup */
 char *xtrabackup_extra_lsndir = NULL;    /* for --backup with --extra-lsndir */
 char *xtrabackup_incremental_dir = NULL; /* for --prepare */
-
+char *xtrabackup_redo_log_arch_dir = NULL;
 char xtrabackup_real_incremental_basedir[FN_REFLEN];
 char xtrabackup_real_extra_lsndir[FN_REFLEN];
 char xtrabackup_real_incremental_dir[FN_REFLEN];
@@ -637,6 +637,7 @@ enum options_xtrabackup {
   OPT_LOG,
   OPT_LOG_BIN_INDEX,
   OPT_INNODB,
+  OPT_INNODB_REDO_LOG_ARCHIVE_DIRS,
   OPT_INNODB_CHECKSUMS,
   OPT_INNODB_DATA_FILE_PATH,
   OPT_INNODB_DATA_HOME_DIR,
@@ -843,6 +844,11 @@ struct my_option xb_client_options[] = {
      "careful!",
      (G_PTR *)&xtrabackup_incremental, (G_PTR *)&xtrabackup_incremental, 0,
      GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+      {"redo_log_arch_dir", OPT_INNODB_REDO_LOG_ARCHIVE_DIRS, "destination directory",
+      (G_PTR *)&xtrabackup_redo_log_arch_dir, (G_PTR *)&xtrabackup_redo_log_arch_dir, 0,
+      GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
+
     {"incremental-basedir", OPT_XTRA_INCREMENTAL_BASEDIR,
      "(for --backup): copy only .ibd pages newer than backup at specified "
      "directory.",
