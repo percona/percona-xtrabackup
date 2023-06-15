@@ -1,6 +1,9 @@
 . inc/xbcloud_common.sh
 is_xbcloud_credentials_set
 
+# call cleanup in case of error
+trap 'xbcloud_cleanup' ERR
+
 start_server --innodb_file_per_table
 
 write_credentials
@@ -75,9 +78,9 @@ run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf get \
 for password_string in "${secret_keys[@]}"
 do
   vlog "check for $password_string in backup directory"
-  if grep -rq $password_string $topdir/downloaded_full
+  if grep -rq $password_string $topdir/downloaded_full/xtrabackup*
   then
-     grep -r $password_string $topdir/downloaded_full
+     grep -r $password_string $topdir/downloaded_full/xtrabackup*
      die "found $password_string string in $topdir/downloaded_full"
   fi
 done

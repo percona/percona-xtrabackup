@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2019, 2021 Percona LLC and/or its affiliates.
+Copyright (c) 2019, 2023 Percona LLC and/or its affiliates.
 
 HTTP client implementation using cURL.
 
@@ -639,7 +639,7 @@ void Http_client::callback(CLIENT *client, std::string container,
                   std::placeholders::_1, std::placeholders::_2, count + 1),
         true);
     return;
-  } else if (count > client->get_max_retries())
+  } else if (retry_error && count > client->get_max_retries())
     msg_ts("%s: No more retries for %s\n", my_progname, name.c_str());
 
   if (callback) {

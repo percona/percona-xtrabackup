@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2011-2017 Percona LLC and/or its affiliates.
+Copyright (c) 2011-2023 Percona LLC and/or its affiliates.
 
 The xbstream format interface.
 
@@ -24,6 +24,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <my_base.h>
 #include <my_dir.h>
 #include <my_io.h>
+#include <string>
 #include "datasink.h"
 
 /* Magic value in a chunk header */
@@ -105,7 +106,22 @@ typedef struct {
   ds_sparse_chunk_t *sparse_map;
 } xb_rstream_chunk_t;
 
-xb_rstream_t *xb_stream_read_new(void);
+/**
+ * Open FIFO file for reading
+ *
+ * @param[in] path      Path of FIFO file
+ * @param[in] timeout   Timeout in seconds
+ *
+ * @return pointer to xb_rstream_t object or nullptr in case of error
+ */
+xb_rstream_t *xb_stream_read_new_fifo(const char *path, int timeout);
+
+/**
+ * Open STDIN for reading
+ *
+ * @return pointer to xb_rstream_t object
+ */
+xb_rstream_t *xb_stream_read_new_stdin(void);
 
 xb_rstream_result_t xb_stream_read_chunk(xb_rstream_t *stream,
                                          xb_rstream_chunk_t *chunk);

@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2021 Percona LLC and/or its affiliates.
+Copyright (c) 2021-2023 Percona LLC and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -175,4 +175,29 @@ xb_fil_cur_result_t datafile_read(datafile_cur_t *cursor);
 */
 bool restore_sparseness(const char *src_file_path, uint buffer_size,
                         char error[512]);
+
+/**
+  Open FIFO file for writing. Wait up to timeout seconds for it to return a
+  valid file descriptor. This is done by opening it on non-blocking mode which
+  does not block if the file is not open for read. Then later changing FD mode
+  to blocking mode.
+
+  @param [in]       path      path to file
+  @param [in]       timeout   timeout in seconds.
+
+  @return file descriptor in case of success, -1 otherwise
+*/
+File open_fifo_for_write_with_timeout(const char *path, uint timeout);
+
+/**
+  Open FIFO file for reading. Wait up to timeout seconds for it to return a
+  valid file descriptor. This is done by opening it on non-blocking mode waiting
+  the FD to report EPOLLIN (FD ready for read).
+
+  @param [in]       path      path to file
+  @param [in]       timeout   timeout in seconds.
+
+  @return file descriptor in case of success, -1 otherwise
+*/
+File open_fifo_for_read_with_timeout(const char *path, uint timeout);
 #endif

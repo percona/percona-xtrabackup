@@ -1,5 +1,27 @@
+/******************************************************
+Copyright (c) 2021-2023 Percona LLC and/or its affiliates.
+
+Streaming implementation for XtraBackup.
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; version 2 of the License.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
+
+*******************************************************/
+
 #include "file_utils.h"
 #include <mysql/service_mysql_alloc.h>
+#include <sys/epoll.h>
+#include <thread>
 #include "common.h"
 #include "msg.h"
 #include "my_dir.h"
@@ -314,4 +336,63 @@ bool restore_sparseness(const char *src_file_path, uint buffer_size,
   }
   datafile_close(&cursor);
   return true;
+}
+
+File open_fifo_for_write_with_timeout(const char *path, uint timeout) {
+  File fd;
+  uint attempt = 0;
+  do {
+    fd = my_open(path, O_WRONLY | O_NONBLOCK, MYF(0));
+    if (fd < 0) {
+      attempt++;
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+
+  } while (fd < 0 && attempt < timeout);
+  if (fd < 0) {
+    return -1;
+  }
+  /* Adjust file flags to blocking - we are in sync mode now. */
+  if (fcntl(fd, F_SETFL, O_WRONLY) == -1) {
+    my_close(fd, MYF(0));
+    return -1;
+  }
+
+  return fd;
+}
+
+File open_fifo_for_read_with_timeout(const char *path, uint timeout) {
+  int fd;
+  uint attempt = 0;
+  do {
+    fd = open(path, O_RDONLY | O_NONBLOCK);
+    if (fd < 0) {
+      attempt++;
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+  } while (fd < 0 && attempt < timeout);
+
+  if (fd < 0) {
+    return -1;
+  }
+
+  /* File was open, lets check its open on the other side */
+  int epoll_fd = epoll_create1(0);
+  if (epoll_fd < 0) {
+    return -1;
+  }
+  struct epoll_event ev;
+  ev.events = EPOLLIN;
+  ev.data.fd = fd;
+  if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev) < 0) {
+    return -1;
+  }
+  int ret = epoll_wait(epoll_fd, &ev, 1, timeout * 1000);
+  if (ret <= 0) {
+    return -1;
+  }
+  if (fcntl(fd, F_SETFL, O_RDONLY) == -1) {
+    return -1;
+  }
+  return fd;
 }

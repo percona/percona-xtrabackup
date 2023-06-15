@@ -1,5 +1,5 @@
 /******************************************************
-Copyright (c) 2013-2022 Percona LLC and/or its affiliates.
+Copyright (c) 2013-2023 Percona LLC and/or its affiliates.
 
 The xbcrypt utility: decrypt files in the XBCRYPT format.
 
@@ -121,6 +121,7 @@ datasink_t datasink_decompress_lz4;
 datasink_t datasink_decompress_zstd;
 datasink_t datasink_tmpfile;
 datasink_t datasink_buffer;
+datasink_t datasink_fifo;
 
 static int get_options(int *argc, char ***argv);
 

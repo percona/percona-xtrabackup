@@ -230,6 +230,10 @@ bool io_watching_thread_running = false;
 bool xtrabackup_logfile_is_renamed = false;
 
 int xtrabackup_parallel;
+int xtrabackup_fifo_streams;
+bool xtrabackup_fifo_streams_set = false;
+uint xtrabackup_fifo_timeout = 60;
+char *xtrabackup_fifo_dir = NULL;
 bool opt_strict = true;
 
 char *xtrabackup_stream_str = NULL;
@@ -615,7 +619,10 @@ enum options_xtrabackup {
   OPT_XTRA_DATABASES_FILE,
   OPT_XTRA_CREATE_IB_LOGFILE,
   OPT_XTRA_PARALLEL,
+  OPT_XTRA_FIFO_STREAMS,
   OPT_XTRA_STREAM,
+  OPT_XTRA_FIFO_DIR,
+  OPT_XTRA_FIFO_TIMEOUT,
   OPT_XTRA_STRICT,
   OPT_XTRA_COMPRESS,
   OPT_XTRA_COMPRESS_THREADS,
@@ -889,11 +896,11 @@ struct my_option xb_client_options[] = {
      0},
 
     {"stream", OPT_XTRA_STREAM,
-     "Stream all backup files to the standard output "
-     "in the specified format. Currently supported formats are 'tar' and "
-     "'xbstream'.",
+     "Stream all backup files using xbstream format. Files are streamed to "
+     "STDOUT or FIFO files depending on --fifo-streams option. The only "
+     "supported stream format is 'xbstream'.",
      (G_PTR *)&xtrabackup_stream_str, (G_PTR *)&xtrabackup_stream_str, 0,
-     GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+     GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
     {"compress", OPT_XTRA_COMPRESS,
      "Compress individual backup files using the specified compression "
@@ -1360,6 +1367,23 @@ struct my_option xb_client_options[] = {
      "The default value is 1.",
      (G_PTR *)&xtrabackup_parallel, (G_PTR *)&xtrabackup_parallel, 0, GET_INT,
      REQUIRED_ARG, 1, 1, INT_MAX, 0, 0, 0},
+
+    {"fifo-streams", OPT_XTRA_FIFO_STREAMS,
+     "Number of FIFO files to use for parallel datafiles stream. Setting this "
+     "parameter to 1 disables FIFO and stream is sent to STDOUT.",
+     (G_PTR *)&xtrabackup_fifo_streams, (G_PTR *)&xtrabackup_fifo_streams, 0,
+     GET_INT, REQUIRED_ARG, 1, 1, INT_MAX, 0, 0, 0},
+
+    {"fifo-dir", OPT_XTRA_FIFO_DIR,
+     "Directory to write Named Pipe. If ommited, we use --target-dir",
+     &xtrabackup_fifo_dir, &xtrabackup_fifo_dir, 0, GET_STR_ALLOC, REQUIRED_ARG,
+     0, 0, 0, 0, 0, 0},
+
+    {"fifo-timeout", OPT_XTRA_FIFO_TIMEOUT,
+     "How many seconds to wait for other end to open the fifo stream for "
+     "reading. Default 60 seconds",
+     (G_PTR *)&xtrabackup_fifo_timeout, (G_PTR *)&xtrabackup_fifo_timeout, 0,
+     GET_INT, REQUIRED_ARG, 60, 1, INT_MAX, 0, 0, 0},
 
     {"strict", OPT_XTRA_STRICT,
      "Fail with error when invalid arguments were passed to the xtrabackup.",
@@ -1837,13 +1861,16 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
       xtrabackup_target_dir = xtrabackup_real_target_dir;
       break;
     case OPT_XTRA_STREAM:
-      if (!strcasecmp(argument, "xbstream"))
+      if (argument == NULL || !strcasecmp(argument, "xbstream"))
         xtrabackup_stream_fmt = XB_STREAM_FMT_XBSTREAM;
       else {
         xb::error() << "Invalid --stream argument: " << argument;
         return 1;
       }
       xtrabackup_stream = true;
+      break;
+    case OPT_XTRA_FIFO_STREAMS:
+      xtrabackup_fifo_streams_set = true;
       break;
     case OPT_XTRA_COMPRESS:
       if (argument == NULL) {
@@ -3206,9 +3233,20 @@ files first, and then streams them in a serialized way when closed. */
 static void xtrabackup_init_datasinks(void) {
   /* Start building out the pipelines from the terminus back */
   if (xtrabackup_stream) {
-    /* All streaming goes to stdout */
-    ds_data = ds_meta = ds_redo =
-        ds_create(xtrabackup_target_dir, DS_TYPE_STDOUT);
+    if (xtrabackup_fifo_streams > 1) {
+      /* Use Named PIPEs */
+      xb::info() << "Creating " << xtrabackup_fifo_streams
+                 << " Named Pipes(FIFO) at folder " << xtrabackup_target_dir
+                 << ". Waiting up to " << xtrabackup_fifo_timeout
+                 << " second(s) for xbstream/xbcloud to open the "
+                    "files for reading.\n";
+      ds_data = ds_meta = ds_redo =
+          ds_create(xtrabackup_target_dir, DS_TYPE_FIFO);
+    } else {
+      /* All streaming goes to stdout */
+      ds_data = ds_meta = ds_redo =
+          ds_create(xtrabackup_target_dir, DS_TYPE_STDOUT);
+    }
   } else {
     /* Local filesystem */
     ds_data = ds_meta = ds_redo =
@@ -4097,6 +4135,25 @@ void xtrabackup_backup_func(void) {
     xb::error() << "cannot mkdir: " << my_errno() << " "
                 << xtrabackup_extra_lsndir;
     exit(EXIT_FAILURE);
+  }
+
+  if (xtrabackup_fifo_streams_set && xtrabackup_fifo_dir != NULL) {
+    xtrabackup_target_dir = xtrabackup_fifo_dir;
+  }
+
+  if (xtrabackup_fifo_streams_set && !xtrabackup_stream) {
+    xb::info() << "Option --fifo-streams require xbstream format. Setting "
+                  "--stream to xbstream.";
+    xtrabackup_stream_fmt = XB_STREAM_FMT_XBSTREAM;
+    xtrabackup_stream = true;
+  }
+
+  if (xtrabackup_fifo_streams_set &&
+      xtrabackup_fifo_streams > xtrabackup_parallel) {
+    xb::info() << "Option --fifo-streams set higer than --parallel. "
+                  "Adjusting --parallel to "
+               << xtrabackup_fifo_streams;
+    xtrabackup_parallel = xtrabackup_fifo_streams;
   }
 
   /* create target dir if not exist */
@@ -7789,6 +7846,12 @@ int main(int argc, char **argv) {
       (strcmp(mysql_data_home, "./") == 0)) {
     if (!xtrabackup_print_param) usage();
     xb::error() << "Please set parameter 'datadir'";
+    exit(EXIT_FAILURE);
+  }
+
+  if (xtrabackup_fifo_streams_set && xtrabackup_fifo_dir == NULL &&
+      strcmp(xtrabackup_target_dir, "./xtrabackup_backupfiles/") == 0) {
+    xb::error() << "Option --fifo-streams requires --fifo-dir to be set.";
     exit(EXIT_FAILURE);
   }
 
