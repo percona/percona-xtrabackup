@@ -271,8 +271,8 @@ class Archived_Redo_Log_Monitor {
   /** readiness flag. */
   std::atomic<bool> ready;
 
-  /** redo arch flag. */
-  std::atomic<bool> redo_arch;
+  /** controls if xtrabackup has set redo log arch. */
+  std::atomic<bool> innodb_redo_log_archive;
 
   /** first log block no. */
   uint32_t first_log_block_no;

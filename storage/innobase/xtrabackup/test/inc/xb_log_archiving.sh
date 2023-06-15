@@ -56,3 +56,49 @@ ls $TEST_VAR_ROOT/dir_b
 
 [ "$( ls -A $TEST_VAR_ROOT/dir_a )" ] && die "directory $TEST_VAR_ROOT/dir_a is not empty" || true
 [ "$( ls -A $TEST_VAR_ROOT/dir_b )" ] && die "directory $TEST_VAR_ROOT/dir_b is not empty" || true
+
+# PXB-3059 add a innodb_redo_log archive option to xtrabackup
+
+#PXB-3059-1 mysql  and  xtrabackup all set and not null
+mysql -e "set global innodb_redo_log_archive_dirs='temp:$TEST_VAR_ROOT/dir_set_1'"
+xtrabackup  --backup  --target-dir=$topdir/backup1  --redo_log_arch_dir=temp:$topdir/dir_1
+redo_dir_1=$(mysql  -e "show variables like '%innodb_redo_log_archive_dirs%'"  2> /dev/null  | grep innodb_redo_log_archive_dirs| awk -F ' '  '{print $2}')
+if [ "$redo_dir_1" != "temp:$TEST_VAR_ROOT/dir_set_1" ]
+then
+    die "innodb_redo_log_archive_dirs has been changed"
+    exit -1 
+fi
+[ ! -d $TEST_VAR_ROOT/dir_set_1 ] && die "innodb_redo_log_archive_dirs not task effect"
+
+
+#PXB-3059-2 mysql not set  ,  xtrabackup  set
+mysql -e "set global innodb_redo_log_archive_dirs=NULL"
+xtrabackup  --backup  --target-dir=$topdir/backup2   --redo_log_arch_dir=temp:$topdir/dir_2
+redo_dir_2=$(mysql  -e "show variables like '%innodb_redo_log_archive_dirs%'"  2> /dev/null  | grep innodb_redo_log_archive_dirs| awk -F ' '  '{print $2}')
+[ $redo_dir_2  ] && die  "innodb_redo_log_archive_dirs has been changed"
+[  -d $topdir/dir_2 ] && die "innodb_redo_log_archive_dirs not task effect"
+
+#PXB-3059-3 mysql set  ,  xtrabackup  not set
+mysql -e "set global innodb_redo_log_archive_dirs='temp:$TEST_VAR_ROOT/dir_set_3'"
+xtrabackup  --backup  --target-dir=$topdir/backup3  
+redo_dir_3=$(mysql  -e "show variables like '%innodb_redo_log_archive_dirs%'"  2> /dev/null  | grep innodb_redo_log_archive_dirs| awk -F ' '  '{print $2}')
+if [ "$redo_dir_3" != "temp:$TEST_VAR_ROOT/dir_set_3" ]
+then
+    die "innodb_redo_log_archive_dirs has been changed"
+    exit -1
+fi
+[  -d $TEST_VAR_ROOT/dir_set_3 ] && die "innodb_redo_log_archive_dirs not task effect"
+
+
+
+#PXB-3059-4   mysql  and  xtrabackup all not  set 
+mysql -e "set global innodb_redo_log_archive_dirs=NULL"
+xtrabackup  --backup  --target-dir=$topdir/backup4
+redo_dir_4=$(mysql  -e "show variables like '%innodb_redo_log_archive_dirs%'"  2> /dev/null  | grep innodb_redo_log_archive_dirs| awk -F ' '  '{print $2}')
+[  ! $redo_dir_4  ] && die  "innodb_redo_log_archive_dirs has been changed"
+
+
+
+
+
+

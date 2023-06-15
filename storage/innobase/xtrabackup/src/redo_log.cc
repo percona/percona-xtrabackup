@@ -932,7 +932,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
 
   stopped = false;
   ready = false;
-  redo_arch = false;
+  innodb_redo_log_archive = false;
 
   auto mysql = xb_mysql_connect();
   if (mysql == nullptr) {
@@ -954,24 +954,23 @@ void Archived_Redo_Log_Monitor::thread_func() {
     std::string dir;
     std::string subdir;
   } archive;
-  std::ostringstream query;
+  
   read_mysql_variables(mysql, "SHOW VARIABLES", vars, true);
 
   if (!(redo_log_archive_dirs == nullptr || *redo_log_archive_dirs == 0)) {
-    xb::info() << "innodb_redo_log_archive_dirs is now  set .";
-    redo_arch = true;
+    xb::info() << "innodb_redo_log_archive_dirs is already  set .";
+    innodb_redo_log_archive = true;
   }
-
-  if (xtrabackup_redo_log_arch_dir) {
+  
+  std::ostringstream query;
+  if (!innodb_redo_log_archive && xtrabackup_redo_log_arch_dir) {
     xb::info() << "xtrabackup redo_log_arch_dir is now  set .";
     query << "SET GLOBAL innodb_redo_log_archive_dirs ="
           << "\"" << xtrabackup_redo_log_arch_dir << "\"";
     xb_mysql_query(mysql, query.str().c_str(), false);
   }
 
-  read_mysql_variables(mysql, "SHOW VARIABLES", vars, true);
-
-  if (redo_log_archive_dirs == nullptr || *redo_log_archive_dirs == 0) {
+  if (!innodb_redo_log_archive && !xtrabackup_redo_log_arch_dir) {
     xb::info() << "Redo Log Archiving is not set up.";
     free_mysql_variables(vars);
     mysql_close(mysql);
@@ -979,6 +978,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
     return;
   }
 
+  read_mysql_variables(mysql, "SHOW VARIABLES", vars, true);
   parse_archive_dirs(redo_log_archive_dirs);
 
   if (archived_dirs.empty()) {
@@ -1143,7 +1143,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
   }
 
   xb_mysql_query(mysql, "SELECT innodb_redo_log_archive_stop()", false);
-  if (!redo_arch) {
+  if (!innodb_redo_log_archive) {
     xb::info() << "innodb_redo_log_archive_dirs is not set,set it NULL .";
     xb_mysql_query(mysql, "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",
                    false, true);
