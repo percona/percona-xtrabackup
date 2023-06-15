@@ -851,7 +851,7 @@ struct my_option xb_client_options[] = {
      (G_PTR *)&xtrabackup_incremental_basedir,
      (G_PTR *)&xtrabackup_incremental_basedir, 0, GET_STR, REQUIRED_ARG, 0, 0,
      0, 0, 0, 0},
-	{"redo_log_arch_dir", OPT_INNODB_REDO_LOG_ARCHIVE_DIRS,
+    {"redo_log_arch_dir", OPT_INNODB_REDO_LOG_ARCHIVE_DIRS,
      "redo log archive destination directory",
      (G_PTR *)&xtrabackup_redo_log_arch_dir,
      (G_PTR *)&xtrabackup_redo_log_arch_dir, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0,
