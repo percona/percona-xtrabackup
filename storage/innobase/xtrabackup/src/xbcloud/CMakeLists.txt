@@ -1,4 +1,4 @@
-# Copyright (c) 2019 Percona and/or its affiliates. All rights reserved.
+# Copyright (c) 2019-2023 Percona and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -49,6 +49,7 @@ MYSQL_ADD_EXECUTABLE(xbcloud
   s3.cc
   s3_ec2.cc
   ../xbcrypt_common.cc
+  ../file_utils.cc
   swift.cc)
 
 SET_TARGET_PROPERTIES(xbcloud

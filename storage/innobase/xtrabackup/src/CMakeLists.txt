@@ -86,6 +86,7 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   ds_compress_lz4.cc
   ds_compress_zstd.cc
   ds_encrypt.cc
+  ds_fifo.cc
   ds_local.cc
   ds_stdout.cc
   ds_tmpfile.cc

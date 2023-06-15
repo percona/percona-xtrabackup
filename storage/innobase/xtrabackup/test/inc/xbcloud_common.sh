@@ -31,6 +31,7 @@ now=$(date +%s)
 uuid=($(cat /proc/sys/kernel/random/uuid))
 full_backup_name=${now}-${uuid}-full_backup
 inc_backup_name=${now}-${uuid}-inc_backup
+inc2_backup_name=${now}-${uuid}-inc2_backup
 
 full_backup_dir=$topdir/${full_backup_name}
 inc_backup_dir=$topdir/${inc_backup_name}
@@ -61,4 +62,10 @@ function is_ec2_with_profile() {
 
   curl -sS --connect-timeout 3 -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/iam/security-credentials/${PROFILE} || \
   return 1
+}
+
+xbcloud_cleanup() {
+     xbcloud --defaults-file=$topdir/xbcloud.cnf delete --parallel=10 ${full_backup_name}
+     xbcloud --defaults-file=$topdir/xbcloud.cnf delete --parallel=10 ${inc_backup_name}
+     xbcloud --defaults-file=$topdir/xbcloud.cnf delete --parallel=10 ${inc2_backup_name}
 }

@@ -834,7 +834,7 @@ function verify_db_state()
 {
     $MYSQLDUMP $MYSQL_ARGS $MYSQLDUMP_ARGS -t --compact --skip-extended-insert \
         $1 >"$topdir/tmp/$1_new.sql"
-    diff -u "$topdir/tmp/$1_old.sql" "$topdir/tmp/$1_new.sql"
+    run_cmd diff -u "$topdir/tmp/$1_old.sql" "$topdir/tmp/$1_new.sql"
 }
 
 ########################################################################
