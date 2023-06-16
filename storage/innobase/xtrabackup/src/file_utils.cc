@@ -20,9 +20,14 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #include "file_utils.h"
 #include <mysql/service_mysql_alloc.h>
+#ifdef __APPLE__
+#include <sys/event.h>
+#else
 #include <sys/epoll.h>
+#endif
 #include <thread>
 #include "common.h"
+#include "ds_fifo.h"
 #include "msg.h"
 #include "my_dir.h"
 #include "my_io.h"
@@ -358,6 +363,15 @@ File open_fifo_for_write_with_timeout(const char *path, uint timeout) {
     return -1;
   }
 
+  /*
+   * Signals the read side by writing DS_FIFO_CONTROL_CHAR
+   * This triggers EVFILT_READ/EPOLLIN. This is necessary because
+   * the read side is also opened in non-blocking mode. We change
+   * back to blocking node once kqueue/epoll is notified. The way
+   * to notify that data is available to read is to write some data
+   * to it.
+   */
+  my_write(fd, (uchar *)DS_FIFO_CONTROL_CHAR, 1, MYF(0));
   return fd;
 }
 
@@ -365,7 +379,7 @@ File open_fifo_for_read_with_timeout(const char *path, uint timeout) {
   int fd;
   uint attempt = 0;
   do {
-    fd = open(path, O_RDONLY | O_NONBLOCK);
+    fd = my_open(path, O_RDONLY | O_NONBLOCK, MYF(0));
     if (fd < 0) {
       attempt++;
       std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -377,6 +391,22 @@ File open_fifo_for_read_with_timeout(const char *path, uint timeout) {
   }
 
   /* File was open, lets check its open on the other side */
+#ifdef __APPLE__
+  struct timespec tm = {timeout, 0};
+  int kqueue_fd = kqueue();
+  if (kqueue_fd < 0) {
+    return -1;
+  }
+  struct kevent ev;
+  EV_SET(&ev, fd, EVFILT_READ, EV_ADD, 0, 0, NULL);
+  if (kevent(kqueue_fd, &ev, 1, NULL, 0, NULL) < 0) {
+    return -1;
+  }
+  if (kevent(kqueue_fd, NULL, 0, &ev, 1, &tm) <= 0) {
+    return -1;
+  }
+  close(kqueue_fd);
+#else
   int epoll_fd = epoll_create1(0);
   if (epoll_fd < 0) {
     return -1;
@@ -387,12 +417,24 @@ File open_fifo_for_read_with_timeout(const char *path, uint timeout) {
   if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev) < 0) {
     return -1;
   }
-  int ret = epoll_wait(epoll_fd, &ev, 1, timeout * 1000);
-  if (ret <= 0) {
+  if (epoll_wait(epoll_fd, &ev, 1, timeout * 1000) <= 0) {
     return -1;
   }
+  close(epoll_fd);
+#endif  // __APPLE__
+
   if (fcntl(fd, F_SETFL, O_RDONLY) == -1) {
     return -1;
   }
+
+  /* Read the control char to make sure the other side is in sync. */
+  char buf[1];
+  if (my_read(fd, (uchar *)buf, 1, MYF(0)) <= 0) {
+    return -1;
+  }
+  if (memcmp(buf, DS_FIFO_CONTROL_CHAR, 1)) {
+    return -1;
+  }
+
   return fd;
 }

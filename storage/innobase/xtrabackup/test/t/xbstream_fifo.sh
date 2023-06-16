@@ -33,7 +33,7 @@ vlog "Test 2 - Taking inc1 backup"
 take_backup_fifo_xbstream ${topdir}/stream "--parallel=4 --fifo-streams=3 --incremental-basedir=${topdir}/full" "-x -C ${topdir}/inc1 --fifo-streams=3"
 wait ${insert_pid}
 vlog "Test 2 - Taking inc2 backup"
-take_backup_fifo_xbstream ${topdir}/stream "--parallel=4 --fifo-streams=3 --incremental-basedir=${topdir}/inc1" "-x -C ${topdir}/inc2 --fifo-streams=3"
+take_backup_fifo_xbstream ${topdir}/stream "--parallel=2 --fifo-streams=3 --incremental-basedir=${topdir}/inc1" "-x -C ${topdir}/inc2 --fifo-streams=3 --parallel=6"
 record_db_state test
 
 stop_server
