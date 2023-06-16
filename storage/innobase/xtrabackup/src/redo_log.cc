@@ -1030,7 +1030,8 @@ void Archived_Redo_Log_Monitor::thread_func() {
   if (res == nullptr) {
     xb::info() << "Redo Log Archiving is not used.";
     if (!innodb_redo_log_archive) {
-	xb_mysql_query(mysql, "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",false, true);	    
+      xb_mysql_query(mysql, "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",
+                     false, true);
     }
     mysql_close(mysql);
     my_thread_end();
@@ -1062,7 +1063,8 @@ void Archived_Redo_Log_Monitor::thread_func() {
     if (file < 0) {
       xb::error() << "cannot open " << SQUOTE(archive.filename.c_str());
       if (!innodb_redo_log_archive) {
-	 xb_mysql_query(mysql, "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",false, true);
+        xb_mysql_query(mysql, "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",
+                       false, true);
       }
       mysql_close(mysql);
       my_thread_end();
@@ -1100,9 +1102,11 @@ void Archived_Redo_Log_Monitor::thread_func() {
         if (n_read == MY_FILE_ERROR) {
           xb::error() << "cannot read from " << archive.filename.c_str();
           if (!innodb_redo_log_archive) {
-	      xb_mysql_query(mysql, "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",false, true);
-	  }
-	  mysql_close(mysql);
+            xb_mysql_query(mysql,
+                           "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",
+                           false, true);
+          }
+          mysql_close(mysql);
           my_thread_end();
           return;
         }
@@ -1118,9 +1122,11 @@ void Archived_Redo_Log_Monitor::thread_func() {
         if (n_read == MY_FILE_ERROR) {
           xb::error() << "cannot read from " << archive.filename.c_str();
           if (!innodb_redo_log_archive) {
-             xb_mysql_query(mysql, "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",false, true);
+            xb_mysql_query(mysql,
+                           "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",
+                           false, true);
           }
-	  mysql_close(mysql);
+          mysql_close(mysql);
           my_thread_end();
           return;
         }
