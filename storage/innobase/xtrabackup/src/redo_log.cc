@@ -1029,6 +1029,9 @@ void Archived_Redo_Log_Monitor::thread_func() {
 
   if (res == nullptr) {
     xb::info() << "Redo Log Archiving is not used.";
+    if (!innodb_redo_log_archive) {
+	xb_mysql_query(mysql, "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",false, true);	    
+    }
     mysql_close(mysql);
     my_thread_end();
     return;
@@ -1058,6 +1061,9 @@ void Archived_Redo_Log_Monitor::thread_func() {
     file = my_open(archive.filename.c_str(), O_RDONLY, MYF(MY_WME));
     if (file < 0) {
       xb::error() << "cannot open " << SQUOTE(archive.filename.c_str());
+      if (!innodb_redo_log_archive) {
+	 xb_mysql_query(mysql, "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",false, true);
+      }
       mysql_close(mysql);
       my_thread_end();
       return;
@@ -1093,7 +1099,10 @@ void Archived_Redo_Log_Monitor::thread_func() {
         size_t n_read = my_read(file, buf2, hdr_len, MYF(MY_WME));
         if (n_read == MY_FILE_ERROR) {
           xb::error() << "cannot read from " << archive.filename.c_str();
-          mysql_close(mysql);
+          if (!innodb_redo_log_archive) {
+	      xb_mysql_query(mysql, "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",false, true);
+	  }
+	  mysql_close(mysql);
           my_thread_end();
           return;
         }
@@ -1108,7 +1117,10 @@ void Archived_Redo_Log_Monitor::thread_func() {
         size_t n_read = my_read(file, buf, hdr_len, MYF(MY_WME));
         if (n_read == MY_FILE_ERROR) {
           xb::error() << "cannot read from " << archive.filename.c_str();
-          mysql_close(mysql);
+          if (!innodb_redo_log_archive) {
+             xb_mysql_query(mysql, "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",false, true);
+          }
+	  mysql_close(mysql);
           my_thread_end();
           return;
         }
