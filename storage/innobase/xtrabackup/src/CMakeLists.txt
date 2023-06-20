@@ -14,12 +14,14 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 INCLUDE(gcrypt)
+INCLUDE(procps)
 
 OPTION(WITH_VERSION_CHECK "Build with version check" ON)
 
 INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
 
 FIND_GCRYPT()
+FIND_PROCPS()
 
 CHECK_TYPE_SIZE("unsigned long" SIZEOF_UNSIGNED_LONG)
 
@@ -134,9 +136,11 @@ TARGET_LINK_LIBRARIES(xtrabackup
   )
 
 IF(NOT APPLE)
-  TARGET_LINK_LIBRARIES(xtrabackup
-    procps
-    )
+  IF(PROCPS_VERSION EQUAL 4)
+    TARGET_LINK_LIBRARIES(xtrabackup proc2)
+  ELSE()
+    TARGET_LINK_LIBRARIES(xtrabackup procps)
+  ENDIF()
 ENDIF()
 
  # We depend on protobuf because of the mysqlx plugin and replication.
