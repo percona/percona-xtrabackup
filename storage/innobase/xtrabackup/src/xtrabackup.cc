@@ -2905,7 +2905,7 @@ bool check_if_skip_table(
     return (false);
   }
 
-  strncpy(buf, dbname, FN_REFLEN);
+  strncpy(buf, dbname, FN_REFLEN - 1);
   buf[tbname - 1 - dbname] = 0;
 
   const skip_database_check_result skip_database = check_if_skip_database(buf);
@@ -3039,7 +3039,7 @@ static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
     goto error;
   }
 
-  strncpy(dst_name, cursor.rel_path, sizeof(dst_name));
+  strcpy(dst_name, cursor.rel_path);
 
   /* Setup the page write filter */
   if (xtrabackup_incremental) {
@@ -5354,8 +5354,11 @@ static pfs_os_file_t xb_delta_open_matching_space(
     snprintf(dest_space_name, sizeof(dest_space_name), "%s", name);
   }
 
-  snprintf(real_name, real_name_len, "%s/%s", xtrabackup_target_dir,
-           dest_space_name);
+  if (snprintf(real_name, real_name_len - 1, "%s/%s", xtrabackup_target_dir,
+               dest_space_name) > (int)(real_name_len - 1)) {
+    xb::error() << "Cannot format real_name.";
+    return file;
+  }
   Fil_path::normalize(real_name);
   /* Truncate ".ibd" */
   dest_space_name[strlen(dest_space_name) - 4] = '\0';
@@ -5489,11 +5492,11 @@ static pfs_os_file_t xb_delta_open_matching_space(
   fil_space = fil_space_get(space_id);
 
   if (fil_space != NULL) {
-    char tmpname[FN_REFLEN];
+    char tmpname[FN_REFLEN * 2 + 2];
     bool exists;
     os_file_type_t type;
 
-    strncpy(tmpname, dest_space_name, FN_REFLEN);
+    strncpy(tmpname, dest_space_name, sizeof(tmpname) - 1);
 
     char *oldpath, *space_name;
 
@@ -5607,7 +5610,7 @@ static bool xtrabackup_apply_delta(
   }
   dst_path[strlen(dst_path) - 6] = '\0';
 
-  strncpy(space_name, entry.file_name.c_str(), FN_REFLEN);
+  strncpy(space_name, entry.file_name.c_str(), FN_REFLEN - 1);
   space_name[strlen(space_name) - 6] = 0;
 
   if (!get_meta_path(src_path, meta_path)) {
@@ -7780,7 +7783,7 @@ void setup_error_messages() {
 
 void xb_set_plugin_dir() {
   if (opt_xtra_plugin_dir != NULL) {
-    strncpy(opt_plugin_dir, opt_xtra_plugin_dir, FN_REFLEN);
+    strncpy(opt_plugin_dir, opt_xtra_plugin_dir, FN_REFLEN - 1);
   } else {
     strcpy(opt_plugin_dir, PLUGINDIR);
   }

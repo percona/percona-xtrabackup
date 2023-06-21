@@ -214,14 +214,14 @@ bool datafile_open(const char *file, datafile_cur_t *cursor, bool read_only,
                    uint buffer_size) {
   memset(cursor, 0, sizeof(datafile_cur_t));
 
-  strncpy(cursor->abs_path, file, sizeof(cursor->abs_path));
+  strncpy(cursor->abs_path, file, sizeof(cursor->abs_path) - 1);
 
   /* Get the relative path for the destination tablespace name, i.e. the
   one that can be appended to the backup root directory. Non-system
   tablespaces may have absolute paths for remote tablespaces in MySQL
   5.6+. We want to make "local" copies for the backup. */
   strncpy(cursor->rel_path, get_relative_path(cursor->abs_path),
-          sizeof(cursor->rel_path));
+          sizeof(cursor->rel_path) - 1);
 
   cursor->fd =
       my_open(cursor->abs_path, (read_only) ? O_RDONLY : O_RDWR, MYF(MY_WME));

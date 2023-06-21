@@ -14,12 +14,14 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 INCLUDE(gcrypt)
+INCLUDE(procps)
 
 OPTION(WITH_VERSION_CHECK "Build with version check" ON)
 
 INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
 
 FIND_GCRYPT()
+FIND_PROCPS()
 
 CHECK_TYPE_SIZE("unsigned long" SIZEOF_UNSIGNED_LONG)
 
@@ -70,12 +72,12 @@ INCLUDE_DIRECTORIES(
 ADD_SUBDIRECTORY(${CMAKE_SOURCE_DIR}/plugin/keyring "${CMAKE_CURRENT_BINARY_DIR}/keyring")
 ADD_SUBDIRECTORY(${CMAKE_SOURCE_DIR}/plugin/keyring_vault "${CMAKE_CURRENT_BINARY_DIR}/keyring_vault")
 
-ADD_COMPILE_FLAGS(
+MY_ADD_COMPILE_DEFINITIONS(
   xtrabackup.cc
   backup_mysql.cc
   file_utils.cc
   xb_dict.cc
-  COMPILE_FLAGS -DMYSQL_CLIENT)
+  COMPILE_DEFINITIONS MYSQL_CLIENT)
 
 MYSQL_ADD_EXECUTABLE(xtrabackup
   xtrabackup.cc
@@ -134,9 +136,11 @@ TARGET_LINK_LIBRARIES(xtrabackup
   )
 
 IF(NOT APPLE)
-  TARGET_LINK_LIBRARIES(xtrabackup
-    procps
-    )
+  IF(PROCPS_VERSION EQUAL 4)
+    TARGET_LINK_LIBRARIES(xtrabackup proc2)
+  ELSE()
+    TARGET_LINK_LIBRARIES(xtrabackup procps)
+  ENDIF()
 ENDIF()
 
  # We depend on protobuf because of the mysqlx plugin and replication.
