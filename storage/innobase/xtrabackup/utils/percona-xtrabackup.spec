@@ -76,7 +76,20 @@ sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrab
 sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/python/subunit/tests/sample-two-script.py
 sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/python/subunit/tests/sample-script.py
 sed -i 's:#!/usr/bin/env python:#!/usr/bin/env python2:g' storage/innobase/xtrabackup/test/python/subunit/run.py
-#
+# debug
+mkdir debug
+(
+  cd debug
+  %{cmake_bin} .. -DCMAKE_BUILD_TYPE=Debug -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
+  -DWITH_SSL=system -DINSTALL_MANDIR=%{_mandir} -DWITH_MAN_PAGES=1 \
+  -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} \
+  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMINIMAL_RELWITHDEBINFO=OFF -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
+  -DINSTALL_PLUGINDIR="%{_lib}/xtrabackup/plugin" -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled
+  make %{?_smp_mflags}
+  cd ..
+  ls -la debug
+)
+# release
 %{cmake_bin} . -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
   -DWITH_SSL=system -DINSTALL_MANDIR=%{_mandir} -DWITH_MAN_PAGES=1 \
   -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} \
@@ -90,6 +103,8 @@ make %{?_smp_mflags}
 %install
 rm -rf $RPM_BUILD_ROOT
 make install DESTDIR=$RPM_BUILD_ROOT
+cp -v debug/bin/xtrabackup $RPM_BUILD_ROOT/%{_bindir}/xtrabackup-debug
+patchelf --debug --set-rpath '$ORIGIN/../lib/private' $RPM_BUILD_ROOT/%{_bindir}/xtrabackup-debug
 rm -rf $RPM_BUILD_ROOT/%{_libdir}/libmysqlservices.a
 rm -rf $RPM_BUILD_ROOT/usr/lib/libmysqlservices.a
 rm -rf $RPM_BUILD_ROOT/usr/docs/INFO_SRC
@@ -107,6 +122,7 @@ rm -rf $RPM_BUILD_ROOT
 %files
 %defattr(-,root,root,-)
 %{_bindir}/xtrabackup
+%{_bindir}/xtrabackup-debug
 %{_bindir}/xbstream
 %{_bindir}/xbcrypt
 %{_bindir}/xbcloud
