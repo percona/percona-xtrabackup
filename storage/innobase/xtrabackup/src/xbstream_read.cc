@@ -24,6 +24,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <mysql/service_mysql_alloc.h>
 #include <mysql_version.h>
 #include <zlib.h>
+#include <mutex>
 #include <thread>
 #include "common.h"
 #include "crc_glue.h"
@@ -38,15 +39,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #define MY_OFF_T_MAX (~(my_off_t)0UL)
 #endif
 
-struct xb_rstream_struct {
-  my_off_t offset;
-  File fd;
-};
-
 xb_rstream_t *xb_stream_read_new_fifo(const char *path, int timeout) {
   xb_rstream_t *stream;
   File fd;
-
+  std::mutex *mutex = new std::mutex();
   fd = open_fifo_for_read_with_timeout(path, timeout);
 
   if (fd < 0) return nullptr;
@@ -55,6 +51,7 @@ xb_rstream_t *xb_stream_read_new_fifo(const char *path, int timeout) {
                                      MYF(MY_FAE));
   stream->fd = fd;
   stream->offset = 0;
+  stream->mutex = mutex;
 
 #ifdef __WIN__
   setmode(stream->fd, _O_BINARY);
@@ -65,12 +62,13 @@ xb_rstream_t *xb_stream_read_new_fifo(const char *path, int timeout) {
 
 xb_rstream_t *xb_stream_read_new_stdin(void) {
   xb_rstream_t *stream;
-
+  std::mutex *mutex = new std::mutex();
   stream = (xb_rstream_t *)my_malloc(PSI_NOT_INSTRUMENTED, sizeof(xb_rstream_t),
                                      MYF(MY_FAE));
 
   stream->fd = fileno(stdin);
   stream->offset = 0;
+  stream->mutex = mutex;
 
 #ifdef __WIN__
   setmode(stream->fd, _O_BINARY);
@@ -312,6 +310,7 @@ int xb_stream_read_done(xb_rstream_t *stream) {
     my_close(stream->fd, MYF(0));
     stream->fd = -1;
   }
+  delete stream->mutex;
   my_free(stream);
 
   return 0;

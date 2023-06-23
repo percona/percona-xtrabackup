@@ -18,6 +18,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 *******************************************************/
 
+// clang-format off
 /* FIFO Datasink implementation
 
 at xtrabackup_init_datasinks we initialize ds_data as DS_TYPE_FIFO, and create a ds object as XB_STREAM_FMT_XBSTREAM (xbstream).
@@ -58,10 +59,14 @@ Now:
  * copy_thread->parallel_stream_ctxt->stream_context->fifo
 
 */
+// clang-format on
 #ifndef DS_FIFO_H
 #define DS_FIFO_H
 
 #include "datasink.h"
+
+/* Character sent to indicate both sides are ready */
+#define DS_FIFO_CONTROL_CHAR "S"
 
 extern uint ds_fifo_threads;
 

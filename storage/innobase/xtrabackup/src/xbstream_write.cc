@@ -35,7 +35,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #define XB_STREAM_MIN_CHUNK_SIZE (10 * 1024 * 1024)
 
 struct xb_wstream_struct {
-  std::mutex mutex;
+  std::mutex *mutex;
 };
 
 struct xb_wstream_file_struct {
@@ -71,9 +71,11 @@ static ssize_t xb_stream_default_write_callback(xb_wstream_file_t *file
 
 xb_wstream_t *xb_stream_write_new(void) {
   xb_wstream_t *stream;
+  std::mutex *mutex = new std::mutex();
 
   stream = (xb_wstream_t *)my_malloc(PSI_NOT_INSTRUMENTED, sizeof(xb_wstream_t),
                                      MYF(MY_FAE | MY_ZEROFILL));
+  stream->mutex = mutex;
   return stream;
 }
 
@@ -152,6 +154,7 @@ int xb_stream_write_close(xb_wstream_file_t *file) {
 }
 
 int xb_stream_write_done(xb_wstream_t *stream) {
+  delete stream->mutex;
   my_free(stream);
 
   return 0;
@@ -233,7 +236,7 @@ static int xb_stream_write_chunk(xb_wstream_file_t *file, const void *buf,
                     4 * 2 * sparse_map_size);
   checksum = crc32_iso3309(checksum, static_cast<const uchar *>(buf), len);
 
-  stream->mutex.lock();
+  stream->mutex->lock();
 
   int8store(ptr, file->offset); /* Payload offset */
   ptr += 8;
@@ -256,13 +259,13 @@ static int xb_stream_write_chunk(xb_wstream_file_t *file, const void *buf,
     file->offset += sparse_map[i].skip;
   file->offset += len;
 
-  stream->mutex.unlock();
+  stream->mutex->unlock();
 
   return 0;
 
 err:
 
-  stream->mutex.unlock();
+  stream->mutex->unlock();
 
   return 1;
 }
@@ -273,7 +276,7 @@ static int xb_stream_write_eof(xb_wstream_file_t *file) {
   uchar *ptr;
   xb_wstream_t *stream = file->stream;
 
-  stream->mutex.lock();
+  stream->mutex->lock();
 
   /* Write xbstream header */
   ptr = tmpbuf;
@@ -298,12 +301,12 @@ static int xb_stream_write_eof(xb_wstream_file_t *file) {
       -1)
     goto err;
 
-  stream->mutex.unlock();
+  stream->mutex->unlock();
 
   return 0;
 err:
 
-  stream->mutex.unlock();
+  stream->mutex->unlock();
 
   return 1;
 }
