@@ -27,10 +27,10 @@ EOF
 }
 
 append_arg_to_args () {
-  args="$args "$(shell_quote_string "$1")
+    args="$args "$(shell_quote_string "$1")
 }
 
- parse_arguments() {
+parse_arguments() {
     pick_args=
     if test "$1" = PICK-ARGS-FROM-ARGV
     then
@@ -155,6 +155,9 @@ get_sources(){
 
     cd ${PXBDIR}
     rsync -av ../extra/libkmip/* extra/libkmip/
+    sed -i 's:-Wall -Wextra -Wformat-security -Wvla -Wundef:-Wextra -Wformat-security -Wvla -Wundef:g' cmake/maintainer.cmake
+    sed -i '/Werror/d' cmake/maintainer.cmake
+    sed -i 's:Wstringop-truncation:Wno-stringop-truncation:g' cmake/maintainer.cmake
     sed -i "s:@@XB_VERSION_MAJOR@@:${XB_VERSION_MAJOR}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
     sed -i "s:@@XB_VERSION_MINOR@@:${XB_VERSION_MINOR}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
     sed -i "s:@@XB_VERSION_PATCH@@:${XB_VERSION_PATCH}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
