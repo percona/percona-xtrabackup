@@ -27,6 +27,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <mysql/service_mysql_alloc.h>
 #include <mysql_version.h>
 #include <typelib.h>
+#include <list>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -120,11 +121,11 @@ static struct my_option my_long_options[] = {
     {"verbose", 'v', "Print verbose output.", &opt_verbose, &opt_verbose, 0,
      GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
     {"parallel", OPT_PARALLEL,
-     "Deprecated. Use --fifo-streams instead. Number of worker threads for "
-     "reading / writing.",
-     &opt_parallel, &opt_parallel, 0, GET_INT, REQUIRED_ARG, 1, 1, INT_MAX, 0,
-     0, 0},
-    {"fifo-streams", 'f', "Number of worker threads for reading / writing.",
+     "Number of worker threads for reading / writing.", &opt_parallel,
+     &opt_parallel, 0, GET_INT, REQUIRED_ARG, 1, 1, INT_MAX, 0, 0, 0},
+    {"fifo-streams", 'f',
+     "Number of FIFO files to use for parallel datafiles stream. Setting this "
+     "parameter to 1 disables FIFO and stream is sent to STDOUT",
      &opt_fifo_streams, &opt_fifo_streams, 0, GET_INT, REQUIRED_ARG, 1, 1,
      INT_MAX, 0, 0, 0},
     {"fifo-dir", OPT_FIFO_DIR, "Directory to read Named Pipe.", &opt_fifo_dir,
@@ -159,12 +160,13 @@ typedef struct {
   uint pathlen;
   my_off_t offset;
   ds_file_t *file;
-  std::mutex mutex;
+  std::mutex *mutex;
 } file_entry_t;
 
 typedef struct {
   int thread_id;
   std::unordered_map<std::string, file_entry_t *> *filehash;
+  std::list<xb_rstream_t *> *streams;
   ds_ctxt_t *ds_ctxt;
   ds_ctxt_t *ds_decompress_quicklz_ctxt;
   ds_ctxt_t *ds_decompress_lz4_ctxt;
@@ -202,16 +204,19 @@ int main(int argc, char **argv) {
     goto err;
   }
 
-  if (opt_parallel > 1 && opt_fifo_streams == 1) {
-    msg("%s: option --parallel is deprecated and has no effect. Please use "
-        "--fifo-streams instead.\n",
-        my_progname);
-  }
-
-  if (opt_mode == RUN_MODE_EXTRACT && opt_fifo_streams > 1 &&
-      opt_fifo_dir == nullptr) {
-    msg("%s: --fifo-streams requires --fifo-dir parameter.\n", my_progname);
-    goto err;
+  if (opt_mode == RUN_MODE_EXTRACT && opt_fifo_streams > 1) {
+    if (opt_fifo_dir == nullptr) {
+      msg("%s: --fifo-streams requires --fifo-dir parameter.\n", my_progname);
+      goto err;
+    }
+    /* adjust n_threads to at least fifo streams */
+    if (opt_parallel < opt_fifo_streams) {
+      msg_ts(
+          "%s: Adjusting number of threads from %d to %d to match number of "
+          "fifo streams.\n",
+          my_progname, opt_parallel, opt_fifo_streams);
+      opt_parallel = opt_fifo_streams;
+    }
   }
 
   if (opt_encrypt_algo || opt_encrypt_key) {
@@ -221,7 +226,7 @@ int main(int argc, char **argv) {
   if (opt_mode == RUN_MODE_CREATE && mode_create(argc, argv)) {
     goto err;
   } else if (opt_mode == RUN_MODE_EXTRACT &&
-             mode_extract(opt_fifo_streams, argc, argv)) {
+             mode_extract(opt_parallel, argc, argv)) {
     goto err;
   }
 
@@ -424,12 +429,12 @@ static file_entry_t *file_entry_new(extract_ctxt_t *ctxt, const char *path,
                                     uint pathlen) {
   file_entry_t *entry;
   ds_file_t *file;
-
   entry = (file_entry_t *)my_malloc(PSI_NOT_INSTRUMENTED, sizeof(file_entry_t),
                                     MYF(MY_WME | MY_ZEROFILL));
   if (entry == NULL) {
     return NULL;
   }
+  entry->mutex = new std::mutex();
 
   entry->path = my_strndup(PSI_NOT_INSTRUMENTED, path, pathlen, MYF(MY_WME));
   if (entry->path == NULL) {
@@ -480,6 +485,7 @@ err:
 static void file_entry_free(file_entry_t *entry) {
   ds_close(entry->file);
   my_free(entry->path);
+  delete entry->mutex;
   my_free(entry);
 }
 
@@ -488,28 +494,12 @@ static void extract_worker_thread_func(extract_ctxt_t &ctxt) {
   xb_rstream_chunk_t chunk;
   file_entry_t *entry;
   xb_rstream_result_t res;
-  if (opt_fifo_streams > 1) {
-    char filename[FN_REFLEN];
-    snprintf(filename, sizeof(filename), "%s%s%lu", opt_fifo_dir, "/thread_",
-             (ulong)ctxt.thread_id);
-    stream = xb_stream_read_new_fifo(filename, opt_fifo_timeout);
-    if (stream == nullptr) {
-      msg_ts(
-          "%s: xb_stream_read_new_fifo() failed for thread %d. Possibly sender "
-          "did "
-          "not start.\n",
-          my_progname, ctxt.thread_id);
-      ctxt.has_errors->store(true);
-      return;
-    }
-  } else {
-    stream = xb_stream_read_new_stdin();
-    if (stream == NULL) {
-      msg("%s: xb_stream_read_new_stdin() failed.\n", my_progname);
-      ctxt.has_errors->store(true);
-      return;
-    }
-  }
+
+  ctxt.mutex->lock();
+  stream = ctxt.streams->front();
+  ctxt.streams->pop_front();
+  ctxt.streams->push_back(stream);
+  ctxt.mutex->unlock();
 
   my_thread_init();
 
@@ -521,15 +511,17 @@ static void extract_worker_thread_func(extract_ctxt_t &ctxt) {
       break;
     }
 
+    stream->mutex->lock();
     res = xb_stream_read_chunk(stream, &chunk);
-
     if (res != XB_STREAM_READ_CHUNK) {
+      stream->mutex->unlock();
       break;
     }
 
     /* If unknown type and ignorable flag is set, skip this chunk */
     if (chunk.type == XB_CHUNK_TYPE_UNKNOWN &&
         !(chunk.flags & XB_STREAM_FLAG_IGNORABLE)) {
+      stream->mutex->unlock();
       continue;
     }
 
@@ -540,11 +532,13 @@ static void extract_worker_thread_func(extract_ctxt_t &ctxt) {
         msg("%s: absolute path not allowed: %.*s.\n", my_progname,
             chunk.pathlen, chunk.path);
         res = XB_STREAM_READ_ERROR;
+        stream->mutex->unlock();
         break;
       }
     }
 
     ctxt.mutex->lock();
+    stream->mutex->unlock();
     /* See if we already have this file open */
     std::unordered_map<std::string, file_entry_t *>::const_iterator entry_it =
         ctxt.filehash->find(chunk.path);
@@ -561,7 +555,7 @@ static void extract_worker_thread_func(extract_ctxt_t &ctxt) {
       entry = entry_it->second;
     }
 
-    entry->mutex.lock();
+    entry->mutex->lock();
 
     ctxt.mutex->unlock();
 
@@ -571,13 +565,13 @@ static void extract_worker_thread_func(extract_ctxt_t &ctxt) {
     }
 
     if (res != XB_STREAM_READ_CHUNK) {
-      entry->mutex.unlock();
+      entry->mutex->unlock();
       break;
     }
 
     if (chunk.type == XB_CHUNK_TYPE_EOF) {
       ctxt.mutex->lock();
-      entry->mutex.unlock();
+      entry->mutex->unlock();
       ctxt.filehash->erase(entry->path);
       file_entry_free(entry);
       ctxt.mutex->unlock();
@@ -611,7 +605,7 @@ static void extract_worker_thread_func(extract_ctxt_t &ctxt) {
       msg("%s: out-of-order chunk: real offset = 0x%llx, "
           "expected offset = 0x%llx\n",
           my_progname, chunk.offset, entry->offset);
-      entry->mutex.unlock();
+      entry->mutex->unlock();
       res = XB_STREAM_READ_ERROR;
       break;
     }
@@ -619,7 +613,7 @@ static void extract_worker_thread_func(extract_ctxt_t &ctxt) {
     if (chunk.type == XB_CHUNK_TYPE_PAYLOAD) {
       if (ds_write(entry->file, chunk.data, chunk.length)) {
         msg("%s: my_write() failed.\n", my_progname);
-        entry->mutex.unlock();
+        entry->mutex->unlock();
         res = XB_STREAM_READ_ERROR;
         break;
       }
@@ -630,7 +624,7 @@ static void extract_worker_thread_func(extract_ctxt_t &ctxt) {
                           chunk.sparse_map_size, chunk.sparse_map,
                           ctxt.ds_ctxt->fs_support_punch_hole)) {
         msg("%s: my_write() failed.\n", my_progname);
-        entry->mutex.unlock();
+        entry->mutex->unlock();
         res = XB_STREAM_READ_ERROR;
         break;
       }
@@ -640,10 +634,9 @@ static void extract_worker_thread_func(extract_ctxt_t &ctxt) {
       entry->offset += chunk.length;
     }
 
-    entry->mutex.unlock();
+    entry->mutex->unlock();
   }
 
-  xb_stream_read_done(stream);
   my_free(chunk.raw_data);
   my_free(chunk.sparse_map);
 
@@ -663,6 +656,8 @@ static int mode_extract(int n_threads, int argc __attribute__((unused)),
   ds_ctxt_t *ds_decompress_lz4_ctxt = NULL;
   ds_ctxt_t *ds_decompress_zstd_ctxt = NULL;
   extract_ctxt_t *data_threads = NULL;
+  std::list<xb_rstream_t *> *streams = new std::list<xb_rstream_t *>();
+  xb_rstream_t *stream = NULL;
   std::atomic<bool> has_errors{false};
   std::vector<std::thread> threads;
   std::unordered_map<std::string, file_entry_t *> *filehash =
@@ -727,6 +722,34 @@ static int mode_extract(int n_threads, int argc __attribute__((unused)),
       ds_set_pipe(ds_decrypt_zstd_ctxt, ds_decompress_zstd_ctxt);
     }
   }
+  if (opt_fifo_streams > 1) {
+    for (int idx = 0; idx < opt_fifo_streams; idx++) {
+      char filename[FN_REFLEN];
+      snprintf(filename, sizeof(filename), "%s%s%lu", opt_fifo_dir, "/thread_",
+               (ulong)idx);
+      stream = xb_stream_read_new_fifo(filename, opt_fifo_timeout);
+      if (stream == nullptr) {
+        msg_ts(
+            "%s: xb_stream_read_new_fifo() failed for thread %d. Possibly "
+            "sender "
+            "did "
+            "not start.\n",
+            my_progname, idx);
+        ret = 1;
+        goto exit;
+      }
+      streams->push_back(stream);
+    }
+  } else {
+    stream = xb_stream_read_new_stdin();
+    if (stream == NULL) {
+      msg("%s: xb_stream_read_new_stdin() failed.\n", my_progname);
+      ret = 1;
+      goto exit;
+    }
+    streams->push_back(stream);
+  }
+
   data_threads = (extract_ctxt_t *)my_malloc(
       PSI_NOT_INSTRUMENTED, sizeof(extract_ctxt_t) * (n_threads + 1),
       MYF(MY_FAE));
@@ -743,6 +766,7 @@ static int mode_extract(int n_threads, int argc __attribute__((unused)),
     data_threads[i].ds_decrypt_zstd_ctxt = ds_decrypt_zstd_ctxt;
     data_threads[i].mutex = &mutex;
     data_threads[i].has_errors = &has_errors;
+    data_threads[i].streams = streams;
 
     threads.push_back(
         std::thread(extract_worker_thread_func, std::ref(data_threads[i])));
@@ -791,6 +815,9 @@ exit:
     my_free(data_threads);
   }
 
+  std::for_each(streams->begin(), streams->end(),
+                [](xb_rstream_t *s) { xb_stream_read_done(s); });
+  delete streams;
   if (ret) {
     msg("exit code: %d\n", ret);
   }

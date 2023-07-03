@@ -24,7 +24,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <my_base.h>
 #include <my_dir.h>
 #include <my_io.h>
+#include <mutex>
 #include <string>
+
 #include "datasink.h"
 
 /* Magic value in a chunk header */
@@ -39,6 +41,12 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
   ((sizeof(XB_STREAM_CHUNK_MAGIC) - 1) + 1 + 1 + 4)
 #define CHUNK_TYPE_OFFSET (sizeof(XB_STREAM_CHUNK_MAGIC) - 1 + 1)
 #define PATH_LENGTH_OFFSET (sizeof(XB_STREAM_CHUNK_MAGIC) - 1 + 1 + 1)
+
+struct xb_rstream_struct {
+  my_off_t offset;
+  File fd;
+  std::mutex *mutex;
+};
 
 typedef struct xb_wstream_struct xb_wstream_t;
 

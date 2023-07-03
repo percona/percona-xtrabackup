@@ -57,6 +57,14 @@ typedef struct {
     FIFO_list.erase(fifo_it);
     return false;
   }
+  /* Close all FIFO files in FIFO_list */
+  void close_all() {
+    std::lock_guard<std::mutex> g(fifo_mutex);
+    for (auto &fifo : FIFO_list) {
+      my_close(fifo.second, MYF(0));
+    }
+    FIFO_list.clear();
+  }
 } ds_fifo_ctxt_t;
 
 typedef struct {
@@ -76,10 +84,11 @@ static void fifo_deinit(ds_ctxt_t *ctxt);
 datasink_t datasink_fifo = {&fifo_init, &fifo_open,  &fifo_write,
                             nullptr,    &fifo_close, &fifo_deinit};
 
-static void cleanup_on_error(int idx, const char *root) {
+static void cleanup_on_error(const char *root, ds_fifo_ctxt_t *ctxt) {
   std::string path;
   char fullpath[FN_REFLEN];
-  for (int i = 0; i <= idx; i++) {
+  ctxt->close_all();
+  for (uint i = 0; i < xtrabackup_fifo_streams; i++) {
     path = "thread_" + std::to_string(i);
     fn_format(fullpath, path.c_str(), root, "", MYF(MY_RELATIVE_PATH));
     unlink(fullpath);
@@ -119,7 +128,7 @@ static ds_ctxt_t *fifo_init(const char *root) {
             "xtrabackup instance running, remove the file(s) and try again.\n",
             fullpath);
       } else {
-        cleanup_on_error(i, root);
+        cleanup_on_error(root, fifo_context);
       }
       return NULL;
     }
@@ -130,7 +139,7 @@ static ds_ctxt_t *fifo_init(const char *root) {
     fn_format(fullpath, path.c_str(), root, "", MYF(MY_RELATIVE_PATH));
     fd = open_fifo_for_write_with_timeout(fullpath, xtrabackup_fifo_timeout);
     if (fd < 0) {
-      cleanup_on_error(i, root);
+      cleanup_on_error(root, fifo_context);
       return NULL;
     }
     fifo_context->populate_list(fullpath, fd);

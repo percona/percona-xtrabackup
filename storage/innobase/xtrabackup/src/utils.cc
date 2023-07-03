@@ -23,8 +23,12 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <mach/mach_host.h>
 #include <sys/sysctl.h>
 #else
+#ifdef HAVE_PROCPS_V3
 #include <proc/sysinfo.h>
-#endif
+#else
+#include <libproc2/meminfo.h>
+#endif                                     // HAVE_PROCPS_V3
+#endif                                     // __APPLE__
 #include <boost/uuid/uuid.hpp>             // uuid class
 #include <boost/uuid/uuid_generators.hpp>  // generators
 #include <boost/uuid/uuid_io.hpp>          // streaming operators etc.
@@ -141,13 +145,31 @@ unsigned long host_free_memory() {
 }
 #else
 unsigned long host_total_memory() {
+#ifdef HAVE_PROCPS_V3
   meminfo();
   return kb_main_total * 1024;
+#else
+  struct meminfo_info *mem_info;
+  if (procps_meminfo_new(&mem_info) < 0) {
+    return 0;
+  }
+
+  return MEMINFO_GET(mem_info, MEMINFO_MEM_TOTAL, ul_int) * 1024;
+#endif  // HAVE_PROCPS_V3
 }
 
 unsigned long host_free_memory() {
+#ifdef HAVE_PROCPS_V3
   meminfo();
   return kb_main_available * 1024;
+#else
+  struct meminfo_info *mem_info;
+  if (procps_meminfo_new(&mem_info) < 0) {
+    return 0;
+  }
+
+  return MEMINFO_GET(mem_info, MEMINFO_MEM_AVAILABLE, ul_int) * 1024;
+#endif  // HAVE_PROCPS_V3
 }
 #endif
 

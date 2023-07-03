@@ -641,8 +641,11 @@ static bool move_file(ds_ctxt_t *datasink, const char *src_file_path,
   char dst_dir_abs[FN_REFLEN];
   size_t dirname_length;
 
-  snprintf(dst_file_path_abs, sizeof(dst_file_path_abs), "%s/%s", dst_dir,
-           dst_file_path);
+  if (snprintf(dst_file_path_abs, sizeof(dst_file_path_abs) - 1, "%s/%s",
+               dst_dir, dst_file_path) > (int)(sizeof(dst_file_path_abs) - 1)) {
+    xb::error() << "Cannot format dst_file_path_abs";
+    return (false);
+  }
 
   dirname_part(dst_dir_abs, dst_file_path_abs, &dirname_length);
 
