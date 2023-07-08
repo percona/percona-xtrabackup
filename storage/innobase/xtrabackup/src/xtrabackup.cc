@@ -854,8 +854,8 @@ struct my_option xb_client_options[] = {
     {"redo_log_arch_dir", OPT_INNODB_REDO_LOG_ARCHIVE_DIRS,
      "redo log archive destination directory",
      (G_PTR *)&xtrabackup_redo_log_arch_dir,
-     (G_PTR *)&xtrabackup_redo_log_arch_dir, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0,
-     0},
+     (G_PTR *)&xtrabackup_redo_log_arch_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0,
+     0, 0, 0},
     {"incremental-dir", OPT_XTRA_INCREMENTAL_DIR,
      "(for --prepare): apply .delta files and logfile in the specified "
      "directory.",

@@ -927,6 +927,14 @@ void Archived_Redo_Log_Monitor::parse_archive_dirs(const std::string &s) {
   }
 }
 
+void Archived_Redo_Log_Monitor::archive_error_handle(auto mysql,
+                                                     bool archive_set) {
+  if (!archive_set) {
+    xb_mysql_query(mysql, "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",
+                   false, true);
+  }
+}
+
 void Archived_Redo_Log_Monitor::thread_func() {
   my_thread_init();
 
@@ -957,32 +965,29 @@ void Archived_Redo_Log_Monitor::thread_func() {
   
   read_mysql_variables(mysql, "SHOW VARIABLES", vars, true);
 
-  if (!(redo_log_archive_dirs == nullptr || *redo_log_archive_dirs == 0)) {
-    xb::info() << "innodb_redo_log_archive_dirs is already  set .";
-    innodb_redo_log_archive = true;
+  if (redo_log_archive_dirs == nullptr || *redo_log_archive_dirs == 0) {
+    std::ostringstream query;
+    if (xtrabackup_redo_log_arch_dir) {
+      query << "SET GLOBAL innodb_redo_log_archive_dirs ="
+            << "\"" << xtrabackup_redo_log_arch_dir << "\"";
+      xb_mysql_query(mysql, query.str().c_str(), false, true);
+      innodb_redo_log_archive = true;
+    } else {
+      xb::info() << "Redo Log Archiving is not set up.";
+      free_mysql_variables(vars);
+      mysql_close(mysql);
+      my_thread_end();
+      return;
+    }
   }
-  
-  std::ostringstream query;
-  if (!innodb_redo_log_archive && xtrabackup_redo_log_arch_dir) {
-    xb::info() << "xtrabackup redo_log_arch_dir is now  set .";
-    query << "SET GLOBAL innodb_redo_log_archive_dirs ="
-          << "\"" << xtrabackup_redo_log_arch_dir << "\"";
-    xb_mysql_query(mysql, query.str().c_str(), false);
-  }
-
-  if (!innodb_redo_log_archive && !xtrabackup_redo_log_arch_dir) {
-    xb::info() << "Redo Log Archiving is not set up.";
-    free_mysql_variables(vars);
-    mysql_close(mysql);
-    my_thread_end();
-    return;
-  }
+  xb::info() << "xtrabackup redo_log_arch_dir is now  set .";
 
   read_mysql_variables(mysql, "SHOW VARIABLES", vars, true);
   parse_archive_dirs(redo_log_archive_dirs);
 
   if (archived_dirs.empty()) {
     xb::info() << "Redo Log Archiving directory is empty.";
+    archive_error_handle(mysql, innodb_redo_log_archive);
     free_mysql_variables(vars);
     mysql_close(mysql);
     my_thread_end();
@@ -1029,10 +1034,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
 
   if (res == nullptr) {
     xb::info() << "Redo Log Archiving is not used.";
-    if (!innodb_redo_log_archive) {
-      xb_mysql_query(mysql, "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",
-                     false, true);
-    }
+    archive_error_handle(mysql, innodb_redo_log_archive);
     mysql_close(mysql);
     my_thread_end();
     return;
@@ -1062,10 +1064,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
     file = my_open(archive.filename.c_str(), O_RDONLY, MYF(MY_WME));
     if (file < 0) {
       xb::error() << "cannot open " << SQUOTE(archive.filename.c_str());
-      if (!innodb_redo_log_archive) {
-        xb_mysql_query(mysql, "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",
-                       false, true);
-      }
+      archive_error_handle(mysql, innodb_redo_log_archive);
       mysql_close(mysql);
       my_thread_end();
       return;
@@ -1080,6 +1079,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
       size_t n_read = my_read(file, buf, hdr_len, MYF(MY_WME));
       if (n_read == MY_FILE_ERROR) {
         xb::error() << "cannot read from " << SQUOTE(archive.filename.c_str());
+        archive_error_handle(mysql, innodb_redo_log_archive);
         mysql_close(mysql);
         my_thread_end();
         return;
@@ -1101,11 +1101,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
         size_t n_read = my_read(file, buf2, hdr_len, MYF(MY_WME));
         if (n_read == MY_FILE_ERROR) {
           xb::error() << "cannot read from " << archive.filename.c_str();
-          if (!innodb_redo_log_archive) {
-            xb_mysql_query(mysql,
-                           "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",
-                           false, true);
-          }
+          archive_error_handle(mysql, innodb_redo_log_archive);
           mysql_close(mysql);
           my_thread_end();
           return;
@@ -1121,11 +1117,7 @@ void Archived_Redo_Log_Monitor::thread_func() {
         size_t n_read = my_read(file, buf, hdr_len, MYF(MY_WME));
         if (n_read == MY_FILE_ERROR) {
           xb::error() << "cannot read from " << archive.filename.c_str();
-          if (!innodb_redo_log_archive) {
-            xb_mysql_query(mysql,
-                           "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",
-                           false, true);
-          }
+          archive_error_handle(mysql, innodb_redo_log_archive);
           mysql_close(mysql);
           my_thread_end();
           return;
@@ -1161,8 +1153,8 @@ void Archived_Redo_Log_Monitor::thread_func() {
   }
 
   xb_mysql_query(mysql, "SELECT innodb_redo_log_archive_stop()", false);
-  if (!innodb_redo_log_archive) {
-    xb::info() << "innodb_redo_log_archive_dirs is not set,set it NULL .";
+  /*Return the configuration back to the original value*/
+  if (innodb_redo_log_archive) {
     xb_mysql_query(mysql, "SET GLOBAL innodb_redo_log_archive_dirs = NULL;",
                    false, true);
   }

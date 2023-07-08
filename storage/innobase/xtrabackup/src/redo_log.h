@@ -255,6 +255,9 @@ class Archived_Redo_Log_Monitor {
   /** Parse the value of innodb_redo_log_archive_dirs. */
   void parse_archive_dirs(const std::string &s);
 
+  /**In case of error return the configuration back to the original value  */
+  void archive_error_handle(auto mysql, bool archive_set);
+
   /** Start log archiving on server if supported, open archive file,
       wait for stop signal and remove the archive. */
   void thread_func();
