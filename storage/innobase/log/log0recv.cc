@@ -3695,31 +3695,16 @@ automatically when the hash table becomes full.
 @param[in]      len             buffer length
 @param[in]      start_lsn       buffer start lsn
 @param[out]  read_upto_lsn  scanning succeeded up to this lsn
-<<<<<<< HEAD
 @param[in]      to_lsn          LSN to stop scanning at
-@param[out]  err             DB_SUCCESS when no dblwr corruptions.
-||||||| ea7087d8850
-@param[out]  err             DB_SUCCESS when no dblwr corruptions.
-=======
->>>>>>> mysql-8.0.34
 @return true if not able to scan any more in this log */
 #ifndef UNIV_HOTBACKUP
 static bool recv_scan_log_recs(log_t &log,
 #else  /* !UNIV_HOTBACKUP */
 bool meb_scan_log_recs(
 #endif /* !UNIV_HOTBACKUP */
-<<<<<<< HEAD
                                size_t *max_memory, const byte *buf, size_t len,
                                lsn_t start_lsn, lsn_t *read_upto_lsn,
-                               dberr_t &err, lsn_t to_lsn) {
-||||||| ea7087d8850
-                               size_t max_memory, const byte *buf, size_t len,
-                               lsn_t start_lsn, lsn_t *read_upto_lsn,
-                               dberr_t &err) {
-=======
-                               size_t max_memory, const byte *buf, size_t len,
-                               lsn_t start_lsn, lsn_t *read_upto_lsn) {
->>>>>>> mysql-8.0.34
+                               lsn_t to_lsn) {
   const byte *log_block = buf;
   lsn_t scanned_lsn = start_lsn;
   bool finished = false;
@@ -4120,18 +4105,10 @@ Parses and hashes the log records if new data found.
                                         an mtr which we can ignore, as it is
                                         already applied to tablespace files)
                                         until which all redo log has been
-<<<<<<< HEAD
                                         scanned
 @param[in,out]  to_lsn                  LSN to stop recovery at */
-static dberr_t recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn,
+static void recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn,
                                    lsn_t to_lsn) {
-||||||| ea7087d8850
-                                        scanned */
-static dberr_t recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn) {
-=======
-                                        scanned */
-static void recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn) {
->>>>>>> mysql-8.0.34
   mutex_enter(&recv_sys->mutex);
 
   recv_sys->len = 0;
@@ -4184,28 +4161,8 @@ static void recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn) {
       break;
     }
 
-<<<<<<< HEAD
-    dberr_t err;
-
     finished = recv_scan_log_recs(log, &max_mem, log.buf, end_lsn - start_lsn,
-                                  start_lsn, &log.m_scanned_lsn, err, to_lsn);
-
-    if (err != DB_SUCCESS) {
-      return err;
-    }
-||||||| ea7087d8850
-    dberr_t err;
-
-    finished = recv_scan_log_recs(log, max_mem, log.buf, end_lsn - start_lsn,
-                                  start_lsn, &log.m_scanned_lsn, err);
-
-    if (err != DB_SUCCESS) {
-      return err;
-    }
-=======
-    finished = recv_scan_log_recs(log, max_mem, log.buf, end_lsn - start_lsn,
-                                  start_lsn, &log.m_scanned_lsn);
->>>>>>> mysql-8.0.34
+                                  start_lsn, &log.m_scanned_lsn, to_lsn);
 
     start_lsn = end_lsn;
   }
@@ -4346,7 +4303,6 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
     }
   }
 
-<<<<<<< HEAD
 #ifdef XTRABACKUP
   /* PXB 8.0.30 could set wrong start_lsn in the xtrabackup_log_file. We fix
   such files, by determining the LSN of the first block found in the file as
@@ -4363,18 +4319,7 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
   }
 #endif  // XTRABACKUP
 
-  err = recv_recovery_begin(log, checkpoint_lsn, to_lsn);
-  if (err != DB_SUCCESS) {
-    return err;
-  }
-||||||| ea7087d8850
-  err = recv_recovery_begin(log, checkpoint_lsn);
-  if (err != DB_SUCCESS) {
-    return err;
-  }
-=======
-  recv_recovery_begin(log, checkpoint_lsn);
->>>>>>> mysql-8.0.34
+  recv_recovery_begin(log, checkpoint_lsn, to_lsn);
 
   if (srv_read_only_mode && log.m_scanned_lsn > checkpoint_lsn) {
     ib::error(ER_IB_MSG_RECOVERY_IN_READ_ONLY);

@@ -5400,17 +5400,6 @@ static int init_ssl() {
     LogErr(WARNING_LEVEL, ER_SSL_MEMORY_INSTRUMENTATION_INIT_FAILED,
            "CRYPTO_set_mem_functions");
   ssl_start();
-<<<<<<< HEAD
-}
-
-static int init_ssl_communication() {
-#if !defined(XTRABACKUP)
-||||||| ea7087d8850
-}
-
-static int init_ssl_communication() {
-=======
->>>>>>> mysql-8.0.34
   char ssl_err_string[OPENSSL_ERROR_LENGTH] = {'\0'};
   if (set_fips_mode(opt_ssl_fips_mode, ssl_err_string)) {
     LogErr(ERROR_LEVEL, ER_SSL_FIPS_MODE_ERROR, ssl_err_string);
@@ -5424,6 +5413,7 @@ static int init_ssl_communication() {
 }
 
 static int init_ssl_communication() {
+#if !defined(XTRABACKUP)
   if (TLS_channel::singleton_init(&mysql_main, mysql_main_channel, opt_use_ssl,
                                   &server_main_callback, opt_initialize))
     return 1;

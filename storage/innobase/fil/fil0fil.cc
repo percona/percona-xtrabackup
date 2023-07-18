@@ -10101,16 +10101,10 @@ dberr_t Fil_system::open_for_recovery(space_id_t space_id) {
                                      << space->name << " ID: " << space->id;
     }
 
-<<<<<<< HEAD
-    return err;
+    return DB_SUCCESS;
   } else if (status == FIL_LOAD_INVALID_ENCRYPTION_META) {
     xb::error() << "Invalid encryption metadata in tablespace header.";
     exit(EXIT_FAILURE);
-||||||| ea7087d8850
-    return err;
-=======
-    return DB_SUCCESS;
->>>>>>> mysql-8.0.34
   }
 
   return DB_FAIL;
