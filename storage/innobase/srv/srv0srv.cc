@@ -2848,11 +2848,7 @@ void srv_worker_thread() {
 
   THD *thd = create_internal_thd();
 
-  rw_lock_x_lock(&purge_sys->latch, UT_LOCATION_HERE);
-
-  purge_sys->thds.insert(thd);
-
-  rw_lock_x_unlock(&purge_sys->latch);
+  purge_sys->is_this_a_purge_thread = true;
 
   slot = srv_reserve_slot(SRV_WORKER);
 
@@ -3092,11 +3088,7 @@ void srv_purge_coordinator_thread() {
 
   THD *thd = create_internal_thd();
 
-  rw_lock_x_lock(&purge_sys->latch, UT_LOCATION_HERE);
-
-  purge_sys->thds.insert(thd);
-
-  rw_lock_x_unlock(&purge_sys->latch);
+  purge_sys->is_this_a_purge_thread = true;
 
   ulint n_total_purged = ULINT_UNDEFINED;
 
