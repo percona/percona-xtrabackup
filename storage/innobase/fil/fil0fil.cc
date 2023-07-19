@@ -8822,7 +8822,7 @@ dberr_t fil_tablespace_iterate(const Encryption_metadata &encryption_metadata,
   DBUG_EXECUTE_IF("fil_tablespace_iterate_failure", {
     static bool once;
 
-    if (!once || ut::random_from_interval(0, 10) == 5) {
+    if (!once || ut::random_from_interval_fast(0, 10) == 5) {
       once = true;
       success = false;
       os_file_close(file);
@@ -10081,8 +10081,6 @@ dberr_t Fil_system::open_for_recovery(space_id_t space_id) {
     return DB_CORRUPTION;
   }
 
-  dberr_t err = DB_SUCCESS;
-
   if (status == FIL_LOAD_OK) {
     /* In the case of undo tablespace, even if the encryption flag is not
     enabled in space->flags, the encryption keys needs to be restored from
@@ -10097,14 +10095,13 @@ dberr_t Fil_system::open_for_recovery(space_id_t space_id) {
     }
 
     if (!recv_sys->dblwr->empty()) {
-      err = recv_sys->dblwr->recover(space);
-
+      recv_sys->dblwr->recover(space);
     } else {
       ib::info(ER_IB_MSG_DBLWR_1317) << "DBLWR recovery skipped for "
                                      << space->name << " ID: " << space->id;
     }
 
-    return err;
+    return DB_SUCCESS;
   } else if (status == FIL_LOAD_INVALID_ENCRYPTION_META) {
     xb::error() << "Invalid encryption metadata in tablespace header.";
     exit(EXIT_FAILURE);

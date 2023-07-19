@@ -235,7 +235,7 @@ static bool recv_writer_is_active() {
 
 /** Initialize crash recovery environment. Can be called iff
 recv_needed_recovery == false. */
-static dberr_t recv_init_crash_recovery();
+static void recv_init_crash_recovery();
 #endif /* !UNIV_HOTBACKUP */
 
 /** Calculates the new value for lsn when more data is added to the log.
@@ -312,22 +312,30 @@ byte *MetadataRecover::parseMetadataLog(table_id_t id, uint64_t version,
   ut_ad(dict_persist->persisters != nullptr);
 
   Persister *persister = dict_persist->persisters->get(type);
+  if (persister == nullptr) {
+    recv_sys->found_corrupt_log = true;
+    return ptr;
+  }
+
+  ptr++;
+
   PersistentTableMetadata *metadata = getMetadata(id);
 
+  PersistentTableMetadata new_entry{id, version};
   bool corrupt;
-  ulint consumed = persister->read(*metadata, ptr, end - ptr, &corrupt);
+  ulint consumed = persister->read(new_entry, ptr, end - ptr, &corrupt);
 
   if (corrupt) {
     recv_sys->found_corrupt_log = true;
-  } else if (consumed != 0) {
-    metadata->set_version(version);
+    return ptr + consumed;
   }
 
   if (consumed == 0) {
     return nullptr;
-  } else {
-    return ptr + consumed;
   }
+
+  persister->aggregate(*metadata, new_entry);
+  return ptr + consumed;
 }
 
 /** Creates the recovery system. */
@@ -3104,8 +3112,7 @@ void recv_recover_page_func(
 
   /* Make sure that committing mtr does not change the modification
   LSN values of page */
-
-  mtr.discard_modifications();
+  ut_a(mtr.get_log_mode() == MTR_LOG_NONE);
 
   mtr_commit(&mtr);
 
@@ -3689,7 +3696,6 @@ automatically when the hash table becomes full.
 @param[in]      start_lsn       buffer start lsn
 @param[out]  read_upto_lsn  scanning succeeded up to this lsn
 @param[in]      to_lsn          LSN to stop scanning at
-@param[out]  err             DB_SUCCESS when no dblwr corruptions.
 @return true if not able to scan any more in this log */
 #ifndef UNIV_HOTBACKUP
 static bool recv_scan_log_recs(log_t &log,
@@ -3698,12 +3704,11 @@ bool meb_scan_log_recs(
 #endif /* !UNIV_HOTBACKUP */
                                size_t *max_memory, const byte *buf, size_t len,
                                lsn_t start_lsn, lsn_t *read_upto_lsn,
-                               dberr_t &err, lsn_t to_lsn) {
+                               lsn_t to_lsn) {
   const byte *log_block = buf;
   lsn_t scanned_lsn = start_lsn;
   bool finished = false;
   bool more_data = false;
-  err = DB_SUCCESS;
 
   ut_ad(start_lsn % OS_FILE_LOG_BLOCK_SIZE == 0);
   ut_ad(len % OS_FILE_LOG_BLOCK_SIZE == 0);
@@ -3898,10 +3903,7 @@ bool meb_scan_log_recs(
 
         ib::info(ER_IB_MSG_722, ulonglong{recv_sys->scanned_lsn});
 
-        err = recv_init_crash_recovery();
-        if (err != DB_SUCCESS) {
-          return true;
-        }
+        recv_init_crash_recovery();
       }
 #endif /* !UNIV_HOTBACKUP */
 
@@ -4105,7 +4107,7 @@ Parses and hashes the log records if new data found.
                                         until which all redo log has been
                                         scanned
 @param[in,out]  to_lsn                  LSN to stop recovery at */
-static dberr_t recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn,
+static void recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn,
                                    lsn_t to_lsn) {
   mutex_enter(&recv_sys->mutex);
 
@@ -4159,25 +4161,18 @@ static dberr_t recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn,
       break;
     }
 
-    dberr_t err;
-
     finished = recv_scan_log_recs(log, &max_mem, log.buf, end_lsn - start_lsn,
-                                  start_lsn, &log.m_scanned_lsn, err, to_lsn);
-
-    if (err != DB_SUCCESS) {
-      return err;
-    }
+                                  start_lsn, &log.m_scanned_lsn, to_lsn);
 
     start_lsn = end_lsn;
   }
 
   DBUG_PRINT("ib_log", ("scan " LSN_PF " completed", log.m_scanned_lsn));
-  return DB_SUCCESS;
 }
 
 /** Initialize crash recovery environment. Can be called iff
 recv_needed_recovery == false. */
-static dberr_t recv_init_crash_recovery() {
+static void recv_init_crash_recovery() {
   ut_ad(!srv_read_only_mode);
   ut_a(!recv_needed_recovery);
 
@@ -4186,7 +4181,7 @@ static dberr_t recv_init_crash_recovery() {
   ib::info(ER_IB_MSG_726);
   ib::info(ER_IB_MSG_727);
 
-  dberr_t err = recv_sys->dblwr->recover();
+  recv_sys->dblwr->recover();
 
   if (srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
     /* Spawn the background thread to flush dirty pages
@@ -4197,8 +4192,6 @@ static dberr_t recv_init_crash_recovery() {
 
     srv_threads.m_recv_writer.start();
   }
-
-  return err;
 }
 #endif /* !UNIV_HOTBACKUP */
 
@@ -4306,10 +4299,7 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
         return DB_ERROR;
       }
 
-      err = recv_init_crash_recovery();
-      if (err != DB_SUCCESS) {
-        return err;
-      }
+      recv_init_crash_recovery();
     }
   }
 
@@ -4329,10 +4319,7 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
   }
 #endif  // XTRABACKUP
 
-  err = recv_recovery_begin(log, checkpoint_lsn, to_lsn);
-  if (err != DB_SUCCESS) {
-    return err;
-  }
+  recv_recovery_begin(log, checkpoint_lsn, to_lsn);
 
   if (srv_read_only_mode && log.m_scanned_lsn > checkpoint_lsn) {
     ib::error(ER_IB_MSG_RECOVERY_IN_READ_ONLY);
