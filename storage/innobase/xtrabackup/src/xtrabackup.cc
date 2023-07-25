@@ -904,9 +904,8 @@ struct my_option xb_client_options[] = {
 
     {"compress", OPT_XTRA_COMPRESS,
      "Compress individual backup files using the specified compression "
-     "algorithm. Supported algorithms are 'quicklz', 'lz4' and 'zstd'. The "
-     "default algorithm is 'quicklz'. Please note: quicklz is deprecated. "
-     "Consider using ZSTD or LZ4.",
+     "algorithm. Supported algorithms are 'lz4' and 'zstd'. The "
+     "default algorithm is 'zstd'.",
      (G_PTR *)&xtrabackup_compress_alg, (G_PTR *)&xtrabackup_compress_alg, 0,
      GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
@@ -1163,8 +1162,7 @@ struct my_option xb_client_options[] = {
      0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
     {"decompress", OPT_DECOMPRESS,
-     "Decompresses all files with the .qp "
-     "extension in a backup previously made with the --compress option.",
+     "Decompresses all the compressed files made with the --compress option.",
      (uchar *)&opt_decompress, (uchar *)&opt_decompress, 0, GET_BOOL, NO_ARG, 0,
      0, 0, 0, 0, 0},
 
@@ -1234,7 +1232,7 @@ struct my_option xb_client_options[] = {
      GET_ENUM, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
     {"remove-original", OPT_REMOVE_ORIGINAL,
-     "Remove .qp and .xbcrypt files "
+     "Remove .qp, .zst, .lz4 and .xbcrypt files "
      "after decryption and decompression.",
      (uchar *)&opt_remove_original, (uchar *)&opt_remove_original, 0, GET_BOOL,
      NO_ARG, 0, 0, 0, 0, 0, 0},
@@ -1874,9 +1872,10 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
       break;
     case OPT_XTRA_COMPRESS:
       if (argument == NULL) {
-        xtrabackup_compress = XTRABACKUP_COMPRESS_QUICKLZ;
-        xtrabackup_compress_ds = DS_TYPE_COMPRESS_QUICKLZ;
+        xtrabackup_compress = XTRABACKUP_COMPRESS_ZSTD;
+        xtrabackup_compress_ds = DS_TYPE_COMPRESS_ZSTD;
       } else if (strcasecmp(argument, "quicklz") == 0) {
+        /* leaving this as an option to show proper error message */
         xtrabackup_compress = XTRABACKUP_COMPRESS_QUICKLZ;
         xtrabackup_compress_ds = DS_TYPE_COMPRESS_QUICKLZ;
       } else if (strcasecmp(argument, "lz4") == 0) {
@@ -3330,12 +3329,11 @@ static void xtrabackup_init_datasinks(void) {
       ds_redo = ds_data = ds;
     }
 
-    /* Deprecation of qpress warning */
+    /* Removal of qpress warning */
     if (xtrabackup_compress == XTRABACKUP_COMPRESS_QUICKLZ) {
-      xb::warn()
-          << "--compress using quicklz is deprecated and the ability to "
-             "take backups using this compression algorithm will be removed in "
-             "a future release. Please use ZSTD or LZ4 instead.";
+      xb::error() << "--compress using quicklz is removed. Please use ZSTD or "
+                     "LZ4 instead.";
+      exit(EXIT_FAILURE);
     }
     ds = ds_create(xtrabackup_target_dir, xtrabackup_compress_ds);
     xtrabackup_add_datasink(ds);

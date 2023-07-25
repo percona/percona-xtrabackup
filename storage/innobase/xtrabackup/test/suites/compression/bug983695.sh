@@ -4,7 +4,7 @@
 
 . inc/common.sh
 
-require_qpress
+require_zstd
 
 start_server --innodb_file_per_table
 load_sakila
@@ -15,9 +15,8 @@ stop_server
 rm -rf ${MYSQLD_DATADIR}/*
 
 # Uncompress the backup
-cd $topdir/backup
-for i in *.qp sakila/*.qp;  do qpress -d $i ./; done;
-cd -
+xtrabackup --decompress --target-dir=$topdir/backup
+
 
 xtrabackup --prepare --target-dir=$topdir/backup
 xtrabackup --copy-back --target-dir=$topdir/backup
