@@ -71,8 +71,6 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "fsp0fsp.h"
 #include "xb_regex.h"
 
-extern bool opt_no_server_version_check;
-
 /** Possible values for system variable "innodb_checksum_algorithm". */
 extern const char *innodb_checksum_algorithm_names[];
 
@@ -370,7 +368,7 @@ static bool check_server_version(unsigned long version_number,
   }
 
   version_supported =
-      version_supported || (version_number > 80000 && version_number < 90000);
+      version_supported || (version_number > 80000 && version_number <= 80099);
 
   mysql51 = version_number > 50100 && version_number < 50500;
   pxb24 = pxb24 || (mysql51 && innodb_version != NULL);
@@ -392,24 +390,10 @@ static bool check_server_version(unsigned long version_number,
     if (pxb24) {
       xb::info() << "Please use Percona XtraBackup 2.4 for this database.";
     }
+    return false;
   }
 
-  auto pxb_base_ver =
-      xtrabackup::utils::get_version_number(MYSQL_SERVER_VERSION);
-
-  DBUG_EXECUTE_IF("simulate_lower_version", pxb_base_ver = 80014;);
-
-  if (!opt_no_server_version_check && pxb_base_ver < version_number) {
-    xb::error() << "Unsupported server version "
-                << mysql_connection->server_version;
-    xb::error()
-        << "Please upgrade PXB, if a new "
-           "version is available. To continue with risk, use the option "
-           "--no-server-version-check.";
-    version_supported = false;
-  }
-
-  return (version_supported);
+  return true;
 }
 
 /*********************************************************************/ /**
