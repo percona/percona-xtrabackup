@@ -18,7 +18,7 @@ run_cmd $XB_BIN --decrypt=AES256 --encrypt-key=percona_xtrabackup_is_awesome___ 
 		--parallel=4 --encrypt-chunk-size=8K \
 		--target-dir=$topdir/backup1
 
-test -f $topdir/backup1/test/t1.ibd.qp.xbcrypt || die "Files removed"
+test -f $topdir/backup1/test/t1.ibd.zst.xbcrypt || die "Files removed"
 
 rm -rf $topdir/backup1
 cp -r $topdir/backup $topdir/backup1
@@ -28,7 +28,7 @@ run_cmd $XB_BIN --decrypt=AES256 --encrypt-key=percona_xtrabackup_is_awesome___ 
 		--remove-original \
 		--target-dir=$topdir/backup1
 
-test -f $topdir/backup1/test/t1.ibd.qp.xbcrypt && die "Files not removed"
+test -f $topdir/backup1/test/t1.ibd.zst.xbcrypt && die "Files not removed"
 
 rm -rf $topdir/backup1
 cp -r $topdir/backup $topdir/backup1
@@ -39,4 +39,4 @@ run_cmd_expect_failure $XB_BIN --decrypt=AES256 \
 			       --remove-original \
 			       --target-dir=$topdir/backup1
 
-test -f $topdir/backup1/test/t1.ibd.qp.xbcrypt || die "Files removed"
+test -f $topdir/backup1/test/t1.ibd.zst.xbcrypt || die "Files removed"

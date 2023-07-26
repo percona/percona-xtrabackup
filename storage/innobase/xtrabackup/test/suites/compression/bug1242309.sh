@@ -6,7 +6,7 @@ start_server
 
 xtrabackup --backup --compress --target-dir=$topdir/backup
 
-if [ ! -f $topdir/backup/xtrabackup_logfile.qp ] ; then
+if [ ! -f $topdir/backup/xtrabackup_logfile.zst ] ; then
 	die "xtrabackup_logfile is not compressed!"
 fi
 
@@ -14,6 +14,6 @@ rm -rf $topdir/backup/*
 
 xtrabackup --backup --compress --stream=xbstream --target-dir=$topdir/backup | xbstream -xv -C $topdir/backup
 
-if [ ! -f $topdir/backup/xtrabackup_logfile.qp ] ; then
+if [ ! -f $topdir/backup/xtrabackup_logfile.zst ] ; then
 	die "xtrabackup_logfile is not compressed!"
 fi
