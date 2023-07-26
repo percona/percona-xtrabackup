@@ -353,6 +353,7 @@ class Http_client {
       CURLcode::CURLE_SEND_FAIL_REWIND,  CURLcode::CURLE_PARTIAL_FILE,
       CURLcode::CURLE_SSL_CONNECT_ERROR, CURLcode::CURLE_OBSOLETE16};
   std::vector<long> http_retriable_errors{503, 500, 504, 408};
+  ulong timeout = 0;
   mutable curl_easy_unique_ptr curl{nullptr, curl_easy_cleanup};
 
   static void async_result_callback(async_callback_t user_callback,
@@ -385,6 +386,7 @@ class Http_client {
                 ulong count) const;
   void set_verbose(bool val) { verbose = val; }
   void set_insecure(bool val) { insecure = val; }
+  void set_timeout(ulong val) { timeout = val; }
   void set_cacaert(const std::string &val) { cacert = val; }
   void set_curl_retriable_errors(CURLcode code) {
     if (code < CURLcode::CURL_LAST) {

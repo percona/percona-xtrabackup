@@ -515,6 +515,10 @@ void Http_client::setup_request(
   if (!cacert.empty()) {
     curl_easy_setopt(curl, CURLOPT_CAINFO, cacert.c_str());
   }
+
+  if (timeout > 0) {
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout);
+  }
 }
 
 int Http_client::upload_callback(char *ptr, size_t size, size_t nmemb,

@@ -128,6 +128,7 @@ static ulong opt_parallel = 1;
 static ulong opt_threads = 1;
 static char *opt_fifo_dir = nullptr;
 static ulong opt_fifo_timeout = 60;
+static ulong opt_timeout = 120;
 static ulong opt_max_retries = 10;
 static u_int32_t opt_max_backoff = 300000;
 
@@ -202,6 +203,7 @@ enum {
   OPT_THREADS,
   OPT_FIFO_DIR,
   OPT_FIFO_TIMEOUT,
+  OPT_TIMEOUT,
   OPT_MAX_RETRIES,
   OPT_MAX_BACKOFF,
   OPT_CACERT,
@@ -321,6 +323,12 @@ static struct my_option my_long_options[] = {
      "Default 60 seconds",
      &opt_fifo_timeout, &opt_fifo_timeout, 0, GET_INT, REQUIRED_ARG, 60, 1,
      INT_MAX, 0, 0, 0},
+
+    {"timeout", OPT_TIMEOUT,
+     "How many seconds to wait for activity on TCP connection. Setting this to "
+     "0 means no timeout. Default 120 seconds",
+     &opt_timeout, &opt_timeout, 0, GET_INT, REQUIRED_ARG, 120, 0, INT_MAX, 0,
+     0, 0},
 
     {"max-retries", OPT_MAX_RETRIES,
      "Number of retries of chunk uploads/downloads after a failure (Default "
@@ -1292,6 +1300,9 @@ int main(int argc, char **argv) {
   }
   if (opt_cacert != nullptr) {
     http_client.set_cacaert(opt_cacert);
+  }
+  if (opt_timeout > 0) {
+    http_client.set_timeout(opt_timeout);
   }
 
   std::string container_name;
