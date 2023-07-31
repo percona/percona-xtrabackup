@@ -255,6 +255,9 @@ class Archived_Redo_Log_Monitor {
   /** Parse the value of innodb_redo_log_archive_dirs. */
   void parse_archive_dirs(const std::string &s);
 
+  /** In case of error return the configuration back to the original value  */
+  void archive_error_handle(MYSQL *mysql);
+
   /** Start log archiving on server if supported, open archive file,
       wait for stop signal and remove the archive. */
   void thread_func();
@@ -270,6 +273,10 @@ class Archived_Redo_Log_Monitor {
 
   /** readiness flag. */
   std::atomic<bool> ready;
+
+  /** controls if xtrabackup has set redo log arch. Can only happen if it was
+      set to null */
+  std::atomic<bool> xb_has_set_redo_log_arch;
 
   /** first log block no. */
   uint32_t first_log_block_no;
