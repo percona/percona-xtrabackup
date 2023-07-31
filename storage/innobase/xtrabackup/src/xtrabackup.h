@@ -72,6 +72,7 @@ extern char *xtrabackup_target_dir;
 extern char xtrabackup_real_target_dir[FN_REFLEN];
 extern char *xtrabackup_incremental_dir;
 extern char *xtrabackup_incremental_basedir;
+extern char *xtrabackup_redo_log_arch_dir;
 extern char *innobase_data_home_dir;
 extern char *innobase_buffer_pool_filename;
 extern ds_ctxt_t *ds_meta;

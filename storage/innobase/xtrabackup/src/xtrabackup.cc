@@ -185,6 +185,7 @@ pagetracking::xb_space_map *changed_page_tracking = nullptr;
 char *xtrabackup_incremental_basedir = NULL; /* for --backup */
 char *xtrabackup_extra_lsndir = NULL;    /* for --backup with --extra-lsndir */
 char *xtrabackup_incremental_dir = NULL; /* for --prepare */
+char *xtrabackup_redo_log_arch_dir = NULL;
 
 char xtrabackup_real_incremental_basedir[FN_REFLEN];
 char xtrabackup_real_extra_lsndir[FN_REFLEN];
@@ -644,6 +645,7 @@ enum options_xtrabackup {
   OPT_INNODB_FAST_SHUTDOWN,
   OPT_INNODB_FILE_PER_TABLE,
   OPT_INNODB_FLUSH_LOG_AT_TRX_COMMIT,
+  OPT_INNODB_REDO_LOG_ARCHIVE_DIRS,
   OPT_INNODB_FLUSH_METHOD,
   OPT_INNODB_LOG_ARCH_DIR,
   OPT_INNODB_LOG_ARCHIVE,
@@ -849,6 +851,12 @@ struct my_option xb_client_options[] = {
      (G_PTR *)&xtrabackup_incremental_basedir,
      (G_PTR *)&xtrabackup_incremental_basedir, 0, GET_STR, REQUIRED_ARG, 0, 0,
      0, 0, 0, 0},
+    {"redo_log_arch_dir", OPT_INNODB_REDO_LOG_ARCHIVE_DIRS,
+     "Set redo log archive destination directory if not already set in the "
+     "server",
+     (G_PTR *)&xtrabackup_redo_log_arch_dir,
+     (G_PTR *)&xtrabackup_redo_log_arch_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0,
+     0, 0, 0},
     {"incremental-dir", OPT_XTRA_INCREMENTAL_DIR,
      "(for --prepare): apply .delta files and logfile in the specified "
      "directory.",

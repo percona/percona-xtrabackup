@@ -32,6 +32,8 @@ function run_test() {
   if [ "with_encryption" = $1 ]; then
     mysql -e "set global innodb_redo_log_encrypt=on"
   fi
+  run_inserts
+  innodb_wait_for_flush_all
 
   mkdir $topdir/backup
 
