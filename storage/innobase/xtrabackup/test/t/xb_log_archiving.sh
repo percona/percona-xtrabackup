@@ -4,8 +4,6 @@
 
 require_server_version_higher_than 8.0.16
 
-skip_if_asan
-
 . inc/keyring_file.sh
 
 start_server
