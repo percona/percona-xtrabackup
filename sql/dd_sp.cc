@@ -29,12 +29,13 @@
 #include <string>
 
 #include "lex_string.h"
-#include "m_ctype.h"
 #include "m_string.h"
 #include "my_alloc.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
+#include "mysql/strings/dtoa.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql_com.h"
 #include "sql/dd/collection.h"
 #include "sql/dd/properties.h"   // Properties
@@ -53,6 +54,7 @@
 #include "sql/system_variables.h"
 #include "sql/table.h"
 #include "sql_string.h"
+#include "string_with_len.h"
 #include "typelib.h"
 
 void prepare_sp_chistics_from_dd_routine(const dd::Routine *routine,
@@ -78,6 +80,13 @@ void prepare_sp_chistics_from_dd_routine(const dd::Routine *routine,
     default:
       sp_chistics->daccess = SP_DEFAULT_ACCESS_MAPPING; /* purecov: deadcode */
   }
+
+  // External language.
+  if (!routine->external_language().empty()) {
+    sp_chistics->language = {routine->external_language().c_str(),
+                             routine->external_language().length()};
+  } else
+    sp_chistics->language = EMPTY_CSTR;
 
   // Security type.
   sp_chistics->suid = (routine->security_type() == dd::View::ST_INVOKER)
@@ -133,7 +142,7 @@ static void prepare_type_string_from_dd_param(THD *thd,
   if (param->data_type() == dd::enum_column_types::ENUM ||
       param->data_type() == dd::enum_column_types::SET) {
     // Allocate space for interval.
-    size_t interval_parts = param->elements_count();
+    const size_t interval_parts = param->elements_count();
 
     interval = static_cast<TYPELIB *>(thd->mem_root->Alloc(sizeof(TYPELIB)));
     interval->type_names = static_cast<const char **>(

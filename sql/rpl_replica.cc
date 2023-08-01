@@ -45,6 +45,7 @@
 
 #include "include/compression.h"
 #include "include/mutex_lock.h"
+#include "m_string.h"
 #include "mysql/components/services/bits/psi_bits.h"
 #include "mysql/components/services/bits/psi_memory_bits.h"
 #include "mysql/components/services/bits/psi_stage_bits.h"
@@ -53,6 +54,7 @@
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/status_var.h"
+#include "mysql/strings/int2str.h"
 #include "sql/changestreams/apply/replication_thread_status.h"
 #include "sql/rpl_channel_service_interface.h"
 #ifdef HAVE_SYS_TIME_H
@@ -76,8 +78,6 @@
 #include "libbinlogevents/include/binlog_event.h"
 #include "libbinlogevents/include/control_events.h"
 #include "libbinlogevents/include/debug_vars.h"
-#include "m_ctype.h"
-#include "m_string.h"
 #include "mutex_lock.h"  // MUTEX_LOCK
 #include "my_bitmap.h"   // MY_BITMAP
 #include "my_byteorder.h"
@@ -86,16 +86,17 @@
 #include "my_dbug.h"
 #include "my_dir.h"
 #include "my_io.h"
-#include "my_loglevel.h"
 #include "my_macros.h"
 #include "my_sys.h"
 #include "my_systime.h"
 #include "my_thread_local.h"  // thread_local_key_t
 #include "mysql.h"            // MYSQL
+#include "mysql/my_loglevel.h"
 #include "mysql/psi/mysql_file.h"
 #include "mysql/psi/mysql_memory.h"
 #include "mysql/psi/mysql_thread.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql/thread_type.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
@@ -158,6 +159,9 @@
 #include "sql/transaction_info.h"
 #include "sql_common.h"  // end_server
 #include "sql_string.h"
+#include "str2int.h"
+#include "string_with_len.h"
+#include "strmake.h"
 #include "typelib.h"
 #ifndef NDEBUG
 #include "rpl_debug_points.h"
@@ -196,12 +200,6 @@ const char *relay_log_basename = nullptr;
   It can be set to any value in [1, ULONG_MAX - 1] range.
 */
 const ulong mts_slave_worker_queue_len_max = 16384;
-
-/*
-  Statistics go to the error log every # of seconds when
-  --log_error_verbosity > 2
-*/
-const long mts_online_stat_period = 60 * 2;
 
 /*
   MTS load-ballancing parameter.
@@ -6686,6 +6684,7 @@ static int slave_start_workers(Relay_log_info *rli, ulong n, bool *mts_inited) {
   rli->curr_group_isolated = false;
   rli->rli_checkpoint_seqno = 0;
   rli->mts_last_online_stat = time(nullptr);
+  rli->mta_coordinator_has_waited_stat = time(nullptr);
   rli->mts_group_status = Relay_log_info::MTS_NOT_IN_GROUP;
   clear_gtid_monitoring_info = true;
 

@@ -40,8 +40,6 @@
 #include "decimal.h"
 #include "field_types.h"  // enum_field_types
 #include "lex_string.h"
-#include "m_ctype.h"
-#include "m_string.h"
 #include "memory_debugging.h"
 #include "my_alloc.h"
 #include "my_bitmap.h"
@@ -52,10 +50,14 @@
 #include "my_sys.h"
 #include "my_table_map.h"
 #include "my_time.h"
+#include "mysql/strings/dtoa.h"
+#include "mysql/strings/m_ctype.h"
+#include "mysql/strings/my_strtoll10.h"
 #include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
 #include "mysql_time.h"
 #include "mysqld_error.h"
+#include "nulls.h"
 #include "sql/enum_query_type.h"
 #include "sql/field.h"  // Derivation
 #include "sql/mem_root_array.h"
@@ -70,6 +72,7 @@
 #include "sql/thr_malloc.h"
 #include "sql/trigger_def.h"  // enum_trigger_variable_type
 #include "sql_string.h"
+#include "string_with_len.h"
 #include "template_utils.h"
 
 class Item;
@@ -130,7 +133,7 @@ void item_init(void); /* Init item functions */
 
 static inline uint32 char_to_byte_length_safe(uint32 char_length_arg,
                                               uint32 mbmaxlen_arg) {
-  ulonglong tmp = ((ulonglong)char_length_arg) * mbmaxlen_arg;
+  const ulonglong tmp = ((ulonglong)char_length_arg) * mbmaxlen_arg;
   return (tmp > UINT_MAX32) ? (uint32)UINT_MAX32 : (uint32)tmp;
 }
 
@@ -1005,6 +1008,7 @@ class Item : public Parse_tree_node {
       case MYSQL_TYPE_INVALID:
         return INVALID_RESULT;
       case MYSQL_TYPE_NULL:
+        return STRING_RESULT;
       case MYSQL_TYPE_TYPED_ARRAY:
         break;
     }
@@ -1108,7 +1112,7 @@ class Item : public Parse_tree_node {
     Hide the contextualize*() functions: call/override the itemize()
     in Item class tree instead.
   */
-  bool contextualize(Parse_context *) override {
+  bool do_contextualize(Parse_context *) override {
     assert(0);
     return true;
   }
@@ -1139,6 +1143,12 @@ class Item : public Parse_tree_node {
    */
   static bool bit_func_returns_binary(const Item *a, const Item *b);
 
+  /**
+    The core function that does the actual itemization. itemize() is just a
+    wrapper over this.
+  */
+  virtual bool do_itemize(Parse_context *pc, Item **res);
+
  public:
   /**
     The same as contextualize() but with additional parameter
@@ -1147,6 +1157,9 @@ class Item : public Parse_tree_node {
     constructor): we can access/change parser contexts from the itemize()
     function.
 
+    Derived classes should not override this. If needed, they should
+    override do_itemize().
+
     @param        pc    current parse context
     @param  [out] res   pointer to "this" or to a newly allocated
                         replacement object to use in the Item tree instead
@@ -1154,7 +1167,28 @@ class Item : public Parse_tree_node {
     @retval false       success
     @retval true        syntax/OOM/etc error
   */
-  virtual bool itemize(Parse_context *pc, Item **res);
+  // Visual Studio with MSVC_CPPCHECK=ON gives warning C26435:
+  // Function <fun> should specify exactly one of
+  //    'virtual', 'override', or 'final'
+  MY_COMPILER_DIAGNOSTIC_PUSH()
+  MY_COMPILER_MSVC_DIAGNOSTIC_IGNORE(26435)
+  virtual bool itemize(Parse_context *pc, Item **res) final {
+    // For condition#2 below ... If position is empty, this item was not
+    // created in the parser; so don't show it in the parse tree.
+    if (pc->m_show_parse_tree == nullptr || this->m_pos.is_empty())
+      return do_itemize(pc, res);
+
+    Show_parse_tree *tree = pc->m_show_parse_tree.get();
+
+    if (begin_parse_tree(tree)) return true;
+
+    if (do_itemize(pc, res)) return true;
+
+    if (end_parse_tree(tree)) return true;
+
+    return false;
+  }
+  MY_COMPILER_DIAGNOSTIC_POP()
 
   void rename(char *new_name);
   void init_make_field(Send_field *tmp_field, enum enum_field_types type);
@@ -1392,10 +1426,35 @@ class Item : public Parse_tree_node {
     m_data_type = static_cast<uint8>(data_type);
   }
 
+  inline void set_data_type_null() {
+    set_data_type(MYSQL_TYPE_NULL);
+    collation.set(&my_charset_bin, DERIVATION_IGNORABLE);
+    max_length = 0;
+    set_nullable(true);
+  }
+
   inline void set_data_type_bool() {
     set_data_type(MYSQL_TYPE_LONGLONG);
     collation.set_numeric();
     max_length = 1;
+  }
+
+  /**
+    Set the data type of the Item to be a specific integer type
+
+    @param type          Integer type
+    @param unsigned_prop Whether the integer is signed or not
+    @param max_width     Maximum width of field in number of digits
+  */
+  inline void set_data_type_int(enum_field_types type, bool unsigned_prop,
+                                uint32 max_width) {
+    assert(type == MYSQL_TYPE_TINY || type == MYSQL_TYPE_SHORT ||
+           type == MYSQL_TYPE_INT24 || type == MYSQL_TYPE_LONG ||
+           type == MYSQL_TYPE_LONGLONG);
+    set_data_type(type);
+    collation.set_numeric();
+    unsigned_flag = unsigned_prop;
+    fix_char_length(max_width);
   }
 
   /**
@@ -1526,11 +1585,18 @@ class Item : public Parse_tree_node {
   /**
     Set the Item to be of BLOB type.
 
-    @param max_l Maximum number of bytes in data type
+    @param type   Actual blob data type
+    @param max_l  Maximum number of characters in data type
   */
-  inline void set_data_type_blob(uint32 max_l) {
-    set_data_type(MYSQL_TYPE_LONG_BLOB);
-    max_length = max_l;
+  inline void set_data_type_blob(enum_field_types type, uint32 max_l) {
+    assert(type == MYSQL_TYPE_TINY_BLOB || type == MYSQL_TYPE_BLOB ||
+           type == MYSQL_TYPE_MEDIUM_BLOB || type == MYSQL_TYPE_LONG_BLOB);
+    set_data_type(type);
+    ulonglong max_width = max_l * collation.collation->mbmaxlen;
+    if (max_width > Field::MAX_LONG_BLOB_WIDTH) {
+      max_width = Field::MAX_LONG_BLOB_WIDTH;
+    }
+    max_length = max_width;
     decimals = DECIMAL_NOT_SPECIFIED;
   }
 
@@ -1603,16 +1669,19 @@ class Item : public Parse_tree_node {
   void set_data_type_year() {
     set_data_type(MYSQL_TYPE_YEAR);
     collation.set_numeric();
-    fix_char_length(5);  // YYYY + sign
+    fix_char_length(4);  // YYYY
+    unsigned_flag = true;
   }
 
   /**
     Set the data type of the Item to be bit.
+
+    @param max_bits Maximum number of bits to store in this field.
   */
-  void set_data_type_bit() {
+  void set_data_type_bit(uint32 max_bits) {
     set_data_type(MYSQL_TYPE_BIT);
     collation.set_numeric();
-    fix_char_length(21);
+    max_length = max_bits;
     unsigned_flag = true;
   }
 
@@ -1649,7 +1718,7 @@ class Item : public Parse_tree_node {
   virtual Item_result cast_to_int_type() const { return result_type(); }
   virtual enum Type type() const = 0;
 
-  void aggregate_type(Bounds_checked_array<Item *> items);
+  bool aggregate_type(const char *name, Item **items, uint count);
 
   /*
     Return information about function monotonicity. See comment for
@@ -2321,10 +2390,11 @@ class Item : public Parse_tree_node {
      @param  thd            Thread handle
      @param  str            String to print to
      @param  query_type     How to format the item
-     @param  used_alias     Whether item was referenced with alias.
+     @param  used_alias     The alias with which this item was referenced, or
+                            nullptr if it was not referenced with an alias.
   */
   void print_for_order(const THD *thd, String *str, enum_query_type query_type,
-                       bool used_alias) const;
+                       const char *used_alias) const;
 
   /**
     Updates used tables, not null tables information and accumulates
@@ -2580,6 +2650,9 @@ class Item : public Parse_tree_node {
    public:
     List<Item> *m_item_fields_or_view_refs;
     Query_block *m_transformed_block;
+    /// Used to compute \c Item_field's \c m_protected_by_any_value. Pushed and
+    /// popped when walking arguments of \c Item_func_any_value.a
+    uint m_any_value_level{0};
     Collect_item_fields_or_view_refs(List<Item> *fields_or_vr,
                                      Query_block *transformed_block)
         : m_item_fields_or_view_refs(fields_or_vr),
@@ -3166,7 +3239,7 @@ class Item : public Parse_tree_node {
       Return MAX_DOUBLE_STR_LENGTH to prevent truncation of data without having
       to evaluate the value of the item.
     */
-    uint32 max_len =
+    const uint32 max_len =
         data_type() == MYSQL_TYPE_DOUBLE ? MAX_DOUBLE_STR_LENGTH : max_length;
     if (result_type() == STRING_RESULT)
       return max_len / collation.collation->mbmaxlen;
@@ -3313,12 +3386,15 @@ class Item : public Parse_tree_node {
   */
   bool can_be_substituted_for_gc(bool array = false) const;
 
-  void aggregate_decimal_properties(Item **item, uint nitems);
-  void aggregate_float_properties(Item **item, uint nitems);
-  void aggregate_char_length(Item **args, uint nitems);
-  void aggregate_temporal_properties(Item **item, uint nitems);
-  bool aggregate_string_properties(const char *name, Item **item, uint nitems);
-  void aggregate_num_type(Item_result result_type, Item **item, uint nitems);
+  void aggregate_float_properties(enum_field_types type, Item **items,
+                                  uint nitems);
+  void aggregate_decimal_properties(Item **items, uint nitems);
+  uint32 aggregate_char_width(Item **items, uint nitems);
+  void aggregate_temporal_properties(enum_field_types type, Item **items,
+                                     uint nitems);
+  bool aggregate_string_properties(enum_field_types type, const char *name,
+                                   Item **items, uint nitems);
+  void aggregate_bit_properties(Item **items, uint nitems);
 
   /**
     This function applies only to Item_field objects referred to by an Item_ref
@@ -3816,7 +3892,7 @@ class Item_name_const final : public Item {
  public:
   Item_name_const(const POS &pos, Item *name_arg, Item *val);
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
   bool fix_fields(THD *, Item **) override;
 
   enum Type type() const override;
@@ -3854,15 +3930,15 @@ bool agg_item_charsets(DTCollation &c, const char *name, Item **items,
 inline bool agg_item_charsets_for_string_result(DTCollation &c,
                                                 const char *name, Item **items,
                                                 uint nitems, int item_sep = 1) {
-  uint flags = MY_COLL_ALLOW_SUPERSET_CONV | MY_COLL_ALLOW_COERCIBLE_CONV |
-               MY_COLL_ALLOW_NUMERIC_CONV;
+  const uint flags = MY_COLL_ALLOW_SUPERSET_CONV |
+                     MY_COLL_ALLOW_COERCIBLE_CONV | MY_COLL_ALLOW_NUMERIC_CONV;
   return agg_item_charsets(c, name, items, nitems, flags, item_sep, false);
 }
 inline bool agg_item_charsets_for_comparison(DTCollation &c, const char *name,
                                              Item **items, uint nitems,
                                              int item_sep = 1) {
-  uint flags = MY_COLL_ALLOW_SUPERSET_CONV | MY_COLL_ALLOW_COERCIBLE_CONV |
-               MY_COLL_DISALLOW_NONE;
+  const uint flags = MY_COLL_ALLOW_SUPERSET_CONV |
+                     MY_COLL_ALLOW_COERCIBLE_CONV | MY_COLL_DISALLOW_NONE;
   return agg_item_charsets(c, name, items, nitems, flags, item_sep, true);
 }
 
@@ -4021,7 +4097,7 @@ class Item_ident : public Item {
         cached_table(item->cached_table),
         depended_from(item->depended_from) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 
   const char *full_name() const override;
   void set_orignal_db_name(const char *name_arg) { m_orig_db_name = name_arg; }
@@ -4209,6 +4285,12 @@ class Item_field : public Item_ident {
   */
   const Item_field *m_base_item_field{nullptr};
 
+  /**
+    State used for transforming scalar subqueries to JOINs with derived tables,
+    cf.  \c transform_grouped_to_derived. Has accessor.
+  */
+  bool m_protected_by_any_value{false};
+
  public:
   /**
     Used during optimization to perform multiple equality analysis,
@@ -4259,7 +4341,6 @@ class Item_field : public Item_ident {
     are supported.
   */
   bool can_use_prefix_key{false};
-
   Item_field(Name_resolution_context *context_arg, const char *db_arg,
              const char *table_name_arg, const char *field_name_arg);
   Item_field(const POS &pos, const char *db_arg, const char *table_name_arg,
@@ -4269,7 +4350,7 @@ class Item_field : public Item_ident {
              Field *field);
   Item_field(Field *field);
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 
   enum Type type() const override { return FIELD_ITEM; }
   bool eq(const Item *item, bool binary_cmp) const override;
@@ -4449,6 +4530,8 @@ class Item_field : public Item_ident {
              select list item.
   */
   virtual bool is_asterisk() const { return false; }
+  /// See \c m_protected_by_any_value
+  bool protected_by_any_value() const { return m_protected_by_any_value; }
 };
 
 /**
@@ -4477,7 +4560,7 @@ class Item_asterisk : public Item_field {
                 const char *opt_table_name)
       : super(pos, opt_schema_name, opt_table_name, "*") {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
   bool fix_fields(THD *, Item **) override {
     assert(false);  // should never happen: see setup_wild()
     return true;
@@ -4507,12 +4590,9 @@ class Item_null : public Item_basic_constant {
   typedef Item_basic_constant super;
 
   void init() {
-    set_nullable(true);
+    set_data_type_null();
     null_value = true;
-    set_data_type(MYSQL_TYPE_NULL);
-    max_length = 0;
     fixed = true;
-    collation.set(&my_charset_bin, DERIVATION_IGNORABLE);
   }
 
  protected:
@@ -4730,7 +4810,7 @@ class Item_param final : public Item, private Settable_routine_parameter {
 
   Item_param(const POS &pos, MEM_ROOT *root, uint pos_in_query_arg);
 
-  bool itemize(Parse_context *pc, Item **item) override;
+  bool do_itemize(Parse_context *pc, Item **item) override;
 
   Item_result result_type() const override { return m_result_type; }
   enum Type type() const override { return PARAM_ITEM; }
@@ -5893,7 +5973,7 @@ class Item_ref : public Item_ident {
   }
   bool get_time(MYSQL_TIME *ltime) override {
     assert(fixed);
-    bool result = ref_item()->get_time(ltime);
+    const bool result = ref_item()->get_time(ltime);
     null_value = ref_item()->null_value;
     return result;
   }
@@ -6263,7 +6343,7 @@ class Item_time_with_ref final : public Item_temporal_with_ref {
 class Item_metadata_copy final : public Item {
  public:
   explicit Item_metadata_copy(Item *item) {
-    bool nullable = item->is_nullable();
+    const bool nullable = item->is_nullable();
     null_value = nullable;
     set_nullable(nullable);
     decimals = item->decimals;
@@ -6409,7 +6489,7 @@ class Item_default_value final : public Item_field {
  public:
   Item_default_value(const POS &pos, Item *a = nullptr)
       : super(pos, nullptr, nullptr, nullptr), arg(a) {}
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
   enum Type type() const override { return DEFAULT_VALUE_ITEM; }
   bool eq(const Item *item, bool binary_cmp) const override;
   bool fix_fields(THD *, Item **) override;
@@ -6485,9 +6565,9 @@ class Item_insert_value final : public Item_field {
         arg(a),
         m_is_values_function(false) {}
 
-  bool itemize(Parse_context *pc, Item **res) override {
+  bool do_itemize(Parse_context *pc, Item **res) override {
     if (skip_itemize(res)) return false;
-    return Item_field::itemize(pc, res) || arg->itemize(pc, &arg);
+    return Item_field::do_itemize(pc, res) || arg->itemize(pc, &arg);
   }
 
   enum Type type() const override { return INSERT_VALUE_ITEM; }
@@ -6613,7 +6693,7 @@ class Item_trigger_field final : public Item_field,
   }
 
   bool set_value(THD *thd, Item **it) {
-    bool ret = set_value(thd, nullptr, it);
+    const bool ret = set_value(thd, nullptr, it);
     if (!ret)
       bitmap_set_bit(triggers->get_subject_table()->fields_set_during_insert,
                      field_idx);

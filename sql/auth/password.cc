@@ -72,7 +72,7 @@
 #include <sys/types.h>
 
 #include "crypt_genhash_impl.h"
-#include "m_string.h"
+#include "dig_vec.h"
 #include "my_inttypes.h"
 #include "my_macros.h"
 #include "mysql_com.h"
@@ -138,8 +138,8 @@ static inline uint8 char_val(uint8 X) {
 char *octet2hex(char *to, const char *str, uint len) {
   const char *str_end = str + len;
   for (; str != str_end; ++str) {
-    *to++ = _dig_vec_upper[((uchar)*str) >> 4];
-    *to++ = _dig_vec_upper[((uchar)*str) & 0x0F];
+    *to++ = dig_vec_upper[((uchar)*str) >> 4];
+    *to++ = dig_vec_upper[((uchar)*str) & 0x0F];
   }
   *to = '\0';
   return to;
@@ -158,7 +158,7 @@ char *octet2hex(char *to, const char *str, uint len) {
 static void hex2octet(uint8 *to, const char *str, uint len) {
   const char *str_end = str + len;
   while (str < str_end) {
-    char tmp = char_val(*str++);
+    const char tmp = char_val(*str++);
     *to++ = (tmp << 4) | char_val(*str++);
   }
 }

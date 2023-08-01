@@ -36,12 +36,12 @@
 
 #include "map_helpers.h"
 #include "mutex_lock.h"
-#include "my_loglevel.h"
 #include "my_psi_config.h"
 #include "my_systime.h"  // my_micro_time()
 #include "mysql/components/services/bits/mysql_mutex_bits.h"
 #include "mysql/components/services/bits/psi_mutex_bits.h"
 #include "mysql/components/services/log_builtins.h"
+#include "mysql/my_loglevel.h"
 #include "thr_mutex.h"
 
 #ifndef _WIN32
@@ -61,13 +61,13 @@
 #include <unordered_map>
 #include <utility>
 
-#include "m_ctype.h"
 #include "m_string.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_sys.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysqld_error.h"
 #include "sql/log.h"
 #include "sql/mysqld.h"  // specialflag
@@ -334,7 +334,7 @@ static void add_hostname(const char *ip_string, const char *hostname,
 
   if (specialflag & SPECIAL_NO_HOST_CACHE) return;
 
-  ulonglong now = my_micro_time();
+  const ulonglong now = my_micro_time();
 
   MUTEX_LOCK(hostname_lock, &hostname_cache_mutex);
   if (hostname_cache_size() != 0)
@@ -348,7 +348,7 @@ void inc_host_errors(const char *ip_string, Host_errors *errors) {
 
   if (!ip_string) return;
 
-  ulonglong now = my_micro_time();
+  const ulonglong now = my_micro_time();
 
   MUTEX_LOCK(hostname_lock, &hostname_cache_mutex);
 
@@ -472,7 +472,7 @@ int ip_to_hostname(struct sockaddr_storage *ip_storage, const char *ip_string,
   /* Check first if we have host name in the cache. */
 
   if (!(specialflag & SPECIAL_NO_HOST_CACHE)) {
-    ulonglong now = my_micro_time();
+    const ulonglong now = my_micro_time();
 
     MUTEX_LOCK(hostname_lock, &hostname_cache_mutex);
 
@@ -557,13 +557,13 @@ int ip_to_hostname(struct sockaddr_storage *ip_storage, const char *ip_string,
   });
 
   DBUG_EXECUTE_IF("getnameinfo_fake_max_length", {
-    std::string s(HOSTNAME_LENGTH, 'a');
+    const std::string s(HOSTNAME_LENGTH, 'a');
     strcpy(hostname_buffer, s.c_str());
     err_code = 0;
   });
 
   DBUG_EXECUTE_IF("getnameinfo_fake_max_length_plus_1", {
-    std::string s(HOSTNAME_LENGTH + 1, 'a');
+    const std::string s(HOSTNAME_LENGTH + 1, 'a');
     strcpy(hostname_buffer, s.c_str());
     err_code = 0;
   });

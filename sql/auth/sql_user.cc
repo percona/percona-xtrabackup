@@ -31,8 +31,6 @@
 #include <vector>
 
 #include "lex_string.h"
-#include "m_ctype.h"
-#include "m_string.h"
 #include "map_helpers.h"
 #include "mutex_lock.h"  // Mutex_lock
 #include "my_alloc.h"
@@ -41,7 +39,6 @@
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "my_loglevel.h"
 #include "my_sqlcommand.h"
 #include "my_sys.h"
 #include "my_time.h"
@@ -49,15 +46,23 @@
 #include "mysql/components/services/bits/psi_bits.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/components/services/log_shared.h"
+<<<<<<< HEAD
 #include "mysql/components/services/validate_password.h"
+||||||| b5da0b9817c
+=======
+#include "mysql/components/services/validate_password.h"
+#include "mysql/my_loglevel.h"
+>>>>>>> mysql-8.1.0
 #include "mysql/mysql_lex_string.h"
 #include "mysql/plugin.h"
 #include "mysql/plugin_audit.h"
 #include "mysql/plugin_auth.h"
 #include "mysql/psi/mysql_mutex.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql_com.h"
 #include "mysql_time.h"
 #include "mysqld_error.h"
+#include "nulls.h"
 #include "password.h" /* my_make_scrambled_password */
 #include "scope_guard.h"
 #include "sql/auth/auth_acls.h"
@@ -94,6 +99,8 @@
 #include "sql/table.h"
 #include "sql/thd_raii.h"
 #include "sql_string.h"
+#include "string_with_len.h"
+#include "strxmov.h"
 #include "violite.h"
 /* key_restore */
 
@@ -120,14 +127,16 @@
   @param comma   If true, append a ',' before the the user.
  */
 void log_user(THD *thd, String *str, LEX_USER *user, bool comma = true) {
-  String from_user(user->user.str, user->user.length, system_charset_info);
-  String from_plugin(user->first_factor_auth_info.plugin.str,
-                     user->first_factor_auth_info.plugin.length,
-                     system_charset_info);
-  String from_auth(user->first_factor_auth_info.auth.str,
-                   user->first_factor_auth_info.auth.length,
-                   system_charset_info);
-  String from_host(user->host.str, user->host.length, system_charset_info);
+  const String from_user(user->user.str, user->user.length,
+                         system_charset_info);
+  const String from_plugin(user->first_factor_auth_info.plugin.str,
+                           user->first_factor_auth_info.plugin.length,
+                           system_charset_info);
+  const String from_auth(user->first_factor_auth_info.auth.str,
+                         user->first_factor_auth_info.auth.length,
+                         system_charset_info);
+  const String from_host(user->host.str, user->host.length,
+                         system_charset_info);
 
   if (comma) str->append(',');
   append_query_string(thd, system_charset_info, &from_user, str);
@@ -571,7 +580,7 @@ static bool auth_verify_password_history(
 
   uint32 count = 0;
 
-  int rc = table->file->ha_index_init(0, true);
+  const int rc = table->file->ha_index_init(0, true);
 
   if (rc) {
     table->file->print_error(rc, MYF(0));
@@ -690,7 +699,7 @@ static bool auth_verify_password_history(
   }
 end:
   if (table->file->inited != handler::NONE) {
-    int rc_end = table->file->ha_index_end();
+    const int rc_end = table->file->ha_index_end();
 
     if (rc_end) {
       /* purecov: begin inspected */
@@ -813,7 +822,7 @@ static bool handle_password_history_table(THD *thd, Table_ref *tables,
 
 end:
   if (table->file->inited != handler::NONE) {
-    int rc_end = table->file->ha_index_end();
+    const int rc_end = table->file->ha_index_end();
 
     if (rc_end) {
       /* purecov: begin inspected */
@@ -937,7 +946,8 @@ char translate_byte_to_password_char(unsigned char c) {
   static const std::string translation = std::string(
       "1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY"
       "Z,.-;:_+*!%&/(){}[]<>@");
-  int index = round(((float)c * ((float)(translation.length() - 1) / 255.0)));
+  const int index =
+      round(((float)c * ((float)(translation.length() - 1) / 255.0)));
   return translation[index];
 }
 
@@ -1278,7 +1288,7 @@ bool set_and_validate_user_attributes(
   unsigned int buflen = MAX_FIELD_WIDTH, inbuflen;
   const char *inbuf;
   const char *password = nullptr;
-  enum_sql_command command = thd->lex->sql_command;
+  const enum_sql_command command = thd->lex->sql_command;
   bool current_password_empty = false;
   bool new_password_empty = false;
   char new_password[MAX_FIELD_WIDTH]{0};
@@ -1958,14 +1968,14 @@ bool change_password(THD *thd, LEX_USER *lex_user, const char *new_password,
   LEX_USER *combo = nullptr;
   std::set<LEX_USER *> users;
   acl_table::Pod_user_what_to_update what_to_set;
-  size_t new_password_len = strlen(new_password);
+  const size_t new_password_len = strlen(new_password);
   bool transactional_tables;
   bool result = false;
   bool commit_result = false;
   std::string authentication_plugin;
   bool is_role;
   int ret;
-  sql_mode_t old_sql_mode = thd->variables.sql_mode;
+  const sql_mode_t old_sql_mode = thd->variables.sql_mode;
 
   DBUG_TRACE;
   assert(lex_user && lex_user->host.str);
@@ -1985,7 +1995,7 @@ bool change_password(THD *thd, LEX_USER *lex_user, const char *new_password,
     statement based replication and will be reset to the originals
     values when we are out of this function scope
   */
-  Save_and_Restore_binlog_format_state binlog_format_state(thd);
+  const Save_and_Restore_binlog_format_state binlog_format_state(thd);
 
   if ((ret = open_grant_tables(thd, tables, &transactional_tables)))
     return ret != 1;
@@ -2045,7 +2055,8 @@ bool change_password(THD *thd, LEX_USER *lex_user, const char *new_password,
     memset(&(thd->lex->mqh), 0, sizeof(thd->lex->mqh));
     thd->lex->alter_password.cleanup();
 
-    bool is_privileged_user = is_privileged_user_for_credential_change(thd);
+    const bool is_privileged_user =
+        is_privileged_user_for_credential_change(thd);
     /*
       Change_password() only sets the password for one user at a time and
       it does not support the generation of random passwords. Instead it's
@@ -2105,8 +2116,8 @@ bool change_password(THD *thd, LEX_USER *lex_user, const char *new_password,
     commit_result = log_and_commit_acl_ddl(thd, transactional_tables, &users,
                                            &user_params, false, !result);
 
-    mysql_audit_notify(
-        thd, AUDIT_EVENT(MYSQL_AUDIT_AUTHENTICATION_CREDENTIAL_CHANGE),
+    mysql_event_tracking_authentication_notify(
+        thd, AUDIT_EVENT(EVENT_TRACKING_AUTHENTICATION_CREDENTIAL_CHANGE),
         thd->is_error() || result, lex_user->user.str, lex_user->host.str,
         authentication_plugin.c_str(), is_role, nullptr, nullptr);
   } /* Critical section */
@@ -2220,7 +2231,7 @@ static int handle_grant_struct(enum enum_acl_lists struct_no, bool drop,
   auto matches = [user_from, &result](const char *user, const char *host) {
     if (!user) user = "";
     if (!host) host = "";
-    bool match =
+    const bool match =
         strcmp(user_from->user.str, user) == 0 &&
         my_strcasecmp(system_charset_info, user_from->host.str, host) == 0;
     if (match) result = 1;
@@ -2633,7 +2644,7 @@ static bool check_orphaned_definers(THD *thd, List<LEX_USER> &list) {
   }
   LEX_USER *user_name;
   List_iterator<LEX_USER> user_list(list);
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+  const dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
 
   // iterate over each user to check if it is referenced in other objects.
   while ((user_name = user_list++) != nullptr) {
@@ -2704,7 +2715,7 @@ bool mysql_create_user(THD *thd, List<LEX_USER> &list, bool if_not_exists,
     statement based replication and will be reset to the originals
     values when we are out of this function scope
   */
-  Save_and_Restore_binlog_format_state binlog_format_state(thd);
+  const Save_and_Restore_binlog_format_state binlog_format_state(thd);
 
   /* CREATE USER may be skipped on replication client. */
   if ((result = open_grant_tables(thd, tables, &transactional_tables)))
@@ -2822,9 +2833,9 @@ bool mysql_create_user(THD *thd, List<LEX_USER> &list, bool if_not_exists,
 
         /* Check for anonymous user in roles' list */
         while ((role = role_it++) && result == 0) {
-          Auth_id role_id(role);
+          const Auth_id role_id(role);
           if (role->user.length == 0 || *(role->user.str) == '\0') {
-            std::string to_user = create_authid_str_from(tmp_user_name);
+            const std::string to_user = create_authid_str_from(tmp_user_name);
             my_error(ER_FAILED_ROLE_GRANT, MYF(0), role_id.auth_str().c_str(),
                      to_user.c_str());
             break;
@@ -2843,7 +2854,7 @@ bool mysql_create_user(THD *thd, List<LEX_USER> &list, bool if_not_exists,
         /* SYSTEM_USER requirement */
         role_it.rewind();
         while ((role = role_it++) && result == 0) {
-          Auth_id role_id(role);
+          const Auth_id role_id(role);
           if (thd->security_context()->can_operate_with(role_id,
                                                         consts::system_user)) {
             result = 1;
@@ -2855,7 +2866,7 @@ bool mysql_create_user(THD *thd, List<LEX_USER> &list, bool if_not_exists,
           acl_user = find_acl_user(tmp_user_name->host.str,
                                    tmp_user_name->user.str, true);
         if (acl_user == nullptr) {
-          std::string authid = create_authid_str_from(tmp_user_name);
+          const std::string authid = create_authid_str_from(tmp_user_name);
           my_error(ER_USER_DOES_NOT_EXIST, MYF(0), authid.c_str());
           result = 1;
         }
@@ -2863,13 +2874,13 @@ bool mysql_create_user(THD *thd, List<LEX_USER> &list, bool if_not_exists,
         /* Perform role grants */
         role_it.rewind();
         while ((role = role_it++) && result == 0) {
-          Auth_id role_id(role);
+          const Auth_id role_id(role);
           if (!is_granted_role(tmp_user_name->user, tmp_user_name->host,
                                role->user, role->host)) {
             ACL_USER *acl_role =
                 find_acl_user(role->host.str, role->user.str, true);
             if (acl_role == nullptr) {
-              std::string authid = create_authid_str_from(role);
+              const std::string authid = create_authid_str_from(role);
               my_error(ER_USER_DOES_NOT_EXIST, MYF(0), authid.c_str());
               result = 1;
             } else {
@@ -2974,7 +2985,7 @@ bool mysql_drop_user(THD *thd, List<LEX_USER> &list, bool if_exists,
   LEX_USER *user_name, *tmp_user_name;
   List_iterator<LEX_USER> user_list(list);
   Table_ref tables[ACL_TABLES::LAST_ENTRY];
-  sql_mode_t old_sql_mode = thd->variables.sql_mode;
+  const sql_mode_t old_sql_mode = thd->variables.sql_mode;
   bool transactional_tables;
   std::set<LEX_USER *> audit_users;
   DBUG_TRACE;
@@ -2996,7 +3007,7 @@ bool mysql_drop_user(THD *thd, List<LEX_USER> &list, bool if_exists,
     statement based replication and will be reset to the originals
     values when we are out of this function scope
   */
-  Save_and_Restore_binlog_format_state binlog_format_state(thd);
+  const Save_and_Restore_binlog_format_state binlog_format_state(thd);
 
   /* DROP USER may be skipped on replication client. */
   if ((result = open_grant_tables(thd, tables, &transactional_tables)))
@@ -3019,10 +3030,10 @@ bool mysql_drop_user(THD *thd, List<LEX_USER> &list, bool if_exists,
     while ((user = user_list++) != nullptr) {
       if (std::find_if(mandatory_roles.begin(), mandatory_roles.end(),
                        [&](Role_id &id) -> bool {
-                         Role_id id2(user->user, user->host);
+                         const Role_id id2(user->user, user->host);
                          return id == id2;
                        }) != mandatory_roles.end()) {
-        Role_id authid(user->user, user->host);
+        const Role_id authid(user->user, user->host);
         std::string out;
         authid.auth_str(&out);
         my_error(ER_MANDATORY_ROLE, MYF(0), out.c_str());
@@ -3041,8 +3052,8 @@ bool mysql_drop_user(THD *thd, List<LEX_USER> &list, bool if_exists,
 
       audit_users.insert(tmp_user_name);
 
-      int ret = handle_grant_data(thd, tables, true, user_name, nullptr,
-                                  on_drop_role_priv);
+      const int ret = handle_grant_data(thd, tables, true, user_name, nullptr,
+                                        on_drop_role_priv);
       if (ret <= 0) {
         if (ret < 0) {
           result = 1;
@@ -3088,8 +3099,8 @@ bool mysql_drop_user(THD *thd, List<LEX_USER> &list, bool if_exists,
       LEX_USER *audit_user;
       for (LEX_USER *one_user : audit_users) {
         if ((audit_user = get_current_user(thd, one_user)))
-          mysql_audit_notify(
-              thd, AUDIT_EVENT(MYSQL_AUDIT_AUTHENTICATION_AUTHID_DROP),
+          mysql_event_tracking_authentication_notify(
+              thd, AUDIT_EVENT(EVENT_TRACKING_AUTHENTICATION_AUTHID_DROP),
               thd->is_error(), audit_user->user.str, audit_user->host.str,
               audit_user->first_factor_auth_info.plugin.str,
               is_role_id(audit_user), nullptr, nullptr);
@@ -3161,7 +3172,7 @@ bool mysql_rename_user(THD *thd, List<LEX_USER> &list) {
     statement based replication and will be reset to the originals
     values when we are out of this function scope
   */
-  Save_and_Restore_binlog_format_state binlog_format_state(thd);
+  const Save_and_Restore_binlog_format_state binlog_format_state(thd);
 
   /* RENAME USER may be skipped on replication client. */
   if ((result = open_grant_tables(thd, tables, &transactional_tables)))
@@ -3285,8 +3296,8 @@ bool mysql_rename_user(THD *thd, List<LEX_USER> &list) {
 
       if ((((user_from = get_current_user(thd, audit_user_from)) &&
             ((user_to = get_current_user(thd, audit_user_to))))))
-        mysql_audit_notify(
-            thd, AUDIT_EVENT(MYSQL_AUDIT_AUTHENTICATION_AUTHID_RENAME),
+        mysql_event_tracking_authentication_notify(
+            thd, AUDIT_EVENT(EVENT_TRACKING_AUTHENTICATION_AUTHID_RENAME),
             thd->is_error(), user_from->user.str, user_from->host.str,
             user_from->first_factor_auth_info.plugin.str, is_role_id(user_from),
             user_to->user.str, user_to->user.str);
@@ -3340,7 +3351,7 @@ bool mysql_alter_user(THD *thd, List<LEX_USER> &list, bool if_exists) {
     statement based replication and will be reset to the originals
     values when we are out of this function scope
   */
-  Save_and_Restore_binlog_format_state binlog_format_state(thd);
+  const Save_and_Restore_binlog_format_state binlog_format_state(thd);
 
   if ((result = open_grant_tables(thd, tables, &transactional_tables)))
     return result != 1;
@@ -3537,8 +3548,8 @@ bool mysql_alter_user(THD *thd, List<LEX_USER> &list, bool if_exists) {
     LEX_USER *audit_user;
     for (LEX_USER *one_user : audit_users) {
       if ((audit_user = get_current_user(thd, one_user)))
-        mysql_audit_notify(
-            thd, AUDIT_EVENT(MYSQL_AUDIT_AUTHENTICATION_CREDENTIAL_CHANGE),
+        mysql_event_tracking_authentication_notify(
+            thd, AUDIT_EVENT(EVENT_TRACKING_AUTHENTICATION_CREDENTIAL_CHANGE),
             thd->is_error(), audit_user->user.str, audit_user->host.str,
             audit_user->first_factor_auth_info.plugin.str,
             is_role_id(audit_user), nullptr, nullptr);

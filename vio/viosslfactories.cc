@@ -29,15 +29,17 @@
 #include <sstream>
 #include <string>
 
-#include "m_ctype.h"
+#include "m_string.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "my_loglevel.h"
+#include "mysql/my_loglevel.h"
+#include "mysql/strings/m_ctype.h"
 #if !defined(HAVE_PSI_INTERFACE)
 #include "mysql/psi/mysql_rwlock.h"
 #endif
 #include "mysql/service_mysql_alloc.h"
 #include "mysys_err.h"
+#include "template_utils.h"
 #include "vio/vio_priv.h"
 
 #include <dh_ecdh_config.h>
@@ -170,8 +172,11 @@ static const char *ssl_error_string[] = {
     "SSL context is not usable without certificate and private key",
     "SSL_CTX_set_tmp_dh failed",
     "TLS version is invalid",
+    "FIPS mode invalid",
+    "FIPS mode failed",
     "Failed to set ecdh information",
-    "Failed to set X509 verification parameter"};
+    "Failed to set X509 verification parameter",
+    "Invalid certificates"};
 
 const char *sslGetErrString(enum enum_ssl_init_error e) {
   assert(SSL_INITERR_NOERROR < e && e < SSL_INITERR_LASTERR);

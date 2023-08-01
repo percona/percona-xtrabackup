@@ -34,7 +34,9 @@
 
 #include "my_systime.h"  // my_sleep()
 #include "pfs_thread_provider.h"
+#include "storage/perfschema/pfs_instr.h"
 #include "storage/perfschema/pfs_server.h"
+#include "template_utils.h"
 
 int pfs_get_thread_system_attrs_by_id_vc(PSI_thread *thread,
                                          ulonglong thread_id,
@@ -388,6 +390,17 @@ void pfs_notify_thread_destroy(PSI_thread *thread [[maybe_unused]]) {
   @sa PSI_v1::notify_session_connect
 */
 void pfs_notify_session_connect(PSI_thread *thread [[maybe_unused]]) {
+#ifndef NDEBUG
+  {
+    auto *pfs = reinterpret_cast<PFS_thread *>(thread);
+
+    if (pfs != nullptr) {
+      assert(!pfs->m_debug_session_notified);
+      pfs->m_debug_session_notified = true;
+    }
+  }
+#endif
+
   auto *node = pfs_notification_registry.get_first(EVENT_SESSION_CONNECT);
   if (node == nullptr) {
     return;
@@ -414,6 +427,18 @@ void pfs_notify_session_connect(PSI_thread *thread [[maybe_unused]]) {
   @sa PSI_v1::notify_session_disconnect
 */
 void pfs_notify_session_disconnect(PSI_thread *thread [[maybe_unused]]) {
+#ifndef NDEBUG
+  {
+    auto *pfs = reinterpret_cast<PFS_thread *>(thread);
+
+    if (pfs != nullptr) {
+      // TODO: clean all callers, and enforce
+      // assert(pfs->m_debug_session_notified);
+      pfs->m_debug_session_notified = false;
+    }
+  }
+#endif
+
   auto *node = pfs_notification_registry.get_first(EVENT_SESSION_DISCONNECT);
   if (node == nullptr) {
     return;

@@ -1,0 +1,3114 @@
+
+--echo #
+--echo # WL#15254: SQL syntax extensions to support external language routines
+--echo #
+
+DELIMITER //;
+
+--echo #
+--echo # Tests for LANGUAGE clause
+--echo #
+
+CREATE FUNCTION foo(a INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE SQL
+  BEGIN RETURN a-1; END //
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_name = "foo" //
+DROP FUNCTION foo//
+
+--echo # SQL is default
+CREATE FUNCTION foo(a INTEGER) RETURNS INTEGER DETERMINISTIC
+  BEGIN RETURN a-1; END //
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS where Language like "%JAVA%"//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_name = "foo" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION JAVASCRIPT(x INTEGER) RETURNS INTEGER DETERMINISTIC
+LANGUAGE JAVASCRIPT
+AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION JAVASCRIPT//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'JAVASCRIPT'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT JAVASCRIPT(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION JAVASCRIPT//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE PYTHON
+AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE RUBY
+AS $$
+  x-1
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--echo # Test lower-case
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE javascript
+AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--echo # Test mixed-case
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE jAvaScRIpt
+AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--echo # Any valid identifier can be used for language name
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE JAVA1
+AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE $NOLANG
+AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC
+LANGUAGE $$JAVASCRIPT
+AS $$
+  return x-1;
+$$
+//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE 123j
+AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE __
+AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC
+LANGUAGE "JAVASCRIPT"
+AS $$
+  return x-1;
+$$
+//
+
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC
+LANGUAGE 'JAVASCRIPT'
+AS $$
+  return x-1;
+$$
+//
+
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE " "
+AS $$
+  return x-1;
+$$
+//
+
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE J?
+AS $$
+  return x-1;
+$$
+//
+
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC
+LANGUAGE \JAVASCRIPT
+AS $$
+  return x-1;
+$$
+//
+
+
+--echo # An identifier may not consist solely of digits
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE 123
+AS $$
+  return x-1;
+$$
+//
+
+
+--echo # MySQL allows multiple clauses for the same characteristics
+--echo # (This is not according to SQL standard). Last one will take effect.
+CREATE FUNCTION foo(a INTEGER) RETURNS INTEGER
+LANGUAGE JAVASCRIPT DETERMINISTIC LANGUAGE SQL
+  BEGIN RETURN a-1; END //
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+LANGUAGE SQL DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--echo # Multiple languages in one clause is not allowed
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+LANGUAGE SQL DETERMINISTIC LANGUAGE JAVASCRIPT PYTHON
+AS $$
+  return x-1;
+$$
+//
+
+
+--echo Check "weird" white space before and after JAVASCRIPT.
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+LANGUAGE
+JAVASCRIPT
+
+  AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+LANGUAGE	
+	 JAVASCRIPT
+AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+LANGUAGE	  	 JAVASCRIPT  DETERMINISTIC	
+AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+LANGUAGE
+-- Comment
+JAVASCRIPT
+-- Comment
+AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--echo The language will here be interpreted to be BEGIN
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE
+BEGIN RETURN a-1; END //
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS INTEGER
+LANGUAGE SQL DETERMINISTIC LANGUAGE
+BEGIN RETURN a-1; END //
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE
+BEGIN a-1; END //
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE
+AS $$
+  return x-1;
+$$
+//
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+LANGUAGE JAVASCRIPT DETERMINISTIC LANGUAGE
+AS $$
+  return x-1;
+$$
+//
+
+--echo #Combinations with other characteristics
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC NO SQL
+LANGUAGE JAVASCRIPT
+AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+
+CREATE FUNCTION foo(a INTEGER) RETURNS INTEGER DETERMINISTIC NO SQL
+LANGUAGE SQL
+  BEGIN RETURN a-1; END //
+DROP FUNCTION foo//
+
+CREATE FUNCTION foo(a INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE SQL NO SQL
+  BEGIN RETURN a-1; END //
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE JAVASCRIPT
+CONTAINS SQL
+AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC READS SQL DATA
+LANGUAGE JAVASCRIPT
+AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE JAVASCRIPT
+MODIFIES SQL DATA
+AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+CREATE FUNCTION foo(a INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE SQL
+CONTAINS SQL
+  BEGIN RETURN a-1; END //
+DROP FUNCTION foo//
+
+CREATE FUNCTION foo(a INTEGER) RETURNS INTEGER DETERMINISTIC READS SQL DATA
+LANGUAGE SQL
+  BEGIN RETURN a-1; END //
+DROP FUNCTION foo//
+
+CREATE FUNCTION foo(a INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE SQL
+MODIFIES SQL DATA
+  BEGIN RETURN a-1; END //
+DROP FUNCTION foo//
+
+CREATE FUNCTION foo(a INTEGER) RETURNS INTEGER NOT DETERMINISTIC LANGUAGE SQL
+  BEGIN RETURN a-1; END //
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER NOT DETERMINISTIC
+LANGUAGE JAVASCRIPT
+AS $$
+  return x-1;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+
+--echo # This is not SQL
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE SQL
+AS $$ return a-1; $$ //
+
+--echo # This is not Javascript
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+BEGIN RETURN a-1; END //
+
+--echo # Repeat test cases for PROCEDURE
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE SQL
+  BEGIN DECLARE b INTEGER DEFAULT a; END //
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_name = "bar" //
+DROP PROCEDURE bar//
+
+--echo # SQL is default
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC
+  BEGIN DECLARE b INTEGER DEFAULT a; END //
+DROP PROCEDURE bar//
+
+--echo # Currently, no other language than SQL is supported
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS where Language like "%JAVA%"//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_name = "bar" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP PROCEDURE bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE JAVASCRIPT(a INTEGER) DETERMINISTIC
+LANGUAGE JAVASCRIPT
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure JAVASCRIPT//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'JAVASCRIPT'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL JAVASCRIPT(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure JAVASCRIPT//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE PYTHON
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE RUBY
+AS $$ b = a $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--echo # Test lower-case
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE javascript
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--echo # Test mixed-case
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE jAvaScRIpt
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--echo # Any valid identifier can be used for language name
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE JAVA1
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE $NOLANG
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE $$JAVASCRIPT
+AS $$ let b = a; $$ //
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE 123j
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE __
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE "JAVASCRIPT"
+AS $$ let b = a; $$ //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE 'JAVASCRIPT'
+AS $$ let b = a; $$ //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE " "
+AS $$ let b = a; $$ //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE J?
+AS $$ let b = a; $$ //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE \JAVASCRIPT
+AS $$ let b = a; $$ //
+
+--echo # An identifier may not consist solely of digits
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE 123
+AS $$ let b = a; $$ //
+
+--echo # MySQL allows multiple clauses for the same characteristics
+--echo # (This is not according to SQL standard). Last one will take effect.
+CREATE PROCEDURE bar(a INTEGER)
+LANGUAGE JAVASCRIPT DETERMINISTIC LANGUAGE SQL
+  BEGIN DECLARE b INTEGER DEFAULT a; END //
+DROP PROCEDURE bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+LANGUAGE SQL DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--echo # Multiple languages in one clause is not allowed
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+LANGUAGE SQL DETERMINISTIC LANGUAGE JAVASCRIPT PYTHON
+AS $$ b = a $$ //
+
+--echo Check "weird" white space before and after JAVASCRIPT.
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+LANGUAGE
+JAVASCRIPT
+
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+LANGUAGE	
+	 JAVASCRIPT
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+LANGUAGE	  	 JAVASCRIPT  DETERMINISTIC	
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+LANGUAGE
+-- Comment
+JAVASCRIPT
+-- Comment
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--echo The language will here be interpreted to be BEGIN
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE
+BEGIN DECLARE b INTEGER DEFAULT a; END //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+LANGUAGE SQL DETERMINISTIC LANGUAGE
+BEGIN DECLARE b INTEGER DEFAULT a; END //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE
+BEGIN a-1; END //
+
+--echo #Combinations with other characteristics
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC NO SQL
+LANGUAGE JAVASCRIPT
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC NO SQL
+LANGUAGE SQL
+  BEGIN DECLARE b INTEGER DEFAULT a; END //
+DROP PROCEDURE bar//
+
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE SQL NO SQL
+  BEGIN DECLARE b INTEGER DEFAULT a; END //
+DROP PROCEDURE bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE JAVASCRIPT
+CONTAINS SQL
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC READS SQL DATA
+LANGUAGE JAVASCRIPT
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE JAVASCRIPT
+MODIFIES SQL DATA
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE SQL
+CONTAINS SQL
+  BEGIN DECLARE b INTEGER DEFAULT a; END //
+DROP PROCEDURE bar//
+
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC READS SQL DATA
+LANGUAGE SQL
+  BEGIN DECLARE b INTEGER DEFAULT a; END //
+DROP PROCEDURE bar//
+
+CREATE PROCEDURE bar(a INTEGER) DETERMINISTIC LANGUAGE SQL
+MODIFIES SQL DATA
+  BEGIN DECLARE b INTEGER DEFAULT a; END //
+DROP PROCEDURE bar//
+
+CREATE PROCEDURE bar(a INTEGER) NOT DETERMINISTIC LANGUAGE SQL
+  BEGIN DECLARE b INTEGER DEFAULT a; END //
+DROP PROCEDURE bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER) NOT DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$ let b = a; $$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--echo # This is not SQL
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+LANGUAGE SQL DETERMINISTIC LANGUAGE SQL
+$$ let b = a; $$ //
+
+--echo # This is not Javascript
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+BEGIN DECLARE b INTEGER DEFAULT a; END //
+
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE SQL
+BEGIN DECLARE b INTEGER DEFAULT a; END //
+
+--echo # Changing language will not be allowed
+CREATE FUNCTION foo(a INTEGER) RETURNS INTEGER DETERMINISTIC LANGUAGE SQL
+  BEGIN RETURN a-1; END //
+--error ER_SP_NO_ALTER_LANGUAGE
+ALTER FUNCTION foo LANGUAGE JAVASCRIPT //
+SHOW CREATE FUNCTION foo//
+ALTER FUNCTION foo LANGUAGE SQL NO SQL //
+SHOW CREATE FUNCTION foo//
+--error ER_PARSE_ERROR
+ALTER FUNCTION foo LANGUAGE NO SQL //
+DROP FUNCTION foo //
+
+--error ER_SP_NO_ALTER_LANGUAGE
+ALTER PROCEDURE bar LANGUAGE JAVASCRIPT //
+ALTER PROCEDURE bar LANGUAGE SQL NO SQL //
+SHOW CREATE PROCEDURE bar//
+--error ER_PARSE_ERROR
+ALTER PROCEDURE bar LANGUAGE NO SQL //
+DROP PROCEDURE bar //
+
+--echo #
+--echo # Tests for inline code in external language
+--echo #
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$
+  return x-1;
+$$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS 'return x-1;' //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS "return x-1;" //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS '
+  return x-1;
+' //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+"
+   return x-1;
+" //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--echo Routine body must come after characteristics
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+AS $$
+  return x-1;
+$$
+DETERMINISTIC LANGUAGE JAVASCRIPT
+//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+'
+  return "$$" + a + "$$";
+'
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$code$
+  return "$$" + a + "$$";
+$code$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$coDE$
+  return "$$" + a + "$$";
+$coDE$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$CODE$
+  return "$$" + a + "$$";
+$CODE$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$tag$
+  return "$$" + a + "$$";
+$tag$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$TAG$
+  return "$$" + a + "$$";
+$TAG$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$NULL$
+  return "$$" + a + "$$";
+$NULL$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$abdc_1234$
+  return "$$" + a + "$$";
+$abdc_1234$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$_a$
+  return "$$" + a + "$$";
+$_a$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$_$
+  return "$$" + a + "$$";
+$_$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$0$
+  return "$$" + a + "$$";
+$0$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$100$
+  return "$$" + a + "$$";
+$100$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$12345678901234$
+  return "$$" + a + "$$";
+$12345678901234$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$1234567890qwertyuiopasdfghjklzxcvbnm_QWERTYUIOPASDFGHJKLZXCVBNM$
+  return "$$" + a + "$$";
+$1234567890qwertyuiopasdfghjklzxcvbnm_QWERTYUIOPASDFGHJKLZXCVBNM$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$¡$
+  return "$$" + a + "$$";
+$¡$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$1234567890qwertyuiopasdfghjklzxcvbnm_QWERTYUIOPASDFGHJKLZXCVBNM¡™£¢∞§¶•ªº–≠œ∑´®†¥¨ˆøπ“‘«åß∂ƒ©˙∆˚¬…æΩ≈ç√∫µ≤≥÷⁄€‹›ﬁﬂ‡°·‚—±ÅÍÎÏ˝ÓÔÒÚÆ¸˛Ç◊ıÂ¯˘¿$
+  return "$$" + a + "$$";
+$1234567890qwertyuiopasdfghjklzxcvbnm_QWERTYUIOPASDFGHJKLZXCVBNM¡™£¢∞§¶•ªº–≠œ∑´®†¥¨ˆøπ“‘«åß∂ƒ©˙∆˚¬…æΩ≈ç√∫µ≤≥÷⁄€‹›ﬁﬂ‡°·‚—±ÅÍÎÏ˝ÓÔÒÚÆ¸˛Ç◊ıÂ¯˘¿$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS	      $$
+  const $x = 3;
+  const $y$ = 4;
+  return $x + $y$ + a;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$code$
+  const x$$ = 3;
+  const $y$$z = 4;
+  return x$$ + $y$$z + a;
+
+$code$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+$$
+  return x-1;
+$$ //
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE 'return x-1;' //
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE return x-1 //
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC AS LANGUAGE JAVASCRIPT
+"return x-1;" //
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+$code$
+  return "$$" + a + "$$";
+$code$
+//
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $
+  return x-1;
+$ //
+
+--echo # Test conflicting dollar quotes
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$
+  return "$$" + a + "$$";
+$$
+//
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $code$
+  return "$code$" + a + "$code$";
+$code$
+//
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$
+  return x-1;
+$code$ //
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$code$
+  return "$$" + a + "$$";
+$$
+//
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$Code$
+  return "$$" + a + "$$";
+$CODE$
+//
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$CodE$
+  return "$$" + a + "$$";
+$code$
+//
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS	      $$
+  const $x = 3;
+  const $y$ = 4;
+  return $x + $y$ + a;
+//
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$code$
+  const x$$ = 3;
+  const $y$$z = 4;
+  return x$$ + $y$$z + a;
+
+$
+//
+
+# Tag differs in last char
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$1234567890qwertyuiopasdfghjklzxcvbnm_QWERTYUIOPASDFGHJKLZXCVBNM™∞•–≠∑†π“‘∂ƒ˙∆˚…Ω≈√∫≤≥⁄€‹›ﬁﬂ‡‚—˝˛◊ı˘$
+  return "$$" + a + "$$";
+$1234567890qwertyuiopasdfghjklzxcvbnm_QWERTYUIOPASDFGHJKLZXCVBNM™∞•–≠∑†π“‘∂ƒ˙∆˚…Ω≈√∫≤≥⁄€‹›ﬁﬂ‡‚—˝˛◊ı˗$
+//
+
+--echo Check cases with invalid dollar tags
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $+a$
+  return x-1;
+$+a$ //
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $a-$
+  return x-1;
+$a-$ //
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $a(b$
+  return x-1;
+$a(b$ //
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $a~b$
+  return x-1;
+$a~b$ //
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $ $
+  return x-1;
+$ $ //
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $ $
+  return x-1;
+$ $ //
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $I'm$
+  return x-1;
+$I'm$ //
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $'Hi'$
+  return x-1;
+$'Hi'$ //
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $a"b"$
+  return x-1;
+$a"b"$ //
+
+--echo # Test multi-byte characters in code (∂ is 3 bytes in UTF8)
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$
+  return "∂" + a + "$∂$";
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $code$
+  return "∂" + a + "$∂$$";
+$code$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $code$
+  return "∂" + a + "$∂$$∂";
+$code$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$∂
+  return "∂" + a + "$∂$";
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--echo Test multi-byte characters in quote tags
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $∂$
+  return "∂" + a + "∂$";
+$∂$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $co∂e$
+  return "∂" + a + "$∂$$";
+$co∂e$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+# The 4-byte UTF8 characters below may not be correctly displayed in an editor
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $😀$
+  return "😀$😔" + a + "😀$😔$";
+$😀$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $😀😔$
+  return "😀$😔" + a + "😀$😔$";
+$😀😔$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $x😀$
+  return "$x😀😔" + a + "$x😀😔$";
+$x😀$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $😀x$
+  return "$😀x😔$" + a + "$😀😔x$";
+$😀x$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $x😀y$
+  return "$x😀😔y$" + a + "$x😀y😔$";
+$x😀y$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $x😀y😔$
+  return "😀😔$" + a + "😀$😔$";
+$x😀y😔$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $😀😔$
+  return "😀$😔" + a + "😀$😔$";
+$😔😀$
+//
+
+--echo # Escape sequences is not supported in dollar quoted strings
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$
+  return "\$$" + a + "\$code$";
+$$
+//
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $code$
+  return "\$$" + a + "\$code$";
+$code$
+//
+
+
+--echo # Check some variants that should give external parse error
+--echo # if the language is supported
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $code$ rtrn "$$" + x + "$foo$"; $code$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$
+  const $x = x,
+  const $y = 1
+  return $x + $y;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE FUNCTION foo//
+--replace_column 6 <modified> 7 <created>
+SHOW FUNCTION STATUS WHERE Name = 'foo'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+SELECT foo(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP FUNCTION foo//
+
+--echo # Multiple occurrences of routine body is not allowed
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS 'return "$$" + a + "$foo$";'
+AS $$ return a-1; $$ //
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS VARCHAR(20)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $code$ return "$$" + a + "$foo$"; $code$
+AS $$ return a-1; $$ //
+
+--echo # Both external code and SQL code is not allowed
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$ return a-1; $$
+BEGIN RETURN a-1; END //
+
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo(a INTEGER) RETURNS INTEGER
+DETERMINISTIC LANGUAGE SQL
+AS $$ return a-1; $$
+BEGIN RETURN a-1; END //
+
+--echo # Parse error if no routine body
+--error ER_PARSE_ERROR
+CREATE FUNCTION foo() RETURNS INTEGER
+DETERMINISTIC LANGUAGE JAVASCRIPT//
+
+--echo # Repeat test cases for procedures
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$
+  let b = a;
+$$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS 'let b = a;' //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS "let b = a;" //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS '
+  let b = a;
+' //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+"
+   let b = a;
+" //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--echo Routine body must come after characteristics
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+AS $$
+  let b = a;
+$$
+DETERMINISTIC LANGUAGE JAVASCRIPT
+//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+'
+  let b = "$$" + a + "$$";
+'
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$code$
+  let b = "$$" + a + "$$";
+$code$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$coDE$
+  let b = "$$" + a + "$$";
+$coDE$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$CODE$
+  let b = "$$" + a + "$$";
+$CODE$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$tag$
+  let b = "$$" + a + "$$";
+$tag$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$TAG$
+  let b = "$$" + a + "$$";
+$TAG$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$NULL$
+  let b = "$$" + a + "$$";
+$NULL$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$abdc_1234$
+  let b = "$$" + a + "$$";
+$abdc_1234$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$_a$
+  let b = "$$" + a + "$$";
+$_a$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$_$
+  let b = "$$" + a + "$$";
+$_$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$0$
+  let b = "$$" + a + "$$";
+$0$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$100$
+  let b = "$$" + a + "$$";
+$100$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$12345678901234$
+  let b = "$$" + a + "$$";
+$12345678901234$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$1234567890qwertyuiopasdfghjklzxcvbnm_QWERTYUIOPASDFGHJKLZXCVBNM$
+  let b = "$$" + a + "$$";
+$1234567890qwertyuiopasdfghjklzxcvbnm_QWERTYUIOPASDFGHJKLZXCVBNM$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$¡$
+  let b = "$$" + a + "$$";
+$¡$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$1234567890qwertyuiopasdfghjklzxcvbnm_QWERTYUIOPASDFGHJKLZXCVBNM¡™£¢∞§¶•ªº–≠œ∑´®†¥¨ˆøπ“‘«åß∂ƒ©˙∆˚¬…æΩ≈ç√∫µ≤≥÷⁄€‹›ﬁﬂ‡°·‚—±ÅÍÎÏ˝ÓÔÒÚÆ¸˛Ç◊ıÂ¯˘¿$
+  let b = "$$" + a + "$$";
+$1234567890qwertyuiopasdfghjklzxcvbnm_QWERTYUIOPASDFGHJKLZXCVBNM¡™£¢∞§¶•ªº–≠œ∑´®†¥¨ˆøπ“‘«åß∂ƒ©˙∆˚¬…æΩ≈ç√∫µ≤≥÷⁄€‹›ﬁﬂ‡°·‚—±ÅÍÎÏ˝ÓÔÒÚÆ¸˛Ç◊ıÂ¯˘¿$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS	      $$
+  const $x = 3;
+  const $y$ = 4;
+  let b = $x + $y$ + a;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$code$
+  const x$$ = 3;
+  const $y$$z = 4;
+  let b = x$$ + $y$$z + a;
+
+$code$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+$$
+  let b = a;
+$$ //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE 'let b = a;' //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE let b = a //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC AS LANGUAGE JAVASCRIPT
+"let b = a;" //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+$code$
+  let b = "$$" + a + "$$";
+$code$
+//
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $
+  let b = a;
+$ //
+
+--echo # Test conflicting dollar quotes
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$
+  let b = "$$" + a + "$$";
+$$
+//
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $code$
+  let b = "$code$" + a + "$code$";
+$code$
+//
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$
+  let b = a;
+$code$ //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$code$
+  let b = "$$" + a + "$$";
+$$
+//
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$Code$
+  let b = "$$" + a + "$$";
+$CODE$
+//
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$CodE$
+  let b = "$$" + a + "$$";
+$code$
+//
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS	      $$
+  const $x = 3;
+  const $y$ = 4;
+  let b = $x + $y$ + a;
+//
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$code$
+  const x$$ = 3;
+  const $y$$z = 4;
+  let b = x$$ + $y$$z + a;
+
+$
+//
+
+# Tag differs in last char
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS
+$1234567890qwertyuiopasdfghjklzxcvbnm_QWERTYUIOPASDFGHJKLZXCVBNM™∞•–≠∑†π“‘∂ƒ˙∆˚…Ω≈√∫≤≥⁄€‹›ﬁﬂ‡‚—˝˛◊ı˘$
+  let b = "$$" + a + "$$";
+$1234567890qwertyuiopasdfghjklzxcvbnm_QWERTYUIOPASDFGHJKLZXCVBNM™∞•–≠∑†π“‘∂ƒ˙∆˚…Ω≈√∫≤≥⁄€‹›ﬁﬂ‡‚—˝˛◊ı˗$
+//
+
+--echo Check cases with invalid dollar tags
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $+a$
+  let b = a;
+$+a$ //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $a-$
+  let b = a;
+$a-$ //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $a(b$
+  let b = a;
+$a(b$ //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $a~b$
+  let b = a;
+$a~b$ //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $ $
+  let b = a;
+$ $ //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $ $
+  let b = a;
+$ $ //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $I'm$
+  let b = a;
+$I'm$ //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $'Hi'$
+  let b = a;
+$'Hi'$ //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $a"b"$
+  let b = a;
+$a"b"$ //
+
+--echo # Test multi-byte characters in code (∂ is 3 bytes in UTF8)
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$
+  let b = "∂" + a + "$∂$";
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $code$
+  let b = "∂" + a + "$∂$$";
+$code$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $code$
+  let b = "∂" + a + "$∂$$∂";
+$code$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$∂
+  let b = "∂" + a + "$∂$";
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--echo Test multi-byte characters in quote tags
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $∂$
+  let b = "∂" + a + "∂$";
+$∂$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $co∂e$
+  let b = "∂" + a + "$∂$$";
+$co∂e$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+# The 4-byte UTF8 characters below may not be correctly displayed in an editor
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $😀$
+  let b = "😀$😔" + a + "😀$😔$";
+$😀$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $😀😔$
+  let b = "😀$😔" + a + "😀$😔$";
+$😀😔$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $x😀$
+  let b = "$x😀😔" + a + "$x😀😔$";
+$x😀$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $😀x$
+  let b = "$😀x😔$" + a + "$😀😔x$";
+$😀x$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $x😀y$
+  let b = "$x😀😔y$" + a + "$x😀y😔$";
+$x😀y$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $x😀y😔$
+  let b = "😀😔$" + a + "😀$😔$";
+$x😀y😔$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $😀😔$
+  let b = "😀$😔" + a + "😀$😔$";
+$😔😀$
+//
+
+--echo # Escape sequences is not supported in dollar quoted strings
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$
+  let b = "\$$" + a + "\$code$";
+$$
+//
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $code$
+  let b = "\$$" + a + "\$code$";
+$code$
+//
+
+
+--echo # Check some variants that should give external parse error
+--echo # if the language is supported
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(x INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $code$ let b := "$$" + x + "$foo$"; $code$ //
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--error ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+CREATE PROCEDURE bar(x INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$
+  const $x = x,
+  const $y = 1
+  let b = $x + $y;
+$$
+//
+--error ER_SP_DOES_NOT_EXIST
+SHOW CREATE procedure bar//
+--replace_column 6 <modified> 7 <created>
+SHOW PROCEDURE STATUS WHERE Name = 'bar'//
+SELECT routine_name, routine_type, data_type, routine_body,
+       external_name, external_language, parameter_style, routine_definition
+FROM information_schema.routines
+WHERE routine_schema = "test" //
+--error ER_SP_DOES_NOT_EXIST
+CALL bar(2)//
+--error ER_SP_DOES_NOT_EXIST
+DROP procedure bar//
+
+--echo # Multiple occurrences of routine body is not allowed
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS 'let b = "$$" + a + "$foo$";'
+AS $$ let b = a-1; $$ //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $code$ let b = "$$" + a + "$foo$"; $code$
+AS $$ let b = a-1; $$ //
+
+--echo # Both external code and SQL code is not allowed
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE JAVASCRIPT
+AS $$ let b = a-1; $$
+BEGIN RETURN a-1; END //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar(a INTEGER)
+DETERMINISTIC LANGUAGE SQL
+AS $$ let b = a-1; $$
+BEGIN RETURN a-1; END //
+
+--echo # Parse error if no routine body
+--error ER_PARSE_ERROR
+CREATE PROCEDURE bar()
+DETERMINISTIC LANGUAGE JAVASCRIPT//
+
+--echo # Check that dollar quotes can not be used in other context
+--error ER_PARSE_ERROR
+CREATE FUNCTION $$foo(x INTEGER) INTEGER DETERMINISTIC
+LANGUAGE JAVASCRIPT AS $$ let b = x-1; $$ //
+
+--error ER_PARSE_ERROR
+CREATE PROCEDURE $$bar(a INTEGER) DETERMINISTIC
+LANGUAGE JAVASCRIPT AS $$ let b = a; $$ //
+
+delimiter ;//
+
+--error ER_PARSE_ERROR
+SELECT $$Hello world!$$;
+--error ER_PARSE_ERROR
+SELECT $hi$Hello world!$hi$;
+
+--echo # Check that dollars can still be used in identifiers
+SELECT 1 AS $hi;
+SELECT 1 AS h$i;
+SELECT 1 AS h$$i;
+SELECT 1 AS h$i$;
+
+--echo # Identifiers matching dollar quotes can no longer be used
+--error ER_PARSE_ERROR
+SELECT 1 AS $$;
+--error ER_PARSE_ERROR
+SELECT 1 AS $hi$;
+--error ER_PARSE_ERROR
+SELECT 1 AS $h$i;
+
+--echo # ... unless quoted
+SELECT 1 AS `$$`;
+SELECT 1 AS `$hi$`;
+SELECT 1 AS `$h$i`;

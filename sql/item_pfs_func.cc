@@ -34,11 +34,10 @@
 #include <cstdio>
 #include <cstdlib>  // abs
 
-#include "m_ctype.h"
-
 #include "my_psi_config.h"
 #include "my_sys.h"
 #include "mysql/components/services/bits/psi_thread_bits.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysqld_error.h"
 #include "pfs_thread_provider.h"
 #include "sql/field.h"
@@ -51,9 +50,10 @@ extern bool pfs_enabled;
 
 /** ps_current_thread_id() */
 
-bool Item_func_pfs_current_thread_id::itemize(Parse_context *pc, Item **res) {
+bool Item_func_pfs_current_thread_id::do_itemize(Parse_context *pc,
+                                                 Item **res) {
   if (skip_itemize(res)) return false;
-  if (super::itemize(pc, res)) return true;
+  if (super::do_itemize(pc, res)) return true;
   pc->thd->lex->safe_to_cache_query = false; /* result can vary */
   return false;
 }
@@ -92,9 +92,9 @@ longlong Item_func_pfs_current_thread_id::val_int() {
 
 /** ps_thread_id() */
 
-bool Item_func_pfs_thread_id::itemize(Parse_context *pc, Item **res) {
+bool Item_func_pfs_thread_id::do_itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
-  if (super::itemize(pc, res)) return true;
+  if (super::do_itemize(pc, res)) return true;
   pc->thd->lex->safe_to_cache_query = false; /* result can vary */
   return false;
 }
@@ -117,7 +117,7 @@ longlong Item_func_pfs_thread_id::val_int() {
   }
 
   /* Evaluate the function argument. */
-  longlong processlist_id = args[0]->val_int();
+  const longlong processlist_id = args[0]->val_int();
 
   /* Verify argument type. */
   if (!is_integer_type(args[0]->data_type())) {
@@ -160,7 +160,7 @@ bool Item_func_pfs_format_bytes::resolve_type(THD *) {
 
 String *Item_func_pfs_format_bytes::val_str(String *) {
   /* Evaluate argument value. */
-  double bytes = args[0]->val_real();
+  const double bytes = args[0]->val_real();
 
   /* If input is null, return null. */
   null_value = args[0]->null_value;
@@ -208,7 +208,7 @@ String *Item_func_pfs_format_bytes::val_str(String *) {
   if (divisor == 1) {
     len = sprintf(m_value_buffer, "%4d %s", (int)bytes, unit);
   } else {
-    double value = bytes / divisor;
+    const double value = bytes / divisor;
     if (std::abs(value) >= 100000.0) {
       len = sprintf(m_value_buffer, "%4.2e %s", value, unit);
     } else {
@@ -231,7 +231,7 @@ bool Item_func_pfs_format_pico_time::resolve_type(THD *) {
 
 String *Item_func_pfs_format_pico_time::val_str(String *) {
   /* Evaluate the argument */
-  double time_val = args[0]->val_real();
+  const double time_val = args[0]->val_real();
 
   /* If argument is null, return null. */
   null_value = args[0]->null_value;
@@ -284,7 +284,7 @@ String *Item_func_pfs_format_pico_time::val_str(String *) {
   if (divisor == 1) {
     len = sprintf(m_value_buffer, "%3d %s", (int)time_val, unit);
   } else {
-    double value = time_val / divisor;
+    const double value = time_val / divisor;
     if (std::abs(value) >= 100000.0) {
       len = sprintf(m_value_buffer, "%4.2e %s", value, unit);
     } else {

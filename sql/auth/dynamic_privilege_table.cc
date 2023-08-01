@@ -26,7 +26,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <string>
 
 #include "lex_string.h"
-#include "m_ctype.h"
 #include "my_alloc.h"
 #include "my_base.h"
 #include "my_dbug.h"
@@ -40,6 +39,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include "mysql/components/services/registry.h"
 #include "mysql/mysql_lex_string.h"
 #include "mysql/service_plugin_registry.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysqld_error.h"
 #include "sql/auth/auth_common.h"
 #include "sql/auth/auth_internal.h"
@@ -137,8 +137,8 @@ bool populate_dynamic_privilege_caches(THD *thd, Table_ref *tablelst) {
 
       my_caseup_str(system_charset_info, priv);
       LEX_CSTRING str_priv = {priv, strlen(priv)};
-      LEX_CSTRING str_user = {user, strlen(user)};
-      LEX_CSTRING str_host = {host, strlen(host)};
+      const LEX_CSTRING str_user = {user, strlen(user)};
+      const LEX_CSTRING str_host = {host, strlen(host)};
       Update_dynamic_privilege_table no_update;
       if (grant_dynamic_privilege(str_priv, str_user, str_host,
                                   (*with_grant_option == 'Y' ? true : false),

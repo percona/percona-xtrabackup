@@ -28,9 +28,9 @@
 #include <new>
 
 #include "lex_string.h"
-#include "m_ctype.h"
 
 #include "my_inttypes.h"  // TODO: replace with cstdint
+#include "mysql/strings/m_ctype.h"
 #include "mysql_time.h"
 #include "sql/item.h"
 #include "sql/item_func.h"       // Item etc.
@@ -105,12 +105,14 @@ class PT_item_list : public Parse_tree_node {
   typedef Parse_tree_node super;
 
  public:
-  PT_item_list() : value(*THR_MALLOC) {}
+  explicit PT_item_list(const POS &pos) : super(pos), value(*THR_MALLOC) {}
+  explicit PT_item_list(const POS &start_pos, const POS &end_pos)
+      : super(start_pos, end_pos), value(*THR_MALLOC) {}
 
   mem_root_deque<Item *> value;
 
-  bool contextualize(Parse_context *pc) override {
-    if (super::contextualize(pc)) return true;
+  bool do_contextualize(Parse_context *pc) override {
+    if (super::do_contextualize(pc)) return true;
     for (Item *&item : value) {
       if (item->itemize(pc, &item)) return true;
     }

@@ -26,13 +26,13 @@
 #include <sys/types.h>
 
 #include "lex_string.h"
-#include "m_ctype.h"
 #include "my_base.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_io.h"
 #include "my_sys.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysqld.h"  // table_alias_charset
 #include "mysqld_error.h"
 #include "scope_guard.h"  // create_scope_guard
@@ -49,7 +49,7 @@
 #include "sql/lock.h"  // MYSQL_OPEN_* flags
 #include "sql/mdl.h"
 #include "sql/query_options.h"
-#include "sql/sql_audit.h"        // mysql_audit_table_access_notify
+#include "sql/sql_audit.h"        // mysql_event_tracking_table_access_notify
 #include "sql/sql_backup_lock.h"  // acquire_shared_backup_lock
 #include "sql/sql_base.h"         // open_and_lock_tables
 #include "sql/sql_class.h"        // THD
@@ -545,7 +545,7 @@ void Sql_cmd_truncate_table::truncate_base(THD *thd, Table_ref *table_ref) {
     // Set this before any potential error returns
     binlog_is_trans = (hton->flags & HTON_SUPPORTS_ATOMIC_DDL);
 
-    if (mysql_audit_table_access_notify(thd, table_ref) != 0) {
+    if (mysql_event_tracking_table_access_notify(thd, table_ref) != 0) {
       return;
     }
 
@@ -576,7 +576,7 @@ void Sql_cmd_truncate_table::truncate_base(THD *thd, Table_ref *table_ref) {
   /*
     The engine does not support truncate-by-recreate.
     Attempt to use the handler truncate method.
-    MYSQL_AUDIT_TABLE_ACCESS_READ audit event is generated when opening
+    EVENT_TRACKING_TABLE_ACCESS_READ audit event is generated when opening
     tables using open_tables function.
   */
   const Truncate_result tr = handler_truncate_base(thd, table_ref, table_def);

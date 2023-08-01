@@ -83,7 +83,6 @@
 #include <atomic>
 
 #include "lex_string.h"
-#include "m_ctype.h"
 #include "m_string.h"
 #include "my_base.h"
 #include "my_dbug.h"
@@ -91,6 +90,7 @@
 #include "my_sqlcommand.h"
 #include "my_sys.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
 #include "sql/auth/auth_common.h"  // SUPER_ACL
@@ -316,9 +316,9 @@ MYSQL_LOCK *mysql_lock_tables(THD *thd, TABLE **tables, size_t count,
                               uint flags) {
   int rc;
   MYSQL_LOCK *sql_lock;
-  ulong timeout = (flags & MYSQL_LOCK_IGNORE_TIMEOUT)
-                      ? LONG_TIMEOUT
-                      : thd->variables.lock_wait_timeout;
+  const ulong timeout = (flags & MYSQL_LOCK_IGNORE_TIMEOUT)
+                            ? LONG_TIMEOUT
+                            : thd->variables.lock_wait_timeout;
 
   DBUG_TRACE;
 
@@ -330,7 +330,7 @@ MYSQL_LOCK *mysql_lock_tables(THD *thd, TABLE **tables, size_t count,
   if (!(thd->state_flags & Open_tables_state::SYSTEM_TABLES))
     THD_STAGE_INFO(thd, stage_system_lock);
 
-  ulonglong lock_start_usec = my_micro_time();
+  const ulonglong lock_start_usec = my_micro_time();
 
   DBUG_PRINT("info", ("thd->proc_info %s", thd->proc_info()));
   if (sql_lock->table_count &&
@@ -370,7 +370,7 @@ end:
   if (thd->variables.session_track_transaction_info > TX_TRACK_NONE)
     track_table_access(thd, tables, count);
 
-  ulonglong lock_end_usec = my_micro_time();
+  const ulonglong lock_end_usec = my_micro_time();
   thd->inc_lock_usec(lock_end_usec - lock_start_usec);
 
   return sql_lock;

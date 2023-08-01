@@ -32,13 +32,13 @@
 #include <unordered_set>
 
 #include "field_types.h"
-#include "m_ctype.h"
 #include "my_alloc.h"  // destroy
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "my_table_map.h"
 #include "my_time.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql/udf_registration_types.h"
 #include "mysqld_error.h"
 #include "sql/derror.h"  // ER_THD
@@ -84,7 +84,7 @@ static ORDER *clone(THD *thd, ORDER *order) {
   ORDER *clone = nullptr;
   ORDER **prev_next = &clone;
   for (; order != nullptr; order = order->next) {
-    ORDER *o = new (thd->mem_root) PT_order_expr(nullptr, ORDER_ASC);
+    ORDER *o = new (thd->mem_root) PT_order_expr(POS(), nullptr, ORDER_ASC);
     std::memcpy(o, order, sizeof(*order));
     *prev_next = o;
     prev_next = &o->next;
@@ -547,7 +547,7 @@ bool Window::before_or_after_frame(bool before) {
     infinity = WBT_UNBOUNDED_FOLLOWING;
   }
 
-  enum enum_window_border_type border_type = border->m_border_type;
+  const enum enum_window_border_type border_type = border->m_border_type;
 
   if (border_type == infinity) return false;  // all rows included
 
@@ -693,13 +693,13 @@ bool Window::resolve_window_ordering(THD *thd, Ref_item_array ref_item_array,
       return true;
     oi = *order->item;
 
-    if (order->used_alias) {
+    if (order->used_alias != nullptr) {
       /*
         Order by using alias is not allowed for windows, cf. SQL 2011, section
         7.11 <window clause>, SR 4. Throw the same error code as when alias is
         argument of a window function, or any function.
       */
-      my_error(ER_BAD_FIELD_ERROR, MYF(0), oi->item_name.ptr(), thd->where);
+      my_error(ER_BAD_FIELD_ERROR, MYF(0), order->used_alias, thd->where);
       return true;
     }
 
@@ -1102,7 +1102,7 @@ bool Window::setup_windows1(THD *thd, Query_block *select,
     We can encounter aggregate functions in the ORDER BY and PARTITION clauses
     of window function, so make sure we allow it:
   */
-  nesting_map save_allow_sum_func = thd->lex->allow_sum_func;
+  const nesting_map save_allow_sum_func = thd->lex->allow_sum_func;
   thd->lex->allow_sum_func |= (nesting_map)1 << select->nest_level;
 
   for (Window &w : *windows) {

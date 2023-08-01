@@ -38,7 +38,6 @@
 
 #include "client/client_priv.h"
 #include "compression.h"
-#include "m_ctype.h"
 #include "m_string.h"
 #include "map_helpers.h"
 #include "my_compiler.h"
@@ -53,11 +52,16 @@
 #include "my_user.h"
 #include "mysql.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql_version.h"
 #include "mysqld_error.h"
+#include "nulls.h"
 #include "prealloced_array.h"
 #include "print_version.h"
 #include "scope_guard.h"
+#include "string_with_len.h"
+#include "strmake.h"
+#include "strxmov.h"
 #include "template_utils.h"
 #include "typelib.h"
 #include "welcome_copyright_notice.h" /* ORACLE_WELCOME_COPYRIGHT_NOTICE */
@@ -1252,8 +1256,8 @@ static char *my_case_str(char *str, size_t str_len, const char *token,
                          size_t token_len) {
   my_match_t match;
 
-  uint status = my_charset_latin1.coll->strstr(&my_charset_latin1, str, str_len,
-                                               token, token_len, &match, 1);
+  const uint status = my_charset_latin1.coll->strstr(
+      &my_charset_latin1, str, str_len, token, token_len, &match, 1);
 
   return status ? str + match.end : nullptr;
 }
@@ -1785,7 +1789,7 @@ static bool test_if_special_chars(const char *str) {
 */
 static char *quote_name(char *name, char *buff, bool force) {
   char *to = buff;
-  char qtype = ansi_quotes_mode ? '"' : '`';
+  const char qtype = ansi_quotes_mode ? '"' : '`';
 
   if (!force && !opt_quoted && !test_if_special_chars(name)) return name;
   *to++ = qtype;
@@ -3424,7 +3428,7 @@ static int dump_trigger(FILE *sql_file, MYSQL_RES *show_create_trigger_rs,
 static int dump_triggers_for_table(char *table_name, char *db_name) {
   char name_buff[NAME_LEN * 4 + 3];
   char query_buff[QUERY_LENGTH];
-  bool old_ansi_quotes_mode = ansi_quotes_mode;
+  const bool old_ansi_quotes_mode = ansi_quotes_mode;
   MYSQL_RES *show_triggers_rs;
   MYSQL_ROW row;
   FILE *sql_file = md_result_file;
@@ -3516,7 +3520,7 @@ static bool dump_column_statistics_for_table(char *table_name, char *db_name) {
   char name_buff[NAME_LEN * 4 + 3];
   char column_buffer[NAME_LEN * 4 + 3];
   char query_buff[QUERY_LENGTH * 3 / 2];
-  bool old_ansi_quotes_mode = ansi_quotes_mode;
+  const bool old_ansi_quotes_mode = ansi_quotes_mode;
   char *quoted_table;
   MYSQL_RES *column_statistics_rs;
   MYSQL_ROW row;
@@ -3917,7 +3921,7 @@ static void dump_table(char *table, char *db) {
 
       for (i = 0; i < mysql_num_fields(res); i++) {
         int is_blob;
-        ulong length = lengths[i];
+        const ulong length = lengths[i];
 
         if (!(field = mysql_fetch_field(res)))
           die(EX_CONSCHECK, "Not enough fields from table %s! Aborting.\n",
@@ -4631,7 +4635,7 @@ static int dump_all_tables_in_db(char *database) {
   char hash_key[2 * NAME_LEN + 2]; /* "db.tablename" */
   char *afterdot;
   bool general_log_table_exists = false, slow_log_table_exists = false;
-  int using_mysql_db = !my_strcasecmp(charset_info, database, "mysql");
+  const int using_mysql_db = !my_strcasecmp(charset_info, database, "mysql");
   bool real_columns[MAX_FIELDS];
 
   DBUG_TRACE;
@@ -4863,7 +4867,7 @@ static char *get_actual_table_name(const char *old_table_name, MEM_ROOT *root) {
   if (mysql_query_with_error_report(mysql, nullptr, query)) return NullS;
 
   if ((table_res = mysql_store_result(mysql))) {
-    uint64_t num_rows = mysql_num_rows(table_res);
+    const uint64_t num_rows = mysql_num_rows(table_res);
     if (num_rows > 0) {
       ulong *lengths;
       /*
@@ -5399,7 +5403,7 @@ static char *primary_key_fields(const char *table_name) {
   size_t result_length = 0;
   char *result = nullptr;
   char buff[NAME_LEN * 2 + 3];
-  char *quoted_field;
+  char *order_by_part;
 
   snprintf(show_keys_buff, sizeof(show_keys_buff), "SHOW KEYS FROM %s",
            table_name);
@@ -5419,31 +5423,67 @@ static char *primary_key_fields(const char *table_name) {
    * row, and UNIQUE keys come before others.  So we only need to check
    * the first key, not all keys.
    */
-  if ((row = mysql_fetch_row(res)) && atoi(row[1]) == 0) {
-    /* Key is unique */
-    do {
-      quoted_field = quote_name(row[4], buff, false);
-      result_length += strlen(quoted_field) + 1; /* + 1 for ',' or \0 */
-    } while ((row = mysql_fetch_row(res)) && atoi(row[3]) > 1);
+  while (nullptr != (row = mysql_fetch_row(res))) {
+    unsigned braces_length = 0;
+    if (!row[3] || !*row[3]) {
+      fprintf(stderr,
+              "Warning: Couldn't read key column index from table %s. "
+              "Inspect the output from 'SHOW KEYS FROM %s. "
+              "Records are probably not fully sorted.'\n",
+              table_name, table_name);
+      continue;
+    }
+    if (atoi(row[3]) < 1) break;
+    if (row[4] && *row[4]) order_by_part = quote_name(row[4], buff, false);
+#ifdef USABLE_EXPR_IN_SHOW_INDEX_BUG35273994
+    else if (mysql_num_fields(res) > 14 && row[14] &&
+             *row[14]) /* there's an Expression column */
+    {
+      order_by_part = row[14];
+      braces_length = 2;
+    }
+#endif
+    else {
+      fprintf(
+          stderr,
+          "Warning: Couldn't read key column name or expression from table %s;"
+          " position %d. Inspect the output from 'SHOW KEYS FROM %s."
+          " Records are probably not fully sorted.\n",
+          table_name, atoi(row[3]), table_name);
+      continue;
+    }
+    result_length +=
+        strlen(order_by_part) + braces_length + 1; /* + 1 for ',' or \0 */
   }
 
   /* Build the ORDER BY clause result */
   if (result_length) {
-    char *end;
     /* result (terminating \0 is already in result_length) */
-    result = static_cast<char *>(
+    char *end = result = static_cast<char *>(
         my_malloc(PSI_NOT_INSTRUMENTED, result_length + 10, MYF(MY_WME)));
     if (!result) {
       fprintf(stderr, "Error: Not enough memory to store ORDER BY clause\n");
       goto cleanup;
     }
     mysql_data_seek(res, 0);
-    row = mysql_fetch_row(res);
-    quoted_field = quote_name(row[4], buff, false);
-    end = my_stpcpy(result, quoted_field);
-    while ((row = mysql_fetch_row(res)) && atoi(row[3]) > 1) {
-      quoted_field = quote_name(row[4], buff, false);
-      end = strxmov(end, ",", quoted_field, NullS);
+    while (nullptr != (row = mysql_fetch_row(res))) {
+      unsigned braces_length = 0;
+      if (!row[3] || !*row[3]) continue;
+      if (atoi(row[3]) < 1) break;
+      if (row[4] && *row[4]) order_by_part = quote_name(row[4], buff, false);
+#ifdef USABLE_EXPR_IN_SHOW_INDEX_BUG35273994
+      else if (mysql_num_fields(res) > 14 && row[14] && *row[14]) {
+        order_by_part = row[14];
+        braces_length = 2;
+      }
+#endif
+      else
+        continue;
+      if (end != result) end = my_stpcpy(end, ",");
+      if (braces_length)
+        end = strxmov(end, "(", order_by_part, ")", NullS);
+      else
+        end = my_stpcpy(end, order_by_part);
     }
   }
 
@@ -5993,7 +6033,7 @@ int main(int argc, char **argv) {
     // that escaped name will be not longer than NAME_LEN*2 + 2 bytes long.
     int argument;
     for (argument = 0; argument < argc; argument++) {
-      size_t argument_length = strlen(argv[argument]);
+      const size_t argument_length = strlen(argv[argument]);
       if (argument_length > NAME_LEN) {
         die(EX_CONSCHECK,
             "[ERROR] Argument '%s' is too long, it cannot be "

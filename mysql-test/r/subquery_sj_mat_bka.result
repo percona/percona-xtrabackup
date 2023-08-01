@@ -1,8 +1,4 @@
 set optimizer_switch='batched_key_access=on,mrr_cost_based=off';
-Warnings:
-Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
-Warnings:
-Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
 set optimizer_switch='semijoin=on,materialization=on';
 set @old_opt_switch=@@optimizer_switch;
 set optimizer_switch='subquery_materialization_cost_based=off';
@@ -13491,7 +13487,7 @@ EXPLAIN
                         -> Filter: (t1.col_int_key is not null)  (rows=7)
                             -> Filter: (t3.col_int is null)  (rows=7)
                                 -> Nested loop left join  (rows=7)
-                                    -> Index scan on t1 using col_int_key  (rows=7)
+                                    -> Covering index scan on t1 using col_int_key  (rows=7)
                                     -> Nested loop inner join  (rows=1)
                                         -> Single-row index lookup on t2 using PRIMARY (pk=t1.pk)  (rows=1)
                                         -> Filter: (t3.col_int_key = t2.col_int)  (rows=1)
@@ -13845,6 +13841,4 @@ f1	f2
 14:51:13	S
 DROP TABLE t1, t2;
 set optimizer_switch=default;
-Warnings:
-Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
 set optimizer_switch=default;

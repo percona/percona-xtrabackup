@@ -118,29 +118,4 @@ DECLARE_BOOL_METHOD(destroy, (mysql_scheduler_runnable_handle handle));
 
 END_SERVICE_DEFINITION(mysql_scheduler)
 
-/**
-  @ingroup group_components_services_inventory
-  Notification service for the scheduler customers.
-  The scheduler will broadcast this at important events of its operation
-  that may be of interest to customers.
-  Currently only supports STARTED event:
-  When the scheduler starts some of its "customers" may be already
-  loaded and have allowed delayed initialization.
-  To avoid polling for scheduler implementations, the scheduler
-  will broadcast to all implementations of this service at its startup so
-  they can register their scheduled tasks.
-  This is useful for e.g. customers loading prior to the scheduler and
-  willing to register their tasks when the scheduler is present.
-*/
-BEGIN_SERVICE_DEFINITION(mysql_scheduler_notify)
-/**
-  @retval true   failure
-  @retval false  success
-  @param what    Notification kind. One of:
-                    * STARTED : the sheduler is open for service. Clients
-                                 should re-try registering their tasks.
-*/
-DECLARE_BOOL_METHOD(emit, (const char *what));
-END_SERVICE_DEFINITION(mysql_scheduler_notify)
-
 #endif /* MYSQL_SCHEDULER_H */

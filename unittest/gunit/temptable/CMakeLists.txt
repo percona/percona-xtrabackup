@@ -72,4 +72,3 @@ FOREACH(test ${TESTS})
   ADD_DEPENDENCIES(${test}-t GenError)
 
 ENDFOREACH()
-

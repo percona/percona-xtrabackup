@@ -435,20 +435,6 @@ bool Query_block::prepare(THD *thd, mem_root_deque<Item *> *insert_field_list) {
     opt_trace_print_expanded_query(thd, this, &trace_wrapper);
   }
 
-  /*
-    When normalizing a view (like when writing a view's body to the FRM),
-    subquery transformations don't apply (if they did, IN->EXISTS could not be
-    undone in favour of materialization, when optimizing a later statement
-    using the view)
-  */
-  if (unit->item &&  // This is a subquery
-                     // A real query block
-                     // Not normalizing a view
-      unit->is_leaf_block(this) && !thd->lex->is_view_context_analysis()) {
-    // Query block represents a subquery within an IN/ANY/ALL/EXISTS predicate
-    if (resolve_subquery(thd)) return true;
-  }
-
   // Transform eligible scalar subqueries to derived tables.
   //
   // Don't transform if analyzing a view: the resulting query may not be
@@ -669,7 +655,7 @@ bool Query_block::prepare_values(THD *thd) {
 
   // Setup the HAVING clause, duplicating code from Query_block::prepare. This
   // is strictly necessary in the case of PREPARE statements, where
-  // resolve_subquery may rewrite its Query_block to use m_having_cond.
+  // subquery transformations may rewrite its Query_block to use m_having_cond.
   //
   // For example, a query like `SELECT * FROM t WHERE (a, b) IN (VALUES ROW(1,
   // 10))` may be rewritten such that the Query_block within the IN subquery has
@@ -703,19 +689,6 @@ bool Query_block::prepare_values(THD *thd) {
   if (is_ordered() && setup_order(thd, base_ref_items, get_table_list(),
                                   &fields, order_list.first)) {
     return true;
-  }
-
-  // Again, duplicating checks that are also done in Query_block::prepare for
-  // resolving subqueries. This should, like the resolving of m_having_clause
-  // above, be refactored such that there is less duplication of code from
-  // Query_block::prepare.
-  if (unit->item &&  // This is a subquery
-                     // A real query block
-                     // Not normalizing a view
-      (unit->is_simple() || this != unit->query_term()->query_block()) &&
-      !thd->lex->is_view_context_analysis()) {
-    // Query block represents a subquery within an IN/ANY/ALL/EXISTS predicate
-    if (resolve_subquery(thd)) return true;
   }
 
   if (query_result() && query_result()->prepare(thd, fields, unit))
@@ -783,7 +756,7 @@ bool Query_block::apply_local_transforms(THD *thd, bool prune) {
     simplify_joins() (for example it uses the value of
     Query_block::outer_join).
 
-    The drawback is that the checks are after resolve_subquery(), so can
+    The drawback is that the checks are after subquery transformations, so can
     meet strange "internally added" items.
 
     Note that when we are creating a view, simplify_joins() doesn't run so
@@ -979,7 +952,7 @@ static bool simplify_const_condition(THD *thd, Item **cond, bool remove_cond,
 
 bool Item_in_subselect::subquery_allows_materialization(
     THD *thd, Query_block *query_block, const Query_block *outer) {
-  const uint elements = unit->first_query_block()->num_visible_fields();
+  const uint elements = query_expr()->first_query_block()->num_visible_fields();
   DBUG_TRACE;
   assert(elements >= 1);
   assert(left_expr->cols() == elements);
@@ -989,7 +962,7 @@ bool Item_in_subselect::subquery_allows_materialization(
                       "materialization");
 
   const char *cause = nullptr;
-  if (substype() != Item_subselect::IN_SUBS) {
+  if (subquery_type() != Item_subselect::IN_SUBQUERY) {
     // Subq-mat cannot handle 'outer_expr > {ANY|ALL}(subq)'...
     cause = "not an IN predicate";
   } else if (m_subquery_used_tables & RAND_TABLE_BIT) {
@@ -1040,7 +1013,8 @@ bool Item_in_subselect::subquery_allows_materialization(
     bool has_nullables = left_expr->is_nullable();
 
     uint i = 0;
-    for (Item *const inner_item : unit->first_query_block()->visible_fields()) {
+    for (Item *const inner_item :
+         query_expr()->first_query_block()->visible_fields()) {
       Item *const outer_item = left_expr->element_index(i++);
       if (!types_allow_materialization(outer_item, inner_item)) {
         cause = "type mismatch";
@@ -1341,261 +1315,6 @@ bool Query_block::is_row_count_valid_for_semi_join() {
 }
 
 /**
-  @brief Resolve predicate involving subquery
-
-  @param thd     Pointer to THD.
-
-  @retval false  Success.
-  @retval true   Error.
-
-  @details
-  Perform early unconditional subquery transformations:
-   - Convert subquery predicate into semi-join, or
-   - Mark the subquery for execution using materialization, or
-   - Perform IN->EXISTS transformation, or
-   - Perform more/less ALL/ANY -> MIN/MAX rewrite
-   - Substitute trivial scalar-context subquery with its value
-
-  @todo for PS, make the whole block execute only on the first execution
-
-*/
-
-bool Query_block::resolve_subquery(THD *thd) {
-  DBUG_TRACE;
-
-  bool choice_made = false;  // becomes true when subquery strategy is chosen
-  bool deterministic = true;
-  Query_block *const outer = outer_query_block();
-
-  /*
-    @todo for PS, make the whole block execute only on the first execution.
-    resolve_subquery() is only invoked in the first execution for subqueries
-    that are transformed to semijoin, but for other subqueries, this function
-    is called for every execution. One solution is perhaps to define
-    exec_method in class Item_subselect and exit immediately if unequal to
-    SubqueryExecMethod::EXEC_UNSPECIFIED.
-  */
-  Item_subselect *subq_predicate = master_query_expression()->item;
-  assert(subq_predicate != nullptr);
-  /**
-    @note
-    In this case: IN (SELECT ... UNION SELECT ...), Query_block::prepare() is
-    called for each of the two UNION members, and in those two calls,
-    subq_predicate is the same, not sure this is desired (double work?).
-  */
-
-  // Predicate for possible semi-join candidates (IN and EXISTS)
-  Item_exists_subselect *const predicate =
-      subq_predicate->substype() == Item_subselect::EXISTS_SUBS ||
-              subq_predicate->substype() == Item_subselect::IN_SUBS
-          ? down_cast<Item_exists_subselect *>(subq_predicate)
-          : nullptr;
-
-  // Predicate for IN subquery predicate
-  Item_in_subselect *const in_predicate =
-      subq_predicate->substype() == Item_subselect::IN_SUBS
-          ? down_cast<Item_in_subselect *>(subq_predicate)
-          : nullptr;
-
-  if (in_predicate != nullptr) {
-    thd->lex->set_current_query_block(outer);
-    char const *save_where = thd->where;
-    thd->where = "IN/ALL/ANY subquery";
-    Condition_context CCT(outer);
-
-    bool result =
-        !in_predicate->left_expr->fixed &&
-        in_predicate->left_expr->fix_fields(thd, &in_predicate->left_expr);
-    thd->lex->set_current_query_block(this);
-    thd->where = save_where;
-    if (result) return true;
-
-    /*
-      Check if the left and right expressions have the same # of
-      columns, i.e. we don't have a case like
-        (oe1, oe2) IN (SELECT ie1, ie2, ie3 ...)
-
-      TODO why do we have this duplicated in IN->EXISTS transformers?
-      psergey-todo: fix these: grep for duplicated_subselect_card_check
-    */
-    if (num_visible_fields() != in_predicate->left_expr->cols()) {
-      my_error(ER_OPERAND_COLUMNS, MYF(0), in_predicate->left_expr->cols());
-      return true;
-    }
-    if (in_predicate->left_expr->is_non_deterministic()) deterministic = false;
-  }
-
-  // (a) A certain secondary engine doesn't support antijoin transforms
-  // (b) For NOT EXISTS (non-correlated subquery), or
-  // <constant> NOT IN (non-correlated subquery): it is more efficient to
-  // evaluate it once for all during optimization:
-  // - if it is false, we may be able to skip reading the outer table,
-  // - if it is true, we'll avoid reading the inner table many times.
-  // So we leave it as a subquery.
-  // todo: revisit this when (a) becomes false, or when the cost optimizer
-  // is made to prefer hash antijoin over nested loop antijoin for the cases of
-  // (b) (hash antijoin has efficient handling of them).
-  const bool cannot_do_antijoin =
-      (thd->lex->m_sql_cmd != nullptr &&  // (a)
-       thd->secondary_engine_optimization() ==
-           Secondary_engine_optimization::SECONDARY) ||
-      ((in_predicate == nullptr ||
-        in_predicate->left_expr->const_item()) &&  // (b)
-       (master_query_expression()->uncacheable & UNCACHEABLE_DEPENDENT) == 0);
-  const bool try_convert_to_derived =
-      (thd->optimizer_switch_flag(OPTIMIZER_SWITCH_SUBQUERY_TO_DERIVED) ||
-       // a certain secondary engine doesn't support subqueries
-       (thd->lex->m_sql_cmd != nullptr &&
-        thd->secondary_engine_optimization() ==
-            Secondary_engine_optimization::SECONDARY));
-
-  DBUG_PRINT("info", ("Checking if subq can be converted to semi-join"));
-  const bool no_aggregates = !is_grouped() && !with_sum_func &&
-                             having_cond() == nullptr && !has_windows();
-
-  /*
-    Check if we're in subquery that is a candidate for flattening into a
-    semi-join (which is done in flatten_subqueries()). The requirements are:
-      0. Semi-join is enabled (cf. hints)
-      1. Subquery predicate is an IN/=ANY or EXISTS predicate
-      2. Subquery is a simple query block (not a set operation or a
-         parenthesized query expression).
-      3. Subquery is not grouped (explicitly or implicitly)
-         3x: outer aggregated expression are not accepted
-      4. Subquery does not use HAVING
-      5. Subquery does not use windowing functions
-      6. Subquery predicate is (a) in an ON/WHERE clause,
-         and (b) at the AND-top-level of that clause. Note for 6a:
-         Semijoin transformations of subqueries in ON cause the
-         join nests to no longer be acceptable as a join tree, which
-         disturbs the hypergraph optimizer, so we disable them
-         for that case (6x). However, we enable them when secondary
-         engine optimization is ON because it is easy to reject a
-         possible wrong plan when its not supporting nested loop
-         joins.
-      7. Parent query block accepts semijoins (i.e we are not in a subquery of
-      a single table UPDATE/DELETE (TODO: We should handle this at some
-      point by switching to multi-table UPDATE/DELETE)
-      8. We're not in a confluent table-less subquery, like "SELECT 1".
-      9. No execution method was already chosen (by a prepared statement)
-      10. Parent query block is not a confluent table-less query block.
-      11. Neither parent nor child query block has straight join.
-      12. Parent query block does not prohibit semi-join.
-      13. LHS of IN predicate is deterministic
-      14. The surrounding truth test, and the nullability of expressions,
-      are compatible with the conversion.
-      15. Antijoins are supported, or it's not an antijoin (it's a semijoin).
-      16. OFFSET starts from the first row and LIMIT is not 0.
-  */
-  SecondaryEngineFlags engine_flags = 0;
-  if (const handlerton *secondary_engine = SecondaryEngineHandlerton(thd);
-      secondary_engine != nullptr) {
-    engine_flags = secondary_engine->secondary_engine_flags;
-  }
-  if (semijoin_enabled(thd) &&                                     // 0
-      predicate != nullptr &&                                      // 1
-      is_simple_query_block() &&                                   // 2
-      no_aggregates &&                                             // 3,3x,4,5
-      (outer->resolve_place == Query_block::RESOLVE_CONDITION ||   // 6a
-       (outer->resolve_place == Query_block::RESOLVE_JOIN_NEST &&  // 6a
-        (!thd->lex->using_hypergraph_optimizer ||
-         (thd->secondary_engine_optimization() ==
-              Secondary_engine_optimization::SECONDARY &&
-          !Overlaps(
-              engine_flags,
-              MakeSecondaryEngineFlags(
-                  SecondaryEngineFlag::SUPPORTS_NESTED_LOOP_JOIN)))))) &&  // 6x
-      outer->condition_context == enum_condition_context::ANDS &&          // 6b
-      outer->sj_candidates &&                                              // 7
-      leaf_table_count > 0 &&                                              // 8
-      predicate->strategy ==                                               //  9
-          Subquery_strategy::UNSPECIFIED &&                                //  9
-      outer->leaf_table_count > 0 &&                                       // 10
-      !((active_options() | outer->active_options()) &                     // 11
-        SELECT_STRAIGHT_JOIN) &&                                           // 11
-      !(outer->active_options() & SELECT_NO_SEMI_JOIN) &&                  // 12
-      deterministic &&                                                     // 13
-      predicate->choose_semijoin_or_antijoin() &&                          // 14
-      (!cannot_do_antijoin || !predicate->can_do_aj) &&                    // 15
-      is_row_count_valid_for_semi_join()) {                                // 16
-    DBUG_PRINT("info", ("Subquery is semi-join conversion candidate"));
-
-    /* Notify in the subquery predicate where it belongs in the query graph */
-    predicate->embedding_join_nest = outer->resolve_nest;
-
-    /* Register the subquery for further processing in flatten_subqueries() */
-    predicate->strategy = Subquery_strategy::CANDIDATE_FOR_SEMIJOIN;
-    outer->sj_candidates->push_back(predicate);
-    choice_made = true;
-  }
-
-  /*
-    If semijoin failed, try a transformation to a derived table:
-    FROM ot WHERE ot.x IN (SELECT y FROM it1, it2)
-    =>
-    FROM ot LEFT JOIN (SELECT DISTINCT y FROM it1, it2) AS derived
-            ON ot.x=derived.y
-    WHERE derived.y IS NOT NULL.
-
-    Applicability constraints have numbers which are the same as in the list of
-    the previous block. Reasons may be different though.
-      1. Subquery predicate is an IN/=ANY or EXISTS predicate
-      2. Subquery is a simple query block (not a set operation or a
-         parenthesized query expression). This is because a certain secondary
-         engine has no support for setop DISTINCT.
-      3. If this is [NOT] EXISTS, there is no aggregation; see
-      transform_table_subquery_to_join_with_derived()
-      6. Subquery predicate is
-        6a. in WHERE clause (we have not implemented the transformation for the
-        ON clause)
-        6b. linked to the root of that clause with ANDs or ORs.
-      7. Parent query block accepts semijoins (i.e we are not in a subquery of
-      a single table UPDATE/DELETE (TODO: We should handle this at some
-      point by switching to multi-table UPDATE/DELETE)
-      9. No execution method was already chosen (by a prepared statement)
-      10. Parent select has tables, as we'll link to them with LEFT JOIN
-      12. Parent query block does not prohibit semi-join.
-      13. LHS of IN predicate is deterministic
-      14. The surrounding truth test, and the nullability of expressions,
-      are compatible with the conversion.
-      16. The left argument isn't a row (multi-column) subquery; it would lead
-      to creating conditions like WHERE (outer_subq) =
-      ROW(derived.col1,derived.col2), which would complicate code.
-      17. Certain other subquery transformations, incompatible with this one,
-      have not been done.
-  */
-
-  if (!choice_made && try_convert_to_derived && predicate != nullptr &&  // 1
-      is_simple_query_block() &&                                         // 2
-      (in_predicate != nullptr || no_aggregates) &&                      // 3
-      outer->resolve_place == Query_block::RESOLVE_CONDITION &&          // 6a
-      outer->condition_context != enum_condition_context::NEITHER &&     // 6b
-      outer->sj_candidates &&                                            // 7
-      predicate->strategy ==                                             //  9
-          Subquery_strategy::UNSPECIFIED &&                              //  9
-      outer->leaf_table_count &&                                         // 10
-      !(outer->active_options() & SELECT_NO_SEMI_JOIN) &&                // 12
-      deterministic &&                                                   // 13
-      predicate->choose_semijoin_or_antijoin() &&                        // 14
-      !(in_predicate != nullptr &&                                       // 16
-        in_predicate->left_expr->type() == Item::SUBSELECT_ITEM &&
-        in_predicate->left_expr->cols() > 1) &&
-      !thd->lex->m_subquery_to_derived_is_impossible) {  // 17
-    assert(outer->resolve_nest == nullptr);
-    /* Register the subquery for further processing in flatten_subqueries() */
-    outer->sj_candidates->push_back(predicate);
-    predicate->strategy = Subquery_strategy::CANDIDATE_FOR_DERIVED_TABLE;
-    predicate->outer_condition_context = outer->condition_context;
-    choice_made = true;
-  }
-
-  if (!choice_made) {
-    return subq_predicate->select_transformer(thd, this);
-  }
-  return false;
-}
-
-/**
   Expand all '*' in list of expressions with the matching column references
 
   Function should not be called with no wild cards in select list
@@ -1630,7 +1349,8 @@ bool Query_block::setup_wild(THD *thd) {
         select list. Replacing * with 1 effectively eliminates this
         possibility.
       */
-      if (subsel && subsel->substype() == Item_subselect::EXISTS_SUBS &&
+      if (subsel != nullptr &&
+          subsel->subquery_type() == Item_subselect::EXISTS_SUBQUERY &&
           !having_cond()) {
         /*
           It is EXISTS(SELECT * ...) and we can replace * by any constant.
@@ -2815,7 +2535,7 @@ static bool build_sj_exprs(THD *thd, mem_root_deque<Item *> *sj_outer_exprs,
           : nullptr;
 
   if (left_subquery &&
-      (left_subquery->substype() == Item_subselect::SINGLEROW_SUBS)) {
+      (left_subquery->subquery_type() == Item_subselect::SCALAR_SUBQUERY)) {
     mem_root_deque<Item *> ref_list(thd->mem_root);
     Item *header = subq_query_block->base_ref_items[0];
     for (uint i = 1; i < in_subq_pred->left_expr->cols(); i++) {
@@ -2958,8 +2678,8 @@ bool Query_block::convert_subquery_to_semijoin(
   mem_root_deque<Table_ref *> *emb_join_list = &m_table_nest;
   DBUG_TRACE;
 
-  assert(subq_pred->substype() == Item_subselect::IN_SUBS ||
-         subq_pred->substype() == Item_subselect::EXISTS_SUBS);
+  assert(subq_pred->subquery_type() == Item_subselect::IN_SUBQUERY ||
+         subq_pred->subquery_type() == Item_subselect::EXISTS_SUBQUERY);
 
   Opt_trace_context *trace = &thd->opt_trace;
   Opt_trace_object trace_object(trace, "transformation_to_semi_join");
@@ -3168,8 +2888,8 @@ bool Query_block::convert_subquery_to_semijoin(
     nested_join->used_tables and nested_join->not_null_tables are
     initialized in simplify_joins().
   */
-
-  Query_block *const subq_query_block = subq_pred->unit->first_query_block();
+  Query_block *const subq_query_block =
+      subq_pred->query_expr()->first_query_block();
 
   nested_join->query_block_id = subq_query_block->select_number;
 
@@ -3230,7 +2950,7 @@ bool Query_block::convert_subquery_to_semijoin(
   nested_join->sj_outer_exprs.clear();
   nested_join->sj_inner_exprs.clear();
 
-  if (subq_pred->substype() == Item_subselect::IN_SUBS) {
+  if (subq_pred->subquery_type() == Item_subselect::IN_SUBQUERY) {
     build_sj_exprs(thd, &nested_join->sj_outer_exprs,
                    &nested_join->sj_inner_exprs, subq_pred, subq_query_block);
   } else {  // this is EXISTS
@@ -3702,7 +3422,8 @@ static bool replace_subcondition(THD *thd, Item **tree, Item *old_cond,
     return false;
   }
   if ((*tree)->type() == Item::COND_ITEM) {
-    List_iterator<Item> li(*((Item_cond *)(*tree))->argument_list());
+    Item_cond *cond = down_cast<Item_cond *>(*tree);
+    List_iterator<Item> li(*cond->argument_list());
     Item *item;
     bool found_local = false;
     while ((item = li++)) {
@@ -3714,9 +3435,22 @@ static bool replace_subcondition(THD *thd, Item **tree, Item *old_cond,
         return false;
       }
     }
+  } else if ((*tree)->type() == Item::FUNC_ITEM) {
+    Item_func *func = down_cast<Item_func *>(*tree);
+    bool found_local = false;
+    for (uint i = 0; i < func->arg_count; i++) {
+      if (replace_subcondition(thd, func->arguments() + i, old_cond, new_cond,
+                               do_fix_fields, &found_local))
+        return true;
+      if (found_local) {
+        if (found_ptr != nullptr) *found_ptr = true;  // inform upper call
+        return false;
+      }
+    }
   }
   // item not found
   // if it is the top call: error, else: no error.
+  assert(found_ptr != nullptr);
   return (found_ptr == nullptr);
 }
 
@@ -3804,29 +3538,29 @@ bool Query_block::flatten_subqueries(THD *thd) {
    */
   uint subq_no;
   for (subq = subq_begin, subq_no = 0; subq < subq_end; subq++, subq_no++) {
-    auto subq_item = *subq;
+    Item_exists_subselect *item = *subq;
     /*
       Some subqueries may have been deleted, remove them fully before sorting
       sj_candidates and subsequent processing:
     */
-    if (subq_item->strategy == Subquery_strategy::DELETED) {
-      sj_candidates->erase_value(subq_item);
+    if (item->strategy == Subquery_strategy::DELETED) {
+      sj_candidates->erase_value(item);
       subq--;  // So that the next iteration will handle the next subquery.
       subq_end = sj_candidates->end();  // array's end moved.
 
       continue;
     }
     // Transformation of IN and EXISTS subqueries is supported
-    assert(subq_item->substype() == Item_subselect::IN_SUBS ||
-           subq_item->substype() == Item_subselect::EXISTS_SUBS);
+    assert(item->subquery_type() == Item_subselect::IN_SUBQUERY ||
+           item->subquery_type() == Item_subselect::EXISTS_SUBQUERY);
 
-    Query_block *child_query_block = subq_item->unit->first_query_block();
+    Query_block *child_query_block = item->query_expr()->first_query_block();
 
     // Check that we proceeded bottom-up
     assert(child_query_block->sj_candidates == nullptr);
 
-    bool dependent = subq_item->unit->uncacheable & UNCACHEABLE_DEPENDENT;
-    subq_item->sj_convert_priority =
+    bool dependent = item->query_expr()->uncacheable & UNCACHEABLE_DEPENDENT;
+    item->sj_convert_priority =
         (((dependent * MAX_TABLES_FOR_SIZE) +  // dependent subqueries first
           child_query_block->leaf_table_count) *
          65536) +           // then with many tables
@@ -3854,15 +3588,14 @@ bool Query_block::flatten_subqueries(THD *thd) {
 
   // Transform certain subquery predicates to derived tables
   for (subq = subq_begin; subq < subq_end; subq++) {
-    auto subq_item = *subq;
-    if (subq_item->strategy != Subquery_strategy::CANDIDATE_FOR_DERIVED_TABLE)
+    Item_exists_subselect *item = *subq;
+    if (item->strategy != Subquery_strategy::CANDIDATE_FOR_DERIVED_TABLE)
       continue;
     OPT_TRACE_TRANSFORM(trace, oto0, oto1,
-                        subq_item->unit->first_query_block()->select_number,
+                        item->query_expr()->first_query_block()->select_number,
                         "IN (SELECT)", "joined derived table");
     oto1.add("chosen", true);
-    if (transform_table_subquery_to_join_with_derived(thd, subq_item))
-      return true;
+    if (transform_table_subquery_to_join_with_derived(thd, item)) return true;
   }
   /*
     Replace all subqueries to be flattened with a truth predicate.
@@ -3873,23 +3606,22 @@ bool Query_block::flatten_subqueries(THD *thd) {
 
   uint table_count = leaf_table_count;
   for (subq = subq_begin; subq < subq_end; subq++) {
-    auto subq_item = *subq;
-    if (subq_item->strategy != Subquery_strategy::CANDIDATE_FOR_SEMIJOIN)
-      continue;
+    Item_exists_subselect *item = *subq;
+    if (item->strategy != Subquery_strategy::CANDIDATE_FOR_SEMIJOIN) continue;
 
     // Add the tables in the subquery nest plus one in case of materialization:
     const uint tables_added =
-        subq_item->unit->first_query_block()->leaf_table_count + 1;
+        item->query_expr()->first_query_block()->leaf_table_count + 1;
 
     // (1) Not too many tables in total.
     // (2) This subquery contains no antijoin nest (anti/semijoin nest cannot
     // include antijoin nest for implementation reasons, see
     // advance_sj_state()).
-    if (table_count + tables_added <= MAX_TABLES &&           // (1)
-        !subq_item->unit->first_query_block()->has_aj_nests)  // (2)
-      subq_item->strategy = Subquery_strategy::SEMIJOIN;
+    if (table_count + tables_added <= MAX_TABLES &&              // (1)
+        !item->query_expr()->first_query_block()->has_aj_nests)  // (2)
+      item->strategy = Subquery_strategy::SEMIJOIN;
 
-    Item *subq_where = subq_item->unit->first_query_block()->where_cond();
+    Item *subq_where = item->query_expr()->first_query_block()->where_cond();
     /*
       A predicate can be evaluated to ALWAYS TRUE or ALWAYS FALSE when it
       has only const items. If found to be ALWAYS FALSE, do not include
@@ -3905,16 +3637,16 @@ bool Query_block::flatten_subqueries(THD *thd) {
     if (!cond_value) {
       // Unlink and delete this subquery's query expression
       Item::Cleanup_after_removal_context ctx(this);
-      subq_item->walk(&Item::clean_up_after_removal, walk_options,
-                      pointer_cast<uchar *>(&ctx));
+      item->walk(&Item::clean_up_after_removal, walk_options,
+                 pointer_cast<uchar *>(&ctx));
     }
 
-    if (subq_item->strategy == Subquery_strategy::SEMIJOIN)
+    if (item->strategy == Subquery_strategy::SEMIJOIN)
       table_count += tables_added;
 
-    if (subq_item->strategy != Subquery_strategy::SEMIJOIN &&
-        subq_item->strategy != Subquery_strategy::DELETED) {
-      subq_item->strategy = Subquery_strategy::UNSPECIFIED;
+    if (item->strategy != Subquery_strategy::SEMIJOIN &&
+        item->strategy != Subquery_strategy::DELETED) {
+      item->strategy = Subquery_strategy::UNSPECIFIED;
       continue;
     }
     /*
@@ -3924,26 +3656,27 @@ bool Query_block::flatten_subqueries(THD *thd) {
       false if a semijoin (IN) and truth value true if an antijoin (NOT IN).
     */
     Item *truth_item =
-        (cond_value || subq_item->can_do_aj)
+        (cond_value || item->can_do_aj)
             ? implicit_cast<Item *>(new (thd->mem_root) Item_func_true())
             : implicit_cast<Item *>(new (thd->mem_root) Item_func_false());
     if (truth_item == nullptr) return true;
-    Item **tree = (subq_item->embedding_join_nest == nullptr)
+    Item **tree = (item->embedding_join_nest == nullptr)
                       ? &m_where_cond
-                      : subq_item->embedding_join_nest->join_cond_ref();
-    if (replace_subcondition(thd, tree, subq_item, truth_item, false))
+                      : item->embedding_join_nest->join_cond_ref();
+    if (replace_subcondition(thd, tree, item, truth_item, false))
       return true; /* purecov: inspected */
   }
 
   /* Transform the selected subqueries into semi-join */
 
   for (subq = subq_begin; subq < subq_end; subq++) {
-    auto subq_item = *subq;
-    if (subq_item->strategy != Subquery_strategy::SEMIJOIN) continue;
+    Item_exists_subselect *item = *subq;
+    if (item->strategy != Subquery_strategy::SEMIJOIN) continue;
 
-    OPT_TRACE_TRANSFORM(
-        trace, oto0, oto1, subq_item->unit->first_query_block()->select_number,
-        "IN (SELECT)", subq_item->can_do_aj ? "antijoin" : "semijoin");
+    OPT_TRACE_TRANSFORM(trace, oto0, oto1,
+                        item->query_expr()->first_query_block()->select_number,
+                        "IN (SELECT)",
+                        item->can_do_aj ? "antijoin" : "semijoin");
     oto1.add("chosen", true);
     if (convert_subquery_to_semijoin(thd, *subq)) return true;
   }
@@ -3952,41 +3685,31 @@ bool Query_block::flatten_subqueries(THD *thd) {
     ie. perform IN->EXISTS rewrite.
   */
   for (subq = subq_begin; subq < subq_end; subq++) {
-    auto subq_item = *subq;
-    if (subq_item->strategy != Subquery_strategy::UNSPECIFIED) continue;
-    subq_item->changed = false;
-    subq_item->fixed = false;
+    Item_exists_subselect *item = *subq;
+    if (item->strategy != Subquery_strategy::UNSPECIFIED) continue;
 
     Query_block *save_query_block = thd->lex->current_query_block();
-    thd->lex->set_current_query_block(subq_item->unit->first_query_block());
+    thd->lex->set_current_query_block(item->query_expr()->first_query_block());
 
-    // This is the only part of the function which uses a JOIN.
-    if (subq_item->select_transformer(thd,
-                                      subq_item->unit->first_query_block()))
+    Item *transformed = nullptr;
+    if (item->transformer(thd, &transformed)) {
       return true;
-
+    }
     thd->lex->set_current_query_block(save_query_block);
-
-    subq_item->changed = true;
-    subq_item->fixed = true;
-
     /*
       If the Item has been substituted with another Item (e.g an
       Item_in_optimizer), resolve it and add it to proper WHERE or ON clause.
       If no substitute exists (e.g for EXISTS predicate), no action is required.
     */
-    Item *substitute = subq_item->substitution;
-    if (substitute == nullptr) continue;
-    const bool do_fix_fields = !substitute->fixed;
-    const bool subquery_in_join_clause =
-        subq_item->embedding_join_nest != nullptr;
+    if (transformed == nullptr) continue;
+    const bool do_fix_fields = !transformed->fixed;
+    const bool subquery_in_join_clause = item->embedding_join_nest != nullptr;
 
     Item **tree = subquery_in_join_clause
-                      ? (subq_item->embedding_join_nest->join_cond_ref())
+                      ? (item->embedding_join_nest->join_cond_ref())
                       : &m_where_cond;
-    if (replace_subcondition(thd, tree, *subq, substitute, do_fix_fields))
+    if (replace_subcondition(thd, tree, *subq, transformed, do_fix_fields))
       return true;
-    subq_item->substitution = nullptr;
   }
 
   sj_candidates->clear();
@@ -4111,14 +3834,14 @@ bool Query_block::remove_redundant_subquery_clauses(
   };
   uint possible_changes;
 
-  if (subq_predicate->substype() == Item_subselect::SINGLEROW_SUBS) {
+  if (subq_predicate->subquery_type() == Item_subselect::SCALAR_SUBQUERY) {
     if (has_limit()) return false;
     possible_changes = REMOVE_ORDER;
   } else {
-    assert(subq_predicate->substype() == Item_subselect::EXISTS_SUBS ||
-           subq_predicate->substype() == Item_subselect::IN_SUBS ||
-           subq_predicate->substype() == Item_subselect::ALL_SUBS ||
-           subq_predicate->substype() == Item_subselect::ANY_SUBS);
+    assert(subq_predicate->subquery_type() == Item_subselect::EXISTS_SUBQUERY ||
+           subq_predicate->subquery_type() == Item_subselect::IN_SUBQUERY ||
+           subq_predicate->subquery_type() == Item_subselect::ALL_SUBQUERY ||
+           subq_predicate->subquery_type() == Item_subselect::ANY_SUBQUERY);
     possible_changes = REMOVE_ORDER | REMOVE_DISTINCT | REMOVE_GROUP;
   }
 
@@ -4368,7 +4091,7 @@ bool find_order_in_list(THD *thd, Ref_item_array ref_item_array,
       (*order->item)->increment_ref_count();
       order->in_field_list = true;
       if (resolution == RESOLVED_AGAINST_ALIAS && from_field == not_found_field)
-        order->used_alias = true;
+        order->used_alias = (*order->item)->item_name.ptr();
       return false;
     }
     /*
@@ -5416,7 +5139,7 @@ static bool update_context_to_derived(Item *expr, Query_block *new_derived);
 bool Query_block::transform_table_subquery_to_join_with_derived(
     THD *thd, Item_exists_subselect *subq) {
   assert(first_execution);
-  Query_expression *const subs_query_expression = subq->unit;
+  Query_expression *const subs_query_expression = subq->query_expr();
   Query_block *subs_query_block = subs_query_expression->first_query_block();
   assert(subs_query_block->first_execution);
 
@@ -5456,13 +5179,13 @@ bool Query_block::transform_table_subquery_to_join_with_derived(
   mem_root_deque<Item *> sj_inner_exprs(thd->mem_root);
   Mem_root_array<Item_func::Functype> op_types(thd->mem_root);
 
-  if (subq->substype() == Item_subselect::IN_SUBS) {
+  if (subq->subquery_type() == Item_subselect::IN_SUBQUERY) {
     build_sj_exprs(thd, &sj_outer_exprs, &sj_inner_exprs, subq,
                    subs_query_block);
     // All these expressions are compared with '=':
     op_types.resize(sj_outer_exprs.size(), Item_func::EQ_FUNC);
   } else {
-    assert(subq->substype() == Item_subselect::EXISTS_SUBS);
+    assert(subq->subquery_type() == Item_subselect::EXISTS_SUBQUERY);
 
     if (subs_query_block->is_table_value_constructor) {
       if ((subs_query_block->select_limit != nullptr &&
@@ -5492,7 +5215,7 @@ bool Query_block::transform_table_subquery_to_join_with_derived(
     // if we replace we get
     // EXISTS(SELECT 1, 1 FROM t GROUP BY y HAVING x>2)
     // And as 'x' points to 1, HAVING is "always false".
-    // resolve_subquery() ensures that this assertion holds.
+    // Resolving ensures that this assertion holds.
     assert(no_aggregates);
 
     if (subs_query_block->is_table_value_constructor) {
@@ -5628,7 +5351,7 @@ bool Query_block::transform_table_subquery_to_join_with_derived(
 
   // If the subquery is (still) correlated, we would need to create a LATERAL
   // derived table, but a certain secondary engine doesn't support it. Error:
-  if ((subq->m_subquery_used_tables & ~PSEUDO_TABLE_BITS) != 0) {
+  if ((subq->subquery_used_tables() & ~PSEUDO_TABLE_BITS) != 0) {
     my_error(ER_SUBQUERY_TRANSFORM_REJECTED, MYF(0));
     return true;
   }
@@ -5636,7 +5359,7 @@ bool Query_block::transform_table_subquery_to_join_with_derived(
   // We have added to subs_query_expression->fields;
   // subs_query_expression->types must always be equal to its visible fields.
   subs_query_expression->types.clear();
-  for (Item *item : subq->unit->first_query_block()->visible_fields()) {
+  for (Item *item : subq->query_expr()->first_query_block()->visible_fields()) {
     subs_query_expression->types.push_back(item);
   }
 
@@ -6032,44 +5755,41 @@ bool Query_block::replace_item_in_expression(Item **expr, bool was_hidden,
 }
 
 /**
-  Minion of transform_scalar_subqueries_to_join_with_derived. Moves implicit
+  Minion of \c transform_scalar_subqueries_to_join_with_derived. Moves implicit
   grouping down into a derived table to prepare for
-  transform_scalar_subqueries_to_join_with_derived.
+  \c transform_scalar_subqueries_to_join_with_derived.
 
   Example:
 
   @verbatim
 
-    SELECT (SELECT COUNT(*)
-            FROM t1) AS tot,
-           IFNULL(MAX(t2.b), 0) + 6 AS mx
-    FROM t2
-    WHERE expr-2;
+    SELECT ( SELECT COUNT(*)
+             FROM t1 ) AS tot,
+           IFNULL(MAX(t2.b), 0) + 6 AS mx  # MAX(t2.b), FROM t2 and
+    FROM t2                                # WHERE go to derived_1_3
+    WHERE ANY_VALUE(t2.b) = 10;
 
-  is transformed to ->
+  is transformed to
 
-    SELECT derived_1_1.`COUNT(*)` AS tot,
-           (IFNULL(derived_1_0.`MAX(t2.b)`,0) + 6) AS mx
-    FROM (SELECT MAX(t2.b) AS `MAX(t2.b)`
-          FROM t2
-          WHERE expr-2) derived_1_0
-         LEFT JOIN
-         (SELECT COUNT(0) AS `COUNT(*)`
-          FROM t1) derived_1_1
-         ON TRUE;
+    SELECT ( SELECT COUNT(*)
+             FROM t1 ) AS tot,
+           IFNULL(derived_1_3.`MAX(t2.b)`, 0) + 6 AS mx
+    FROM ( SELECT MAX(t2.b) AS `MAX(t2.b)`
+           FROM t2
+           WHERE (ANY_VALUE(t2.b) = 10)) derived_1_3
 
   @endverbatim
 
   Create a new query expression object and query block object to represent the
-  contents of a derived table ("new_derived" in the code below, "derived1" in
-  the example above), with a select list which only contains the aggregate
-  functions lifted out of the transformed query block ("MAX(b) AS mx" above) and
-  any fields referenced ("i" above).
+  contents of a derived table ("new_derived" in the code below, "derived_1_3"
+  in the example above), with a select list which only contains the aggregate
+  functions lifted out of the transformed query block ("MAX(t2.b) AS
+  `MAX(t2.b)`" above) and any fields referenced.
 
   The transformed query block retains the original select list except aggregates
-  and fields are replaced by fields ("derived1.mx", "derived1.i" above) from the
+  and fields are replaced by fields ("derived_1_3.`MAX(t2.b)`") from the
   new subquery, but it loses its FROM list, replaced by the new derived table
-  ("derived1" above) and its WHERE and HAVING clauses which all go to
+  ("derived_1_3" above) and its WHERE and HAVING clauses which all go to
   the derived table's query block.
 
   Any DISTINCT, WINDOW clauses and LIMITs stay in place at the transformed
@@ -6333,6 +6053,9 @@ bool Query_block::transform_grouped_to_derived(THD *thd, bool *break_off) {
         Item_field *f = down_cast<Item_field *>(lf);
         if (unique_fields.find(f->field) == unique_fields.end()) {
           unique_fields.emplace(std::pair<Field *, Item_field *>(f->field, f));
+        } else {
+          // Should already have been deduplicated during collection
+          assert(false);
         }
       } else if (lf->type() == Item::DEFAULT_VALUE_ITEM) {
         Item_default_value *dv = down_cast<Item_default_value *>(lf);
@@ -6342,6 +6065,9 @@ bool Query_block::transform_grouped_to_derived(THD *thd, bool *break_off) {
             unique_default_values.end()) {
           unique_default_values.emplace(
               std::pair<Field *, Item_field *>(lf_field->field, dv));
+        } else {
+          // Should already have been deduplicated during collection
+          assert(false);
         }
       } else {
         Item_view_ref *vr = down_cast<Item_view_ref *>(lf);
@@ -6364,10 +6090,21 @@ bool Query_block::transform_grouped_to_derived(THD *thd, bool *break_off) {
 
     for (auto field_class : field_classes) {
       for (auto pair : *field_class) {
-        if (new_derived->add_item_to_list(pair.second)) return true;
-        if (baptize_item(thd, pair.second, &field_no)) return true;
-        if (update_context_to_derived(pair.second, new_derived)) return true;
-        pair.second->depended_from = nullptr;
+        Item_field *f = pair.second;
+        Item *sl_item = f;
+        if (f->type() == Item::FIELD_ITEM && f->protected_by_any_value()) {
+          // The field was mentioned only ever inside arguments to ANY_VALUE, so
+          // protect it likewise in new_derived, lest we get a
+          // ER_MIX_OF_GROUP_FUNC_AND_FIELDS_V2. If not, we let the check
+          // proceed, i.e. we do not add ANY_VALUE for the column.
+          sl_item = new (thd->mem_root) Item_func_any_value(f);
+          if (sl_item == nullptr) return true;
+          if (sl_item->fix_fields(thd, &sl_item)) return true;
+        }
+        if (new_derived->add_item_to_list(sl_item)) return true;
+        if (baptize_item(thd, sl_item, &field_no)) return true;
+        if (update_context_to_derived(sl_item, new_derived)) return true;
+        f->depended_from = nullptr;
       }
     }
 
@@ -6915,7 +6652,8 @@ bool Query_block::decorrelate_derived_scalar_subquery_pre(
           in_select = selected_field;
           selected_field_in_group_by = true;
         }
-        ORDER *o = new (thd->mem_root) PT_order_expr(in_select, ORDER_ASC);
+        ORDER *o =
+            new (thd->mem_root) PT_order_expr(POS(), in_select, ORDER_ASC);
         if (o == nullptr) return true;
         o->direction = ORDER_NOT_RELEVANT;  // ignored by constructur
         o->in_field_list = true;
@@ -7127,10 +6865,14 @@ bool Query_block::transform_subquery_to_derived(
     leaf->next_leaf = tl;
 
     // Adjust table no and map
+    if (leaf_table_count >= MAX_TABLES) {
+      my_error(ER_TOO_MANY_TABLES, MYF(0), static_cast<int>(MAX_TABLES));
+      return true;
+    }
     tl->set_tableno(leaf_table_count);
 
     tl->embedding->nested_join->query_block_id =
-        subq->unit->first_query_block()->select_number;
+        subq->query_expr()->first_query_block()->select_number;
     leaf_table_count += 1;
 
     if (!(tl->derived_result = new (thd->mem_root) Query_result_union()))
@@ -7630,7 +7372,7 @@ bool Query_block::transform_scalar_subqueries_to_join_with_derived(THD *thd) {
     bool need_new_outer = false;
     for (auto subquery : subqueries.m_list) {
       auto *subq = subquery.item;
-      if (!query_block_contains_subquery(this, subq->unit)) continue;
+      if (!query_block_contains_subquery(this, subq->query_expr())) continue;
 
       // Possibly contradicting requirements
       // (1) Subquery is in SELECT list: new_outer
@@ -7662,7 +7404,7 @@ bool Query_block::transform_scalar_subqueries_to_join_with_derived(THD *thd) {
   */
   for (auto subquery : subqueries.m_list) {
     Item_singlerow_subselect *const subq = subquery.item;
-    Query_expression *const subs_query_expression = subq->unit;
+    Query_expression *const subs_query_expression = subq->query_expr();
 
     /*
       [1] A reference to a scalar subquery from another query expression can

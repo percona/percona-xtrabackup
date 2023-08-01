@@ -25,13 +25,13 @@
 #define MYSQL_COMMAND_DELEGATES_H
 
 #include <include/decimal.h>
-#include <include/m_ctype.h>
 #include <include/my_compiler.h>
 #include <include/mysql.h>
 #include <include/mysql/service_command.h>
 #include <mysql/components/my_service.h>
 #include <mysql/components/services/mysql_admin_session.h>
 #include <mysql/components/services/mysql_command_consumer.h>
+#include <mysql/strings/m_ctype.h>
 
 class Command_delegate {
  public:
@@ -44,7 +44,7 @@ class Command_delegate {
   Command_delegate &operator=(Command_delegate &&) = default;
 
   const st_command_service_cbs *callbacks() const {
-    static st_command_service_cbs cbs = {
+    static const st_command_service_cbs cbs = {
         &Command_delegate::call_start_result_metadata,
         &Command_delegate::call_field_metadata,
         &Command_delegate::call_end_result_metadata,
@@ -309,7 +309,7 @@ class Command_delegate {
                                       uint warn_count) {
     assert(ctx);
     Command_delegate *self = static_cast<Command_delegate *>(ctx);
-    int tmp = self->end_result_metadata(server_status, warn_count);
+    const int tmp = self->end_result_metadata(server_status, warn_count);
     return tmp;
   }
 

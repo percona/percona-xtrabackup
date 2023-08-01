@@ -245,7 +245,7 @@ class Item_func_geometry_from_text : public Item_geometry_func {
                                Item *option, Functype functype)
       : Item_geometry_func(pos, a, srid, option), m_functype(functype) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
   const char *func_name() const override;
   String *val_str(String *) override;
   bool resolve_type(THD *thd) override {
@@ -312,7 +312,7 @@ class Item_func_geometry_from_wkb : public Item_geometry_func {
                               Functype functype)
       : Item_geometry_func(pos, a, srid, option), m_functype(functype) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
   const char *func_name() const override;
   String *val_str(String *) override;
 };
@@ -338,7 +338,7 @@ class Item_func_as_wkb : public Item_geometry_func {
     if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_GEOMETRY)) return true;
     if (param_type_is_default(thd, 1, 2)) return true;
     if (Item_geometry_func::resolve_type(thd)) return true;
-    set_data_type_blob(Field::MAX_LONG_BLOB_WIDTH);
+    set_data_type_blob(MYSQL_TYPE_LONG_BLOB, Field::MAX_LONG_BLOB_WIDTH);
     return false;
   }
 };

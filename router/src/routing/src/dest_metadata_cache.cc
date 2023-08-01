@@ -128,19 +128,19 @@ routing::RoutingStrategy get_default_routing_strategy(
 }
 
 /** @brief check that mode (if present) is correct for the role */
-bool mode_is_valid(const routing::AccessMode mode,
+bool mode_is_valid(const routing::Mode mode,
                    const DestMetadataCacheGroup::ServerRole role) {
   // no mode given, that's ok, nothing to check
-  if (mode == routing::AccessMode::kUndefined) {
+  if (mode == routing::Mode::kUndefined) {
     return true;
   }
 
   switch (role) {
     case DestMetadataCacheGroup::ServerRole::Primary:
-      return mode == routing::AccessMode::kReadWrite;
+      return mode == routing::Mode::kReadWrite;
     case DestMetadataCacheGroup::ServerRole::Secondary:
     case DestMetadataCacheGroup::ServerRole::PrimaryAndSecondary:
-      return mode == routing::AccessMode::kReadOnly;
+      return mode == routing::Mode::kReadOnly;
     default:;  //
                /* fall-through, no access mode is valid for that role */
   }
@@ -210,13 +210,12 @@ DestMetadataCacheGroup::DestMetadataCacheGroup(
     net::io_context &io_ctx, const std::string &metadata_cache,
     const routing::RoutingStrategy routing_strategy,
     const mysqlrouter::URIQuery &query, const Protocol::Type protocol,
-    const routing::AccessMode access_mode,
-    metadata_cache::MetadataCacheAPIBase *cache_api)
+    const routing::Mode mode, metadata_cache::MetadataCacheAPIBase *cache_api)
     : RouteDestination(io_ctx, protocol),
       cache_name_(metadata_cache),
       uri_query_(query),
       routing_strategy_(routing_strategy),
-      access_mode_(access_mode),
+      mode_(mode),
       server_role_(get_server_role_from_uri(query)),
       cache_api_(cache_api),
       disconnect_on_promoted_to_primary_(
@@ -242,9 +241,11 @@ std::pair<AllowedNodes, bool> DestMetadataCacheGroup::get_available(
         [&](const metadata_cache::ManagedInstance &i) {
           if (for_new_connections && query_quarantined_destinations_callback_) {
             return i.mode == metadata_cache::ServerMode::ReadOnly &&
-                   !i.hidden && !query_quarantined_destinations_callback_(i);
+                   !i.hidden && !i.ignore &&
+                   !query_quarantined_destinations_callback_(i);
           } else {
-            return i.mode == metadata_cache::ServerMode::ReadOnly && !i.hidden;
+            return i.mode == metadata_cache::ServerMode::ReadOnly &&
+                   !i.hidden && !i.ignore;
           }
         });
 
@@ -259,6 +260,7 @@ std::pair<AllowedNodes, bool> DestMetadataCacheGroup::get_available(
   }
 
   for (const auto &it : instances) {
+    if (it.ignore) continue;
     if (for_new_connections) {
       // for new connections skip (do not include) the node if it is hidden - it
       // is not allowed
@@ -305,7 +307,7 @@ AllowedNodes DestMetadataCacheGroup::get_available_primaries(
   AllowedNodes result;
 
   for (const auto &it : managed_servers) {
-    if (it.hidden) continue;
+    if (it.hidden || it.ignore) continue;
 
     auto port = (protocol_ == Protocol::Type::kXProtocol) ? it.xport : it.port;
 
@@ -330,7 +332,7 @@ void DestMetadataCacheGroup::init() {
 
   // if the routing strategy is set we don't allow mode to be set
   if (routing_strategy_ != routing::RoutingStrategy::kUndefined &&
-      access_mode_ != routing::AccessMode::kUndefined) {
+      mode_ != routing::Mode::kUndefined) {
     throw std::runtime_error(
         "option 'mode' is not allowed together with 'routing_strategy' option");
   }
@@ -345,9 +347,9 @@ void DestMetadataCacheGroup::init() {
   // check that mode (if present) is correct for the role
   // we don't actually use it but support it for backward compatibility
   // and parity with STANDALONE routing destinations
-  if (!mode_is_valid(access_mode_, server_role_)) {
+  if (!mode_is_valid(mode_, server_role_)) {
     throw std::runtime_error(
-        "mode '" + routing::get_access_mode_name(access_mode_) +
+        "mode '" + routing::get_mode_name(mode_) +
         "' is not valid for 'role=" + get_server_role_name(server_role_) + "'");
   }
 

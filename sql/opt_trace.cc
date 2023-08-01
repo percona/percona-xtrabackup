@@ -30,14 +30,16 @@
 #include <stdio.h>
 #include <new>
 
+#include "dig_vec.h"
 #include "lex_string.h"
-#include "m_ctype.h"
-#include "m_string.h"  // _dig_vec_lower
 #include "my_dbug.h"
 #include "my_pointer_arithmetic.h"
 #include "my_sys.h"
 #include "mysql/components/services/bits/psi_bits.h"
+#include "mysql/strings/int2str.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysqld_error.h"
+#include "nulls.h"
 #include "prealloced_array.h"
 #include "sql/current_thd.h"
 #include "sql/enum_query_type.h"
@@ -45,6 +47,7 @@
 #include "sql/item.h"  // Item
 #include "sql/table.h"
 #include "sql_string.h"  // String
+#include "string_with_len.h"
 
 namespace {
 /**
@@ -457,7 +460,7 @@ void Opt_trace_stmt::set_query(const char *query, size_t length,
     return;
   }
   // We are taking a bit of space from 'trace_buffer'.
-  size_t available =
+  const size_t available =
       (trace_buffer.alloced_length() >= trace_buffer.get_allowed_mem_size())
           ? 0
           : (trace_buffer.get_allowed_mem_size() -
@@ -691,7 +694,7 @@ void Buffer::append_escaped(const char *str, size_t length) {
           *pbuf++ = '1';
           ascii_code -= 16;
         }
-        *pbuf++ = _dig_vec_lower[ascii_code];
+        *pbuf++ = dig_vec_lower[ascii_code];
       } else
         *pbuf++ = c;  // Normal character, no escaping needed.
     }
@@ -1085,7 +1088,7 @@ size_t Opt_trace_context::allowed_mem_size_for_current_stmt() const {
   }
   /* The current statement is in exactly one of the two lists above */
   mem_size -= pimpl->current_stmt_in_gen->alloced_length();
-  size_t rc =
+  const size_t rc =
       (mem_size <= pimpl->max_mem_size) ? (pimpl->max_mem_size - mem_size) : 0;
   DBUG_PRINT("opt", ("rc %llu max_mem_size %llu", (ulonglong)rc,
                      (ulonglong)pimpl->max_mem_size));

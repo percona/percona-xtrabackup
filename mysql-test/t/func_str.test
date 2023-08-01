@@ -2581,15 +2581,21 @@ INSERT INTO t1 VALUES
 
 CREATE VIEW v1 AS SELECT * FROM t1;
 
+--sorted_result
 SELECT
 pk FROM v1
 ORDER BY  "cant"  IN ( ( FORMAT(  LAST_INSERT_ID( pk ) , 42 ) ) );
 
+# The old optimizer gets a warning because it evaluates the expression
+# in the ORDER BY clause. Hypergraph elides the ORDER BY clause
+# entirely, and does not get a warning.
+--disable_warnings
 SELECT
 STDDEV_POP( ( LAST_INSERT_ID( ( - 2313724308561592320 ) ) ) ) AS field5
 FROM t1
 GROUP BY HEX( col_varchar_255_utf8_key )
 ORDER BY SPACE( LAST_INSERT_ID() );
+--enable_warnings
 
 DROP VIEW v1;
 DROP TABLE t1;
@@ -2617,3 +2623,40 @@ SELECT LPAD(a, ASCII(RANDOM_BYTES(1)) - 10, 'abc') FROM t;
 SET sql_mode = DEFAULT;
 
 DROP TABLE t;
+
+--echo #
+--echo # Bug#35286970 QUOTE function doesn't work as expected
+--echo #              on tables that are utf16
+
+SELECT QUOTE(CAST(NULL AS CHAR CHARSET utf16));
+SELECT QUOTE(CAST(NULL AS CHAR CHARSET utf32));
+SELECT QUOTE(CAST(NULL AS CHAR CHARSET utf8mb4));
+
+--echo #
+--echo # Bug#35174730 push_packet_overflow_warning(THD*, const char*):
+--echo #              Assertion `is_nullable()' failed
+
+SET sql_mode="";
+
+CREATE TABLE t1 (
+  c1 date NOT NULL,
+  c2 datetime NOT NULL,
+  KEY(c2)
+);
+
+INSERT INTO t1 VALUES
+('2004-01-22','1900-01-01 23:32:52');
+
+--disable_warnings
+SELECT
+1
+FROM t1
+WHERE REPEAT(
+        INSTR(t1.c1, t1.c2),
+        CONCAT( ~ UNIX_TIMESTAMP()))
+;
+--enable_warnings
+
+DROP TABLE t1;
+
+SET sql_mode = DEFAULT;

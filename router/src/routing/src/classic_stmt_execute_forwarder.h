@@ -33,6 +33,8 @@ class StmtExecuteForwarder : public ForwardingProcessor {
 
   enum class Stage {
     Command,
+    Forward,
+    ForwardDone,
     Response,
     ColumnCount,
     Column,
@@ -44,6 +46,8 @@ class StmtExecuteForwarder : public ForwardingProcessor {
     Done,
   };
 
+  static std::string_view prefix() { return "mysql/stmt_execute"; }
+
   stdx::expected<Result, std::error_code> process() override;
 
   void stage(Stage stage) { stage_ = stage; }
@@ -51,6 +55,8 @@ class StmtExecuteForwarder : public ForwardingProcessor {
 
  private:
   stdx::expected<Result, std::error_code> command();
+  stdx::expected<Result, std::error_code> forward();
+  stdx::expected<Result, std::error_code> forward_done();
   stdx::expected<Result, std::error_code> response();
   stdx::expected<Result, std::error_code> column_count();
   stdx::expected<Result, std::error_code> column();
@@ -61,6 +67,10 @@ class StmtExecuteForwarder : public ForwardingProcessor {
   stdx::expected<Result, std::error_code> error();
 
   Stage stage_{Stage::Command};
+
+  TraceEvent *trace_event_command_{};
+  TraceEvent *trace_event_connect_and_forward_command_{};
+  TraceEvent *trace_event_forward_command_{};
 };
 
 #endif

@@ -60,6 +60,7 @@ FOREACH(test_file
     test_master_key_reader_writer.cc
     test_metadata_ttl.cc
     test_pidfile.cc
+    test_read_replica.cc
     test_rest_api.cc
     test_rest_api_enable.cc
     test_rest_metadata_cache.cc
@@ -72,6 +73,7 @@ FOREACH(test_file
     test_routing.cc
     test_routing_connection.cc
     test_routing_connection_errors.cc
+    test_routing_retry.cc
     test_routing_strategy.cc
     test_routing_sharing.cc
     test_sd_notify.cc

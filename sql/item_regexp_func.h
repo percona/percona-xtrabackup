@@ -66,6 +66,7 @@
 
 // assert
 #include "my_inttypes.h"  // MY_INT32_NUM_DECIMAL_DIGITS
+#include "mysql/strings/m_ctype.h"
 #include "sql/item_cmpfunc.h"
 #include "sql/item_strfunc.h"
 #include "sql/mysqld.h"  // make_unique_destroy_only
@@ -111,9 +112,9 @@ class Item_func_regexp : public Item_func {
 
   /// The value of the `position` argument, or its default if absent.
   std::optional<int> position() const {
-    int the_index = pos_arg_pos();
+    const int the_index = pos_arg_pos();
     if (the_index != -1 && arg_count >= static_cast<uint>(the_index) + 1) {
-      int value = args[the_index]->val_int();
+      const int value = args[the_index]->val_int();
       /*
         Note: Item::null_value() can't be trusted alone here; there are cases
         (for the DATE data type in particular) where we can have it set
@@ -130,9 +131,9 @@ class Item_func_regexp : public Item_func {
 
   /// The value of the `occurrence` argument, or its default if absent.
   std::optional<int> occurrence() const {
-    int the_index = occ_arg_pos();
+    const int the_index = occ_arg_pos();
     if (the_index != -1 && arg_count >= static_cast<uint>(the_index) + 1) {
-      int value = args[the_index]->val_int();
+      const int value = args[the_index]->val_int();
       /*
         Note: Item::null_value() can't be trusted alone here; there are cases
         (for the DATE data type in particular) where we can have it set
@@ -149,7 +150,7 @@ class Item_func_regexp : public Item_func {
 
   /// The value of the `match_parameter` argument, or an empty string if absent.
   std::optional<std::string> match_parameter() const {
-    int the_index = match_arg_pos();
+    const int the_index = match_arg_pos();
     if (the_index != -1 && arg_count >= static_cast<uint>(the_index) + 1) {
       StringBuffer<5> buf;  // Longer match_parameter doesn't make sense.
       String *s = args[the_index]->val_str(&buf);
@@ -245,10 +246,10 @@ class Item_func_regexp_instr : public Item_func_regexp {
 
   /// The value of the `return_option` argument, or its default if absent.
   std::optional<int> return_option() const {
-    int the_index = retopt_arg_pos();
+    const int the_index = retopt_arg_pos();
     if (the_index != -1 && arg_count >= static_cast<uint>(the_index) + 1) {
-      int value = args[the_index]->val_int();
-      if (args[the_index]->null_value)
+      const int value = args[the_index]->val_int();
+      if (args[the_index]->null_value || current_thd->is_error())
         return std::optional<int>();
       else
         return value;
@@ -405,7 +406,7 @@ class Item_func_icu_version final : public Item_static_string_func {
  public:
   explicit Item_func_icu_version(const POS &pos);
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 #if defined(__GNUC__) && !defined(__clang__)

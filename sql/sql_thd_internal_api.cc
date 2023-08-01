@@ -47,6 +47,7 @@
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_socket.h"
 #include "mysql/thread_type.h"
+#include "nulls.h"
 #include "sql/binlog.h"       // mysql_bin_log
 #include "sql/current_thd.h"  // current_thd
 #include "sql/mysqld.h"
@@ -61,6 +62,7 @@
 #include "sql/transaction_info.h"
 #include "violite.h"
 
+struct CHARSET_INFO;
 struct mysql_cond_t;
 struct mysql_mutex_t;
 
@@ -253,7 +255,7 @@ LEX_CSTRING thd_query_unsafe(THD *thd) {
 
 size_t thd_query_safe(THD *thd, char *buf, size_t buflen) {
   mysql_mutex_lock(&thd->LOCK_thd_query);
-  LEX_CSTRING query_string = thd->query();
+  const LEX_CSTRING query_string = thd->query();
   size_t len = std::min(buflen - 1, query_string.length);
   if (len > 0) strncpy(buf, query_string.str, len);
   buf[len] = '\0';
@@ -324,8 +326,8 @@ bool is_mysql_datadir_path(const char *path) {
   char mysql_data_dir[FN_REFLEN], path_dir[FN_REFLEN];
   convert_dirname(path_dir, path, NullS);
   convert_dirname(mysql_data_dir, mysql_unpacked_real_data_home, NullS);
-  size_t mysql_data_home_len = dirname_length(mysql_data_dir);
-  size_t path_len = dirname_length(path_dir);
+  const size_t mysql_data_home_len = dirname_length(mysql_data_dir);
+  const size_t path_len = dirname_length(path_dir);
 
   if (path_len < mysql_data_home_len) return true;
 
@@ -346,8 +348,9 @@ int mysql_tmpfile_path(const char *path, const char *prefix) {
 #ifdef _WIN32
   mode |= O_TRUNC | O_SEQUENTIAL;
 #endif
-  File fd = mysql_file_create_temp(PSI_NOT_INSTRUMENTED, filename, path, prefix,
-                                   mode, UNLINK_FILE, MYF(MY_WME));
+  const File fd =
+      mysql_file_create_temp(PSI_NOT_INSTRUMENTED, filename, path, prefix, mode,
+                             UNLINK_FILE, MYF(MY_WME));
   return fd;
 }
 

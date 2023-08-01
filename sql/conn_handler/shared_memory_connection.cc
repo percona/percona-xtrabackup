@@ -29,14 +29,18 @@
 #include "channel_info.h"                // Channel_info
 #include "connection_handler_manager.h"  // Connection_handler_manager
 #include "init_net_server_extension.h"   // init_net_server_extension
+#include "m_string.h"
 #include "my_byteorder.h"
 #include "my_shm_defaults.h"
 #include "mysql/components/services/log_builtins.h"
+#include "mysql/strings/int2str.h"
+#include "nulls.h"
 #include "sql/log.h"
 #include "sql/mysqld.h"  // connection_events_loop_aborted
 #include "sql/psi_memory_key.h"
 #include "sql/sql_class.h"  // THD
-#include "violite.h"        // Vio
+#include "strxmov.h"
+#include "violite.h"  // Vio
 
 ///////////////////////////////////////////////////////////////////////////
 // Channel_info_shared_mem implementation
@@ -235,7 +239,7 @@ Channel_info *Shared_mem_listener::listen_for_connection_event() {
                          connect_number_char, "_", NullS);
 
   const char *errmsg = NULL;
-  ulong smem_buffer_length = shared_memory_buffer_length + 4;
+  const ulong smem_buffer_length = shared_memory_buffer_length + 4;
 
   my_stpcpy(m_suffix_pos, "DATA");
   if ((m_handle_client_file_map =

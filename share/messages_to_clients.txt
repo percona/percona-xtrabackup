@@ -9959,20 +9959,102 @@ ER_USER_LOCK_OVERLONG_NAME  42000
 ER_WARN_NO_SPACE_VERSION_COMMENT
   eng "Immediately starting the version comment after the version number is deprecated and may change behavior in a future release. Please insert a white-space character after the version number."
 
+<<<<<<< HEAD
 ER_VALIDATE_PASSWORD_INSUFFICIENT_CHANGED_CHARACTERS
   eng "The new password must have at least '%u' characters that are different from the old password. It has only '%u' character(s) different. For this comparison, uppercase letters and lowercase letters are considered to be equal."
+||||||| b5da0b9817c
+=======
+ER_VALIDATE_PASSWORD_INSUFFICIENT_CHANGED_CHARACTERS
+  eng "The new password must have at least '%u' characters that are different from the old password. It has only '%u' character(s) different. For this comparison, uppercase letters and lowercase letters are considered to be equal."
+
+>>>>>>> mysql-8.1.0
 #
 #  End of 8.0 error messages (server-to-client).
-#  Do NOT add messages intended for the error log above!
 #
+#  Please put messages for 8.1+ in the section beginning with
+#  start-error-number 6000
+#
+
+
+################################################################################
+# Error numbers 4500 to 4999 are reserved for Router. Please do not use
+# them for other error messages.
+################################################################################
+
+reserved-error-section 4500 4999
+
 
 ################################################################################
 # Error numbers 5000 to 5999 are reserved for X Plugin. Please do not use
 # them for other error messages.
 ################################################################################
 
-
 reserved-error-section 5000 5999
+
+
+################################################################################
+# Error numbers starting at 6000: server-to-client messages 8.1+
+################################################################################
+
+# Do NOT add messages intended for the error log here;
+# they have their own section below.
+#
+# Do NOT add messages to clients for mysqld 8.0.x here;
+# they have their own section above.
+#
+# See the FAQ at the end of the file for more information.
+
+start-error-number 6000
+
+ER_LANGUAGE_COMPONENT
+  eng "%s"
+
+ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
+  eng "No Language component available"
+
+ER_LANGUAGE_COMPONENT_UNSUPPORTED_LANGUAGE
+  eng "Unsupported external language: %s"
+
+ER_LANGUAGE_COMPONENT_CANNOT_UNINSTALL
+  eng "Cannot uninstall Multilingual Engine - there are sessions still connected. Please disconnect all sessions and try again."
+
+ER_SP_NO_ALTER_LANGUAGE
+  eng "Altering the language of an existing routine is not possible."
+
+ER_EXPLAIN_INTO_ANALYZE_NOT_SUPPORTED 0A000
+  eng "EXPLAIN ANALYZE does not support the INTO clause."
+
+ER_EXPLAIN_INTO_IMPLICIT_FORMAT_NOT_SUPPORTED 0A000
+  eng "EXPLAIN INTO does not support implicit FORMAT."
+
+ER_EXPLAIN_INTO_FORMAT_NOT_SUPPORTED 0A000
+  eng "EXPLAIN INTO does not support FORMAT=%s."
+
+ER_NULL_CANT_BE_PERSISTED_FOR_READONLY
+  eng "Trying to persist a NULL into a variable '%-.192s' that's settable only on command line is not supported"
+
+ER_EXPLAIN_INTO_FOR_CONNECTION_NOT_SUPPORTED 0A000
+  eng "EXPLAIN FOR CONNECTION does not support the INTO clause."
+
+ER_INNODB_IMPORT_WRONG_DROPPED_ENUM_LENGTH
+  eng "Enum element name length %lu, is invalid for column %s"
+
+ER_INNODB_IMPORT_WRONG_NUMBER_OF_INDEXES_ZERO
+  eng "Number of indexes in meta-data file is 0"
+
+ER_INNODB_IMPORT_WRONG_NUMBER_OF_INDEXES_TOO_HIGH
+  eng "Number of indexes in meta-data file is too high: %llu"
+
+ER_INNODB_IMPORT_DROP_COL_METADATA_MISMATCH
+  eng "DD metadata for INSTANT DROP column %s in target table doesn't match with CFG."
+
+ER_INNODB_IMPORT_ENUM_NULL_TERMINATOR_MISSING
+  eng "Enum/Set element name missing null terminator for column '%s'"
+
+#
+#  End of 8.1 error messages (server-to-client).
+#  Do NOT add messages intended for the error log above!
+#
 
 
 ################################################################################

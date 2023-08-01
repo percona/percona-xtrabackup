@@ -36,7 +36,7 @@
 
 #include "client/client_priv.h"
 #include "compression.h"
-#include "m_ctype.h"
+#include "m_string.h"
 #include "my_alloc.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
@@ -46,8 +46,13 @@
 #include "my_macros.h"
 #include "my_thread.h" /* because of signal()	*/
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/strings/int2str.h"
+#include "mysql/strings/m_ctype.h"
+#include "nulls.h"
 #include "print_version.h"
 #include "sql_common.h"
+#include "str2int.h"
+#include "strxmov.h"
 #include "typelib.h"
 #include "welcome_copyright_notice.h" /* ORACLE_WELCOME_COPYRIGHT_NOTICE */
 
@@ -472,7 +477,7 @@ int main(int argc, char *argv[]) {
       The following just determines the exit-code we'll give.
     */
 
-    unsigned int err = mysql_errno(&mysql);
+    const unsigned int err = mysql_errno(&mysql);
     if (err >= CR_MIN_ERROR && err <= CR_MAX_ERROR)
       error = 1;
     else {
@@ -1026,7 +1031,7 @@ static int execute_commands(MYSQL *mysql, int argc, char **argv) {
 
         if (typed_password[0]) {
 #ifdef _WIN32
-          size_t pw_len = strlen(typed_password);
+          const size_t pw_len = strlen(typed_password);
           if (pw_len > 1 && typed_password[0] == '\'' &&
               typed_password[pw_len - 1] == '\'')
             printf(

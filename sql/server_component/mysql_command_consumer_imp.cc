@@ -26,8 +26,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include "include/my_sys.h"
 #include "include/my_time.h"
 #include "include/mysql/service_command.h"
+#include "include/mysql/strings/int2str.h"
+#include "include/mysql/strings/m_ctype.h"
 #include "include/mysqld_error.h"
-#include "m_ctype.h"
 #include "sql/my_decimal.h"
 #include "sql/server_component/mysql_command_services_imp.h"
 #include "sql_string.h"  // String
@@ -87,7 +88,7 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::start_result_metadata,
     }
 
     ctx->m_field_column_count = (protocol_41(ctx->m_mysql) ? 7 : 5);
-    size_t size = sizeof(MYSQL_FIELD) * num_cols;
+    const size_t size = sizeof(MYSQL_FIELD) * num_cols;
 
     ctx->m_fields = ctx->m_mysql->fields =
         (MYSQL_FIELD *)ctx->m_mysql->field_alloc->Alloc(size);
@@ -254,7 +255,7 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get, (SRV_CTX_H srv_ctx_h)) {
     Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return true;
     char buff[5] = {"NULL"}; /* Store 'NULL' as null value into the data */
-    bool ret = store_data(srv_ctx_h, buff, 4);
+    const bool ret = store_data(srv_ctx_h, buff, 4);
     ++ctx->m_cur_field_num;
     return ret;
   } catch (...) {
@@ -272,7 +273,7 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get,
     char buff[MY_INT64_NUM_DECIMAL_DIGITS + 1];
     const char *end = longlong10_to_str(value, buff, -10);
     const size_t int_length = end - buff;
-    bool ret = store_data(srv_ctx_h, buff, int_length);
+    const bool ret = store_data(srv_ctx_h, buff, int_length);
     ++ctx->m_cur_field_num;
     return ret;
   } catch (...) {
@@ -291,7 +292,7 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get,
     char buff[MY_INT64_NUM_DECIMAL_DIGITS + 1];
     const char *end = longlong10_to_str(value, buff, unsigned_flag ? 10 : -10);
     const size_t length = end - buff;
-    bool ret = store_data(srv_ctx_h, buff, length);
+    const bool ret = store_data(srv_ctx_h, buff, length);
     ++ctx->m_cur_field_num;
     return ret;
   } catch (...) {
@@ -311,7 +312,7 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get,
     int string_length = DECIMAL_MAX_STR_LENGTH + 1;
     String str(buff, sizeof(buff), &my_charset_bin);
     decimal2string(value, buff, &string_length);
-    bool ret_val = store_data(srv_ctx_h, str.ptr(), str.length());
+    const bool ret_val = store_data(srv_ctx_h, str.ptr(), str.length());
     ++ctx->m_cur_field_num;
     return ret_val;
   } catch (...) {
@@ -333,7 +334,7 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get,
     else
       length = my_gcvt(value, MY_GCVT_ARG_FLOAT, FLOATING_POINT_BUFFER, buffer,
                        nullptr);
-    bool ret_val = store_data(srv_ctx_h, buffer, length);
+    const bool ret_val = store_data(srv_ctx_h, buffer, length);
     ++ctx->m_cur_field_num;
     return ret_val;
   } catch (...) {
@@ -349,8 +350,8 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get_date,
     if (ctx == nullptr) return true;
     auto value = (const MYSQL_TIME *)(time);
     char buff[MAX_DATE_STRING_REP_LENGTH];
-    size_t length = my_date_to_str(*value, buff);
-    bool ret_val = store_data(srv_ctx_h, buff, length);
+    const size_t length = my_date_to_str(*value, buff);
+    const bool ret_val = store_data(srv_ctx_h, buff, length);
     ++ctx->m_cur_field_num;
     return ret_val;
   } catch (...) {
@@ -366,8 +367,8 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get_time,
     if (ctx == nullptr) return true;
     auto value = (const MYSQL_TIME *)(time);
     char buff[MAX_DATE_STRING_REP_LENGTH];
-    size_t length = my_time_to_str(*value, buff, precision);
-    bool ret_val = store_data(srv_ctx_h, buff, length);
+    const size_t length = my_time_to_str(*value, buff, precision);
+    const bool ret_val = store_data(srv_ctx_h, buff, length);
     ++ctx->m_cur_field_num;
     return ret_val;
   } catch (...) {
@@ -383,8 +384,8 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get_datetime,
     if (ctx == nullptr) return true;
     auto value = (const MYSQL_TIME *)(time);
     char buff[MAX_DATE_STRING_REP_LENGTH];
-    size_t length = my_datetime_to_str(*value, buff, precision);
-    bool ret_val = store_data(srv_ctx_h, buff, length);
+    const size_t length = my_datetime_to_str(*value, buff, precision);
+    const bool ret_val = store_data(srv_ctx_h, buff, length);
     ++ctx->m_cur_field_num;
     return ret_val;
   } catch (...) {
@@ -398,7 +399,7 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::get_string,
   try {
     Dom_ctx *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return true;
-    bool ret = store_data(srv_ctx_h, value, length);
+    const bool ret = store_data(srv_ctx_h, value, length);
     ++(ctx->m_cur_field_num);
     return ret;
   } catch (...) {

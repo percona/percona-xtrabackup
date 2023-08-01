@@ -27,6 +27,7 @@
 
 #include "mysqlrouter/router_export.h"
 
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -183,6 +184,20 @@ class TargetCluster {
   InvalidatedClusterRoutingPolicy invalidated_cluster_routing_policy_{
       InvalidatedClusterRoutingPolicy::DropAll};
 };
+
+constexpr const std::string_view kNodeTagHidden{"_hidden"};
+constexpr const std::string_view kNodeTagDisconnectWhenHidden{
+    "_disconnect_existing_sessions_when_hidden"};
+
+constexpr const bool kNodeTagHiddenDefault{false};
+constexpr const bool kNodeTagDisconnectWhenHiddenDefault{true};
+
+enum class InstanceType { GroupMember, AsyncMember, ReadReplica, Unsupported };
+
+std::optional<InstanceType> ROUTER_LIB_EXPORT
+str_to_instance_type(const std::string &);
+
+std::string ROUTER_LIB_EXPORT to_string(const InstanceType);
 
 }  // namespace mysqlrouter
 #endif

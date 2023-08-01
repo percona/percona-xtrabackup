@@ -26,14 +26,6 @@ ENDIF()
 
 MSVC_CPPCHECK_DISABLE()
 
-IF(WITH_LTO OR CMAKE_COMPILER_FLAG_WITH_LTO)
-  # We get ODR violations because of multiple bison parsers.
-  MY_CHECK_CXX_COMPILER_WARNING("error=odr" HAS_WARN_FLAG)
-  IF(HAS_WARN_FLAG)
-    STRING_APPEND(CMAKE_EXE_LINKER_FLAGS " ${HAS_WARN_FLAG}")
-  ENDIF()
-ENDIF()
-
 # Some tests require Boost.
 INCLUDE_DIRECTORIES(SYSTEM ${BOOST_PATCHES_DIR} ${BOOST_INCLUDE_DIR})
 
@@ -103,7 +95,7 @@ ADD_DEPENDENCIES(gunit_large GenError)
 TARGET_LINK_LIBRARIES(gunit_small
   mysys strings ${GTEST_LIBRARIES} ${UNITTEST_JEMALLOC_LIB} extra::rapidjson)
 TARGET_LINK_LIBRARIES(gunit_large
-  mysys strings ${GTEST_LIBRARIES} ${UNITTEST_JEMALLOC_LIB} extra::rapidjson)
+  ${GTEST_LIBRARIES} ${UNITTEST_JEMALLOC_LIB} extra::rapidjson)
 
 IF(WIN32)
   ## Create an object library of nt_servc.cc, so we don't have to
@@ -182,6 +174,7 @@ SET(TESTS
   sql_string
   stl_alloc
   stream_cipher
+  strings_misc
   strings_skip_trailing
   strings_strnxfrm
   strings_utf8
@@ -293,6 +286,7 @@ SET(SERVER_TESTS
   subquery_syntax
   table_cache
   table_factor_syntax
+  table_histograms
   table_list
   tc_log_mmap
   temptable_allocator

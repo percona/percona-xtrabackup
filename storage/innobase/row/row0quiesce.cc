@@ -80,8 +80,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
     DBUG_EXECUTE_IF("ib_export_io_write_failure_9", close(fileno(file)););
 
     if (fwrite(row, 1, row_len, file) != row_len) {
-      ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                  strerror(errno), "while writing index fields.");
+      ib::send_errno_warn(thd, ER_IO_WRITE_ERROR,
+                          "while writing index fields.");
 
       return (DB_IO_ERROR);
     }
@@ -96,8 +96,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
     if (fwrite(row, 1, sizeof(len), file) != sizeof(len) ||
         fwrite(field->name, 1, len, file) != len) {
-      ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                  strerror(errno), "while writing index column.");
+      ib::send_errno_warn(thd, ER_IO_WRITE_ERROR,
+                          "while writing index column.");
 
       return (DB_IO_ERROR);
     }
@@ -148,8 +148,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
   DBUG_EXECUTE_IF("ib_export_io_write_failure_12", close(fileno(file)););
 
   if (fwrite(row, 1, sizeof(row), file) != sizeof(row)) {
-    ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                strerror(errno), "while writing index meta-data.");
+    ib::send_errno_warn(thd, ER_IO_WRITE_ERROR,
+                        "while writing index meta-data.");
 
     return (DB_IO_ERROR);
   }
@@ -165,8 +165,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
   if (fwrite(row, 1, sizeof(len), file) != sizeof(len) ||
       fwrite(index->name, 1, len, file) != len) {
-    ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                strerror(errno), "while writing index name.");
+    ib::send_errno_warn(thd, ER_IO_WRITE_ERROR, "while writing index name.");
 
     return (DB_IO_ERROR);
   }
@@ -202,8 +201,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
   DBUG_EXECUTE_IF("ib_export_io_write_failure_11", close(fileno(file)););
 
   if (fwrite(row, 1, sizeof(row), file) != sizeof(row)) {
-    ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                strerror(errno), "while writing index count.");
+    ib::send_errno_warn(thd, ER_IO_WRITE_ERROR, "while writing index count.");
 
     return (DB_IO_ERROR);
   }
@@ -337,26 +335,32 @@ static dberr_t row_quiesce_write_dropped_col_metadata(
     /* Write element count */
     mach_write_to_4(_row, column->elements().size());
     if (fwrite(_row, 1, sizeof(_row), file) != sizeof(_row)) {
-      ib_senderrf(
-          thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno, strerror(errno),
-          "while writing enum column element count for column %s.", col_name);
+      std::ostringstream msg;
+      msg << "while writing enum/set column element count for column "
+          << col_name << ".";
+
+      ib::send_errno_warn(thd, ER_IO_WRITE_ERROR, msg.str());
 
       return (DB_IO_ERROR);
     }
 
     /* Write out the enum/set column element name as [len, byte array]. */
     for (const auto *source_elem : column->elements()) {
-      const char *elem_name = source_elem->name().c_str();
-      uint32_t len = strlen(elem_name) + 1;
-      ut_a(len > 1);
+      const auto elem_name = source_elem->name();
 
-      mach_write_to_4(_row, len);
+      /* Column charset: non-ASCII, can't use string functions like strlen */
+      const uint32_t len_with_null = elem_name.length() + 1;
 
-      if (fwrite(_row, 1, sizeof(len), file) != sizeof(len) ||
-          fwrite(elem_name, 1, len, file) != len) {
-        ib_senderrf(
-            thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno, strerror(errno),
-            "while writing enum column element name for column %s.", col_name);
+      mach_write_to_4(_row, len_with_null);
+
+      /* Write length, element name with \0 for backward compatibility */
+      if (fwrite(_row, sizeof(len_with_null), 1, file) != 1 ||
+          fwrite(elem_name.c_str(), len_with_null, 1, file) != 1) {
+        std::ostringstream msg;
+        msg << "while writing enum/set column element name for column "
+            << col_name << ".";
+
+        ib::send_errno_warn(thd, ER_IO_WRITE_ERROR, msg.str());
 
         return (DB_IO_ERROR);
       }
@@ -450,8 +454,8 @@ static
     DBUG_EXECUTE_IF("ib_export_io_write_failure_2", close(fileno(file)););
 
     if (fwrite(row, 1, sizeof(row), file) != sizeof(row)) {
-      ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                  strerror(errno), "while writing table column data.");
+      ib::send_errno_warn(thd, ER_IO_WRITE_ERROR,
+                          "while writing table column data.");
 
       return (DB_IO_ERROR);
     }
@@ -473,8 +477,7 @@ static
 
     if (fwrite(row, 1, sizeof(len), file) != sizeof(len) ||
         fwrite(col_name, 1, len, file) != len) {
-      ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                  strerror(errno), "while writing column name.");
+      ib::send_errno_warn(thd, ER_IO_WRITE_ERROR, "while writing column name.");
 
       return (DB_IO_ERROR);
     }
@@ -505,9 +508,9 @@ static
       mach_write_to_4(ptr, col->get_phy_pos());
 
       if (fwrite(row, 1, sizeof(row), file) != sizeof(row)) {
-        ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                    strerror(errno),
-                    "while writing table column instant metadata.");
+        ib::send_errno_warn(thd, ER_IO_WRITE_ERROR,
+                            "while writing table column instant metadata.");
+
         return (DB_IO_ERROR);
       }
 
@@ -516,17 +519,18 @@ static
         const char *col_name = table->get_col_name(dict_col_get_no(col));
         if (row_quiesce_write_dropped_col_metadata(col, col_name, file, table,
                                                    thd) != DB_SUCCESS) {
-          ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                      strerror(errno),
-                      "while writing dropped column metadata.");
+          ib::send_errno_warn(thd, ER_IO_WRITE_ERROR,
+                              "while writing dropped column metadata.");
+
           return (DB_IO_ERROR);
         }
       }
     }
 
     if (row_quiesce_write_default_value(col, file) != DB_SUCCESS) {
-      ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                  strerror(errno), "while writing table column default.");
+      ib::send_errno_warn(thd, ER_IO_WRITE_ERROR,
+                          "while writing table column default.");
+
       return (DB_IO_ERROR);
     }
   }
@@ -554,8 +558,8 @@ static
   DBUG_EXECUTE_IF("ib_export_io_write_failure_4", close(fileno(file)););
 
   if (fwrite(&value, 1, sizeof(value), file) != sizeof(value)) {
-    ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                strerror(errno), "while writing meta-data version number.");
+    ib::send_errno_warn(thd, ER_IO_WRITE_ERROR,
+                        "while writing meta-data version number.");
 
     return (DB_IO_ERROR);
   }
@@ -580,8 +584,7 @@ static
 
   if (fwrite(&value, 1, sizeof(value), file) != sizeof(value) ||
       fwrite(hostname, 1, len, file) != len) {
-    ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                strerror(errno), "while writing hostname.");
+    ib::send_errno_warn(thd, ER_IO_WRITE_ERROR, "while writing hostname.");
 
     return (DB_IO_ERROR);
   }
@@ -597,8 +600,7 @@ static
 
   if (fwrite(&value, 1, sizeof(value), file) != sizeof(value) ||
       fwrite(table->name.m_name, 1, len, file) != len) {
-    ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                strerror(errno), "while writing table name.");
+    ib::send_errno_warn(thd, ER_IO_WRITE_ERROR, "while writing table name.");
 
     return (DB_IO_ERROR);
   }
@@ -611,8 +613,8 @@ static
   DBUG_EXECUTE_IF("ib_export_io_write_failure_7", close(fileno(file)););
 
   if (fwrite(row, 1, sizeof(uint64_t), file) != sizeof(uint64_t)) {
-    ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                strerror(errno), "while writing table autoinc value.");
+    ib::send_errno_warn(thd, ER_IO_WRITE_ERROR,
+                        "while writing table autoinc value.");
 
     return (DB_IO_ERROR);
   }
@@ -634,8 +636,8 @@ static
   DBUG_EXECUTE_IF("ib_export_io_write_failure_8", close(fileno(file)););
 
   if (fwrite(row, 1, sizeof(row), file) != sizeof(row)) {
-    ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                strerror(errno), "while writing table meta-data.");
+    ib::send_errno_warn(thd, ER_IO_WRITE_ERROR,
+                        "while writing table meta-data.");
 
     return (DB_IO_ERROR);
   }
@@ -645,8 +647,8 @@ static
     mach_write_to_4(value, table->first_index()->get_instant_nullable());
 
     if (fwrite(&value, 1, sizeof(value), file) != sizeof(value)) {
-      ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                  strerror(errno), "while writing table meta-data.");
+      ib::send_errno_warn(thd, ER_IO_WRITE_ERROR,
+                          "while writing table meta-data.");
 
       return (DB_IO_ERROR);
     }
@@ -677,8 +679,8 @@ static
     mach_write_to_4(ptr, table->current_row_version);
 
     if (fwrite(row, 1, sizeof(row), file) != sizeof(row)) {
-      ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                  strerror(errno), "while writing table meta-data.");
+      ib::send_errno_warn(thd, ER_IO_WRITE_ERROR,
+                          "while writing table meta-data.");
 
       return (DB_IO_ERROR);
     }
@@ -690,8 +692,7 @@ static
   mach_write_to_4(value, space_flags);
 
   if (fwrite(&value, 1, sizeof(value), file) != sizeof(value)) {
-    ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                strerror(errno), "while writing space_flags.");
+    ib::send_errno_warn(thd, ER_IO_WRITE_ERROR, "while writing space_flags.");
 
     return (DB_IO_ERROR);
   }
@@ -703,8 +704,8 @@ static
     mach_write_to_1(value, compression_type);
 
     if (fwrite(&value, 1, sizeof(uint8_t), file) != sizeof(uint8_t)) {
-      ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                  strerror(errno), "while writing compression type info.");
+      ib::send_errno_warn(thd, ER_IO_WRITE_ERROR,
+                          "while writing compression type info.");
 
       return DB_IO_ERROR;
     }
@@ -725,13 +726,12 @@ static
 
   dd_get_meta_data_filename(table, nullptr, name, sizeof(name));
 
-  ib::info(ER_IB_MSG_1014) << "Writing table metadata to '" << name << "'";
+  ib::info(ER_IB_IMPORT_START_CFG_NAME, name);
 
   FILE *file = fopen(name, "w+b");
 
   if (file == nullptr) {
-    ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_CANT_CREATE_FILE, name, errno,
-                strerror(errno));
+    ib::send_errno_warn(thd, ER_CANT_CREATE_FILE, name);
 
     err = DB_IO_ERROR;
   } else {
@@ -746,21 +746,17 @@ static
     }
 
     if (fflush(file) != 0) {
-      char msg[BUFSIZ];
+      std::ostringstream msg;
+      msg << name << " flush() failed";
 
-      snprintf(msg, sizeof(msg), "%s flush() failed", name);
-
-      ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                  strerror(errno), msg);
+      ib::send_errno_warn(thd, ER_IO_WRITE_ERROR, msg.str());
     }
 
     if (fclose(file) != 0) {
-      char msg[BUFSIZ];
+      std::ostringstream msg;
+      msg << name << " flose() failed";
 
-      snprintf(msg, sizeof(msg), "%s flose() failed", name);
-
-      ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                  strerror(errno), msg);
+      ib::send_errno_warn(thd, ER_IO_WRITE_ERROR, msg.str());
     }
   }
 
@@ -786,8 +782,7 @@ static
   mach_write_to_4(key_size, Encryption::KEY_LEN);
 
   if (fwrite(&key_size, 1, sizeof(key_size), file) != sizeof(key_size)) {
-    ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                strerror(errno), "while writing key size.");
+    ib::send_errno_warn(thd, ER_IO_WRITE_ERROR, "while writing key size.");
 
     return (DB_IO_ERROR);
   }
@@ -796,8 +791,7 @@ static
   Encryption::random_value(transfer_key);
   if (fwrite(transfer_key, 1, Encryption::KEY_LEN, file) !=
       Encryption::KEY_LEN) {
-    ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                strerror(errno), "while writing transfer key.");
+    ib::send_errno_warn(thd, ER_IO_WRITE_ERROR, "while writing transfer key.");
 
     return (DB_IO_ERROR);
   }
@@ -810,15 +804,16 @@ static
                         nullptr, false);
 
   if (elen == MY_AES_BAD_DATA) {
-    ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                strerror(errno), "while encrypt tablespace key.");
+    ib::send_errno_warn(thd, ER_IO_WRITE_ERROR,
+                        "while encrypt tablespace key.");
+
     return (DB_ERROR);
   }
 
   /* Write encrypted tablespace key */
   if (fwrite(ptr, 1, Encryption::KEY_LEN, file) != Encryption::KEY_LEN) {
-    ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                strerror(errno), "while writing encrypted tablespace key.");
+    ib::send_errno_warn(thd, ER_IO_WRITE_ERROR,
+                        "while writing encrypted tablespace key.");
 
     return (DB_IO_ERROR);
   }
@@ -830,15 +825,15 @@ static
                         nullptr, false);
 
   if (elen == MY_AES_BAD_DATA) {
-    ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                strerror(errno), "while encrypt tablespace iv.");
+    ib::send_errno_warn(thd, ER_IO_WRITE_ERROR, "while encrypt tablespace iv.");
+
     return (DB_ERROR);
   }
 
   /* Write encrypted tablespace iv */
   if (fwrite(ptr, 1, Encryption::KEY_LEN, file) != Encryption::KEY_LEN) {
-    ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                strerror(errno), "while writing encrypted tablespace iv.");
+    ib::send_errno_warn(thd, ER_IO_WRITE_ERROR,
+                        "while writing encrypted tablespace iv.");
 
     return (DB_IO_ERROR);
   }
@@ -877,8 +872,7 @@ static
   FILE *file = fopen(name, "w+b");
 
   if (file == nullptr) {
-    ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_CANT_CREATE_FILE, name, errno,
-                strerror(errno));
+    ib::send_errno_warn(thd, ER_CANT_CREATE_FILE, name);
 
     err = DB_IO_ERROR;
   } else {
@@ -886,23 +880,20 @@ static
         row_quiesce_write_transfer_key(space->m_encryption_metadata, file, thd);
 
     if (fflush(file) != 0) {
-      char msg[BUFSIZ];
+      std::ostringstream msg;
+      msg << name << " flush() failed";
 
-      snprintf(msg, sizeof(msg), "%s flush() failed", name);
-
-      ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                  strerror(errno), msg);
+      ib::send_errno_warn(thd, ER_IO_WRITE_ERROR, msg.str());
 
       err = DB_IO_ERROR;
     }
 
     if (fclose(file) != 0) {
-      char msg[BUFSIZ];
+      std::ostringstream msg;
+      msg << name << " flose() failed";
 
-      snprintf(msg, sizeof(msg), "%s flose() failed", name);
+      ib::send_errno_warn(thd, ER_IO_WRITE_ERROR, msg.str());
 
-      ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR, errno,
-                  strerror(errno), msg);
       err = DB_IO_ERROR;
     }
   }

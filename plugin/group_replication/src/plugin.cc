@@ -41,6 +41,8 @@
 #include "plugin/group_replication/include/plugin.h"
 #include "plugin/group_replication/include/plugin_handlers/consensus_leaders_handler.h"
 #include "plugin/group_replication/include/plugin_handlers/member_actions_handler.h"
+#include "plugin/group_replication/include/plugin_handlers/metrics_handler.h"
+#include "plugin/group_replication/include/plugin_status_variables.h"
 #include "plugin/group_replication/include/plugin_variables.h"
 #include "plugin/group_replication/include/plugin_variables/recovery_endpoints.h"
 #include "plugin/group_replication/include/services/message_service/message_service.h"
@@ -49,6 +51,7 @@
 #include "plugin/group_replication/include/thread/mysql_thread.h"
 #include "plugin/group_replication/include/udf/udf_registration.h"
 #include "plugin/group_replication/include/udf/udf_utils.h"
+#include "string_with_len.h"
 
 #ifndef NDEBUG
 #include "plugin/group_replication/include/services/notification/impl/gms_listener_test.h"
@@ -134,6 +137,7 @@ Mysql_thread *mysql_thread_handler = nullptr;
 Mysql_thread *mysql_thread_handler_read_only_mode = nullptr;
 /** Module with the acquired server services on plugin install */
 Server_services_references *server_services_references_module = nullptr;
+Metrics_handler *metrics_handler{nullptr};
 
 Plugin_gcs_events_handler *events_handler = nullptr;
 Plugin_gcs_view_modification_notifier *view_change_notifier = nullptr;
@@ -362,18 +366,23 @@ bool get_allow_single_leader() {
  * @param thd     THD object of the connection
  * @param fd      File descriptor of the connections
  * @param ssl_ctx SSL data of the connection
+ *
+ * @return int Returns 1 in case of any error. 0 otherwise.
  */
-void handle_group_replication_incoming_connection(THD *thd, int fd,
-                                                  SSL *ssl_ctx) {
+
+int handle_group_replication_incoming_connection(THD *thd, int fd,
+                                                 SSL *ssl_ctx) {
   auto *new_connection = new Network_connection(fd, ssl_ctx);
   new_connection->has_error = false;
+  int error_return = 1;
 
-  Gcs_mysql_network_provider *mysql_provider =
-      gcs_module->get_mysql_network_provider();
-
-  if (mysql_provider) {
+  if (auto mysql_provider = gcs_module->get_mysql_network_provider();
+      mysql_provider) {
     mysql_provider->set_new_connection(thd, new_connection);
+    error_return = 0;
   }
+
+  return error_return;
 }
 
 /**
@@ -1451,6 +1460,13 @@ int initialize_plugin_modules(gr_modules::mask modules_to_init) {
         ov.components_stop_timeout_var);
   }
 
+  /*
+    Metrics handler.
+  */
+  if (modules_to_init[gr_modules::METRICS_HANDLER]) {
+    metrics_handler->reset();
+  }
+
   return ret;
 }
 
@@ -1695,6 +1711,7 @@ bool attempt_rejoin() {
   modules_mask.set(gr_modules::MESSAGE_SERVICE_HANDLER, true);
   modules_mask.set(gr_modules::BINLOG_DUMP_THREAD_KILL, true);
   modules_mask.set(gr_modules::RECOVERY_MODULE, true);
+  modules_mask.set(gr_modules::METRICS_HANDLER, true);
 
   /*
     Before leaving the group we need to terminate services that
@@ -1777,6 +1794,7 @@ bool attempt_rejoin() {
   */
   DBUG_EXECUTE_IF("group_replication_fail_rejoin", goto end;);
   view_change_notifier->start_view_modification();
+
   join_state =
       gcs_module->join(*events_handler, *events_handler, view_change_notifier);
   if (join_state == GCS_OK) {
@@ -1957,9 +1975,6 @@ int plugin_group_replication_init(MYSQL_PLUGIN plugin_info) {
   register_all_group_replication_psi_keys();
 #endif /* HAVE_PSI_INTERFACE */
 
-  mysql_mutex_init(key_GR_LOCK_force_members_running,
-                   &lv.force_members_running_mutex, MY_MUTEX_INIT_FAST);
-
   lv.online_wait_mutex =
       new Plugin_waitlock(&lv.plugin_online_mutex, &lv.plugin_online_condition,
 #ifdef HAVE_PSI_INTERFACE
@@ -1981,6 +1996,7 @@ int plugin_group_replication_init(MYSQL_PLUGIN plugin_info) {
   );
 
   shared_plugin_stop_lock = new Shared_writelock(lv.plugin_stop_lock);
+  metrics_handler = new Metrics_handler();
   transactions_latch = new Wait_ticket<my_thread_id>();
   transaction_consistency_manager = new Transaction_consistency_manager();
   advertised_recovery_endpoints = new Advertised_recovery_endpoints();
@@ -2222,8 +2238,9 @@ int plugin_group_replication_deinit(void *p) {
   transaction_consistency_manager = nullptr;
   delete transactions_latch;
   transactions_latch = nullptr;
+  delete metrics_handler;
+  metrics_handler = nullptr;
 
-  mysql_mutex_destroy(&lv.force_members_running_mutex);
   mysql_mutex_destroy(&lv.plugin_applier_module_initialize_terminate_mutex);
   mysql_mutex_destroy(&lv.plugin_modules_termination_mutex);
 
@@ -3614,9 +3631,21 @@ static int check_force_members(MYSQL_THD thd, SYS_VAR *, void *save,
                                struct st_mysql_value *value) {
   DBUG_TRACE;
 
+  /* As a safeguard on locking concurrent resources, as gcs_operations, now
+    setting group_replication_force_members execute Try Write lock on
+    plugin_running_lock to prevent other SET group_replication_*  running in
+    parallel.
+  */
   Checkable_rwlock::Guard g(*lv.plugin_running_lock,
-                            Checkable_rwlock::TRY_READ_LOCK);
-  if (!plugin_running_lock_is_rdlocked(g)) return 1;
+                            Checkable_rwlock::TRY_WRITE_LOCK);
+  if (!g.is_wrlocked()) {
+    my_message(ER_UNABLE_TO_SET_OPTION,
+               "This option cannot be set while START or STOP "
+               "GROUP_REPLICATION is ongoing or other Group Replication "
+               "options are being set.",
+               MYF(0));
+    return 1;
+  }
 
   int error = 0;
   char buff[STRING_BUFFER_USUAL_SIZE];
@@ -3626,25 +3655,14 @@ static int check_force_members(MYSQL_THD thd, SYS_VAR *, void *save,
   Gcs_operations::enum_force_members_state force_members_error =
       Gcs_operations::FORCE_MEMBERS_OK;
 
-  // Only one set force_members can run at a time.
-  mysql_mutex_lock(&lv.force_members_running_mutex);
-  if (lv.force_members_running) {
-    my_error(ER_GROUP_REPLICATION_FORCE_MEMBERS_COMMAND_FAILURE, MYF(0),
-             "value",
-             "There is one group_replication_force_members operation "
-             "already ongoing.");
-    mysql_mutex_unlock(&lv.force_members_running_mutex);
-    return 1;
-  }
-  lv.force_members_running = true;
-  mysql_mutex_unlock(&lv.force_members_running_mutex);
-
-#ifndef NDEBUG
   DBUG_EXECUTE_IF("group_replication_wait_on_check_force_members", {
-    const char act[] = "now wait_for waiting";
+    const char act[] =
+        "now signal "
+        "signal.reached_group_replication_wait_on_check_force_members "
+        "wait_for "
+        "signal.resume_group_replication_wait_on_check_force_members ";
     assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
   });
-#endif
 
   // String validations.
   length = sizeof(buff);
@@ -3652,11 +3670,14 @@ static int check_force_members(MYSQL_THD thd, SYS_VAR *, void *save,
     str = thd->strmake(str, length);
   else {
     error = 1; /* purecov: inspected */
-    goto end;  /* purecov: inspected */
+    return 1;
   }
 
   // If option value is empty string, just update its value.
-  if (length == 0) goto update_value;
+  if (length == 0) {
+    *(const char **)save = str;
+    return 0;
+  }
 
   // if group replication isn't running and majority is reachable you can't
   // update force_members
@@ -3666,7 +3687,22 @@ static int check_force_members(MYSQL_THD thd, SYS_VAR *, void *save,
     force_members_error =
         Gcs_operations::FORCE_MEMBERS_ER_NOT_ONLINE_AND_MAJORITY_UNREACHABLE;
   } else {
-    force_members_error = gcs_module->force_members(str);
+    Plugin_gcs_view_modification_notifier view_change_notifier;
+    view_change_notifier.start_view_modification();
+
+    force_members_error = gcs_module->force_members(str, &view_change_notifier);
+
+    if (Gcs_operations::FORCE_MEMBERS_OK != force_members_error) {
+      LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_FORCE_MEMBER_VALUE_SET_ERROR, str);
+      view_change_notifier.cancel_view_modification();
+    } else if (view_change_notifier.wait_for_view_modification(
+                   FORCE_MEMBERS_VIEW_MODIFICATION_TIMEOUT)) {
+      LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_FORCE_MEMBER_VALUE_TIME_OUT, str);
+      force_members_error =
+          Gcs_operations::FORCE_MEMBERS_ER_TIMEOUT_ON_WAIT_FOR_VIEW;
+    }
+
+    gcs_module->remove_view_notifer(&view_change_notifier);
   }
 
   if (force_members_error != Gcs_operations::FORCE_MEMBERS_OK) {
@@ -3702,16 +3738,9 @@ static int check_force_members(MYSQL_THD thd, SYS_VAR *, void *save,
     my_error(ER_GROUP_REPLICATION_FORCE_MEMBERS_COMMAND_FAILURE, MYF(0), str,
              ss.str().c_str());
     error = 1;
-    goto end;
   }
 
-update_value:
-  *(const char **)save = str;
-
-end:
-  mysql_mutex_lock(&lv.force_members_running_mutex);
-  lv.force_members_running = false;
-  mysql_mutex_unlock(&lv.force_members_running_mutex);
+  if (0 == error) *(const char **)save = str;
 
   return error;
 }
@@ -5325,6 +5354,82 @@ static int show_primary_member(MYSQL_THD, SHOW_VAR *var, char *buff) {
 
 static SHOW_VAR group_replication_status_vars[] = {
     {"group_replication_primary_member", (char *)&show_primary_member,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Gr_control_messages_sent_count",
+     (char *)&Plugin_status_variables::get_control_messages_sent_count,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Gr_data_messages_sent_count",
+     (char *)&Plugin_status_variables::get_data_messages_sent_count, SHOW_FUNC,
+     SHOW_SCOPE_GLOBAL},
+    {"Gr_control_messages_sent_bytes_sum",
+     (char *)&Plugin_status_variables::get_control_messages_sent_bytes_sum,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Gr_data_messages_sent_bytes_sum",
+     (char *)&Plugin_status_variables::get_data_messages_sent_bytes_sum,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Gr_control_messages_sent_roundtrip_time_sum",
+     (char *)&Plugin_status_variables::
+         get_control_messages_sent_roundtrip_time_sum,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Gr_data_messages_sent_roundtrip_time_sum",
+     (char
+          *)&Plugin_status_variables::get_data_messages_sent_roundtrip_time_sum,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Gr_transactions_consistency_before_begin_count",
+     (char *)&Plugin_status_variables::
+         get_transactions_consistency_before_begin_count,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Gr_transactions_consistency_before_begin_time_sum",
+     (char *)&Plugin_status_variables::
+         get_transactions_consistency_before_begin_time_sum,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Gr_transactions_consistency_after_termination_count",
+     (char *)&Plugin_status_variables::
+         get_transactions_consistency_after_termination_count,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Gr_transactions_consistency_after_termination_time_sum",
+     (char *)&Plugin_status_variables::
+         get_transactions_consistency_after_termination_time_sum,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Gr_transactions_consistency_after_sync_count",
+     (char *)&Plugin_status_variables::
+         get_transactions_consistency_after_sync_count,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Gr_transactions_consistency_after_sync_time_sum",
+     (char *)&Plugin_status_variables::
+         get_transactions_consistency_after_sync_time_sum,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Gr_certification_garbage_collector_count",
+     (char
+          *)&Plugin_status_variables::get_certification_garbage_collector_count,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Gr_certification_garbage_collector_time_sum",
+     (char *)&Plugin_status_variables::
+         get_certification_garbage_collector_time_sum,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Gr_all_consensus_proposals_count",
+     (char *)&Plugin_status_variables::get_all_consensus_proposals_count,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Gr_empty_consensus_proposals_count",
+     (char *)&Plugin_status_variables::get_empty_consensus_proposals_count,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Gr_consensus_bytes_sent_sum",
+     (char *)&Plugin_status_variables::get_consensus_bytes_sent_sum, SHOW_FUNC,
+     SHOW_SCOPE_GLOBAL},
+    {"Gr_consensus_bytes_received_sum",
+     (char *)&Plugin_status_variables::get_consensus_bytes_received_sum,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Gr_all_consensus_time_sum",
+     (char *)&Plugin_status_variables::get_all_consensus_time_sum, SHOW_FUNC,
+     SHOW_SCOPE_GLOBAL},
+    {"Gr_extended_consensus_count",
+     (char *)&Plugin_status_variables::get_extended_consensus_count, SHOW_FUNC,
+     SHOW_SCOPE_GLOBAL},
+    {"Gr_total_messages_sent_count",
+     (char *)&Plugin_status_variables::get_total_messages_sent_count, SHOW_FUNC,
+     SHOW_SCOPE_GLOBAL},
+    {"Gr_last_consensus_end_timestamp",
+     (char *)&Plugin_status_variables::get_last_consensus_end_timestamp,
      SHOW_FUNC, SHOW_SCOPE_GLOBAL},
     {nullptr, nullptr, SHOW_LONG, SHOW_SCOPE_GLOBAL},
 };

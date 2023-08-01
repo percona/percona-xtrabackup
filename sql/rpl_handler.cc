@@ -34,13 +34,14 @@
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_io.h"
-#include "my_loglevel.h"
 #include "mysql/components/services/bits/psi_bits.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/components/services/log_shared.h"
+#include "mysql/my_loglevel.h"
 #include "mysql/plugin.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysqld_error.h"
 #include "prealloced_array.h"
 #include "sql/current_thd.h"
@@ -577,6 +578,7 @@ int Trans_delegate::before_commit(THD *thd, bool all,
   param.is_create_table_as_query_block =
       (thd->lex->sql_command == SQLCOM_CREATE_TABLE &&
        !thd->lex->query_block->field_list_is_empty());
+  param.thd = thd;
 
   bool is_real_trans =
       (all || !thd->get_transaction()->is_active(Transaction_ctx::SESSION));
@@ -865,6 +867,7 @@ int Trans_delegate::trans_begin(THD *thd, int &out) {
   param.hold_timeout = thd->variables.net_wait_timeout;
   param.server_id = thd->server_id;
   param.rpl_channel_type = thd->rpl_thd_ctx.get_rpl_channel_type();
+  param.thd = thd;
 
   int ret = 0;
   thd->rpl_thd_ctx.set_tx_rpl_delegate_stage_status(

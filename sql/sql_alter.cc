@@ -26,13 +26,13 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "m_ctype.h"
 #include "m_string.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_macros.h"
 #include "my_sys.h"
 #include "mysql/plugin.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysqld_error.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // check_access
@@ -389,7 +389,7 @@ bool Sql_cmd_discard_import_tablespace::execute(THD *thd) {
     it is the case.
     TODO: this design is obsolete and will be removed.
   */
-  enum_log_table_type table_kind =
+  const enum_log_table_type table_kind =
       query_logger.check_if_log_table(table_list, false);
 
   if (table_kind != QUERY_LOG_NONE) {

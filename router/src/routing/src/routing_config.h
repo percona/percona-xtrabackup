@@ -28,7 +28,7 @@
 #include <string>
 
 #include "mysql/harness/filesystem.h"  // Path
-#include "mysqlrouter/routing.h"       // RoutingStrategy, AccessMode
+#include "mysqlrouter/routing.h"       // RoutingStrategy, Mode
 #include "protocol/protocol.h"         // Protocol::Type
 #include "ssl_mode.h"
 #include "tcp_address.h"
@@ -44,8 +44,7 @@ class RoutingConfig {
   mysql_harness::TCPAddress bind_address;  //!< IP address to bind to
   mysql_harness::Path named_socket;  //!< unix domain socket path to bind to
   int connect_timeout{};             //!< connect-timeout in seconds
-  routing::AccessMode mode{
-      routing::AccessMode::kUndefined};  //!< read-only/read-write
+  routing::Mode mode{routing::Mode::kUndefined};  //!< read-only/read-write
   routing::RoutingStrategy routing_strategy{
       routing::RoutingStrategy::kUndefined};  //!< routing strategy (next-avail,
                                               //!< ...)
@@ -79,6 +78,18 @@ class RoutingConfig {
       connection_sharing_delay{};  //!< delay before an idling connection is
                                    //!< moved to the pool and connection sharing
                                    //!< is allowed.
+
+  bool client_ssl_session_cache_mode{true};
+  size_t client_ssl_session_cache_size{};
+  unsigned int client_ssl_session_cache_timeout{};
+
+  bool server_ssl_session_cache_mode{true};
+  size_t server_ssl_session_cache_size{};
+  unsigned int server_ssl_session_cache_timeout{};
+
+  std::chrono::milliseconds
+      connect_retry_timeout{};  //!< timeout of retrying after a transient
+                                //!< connect-failure.
 };
 
 #endif  // ROUTING_CONFIG_INCLUDED

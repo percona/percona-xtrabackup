@@ -48,7 +48,9 @@
 #include "mysql/service_mysql_alloc.h"
 #include "mysql/service_security_context.h"
 #include "mysqld_error.h"
+#include "nulls.h"
 #include "sql/sql_error.h"
+#include "template_utils.h"
 #include "typelib.h"
 
 class THD;
@@ -226,7 +228,7 @@ static int validate_dictionary_check(mysql_string_handle password) {
   mysql_string_free(lower_string_handle);
   int substr_pos = 0;
   int substr_length = length;
-  string_type password_str = string_type((const char *)buffer, length);
+  const string_type password_str = string_type((const char *)buffer, length);
   string_type password_substr;
   set_type::iterator itr;
   /*

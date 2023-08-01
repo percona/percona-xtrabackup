@@ -29,10 +29,9 @@
 #include <string>
 #include <utility>
 
-#include "m_ctype.h"
-#include "m_string.h"
 #include "my_alloc.h"
 #include "my_sqlcommand.h"
+#include "mysql/strings/m_ctype.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // check_global_access
 #include "sql/auth/sql_security_ctx.h"
@@ -55,6 +54,7 @@
 #include "sql/thr_malloc.h"
 #include "sql/trigger.h"
 #include "sql/trigger_chain.h"
+#include "string_with_len.h"
 #include "thr_lock.h"
 
 namespace dd {
@@ -112,7 +112,7 @@ bool Table_trigger_dispatcher::create_trigger(
   assert(m_subject_table);
   assert(!already_exists);
   LEX *lex = thd->lex;
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+  const dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
 
   // If this table has broken triggers, CREATE TRIGGER is not allowed.
   if (check_for_broken_triggers()) return true;
@@ -456,7 +456,7 @@ void Table_trigger_dispatcher::parse_triggers(THD *thd, List<Trigger> *triggers,
 
     if (!t) break;
 
-    bool fatal_parse_error = t->parse(thd, is_upgrade);
+    const bool fatal_parse_error = t->parse(thd, is_upgrade);
 
     /*
       There are two kinds of parse errors here:
@@ -557,7 +557,7 @@ bool Table_trigger_dispatcher::process_triggers(
   assert(m_subject_table->pos_in_table_list->trg_event_map &
          static_cast<uint>(1 << static_cast<int>(event)));
 
-  bool rc = tc->execute_triggers(thd);
+  const bool rc = tc->execute_triggers(thd);
 
   m_new_field = nullptr;
   m_old_field = nullptr;

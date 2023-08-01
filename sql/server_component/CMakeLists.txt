@@ -26,6 +26,8 @@ SET(MYSQL_SERVER_COMPONENT_SOURCES
   clone_protocol_service.cc
   component_status_var_service.cc
   component_sys_var_service.cc
+  debug_keyword_service_imp.cc
+  debug_sync_service_imp.cc
   dynamic_loader_path_filter.cc
   host_application_signal_imp.cc
   keyring_iterator_service_imp.cc
@@ -52,6 +54,7 @@ SET(MYSQL_SERVER_COMPONENT_SOURCES
   server_component.cc
   system_variable_source_imp.cc
   table_access_service.cc
+  thread_cleanup_register_imp.cc
   udf_metadata_imp.cc
   audit_api_connection_service_imp.cc
   mysql_query_attributes_imp.cc
@@ -69,6 +72,11 @@ SET(MYSQL_SERVER_COMPONENT_SOURCES
   storing_auto_thd.cc
   mysql_thd_store_imp.cc
   set_variables_helper.cc
+  mysql_thd_store_imp.cc
+  mysql_server_event_tracking_bridge_imp.cc
+  dynamic_loader_service_notification_imp.cc
+  event_tracking_information.cc
+  mysql_stored_program_imp.cc
   mysql_simple_error_log_imp.cc
   )
 

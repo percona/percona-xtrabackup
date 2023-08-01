@@ -39,13 +39,13 @@
 #include <time.h>
 
 #include "decimal.h"
-#include "m_ctype.h"
-#include "m_string.h"
 #include "my_compiler.h"
 
 #include "my_macros.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
+#include "nulls.h"
 #include "sql/current_thd.h"
 #include "sql/derror.h"
 #include "sql/field.h"
@@ -54,6 +54,7 @@
 #include "sql/sql_const.h"
 #include "sql/system_variables.h"
 #include "sql/tztime.h"  // struct Time_zone
+#include "string_with_len.h"
 
 /**
   Name description of interval names used in statements.
@@ -676,7 +677,8 @@ const char *get_date_time_format_str(const Known_date_time_format *format,
 */
 void make_time(const Date_time_format *format [[maybe_unused]],
                const MYSQL_TIME *l_time, String *str, uint dec) {
-  uint length = static_cast<uint>(my_time_to_str(*l_time, str->ptr(), dec));
+  const uint length =
+      static_cast<uint>(my_time_to_str(*l_time, str->ptr(), dec));
   str->length(length);
   str->set_charset(&my_charset_numeric);
 }
@@ -689,7 +691,7 @@ void make_time(const Date_time_format *format [[maybe_unused]],
 */
 void make_date(const Date_time_format *format [[maybe_unused]],
                const MYSQL_TIME *l_time, String *str) {
-  uint length = static_cast<uint>(my_date_to_str(*l_time, str->ptr()));
+  const uint length = static_cast<uint>(my_date_to_str(*l_time, str->ptr()));
   str->length(length);
   str->set_charset(&my_charset_numeric);
 }
@@ -703,7 +705,8 @@ void make_date(const Date_time_format *format [[maybe_unused]],
 */
 void make_datetime(const Date_time_format *format [[maybe_unused]],
                    const MYSQL_TIME *l_time, String *str, uint dec) {
-  uint length = static_cast<uint>(my_datetime_to_str(*l_time, str->ptr(), dec));
+  const uint length =
+      static_cast<uint>(my_datetime_to_str(*l_time, str->ptr(), dec));
   str->length(length);
   str->set_charset(&my_charset_numeric);
 }

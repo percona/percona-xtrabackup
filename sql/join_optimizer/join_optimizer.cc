@@ -97,6 +97,7 @@
 #include "sql/range_optimizer/range_analysis.h"
 #include "sql/range_optimizer/range_opt_param.h"
 #include "sql/range_optimizer/range_optimizer.h"
+#include "sql/range_optimizer/rowid_ordered_retrieval_plan.h"
 #include "sql/range_optimizer/tree.h"
 #include "sql/sql_array.h"
 #include "sql/sql_base.h"
@@ -142,7 +143,16 @@ AccessPath *CreateMaterializationPath(THD *thd, JOIN *join, AccessPath *path,
                                       bool copy_items);
 
 AccessPath *GetSafePathToSort(THD *thd, JOIN *join, AccessPath *path,
-                              bool need_rowid);
+                              bool need_rowid,
+                              bool force_materialization = false);
+
+// Represents a candidate row-id ordered scan. For a ROR compatible
+// range scan, it stores the applied and subsumed predicates.
+struct PossibleRORScan {
+  unsigned idx;
+  OverflowBitset applied_predicates;
+  OverflowBitset subsumed_predicates;
+};
 
 /**
   CostingReceiver contains the main join planning logic, selecting access paths
@@ -174,6 +184,8 @@ class CostingReceiver {
       table_map immediate_update_delete_candidates, bool need_rowid,
       SecondaryEngineFlags engine_flags, int subgraph_pair_limit,
       secondary_engine_modify_access_path_cost_t secondary_engine_cost_hook,
+      secondary_engine_check_optimizer_request_t
+          secondary_engine_planning_complexity_check_hook,
       string *trace)
       : m_thd(thd),
         m_query_block(query_block),
@@ -193,6 +205,8 @@ class CostingReceiver {
         m_engine_flags(engine_flags),
         m_subgraph_pair_limit(subgraph_pair_limit),
         m_secondary_engine_cost_hook(secondary_engine_cost_hook),
+        m_secondary_engine_planning_complexity_check(
+            secondary_engine_planning_complexity_check_hook),
         m_trace(trace) {
     // At least one join type must be supported.
     assert(Overlaps(engine_flags,
@@ -213,6 +227,8 @@ class CostingReceiver {
   }
 
   bool FoundSingleNode(int node_idx);
+
+  bool evaluate_secondary_engine_optimizer_state_request();
 
   // Called EmitCsgCmp() in the DPhyp paper.
   bool FoundSubgraphPair(NodeMap left, NodeMap right, int edge_idx);
@@ -243,6 +259,8 @@ class CostingReceiver {
     }
     return access_paths;
   }
+
+  int subgraph_pair_limit() const { return m_subgraph_pair_limit; }
 
   /// True if the result of the join is found to be always empty, typically
   /// because of an impossible WHERE clause.
@@ -414,6 +432,11 @@ class CostingReceiver {
   /// for execution in a secondary storage engine, or nullptr otherwise.
   secondary_engine_modify_access_path_cost_t m_secondary_engine_cost_hook;
 
+  /// Pointer to a function that returns what state should hypergraph progress
+  /// for optimization with secondary storage engine, or nullptr otherwise.
+  secondary_engine_check_optimizer_request_t
+      m_secondary_engine_planning_complexity_check;
+
   /// If not nullptr, we store human-readable optimizer trace information here.
   string *m_trace;
 
@@ -485,6 +508,27 @@ class CostingReceiver {
                          double num_output_rows_after_filter,
                          RANGE_OPT_PARAM *param,
                          bool *has_clustered_primary_key_scan);
+  void ProposeRowIdOrderedUnion(TABLE *table, int node_idx,
+                                const SEL_IMERGE &imerge, int pred_idx,
+                                bool inexact, int num_where_predicates,
+                                double num_output_rows_after_filter,
+                                const RANGE_OPT_PARAM *param,
+                                const Mem_root_array<AccessPath *> &paths);
+  void ProposeAllRowIdOrderedIntersectPlans(
+      TABLE *table, int node_idx, SEL_TREE *tree, int num_where_predicates,
+      const Mem_root_array<PossibleRORScan> &possible_ror_scans,
+      double num_output_rows_after_filter, const RANGE_OPT_PARAM *param);
+  void ProposeRowIdOrderedIntersect(
+      TABLE *table, int node_idx, int num_where_predicates,
+      const Mem_root_array<PossibleRORScan> &possible_ror_scans,
+      const Mem_root_array<ROR_SCAN_INFO *> &ror_scans, ROR_SCAN_INFO *cpk_scan,
+      double num_output_rows_after_filter, const RANGE_OPT_PARAM *param,
+      OverflowBitset needed_fields);
+  void ProposeIndexSkipScan(int node_idx, RANGE_OPT_PARAM *param,
+                            AccessPath *skip_scan_path, TABLE *table,
+                            OverflowBitset all_predicates,
+                            size_t num_where_predicates, size_t predicate_idx,
+                            double num_output_rows_after_filter, bool inexact);
 
   void TraceAccessPaths(NodeMap nodes);
   void ProposeAccessPathForBaseTable(int node_idx,
@@ -578,6 +622,22 @@ secondary_engine_modify_access_path_cost_t SecondaryEngineCostHook(
   } else {
     return secondary_engine->secondary_engine_modify_access_path_cost;
   }
+}
+
+/// Gets the secondary storage engine hypergraph state hook function, if any.
+secondary_engine_check_optimizer_request_t SecondaryEngineStateCheckHook(
+    const THD *thd) {
+  const handlerton *secondary_engine = SecondaryEngineHandlerton(thd);
+  if (secondary_engine == nullptr) {
+    return nullptr;
+  }
+
+  return secondary_engine->secondary_engine_check_optimizer_request;
+}
+
+bool IsClusteredPrimaryKey(unsigned key_index, const TABLE &table) {
+  return key_index == table.s->primary_key &&
+         table.file->primary_key_is_clustered();
 }
 
 /// Returns the MATCH function of a predicate that can be pushed down to a
@@ -795,16 +855,23 @@ bool CostingReceiver::FoundSingleNode(int node_idx) {
         continue;
       }
       const int order = reverse ? reverse_order : forward_order;
-      if (order != 0) {
+      const int key_idx = order_info.key_idx;
+      // An index scan is more interesting than a table scan if it follows an
+      // interesting order that can be used to avoid a sort later, or if it is
+      // covering so that it can reduce the volume of data to read. A scan of a
+      // clustered primary index reads as much data as a table scan, so it is
+      // not considered unless it follows an interesting order.
+      if (order != 0 || (table->covering_keys.is_set(key_idx) &&
+                         !IsClusteredPrimaryKey(key_idx, *table))) {
         if (ProposeIndexScan(table, node_idx, range_optimizer_row_estimate,
-                             order_info.key_idx, reverse, order)) {
+                             key_idx, reverse, order)) {
           return true;
         }
       }
 
       // Propose ref access using only sargable predicates that reference no
       // other table.
-      if (ProposeRefAccess(table, node_idx, order_info.key_idx,
+      if (ProposeRefAccess(table, node_idx, key_idx,
                            range_optimizer_row_estimate, reverse,
                            /*allowed_parameter_tables=*/0, order)) {
         return true;
@@ -826,8 +893,7 @@ bool CostingReceiver::FoundSingleNode(int node_idx) {
       table_map want_parameter_tables = 0;
       for (const SargablePredicate &sp :
            m_graph->nodes[node_idx].sargable_predicates) {
-        if (sp.field->table == table &&
-            sp.field->part_of_key.is_set(order_info.key_idx) &&
+        if (sp.field->table == table && sp.field->part_of_key.is_set(key_idx) &&
             !Overlaps(sp.other_side->used_tables(),
                       PSEUDO_TABLE_BITS | table->pos_in_table_list->map())) {
           want_parameter_tables |= sp.other_side->used_tables();
@@ -835,7 +901,7 @@ bool CostingReceiver::FoundSingleNode(int node_idx) {
       }
       for (table_map allowed_parameter_tables :
            NonzeroSubsetsOf(want_parameter_tables)) {
-        if (ProposeRefAccess(table, node_idx, order_info.key_idx,
+        if (ProposeRefAccess(table, node_idx, key_idx,
                              range_optimizer_row_estimate, reverse,
                              allowed_parameter_tables, order)) {
           return true;
@@ -989,6 +1055,10 @@ bool CollectPossibleRangeScans(
     scan.cost = cost.total_cost();
     scan.num_rows = num_rows;
     scan.is_ror_scan = is_ror_scan;
+    if (is_ror_scan) {
+      tree->n_ror_scans++;
+      tree->ror_scans_map.set_bit(idx);
+    }
     scan.is_imerge_scan = is_imerge_scan;
     scan.ranges = std::move(ranges);
     FindAppliedAndSubsumedPredicatesForRangeScan(
@@ -1158,7 +1228,8 @@ double EstimateOutputRowsFromRangeTree(
 AccessPath *FindCheapestIndexRangeScan(THD *thd, SEL_TREE *tree,
                                        RANGE_OPT_PARAM *param,
                                        bool prefer_clustered_primary_key_scan,
-                                       bool *inexact) {
+                                       bool *inexact,
+                                       bool need_rowid_ordered_rows) {
   double best_cost = DBL_MAX;
   int best_key = -1;
   int best_num_rows = -1;
@@ -1179,13 +1250,19 @@ AccessPath *FindCheapestIndexRangeScan(THD *thd, SEL_TREE *tree,
                            /*update_tbl_stats=*/true, ORDER_NOT_RELEVANT,
                            /*skip_records_in_range=*/false, &mrr_flags,
                            &buf_size, &cost, &is_ror_scan, &is_imerge_scan);
-    if (num_rows == HA_POS_ERROR || !is_imerge_scan) {
+    if (num_rows == HA_POS_ERROR || (!is_imerge_scan && !is_ror_scan)) {
       continue;
+    }
+    if (!is_ror_scan && need_rowid_ordered_rows) {
+      continue;
+    }
+    if (is_ror_scan) {
+      tree->n_ror_scans++;
+      tree->ror_scans_map.set_bit(idx);
     }
     const bool is_preferred_cpk =
         prefer_clustered_primary_key_scan &&
-        param->table->file->primary_key_is_clustered() &&
-        param->real_keynr[idx] == param->table->s->primary_key;
+        IsClusteredPrimaryKey(param->real_keynr[idx], *param->table);
     if (!is_preferred_cpk && cost.total_cost() > best_cost) {
       continue;
     }
@@ -1232,7 +1309,7 @@ AccessPath *FindCheapestIndexRangeScan(THD *thd, SEL_TREE *tree,
   path->index_range_scan().mrr_buf_size = best_mrr_buf_size;
   path->index_range_scan().can_be_used_for_ror =
       tree->ror_scans_map.is_set(best_key);
-  path->index_range_scan().need_rows_in_rowid_order = false;
+  path->index_range_scan().need_rows_in_rowid_order = need_rowid_ordered_rows;
   path->index_range_scan().can_be_used_for_imerge = true;
   path->index_range_scan().reuse_handler = false;
   path->index_range_scan().geometry = Overlaps(key->flags, HA_SPATIAL);
@@ -1278,6 +1355,18 @@ struct PossibleIndexMerge {
   bool inexact;
 };
 
+/**
+  Represents a candidate index skip scan, i.e. a scan on a multi-column
+  index which uses some of, but not all, the columns of the index. Each
+  index skip scan is associated with a predicate. All candidate skip
+  scans are calculated and saved in skip_scan_paths for later proposal.
+*/
+struct PossibleIndexSkipScan {
+  SEL_TREE *tree;
+  size_t predicate_idx;  // = num_where_predicates if scan covers all predicates
+  Mem_root_array<AccessPath *> skip_scan_paths;
+};
+
 bool CostingReceiver::FindIndexRangeScans(
     int node_idx, bool *impossible, double *num_output_rows_after_filter) {
   *impossible = false;
@@ -1303,6 +1392,13 @@ bool CostingReceiver::FindIndexRangeScans(
   MutableOverflowBitset tree_subsumed_predicates{m_thd->mem_root,
                                                  m_graph->predicates.size()};
   Mem_root_array<PossibleIndexMerge> index_merges(&m_range_optimizer_mem_root);
+  Mem_root_array<PossibleIndexSkipScan> index_skip_scans(
+      &m_range_optimizer_mem_root);
+  const bool skip_scan_hint =
+      hint_table_state(m_thd, table->pos_in_table_list, SKIP_SCAN_HINT_ENUM, 0);
+  const bool allow_skip_scan =
+      skip_scan_hint || m_thd->optimizer_switch_flag(OPTIMIZER_SKIP_SCAN);
+
   const NodeMap my_map = TableBitmap(node_idx);
   SEL_TREE *tree = nullptr;
   for (size_t i = 0; i < m_graph->num_where_predicates; ++i) {
@@ -1358,22 +1454,36 @@ bool CostingReceiver::FindIndexRangeScans(
       PossibleIndexMerge merge;
       merge.imerge = &imerge;
       merge.pred_idx = i;
+      merge.inexact = new_tree->inexact;
 
       // If there is more than one candidate merge arising from this predicate,
       // it must be because we had an AND inside an OR (tree_and() is the only
       // case that creates multiple candidates). ANDs in index merges are pretty
       // much always handled nonexactly (see the comment on PossibleIndexMerge),
       // ie., we pick one part of the conjunction and have to check the other
-      // by filter. So we need to note here that this has happened.
-      merge.inexact = (new_tree->merges.size() > 1);
+      // by filter. Verify that the ANDing marked the tree as inexact.
+      assert(merge.inexact || new_tree->merges.size() == 1);
 
       // Similarly, if there is also range scan arising from this predicate
       // (again because of an AND inside an OR), we need to handle the index
       // merge nonexactly, as the index merge will need to have the range
       // predicate in a filter on top of it.
-      merge.inexact |= !new_tree->keys_map.is_clear_all();
+      assert(merge.inexact || new_tree->keys_map.is_clear_all());
 
       index_merges.push_back(merge);
+    }
+
+    if (allow_skip_scan && (new_tree != nullptr) &&
+        (new_tree->type != SEL_TREE::IMPOSSIBLE)) {
+      PossibleIndexSkipScan index_skip;
+      // get all index skip scan access paths before tree is modified by AND-ing
+      // of trees
+      index_skip.skip_scan_paths =
+          get_all_skip_scans(m_thd, &param, new_tree, ORDER_NOT_RELEVANT,
+                             /*skip_records_in_range=*/false, skip_scan_hint);
+      index_skip.tree = new_tree;
+      index_skip.predicate_idx = i;
+      index_skip_scans.push_back(std::move(index_skip));
     }
 
     if (tree == nullptr) {
@@ -1406,14 +1516,18 @@ bool CostingReceiver::FindIndexRangeScans(
           tree_subsumed_predicates_fixed, *m_graph, &possible_scans)) {
     return true;
   }
+  OverflowBitset all_predicates_fixed = std::move(all_predicates);
   *num_output_rows_after_filter = EstimateOutputRowsFromRangeTree(
       m_thd, param, table->file->stats.records, possible_scans, *m_graph,
-      std::move(all_predicates), m_trace);
+      all_predicates_fixed, m_trace);
+
   if (Overlaps(table->file->ha_table_flags(), HA_NO_INDEX_ACCESS)) {
     // We only wanted to use the index for estimation, and now we've done that.
     return false;
   }
 
+  Mem_root_array<PossibleRORScan> possible_ror_scans(
+      &m_range_optimizer_mem_root);
   // Propose all single-index index range scans.
   for (PossibleRangeScan &scan : possible_scans) {
     const uint keynr = param.real_keynr[scan.idx];
@@ -1439,6 +1553,17 @@ bool CostingReceiver::FindIndexRangeScans(
     path.index_range_scan().geometry = Overlaps(key->flags, HA_SPATIAL);
     path.index_range_scan().reverse = false;
     path.index_range_scan().using_extended_key_parts = false;
+
+    // Store the applied and subsumed predicates for this range scan
+    // if it is ROR compatible. This will be used in
+    // ProposeRowIdOrderedIntersect() later.
+    if (path.index_range_scan().can_be_used_for_ror) {
+      PossibleRORScan ror_scan;
+      ror_scan.idx = scan.idx;
+      ror_scan.applied_predicates = scan.applied_predicates;
+      ror_scan.subsumed_predicates = scan.subsumed_predicates;
+      possible_ror_scans.push_back(ror_scan);
+    }
 
     if (IsBitSet(node_idx, m_immediate_update_delete_candidates)) {
       path.immediate_update_delete_table = node_idx;
@@ -1509,6 +1634,7 @@ bool CostingReceiver::FindIndexRangeScans(
       // get consistent values.
       path.cost = path.cost_before_filter = cost.total_cost();
       path.index_range_scan().can_be_used_for_imerge = is_imerge_scan;
+      path.index_range_scan().can_be_used_for_ror = is_ror_scan;
       path.ordering_state = m_orderings->SetOrder(ordering_idx);
       path.index_range_scan().reverse = (order_direction == ORDER_DESC);
 
@@ -1551,18 +1677,20 @@ bool CostingReceiver::FindIndexRangeScans(
       }
     }
   }
+  // Now Propose Row-ID ordered index merge intersect plans if possible.
+  ProposeAllRowIdOrderedIntersectPlans(
+      table, node_idx, tree, m_graph->num_where_predicates, possible_ror_scans,
+      *num_output_rows_after_filter, &param);
 
-  // Propose all index merges we have collected. Note that this is only
-  // “sort-index” merges, ie., generally collect all the row IDs,
-  // deduplicate them by sorting (in a Unique object) and then read all the
-  // rows. If the indexes are “ROR compatible” (give out their rows in row ID
-  // order directly, without any sort -- typically only for InnoDB indexes with
-  // the primary key appended directly after the last key part), we can
-  // union/intersect them directly without any sorts (“ROR scans”). However, we
-  // do not support that yet; it will be for a future worklog.
+  // Propose all index merges we have collected. This proposes both
+  // "sort-index" merges, ie., generally collect all the row IDs,
+  // deduplicate them by sorting (in a Unique object) and then read all
+  // the rows. If the indexes are “ROR compatible” (give out their rows in
+  // row ID order directly, without any sort which is mostly the case
+  // when a condition has equality predicates), we propose ROR union scans.
   for (const PossibleIndexMerge &imerge : index_merges) {
     for (bool allow_clustered_primary_key_scan : {true, false}) {
-      bool has_clustered_primary_key_scan;
+      bool has_clustered_primary_key_scan = false;
       ProposeIndexMerge(table, node_idx, *imerge.imerge, imerge.pred_idx,
                         imerge.inexact, allow_clustered_primary_key_scan,
                         m_graph->num_where_predicates,
@@ -1575,7 +1703,433 @@ bool CostingReceiver::FindIndexRangeScans(
       }
     }
   }
+
+  if (allow_skip_scan && (m_graph->num_where_predicates > 1)) {
+    // Multiple predicates, check for index skip scan which can be used to
+    // evaluate entire WHERE condition
+    PossibleIndexSkipScan index_skip;
+    index_skip.skip_scan_paths =
+        get_all_skip_scans(m_thd, &param, tree, ORDER_NOT_RELEVANT,
+                           /*use_records_in_range=*/false, skip_scan_hint);
+    index_skip.tree = tree;
+    // Set predicate index to #predicates to indicate all predicates applied
+    index_skip.predicate_idx = m_graph->num_where_predicates;
+    index_skip_scans.push_back(std::move(index_skip));
+  }
+
+  // Propose all index skip scans
+  for (const PossibleIndexSkipScan &iskip_scan : index_skip_scans) {
+    for (AccessPath *skip_scan_path : iskip_scan.skip_scan_paths) {
+      size_t pred_idx = iskip_scan.predicate_idx;
+      ProposeIndexSkipScan(node_idx, &param, skip_scan_path, table,
+                           all_predicates_fixed, m_graph->num_where_predicates,
+                           pred_idx, *num_output_rows_after_filter,
+                           iskip_scan.tree->inexact);
+    }
+  }
   return false;
+}
+
+// Used by ProposeRowIdOrderedIntersect() to update the applied_predicates
+// and subsumed_predicates when a new scan is added to a plan.
+void UpdateAppliedAndSubsumedPredicates(
+    const uint idx, const Mem_root_array<PossibleRORScan> &possible_ror_scans,
+    const RANGE_OPT_PARAM *param, OverflowBitset *applied_predicates,
+    OverflowBitset *subsumed_predicates) {
+  const auto s_it =
+      find_if(possible_ror_scans.begin(), possible_ror_scans.end(),
+              [idx](const PossibleRORScan &scan) { return scan.idx == idx; });
+  assert(s_it != possible_ror_scans.end());
+  *applied_predicates = OverflowBitset::Or(
+      param->temp_mem_root, *applied_predicates, s_it->applied_predicates);
+  *subsumed_predicates = OverflowBitset::Or(
+      param->temp_mem_root, *subsumed_predicates, s_it->subsumed_predicates);
+}
+
+// An ROR-Intersect plan is proposed when there are atleast two
+// ROR compatible scans. To decide the order of the indexes to
+// be read for an intersect, in the old optimizer, it orders
+// the range scans based on the number of fields that are
+// covered by an index before it starts planning. This way when
+// a plan is proposed, the best indexes are always looked at first.
+// Old optimizer could propose only one plan. However hypergraph
+// optimizer can propose more. This would mean, it could choose
+// any combination of indexes to do an ROR-Intersect and propose
+// it. But we do not need to do it. E.g. if adding a range scan
+// to an existing combination of scans does not improve selectivity,
+// it does not make sense to add it. Also, if existing scans in a
+// plan already cover the fields needed by the query, we do not need
+// to add an additional scan to this.
+// So, for hypergraph optimizer what we do is, for every combination
+// of the available ROR scans, we first order the range scans
+// in the combination based on the fields covered (and selectivity) and
+// look at the scans in that order while planning. For each combination
+// if any of the scan cannot be added because it does not cover more
+// fields or does not improve selectivity, we do not propose a plan
+// with that combination. This way, we can prune the number of plans
+// that get proposed.
+// For handling the subsumed and applied predicates, we use the same
+// information that is collected when proposing all possible range scans
+// earlier in CollectPossibleRangeScans(). Ordering is similar to that
+// of other index merge scans (provides only primary key ordering).
+
+void CostingReceiver::ProposeAllRowIdOrderedIntersectPlans(
+    TABLE *table, int node_idx, SEL_TREE *tree, int num_where_predicates,
+    const Mem_root_array<PossibleRORScan> &possible_ror_scans,
+    double num_output_rows_after_filter, const RANGE_OPT_PARAM *param) {
+  if (tree->n_ror_scans < 2 || !table->file->stats.records) return;
+
+  ROR_SCAN_INFO *cpk_scan = nullptr;
+  Mem_root_array<ROR_SCAN_INFO *> ror_scans(param->temp_mem_root, 0);
+  uint cpk_no =
+      table->file->primary_key_is_clustered() ? table->s->primary_key : MAX_KEY;
+  OverflowBitset needed_fields = get_needed_fields(param);
+
+  // Create ROR_SCAN_INFO structures for all possible ROR scans.
+  // ROR_SCAN_INFO holds the necessary information to plan (like
+  // index_scan_cost, index records, fields covered by the index etc).
+  for (const PossibleRORScan &scan : possible_ror_scans) {
+    uint idx = scan.idx;
+    ROR_SCAN_INFO *ror_scan =
+        make_ror_scan(param, idx, tree->keys[idx], needed_fields);
+    if (ror_scan == nullptr) return;
+    if (param->real_keynr[idx] == cpk_no) {
+      cpk_scan = ror_scan;
+      tree->n_ror_scans--;
+    } else
+      ror_scans.push_back(ror_scan);
+  }
+
+  // We have only 2 scans available, one a non-cpk scan and
+  // another a cpk scan. Propose the plan and return.
+  if (ror_scans.size() == 1 && cpk_scan != nullptr) {
+    ProposeRowIdOrderedIntersect(
+        table, node_idx, num_where_predicates, possible_ror_scans, ror_scans,
+        cpk_scan, num_output_rows_after_filter, param, needed_fields);
+    return;
+  }
+
+  // Now propose all possible ROR intersect plans.
+  uint num_scans = ror_scans.size();
+  Mem_root_array<bool> scan_combination(param->temp_mem_root, num_scans);
+  // For each combination of the scans available, first order the
+  // scans so that we look at the best indexes first.
+  for (uint num_scans_to_use = 2; num_scans_to_use <= num_scans;
+       num_scans_to_use++) {
+    // Generate combinations.
+    std::fill(scan_combination.begin(),
+              scan_combination.end() - num_scans_to_use, false);
+    std::fill(scan_combination.end() - num_scans_to_use, scan_combination.end(),
+              true);
+    Mem_root_array<ROR_SCAN_INFO *> ror_scans_to_use(param->return_mem_root, 0);
+    do {
+      ror_scans_to_use.clear();
+      for (uint i = 0; i < ror_scans.size(); i++) {
+        if (scan_combination[i]) ror_scans_to_use.push_back(ror_scans[i]);
+      }
+      // Find an optimal order of the scans available to start planning.
+      find_intersect_order(&ror_scans_to_use, needed_fields,
+                           param->temp_mem_root);
+      ProposeRowIdOrderedIntersect(table, node_idx, num_where_predicates,
+                                   possible_ror_scans, ror_scans_to_use,
+                                   cpk_scan, num_output_rows_after_filter,
+                                   param, needed_fields);
+    } while (std::next_permutation(scan_combination.begin(),
+                                   scan_combination.end()));
+  }
+}
+
+int GetRowIdOrdering(const TABLE *table, const LogicalOrderings *orderings,
+                     const Mem_root_array<ActiveIndexInfo> *active_indexes) {
+  const auto it =
+      find_if(active_indexes->begin(), active_indexes->end(),
+              [table](const ActiveIndexInfo &info) {
+                return info.table == table &&
+                       info.key_idx == static_cast<int>(table->s->primary_key);
+              });
+  if (it != active_indexes->end()) {
+    return orderings->SetOrder(
+        orderings->RemapOrderingIndex(it->forward_order));
+  }
+  return 0;
+}
+
+// Helper to ProposeAllRowIdOrderedIntersectPlans. Proposes an ROR-intersect
+// plan if all the scans are utilized in the available ror scans.
+void CostingReceiver::ProposeRowIdOrderedIntersect(
+    TABLE *table, int node_idx, int num_where_predicates,
+    const Mem_root_array<PossibleRORScan> &possible_ror_scans,
+    const Mem_root_array<ROR_SCAN_INFO *> &ror_scans, ROR_SCAN_INFO *cpk_scan,
+    double num_output_rows_after_filter, const RANGE_OPT_PARAM *param,
+    OverflowBitset needed_fields) {
+  ROR_intersect_plan plan(param, needed_fields.capacity());
+  MutableOverflowBitset ap_mutable(param->return_mem_root,
+                                   num_where_predicates);
+  OverflowBitset applied_predicates(std::move(ap_mutable));
+  MutableOverflowBitset sp_mutable(param->return_mem_root,
+                                   num_where_predicates);
+  OverflowBitset subsumed_predicates(std::move(sp_mutable));
+  uint index = 0;
+  bool cpk_scan_used = false;
+  while (index < ror_scans.size() && !plan.m_is_covering) {
+    ROR_SCAN_INFO *cur_scan = ror_scans[index];
+    if (plan.add(needed_fields, cur_scan, /*is_cpk_scan=*/false,
+                 /*trace_idx=*/nullptr, /*ignore_cost=*/false)) {
+      UpdateAppliedAndSubsumedPredicates(cur_scan->idx, possible_ror_scans,
+                                         param, &applied_predicates,
+                                         &subsumed_predicates);
+    } else {
+      return;
+    }
+    index++;
+    // We have added a non-CPK key scan to the plan. Check if we should
+    // add a CPK scan. If the obtained ROR-intersection is covering, it
+    // does not make sense to add a CPK scan. If it is not covering and
+    // we have exhausted all the avaialble non-CPK key scans, then add a
+    // CPK scan.
+    if (!plan.m_is_covering && index == ror_scans.size() &&
+        cpk_scan != nullptr) {
+      if (plan.add(needed_fields, cpk_scan, /*is_cpk_scan=*/true,
+                   /*trace_idx=*/nullptr, /*ignore_cost=*/true)) {
+        cpk_scan_used = true;
+      }
+      UpdateAppliedAndSubsumedPredicates(cpk_scan->idx, possible_ror_scans,
+                                         param, &applied_predicates,
+                                         &subsumed_predicates);
+    }
+  }
+
+  // Make the intersect plan here
+  AccessPath ror_intersect_path;
+  ror_intersect_path.type = AccessPath::ROWID_INTERSECTION;
+  ror_intersect_path.rowid_intersection().table = table;
+  ror_intersect_path.rowid_intersection().forced_by_hint = false;
+  ror_intersect_path.rowid_intersection().retrieve_full_rows =
+      !plan.m_is_covering;
+  ror_intersect_path.rowid_intersection().need_rows_in_rowid_order = false;
+
+  Mem_root_array<AccessPath *> children(param->return_mem_root);
+  for (unsigned i = 0; i < plan.num_scans(); ++i) {
+    AccessPath *child_path = MakeRowIdOrderedIndexScanAccessPath(
+        plan.m_ror_scans[i], table, param->key[plan.m_ror_scans[i]->idx],
+        /*reuse_handler=*/plan.m_is_covering && i == 0, param->return_mem_root);
+    children.push_back(child_path);
+  }
+  ror_intersect_path.rowid_intersection().children =
+      new (param->return_mem_root)
+          Mem_root_array<AccessPath *>(std::move(children));
+
+  AccessPath *cpk_child =
+      cpk_scan_used ? MakeRowIdOrderedIndexScanAccessPath(
+                          cpk_scan, table, param->key[cpk_scan->idx],
+                          /*reuse_handler=*/false, param->return_mem_root)
+                    : nullptr;
+  ror_intersect_path.rowid_intersection().cpk_child = cpk_child;
+  ror_intersect_path.cost = ror_intersect_path.cost_before_filter =
+      plan.m_total_cost.total_cost();
+  ror_intersect_path.init_cost = plan.m_total_cost.total_cost();
+  double best_rows = std::max<double>(plan.m_out_rows, 1.0);
+  ror_intersect_path.set_num_output_rows(
+      ror_intersect_path.num_output_rows_before_filter =
+          min<double>(best_rows, num_output_rows_after_filter));
+
+  if (IsBitSet(node_idx, m_immediate_update_delete_candidates)) {
+    ror_intersect_path.immediate_update_delete_table = node_idx;
+    // Don't allow immediate update of any keys being scanned.
+    if (IsUpdateStatement(m_thd) &&
+        uses_index_on_fields(&ror_intersect_path, table->write_set)) {
+      ror_intersect_path.immediate_update_delete_table = -1;
+    }
+  }
+
+  // Since the rows are retrived in row-id order, it always
+  // follows the clustered primary key.
+  if (!table->s->is_missing_primary_key() &&
+      table->file->primary_key_is_clustered()) {
+    ror_intersect_path.ordering_state =
+        GetRowIdOrdering(table, m_orderings, m_active_indexes);
+  }
+
+  const bool contains_subqueries = Overlaps(
+      ror_intersect_path.filter_predicates, m_graph->materializable_predicates);
+  // Add some trace info.
+  string description_for_trace;
+  for (AccessPath *path : *ror_intersect_path.rowid_intersection().children) {
+    description_for_trace +=
+        string(param->table->key_info[path->index_range_scan().index].name) +
+        " ";
+  }
+  description_for_trace += "intersect";
+  for (bool materialize_subqueries : {false, true}) {
+    AccessPath new_path = ror_intersect_path;
+    FunctionalDependencySet new_fd_set;
+    ApplyPredicatesForBaseTable(node_idx, applied_predicates,
+                                subsumed_predicates, materialize_subqueries,
+                                &new_path, &new_fd_set);
+
+    // Override the number of estimated rows, so that all paths get the
+    // same.
+    new_path.set_num_output_rows(num_output_rows_after_filter);
+
+    ProposeAccessPathWithOrderings(
+        TableBitmap(node_idx), new_fd_set,
+        /*obsolete_orderings=*/0, &new_path,
+        materialize_subqueries ? "mat. subq" : description_for_trace.c_str());
+
+    if (!contains_subqueries) {
+      // Nothing to try to materialize.
+      break;
+    }
+  }
+}
+
+// Propose Row-ID ordered index merge plans. We propose both ROR-Union
+// and ROR-Union with ROR-Intersect plans. For every "imerge",
+// ProposeIndexMerge() finds the cheapest range scan for each part
+// of the OR condition. If all such range scans are marked as ROR
+// compatible, we propose a ROR Union plan. Each part of an OR
+// condition could in turn have multiple predicates. In such a case
+// it proposes ROR Union of ROR intersect plan.
+void CostingReceiver::ProposeRowIdOrderedUnion(
+    TABLE *table, int node_idx, const SEL_IMERGE &imerge, int pred_idx,
+    bool inexact, int num_where_predicates, double num_output_rows_after_filter,
+    const RANGE_OPT_PARAM *param,
+    const Mem_root_array<AccessPath *> &range_paths) {
+  double cost = 0.0;
+  double num_output_rows = 0.0;
+  double intersect_factor = 1.0;
+  auto p_it = range_paths.begin();
+  Mem_root_array<AccessPath *> paths(m_thd->mem_root);
+  for (auto t_it = imerge.trees.begin(); t_it != imerge.trees.end();
+       t_it++, p_it++) {
+    AccessPath *range_path = *p_it;
+    SEL_TREE *tree = *t_it;
+    inexact |= tree->inexact;
+    // The cheapest range scan chosen is an ror scan. If this needs
+    // to be compared against an ROR-intersect plan, we need
+    // to add the row retrieval cost for the range scan. We only
+    // have the index scan cost.
+    double scan_cost = table->file
+                           ->read_cost(range_path->index_range_scan().index, 1,
+                                       range_path->num_output_rows())
+                           .total_cost();
+    scan_cost +=
+        table->cost_model()->row_evaluate_cost(range_path->num_output_rows());
+    // Only pick the best intersect plan to be proposed as part of an ROR-Union.
+    AccessPath *ror_intersect_path = get_best_ror_intersect(
+        m_thd, param, table, /*index_merge_intersect_allowed=*/true, tree,
+        scan_cost, /*force_index_merge_result=*/false, /*reuse_handler=*/false);
+    AccessPath *path = ror_intersect_path;
+    if (path == nullptr) {
+      path = range_path;
+      path->index_range_scan().need_rows_in_rowid_order = true;
+    } else {
+      path->rowid_intersection().need_rows_in_rowid_order = true;
+      path->init_cost = path->cost;
+      path->rowid_intersection().retrieve_full_rows = false;
+    }
+    paths.push_back(path);
+    cost += path->cost;
+    num_output_rows += path->num_output_rows();
+    // Get the factor by which this index would reduce the output rows
+    intersect_factor *=
+        min(1.0, path->num_output_rows() / table->file->stats.records);
+  }
+
+  // rows to retrieve =
+  // SUM(rows_from_all_range_scans) - (table_rows * intersect_factor)
+  num_output_rows -=
+      static_cast<ha_rows>(intersect_factor * table->file->stats.records);
+  // NOTE: We always give is_interrupted = false, because we don't
+  // really know where we will be in the join tree.
+  Cost_estimate sweep_cost;
+  get_sweep_read_cost(table, num_output_rows, /*interrupted=*/false,
+                      &sweep_cost);
+  cost += sweep_cost.total_cost();
+  cost += table->cost_model()->key_compare_cost(rows2double(num_output_rows) *
+                                                std::log2(paths.size()));
+
+  AccessPath ror_union_path;
+  ror_union_path.type = AccessPath::ROWID_UNION;
+  ror_union_path.rowid_union().table = table;
+  ror_union_path.rowid_union().forced_by_hint = false;
+  ror_union_path.rowid_union().children = new (param->return_mem_root)
+      Mem_root_array<AccessPath *>(std::move(paths));
+
+  ror_union_path.cost = ror_union_path.cost_before_filter = cost;
+  ror_union_path.init_cost = ror_union_path.init_once_cost = cost;
+  ror_union_path.set_num_output_rows(
+      ror_union_path.num_output_rows_before_filter =
+          min<double>(num_output_rows, num_output_rows_after_filter));
+
+  if (IsBitSet(node_idx, m_immediate_update_delete_candidates)) {
+    ror_union_path.immediate_update_delete_table = node_idx;
+    // Don't allow immediate update of any keys being scanned.
+    if (IsUpdateStatement(m_thd) &&
+        uses_index_on_fields(&ror_union_path, table->write_set)) {
+      ror_union_path.immediate_update_delete_table = -1;
+    }
+  }
+
+  // Find out which ordering we would follow, if any. Rows are read in
+  // row ID order (which follows the primary key).
+  if (!table->s->is_missing_primary_key() &&
+      table->file->primary_key_is_clustered()) {
+    ror_union_path.ordering_state =
+        GetRowIdOrdering(table, m_orderings, m_active_indexes);
+  }
+
+  // An index merge corresponds to one predicate (see comment on
+  // PossibleIndexMerge), and subsumes that predicate if and only if it is a
+  // faithful representation of everything in it.
+  MutableOverflowBitset this_predicate(param->temp_mem_root,
+                                       num_where_predicates);
+  this_predicate.SetBit(pred_idx);
+  OverflowBitset applied_predicates(std::move(this_predicate));
+  OverflowBitset subsumed_predicates =
+      inexact ? OverflowBitset() : applied_predicates;
+  const bool contains_subqueries = Overlaps(ror_union_path.filter_predicates,
+                                            m_graph->materializable_predicates);
+  // Add some trace info.
+  string description_for_trace;
+  for (AccessPath *path : *ror_union_path.rowid_union().children) {
+    if (path->type == AccessPath::ROWID_INTERSECTION) {
+      description_for_trace += "[";
+      for (AccessPath *range_path : *path->rowid_intersection().children) {
+        description_for_trace +=
+            string(param->table->key_info[range_path->index_range_scan().index]
+                       .name) +
+            " ";
+      }
+      description_for_trace += "intersect] ";
+    } else {
+      description_for_trace +=
+          string(param->table->key_info[path->index_range_scan().index].name) +
+          " ";
+    }
+  }
+  description_for_trace += "union";
+  for (bool materialize_subqueries : {false, true}) {
+    AccessPath new_path = ror_union_path;
+    FunctionalDependencySet new_fd_set;
+    ApplyPredicatesForBaseTable(node_idx, applied_predicates,
+                                subsumed_predicates, materialize_subqueries,
+                                &new_path, &new_fd_set);
+
+    // Override the number of estimated rows, so that all paths get the
+    // same.
+    new_path.set_num_output_rows(num_output_rows_after_filter);
+
+    ProposeAccessPathWithOrderings(
+        TableBitmap(node_idx), new_fd_set,
+        /*obsolete_orderings=*/0, &new_path,
+        materialize_subqueries ? "mat. subq" : description_for_trace.c_str());
+
+    if (!contains_subqueries) {
+      // Nothing to try to materialize.
+      break;
+    }
+  }
 }
 
 void CostingReceiver::ProposeIndexMerge(
@@ -1598,6 +2152,9 @@ void CostingReceiver::ProposeIndexMerge(
   double non_cpk_rows = 0.0;
 
   Mem_root_array<AccessPath *> paths(m_thd->mem_root);
+  Mem_root_array<AccessPath *> ror_paths(m_thd->mem_root);
+  bool all_scans_are_ror = true;
+  bool all_scans_ror_able = true;
   for (SEL_TREE *tree : imerge.trees) {
     inexact |= tree->inexact;
 
@@ -1610,25 +2167,58 @@ void CostingReceiver::ProposeIndexMerge(
     AccessPath *path = FindCheapestIndexRangeScan(
         m_thd, tree, param,
         /*prefer_clustered_primary_key_scan=*/allow_clustered_primary_key_scan,
-        &inexact);
+        &inexact, /*need_rowid_ordered_rows=*/false);
 
     if (path == nullptr) {
       // Something failed; ignore.
       return;
+    }
+    all_scans_are_ror &= path->index_range_scan().can_be_used_for_ror;
+    all_scans_ror_able &= (tree->n_ror_scans > 0);
+    // Check if we can find a row-id ordered scan even though it is not
+    // the cheapest one. It might be advantageous to have row-id ordered
+    // union scan instead of a "sort-union" scan.
+    AccessPath *ror_path = nullptr;
+    if (all_scans_ror_able) {
+      if (path->index_range_scan().can_be_used_for_ror) {
+        // Make a copy of the found range scan access path.
+        ror_path = new (param->return_mem_root) AccessPath(*path);
+        ror_paths.push_back(ror_path);
+      } else if (tree->n_ror_scans > 0) {
+        ror_path = FindCheapestIndexRangeScan(
+            m_thd, tree, param,
+            /*prefer_clustered_primary_key_scan=*/
+            allow_clustered_primary_key_scan, &inexact,
+            /*need_rowid_ordered_rows=*/true);
+        if (ror_path == nullptr) {
+          all_scans_ror_able = false;
+        } else {
+          ror_paths.push_back(ror_path);
+        }
+      }
     }
     paths.push_back(path);
     cost += path->cost;
     num_output_rows += path->num_output_rows();
 
     if (allow_clustered_primary_key_scan &&
-        table->file->primary_key_is_clustered() &&
-        path->index_range_scan().index == table->s->primary_key) {
+        IsClusteredPrimaryKey(path->index_range_scan().index, *table)) {
       assert(!*has_clustered_primary_key_scan);
       *has_clustered_primary_key_scan = true;
     } else {
       non_cpk_cost += path->cost;
-      non_cpk_rows = path->num_output_rows();
+      non_cpk_rows += path->num_output_rows();
     }
+  }
+  // Propose row-id ordered union plan if possible.
+  if (all_scans_ror_able) {
+    ProposeRowIdOrderedUnion(table, node_idx, imerge, pred_idx, inexact,
+                             num_where_predicates, num_output_rows_after_filter,
+                             param, ror_paths);
+    // If all chosen scans (best range scans) are ROR compatible, there
+    // is no need to propose an Index Merge plan as ROR-Union plan will
+    // always be better (Avoids sorting by row IDs).
+    if (all_scans_are_ror) return;
   }
 
   double init_cost = non_cpk_cost;
@@ -1695,16 +2285,8 @@ void CostingReceiver::ProposeIndexMerge(
   // out-of-order (ironically enough).
   if (!*has_clustered_primary_key_scan &&
       table->file->primary_key_is_clustered()) {
-    const auto it = find_if(
-        m_active_indexes->begin(), m_active_indexes->end(),
-        [table](const ActiveIndexInfo &info) {
-          return info.table == table &&
-                 info.key_idx == static_cast<int>(table->s->primary_key);
-        });
-    if (it != m_active_indexes->end()) {
-      imerge_path.ordering_state = m_orderings->SetOrder(
-          m_orderings->RemapOrderingIndex(it->forward_order));
-    }
+    imerge_path.ordering_state =
+        GetRowIdOrdering(table, m_orderings, m_active_indexes);
   }
 
   // An index merge corresponds to one predicate (see comment on
@@ -1720,6 +2302,14 @@ void CostingReceiver::ProposeIndexMerge(
               : applied_predicates;
   const bool contains_subqueries = Overlaps(imerge_path.filter_predicates,
                                             m_graph->materializable_predicates);
+  // Add some trace info.
+  string description_for_trace;
+  for (AccessPath *path : *imerge_path.index_merge().children) {
+    description_for_trace +=
+        string(param->table->key_info[path->index_range_scan().index].name) +
+        " ";
+  }
+  description_for_trace += "sort-union";
   for (bool materialize_subqueries : {false, true}) {
     AccessPath new_path = imerge_path;
     FunctionalDependencySet new_fd_set;
@@ -1734,13 +2324,79 @@ void CostingReceiver::ProposeIndexMerge(
     ProposeAccessPathWithOrderings(
         TableBitmap(node_idx), new_fd_set,
         /*obsolete_orderings=*/0, &new_path,
-        materialize_subqueries ? "mat. subq" : "index merge");
+        materialize_subqueries ? "mat. subq" : description_for_trace.c_str());
 
     if (!contains_subqueries) {
       // Nothing to try to materialize.
       break;
     }
   }
+}
+
+/**
+  Propose a single INDEX_SKIP_SCAN for consideration by hypergraph.
+
+  @param node_idx               Index of the base table in the nodes array.
+  @param param                  RANGE_OPT_PARAM
+  @param skip_scan_path         INDEX_SKIP_SCAN AccessPath to propose
+  @param table                  Base table
+  @param all_predicates         Bitset of all predicates for this join
+  @param num_where_predicates   Total number of predicates in WHERE clause
+  @param predicate_idx          Index of predicate applied to this skip scan, if
+  predicate_idx = num_where_predicates, then all predicates are applied
+  @param num_output_rows_after_filter Row count output
+  @param inexact                Whether the predicate is an exact match for the
+  skip scan index
+
+*/
+void CostingReceiver::ProposeIndexSkipScan(
+    int node_idx, RANGE_OPT_PARAM *param, AccessPath *skip_scan_path,
+    TABLE *table, OverflowBitset all_predicates, size_t num_where_predicates,
+    size_t predicate_idx, double num_output_rows_after_filter, bool inexact) {
+  skip_scan_path->cost_before_filter = skip_scan_path->cost;
+  skip_scan_path->num_output_rows_before_filter =
+      skip_scan_path->num_output_rows();
+  MutableOverflowBitset applied_predicates{param->temp_mem_root,
+                                           num_where_predicates};
+  MutableOverflowBitset subsumed_predicates{param->temp_mem_root,
+                                            num_where_predicates};
+  FunctionalDependencySet new_fd_set;
+  if (predicate_idx < num_where_predicates) {
+    applied_predicates.SetBit(predicate_idx);
+    if (!inexact) {
+      subsumed_predicates.SetBit(predicate_idx);
+    }
+    ApplyPredicatesForBaseTable(
+        node_idx, OverflowBitset(std::move(applied_predicates)),
+        OverflowBitset(std::move(subsumed_predicates)),
+        /*materialize_subqueries*/ false, skip_scan_path, &new_fd_set);
+  } else {
+    // Subsumed predicates cannot be reliably calculated, so, for safety,
+    // no predicates are marked as subsumed. This may result in a FILTER
+    // with redundant predicates.
+    assert(IsEmpty(subsumed_predicates));
+    ApplyPredicatesForBaseTable(
+        node_idx, all_predicates,  // all predicates applied
+        OverflowBitset(std::move(subsumed_predicates)),
+        /*materialize_subqueries*/ false, skip_scan_path, &new_fd_set);
+  }
+
+  const uint keynr = param->real_keynr[skip_scan_path->index_skip_scan().index];
+  const auto it = find_if(m_active_indexes->begin(), m_active_indexes->end(),
+                          [table, keynr](const ActiveIndexInfo &info) {
+                            return info.table == table &&
+                                   info.key_idx == static_cast<int>(keynr);
+                          });
+  if (it != m_active_indexes->end()) {
+    skip_scan_path->ordering_state = m_orderings->SetOrder(
+        m_orderings->RemapOrderingIndex(it->forward_order));
+  }
+
+  skip_scan_path->set_num_output_rows(num_output_rows_after_filter);
+  skip_scan_path->init_cost = 0.0;
+  ProposeAccessPathWithOrderings(TableBitmap(node_idx), new_fd_set,
+                                 /*obsolete_orderings=*/0, skip_scan_path,
+                                 "index skip scan");
 }
 
 // Specifies a mapping in an Index_lookup between an index keypart and a
@@ -2340,7 +2996,7 @@ bool CostingReceiver::ProposeIndexScan(
   path.type = AccessPath::INDEX_SCAN;
   path.index_scan().table = table;
   path.index_scan().idx = key_idx;
-  path.index_scan().use_order = true;
+  path.index_scan().use_order = ordering_idx != 0;
   path.index_scan().reverse = reverse;
   path.count_examined_rows = true;
   path.ordering_state = m_orderings->SetOrder(ordering_idx);
@@ -2360,8 +3016,7 @@ bool CostingReceiver::ProposeIndexScan(
   //
   // Note that this will give somewhat more access paths than is
   // required in some cases.
-  if (table->s->primary_key == key_idx &&
-      table->file->primary_key_is_clustered()) {
+  if (IsClusteredPrimaryKey(key_idx, *table)) {
     cost = table->file->table_scan_cost().total_cost() * 1.001;
   } else if (table->covering_keys.is_set(key_idx)) {
     // The index is covering, so we can do an index-only scan.
@@ -2935,6 +3590,24 @@ bool IsEmptyJoin(const RelationalExpression::Type join_type, bool left_is_empty,
   return false;
 }
 
+bool CostingReceiver::evaluate_secondary_engine_optimizer_state_request() {
+  SecondaryEngineGraphSimplificationRequestParameters restart_parameters =
+      m_secondary_engine_planning_complexity_check(
+          m_thd, *m_graph, /*ap = */ nullptr,
+          /*current_num_sg_pairs = */ m_num_seen_subgraph_pairs,
+          /*current_sg_pairs_limit = */ m_subgraph_pair_limit,
+          /*is_root_ap=*/false,
+          /*requested_num_sg_pairs = */ m_trace);
+
+  switch (restart_parameters.secondary_engine_optimizer_request) {
+    case SecondaryEngineGraphSimplificationRequest::kRestart:
+      m_subgraph_pair_limit = restart_parameters.subgraph_pair_limit;
+      return true;
+    case SecondaryEngineGraphSimplificationRequest::kContinue:
+      break;
+  }
+  return false;
+}
 /**
   If the ON clause of a left join only references tables on the right side of
   the join, pushing the condition into the right side is a valid thing to do. If
@@ -3026,10 +3699,17 @@ bool CostingReceiver::FoundSubgraphPair(NodeMap left, NodeMap right,
   m_graph->secondary_engine_costing_flags |=
       SecondaryEngineCostingFlag::HAS_MULTIPLE_BASE_TABLES;
 
-  if (++m_num_seen_subgraph_pairs > m_subgraph_pair_limit &&
-      m_subgraph_pair_limit >= 0) {
-    // Bail out; we're going to be needing graph simplification,
-    // which the caller will handle for us.
+  ++m_num_seen_subgraph_pairs;
+
+  if (m_secondary_engine_planning_complexity_check != nullptr) {
+    /* In presence of secondary engine complexity hook, use it preferably. */
+    if (evaluate_secondary_engine_optimizer_state_request()) {
+      return true;
+    }
+  } else if (m_num_seen_subgraph_pairs > m_subgraph_pair_limit &&
+             m_subgraph_pair_limit >= 0) {
+    /* Bail out; we're going to be needing graph simplification,
+     * which the caller will handle for us. */
     return true;
   }
 
@@ -3187,6 +3867,14 @@ bool CostingReceiver::FoundSubgraphPair(NodeMap left, NodeMap right,
             new_obsolete_orderings, &wrote_trace);
       }
       m_overflow_bitset_mem_root.ClearForReuse();
+
+      if (m_secondary_engine_planning_complexity_check != nullptr) {
+        /* In presence of secondary engine complexity hook, use it preferably.
+         */
+        if (evaluate_secondary_engine_optimizer_state_request()) {
+          return true;
+        }
+      }
     }
   }
 
@@ -3226,7 +3914,8 @@ bool CostingReceiver::FoundSubgraphPair(NodeMap left, NodeMap right,
  */
 AccessPath *DeduplicateForSemijoin(THD *thd, AccessPath *path,
                                    Item **semijoin_group,
-                                   int semijoin_group_size) {
+                                   int semijoin_group_size,
+                                   std::string *trace) {
   AccessPath *dedup_path;
   if (semijoin_group_size == 0) {
     dedup_path = NewLimitOffsetAccessPath(thd, path, /*limit=*/1, /*offset=*/0,
@@ -3237,7 +3926,9 @@ AccessPath *DeduplicateForSemijoin(THD *thd, AccessPath *path,
     dedup_path = NewRemoveDuplicatesAccessPath(thd, path, semijoin_group,
                                                semijoin_group_size);
     CopyBasicProperties(*path, dedup_path);
-    // TODO(sgunders): Model the actual reduction in rows somehow.
+    dedup_path->set_num_output_rows(EstimateAggregateRows(
+        path->num_output_rows(),
+        {semijoin_group, static_cast<size_t>(semijoin_group_size)}, trace));
     dedup_path->cost += kAggregateOneRowCost * path->num_output_rows();
   }
   return dedup_path;
@@ -3392,8 +4083,9 @@ void CostingReceiver::ProposeHashJoin(
     // NOTE: We purposefully don't overwrite left_path here, so that we
     // don't have to worry about copying ordering_state etc.
     CommitBitsetsToHeap(left_path);
-    join_path.hash_join().outer = DeduplicateForSemijoin(
-        m_thd, left_path, edge->semijoin_group, edge->semijoin_group_size);
+    join_path.hash_join().outer =
+        DeduplicateForSemijoin(m_thd, left_path, edge->semijoin_group,
+                               edge->semijoin_group_size, m_trace);
   }
 
   // TODO(sgunders): Consider removing redundant join conditions.
@@ -3882,8 +4574,9 @@ void CostingReceiver::ProposeNestedLoopJoin(
 
     // NOTE: We purposefully don't overwrite left_path here, so that we
     // don't have to worry about copying ordering_state etc.
-    join_path.nested_loop_join().outer = DeduplicateForSemijoin(
-        m_thd, left_path, edge->semijoin_group, edge->semijoin_group_size);
+    join_path.nested_loop_join().outer =
+        DeduplicateForSemijoin(m_thd, left_path, edge->semijoin_group,
+                               edge->semijoin_group_size, m_trace);
   } else if (edge->expr->type == RelationalExpression::STRAIGHT_INNER_JOIN) {
     join_path.nested_loop_join().join_type = JoinType::INNER;
   } else {
@@ -4512,6 +5205,7 @@ void CostingReceiver::CommitBitsetsToHeap(AccessPath *path) const {
 /// as it is expensive.
 [[maybe_unused]] bool CostingReceiver::BitsetsAreCommitted(
     AccessPath *path) const {
+  DBUG_EXECUTE_IF("disable_bitsets_are_committed", { return true; });
   // Verify that there are no uncommitted bitsets forgotten in children.
   bool all_ok = true;
   WalkAccessPaths(path, /*join=*/nullptr,
@@ -4569,6 +5263,7 @@ AccessPath *CostingReceiver::ProposeAccessPath(
       // Rejected by the secondary engine.
       return nullptr;
     }
+
     assert(!m_thd->is_error());
     assert(path->init_cost <= path->cost);
     if (!IsEmpty(path->filter_predicates)) {
@@ -4630,7 +5325,8 @@ AccessPath *CostingReceiver::ProposeAccessPath(
           }
         }
         if (!has_known_row_count_inconsistency_bugs) {
-          assert(false);
+          assert(false &&
+                 "Inconsistent row counts for different AccessPath objects.");
         }
         break;
       }
@@ -4908,8 +5604,9 @@ AccessPath *CreateMaterializationOrStreamingPath(THD *thd, JOIN *join,
 }
 
 AccessPath *GetSafePathToSort(THD *thd, JOIN *join, AccessPath *path,
-                              bool need_rowid) {
-  if (need_rowid && path->safe_for_rowid == AccessPath::UNSAFE) {
+                              bool need_rowid, bool force_materialization) {
+  if (force_materialization ||
+      (need_rowid && path->safe_for_rowid == AccessPath::UNSAFE)) {
     // We need to materialize this path before we can sort it,
     // since it might not give us stable row IDs.
     return CreateMaterializationOrStreamingPath(
@@ -5331,8 +6028,7 @@ void EnableFullTextCoveringIndexes(const Query_block *query_block) {
 AccessPath *CreateZeroRowsForEmptyJoin(JOIN *join, const char *cause) {
   join->zero_result_cause = cause;
   join->needs_finalize = true;
-  join->create_access_paths_for_zero_rows();
-  return join->root_access_path();
+  return join->create_access_paths_for_zero_rows();
 }
 
 /**
@@ -5432,7 +6128,7 @@ void ApplyHavingCondition(THD *thd, Item *having_cond, Query_block *query_block,
     filter_path.filter().materialize_subqueries = false;
     filter_path.set_num_output_rows(
         root_path->num_output_rows() *
-        EstimateSelectivity(thd, having_cond, trace));
+        EstimateSelectivity(thd, having_cond, CompanionSet(), trace));
 
     const FilterCost filter_cost = EstimateFilterCost(
         thd, root_path->num_output_rows(), having_cond, query_block);
@@ -5540,23 +6236,11 @@ Prealloced_array<AccessPath *, 4> ApplyDistinctAndOrder(
   // problem. Note that we can't do this if sorting by row IDs, as
   // AggregateIterator doesn't preserve them (doing so would probably not be
   // worth it for something that's fairly niche).
-  //
-  // NOTE: If we elide the sort due to interesting orderings, this might
-  // be redundant. It is fairly harmless, though.
-  if ((query_block->is_explicitly_grouped() &&
+  const bool force_materialization_before_sort =
+      (query_block->is_explicitly_grouped() &&
        (*join->sum_funcs != nullptr ||
         join->rollup_state != JOIN::RollupState::NONE || need_rowid)) &&
-      join->m_windows.is_empty()) {
-    Prealloced_array<AccessPath *, 4> new_root_candidates(PSI_NOT_INSTRUMENTED);
-    for (AccessPath *root_path : root_candidates) {
-      root_path =
-          CreateMaterializationOrStreamingPath(thd, join, root_path, need_rowid,
-                                               /*copy_items=*/true);
-      receiver.ProposeAccessPath(root_path, &new_root_candidates,
-                                 /*obsolete_orderings=*/0, "");
-    }
-    root_candidates = std::move(new_root_candidates);
-  }
+      join->m_windows.is_empty();
 
   // Now create iterators for DISTINCT, if applicable.
   if (join->select_distinct) {
@@ -5604,7 +6288,8 @@ Prealloced_array<AccessPath *, 4> ApplyDistinctAndOrder(
         continue;
       }
 
-      root_path = GetSafePathToSort(thd, join, root_path, need_rowid);
+      root_path = GetSafePathToSort(thd, join, root_path, need_rowid,
+                                    force_materialization_before_sort);
 
       // We need to sort. Try all sort-ahead, not just the one directly
       // derived from DISTINCT clause, because the DISTINCT clause might
@@ -5695,7 +6380,8 @@ Prealloced_array<AccessPath *, 4> ApplyDistinctAndOrder(
         const bool push_limit_to_filesort =
             limit_rows != HA_POS_ERROR && !join->calc_found_rows;
 
-        root_path = GetSafePathToSort(thd, join, root_path, need_rowid);
+        root_path = GetSafePathToSort(thd, join, root_path, need_rowid,
+                                      force_materialization_before_sort);
 
         AccessPath *sort_path = new (thd->mem_root) AccessPath;
         sort_path->type = AccessPath::SORT;
@@ -6172,6 +6858,7 @@ static bool CompatibleTypesForIndexLookup(Item_func_eq *eq_item, Field *field,
      only for join conditions.
  */
 static void PossiblyAddSargableCondition(THD *thd, Item *item,
+                                         const CompanionSet &companion_set,
                                          TABLE *force_table,
                                          int predicate_index,
                                          bool is_join_condition,
@@ -6251,7 +6938,7 @@ static void PossiblyAddSargableCondition(THD *thd, Item *item,
       // to it in bitmaps.
       Predicate p;
       p.condition = eq_item;
-      p.selectivity = EstimateSelectivity(thd, eq_item, trace);
+      p.selectivity = EstimateSelectivity(thd, eq_item, companion_set, trace);
       p.used_nodes =
           GetNodeMapFromTableMap(eq_item->used_tables() & ~PSEUDO_TABLE_BITS,
                                  graph->table_num_to_node_num);
@@ -6291,9 +6978,11 @@ void FindSargablePredicates(THD *thd, string *trace, JoinHypergraph *graph) {
   if (trace != nullptr) {
     *trace += "\n";
   }
+
   for (unsigned i = 0; i < graph->num_where_predicates; ++i) {
     if (IsSingleBitSet(graph->predicates[i].total_eligibility_set)) {
       PossiblyAddSargableCondition(thd, graph->predicates[i].condition,
+                                   CompanionSet(),
                                    /*force_table=*/nullptr, i,
                                    /*is_join_condition=*/false, graph, trace);
     }
@@ -6303,7 +6992,8 @@ void FindSargablePredicates(THD *thd, string *trace, JoinHypergraph *graph) {
       const auto it = graph->sargable_join_predicates.find(cond);
       int predicate_index =
           (it == graph->sargable_join_predicates.end()) ? -1 : it->second;
-      PossiblyAddSargableCondition(thd, cond, node.table, predicate_index,
+      PossiblyAddSargableCondition(thd, cond, *node.companion_set, node.table,
+                                   predicate_index,
                                    /*is_join_condition=*/true, graph, trace);
     }
   }
@@ -6332,7 +7022,8 @@ static void CacheCostInfoForJoinConditions(THD *thd,
     edge.expr->properties_for_join_conditions.init(thd->mem_root);
     for (Item_eq_base *cond : edge.expr->equijoin_conditions) {
       CachedPropertiesForPredicate properties;
-      properties.selectivity = EstimateSelectivity(thd, cond, trace);
+      properties.selectivity =
+          EstimateSelectivity(thd, cond, *edge.expr->companion_set, trace);
       properties.contained_subqueries.init(thd->mem_root);
       FindContainedSubqueries(
           cond, query_block, [&properties](const ContainedSubquery &subquery) {
@@ -6358,7 +7049,8 @@ static void CacheCostInfoForJoinConditions(THD *thd,
     }
     for (Item *cond : edge.expr->join_conditions) {
       CachedPropertiesForPredicate properties;
-      properties.selectivity = EstimateSelectivity(thd, cond, trace);
+      properties.selectivity =
+          EstimateSelectivity(thd, cond, CompanionSet(), trace);
       properties.contained_subqueries.init(thd->mem_root);
       FindContainedSubqueries(
           cond, query_block, [&properties](const ContainedSubquery &subquery) {
@@ -6397,8 +7089,9 @@ static void CacheCostInfoForJoinConditions(THD *thd,
   multiple candidates in play at every step if they are meaningfully different,
   and only pick out the winning candidate based on cost at the very end.
  */
-AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
-                              string *trace) {
+static AccessPath *FindBestQueryPlanInner(THD *thd, Query_block *query_block,
+                                          bool *retry, int *subgraph_pair_limit,
+                                          string *trace) {
   JOIN *join = query_block->join;
   if (CheckSupportedQuery(thd)) return nullptr;
 
@@ -6531,13 +7224,16 @@ AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
   }
   const secondary_engine_modify_access_path_cost_t secondary_engine_cost_hook =
       SecondaryEngineCostHook(thd);
+  const secondary_engine_check_optimizer_request_t
+      secondary_engine_optimizer_request_state_hook =
+          SecondaryEngineStateCheckHook(thd);
   CostingReceiver receiver(
       thd, query_block, graph, &orderings, &sort_ahead_orderings,
       &active_indexes, &fulltext_searches, fulltext_tables,
       sargable_fulltext_predicates, update_delete_target_tables,
       immediate_update_delete_candidates, need_rowid, EngineFlags(thd),
-      thd->variables.optimizer_max_subgraph_pairs, secondary_engine_cost_hook,
-      trace);
+      *subgraph_pair_limit, secondary_engine_cost_hook,
+      secondary_engine_optimizer_request_state_hook, trace);
   if (graph.edges.empty()) {
     // Fast path for single-table queries. No need to run the join enumeration
     // when there is no join. Just visit the only node directly.
@@ -6547,40 +7243,46 @@ AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
     }
   } else if (EnumerateAllConnectedPartitions(graph.graph, &receiver) &&
              !thd->is_error() && join->zero_result_cause == nullptr) {
-    SimplifyQueryGraph(thd, thd->variables.optimizer_max_subgraph_pairs, &graph,
-                       trace);
-
-    // Reset the receiver and run the query again, this time with
-    // the simplified hypergraph (and no query limit, in case the
-    // given limit was just inherently too low, e.g., one subgraph pair
-    // and three tables).
-    //
-    // It's not given that we _must_ reset the receiver; we could
-    // probably have reused its state (which could save time and
-    // even lead to a better plan, if we have simplified away some
-    // join orderings that have already been evaluated).
-    // However, more subgraph pairs also often means we get more access
-    // paths on the Pareto frontier for each subgraph, and given
-    // that we don't currently have any heuristics to curb the
-    // amount of those, it is probably good to get the second-order
-    // effect as well and do a full reset.
-    if (trace) {
-      *trace += "Simplified hypergraph:\n";
-      *trace += PrintDottyHypergraph(graph);
-      *trace += "\nRestarting query planning with the new graph.\n";
-    }
-    receiver = CostingReceiver(
-        thd, query_block, graph, &orderings, &sort_ahead_orderings,
-        &active_indexes, &fulltext_searches, fulltext_tables,
-        sargable_fulltext_predicates, update_delete_target_tables,
-        immediate_update_delete_candidates, need_rowid, EngineFlags(thd),
-        /*subgraph_pair_limit=*/-1, secondary_engine_cost_hook, trace);
-    // Reset the secondary engine planning flags
-    graph.secondary_engine_costing_flags = {};
-    if (EnumerateAllConnectedPartitions(graph.graph, &receiver) &&
-        thd->is_error()) {
-      return nullptr;
-    }
+    GraphSimplifier simplifier(&graph, thd->mem_root);
+    do {
+      *subgraph_pair_limit = receiver.subgraph_pair_limit();
+      SetNumberOfSimplifications(0, &simplifier);
+      SimplifyQueryGraph(thd, *subgraph_pair_limit, &graph, &simplifier, trace);
+      if (trace != nullptr) {
+        *trace += "Simplified hypergraph:\n";
+        *trace += PrintDottyHypergraph(graph);
+        *trace += "\nRestarting query planning with the new graph.\n";
+      }
+      if (secondary_engine_optimizer_request_state_hook == nullptr) {
+        /** ensure full enumeration is done for primary engine. */
+        *subgraph_pair_limit = -1;
+      }
+      // Reset the receiver and run the query again, this time with
+      // the simplified hypergraph (and no query limit, in case the
+      // given limit was just inherently too low, e.g., one subgraph pair
+      // and three tables).
+      //
+      // It's not given that we _must_ reset the receiver; we could
+      // probably have reused its state (which could save time and
+      // even lead to a better plan, if we have simplified away some
+      // join orderings that have already been evaluated).
+      // However, more subgraph pairs also often means we get more access
+      // paths on the Pareto frontier for each subgraph, and given
+      // that we don't currently have any heuristics to curb the
+      // amount of those, it is probably good to get the second-order
+      // effect as well and do a full reset.
+      receiver = CostingReceiver(
+          thd, query_block, graph, &orderings, &sort_ahead_orderings,
+          &active_indexes, &fulltext_searches, fulltext_tables,
+          sargable_fulltext_predicates, update_delete_target_tables,
+          immediate_update_delete_candidates, need_rowid, EngineFlags(thd),
+          /*subgraph_pair_limit=*/*subgraph_pair_limit,
+          secondary_engine_cost_hook,
+          secondary_engine_optimizer_request_state_hook, trace);
+      // Reset the secondary engine planning flags
+      graph.secondary_engine_costing_flags = {};
+    } while (EnumerateAllConnectedPartitions(graph.graph, &receiver) &&
+             (join->zero_result_cause == nullptr) && (!thd->is_error()));
   }
   if (thd->is_error()) return nullptr;
 
@@ -6777,7 +7479,8 @@ AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
            sort_ahead_orderings) {
         LogicalOrderings::StateIndex ordering_state = orderings.ApplyFDs(
             orderings.SetOrder(sort_ahead_ordering.ordering_idx), fd_set);
-        if (!orderings.DoesFollowOrder(ordering_state, group_by_ordering_idx)) {
+        if (sort_ahead_ordering.ordering_idx != group_by_ordering_idx &&
+            !orderings.DoesFollowOrder(ordering_state, group_by_ordering_idx)) {
           continue;
         }
         if (sort_ahead_ordering.aggregates_required) {
@@ -6962,6 +7665,20 @@ AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
                           return a->cost < b->cost;
                         });
 
+  if (secondary_engine_optimizer_request_state_hook != nullptr) {
+    SecondaryEngineGraphSimplificationRequestParameters
+        root_path_quality_status =
+            secondary_engine_optimizer_request_state_hook(
+                thd, graph, root_path, *subgraph_pair_limit,
+                *subgraph_pair_limit, /*is_root_ap=*/true, trace);
+    if (root_path_quality_status.secondary_engine_optimizer_request ==
+        SecondaryEngineGraphSimplificationRequest::kRestart) {
+      *retry = true;
+      *subgraph_pair_limit = root_path_quality_status.subgraph_pair_limit;
+      return nullptr;
+    }
+  }
+
   // Materialize the result if a top-level query block has the SQL_BUFFER_RESULT
   // option, and the chosen root path isn't already a materialization path. Skip
   // the materialization path when using an external executor, since it will
@@ -7008,5 +7725,21 @@ AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
     join->best_rowcount = PLACEHOLDER_TABLE_ROW_ESTIMATE;
   }
 
+  return root_path;
+}
+
+AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
+                              string *trace) {
+  assert(thd->variables.optimizer_max_subgraph_pairs <
+         ulong{std::numeric_limits<int>::max()});
+  int next_retry_subgraph_pairs =
+      static_cast<int>(thd->variables.optimizer_max_subgraph_pairs);
+  bool retry = false;
+  AccessPath *root_path = FindBestQueryPlanInner(
+      thd, query_block, &retry, &next_retry_subgraph_pairs, trace);
+  if (retry) {
+    root_path = FindBestQueryPlanInner(thd, query_block, &retry,
+                                       &next_retry_subgraph_pairs, trace);
+  }
   return root_path;
 }

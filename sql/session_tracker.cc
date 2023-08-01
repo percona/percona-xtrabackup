@@ -31,7 +31,6 @@
 #include <vector>
 
 #include "lex_string.h"
-#include "m_ctype.h"
 #include "m_string.h"
 #include "map_helpers.h"
 #include "my_compiler.h"
@@ -40,6 +39,7 @@
 #include "my_sys.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysql/status_var.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql/thread_type.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
@@ -58,6 +58,7 @@
 #include "sql/transaction_info.h"
 #include "sql/xa.h"
 #include "sql_string.h"
+#include "string_with_len.h"
 #include "template_utils.h"
 
 static void store_lenenc_string(String &to, const char *from, size_t length);
@@ -282,19 +283,20 @@ class Session_gtids_ctx_encoder_string : public Session_gtids_ctx_encoder {
         These are constants in this class and will both be encoded using
         only 1 byte.
       */
-      ulonglong tracker_type_enclen =
+      const ulonglong tracker_type_enclen =
           1 /* net_length_size((ulonglong)SESSION_TRACK_GTIDS); */;
-      ulonglong encoding_spec_enclen =
+      const ulonglong encoding_spec_enclen =
           1 /* net_length_size(encoding_specification()); */;
-      ulonglong gtids_string_len =
+      const ulonglong gtids_string_len =
           state->get_string_length(&Gtid_set::default_string_format);
-      ulonglong gtids_string_len_enclen = net_length_size(gtids_string_len);
-      ulonglong entity_len =
+      const ulonglong gtids_string_len_enclen =
+          net_length_size(gtids_string_len);
+      const ulonglong entity_len =
           encoding_spec_enclen + gtids_string_len_enclen + gtids_string_len;
-      ulonglong entity_len_enclen = net_length_size(entity_len);
-      ulonglong total_enclen = tracker_type_enclen + entity_len_enclen +
-                               encoding_spec_enclen + gtids_string_len_enclen +
-                               gtids_string_len;
+      const ulonglong entity_len_enclen = net_length_size(entity_len);
+      const ulonglong total_enclen = tracker_type_enclen + entity_len_enclen +
+                                     encoding_spec_enclen +
+                                     gtids_string_len_enclen + gtids_string_len;
 
       /* prepare the buffer */
       uchar *to = (uchar *)buf.prep_append(total_enclen, EXTRA_ALLOC);
@@ -987,7 +989,7 @@ bool Transaction_state_tracker::store(THD *thd, String &buf) {
 
   if ((thd->variables.session_track_transaction_info == TX_TRACK_CHISTICS) &&
       (tx_changed & TX_CHG_CHISTICS)) {
-    bool is_xa =
+    const bool is_xa =
         !thd->get_transaction()->xid_state()->has_state(XID_STATE::XA_NOTR);
 
     // worst case: READ UNCOMMITTED + READ WRITE + CONSISTENT SNAPSHOT
@@ -1082,10 +1084,10 @@ bool Transaction_state_tracker::store(THD *thd, String &buf) {
           Unfortunately, we can't re-use tx_isolation_names /
           tx_isolation_typelib as it hyphenates its items.
         */
-        LEX_CSTRING isol[] = {{STRING_WITH_LEN("READ UNCOMMITTED")},
-                              {STRING_WITH_LEN("READ COMMITTED")},
-                              {STRING_WITH_LEN("REPEATABLE READ")},
-                              {STRING_WITH_LEN("SERIALIZABLE")}};
+        const LEX_CSTRING isol[] = {{STRING_WITH_LEN("READ UNCOMMITTED")},
+                                    {STRING_WITH_LEN("READ COMMITTED")},
+                                    {STRING_WITH_LEN("REPEATABLE READ")},
+                                    {STRING_WITH_LEN("SERIALIZABLE")}};
 
         tx.append(STRING_WITH_LEN("SET TRANSACTION ISOLATION LEVEL "));
         tx.append(isol[tx_isol_level - 1].str, isol[tx_isol_level - 1].length);
@@ -1249,7 +1251,7 @@ void Transaction_state_tracker::reset() {
 enum_tx_state Transaction_state_tracker::calc_trx_state(thr_lock_type l,
                                                         bool has_trx) {
   enum_tx_state s;
-  bool read = (l <= TL_READ_NO_INSERT);
+  const bool read = (l <= TL_READ_NO_INSERT);
 
   if (read)
     s = has_trx ? TX_READ_TRX : TX_READ_UNSAFE;
@@ -1303,12 +1305,44 @@ void Transaction_state_tracker::add_trx_state(THD *thd, uint add) {
   // always report to the client).
   if (thd->state_flags & Open_tables_state::BACKUPS_AVAIL) return;
 
+#ifndef NDEBUG
+  /*
+    Assert that we do not set TX_STMT_DML while the current state is
+    TX_STMT_DDL. We currently allow transitions from DML to DDL,
+    but not vice versa. Allowing this would not be bad per se, it's
+    more a "we don't know of any such cases, so if this assertion
+    fails, double-check whether the call/transition wasn't a bug.
+    If the call was not in error, remove this assertion and update
+    the comment to note that this state transition has become valid.
+  */
+  assert((add != TX_STMT_DML) || !(tx_curr_state & TX_STMT_DDL));
+#endif
+
   if (add == TX_EXPLICIT) {
     /*
       Always send chistics item (if tracked), always replace state.
     */
     tx_changed |= TX_CHG_CHISTICS;
     tx_curr_state = TX_EXPLICIT;
+  }
+
+  else if (add == TX_STMT_DDL) {
+    /*
+      Always replace state: A DML-statement can transition to DDL here
+      (as currently, we flag each statement as only one of DML/DDL,
+      never both). DDL will also implicitly end an explicit transaction
+      (e.g. one started with BEGIN).
+
+      It is possible that we arrive here with TX_STMT_DML already set, e.g. in
+      rpl_gtid.rpl_gtid_mixed_row_create_drop_temporary_in_function_or_trigger
+      where we do an INSERT INTO ... VALUES (func1()) with the func1
+      containing DDL (CREATE TEMPORARY TABLE etc.).
+
+      Send chistics if client is tracking this information and we're
+      in a transaction.
+    */
+    if (tx_curr_state & TX_EXPLICIT) tx_changed |= TX_CHG_CHISTICS;
+    tx_curr_state = TX_STMT_DDL;
   }
 
   /*

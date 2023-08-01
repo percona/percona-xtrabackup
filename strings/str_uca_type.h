@@ -25,9 +25,14 @@
 #ifndef STR_UCA_TYPE_H
 #define STR_UCA_TYPE_H
 
+#include <array>
+#include <cstdint>
 #include <vector>
 
-#include "my_inttypes.h"
+#include "mysql/strings/m_ctype.h"
+
+constexpr int MY_UCA_CNT_FLAG_SIZE = 4096;
+constexpr my_wc_t MY_UCA_CNT_FLAG_MASK = 4095;
 
 /*
   So far we have only Croatian collation needs to reorder Latin and
@@ -47,8 +52,8 @@ enum enum_char_grp {
 };
 
 struct Weight_boundary {
-  uint16 begin;
-  uint16 end;
+  uint16_t begin;
+  uint16_t end;
 };
 
 struct Reorder_wt_rec {
@@ -60,7 +65,7 @@ struct Reorder_param {
   enum enum_char_grp reorder_grp[UCA_MAX_CHAR_GRP];
   struct Reorder_wt_rec wt_rec[2 * UCA_MAX_CHAR_GRP];
   int wt_rec_num;
-  uint16 max_weight;
+  uint16_t max_weight;
 };
 
 enum enum_case_first { CASE_FIRST_OFF, CASE_FIRST_UPPER, CASE_FIRST_LOWER };
@@ -111,20 +116,24 @@ struct MY_CONTRACTION {
   std::vector<MY_CONTRACTION> child_nodes_context;
 
   // weight and with_context are only useful when is_contraction_tail is true.
-  uint16 weight[MY_UCA_MAX_WEIGHT_SIZE]; /* Its weight string, 0-terminated */
+  uint16_t weight[MY_UCA_MAX_WEIGHT_SIZE]; /* Its weight string, 0-terminated */
   bool is_contraction_tail;
   size_t contraction_len;
 };
 
 struct MY_UCA_INFO {
-  enum enum_uca_ver version;
+  enum_uca_ver version{UCA_V400};
+  MY_UCA_INFO *m_based_on{nullptr};
 
   // Collation weights.
-  my_wc_t maxchar;
-  uchar *lengths;
-  uint16 **weights;
-  bool have_contractions;
-  std::vector<MY_CONTRACTION> *contraction_nodes;
+  my_wc_t maxchar{0};
+
+  uint8_t *lengths{nullptr};
+  std::vector<uint8_t> *m_allocated_weights{nullptr};
+  uint16_t **weights{nullptr};
+
+  bool have_contractions{false};
+  std::vector<MY_CONTRACTION> *contraction_nodes{nullptr};
   /*
     contraction_flags is only used when a collation has contraction rule.
     UCA collation supports at least 65535 characters, but only a few of
@@ -137,21 +146,22 @@ struct MY_UCA_INFO {
     contraction. This byte will be used to quick check whether one character
     can be part of contraction.
   */
-  char *contraction_flags;
+  using flags_type = std::array<char, MY_UCA_CNT_FLAG_SIZE>;
+  flags_type *contraction_flags{nullptr};
 
   /* Logical positions */
-  my_wc_t first_non_ignorable;
-  my_wc_t last_non_ignorable;
-  my_wc_t first_primary_ignorable;
-  my_wc_t last_primary_ignorable;
-  my_wc_t first_secondary_ignorable;
-  my_wc_t last_secondary_ignorable;
-  my_wc_t first_tertiary_ignorable;
-  my_wc_t last_tertiary_ignorable;
-  my_wc_t first_trailing;
-  my_wc_t last_trailing;
-  my_wc_t first_variable;
-  my_wc_t last_variable;
+  my_wc_t first_non_ignorable{0};
+  my_wc_t last_non_ignorable{0};
+  my_wc_t first_primary_ignorable{0};
+  my_wc_t last_primary_ignorable{0};
+  my_wc_t first_secondary_ignorable{0};
+  my_wc_t last_secondary_ignorable{0};
+  my_wc_t first_tertiary_ignorable{0};
+  my_wc_t last_tertiary_ignorable{0};
+  my_wc_t first_trailing{0};
+  my_wc_t last_trailing{0};
+  my_wc_t first_variable{0};
+  my_wc_t last_variable{0};
   /*
     extra_ce_pri_base, extra_ce_sec_base and extra_ce_ter_base are only used for
     the UCA collations whose UCA version is not smaller than UCA_V900. For why
@@ -165,13 +175,10 @@ struct MY_UCA_INFO {
     been occupied to do reordering. There might be weight conflict if we still
     use 0x54A4. Please also see the comment on modify_all_zh_pages().
    */
-  uint16 extra_ce_pri_base;  // Primary weight of extra CE
-  uint16 extra_ce_sec_base;  // Secondary weight of extra CE
-  uint16 extra_ce_ter_base;  // Tertiary weight of extra CE
+  uint16_t extra_ce_pri_base{0};  // Primary weight of extra CE
+  uint16_t extra_ce_sec_base{0};  // Secondary weight of extra CE
+  uint16_t extra_ce_ter_base{0};  // Tertiary weight of extra CE
 };
-
-#define MY_UCA_CNT_FLAG_SIZE 4096
-#define MY_UCA_CNT_FLAG_MASK 4095
 
 /** Whether the given character can be the first in any contraction. */
 #define MY_UCA_CNT_HEAD 1
@@ -226,8 +233,9 @@ struct MY_UCA_INFO {
   @retval   1 - can be contraction head
 */
 
-inline bool my_uca_can_be_contraction_head(const char *flags, my_wc_t wc) {
-  return flags[wc & MY_UCA_CNT_FLAG_MASK] & MY_UCA_CNT_HEAD;
+inline bool my_uca_can_be_contraction_head(const MY_UCA_INFO::flags_type *flags,
+                                           my_wc_t wc) {
+  return (*flags)[wc & MY_UCA_CNT_FLAG_MASK] & MY_UCA_CNT_HEAD;
 }
 
 /**
@@ -240,10 +248,11 @@ inline bool my_uca_can_be_contraction_head(const char *flags, my_wc_t wc) {
   @retval   1 - can be contraction tail
 */
 
-inline bool my_uca_can_be_contraction_tail(const char *flags, my_wc_t wc) {
-  return flags[wc & MY_UCA_CNT_FLAG_MASK] & MY_UCA_CNT_TAIL;
+inline bool my_uca_can_be_contraction_tail(const MY_UCA_INFO::flags_type *flags,
+                                           my_wc_t wc) {
+  return (*flags)[wc & MY_UCA_CNT_FLAG_MASK] & MY_UCA_CNT_TAIL;
 }
 
-const uint16 *my_uca_contraction2_weight(
+const uint16_t *my_uca_contraction2_weight(
     const std::vector<MY_CONTRACTION> *cont_nodes, my_wc_t wc1, my_wc_t wc2);
 #endif

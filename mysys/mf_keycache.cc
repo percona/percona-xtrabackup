@@ -128,11 +128,11 @@
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_io.h"
-#include "my_loglevel.h"
 #include "my_macros.h"
 #include "my_pointer_arithmetic.h"
 #include "my_sys.h"
 #include "my_thread_local.h"
+#include "mysql/my_loglevel.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/service_mysql_alloc.h"
@@ -2935,7 +2935,7 @@ static int flush_cached_blocks(KEY_CACHE *keycache,
                                enum flush_type type) {
   int error;
   int last_errno = 0;
-  uint count = (uint)(end - cache);
+  const uint count = (uint)(end - cache);
 
   /* Don't lock the cache during the flush */
   mysql_mutex_unlock(&keycache->cache_lock);

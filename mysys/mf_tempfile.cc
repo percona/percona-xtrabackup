@@ -52,6 +52,7 @@
 #include "mysql/psi/mysql_mutex.h"
 #include "mysys/mysys_priv.h"
 #include "mysys_err.h"
+#include "nulls.h"
 
 #ifdef WIN32
 #include <fcntl.h>  // O_EXCL
@@ -262,7 +263,7 @@ File create_temp_file(char *to, const char *dir, const char *prefix,
   */
   if ((file = my_open(to, (mode & ~O_EXCL), MyFlags)) < 0) {
     /* Open failed, remove the file created by GetTempFileName */
-    int tmp = my_errno();
+    const int tmp = my_errno();
     (void)my_delete(to, MYF(0));
     set_my_errno(tmp);
     return file;

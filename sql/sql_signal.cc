@@ -25,14 +25,13 @@
 #include <sys/types.h>
 
 #include "lex_string.h"
-#include "m_ctype.h"
-#include "m_string.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_macros.h"
 #include "my_sys.h"
 #include "mysql/components/services/bits/psi_error_bits.h"
 #include "mysql/psi/mysql_error.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysqld_error.h"     // ER_*
 #include "sql/derror.h"       // ER_THD
 #include "sql/item.h"         // Item
@@ -41,6 +40,7 @@
 #include "sql/sql_class.h"    // THD
 #include "sql/sql_lex.h"
 #include "sql_string.h"
+#include "string_with_len.h"
 
 struct MEM_ROOT;
 
@@ -109,7 +109,7 @@ void Sql_cmd_common_signal::eval_defaults(THD *thd, Sql_condition *cond) {
   assert(cond);
 
   const char *sqlstate;
-  bool set_defaults = (m_cond != nullptr);
+  const bool set_defaults = (m_cond != nullptr);
 
   if (set_defaults) {
     /*
@@ -239,7 +239,7 @@ int Sql_cmd_common_signal::eval_signal_informations(THD *thd,
     String Sql_condition::*m_member;
   };
 
-  static cond_item_map map[] = {
+  static const cond_item_map map[] = {
       {CIN_CLASS_ORIGIN, &Sql_condition::m_class_origin},
       {CIN_SUBCLASS_ORIGIN, &Sql_condition::m_subclass_origin},
       {CIN_CONSTRAINT_CATALOG, &Sql_condition::m_constraint_catalog},
@@ -335,7 +335,7 @@ int Sql_cmd_common_signal::eval_signal_informations(THD *thd,
       thd->raise_error_printf(ER_WRONG_VALUE_FOR_VAR, "MYSQL_ERRNO", "NULL");
       goto end;
     }
-    longlong code = set->val_int();
+    const longlong code = set->val_int();
     if ((code <= 0) || (code > MAX_MYSQL_ERRNO)) {
       str = set->val_str(&str_value);
       thd->raise_error_printf(ER_WRONG_VALUE_FOR_VAR, "MYSQL_ERRNO",

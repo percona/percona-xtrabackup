@@ -41,8 +41,6 @@
 #include <time.h>
 
 #include "lex_string.h"
-#include "m_ctype.h"
-#include "m_string.h"  // strmake
 #include "map_helpers.h"
 #include "mutex_lock.h"  // MUTEX_LOCK
 #include "my_alloc.h"
@@ -52,7 +50,6 @@
 #include "my_dir.h"
 #include "my_inttypes.h"
 #include "my_io.h"
-#include "my_loglevel.h"
 #include "my_macros.h"
 #include "my_pointer_arithmetic.h"
 #include "my_psi_config.h"
@@ -64,9 +61,11 @@
 #include "mysql/components/services/bits/psi_mutex_bits.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/components/services/log_shared.h"
+#include "mysql/my_loglevel.h"
 #include "mysql/psi/mysql_file.h"
 #include "mysql/psi/mysql_memory.h"
 #include "mysql/psi/mysql_mutex.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysqld_error.h"
 #include "sql/dd/types/event.h"
 #include "sql/field.h"
@@ -78,6 +77,7 @@
 #include "sql/thr_malloc.h"
 #include "sql/time_zone_common.h"  // ABBR_ARE_USED
 #include "sql/tzfile.h"            // TZ_MAX_REV_RANGES
+#include "string_with_len.h"
 #include "template_utils.h"
 #include "thr_lock.h"
 #include "thr_mutex.h"
@@ -90,6 +90,7 @@
 #include "sql/sql_time.h"   // localtime_to_TIME
 #include "sql/table.h"      // Table_ref
 #include "sql_string.h"     // String
+#include "strmake.h"
 
 #include <algorithm>
 #include <string>
@@ -359,7 +360,7 @@ static my_time_t sec_since_epoch(int year, int mon, int mday, int hour, int min,
   days += mon_starts[isleap(year)][mon - 1];
   days += mday - 1;
 
-  my_time_t result =
+  const my_time_t result =
       ((days * HOURS_PER_DAY + hour) * MINS_PER_HOUR + min) * SECS_PER_MIN +
       sec;
   return result;
@@ -613,10 +614,10 @@ bool convert_time_zone_displacement(const Time_zone *tz, MYSQL_TIME *mt) {
   if (check_time_zone_convertibility(*mt)) return true;
 
   MYSQL_TIME out;
-  std::int64_t epoch_secs_in_utc =
+  const std::int64_t epoch_secs_in_utc =
       sec_since_epoch64(*mt) - mt->time_zone_displacement;
 
-  ulong microseconds = mt->second_part;
+  const ulong microseconds = mt->second_part;
 
   tz->gmt_sec_to_TIME(&out, epoch_secs_in_utc);
   out.second_part = microseconds;
@@ -706,7 +707,7 @@ my_time_t Time_zone_system::TIME_to_gmt_sec(const MYSQL_TIME *mt,
 */
 void Time_zone_system::gmt_sec_to_TIME(MYSQL_TIME *tmp, my_time_t t) const {
   struct tm tmp_tm;
-  time_t tmp_t = (time_t)t;
+  const time_t tmp_t = (time_t)t;
 
   localtime_r(&tmp_t, &tmp_tm);
   if (tmp_tm.tm_year <= 0) {  // Windows sets -1 if timestamp is too high.
@@ -792,7 +793,7 @@ my_time_t Time_zone_utc::TIME_to_gmt_sec(const MYSQL_TIME *mt,
 */
 void Time_zone_utc::gmt_sec_to_TIME(MYSQL_TIME *tmp, my_time_t t) const {
   struct tm tmp_tm;
-  time_t tmp_t = (time_t)t;
+  const time_t tmp_t = (time_t)t;
   gmtime_r(&tmp_t, &tmp_tm);
 
   if (tmp_tm.tm_year <= 0) {  // Windows sets -1 if timestamp is too high.
@@ -950,10 +951,10 @@ class Time_zone_offset : public Time_zone {
                       Positive for direction to east.
 */
 Time_zone_offset::Time_zone_offset(long tz_offset_arg) : offset(tz_offset_arg) {
-  uint hours = abs((int)(offset / SECS_PER_HOUR));
-  uint minutes = abs((int)(offset % SECS_PER_HOUR / SECS_PER_MIN));
-  size_t length = snprintf(name_buff, sizeof(name_buff), "%s%02d:%02d",
-                           (offset >= 0) ? "+" : "-", hours, minutes);
+  const uint hours = abs((int)(offset / SECS_PER_HOUR));
+  const uint minutes = abs((int)(offset % SECS_PER_HOUR / SECS_PER_MIN));
+  const size_t length = snprintf(name_buff, sizeof(name_buff), "%s%02d:%02d",
+                                 (offset >= 0) ? "+" : "-", hours, minutes);
   name.set(name_buff, length, &my_charset_latin1);
 }
 
@@ -979,7 +980,7 @@ my_time_t Time_zone_offset::TIME_to_gmt_sec(const MYSQL_TIME *t,
     overflow of my_time_t if the time value is near its
     maximum range
   */
-  int shift =
+  const int shift =
       ((t->year == MYTIME_MAX_YEAR) && (t->month == 1) && t->day > 4) ? 2 : 0;
 
   my_time_t local_t = sec_since_epoch(t->year, t->month, (t->day - shift),
@@ -1188,7 +1189,7 @@ bool my_tz_init(THD *org_thd, const char *default_tzname, bool bootstrap) {
   TABLE *table;
   Tz_names_entry *tmp_tzname;
   bool return_val = true;
-  LEX_CSTRING db = {STRING_WITH_LEN("mysql")};
+  const LEX_CSTRING db = {STRING_WITH_LEN("mysql")};
   int res;
   DBUG_TRACE;
 
@@ -1317,7 +1318,7 @@ end_with_close:
 end_with_setting_default_tz:
   /* If we have default time zone try to load it */
   if (!return_val && default_tzname) {
-    String tmp_tzname2(default_tzname, &my_charset_latin1);
+    const String tmp_tzname2(default_tzname, &my_charset_latin1);
     /*
       Time zone tables may be open here, and my_tz_find() may open
       most of them once more, but this is OK for system tables open

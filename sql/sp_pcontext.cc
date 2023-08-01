@@ -23,13 +23,13 @@
 #include "sql/sp_pcontext.h"
 
 #include <assert.h>
-#include "m_ctype.h"
-#include "m_string.h"
 #include "my_alloc.h"
 
 #include "my_inttypes.h"
+#include "mysql/strings/m_ctype.h"
 #include "sql/sql_class.h"
 #include "sql_string.h"
+#include "string_with_len.h"
 
 bool sp_condition_value::equals(const sp_condition_value *cv) const {
   assert(cv);
@@ -162,7 +162,7 @@ sp_pcontext *sp_pcontext::push_context(THD *thd,
 sp_pcontext *sp_pcontext::pop_context() {
   m_parent->m_max_var_index += m_max_var_index;
 
-  uint submax = max_cursor_index();
+  const uint submax = max_cursor_index();
   if (submax > m_parent->m_max_cursor_index)
     m_parent->m_max_cursor_index = submax;
 

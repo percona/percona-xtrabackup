@@ -36,6 +36,7 @@
 #include "my_thread_local.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_rwlock.h"  // mysql_rwlock_t
+#include "mysql/strings/m_ctype.h"   // my_isspace
 #include "prealloced_array.h"        // Prealloced_array
 #include "sql/rpl_reporting.h"       // MAX_SLAVE_ERRMSG
 #include "template_utils.h"
@@ -328,7 +329,13 @@ class Checkable_rwlock {
   /// Destroy this Checkable_lock.
   ~Checkable_rwlock() { mysql_rwlock_destroy(&m_rwlock); }
 
-  enum enum_lock_type { NO_LOCK, READ_LOCK, WRITE_LOCK, TRY_READ_LOCK };
+  enum enum_lock_type {
+    NO_LOCK,
+    READ_LOCK,
+    WRITE_LOCK,
+    TRY_READ_LOCK,
+    TRY_WRITE_LOCK
+  };
 
   /**
     RAII class to acquire a lock for the duration of a block.
@@ -354,6 +361,9 @@ class Checkable_rwlock {
         case TRY_READ_LOCK:
           tryrdlock();
           break;
+        case TRY_WRITE_LOCK:
+          trywrlock();
+          break;
         case NO_LOCK:
           break;
       }
@@ -374,6 +384,7 @@ class Checkable_rwlock {
           lock.assert_some_wrlock();
           break;
         case TRY_READ_LOCK:
+        case TRY_WRITE_LOCK:
         case NO_LOCK:
           break;
       }

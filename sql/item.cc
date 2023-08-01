@@ -37,15 +37,21 @@
 #include <utility>
 
 #include "decimal.h"
+#include "dig_vec.h"
 #include "float.h"
 #include "limits.h"
+#include "m_string.h"
 #include "my_alloc.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_macros.h"
 #include "myisampack.h"  // mi_int8store
 #include "mysql.h"       // IS_NUM
+#include "mysql/strings/dtoa.h"
+#include "mysql/strings/m_ctype.h"
+#include "mysql/strings/my_strtoll10.h"
 #include "mysql_time.h"
+#include "nulls.h"
 #include "sql-common/json_dom.h"  // Json_wrapper
 #include "sql/aggregate_check.h"  // Distinct_check
 #include "sql/auth/auth_acls.h"
@@ -84,6 +90,9 @@
 #include "sql/system_variables.h"
 #include "sql/thd_raii.h"
 #include "sql/tztime.h"  // my_tz_UTC
+#include "string_with_len.h"
+#include "strmake.h"
+#include "strxmov.h"
 #include "template_utils.h"
 #include "typelib.h"
 #include "unsafe_string_append.h"
@@ -128,7 +137,8 @@ void item_init(void) {
 }
 
 Item::Item()
-    : next_free(nullptr),
+    : super(POS()),
+      next_free(nullptr),
       str_value(),
       collation(&my_charset_bin, DERIVATION_COERCIBLE),
       item_name(),
@@ -155,7 +165,8 @@ Item::Item()
 }
 
 Item::Item(THD *thd, const Item *item)
-    : next_free(nullptr),
+    : super(POS()),
+      next_free(nullptr),
       str_value(item->str_value),
       collation(item->collation),
       item_name(item->item_name),
@@ -182,8 +193,9 @@ Item::Item(THD *thd, const Item *item)
   thd->add_item(this);
 }
 
-Item::Item(const POS &)
-    : next_free(nullptr),
+Item::Item(const POS &pos)
+    : super(pos),
+      next_free(nullptr),
       str_value(),
       collation(&my_charset_bin, DERIVATION_COERCIBLE),
       item_name(),
@@ -257,7 +269,7 @@ String *Item::val_str_ascii(String *str) {
 }
 
 String *Item::val_string_from_real(String *str) {
-  double nr = val_real();
+  const double nr = val_real();
   if (null_value) return nullptr; /* purecov: inspected */
 
   char buffer[FLOATING_POINT_BUFFER];
@@ -280,7 +292,7 @@ String *Item::val_string_from_real(String *str) {
 }
 
 String *Item::val_string_from_int(String *str) {
-  longlong nr = val_int();
+  const longlong nr = val_int();
   if (null_value) return nullptr;
   str->set_int(nr, unsigned_flag, &my_charset_bin);
   return str;
@@ -325,14 +337,14 @@ String *Item::val_string_from_time(String *str) {
 
 my_decimal *Item::val_decimal_from_real(my_decimal *decimal_value) {
   DBUG_TRACE;
-  double nr = val_real();
+  const double nr = val_real();
   if (null_value) return nullptr;
   double2my_decimal(E_DEC_FATAL_ERROR, nr, decimal_value);
   return decimal_value;
 }
 
 my_decimal *Item::val_decimal_from_int(my_decimal *decimal_value) {
-  longlong nr = val_int();
+  const longlong nr = val_int();
   if (null_value) return nullptr;
   int2my_decimal(E_DEC_FATAL_ERROR, nr, unsigned_flag, decimal_value);
   return decimal_value;
@@ -349,7 +361,7 @@ my_decimal *Item::val_decimal_from_string(my_decimal *decimal_value) {
       The EC_BAD_NUM message is awkward that's why we didn't let
       str2my_decimal() send it above. We unconditionally send:
     */
-    ErrConvString err(res);
+    const ErrConvString err(res);
     push_warning_printf(
         current_thd, Sql_condition::SL_WARNING, ER_TRUNCATED_WRONG_VALUE,
         ER_THD(current_thd, ER_TRUNCATED_WRONG_VALUE), "DECIMAL", err.ptr());
@@ -395,9 +407,9 @@ longlong Item::val_date_temporal() {
 // TS-TODO: split into separate methods?
 longlong Item::val_temporal_with_round(enum_field_types type, uint8 dec) {
   longlong nr = val_temporal_by_field_type();
-  longlong diff =
+  const longlong diff =
       my_time_fraction_remainder(my_packed_time_get_frac_part(nr), dec);
-  longlong abs_diff = diff > 0 ? diff : -diff;
+  const longlong abs_diff = diff > 0 ? diff : -diff;
   if (abs_diff * 2 >= (int)log_10_int[DATETIME_MAX_DECIMALS - dec]) {
     /* Needs rounding */
     switch (type) {
@@ -554,44 +566,55 @@ type_conversion_status Item::save_str_value_in_field(Field *field,
 /**
   Aggregates data types from array of items into current item
 
+  @param name   name of function that performs type aggregation
   @param items  array of items to aggregate the type from
+  @param count  number of items to aggregate
+
+  @returns false on success, true on error
 
   This function aggregates all type information from the array of items.
   Found type is supposed to be used later as the result data type
   of a multi-argument function.
   Aggregation itself is performed partially by the Field::field_type_merge()
   function.
+
+  The function is used when resolving the result type of
+  - expressions from set operations UNION, INTERSECT and EXCEPT.
+  - functions CASE, COALESCE, IF, IFNULL and NULLIF.
+  - functions LEAST and GREATEST.
+  - LEAD and LAG.
 */
 
-void Item::aggregate_type(Bounds_checked_array<Item *> items) {
+bool Item::aggregate_type(const char *name, Item **items, uint count) {
   uint itemno = 0;
-  const uint count = items.size();
+
   while (itemno < count && items[itemno]->data_type() == MYSQL_TYPE_NULL)
     itemno++;
 
-  if (itemno == count)  // All items have NULL type, consolidated type is NULL
-  {
-    set_data_type(MYSQL_TYPE_NULL);
-    return;
+  if (itemno == count) {  // All items have NULL type, consolidated type is NULL
+    set_data_type_null();
+    return false;
   }
 
   assert(items[itemno]->result_type() != ROW_RESULT);
 
   enum_field_types new_type = real_data_type(items[itemno]);
-  uint8 new_dec = items[itemno]->decimals;
+  uint32 new_length = items[itemno]->max_length;
   bool new_unsigned = items[itemno]->unsigned_flag;
   bool mixed_signs = false;
 
+  // Aggregate the resulting data type and calculate properties for integers
   for (itemno = itemno + 1; itemno < count; itemno++) {
     // Do not aggregate items with NULL type
     if (items[itemno]->data_type() == MYSQL_TYPE_NULL) continue;
     assert(items[itemno]->result_type() != ROW_RESULT);
     new_type = Field::field_type_merge(new_type, real_data_type(items[itemno]));
     mixed_signs |= (new_unsigned != items[itemno]->unsigned_flag);
-    new_dec = max<uint8>(new_dec, items[itemno]->decimals);
+    new_length = max<uint32>(new_length, items[itemno]->max_length);
   }
   if (mixed_signs && is_integer_type(new_type)) {
     bool bump_range = false;
+    new_unsigned = false;
     for (uint i = 0; i < count; i++)
       bump_range |= (items[i]->unsigned_flag &&
                      (items[i]->data_type() == new_type ||
@@ -619,16 +642,106 @@ void Item::aggregate_type(Bounds_checked_array<Item *> items) {
     }
   }
 
-  set_data_type(real_type_to_type(new_type));
-  decimals = new_dec;
-  unsigned_flag = new_unsigned && !mixed_signs;
-  max_length = 0;
-  return;
+  // Operate on "new" types only
+  new_type = real_type_to_type(new_type);
+
+  // Calculate remaining type properties and set complete data type
+  switch (new_type) {
+    case MYSQL_TYPE_NULL:
+      set_data_type_null();
+      break;
+
+    case MYSQL_TYPE_BOOL:
+      set_data_type_bool();
+      break;
+
+    case MYSQL_TYPE_TINY:
+    case MYSQL_TYPE_SHORT:
+    case MYSQL_TYPE_INT24:
+    case MYSQL_TYPE_LONG:
+    case MYSQL_TYPE_LONGLONG:
+      set_data_type_int(new_type, new_unsigned, new_length);
+      break;
+
+    case MYSQL_TYPE_NEWDECIMAL:
+      aggregate_decimal_properties(items, count);
+      break;
+
+    case MYSQL_TYPE_FLOAT:
+    case MYSQL_TYPE_DOUBLE:
+      aggregate_float_properties(new_type, items, count);
+      break;
+
+    case MYSQL_TYPE_DATE:
+      set_data_type_date();
+      break;
+
+    case MYSQL_TYPE_TIME: {
+      uint8 fsp = 0;
+      for (uint i = 0; i < count; i++) {
+        fsp = max(fsp, items[i]->decimals);
+      }
+      set_data_type_time(fsp);
+      break;
+    }
+    case MYSQL_TYPE_DATETIME: {
+      uint8 fsp = 0;
+      for (uint i = 0; i < count; i++) {
+        fsp = max(fsp, items[i]->decimals);
+      }
+      set_data_type_datetime(fsp);
+      break;
+    }
+    case MYSQL_TYPE_TIMESTAMP: {
+      uint8 fsp = 0;
+      for (uint i = 0; i < count; i++) {
+        fsp = max(fsp, items[i]->decimals);
+      }
+      set_data_type_timestamp(fsp);
+      break;
+    }
+    case MYSQL_TYPE_YEAR:
+      set_data_type_year();
+      break;
+
+    case MYSQL_TYPE_BIT:
+      aggregate_bit_properties(items, count);
+      break;
+
+    case MYSQL_TYPE_GEOMETRY: {
+      set_data_type_geometry();
+      // @note: We do not set any geometry subtype here
+      break;
+    }
+    case MYSQL_TYPE_JSON:
+      set_data_type_json();
+      break;
+
+    case MYSQL_TYPE_STRING:
+    case MYSQL_TYPE_VARCHAR:
+    case MYSQL_TYPE_TINY_BLOB:
+    case MYSQL_TYPE_BLOB:
+    case MYSQL_TYPE_MEDIUM_BLOB:
+    case MYSQL_TYPE_LONG_BLOB:
+    case MYSQL_TYPE_SET:
+    case MYSQL_TYPE_ENUM:
+      if (aggregate_string_properties(new_type, name, items, count))
+        return true;
+      break;
+
+    default:
+      assert(false);
+      set_data_type(new_type);
+      break;
+  }
+
+  assert(data_type() != MYSQL_TYPE_INVALID);
+  return false;
 }
 
-bool Item::itemize(Parse_context *pc, Item **res) {
+bool Item::do_itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
-  if (super::contextualize(pc)) return true;
+  if (super::do_contextualize(pc)) return true;
 
   // Add item to global list
   pc->thd->add_item(this);
@@ -637,7 +750,7 @@ bool Item::itemize(Parse_context *pc, Item **res) {
     command => we should check pc->select on zero
   */
   if (pc->select) {
-    enum_parsing_context place = pc->select->parsing_place;
+    const enum_parsing_context place = pc->select->parsing_place;
     if (place == CTX_SELECT_LIST || place == CTX_HAVING)
       pc->select->select_n_having_items++;
   }
@@ -645,14 +758,14 @@ bool Item::itemize(Parse_context *pc, Item **res) {
 }
 
 uint Item::decimal_precision() const {
-  Item_result restype = result_type();
+  const Item_result restype = result_type();
   constexpr const uint DATE_INT_DIGITS{8};      /* YYYYMMDD       */
   constexpr const uint TIME_INT_DIGITS{7};      /* hhhmmss        */
   constexpr const uint DATETIME_INT_DIGITS{14}; /* YYYYMMDDhhmmss */
 
   if ((restype == DECIMAL_RESULT) || (restype == INT_RESULT)) {
-    uint prec = my_decimal_length_to_precision(max_char_length(), decimals,
-                                               unsigned_flag);
+    const uint prec = my_decimal_length_to_precision(max_char_length(),
+                                                     decimals, unsigned_flag);
     return max<uint>(1, min<uint>(prec, DECIMAL_MAX_PRECISION));
   }
   switch (data_type()) {
@@ -733,13 +846,13 @@ void Item::print_item_w_name(const THD *thd, String *str,
    merge-able view never has GROUP BY. @see mysql_register_view().
 */
 void Item::print_for_order(const THD *thd, String *str,
-                           enum_query_type query_type, bool used_alias) const {
+                           enum_query_type query_type,
+                           const char *used_alias) const {
   if ((query_type & QT_NORMALIZED_FORMAT) != 0)
     str->append("?");
-  else if (used_alias) {
-    assert(item_name.is_set());
+  else if (used_alias != nullptr) {
     // In the clause, user has referenced expression using an alias; we use it
-    append_identifier(thd, str, item_name.ptr(), item_name.length());
+    append_identifier(thd, str, used_alias, strlen(used_alias));
   } else {
     if (type() == Item::INT_ITEM && basic_const_item()) {
       /*
@@ -776,9 +889,9 @@ Item *Item::transform(Item_transformer transformer, uchar *arg) {
   return (this->*transformer)(arg);
 }
 
-bool Item_ident::itemize(Parse_context *pc, Item **res) {
+bool Item_ident::do_itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
-  if (super::itemize(pc, res)) return true;
+  if (super::do_itemize(pc, res)) return true;
   context = pc->thd->lex->current_context();
   return false;
 }
@@ -872,8 +985,18 @@ bool Item_field::collect_item_field_or_view_ref_processor(uchar *arg) {
   List_iterator<Item> item_list_it(*info->m_item_fields_or_view_refs);
   Item *curr_item;
   while ((curr_item = item_list_it++)) {
-    if (curr_item->eq(this, true)) return false; /* Already in the set. */
+    if (curr_item->eq(this, true)) {
+      // We have this field already, so don't insert.  All occurrences must be
+      // protected by ANY_VALUE for us to also protect it: one occurrence that
+      // is not protected might give ER_MIX_OF_GROUP_FUNC_AND_FIELDS_V2 in
+      // strict mode, so we don't want to lose that info during transform by
+      // protecting a reference that wasn't protected before, hence '&=' below.
+      down_cast<Item_field *>(curr_item)->m_protected_by_any_value &=
+          info->m_any_value_level > 0;
+      return false; /* Already in the set. */
+    }
   }
+  m_protected_by_any_value = info->m_any_value_level > 0;
   info->m_item_fields_or_view_refs->push_back(this);
   return false;
 }
@@ -1116,7 +1239,7 @@ bool Item_field::check_function_as_value_generator(uchar *checker_args) {
     return false;
   }
 
-  int fld_idx = func_args->col_index;
+  const int fld_idx = func_args->col_index;
   assert(fld_idx > -1);
 
   /*
@@ -1249,7 +1372,7 @@ void Item_name_string::copy(const char *str_arg, size_t length_arg,
   m_is_autogenerated = is_autogenerated_arg;
   copy(str_arg, length_arg, cs_arg);
   if (length_arg > length() && !is_autogenerated()) {
-    ErrConvString tmp(str_arg, static_cast<uint>(length_arg), cs_arg);
+    const ErrConvString tmp(str_arg, static_cast<uint>(length_arg), cs_arg);
     if (length() == 0)
       push_warning_printf(
           current_thd, Sql_condition::SL_WARNING, ER_NAME_BECOMES_EMPTY,
@@ -1458,7 +1581,7 @@ bool Item::get_date_from_string(MYSQL_TIME *ltime, my_time_flags_t flags) {
 }
 
 bool Item::get_date_from_real(MYSQL_TIME *ltime, my_time_flags_t flags) {
-  double value = val_real();
+  const double value = val_real();
   if (null_value) {
     set_zero_time(ltime, MYSQL_TIMESTAMP_DATETIME);
     return true;
@@ -1476,7 +1599,7 @@ bool Item::get_date_from_decimal(MYSQL_TIME *ltime, my_time_flags_t flags) {
 }
 
 bool Item::get_date_from_int(MYSQL_TIME *ltime, my_time_flags_t flags) {
-  longlong value = val_int();
+  const longlong value = val_int();
   if (null_value) {
     set_zero_time(ltime, MYSQL_TIMESTAMP_DATETIME);
     return true;
@@ -1545,7 +1668,7 @@ bool Item::get_time_from_string(MYSQL_TIME *ltime) {
 }
 
 bool Item::get_time_from_real(MYSQL_TIME *ltime) {
-  double value = val_real();
+  const double value = val_real();
   if (null_value) {
     set_zero_time(ltime, MYSQL_TIMESTAMP_TIME);
     return true;
@@ -1563,7 +1686,7 @@ bool Item::get_time_from_decimal(MYSQL_TIME *ltime) {
 }
 
 bool Item::get_time_from_int(MYSQL_TIME *ltime) {
-  longlong value = val_int();
+  const longlong value = val_int();
   if (null_value) {
     set_zero_time(ltime, MYSQL_TIMESTAMP_TIME);
     return true;
@@ -1663,9 +1786,9 @@ type_conversion_status Item::save_in_field_no_warnings(Field *field,
   DBUG_TRACE;
   TABLE *table = field->table;
   THD *thd = current_thd;
-  enum_check_fields tmp = thd->check_for_truncated_fields;
+  const enum_check_fields tmp = thd->check_for_truncated_fields;
   my_bitmap_map *old_map = dbug_tmp_use_all_columns(table, table->write_set);
-  sql_mode_t sql_mode = thd->variables.sql_mode;
+  const sql_mode_t sql_mode = thd->variables.sql_mode;
   /*
     For cases like data truncation still warning is reported here. Which was
     avoided before with THD::abort_on_warning flag. Since the flag is removed
@@ -1689,7 +1812,7 @@ type_conversion_status Item::save_in_field_no_warnings(Field *field,
 bool Item::is_blob_field() const {
   assert(fixed);
 
-  enum_field_types type = data_type();
+  const enum_field_types type = data_type();
   return (type == MYSQL_TYPE_BLOB || type == MYSQL_TYPE_GEOMETRY ||
           // Char length, not the byte one, should be taken into account
           max_length / collation.collation->mbmaxlen >
@@ -1722,7 +1845,7 @@ bool Item_sp_variable::fix_fields(THD *, Item **) {
 double Item_sp_variable::val_real() {
   assert(fixed);
   Item *it = this_item();
-  double ret = it->val_real();
+  const double ret = it->val_real();
   null_value = it->null_value;
   return ret;
 }
@@ -1730,7 +1853,7 @@ double Item_sp_variable::val_real() {
 longlong Item_sp_variable::val_int() {
   assert(fixed);
   Item *it = this_item();
-  longlong ret = it->val_int();
+  const longlong ret = it->val_int();
   null_value = it->null_value;
   return ret;
 }
@@ -1779,7 +1902,7 @@ my_decimal *Item_sp_variable::val_decimal(my_decimal *decimal_value) {
 bool Item_sp_variable::val_json(Json_wrapper *wr) {
   assert(fixed);
   Item *it = this_item();
-  bool result = it->val_json(wr);
+  const bool result = it->val_json(wr);
   null_value = it->null_value;
   return result;
 }
@@ -1838,7 +1961,7 @@ Item **Item_splocal::this_item_addr(THD *thd, Item **) {
 
 bool Item_splocal::val_json(Json_wrapper *result) {
   Item *it = this_item();
-  bool ret = it->val_json(result);
+  const bool ret = it->val_json(result);
   null_value = it->null_value;
   return ret;
 }
@@ -1898,14 +2021,14 @@ void Item_case_expr::print(const THD *, String *str, enum_query_type) const {
 
 double Item_name_const::val_real() {
   assert(fixed);
-  double ret = value_item->val_real();
+  const double ret = value_item->val_real();
   null_value = value_item->null_value;
   return ret;
 }
 
 longlong Item_name_const::val_int() {
   assert(fixed);
-  longlong ret = value_item->val_int();
+  const longlong ret = value_item->val_int();
   null_value = value_item->null_value;
   return ret;
 }
@@ -1941,9 +2064,9 @@ Item_name_const::Item_name_const(const POS &pos, Item *name_arg, Item *val)
   set_nullable(true);
 }
 
-bool Item_name_const::itemize(Parse_context *pc, Item **res) {
+bool Item_name_const::do_itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
-  if (super::itemize(pc, res) || value_item->itemize(pc, &value_item) ||
+  if (super::do_itemize(pc, res) || value_item->itemize(pc, &value_item) ||
       name_item->itemize(pc, &name_item))
     return true;
   /*
@@ -2008,7 +2131,7 @@ Item::Type Item_name_const::type() const {
     'value' argument type.
   */
   if (!valid_args) return NULL_ITEM;
-  Item::Type value_type = value_item->type();
+  const Item::Type value_type = value_item->type();
   if (value_type == FUNC_ITEM) {
     /*
       The second argument of NAME_CONST('name', 'value') must be
@@ -2221,10 +2344,11 @@ void Item::split_sum_func2(THD *thd, Ref_item_array ref_item_array,
     split_sum_func(thd, ref_item_array, fields);
   } else if ((type() == SUM_FUNC_ITEM || !const_for_execution()) &&  // (1)
              (type() != SUBSELECT_ITEM ||                            // (2)
-              (down_cast<Item_subselect *>(this)->substype() ==
-                   Item_subselect::SINGLEROW_SUBS &&
+              (down_cast<Item_subselect *>(this)->subquery_type() ==
+                   Item_subselect::SCALAR_SUBQUERY &&
                down_cast<Item_subselect *>(this)
-                       ->unit->first_query_block()
+                       ->query_expr()
+                       ->first_query_block()
                        ->single_visible_field() != nullptr)) &&
              (type() != REF_ITEM ||  // (3)
               (down_cast<Item_ref *>(this))->ref_type() ==
@@ -2765,9 +2889,9 @@ Item_field::Item_field(const POS &pos, const char *db_arg,
   collation.set(DERIVATION_IMPLICIT);
 }
 
-bool Item_field::itemize(Parse_context *pc, Item **res) {
+bool Item_field::do_itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
-  if (super::itemize(pc, res)) return true;
+  if (super::do_itemize(pc, res)) return true;
   Query_block *const select = pc->select;
   if (select->parsing_place != CTX_HAVING) select->select_n_where_fields++;
   return false;
@@ -2843,7 +2967,7 @@ Item_field::Item_field(Field *f)
 inline static uint32 adjust_max_effective_column_length(Field *field_par,
                                                         uint32 max_length) {
   uint32 new_max_length = field_par->max_display_length();
-  uint32 sign_length = field_par->is_flag_set(UNSIGNED_FLAG) ? 0 : 1;
+  const uint32 sign_length = field_par->is_flag_set(UNSIGNED_FLAG) ? 0 : 1;
 
   switch (field_par->type()) {
     case MYSQL_TYPE_INT24:
@@ -3223,7 +3347,7 @@ Item *Item_field::get_tmp_table_item(THD *thd) {
 }
 
 longlong Item_field::val_int_endpoint(bool, bool *) {
-  longlong res = val_int();
+  const longlong res = val_int();
   return null_value ? LLONG_MIN : res;
 }
 
@@ -3471,7 +3595,8 @@ void Item_string::print(const THD *, String *str,
         sequences (which is ASCII too). This way, our bytes will not be
         changed.
       */
-      ErrConvString tmp(str_value.ptr(), str_value.length(), &my_charset_bin);
+      const ErrConvString tmp(str_value.ptr(), str_value.length(),
+                              &my_charset_bin);
       str->append(tmp.ptr());
     } else {
       // Convert to system charset.
@@ -3502,7 +3627,7 @@ double double_from_string_with_check(const CHARSET_INFO *cs, const char *cptr,
   const char *endptr = end;
   tmp = my_strntod(cs, cptr, end - cptr, &endptr, &error);
   if (error || (end != endptr && !check_if_only_end_space(cs, endptr, end))) {
-    ErrConvString err(cptr, end - cptr, cs);
+    const ErrConvString err(cptr, end - cptr, cs);
     push_warning_printf(
         current_thd, Sql_condition::SL_WARNING, ER_TRUNCATED_WRONG_VALUE,
         ER_THD(current_thd, ER_TRUNCATED_WRONG_VALUE), "DOUBLE", err.ptr());
@@ -3537,7 +3662,7 @@ longlong longlong_from_string_with_check(const CHARSET_INFO *cs,
   if (err > 0 ||  // range error, or
                   // parse error not due to end spaces:
       (end != endptr && !check_if_only_end_space(cs, endptr, end))) {
-    ErrConvString errstr(cptr, end - cptr, cs);
+    const ErrConvString errstr(cptr, end - cptr, cs);
 
     push_warning_printf(
         current_thd, Sql_condition::SL_WARNING, ER_TRUNCATED_WRONG_VALUE,
@@ -3615,9 +3740,9 @@ Item_param::Item_param(const POS &pos, MEM_ROOT *root, uint pos_in_query_arg)
   set_nullable(true);  // All parameters are nullable
 }
 
-bool Item_param::itemize(Parse_context *pc, Item **res) {
+bool Item_param::do_itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
-  if (super::itemize(pc, res)) return true;
+  if (super::do_itemize(pc, res)) return true;
 
   /*
     see commentaries in PTI_limit_option_param_marker::itemize()
@@ -3636,7 +3761,7 @@ bool Item_param::itemize(Parse_context *pc, Item **res) {
       Calculate the expected position of this master in the original
       statement:
     */
-    uint master_pos = pos_in_query + lex->reparse_common_table_expr_at;
+    const uint master_pos = pos_in_query + lex->reparse_common_table_expr_at;
     List_iterator_fast<Item_param> it(lex->param_list);
     Item_param *master;
     while ((master = it++)) {
@@ -3733,7 +3858,7 @@ bool Item_param::propagate_type(THD *, const Type_properties &type) {
       unsigned_flag = type.m_unsigned_flag;
       break;
     case MYSQL_TYPE_BIT:
-      set_data_type_bit();
+      set_data_type_bit(64);
       break;
     case MYSQL_TYPE_YEAR:
       set_data_type_year();
@@ -4569,7 +4694,7 @@ bool Item_param::convert_value() {
         }
       } else if (is_numeric_type(data_type())) {
         const char *ptr = str_value.ptr();
-        size_t length = str_value.length();
+        const size_t length = str_value.length();
         const CHARSET_INFO *cs = m_collation_source;
         int error;
         const char *endptr;
@@ -4894,50 +5019,50 @@ bool Item::fix_fields(THD *, Item **) {
 
 double Item_ref_null_helper::val_real() {
   auto tmp = super::val_real();
-  owner->was_null |= null_value;
+  owner->m_was_null |= null_value;
   return tmp;
 }
 
 longlong Item_ref_null_helper::val_int() {
   auto tmp = super::val_int();
-  owner->was_null |= null_value;
+  owner->m_was_null |= null_value;
   return tmp;
 }
 
 longlong Item_ref_null_helper::val_time_temporal() {
   auto tmp = super::val_time_temporal();
-  owner->was_null |= null_value;
+  owner->m_was_null |= null_value;
   return tmp;
 }
 
 longlong Item_ref_null_helper::val_date_temporal() {
   auto tmp = super::val_date_temporal();
-  owner->was_null |= null_value;
+  owner->m_was_null |= null_value;
   return tmp;
 }
 
 my_decimal *Item_ref_null_helper::val_decimal(my_decimal *decimal_value) {
   auto tmp = super::val_decimal(decimal_value);
-  owner->was_null |= null_value;
+  owner->m_was_null |= null_value;
   return tmp;
 }
 
 bool Item_ref_null_helper::val_bool() {
   auto tmp = super::val_bool();
-  owner->was_null |= null_value;
+  owner->m_was_null |= null_value;
   return tmp;
 }
 
 String *Item_ref_null_helper::val_str(String *s) {
   auto tmp = super::val_str(s);
-  owner->was_null |= null_value;
+  owner->m_was_null |= null_value;
   return tmp;
 }
 
 bool Item_ref_null_helper::get_date(MYSQL_TIME *ltime,
                                     my_time_flags_t fuzzydate) {
   auto tmp = super::get_date(ltime, fuzzydate);
-  owner->was_null |= null_value;
+  owner->m_was_null |= null_value;
   return tmp;
 }
 
@@ -4976,13 +5101,13 @@ static void mark_as_dependent(THD *thd, Query_block *last, Query_block *current,
       is printed as names in ORDER BY are resolved against select list of the
       first SELECT.
     */
-    uint sel_nr = (last->master_query_expression()
-                       ->find_blocks_query_term(last)
-                       ->term_type() == QT_QUERY_BLOCK)
-                      ? last->select_number
-                      : last->master_query_expression()
-                            ->first_query_block()
-                            ->select_number;
+    const uint sel_nr = (last->master_query_expression()
+                             ->find_blocks_query_term(last)
+                             ->term_type() == QT_QUERY_BLOCK)
+                            ? last->select_number
+                            : last->master_query_expression()
+                                  ->first_query_block()
+                                  ->select_number;
     push_warning_printf(thd, Sql_condition::SL_NOTE, ER_WARN_FIELD_RESOLVED,
                         ER_THD(thd, ER_WARN_FIELD_RESOLVED), db_name,
                         (db_name[0] ? "." : ""), table_name,
@@ -5245,7 +5370,7 @@ static bool resolve_ref_in_select_and_group(THD *thd, Item_ident *ref,
 
 int Item_field::fix_outer_field(THD *thd, Field **from_field,
                                 Item **reference) {
-  bool field_found = (*from_field != not_found_field);
+  const bool field_found = (*from_field != not_found_field);
   bool upward_lookup = false;
 
   /*
@@ -5386,7 +5511,7 @@ int Item_field::fix_outer_field(THD *thd, Field **from_field,
           if (thd->lex->in_sum_func &&
               thd->lex->in_sum_func->base_query_block->nest_level >=
                   select->nest_level) {
-            Item::Type ref_type = (*reference)->type();
+            const Item::Type ref_type = (*reference)->type();
             thd->lex->in_sum_func->max_aggr_level =
                 max(thd->lex->in_sum_func->max_aggr_level,
                     int8(select->nest_level));
@@ -5400,7 +5525,7 @@ int Item_field::fix_outer_field(THD *thd, Field **from_field,
             return 0;
           }
         } else {
-          Item::Type ref_type = (*reference)->type();
+          const Item::Type ref_type = (*reference)->type();
           Used_tables ut(select);
           (void)(*reference)
               ->walk(&Item::used_tables_for_level, enum_walk::SUBQUERY_POSTFIX,
@@ -6297,7 +6422,7 @@ String *Item::check_well_formed_result(String *str, bool send_error,
     const char *print_byte = str->ptr() + valid_length;
     THD *thd = current_thd;
     char hexbuf[7];
-    size_t diff = min(size_t(str_end - print_byte), size_t(3));
+    const size_t diff = min(size_t(str_end - print_byte), size_t(3));
     octet2hex(hexbuf, print_byte, diff);
     if (send_error && length_error) {
       my_error(ER_INVALID_CHARACTER_STRING, MYF(0), cs->csname, hexbuf);
@@ -6351,7 +6476,7 @@ bool Item::eq_by_collation(Item *item, bool binary_cmp,
     save_item_cs = item->collation.collation;
     item->collation.collation = cs;
   }
-  bool res = eq(item, binary_cmp);
+  const bool res = eq(item, binary_cmp);
   if (save_cs) collation.collation = save_cs;
   if (save_item_cs) item->collation.collation = save_item_cs;
   return res;
@@ -6461,6 +6586,7 @@ Field *Item::tmp_table_field_from_field_type(TABLE *table,
       break;
     case MYSQL_TYPE_YEAR:
       assert(max_length == 4);  // Field_year is only for length 4.
+      assert(decimal_precision() == 4);
       field = new (*THR_MALLOC) Field_year(m_nullable, item_name.ptr());
       break;
     case MYSQL_TYPE_BIT:
@@ -6628,8 +6754,8 @@ type_conversion_status Item::save_in_field(Field *field, bool no_conversions) {
   // name of the hidden column. It will instead print out the functional
   // index name.
 
-  Functional_index_error_handler functional_index_error_handler(field,
-                                                                current_thd);
+  const Functional_index_error_handler functional_index_error_handler(
+      field, current_thd);
 
   const type_conversion_status ret = save_in_field_inner(field, no_conversions);
 
@@ -6708,14 +6834,14 @@ type_conversion_status Item::save_in_field_inner(Field *field,
       if (field_type == MYSQL_TYPE_INT24 || field_type == MYSQL_TYPE_TINY ||
           field_type == MYSQL_TYPE_SHORT || field_type == MYSQL_TYPE_LONG ||
           field_type == MYSQL_TYPE_LONGLONG) {
-        longlong nr = val_int();
+        const longlong nr = val_int();
         if (null_value)
           return set_field_to_null_with_conversions(field, no_conversions);
         field->set_notnull();
         return field->store(nr, unsigned_flag);
       }
       if (field_type == MYSQL_TYPE_FLOAT || field_type == MYSQL_TYPE_DOUBLE) {
-        double nr = val_real();
+        const double nr = val_real();
         if (null_value)
           return set_field_to_null_with_conversions(field, no_conversions);
         field->set_notnull();
@@ -6737,7 +6863,7 @@ type_conversion_status Item::save_in_field_inner(Field *field,
     /* NOTE: If null_value == false, "result" must be not NULL.  */
 
     field->set_notnull();
-    type_conversion_status error =
+    const type_conversion_status error =
         field->store(result->ptr(), result->length(),
                      field->type() == MYSQL_TYPE_JSON ? result->charset() : cs);
     str_value.set_quick(nullptr, 0, cs);
@@ -6745,7 +6871,7 @@ type_conversion_status Item::save_in_field_inner(Field *field,
   }
 
   if (result_type() == REAL_RESULT) {
-    double nr = val_real();
+    const double nr = val_real();
     if (null_value)
       return set_field_to_null_with_conversions(field, no_conversions);
     field->set_notnull();
@@ -6761,7 +6887,7 @@ type_conversion_status Item::save_in_field_inner(Field *field,
     return field->store_decimal(value);
   }
 
-  longlong nr = val_int();
+  const longlong nr = val_int();
   if (null_value)
     return set_field_to_null_with_conversions(field, no_conversions);
   field->set_notnull();
@@ -6964,7 +7090,7 @@ void Item_float::init(const char *str_arg, uint length) {
 }
 
 type_conversion_status Item_float::save_in_field_inner(Field *field, bool) {
-  double nr = val_real();
+  const double nr = val_real();
   // TODO: call set_field_to_null_with_conversions below
   if (null_value) return set_field_to_null(field);
   field->set_notnull();
@@ -7023,7 +7149,7 @@ Item_hex_string::Item_hex_string(const POS &pos, const LEX_STRING &literal)
 }
 
 LEX_CSTRING Item_hex_string::make_hex_str(const char *str, size_t str_length) {
-  size_t max_length = (str_length + 1) / 2;
+  const size_t max_length = (str_length + 1) / 2;
   char *ptr = (char *)(*THR_MALLOC)->Alloc(max_length + 1);
   if (ptr == nullptr) return NULL_CSTR;
   LEX_CSTRING ret = {ptr, max_length};
@@ -7065,7 +7191,7 @@ uint Item_hex_string::decimal_precision() const {
 }
 
 void Item_hex_string::hex_string_init(const char *str, uint str_length) {
-  LEX_CSTRING s = make_hex_str(str, str_length);
+  const LEX_CSTRING s = make_hex_str(str, str_length);
   str_value.set(s.str, s.length, &my_charset_bin);
   set_data_type(MYSQL_TYPE_VARCHAR);
   max_length = s.length;
@@ -7094,8 +7220,8 @@ longlong Item_hex_string::val_int() {
         *errptr++ = '\'';
         for (ptr = str_value.ptr(); ptr < end; ++ptr) {
           if (errptr > errbuff + sizeof(errbuff) - 4) break;
-          *errptr++ = _dig_vec_lower[((uchar)*ptr) >> 4];
-          *errptr++ = _dig_vec_lower[((uchar)*ptr) & 0x0F];
+          *errptr++ = dig_vec_lower[((uchar)*ptr) >> 4];
+          *errptr++ = dig_vec_lower[((uchar)*ptr) & 0x0F];
         }
         *errptr++ = '\'';
         *errptr++ = 0;
@@ -7116,7 +7242,7 @@ longlong Item_hex_string::val_int() {
 my_decimal *Item_hex_string::val_decimal(my_decimal *decimal_value) {
   // following assert is redundant, because fixed=1 assigned in constructor
   assert(fixed == 1);
-  ulonglong value = (ulonglong)val_int();
+  const ulonglong value = (ulonglong)val_int();
   int2my_decimal(E_DEC_FATAL_ERROR, value, true, decimal_value);
   return (decimal_value);
 }
@@ -7129,7 +7255,7 @@ type_conversion_status Item_hex_string::save_in_field_inner(Field *field,
                         collation.collation);
 
   ulonglong nr;
-  size_t length = str_value.length();
+  const size_t length = str_value.length();
   if (!length) {
     field->reset();
     return TYPE_WARN_OUT_OF_RANGE;
@@ -7160,10 +7286,17 @@ void Item_hex_string::print(const THD *, String *str,
   }
   const uchar *ptr = pointer_cast<const uchar *>(str_value.ptr());
   const uchar *end = ptr + str_value.length();
+  // If it is an empty string, print X''. Printing "0x" makes it not
+  // parse correctly when this printed string is re-used to parse
+  // this expression.
+  if (ptr == end) {
+    str->append("X''");
+    return;
+  }
   str->append("0x");
   for (; ptr != end; ptr++) {
-    str->append(_dig_vec_lower[*ptr >> 4]);
-    str->append(_dig_vec_lower[*ptr & 0x0F]);
+    str->append(dig_vec_lower[*ptr >> 4]);
+    str->append(dig_vec_lower[*ptr & 0x0F]);
   }
 }
 
@@ -7198,7 +7331,7 @@ LEX_CSTRING Item_bin_string::make_bin_str(const char *str, size_t str_length) {
   uchar bits = 0;
   uint power = 1;
 
-  size_t max_length = (str_length + 7) >> 3;
+  const size_t max_length = (str_length + 7) >> 3;
   char *ptr = (char *)(*THR_MALLOC)->Alloc(max_length + 1);
   if (ptr == nullptr) return NULL_CSTR;
 
@@ -7224,7 +7357,7 @@ LEX_CSTRING Item_bin_string::make_bin_str(const char *str, size_t str_length) {
 }
 
 void Item_bin_string::bin_string_init(const char *str, size_t str_length) {
-  LEX_CSTRING s = make_bin_str(str, str_length);
+  const LEX_CSTRING s = make_bin_str(str, str_length);
   max_length = s.length;
   str_value.set(s.str, s.length, &my_charset_bin);
   collation.set(&my_charset_bin, DERIVATION_COERCIBLE);
@@ -7330,34 +7463,34 @@ bool Item::send(Protocol *protocol, String *buffer) {
       break;
     }
     case MYSQL_TYPE_TINY: {
-      longlong nr = val_int();
+      const longlong nr = val_int();
       if (!null_value) return protocol->store_tiny(nr);
       break;
     }
     case MYSQL_TYPE_SHORT:
     case MYSQL_TYPE_YEAR: {
-      longlong nr = val_int();
+      const longlong nr = val_int();
       if (!null_value) return protocol->store_short(nr);
       break;
     }
     case MYSQL_TYPE_INT24:
     case MYSQL_TYPE_LONG: {
-      longlong nr = val_int();
+      const longlong nr = val_int();
       if (!null_value) return protocol->store_long(nr);
       break;
     }
     case MYSQL_TYPE_LONGLONG: {
-      longlong nr = val_int();
+      const longlong nr = val_int();
       if (!null_value) return protocol->store_longlong(nr, unsigned_flag);
       break;
     }
     case MYSQL_TYPE_FLOAT: {
-      float nr = static_cast<float>(val_real());
+      const float nr = static_cast<float>(val_real());
       if (!null_value) return protocol->store_float(nr, decimals, 0);
       break;
     }
     case MYSQL_TYPE_DOUBLE: {
-      double nr = val_real();
+      const double nr = val_real();
       if (!null_value) return protocol->store_double(nr, decimals, 0);
       break;
     }
@@ -7561,9 +7694,14 @@ bool Item::can_be_substituted_for_gc(bool array) const {
 }
 
 /**
-  Set the maximum number of characters required by any of the items in args.
+  Calculate the maximum number of characters required by any of the items.
+
+  @param items   arguments to calculate max width for
+  @param nitems   number of arguments
+
+  @returns max width in number of characters
 */
-void Item::aggregate_char_length(Item **args, uint nitems) {
+uint32 Item::aggregate_char_width(Item **items, uint nitems) {
   uint32 char_length = 0;
   /*
     To account for character sets with different number of bytes per character,
@@ -7571,86 +7709,90 @@ void Item::aggregate_char_length(Item **args, uint nitems) {
     binary to prevent truncation of data as some characters require more than
     one byte.
   */
-  bool bin_charset = collation.collation == &my_charset_bin;
+  const bool bin_charset = collation.collation == &my_charset_bin;
   for (uint i = 0; i < nitems; i++)
-    char_length = max(char_length, bin_charset ? args[i]->max_length
-                                               : args[i]->max_char_length());
-  if (char_length * collation.collation->mbmaxlen > max_length)
-    fix_char_length(char_length);
+    char_length = max(char_length, bin_charset ? items[i]->max_length
+                                               : items[i]->max_char_length());
+  return char_length;
 }
 
 /**
   Set max_length and decimals of function if function is floating point and
   result length/precision depends on argument ones.
 
-  @param item    Argument array.
+  @param type    The float type (float or double precision)
+  @param items   Argument array.
   @param nitems  Number of arguments in the array.
 */
-void Item::aggregate_float_properties(Item **item, uint nitems) {
-  assert(result_type() == REAL_RESULT);
-  uint32 length = 0;
-  uint8 decimals_cnt = 0;
-  uint32 maxl = 0;
+void Item::aggregate_float_properties(enum_field_types type, Item **items,
+                                      uint nitems) {
+  uint32 int_part = 0;
+  uint8 deci = 0;
   for (uint i = 0; i < nitems; i++) {
-    if (decimals_cnt != DECIMAL_NOT_SPECIFIED) {
-      decimals_cnt = max(decimals_cnt, item[i]->decimals);
-      length = max(length, (item[i]->max_length - item[i]->decimals));
+    if (items[i]->decimals == DECIMAL_NOT_SPECIFIED) {
+      deci = DECIMAL_NOT_SPECIFIED;
     }
-    maxl = max(maxl, item[i]->max_length);
+    if (deci != DECIMAL_NOT_SPECIFIED) {
+      deci = max(deci, items[i]->decimals);
+      int_part = max(int_part, items[i]->max_length - items[i]->decimals);
+    }
   }
-  if (decimals_cnt != DECIMAL_NOT_SPECIFIED) {
-    maxl = length;
-    length += decimals_cnt;
-    if (length < maxl)  // If previous operation gave overflow
-      maxl = UINT_MAX32;
+  unsigned_flag = false;
+  if (type == MYSQL_TYPE_FLOAT)
+    set_data_type_float();
+  else
+    set_data_type_double();
+  if (deci != DECIMAL_NOT_SPECIFIED) {
+    if (UINT_MAX32 - int_part < deci)
+      max_length = UINT_MAX32;
     else
-      maxl = length;
+      max_length = int_part + deci;
+    decimals = deci;
   }
-
-  this->max_length = maxl;
-  this->decimals = decimals_cnt;
 }
 
 /**
-  Set precision and decimals of function when this depends on arguments'
-  values for these quantities.
+  Set data type, precision and scale of item of type decimal from list of items.
 
-  @param item    Argument array.
+  @param items   Argument array.
   @param nitems  Number of arguments in the array.
 */
-void Item::aggregate_decimal_properties(Item **item, uint nitems) {
-  assert(result_type() == DECIMAL_RESULT);
-  int max_int_part = 0;
-  uint8 decimal_cnt = 0;
+
+void Item::aggregate_decimal_properties(Item **items, uint nitems) {
+  uint8 int_part = 0;
+  uint8 scale = 0;
   for (uint i = 0; i < nitems; i++) {
-    decimal_cnt = max(decimal_cnt, item[i]->decimals);
-    max_int_part = max(max_int_part, item[i]->decimal_int_part());
+    scale = max(scale, items[i]->decimals);
+    int_part = max(int_part, static_cast<uint8>(items[i]->decimal_int_part()));
   }
-  int precision = min(max_int_part + decimal_cnt, DECIMAL_MAX_PRECISION);
-  set_data_type_decimal(precision, decimal_cnt);
+  const uint8 precision = min(int_part + scale, DECIMAL_MAX_PRECISION);
+
+  unsigned_flag = false;
+  set_data_type_decimal(precision, scale);
 }
 
 /**
-  Set fractional seconds precision for temporal functions.
+  Set data type and fractional seconds precision for temporal functions.
 
-  @param item    Argument array
+  @param type    Temporal data type
+  @param items   Argument array
   @param nitems  Number of arguments in the array.
 */
-void Item::aggregate_temporal_properties(Item **item, uint nitems) {
-  assert(result_type() == STRING_RESULT);
+void Item::aggregate_temporal_properties(enum_field_types type, Item **items,
+                                         uint nitems) {
   uint8 decimal_cnt = 0;
 
-  switch (data_type()) {
+  switch (type) {
     case MYSQL_TYPE_DATETIME:
       for (uint i = 0; i < nitems; i++)
-        decimal_cnt = max(decimal_cnt, uint8(item[i]->datetime_precision()));
+        decimal_cnt = max(decimal_cnt, uint8(items[i]->datetime_precision()));
       decimal_cnt = min(decimal_cnt, uint8(DATETIME_MAX_DECIMALS));
       set_data_type_datetime(decimal_cnt);
       break;
 
     case MYSQL_TYPE_TIMESTAMP:
       for (uint i = 0; i < nitems; i++)
-        decimal_cnt = max(decimal_cnt, uint8(item[i]->datetime_precision()));
+        decimal_cnt = max(decimal_cnt, uint8(items[i]->datetime_precision()));
       decimal_cnt = min(decimal_cnt, uint8(DATETIME_MAX_DECIMALS));
       set_data_type_timestamp(decimal_cnt);
       break;
@@ -7667,7 +7809,7 @@ void Item::aggregate_temporal_properties(Item **item, uint nitems) {
 
     case MYSQL_TYPE_TIME:
       for (uint i = 0; i < nitems; i++)
-        decimal_cnt = max(decimal_cnt, uint8(item[i]->time_precision()));
+        decimal_cnt = max(decimal_cnt, uint8(items[i]->time_precision()));
       decimal_cnt = min(decimal_cnt, uint8(DATETIME_MAX_DECIMALS));
       set_data_type_time(decimal_cnt);
       break;
@@ -7685,76 +7827,70 @@ void Item::aggregate_temporal_properties(Item **item, uint nitems) {
   Aggregate string properties (character set, collation and maximum length) for
   string function.
 
+  @param type        String data type
   @param name        Name of function
   @param items       Argument array.
   @param nitems      Number of arguments.
 
-  @retval            False on success, true on error.
+  @returns           False on success, true on error.
 */
-bool Item::aggregate_string_properties(const char *name, Item **items,
-                                       uint nitems) {
-  assert(result_type() == STRING_RESULT);
+bool Item::aggregate_string_properties(enum_field_types type, const char *name,
+                                       Item **items, uint nitems) {
   if (agg_item_charsets_for_string_result(collation, name, items, nitems, 1))
     return true;
-  if (is_temporal_type(data_type())) {
-    /*
-      aggregate_temporal_properties() will set collation to numeric, causing
-      the character set to be explicitly set to latin1, which may not match the
-      aggregated character set. The collation must therefore be restored after
-      the temporal properties have been computed.
-    */
-    auto aggregated_collation = collation;
-    aggregate_temporal_properties(items, nitems);
-    collation.set(aggregated_collation);
-    /*
-      Set max_length again as the aggregated character set may have different
-      number of bytes per character than latin1.
-    */
-    fix_char_length(max_length);
-  } else
-    decimals = min(decimals, uint8(DECIMAL_NOT_SPECIFIED));
-  aggregate_char_length(items, nitems);
+
+  // Calculate maximum width in number of characters
+  uint32 char_width = aggregate_char_width(items, nitems);
 
   /*
     If the resulting data type is a fixed length character or binary string
     and the result maximum length in characters is longer than the MySQL
     maximum CHAR/BINARY size, convert to a variable-sized type.
   */
-  if (data_type() == MYSQL_TYPE_STRING &&
-      max_char_length() > MAX_FIELD_CHARLENGTH)
-    set_data_type(MYSQL_TYPE_VARCHAR);
+  if (type == MYSQL_TYPE_STRING && char_width > MAX_FIELD_CHARLENGTH)
+    type = MYSQL_TYPE_VARCHAR;
 
+  switch (type) {
+    case MYSQL_TYPE_STRING:
+      set_data_type_char(char_width);
+      break;
+    case MYSQL_TYPE_VARCHAR:
+      set_data_type_string(char_width);
+      break;
+    case MYSQL_TYPE_TINY_BLOB:
+    case MYSQL_TYPE_BLOB:
+    case MYSQL_TYPE_MEDIUM_BLOB:
+    case MYSQL_TYPE_LONG_BLOB:
+      set_data_type_blob(type, char_width);
+      break;
+
+    case MYSQL_TYPE_SET:
+    case MYSQL_TYPE_ENUM:
+      set_data_type(type);
+      decimals = DECIMAL_NOT_SPECIFIED;
+      fix_char_length(char_width);
+      break;
+
+    default:
+      assert(false);
+      set_data_type(type);
+      break;
+  }
   return false;
 }
 
 /**
-  This function is used to resolve type for numeric result type of CASE,
-  COALESCE, IF and LEAD/LAG. COALESCE is a CASE abbreviation according to the
-  standard.
+  Set data type and properties of a BIT column
 
-  @param result_type The desired result type
-  @param item        The arguments of func
-  @param nitems      The number of arguments
+  @param items   Items to aggregate bit properties from
+  @param nitems  Number of items
 */
-void Item::aggregate_num_type(Item_result result_type, Item **item,
-                              uint nitems) {
-  collation.set_numeric();
-  switch (result_type) {
-    case DECIMAL_RESULT:
-      aggregate_decimal_properties(item, nitems);
-      break;
-    case REAL_RESULT:
-      aggregate_float_properties(item, nitems);
-      break;
-    case INT_RESULT:
-    case STRING_RESULT:
-      aggregate_char_length(item, nitems);
-      decimals = 0;
-      break;
-    case ROW_RESULT:
-    default:
-      assert(0);
+void Item::aggregate_bit_properties(Item **items, uint nitems) {
+  uint32 max_bits = 0;
+  for (uint i = 0; i < nitems; i++) {
+    max_bits = max(max_bits, items[i]->max_length);
   }
+  set_data_type_bit(max_bits);
 }
 
 /**
@@ -7784,7 +7920,7 @@ Item *Item::cache_const_expr_transformer(uchar *arg) {
       Item_func *caller = down_cast<Item_func *>(carg->stack.head());
       String buf;
       Json_wrapper wr;
-      enum_const_item_cache what_cache = carg->cache_arg;
+      const enum_const_item_cache what_cache = carg->cache_arg;
 
       carg->cache_arg = CACHE_NONE;
       if (what_cache == CACHE_JSON_VALUE) {
@@ -8138,7 +8274,7 @@ bool Item_ref::fix_fields(THD *thd, Item **reference) {
               IGNORE_EXCEPT_NON_UNIQUE, thd->want_privilege, true);
           if (from_field == nullptr) return true;
           if (from_field == view_ref_found) {
-            Item::Type refer_type = (*reference)->type();
+            const Item::Type refer_type = (*reference)->type();
             cur_query_expression->accumulate_used_tables(
                 (*reference)->used_tables());
             assert((*reference)->type() == REF_ITEM);
@@ -8192,7 +8328,7 @@ bool Item_ref::fix_fields(THD *thd, Item **reference) {
         Item_field *fld;
 
         {
-          Prepared_stmt_arena_holder ps_arena_holder(thd);
+          const Prepared_stmt_arena_holder ps_arena_holder(thd);
           fld = new Item_field(
               thd, context, from_field->table->pos_in_table_list, from_field);
           if (fld == nullptr) return true;
@@ -8363,7 +8499,7 @@ void Item_ref::print(const THD *thd, String *str,
   if (!const_item() && m_alias_of_expr &&
       ref_item()->type() != Item::CACHE_ITEM && ref_type() != VIEW_REF &&
       table_name == nullptr && item_name.ptr()) {
-    Simple_cstring str1 = ref_item()->real_item()->item_name;
+    const Simple_cstring str1 = ref_item()->real_item()->item_name;
     append_identifier(thd, str, str1.ptr(), str1.length());
   } else {
     ref_item()->print(thd, str, query_type);
@@ -8376,14 +8512,14 @@ bool Item_ref::send(Protocol *prot, String *tmp) {
 
 double Item_ref::val_real() {
   assert(fixed);
-  double tmp = ref_item()->val_real();
+  const double tmp = ref_item()->val_real();
   null_value = ref_item()->null_value;
   return tmp;
 }
 
 longlong Item_ref::val_int() {
   assert(fixed);
-  longlong tmp = ref_item()->val_int();
+  const longlong tmp = ref_item()->val_int();
   null_value = ref_item()->null_value;
   return tmp;
 }
@@ -8391,7 +8527,7 @@ longlong Item_ref::val_int() {
 longlong Item_ref::val_time_temporal() {
   assert(fixed);
   assert(ref_item()->is_temporal() || ref_item()->is_null());
-  longlong tmp = ref_item()->val_time_temporal();
+  const longlong tmp = ref_item()->val_time_temporal();
   null_value = ref_item()->null_value;
   return tmp;
 }
@@ -8399,14 +8535,14 @@ longlong Item_ref::val_time_temporal() {
 longlong Item_ref::val_date_temporal() {
   assert(fixed);
   assert(ref_item()->is_temporal());
-  longlong tmp = ref_item()->val_date_temporal();
+  const longlong tmp = ref_item()->val_date_temporal();
   null_value = ref_item()->null_value;
   return tmp;
 }
 
 bool Item_ref::val_bool() {
   assert(fixed);
-  bool tmp = ref_item()->val_bool();
+  const bool tmp = ref_item()->val_bool();
   null_value = ref_item()->null_value;
   return tmp;
 }
@@ -8420,21 +8556,21 @@ String *Item_ref::val_str(String *tmp) {
 
 bool Item_ref::val_json(Json_wrapper *result) {
   assert(fixed);
-  bool ok = ref_item()->val_json(result);
+  const bool ok = ref_item()->val_json(result);
   null_value = ref_item()->null_value;
   return ok;
 }
 
 bool Item_ref::is_null() {
   assert(fixed);
-  bool tmp = ref_item()->is_null();
+  const bool tmp = ref_item()->is_null();
   null_value = ref_item()->null_value;
   return tmp;
 }
 
 bool Item_ref::get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) {
   assert(fixed);
-  bool result = ref_item()->get_date(ltime, fuzzydate);
+  const bool result = ref_item()->get_date(ltime, fuzzydate);
   null_value = ref_item()->null_value;
   return result;
 }
@@ -8814,9 +8950,9 @@ Item *Item_view_ref::replace_view_refs_with_clone(uchar *arg) {
       current_thd, ref_item());
 }
 
-bool Item_default_value::itemize(Parse_context *pc, Item **res) {
+bool Item_default_value::do_itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
-  if (super::itemize(pc, res)) return true;
+  if (super::do_itemize(pc, res)) return true;
 
   if (arg != nullptr) {
     if (arg->itemize(pc, &arg)) return true;
@@ -8977,7 +9113,7 @@ bool Item_insert_value::fix_fields(THD *thd, Item **reference) {
   if (!arg->fixed) {
     Table_ref *orig_next_table = context->last_name_resolution_table;
     context->last_name_resolution_table = context->first_name_resolution_table;
-    bool res = arg->fix_fields(thd, &arg);
+    const bool res = arg->fix_fields(thd, &arg);
     context->last_name_resolution_table = orig_next_table;
     if (res) return true;
   }
@@ -9136,7 +9272,7 @@ bool Item_trigger_field::set_value(THD *thd, sp_rcontext * /*ctx*/, Item **it) {
   if (item == nullptr) return true;
 
   if (!fixed) {
-    Prepared_stmt_arena_holder ps_arena_holder(thd);
+    const Prepared_stmt_arena_holder ps_arena_holder(thd);
 
     if (fix_fields(thd, nullptr)) return true;
   } else {
@@ -9147,11 +9283,11 @@ bool Item_trigger_field::set_value(THD *thd, sp_rcontext * /*ctx*/, Item **it) {
 
   // NOTE: field->table->copy_blobs should be false here, but let's
   // remember the value at runtime to avoid subtle bugs.
-  bool copy_blobs_saved = field->table->copy_blobs;
+  const bool copy_blobs_saved = field->table->copy_blobs;
 
   field->table->copy_blobs = true;
 
-  int err_code = item->save_in_field(field, false);
+  const int err_code = item->save_in_field(field, false);
 
   field->table->copy_blobs = copy_blobs_saved;
 
@@ -9274,7 +9410,7 @@ bool resolve_const_item(THD *thd, Item **ref, Item *comp_item) {
 
   Item *new_item = nullptr;
   if (item->basic_const_item()) return false;  // Can't be better
-  Item_result res_type =
+  const Item_result res_type =
       item_cmp_type(comp_item->result_type(), item->result_type());
   switch (res_type) {
     case STRING_RESULT: {
@@ -9295,13 +9431,13 @@ bool resolve_const_item(THD *thd, Item **ref, Item *comp_item) {
       if (item->null_value)
         new_item = new Item_null(item->item_name);
       else if (item->is_temporal()) {
-        enum_field_types type = item->data_type() == MYSQL_TYPE_TIMESTAMP
-                                    ? MYSQL_TYPE_DATETIME
-                                    : item->data_type();
+        const enum_field_types type = item->data_type() == MYSQL_TYPE_TIMESTAMP
+                                          ? MYSQL_TYPE_DATETIME
+                                          : item->data_type();
         new_item = create_temporal_literal(thd, result->ptr(), result->length(),
                                            result->charset(), type, true);
       } else {
-        size_t length = result->length();
+        const size_t length = result->length();
         char *tmp_str = sql_strmake(result->ptr(), length);
         new_item = new Item_string(item->item_name, tmp_str, length,
                                    result->charset());
@@ -9309,10 +9445,10 @@ bool resolve_const_item(THD *thd, Item **ref, Item *comp_item) {
       break;
     }
     case INT_RESULT: {
-      longlong result = item->val_int();
+      const longlong result = item->val_int();
       if (thd->is_error()) return true;
-      uint length = item->max_length;
-      bool null_value = item->null_value;
+      const uint length = item->max_length;
+      const bool null_value = item->null_value;
       if (null_value)
         new_item = new Item_null(item->item_name);
       else if (item->unsigned_flag)
@@ -9351,10 +9487,10 @@ bool resolve_const_item(THD *thd, Item **ref, Item *comp_item) {
       break;
     }
     case REAL_RESULT: {  // It must REAL_RESULT
-      double result = item->val_real();
+      const double result = item->val_real();
       if (thd->is_error()) return true;
-      uint length = item->max_length, decimals = item->decimals;
-      bool null_value = item->null_value;
+      const uint length = item->max_length, decimals = item->decimals;
+      const bool null_value = item->null_value;
       new_item = (null_value ? (Item *)new Item_null(item->item_name)
                              : (Item *)new Item_float(item->item_name, result,
                                                       decimals, length));
@@ -9364,7 +9500,7 @@ bool resolve_const_item(THD *thd, Item **ref, Item *comp_item) {
       my_decimal decimal_value;
       my_decimal *result = item->val_decimal(&decimal_value);
       if (thd->is_error()) return true;
-      bool null_value = item->null_value;
+      const bool null_value = item->null_value;
       new_item = (null_value ? (Item *)new Item_null(item->item_name)
                              : (Item *)new Item_decimal(item->item_name, result,
                                                         item->decimals,
@@ -9403,12 +9539,12 @@ bool resolve_const_item(THD *thd, Item **ref, Item *comp_item) {
 */
 
 int stored_field_cmp_to_item(THD *thd, Field *field, Item *item) {
-  Item_result res_type =
+  const Item_result res_type =
       item_cmp_type(field->result_type(), item->result_type());
   if (field->type() == MYSQL_TYPE_TIME &&
       item->data_type() == MYSQL_TYPE_TIME) {
-    longlong field_value = field->val_time_temporal();
-    longlong item_value = item->val_time_temporal();
+    const longlong field_value = field->val_time_temporal();
+    const longlong item_value = item->val_time_temporal();
     return field_value < item_value ? -1 : field_value > item_value ? 1 : 0;
   }
   if (is_temporal_type_with_date(field->type()) && item->is_temporal()) {
@@ -9419,8 +9555,8 @@ int stored_field_cmp_to_item(THD *thd, Field *field, Item *item) {
       Only non-temporal data types go though get_mysql_time_from_str()
       in the below code branch.
     */
-    longlong field_value = field->val_date_temporal();
-    longlong item_value = item->val_date_temporal();
+    const longlong field_value = field->val_date_temporal();
+    const longlong item_value = item->val_date_temporal();
     return field_value < item_value ? -1 : field_value > item_value ? 1 : 0;
   }
   if (res_type == STRING_RESULT) {
@@ -9438,7 +9574,7 @@ int stored_field_cmp_to_item(THD *thd, Field *field, Item *item) {
     String *field_result = field->val_str(&field_tmp);
 
     if (is_temporal_type_with_date(field->type())) {
-      enum_mysql_timestamp_type type =
+      const enum_mysql_timestamp_type type =
           field_type_to_timestamp_type(field->type());
       const char *field_name = field->field_name;
       MYSQL_TIME field_time, item_time;
@@ -9621,7 +9757,7 @@ String *Item_cache_bit::val_str(String *str) {
 
   char buff[sizeof(longlong)];
   mi_int8store(buff, value);
-  uint offset = sizeof(longlong) - string_length();
+  const uint offset = sizeof(longlong) - string_length();
 
   // for BIT(N), copy last N bits from buff
   // (rounded up to an integral number of bytes)
@@ -10146,7 +10282,7 @@ bool Item_cache_row::cache_value() {
 
   const bool cached_item_is_assigned =
       example->type() != SUBSELECT_ITEM ||
-      down_cast<Item_subselect *>(example)->assigned();
+      down_cast<Item_subselect *>(example)->is_value_assigned();
 
   for (uint i = 0; i < item_count; i++) {
     if (!cached_item_is_assigned) {
@@ -10235,7 +10371,7 @@ static enum_field_types real_data_type(Item *item) {
         a different type, like for enum/set, so we need to ask real type.
       */
       Field *field = ((Item_field *)item)->field;
-      enum_field_types type = field->real_type();
+      const enum_field_types type = field->real_type();
       if (field->is_created_from_null_item) return MYSQL_TYPE_NULL;
       /* work around about varchar type field detection */
       if (type == MYSQL_TYPE_STRING && field->type() == MYSQL_TYPE_VAR_STRING)
@@ -10331,11 +10467,10 @@ bool Item_aggregate_type::join_types(THD *thd, Item *item) {
     original Item tree.
   */
   Item **args = new (thd->mem_root) Item *[2] { item_copy, item };
-  aggregate_type(make_array(&args[0], 2));
+  if (aggregate_type("UNION", args, 2)) return true;
 
   Item_result merge_type = Field::result_merge_type(data_type());
   if (merge_type == STRING_RESULT) {
-    if (aggregate_string_properties("UNION", args, 2)) return true;
     /*
       For geometry columns, we must also merge subtypes. If the
       subtypes are different, use GEOMETRY.
@@ -10344,8 +10479,7 @@ bool Item_aggregate_type::join_types(THD *thd, Item *item) {
         (item->data_type() != MYSQL_TYPE_GEOMETRY ||
          geometry_type != item->get_geometry_type()))
       geometry_type = Field::GEOM_GEOMETRY;
-  } else
-    aggregate_num_type(merge_type, args, 2);
+  }
 
   // Note: when called to join the types of a set operation's select list, the
   // below line is correct only if we have no INTERSECT or EXCEPT in the query
@@ -10554,14 +10688,14 @@ bool Item_values_column::eq(const Item *item, bool binary_cmp) const {
 
 double Item_values_column::val_real() {
   assert(fixed);
-  double tmp = m_value_ref->val_real();
+  const double tmp = m_value_ref->val_real();
   null_value = m_value_ref->null_value;
   return tmp;
 }
 
 longlong Item_values_column::val_int() {
   assert(fixed);
-  longlong tmp = m_value_ref->val_int();
+  const longlong tmp = m_value_ref->val_int();
   null_value = m_value_ref->null_value;
   return tmp;
 }
@@ -10577,7 +10711,7 @@ my_decimal *Item_values_column::val_decimal(my_decimal *decimal_value) {
 bool Item_values_column::val_bool() {
   assert(false);
   assert(fixed);
-  bool tmp = m_value_ref->val_bool();
+  const bool tmp = m_value_ref->val_bool();
   null_value = m_value_ref->null_value;
   return tmp;
 }
@@ -10585,7 +10719,7 @@ bool Item_values_column::val_bool() {
 bool Item_values_column::val_json(Json_wrapper *result) {
   assert(false);
   assert(fixed);
-  bool ok = m_value_ref->val_json(result);
+  const bool ok = m_value_ref->val_json(result);
   null_value = m_value_ref->null_value;
   return ok;
 }
@@ -10609,7 +10743,7 @@ bool Item_values_column::is_null() {
     during resolving.
   */
   assert(m_value_ref != nullptr);
-  bool tmp = m_value_ref->is_null();
+  const bool tmp = m_value_ref->is_null();
   null_value = m_value_ref->null_value;
   return tmp;
 }
@@ -10617,7 +10751,7 @@ bool Item_values_column::is_null() {
 bool Item_values_column::get_date(MYSQL_TIME *ltime,
                                   my_time_flags_t fuzzydate) {
   assert(fixed);
-  bool result = m_value_ref->get_date(ltime, fuzzydate);
+  const bool result = m_value_ref->get_date(ltime, fuzzydate);
   null_value = m_value_ref->null_value;
   return result;
 }
@@ -10625,7 +10759,9 @@ bool Item_values_column::get_date(MYSQL_TIME *ltime,
 bool Item_values_column::get_time(MYSQL_TIME *ltime) {
   assert(fixed);
   assert(m_value_ref != nullptr);
-  return m_value_ref->get_time(ltime);
+  const bool result = m_value_ref->get_time(ltime);
+  null_value = m_value_ref->null_value;
+  return result;
 }
 
 void Item_values_column::add_used_tables(Item *value) {
@@ -10664,7 +10800,7 @@ void convert_and_print(const String *from_str, String *to_str,
     LEX_STRING lex_str;
     thd->convert_string(&lex_str, to_cs, from_str->ptr(), from_str->length(),
                         from_str->charset());
-    String tmp(lex_str.str, lex_str.length, to_cs);
+    const String tmp(lex_str.str, lex_str.length, to_cs);
     tmp.print(to_str);
   }
 }
@@ -10867,13 +11003,13 @@ Item_field *FindEqualField(Item_field *item_field, table_map reachable_tables,
   return item_field;
 }
 
-bool Item_asterisk::itemize(Parse_context *pc, Item **res) {
+bool Item_asterisk::do_itemize(Parse_context *pc, Item **res) {
   assert(pc->select->parsing_place == CTX_SELECT_LIST);
 
   if (skip_itemize(res)) {
     return false;
   }
-  if (super::itemize(pc, res)) {
+  if (super::do_itemize(pc, res)) {
     return true;
   }
   pc->select->with_wild++;

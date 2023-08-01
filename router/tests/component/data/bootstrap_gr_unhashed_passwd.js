@@ -11,8 +11,8 @@ if (mysqld.global.cluster_name == undefined) {
   mysqld.global.cluster_name = "mycluster";
 }
 
-if (mysqld.global.metadata_version === undefined) {
-  mysqld.global.metadata_version = [2, 0, 3];
+if (mysqld.global.metadata_schema_version === undefined) {
+  mysqld.global.metadata_schema_version = [2, 0, 3];
 }
 
 if (mysqld.global.gr_id === undefined) {
@@ -20,7 +20,7 @@ if (mysqld.global.gr_id === undefined) {
 }
 
 var options = {
-  metadata_schema_version: mysqld.global.metadata_version,
+  metadata_schema_version: mysqld.global.metadata_schema_version,
   cluster_type: "gr",
   gr_id: mysqld.global.gr_id,
   clusterset_present: 0,
@@ -43,6 +43,7 @@ var common_responses = common_stmts.prepare_statement_responses(
       "router_start_transaction",
       "router_commit",
       "router_clusterset_present",
+      "router_select_current_instance_attributes",
 
       // account verification
       "router_select_metadata_v2_gr_account_verification",

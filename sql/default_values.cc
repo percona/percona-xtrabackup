@@ -34,6 +34,7 @@
 #include "my_macros.h"
 #include "my_pointer_arithmetic.h"
 #include "my_sys.h"
+#include "mysql/strings/dtoa.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
 #include "sql/create_field.h"
@@ -44,11 +45,10 @@
 #include "sql/dd_table_share.h"   // dd_get_old_field_type
 #include "sql/field.h"            // calc_pack_length
 #include "sql/gis/srid.h"
-#include "sql/handler.h"     // handler
-#include "sql/item.h"        // Item
-#include "sql/my_decimal.h"  // DECIMAL_MAX_SCALE
-#include "sql/sql_class.h"   // THD
-#include "sql/sql_list.h"    // List
+#include "sql/handler.h"    // handler
+#include "sql/item.h"       // Item
+#include "sql/sql_class.h"  // THD
+#include "sql/sql_list.h"   // List
 #include "sql/table.h"
 
 /**
@@ -68,7 +68,7 @@
 
 size_t column_pack_length(const dd::Column &col_obj) {
   // Arrays always use JSON as storage
-  dd::enum_column_types col_type =
+  const dd::enum_column_types col_type =
       col_obj.is_array() ? dd::enum_column_types::JSON : col_obj.type();
   bool treat_bit_as_char = false;
 
@@ -201,7 +201,7 @@ bool prepare_default_value(THD *thd, uchar *buf, TABLE *table,
   if (field.constant_default) {
     // Pointless to store the value of a function as it may not be constant.
     assert(field.constant_default->type() != Item::FUNC_ITEM);
-    type_conversion_status res =
+    const type_conversion_status res =
         field.constant_default->save_in_field(regfield, true);
     if (res != TYPE_OK && res != TYPE_NOTE_TIME_TRUNCATED &&
         res != TYPE_NOTE_TRUNCATED) {
@@ -277,8 +277,8 @@ bool prepare_default_value_buffer_and_table_share(THD *thd,
   }
 
   // Get the minimal and extra record buffer lengths from the handler.
-  size_t extra_length = file->extra_rec_buf_length();
-  size_t min_length =
+  const size_t extra_length = file->extra_rec_buf_length();
+  const size_t min_length =
       static_cast<size_t>(file->min_record_length(share->db_create_options));
   destroy(file);
 

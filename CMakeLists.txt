@@ -187,8 +187,9 @@ IF(CMAKE_GENERATOR MATCHES "Visual Studio [1-9][0-9].*" AND
   SET(CMAKE_GENERATOR_TOOLSET "host=x64")
 ENDIF()
 
-# On Linux el6/el7 the default gcc is too old, see if devtoolset is installed.
-# Same with SLES 12, look for gcc 7 there.
+# On Linux el6/el7/el8/el9 the default gcc is too old,
+# see if devtoolset/gcc-toolset is installed.
+# Same with SUSE linux, look for gcc 10/12 there.
 # We need to look for gcc before calling PROJECT below.
 OPTION(FORCE_UNSUPPORTED_COMPILER "Disable compiler version checks" OFF)
 MARK_AS_ADVANCED(WITHOUT_SERVER FORCE_UNSUPPORTED_COMPILER)
@@ -449,16 +450,16 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
           NO_DEFAULT_PATH
           PATHS "/usr/bin")
       ELSEIF(LINUX_SUSE_15)
-        FIND_PROGRAM(ALTERNATIVE_GCC gcc-9
+        FIND_PROGRAM(ALTERNATIVE_GCC gcc-12
           NO_DEFAULT_PATH
           PATHS "/usr/bin")
-        FIND_PROGRAM(ALTERNATIVE_GPP g++-9
+        FIND_PROGRAM(ALTERNATIVE_GPP g++-12
           NO_DEFAULT_PATH
           PATHS "/usr/bin")
-        FIND_PROGRAM(GCC_AR_EXECUTABLE gcc-ar-9
+        FIND_PROGRAM(GCC_AR_EXECUTABLE gcc-ar-12
           NO_DEFAULT_PATH
           PATHS "/usr/bin")
-        FIND_PROGRAM(GCC_RANLIB_EXECUTABLE gcc-ranlib-9
+        FIND_PROGRAM(GCC_RANLIB_EXECUTABLE gcc-ranlib-12
           NO_DEFAULT_PATH
           PATHS "/usr/bin")
       ENDIF()
@@ -486,7 +487,7 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
           MESSAGE(FATAL_ERROR "Please do zypper install gcc10 gcc10-c++\n"
             "or set CMAKE_C_COMPILER and CMAKE_CXX_COMPILER explicitly.")
         ELSE()
-          MESSAGE(FATAL_ERROR "Please do zypper install gcc9 gcc9-c++\n"
+          MESSAGE(FATAL_ERROR "Please do zypper install gcc12 gcc12-c++\n"
             "or set CMAKE_C_COMPILER and CMAKE_CXX_COMPILER explicitly.")
         ENDIF()
       ENDIF()
@@ -935,6 +936,10 @@ IF(WITH_INTERNAL AND (NOT SOLARIS))
   SET(WITH_AUTHENTICATION_FIDO_DEFAULT ON)
 ELSE()
   SET(WITH_AUTHENTICATION_FIDO_DEFAULT OFF)
+ENDIF()
+
+IF(WITH_INTERNAL)
+  SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_SOURCE_DIR}/internal/cmake)
 ENDIF()
 
 OPTION(WITH_AUTHENTICATION_FIDO
@@ -1596,6 +1601,17 @@ IF(APPLE)
   ADD_DEFINITIONS(-D__STDC_WANT_LIB_EXT1__=1) # Get access to memset_s
 ENDIF()
 
+# Force the same macro definition MYSQL_PROJECT for all source files being
+# compiled as a part of the MySQL server, client tools, libraries etc.
+# The MYSQL_PROJECT macro helps to distinguish when e.g. some C++ header file
+# is included by the MySQL project source file or by the external project
+# source file.
+# For example, MYSQL_PROJECT helps to detect when include/mysql/strings/api.h
+# is used to a) build a static library, or b) build a Windows DLL, or
+# c) reference the server strings API from plugins (DLLs) loaded by the
+# MySQL server, or d) reference the libstrings DLL from external executables.
+ADD_DEFINITIONS(-DMYSQL_PROJECT)
+
 OPTION(ENABLE_EXPERIMENT_SYSVARS "Expose ussually hidden system variables to allow experiments" OFF)
 IF(ENABLE_EXPERIMENT_SYSVARS)
   ADD_DEFINITIONS(-DENABLE_EXPERIMENT_SYSVARS)
@@ -2134,6 +2150,17 @@ OPTION(WITH_HYPERGRAPH_OPTIMIZER
   ${WITH_HYPERGRAPH_OPTIMIZER_DEFAULT}
   )
 
+# Allow SHOW PARSE_TREE on debug build by default.
+IF(CMAKE_BUILD_TYPE_UPPER STREQUAL "DEBUG" OR WITH_DEBUG)
+  SET(WITH_SHOW_PARSE_TREE_DEFAULT ON)
+ELSE()
+  SET(WITH_SHOW_PARSE_TREE_DEFAULT OFF)
+ENDIF()
+OPTION(WITH_SHOW_PARSE_TREE
+  "Allow showing the parse tree"
+  ${WITH_SHOW_PARSE_TREE_DEFAULT}
+  )
+
 # Utility target to build every executable tagged with ADD_TEST.
 ADD_CUSTOM_TARGET(unittest_all)
 
@@ -2251,6 +2278,13 @@ IF(NOT WITHOUT_SERVER AND WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
       # If some symbols are still missing, they will be picked up from
       # dependent libraries, since we LINK_PUBLIC.
       # To see what symbols we need to import, remove LINK_PUBLIC above.
+      #
+      # The strings library uses visibility=hidden for all symbols,
+      # except those explicitly tagged with MYSQL_STRINGS_EXPORT.
+      # If we get ODR violations for executables using server_unittest_library,
+      # it means the symbol has been found in strings and
+      # server_unittest_library, which means the unit test is using
+      # some non-exported symbol from strings.
       EXPORTS
       builtin_perfschema_plugin            # Pulls in the whole server.
       mysql_service_mysql_rwlock_v1        # Pulls in minchassis
@@ -2259,11 +2293,6 @@ IF(NOT WITHOUT_SERVER AND WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
       TARGET_LINK_LIBRARIES(server_unittest_library PUBLIC numa)
     ENDIF()
     IF(WITH_LTO OR CMAKE_COMPILER_FLAG_WITH_LTO)
-      # We get ODR violations because of multiple bison parsers.
-      MY_CHECK_CXX_COMPILER_WARNING("error=odr" HAS_WARN_FLAG)
-      IF(HAS_WARN_FLAG)
-        MY_TARGET_LINK_OPTIONS(server_unittest_library "${HAS_WARN_FLAG}")
-      ENDIF()
       # We may get errors in boost/geometry/srs/projections/proj/ob_tran.hpp
       # and several other boost files.
       MY_CHECK_CXX_COMPILER_WARNING("error=maybe-uninitialized" HAS_WARN_FLAG)
@@ -2448,6 +2477,22 @@ IF(WIN32)
         ENDIF()
       ENDFOREACH()
     ENDFOREACH()
+  ENDIF()
+ENDIF()
+
+# Packaging
+IF(WIN32)
+  SET(BUNDLE_MYSQL_CONFIGURATOR "" CACHE PATH
+    "Path to MySQL Configurator executable to bundle in the MSI installer")
+  IF(BUNDLE_MYSQL_CONFIGURATOR)
+    FILE(TO_CMAKE_PATH "${BUNDLE_MYSQL_CONFIGURATOR}" BUNDLE_MYSQL_CONFIGURATOR)
+    IF(NOT EXISTS "${BUNDLE_MYSQL_CONFIGURATOR}")
+      MESSAGE(FATAL_ERROR "\"${BUNDLE_MYSQL_CONFIGURATOR}\" doesn't exist")
+    ENDIF()
+    MESSAGE(STATUS "INSTALL ${BUNDLE_MYSQL_CONFIGURATOR} to ${INSTALL_BINDIR}")
+    INSTALL(FILES
+      "${BUNDLE_MYSQL_CONFIGURATOR}" DESTINATION "${INSTALL_BINDIR}"
+      COMPONENT Server)
   ENDIF()
 ENDIF()
 

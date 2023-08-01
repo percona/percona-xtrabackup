@@ -30,10 +30,10 @@
 
 #include "my_config.h"
 
-#include "my_loglevel.h"
 #include "my_psi_config.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/components/services/log_shared.h"
+#include "mysql/my_loglevel.h"
 #include "pfs_thread_provider.h"
 #include "sql/table.h"
 
@@ -56,7 +56,6 @@
 #include <utility>
 
 #include "lex_string.h"
-#include "m_ctype.h"
 #include "m_string.h"  // my_stpcpy
 #include "map_helpers.h"
 #include "my_command.h"
@@ -67,6 +66,7 @@
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_thread.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
 #include "sql-common/net_ns.h"  // set_network_namespace
@@ -90,6 +90,7 @@
 #include "sql/sql_plugin.h"  // plugin_thdvar_cleanup
 #include "sql/system_variables.h"
 #include "sql_string.h"
+#include "string_with_len.h"
 #include "violite.h"
 
 #ifdef HAVE_ARPA_INET_H
@@ -342,7 +343,7 @@ void reset_mqh(THD *thd, LEX_USER *lu, bool get_them = false) {
   DEBUG_SYNC(thd, "in_reset_mqh_flush_privileges");
   if (lu)  // for GRANT
   {
-    size_t temp_len = lu->user.length + lu->host.length + 2;
+    const size_t temp_len = lu->user.length + lu->host.length + 2;
     char temp_user[USER_HOST_BUFF_SIZE];
 
     memcpy(temp_user, lu->user.str, lu->user.length);
@@ -643,19 +644,22 @@ static int check_connection(THD *thd) {
     return 1; /* The error is set by alloc(). */
   }
 
-  if (mysql_audit_notify(
-          thd, AUDIT_EVENT(MYSQL_AUDIT_CONNECTION_PRE_AUTHENTICATE))) {
+  if (mysql_event_tracking_connection_notify(
+          thd, AUDIT_EVENT(EVENT_TRACKING_CONNECTION_PRE_AUTHENTICATE))) {
     return 1;
   }
 
   auth_rc = acl_authenticate(thd, COM_CONNECT);
 
-  if (mysql_audit_notify(thd, AUDIT_EVENT(MYSQL_AUDIT_CONNECTION_CONNECT))) {
+  if (mysql_event_tracking_connection_notify(
+          thd, AUDIT_EVENT(EVENT_TRACKING_CONNECTION_CONNECT))) {
     return 1;
   }
 
 #ifdef HAVE_PSI_THREAD_INTERFACE
-  PSI_THREAD_CALL(notify_session_connect)(thd->get_psi());
+  if (auth_rc == 0) {
+    PSI_THREAD_CALL(notify_session_connect)(thd->get_psi());
+  }
 #endif /* HAVE_PSI_THREAD_INTERFACE */
 
   if (auth_rc == 0 && connect_errors != 0) {
@@ -730,13 +734,16 @@ static bool login_connection(THD *thd) {
 void end_connection(THD *thd) {
   NET *net = thd->get_protocol_classic()->get_net();
 
-  mysql_audit_notify(thd, AUDIT_EVENT(MYSQL_AUDIT_CONNECTION_DISCONNECT), 0);
+  mysql_event_tracking_connection_notify(
+      thd, AUDIT_EVENT(EVENT_TRACKING_CONNECTION_DISCONNECT), 0);
 
 #ifdef HAVE_PSI_THREAD_INTERFACE
   PSI_THREAD_CALL(notify_session_disconnect)(thd->get_psi());
 #endif /* HAVE_PSI_THREAD_INTERFACE */
 
   plugin_thdvar_cleanup(thd, thd->m_enable_plugins);
+
+  thd->release_external_store();
 
   /*
     The thread may returned back to the pool and assigned to a user
@@ -752,7 +759,7 @@ void end_connection(THD *thd) {
   if (net->error && net->vio != nullptr) {
     if (!thd->killed) {
       Security_context *sctx = thd->security_context();
-      LEX_CSTRING sctx_user = sctx->user();
+      const LEX_CSTRING sctx_user = sctx->user();
       LogErr(
           INFORMATION_LEVEL, ER_ABORTING_USER_CONNECTION, thd->thread_id(),
           (thd->db().str ? thd->db().str : "unconnected"),
@@ -776,14 +783,14 @@ static void prepare_new_connection_state(THD *thd) {
       thd->get_protocol()->has_client_capability(
           CLIENT_ZSTD_COMPRESSION_ALGORITHM)) {
     net->compress = true;  // Use compression
-    enum enum_compression_algorithm algorithm = get_compression_algorithm(
+    const enum enum_compression_algorithm algorithm = get_compression_algorithm(
         thd->get_protocol()->get_compression_algorithm());
     NET_SERVER *server_extn = static_cast<NET_SERVER *>(net->extension);
     if (server_extn != nullptr)
       mysql_compress_context_init(&server_extn->compress_ctx, algorithm,
                                   thd->get_protocol()->get_compression_level());
     if (net->extension == nullptr) {
-      LEX_CSTRING sctx_user = sctx->user();
+      const LEX_CSTRING sctx_user = sctx->user();
       Host_errors errors;
       my_error(ER_NEW_ABORTING_CONNECTION, MYF(0), thd->thread_id(),
                thd->db().str ? thd->db().str : "unconnected",
@@ -832,7 +839,7 @@ static void prepare_new_connection_state(THD *thd) {
     if (thd->is_error()) {
       Host_errors errors;
       ulong packet_length;
-      LEX_CSTRING sctx_user = sctx->user();
+      const LEX_CSTRING sctx_user = sctx->user();
       Diagnostics_area *da = thd->get_stmt_da();
       const char *user = sctx_user.str ? sctx_user.str : "unauthenticated";
       const char *what = "init_connect command failed";
@@ -917,8 +924,8 @@ void close_connection(THD *thd, uint sql_errno, bool server_shutdown,
   thd->disconnect(server_shutdown);
 
   if (generate_event) {
-    mysql_audit_notify(thd, AUDIT_EVENT(MYSQL_AUDIT_CONNECTION_DISCONNECT),
-                       sql_errno);
+    mysql_event_tracking_connection_notify(
+        thd, AUDIT_EVENT(EVENT_TRACKING_CONNECTION_DISCONNECT), sql_errno);
 #ifdef HAVE_PSI_THREAD_INTERFACE
     PSI_THREAD_CALL(notify_session_disconnect)(thd->get_psi());
 #endif /* HAVE_PSI_THREAD_INTERFACE */

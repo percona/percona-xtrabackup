@@ -32,9 +32,10 @@
 
 using std::max;
 
-bool Item_wait_for_executed_gtid_set::itemize(Parse_context *pc, Item **res) {
+bool Item_wait_for_executed_gtid_set::do_itemize(Parse_context *pc,
+                                                 Item **res) {
   if (skip_itemize(res)) return false;
-  if (super::itemize(pc, res)) return true;
+  if (super::do_itemize(pc, res)) return true;
   /*
     It is unsafe because the return value depends on timing. If the timeout
     happens, the return value is different from the one in which the function
@@ -87,8 +88,8 @@ longlong Item_wait_for_executed_gtid_set::val_int() {
 
   Gtid_set wait_for_gtid_set(global_sid_map, nullptr);
 
-  Checkable_rwlock::Guard global_sid_lock_guard(*global_sid_lock,
-                                                Checkable_rwlock::READ_LOCK);
+  const Checkable_rwlock::Guard global_sid_lock_guard(
+      *global_sid_lock, Checkable_rwlock::READ_LOCK);
   if (global_gtid_mode.get() == Gtid_mode::OFF) {
     my_error(ER_GTID_MODE_OFF, MYF(0), "use WAIT_FOR_EXECUTED_GTID_SET");
     return error_int();
@@ -141,9 +142,9 @@ Item_master_gtid_set_wait::Item_master_gtid_set_wait(const POS &pos, Item *a,
                        "WAIT_FOR_EXECUTED_GTID_SET");
 }
 
-bool Item_master_gtid_set_wait::itemize(Parse_context *pc, Item **res) {
+bool Item_master_gtid_set_wait::do_itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
-  if (super::itemize(pc, res)) return true;
+  if (super::do_itemize(pc, res)) return true;
   pc->thd->lex->set_stmt_unsafe(LEX::BINLOG_STMT_UNSAFE_SYSTEM_FUNCTION);
   pc->thd->lex->safe_to_cache_query = false;
   return false;
@@ -326,7 +327,7 @@ String *Item_func_gtid_subtract::val_str_ascii(String *str) {
   // compute sets while holding locks
   Gtid_set set1(&sid_map, charp1, &status);
   if (status == RETURN_STATUS_OK) {
-    Gtid_set set2(&sid_map, charp2, &status);
+    const Gtid_set set2(&sid_map, charp2, &status);
     size_t length;
     // subtract, save result, return result
     if (status == RETURN_STATUS_OK) {

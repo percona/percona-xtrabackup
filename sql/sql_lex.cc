@@ -31,11 +31,13 @@
 #include <initializer_list>
 
 #include "field_types.h"
-#include "m_ctype.h"
+#include "m_string.h"
 #include "my_alloc.h"
 #include "my_dbug.h"
 #include "mysql/mysql_lex_string.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/strings/collations.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql_version.h"  // MYSQL_VERSION_ID
 #include "mysqld_error.h"
 #include "prealloced_array.h"  // Prealloced_array
@@ -73,12 +75,13 @@
 #include "sql/table_function.h"
 #include "sql/window.h"
 #include "sql_update.h"  // Sql_cmd_update
+#include "string_with_len.h"
 #include "template_utils.h"
 
 class PT_hint_list;
 
-extern int HINT_PARSER_parse(THD *thd, Hint_scanner *scanner,
-                             PT_hint_list **ret);
+extern int my_hint_parser_parse(THD *thd, Hint_scanner *scanner,
+                                PT_hint_list **ret);
 
 static int lex_one_token(Lexer_yystype *yylval, THD *thd);
 
@@ -156,19 +159,6 @@ Table_ident::Table_ident(Protocol *protocol, const LEX_CSTRING &db_arg,
     db = NULL_CSTR;
   else
     db = db_arg;
-}
-
-bool lex_init() {
-  DBUG_TRACE;
-
-  for (CHARSET_INFO **cs = all_charsets;
-       cs < all_charsets + array_elements(all_charsets) - 1; cs++) {
-    if (*cs && (*cs)->ctype && is_supported_parser_charset(*cs)) {
-      if (init_state_maps(*cs)) return true;  // OOM
-    }
-  }
-
-  return false;
 }
 
 void lex_free() {  // Call this when daemon ends
@@ -283,7 +273,7 @@ void Lex_input_stream::body_utf8_start(THD *thd, const char *begin_ptr) {
   assert(begin_ptr);
   assert(m_cpp_buf <= begin_ptr && begin_ptr <= m_cpp_buf + m_buf_length);
 
-  size_t body_utf8_length =
+  const size_t body_utf8_length =
       (m_buf_length / thd->variables.character_set_client->mbminlen) *
       my_charset_utf8mb3_bin.mbmaxlen;
 
@@ -323,7 +313,7 @@ void Lex_input_stream::body_utf8_append(const char *ptr, const char *end_ptr) {
 
   if (m_cpp_utf8_processed_ptr >= ptr) return;
 
-  size_t bytes_to_copy = ptr - m_cpp_utf8_processed_ptr;
+  const size_t bytes_to_copy = ptr - m_cpp_utf8_processed_ptr;
 
   memcpy(m_body_utf8_ptr, m_cpp_utf8_processed_ptr, bytes_to_copy);
   m_body_utf8_ptr += bytes_to_copy;
@@ -645,7 +635,7 @@ Query_block *LEX::new_query(Query_block *curr_query_block) {
 
   Name_resolution_context *outer_context = current_context();
 
-  enum_parsing_context parsing_place =
+  const enum_parsing_context parsing_place =
       curr_query_block != nullptr ? curr_query_block->parsing_place : CTX_NONE;
 
   Query_expression *const new_query_expression = create_query_expr_and_block(
@@ -880,7 +870,7 @@ static bool consume_optimizer_hints(Lex_input_stream *lip) {
                               lip->get_end_of_query() - lip->get_ptr(),
                               lip->m_digest);
     PT_hint_list *hint_list = nullptr;
-    int rc = HINT_PARSER_parse(lip->m_thd, &hint_scanner, &hint_list);
+    const int rc = my_hint_parser_parse(lip->m_thd, &hint_scanner, &hint_list);
     if (rc == 2) return true;  // Bison's internal OOM error
     if (rc == 1) {
       /*
@@ -1124,6 +1114,70 @@ static char *get_text(Lex_input_stream *lip, int pre_skip, int post_skip) {
   return nullptr;  // unexpected end of query
 }
 
+/**
+  Get the text literal between dollar quotes.
+
+  A dollar quote is of the form $tag$, where tag is zero or more characters.
+  The same characters that are permitted for unquoted identifiers,
+  except dollar, may be used for the tag.
+  That is, basic ASCII letters, digits 0-9, underscore,
+  and any multibyte UTF8 characters.
+
+  @param lip     The input stream. When called, the current position
+                 is right after the initial dollar character
+  @param tag_len The length of the tag
+
+  @returns The text literal without dollar quotes
+ */
+static LEX_CSTRING get_dollar_quoted_text(Lex_input_stream *lip, int tag_len) {
+  assert(lip->yyGetLast() == '$' && !lip->eof());
+
+  const CHARSET_INFO *cs = lip->m_thd->charset();
+
+  const uchar *left_delim = pointer_cast<const uchar *>(lip->get_tok_start());
+  lip->yySkipn(tag_len + 1);  // skip beyond the 2nd '$'
+
+  enum { TEXT_BODY, RIGHT_DELIMITER } state = TEXT_BODY;
+
+  const char *body_start = lip->get_cpp_ptr();
+  int delim_pos = 0;  // Position during delimiter matching
+
+  while (!lip->eof()) {
+    const uchar c = lip->yyGet();
+
+    switch (state) {
+      case TEXT_BODY:
+        if (use_mb(cs)) {
+          int mb_len =
+              my_ismbchar(cs, lip->get_ptr() - 1, lip->get_end_of_query());
+          if (mb_len > 1) {
+            lip->skip_binary(mb_len - 1);
+            break;
+          }
+        }
+        if (c == '$') {
+          state = RIGHT_DELIMITER;
+        }
+        break;
+
+      case RIGHT_DELIMITER:
+        if (c == left_delim[++delim_pos]) {
+          if (delim_pos == tag_len + 1) {
+            size_t length = lip->get_cpp_ptr() - body_start - tag_len - 2;
+            return LEX_CSTRING{body_start, length};
+          }
+        } else {  // Not a right delimiter after all
+          state = TEXT_BODY;
+          delim_pos = 0;
+        }
+        break;
+    }
+  }
+
+  assert(lip->eof());
+  return LEX_CSTRING{};  // error: unterminated text
+}
+
 uint Lex_input_stream::get_lineno(const char *raw_ptr) const {
   assert(m_buf <= raw_ptr && raw_ptr <= m_end_of_query);
   if (!(m_buf <= raw_ptr && raw_ptr <= m_end_of_query)) return 1;
@@ -1292,12 +1346,13 @@ static bool consume_comment(Lex_input_stream *lip,
   @return                    token number
 
   @note
-  MYSQLlex remember the following states from the following MYSQLlex():
+  my_sql_parser_lex remember the following states from the
+  following my_sql_parser_lex():
 
   - MY_LEX_END			Found end of query
 */
 
-int MYSQLlex(YYSTYPE *yacc_yylval, YYLTYPE *yylloc, THD *thd) {
+int my_sql_parser_lex(MY_SQL_PARSER_STYPE *yacc_yylval, POS *yylloc, THD *thd) {
   auto *yylval = reinterpret_cast<Lexer_yystype *>(yacc_yylval);
   Lex_input_stream *lip = &thd->m_parser_state->m_lip;
   int token;
@@ -1443,12 +1498,6 @@ static int lex_one_token(Lexer_yystype *yylval, THD *thd) {
         yylval->lex_str.length = lip->yytoklen;
         return (NCHAR_STRING);
 
-      case MY_LEX_IDENT_OR_DOLLAR_QUOTE:
-        state = MY_LEX_IDENT;
-        push_deprecated_warn_no_replacement(
-            lip->m_thd, "$ as the first character of an unquoted identifier");
-        break;
-
       case MY_LEX_IDENT_OR_HEX:
         if (lip->yyPeek() == '\'') {  // Found x'hex-number'
           state = MY_LEX_HEX_NUMBER;
@@ -1472,7 +1521,7 @@ static int lex_one_token(Lexer_yystype *yylval, THD *thd) {
               if (my_mbmaxlenlen(cs) < 2) break;
               [[fallthrough]];
             default:
-              int l =
+              const int l =
                   my_ismbchar(cs, lip->get_ptr() - 1, lip->get_end_of_query());
               if (l == 0) {
                 state = MY_LEX_CHAR;
@@ -1527,14 +1576,13 @@ static int lex_one_token(Lexer_yystype *yylval, THD *thd) {
         /*
            Note: "SELECT _bla AS 'alias'"
            _bla should be considered as a IDENT if charset haven't been found.
-           So we don't use MYF(MY_WME) with get_charset_by_csname to avoid
-           producing an error.
+           So we don't want to produce any warning in find_primary.
         */
 
         if (yylval->lex_str.str[0] == '_') {
           auto charset_name = yylval->lex_str.str + 1;
           const CHARSET_INFO *underscore_cs =
-              get_charset_by_csname(charset_name, MY_CS_PRIMARY, MYF(0));
+              mysql::collation::find_primary(charset_name);
           if (underscore_cs) {
             lip->warn_on_deprecated_charset(underscore_cs, charset_name);
             if (underscore_cs == &my_charset_utf8mb4_0900_ai_ci) {
@@ -1566,7 +1614,7 @@ static int lex_one_token(Lexer_yystype *yylval, THD *thd) {
         yylval->lex_str.str = const_cast<char *>(lip->get_ptr());
         yylval->lex_str.length = 1;
         c = lip->yyGet();  // should be '.'
-        if (uchar next_c = lip->yyPeek(); ident_map[next_c]) {
+        if (const uchar next_c = lip->yyPeek(); ident_map[next_c]) {
           lip->next_state =
               MY_LEX_IDENT_START;  // Next is an ident (not a keyword)
           if (next_c == '$')       // We got .$ident
@@ -1670,7 +1718,7 @@ static int lex_one_token(Lexer_yystype *yylval, THD *thd) {
       case MY_LEX_USER_VARIABLE_DELIMITER:  // Found quote char
       {
         uint double_quotes = 0;
-        char quote_char = c;  // Used char
+        const char quote_char = c;  // Used char
         for (;;) {
           c = lip->yyGet();
           if (c == 0) {
@@ -1844,31 +1892,41 @@ static int lex_one_token(Lexer_yystype *yylval, THD *thd) {
 
           /*
             The special comment format is very strict:
-            '/' '*' '!', followed by exactly
-            1 digit (major), 2 digits (minor), then 2 digits (dot).
-            32302 -> 3.23.02
+            '/' '*' '!', followed by either
+
+            6 digits: 2 digits (major), 2 digits (mionr), 2 digits (dot), then a
+            white-space character.
+            032302 -> 3.23.2
+            050032 -> 5.0.32
+            050114 -> 5.1.14
+            100000 -> 10.0.0
+
+            or, if that format is not matched:
+
+            5 digits: 1 digit (major), 2 digits (minor), then 2 digits (dot).
+            32302 -> 3.23.2
             50032 -> 5.0.32
             50114 -> 5.1.14
           */
-          char version_str[6];
+          char version_str[7] = {0};
           if (my_isdigit(cs, (version_str[0] = lip->yyPeekn(0))) &&
               my_isdigit(cs, (version_str[1] = lip->yyPeekn(1))) &&
               my_isdigit(cs, (version_str[2] = lip->yyPeekn(2))) &&
               my_isdigit(cs, (version_str[3] = lip->yyPeekn(3))) &&
               my_isdigit(cs, (version_str[4] = lip->yyPeekn(4)))) {
-            if (!my_isspace(cs, lip->yyPeekn(5))) {
+            if (my_isdigit(cs, lip->yyPeekn(5)) &&
+                my_isspace(cs, lip->yyPeekn(6))) {
+              version_str[5] = lip->yyPeekn(5);
+            } else if (!my_isspace(cs, lip->yyPeekn(5))) {
               push_warning(thd, Sql_condition::SL_WARNING,
                            ER_WARN_NO_SPACE_VERSION_COMMENT,
                            ER_THD(thd, ER_WARN_NO_SPACE_VERSION_COMMENT));
             }
 
-            version_str[5] = 0;
-            ulong version;
-            version = strtol(version_str, nullptr, 10);
-
+            ulong version = strtol(version_str, nullptr, 10);
             if (version <= MYSQL_VERSION_ID) {
-              /* Accept 'M' 'm' 'm' 'd' 'd' */
-              lip->yySkipn(5);
+              /* Accept ('M') 'M' 'm' 'm' 'd' 'd' */
+              lip->yySkipn(strlen(version_str));
               /* Expand the content of the special comment as real code */
               lip->set_echo(true);
               state = MY_LEX_START;
@@ -2049,6 +2107,42 @@ static int lex_one_token(Lexer_yystype *yylval, THD *thd) {
                                       lip->m_cpp_text_end);
 
         return (result_state);
+
+      case MY_LEX_IDENT_OR_DOLLAR_QUOTED_TEXT: {
+        int len = 0;             /* Length of the tag of the dollar quote */
+        uchar p = lip->yyPeek(); /* Character succeeding first $ */
+        // Find $ character after the tag
+        while (p != '$' && ident_map[p] &&
+               lip->get_ptr() + len <= lip->get_end_of_query()) {
+          if (use_mb(cs)) {
+            int l =
+                my_ismbchar(cs, lip->get_ptr() + len, lip->get_end_of_query());
+            if (l > 1) len += l - 1;
+          }
+          p = lip->yyPeekn(++len);
+        }
+
+        if (p != '$') { /* Not a dollar quote, could be an identifier */
+          push_deprecated_warn_no_replacement(
+              lip->m_thd, "$ as the first character of an unquoted identifier");
+          state = MY_LEX_IDENT;
+          break;
+        } else {
+          LEX_CSTRING text = get_dollar_quoted_text(lip, len);
+          if (text == NULL_CSTR)
+            return ABORT_SYM;  // error: unterminated text
+          else {
+            yylval->lex_str.str = const_cast<char *>(text.str);
+            yylval->lex_str.length = text.length;
+
+            lip->body_utf8_append(text.str);
+            lip->body_utf8_append_literal(thd, &yylval->lex_str, cs,
+                                          text.str + text.length);
+
+            return DOLLAR_QUOTED_STRING_SYM;  // $$ ... $$
+          }
+        }
+      }
     }
   }
 }
@@ -2532,8 +2626,8 @@ bool Query_block::setup_base_ref_items(THD *thd) {
         thd->secondary_engine_optimization() ==
             Secondary_engine_optimization::SECONDARY))) {
     Item_subselect *subq_predicate = master_query_expression()->item;
-    if (subq_predicate->substype() == Item_subselect::EXISTS_SUBS ||
-        subq_predicate->substype() == Item_subselect::IN_SUBS) {
+    if (subq_predicate->subquery_type() == Item_subselect::EXISTS_SUBQUERY ||
+        subq_predicate->subquery_type() == Item_subselect::IN_SUBQUERY) {
       // might be transformed to derived table, so:
       n_elems +=
           // possible additions to SELECT list from decorrelation of WHERE
@@ -2628,11 +2722,11 @@ void Query_block::print_limit(const THD *thd, String *str,
   Query_expression *unit = master_query_expression();
   Item_subselect *item = unit->item;
 
-  if (item && unit->global_parameters() == this) {
-    Item_subselect::subs_type subs_type = item->substype();
-    if (subs_type == Item_subselect::EXISTS_SUBS ||
-        subs_type == Item_subselect::IN_SUBS ||
-        subs_type == Item_subselect::ALL_SUBS)
+  if (item != nullptr && unit->global_parameters() == this) {
+    Item_subselect::Subquery_type type = item->subquery_type();
+    if (type == Item_subselect::EXISTS_SUBQUERY ||
+        type == Item_subselect::IN_SUBQUERY ||
+        type == Item_subselect::ALL_SUBQUERY)
       return;
   }
   if (has_limit() && !m_internal_limit) {
@@ -3133,21 +3227,10 @@ bool Query_block::print_error(const THD *thd, String *str) {
 }
 
 void Query_block::print_select_options(String *str) {
-  /* First add options */
-  if (active_options() & SELECT_STRAIGHT_JOIN)
-    str->append(STRING_WITH_LEN("straight_join "));
-  if (active_options() & SELECT_HIGH_PRIORITY)
-    str->append(STRING_WITH_LEN("high_priority "));
-  if (active_options() & SELECT_DISTINCT)
-    str->append(STRING_WITH_LEN("distinct "));
-  if (active_options() & SELECT_SMALL_RESULT)
-    str->append(STRING_WITH_LEN("sql_small_result "));
-  if (active_options() & SELECT_BIG_RESULT)
-    str->append(STRING_WITH_LEN("sql_big_result "));
-  if (active_options() & OPTION_BUFFER_RESULT)
-    str->append(STRING_WITH_LEN("sql_buffer_result "));
-  if (active_options() & OPTION_FOUND_ROWS)
-    str->append(STRING_WITH_LEN("sql_calc_found_rows "));
+  std::string select_options_str;
+  get_select_options_str(active_options(), &select_options_str);
+  str->append(select_options_str);
+  if (!select_options_str.empty()) str->append(" ");
 }
 
 void Query_block::print_update_options(String *str) {
@@ -3167,7 +3250,7 @@ void Query_block::print_delete_options(String *str) {
 
 void Query_block::print_insert_options(String *str) {
   if (get_table_list()) {
-    int type = static_cast<int>(get_table_list()->lock_descriptor().type);
+    const int type = static_cast<int>(get_table_list()->lock_descriptor().type);
 
     // Lock option
     if (type == static_cast<int>(TL_WRITE_LOW_PRIORITY))
@@ -4523,7 +4606,7 @@ Subquery_strategy Query_block::subquery_strategy(const THD *thd) const {
     return Subquery_strategy::SUBQ_MATERIALIZATION;
 
   if (opt_hints_qb) {
-    Subquery_strategy strategy = opt_hints_qb->subquery_strategy();
+    const Subquery_strategy strategy = opt_hints_qb->subquery_strategy();
     if (strategy != Subquery_strategy::UNSPECIFIED) return strategy;
   }
 
@@ -4542,13 +4625,13 @@ bool Query_block::semijoin_enabled(const THD *thd) const {
 }
 
 void Query_block::update_semijoin_strategies(THD *thd) {
-  uint sj_strategy_mask =
+  const uint sj_strategy_mask =
       OPTIMIZER_SWITCH_FIRSTMATCH | OPTIMIZER_SWITCH_LOOSE_SCAN |
       OPTIMIZER_SWITCH_MATERIALIZATION | OPTIMIZER_SWITCH_DUPSWEEDOUT;
 
-  uint opt_switches = thd->variables.optimizer_switch & sj_strategy_mask;
+  const uint opt_switches = thd->variables.optimizer_switch & sj_strategy_mask;
 
-  bool is_secondary_engine_optimization =
+  const bool is_secondary_engine_optimization =
       parent_lex->m_sql_cmd != nullptr &&
       parent_lex->m_sql_cmd->using_secondary_storage_engine();
 
@@ -4756,8 +4839,8 @@ bool Query_block::walk(Item_processor processor, enum_walk walk, uchar *arg) {
   @retval NULL If not found.
 */
 Table_ref *Query_block::find_table_by_name(const Table_ident *ident) {
-  LEX_CSTRING db_name = ident->db;
-  LEX_CSTRING table_name = ident->table;
+  const LEX_CSTRING db_name = ident->db;
+  const LEX_CSTRING table_name = ident->table;
 
   for (Table_ref *table = m_table_list.first; table;
        table = table->next_local) {
@@ -4839,7 +4922,7 @@ bool Query_options::merge(const Query_options &a, const Query_options &b) {
 
 bool Query_options::save_to(Parse_context *pc) {
   LEX *lex = pc->thd->lex;
-  ulonglong options = query_spec_options;
+  const ulonglong options = query_spec_options;
   if (pc->select->validate_base_options(lex, options)) return true;
   pc->select->set_base_options(options);
 
@@ -4927,7 +5010,7 @@ static void unsafe_mixed_statement(LEX::enum_stmt_accessed_table a,
                                    LEX::enum_stmt_accessed_table b,
                                    uint condition) {
   int type = 0;
-  int index = (1U << a) | (1U << b);
+  const int index = (1U << a) | (1U << b);
 
   for (type = 0; type < 256; type++) {
     if ((type & index) == index) {
@@ -5104,3 +5187,25 @@ void LEX_GRANT_AS::cleanup() {
 }
 
 LEX_GRANT_AS::LEX_GRANT_AS() { cleanup(); }
+
+void get_select_options_str(ulonglong options, std::string *str) {
+  size_t len = str->length();
+
+  if ((options & SELECT_STRAIGHT_JOIN) != 0u)
+    str->append(STRING_WITH_LEN("straight_join "));
+  if ((options & SELECT_HIGH_PRIORITY) != 0u)
+    str->append(STRING_WITH_LEN("high_priority "));
+  if ((options & SELECT_DISTINCT) != 0u)
+    str->append(STRING_WITH_LEN("distinct "));
+  if ((options & SELECT_SMALL_RESULT) != 0u)
+    str->append(STRING_WITH_LEN("sql_small_result "));
+  if ((options & SELECT_BIG_RESULT) != 0u)
+    str->append(STRING_WITH_LEN("sql_big_result "));
+  if ((options & OPTION_BUFFER_RESULT) != 0u)
+    str->append(STRING_WITH_LEN("sql_buffer_result "));
+  if ((options & OPTION_FOUND_ROWS) != 0u)
+    str->append(STRING_WITH_LEN("sql_calc_found_rows "));
+
+  // Delete the last space character.
+  if (str->length() > len) str->pop_back();
+}

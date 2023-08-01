@@ -30,7 +30,6 @@
 #include "base64.h"  // base64_needed_decoded_length
 #include "lex_string.h"
 #include "libbinlogevents/include/binlog_event.h"
-#include "m_string.h"
 #include "my_byteorder.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -48,6 +47,7 @@
 #include "sql/sql_class.h"
 #include "sql/sql_lex.h"
 #include "sql/system_variables.h"
+#include "string_with_len.h"
 
 /**
   Check if the event type is allowed in a BINLOG statement.
@@ -147,14 +147,14 @@ void mysql_client_binlog_statement(THD *thd) {
     my_error(ER_SYNTAX_ERROR, MYF(0));
     return;
   }
-  size_t decoded_len = base64_needed_decoded_length(coded_len);
+  const size_t decoded_len = base64_needed_decoded_length(coded_len);
 
   /*
     option_bits will be changed when applying the event. But we don't expect
     it be changed permanently after BINLOG statement, so backup it first.
     It will be restored at the end of this function.
   */
-  ulonglong thd_options = thd->variables.option_bits;
+  const ulonglong thd_options = thd->variables.option_bits;
 
   /*
     Allocation

@@ -26,11 +26,14 @@
 
 #include <memory>  // make_unique
 
+#include <openssl/ssl.h>  // SSL_set_msg_callback_arg
+
 #include "classic_connect.h"
 #include "classic_connection_base.h"
 #include "classic_forwarder.h"
 #include "classic_frame.h"
 #include "classic_lazy_connect.h"
+#include "mysqld_error.h"  // ER_...
 #include "mysqlrouter/connection_pool_component.h"
 
 stdx::expected<Processor::Result, std::error_code>
@@ -89,6 +92,10 @@ ForwardingProcessor::pool_server_connection() {
     if (auto pool = pools.get(ConnectionPoolComponent::default_pool_name())) {
       auto ssl_mode = server_conn.ssl_mode();
 
+      if (auto *server_ssl = socket_splicer->server_channel()->ssl()) {
+        SSL_set_msg_callback_arg(server_ssl, nullptr);
+      }
+
       auto is_full_res = pool->add_if_not_full(make_pooled_connection(
           std::exchange(socket_splicer->server_conn(),
                         TlsSwitchableConnection{
@@ -100,6 +107,11 @@ ForwardingProcessor::pool_server_connection() {
       if (is_full_res) {
         // pool is full, restore the connection.
         server_conn = make_connection_from_pooled(std::move(*is_full_res));
+
+        if (auto *server_ssl = socket_splicer->server_channel()->ssl()) {
+          SSL_set_msg_callback_arg(server_ssl, connection());
+        }
+
         return {false};
       }
     }
@@ -109,22 +121,25 @@ ForwardingProcessor::pool_server_connection() {
 }
 
 stdx::expected<Processor::Result, std::error_code>
-ForwardingProcessor::socket_reconnect_start() {
+ForwardingProcessor::socket_reconnect_start(TraceEvent *parent_event) {
   connection()->push_processor(std::make_unique<ConnectProcessor>(
-      connection(), [this](classic_protocol::message::server::Error err) {
+      connection(),
+      [this](classic_protocol::message::server::Error err) {
         reconnect_error_ = std::move(err);
-      }));
+      },
+      parent_event));
 
   return Result::Again;
 }
 
 stdx::expected<Processor::Result, std::error_code>
-ForwardingProcessor::mysql_reconnect_start() {
+ForwardingProcessor::mysql_reconnect_start(TraceEvent *parent_event) {
   connection()->push_processor(std::make_unique<LazyConnector>(
       connection(), false /* not in handshake */,
       [this](classic_protocol::message::server::Error err) {
         reconnect_error_ = std::move(err);
-      }));
+      },
+      parent_event));
 
   return Result::Again;
 }
@@ -148,4 +163,9 @@ ForwardingProcessor::reconnect_send_error_msg(
   if (!send_res) return send_client_failed(send_res.error());
 
   return Result::SendToClient;
+}
+
+bool ForwardingProcessor::connect_error_is_transient(
+    const classic_protocol::message::server::Error &err) {
+  return err.error_code() == ER_CON_COUNT_ERROR;  // 1040
 }

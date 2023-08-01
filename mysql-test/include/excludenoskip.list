@@ -121,6 +121,7 @@ have_innodb_4k.inc
 have_innodb_64k.inc
 have_innodb_8k.inc
 have_innodb_max_16k.inc
+have_innodb_min_16k.inc
 have_innodb_min_8k.inc
 not_have_innodb_4k.inc
 
@@ -140,6 +141,10 @@ have_statement_timeout.inc
 # contains more than 2 InnoDB undo tablespaces.  That can be done using
 # --bootstrap=--init-file=std_data/explicit_undo_32.sql
 have_innodb_default_undo_tablespaces.inc
+
+# 4.9 General utility to skip if a specific command line option is used.
+# The usage is described in the .inc file.
+skip_by_command_line_option.inc
 
 # 5.0 Different protocols
 # Reason for inclusion: Tests should run only with supported protocols and

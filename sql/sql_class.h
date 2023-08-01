@@ -45,11 +45,12 @@
 #include <bitset>
 #include <memory>
 #include <new>
+#include <stack>
 #include <string>
+#include <unordered_map>
 
 #include "dur_prop.h"  // durability_properties
 #include "lex_string.h"
-#include "m_ctype.h"
 #include "map_helpers.h"
 #include "my_alloc.h"
 #include "my_base.h"
@@ -73,9 +74,11 @@
 #include "mysql/components/services/bits/psi_statement_bits.h"
 #include "mysql/components/services/bits/psi_thread_bits.h"
 #include "mysql/components/services/bits/psi_transaction_bits.h"
+#include "mysql/plugin_audit.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_statement.h"
 #include "mysql/psi/mysql_thread.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql/thread_type.h"
 #include "mysql_com.h"
 #include "mysql_com_server.h"  // NET_SERVER
@@ -90,12 +93,15 @@
 #include "sql/mdl.h"
 #include "sql/opt_costmodel.h"
 #include "sql/opt_trace_context.h"  // Opt_trace_context
+#include "sql/parse_location.h"
 #include "sql/psi_memory_key.h"
 #include "sql/query_options.h"
+#include "sql/reference_caching_setup.h"
 #include "sql/resourcegroups/resource_group_basic_types.h"
 #include "sql/rpl_context.h"  // Rpl_thd_context
 #include "sql/rpl_gtid.h"
 #include "sql/session_tracker.h"  // Session_tracker
+#include "sql/sql_audit.h"
 #include "sql/sql_connect.h"
 #include "sql/sql_const.h"
 #include "sql/sql_digest_stream.h"  // sql_digest_state
@@ -106,6 +112,7 @@
 #include "sql/system_variables.h"       // system_variables
 #include "sql/transaction_info.h"       // Ha_trx_info
 #include "sql/xa.h"
+#include "sql_event_tracking_to_audit_event_mapping.h"
 #include "sql_string.h"
 #include "template_utils.h"
 #include "thr_lock.h"
@@ -135,7 +142,6 @@ struct TABLE;
 class Table_ref;
 struct timeval;
 struct User_level_lock;
-struct YYLTYPE;
 
 namespace dd {
 namespace cache {
@@ -917,6 +923,10 @@ class Transactional_ddl_context {
 };
 
 struct PS_PARAM;
+
+using Event_tracking_data =
+    std::pair<Event_tracking_class, Event_tracking_information *>;
+using Event_tracking_data_stack = std::stack<Event_tracking_data>;
 
 /**
   @class THD
@@ -1810,6 +1820,12 @@ class THD : public MDL_context_owner,
     'read_only' and 'super_read_only' options.
   */
   bool skip_readonly_check;
+
+  /*
+    Indicates that the command which is under execution should ignore the
+    read only transaction mode.
+  */
+  bool skip_transaction_read_only_check;
   /**
     Indicate if the current statement should be discarded
     instead of written to the binlog.
@@ -1874,12 +1890,28 @@ class THD : public MDL_context_owner,
  public:
   const NET *get_net() const { return &net; }
 
-  void set_skip_readonly_check() { skip_readonly_check = true; }
-
+  void set_skip_readonly_check() {
+    skip_readonly_check = true;
+    // Make a transaction skip the read only check set via the command
+    // SET SESSION TRANSACTION READ ONLY
+    set_skip_transaction_read_only_check();
+  }
+  void set_skip_transaction_read_only_check() {
+    skip_transaction_read_only_check = true;
+  }
   bool is_cmd_skip_readonly() const { return skip_readonly_check; }
 
+  bool is_cmd_skip_transaction_read_only() const {
+    return skip_transaction_read_only_check;
+  }
   void reset_skip_readonly_check() {
     if (skip_readonly_check) skip_readonly_check = false;
+    reset_skip_transaction_read_only_check();
+  }
+
+  void reset_skip_transaction_read_only_check() {
+    if (skip_transaction_read_only_check)
+      skip_transaction_read_only_check = false;
   }
 
   void issue_unsafe_warnings();
@@ -2799,7 +2831,7 @@ class THD : public MDL_context_owner,
     Audit API events are generated, when this flag is true. The flag
     is initially true, but it can be set false in some cases, e.g.
     Session Service's THDs are created with auditing disabled. Auditing
-    is enabled on MYSQL_AUDIT_CONNECTION_CONNECT event.
+    is enabled on EVENT_TRACKING_CONNECTION_CONNECT event.
   */
   bool m_audited;
 
@@ -2926,7 +2958,7 @@ class THD : public MDL_context_owner,
   /** Check if clone network Vio is active. */
   inline bool check_clone_vio() {
     mysql_mutex_lock(&LOCK_thd_data);
-    bool is_active = (clone_vio != nullptr);
+    const bool is_active = (clone_vio != nullptr);
     mysql_mutex_unlock(&LOCK_thd_data);
     return (is_active);
   }
@@ -4036,8 +4068,9 @@ class THD : public MDL_context_owner,
   friend void my_message_sql(uint, const char *, myf);
 
   /**
-    Raise a generic SQL condition. Also calls mysql_audit_notify() unless
-    the condition is handled by a SQL condition handler.
+    Raise a generic SQL condition. Also calls
+    mysql_event_tracking_general_notify() unless the condition is handled by a
+    SQL condition handler.
 
     @param sql_errno the condition error number
     @param sqlstate the condition SQLSTATE
@@ -4134,7 +4167,7 @@ class THD : public MDL_context_owner,
     Protected with the LOCK_thd_query mutex.
   */
   void set_query(const char *query_arg, size_t query_length_arg) {
-    LEX_CSTRING tmp = {query_arg, query_length_arg};
+    const LEX_CSTRING tmp = {query_arg, query_length_arg};
     set_query(tmp);
   }
   void set_query(LEX_CSTRING query_arg);
@@ -4376,15 +4409,15 @@ class THD : public MDL_context_owner,
       MY_ATTRIBUTE((format(printf, 2, 3)));
   void syntax_error(int mysql_errno, ...);
 
-  void syntax_error_at(const YYLTYPE &location) {
+  void syntax_error_at(const POS &location) {
     syntax_error_at(location, ER_SYNTAX_ERROR);
   }
-  void syntax_error_at(const YYLTYPE &location, const char *format, ...)
+  void syntax_error_at(const POS &location, const char *format, ...)
       MY_ATTRIBUTE((format(printf, 3, 4)));
-  void syntax_error_at(const YYLTYPE &location, int mysql_errno, ...);
+  void syntax_error_at(const POS &location, int mysql_errno, ...);
 
-  void vsyntax_error_at(const YYLTYPE &location, const char *format,
-                        va_list args) MY_ATTRIBUTE((format(printf, 3, 0)));
+  void vsyntax_error_at(const POS &location, const char *format, va_list args)
+      MY_ATTRIBUTE((format(printf, 3, 0)));
   void vsyntax_error_at(const char *pos_in_lexer_raw_buffer, const char *format,
                         va_list args) MY_ATTRIBUTE((format(printf, 3, 0)));
 
@@ -4686,9 +4719,34 @@ class THD : public MDL_context_owner,
  public:
   bool add_external(unsigned int slot, void *data);
   void *fetch_external(unsigned int slot);
+  void release_external_store();
 
  private:
   std::unordered_map<unsigned int, void *> external_store_;
+
+ public:
+  Event_tracking_data get_event_tracking_data() {
+    if (!event_tracking_data_.empty()) return event_tracking_data_.top();
+    return std::make_pair(Event_tracking_class::LAST, nullptr);
+  }
+
+  bool check_event_subscribers(Event_tracking_class event,
+                               unsigned long subevent, bool check_audited);
+  bool event_notify(struct st_mysql_event_generic *event_data);
+  void refresh_reference_caches() {
+    if (events_cache_) events_cache_->refresh_all();
+  }
+
+ private:
+  bool push_event_tracking_data(
+      Event_tracking_class event,
+      const Event_tracking_information *Event_tracking_information);
+
+  void pop_event_tracking_data();
+
+  Event_reference_caching_cache *events_cache_{nullptr};
+  Event_tracking_data_stack event_tracking_data_;
+  bool audit_plugins_present;
 };  // End of class THD
 
 /**

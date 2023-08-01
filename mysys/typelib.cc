@@ -34,13 +34,14 @@
 #include <stdlib.h>
 #include <sys/types.h>
 
-#include "m_ctype.h"
 #include "m_string.h"
 #include "my_alloc.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_macros.h"
 #include "my_sys.h"
+#include "mysql/strings/m_ctype.h"
+#include "template_utils.h"
 #include "typelib.h"
 
 #define is_field_separator(X) ((X) == ',' || (X) == '=')
@@ -252,7 +253,7 @@ static TYPELIB on_off_default_typelib = {
 static int parse_name(const TYPELIB *lib, const char **strpos,
                       const char *end) {
   const char *pos = *strpos;
-  int find = find_type(pos, lib, FIND_TYPE_COMMA_TERM);
+  const int find = find_type(pos, lib, FIND_TYPE_COMMA_TERM);
   for (; pos != end && *pos != '=' && *pos != ','; pos++)
     ;
   *strpos = pos;
@@ -309,7 +310,7 @@ uint64_t find_set_from_flags(const TYPELIB *lib, int default_name,
       const char *pos = start;
       uint value;
 
-      int flag_no = parse_name(lib, &pos, end);
+      const int flag_no = parse_name(lib, &pos, end);
       if (flag_no <= 0) goto err;
 
       if (flag_no == default_name) {
@@ -317,7 +318,7 @@ uint64_t find_set_from_flags(const TYPELIB *lib, int default_name,
         if (set_defaults) goto err;
         set_defaults = true;
       } else {
-        uint64_t bit = (1ULL << (flag_no - 1));
+        const uint64_t bit = (1ULL << (flag_no - 1));
         /* parse the '=on|off|default' */
         if ((flags_to_clear | flags_to_set) & bit || pos >= end ||
             *pos++ != '=' ||

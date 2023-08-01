@@ -31,13 +31,14 @@
 #include "caching_sha2_passwordopt-vars.h"
 #include "client/client_priv.h"
 #include "compression.h"
-#include "m_ctype.h"
 #include "my_alloc.h"
 #include "my_dbug.h"
 #include "my_default.h"
 #include "my_inttypes.h"
 #include "my_macros.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/strings/m_ctype.h"
+#include "nulls.h"
 #include "print_version.h"
 #include "sslopt-vars.h"
 #include "typelib.h"
@@ -303,7 +304,7 @@ static void usage(void) {
 extern "C" {
 static bool get_one_option(int optid, const struct my_option *opt,
                            char *argument) {
-  int orig_what_to_do = what_to_do;
+  const int orig_what_to_do = what_to_do;
 
   switch (optid) {
     case 'a':
@@ -394,7 +395,7 @@ static int get_options(int *argc, char ***argv, MEM_ROOT *alloc) {
   my_getopt_use_args_separator = false;
 
   if (!what_to_do) {
-    size_t pnlen = strlen(my_progname);
+    const size_t pnlen = strlen(my_progname);
 
     if (pnlen < 6) /* name too short */
       what_to_do = DO_CHECK;

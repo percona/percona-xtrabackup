@@ -32,11 +32,11 @@
 #include <cstddef>
 
 #include "field_types.h"  // MYSQL_TYPE_DATETIME
-#include "m_ctype.h"
 
 #include "my_inttypes.h"
 #include "my_table_map.h"
 #include "my_time.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql/udf_registration_types.h"
 #include "mysql_time.h"
 #include "sql/enum_query_type.h"
@@ -68,6 +68,7 @@ class Item_func_period_add final : public Item_int_func {
       : Item_int_func(pos, a, b) {}
   longlong val_int() override;
   const char *func_name() const override { return "period_add"; }
+  enum Functype functype() const override { return PERIODADD_FUNC; }
   bool resolve_type(THD *thd) override;
 };
 
@@ -77,6 +78,7 @@ class Item_func_period_diff final : public Item_int_func {
       : Item_int_func(pos, a, b) {}
   longlong val_int() override;
   const char *func_name() const override { return "period_diff"; }
+  enum Functype functype() const override { return PERIODDIFF_FUNC; }
   bool resolve_type(THD *thd) override;
 };
 
@@ -149,7 +151,7 @@ class Item_func_month final : public Item_func {
     return (double)Item_func_month::val_int();
   }
   String *val_str(String *str) override {
-    longlong nr = val_int();
+    const longlong nr = val_int();
     if (null_value) return nullptr;
     str->set(nr, collation.collation);
     return str;
@@ -255,7 +257,7 @@ class Item_func_week final : public Item_int_func {
   Item_func_week(Item *a, Item *b) : Item_int_func(a, b) {}
   Item_func_week(const POS &pos, Item *a, Item *b) : super(pos, a, b) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 
   longlong val_int() override;
   const char *func_name() const override { return "week"; }
@@ -411,7 +413,7 @@ class Item_func_unix_timestamp final : public Item_timeval_func {
   const char *func_name() const override { return "unix_timestamp"; }
   enum Functype functype() const override { return UNIX_TIMESTAMP_FUNC; }
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
   enum_monotonicity_info get_monotonicity_info() const override;
   longlong val_int_endpoint(bool left_endp, bool *incl_endp) override;
   bool check_partition_func_processor(uchar *) override { return false; }
@@ -423,6 +425,12 @@ class Item_func_unix_timestamp final : public Item_timeval_func {
   bool check_valid_arguments_processor(uchar *) override {
     return !has_timestamp_args();
   }
+
+  table_map get_initial_pseudo_tables() const override {
+    if (arg_count == 0) return INNER_TABLE_BIT;
+    return 0;
+  }
+
   bool resolve_type(THD *thd) override {
     if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_DATETIME)) return true;
     collation.set_numeric();
@@ -470,6 +478,12 @@ class Item_func_time_to_sec final : public Item_int_func {
 class Item_temporal_func : public Item_func {
  protected:
   bool check_precision();
+
+ protected:
+  void add_json_info(Json_object *obj) override {
+    if (decimals > 0)
+      obj->add_alias("precision", create_dom_ptr<Json_uint>(decimals));
+  }
 
  public:
   Item_temporal_func() : Item_func() {}
@@ -525,6 +539,9 @@ class Item_temporal_hybrid_func : public Item_str_func {
   virtual bool val_datetime(MYSQL_TIME *ltime, my_time_flags_t fuzzy_date) = 0;
   type_conversion_status save_in_field_inner(Field *field,
                                              bool no_conversions) override;
+  void add_json_info(Json_object *obj) override {
+    Item_str_func::add_json_info(obj);
+  }
 
  public:
   Item_temporal_hybrid_func(Item *a, Item *b)
@@ -1007,6 +1024,10 @@ class Item_func_curtime : public Item_time_func {
   // Abstract method that defines which time zone is used for conversion.
   virtual Time_zone *time_zone() = 0;
 
+  void add_json_info(Json_object *obj) override {
+    obj->add_alias("precision", create_dom_ptr<Json_uint>(decimals));
+  }
+
  public:
   /**
     Constructor for Item_func_curtime.
@@ -1017,7 +1038,7 @@ class Item_func_curtime : public Item_time_func {
     decimals = dec_arg;
   }
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 
   /// This function must assign a new value for each execution
   table_map get_initial_pseudo_tables() const override {
@@ -1072,7 +1093,7 @@ class Item_func_curdate : public Item_date_func {
  public:
   explicit Item_func_curdate(const POS &pos) : Item_date_func(pos) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 
   /// This function must assign a new value for each execution
   table_map get_initial_pseudo_tables() const override {
@@ -1121,6 +1142,11 @@ class Item_func_now : public Item_datetime_func {
   virtual Time_zone *time_zone() = 0;
   type_conversion_status save_in_field_inner(Field *to,
                                              bool no_conversions) override;
+
+  void add_json_info(Json_object *obj) override {
+    if (decimals > 0)
+      obj->add_alias("precision", create_dom_ptr<Json_uint>(decimals));
+  }
 
  public:
   /**
@@ -1182,7 +1208,7 @@ class Item_func_now_utc final : public Item_func_now {
   Item_func_now_utc(const POS &pos, uint8 dec_arg)
       : Item_func_now(pos, dec_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 
   const char *func_name() const override { return "utc_timestamp"; }
 };
@@ -1198,6 +1224,7 @@ class Item_func_sysdate_local final : public Item_datetime_func {
   }
   const char *func_name() const override { return "sysdate"; }
   bool resolve_type(THD *) override;
+  enum Functype functype() const override { return SYSDATE_FUNC; }
   bool get_date(MYSQL_TIME *res, my_time_flags_t fuzzy_date) override;
   /**
     This function is non-deterministic and hence depends on the 'RAND'
@@ -1296,6 +1323,7 @@ class Item_func_sec_to_time final : public Item_time_func {
     return false;
   }
   const char *func_name() const override { return "sec_to_time"; }
+  enum Functype functype() const override { return SEC_TO_TIME_FUNC; }
   bool get_time(MYSQL_TIME *ltime) override;
 };
 
@@ -1306,6 +1334,8 @@ extern const char *interval_names[];
   Also used for the synonym functions ADDDATE and SUBDATE.
 */
 class Item_date_add_interval final : public Item_temporal_hybrid_func {
+  typedef Item_temporal_hybrid_func super;
+
  public:
   Item_date_add_interval(const POS &pos, Item *a, Item *b, interval_type type,
                          bool subtract)
@@ -1328,6 +1358,9 @@ class Item_date_add_interval final : public Item_temporal_hybrid_func {
              enum_query_type query_type) const override;
   interval_type get_interval_type() const { return m_interval_type; }
   bool is_subtract() const { return m_subtract; }
+
+ protected:
+  void add_json_info(Json_object *obj) override;
 
  private:
   bool val_datetime(MYSQL_TIME *ltime, my_time_flags_t fuzzy_date) override;
@@ -1547,6 +1580,7 @@ class Item_func_timediff final : public Item_time_func {
   Item_func_timediff(const POS &pos, Item *a, Item *b)
       : Item_time_func(pos, a, b) {}
   const char *func_name() const override { return "timediff"; }
+  enum Functype functype() const override { return TIMEDIFF_FUNC; }
   bool resolve_type(THD *thd) override {
     /*
       This function can operate on two TIME, or on two DATETIME (no mix).
@@ -1578,6 +1612,7 @@ class Item_func_maketime final : public Item_time_func {
     return false;
   }
   const char *func_name() const override { return "maketime"; }
+  enum Functype functype() const override { return MAKETIME_FUNC; }
   bool get_time(MYSQL_TIME *ltime) override;
 };
 
@@ -1630,6 +1665,7 @@ class Item_func_get_format final : public Item_str_ascii_func {
       : Item_str_ascii_func(pos, a), type(type_arg) {}
   String *val_str_ascii(String *str) override;
   const char *func_name() const override { return "get_format"; }
+  enum Functype functype() const override { return GET_FORMAT_FUNC; }
   bool resolve_type(THD *) override {
     set_nullable(true);
     set_data_type_string(17, default_charset());
@@ -1637,6 +1673,8 @@ class Item_func_get_format final : public Item_str_ascii_func {
   }
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
+
+  enum_mysql_timestamp_type timestamp_type() const { return type; }
 };
 
 class Item_func_str_to_date final : public Item_temporal_hybrid_func {
