@@ -663,7 +663,13 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
 
     Encryption_key e_key{m_encryption_key, m_encryption_iv};
     if (!fsp_header_get_encryption_key(m_flags, e_key, m_first_page)) {
+#ifndef XTRABACKUP
       ib::error(ER_IB_MSG_401)
+#else
+      /* PXB reports error later only if there is redo or undo on the
+      tablespace */
+      ib::info()
+#endif /*!XTRABACKUP */
           << "Encryption information in datafile: " << m_filepath
           << " can't be decrypted, please confirm that"
              " keyring is loaded.";
@@ -691,11 +697,14 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
         ut::free(m_encryption_iv);
         m_encryption_key = nullptr;
         m_encryption_iv = nullptr;
-        xb::info() << "Failed to decrypt table " << m_filepath << " with space"
-                   << " id " << m_space_id
-                   << ". Will check if encrytion key has been"
-                   << " parsed at the end of backup.";
-        invalid_encrypted_tablespace_ids.push_back(m_space_id);
+        if (srv_backup_mode) {
+          xb::info() << "Failed to decrypt table " << m_filepath
+                     << " with space"
+                     << " id " << m_space_id
+                     << ". Will check if encrytion key has been"
+                     << " parsed at the end of backup.";
+          invalid_encrypted_tablespace_ids.push_back(m_space_id);
+        }
         return (DB_INVALID_ENCRYPTION_META);
       }
     } else {
