@@ -2165,9 +2165,9 @@ ignore redo log records during the apply phase */
 /** Open tablespace file for backup.
 @param[in]  path  file path.
 @param[in]  name  space name.
-@return DB_SUCCESS if all OK */
-dberr_t fil_open_for_xtrabackup(const std::string &path,
-                                const std::string &name);
+@return tuple <DB_SUCCESS,space_id> if all OK, else <DB_*, space_id> */
+std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
+    const std::string &path, const std::string &name);
 
 /** Open all known tablespaces. */
 void fil_open_ibds();
@@ -2282,4 +2282,22 @@ size_t fil_count_undo_deleted(space_id_t undo_num);
 @param[in]  type  the page type to be checked for validity.
 @return true if it is valid page type, false otherwise. */
 [[nodiscard]] bool fil_is_page_type_valid(page_type_t type) noexcept;
+
+#ifdef XTRABACKUP
+/** Save tablespace error in cache. This is retrieved later on
+rollback on tables. If a tablespace cannot be loaded due to keyring
+issues, we dont assume it to be dropped and skip rollback. We use
+this cached error and abort if tablespace cannot be loaded to due to
+an error
+@param[in]	space_id	tablespace id
+@param[in]    err		DB_* error that occurred on tablespace */
+void fil_xb_save_tablespace_error(space_id_t space_id, dberr_t err);
+
+/** Retrieve a tablespace error that occurred during tablespace loading
+stage. This is used at rollback phase
+@param[in]	space_id	tablespace id
+@return DB_ERROR_UNSET if no error occured, else DB_* error */
+dberr_t fil_xb_get_tablespace_error(space_id_t space_id);
+#endif /* XTRABACKUP */
+
 #endif /* fil0fil_h */

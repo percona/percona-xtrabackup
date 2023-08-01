@@ -1197,6 +1197,23 @@ class Fil_shard {
   @param[in,out]        space           tablespace */
   static void space_free_low(fil_space_t *&space);
 
+#ifdef XTRABACKUP
+  /** Save tablespace error in cache. This is retrieved later on
+  rollback on tables. If a tablespace cannot be loaded due to keyring
+  issues, we dont assume it to be dropped and skip rollback. We use
+  this cached error and abort if tablespace cannot be loaded to due to
+  an error
+  @param[in]	space_id	tablespace id
+  @param[in]    err		DB_* error that occurred on tablespace */
+  void xb_save_tablespace_error(space_id_t space_id, dberr_t err);
+
+  /** Retrieve a tablespace error that occurred during tablespace loading
+  stage. This is used at rollback phase
+  @param[in]	space_id	tablespace id
+  @return DB_ERROR_UNSET if no error occured, else DB_* error */
+  dberr_t xb_get_tablespace_error(space_id_t space_id);
+#endif /* XTRABACKUP */
+
  private:
   /** We keep system tablespace files always open; this is important
   in preventing deadlocks in this module, as a page read completion
@@ -1286,6 +1303,11 @@ class Fil_shard {
   is zero, this fil_space_t can be deleted from m_deleted_spaces and removed
   from memory. All reads and writes must be done under the shard mutex. */
   Deleted_spaces m_deleted_spaces;
+
+  /** Map of tablespaces that are errored out at loading stage. We do
+  not abort immediately. We only abort if there is a rollback on such
+  tablespaces. This map is used to find such errored tablespaces  */
+  std::unordered_map<space_id_t, dberr_t> m_errored_spaces;
 #endif /* !UNIV_HOTBACKUP */
 
   /** Base node for the LRU list of the most recently used open
@@ -2257,13 +2279,19 @@ void Tablespace_files::open_ibds_slice(const Const_iter &start,
 
   for (auto it = start; it != end; ++it) {
     for (auto name : it->second) {
-      dberr_t err = fil_open_for_xtrabackup(m_dir.path() + name,
-                                            name.substr(0, name.length() - 4));
+      /* result <dberr_t, space_id_t> */
+      auto [err, space_id] = fil_open_for_xtrabackup(
+          m_dir.path() + name, name.substr(0, name.length() - 4));
 
+      /* DB_TABLESPACE_EXISTS is allowed because it means a tablespace is
+      already opened by redo */
       if (err != DB_SUCCESS && err != DB_TABLESPACE_EXISTS &&
-          err != DB_TABLESPACE_NOT_FOUND && err != DB_TABLESPACE_DELETED) {
-        xb::info() << "Unable to open tablespace " << SQUOTE(name)
-                   << ". Possibly dropped. InnoDB DB_ error code is " << err;
+          space_id != SPACE_UNKNOWN) {
+        /* We do not abort immediately on tablespace loading errors (after
+        redo apply. We save them and abort only if there is a prepare on
+        these tablespaces. See dict_load_tables_from_space_id_wrapper() for
+        more information */
+        fil_xb_save_tablespace_error(space_id, err);
       }
     }
     ++count;
@@ -4696,7 +4724,12 @@ static void fil_op_write_log(mlog_id_t type, space_id_t space_id,
 #endif /* !XTRABACKUP */
 
 bool fil_system_get_file_by_space_id(space_id_t space_id, std::string &name) {
+#ifndef XTRABACKUP
+  /* This assertion is not relevant for PXB because we use this function at
+  rollback phase. We try to print a file name instead of space_id using this
+  function */
   ut_a(dict_sys_t::is_reserved(space_id) || srv_is_upgrade_mode);
+#endif /* !XTRABACKUP */
 
   return fil_system->get_file_by_space_id(space_id, name);
 }
@@ -4879,6 +4912,18 @@ dberr_t fil_delete_tablespace(space_id_t space_id, buf_remove_t buf_remove) {
   return shard->space_delete(space_id, buf_remove);
 }
 
+#ifdef XTRABACKUP
+void fil_xb_save_tablespace_error(space_id_t space_id, dberr_t err) {
+  auto shard = fil_system->shard_by_id(space_id);
+  shard->xb_save_tablespace_error(space_id, err);
+}
+
+dberr_t fil_xb_get_tablespace_error(space_id_t space_id) {
+  auto shard = fil_system->shard_by_id(space_id);
+  return shard->xb_get_tablespace_error(space_id);
+}
+#endif /* XTRABACKUP */
+
 dberr_t Fil_shard::space_prepare_for_truncate(space_id_t space_id,
                                               fil_space_t *&space) {
   ut_ad(space_id != TRX_SYS_SPACE);
@@ -4948,6 +4993,17 @@ bool Fil_shard::space_truncate(space_id_t space_id, page_no_t size_in_pages) {
   ut_error;
 #endif
 }
+
+#ifdef XTRABACKUP
+void Fil_shard::xb_save_tablespace_error(space_id_t space_id, dberr_t err) {
+  m_errored_spaces.insert({space_id, err});
+}
+
+dberr_t Fil_shard::xb_get_tablespace_error(space_id_t space_id) {
+  auto it = m_errored_spaces.find(space_id);
+  return (it == m_errored_spaces.end() ? DB_ERROR_UNSET : it->second);
+}
+#endif /* XTRABACKUP */
 
 /** Truncate the tablespace to needed size.
 @param[in]      space_id        Tablespace ID to truncate
@@ -10104,6 +10160,8 @@ dberr_t Fil_system::open_for_recovery(space_id_t space_id) {
     return DB_SUCCESS;
   } else if (status == FIL_LOAD_INVALID_ENCRYPTION_META) {
     xb::error() << "Invalid encryption metadata in tablespace header.";
+    xb::error() << KEYRING_NOT_LOADED;
+
     exit(EXIT_FAILURE);
   }
 
@@ -11009,6 +11067,7 @@ byte *fil_tablespace_redo_encryption(byte *ptr, const byte *end,
                                             true)) {
       if (!srv_backup_mode) {
         xb::error() << "Cannot decode encryption information in the redo log.";
+        xb::error() << KEYRING_NOT_LOADED;
         exit(EXIT_FAILURE);
       }
       return (ptr + len);
@@ -11422,16 +11481,16 @@ space_id_t Fil_system::get_tablespace_id(const std::string &filename) {
 /** Open tablespace file for backup.
 @param[in]  path  file path.
 @param[in]  name  space name.
-@return DB_SUCCESS if all OK */
-dberr_t fil_open_for_xtrabackup(const std::string &path,
-                                const std::string &name) {
+@return tuple <DB_SUCCESS,space_id> if all OK, else <DB_*, space_id> */
+std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
+    const std::string &path, const std::string &name) {
   Datafile file;
   file.set_name(name.c_str());
   file.set_filepath(path.c_str());
 
   dberr_t err = file.open_read_only(true);
   if (err != DB_SUCCESS) {
-    return (err);
+    return {err, SPACE_UNKNOWN};
   }
 
   os_offset_t node_size = os_file_get_size(file.handle());
@@ -11439,17 +11498,18 @@ dberr_t fil_open_for_xtrabackup(const std::string &path,
   lsn_t flush_lsn;
   err = file.validate_first_page(SPACE_UNKNOWN, &flush_lsn, false);
 
+  space_id_t space_id = file.space_id();
   if (err == DB_PAGE_IS_BLANK) {
     /* allow corrupted first page for xtrabackup, it could be just
     zero-filled page, which we'll restore from redo log later */
-    return (DB_SUCCESS);
+    return {DB_SUCCESS, space_id};
   } else if (err != DB_SUCCESS) {
-    return (err);
+    return {err, space_id};
   }
 
   if (fil_space_get(file.space_id())) {
     /* space already exists */
-    return (DB_TABLESPACE_EXISTS);
+    return {DB_TABLESPACE_EXISTS, space_id};
   }
 
   bool is_tmp = FSP_FLAGS_GET_TEMPORARY(file.flags());
@@ -11467,7 +11527,7 @@ dberr_t fil_open_for_xtrabackup(const std::string &path,
 
   char *fn = fil_node_create(file.filepath(), n_pages, space, false, false);
   if (fn == nullptr) {
-    return (DB_ERROR);
+    return {DB_ERROR, space_id};
   }
 
   /* For encrypted tablespace, initialize encryption
@@ -11498,7 +11558,7 @@ dberr_t fil_open_for_xtrabackup(const std::string &path,
     fil_space_close(space->id);
   }
 
-  return (DB_SUCCESS);
+  return {DB_SUCCESS, space_id};
 }
 
 /** Open IBD tablespaces and load them to cache
@@ -11519,10 +11579,13 @@ void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
       continue;
     }
 
-    dberr_t err = fil_open_for_xtrabackup(
+    /* cannot use auto [err, space_id] = fil_open_for_xtrabackup() as space_id
+    is unused here and we get unused variable error during compilation */
+    dberr_t err;
+    std::tie(err, std::ignore) = fil_open_for_xtrabackup(
         phy_filename, filename.substr(0, filename.length() - 4));
-    /* PXB-2275 - Allow DB_INVALID_ENCRYPTION_META as we will test it in the end
-     * of the backup */
+    /* PXB-2275 - Allow DB_INVALID_ENCRYPTION_META as we will test it in the
+    end of the backup */
     if (err != DB_SUCCESS && err != DB_INVALID_ENCRYPTION_META) {
       result = false;
     }
