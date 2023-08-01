@@ -552,7 +552,14 @@ os_offset_t Log_files_capacity::next_file_size(os_offset_t physical_capacity) {
   const auto file_size =
       ut_uint64_align_down(physical_capacity / LOG_N_FILES, UNIV_PAGE_SIZE);
   ut_a(LOG_FILE_MIN_SIZE <= file_size);
+  /* The filesize/physical_capacity is the size of xtrabackup_logfile. This is
+  also used for hard_logical_capacity calculation. At recovery, the margin is
+  size of xtrabackup_logfile + 1G for MLOG_DYNAMIC_METADATA records. For prepare
+  phase, we resize the redo logs. So the max file size limit is not applicable
+  */
+#ifndef XTRABACKUP
   ut_a(file_size <= LOG_FILE_MAX_SIZE);
+#endif
   ut_a(file_size % UNIV_PAGE_SIZE == 0);
   return file_size;
 }
