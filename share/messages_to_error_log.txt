@@ -2760,7 +2760,7 @@ ER_FAILED_TO_FIND_DL_ENTRY
   eng "Can't find symbol '%-.128s' in library."
 
 ER_FAILED_TO_OPEN_SHARED_LIBRARY
-  eng "Can't open shared library '%-.192s' (errno: %d %s)."
+  eng "Can't open shared library '%-.192s' (errno: %d %-.128s)."
 
 ER_THREAD_PRIORITY_IGNORED
   eng "Thread priority attribute setting in Resource Group SQL shall be ignored due to unsupported platform or insufficient privilege."
@@ -10867,7 +10867,7 @@ ER_XPLUGIN_FAILED_TO_BIND_INTERFACE_ADDRESS
   eng "Value '%s' set to `Mysqlx_bind_address`, X Plugin can't bind to it. Skipping this value."
 
 ER_IB_ERR_RECOVERY_REDO_DISABLED
-  eng "Redo logging is disabled, cannot take consistent backup"
+  eng "Server was killed when InnoDB redo logging was disabled. Data files could be corrupt. You can try to restart the database with innodb_force_recovery=6"
 
 ER_IB_WRN_FAST_SHUTDOWN_REDO_DISABLED
   eng "InnoDB cannot do cold shutdown 'innodb_fast_shutdown = 2' and is forcing 'innodb_fast_shutdown = 1' as redo logging is disabled. InnoDB would flush all dirty pages to ensure physical data consistency."
@@ -12237,12 +12237,6 @@ ER_WARN_SCHEDULED_TASK_RUN_FAILED
 ER_AUDIT_LOG_INVALID_FLUSH_INTERVAL_VALUE
    eng "Invalid flush interval specified: %lu. Valid values are 0 (off) or greater than or equal to %d. Adjusting to %d"
 
-<<<<<<< HEAD
-ER_LOG_CANNOT_PURGE_BINLOG_WITH_BACKUP_LOCK
-  eng "Could not purge binary logs since another session is executing LOCK INSTANCE FOR BACKUP. Wait for that session to release the lock."
-
-||||||| b5da0b9817c
-=======
 ER_LOG_CANNOT_PURGE_BINLOG_WITH_BACKUP_LOCK
   eng "Could not purge binary logs since another session is executing LOCK INSTANCE FOR BACKUP. Wait for that session to release the lock."
 
@@ -12343,7 +12337,6 @@ ER_NUM_THREADS_STILL_ALIVE
 ER_GRP_RPL_MYSQL_NETWORK_PROVIDER_SERVER_ERROR_COMMAND_ERR
    eng "Failed to accept a MySQL connection for Group Replication. %s. Please retry."
 
->>>>>>> mysql-8.1.0
 # DO NOT add server-to-client messages here;
 # they go in messages_to_clients.txt
 # in the same directory as this file.
@@ -12353,39 +12346,13 @@ ER_GRP_RPL_MYSQL_NETWORK_PROVIDER_SERVER_ERROR_COMMAND_ERR
 # See the FAQ in errmsg_readme.txt in the
 # same directory as this file for more
 # information.
-<<<<<<< HEAD
-||||||| b5da0b9817c
-
-=======
 
 
->>>>>>> mysql-8.1.0
 #
 # End of 8.1 error messages intended to be written to the server error log.
 #
 
-<<<<<<< HEAD
-#
-# Start of Percona Server 8.0 server error log messages
-#
-start-error-number 48000
 
-ER_KEYRING_COMPONENT_NO_CONFIG
-  eng "Keyring configuration doesn't exists: %s"
-
-ER_KEYRING_COMPONENT_CONFIG_PARSE_FAILED
-  eng "Keyring configuration JSON parse error: %s (%lu)"
-
-ER_KEYRING_COMPONENT_KMS_ERROR
-  eng "KMS communication error: %s"
-
-#
-# End of Percona Server 8.0 server error log messages
-#
-||||||| b5da0b9817c
-=======
-
->>>>>>> mysql-8.1.0
 ################################################################################
 # Error numbers 50000 to 51999 are reserved. Please do not use them for
 # other error messages.

@@ -2032,17 +2032,9 @@ const char *component_urns[] = {"file://component_reference_cache"};
   @retval false success
   @retval true failure
 */
-<<<<<<< HEAD
 /* pxb requires it. Cannot bet static as we will use extern */
 bool component_infrastructure_init() {
-  bool retval = false;
-||||||| b5da0b9817c
-static bool component_infrastructure_init() {
-  bool retval = false;
-=======
-static bool component_infrastructure_init() {
   const bool retval = false;
->>>>>>> mysql-8.1.0
   if (initialize_minimal_chassis(&srv_registry)) {
     LogErr(ERROR_LEVEL, ER_COMPONENTS_INFRASTRUCTURE_BOOTSTRAP);
     return true;
@@ -2147,16 +2139,10 @@ static bool mysql_component_infrastructure_init() {
   @retval false success
   @retval true failure
 */
-<<<<<<< HEAD
 bool component_infrastructure_deinit() {
-||||||| b5da0b9817c
-static bool component_infrastructure_deinit() {
-=======
-static bool component_infrastructure_deinit() {
   if (!opt_initialize)
     LogErr(INFORMATION_LEVEL, ER_COMPONENTS_INFRASTRUCTURE_SHUTDOWN_START);
 
->>>>>>> mysql-8.1.0
   persistent_dynamic_loader_deinit();
   bool retval = false;
 

@@ -30,14 +30,8 @@
 #include "sql/rpl_replica.h"
 #include "sql/rpl_rli.h"
 #include "sql/rpl_rli_pdb.h"
-<<<<<<< HEAD
-#include "sql/sql_backup_lock.h"  // is_instance_backup_locked et al.
-||||||| b5da0b9817c
-#include "sql/sql_backup_lock.h"
-=======
 #include "sql/sql_backup_lock.h"
 #include "string_with_len.h"
->>>>>>> mysql-8.1.0
 
 /**
    It manages a stage and the related mutex and makes the process of

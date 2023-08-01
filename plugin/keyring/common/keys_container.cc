@@ -27,12 +27,8 @@
 #include <algorithm>
 
 #include <mysqld_error.h>
-<<<<<<< HEAD
 #include "plugin/keyring/common/system_keys_container.h"
-||||||| b5da0b9817c
-=======
 #include "sql/mysqld_cs.h"
->>>>>>> mysql-8.1.0
 
 using std::string;
 using std::unique_ptr;

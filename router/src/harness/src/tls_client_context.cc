@@ -40,15 +40,6 @@
 #define TLS_CLIENT_METHOD() SSLv23_client_method()
 #endif
 
-<<<<<<< HEAD
-TlsClientContext::TlsClientContext(TlsVerify mode)
-    : TlsContext(TLS_CLIENT_METHOD()) {
-  (void)set_ecdh(ssl_ctx_.get());
-  (void)set_dh(ssl_ctx_.get());
-||||||| b5da0b9817c
-TlsClientContext::TlsClientContext(TlsVerify mode)
-    : TlsContext(TLS_CLIENT_METHOD()) {
-=======
 TlsClientContext::TlsClientContext(TlsVerify mode, bool session_cache_mode,
                                    size_t session_cache_size,
                                    std::chrono::seconds session_cache_timeout)
@@ -58,7 +49,6 @@ TlsClientContext::TlsClientContext(TlsVerify mode, bool session_cache_mode,
       session_cache_timeout_(session_cache_timeout) {
   (void)set_ecdh(ssl_ctx_.get());
   (void)set_dh(ssl_ctx_.get());
->>>>>>> mysql-8.1.0
   verify(mode);
 
   const auto cache_mode =

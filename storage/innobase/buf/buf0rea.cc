@@ -637,16 +637,6 @@ void buf_read_ibuf_merge_pages(bool sync, const space_id_t *space_ids,
     }
   }
 
-<<<<<<< HEAD
-  /* Release the acquired spaces */
-  for (const auto space_entry : acquired_spaces) {
-    if (space_entry.second) {
-      fil_space_release(space_entry.second);
-    }
-  }
-
-||||||| b5da0b9817c
-=======
   /* Release the acquired spaces */
   for (const auto &space_entry : acquired_spaces) {
     if (space_entry.second) {
@@ -654,7 +644,6 @@ void buf_read_ibuf_merge_pages(bool sync, const space_id_t *space_ids,
     }
   }
 
->>>>>>> mysql-8.1.0
   os_aio_simulated_wake_handler_threads();
 
   if (n_stored) {

@@ -4149,15 +4149,6 @@ static void recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn,
   const size_t delta_hashmap_max_mem =
       UNIV_PAGE_SIZE * (buf_pool_get_n_pages() - pages_to_be_kept_free);
 
-<<<<<<< HEAD
-  max_mem =
-      UNIV_PAGE_SIZE * (buf_pool_get_n_pages() -
-                        (recv_n_pool_free_frames * srv_buf_pool_instances));
-||||||| b5da0b9817c
-  ulint max_mem =
-      UNIV_PAGE_SIZE * (buf_pool_get_n_pages() -
-                        (recv_n_pool_free_frames * srv_buf_pool_instances));
-=======
   if (log_test == nullptr) {
     recv_n_frames_for_pages_per_pool_instance =
         pages_to_be_kept_free / srv_buf_pool_instances;
@@ -4181,7 +4172,6 @@ static void recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn,
   }
 
   mutex_exit(&recv_sys->mutex);
->>>>>>> mysql-8.1.0
 
   lsn_t start_lsn =
       ut_uint64_align_down(checkpoint_lsn, OS_FILE_LOG_BLOCK_SIZE);
@@ -4198,17 +4188,8 @@ static void recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn,
       break;
     }
 
-<<<<<<< HEAD
-    finished = recv_scan_log_recs(log, &max_mem, log.buf, end_lsn - start_lsn,
+    finished = recv_scan_log_recs(log, &delta_hashmap_max_mem, log.buf, end_lsn - start_lsn,
                                   start_lsn, &log.m_scanned_lsn, to_lsn);
-||||||| b5da0b9817c
-    finished = recv_scan_log_recs(log, max_mem, log.buf, end_lsn - start_lsn,
-                                  start_lsn, &log.m_scanned_lsn);
-=======
-    finished =
-        recv_scan_log_recs(log, delta_hashmap_max_mem, log.buf,
-                           end_lsn - start_lsn, start_lsn, &log.m_scanned_lsn);
->>>>>>> mysql-8.1.0
 
     start_lsn = end_lsn;
   }

@@ -32,25 +32,7 @@
 #include <sys/types.h>
 #include <functional>
 
-<<<<<<< HEAD
-#include "m_string.h"
-#include "my_getopt.h"
-#include "mysql.h"
-#include "template_utils.h"
-#include "typelib.h"
-
-#if defined(MYSQL_SERVER) && !defined(XTRABACKUP)
-||||||| b5da0b9817c
-#include "m_string.h"
-#include "my_getopt.h"
-#include "mysql.h"
-#include "template_utils.h"
-#include "typelib.h"
-
-#ifdef MYSQL_SERVER
-=======
-#ifdef MYSQL_SERVER
->>>>>>> mysql-8.1.0
+#ifdef MYSQL_SERVER && !defined(XTRABACKUP)
 #error This header is supposed to be used only in the client
 #endif
 

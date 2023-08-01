@@ -48,14 +48,9 @@
 #include "my_double2ulonglong.h"
 #include "my_sqlcommand.h"
 #include "myisampack.h"
-<<<<<<< HEAD
-#include "scope_guard.h"
-||||||| b5da0b9817c
-=======
 #include "mysql/strings/dtoa.h"
 #include "mysql/strings/int2str.h"
 #include "scope_guard.h"
->>>>>>> mysql-8.1.0
 #include "sql-common/json_binary.h"  // json_binary::serialize
 #include "sql-common/json_dom.h"     // Json_dom, Json_wrapper
 #include "sql/create_field.h"

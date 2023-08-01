@@ -46,13 +46,8 @@
 #include "mysql/components/services/bits/psi_bits.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/components/services/log_shared.h"
-<<<<<<< HEAD
-#include "mysql/components/services/validate_password.h"
-||||||| b5da0b9817c
-=======
 #include "mysql/components/services/validate_password.h"
 #include "mysql/my_loglevel.h"
->>>>>>> mysql-8.1.0
 #include "mysql/mysql_lex_string.h"
 #include "mysql/plugin.h"
 #include "mysql/plugin_audit.h"
