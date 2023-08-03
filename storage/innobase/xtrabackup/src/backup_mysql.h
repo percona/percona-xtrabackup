@@ -245,6 +245,11 @@ bool is_fts_index(const std::string &tablespace);
 @return true if tablespace is temporary table. */
 bool is_tmp_table(const std::string &tablespace);
 
+/** Identifies if table is blocked by select - PS compression dictionary.
+@param[in]	tablespace		tablespace
+@return true if tablespace is blocked. */
+bool is_access_blocked(const std::string &tablespace);
+
 /** Runs a regexp against a table name
 @param[in]	tablespace		tablespace
 @param[in]	error_context		error to be return in case of errors

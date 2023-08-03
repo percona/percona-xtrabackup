@@ -2137,13 +2137,21 @@ void mdl_lock_tables() {
       if (fsp_is_ibd_tablespace(atoi(row[1]))) {
         char full_table_name[MAX_FULL_NAME_LEN + 1];
         innobase_format_name(full_table_name, sizeof(full_table_name), row[0]);
+        if (check_if_skip_table(row[0]) &&
+            !fsp_is_dd_tablespace(atoi(row[1]))) {
+          xb::info() << full_table_name << " match an exclude rule. Skipping";
+          continue;
+        }
         if (is_fts_index(full_table_name)) {
           // We will eventually get to the row to lock the main table
           xb::info() << full_table_name << " is a Full-Text Index. Skipping";
           continue;
-        } else if (is_tmp_table(full_table_name)) {
+        } else if (is_tmp_table(full_table_name) ||
+                   (is_access_blocked(full_table_name) &&
+                    fsp_is_dd_tablespace(atoi(row[1])))) {
           // We cannot run SELECT ... #sql-; Skipped to avoid invalid query.
-          xb::info() << full_table_name << " is a temporary table. Skipping";
+          xb::info() << full_table_name
+                     << " is a temporary table or internal. Skipping";
           continue;
         }
 
@@ -2180,6 +2188,12 @@ bool is_fts_index(const std::string &tablespace) {
 bool is_tmp_table(const std::string &tablespace) {
   const char *pattern = "^#sql";
   const char *error_context = "is_tmp_table";
+  return check_regexp_table_name(tablespace, error_context, pattern);
+}
+
+bool is_access_blocked(const std::string &tablespace) {
+  const char *pattern = "compression_dictionary";
+  const char *error_context = "is_blocked_table";
   return check_regexp_table_name(tablespace, error_context, pattern);
 }
 
