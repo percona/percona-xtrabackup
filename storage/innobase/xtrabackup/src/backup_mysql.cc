@@ -2137,13 +2137,21 @@ void mdl_lock_tables() {
       if (fsp_is_ibd_tablespace(atoi(row[1]))) {
         char full_table_name[MAX_FULL_NAME_LEN + 1];
         innobase_format_name(full_table_name, sizeof(full_table_name), row[0]);
+        if (check_if_skip_table(row[0]) &&
+            !fsp_is_dd_tablespace(atoi(row[1]))) {
+          xb::info() << full_table_name << " match an exclude rule. Skipping";
+          continue;
+        }
         if (is_fts_index(full_table_name)) {
           // We will eventually get to the row to lock the main table
           xb::info() << full_table_name << " is a Full-Text Index. Skipping";
           continue;
-        } else if (is_tmp_table(full_table_name)) {
+        } else if (is_tmp_table(full_table_name) ||
+                   (is_access_blocked(full_table_name) &&
+                    fsp_is_dd_tablespace(atoi(row[1])))) {
           // We cannot run SELECT ... #sql-; Skipped to avoid invalid query.
-          xb::info() << full_table_name << " is a temporary table. Skipping";
+          xb::info() << full_table_name
+                     << " is a temporary table or internal. Skipping";
           continue;
         }
 
@@ -2168,41 +2176,47 @@ void mdl_unlock_all() {
     mysql_close(mdl_con);
   }
 }
-bool is_fts_index(const std::string &tablespace) {
+bool is_fts_index(const std::string &table_name) {
   const char *pattern =
       "^(FTS|fts)_[0-9a-fA-f]{16}_(([0-9a-fA-]{16}_(INDEX|index)_[1-6])|"
       "DELETED_CACHE|deleted_cache|DELETED|deleted|CONFIG|config|BEING_DELETED|"
       "being_deleted|BEING_DELETED_CACHE|beign_deleted_cache)$";
   const char *error_context = "is_fts_index";
-  return check_regexp_table_name(tablespace, error_context, pattern);
+  return check_regexp_table_name(table_name, error_context, pattern);
 }
 
-bool is_tmp_table(const std::string &tablespace) {
+bool is_tmp_table(const std::string &table_name) {
   const char *pattern = "^#sql";
   const char *error_context = "is_tmp_table";
-  return check_regexp_table_name(tablespace, error_context, pattern);
+  return check_regexp_table_name(table_name, error_context, pattern);
 }
 
-bool check_regexp_table_name(std::string tablespace, const char *error_context,
+bool is_access_blocked(const std::string &table_name) {
+  const char *pattern = "compression_dictionary";
+  const char *error_context = "is_blocked_table";
+  return check_regexp_table_name(table_name, error_context, pattern);
+}
+
+bool check_regexp_table_name(std::string table_name, const char *error_context,
                              const char *pattern) {
   bool result = false;
-  get_table_name_from_tablespace(tablespace);
+  get_table_name_from_fq(table_name);
   xb_regex_t preg;
   size_t nmatch = 1;
   xb_regmatch_t pmatch[1];
   compile_regex(pattern, error_context, &preg);
 
-  if (xb_regexec(&preg, tablespace.c_str(), nmatch, pmatch, 0) != REG_NOMATCH) {
+  if (xb_regexec(&preg, table_name.c_str(), nmatch, pmatch, 0) != REG_NOMATCH) {
     result = true;
   }
   xb_regfree(&preg);
   return result;
 }
-void get_table_name_from_tablespace(std::string &tablespace) {
-  std::size_t pos = tablespace.find("`.`");  //`db`.`table` separator
+void get_table_name_from_fq(std::string &fq_table_name) {
+  std::size_t pos = fq_table_name.find("`.`");  //`db`.`table` separator
   if (pos != std::string::npos) {
-    tablespace = tablespace.substr(pos + 3);
-    tablespace.erase(tablespace.size() - 1);  // remove leading `
+    fq_table_name = fq_table_name.substr(pos + 3);
+    fq_table_name.erase(fq_table_name.size() - 1);  // remove leading `
   }
 }
 
