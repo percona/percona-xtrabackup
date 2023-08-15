@@ -128,7 +128,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_bindir}/xbcloud
 %{_bindir}/xbcloud_osenv
 /usr/lib/private/libprotobuf*
-/usr/lib/private/icudt69l
+/usr/lib/private/icudt73l
 %{_libdir}/xtrabackup/plugin/keyring_file.so
 %{_libdir}/xtrabackup/plugin/keyring_vault.so
 %{_libdir}/xtrabackup/plugin/component_keyring_file.so
