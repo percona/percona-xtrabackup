@@ -43,8 +43,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "xtrabackup_version.h"
 
 #include "crc_glue.h"
-
 #include "msg.h"
+#include "nulls.h"
 #include "xbcloud/azure.h"
 #include "xbcloud/s3.h"
 #include "xbcloud/s3_ec2.h"

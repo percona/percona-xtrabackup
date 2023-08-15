@@ -32,7 +32,7 @@
 #include <sys/types.h>
 #include <functional>
 
-#ifdef MYSQL_SERVER && !defined(XTRABACKUP)
+#if defined(MYSQL_SERVER) && !defined(XTRABACKUP)
 #error This header is supposed to be used only in the client
 #endif
 
@@ -85,6 +85,7 @@ ulong opt_ssl_fips_mode = SSL_FIPS_MODE_OFF;
 bool ssl_mode_set_explicitly = false;
 char *opt_ssl_session_data = nullptr;
 bool opt_ssl_session_data_continue_on_failed_reuse = false;
+char *opt_tls_sni_servername = nullptr;
 
 int set_client_ssl_options(MYSQL *mysql) {
 #endif

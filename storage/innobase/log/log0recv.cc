@@ -574,12 +574,12 @@ void recv_sys_init() {
 #ifdef XTRABACKUP
   if (estimate_memory) {
     if (srv_buf_pool_curr_size >= (long long)real_redo_memory) {
-      if (recv_n_pool_free_frames < real_redo_frames) {
+      if (recv_n_frames_for_pages_per_pool_instance < real_redo_frames) {
         xb::info() << "Setting free frames to " << real_redo_frames;
-        recv_n_pool_free_frames = real_redo_frames;
+        recv_n_frames_for_pages_per_pool_instance = real_redo_frames;
       }
     } else {
-      recv_n_pool_free_frames = 0;
+      recv_n_frames_for_pages_per_pool_instance = 0;
     }
   }
 #endif
@@ -654,7 +654,7 @@ static void recv_sys_empty_hash() {
 #ifdef XTRABACKUP
 
   if (estimate_memory && srv_buf_pool_curr_size < (long long)real_redo_memory) {
-    recv_n_pool_free_frames = 0;
+    recv_n_frames_for_pages_per_pool_instance = 0;
   }
   if (pxb_recv_sys->spaces == nullptr) return;
   ut::delete_(pxb_recv_sys->spaces);
@@ -2741,14 +2741,16 @@ static void recv_add_to_hash_table(mlog_id_t type, space_id_t space_id,
 #ifdef XTRABACKUP
     /*
      * In case we do not have enough free memory to run --prepare in a single
-     * batch, we adjust recv_n_pool_free_frames as we parse each single record.
-     * This way we have room to hold all required pages on this batch.
+     * batch, we adjust recv_n_frames_for_pages_per_pool_instance as we parse
+     * each single record. This way we have room to hold all required pages on
+     * this batch.
      */
-    if (estimate_memory && recv_n_pool_free_frames != real_redo_frames) {
-      recv_n_pool_free_frames++;
-      max_mem =
-          UNIV_PAGE_SIZE * (buf_pool_get_n_pages() -
-                            (recv_n_pool_free_frames * srv_buf_pool_instances));
+    if (estimate_memory &&
+        recv_n_frames_for_pages_per_pool_instance != real_redo_frames) {
+      recv_n_frames_for_pages_per_pool_instance++;
+      max_mem = UNIV_PAGE_SIZE * (buf_pool_get_n_pages() -
+                                  (recv_n_frames_for_pages_per_pool_instance *
+                                   srv_buf_pool_instances));
     }
 #endif
     recv_addr = static_cast<recv_addr_t *>(
@@ -4146,8 +4148,11 @@ static void recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn,
       mind that the limit for the deltas hashmap is not strictly enforced and
       this number includes the not-well specified safety margin. */
       size_t{256} * srv_buf_pool_instances);
-  const size_t delta_hashmap_max_mem =
-      UNIV_PAGE_SIZE * (buf_pool_get_n_pages() - pages_to_be_kept_free);
+#ifndef XTRABACKUP
+  const
+#endif
+      size_t delta_hashmap_max_mem =
+          UNIV_PAGE_SIZE * (buf_pool_get_n_pages() - pages_to_be_kept_free);
 
   if (log_test == nullptr) {
     recv_n_frames_for_pages_per_pool_instance =

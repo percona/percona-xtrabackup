@@ -61,6 +61,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "os0event.h"
 #include "rpl_log_encryption.h"
 #include "space_map.h"
+#include "strmake.h"
 #include "typelib.h"
 #include "utils.h"
 #include "xb0xb.h"
