@@ -472,24 +472,12 @@ function get_version_info()
 	INNODB_FLAVOR="InnoDB"
     fi
 
-    # Setup version-specific mysqld arguments
-    case "$MYSQL_VERSION_MAJOR.$MYSQL_VERSION_MINOR" in
-        5.1 )
-            if [ -z "$INNODB_VERSION" ]
-            then
-                MYSQLD_EXTRA_ARGS="--ignore-builtin-innodb \
---plugin-load=innodb=ha_innodb_plugin.so"
-                fix_selinux
-                INNODB_VERSION="$MYSQL_VERSION"
-            fi
-            ;;
-        8.0 )
-            ;;
-        *)
-            vlog "Unknown MySQL/InnoDB version: $MYSQL_VERSION/$INNODB_VERSION"
-            exit -1
-            ;;
-    esac
+    # version check - Allow 8.1 to 8.4
+    if [[ "$MYSQL_VERSION_MAJOR" -ne 8 ]] || [[ "$MYSQL_VERSION_MINOR" -ne 1 ]]
+    then
+        vlog "Unknown MySQL/InnoDB version: $MYSQL_VERSION/$INNODB_VERSION"
+        exit -1
+    fi
 
     XB_PATH="`which $XB_BIN`"
     if [ -z "$XB_PATH" ]

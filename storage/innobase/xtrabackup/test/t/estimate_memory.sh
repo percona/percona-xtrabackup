@@ -1,8 +1,3 @@
-if is_server_version_higher_than 8.0.34
-then
-    die "We should check if smart memory is mature to transition to GA."
-fi
-
 . inc/common.sh
 require_debug_pxb_version
 
