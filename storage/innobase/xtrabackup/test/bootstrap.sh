@@ -84,9 +84,9 @@ main () {
 
     case "${TYPE}" in
         innodb80)
-            url="https://dev.mysql.com/get/Downloads/MySQL-8.0"
+            url="https://dev.mysql.com/get/Downloads/MySQL-8.1"
             fallback_url="https://downloads.mysql.com/archives/get/p/23/file"
-            tarball="mysql-${VERSION}-linux-glibc2.12-${arch}.tar.xz"
+            tarball="mysql-${VERSION}-linux-glibc2.17-${arch}.tar.xz"
                 if ! wget --spider "${url}/${tarball}" 2>/dev/null; then
                     unset url
                     url=${fallback_url}

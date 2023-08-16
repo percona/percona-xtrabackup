@@ -379,6 +379,7 @@ static bool check_server_version(unsigned long version_number,
 
   DBUG_EXECUTE_IF("simulate_lower_version", version_number = 80499;);
 
+  /* PXB 8.1 supports server version 8.1.0 until 8.1.99 */
   version_supported =
       version_supported || (version_number >= 80100 && version_number <= 80199);
 
