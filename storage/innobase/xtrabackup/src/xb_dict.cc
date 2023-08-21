@@ -34,7 +34,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "sql/dd/types/column_type_element.h"
 #include "storage/innobase/include/btr0pcur.h"
 #include "storage/innobase/include/dict0dd.h"
-//#include "sql/dd/dd_table.h"
+#include "xb0xb.h"
 
 namespace xb {
 // Dictionary used by backup phase. Currently we query running server to know
@@ -228,7 +228,26 @@ b - std::vector<dict_table_t*>, empty on errors */
 static xb_dict_tuple dict_load_tables_from_space_id_wrapper(
     space_id_t space_id, table_id_t table_id) {
   fil_space_t *space = fil_space_get(space_id);
+
   if (space == nullptr) {
+    dberr_t err = fil_xb_get_tablespace_error(space_id);
+    /* Check if tablespace errored out when it was loaded. If yes, we abort
+    the prepare. If no, we consider the tablespace as dropped */
+    if (err != DB_ERROR_UNSET) {
+      std::string tablespace_name;
+      bool found = fil_system_get_file_by_space_id(space_id, tablespace_name);
+      xb::error() << "Tablespace " << (found ? tablespace_name : "")
+                  << " with space_id " << space_id
+                  << " is required for transaction rollback but it was not"
+                  << " loaded because of DB_ error " << err;
+
+      if (err == DB_INVALID_ENCRYPTION_META) {
+        xb::error() << KEYRING_NOT_LOADED;
+      }
+
+      exit(EXIT_FAILURE);
+    }
+
     return {DB_TABLESPACE_NOT_FOUND, {}};
   }
 
