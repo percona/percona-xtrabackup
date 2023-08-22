@@ -39,6 +39,7 @@ enum mysql_flavor_t {
 };
 extern mysql_flavor_t server_flavor;
 extern unsigned long mysql_server_version;
+extern std::string mysql_server_version_comment;
 
 struct replication_channel_status_t {
   std::string channel_name;
@@ -275,9 +276,16 @@ void dump_innodb_buffer_pool(MYSQL *connection);
 
 void check_dump_innodb_buffer_pool(MYSQL *connection);
 
-/* print tables that have INSTANT ADD/DROP column row version
- * @param[in]   connection  MySQL connection handler
+/* Check if a specific server/backup dir version is supported.
+ * @param[in]   version_number  version numbers ( 80100)
+ * @param[in]   version_string  version string (8.1.0-1)
+ * @param[in]   version_comment version comment (Percona Server (GPL),
+ * Release 8.1.0-1, Revision xxx)
+ * @param[in]   innodb_version  innodb version (8.1.0-1)
  * @return true if tables with row versions > 0 */
-bool print_instant_versioned_tables(MYSQL *connection);
+bool check_server_version(unsigned long version_number,
+                          const char *version_string,
+                          const char *version_comment,
+                          const char *innodb_version);
 extern log_status_t log_status;
 #endif

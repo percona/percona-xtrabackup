@@ -451,15 +451,6 @@ Log_uuid log_generate_uuid();
 
 /* Definition of inline functions. */
 
-inline bool log_block_get_flush_bit(const byte *log_block) {
-  if (LOG_BLOCK_FLUSH_BIT_MASK &
-      mach_read_from_4(log_block + LOG_BLOCK_HDR_NO)) {
-    return (true);
-  }
-
-  return (false);
-}
-
 /** Gets a log block number stored in the header. The number corresponds
 to lsn range for data stored in the block.
 
@@ -528,13 +519,6 @@ inline uint32_t log_block_get_epoch_no(const byte *log_block) {
   return mach_read_from_4(log_block + LOG_BLOCK_EPOCH_NO);
 }
 
-/** Gets a log block checkpoint_no. For details: @see LOG_BLOCK_CHECKPOINT_NO.
-@param[in]	log_block	log block
-@return epoch number */
-inline uint32_t log_block_get_checkpoint_no(const byte *log_block) {
-  return mach_read_from_4(log_block + LOG_BLOCK_CHECKPOINT_NO);
-}
-
 /** Sets a log block epoch_no. For details: @see LOG_BLOCK_EPOCH_NO.
 @param[in,out]  log_block  log block
 @param[in]      no         epoch number */
@@ -561,24 +545,6 @@ inline uint32_t log_block_convert_lsn_to_hdr_no(lsn_t lsn) {
   return 1 +
          static_cast<uint32_t>(lsn / OS_FILE_LOG_BLOCK_SIZE % LOG_BLOCK_MAX_NO);
 }
-
-#ifdef XTRABACKUP
-/** Convert block header number to LSN
-@param[in] header_num		log_block_number
-@param[in] start_lsn		the current start_LSN set in system
-@return LSN number */
-inline lsn_t log_block_convert_hdr_to_lsn_no(uint32_t header_num,
-                                             lsn_t start_lsn) {
-  ut_ad(header_num <= LOG_BLOCK_MAX_NO);
-
-  uint32_t round_off =
-      static_cast<uint32_t>(start_lsn / OS_FILE_LOG_BLOCK_SIZE /
-                            LOG_BLOCK_MAX_NO) +
-      1;
-  return header_num * OS_FILE_LOG_BLOCK_SIZE * round_off -
-         OS_FILE_LOG_BLOCK_SIZE;
-}
-#endif /* XTRABACKUP */
 
 /** Calculates the checksum for a log block.
 @param[in]	log_block	log block

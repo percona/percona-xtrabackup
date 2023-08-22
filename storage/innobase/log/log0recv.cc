@@ -1050,9 +1050,7 @@ static
       return;
     }
 
-    if (IF_XB(log.m_files_ctx.m_files_ruleset >
-                  Log_files_ruleset::PRE_8_0_30 &&) !file
-            .contains(checkpoint_in_file.m_checkpoint_lsn)) {
+    if (!file.contains(checkpoint_in_file.m_checkpoint_lsn)) {
       const auto file_path = file_handle.file_path();
       ib::error(ER_IB_MSG_RECOVERY_CHECKPOINT_OUTSIDE_LOG_FILE,
                 ulonglong{checkpoint_in_file.m_checkpoint_lsn},
@@ -3763,77 +3761,17 @@ bool meb_scan_log_recs(
 #endif
         auto data_len = block_header.m_data_len;
 
-#ifdef XTRABACKUP
-    /**
-     * Key changes on 8.0.30 (log format v6):
-     *
-     * - It records LOG_BLOCK_EPOCH_NO at 8th by of log block header while
-     * pre-8.0.30 we recorded LOG_BLOCK_CHECKPOINT_NO at the same position (we
-     * store this information at recv_sys->scanned_epoch_no). When we have two
-     * checkpoints on the same block on 8.0.29, LOG_BLOCK_CHECKPOINT_NO will be
-     * increased by two, then log_block_epoch_no_is_valid will indentify this
-     * gap (it only accepts scanned_epoch_no + 1) and will consider the block as
-     * completed without parsing it. Thus we need to parse differently depending
-     * on the version of redo log format.
-     * - LOG_BLOCK_FLUSH_BIT_MASK is no longer necessary and only kept for
-     * reading old log files.
-     * - FIELD_CHECKPOINT_OFFSET is no longer stored on log file header. Instead
-     * only the m_checkpoint_lsn is written.
-     * - File containing an LSN is now find by log.m_files.find and offsets are
-     * now calculated by file->offset(lsn). File m_start_lsn & m_end_lsn are
-     * used to for both operations. Previously we had a continious offset and
-     * had to calculated based on log file size and nr of logs in which file a
-     * particular offset will fall into. In order to find an offset we required
-     * to discover one know pair of LSN/Offset. This was done by
-     * FIELD_CHECKPOINT_OFFSET and FIELD_CHECKPOINT_LSN. Thus we have to
-     * implement special handling for following redo logs on previous versions.
-     * check redo_log.cc read_log_seg_pre8030 & scan_log_recs_pre8030.
-     */
-    if (scanned_lsn + data_len > recv_sys->scanned_lsn) {
-      if (xb_log_detected_format >= Log_format::VERSION_8_0_30 &&
-          recv_sys->scanned_epoch_no > 0 &&
-          !log_block_epoch_no_is_valid(block_header.m_epoch_no,
-                                       recv_sys->scanned_epoch_no)) {
-        /* Garbage from a log buffer flush which was made
-        before the most recent database recovery */
+    if (scanned_lsn + data_len > recv_sys->scanned_lsn &&
+        recv_sys->scanned_epoch_no > 0 &&
+        !log_block_epoch_no_is_valid(block_header.m_epoch_no,
+                                     recv_sys->scanned_epoch_no)) {
+      /* Garbage from a log buffer flush which was made
+      before the most recent database recovery */
 
-        finished = true;
+      finished = true;
 
-        break;
-      } else {
-        /** block_header.m_epoch_no = log_block_get_checkpoint_no
-         * recv_sys->scanned_epoch_no = recv_sys->scanned_checkpoint_no
-         *  log_block_get_checkpoint_no(log_block) <
-            recv_sys->scanned_checkpoint_no &&
-        (recv_sys->scanned_checkpoint_no -
-             log_block_get_checkpoint_no(log_block) >
-         0x80000000UL)
-         */
-        if (block_header.m_epoch_no < recv_sys->scanned_epoch_no &&
-            (recv_sys->scanned_epoch_no - block_header.m_epoch_no >
-             0x80000000UL)) {
-          /* Garbage from a log buffer flush which was made
-          before the most recent database recovery */
-
-          finished = true;
-
-          break;
-        }
-      }
+      break;
     }
-#else
-        if (scanned_lsn + data_len > recv_sys->scanned_lsn &&
-            recv_sys->scanned_epoch_no > 0 &&
-            !log_block_epoch_no_is_valid(block_header.m_epoch_no,
-                                         recv_sys->scanned_epoch_no)) {
-          /* Garbage from a log buffer flush which was made
-          before the most recent database recovery */
-
-          finished = true;
-
-          break;
-        }
-#endif  // XTRABACKUP
 
     if (!recv_sys->parse_start_lsn && block_header.m_first_rec_group > 0) {
       /* We found a point from which to start the parsing of log records */
@@ -4065,37 +4003,6 @@ static
 
   return end_lsn;
 }
-
-#ifdef XTRABACKUP
-/** Determine the LSN of the first block found in the redo file
-@param[in,out]  log     	redo log
-@param[in]  	start_lsn 	current start lsn set
-@param[in,out]  calculated_start_lsn 	lsn found in first block
-*/
-static dberr_t determine_redo_file_start_lsn(log_t &log, lsn_t start_lsn,
-                                             lsn_t &calculated_start_lsn) {
-  auto file = log.m_files.find(start_lsn);
-  auto file_handle = file->open(Log_file_access_mode::READ_ONLY);
-
-  /* read the first redo block and find out header number */
-  const dberr_t err = log_data_blocks_read(file_handle, LOG_FILE_HDR_SIZE,
-                                           OS_FILE_LOG_BLOCK_SIZE, log.buf);
-  if (err != DB_SUCCESS) {
-    xb::error() << "Failed to read redo file first block";
-    return err;
-  }
-  Log_data_block_header block_header;
-
-  if (!log_data_block_header_deserialize(log.buf, block_header)) {
-    xb::error() << "Invalid checksum of redo file first block";
-    return DB_ERROR;
-  }
-  calculated_start_lsn =
-      log_block_convert_hdr_to_lsn_no(block_header.m_hdr_no, start_lsn);
-
-  return DB_SUCCESS;
-}
-#endif  // XTRABACKUP
 
 /** Scans log from a buffer and stores new log data to the parsing buffer.
 Parses and hashes the log records if new data found.
@@ -4334,22 +4241,6 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
       recv_init_crash_recovery();
     }
   }
-
-#ifdef XTRABACKUP
-  /* PXB 8.0.30 could set wrong start_lsn in the xtrabackup_log_file. We fix
-  such files, by determining the LSN of the first block found in the file as
-  the START_LSN in the redo file header */
-  if (!srv_backup_mode && !srv_read_only_mode && xb_backup_version == 80030) {
-    lsn_t calculated_start_lsn;
-    const dberr_t err = determine_redo_file_start_lsn(log, checkpoint_lsn,
-                                                      calculated_start_lsn);
-    if (err != DB_SUCCESS) {
-      xb::error() << "Failed to determine start lsn in redo file";
-      return err;
-    }
-    log.m_files.set_lsn(log.m_current_file.m_id, calculated_start_lsn);
-  }
-#endif  // XTRABACKUP
 
   recv_recovery_begin(log, checkpoint_lsn, to_lsn);
 

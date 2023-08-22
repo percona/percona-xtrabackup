@@ -93,6 +93,7 @@ char tool_args[2048];
 /* mysql flavor and version */
 mysql_flavor_t server_flavor = FLAVOR_UNKNOWN;
 unsigned long mysql_server_version = 0;
+std::string mysql_server_version_comment;
 /* the version of xtrabackup used during the backup */
 unsigned long xb_backup_version = 0;
 
@@ -350,17 +351,17 @@ void parse_show_engine_innodb_status(MYSQL *connection) {
   mysql_free_result(mysql_result);
 }
 
-static bool check_server_version(unsigned long version_number,
-                                 const char *version_string,
-                                 const char *version_comment,
-                                 const char *innodb_version) {
+bool check_server_version(unsigned long version_number,
+                          const char *version_string,
+                          const char *version_comment,
+                          const char *innodb_version) {
   bool version_supported = false;
   bool mysql51 = false;
   bool pxb24 = false;
   bool pxb80 = false;
 
   mysql_server_version = version_number;
-
+  mysql_server_version_comment = version_comment;
   server_flavor = FLAVOR_UNKNOWN;
   if (strstr(version_comment, "Percona") != NULL) {
     server_flavor = FLAVOR_PERCONA_SERVER;
@@ -1792,6 +1793,7 @@ char *get_xtrabackup_info(MYSQL *connection) {
                      "tool_version = %s\n"
                      "ibbackup_version = %s\n"
                      "server_version = %s\n"
+                     "server_flavor = %s\n"
                      "start_time = %s\n"
                      "end_time = %s\n"
                      "lock_time = %ld\n"
@@ -1812,13 +1814,14 @@ char *get_xtrabackup_info(MYSQL *connection) {
                      XTRABACKUP_VERSION,             /* tool_version */
                      XTRABACKUP_VERSION,             /* ibbackup_version */
                      server_version,                 /* server_version */
-                     buf_start_time,                 /* start_time */
-                     buf_end_time,                   /* end_time */
-                     (long int)history_lock_time,    /* lock_time */
-                     mysql_binlog_position.c_str(),  /* binlog_pos */
-                     incremental_lsn,                /* innodb_from_lsn */
-                     metadata_to_lsn,                /* innodb_to_lsn */
-                     (xtrabackup_tables              /* partial */
+                     mysql_server_version_comment.c_str(), /* server_flavor */
+                     buf_start_time,                       /* start_time */
+                     buf_end_time,                         /* end_time */
+                     (long int)history_lock_time,          /* lock_time */
+                     mysql_binlog_position.c_str(),        /* binlog_pos */
+                     incremental_lsn,                      /* innodb_from_lsn */
+                     metadata_to_lsn,                      /* innodb_to_lsn */
+                     (xtrabackup_tables                    /* partial */
                       || xtrabackup_tables_exclude || xtrabackup_tables_file ||
                       xtrabackup_databases || xtrabackup_databases_exclude ||
                       xtrabackup_databases_file)
@@ -2371,50 +2374,4 @@ void check_dump_innodb_buffer_pool(MYSQL *connection) {
              original_innodb_buffer_pool_dump_pct);
     xb_mysql_query(mysql_connection, change_bp_dump_pct_query, false);
   }
-}
-
-/* print tables that have INSTANT ADD/DROP column row version
- * @param[in]   connection  MySQL connection handler
- * @return true if tables with row versions > 0 */
-bool print_instant_versioned_tables(MYSQL *connection) {
-  /**
-   * PS is not affected by INSTANT issues. Upstream only affected on 8.0.29+.
-   * We considered 8.0.32+ stable and allow INSTANT
-   */
-  if (server_flavor == FLAVOR_PERCONA_SERVER || mysql_server_version < 80029 ||
-      mysql_server_version >= 80032)
-    return false;
-
-  bool ret = false;
-  my_ulonglong rows_count = 0;
-  MYSQL_RES *result =
-      xb_mysql_query(connection,
-                     "SELECT NAME FROM INFORMATION_SCHEMA.INNODB_TABLES WHERE "
-                     "TOTAL_ROW_VERSIONS > 0",
-                     true, true);
-
-  if (result) {
-    rows_count = mysql_num_rows(result);
-    if (rows_count > 0) {
-      MYSQL_ROW row;
-      ret = true;
-      xb::error()
-          << "Found tables with row versions due to INSTANT ADD/DROP columns";
-      xb::error()
-          << "This feature is not stable and will cause backup corruption.";
-      xb::error()
-          << "Please check "
-             "https://docs.percona.com/percona-xtrabackup/8.0/em/instant.html "
-             "for more details.";
-      xb::error() << "Tables found:";
-      while ((row = mysql_fetch_row(result)) != NULL) {
-        xb::error() << row[0];
-      }
-      xb::error()
-          << "Please run OPTIMIZE TABLE or ALTER TABLE ALGORITHM=COPY on "
-             "all listed tables to fix this issue.";
-    }
-    mysql_free_result(result);
-  }
-  return ret;
 }
