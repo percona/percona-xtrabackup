@@ -235,29 +235,35 @@ void parse_show_engine_innodb_status(MYSQL *connection);
 /** Acquires MDL lock on all tables */
 void mdl_lock_tables();
 
-/** Identifies if tablespace is a Full Text Index.
-@param[in]	tablespace		tablespace
-@return true if tablespace is FTS. */
-bool is_fts_index(const std::string &tablespace);
+/** Identifies if table_name is a Full Text Index.
+@param[in]	table_name		table_name
+@return true if table_name is FTS. */
+bool is_fts_index(const std::string &table_name);
 
-/** Identifies if tablespace is a temporary table (#sql-)
-@param[in]	tablespace		tablespace
-@return true if tablespace is temporary table. */
-bool is_tmp_table(const std::string &tablespace);
+/** Identifies if table_name is a temporary table (#sql-)
+@param[in]	table_name		table_name
+@return true if table_name is temporary table. */
+bool is_tmp_table(const std::string &table_name);
+
+/** Identifies if table is blocked by select
+SELECT from mysql.compression_* tables is not allowed by Server.
+@param[in]	table_name		table_name
+@return true if table_name is blocked. */
+bool is_access_blocked(const std::string &table_name);
 
 /** Runs a regexp against a table name
-@param[in]	tablespace		tablespace
+@param[in]	table_name		table_name
 @param[in]	error_context		error to be return in case of errors
 @param[in]	pattern		regexp pattern to try a match
 @return true if there is a match, or false otherwise */
-bool check_regexp_table_name(std::string tablespace, const char *error_context,
+bool check_regexp_table_name(std::string table_name, const char *error_context,
                              const char *pattern);
 
 /** Extract the table name from a full qualified `db`.`table` string
 removing escape string. Replace the name inplace
-@param[in/out]	tablespace		tablespace
+@param[in/out]	fq_table_name		full qualified table name
  */
-void get_table_name_from_tablespace(std::string &tablespace);
+void get_table_name_from_fq(std::string &fq_table_name);
 
 void mdl_unlock_all();
 
