@@ -3,7 +3,7 @@ name: Pre-commit Checks
 on:
   push:
     branches:
-      - 8.*
+      - trunk
       - release-*
   pull_request:
 
@@ -17,8 +17,8 @@ jobs:
         fetch-depth: '32'
     - name: Run BiDi Scan
       run: |
-        git fetch origin 8.0
-        CHANGED_FILES=$(git diff --name-only --relative --diff-filter AMR origin/8.0 -- . | tr '\n' ' ')
+        git fetch origin trunk
+        CHANGED_FILES=$(git diff --name-only --relative --diff-filter AMR origin/trunk -- . | tr '\n' ' ')
 
         if [ -z "${CHANGED_FILES}" ]; then
             echo --- No changed files
