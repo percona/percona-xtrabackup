@@ -25,8 +25,8 @@
 
 #include "field_types.h"  // enum_field_types
 #include "lex_string.h"
-#include "m_ctype.h"
 #include "my_inttypes.h"  // TODO: replace with cstdint
+#include "mysql/strings/m_ctype.h"
 #include "sql/comp_creator.h"
 #include "sql/field.h"
 #include "sql/item.h"
@@ -52,7 +52,10 @@ class PTI_truth_transform : public Parse_tree_item {
   PTI_truth_transform(const POS &pos, Item *expr_arg, Bool_test truth_test)
       : super(pos), expr(expr_arg), truth_test(truth_test) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
+
+ protected:
+  void add_json_info(Json_object *obj) override;
 };
 
 class PTI_comp_op : public Parse_tree_item {
@@ -71,7 +74,13 @@ class PTI_comp_op : public Parse_tree_item {
         boolfunc2creator(boolfunc2creator_arg),
         right(right_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
+
+ protected:
+  void add_json_info(Json_object *obj) override {
+    obj->add_alias("operator", create_dom_ptr<Json_string>(
+                                   (*boolfunc2creator)(false)->symbol(false)));
+  }
 };
 
 class PTI_comp_op_all : public Parse_tree_item {
@@ -81,6 +90,13 @@ class PTI_comp_op_all : public Parse_tree_item {
   chooser_compare_func_creator comp_op;
   bool is_all;
   PT_subquery *subselect;
+
+ protected:
+  void add_json_info(Json_object *obj) override {
+    obj->add_alias("is_all", create_dom_ptr<Json_boolean>(is_all));
+    obj->add_alias("operator", create_dom_ptr<Json_string>(
+                                   (*comp_op)(false)->symbol(false)));
+  }
 
  public:
   PTI_comp_op_all(const POS &pos, Item *left_arg,
@@ -92,7 +108,7 @@ class PTI_comp_op_all : public Parse_tree_item {
         is_all(is_all_arg),
         subselect(subselect_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_simple_ident_ident : public Parse_tree_item {
@@ -105,7 +121,7 @@ class PTI_simple_ident_ident : public Parse_tree_item {
   PTI_simple_ident_ident(const POS &pos, const LEX_CSTRING &ident_arg)
       : super(pos), ident(ident_arg), raw(pos.raw) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 /**
@@ -124,7 +140,7 @@ class PTI_simple_ident_q_3d : public Parse_tree_item {
                         const char *table_arg, const char *field_arg)
       : super(pos), db(db_arg), table(table_arg), field(field_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 /**
@@ -138,7 +154,7 @@ class PTI_simple_ident_q_2d : public PTI_simple_ident_q_3d {
                         const char *field_arg)
       : super(pos, nullptr, table_arg, field_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_simple_ident_nospvar_ident : public Parse_tree_item {
@@ -150,7 +166,7 @@ class PTI_simple_ident_nospvar_ident : public Parse_tree_item {
   PTI_simple_ident_nospvar_ident(const POS &pos, const LEX_STRING &ident_arg)
       : super(pos), ident(ident_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_function_call_nonkeyword_now final : public Item_func_now_local {
@@ -160,7 +176,7 @@ class PTI_function_call_nonkeyword_now final : public Item_func_now_local {
   PTI_function_call_nonkeyword_now(const POS &pos, uint8 dec_arg)
       : super(pos, dec_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_function_call_nonkeyword_sysdate : public Parse_tree_item {
@@ -172,7 +188,7 @@ class PTI_function_call_nonkeyword_sysdate : public Parse_tree_item {
   explicit PTI_function_call_nonkeyword_sysdate(const POS &pos, uint8 dec_arg)
       : super(pos), dec(dec_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_udf_expr : public Parse_tree_item {
@@ -191,7 +207,7 @@ class PTI_udf_expr : public Parse_tree_item {
         select_alias(select_alias_arg),
         expr_loc(expr_loc_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_function_call_generic_ident_sys : public Parse_tree_item {
@@ -210,7 +226,13 @@ class PTI_function_call_generic_ident_sys : public Parse_tree_item {
         ident(ident_arg),
         opt_udf_expr_list(opt_udf_expr_list_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
+
+ protected:
+  void add_json_info(Json_object *obj) override {
+    obj->add_alias("func_name",
+                   create_dom_ptr<Json_string>(ident.str, ident.length));
+  }
 };
 
 /**
@@ -232,7 +254,10 @@ class PTI_function_call_generic_2d : public Parse_tree_item {
         func(func_arg),
         opt_expr_list(opt_expr_list_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
+
+ protected:
+  void add_json_info(Json_object *obj) override;
 };
 
 class PTI_text_literal : public Item_string {
@@ -255,7 +280,7 @@ class PTI_text_literal_text_string : public PTI_text_literal {
                                const LEX_STRING &literal_arg)
       : super(pos, is_7bit_arg, literal_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_text_literal_nchar_string : public PTI_text_literal {
@@ -266,7 +291,7 @@ class PTI_text_literal_nchar_string : public PTI_text_literal {
                                 const LEX_STRING &literal_arg)
       : super(pos, is_7bit_arg, literal_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_text_literal_underscore_charset : public PTI_text_literal {
@@ -280,8 +305,8 @@ class PTI_text_literal_underscore_charset : public PTI_text_literal {
                                       const LEX_STRING &literal_arg)
       : super(pos, is_7bit_arg, literal_arg), cs(cs_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override {
-    if (super::itemize(pc, res)) return true;
+  bool do_itemize(Parse_context *pc, Item **res) override {
+    if (super::do_itemize(pc, res)) return true;
 
     init(literal.str, literal.length, cs, DERIVATION_COERCIBLE,
          MY_REPERTOIRE_UNICODE30);
@@ -301,7 +326,7 @@ class PTI_text_literal_concat : public PTI_text_literal {
                           PTI_text_literal *head_arg, const LEX_STRING &tail)
       : super(pos, is_7bit_arg, tail), head(head_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_temporal_literal : public Parse_tree_item {
@@ -320,7 +345,7 @@ class PTI_temporal_literal : public Parse_tree_item {
         field_type(field_type_arg),
         cs(cs_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_literal_underscore_charset_hex_num : public Item_string {
@@ -334,8 +359,8 @@ class PTI_literal_underscore_charset_hex_num : public Item_string {
               Item_hex_string::make_hex_str(literal.str, literal.length),
               charset) {}
 
-  bool itemize(Parse_context *pc, Item **res) override {
-    if (super::itemize(pc, res)) return true;
+  bool do_itemize(Parse_context *pc, Item **res) override {
+    if (super::do_itemize(pc, res)) return true;
 
     set_repertoire_from_value();
     set_cs_specified(true);
@@ -354,8 +379,8 @@ class PTI_literal_underscore_charset_bin_num : public Item_string {
               Item_bin_string::make_bin_str(literal.str, literal.length),
               charset) {}
 
-  bool itemize(Parse_context *pc, Item **res) override {
-    if (super::itemize(pc, res)) return true;
+  bool do_itemize(Parse_context *pc, Item **res) override {
+    if (super::do_itemize(pc, res)) return true;
 
     set_cs_specified(true);
     return check_well_formed_result(&str_value, true, true) == nullptr;
@@ -369,7 +394,7 @@ class PTI_variable_aux_set_var final : public Item_func_set_user_var {
   PTI_variable_aux_set_var(const POS &pos, const LEX_STRING &var, Item *expr)
       : super(pos, var, expr) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_user_variable final : public Item_func_get_user_var {
@@ -378,7 +403,7 @@ class PTI_user_variable final : public Item_func_get_user_var {
  public:
   PTI_user_variable(const POS &pos, const LEX_STRING &var) : super(pos, var) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 /**
@@ -399,7 +424,7 @@ class PTI_get_system_variable : public Parse_tree_item {
         m_opt_prefix{opt_prefix},
         m_name{name} {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 
  private:
   const enum_var_type m_scope;
@@ -415,7 +440,7 @@ class PTI_count_sym : public Item_sum_count {
   PTI_count_sym(const POS &pos, PT_window *w)
       : super(pos, (Item *)nullptr, w) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_in_sum_expr : public Parse_tree_item {
@@ -427,7 +452,7 @@ class PTI_in_sum_expr : public Parse_tree_item {
   PTI_in_sum_expr(const POS &pos, Item *expr_arg)
       : super(pos), expr(expr_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_singlerow_subselect : public Parse_tree_item {
@@ -439,7 +464,7 @@ class PTI_singlerow_subselect : public Parse_tree_item {
   PTI_singlerow_subselect(const POS &pos, PT_subquery *subselect_arg)
       : super(pos), subselect(subselect_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_exists_subselect : public Parse_tree_item {
@@ -451,7 +476,7 @@ class PTI_exists_subselect : public Parse_tree_item {
   PTI_exists_subselect(const POS &pos, PT_subquery *subselect_arg)
       : super(pos), subselect(subselect_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_odbc_date : public Parse_tree_item {
@@ -460,11 +485,17 @@ class PTI_odbc_date : public Parse_tree_item {
   LEX_STRING ident;
   Item *expr;
 
+ protected:
+  void add_json_info(Json_object *obj) override {
+    obj->add_alias("date_type",
+                   create_dom_ptr<Json_string>(ident.str, ident.length));
+  }
+
  public:
   PTI_odbc_date(const POS &pos, const LEX_STRING &ident_arg, Item *expr_arg)
       : super(pos), ident(ident_arg), expr(expr_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_handle_sql2003_note184_exception : public Parse_tree_item {
@@ -482,7 +513,10 @@ class PTI_handle_sql2003_note184_exception : public Parse_tree_item {
         is_negation(is_negation_arg),
         right(right_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
+  void add_json_info(Json_object *obj) override {
+    obj->add_alias("negated", create_dom_ptr<Json_boolean>(is_negation));
+  }
 };
 
 class PTI_expr_with_alias : public Parse_tree_item {
@@ -498,7 +532,10 @@ class PTI_expr_with_alias : public Parse_tree_item {
                       const LEX_CSTRING &alias_arg)
       : super(pos), expr(expr_arg), expr_loc(expr_loc_arg), alias(alias_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
+
+ protected:
+  void add_json_info(Json_object *obj) override;
 };
 
 class PTI_int_splocal : public Parse_tree_item {
@@ -508,7 +545,7 @@ class PTI_int_splocal : public Parse_tree_item {
   PTI_int_splocal(const POS &pos, const LEX_CSTRING &name)
       : super(pos), m_location{pos}, m_name{name} {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 
  private:
   /// Location of the variable name.
@@ -525,7 +562,7 @@ class PTI_limit_option_ident : public PTI_int_splocal {
   PTI_limit_option_ident(const POS &pos, const LEX_CSTRING &name)
       : super{pos, name} {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_limit_option_param_marker : public Parse_tree_item {
@@ -538,7 +575,7 @@ class PTI_limit_option_param_marker : public Parse_tree_item {
                                          Item_param *param_marker_arg)
       : super(pos), param_marker(param_marker_arg) {}
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_context : public Parse_tree_item {
@@ -551,7 +588,7 @@ class PTI_context : public Parse_tree_item {
       : super(pos), expr(expr_arg), m_parsing_place(place) {}
 
  public:
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 };
 
 class PTI_where final : public PTI_context {

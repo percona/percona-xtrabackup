@@ -23,10 +23,10 @@
 #include "sql/parse_tree_partitions.h"
 
 #include <assert.h>
-#include "m_ctype.h"
 #include "my_alloc.h"
 
 #include "my_sys.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
 #include "sql/derror.h"
@@ -49,7 +49,7 @@ Partition_parse_context::Partition_parse_context(
                             curr_part_elem_arg, nullptr, 0),
       is_add_or_reorganize_partition(is_add_or_reorganize_partition) {}
 
-bool PT_subpartition::contextualize(Partition_parse_context *pc) {
+bool PT_subpartition::do_contextualize(Partition_parse_context *pc) {
   partition_info *const part_info = pc->part_info;
 
   if (part_info->use_default_subpartitions &&
@@ -65,7 +65,7 @@ bool PT_subpartition::contextualize(Partition_parse_context *pc) {
       the second partition (the current partition processed
       have already been put into the partitions list.
     */
-    error(pc, pos, ER_THD(pc->thd, ER_PARTITION_WRONG_NO_SUBPART_ERROR));
+    error(pc, m_errpos, ER_THD(pc->thd, ER_PARTITION_WRONG_NO_SUBPART_ERROR));
     return true;
   }
 
@@ -101,11 +101,11 @@ bool PT_subpartition::contextualize(Partition_parse_context *pc) {
   return false;
 }
 
-bool PT_part_value_item_max::contextualize(Partition_parse_context *pc) {
-  if (super::contextualize(pc)) return true;
+bool PT_part_value_item_max::do_contextualize(Partition_parse_context *pc) {
+  if (super::do_contextualize(pc)) return true;
 
   if (pc->part_info->part_type == partition_type::LIST) {
-    error(pc, pos, ER_THD(pc->thd, ER_MAXVALUE_IN_VALUES_IN));
+    error(pc, m_pos, ER_THD(pc->thd, ER_MAXVALUE_IN_VALUES_IN));
     return true;
   }
   if (pc->add_max_value()) return true;
@@ -113,13 +113,13 @@ bool PT_part_value_item_max::contextualize(Partition_parse_context *pc) {
   return false;
 }
 
-bool PT_part_value_item_expr::contextualize(Partition_parse_context *pc) {
+bool PT_part_value_item_expr::do_contextualize(Partition_parse_context *pc) {
   LEX *const lex = pc->thd->lex;
   lex->safe_to_cache_query = true;
-  if (super::contextualize(pc) || expr->itemize(pc, &expr)) return true;
+  if (super::do_contextualize(pc) || expr->itemize(pc, &expr)) return true;
 
   if (!lex->safe_to_cache_query) {
-    error(pc, pos, ER_THD(pc->thd, ER_WRONG_EXPR_IN_PARTITION_FUNC_ERROR));
+    error(pc, m_pos, ER_THD(pc->thd, ER_WRONG_EXPR_IN_PARTITION_FUNC_ERROR));
     return true;
   }
   if (pc->add_column_list_value(pc->thd, expr)) return true;
@@ -127,7 +127,8 @@ bool PT_part_value_item_expr::contextualize(Partition_parse_context *pc) {
   return false;
 }
 
-bool PT_part_value_item_list_paren::contextualize(Partition_parse_context *pc) {
+bool PT_part_value_item_list_paren::do_contextualize(
+    Partition_parse_context *pc) {
   pc->part_info->print_debug("( part_value_item_list_paren", nullptr);
   /* Initialisation code needed for each list of value expressions */
   if (!(pc->part_info->part_type == partition_type::LIST &&
@@ -159,8 +160,8 @@ bool PT_part_value_item_list_paren::contextualize(Partition_parse_context *pc) {
   return false;
 }
 
-bool PT_part_values_in_item::contextualize(Partition_parse_context *pc) {
-  if (super::contextualize(pc) || item->contextualize(pc)) return true;
+bool PT_part_values_in_item::do_contextualize(Partition_parse_context *pc) {
+  if (super::do_contextualize(pc) || item->contextualize(pc)) return true;
 
   partition_info *const part_info = pc->part_info;
   part_info->print_debug("part_values_in: part_value_item_list_paren", nullptr);
@@ -169,7 +170,7 @@ bool PT_part_values_in_item::contextualize(Partition_parse_context *pc) {
     if (!pc->is_add_or_reorganize_partition || part_info->num_columns == 0 ||
         part_info->num_columns > MAX_REF_PARTS) {
       part_info->print_debug("Kilroy III", nullptr);
-      error(pc, pos, ER_THD(pc->thd, ER_PARTITION_COLUMN_LIST_ERROR));
+      error(pc, m_errpos, ER_THD(pc->thd, ER_PARTITION_COLUMN_LIST_ERROR));
       return true;
     }
     /*
@@ -184,24 +185,24 @@ bool PT_part_values_in_item::contextualize(Partition_parse_context *pc) {
   return false;
 }
 
-bool PT_part_values_in_list::contextualize(Partition_parse_context *pc) {
-  if (super::contextualize(pc)) return true;
+bool PT_part_values_in_list::do_contextualize(Partition_parse_context *pc) {
+  if (super::do_contextualize(pc)) return true;
 
   for (auto item : *list) {
     if (item->contextualize(pc)) return true;
   }
 
   if (pc->part_info->num_columns < 2U) {
-    error(pc, pos, ER_THD(pc->thd, ER_ROW_SINGLE_PARTITION_FIELD_ERROR));
+    error(pc, m_errpos, ER_THD(pc->thd, ER_ROW_SINGLE_PARTITION_FIELD_ERROR));
     return true;
   }
   return false;
 }
 
-bool PT_part_definition::contextualize(Partition_parse_context *pc) {
+bool PT_part_definition::do_contextualize(Partition_parse_context *pc) {
   assert(pc->current_partition == nullptr && pc->curr_part_elem == nullptr);
 
-  if (super::contextualize(pc)) return true;
+  if (super::do_contextualize(pc)) return true;
 
   partition_info *const part_info = pc->part_info;
 
@@ -229,12 +230,14 @@ bool PT_part_definition::contextualize(Partition_parse_context *pc) {
       if (part_info->part_type == partition_type::NONE)
         part_info->part_type = partition_type::HASH;
       else if (part_info->part_type == partition_type::RANGE) {
-        errorf(&ppc, pos, ER_THD(pc->thd, ER_PARTITION_REQUIRES_VALUES_ERROR),
-               "RANGE", "LESS THAN");
+        errorf(&ppc, m_errpos,
+               ER_THD(pc->thd, ER_PARTITION_REQUIRES_VALUES_ERROR), "RANGE",
+               "LESS THAN");
         return true;
       } else if (part_info->part_type == partition_type::LIST) {
-        errorf(&ppc, pos, ER_THD(pc->thd, ER_PARTITION_REQUIRES_VALUES_ERROR),
-               "LIST", "IN");
+        errorf(&ppc, m_errpos,
+               ER_THD(pc->thd, ER_PARTITION_REQUIRES_VALUES_ERROR), "LIST",
+               "IN");
         return true;
       }
     } break;
@@ -271,7 +274,7 @@ bool PT_part_definition::contextualize(Partition_parse_context *pc) {
     } break;
     default:
       assert(false);
-      error(&ppc, pos, ER_THD(pc->thd, ER_UNKNOWN_ERROR));
+      error(&ppc, m_errpos, ER_THD(pc->thd, ER_UNKNOWN_ERROR));
       return true;
   }
 
@@ -316,10 +319,10 @@ bool PT_part_definition::contextualize(Partition_parse_context *pc) {
   return false;
 }
 
-bool PT_sub_partition_by_hash::contextualize(Partition_parse_context *pc) {
+bool PT_sub_partition_by_hash::do_contextualize(Partition_parse_context *pc) {
   LEX *const lex = pc->thd->lex;
   lex->safe_to_cache_query = true;
-  if (super::contextualize(pc) || hash->itemize(pc, &hash)) return true;
+  if (super::do_contextualize(pc) || hash->itemize(pc, &hash)) return true;
 
   partition_info *const part_info = pc->part_info;
 
@@ -343,8 +346,8 @@ bool PT_sub_partition_by_hash::contextualize(Partition_parse_context *pc) {
   return false;
 }
 
-bool PT_sub_partition_by_key::contextualize(Partition_parse_context *pc) {
-  if (super::contextualize(pc)) return true;
+bool PT_sub_partition_by_key::do_contextualize(Partition_parse_context *pc) {
+  if (super::do_contextualize(pc)) return true;
 
   partition_info *const part_info = pc->part_info;
 
@@ -398,8 +401,8 @@ bool PT_part_type_def::itemize_part_expr(Partition_parse_context *pc,
   return false;
 }
 
-bool PT_part_type_def_key::contextualize(Partition_parse_context *pc) {
-  if (super::contextualize(pc)) return true;
+bool PT_part_type_def_key::do_contextualize(Partition_parse_context *pc) {
+  if (super::do_contextualize(pc)) return true;
 
   pc->part_info->part_type = partition_type::HASH;
   pc->part_info->column_list = false;
@@ -413,8 +416,8 @@ bool PT_part_type_def_key::contextualize(Partition_parse_context *pc) {
   return false;
 }
 
-bool PT_part_type_def_hash::contextualize(Partition_parse_context *pc) {
-  if (super::contextualize(pc) || itemize_part_expr(pc, expr_pos, &expr))
+bool PT_part_type_def_hash::do_contextualize(Partition_parse_context *pc) {
+  if (super::do_contextualize(pc) || itemize_part_expr(pc, expr_pos, &expr))
     return true;
 
   pc->part_info->part_type = partition_type::HASH;
@@ -425,20 +428,21 @@ bool PT_part_type_def_hash::contextualize(Partition_parse_context *pc) {
   return false;
 }
 
-bool PT_part_type_def_range_expr::contextualize(Partition_parse_context *pc) {
-  if (super::contextualize(pc) || itemize_part_expr(pc, expr_pos, &expr))
-    return true;
-
-  pc->part_info->part_type = partition_type::RANGE;
-  pc->part_info->column_list = false;
-  pc->part_info->num_columns = 1;
-
-  return false;
-}
-
-bool PT_part_type_def_range_columns::contextualize(
+bool PT_part_type_def_range_expr::do_contextualize(
     Partition_parse_context *pc) {
-  if (super::contextualize(pc)) return true;
+  if (super::do_contextualize(pc) || itemize_part_expr(pc, expr_pos, &expr))
+    return true;
+
+  pc->part_info->part_type = partition_type::RANGE;
+  pc->part_info->column_list = false;
+  pc->part_info->num_columns = 1;
+
+  return false;
+}
+
+bool PT_part_type_def_range_columns::do_contextualize(
+    Partition_parse_context *pc) {
+  if (super::do_contextualize(pc)) return true;
 
   pc->part_info->part_type = partition_type::RANGE;
   pc->part_info->column_list = true;
@@ -447,8 +451,8 @@ bool PT_part_type_def_range_columns::contextualize(
   return set_part_field_list(pc, columns);
 }
 
-bool PT_part_type_def_list_expr::contextualize(Partition_parse_context *pc) {
-  if (super::contextualize(pc) || itemize_part_expr(pc, expr_pos, &expr))
+bool PT_part_type_def_list_expr::do_contextualize(Partition_parse_context *pc) {
+  if (super::do_contextualize(pc) || itemize_part_expr(pc, expr_pos, &expr))
     return true;
 
   pc->part_info->part_type = partition_type::LIST;
@@ -458,8 +462,9 @@ bool PT_part_type_def_list_expr::contextualize(Partition_parse_context *pc) {
   return false;
 }
 
-bool PT_part_type_def_list_columns::contextualize(Partition_parse_context *pc) {
-  if (super::contextualize(pc)) return true;
+bool PT_part_type_def_list_columns::do_contextualize(
+    Partition_parse_context *pc) {
+  if (super::do_contextualize(pc)) return true;
 
   pc->part_info->part_type = partition_type::LIST;
   pc->part_info->column_list = true;
@@ -468,8 +473,8 @@ bool PT_part_type_def_list_columns::contextualize(Partition_parse_context *pc) {
   return set_part_field_list(pc, columns);
 }
 
-bool PT_partition::contextualize(Parse_context *pc) {
-  if (super::contextualize(pc)) return true;
+bool PT_partition::do_contextualize(Parse_context *pc) {
+  if (super::do_contextualize(pc)) return true;
 
   Partition_parse_context part_pc(pc->thd, &part_info, false);
   if (part_type_def->contextualize(&part_pc)) return true;

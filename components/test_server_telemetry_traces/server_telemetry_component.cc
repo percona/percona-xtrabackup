@@ -23,6 +23,7 @@
 #include "server_telemetry_component.h"
 #include <cinttypes>  // PRId64
 #include <thread>     // sleep_for()
+#include "mysql/mysql_lex_string.h"
 #include "server_telemetry_data.h"
 #include "template_utils.h"  // pointer_cast
 
@@ -403,7 +404,7 @@ static telemetry_locker_t *tm_stmt_start(telemetry_session_t * /* session */,
        (0 == strcmp(user.str, "api") || 0 == strcmp(user.str, "root")))) {
     *flags = TRACE_STATEMENTS;
 
-    Statement_Data info;
+    const Statement_Data info;
     data->m_stmt_stack.push_back(std::move(info));
 
   } else {

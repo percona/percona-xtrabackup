@@ -126,14 +126,13 @@ class METADATA_CACHE_EXPORT GRClusterMetadata : public ClusterMetadata {
    *
    * @param target_cluster information about the Cluster that this information
    * is retrieved for
+   * @param md_server address of the metadata server to get the data from
    *
    * @returns authentication data of the rest users stored in the metadata
    */
   auth_credentials_t fetch_auth_credentials(
+      const metadata_cache::metadata_server_t &md_server,
       const mysqlrouter::TargetCluster &target_cluster) override;
-
-  std::optional<std::chrono::seconds>
-  get_periodic_stats_update_frequency() noexcept override;
 
  protected:
   /** @brief Queries the metadata server for the list of instances that belong
@@ -146,18 +145,18 @@ class METADATA_CACHE_EXPORT GRClusterMetadata : public ClusterMetadata {
   /** Query the GR performance_schema tables for live information about a
    * cluster.
    *
-   * update_cluster_status() calls check_cluster_status() for some of its
-   * processing. Together, they:
+   * update_cluster_status_from_gr() calls check_cluster_status_in_gr() for some
+   * of its processing. Together, they:
    * - check current topology (status) returned from a cluster node
    * - update 'instances' with this state
    * - get other metadata about the cluster
    *
    * The information is pulled from GR maintained performance_schema tables.
    */
-  void update_cluster_status(metadata_cache::ManagedCluster &cluster);
+  void update_cluster_status_from_gr(metadata_cache::ManagedCluster &cluster);
 
-  GRClusterStatus check_cluster_status(
-      std::vector<metadata_cache::ManagedInstance> &instances,
+  GRClusterStatus check_cluster_status_in_gr(
+      std::vector<metadata_cache::ManagedInstance *> &instances,
       const std::map<std::string, GroupReplicationMember> &member_status,
       bool &metadata_gr_discrepancy) const noexcept;
 

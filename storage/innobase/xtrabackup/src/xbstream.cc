@@ -41,6 +41,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "ds_decrypt.h"
 #include "file_utils.h"
 #include "msg.h"
+#include "nulls.h"
 #include "template_utils.h"
 #include "xbcrypt_common.h"
 #include "xtrabackup_version.h"

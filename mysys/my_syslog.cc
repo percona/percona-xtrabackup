@@ -33,11 +33,11 @@
 
 #include <stddef.h>
 
-#include "m_ctype.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
-#include "my_loglevel.h"
 #include "my_sys.h"
+#include "mysql/my_loglevel.h"
+#include "mysql/strings/m_ctype.h"
 #if defined(_WIN32)
 #include <stdio.h>
 
@@ -214,7 +214,7 @@ static int windows_eventlog_create_registry_entry(const char *key) {
   TCHAR szPath[MAX_PATH];
   DWORD dwTypes;
 
-  size_t l = sizeof(registry_prefix) + strlen(key) + 1;
+  const size_t l = sizeof(registry_prefix) + strlen(key) + 1;
   char *buff;
 
   int ret = 0;

@@ -28,12 +28,12 @@
 #include <string.h>
 #include <sys/types.h>
 
-#include "m_ctype.h"
 #include "my_base.h"
 #include "my_bitmap.h"
 #include "my_compiler.h"
 #include "my_inttypes.h"
 #include "mysql/service_rules_table.h"
+#include "mysql/strings/m_ctype.h"
 #include "sql/field.h"
 #include "sql/handler.h"
 #include "sql/sql_base.h"
@@ -141,7 +141,7 @@ const char *Cursor::fetch_string(int fieldno) {
   if (field->is_null()) return nullptr;
   String value_buf;
   String *value = field->val_str(&value_buf);
-  size_t length = value->length();
+  const size_t length = value->length();
   char *res = new char[length + 1];
   strncpy(res, value->ptr(), length);
   res[length] = '\0';

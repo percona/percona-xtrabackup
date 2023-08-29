@@ -38,6 +38,8 @@ std::string mysql_admin_channel("mysql_admin");
 
 /** SSL context options */
 
+bool opt_tls_certificates_enforced_validation{false};
+
 /* Related to client server connection port */
 static const char *opt_ssl_ca = nullptr;
 static const char *opt_ssl_key = nullptr;
@@ -345,7 +347,7 @@ void Ssl_init_callback_server_main::read_parameters(
     OptionalString *cert, OptionalString *cipher, OptionalString *ciphersuites,
     OptionalString *key, OptionalString *crl, OptionalString *crl_path,
     bool *session_cache_mode, long *session_cache_timeout) {
-  AutoRLock lock(&lock_ssl_ctx);
+  const AutoRLock lock(&lock_ssl_ctx);
   if (ca) ca->assign(opt_ssl_ca);
   if (capath) capath->assign(opt_ssl_capath);
   if (version) version->assign(opt_tls_version);
@@ -401,7 +403,7 @@ ssl_artifacts_status Ssl_init_callback_server_main::auto_detect_ssl() {
 
 bool Ssl_init_callback_server_main::provision_certs() {
   ssl_artifacts_status auto_detection_status;
-  AutoRLock lock(&lock_ssl_ctx);
+  const AutoRLock lock(&lock_ssl_ctx);
   auto_detection_status = auto_detect_ssl();
   if (auto_detection_status == SSL_ARTIFACTS_AUTO_DETECTED)
     LogErr(INFORMATION_LEVEL, ER_SSL_TRYING_DATADIR_DEFAULTS,
@@ -412,7 +414,7 @@ bool Ssl_init_callback_server_main::provision_certs() {
 }
 
 bool Ssl_init_callback_server_main::warn_self_signed_ca() {
-  AutoRLock lock(&lock_ssl_ctx);
+  const AutoRLock lock(&lock_ssl_ctx);
   return warn_self_signed_ca_certs(opt_ssl_ca, opt_ssl_capath);
 }
 
@@ -423,7 +425,7 @@ void Ssl_init_callback_server_admin::read_parameters(
     OptionalString *cert, OptionalString *cipher, OptionalString *ciphersuites,
     OptionalString *key, OptionalString *crl, OptionalString *crl_path,
     bool *session_cache_mode, long *session_cache_timeout) {
-  AutoRLock lock(&lock_admin_ssl_ctx);
+  const AutoRLock lock(&lock_admin_ssl_ctx);
   if (ca) ca->assign(opt_admin_ssl_ca);
   if (capath) capath->assign(opt_admin_ssl_capath);
   if (version) version->assign(opt_admin_tls_version);
@@ -444,7 +446,7 @@ void Ssl_init_callback_server_admin::read_parameters(
 }
 
 bool Ssl_init_callback_server_admin::warn_self_signed_ca() {
-  AutoRLock lock(&lock_ssl_ctx);
+  const AutoRLock lock(&lock_ssl_ctx);
   return warn_self_signed_ca_certs(opt_admin_ssl_ca, opt_admin_ssl_capath);
 }
 

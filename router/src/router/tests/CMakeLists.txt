@@ -141,6 +141,20 @@ SET_TARGET_PROPERTIES(
   PROPERTIES
   COMPILE_DEFINITIONS ROUTER_LIB_STATIC_DEFINE=1)
 
+FOREACH(test_file
+    test_instance_attributes.cc
+    )
+  ADD_HARNESS_TEST_FILE(${test_file}
+    MODULE ${TEST_MODULE}
+    LIB_DEPENDS
+      test-helpers mysqlclient router_lib
+    INCLUDE_DIRS
+      $<TARGET_PROPERTY:router_lib,INCLUDE_DIRECTORIES>
+      ../src/
+      ../../../tests/helpers/
+    SYSTEM_INCLUDE_DIRS ${GMOCK_INCLUDE_DIRS})
+ENDFOREACH()
+
 ADD_HARNESS_TEST_FILE(test_windows_service.cc
   MODULE ${TEST_MODULE}
   LIB_DEPENDS

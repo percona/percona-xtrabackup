@@ -26,7 +26,6 @@
 #include <atomic>
 
 #include "lex_string.h"
-#include "m_ctype.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_io.h"
@@ -39,6 +38,7 @@
 #include "mysql/plugin.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/service_thd_engine_lock.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql_com.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/sql_security_ctx.h"
@@ -64,6 +64,7 @@
 #include "sql/transaction_info.h"
 #include "sql/xa.h"
 #include "sql_string.h"
+#include "string_with_len.h"
 #include "violite.h"
 
 struct MYSQL_LEX_STRING;
@@ -402,7 +403,15 @@ int thd_sql_command(const MYSQL_THD thd) { return (int)thd->lex->sql_command; }
 
 int thd_tx_isolation(const MYSQL_THD thd) { return (int)thd->tx_isolation; }
 
-int thd_tx_is_read_only(const MYSQL_THD thd) { return (int)thd->tx_read_only; }
+int thd_tx_is_read_only(const MYSQL_THD thd) {
+  // If the transaction is marked to be skipped read-only  then we ignore
+  // the value of tx_read_only variable and treat the transaction as
+  // a normal read-write trx.
+  if (thd->tx_read_only && thd->is_cmd_skip_transaction_read_only())
+    return 0;
+  else
+    return (int)thd->tx_read_only;
+}
 
 int thd_tx_priority(const MYSQL_THD thd) {
   return (thd->thd_tx_priority != 0 ? thd->thd_tx_priority : thd->tx_priority);

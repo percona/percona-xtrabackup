@@ -31,7 +31,6 @@
 #include "field_types.h"
 #include "lex_string.h"
 #include "libbinlogevents/include/table_id.h"  // Table_id
-#include "m_ctype.h"
 #include "map_helpers.h"
 #include "mem_root_deque.h"
 #include "my_alloc.h"
@@ -44,12 +43,14 @@
 #include "my_table_map.h"
 #include "mysql/components/services/bits/mysql_mutex_bits.h"
 #include "mysql/components/services/bits/psi_table_bits.h"
+#include "mysql/strings/m_ctype.h"
 #include "sql/dd/types/foreign_key.h"  // dd::Foreign_key::enum_rule
 #include "sql/enum_query_type.h"       // enum_query_type
 #include "sql/key.h"
 #include "sql/key_spec.h"
 #include "sql/mdl.h"  // MDL_wait_for_subgraph
 #include "sql/mem_root_array.h"
+#include "sql/mysqld_cs.h"
 #include "sql/opt_costmodel.h"  // Cost_model_table
 #include "sql/partition_info.h"
 #include "sql/record_buffer.h"  // Record_buffer
@@ -67,7 +68,7 @@ class Field_longlong;
 
 namespace histograms {
 class Histogram;
-}
+}  // namespace histograms
 
 class ACL_internal_schema_access;
 class ACL_internal_table_access;
@@ -94,6 +95,8 @@ class SortingIterator;
 class String;
 class THD;
 class Table_cache_element;
+class Table_histograms;
+class Table_histograms_collection;
 class Table_ref;
 class Table_trigger_dispatcher;
 class Temp_table_param;
@@ -304,11 +307,11 @@ struct ORDER {
   bool in_field_list{false}; /* true if in select field list */
   /**
      Tells whether this ORDER element was referenced with an alias or with an
-     expression, in the query:
-     SELECT a AS foo GROUP BY foo: true.
-     SELECT a AS foo GROUP BY a: false.
+     expression in the query, and what the alias was:
+     SELECT a AS foo GROUP BY foo: "foo".
+     SELECT a AS foo GROUP BY a: nullptr.
   */
-  bool used_alias{false};
+  const char *used_alias{nullptr};
   /**
     When GROUP BY is implemented with a temporary table (i.e. the table takes
     care to store only unique group rows, table->group != nullptr), each GROUP
@@ -698,21 +701,15 @@ struct TABLE_SHARE {
       : m_version(version), m_secondary_engine(secondary) {}
 
   /*
-    A map of [uint, Histogram] values, where the key is the field index. The
-    map is populated with any histogram statistics when it is loaded/created.
+    Managed collection of refererence-counted snapshots of histograms statistics
+    for the table. TABLE objects acquire/release pointers to histogram
+    statistics from this collection. A new statistics snapshot is inserted when
+    the share is initialized and when histograms are updated/dropped.
+
+    For temporary tables m_histograms should be nullptr since we do not support
+    histograms on temporary tables.
   */
-  malloc_unordered_map<uint, const histograms::Histogram *> *m_histograms{
-      nullptr};
-
-  /**
-    Find the histogram for the given field index.
-
-    @param field_index the index of the field we want to find a histogram for
-
-    @retval nullptr if no histogram is found
-    @retval a pointer to a histogram if one is found
-  */
-  const histograms::Histogram *find_histogram(uint field_index) const;
+  Table_histograms_collection *m_histograms{nullptr};
 
   /** Category of this table. */
   TABLE_CATEGORY table_category{TABLE_UNKNOWN_CATEGORY};
@@ -1416,6 +1413,10 @@ struct TABLE {
   friend class Table_cache_element;
 
  public:
+  // Pointer to the histograms available on the table.
+  // Protected in the same way as the pointer to the share.
+  const Table_histograms *histograms{nullptr};
+
   /**
     A bitmap marking the hidden generated columns that exists for functional
     indexes.
@@ -1604,11 +1605,16 @@ struct TABLE {
   MY_BITMAP def_fields_set_during_insert;
 
   /**
-    Set over all columns that the optimizer intends to read. This is used
-    for two purposes: First, to tell the storage engine which ones it needs
-    to populate. (In particular, NDB can save a lot of bandwidth here.)
-    Second, functions that need to store and restore rows, such as hash join
-    or filesort, need to know which ones to keep.
+    The read set contains the set of columns that the execution engine needs to
+    process the query. In particular, it is used to tell the storage engine
+    which columns are needed. For virtual generated columns, the underlying base
+    columns are also added, since they are required in order to calculate the
+    virtual generated columns.
+
+    Internal operations in the execution engine that need to move rows between
+    buffers, such as aggregation, sorting, hash join and set operations, should
+    rather use read_set_internal, since the virtual generated columns have
+    already been calculated when the row was read from the storage engine.
 
     Set during resolving; every field that gets resolved, sets its own bit
     in the read set. In some cases, we switch the read set around during
@@ -1623,6 +1629,22 @@ struct TABLE {
   MY_BITMAP *read_set{nullptr};
 
   MY_BITMAP *write_set{nullptr};
+
+  /**
+    A bitmap of fields that are explicitly referenced by the query. This is
+    mostly the same as read_set, but it does not include base columns of
+    referenced virtual generated columns unless the base columns are referenced
+    explicitly in the query.
+
+    This is the read set that should be used for determining which columns to
+    store in join buffers, aggregation buffers, sort buffers, or similar
+    operations internal to the execution engine. Both because it is unnecessary
+    to store the implicitly read base columns in the buffer, since they won't
+    ever be read out of the buffer anyways, and because the base columns may not
+    even be possible to read, if a covering index scan is used and the index
+    only contains the virtual column and not all its base columns.
+  */
+  MY_BITMAP read_set_internal;
 
   /**
     A pointer to the bitmap of table fields (columns), which are explicitly set
@@ -2389,6 +2411,16 @@ struct TABLE {
             set or not
   */
   bool should_binlog_drop_if_temp(void) const;
+
+  /**
+    Find the histogram for the given field index.
+
+    @param field_index The index of the field we want to find a histogram for.
+
+    @retval nullptr if no histogram is found.
+    @retval Pointer to a histogram if one is found.
+  */
+  const histograms::Histogram *find_histogram(uint field_index) const;
 };
 
 static inline void empty_record(TABLE *table) {
@@ -3921,8 +3953,7 @@ class Table_ref {
   MY_BITMAP lock_partitions_saved;
   MY_BITMAP read_set_saved;
   MY_BITMAP write_set_saved;
-  my_bitmap_map read_set_small[bitmap_buffer_size(64) / sizeof(my_bitmap_map)];
-  my_bitmap_map write_set_small[bitmap_buffer_size(64) / sizeof(my_bitmap_map)];
+  MY_BITMAP read_set_internal_saved;
 };
 
 /*

@@ -30,6 +30,7 @@
 #include <sstream>
 #include <system_error>
 
+#include <openssl/bio.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
@@ -54,6 +55,9 @@
 #include "mysqld_error.h"  // mysql-server error-codes
 #include "mysqlrouter/classic_protocol_constants.h"
 #include "mysqlrouter/connection_base.h"
+#include "openssl_msg.h"
+#include "openssl_version.h"
+#include "processor.h"
 #include "sql/server_component/mysql_command_services_imp.h"
 #include "tracer.h"
 
@@ -105,35 +109,35 @@ static std::optional<std::string> scramble_them_all(
   }
 }
 
-static void ssl_info_cb(const SSL *ssl, int where, int ret) {
-  auto *conn = reinterpret_cast<MysqlRoutingClassicConnectionBase *>(
-      SSL_get_app_data(ssl));
+static void ssl_msg_cb(int write_p, int version, int content_type,
+                       const void *buf, size_t len, SSL *ssl [[maybe_unused]],
+                       void *arg) {
+  if (arg == nullptr) return;
+
+  auto *conn = static_cast<MysqlRoutingClassicConnectionBase *>(arg);
 
   auto &tr = conn->tracer();
   if (!tr) return;
 
-  if ((where & SSL_CB_LOOP) != 0) {
-    tr.trace(
-        Tracer::Event().stage("tls::state: "s + SSL_state_string_long(ssl)));
-  } else if ((where & SSL_CB_ALERT) != 0) {
-    tr.trace(Tracer::Event().stage("tls::alert: "s +
-                                   SSL_alert_type_string_long(ret) + "::"s +
-                                   SSL_alert_desc_string_long(ret)));
-  } else if ((where & SSL_CB_EXIT) != 0) {
-    if (ret == 0) {
-      tr.trace(Tracer::Event().stage(
-          "tls::state: "s + SSL_state_string_long(ssl) + " <failed>"s));
-    } else if (ret < 0) {
-      switch (SSL_get_error(ssl, ret)) {
-        case SSL_ERROR_WANT_READ:
-        case SSL_ERROR_WANT_WRITE:
-          break;
-        default:
-          tr.trace(Tracer::Event().stage("tls"s + SSL_state_string_long(ssl) +
-                                         " <error>"s));
-      }
-    }
-  }
+  if (content_type == SSL3_RT_HEADER) return;
+#ifdef SSL3_RT_INNER_CONTENT_TYPE
+  if (content_type == SSL3_RT_INNER_CONTENT_TYPE) return;
+#endif
+
+  tr.trace(Tracer::Event().stage(
+      "tls::" + std::string(write_p == 0 ? "client" : "server") +
+      "::msg: " + openssl_msg_version_to_string(version).value_or("") + " " +
+      openssl_msg_content_type_to_string(content_type).value_or("") + "::" +
+      openssl_msg_content_to_string(
+          content_type, static_cast<const unsigned char *>(buf), len)
+          .value_or("")
+#if 0
+      +
+      "\n" +
+      mysql_harness::hexify(
+          std::string_view(static_cast<const char *>(buf), len))
+#endif
+          ));
 }
 
 static void adjust_supported_capabilities(
@@ -330,6 +334,8 @@ stdx::expected<Processor::Result, std::error_code> ServerGreetor::process() {
     case Stage::ServerGreetingSent:
       return Result::Done;
     case Stage::Ok:
+      trace_span_end(trace_event_greeting_);
+
       connection()->authenticated(true);
       return Result::Done;
   }
@@ -343,6 +349,8 @@ stdx::expected<Processor::Result, std::error_code> ServerGreetor::error() {
                  .stage("close::server")
                  .direction(Tracer::Event::Direction::kServerClose));
   }
+
+  trace_span_end(trace_event_greeting_, TraceEvent::StatusCode::kError);
 
   // reset the server connection.
   //
@@ -365,6 +373,13 @@ ServerGreetor::server_greeting() {
   auto *socket_splicer = connection()->socket_splicer();
   auto src_channel = socket_splicer->server_channel();
   auto src_protocol = connection()->server_protocol();
+
+  if (trace_event_greeting_ == nullptr) {
+    trace_event_greeting_ = trace_span(parent_event_, "mysql/greeting");
+
+    trace_event_server_greeting_ =
+        trace_span(trace_event_greeting_, "mysql/server_greeting");
+  }
 
   auto read_res =
       ClassicFrame::ensure_has_msg_prefix(src_channel, src_protocol);
@@ -389,10 +404,6 @@ ServerGreetor::server_greeting() {
  */
 stdx::expected<Processor::Result, std::error_code>
 ServerGreetor::server_greeting_error() {
-  if (auto &tr = tracer()) {
-    tr.trace(Tracer::Event().stage("server::greeting::error"));
-  }
-
   // don't increment the error-counter
   connection()->client_greeting_sent(true);
 
@@ -406,6 +417,17 @@ ServerGreetor::server_greeting_error() {
   if (!msg_res) return recv_client_failed(msg_res.error());
 
   auto msg = *msg_res;
+
+  if (auto &tr = tracer()) {
+    tr.trace(Tracer::Event().stage("server::greeting::error: " +
+                                   std::to_string(msg.error_code())));
+  }
+
+  if (auto *ev = trace_event_server_greeting_) {
+    trace_span_end(ev, TraceEvent::StatusCode::kError);
+  }
+
+  trace_span_end(trace_event_greeting_, TraceEvent::StatusCode::kError);
 
   stage(Stage::Error);
 
@@ -508,8 +530,13 @@ ServerGreetor::server_greeting_greeting() {
     tr.trace(Tracer::Event().stage("server::greeting::greeting"));
   }
 
-  auto msg = src_protocol->server_greeting().value();
+  if (auto *ev = trace_event_server_greeting_) {
+    ev->attrs.emplace_back(
+        "mysql.remote.connection_id",
+        static_cast<int64_t>(server_greeting_msg.connection_id()));
+  }
 
+  auto msg = src_protocol->server_greeting().value();
 #if 0
   std::cerr << __LINE__ << ": proto-version: " << (int)msg.protocol_version()
             << "\n";
@@ -578,6 +605,8 @@ ServerGreetor::server_greeting_greeting() {
     if (!send_res) return send_client_failed(send_res.error());
 
     dst_protocol->server_greeting(msg);
+
+    trace_span_end(trace_event_greeting_, TraceEvent::StatusCode::kOk);
 
     stage(Stage::ServerGreetingSent);  // hand over to the ServerFirstConnector
     return Result::SendToClient;
@@ -678,6 +707,9 @@ ServerGreetor::client_greeting() {
   // soon.
   connection()->client_greeting_sent(true);
   connection()->on_handshake_received();
+
+  trace_event_client_greeting_ =
+      trace_span(trace_event_greeting_, "mysql/client_greeting");
 
   if (dst_protocol->shared_capabilities().test(
           classic_protocol::capabilities::pos::ssl)) {
@@ -830,12 +862,12 @@ ServerGreetor::client_greeting_full() {
       .or_else([this](auto err) { return send_server_failed(err); });
 }
 
-static stdx::expected<SSL_CTX *, std::error_code> get_dest_ssl_ctx(
+static stdx::expected<TlsClientContext *, std::error_code> get_dest_ssl_ctx(
     MySQLRoutingContext &ctx, const std::string &id) {
   return mysql_harness::make_tcp_address(id).and_then(
-      [&ctx,
-       &id](const auto &addr) -> stdx::expected<SSL_CTX *, std::error_code> {
-        return ctx.dest_ssl_ctx(id, addr.address())->get();
+      [&ctx, &id](const auto &addr)
+          -> stdx::expected<TlsClientContext *, std::error_code> {
+        return ctx.dest_ssl_ctx(id, addr.address());
       });
 }
 
@@ -844,22 +876,38 @@ ServerGreetor::tls_connect_init() {
   auto *socket_splicer = connection()->socket_splicer();
   auto *dst_channel = socket_splicer->server_channel();
 
-  auto ssl_ctx_res = get_dest_ssl_ctx(connection()->context(),
-                                      connection()->get_destination_id());
-  if (!ssl_ctx_res || ssl_ctx_res.value() == nullptr) {
+  auto tls_client_ctx_res = get_dest_ssl_ctx(
+      connection()->context(), connection()->get_destination_id());
+  if (!tls_client_ctx_res || tls_client_ctx_res.value() == nullptr ||
+      (*tls_client_ctx_res)->get() == nullptr) {
     // shouldn't happen. But if it does, close the connection.
     log_warning("failed to create SSL_CTX");
 
     return send_server_failed(make_error_code(std::errc::invalid_argument));
   }
-  dst_channel->init_ssl(*ssl_ctx_res);
+
+  auto *tls_client_ctx = *tls_client_ctx_res;
+  auto *ssl_ctx = tls_client_ctx->get();
+
+  dst_channel->init_ssl(ssl_ctx);
 
   SSL_set_app_data(dst_channel->ssl(), connection());
-  SSL_set_info_callback(dst_channel->ssl(), ssl_info_cb);
+
+  SSL_set_msg_callback(dst_channel->ssl(), ssl_msg_cb);
+  SSL_set_msg_callback_arg(dst_channel->ssl(), connection());
 
   // when a connection is taken from the pool for this client-connection, make
   // sure it is TLS again.
   connection()->requires_tls(true);
+
+  trace_event_tls_connect_ =
+      trace_span(trace_event_client_greeting_, "mysql/tls_connect");
+
+  tls_client_ctx->get_session().and_then(
+      [&](auto *sess) -> stdx::expected<void, std::error_code> {
+        SSL_set_session(dst_channel->ssl(), sess);
+        return {};
+      });
 
   stage(Stage::TlsConnect);
   return Result::Again;
@@ -950,11 +998,22 @@ ServerGreetor::tls_connect() {
     std::ostringstream oss;
     oss << "tls::connect::ok: " << SSL_get_version(ssl);
     oss << " using " << SSL_get_cipher_name(ssl);
+#if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(3, 0, 0)
+    oss << " and " << OBJ_nid2ln(SSL_get_negotiated_group(ssl));
+#endif
 
     if (SSL_session_reused(ssl) != 0) {
       oss << ", session_reused";
     }
     tr.trace(Tracer::Event().stage(oss.str()));
+  }
+
+  if (auto *ev = trace_event_tls_connect_) {
+    auto *ssl = dst_channel->ssl();
+    ev->attrs.emplace_back("tls.version", SSL_get_version(ssl));
+    ev->attrs.emplace_back("tls.cipher", SSL_get_cipher_name(ssl));
+    ev->attrs.emplace_back("tls.session_reused", SSL_session_reused(ssl) != 0);
+    trace_span_end(trace_event_tls_connect_);
   }
 
   stage(Stage::ClientGreetingAfterTls);
@@ -1008,6 +1067,10 @@ ServerGreetor::client_greeting_after_tls() {
     tr.trace(Tracer::Event().stage("client::greeting (tls)"));
   }
 
+  if (auto *ev = trace_event_client_greeting_) {
+    ev->attrs.emplace_back("db.name", client_greeting_msg.schema());
+  }
+
   if (src_protocol->password().has_value()) {
     // scramble with the server's auth-data to trigger a fast-auth.
 
@@ -1050,6 +1113,8 @@ ServerGreetor::client_greeting_after_tls() {
 
 stdx::expected<Processor::Result, std::error_code>
 ServerGreetor::initial_response() {
+  trace_span_end(trace_event_client_greeting_);
+
   connection()->push_processor(std::make_unique<AuthForwarder>(connection()));
 
   stage(Stage::FinalResponse);
@@ -1116,6 +1181,8 @@ stdx::expected<Processor::Result, std::error_code> ServerGreetor::auth_error() {
     tr.trace(Tracer::Event().stage("server::auth::error"));
   }
 
+  trace_span_end(trace_event_greeting_, TraceEvent::StatusCode::kError);
+
   stage(Stage::Error);
 
   on_error_({msg.error_code(), std::string(msg.message()),
@@ -1164,6 +1231,8 @@ stdx::expected<Processor::Result, std::error_code> ServerGreetor::auth_ok() {
 
   stage(Stage::Ok);
 
+  trace_span_end(trace_event_greeting_, TraceEvent::StatusCode::kOk);
+
   if (in_handshake_) {
     return forward_server_to_client();
   }
@@ -1197,7 +1266,7 @@ stdx::expected<Processor::Result, std::error_code>
 ServerFirstConnector::connect() {
   stage(Stage::ServerGreeting);
 
-  return socket_reconnect_start();
+  return socket_reconnect_start(nullptr);
 }
 
 stdx::expected<Processor::Result, std::error_code>
@@ -1235,7 +1304,8 @@ ServerFirstConnector::server_greeting() {
       connection(), false,
       [this](const classic_protocol::message::server::Error &err) {
         this->reconnect_error(err);
-      }));
+      },
+      nullptr));
 
   return Result::Again;
 }
@@ -1253,11 +1323,26 @@ ServerFirstConnector::server_greeted() {
     auto *src_channel = socket_splicer->client_channel();
     auto *src_protocol = connection()->client_protocol();
 
+    auto ec = reconnect_error();
+
+    if (connect_error_is_transient(ec) &&
+        std::chrono::steady_clock::now() <
+            started_ + connection()->context().connect_retry_timeout()) {
+      stage(Stage::Connect);
+
+      connection()->connect_timer().expires_after(kConnectRetryInterval);
+      connection()->connect_timer().async_wait([this](std::error_code ec) {
+        if (ec) return;
+
+        connection()->resume();
+      });
+
+      return Result::Suspend;
+    }
+
     stage(Stage::Error);
 
     if (log_level_is_handled(mysql_harness::logging::LogLevel::kDebug)) {
-      auto ec = reconnect_error();
-
       // RouterRoutingTest.RoutingTooManyServerConnections expects this
       // message.
       log_debug(
@@ -1709,20 +1794,33 @@ ServerFirstAuthenticator::tls_connect_init() {
   auto *socket_splicer = connection()->socket_splicer();
   auto *dst_channel = socket_splicer->server_channel();
 
-  auto ssl_ctx_res = get_dest_ssl_ctx(connection()->context(),
-                                      connection()->get_destination_id());
-  if (!ssl_ctx_res || ssl_ctx_res.value() == nullptr) {
+  auto tls_client_ctx_res = get_dest_ssl_ctx(
+      connection()->context(), connection()->get_destination_id());
+  if (!tls_client_ctx_res || tls_client_ctx_res.value() == nullptr ||
+      (*tls_client_ctx_res)->get() == nullptr) {
     // shouldn't happen. But if it does, close the connection.
     log_warning("failed to create SSL_CTX");
 
     return send_server_failed(make_error_code(std::errc::invalid_argument));
   }
-  dst_channel->init_ssl(*ssl_ctx_res);
+
+  auto *tls_client_ctx = *tls_client_ctx_res;
+  auto *ssl_ctx = tls_client_ctx->get();
+
+  dst_channel->init_ssl(ssl_ctx);
 
   SSL_set_app_data(dst_channel->ssl(), connection());
-  SSL_set_info_callback(dst_channel->ssl(), ssl_info_cb);
+
+  SSL_set_msg_callback(dst_channel->ssl(), ssl_msg_cb);
+  SSL_set_msg_callback_arg(dst_channel->ssl(), connection());
 
   connection()->requires_tls(true);
+
+  tls_client_ctx->get_session().and_then(
+      [&](auto *sess) -> stdx::expected<void, std::error_code> {
+        SSL_set_session(dst_channel->ssl(), sess);
+        return {};
+      });
 
   stage(Stage::TlsConnect);
   return Result::Again;
@@ -1806,6 +1904,9 @@ ServerFirstAuthenticator::tls_connect() {
     std::ostringstream oss;
     oss << "tls::connect::ok: " << SSL_get_version(ssl);
     oss << " using " << SSL_get_cipher_name(ssl);
+#if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(3, 0, 0)
+    oss << " and " << OBJ_nid2ln(SSL_get_negotiated_group(ssl));
+#endif
 
     if (SSL_session_reused(ssl) != 0) {
       oss << ", session_reused";
@@ -1954,7 +2055,8 @@ ServerFirstAuthenticator::auth_error() {
   auto msg = *msg_res;
 
   if (auto &tr = tracer()) {
-    tr.trace(Tracer::Event().stage("server::auth::error"));
+    tr.trace(Tracer::Event().stage("server::auth::error: " +
+                                   std::to_string(msg.error_code())));
   }
 
   stage(Stage::Error);  // close the server connection after the Error msg was

@@ -34,6 +34,7 @@
 #include "sql/range_optimizer/range_analysis.h"
 #include "sql/range_optimizer/range_optimizer.h"
 #include "sql/range_optimizer/tree.h"
+#include "string_with_len.h"
 #include "unittest/gunit/fake_range_opt_param.h"
 #include "unittest/gunit/fake_table.h"
 #include "unittest/gunit/handler-t.h"
@@ -1642,7 +1643,7 @@ TEST_F(OptRangeTest, RowConstructorIn2) {
   m_opt_param->add_key();
 
   // We build the expression (field_1, field_2) IN ((3, 4), (1, 2)) ...
-  PT_item_list *all_args = new (current_thd->mem_root) PT_item_list;
+  PT_item_list *all_args = new (current_thd->mem_root) PT_item_list(POS());
   all_args->push_front(new_Item_row(1, 2));
   all_args->push_front(new_Item_row(3, 4));
   all_args->push_front(new_Item_row(m_opt_param->table->field, 2));
@@ -1673,7 +1674,7 @@ TEST_F(OptRangeTest, RowConstructorIn3) {
   m_opt_param->add_key();
 
   // We build the expression (field_1, field_2) IN ((3, 4), (1, 2)) ...
-  PT_item_list *all_args = new (current_thd->mem_root) PT_item_list;
+  PT_item_list *all_args = new (current_thd->mem_root) PT_item_list(POS());
   all_args->push_front(new_Item_row(1, 2, 3));
   all_args->push_front(new_Item_row(4, 5, 6));
   all_args->push_front(new_Item_row(m_opt_param->table->field, 3));

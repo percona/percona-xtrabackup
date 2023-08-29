@@ -44,6 +44,7 @@
 #include "my_decimal.h"                    // my_decimal, my_decimal_cmp
 #include "my_inttypes.h"                   // longlong, ulonglong
 #include "my_time.h"                       // TIME_to_longlong_datetime_packed
+#include "mysql/strings/dtoa.h"            // DECIMAL_NOT_SPECIFIED
 #include "mysql/udf_registration_types.h"  // INT_RESULT, STRING_RESULT
 #include "mysql_time.h"                    // MYSQL_TIME
 #include "sql/field.h"                     // Field_real, Field
@@ -263,24 +264,23 @@ static bool analyze_int_field_constant(THD *thd, Item_field *f,
 
       if (err & E_DEC_TRUNCATED) {
         /*
-          Check for underflow, e.g. 1.7976931348623157E-308 would end up
-          as decimal 0.0, which means that the floating point values was
+          Check for underflow, e.g. 1.7976931348623157E-308 would end up as
+          decimal 0.0, which means that the floating point values was
           marginally greater than 0.0, so we "simulate" this by adding 0.1.
-          Correspondingly for negative underflow, we subtract 0.1. This is
-          OK, because we round later.
+          Correspondingly for negative underflow, we subtract 0.1. This is OK,
+          because we round later.  The value can also be truncated even if it
+          isn't quite as small as zero, but in such a case its absolute value
+          would always be smaller than 0.1, but not representable as a decimal,
+          so we use 0.1 for those as well.
         */
-        my_decimal n;
-        err = int2my_decimal(E_DEC_FATAL_ERROR, 0, false, &n);
-        assert(err == 0);
-        assert(my_decimal_cmp(&n, &dec) == 0);
         if (v > 0) {
           // underflow on the positive side
-          String s("0.1", thd->charset());
+          const String s("0.1", thd->charset());
           err = str2my_decimal(E_DEC_FATAL_ERROR, s.ptr(), s.length(),
                                s.charset(), &dec);
           assert(err == 0);
         } else {
-          String s("-0.1", thd->charset());
+          const String s("-0.1", thd->charset());
           err = str2my_decimal(E_DEC_FATAL_ERROR, s.ptr(), s.length(),
                                s.charset(), &dec);
           assert(err == 0);
@@ -500,7 +500,7 @@ static bool analyze_decimal_field_constant(THD *thd, const Item_field *f,
     } break;
     case REAL_RESULT: {
       my_decimal val_dec;
-      double v = (*const_val)->val_real();
+      const double v = (*const_val)->val_real();
       err = double2decimal(v, &val_dec);
 
       if (err & E_DEC_OVERFLOW) {
@@ -862,8 +862,8 @@ static bool analyze_timestamp_field_constant(THD *thd, const Item_field *f,
               false, MYSQL_TIMESTAMP_DATETIME);
 
           /* '1970-01-01 00:00:01.[000000]' */
-          MYSQL_TIME min_timestamp = my_time_set(1970, 1, 1, 0, 0, 1, 0, false,
-                                                 MYSQL_TIMESTAMP_DATETIME);
+          const MYSQL_TIME min_timestamp = my_time_set(
+              1970, 1, 1, 0, 0, 1, 0, false, MYSQL_TIMESTAMP_DATETIME);
 
           // We store in UTC, so use as is
           const longlong max_t =

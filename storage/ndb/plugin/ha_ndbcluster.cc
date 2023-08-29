@@ -35,9 +35,11 @@
 #include <sstream>
 #include <string>
 
-#include "m_ctype.h"
 #include "my_config.h"  // WORDS_BIGENDIAN
 #include "my_dbug.h"
+#include "mysql/psi/mysql_thread.h"
+#include "mysql/strings/m_ctype.h"
+#include "nulls.h"
 #include "sql/current_thd.h"
 #include "sql/debug_sync.h"  // DEBUG_SYNC
 #include "sql/derror.h"      // ER_THD
@@ -105,6 +107,8 @@
 #include "storage/ndb/src/common/util/parse_mask.hpp"
 #include "storage/ndb/src/ndbapi/NdbQueryBuilder.hpp"
 #include "storage/ndb/src/ndbapi/NdbQueryOperation.hpp"
+#include "string_with_len.h"
+#include "strxnmov.h"
 #include "template_utils.h"
 
 typedef NdbDictionary::Column NDBCOL;

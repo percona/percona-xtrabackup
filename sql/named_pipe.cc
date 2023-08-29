@@ -29,11 +29,14 @@
 #include <mysql/components/services/log_builtins.h>
 #include "my_config.h"
 #include "my_sys.h"
+#include "mysql/strings/int2str.h"
 #include "mysqld_error.h"
+#include "nulls.h"
 #include "sql/current_thd.h"
 #include "sql/log.h"
 #include "sql/mysqld.h"
 #include "sql/sql_error.h"
+#include "strxnmov.h"
 
 bool is_existing_windows_group_name(const char *group_name) {
   // First, let's get a SID for the given group name...
@@ -87,7 +90,7 @@ static bool check_windows_group_for_everyone(const char *group_name,
     }
 
     if (!CreateWellKnownSid(WinWorldSid, NULL, worldSID, &size_world_sid)) {
-      DWORD last_error_num = GetLastError();
+      const DWORD last_error_num = GetLastError();
       FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
                     NULL, last_error_num,
                     MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), last_error_msg,
@@ -153,7 +156,7 @@ bool my_security_attr_add_rights_to_group(SECURITY_ATTRIBUTES *psa,
   // as a special case: we  convert it to the "world" SID
   if (strcmp(group_name, NAMED_PIPE_FULL_ACCESS_GROUP_EVERYONE) == 0) {
     if (!CreateWellKnownSid(WinWorldSid, NULL, soughtSID, &size_sid)) {
-      DWORD last_error_num = GetLastError();
+      const DWORD last_error_num = GetLastError();
       FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
                     NULL, last_error_num,
                     MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), last_error_msg,
@@ -169,7 +172,7 @@ bool my_security_attr_add_rights_to_group(SECURITY_ATTRIBUTES *psa,
     if (!LookupAccountName(NULL, group_name, soughtSID, &size_sid,
                            referencedDomainName, &size_referencedDomainName,
                            &sid_name_use)) {
-      DWORD last_error_num = GetLastError();
+      const DWORD last_error_num = GetLastError();
       FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
                     NULL, last_error_num,
                     MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), last_error_msg,
@@ -197,7 +200,7 @@ bool my_security_attr_add_rights_to_group(SECURITY_ATTRIBUTES *psa,
                                  &dacl_present_in_descriptor, &pOldDACL,
                                  &dacl_defaulted) ||
       !dacl_present_in_descriptor) {
-    DWORD last_error_num = GetLastError();
+    const DWORD last_error_num = GetLastError();
     FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
                   NULL, last_error_num,
                   MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), last_error_msg,
@@ -231,7 +234,7 @@ bool my_security_attr_add_rights_to_group(SECURITY_ATTRIBUTES *psa,
 
   // Create a new ACL that merges the new ACE
   // into the existing DACL.
-  DWORD dwRes = SetEntriesInAcl(1, &ea, pOldDACL, &pNewDACL);
+  const DWORD dwRes = SetEntriesInAcl(1, &ea, pOldDACL, &pNewDACL);
   if (ERROR_SUCCESS != dwRes) {
     char num_buff[20];
     longlong10_to_str(dwRes, num_buff, 10);
@@ -244,7 +247,7 @@ bool my_security_attr_add_rights_to_group(SECURITY_ATTRIBUTES *psa,
   // Apply the new DACL to the existing security descriptor...
   if (!SetSecurityDescriptorDacl(psa->lpSecurityDescriptor, TRUE, pNewDACL,
                                  FALSE)) {
-    DWORD last_error_num = GetLastError();
+    const DWORD last_error_num = GetLastError();
     FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
                   NULL, last_error_num,
                   MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), last_error_msg,
@@ -312,7 +315,7 @@ HANDLE create_server_named_pipe(SECURITY_ATTRIBUTES **ppsec_attr,
       buffer_size, buffer_size, NMPWAIT_USE_DEFAULT_WAIT, *ppsec_attr);
 
   if (ret_handle == INVALID_HANDLE_VALUE) {
-    DWORD last_error_num = GetLastError();
+    const DWORD last_error_num = GetLastError();
 
     if (last_error_num == ERROR_ACCESS_DENIED) {
       /*

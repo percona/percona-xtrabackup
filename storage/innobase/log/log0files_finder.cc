@@ -379,7 +379,11 @@ Log_files_find_result log_files_find_and_analyze(
       ever introduce more possibilities, then we need to update
       the error message. */
       ut_ad(log_file_header_check_flag(log_flags, LOG_HEADER_FLAG_NO_LOGGING));
+#ifdef XTRABACKUP
+      ib::error() << "Redo logging is disabled, cannot take consistent backup";
+#else
       ib::error(ER_IB_ERR_RECOVERY_REDO_DISABLED);
+#endif
       return Log_files_find_result::FOUND_DISABLED_FILES;
     }
   }

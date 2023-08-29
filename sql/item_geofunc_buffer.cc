@@ -50,13 +50,14 @@
 #include <boost/geometry/strategies/strategies.hpp>
 #include <boost/iterator/iterator_facade.hpp>
 
-#include "m_ctype.h"
 #include "m_string.h"
 #include "my_byteorder.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysqld_error.h"
+#include "nulls.h"
 #include "sql/current_thd.h"
 #include "sql/dd/cache/dictionary_client.h"
 #include "sql/dd/types/spatial_reference_system.h"
@@ -156,7 +157,8 @@ String *Item_func_buffer_strategy::val_str(String * /* str_arg */) {
 
     int4store(result_buf, i);
     result_buf += 4;
-    enum_buffer_strategies istrat = static_cast<enum_buffer_strategies>(i);
+    const enum_buffer_strategies istrat =
+        static_cast<enum_buffer_strategies>(i);
 
     /*
       The end_flat and point_square strategies must have no more arguments;
@@ -170,7 +172,7 @@ String *Item_func_buffer_strategy::val_str(String * /* str_arg */) {
         return error_str();
       }
 
-      double val = args[1]->val_real();
+      const double val = args[1]->val_real();
       if ((null_value = args[1]->null_value)) {
         assert(is_nullable());
         return nullptr;

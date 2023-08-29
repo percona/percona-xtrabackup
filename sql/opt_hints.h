@@ -32,16 +32,16 @@
 #include <sys/types.h>
 
 #include "lex_string.h"
-#include "m_ctype.h"
-#include "m_string.h"
 #include "my_compiler.h"
 
 #include "my_inttypes.h"
+#include "mysql/strings/m_ctype.h"
 #include "sql/enum_query_type.h"
 #include "sql/mem_root_array.h"  // Mem_root_array
 #include "sql/sql_bitmap.h"      // Bitmap
 #include "sql/sql_show.h"        // append_identifier
 #include "sql_string.h"          // String
+#include "string_with_len.h"
 
 enum class Subquery_strategy : int;
 class Item;
@@ -381,8 +381,8 @@ class Opt_hints_qb : public Opt_hints {
   ulonglong join_order_hints_ignored;
 
   /*
-    PT_qb_level_hint::contextualize sets subquery/semijoin_hint during parsing.
-    it also registers join order hints during parsing.
+    PT_qb_level_hint::do_contextualize sets subquery/semijoin_hint during
+    parsing. it also registers join order hints during parsing.
   */
   friend class PT_qb_level_hint;
 

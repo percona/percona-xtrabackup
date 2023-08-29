@@ -2,12 +2,12 @@
 .\"     Title: mysqlpump
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 06/02/2023
+.\"      Date: 06/20/2023
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 8.0
+.\"    Source: MySQL 8.1
 .\"  Language: English
 .\"
-.TH "MYSQLPUMP" "1" "06/02/2023" "MySQL 8\&.0" "MySQL Database System"
+.TH "MYSQLPUMP" "1" "06/20/2023" "MySQL 8\&.1" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -118,7 +118,7 @@ logical backups, producing a set of SQL statements that can be executed to repro
 .br
 .PP
 \fBmysqlpump\fR
-is deprecated as of MySQL 8\&.0\&.34; expect it to be removed in a future version of MySQL\&. You can use such MySQL programs as
+is deprecated as of MySQL 8\&.0\&.34 / 8\&.1\&.0; expect it to be removed in a future version of MySQL\&. You can use such MySQL programs as
 \fBmysqldump\fR
 and MySQL Shell to perform logical backups, dump databases, and similar tasks instead\&.
 .sp .5v
@@ -403,14 +403,11 @@ supports the following options, which can be specified on the command line or in
 [mysqlpump]
 and
 [client]
-groups of an option file\&. (Prior to MySQL 8\&.0\&.20,
+groups of an option file\&.
 \fBmysqlpump\fR
-read the
+also reads the
 [mysql_dump]
-group rather than
-[mysqlpump]\&. As of 8\&.0\&.20,
-[mysql_dump]
-is still accepted but is deprecated\&.) For information about option files used by MySQL programs, see
+group but this behavior is deprecated\&. For information about option files used by MySQL programs, see
 Section\ \&4.2.2.2, \(lqUsing Option Files\(rq\&.
 mysqlpump Option Descriptions
 .sp
@@ -453,7 +450,7 @@ statement\&.
 \fBNote\fR
 .ps -1
 .br
-In MySQL 8\&.0, the
+In MySQL 8\&.1, the
 mysql
 schema is considered a system schema that cannot be dropped by end users\&. If
 \fB\-\-add\-drop\-database\fR
@@ -570,7 +567,7 @@ description for information about an incompatibility of that option with
 \fB\-\-all\-databases\fR\&.
 .sp .5v
 .RE
-Prior to MySQL 8\&.0, the
+Prior to MySQL 8\&.1, the
 \fB\-\-routines\fR
 and
 \fB\-\-events\fR
@@ -586,7 +583,7 @@ system database, and therefore also the
 mysql\&.proc
 and
 mysql\&.event
-tables containing stored routine and event definitions\&. As of MySQL 8\&.0, the
+tables containing stored routine and event definitions\&. As of MySQL 8\&.1, the
 mysql\&.event
 and
 mysql\&.proc
@@ -664,7 +661,7 @@ statements that include column names\&.
 Compress all information sent between the client and the server if possible\&. See
 Section\ \&4.2.8, \(lqConnection Compression Control\(rq\&.
 .sp
-As of MySQL 8\&.0\&.18, this option is deprecated\&. Expect it to be removed in a future version of MySQL\&. See
+This option is deprecated\&. Expect it to be removed in a future version of MySQL\&. See
 the section called \(lqConfiguring Legacy Connection Compression\(rq\&.
 .RE
 .sp
@@ -719,8 +716,6 @@ uncompressed\&.
 .sp
 For more information, see
 Section\ \&4.2.8, \(lqConnection Compression Control\(rq\&.
-.sp
-This option was added in MySQL 8\&.0\&.18\&.
 .RE
 .sp
 .RS 4
@@ -1848,7 +1843,7 @@ Do not dump table rows\&.
 .IP \(bu 2.3
 .\}
 \fB\-\-skip\-generated\-invisible\-primary\-key\fR
-This option is available beginning with MySQL 8\&.0\&.30, and causes generated invisible primary keys (GIPKs) to be excluded from the dump\&. See
+This option causes generated invisible primary keys (GIPKs) to be excluded from the dump\&. See
 Section\ \&13.1.20.11, \(lqGenerated Invisible Primary Keys\(rq, for more information about GIPKs and GIPK mode\&.
 .RE
 .sp
@@ -1966,7 +1961,7 @@ STRICT
 causes the client to produce a warning at startup and to operate in non\-FIPS mode\&.
 .sp .5v
 .RE
-As of MySQL 8\&.0\&.34, this option is deprecated\&. Expect it to be removed in a future version of MySQL\&.
+This option is deprecated\&. Expect it to be removed in a future version of MySQL\&.
 .RE
 .sp
 .RS 4
@@ -1980,8 +1975,27 @@ As of MySQL 8\&.0\&.34, this option is deprecated\&. Expect it to be removed in 
 \fB\-\-tls\-ciphersuites=\fR\fB\fIciphersuite_list\fR\fR
 The permissible ciphersuites for encrypted connections that use TLSv1\&.3\&. The value is a list of one or more colon\-separated ciphersuite names\&. The ciphersuites that can be named for this option depend on the SSL library used to compile MySQL\&. For details, see
 Section\ \&6.3.2, \(lqEncrypted Connection TLS Protocols and Ciphers\(rq\&.
+.RE
 .sp
-This option was added in MySQL 8\&.0\&.16\&.
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-tls\-sni\-servername=\fR\fB\fIserver_name\fR\fR
+When specified, the name is passed to the
+libmysqlclient
+C API library using the
+MYSQL_OPT_TLS_SNI_SERVERNAME
+option of
+mysql_options()\&. The server name is not case\-sensitive\&. To show which server name the client specified for the current session, if any, check the
+Tls_sni_server_name
+status variable\&.
+.sp
+Server Name Indication (SNI) is an extension to the TLS protocol (OpenSSL must be compiled using TLS extensions for this option to function)\&. The MySQL implementation of SNI represents the client\-side only\&.
 .RE
 .sp
 .RS 4
@@ -2053,7 +2067,7 @@ The user name of the MySQL account to use for connecting to the server\&.
 .sp
 If you are using the
 Rewriter
-plugin with MySQL 8\&.0\&.31 or later, you should grant this user the
+plugin, you should grant this user the
 SKIP_QUERY_REWRITE
 privilege\&.
 .RE
@@ -2142,8 +2156,6 @@ compression\&.
 .sp
 For more information, see
 Section\ \&4.2.8, \(lqConnection Compression Control\(rq\&.
-.sp
-This option was added in MySQL 8\&.0\&.18\&.
 .RE
 mysqlpump Object Selection
 .PP

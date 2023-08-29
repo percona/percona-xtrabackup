@@ -24,7 +24,6 @@
 
 #include <utility>
 
-#include "m_string.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
@@ -33,6 +32,7 @@
 #include "sql/mdl.h"
 #include "sql/system_variables.h"
 #include "sql_class.h"  // THD
+#include "string_with_len.h"
 
 /**
   Check if a current user has the privilege BACKUP_ADMIN required to run
@@ -175,13 +175,13 @@ void release_backup_lock(THD *thd) {
 
 bool acquire_exclusive_backup_lock(THD *thd, ulong lock_wait_timeout,
                                    bool for_trx) {
-  enum_mdl_duration duration = (for_trx ? MDL_TRANSACTION : MDL_EXPLICIT);
+  const enum_mdl_duration duration = (for_trx ? MDL_TRANSACTION : MDL_EXPLICIT);
   return acquire_mdl_for_backup(thd, MDL_SHARED, duration, lock_wait_timeout);
 }
 
 bool acquire_shared_backup_lock(THD *thd, ulong lock_wait_timeout,
                                 bool for_trx) {
-  enum_mdl_duration duration = (for_trx ? MDL_TRANSACTION : MDL_EXPLICIT);
+  const enum_mdl_duration duration = (for_trx ? MDL_TRANSACTION : MDL_EXPLICIT);
   return acquire_mdl_for_backup(thd, MDL_INTENTION_EXCLUSIVE, duration,
                                 lock_wait_timeout);
 }

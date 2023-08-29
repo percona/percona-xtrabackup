@@ -61,6 +61,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "os0event.h"
 #include "rpl_log_encryption.h"
 #include "space_map.h"
+#include "strmake.h"
 #include "typelib.h"
 #include "utils.h"
 #include "xb0xb.h"
@@ -70,6 +71,8 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "backup_mysql.h"
 #include "fsp0fsp.h"
 #include "xb_regex.h"
+
+extern bool opt_no_server_version_check;
 
 /** Possible values for system variable "innodb_checksum_algorithm". */
 extern const char *innodb_checksum_algorithm_names[];
@@ -354,6 +357,7 @@ static bool check_server_version(unsigned long version_number,
   bool version_supported = false;
   bool mysql51 = false;
   bool pxb24 = false;
+  bool pxb80 = false;
 
   mysql_server_version = version_number;
 
@@ -367,29 +371,63 @@ static bool check_server_version(unsigned long version_number,
     server_flavor = FLAVOR_MYSQL;
   }
 
+  if (server_flavor == FLAVOR_MARIADB) {
+    xb::error()
+        << "This version of Percona XtraBackup does not support MariaDB";
+    return false;
+  }
+
+  DBUG_EXECUTE_IF("simulate_lower_version", version_number = 80499;);
+
+  /* PXB 8.1 supports server version 8.1.0 until 8.1.99 */
   version_supported =
-      version_supported || (version_number > 80000 && version_number <= 80099);
+      version_supported || (version_number >= 80100 && version_number <= 80199);
 
   mysql51 = version_number > 50100 && version_number < 50500;
   pxb24 = pxb24 || (mysql51 && innodb_version != NULL);
   pxb24 = pxb24 || (version_number > 50500 && version_number < 50800);
   pxb24 = pxb24 || ((version_number > 100000 && version_number < 100300) &&
                     server_flavor == FLAVOR_MARIADB);
+  pxb80 = pxb80 || (version_number > 80000 && version_number < 80100);
 
   if (!version_supported) {
     xb::error() << "Unsupported server version: " << SQUOTE(version_string);
     xb::error()
         << "This version of Percona XtraBackup can only perform backups and "
-           "restores against MySQL 8.0 and Percona Server 8.0";
+           "restores against MySQL and Percona Server 8.1";
     if (mysql51 && innodb_version == NULL) {
       xb::error()
           << "You can use Percona XtraBackup 2.0 for MySQL 5.1 with built-in "
              "InnoDB, or upgrade to InnoDB plugin and use Percona XtraBackup "
              "2.4.";
+      return false;
     }
     if (pxb24) {
       xb::info() << "Please use Percona XtraBackup 2.4 for this database.";
+      return false;
     }
+    if (pxb80) {
+      xb::info() << "Please use Percona XtraBackup 8.0 for this database.";
+      return false;
+    }
+
+    auto pxb_base_ver =
+        xtrabackup::utils::get_version_number(MYSQL_SERVER_VERSION);
+
+    if (pxb_base_ver < version_number && version_number >= 80100 &&
+        version_number <= 80499) {
+      if (!opt_no_server_version_check) {
+        xb::error()
+            << "Please upgrade PXB, if a new "
+               "version is available. To continue with risk, use the option "
+               "--no-server-version-check.";
+        return false;
+      } else {
+        return true;
+      }
+    }
+
+    return (version_supported);
     return false;
   }
 

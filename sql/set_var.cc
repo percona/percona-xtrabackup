@@ -31,19 +31,21 @@
 #include <string_view>
 #include <utility>
 
-#include "m_ctype.h"
 #include "m_string.h"
 #include "map_helpers.h"
 #include "my_dbug.h"
 #include "my_io.h"
-#include "my_loglevel.h"
 #include "my_sys.h"
 #include "mysql/components/services/bits/psi_bits.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/components/services/log_shared.h"
+#include "mysql/my_loglevel.h"
 #include "mysql/plugin_audit.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_rwlock.h"
+#include "mysql/strings/dtoa.h"
+#include "mysql/strings/int2str.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysqld_error.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // SUPER_ACL, generate_password
@@ -74,6 +76,8 @@
 #include "sql/table.h"             // table
 #include "sql/thd_raii.h"          // Prepared_stmt_arena_holder
 #include "sql_string.h"
+#include "string_with_len.h"
+#include "strxnmov.h"
 
 using std::min;
 using std::string;
@@ -111,7 +115,7 @@ bool get_sysvar_source(const char *name, uint length,
   assert(get_static_system_variable_hash() != nullptr);
   assert(get_dynamic_system_variable_hash() != nullptr);
 
-  std::string str{name, length};
+  const std::string str{name, length};
   sys_var *sysvar = find_or_nullptr(*get_static_system_variable_hash(), str);
   if (sysvar != nullptr) {
     *source = sysvar->get_source();
@@ -341,7 +345,7 @@ bool sys_var::update(THD *thd, set_var *var) {
   */
   if (pre_update && pre_update(this, thd, var)) return true;
 
-  enum_var_type type = var->type;
+  const enum_var_type type = var->type;
   if (type == OPT_GLOBAL || type == OPT_PERSIST || scope() == GLOBAL) {
     /*
       Yes, both locks need to be taken before an update, just as
@@ -349,16 +353,16 @@ bool sys_var::update(THD *thd, set_var *var) {
       then value_ptr() for strings won't be safe in SHOW VARIABLES anymore,
       to make it safe we'll need value_ptr_unlock().
     */
-    AutoWLock lock1(&PLock_global_system_variables);
-    AutoWLock lock2(guard);
+    const AutoWLock lock1(&PLock_global_system_variables);
+    const AutoWLock lock2(guard);
     return global_update(thd, var) ||
            (on_update && on_update(this, thd, OPT_GLOBAL));
   } else {
     /* Block reads from other threads. */
     mysql_mutex_lock(&thd->LOCK_thd_sysvar);
 
-    bool ret = session_update(thd, var) ||
-               (on_update && on_update(this, thd, OPT_SESSION));
+    const bool ret = session_update(thd, var) ||
+                     (on_update && on_update(this, thd, OPT_SESSION));
 
     mysql_mutex_unlock(&thd->LOCK_thd_sysvar);
 
@@ -415,7 +419,7 @@ bool sys_var::check(THD *thd, set_var *var) {
         str.set(STRING_WITH_LEN("NULL"), &my_charset_latin1);
         res = &str;
       }
-      ErrConvString err(res);
+      const ErrConvString err(res);
       my_error(ER_WRONG_VALUE_FOR_VAR, MYF(0), name.str, err.ptr());
     }
     return true;
@@ -428,7 +432,7 @@ const uchar *sys_var::value_ptr(THD *running_thd, THD *target_thd,
                                 std::string_view keycache_name) {
   if (type == OPT_GLOBAL || type == OPT_PERSIST || scope() == GLOBAL) {
     mysql_mutex_assert_owner(&LOCK_global_system_variables);
-    AutoRLock lock(guard);
+    const AutoRLock lock(guard);
     return global_value_ptr(running_thd, keycache_name);
   } else
     return session_value_ptr(running_thd, target_thd, keycache_name);
@@ -446,7 +450,7 @@ bool sys_var::set_default(THD *thd, set_var *var) {
   else
     session_save_default(thd, var);
 
-  bool ret = check(thd, var) || update(thd, var);
+  const bool ret = check(thd, var) || update(thd, var);
   return ret;
 }
 
@@ -482,9 +486,9 @@ void sys_var::do_deprecated_warning(THD *thd) {
        if deprecation_substitute is an empty string,
        there is no replacement for the syntax
     */
-    uint errmsg = deprecation_substitute[0] == '\0'
-                      ? ER_DEPRECATE_MSG_NO_REPLACEMENT
-                      : ER_DEPRECATE_MSG_WITH_REPLACEMENT;
+    const uint errmsg = deprecation_substitute[0] == '\0'
+                            ? ER_DEPRECATE_MSG_NO_REPLACEMENT
+                            : ER_DEPRECATE_MSG_WITH_REPLACEMENT;
     if (thd)
       push_warning_printf(
           thd, Sql_condition::SL_WARNING, ER_WARN_DEPRECATED_SYNTAX,
@@ -645,7 +649,7 @@ System_variable_tracker::System_variable_tracker(Keycache,
   assert(var->is_struct());
 
   m_keycache.m_keycache_var = var;
-  std::string_view keycache_property_name{to_string_view(var->name)};
+  const std::string_view keycache_property_name{to_string_view(var->name)};
   if (cache_name.empty()) {
     m_keycache.m_keycache_name_size = 0;
     copy_name(m_keycache.m_keycache_var_name, keycache_property_name);
@@ -899,9 +903,9 @@ System_variable_tracker System_variable_tracker::make_tracker(
   if (dot_position == multipart_name.npos) {  // the name is not dot-separated
     return make_tracker({}, multipart_name);
   }
-  std::string_view prefix{multipart_name.data(), dot_position};
-  std::string_view suffix{multipart_name.data() + dot_position + 1,
-                          multipart_name.size() - dot_position - 1};
+  const std::string_view prefix{multipart_name.data(), dot_position};
+  const std::string_view suffix{multipart_name.data() + dot_position + 1,
+                                multipart_name.size() - dot_position - 1};
   return make_tracker(prefix, suffix);
 }
 
@@ -1112,7 +1116,7 @@ bool System_variable_tracker::enumerate_sys_vars(
     System_variable_tracker::Array *output) {
   assert(output != nullptr);
   assert(query_scope == OPT_SESSION || query_scope == OPT_GLOBAL);
-  int count = get_system_variable_count();
+  const int count = get_system_variable_count();
 
   /* Resize array if necessary. */
   if (output->reserve(count + 1)) return true;
@@ -1284,7 +1288,9 @@ void System_variable_tracker::cache_metadata(THD *thd, sys_var *v) const {
   if (m_cache.has_value()) {
     return;
   }
-  m_cache = Cache{v->show_type(), v->is_sensitive()};
+  m_cache = Cache{
+      v->show_type(), v->is_sensitive(),
+      v->is_persist_readonly() || v->is_readonly() || v->is_parse_early()};
   if (v->is_sensitive()) {
     thd->lex->set_rewrite_required();
   }
@@ -1344,14 +1350,14 @@ sys_var *find_dynamic_system_variable(const std::string &name) {
 */
 
 sys_var *intern_find_sys_var(const char *str, size_t length) {
-  std::string name{str, length ? length : strlen(str)};
+  const std::string name{str, length ? length : strlen(str)};
   sys_var *var = find_static_system_variable(name);
   if (var != nullptr) {
     return var;
   }
   DBUG_EXECUTE_IF(
       "check_intern_find_sys_var_lock", if (current_thd) {
-        int err = mysql_rwlock_trywrlock(&LOCK_system_variables_hash);
+        const int err = mysql_rwlock_trywrlock(&LOCK_system_variables_hash);
         assert(err == EBUSY || err == EDEADLK);
       });
   return find_dynamic_system_variable(name);
@@ -1422,7 +1428,7 @@ int sql_set_variables(THD *thd, List<set_var_base> *var_list, bool opened) {
     lex->using_hypergraph_optimizer =
         thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER);
 
-    Prepared_stmt_arena_holder ps_arena_holder(thd);
+    const Prepared_stmt_arena_holder ps_arena_holder(thd);
     while ((var = it++)) {
       if ((error = var->resolve(thd))) goto err;
     }
@@ -1438,6 +1444,71 @@ int sql_set_variables(THD *thd, List<set_var_base> *var_list, bool opened) {
   it.rewind();
   while ((var = it++)) {
     if ((error = var->check(thd))) goto err;
+
+    set_var *setvar = dynamic_cast<set_var *>(var);
+    if (setvar &&
+        (setvar->type == OPT_PERSIST || setvar->type == OPT_PERSIST_ONLY) &&
+        setvar->m_var_tracker.cached_is_applied_as_command_line()) {
+      /*
+        There are certain variables that can process NULL as a default value
+        TODO: there should be no exceptions!
+      */
+      static const std::set<std::string> exceptions = {
+          "basedir",
+          "character_sets_dir",
+          "ft_stopword_file",
+          "lc_messages_dir",
+          "plugin_dir",
+          "relay_log",
+          "relay_log_info_file",
+          "replica_load_tmpdir",
+          "socket",
+          "tmpdir",
+          "init_file",
+          "admin_ssl_ca",
+          "admin_ssl_capath",
+          "admin_ssl_cert",
+          "admin_ssl_cipher",
+          "admin_tls_ciphersuites",
+          "admin_ssl_key",
+          "admin_ssl_crl",
+          "admin_ssl_crlpath",
+          "ssl_ca",
+          "ssl_capath",
+          "ssl_cert",
+          "ssl_cipher",
+          "tls_ciphersuites",
+          "ssl_key",
+          "ssl_crl",
+          "ssl_crlpath",
+          "group_replication_recovery_tls_ciphersuites"};
+
+      if (setvar->value && setvar->value->is_null() &&
+          exceptions.find(setvar->m_var_tracker.get_var_name()) ==
+              exceptions.end()) {
+        /* an explicit NULL value */
+        my_error(ER_NULL_CANT_BE_PERSISTED_FOR_READONLY, MYF(0),
+                 setvar->m_var_tracker.get_var_name());
+        error = 1;
+        goto err;
+      } else if (!setvar->value &&
+                 setvar->m_var_tracker.cached_show_type() == SHOW_CHAR_PTR &&
+                 exceptions.find(setvar->m_var_tracker.get_var_name()) ==
+                     exceptions.end()) {
+        /* SET = DEFAULT for a CHARPTR variable, check the default value */
+        auto f = [&error](const System_variable_tracker &, sys_var *lvar) {
+          assert(lvar->show_type() == SHOW_CHAR_PTR);
+          char *ptr = (char *)(intptr)lvar->get_option()->def_value;
+          if (!ptr) {
+            my_error(ER_NULL_CANT_BE_PERSISTED_FOR_READONLY, MYF(0),
+                     lvar->name.str);
+            error = 1;
+          }
+        };
+        setvar->m_var_tracker.access_system_variable(thd, f);
+        if (error) goto err;
+      }
+    }
   }
   if ((error = thd->is_error())) goto err;
 
@@ -1593,7 +1664,8 @@ int set_var::resolve(THD *thd) {
       }
     }
     if (!var->check_scope(type)) {
-      int err = (is_global_persist()) ? ER_LOCAL_VARIABLE : ER_GLOBAL_VARIABLE;
+      const int err =
+          (is_global_persist()) ? ER_LOCAL_VARIABLE : ER_GLOBAL_VARIABLE;
       my_error(err, MYF(0), var->name.str);
       return -1;
     }
@@ -1679,9 +1751,10 @@ int set_var::check(THD *thd) {
           .value_or(-1);
 
   if (!ret && (is_global_persist())) {
-    ret = mysql_audit_notify(thd, AUDIT_EVENT(MYSQL_AUDIT_GLOBAL_VARIABLE_SET),
-                             m_var_tracker.get_var_name(),
-                             value->item_name.ptr(), value->item_name.length());
+    ret = mysql_event_tracking_global_variable_notify(
+        thd, AUDIT_EVENT(EVENT_TRACKING_GLOBAL_VARIABLE_SET),
+        m_var_tracker.get_var_name(), value->item_name.ptr(),
+        value->item_name.length());
   }
 
   return ret;
@@ -1702,7 +1775,8 @@ int set_var::check(THD *thd) {
 int set_var::light_check(THD *thd) {
   auto f = [this](const System_variable_tracker &, sys_var *var) -> bool {
     if (!var->check_scope(type)) {
-      int err = (is_global_persist()) ? ER_LOCAL_VARIABLE : ER_GLOBAL_VARIABLE;
+      const int err =
+          (is_global_persist()) ? ER_LOCAL_VARIABLE : ER_GLOBAL_VARIABLE;
       my_error(err, MYF(0), var->name.str);
       return true;
     }
@@ -2016,13 +2090,14 @@ int set_var_collation_client::update(THD *thd) {
 
   /* Mark client collation variables as changed */
   if (thd->session_tracker.get_tracker(SESSION_SYSVARS_TRACKER)->is_enabled()) {
-    LEX_CSTRING cs_client = {STRING_WITH_LEN("character_set_client")};
+    const LEX_CSTRING cs_client = {STRING_WITH_LEN("character_set_client")};
     thd->session_tracker.get_tracker(SESSION_SYSVARS_TRACKER)
         ->mark_as_changed(thd, cs_client);
-    LEX_CSTRING cs_results = {STRING_WITH_LEN("character_set_results")};
+    const LEX_CSTRING cs_results = {STRING_WITH_LEN("character_set_results")};
     thd->session_tracker.get_tracker(SESSION_SYSVARS_TRACKER)
         ->mark_as_changed(thd, cs_results);
-    LEX_CSTRING cs_connection = {STRING_WITH_LEN("character_set_connection")};
+    const LEX_CSTRING cs_connection = {
+        STRING_WITH_LEN("character_set_connection")};
     thd->session_tracker.get_tracker(SESSION_SYSVARS_TRACKER)
         ->mark_as_changed(thd, cs_connection);
   }

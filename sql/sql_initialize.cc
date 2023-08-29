@@ -28,15 +28,14 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include "m_ctype.h"
-
 #include "my_dir.h"
 #include "my_inttypes.h"
 #include "my_io.h"
-#include "my_loglevel.h"
 #include "my_rnd.h"
 #include "my_sys.h"
 #include "mysql/components/services/log_builtins.h"
+#include "mysql/my_loglevel.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysqld_error.h"
 #include "scripts/sql_commands_help_data.h"
 #include "scripts/sql_commands_system_data.h"
@@ -147,7 +146,7 @@ bool Compiled_in_command_iterator::begin(void) {
   } else {
     char password[GENERATED_PASSWORD_LENGTH + 1];
     char escaped_password[GENERATED_PASSWORD_LENGTH * 2 + 1];
-    ulong saved_verbosity = log_error_verbosity;
+    const ulong saved_verbosity = log_error_verbosity;
 
     if (generate_password(password, GENERATED_PASSWORD_LENGTH)) {
       LogErr(ERROR_LEVEL, ER_INIT_FAILED_TO_GENERATE_ROOT_PASSWORD);
@@ -225,7 +224,7 @@ void Compiled_in_command_iterator::end(void) {
 */
 bool initialize_create_data_directory(const char *data_home) {
   MY_DIR *dir;
-  int flags =
+  const int flags =
 #ifdef _WIN32
       0
 #else

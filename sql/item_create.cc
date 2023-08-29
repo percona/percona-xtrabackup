@@ -46,12 +46,14 @@
 
 #include "decimal.h"
 #include "field_types.h"
-#include "m_ctype.h"
 #include "m_string.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "my_time.h"
+#include "mysql/strings/dtoa.h"
+#include "mysql/strings/m_ctype.h"
+#include "mysql/strings/my_strtoll10.h"
 #include "mysql/udf_registration_types.h"
 #include "mysql_time.h"
 #include "mysqld_error.h"
@@ -127,7 +129,7 @@ namespace {
   @see Function_factory::create_func()
 */
 constexpr auto MAX_ARGLIST_SIZE =
-    std::numeric_limits<decltype(PT_item_list().elements())>::max();
+    std::numeric_limits<decltype(PT_item_list(POS()).elements())>::max();
 
 /**
   Instantiates a function class with the list of arguments.
@@ -1001,7 +1003,7 @@ uint arglist_length(const PT_item_list *args) {
 bool check_argcount_bounds(THD *, LEX_STRING function_name,
                            PT_item_list *item_list, uint min_argcount,
                            uint max_argcount) {
-  uint argcount = arglist_length(item_list);
+  const uint argcount = arglist_length(item_list);
   if (argcount < min_argcount || argcount > max_argcount) {
     my_error(ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT, MYF(0), function_name.str);
     return true;
@@ -1178,7 +1180,7 @@ Item *Create_udf_func::create(THD *thd, udf_func *udf,
   assert((udf->type == UDFTYPE_FUNCTION) || (udf->type == UDFTYPE_AGGREGATE));
 
   Item *func = nullptr;
-  POS pos{};
+  const POS pos{};
 
   switch (udf->returns) {
     case STRING_RESULT:
@@ -1837,7 +1839,6 @@ Item *create_func_cast(THD *thd, const POS &pos, Item *a,
   expressions, and Items performing CAST-like tasks, such as JSON_VALUE.
 
   @param thd        thread handler
-  @param pos        the location of the expression
   @param arg        the value to cast
   @param cast_type  the target type of the cast
   @param as_array   true if the target type is an array type
@@ -1845,11 +1846,15 @@ Item *create_func_cast(THD *thd, const POS &pos, Item *a,
   @param[out] precision  gets set to the precision of the target type
   @return true on error, false on success
 */
-static bool validate_cast_type_and_extract_length(
-    const THD *thd, const POS &pos, Item *arg, const Cast_type &cast_type,
-    bool as_array, int64_t *length, uint *precision) {
+static bool validate_cast_type_and_extract_length(const THD *thd, Item *arg,
+                                                  const Cast_type &cast_type,
+                                                  bool as_array,
+                                                  int64_t *length,
+                                                  uint *precision) {
   // earlier syntax error detected
   if (arg == nullptr) return true;
+
+  const POS pos(arg->m_pos);
 
   if (as_array) {
     // Disallow arrays in stored routines.
@@ -1894,7 +1899,7 @@ static bool validate_cast_type_and_extract_length(
       return false;
     case ITEM_CAST_TIME:
     case ITEM_CAST_DATETIME: {
-      uint dec = c_dec ? strtoul(c_dec, nullptr, 10) : 0;
+      const uint dec = c_dec ? strtoul(c_dec, nullptr, 10) : 0;
       if (dec > DATETIME_MAX_DECIMALS) {
         my_error(ER_TOO_BIG_PRECISION, MYF(0), dec, "CAST",
                  DATETIME_MAX_DECIMALS);
@@ -2077,8 +2082,8 @@ Item *create_func_cast(THD *thd, const POS &pos, Item *arg,
                        const Cast_type &type, bool as_array) {
   int64_t length = 0;
   unsigned precision = 0;
-  if (validate_cast_type_and_extract_length(thd, pos, arg, type, as_array,
-                                            &length, &precision))
+  if (validate_cast_type_and_extract_length(thd, arg, type, as_array, &length,
+                                            &precision))
     return nullptr;
 
   if (as_array) {
@@ -2145,8 +2150,8 @@ Item *create_func_json_value(THD *thd, const POS &pos, Item *arg, Item *path,
                              Item *on_error_default) {
   int64_t length = 0;
   unsigned precision = 0;
-  if (validate_cast_type_and_extract_length(thd, pos, arg, cast_type, false,
-                                            &length, &precision))
+  if (validate_cast_type_and_extract_length(thd, arg, cast_type, false, &length,
+                                            &precision))
     return nullptr;
 
   // Create dummy items for the default values, if they haven't been specified.
@@ -2227,7 +2232,7 @@ Item *create_temporal_literal(THD *thd, const char *str, size_t length,
     const char *typestr = (type == MYSQL_TYPE_DATE)
                               ? "DATE"
                               : (type == MYSQL_TYPE_TIME) ? "TIME" : "DATETIME";
-    ErrConvString err(str, length, thd->variables.character_set_client);
+    const ErrConvString err(str, length, thd->variables.character_set_client);
     my_error(ER_WRONG_VALUE, MYF(0), typestr, err.ptr());
   }
   return nullptr;

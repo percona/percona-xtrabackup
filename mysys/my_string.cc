@@ -40,12 +40,13 @@
 #include "my_sys.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysys/mysys_priv.h"
+#include "nulls.h"
 
 bool init_dynamic_string(DYNAMIC_STRING *str, const char *init_str,
                          size_t init_alloc) {
   DBUG_TRACE;
 
-  size_t length = init_str == nullptr ? 0 : strlen(init_str);
+  const size_t length = init_str == nullptr ? 0 : strlen(init_str);
   init_alloc = std::max(init_alloc, length + 1);
 
   if (!(str->str = (char *)my_malloc(key_memory_DYNAMIC_STRING, init_alloc,

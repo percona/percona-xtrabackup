@@ -24,9 +24,9 @@
 #include "sql/opt_costconstants.h"
 
 #include <assert.h>
-#include "m_ctype.h"
 
 #include "mysql/components/services/bits/psi_bits.h"
+#include "mysql/strings/m_ctype.h"
 #include "sql/handler.h"
 #include "sql/sql_plugin_ref.h"
 #include "sql/table.h"  // TABLE
@@ -264,7 +264,7 @@ const SE_cost_constants *Cost_model_constants::get_se_cost_constants(
   assert(table->file != nullptr);
   assert(table->file->ht != nullptr);
 
-  static SE_cost_constants default_cost;
+  static const SE_cost_constants default_cost;
 
   /*
     We do not see data for new htons loaded by the current session,

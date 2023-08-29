@@ -38,8 +38,6 @@
 #include <vector>
 
 #include "field_types.h"  // enum_field_types
-#include "m_ctype.h"
-#include "m_string.h"
 #include "my_alloc.h"
 #include "my_compiler.h"
 
@@ -48,6 +46,8 @@
 #include "my_table_map.h"
 #include "my_time.h"
 #include "my_tree.h"  // TREE
+#include "mysql/strings/m_ctype.h"
+#include "mysql/strings/my_strtoll10.h"
 #include "mysql/udf_registration_types.h"
 #include "mysql_time.h"
 #include "mysqld_error.h"
@@ -530,7 +530,7 @@ class Item_sum : public Item_func {
   /// Copy constructor, need to perform subqueries with temporary tables
   Item_sum(THD *thd, const Item_sum *item);
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
   Type type() const override { return SUM_FUNC_ITEM; }
   virtual enum Sumfunctype sum_func() const = 0;
 
@@ -786,6 +786,10 @@ class Item_sum : public Item_func {
     char buff[STRING_BUFFER_USUAL_SIZE];
     snprintf(buff, sizeof(buff), "%s as window function", func_name());
     my_error(ER_NOT_SUPPORTED_YET, MYF(0), buff);
+  }
+
+  void add_json_info(Json_object *obj) override {
+    obj->add_alias("distinct", create_dom_ptr<Json_boolean>(with_distinct));
   }
 };
 
@@ -1545,7 +1549,7 @@ class Item_sum_hybrid : public Item_sum {
   Item_cache *value, *arg_cache;
   Arg_comparator *cmp;
   Item_result hybrid_type;
-  bool was_values;  // Set if we have found at least one row (for max/min only)
+  bool m_has_values;  // Set if at least one row is found (for max/min only)
   /**
     Set to true if the window is ordered ascending.
   */
@@ -1612,7 +1616,7 @@ class Item_sum_hybrid : public Item_sum {
         arg_cache(nullptr),
         cmp(nullptr),
         hybrid_type(INT_RESULT),
-        was_values(true),
+        m_has_values(true),
         m_nulls_first(false),
         m_optimize(false),
         m_want_first(false),
@@ -1628,7 +1632,7 @@ class Item_sum_hybrid : public Item_sum {
         arg_cache(nullptr),
         cmp(nullptr),
         hybrid_type(INT_RESULT),
-        was_values(true),
+        m_has_values(true),
         m_nulls_first(false),
         m_optimize(false),
         m_want_first(false),
@@ -1643,7 +1647,7 @@ class Item_sum_hybrid : public Item_sum {
         value(item->value),
         arg_cache(nullptr),
         hybrid_type(item->hybrid_type),
-        was_values(item->was_values),
+        m_has_values(item->m_has_values),
         m_nulls_first(item->m_nulls_first),
         m_optimize(item->m_optimize),
         m_want_first(item->m_want_first),
@@ -1674,7 +1678,7 @@ class Item_sum_hybrid : public Item_sum {
   }
   void update_field() override;
   void cleanup() override;
-  bool any_value() { return was_values; }
+  bool has_values() { return m_has_values; }
   void no_rows_in_result() override;
   Field *create_tmp_field(bool group, TABLE *table) override;
   bool uses_only_one_row() const override { return m_optimize; }
@@ -1944,7 +1948,7 @@ class Item_udf_sum : public Item_sum {
     if (udf.m_original && udf.is_initialized()) udf.free_handler();
   }
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
   const char *func_name() const override { return udf.name(); }
   bool fix_fields(THD *thd, Item **ref) override {
     assert(fixed == 0);
@@ -2157,7 +2161,7 @@ class Item_func_group_concat final : public Item_sum {
     assert(original != nullptr || unique_filter == nullptr);
   }
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
   void cleanup() override;
 
   enum Sumfunctype sum_func() const override { return GROUP_CONCAT_FUNC; }

@@ -25,11 +25,11 @@
 
 #include <string.h>
 
-#include "m_ctype.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sqlcommand.h"
 #include "my_sys.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql/thread_type.h"
 #include "mysql_time.h"
 #include "mysqld_error.h"  // ER_INVALID_CHARACTER_STRING
@@ -492,8 +492,8 @@ void Event_parse_data::init_definer(THD *thd) {
 
   const char *definer_user = thd->lex->definer->user.str;
   const char *definer_host = thd->lex->definer->host.str;
-  size_t definer_user_len = thd->lex->definer->user.length;
-  size_t definer_host_len = thd->lex->definer->host.length;
+  const size_t definer_user_len = thd->lex->definer->user.length;
+  const size_t definer_host_len = thd->lex->definer->host.length;
 
   DBUG_PRINT("info", ("init definer_user thd->mem_root: %p  "
                       "definer_user: %p",

@@ -30,7 +30,8 @@
 #include "sql/rpl_replica.h"
 #include "sql/rpl_rli.h"
 #include "sql/rpl_rli_pdb.h"
-#include "sql/sql_backup_lock.h"  // is_instance_backup_locked et al.
+#include "sql/sql_backup_lock.h"
+#include "string_with_len.h"
 
 /**
    It manages a stage and the related mutex and makes the process of

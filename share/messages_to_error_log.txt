@@ -2760,7 +2760,7 @@ ER_FAILED_TO_FIND_DL_ENTRY
   eng "Can't find symbol '%-.128s' in library."
 
 ER_FAILED_TO_OPEN_SHARED_LIBRARY
-  eng "Can't open shared library '%-.192s' (errno: %d %s)."
+  eng "Can't open shared library '%-.192s' (errno: %d %-.128s)."
 
 ER_THREAD_PRIORITY_IGNORED
   eng "Thread priority attribute setting in Resource Group SQL shall be ignored due to unsupported platform or insufficient privilege."
@@ -7695,7 +7695,7 @@ ER_IB_MSG_720
   eng "Log block %lu at lsn %llu has valid header, but checksum field contains %lu, should be %lu."
 
 ER_IB_MSG_RECOVERY_SKIPPED_IN_READ_ONLY_MODE
-  eng "Recovery skipped, --innodb-read-only set!"
+  eng "Skipped necessary redo log applying, --innodb-read-only set!"
 
 ER_IB_MSG_722
   eng "Log scan progressed past the checkpoint LSN %llu."
@@ -8372,8 +8372,8 @@ ER_IB_MSG_945
 ER_IB_MSG_946
   eng "%s"
 
-ER_IB_MSG_947
-  eng "%s"
+ER_IB_IMPORT_INDEX_METADATA_READ_FAILED
+  eng "IO Error: %s"
 
 ER_IB_MSG_948
   eng "%s"
@@ -8573,8 +8573,8 @@ ER_IB_MSG_1012
 ER_IB_MSG_1013
   eng "%s"
 
-ER_IB_MSG_1014
-  eng "%s"
+ER_IB_IMPORT_START_CFG_NAME
+  eng "Writing table metadata to '%s'"
 
 ER_IB_MSG_1015
   eng "%s"
@@ -10308,7 +10308,7 @@ ER_IB_RECV_FIRST_REC_GROUP_INVALID
 ER_DD_UPGRADE_COMPLETED
   eng "Data dictionary upgrade from version '%u' to '%u' completed."
 
-ER_SSL_SERVER_CERT_VERIFY_FAILED
+OBSOLETE_ER_SSL_SERVER_CERT_VERIFY_FAILED
   eng "Server SSL certificate doesn't verify: %s"
 
 ER_PERSIST_OPTION_USER_TRUNCATED
@@ -10867,7 +10867,7 @@ ER_XPLUGIN_FAILED_TO_BIND_INTERFACE_ADDRESS
   eng "Value '%s' set to `Mysqlx_bind_address`, X Plugin can't bind to it. Skipping this value."
 
 ER_IB_ERR_RECOVERY_REDO_DISABLED
-  eng "Redo logging is disabled, cannot take consistent backup"
+  eng "Server was killed when InnoDB redo logging was disabled. Data files could be corrupt. You can try to restart the database with innodb_force_recovery=6"
 
 ER_IB_WRN_FAST_SHUTDOWN_REDO_DISABLED
   eng "InnoDB cannot do cold shutdown 'innodb_fast_shutdown = 2' and is forcing 'innodb_fast_shutdown = 1' as redo logging is disabled. InnoDB would flush all dirty pages to ensure physical data consistency."
@@ -12240,6 +12240,103 @@ ER_AUDIT_LOG_INVALID_FLUSH_INTERVAL_VALUE
 ER_LOG_CANNOT_PURGE_BINLOG_WITH_BACKUP_LOCK
   eng "Could not purge binary logs since another session is executing LOCK INSTANCE FOR BACKUP. Wait for that session to release the lock."
 
+#
+# End of 8.0 error messages intended to be written to the server error log.
+#
+
+
+#
+# Start of 8.1 error messages intended to be written to the server error log.
+# Append 8.0 error log messages to the end of the _previous_ section.
+# Messages intended to be sent to _clients_ go in messages_to_clients.txt!
+#
+
+start-error-number 15000
+
+ER_LANGUAGE_COMPONENT_INFO
+  eng "%s"
+
+ER_LANGUAGE_COMPONENT_WARNING
+  eng "%s"
+
+ER_LANGUAGE_COMPONENT_ERROR
+  eng "%s"
+
+ER_IB_BULK_FLUSHER_PUNCH_HOLE
+  eng "bulkflusher: Failed to punch hole: table=%s, index=%s, space_id=%zu, page_no=%zu, disk_page_size=%zu, hole_size=%zu, file=%s, err=%zu"
+
+ER_GRP_RPL_CONN_KILLED
+   eng "%s as the client session was killed."
+
+ER_WARN_CANT_OPEN_CERTIFICATE
+  eng "Cannot open certificate %s. Please check the cerificate"
+
+ER_FAILED_TO_VALIDATE_CERTIFICATES_SERVER_EXIT
+  eng "Certificate validation has failed. Stopping the server as tls-certificates-enforced-validation is enabled"
+
+ER_WARN_CA_CERT_VERIFY_FAILED
+  eng "CA certificate/certficates is invalid. Please check logs for more details."
+
+ER_WARN_FAILED_TO_SETUP_TLS
+  eng "Internal TLS error %s:%s:%d:%s"
+
+ER_TLS_LIBRARY_ERROR_INTERNAL
+  eng "Failed to set up TLS. Check logs for details"
+
+ER_SERVER_CERT_VERIFY_FAILED
+  eng "Server certificate %s verification has failed. Check logs for more details"
+
+ER_WARN_CERTIFICATE_ERROR_STRING
+  eng "Failed to validate certificate %s because %s"
+
+ER_TELEMETRY_INFO
+  eng "%s"
+
+ER_TELEMETRY_WARNING
+  eng "%s"
+
+ER_TELEMETRY_ERROR
+  eng "%s"
+
+ER_SRV_START
+  eng "MySQL Server - start."
+
+ER_SRV_END
+  eng "MySQL Server - end."
+
+ER_SRV_INIT_START
+  eng "MySQL Server Initialization - start."
+
+ER_SRV_INIT_END
+  eng "MySQL Server Initialization - end."
+
+ER_PLUGINS_SHUTDOWN_START
+  eng "MySQL Server: Plugins Shutdown - start."
+
+ER_PLUGINS_SHUTDOWN_END
+  eng "MySQL Server: Plugins Shutdown - end."
+
+ER_COMPONENTS_INFRASTRUCTURE_SHUTDOWN_START
+  eng "MySQL Server: Components Shutdown - start."
+
+ER_COMPONENTS_INFRASTRUCTURE_SHUTDOWN_END
+  eng "MySQL Server: Components Shutdown - end (with return value = %d)."
+
+ER_CONNECTIONS_SHUTDOWN_START
+  eng "MySQL Server: Closing Connections - start."
+
+ER_CONNECTIONS_SHUTDOWN_END
+  eng "MySQL Server: Closing Connections - end."
+
+ER_THREAD_STILL_ALIVE
+  eng "Waiting for forceful disconnection of Thread (ID %ld) to end."
+
+ER_NUM_THREADS_STILL_ALIVE
+  eng "Waiting for forceful disconnection of %ld thread(s) to end."
+
+ER_GRP_RPL_MYSQL_NETWORK_PROVIDER_SERVER_ERROR_COMMAND_ERR
+   eng "Failed to accept a MySQL connection for Group Replication. %s. Please retry."
+
 # DO NOT add server-to-client messages here;
 # they go in messages_to_clients.txt
 # in the same directory as this file.
@@ -12249,8 +12346,10 @@ ER_LOG_CANNOT_PURGE_BINLOG_WITH_BACKUP_LOCK
 # See the FAQ in errmsg_readme.txt in the
 # same directory as this file for more
 # information.
+
+
 #
-# End of 8.0 error messages intended to be written to the server error log.
+# End of 8.1 error messages intended to be written to the server error log.
 #
 
 #
@@ -12270,6 +12369,7 @@ ER_KEYRING_COMPONENT_KMS_ERROR
 #
 # End of Percona Server 8.0 server error log messages
 #
+
 ################################################################################
 # Error numbers 50000 to 51999 are reserved. Please do not use them for
 # other error messages.

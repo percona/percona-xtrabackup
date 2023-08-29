@@ -36,12 +36,15 @@
 #include <mysqld_error.h>
 #include <sys/types.h>
 #include "plugin/replication_observers_example/gr_message_service_example.h"
+#include "plugin/replication_observers_example/src/binlog/service/iterator/tests/pfs.h"
+#include "plugin/replication_observers_example/src/binlog/service/iterator/tests/status_vars.h"
 
 #include <include/mysql/components/services/ongoing_transaction_query_service.h>
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "sql/current_thd.h"
 #include "sql/sql_class.h"
+#include "string_with_len.h"
 
 static MYSQL_PLUGIN plugin_info_ptr;
 static SERVICE_TYPE(registry) *reg_srv = nullptr;
@@ -500,11 +503,11 @@ int validate_plugin_server_requirements(Trans_param *param) {
   rpl_sid fake_sid;
   fake_sid.parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
                  binary_log::Uuid::TEXT_LENGTH);
-  rpl_sidno fake_sidno = get_sidno_from_global_sid_map(fake_sid);
-  rpl_gno fake_gno = get_last_executed_gno(fake_sidno) + 1;
+  const rpl_sidno fake_sidno = get_sidno_from_global_sid_map(fake_sid);
+  const rpl_gno fake_gno = get_last_executed_gno(fake_sidno) + 1;
 
-  Gtid gtid = {fake_sidno, fake_gno};
-  Gtid_specification gtid_spec = {ASSIGNED_GTID, gtid};
+  const Gtid gtid = {fake_sidno, fake_gno};
+  const Gtid_specification gtid_spec = {ASSIGNED_GTID, gtid};
   Gtid_log_event *gle =
       new Gtid_log_event(param->server_id, true, 0, 1, true, 0, 0, gtid_spec,
                          UNKNOWN_SERVER_VERSION, UNKNOWN_SERVER_VERSION);
@@ -521,7 +524,7 @@ int validate_plugin_server_requirements(Trans_param *param) {
   /*
     Instantiate a anonymous Gtid_log_event without a THD parameter.
   */
-  Gtid_specification anonymous_gtid_spec = {ANONYMOUS_GTID, gtid};
+  const Gtid_specification anonymous_gtid_spec = {ANONYMOUS_GTID, gtid};
   gle = new Gtid_log_event(param->server_id, true, 0, 1, true, 0, 0,
                            anonymous_gtid_spec, UNKNOWN_SERVER_VERSION,
                            UNKNOWN_SERVER_VERSION);
@@ -543,7 +546,7 @@ int validate_plugin_server_requirements(Trans_param *param) {
 
   if (tcle->is_valid()) {
     Gtid_set *snapshot_version = tcle->get_snapshot_version();
-    size_t snapshot_version_len = snapshot_version->get_encoded_length();
+    const size_t snapshot_version_len = snapshot_version->get_encoded_length();
     uchar *snapshot_version_buf =
         (uchar *)my_malloc(PSI_NOT_INSTRUMENTED, snapshot_version_len, MYF(0));
     snapshot_version->encode(snapshot_version_buf);
@@ -588,7 +591,7 @@ int validate_plugin_server_requirements(Trans_param *param) {
   get_server_startup_prerequirements(startup_pre_reqs);
 
   // check the server is initialized by checking if the default channel exists
-  bool server_engine_ready = channel_is_active("", CHANNEL_NO_THD);
+  const bool server_engine_ready = channel_is_active("", CHANNEL_NO_THD);
 
   uchar *encoded_gtid_executed = nullptr;
   size_t length;
@@ -631,7 +634,7 @@ int validate_plugin_server_requirements(Trans_param *param) {
 }
 
 int test_channel_service_interface_initialization() {
-  int error = initialize_channel_service_interface();
+  const int error = initialize_channel_service_interface();
   assert(error);
   return error;
 }
@@ -682,7 +685,7 @@ int test_channel_service_interface() {
   rpl_sid fake_sid;
   fake_sid.parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
                  binary_log::Uuid::TEXT_LENGTH);
-  rpl_sidno fake_sidno = get_sidno_from_global_sid_map(fake_sid);
+  const rpl_sidno fake_sidno = get_sidno_from_global_sid_map(fake_sid);
   rpl_gno gno = channel_get_last_delivered_gno(interface_channel, fake_sidno);
   assert(gno == 0);
 
@@ -742,8 +745,8 @@ int test_channel_service_interface() {
 
   // Extract the applier ids
   applier_id = nullptr;
-  int num_appliers = channel_get_thread_id(interface_channel,
-                                           CHANNEL_APPLIER_THREAD, &applier_id);
+  const int num_appliers = channel_get_thread_id(
+      interface_channel, CHANNEL_APPLIER_THREAD, &applier_id);
   assert(num_appliers == 4);
 
   unsigned long thread_id = 0;
@@ -796,7 +799,7 @@ int test_channel_service_interface_io_thread() {
   char interface_channel[] = "example_channel";
 
   // Assert the channel exists
-  bool exists = channel_is_active(interface_channel, CHANNEL_NO_THD);
+  const bool exists = channel_is_active(interface_channel, CHANNEL_NO_THD);
   assert(exists);
 
   // Assert that the receiver is running
@@ -805,8 +808,8 @@ int test_channel_service_interface_io_thread() {
 
   // Extract the receiver id
   long unsigned int *thread_id = nullptr;
-  int num_threads = channel_get_thread_id(interface_channel,
-                                          CHANNEL_RECEIVER_THREAD, &thread_id);
+  const int num_threads = channel_get_thread_id(
+      interface_channel, CHANNEL_RECEIVER_THREAD, &thread_id);
   assert(num_threads == 1);
   assert(*thread_id > 0);
   my_free(thread_id);
@@ -820,7 +823,7 @@ int test_channel_service_interface_io_thread() {
   my_free(retrieved_gtid_set);
 
   // Check that the applier thread is waiting for events to be queued.
-  int is_waiting = channel_is_applier_waiting(interface_channel);
+  const int is_waiting = channel_is_applier_waiting(interface_channel);
   assert(is_waiting == 1);
 
   // Stop the channel
@@ -862,7 +865,7 @@ bool test_channel_service_interface_is_io_stopping() {
   assert(!error);
 
   // Assert the channel exists
-  bool exists = channel_is_active(interface_channel, CHANNEL_NO_THD);
+  const bool exists = channel_is_active(interface_channel, CHANNEL_NO_THD);
   assert(exists);
 
   // Wait until I/O thread reached the error and is going to stop
@@ -879,12 +882,12 @@ bool test_channel_service_interface_is_io_stopping() {
   assert(!error);
 
   // Assert that the receiver is stopping
-  bool io_stopping =
+  const bool io_stopping =
       channel_is_stopping(interface_channel, CHANNEL_RECEIVER_THREAD);
   assert(io_stopping);
 
   // Assert that the receiver is running
-  bool io_running =
+  const bool io_running =
       channel_is_active(interface_channel, CHANNEL_RECEIVER_THREAD);
   assert(io_running);
 
@@ -920,7 +923,7 @@ bool test_channel_service_interface_is_sql_stopping() {
   assert(!error);
 
   // Assert the channel exists
-  bool exists = channel_is_active(interface_channel, CHANNEL_NO_THD);
+  const bool exists = channel_is_active(interface_channel, CHANNEL_NO_THD);
   assert(exists);
 
   // Unregister the thread stop hook
@@ -954,12 +957,12 @@ bool test_channel_service_interface_is_sql_stopping() {
   assert(!error);
 
   // Assert that the applier is stopping
-  bool sql_stopping =
+  const bool sql_stopping =
       channel_is_stopping(interface_channel, CHANNEL_APPLIER_THREAD);
   assert(sql_stopping);
 
   // Assert that the applier is running
-  bool sql_running =
+  const bool sql_running =
       channel_is_active(interface_channel, CHANNEL_APPLIER_THREAD);
   assert(sql_running);
 
@@ -1000,7 +1003,7 @@ bool test_channel_service_interface_relay_log_renamed() {
   assert(!error);
 
   // Assert the channel exists
-  bool exists = channel_is_active(interface_channel, CHANNEL_NO_THD);
+  const bool exists = channel_is_active(interface_channel, CHANNEL_NO_THD);
   assert(exists);
 
   // Start the SQL thread
@@ -1099,6 +1102,22 @@ static int replication_observers_example_plugin_init(MYSQL_PLUGIN plugin_info) {
     return 1;
   }
 
+  if (binlog::service::iterators::tests::register_pfs_tables()) {
+    /* purecov: begin inspected */
+    LogPluginErr(ERROR_LEVEL, ER_LOG_PRINTF_MSG, "Failure on init PFS tables");
+    deinit_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs);
+    return 1;
+    /* purecov: end */
+  }
+
+  if (binlog::service::iterators::tests::register_status_variables()) {
+    /* purecov: begin inspected */
+    LogPluginErr(ERROR_LEVEL, ER_LOG_PRINTF_MSG, "Failure on init STATS VARS");
+    deinit_logging_service_for_plugin(&reg_srv, &log_bi, &log_bs);
+    return 1;
+    /* purecov: end */
+  }
+
   LogPluginErr(INFORMATION_LEVEL, ER_LOG_PRINTF_MSG,
                "replication_observers_example_plugin: init finished");
 
@@ -1127,6 +1146,9 @@ static int replication_observers_example_plugin_deinit(void *p) {
   dump_server_state_calls();
   dump_transaction_calls();
   dump_binlog_relay_calls();
+
+  binlog::service::iterators::tests::unregister_status_variables();
+  binlog::service::iterators::tests::unregister_pfs_tables();
 
   if (unregister_server_state_observer(&server_state_observer, p)) {
     LogPluginErr(ERROR_LEVEL, ER_LOG_PRINTF_MSG,

@@ -26,8 +26,9 @@
 #include <sys/types.h>
 
 #include "my_base.h"
-#include "my_bitmap.h"
 #include "sql/handler.h"
+#include "sql/join_optimizer/overflow_bitset.h"
+#include "sql/range_optimizer/range_opt_param.h"
 #include "sql/range_optimizer/range_optimizer.h"
 
 class Opt_trace_object;
@@ -48,16 +49,7 @@ struct ROR_SCAN_INFO {
   SEL_ROOT *sel_root;
 
   /** Fields used in the query and covered by this ROR scan. */
-  MY_BITMAP covered_fields;
-  /**
-    Fields used in the query that are a) covered by this ROR scan and
-    b) not already covered by ROR scans ordered earlier in the merge
-    sequence.
-  */
-  MY_BITMAP covered_fields_remaining;
-  /** Number of fields in covered_fields_remaining (caching of
-   * bitmap_bits_set()) */
-  uint num_covered_fields_remaining;
+  OverflowBitset covered_fields;
 
   /**
     Cost of reading all index records with values in sel_arg intervals set
@@ -72,11 +64,47 @@ struct ROR_SCAN_INFO {
   uint used_key_parts;
 };
 
-AccessPath *get_best_ror_intersect(
-    THD *thd, const RANGE_OPT_PARAM *param, TABLE *table,
-    bool index_merge_intersect_allowed, SEL_TREE *tree,
-    const MY_BITMAP *needed_fields, double cost_est,
-    bool force_index_merge_result, bool reuse_handler);
+// Planning related information when picking the best combination
+// of rowid ordered scans for a ROR-Intersect plan.
+class ROR_intersect_plan {
+ public:
+  ROR_intersect_plan(const RANGE_OPT_PARAM *param, size_t num_fields);
+  ROR_intersect_plan(const ROR_intersect_plan &) = delete;
+  ROR_intersect_plan &operator=(const ROR_intersect_plan &plan);
+
+  bool add(OverflowBitset needed_fields, ROR_SCAN_INFO *ror_scan,
+           bool is_cpk_scan, Opt_trace_object *trace_costs, bool ignore_cost);
+  double get_scan_selectivity(const ROR_SCAN_INFO *scan) const;
+  size_t num_scans() const { return m_ror_scans.size(); }
+
+ public:
+  /// Range optimizer parameter
+  const RANGE_OPT_PARAM *m_param;
+  /// Rowid ordered scans that are part of this plan.
+  Mem_root_array<ROR_SCAN_INFO *> m_ror_scans;
+  /// Whether this plan with the chosen rowid ordered scans is covering or not.
+  bool m_is_covering{false};
+  /// Output rows for this plan.
+  double m_out_rows;
+  /// Total cost for the plan - m_index_read_cost + disk_sweep_cost
+  Cost_estimate m_total_cost;
+
+ private:
+  /// Bitmap of fields covered by the scans in the plan.
+  OverflowBitset m_covered_fields;
+  /// Number of rows to be read from indexes that are used for rowid ordered
+  /// scans
+  ha_rows m_index_records{0};
+  /// Total cost for reading the indexes picked in the plan.
+  Cost_estimate m_index_read_cost;
+};
+
+AccessPath *get_best_ror_intersect(THD *thd, const RANGE_OPT_PARAM *param,
+                                   TABLE *table,
+                                   bool index_merge_intersect_allowed,
+                                   SEL_TREE *tree, double cost_est,
+                                   bool force_index_merge_result,
+                                   bool reuse_handler);
 
 void trace_basic_info_rowid_intersection(THD *thd, const AccessPath *path,
                                          const RANGE_OPT_PARAM *param,
@@ -92,6 +120,20 @@ void add_keys_and_lengths_rowid_intersection(const AccessPath *path,
 
 void add_keys_and_lengths_rowid_union(const AccessPath *path, String *key_names,
                                       String *used_lengths);
+
+OverflowBitset get_needed_fields(const RANGE_OPT_PARAM *param);
+
+ROR_SCAN_INFO *make_ror_scan(const RANGE_OPT_PARAM *param, int idx,
+                             SEL_ROOT *sel_root, OverflowBitset needed_fields);
+
+void find_intersect_order(Mem_root_array<ROR_SCAN_INFO *> *ror_scans,
+                          OverflowBitset needed_fields, MEM_ROOT *mem_root);
+
+AccessPath *MakeRowIdOrderedIndexScanAccessPath(ROR_SCAN_INFO *scan,
+                                                TABLE *table,
+                                                KEY_PART *used_key_part,
+                                                bool reuse_handler,
+                                                MEM_ROOT *mem_root);
 
 #ifndef NDEBUG
 void dbug_dump_rowid_intersection(int indent, bool verbose,

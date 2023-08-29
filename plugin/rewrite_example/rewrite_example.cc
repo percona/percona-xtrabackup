@@ -30,6 +30,7 @@
 #include "my_inttypes.h"
 #include "my_psi_config.h"
 #include "my_thread.h"  // my_thread_handle needed by mysql_memory.h
+#include "template_utils.h"
 
 /* instrument the memory allocation */
 #ifdef HAVE_PSI_INTERFACE
@@ -57,7 +58,7 @@ static int rewrite_lower(MYSQL_THD, mysql_event_class_t event_class,
     const struct mysql_event_parse *event_parse =
         static_cast<const struct mysql_event_parse *>(event);
     if (event_parse->event_subclass == MYSQL_AUDIT_PARSE_PREPARSE) {
-      size_t query_length = event_parse->query.length;
+      const size_t query_length = event_parse->query.length;
       char *rewritten_query = static_cast<char *>(
           my_malloc(key_memory_rewrite_example, query_length + 1, MYF(0)));
 

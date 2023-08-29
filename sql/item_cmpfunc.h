@@ -329,7 +329,7 @@ class Item_bool_func : public Item_int_func {
   }
   uint decimal_precision() const override { return 1; }
   bool created_by_in2exists() const override { return m_created_by_in2exists; }
-  void set_created_by_in2exists() { m_created_by_in2exists = true; }
+  void set_created_by_in2exists();
 
   static const char *bool_transform_names[10];
   /**
@@ -503,7 +503,7 @@ class Item_in_optimizer final : public Item_bool_func {
     set_subquery();
   }
   bool fix_fields(THD *, Item **) override;
-  bool fix_left(THD *thd, Item **ref);
+  bool fix_left(THD *thd);
   void fix_after_pullout(Query_block *parent_query_block,
                          Query_block *removed_query_block) override;
   void split_sum_func(THD *thd, Ref_item_array ref_item_array,
@@ -715,7 +715,7 @@ class Item_func_xor final : public Item_bool_func2 {
 
   enum Functype functype() const override { return XOR_FUNC; }
   const char *func_name() const override { return "xor"; }
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
   longlong val_int() override;
   void apply_is_true() override {}
   Item *truth_transformer(THD *, Bool_test) override;
@@ -1298,6 +1298,11 @@ class Item_func_opt_neg : public Item_int_func {
   }
   bool eq(const Item *item, bool binary_cmp) const override;
   bool subst_argument_checker(uchar **) override { return true; }
+
+ protected:
+  void add_json_info(Json_object *obj) override {
+    obj->add_alias("negated", create_dom_ptr<Json_boolean>(negated));
+  }
 };
 
 class Item_func_between final : public Item_func_opt_neg {
@@ -1397,7 +1402,7 @@ class Item_func_interval final : public Item_int_func {
     allowed_arg_cols = 0;  // Fetch this value from first argument
   }
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
   longlong val_int() override;
   bool resolve_type(THD *) override;
   const char *func_name() const override { return "interval"; }
@@ -1484,6 +1489,11 @@ class Item_func_any_value final : public Item_func_coalesce {
   const char *func_name() const override { return "any_value"; }
   bool aggregate_check_group(uchar *arg) override;
   bool aggregate_check_distinct(uchar *arg) override;
+  bool collect_item_field_or_view_ref_processor(uchar *arg) override;
+
+ private:
+  // used when walk'ing with collect_item_field_or_view_ref_processor
+  bool m_phase_post{false};
 };
 
 class Item_func_if final : public Item_func {
@@ -1986,6 +1996,12 @@ class Item_func_case final : public Item_func {
   cmp_item *cmp_items[5]; /* For all result types */
   cmp_item *case_item;
 
+ protected:
+  void add_json_info(Json_object *obj) override {
+    obj->add_alias("has_case_expression",
+                   create_dom_ptr<Json_boolean>(get_first_expr_num() != -1));
+  }
+
  public:
   Item_func_case(const POS &pos, mem_root_deque<Item *> *list,
                  Item *first_expr_arg, Item *else_expr_arg)
@@ -2451,7 +2467,7 @@ class Item_cond : public Item_bool_func {
     list.prepend(nlist);
   }
 
-  bool itemize(Parse_context *pc, Item **res) override;
+  bool do_itemize(Parse_context *pc, Item **res) override;
 
   bool fix_fields(THD *, Item **ref) override;
   void fix_after_pullout(Query_block *parent_query_block,

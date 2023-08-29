@@ -2,12 +2,12 @@
 .\"     Title: mysqlbinlog
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 06/02/2023
+.\"      Date: 06/21/2023
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 8.0
+.\"    Source: MySQL 8.1
 .\"  Language: English
 .\"
-.TH "MYSQLBINLOG" "1" "06/02/2023" "MySQL 8\&.0" "MySQL Database System"
+.TH "MYSQLBINLOG" "1" "06/21/2023" "MySQL 8\&.1" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -214,8 +214,6 @@ environment variable\&.
 \fBmysqlbinlog\fR
 sets the value of
 pseudo_replica_mode
-or
-pseudo_slave_mode
 to true before executing any SQL statements\&. This system variable affects the handling of XA transactions, the
 original_commit_timestamp
 replication delay timestamp and the
@@ -444,8 +442,6 @@ uncompressed\&.
 .sp
 For more information, see
 Section\ \&4.2.8, \(lqConnection Compression Control\(rq\&.
-.sp
-This option was added in MySQL 8\&.0\&.18\&.
 .RE
 .sp
 .RS 4
@@ -1204,9 +1200,7 @@ the section called \(lqUSING MYSQLBINLOG TO BACK UP BINARY LOG FILES\(rq\&.
 .IP \(bu 2.3
 .\}
 \fB\-\-read\-from\-remote\-source=\fR\fB\fItype\fR\fR
-From MySQL 8\&.0\&.26, use
-\fB\-\-read\-from\-remote\-source\fR, and before MySQL 8\&.0\&.26, use
-\fB\-\-read\-from\-remote\-master\fR\&. Both options have the same effect\&. The options read binary logs from a MySQL server with the
+This option reads binary logs from a MySQL server with the
 COM_BINLOG_DUMP
 or
 COM_BINLOG_DUMP_GTID
@@ -1215,8 +1209,6 @@ BINLOG\-DUMP\-NON\-GTIDS
 or
 BINLOG\-DUMP\-GTIDS, respectively\&. If
 \fB\-\-read\-from\-remote\-source=BINLOG\-DUMP\-GTIDS\fR
-or
-\fB\-\-read\-from\-remote\-master=BINLOG\-DUMP\-GTIDS\fR
 is combined with
 \fB\-\-exclude\-gtids\fR, transactions can be filtered out on the source, avoiding unnecessary network traffic\&.
 .sp
@@ -1244,8 +1236,8 @@ privilege is required to use these options\&.
 .IP \(bu 2.3
 .\}
 \fB\-\-read\-from\-remote\-master=\fR\fB\fItype\fR\fR
-Use this option before MySQL 8\&.0\&.26 rather than
-\fB\-\-read\-from\-remote\-source\fR\&. Both options have the same effect\&.
+Deprecated synonym for
+\fB\-\-read\-from\-remote\-source\fR\&.
 .RE
 .sp
 .RS 4
@@ -1261,7 +1253,7 @@ Use this option before MySQL 8\&.0\&.26 rather than
 Read the binary log from a MySQL server rather than reading a local log file\&. This option requires that the remote server be running\&. It works only for binary log files on the remote server, not relay log files, and takes only the binary log file name (including the numeric suffix) as its argument, while ignoring any path\&.
 .sp
 The connection parameter options are used with this option or the
-\fB\-\-read\-from\-remote\-master\fR
+\fB\-\-read\-from\-remote\-source\fR
 option\&. These options are
 \fB\-\-host\fR,
 \fB\-\-password\fR,
@@ -1275,7 +1267,7 @@ REPLICATION SLAVE
 privilege is required to use this option\&.
 .sp
 This option is like
-\fB\-\-read\-from\-remote\-master=BINLOG\-DUMP\-NON\-GTIDS\fR\&.
+\fB\-\-read\-from\-remote\-source=BINLOG\-DUMP\-NON\-GTIDS\fR\&.
 .RE
 .sp
 .RS 4
@@ -1315,9 +1307,7 @@ output\&. The stream of events produced with this option would be accepted by a 
 REQUIRE_ROW_FORMAT
 option of the
 CHANGE REPLICATION SOURCE TO
-statement (from MySQL 8\&.0\&.23) or
-CHANGE MASTER TO
-statement (before MySQL 8\&.0\&.23)\&.
+statement\&.
 binlog_format=ROW
 must be set on the server where the binary log was written\&. When you specify this option,
 \fBmysqlbinlog\fR
@@ -1336,8 +1326,6 @@ SET @@session\&.require_row_format
 statement at the start of its output to apply the restrictions when the output is executed, and does not print the
 SET @@session\&.pseudo_thread_id
 statement\&.
-.sp
-This option was added in MySQL 8\&.0\&.19\&.
 .RE
 .sp
 .RS 4
@@ -1669,7 +1657,7 @@ STRICT
 causes the client to produce a warning at startup and to operate in non\-FIPS mode\&.
 .sp .5v
 .RE
-As of MySQL 8\&.0\&.34, this option is deprecated\&. Expect it to be removed in a future version of MySQL\&.
+This option is deprecated\&. Expect it to be removed in a future version of MySQL\&.
 .RE
 .sp
 .RS 4
@@ -1836,8 +1824,27 @@ Section\ \&7.5, \(lqPoint-in-Time (Incremental) Recovery\(rq\&.
 \fB\-\-tls\-ciphersuites=\fR\fB\fIciphersuite_list\fR\fR
 The permissible ciphersuites for encrypted connections that use TLSv1\&.3\&. The value is a list of one or more colon\-separated ciphersuite names\&. The ciphersuites that can be named for this option depend on the SSL library used to compile MySQL\&. For details, see
 Section\ \&6.3.2, \(lqEncrypted Connection TLS Protocols and Ciphers\(rq\&.
+.RE
 .sp
-This option was added in MySQL 8\&.0\&.16\&.
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB\-\-tls\-sni\-servername=\fR\fB\fIserver_name\fR\fR
+When specified, the name is passed to the
+libmysqlclient
+C API library using the
+MYSQL_OPT_TLS_SNI_SERVERNAME
+option of
+mysql_options()\&. The server name is not case\-sensitive\&. To show which server name the client specified for the current session, if any, check the
+Tls_sni_server_name
+status variable\&.
+.sp
+Server Name Indication (SNI) is an extension to the TLS protocol (OpenSSL must be compiled using TLS extensions for this option to function)\&. The MySQL implementation of SNI represents the client\-side only\&.
 .RE
 .sp
 .RS 4
@@ -1958,8 +1965,6 @@ compression\&.
 .sp
 For more information, see
 Section\ \&4.2.8, \(lqConnection Compression Control\(rq\&.
-.sp
-This option was added in MySQL 8\&.0\&.18\&.
 .RE
 .PP
 You can pipe the output of
@@ -3053,14 +3058,14 @@ to create a dump file as a snapshot of the server\*(Aqs data\&. Use
 \fB\-\-events\fR, and
 \fB\-\-routines\fR
 to back up all data, and
-\fB\-\-master\-data=2\fR
+\fB\-\-source\-data=2\fR
 to include the current binary log coordinates in the dump file\&.
 .sp
 .if n \{\
 .RS 4
 .\}
 .nf
-mysqldump \-\-host=\fIhost_name\fR \-\-all\-databases \-\-events \-\-routines \-\-master\-data=2> \fIdump_file\fR
+mysqldump \-\-host=\fIhost_name\fR \-\-all\-databases \-\-events \-\-routines \-\-source\-data=2> \fIdump_file\fR
 .fi
 .if n \{\
 .RE
@@ -3088,7 +3093,7 @@ Then use the binary log backup to re\-execute events that were written after the
 .RS 4
 .\}
 .nf
-\-\- CHANGE MASTER TO MASTER_LOG_FILE=\*(Aqbinlog\&.001002\*(Aq, MASTER_LOG_POS=27284;
+\-\- CHANGE REPLICATION SOURCE TO SOURCE_LOG_FILE=\*(Aqbinlog\&.001002\*(Aq, SOURCE_LOG_POS=27284;
 .fi
 .if n \{\
 .RE

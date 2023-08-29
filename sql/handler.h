@@ -45,7 +45,6 @@
 #include <mysql/components/services/page_track_service.h>
 #include "ft_global.h"  // ft_hints
 #include "lex_string.h"
-#include "m_ctype.h"
 #include "map_helpers.h"
 #include "my_alloc.h"
 #include "my_base.h"
@@ -60,6 +59,7 @@
 #include "my_table_map.h"
 #include "my_thread_local.h"  // my_errno
 #include "mysql/components/services/bits/psi_table_bits.h"
+#include "mysql/strings/m_ctype.h"
 #include "sql/dd/object_id.h"  // dd::Object_id
 #include "sql/dd/string_type.h"
 #include "sql/dd/types/object_table.h"  // dd::Object_table
@@ -68,6 +68,7 @@
 #include "sql/sql_const.h"       // SHOW_COMP_OPTION
 #include "sql/sql_list.h"        // SQL_I_List
 #include "sql/sql_plugin_ref.h"  // plugin_ref
+#include "string_with_len.h"     // STRING_WITH_LEN
 #include "thr_lock.h"            // thr_lock_type
 #include "typelib.h"
 
@@ -2452,6 +2453,46 @@ using get_secondary_engine_offload_or_exec_fail_reason_t =
 */
 using set_secondary_engine_offload_fail_reason_t = void (*)(THD *thd,
                                                             const char *);
+enum class SecondaryEngineGraphSimplificationRequest {
+  /** Continue optimization phase with current hypergraph. */
+  kContinue = 0,
+  /** Trigger restart of hypergraph with provided number of subgraph pairs. */
+  kRestart = 1,
+};
+
+struct SecondaryEngineGraphSimplificationRequestParameters {
+  /** Optimizer request from the secondary engine. */
+  SecondaryEngineGraphSimplificationRequest secondary_engine_optimizer_request;
+  /** Subgraph pairs requested by the secondary engine. */
+  int subgraph_pair_limit;
+};
+
+/**
+  Hook for secondary engine to evaluate the current hypergraph optimization
+  state, and returns the state that hypergraph should transition to. Usually
+  invoked after secondary_engine_modify_access_path_cost_t is invoked via
+  the optimizer.  The state is returned as object of type
+  SecondaryEngineGraphSimplificationRequestParameters, and can lead to
+  simplification of hypergraph search space, or resetting the graph and starting
+  search afresh.
+
+  @param thd The thread context.
+  @param hypergraph The hypergraph that represents the search space.
+  @param access_path The AccessPath to evaluate.
+  @param current_subgraph_pairs Count of subgraph pairs explored so far.
+  @param current_subgraph_pairs_limit Limit for current hypergraph.
+  @param is_root_access_path Indicating if access_path is root.
+  @param trace Optimizer trace string.
+
+  @returns instance of SecondaryEngineGraphSimplificationRequestParameters which
+  contains description of the state hypergraph optimizer should transition to.
+*/
+using secondary_engine_check_optimizer_request_t =
+    SecondaryEngineGraphSimplificationRequestParameters (*)(
+        THD *thd, const JoinHypergraph &hypergraph,
+        const AccessPath *access_path, int current_subgraph_pairs,
+        int current_subgraph_pairs_limit, bool is_root_access_path,
+        std::string *trace);
 
 // Capabilities (bit flags) for secondary engines.
 using SecondaryEngineFlags = uint64_t;
@@ -2848,6 +2889,13 @@ struct handlerton {
   /// @see set_secondary_engine_offload_fail_reason_t for function signature.
   set_secondary_engine_offload_fail_reason_t
       set_secondary_engine_offload_fail_reason;
+
+  /// Pointer to function that checks secondary engine request for updating
+  /// hypergraph join optimization.
+  ///
+  /// @see secondary_engine_check_optimizer_request_t for function signature.
+  secondary_engine_check_optimizer_request_t
+      secondary_engine_check_optimizer_request;
 
   se_before_commit_t se_before_commit;
   se_after_commit_t se_after_commit;
@@ -4597,7 +4645,7 @@ class handler {
      @returns true if it was started.
   */
   bool end_psi_batch_mode_if_started() {
-    bool rc = m_psi_batch_mode;
+    const bool rc = m_psi_batch_mode;
     if (rc) end_psi_batch_mode();
     return rc;
   }
@@ -5400,7 +5448,7 @@ class handler {
   virtual int index_read_map(uchar *buf, const uchar *key,
                              key_part_map keypart_map,
                              enum ha_rkey_function find_flag) {
-    uint key_len = calculate_key_len(table, active_index, keypart_map);
+    const uint key_len = calculate_key_len(table, active_index, keypart_map);
     return index_read(buf, key, key_len, find_flag);
   }
   /**
@@ -5431,6 +5479,7 @@ class handler {
 
   /// @see index_read_map().
   virtual int index_next_same(uchar *buf, const uchar *key, uint keylen);
+
   /**
     The following functions works like index_read, but it find the last
     row with the current key value or prefix.
@@ -5438,7 +5487,7 @@ class handler {
   */
   virtual int index_read_last_map(uchar *buf, const uchar *key,
                                   key_part_map keypart_map) {
-    uint key_len = calculate_key_len(table, active_index, keypart_map);
+    const uint key_len = calculate_key_len(table, active_index, keypart_map);
     return index_read_last(buf, key, key_len);
   }
 

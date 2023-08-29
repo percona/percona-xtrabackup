@@ -25,6 +25,8 @@
 #ifndef ROUTING_CLASSIC_FORWARDING_PROCESSOR_INCLUDED
 #define ROUTING_CLASSIC_FORWARDING_PROCESSOR_INCLUDED
 
+#include <chrono>
+
 #include "processor.h"
 
 /**
@@ -33,6 +35,12 @@
 class ForwardingProcessor : public Processor {
  public:
   using Processor::Processor;
+
+  /**
+   * interval between connect-retries.
+   */
+  static constexpr const std::chrono::milliseconds kConnectRetryInterval{
+      std::chrono::milliseconds(100)};
 
  protected:
   /**
@@ -76,7 +84,8 @@ class ForwardingProcessor : public Processor {
    *
    * @retval Result::Again on success.
    */
-  stdx::expected<Processor::Result, std::error_code> socket_reconnect_start();
+  stdx::expected<Processor::Result, std::error_code> socket_reconnect_start(
+      TraceEvent *parent_event);
 
   /**
    * reconnect a mysql classic connection.
@@ -85,7 +94,8 @@ class ForwardingProcessor : public Processor {
    *
    * when finished, a mysql connection is authenticated.
    */
-  stdx::expected<Processor::Result, std::error_code> mysql_reconnect_start();
+  stdx::expected<Processor::Result, std::error_code> mysql_reconnect_start(
+      TraceEvent *parent_event);
 
   /**
    * send a Error msg based on the reconnect_error().
@@ -110,6 +120,12 @@ class ForwardingProcessor : public Processor {
   classic_protocol::message::server::Error reconnect_error() const {
     return reconnect_error_;
   }
+
+  /**
+   * check if the error is a transient error.
+   */
+  static bool connect_error_is_transient(
+      const classic_protocol::message::server::Error &err);
 
  private:
   /**

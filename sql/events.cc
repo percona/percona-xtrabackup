@@ -32,22 +32,23 @@
 #include <vector>
 
 #include "lex_string.h"
-#include "m_ctype.h"  // CHARSET_INFO
 #include "m_string.h"
 #include "my_dbug.h"
-#include "my_loglevel.h"
 #include "my_macros.h"
 #include "my_sys.h"
 #include "mysql/components/services/bits/psi_bits.h"
 #include "mysql/components/services/bits/psi_memory_bits.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/components/services/log_shared.h"
+#include "mysql/my_loglevel.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_memory.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_sp.h"
 #include "mysql/psi/mysql_stage.h"
 #include "mysql/psi/mysql_thread.h"
+#include "mysql/strings/int2str.h"
+#include "mysql/strings/m_ctype.h"  // CHARSET_INFO
 #include "mysql_com.h"
 #include "mysqld_error.h"  // ER_*
 #include "sql/auth/auth_acls.h"
@@ -84,6 +85,7 @@
 #include "sql/transaction.h"
 #include "sql/tztime.h"  // Time_zone
 #include "sql_string.h"  // String
+#include "string_with_len.h"
 
 /**
   @addtogroup Event_Scheduler
@@ -365,9 +367,9 @@ bool Events::create_event(THD *thd, Event_parse_data *parse_data,
     When we are going out of the function scope, the original binary
     format state will be restored.
   */
-  Save_and_Restore_binlog_format_state binlog_format_state(thd);
+  const Save_and_Restore_binlog_format_state binlog_format_state(thd);
 
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+  const dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
   if (Event_db_repository::create_event(thd, parse_data, if_not_exists,
                                         &event_already_exists)) {
     /* On error conditions my_error() is called so no need to handle here */
@@ -523,9 +525,9 @@ bool Events::update_event(THD *thd, Event_parse_data *parse_data,
     When we are going out of the function scope, the original binary
     format state will be restored.
   */
-  Save_and_Restore_binlog_format_state binlog_format_state(thd);
+  const Save_and_Restore_binlog_format_state binlog_format_state(thd);
 
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+  const dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
   if (Event_db_repository::update_event(thd, parse_data, new_dbname,
                                         new_name)) {
     /* On error conditions my_error() is called so no need to handle here */
@@ -540,8 +542,8 @@ bool Events::update_event(THD *thd, Event_parse_data *parse_data,
       goto err_with_rollback;
     }
 
-    LEX_CSTRING dbname = new_dbname ? *new_dbname : parse_data->dbname;
-    LEX_CSTRING name = new_name ? *new_name : parse_data->name;
+    const LEX_CSTRING dbname = new_dbname ? *new_dbname : parse_data->dbname;
+    const LEX_CSTRING name = new_name ? *new_name : parse_data->name;
     if (Event_db_repository::load_named_event(thd, dbname, name,
                                               new_element.get()))
       goto err_with_rollback;
@@ -646,7 +648,7 @@ bool Events::drop_event(THD *thd, LEX_CSTRING dbname, LEX_CSTRING name,
 
   DEBUG_SYNC(thd, "after_acquiring_exclusive_lock_on_the_event");
 
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+  const dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
   bool event_exists;
   if (Event_db_repository::drop_event(thd, dbname, name, if_exists,
                                       &event_exists)) {
@@ -1148,7 +1150,7 @@ static bool load_events_from_db(THD *thd, Event_queue *event_queue) {
   DBUG_TRACE;
   DBUG_PRINT("enter", ("thd: %p", thd));
 
-  dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+  const dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
 
   // Fetch all Schemas
   std::vector<const dd::Schema *> schemas;

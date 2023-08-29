@@ -31,14 +31,13 @@
 #include <sys/types.h>
 #include <string>
 
-#include "m_string.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "my_loglevel.h"
 #include "my_sys.h"
 #include "my_thread.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/components/services/log_shared.h"
+#include "mysql/my_loglevel.h"
 #include "mysql/psi/mysql_file.h"
 #include "mysql/psi/mysql_thread.h"
 #include "mysql_com.h"
@@ -65,6 +64,7 @@
 #include "sql/system_variables.h"
 #include "sql/thd_raii.h"
 #include "sql/transaction_info.h"
+#include "string_with_len.h"
 
 namespace bootstrap {
 
@@ -147,8 +147,8 @@ static bool handle_bootstrap_impl(handle_bootstrap_args *args) {
       We disable SQL_LOG_BIN session variable while processing compiled
       statements.
     */
-    Disable_binlog_guard disable_binlog(thd);
-    Disable_sql_log_bin_guard disable_sql_log_bin(thd);
+    const Disable_binlog_guard disable_binlog(thd);
+    const Disable_sql_log_bin_guard disable_sql_log_bin(thd);
 
     Compiled_in_command_iterator comp_iter;
     rc = process_iterator(thd, &comp_iter, true);
@@ -423,8 +423,8 @@ bool run_bootstrap_thread(const char *file_name, MYSQL_FILE *file,
 
   my_thread_handle thread_handle;
   // What about setting THD::real_id?
-  int error = mysql_thread_create(key_thread_bootstrap, &thread_handle,
-                                  &thr_attr, handle_bootstrap, &args);
+  const int error = mysql_thread_create(key_thread_bootstrap, &thread_handle,
+                                        &thr_attr, handle_bootstrap, &args);
   if (error) {
     /* purecov: begin inspected */
     LogErr(WARNING_LEVEL, ER_BOOTSTRAP_CANT_THREAD, errno).os_errno(errno);

@@ -5759,8 +5759,8 @@ SELECT
 pk FROM v1
 ORDER BY  "cant"  IN ( ( FORMAT(  LAST_INSERT_ID( pk ) , 42 ) ) );
 pk
-2
 1
+2
 SELECT
 STDDEV_POP( ( LAST_INSERT_ID( ( - 2313724308561592320 ) ) ) ) AS field5
 FROM t1
@@ -5769,8 +5769,6 @@ ORDER BY SPACE( LAST_INSERT_ID() );
 field5
 0
 0
-Warnings:
-Warning	1301	Result of space() was larger than max_allowed_packet (67108864) - truncated
 DROP VIEW v1;
 DROP TABLE t1;
 SET SESSION SQL_MODE=DEFAULT;
@@ -5788,3 +5786,36 @@ SET sql_mode = '';
 SELECT LPAD(a, ASCII(RANDOM_BYTES(1)) - 10, 'abc') FROM t;
 SET sql_mode = DEFAULT;
 DROP TABLE t;
+#
+# Bug#35286970 QUOTE function doesn't work as expected
+#              on tables that are utf16
+SELECT QUOTE(CAST(NULL AS CHAR CHARSET utf16));
+QUOTE(CAST(NULL AS CHAR CHARSET utf16))
+NULL
+SELECT QUOTE(CAST(NULL AS CHAR CHARSET utf32));
+QUOTE(CAST(NULL AS CHAR CHARSET utf32))
+NULL
+SELECT QUOTE(CAST(NULL AS CHAR CHARSET utf8mb4));
+QUOTE(CAST(NULL AS CHAR CHARSET utf8mb4))
+NULL
+#
+# Bug#35174730 push_packet_overflow_warning(THD*, const char*):
+#              Assertion `is_nullable()' failed
+SET sql_mode="";
+CREATE TABLE t1 (
+c1 date NOT NULL,
+c2 datetime NOT NULL,
+KEY(c2)
+);
+INSERT INTO t1 VALUES
+('2004-01-22','1900-01-01 23:32:52');
+SELECT
+1
+FROM t1
+WHERE REPEAT(
+INSTR(t1.c1, t1.c2),
+CONCAT( ~ UNIX_TIMESTAMP()))
+;
+1
+DROP TABLE t1;
+SET sql_mode = DEFAULT;

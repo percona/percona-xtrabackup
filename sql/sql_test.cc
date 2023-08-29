@@ -32,7 +32,6 @@
 
 #include "keycache.h"
 #include "lex_string.h"
-#include "m_ctype.h"
 #include "m_string.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
@@ -43,6 +42,7 @@
 #include "my_sys.h"
 #include "my_thread_local.h"
 #include "mysql/psi/mysql_mutex.h"
+#include "mysql/strings/m_ctype.h"
 #include "prealloced_array.h"
 #include "sql/events.h"
 #include "sql/field.h"
@@ -161,8 +161,8 @@ void TEST_join(JOIN *join) {
 void print_keyuse_array(THD *thd, Opt_trace_context *trace,
                         const Key_use_array *keyuse_array) {
   if (unlikely(!trace->is_started())) return;
-  Opt_trace_object wrapper(trace);
-  Opt_trace_array trace_key_uses(trace, "ref_optimizer_key_uses");
+  const Opt_trace_object wrapper(trace);
+  const Opt_trace_array trace_key_uses(trace, "ref_optimizer_key_uses");
   DBUG_PRINT("opt", ("Key_use array (%zu elements)", keyuse_array->size()));
   for (uint i = 0; i < keyuse_array->size(); i++) {
     const Key_use &keyuse = keyuse_array->at(i);

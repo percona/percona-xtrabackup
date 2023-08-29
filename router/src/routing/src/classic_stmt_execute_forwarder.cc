@@ -37,6 +37,10 @@ StmtExecuteForwarder::process() {
   switch (stage()) {
     case Stage::Command:
       return command();
+    case Stage::Forward:
+      return forward();
+    case Stage::ForwardDone:
+      return forward_done();
     case Stage::Response:
       return response();
     case Stage::ColumnCount:
@@ -110,6 +114,14 @@ StmtExecuteForwarder::command() {
         mysql_harness::hexify(recv_buf)));
   }
 
+  connection()->execution_context().diagnostics_area().warnings().clear();
+  connection()->events().clear();
+
+  trace_event_command_ = trace_command(prefix());
+
+  trace_event_connect_and_forward_command_ =
+      trace_connect_and_forward_command(trace_event_command_);
+
   auto &server_conn = connection()->socket_splicer()->server_conn();
   if (!server_conn.is_open()) {
     auto *src_channel = connection()->socket_splicer()->client_channel();
@@ -137,13 +149,117 @@ StmtExecuteForwarder::command() {
         {ER_UNKNOWN_STMT_HANDLER, "Unknown prepared statement id", "HY000"});
     if (!send_res) return send_client_failed(send_res.error());
 
+    trace_span_end(trace_event_connect_and_forward_command_);
+    trace_span_end(trace_event_command_);
+
     stage(Stage::Done);
     return Result::SendToClient;
-  } else {
-    stage(Stage::Response);
+  }
+
+  trace_event_forward_command_ =
+      trace_forward_command(trace_event_connect_and_forward_command_);
+
+  stage(Stage::Forward);
+
+  return Result::Again;
+}
+
+stdx::expected<Processor::Result, std::error_code>
+StmtExecuteForwarder::forward() {
+  auto *socket_splicer = connection()->socket_splicer();
+  auto *src_protocol = connection()->client_protocol();
+  auto *dst_protocol = connection()->server_protocol();
+
+  auto client_caps = src_protocol->shared_capabilities();
+  auto server_caps = dst_protocol->shared_capabilities();
+
+  if (client_caps.test(classic_protocol::capabilities::pos::query_attributes) ==
+      server_caps.test(classic_protocol::capabilities::pos::query_attributes)) {
+    // if caps are the same, forward the message as is
+    if (auto &tr = tracer()) {
+      tr.trace(Tracer::Event().stage("stmt_execute::forward"));
+    }
+
+    stage(Stage::ForwardDone);
 
     return forward_client_to_server();
   }
+
+  // ... otherwise: recode the message.
+
+  if (auto &tr = tracer()) {
+    tr.trace(Tracer::Event().stage("stmt_execute::forward::recode"));
+  }
+
+  auto *src_channel = socket_splicer->client_channel();
+  auto *dst_channel = socket_splicer->server_channel();
+
+  auto msg_res = ClassicFrame::recv_msg<
+      classic_protocol::borrowed::message::client::StmtExecute>(src_channel,
+                                                                src_protocol);
+  if (!msg_res) {
+    if (msg_res.error().category() !=
+        make_error_code(classic_protocol::codec_errc::not_enough_input)
+            .category()) {
+      return recv_client_failed(msg_res.error());
+    }
+
+    discard_current_msg(src_channel, src_protocol);
+
+    classic_protocol::borrowed::message::server::Error err_msg{
+        ER_MALFORMED_PACKET, "Malformed communication packet", "HY000"};
+
+    if (msg_res.error() ==
+        classic_protocol::codec_errc::statement_id_not_found) {
+      err_msg = {ER_UNKNOWN_STMT_HANDLER, "Unknown prepared statement id",
+                 "HY000"};
+    }
+
+    auto send_msg = ClassicFrame::send_msg(src_channel, src_protocol, err_msg);
+    if (!send_msg) send_client_failed(send_msg.error());
+
+    trace_span_end(trace_event_forward_command_);
+    trace_span_end(trace_event_connect_and_forward_command_);
+    trace_command_end(trace_event_command_, TraceEvent::StatusCode::kError);
+
+    stage(Stage::Done);
+
+    return Result::SendToClient;
+  }
+
+  // if the msg contains query attributes, but the server doesn't support
+  // attributes, ignore them.
+  //
+  // libmysqlclient behaves the same, if mysql_bind_param() is called with a
+  // server which doesn't support query-attributes.
+
+  auto send_res = ClassicFrame::send_msg(dst_channel, dst_protocol, *msg_res);
+  if (!send_res) return send_server_failed(send_res.error());
+
+  discard_current_msg(src_channel, src_protocol);
+
+  // reset the "param-already-sent" flag for the next time the statement is
+  // executed. It will be set by the stmt_param_append
+  auto stmt_it =
+      src_protocol->prepared_statements().find(msg_res->statement_id());
+  if (stmt_it != src_protocol->prepared_statements().end()) {
+    for (auto &param : stmt_it->second.parameters) {
+      param.param_already_sent = false;
+    }
+  }
+
+  stage(Stage::ForwardDone);
+  return Result::SendToServer;
+}
+
+stdx::expected<Processor::Result, std::error_code>
+StmtExecuteForwarder::forward_done() {
+  stage(Stage::Response);
+
+  trace_span_end(trace_event_forward_command_);
+  trace_span_end(trace_event_connect_and_forward_command_);
+
+  return Result::Again;
 }
 
 stdx::expected<Processor::Result, std::error_code>
@@ -266,6 +382,7 @@ StmtExecuteForwarder::end_of_rows() {
   auto *socket_splicer = connection()->socket_splicer();
   auto *src_channel = socket_splicer->server_channel();
   auto *src_protocol = connection()->server_protocol();
+  auto *dst_channel = socket_splicer->client_channel();
   auto *dst_protocol = connection()->client_protocol();
 
   auto msg_res =
@@ -282,8 +399,24 @@ StmtExecuteForwarder::end_of_rows() {
   if (msg.status_flags().test(
           classic_protocol::status::pos::more_results_exist)) {
     stage(Stage::Response);
-  } else {
-    stage(Stage::Done);
+    return forward_server_to_client();
+  }
+
+  if (msg.warning_count() > 0) connection()->diagnostic_area_changed(true);
+
+  trace_command_end(trace_event_command_);
+
+  stage(Stage::Done);
+
+  if (!connection()->events().empty()) {
+    discard_current_msg(src_channel, src_protocol);
+
+    msg.warning_count(msg.warning_count() + 1);
+
+    auto send_res = ClassicFrame::send_msg(dst_channel, dst_protocol, msg);
+    if (!send_res) return stdx::make_unexpected(send_res.error());
+
+    return Result::SendToClient;
   }
 
   dst_protocol->status_flags(msg.status_flags());
@@ -295,6 +428,7 @@ stdx::expected<Processor::Result, std::error_code> StmtExecuteForwarder::ok() {
   auto *socket_splicer = connection()->socket_splicer();
   auto *src_channel = socket_splicer->server_channel();
   auto *src_protocol = connection()->server_protocol();
+  auto *dst_channel = socket_splicer->client_channel();
   auto *dst_protocol = connection()->client_protocol();
 
   auto msg_res =
@@ -302,24 +436,66 @@ stdx::expected<Processor::Result, std::error_code> StmtExecuteForwarder::ok() {
           src_channel, src_protocol);
   if (!msg_res) return recv_server_failed(msg_res.error());
 
+  auto msg = *msg_res;
+
   if (auto &tr = tracer()) {
     tr.trace(Tracer::Event().stage("stmt_execute::ok"));
   }
 
-  auto msg = *msg_res;
-
   dst_protocol->status_flags(msg.status_flags());
 
+  if (msg.warning_count() > 0) connection()->diagnostic_area_changed(true);
+
+  if (auto *ev = trace_span(trace_event_command_, "mysql/response")) {
+    ClassicFrame::trace_set_attributes(ev, src_protocol, msg);
+
+    trace_span_end(ev);
+  }
+
+  trace_command_end(trace_event_command_);
+
   stage(Stage::Done);
+
+  if (!connection()->events().empty()) {
+    discard_current_msg(src_channel, src_protocol);
+
+    msg.warning_count(msg.warning_count() + 1);
+
+    auto send_res = ClassicFrame::send_msg(dst_channel, dst_protocol, msg);
+    if (!send_res) return stdx::make_unexpected(send_res.error());
+
+    return Result::SendToClient;
+  }
 
   return forward_server_to_client();
 }
 
 stdx::expected<Processor::Result, std::error_code>
 StmtExecuteForwarder::error() {
+  auto *socket_splicer = connection()->socket_splicer();
+  auto *src_channel = socket_splicer->server_channel();
+  auto *src_protocol = connection()->server_protocol();
+
+  auto msg_res = ClassicFrame::recv_msg<
+      classic_protocol::borrowed::message::server::Error>(src_channel,
+                                                          src_protocol);
+  if (!msg_res) return recv_server_failed(msg_res.error());
+
+  auto msg = *msg_res;
+
   if (auto &tr = tracer()) {
     tr.trace(Tracer::Event().stage("stmt_execute::error"));
   }
+
+  connection()->diagnostic_area_changed(true);
+
+  if (auto *ev = trace_span(trace_event_command_, "mysql/response")) {
+    ClassicFrame::trace_set_attributes(ev, src_protocol, msg);
+
+    trace_span_end(ev);
+  }
+
+  trace_command_end(trace_event_command_);
 
   stage(Stage::Done);
 

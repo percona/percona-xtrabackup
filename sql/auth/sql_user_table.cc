@@ -38,8 +38,6 @@
 #include <utility>
 
 #include "lex_string.h"
-#include "m_ctype.h"
-#include "m_string.h" /* STRING_WITH_LEN */
 #include "map_helpers.h"
 #include "my_alloc.h"
 #include "my_base.h"
@@ -49,9 +47,11 @@
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/components/services/log_shared.h"
 #include "mysql/psi/mysql_statement.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql_com.h"
 #include "mysql_time.h"
 #include "mysqld_error.h"
+#include "nulls.h"
 #include "sql/auth/acl_change_notification.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"
@@ -89,6 +89,8 @@
 #include "sql/transaction.h" /* trans_commit_stmt */
 #include "sql/tztime.h"
 #include "sql_string.h"
+#include "string_with_len.h"
+#include "strxmov.h"
 #include "thr_lock.h"
 #include "typelib.h"
 #include "violite.h"
@@ -510,7 +512,7 @@ void commit_and_close_mysql_tables(THD *thd) {
     trans_rollback_implicit(thd);
   } else {
 #ifndef NDEBUG
-    bool res =
+    const bool res =
 #endif
         /*
           In @@autocommit=0 mode we have both statement and multi-statement
@@ -818,7 +820,7 @@ int replace_db_table(THD *thd, TABLE *table, const char *db,
   ulong priv, store_rights;
   bool old_row_exists = false;
   int error;
-  char what = (revoke_grant) ? 'N' : 'Y';
+  const char what = (revoke_grant) ? 'N' : 'Y';
   uchar user_key[MAX_KEY_LENGTH];
   Acl_table_intact table_intact(thd);
   DBUG_TRACE;
@@ -1993,8 +1995,8 @@ int open_grant_tables(THD *thd, Table_ref *tables, bool *transactional_tables) {
       tables[i].updating = false;
   }
 
-  uint flags = MYSQL_OPEN_HAS_MDL_LOCK | MYSQL_LOCK_IGNORE_TIMEOUT |
-               MYSQL_OPEN_IGNORE_FLUSH;
+  const uint flags = MYSQL_OPEN_HAS_MDL_LOCK | MYSQL_LOCK_IGNORE_TIMEOUT |
+                     MYSQL_OPEN_IGNORE_FLUSH;
   if (open_and_lock_tables(thd, tables,
                            flags)) {  // This should never happen
     thd->mdl_context.release_transactional_locks();

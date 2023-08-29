@@ -61,6 +61,8 @@
 #include "sql_string.h"
 #include "typelib.h"
 
+struct CHARSET_INFO;
+
 namespace dd {
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -343,6 +345,18 @@ static bool fill_dd_routine_info(THD *thd, const dd::Schema &schema,
   }
   routine->set_sql_data_access(daccess);
 
+  // Set external language for show routine operations.
+  const char *lang = "SQL";
+  char lang_buff[64];
+  // Store language name in upper case
+  if (sp->m_chistics->language.str) {
+    assert(strlen(sp->m_chistics->language.str) <= 64);
+    my_stpcpy(lang_buff, sp->m_chistics->language.str);
+    my_caseup_str(system_charset_info, lang_buff);
+    lang = lang_buff;
+  }
+  routine->set_external_language(lang);
+
   // Set security type.
   View::enum_security_type sec_type;
   enum_sp_suid_behaviour sp_suid = (sp->m_chistics->suid == SP_IS_DEFAULT_SUID)
@@ -368,7 +382,11 @@ static bool fill_dd_routine_info(THD *thd, const dd::Schema &schema,
   routine->set_sql_mode(thd->variables.sql_mode);
 
   // Set client collation id.
-  routine->set_client_collation_id(thd->charset()->number);
+  if (sp->is_sql()) {
+    routine->set_client_collation_id(thd->charset()->number);
+  } else {
+    routine->set_client_collation_id(my_charset_utf8mb4_0900_ai_ci.number);
+  }
 
   // Set connection collation id.
   routine->set_connection_collation_id(
@@ -481,6 +499,14 @@ bool alter_routine(THD *thd, Routine *routine, st_sp_chistics *chistics) {
         return true;   /* purecov: deadcode */
     }
     routine->set_sql_data_access(daccess);
+  }
+
+  // We do not allow language to change for existing procedures.
+  if (chistics->language.str &&
+      my_strcasecmp(system_charset_info, chistics->language.str,
+                    routine->external_language().c_str())) {
+    my_error(ER_SP_NO_ALTER_LANGUAGE, MYF(0));
+    return true;
   }
 
   // Set comment.

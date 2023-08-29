@@ -41,6 +41,9 @@ class QueryForwarder : public ForwardingProcessor {
     Connect,
     Connected,
 
+    Forward,
+    ForwardDone,
+
     Response,
     ColumnCount,
     Column,
@@ -55,8 +58,13 @@ class QueryForwarder : public ForwardingProcessor {
     Ok,
     Error,
 
+    ResponseDone,
     Done,
+
+    SendQueued,
   };
+
+  static constexpr std::string_view prefix() { return "mysql/query"; }
 
   stdx::expected<Result, std::error_code> process() override;
 
@@ -67,6 +75,8 @@ class QueryForwarder : public ForwardingProcessor {
   stdx::expected<Result, std::error_code> command();
   stdx::expected<Result, std::error_code> connect();
   stdx::expected<Result, std::error_code> connected();
+  stdx::expected<Result, std::error_code> forward();
+  stdx::expected<Result, std::error_code> forward_done();
   stdx::expected<Result, std::error_code> response();
   stdx::expected<Result, std::error_code> load_data();
   stdx::expected<Result, std::error_code> data();
@@ -80,6 +90,9 @@ class QueryForwarder : public ForwardingProcessor {
 
   stdx::expected<Result, std::error_code> ok();
   stdx::expected<Result, std::error_code> error();
+  stdx::expected<Result, std::error_code> response_done();
+
+  stdx::expected<Result, std::error_code> send_queued();
 
   stdx::expected<void, std::error_code> track_session_changes(
       net::const_buffer session_trackers,
@@ -90,6 +103,11 @@ class QueryForwarder : public ForwardingProcessor {
   Stage stage_{Stage::Command};
 
   uint64_t columns_left_{0};
+
+  TraceEvent *trace_event_command_{};
+  TraceEvent *trace_event_connect_and_forward_command_{};
+  TraceEvent *trace_event_forward_command_{};
+  TraceEvent *trace_event_query_result_{};
 };
 
 #endif

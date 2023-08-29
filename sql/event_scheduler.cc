@@ -27,21 +27,20 @@
 #include <time.h>
 
 #include "lex_string.h"
-#include "m_ctype.h"
-#include "m_string.h"
 #include "my_command.h"
 #include "my_dbug.h"
-#include "my_loglevel.h"
 #include "my_psi_config.h"
 #include "my_sys.h"
 #include "my_thread.h"
 #include "mysql/components/services/bits/psi_statement_bits.h"
 #include "mysql/components/services/log_builtins.h"
+#include "mysql/my_loglevel.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_statement.h"
 #include "mysql/psi/mysql_thread.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql/thread_type.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
@@ -66,6 +65,7 @@
 #include "sql/sql_error.h"  // Sql_condition
 #include "sql/system_variables.h"
 #include "sql_string.h"
+#include "string_with_len.h"
 #include "thr_mutex.h"
 
 /**
@@ -377,7 +377,14 @@ void Event_worker_thread::run(THD *thd, Event_queue_element_for_exec *event) {
   thd->m_statement_psi = MYSQL_START_STATEMENT(
       &state, event->get_psi_info()->m_key, event->dbname.str,
       event->dbname.length, thd->charset(), nullptr);
+
+  /*
+    Events from the scheduler 'spawn' in the server,
+    they have no parent session, hence no query attributes.
+  */
+  MYSQL_NOTIFY_STATEMENT_QUERY_ATTRIBUTES(thd->m_statement_psi, false);
 #endif
+
   /*
     We must make sure the schema is released and unlocked in the right
     order. Fail if we are unable to get a meta data lock on the schema
@@ -423,6 +430,13 @@ end:
 #ifdef HAVE_PSI_STATEMENT_INTERFACE
   MYSQL_END_STATEMENT(thd->m_statement_psi, thd->get_stmt_da());
   thd->m_statement_psi = nullptr;
+#endif
+
+#ifdef HAVE_PSI_STATEMENT_INTERFACE
+  thread = thd_get_psi(thd);
+  if (thread != nullptr) {
+    PSI_THREAD_CALL(abort_telemetry)(thread);
+  }
 #endif
 
   assert(thd->m_digest == nullptr);
@@ -712,7 +726,7 @@ error:
 
 bool Event_scheduler::is_running() {
   LOCK_DATA();
-  bool ret = (state == RUNNING);
+  const bool ret = (state == RUNNING);
   UNLOCK_DATA();
   return ret;
 }

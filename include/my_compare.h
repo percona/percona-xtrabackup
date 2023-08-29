@@ -29,9 +29,9 @@
 
 #include <sys/types.h>
 
-#include "m_ctype.h" /* CHARSET_INFO */
 #include "my_inttypes.h"
 #include "myisampack.h"
+#include "mysql/strings/m_ctype.h" /* CHARSET_INFO */
 
 /*
   There is a hard limit for the maximum number of keys as there are only
@@ -72,7 +72,7 @@ struct HA_KEYSEG /* Key-portion */
 
 static inline uint get_key_length(const uchar **key) {
   if (**key != 255) return *(*key)++;
-  uint length = mi_uint2korr((*key) + 1);
+  const uint length = mi_uint2korr((*key) + 1);
   (*key) += 3;
   return length;
 }

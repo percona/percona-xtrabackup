@@ -33,6 +33,7 @@
 #include "m_string.h"  // my_stpcpy
 #include "my_inttypes.h"
 #include "my_sys.h"
+#include "mysql/strings/m_ctype.h"
 #include "sql/psi_memory_key.h"
 
 static inline bool is_numeric_beginning(const char *pc, const size_t len) {
@@ -106,7 +107,7 @@ bool Gis_read_stream::check_next_symbol(char symbol) {
 */
 
 void Gis_read_stream::set_error_msg(const char *msg) {
-  size_t len = strlen(msg);  // ok in this context
+  const size_t len = strlen(msg);  // ok in this context
   m_err_msg = (char *)my_realloc(key_memory_Gis_read_stream_err_msg, m_err_msg,
                                  (uint)len + 1, MYF(MY_ALLOW_ZERO_PTR));
   memcpy(m_err_msg, msg, len + 1);

@@ -653,19 +653,19 @@ GREATEST(11, 5, 2) + 0.00
 11.00
 SELECT GREATEST(date '1995-05-05', 19910101, 20050505, 19930303) + 0.00;
 GREATEST(date '1995-05-05', 19910101, 20050505, 19930303) + 0.00
-20050505.00
+20050505
 SELECT GREATEST(time '00:00:00', 120000) + 0.00;
 GREATEST(time '00:00:00', 120000) + 0.00
-120000.00
+120000
 SELECT GREATEST(time '20:00:00', 120000) + 0.00;
 GREATEST(time '20:00:00', 120000) + 0.00
-200000.00
+200000
 SELECT GREATEST('95-05-05', date '10-10-10') + 0.00;
 GREATEST('95-05-05', date '10-10-10') + 0.00
-20101010.00
+20101010
 SELECT GREATEST(date '1995-05-05', '10-10-10') + 0.00;
 GREATEST(date '1995-05-05', '10-10-10') + 0.00
-20101010.00
+20101010
 # End of test for Bug#25123839
 #
 # Bug#26975864: ASSERTION FAILED: DEC <= 6, MY_DATETIME_TO_STR, LEAST,
@@ -741,8 +741,6 @@ DO NULLIF((GREATEST(FROM_UNIXTIME(1537024679) , _utf32 "*b!" )),
 );
 Warnings:
 Warning	1300	Invalid utf32 character string: '002A62'
-Warning	1292	Incorrect datetime value: '?' for column 'FROM_UNIXTIME(1537024679)' at row 1
-Warning	1292	Incorrect datetime value: '?' for column 'FROM_UNIXTIME(1537024679)' at row 1
 #
 # Bug #33624777 sum(least(a, NULL)) result error
 #
@@ -849,3 +847,44 @@ GREATEST(F1, F4, F2)
 2060-12-31 00:00:00
 2060-12-31 00:00:00
 DROP TABLE T4;
+#
+# Bug#35380560 Item_typecast_signed::val_int():
+#              Assertion `is_nullable()' failed.
+#
+CREATE TABLE t1 (
+c1 datetime NOT NULL,
+c2 varchar(7) NOT NULL
+);
+INSERT INTO t1 VALUES
+('1900-01-01 10:10:10','zgkt'),
+('2000-08-19 10:10:10','yzgk'),
+('2005-10-18 17:41:54','tyz'),
+('2000-03-03 23:40:04','ityzg'),
+('1900-01-01 10:10:10','wityzg');
+SELECT
+CONVERT(LEAST(c1,
+CASE (COT(c2)) WHEN c1 THEN c2 ELSE 0 END ),
+SIGNED)
+FROM t1;
+ERROR 22003: DOUBLE value is out of range in 'cot(`test`.`t1`.`c2`)'
+DROP TABLE t1;
+#
+# Bug#35492532 sig 11 in decimal_round
+#
+SET SESSION sql_mode='';
+CREATE TABLE t1 (
+c1 datetime NOT NULL
+) ;
+INSERT INTO t1 VALUES
+('2007-05-16 19:15:59'),
+('2004-10-19 22:37:33'),
+('2000-08-16 05:05:15'),
+('2001-11-04 19:07:55');
+SELECT
+STD( c1 % '2006-08-23 21:41:12.036166' )
+FROM t1
+GROUP BY BIN_TO_UUID( c1 ),
+CAST( LEAST( c1, CONVERT(c1, UNSIGNED) ) AS DECIMAL );
+ERROR HY000: Incorrect string value: '2007-05-16 19:15:59' for function bin_to_uuid
+DROP TABLE t1;
+SET SESSION sql_mode=default;

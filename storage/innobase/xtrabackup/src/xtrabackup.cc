@@ -762,6 +762,7 @@ enum options_xtrabackup {
   OPT_TLS_CIPHERSUITES,
   OPT_SSL_SESSION_DATA,
   OPT_SSL_SESSION_DATA_CONTINUE_ON_FAILED_REUSE,
+  OPT_TLS_SNI_SERVERNAME,
   OPT_SERVER_PUBLIC_KEY,
 
   OPT_XTRA_TABLES_EXCLUDE,
@@ -1135,7 +1136,7 @@ struct my_option xb_client_options[] = {
 
     {"no-server-version-check", OPT_NO_SERVER_VERSION_CHECK,
      "This option allows backup to proceed when the server version is greater "
-     "(newer) than the PXB supported version. (This option is deprecated).",
+     "(newer) than the PXB supported version.",
      (uchar *)&opt_no_server_version_check,
      (uchar *)&opt_no_server_version_check, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0,
      0},

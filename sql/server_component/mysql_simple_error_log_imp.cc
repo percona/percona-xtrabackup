@@ -22,11 +22,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "sql/server_component/mysql_simple_error_log_imp.h"
 #include <stdarg.h>
-#include "my_loglevel.h"
 #include "mysql/components/service.h"
 #include "mysql/components/service_implementation.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/components/services/mysql_simple_error_log.h"
+#include "mysql/my_loglevel.h"
 
 DEFINE_BOOL_METHOD(mysql_simple_error_log_imp::emit,
                    (const char *component, const char *file, unsigned long line,

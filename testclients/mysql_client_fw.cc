@@ -27,15 +27,16 @@
 #include <algorithm>
 
 #include "errmsg.h"
-#include "m_ctype.h"
-#include "m_string.h"
 #include "my_alloc.h"
 #include "my_default.h"
 #include "my_getopt.h"
 #include "my_sys.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/strings/m_ctype.h"
+#include "nulls.h"
 #include "print_version.h"
 #include "sql_common.h"
+#include "strxmov.h"
 #include "welcome_copyright_notice.h" /* ORACLE_WELCOME_COPYRIGHT_NOTICE */
 
 #define MAX_TEST_QUERY_LENGTH 300 /* MAX QUERY BUFFER LENGTH */
@@ -140,14 +141,14 @@ static void die(const char *file, int line, const char *expr) {
 
 #define myquery(RES)      \
   {                       \
-    int r = (RES);        \
+    const int r = (RES);  \
     if (r) myerror(NULL); \
     DIE_UNLESS(r == 0);   \
   }
 
 #define myquery2(L_MYSQL, RES)      \
   {                                 \
-    int r = (RES);                  \
+    const int r = (RES);            \
     if (r) myerror2(L_MYSQL, NULL); \
     DIE_UNLESS(r == 0);             \
   }
@@ -191,6 +192,12 @@ static void die(const char *file, int line, const char *expr) {
   if ((x)) {           \
     myerror(NULL);     \
     DIE_UNLESS(false); \
+  }
+
+#define mytest2(lmysql, x)  \
+  if (!(x)) {               \
+    myerror2(lmysql, NULL); \
+    DIE_UNLESS(false);      \
   }
 
 /* Silence unused function warnings for some of the static functions. */

@@ -28,8 +28,8 @@
 #include "Dbtup.hpp"
 
 #include <cstring>
-#include "m_ctype.h"
 
+#include "mysql/strings/m_ctype.h"
 #include <RefConvert.hpp>
 #include <ndb_limits.h>
 #include <pc.hpp>
@@ -866,7 +866,7 @@ Dbtup::xfrm_reader(Uint8* dstPtr,
   Uint32 maxBytes = AttributeDescriptor::getSizeInBytes(attrDescriptor);
 
   require(i < regTabPtr->noOfCharsets);
-  CHARSET_INFO* cs = regTabPtr->charsetArray[i];
+  const CHARSET_INFO* cs = regTabPtr->charsetArray[i];
 
   Uint32 lb, len;
   const bool ok = NdbSqlUtil::get_var_length(typeId, srcPtr, srcBytes, lb, len);
@@ -2222,7 +2222,7 @@ Dbtup::fixsize_updater(Uint32* inBuffer,
         Uint32 i = AttributeOffset::getCharsetPos(attrDes2);
         require(i < regTabPtr->noOfCharsets);
         // not const in MySQL
-        CHARSET_INFO* cs = regTabPtr->charsetArray[i];
+        const CHARSET_INFO* cs = regTabPtr->charsetArray[i];
         int not_used;
         const char* ssrc = (const char*)&inBuffer[indexBuf + 1];
         Uint32 lb, len;
@@ -3453,7 +3453,7 @@ Dbtup::updateDiskFixedSizeNotNULL(Uint32* inBuffer,
         Uint32 i = AttributeOffset::getCharsetPos(attrDes2);
         require(i < regTabPtr->noOfCharsets);
         // not const in MySQL
-        CHARSET_INFO* cs = regTabPtr->charsetArray[i];
+        const CHARSET_INFO* cs = regTabPtr->charsetArray[i];
 	int not_used;
         const char* ssrc = (const char*)&inBuffer[indexBuf + 1];
         Uint32 lb, len;
@@ -3577,7 +3577,7 @@ Dbtup::updateDiskVarAsFixedSizeNotNULL(Uint32* inBuffer,
         Uint32 i = AttributeOffset::getCharsetPos(attrDes2);
         require(i < regTabPtr->noOfCharsets);
         // not const in MySQL
-        CHARSET_INFO* cs = regTabPtr->charsetArray[i];
+        const CHARSET_INFO* cs = regTabPtr->charsetArray[i];
 	int not_used;
         const char* ssrc = (const char*)&inBuffer[indexBuf + 1];
         Uint32 lb, len;

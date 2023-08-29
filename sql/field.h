@@ -38,7 +38,6 @@
 #include "field_types.h"  // enum_field_types
 #include "lex_string.h"
 #include "libbinlogevents/export/binary_log_funcs.h"  // my_time_binary_length
-#include "m_ctype.h"
 #include "my_alloc.h"
 #include "my_base.h"  // ha_storage_media
 #include "my_bitmap.h"
@@ -47,6 +46,8 @@
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "my_time.h"  // MYSQL_TIME_NOTE_TRUNCATED
+#include "mysql/strings/dtoa.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
 #include "mysql_time.h"
@@ -286,7 +287,7 @@ inline uint get_enum_pack_length(int elements) {
 }
 
 inline uint get_set_pack_length(int elements) {
-  uint len = (elements + 7) / 8;
+  const uint len = (elements + 7) / 8;
   return len > 4 ? 8 : len;
 }
 
@@ -1422,7 +1423,7 @@ class Field {
   }
   longlong val_int_offset(ptrdiff_t row_offset) {
     ptr += row_offset;
-    longlong tmp = val_int();
+    const longlong tmp = val_int();
     ptr -= row_offset;
     return tmp;
   }
@@ -3015,7 +3016,7 @@ class Field_timestampf : public Field_temporal_with_date_and_timef {
   uint32 pack_length() const final { return my_timestamp_binary_length(dec); }
   uint pack_length_from_metadata(uint field_metadata) const final {
     DBUG_TRACE;
-    uint tmp = my_timestamp_binary_length(field_metadata);
+    const uint tmp = my_timestamp_binary_length(field_metadata);
     return tmp;
   }
 
@@ -3252,7 +3253,7 @@ class Field_timef final : public Field_time_common {
   uint32 pack_length() const final { return my_time_binary_length(dec); }
   uint pack_length_from_metadata(uint field_metadata) const final {
     DBUG_TRACE;
-    uint tmp = my_time_binary_length(field_metadata);
+    const uint tmp = my_time_binary_length(field_metadata);
     return tmp;
   }
   uint row_pack_length() const final { return pack_length(); }
@@ -3377,7 +3378,7 @@ class Field_datetimef : public Field_temporal_with_date_and_timef {
   uint32 pack_length() const final { return my_datetime_binary_length(dec); }
   uint pack_length_from_metadata(uint field_metadata) const final {
     DBUG_TRACE;
-    uint tmp = my_datetime_binary_length(field_metadata);
+    const uint tmp = my_datetime_binary_length(field_metadata);
     return tmp;
   }
   bool zero_pack() const final { return true; }

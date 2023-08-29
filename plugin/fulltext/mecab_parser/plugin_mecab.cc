@@ -23,6 +23,7 @@
 #include "my_config.h"
 
 #include "my_compiler.h"
+#include "mysql/strings/m_ctype.h"
 
 MY_COMPILER_DIAGNOSTIC_PUSH()
 // include/mecab.h:1384:22: warning: empty paragraph passed to '@param' command
@@ -36,6 +37,7 @@ MY_COMPILER_DIAGNOSTIC_POP()
 #include <mysql/components/my_service.h>
 #include <mysql/components/services/log_builtins.h>
 
+#include "m_string.h"
 #include "mysqld_error.h"
 #include "storage/innobase/include/fts0tokenize.h"
 
@@ -287,7 +289,7 @@ static int mecab_parser_parse(MYSQL_FTPARSER_PARAM *param) {
   /* Allocate a new string with '\0' in the end to avoid
   valgrind error "Invalid read of size 1" in mecab. */
   assert(param->length >= 0);
-  int doc_length = param->length;
+  const int doc_length = param->length;
   char *doc = reinterpret_cast<char *>(malloc(doc_length + 1));
 
   if (doc == NULL) {

@@ -448,6 +448,7 @@ class SharedRouter {
               {"client_ssl_cert", SSL_TEST_DATA_DIR "/server-cert-sha512.pem"},
               {"connection_sharing", "1"},
               {"connection_sharing_delay", "0"},
+              {"connect_retry_timeout", "0"},
           });
     }
 
@@ -4813,8 +4814,9 @@ TEST_P(ShareConnectionTest, classic_protocol_prepare_fail) {
       EXPECT_THAT(*events_res,
                   ElementsAre(Pair("statement/com/Prepare", 1),
                               Pair("statement/com/Reset Connection", 2),
-                              Pair("statement/sql/select", 1),     //
-                              Pair("statement/sql/set_option", 3)  //
+                              Pair("statement/sql/select", 1),        //
+                              Pair("statement/sql/set_option", 3),    //
+                              Pair("statement/sql/show_warnings", 1)  //
                               ));
     } else {
       EXPECT_THAT(*events_res, ElementsAre(Pair("statement/com/Prepare", 1)));
@@ -5680,10 +5682,23 @@ TEST_P(ShareConnectionTest, classic_protocol_set_option) {
 
   {
     auto query_res = cli.query("DO 1; DO 2");
-    ASSERT_NO_ERROR(query_res);
+    if (can_share) {
+      ASSERT_ERROR(query_res);
 
-    for (const auto &res [[maybe_unused]] : *query_res) {
+      // multi-statements are forbidden when connection-sharing is enabled.
+      EXPECT_EQ(query_res.error().value(), 4501);
+    } else {
+      ASSERT_NO_ERROR(query_res);
+
+      for (const auto &res [[maybe_unused]] : *query_res) {
+      }
     }
+  }
+
+  {
+    // a single statement is ok though.
+    auto query_res = cli.query("DO 1");
+    ASSERT_NO_ERROR(query_res);
   }
 
   if (can_share) {
@@ -5728,9 +5743,16 @@ TEST_P(ShareConnectionTest, classic_protocol_set_option_at_connect) {
 
   {
     auto query_res = cli.query("DO 1; DO 2");
-    ASSERT_NO_ERROR(query_res);
+    if (can_share) {
+      ASSERT_ERROR(query_res);
 
-    for (const auto &res [[maybe_unused]] : *query_res) {
+      // multi-statements are forbidden when connection-sharing is enabled.
+      EXPECT_EQ(query_res.error().value(), 4501);
+    } else {
+      ASSERT_NO_ERROR(query_res);
+
+      for (const auto &res [[maybe_unused]] : *query_res) {
+      }
     }
   }
 
@@ -5742,10 +5764,23 @@ TEST_P(ShareConnectionTest, classic_protocol_set_option_at_connect) {
 
   {
     auto query_res = cli.query("DO 1; DO 2");
-    ASSERT_NO_ERROR(query_res);
+    if (can_share) {
+      ASSERT_ERROR(query_res);
 
-    for (const auto &res [[maybe_unused]] : *query_res) {
+      // multi-statements are forbidden when connection-sharing is enabled.
+      EXPECT_EQ(query_res.error().value(), 4501);
+    } else {
+      ASSERT_NO_ERROR(query_res);
+
+      for (const auto &res [[maybe_unused]] : *query_res) {
+      }
     }
+  }
+
+  {
+    // a single statement is ok though.
+    auto query_res = cli.query("DO 1");
+    ASSERT_NO_ERROR(query_res);
   }
 
   if (can_share) {

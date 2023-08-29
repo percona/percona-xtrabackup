@@ -41,6 +41,7 @@
 #include <mutex>
 #include <thread>
 
+#include "m_string.h"
 #include "my_byteorder.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
@@ -50,7 +51,11 @@
 #include "my_macros.h"
 #include "my_systime.h"  // my_sleep()
 #include "my_time.h"     // SECS_PER_HOUR, SECS_PER_MIN
+#include "mysql/strings/int2str.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql_client_fw.cc"
+#include "nulls.h"
+#include "strxmov.h"
 #include "template_utils.h"
 
 #include <list>
@@ -19061,6 +19066,7 @@ static void test_wl6791() {
     MYSQL_OPT_SSL_CAPATH,
     MYSQL_OPT_SSL_CIPHER,
     MYSQL_OPT_TLS_CIPHERSUITES,
+    MYSQL_OPT_TLS_SNI_SERVERNAME,
     MYSQL_OPT_SSL_CRL,
     MYSQL_OPT_SSL_CRLPATH,
     MYSQL_SERVER_PUBLIC_KEY },
@@ -23531,6 +23537,174 @@ static void test_bug34869076() {
   mysql_close(lmysql);
 }
 
+static void test_wl15651() {
+  MYSQL *mysql_async = NULL, *mysql_sync = NULL;
+  net_async_status status;
+  MYSQL *ret;
+
+  static const char *stage_names[CONNECT_STAGE_COMPLETE + 1] = {
+      "CONNECT_STAGE_INVALID",
+      "CONNECT_STAGE_NOT_STARTED",
+      "CONNECT_STAGE_NET_BEGIN_CONNECT",
+      "CONNECT_STAGE_NET_WAIT_CONNECT",
+      "CONNECT_STAGE_NET_COMPLETE_CONNECT",
+      "CONNECT_STAGE_READ_GREETING",
+      "CONNECT_STAGE_PARSE_HANDSHAKE",
+      "CONNECT_STAGE_ESTABLISH_SSL",
+      "CONNECT_STAGE_AUTHENTICATE",
+      "CONNECT_STAGE_AUTH_BEGIN",
+      "CONNECT_STAGE_AUTH_RUN_FIRST_AUTHENTICATE_USER",
+      "CONNECT_STAGE_AUTH_HANDLE_FIRST_AUTHENTICATE_USER",
+      "CONNECT_STAGE_AUTH_READ_CHANGE_USER_RESULT",
+      "CONNECT_STAGE_AUTH_HANDLE_CHANGE_USER_REQUEST",
+      "CONNECT_STAGE_AUTH_RUN_SECOND_AUTHENTICATE_USER",
+      "CONNECT_STAGE_AUTH_INIT_MULTI_AUTH",
+      "CONNECT_STAGE_AUTH_FINISH_AUTH",
+      "CONNECT_STAGE_AUTH_HANDLE_SECOND_AUTHENTICATE_USER",
+      "CONNECT_STAGE_AUTH_DO_MULTI_PLUGIN_AUTH",
+      "CONNECT_STAGE_AUTH_HANDLE_MULTI_AUTH_RESPONSE",
+      "CONNECT_STAGE_PREP_SELECT_DATABASE",
+      "CONNECT_STAGE_PREP_INIT_COMMANDS",
+      "CONNECT_STAGE_SEND_ONE_INIT_COMMAND",
+      "CONNECT_STAGE_COMPLETE"};
+
+  myheader("test_wl15651");
+
+  enum connect_stage cs = mysql_get_connect_nonblocking_stage(mysql_async);
+  DIE_UNLESS(cs == CONNECT_STAGE_INVALID);
+
+  /* test stages for a nonblocking conneciton */
+  mysql_async = mysql_client_init(NULL);
+  DIE_UNLESS(mysql_async != nullptr);
+
+  cs = mysql_get_connect_nonblocking_stage(mysql_async);
+  DIE_UNLESS(cs == CONNECT_STAGE_NOT_STARTED);
+
+  enum connect_stage cs_prev = cs;
+  do {
+    status = mysql_real_connect_nonblocking(
+        mysql_async, opt_host, opt_user, opt_password, current_db, opt_port,
+        opt_unix_socket, CLIENT_MULTI_STATEMENTS);
+    cs = mysql_get_connect_nonblocking_stage(mysql_async);
+    if (cs != cs_prev) {
+      if (!opt_silent)
+        fprintf(stdout,
+                "\n Nonblocking connect made transition from stage %s(%d) to "
+                "%s(%d)",
+                stage_names[cs_prev], cs_prev, stage_names[cs], cs);
+      cs_prev = cs;
+    }
+  } while (status == NET_ASYNC_NOT_READY);
+  DIE_UNLESS(status != NET_ASYNC_ERROR);
+
+  cs = mysql_get_connect_nonblocking_stage(mysql_async);
+  DIE_UNLESS(cs == CONNECT_STAGE_COMPLETE);
+
+  if (!opt_silent)
+    fprintf(stdout, "\n Nonblocking connect successful. Final stage %s(%d)",
+            stage_names[cs], cs);
+
+  mysql_close(mysql_async);
+
+  /* test stages for a blocking conneciton */
+  mysql_sync = mysql_client_init(NULL);
+  DIE_UNLESS(mysql_sync != nullptr);
+
+  cs = mysql_get_connect_nonblocking_stage(mysql_sync);
+  DIE_UNLESS(cs == CONNECT_STAGE_NOT_STARTED);
+
+  if (!opt_silent)
+    fprintf(stdout, "\n Starting blocking connect. Starting stage %s(%d)",
+            stage_names[cs], cs);
+
+  ret = mysql_real_connect(mysql_sync, opt_host, opt_user, opt_password,
+                           current_db, opt_port, opt_unix_socket, 0);
+  DIE_UNLESS(ret == mysql_sync);
+
+  cs = mysql_get_connect_nonblocking_stage(mysql_sync);
+  DIE_UNLESS(cs == CONNECT_STAGE_COMPLETE);
+
+  if (!opt_silent)
+    fprintf(stdout, "\n Blocking connect successful. Final stage %s(%d)",
+            stage_names[cs], cs);
+
+  mysql_close(mysql_sync);
+}
+
+static void test_wl14839() {
+  myheader("test_wl14839");
+  int rc;
+
+  MYSQL *lmysql = mysql_client_init(nullptr);
+  DIE_UNLESS(lmysql);
+
+  printf("set gizmo as a SNI name.\n");
+  rc = mysql_options(lmysql, MYSQL_OPT_TLS_SNI_SERVERNAME, "gizmo");
+  myquery2(lmysql, rc);
+
+  printf("connect.\n");
+  if (!mysql_real_connect(lmysql, opt_host, opt_user, opt_password, current_db,
+                          opt_port, opt_unix_socket, 0)) {
+    fprintf(stderr, "Failed to connect to the database\n");
+    DIE_UNLESS(0);
+  }
+
+  printf("get the status Tls_sni_server_name var.\n");
+  rc = mysql_query(lmysql, "SHOW SESSION STATUS LIKE 'Tls_sni_server_name'");
+  myquery2(lmysql, rc);
+
+  MYSQL_RES *result = mysql_store_result(lmysql);
+  mytest2(lmysql, result);
+
+  MYSQL_ROW row;
+  if (!(row = mysql_fetch_row(result)) || !row[1]) {
+    fprintf(stdout, "\n *** ERROR: FAILED TO GET THE RESULT ***");
+    DIE_UNLESS(false);
+  }
+  printf("check the status Tls_sni_server_name var's value.\n");
+  if (strcmp(row[1], "gizmo")) {
+    fprintf(stdout, "\n obtained: `%s` (expected: `gizmo`)", row[1]);
+    DIE_UNLESS(false);
+  }
+  printf("Done\n");
+  mysql_free_result(result);
+
+  mysql_close(lmysql);
+}
+
+static void test_wl15633(void) {
+  myheader("test_wl15633");
+  MYSQL *mysql_local;
+  net_async_status status;
+
+  fprintf(stdout, "\n Establishing a test connection ...");
+  if (!(mysql_local = mysql_client_init(nullptr))) {
+    myerror("mysql_client_init() failed");
+    exit(1);
+  }
+
+  if (!(mysql_real_connect(mysql_local, opt_host, opt_user, opt_password,
+                           current_db, opt_port, opt_unix_socket, 0))) {
+    myerror("connection failed");
+    exit(1);
+  }
+
+  do {
+    status = mysql_reset_connection_nonblocking(mysql_local);
+  } while (status == NET_ASYNC_NOT_READY);
+
+  if (status == NET_ASYNC_ERROR) {
+    fprintf(stdout, "\n connection reset failed(%s)", mysql_error(mysql_local));
+    exit(1);
+  }
+
+  if (status == NET_ASYNC_COMPLETE) {
+    fprintf(stdout, "\n connection reset done in nonblocking way");
+  }
+
+  mysql_close(mysql_local);
+}
+
 static struct my_tests_st my_tests[] = {
     {"test_bug5194", test_bug5194},
     {"disable_query_logs", disable_query_logs},
@@ -23849,6 +24023,9 @@ static struct my_tests_st my_tests[] = {
     {"test_bug25584097", test_bug25584097},
     {"test_34556764", test_34556764},
     {"test_bug34869076", test_bug34869076},
+    {"test_wl15651", test_wl15651},
+    {"test_wl14839", test_wl14839},
+    {"test_wl15633", test_wl15633},
     {nullptr, nullptr}};
 
 static struct my_tests_st *get_my_tests() { return my_tests; }

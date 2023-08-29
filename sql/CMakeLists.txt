@@ -386,6 +386,7 @@ SET(SQL_SHARED_SOURCES
   histograms/equi_height_bucket.cc
   histograms/histogram.cc
   histograms/singleton.cc
+  histograms/table_histograms.cc
   histograms/value_map.cc
   hostname_cache.cc
   init.cc
@@ -431,6 +432,7 @@ SET(SQL_SHARED_SOURCES
   join_optimizer/online_cycle_finder.cc
   join_optimizer/overflow_bitset.cc
   join_optimizer/print_utils.cc
+  join_optimizer/relational_expression.cc
   join_optimizer/replace_item.cc
   json_diff.cc
   json_schema.cc
@@ -555,7 +557,6 @@ SET(SQL_SHARED_SOURCES
   sql_help.cc
   sql_import.cc
   sql_insert.cc
-  sql_join_buffer.cc
   sql_lex.cc
   sql_lex_hash.cc
   sql_lex_hints.cc
@@ -634,6 +635,9 @@ SET(SQL_SHARED_SOURCES
   xa/transaction_cache.cc
   xa/xid_extract.cc
   daemon_proxy_keyring/daemon_proxy_keyring.cc
+  reference_caching_setup.cc
+  sql_event_tracking_to_audit_event_mapping.cc
+  command_mapping.cc
   )
 
 IF(BUILD_IS_SINGLE_CONFIG)
@@ -995,6 +999,7 @@ SET(BINLOG_SOURCE
   binlog/group_commit/atomic_bgc_ticket_guard.cc
   binlog/monitoring/context.cc
   binlog/decompressing_event_object_istream.cc
+  binlog/services/iterator/file_storage.cc
   binlog.cc
   binlog_istream.cc
   binlog_ostream.cc
@@ -1154,7 +1159,7 @@ ELSE()
     ${CMAKE_CURRENT_SOURCE_DIR}/sql_yacc.yy
     ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
     COMPILE_FLAGS
-    "--name-prefix=MYSQL --yacc ${BISON_FLAGS_WARNINGS} ${BISON_NO_LINE_OPT}"
+    "--yacc ${BISON_FLAGS_WARNINGS} ${BISON_NO_LINE_OPT}"
     DEFINES_FILE ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.h
     )
 
@@ -1162,7 +1167,7 @@ ELSE()
     ${CMAKE_CURRENT_SOURCE_DIR}/sql_hints.yy
     ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
     COMPILE_FLAGS
-    "--name-prefix=HINT_PARSER_ --yacc ${BISON_FLAGS_WARNINGS} ${BISON_NO_LINE_OPT}"
+    "--yacc ${BISON_FLAGS_WARNINGS} ${BISON_NO_LINE_OPT}"
     DEFINES_FILE ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.h
     )
 

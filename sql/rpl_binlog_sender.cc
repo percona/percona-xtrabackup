@@ -32,18 +32,17 @@
 
 #include "lex_string.h"
 #include "libbinlogevents/include/binlog_event.h"  // binary_log::max_log_event_size
-#include "m_string.h"
 #include "map_helpers.h"
 #include "my_byteorder.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
-#include "my_loglevel.h"
 #include "my_pointer_arithmetic.h"
 #include "my_sys.h"
 #include "my_thread.h"
 #include "mysql.h"
 #include "mysql/components/services/bits/psi_stage_bits.h"
 #include "mysql/components/services/log_builtins.h"
+#include "mysql/my_loglevel.h"
 #include "mysql/psi/mysql_file.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "scope_guard.h"
@@ -64,6 +63,7 @@
 #include "sql/sql_class.h"      // THD
 #include "sql/system_variables.h"
 #include "sql_string.h"
+#include "string_with_len.h"
 #include "typelib.h"
 #include "unsafe_string_append.h"
 

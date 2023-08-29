@@ -410,7 +410,8 @@ class SharedRouter {
 
             {"client_ssl_key", SSL_TEST_DATA_DIR "/server-key-sha512.pem"},
             {"client_ssl_cert", SSL_TEST_DATA_DIR "/server-cert-sha512.pem"},
-            {"connection_sharing", "0"},
+            {"connection_sharing", "0"},  //
+            {"connect_retry_timeout", "0"},
       });
     }
 
@@ -2171,17 +2172,20 @@ TEST_P(ConnectionTest, classic_protocol_prepare_execute) {
   ASSERT_NO_ERROR(
       cli.connect(shared_router()->host(), shared_router()->port(GetParam())));
 
+  SCOPED_TRACE("// prepare");
   auto res = cli.prepare("SELECT ?");
   ASSERT_NO_ERROR(res);
 
   auto stmt = std::move(res.value());
 
+  SCOPED_TRACE("// bind_params");
   std::array<MYSQL_BIND, 1> params{
       NullParam{},
   };
   ASSERT_NO_ERROR(stmt.bind_params(params));
 
-  // execute again to trigger a StmtExecute with new-params-bound = 1.
+  SCOPED_TRACE(
+      "// execute again to trigger a StmtExecute with new-params-bound = 1.");
   {
     auto exec_res = stmt.execute();
     ASSERT_NO_ERROR(exec_res);
@@ -2191,7 +2195,8 @@ TEST_P(ConnectionTest, classic_protocol_prepare_execute) {
     }
   }
 
-  // execute again to trigger a StmtExecute with new-params-bound = 0.
+  SCOPED_TRACE(
+      "// execute again to trigger a StmtExecute with new-params-bound = 0.");
   {
     auto exec_res = stmt.execute();
     ASSERT_NO_ERROR(exec_res);
@@ -2307,7 +2312,7 @@ TEST_P(ConnectionTest, classic_protocol_prepare_append_data_execute) {
   };
   {
     auto bind_res = stmt.bind_params(params);
-    EXPECT_TRUE(bind_res) << bind_res.error();
+    ASSERT_NO_ERROR(bind_res) << bind_res.error();
   }
 
   // a..b..c..d
@@ -2315,30 +2320,30 @@ TEST_P(ConnectionTest, classic_protocol_prepare_append_data_execute) {
   // longdata: c_string with len
   {
     auto append_res = stmt.append_param_data(0, "a", 1);
-    EXPECT_TRUE(append_res) << append_res.error();
+    ASSERT_NO_ERROR(append_res);
   }
 
   // longdata: string_view
   {
     auto append_res = stmt.append_param_data(0, "b"sv);
-    EXPECT_TRUE(append_res) << append_res.error();
+    ASSERT_NO_ERROR(append_res);
   }
 
   // longdata: string_view from std::string
   {
     auto append_res = stmt.append_param_data(0, std::string("c"));
-    EXPECT_TRUE(append_res) << append_res.error();
+    ASSERT_NO_ERROR(append_res);
   }
 
   // longdata: string_view from c-string
   {
     auto append_res = stmt.append_param_data(0, "d");
-    EXPECT_TRUE(append_res) << append_res.error();
+    ASSERT_NO_ERROR(append_res);
   }
 
   {
     auto exec_res = stmt.execute();
-    EXPECT_TRUE(exec_res) << exec_res.error();
+    ASSERT_NO_ERROR(exec_res);
 
     // may contain multi-resultset
     size_t results{0};
@@ -2371,7 +2376,7 @@ TEST_P(ConnectionTest, classic_protocol_prepare_append_data_execute) {
   // execute again
   {
     auto exec_res = stmt.execute();
-    EXPECT_TRUE(exec_res) << exec_res.error();
+    ASSERT_NO_ERROR(exec_res);
   }
 }
 
@@ -3494,6 +3499,75 @@ TEST_P(ConnectionTest, classic_protocol_charset_after_connect) {
 
     EXPECT_THAT(*cmd_res,
                 ElementsAre(ElementsAre("latin1", "latin1_swedish_ci")));
+  }
+}
+
+TEST_P(ConnectionTest, classic_protocol_router_trace_set_fails) {
+  RecordProperty("Worklog", "15582");
+  RecordProperty("RequirementId", "FR2");
+  RecordProperty("Requirement",
+                 "If connection pooling is not active, or the query is sent "
+                 "via other commands (e.g. `COM_STMT_PREPARE`) the behaviour "
+                 "MUST not change.");
+
+  RecordProperty("Description",
+                 "check that `ROUTER SET trace = 1` fails via `COM_QUERY`");
+
+  MysqlClient cli;
+
+  auto account = SharedServer::native_empty_password_account();
+
+  cli.username(account.username);
+  cli.password(account.password);
+
+  ASSERT_NO_ERROR(
+      cli.connect(shared_router()->host(), shared_router()->port(GetParam())));
+
+  {
+    auto cmd_res = cli.query("ROUTER SET trace = 1");
+    ASSERT_ERROR(cmd_res);
+
+    EXPECT_EQ(cmd_res.error().value(), 1064) << cmd_res.error();
+  }
+}
+
+TEST_P(ConnectionTest, classic_protocol_query_attribute_router_trace_ignored) {
+  RecordProperty("Worklog", "15582");
+  RecordProperty("RequirementId", "FR2");
+  RecordProperty("Requirement",
+                 "If connection pooling is not active, or the query is sent "
+                 "via other commands (e.g. `COM_STMT_PREPARE`) the behaviour "
+                 "MUST not change.");
+
+  RecordProperty("Description",
+                 "check that query attributes starting with `router.` are "
+                 "forwarded as is and don't generate a trace.");
+
+  MysqlClient cli;
+
+  auto account = SharedServer::native_empty_password_account();
+
+  cli.username(account.username);
+  cli.password(account.password);
+
+  ASSERT_NO_ERROR(
+      cli.connect(shared_router()->host(), shared_router()->port(GetParam())));
+
+  {
+    uint8_t tiny_one{1};
+    std::array<MYSQL_BIND, 1> params{};
+    params[0] = {};
+    params[0].buffer = &tiny_one;
+    params[0].buffer_length = sizeof(tiny_one);
+    params[0].buffer_type = MYSQL_TYPE_TINY;
+    std::array<const char *, 1> param_names{{"router.trace"}};
+
+    auto cmd_res = cli.query("DO 1", params, param_names);
+    ASSERT_NO_ERROR(cmd_res);
+
+    auto warning_count_res = cli.warning_count();
+    ASSERT_NO_ERROR(warning_count_res);
+    EXPECT_EQ(*warning_count_res, 0);
   }
 }
 

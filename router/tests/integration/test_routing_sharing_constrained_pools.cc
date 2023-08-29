@@ -477,7 +477,8 @@ class SharedRouter {
                 {"client_ssl_cert",
                  SSL_TEST_DATA_DIR "/server-cert-sha512.pem"},
                 {"connection_sharing", "1"},
-                {"connection_sharing_delay", "0"},
+                {"connection_sharing_delay", "0"},  //
+                {"connect_retry_timeout", "0"},
             });
       }
     }
@@ -1463,9 +1464,16 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
   SCOPED_TRACE("// verify multi-statement works");
   {
     auto query_res = cli.query("DO /* client[0] = PASS */ 1; DO 2");
-    ASSERT_NO_ERROR(query_res);
+    if (can_share) {
+      ASSERT_ERROR(query_res);
 
-    for (const auto &res [[maybe_unused]] : *query_res) {
+      // Multi-Statements are forbidden if connection-sharing is enabled.
+      EXPECT_EQ(query_res.error().value(), 4501);
+    } else {
+      ASSERT_NO_ERROR(query_res);
+
+      for (const auto &res [[maybe_unused]] : *query_res) {
+      }
     }
   }
 
@@ -1494,9 +1502,16 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
   SCOPED_TRACE("// the 1st connection still is multi-statement");
   {
     auto query_res = cli.query("DO /* client[0] = PASS */ 1; DO 2");
-    ASSERT_NO_ERROR(query_res);
+    if (can_share) {
+      ASSERT_ERROR(query_res);
 
-    for (const auto &res [[maybe_unused]] : *query_res) {
+      // Multi-Statements are forbidden if connection-sharing is enabled.
+      EXPECT_EQ(query_res.error().value(), 4501);
+    } else {
+      ASSERT_NO_ERROR(query_res);
+
+      for (const auto &res [[maybe_unused]] : *query_res) {
+      }
     }
   }
 }

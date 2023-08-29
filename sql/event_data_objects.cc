@@ -25,17 +25,16 @@
 #include <string.h>
 
 #include "lex_string.h"
-#include "m_ctype.h"
-#include "m_string.h"
 #include "my_dbug.h"
-#include "my_loglevel.h"
 #include "my_sys.h"
 #include "mysql/components/services/bits/psi_bits.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/components/services/log_shared.h"
+#include "mysql/my_loglevel.h"
 #include "mysql/psi/mysql_sp.h"
 #include "mysql/psi/mysql_statement.h"
 #include "mysql/service_mysql_alloc.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql_time.h"
 #include "mysqld.h"
 #include "mysqld_error.h"
@@ -71,6 +70,7 @@
 // calc_time_diff.
 #include "sql/tztime.h"  // my_tz_find, my_tz_OFFSET0
 #include "sql_string.h"
+#include "string_with_len.h"
 
 class Item;
 
@@ -149,7 +149,7 @@ bool Event_creation_ctx::create_event_creation_ctx(
   const CHARSET_INFO *client_cs = nullptr;
   const CHARSET_INFO *connection_cl = nullptr;
   const CHARSET_INFO *db_cl = nullptr;
-  bool invalid_creation_ctx = false;
+  const bool invalid_creation_ctx = false;
   auto collation_info = [](uint id) { return get_charset(id, MYF(0)); };
 
   // Set collation or charset attribute of client, connection and database.
@@ -539,8 +539,8 @@ static bool get_next_time(const Time_zone *time_zone, my_time_t *next,
   if (seconds) {
     longlong seconds_diff;
     long microsec_diff;
-    bool negative = calc_time_diff(local_now, local_start, 1, &seconds_diff,
-                                   &microsec_diff);
+    const bool negative = calc_time_diff(local_now, local_start, 1,
+                                         &seconds_diff, &microsec_diff);
     if (!negative) {
       /*
         The formula below returns the interval that, when added to
@@ -615,8 +615,9 @@ static bool get_next_time(const Time_zone *time_zone, my_time_t *next,
       } while (next_time <= time_now);
     }
   } else {
-    long diff_months = ((long)local_now.year - (long)local_start.year) * 12 +
-                       ((long)local_now.month - (long)local_start.month);
+    const long diff_months =
+        ((long)local_now.year - (long)local_start.year) * 12 +
+        ((long)local_now.month - (long)local_start.month);
 
     /*
       Unlike for seconds above, the formula below returns the interval
@@ -1177,7 +1178,7 @@ end:
 
       // Prevent InnoDB from automatically committing the InnoDB transaction
       // after updating the data-dictionary table.
-      Disable_autocommit_guard autocommit_guard(thd);
+      const Disable_autocommit_guard autocommit_guard(thd);
 
       /*
         NOTE: even if we run in read-only mode, we should be able to lock
@@ -1191,7 +1192,7 @@ end:
       saved_master_access = thd->security_context()->master_access();
       thd->security_context()->set_master_access(saved_master_access |
                                                  SUPER_ACL);
-      bool save_tx_read_only = thd->tx_read_only;
+      const bool save_tx_read_only = thd->tx_read_only;
       thd->tx_read_only = false;
 
       ret = Events::drop_event(thd, m_schema_name, m_event_name, false);
