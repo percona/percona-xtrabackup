@@ -93,4 +93,12 @@ extern bool estimate_memory;
 /** Parameter to enable estimate memory. Used at --backup */
 extern bool xtrabackup_estimate_memory;
 #define SQUOTE(str) "'" << str << "'"
+
+const std::string KEYRING_NOT_LOADED =
+    "Unable to decrypt. Please check if xtrabackup is configured correctly to "
+    "access the keyring plugin or component. Check --xtrabackup-plugin-dir. "
+    "Also verify if valid keyring_file_data is passed with the option "
+    "--keyring_file_data. If keyring component is used, check if "
+    "--component-keyring-config points to valid configuration";
+
 #endif

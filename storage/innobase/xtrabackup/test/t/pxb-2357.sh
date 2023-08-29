@@ -1,5 +1,7 @@
 # PXB-2357: hang in backup with redo log archive#
 
+skip_test "This test is not testing what it is intended to. Check PXB-3110"
+
 require_debug_pxb_version
 
 require_server_version_higher_than 8.0.16

@@ -118,4 +118,20 @@ run_cmd_expect_failure grep 'failed to execute query SELECT \* FROM test.t_hello
 kill -USR1 $job_id
 wait $job_id
 
+
+# PXB-2860 - lock-ddl-per-table locks all tables in the database even with --tables
+mysql -e "CREATE TABLE tb1 (val INT)" test
+mysql -e "CREATE TABLE tb2 (val INT)" test
+
+xtrabackup --backup --target-dir=$topdir/backup7 --tables=tb1 --lock-ddl-per-table --lock-ddl=OFF 2> >( tee $topdir/PXB-2860 )
+
+if ! grep -q '`test`.`tb2` match an exclude rule. Skipping' $topdir/PXB-2860 ; then
+    die "xtrabackup did not skip MDL on excluded table"
+fi
+
+
+if ! grep -q 'Locking MDL for `test`.`tb1`' $topdir/PXB-2860 ; then
+    die "xtrabackup did not MDL lock on included table"
+fi
+
 stop_server

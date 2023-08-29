@@ -1,0 +1,45 @@
+name: Pre-commit Checks
+
+on:
+  push:
+    branches:
+      - 8.*
+      - release-*
+  pull_request:
+
+jobs:
+  bidi_scan_job:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: '32'
+    - name: Run BiDi Scan
+      run: |
+        git fetch origin 8.0
+        CHANGED_FILES=$(git diff --name-only --relative --diff-filter AMR origin/8.0 -- . | tr '\n' ' ')
+
+        if [ -z "${CHANGED_FILES}" ]; then
+            echo --- No changed files
+        else
+            python ${{github.workspace}}/scripts/find_unicode_control.py -p bidi -v ${CHANGED_FILES}
+        fi
+  clang_format:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: '32'
+    - name: Install clang-format
+      run: sudo apt-get install -y clang-format
+    - name: Run clang-format
+      run: |
+        git diff -U0 --no-color HEAD^1 *.c *.cc *.cpp *.h *.hpp *.i *.ic *.ih | clang-format-diff -style=file -p1 >_GIT_DIFF
+        if [ ! -s _GIT_DIFF ]; then
+          echo The last git commit is clang-formatted;
+        else
+          cat _GIT_DIFF;
+          false;
+        fi
