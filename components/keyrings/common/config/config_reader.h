@@ -64,6 +64,40 @@ class Config_reader {
     return false;
   }
 
+  /**
+    Check if an element with the provided name exists.
+
+    @param [in]  element_name  Name of the element being checked
+
+    @returns status of operation
+      @retval false Element found.
+      @retval true  Element is not found.
+  */
+
+  bool has_element(const std::string &element_name);
+
+  /**
+    Check if an element value is of numeric type.
+
+    @param [in]  element_name  Name of the element being checked
+
+    @returns status of type check operation
+      @retval false Element found and it is of numeric type.
+      @retval true  Element type is not a string or element is not found.
+  */
+  bool is_number(const std::string &element_name);
+
+  /**
+    Check if an element value is of string type.
+
+    @param [in]  element_name  Name of the element being checked
+
+    @returns status of type check operation
+      @retval false Element found and it is of string type.
+      @retval true  Element type is not a string or element is not found.
+  */
+  bool is_string(const std::string &element_name);
+
  private:
   /** Configuration file path */
   std::string config_file_path_;

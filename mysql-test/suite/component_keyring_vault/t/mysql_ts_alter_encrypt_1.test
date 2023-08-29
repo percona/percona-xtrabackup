@@ -1,0 +1,37 @@
+--source include/have_component_keyring_vault.inc
+################################################################################
+# InnoDB transparent tablespace data encryption for mysql tablespace.
+# For mysql tablespace, this test will test
+#    1 - Normal alter encryption
+#        - encryption='y' to encryption='n'
+#        - encryption='n' to encryption='y'
+#    2 - Crash during altering mysql tablespace encryption
+#        - encryption='y' to encryption='n'
+#        - encryption='n' to encryption='y'
+#    3 - Crash
+#        - just before encryption processing starts
+#        - just after encryption processing finishes
+#    4 - Crash during master key rotation
+#    5 - Privilege check
+################################################################################
+
+--source include/big_test.inc
+--source include/have_debug.inc
+# Disable in valgrind because of timeout, cf. Bug#22760145
+--source include/not_valgrind.inc
+
+--let $vault_conf_mount_point_uuid = `SELECT UUID()`
+--source ../inc/parse_combination.inc
+
+# Create mount points
+--let $vault_conf_mount_point_suffix =
+--let $mount_point_service_op = CREATE
+--source ../inc/mount_point_service.inc
+
+--source ../inc/setup_component.inc
+--source include/keyring_tests/mats/mysql_ts_alter_encrypt_1.inc
+--source ../inc/teardown_component.inc
+
+# Delete mount points
+--let $mount_point_service_op = DELETE
+--source ../inc/mount_point_service.inc

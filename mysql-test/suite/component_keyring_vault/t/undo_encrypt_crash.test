@@ -1,0 +1,22 @@
+--source include/have_component_keyring_vault.inc
+--source include/big_test.inc
+--source include/not_parallel.inc
+--source include/have_debug.inc
+# This test must be not be run in parallel with other tests because
+# it requires global manifest file to load keyring component directly
+
+--let $vault_conf_mount_point_uuid = `SELECT UUID()`
+--source ../inc/parse_combination.inc
+
+# Create mount points
+--let $vault_conf_mount_point_suffix =
+--let $mount_point_service_op = CREATE
+--source ../inc/mount_point_service.inc
+
+--source ../inc/setup_component_customized.inc
+--source include/keyring_tests/innodb/undo_encrypt_crash.inc
+--source ../inc/teardown_component_customized.inc
+
+# Delete mount points
+--let $mount_point_service_op = DELETE
+--source ../inc/mount_point_service.inc

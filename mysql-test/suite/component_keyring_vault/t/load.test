@@ -1,0 +1,16 @@
+--source include/have_component_keyring_vault.inc
+# Load-Unload test for component_keyring_vault
+
+--let $vault_conf_mount_point_uuid = `SELECT UUID()`
+--source ../inc/parse_combination.inc
+
+# Create mount points
+--let $mount_point_service_op = CREATE
+--source ../inc/mount_point_service.inc
+
+--source ../inc/setup_component.inc
+--source ../inc/teardown_component.inc
+
+# Delete mount points
+--let $mount_point_service_op = DELETE
+--source ../inc/mount_point_service.inc
