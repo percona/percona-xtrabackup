@@ -45,7 +45,7 @@ bool keyring_init_online(MYSQL *connection);
 
 /**
   Initialize Keyring component by reading xtrabackup_keyring_component.cnf file
-  This is used at --prepare, --stats, --move-back, --copy-back
+  This is used at --prepare, --move-back, --copy-back
 
   @return false in case of error, true otherwise
   @keyring_component_initialized false keyring component not initialized

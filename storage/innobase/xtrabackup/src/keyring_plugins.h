@@ -29,21 +29,14 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 @return true if success */
 bool xb_keyring_init_for_backup(MYSQL *connection);
 
-/** Initialize keyring plugin for stats mode. Configuration is read from
-argc and argv.
-@param[in, out]	argc	Command line options (count)
-@param[in, out]	argv	Command line options (values)
-@return true if success */
-bool xb_keyring_init_for_stats(int argc, char **argv);
-
-/** Initialize keyring plugin for stats mode. Configuration is read from
+/** Initialize keyring plugin for prepare mode. Configuration is read from
 argc and argv, server uuid and plugin name is read from backup-my.cnf.
 @param[in, out]	argc	Command line options (count)
 @param[in, out]	argv	Command line options (values)
 @return true if success */
 bool xb_keyring_init_for_prepare(int argc, char **argv);
 
-/** Initialize keyring plugin for stats mode. Configuration is read from
+/** Initialize keyring plugin for copy-back mode. Configuration is read from
 argc and argv, server uuid is read from backup-my.cnf, plugin name is read
 from my.cnf.
 @param[in, out]	argc	Command line options (count)

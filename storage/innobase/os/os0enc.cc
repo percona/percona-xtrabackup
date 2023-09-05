@@ -317,11 +317,6 @@ void Encryption::get_master_key(uint32_t master_key_id, char *srv_uuid,
 
   if (ret != 0) {
     *master_key = nullptr;
-#if defined(XTRABACKUP)
-    if (xtrabackup_stats)
-      ib::error(ER_IB_MSG_832)
-          << "xtrabackup: Encryption is not supported with --stats";
-#endif
     ib::error(ER_IB_MSG_832) << "Encryption can't find master key,"
                              << " please check the keyring is loaded.";
   }
@@ -437,11 +432,6 @@ void Encryption::get_master_key(uint32_t *master_key_id,
 
   if (retval == -1) {
     *master_key = nullptr;
-#if defined(XTRABACKUP)
-    if (xtrabackup_stats)
-      ib::error(ER_IB_MSG_832)
-          << "xtrabackup: Encryption is not supported with --stats";
-#endif
     ib::error(ER_IB_MSG_836) << "Encryption can't find master key, please check"
                              << " the keyring is loaded.";
   }

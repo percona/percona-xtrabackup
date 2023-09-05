@@ -149,7 +149,6 @@ char xtrabackup_real_target_dir[FN_REFLEN] = "./xtrabackup_backupfiles/";
 char *xtrabackup_target_dir = xtrabackup_real_target_dir;
 bool xtrabackup_version = false;
 bool xtrabackup_backup = false;
-bool xtrabackup_stats = false;
 bool xtrabackup_prepare = false;
 bool xtrabackup_copy_back = false;
 bool xtrabackup_move_back = false;
@@ -599,7 +598,6 @@ enum options_xtrabackup {
   OPT_XTRA_TARGET_DIR = 1000, /* make sure it is larger
                                  than OPT_MAX_CLIENT_OPTION */
   OPT_XTRA_BACKUP,
-  OPT_XTRA_STATS,
   OPT_XTRA_PREPARE,
   OPT_XTRA_EXPORT,
   OPT_XTRA_APPLY_LOG_ONLY,
@@ -782,10 +780,6 @@ struct my_option xb_client_options[] = {
      GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
     {"backup", OPT_XTRA_BACKUP, "take backup to target-dir",
      (G_PTR *)&xtrabackup_backup, (G_PTR *)&xtrabackup_backup, 0, GET_BOOL,
-     NO_ARG, 0, 0, 0, 0, 0, 0},
-    {"stats", OPT_XTRA_STATS,
-     "calc statistic of datadir (offline mysqld is recommended)",
-     (G_PTR *)&xtrabackup_stats, (G_PTR *)&xtrabackup_stats, 0, GET_BOOL,
      NO_ARG, 0, 0, 0, 0, 0, 0},
     {"prepare", OPT_XTRA_PREPARE,
      "prepare a backup for starting mysql server on the backup.",
@@ -1358,13 +1352,13 @@ struct my_option xb_client_options[] = {
 
     {"component-keyring-config", OPT_COMPONENT_KEYRING_CONFIG,
      "Path to load component config. Used for --prepare, --move-back,"
-     " --copy-back and --stats.",
+     " --copy-back.",
      &opt_component_keyring_config, &opt_component_keyring_config, 0, GET_STR,
      OPT_ARG, 0, 0, 0, 0, 0, 0},
 
     {"component-keyring-file-config", OPT_COMPONENT_KEYRING_FILE_CONFIG,
      "Path to load keyring component config. Used for --prepare, --move-back,"
-     " --copy-back and --stats. (Deprecated, please use "
+     " --copy-back. (Deprecated, please use "
      "--component-keyring-config instead)",
      &opt_component_keyring_file_config, &opt_component_keyring_file_config, 0,
      GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
@@ -2064,7 +2058,7 @@ static bool innodb_init_param(void) {
   /* Set InnoDB initialization parameters according to the values
   read from MySQL .cnf file */
 
-  if (xtrabackup_backup || xtrabackup_stats) {
+  if (xtrabackup_backup) {
     xb::info() << "using the following InnoDB configuration:";
   } else {
     xb::info() << "using the following InnoDB configuration "
@@ -2075,11 +2069,10 @@ static bool innodb_init_param(void) {
 
   /* The default dir for data files is the datadir of MySQL */
 
-  srv_data_home = ((xtrabackup_backup || xtrabackup_stats) &&
-                           (innobase_data_home_dir != nullptr &&
-                            *innobase_data_home_dir != '\0')
-                       ? innobase_data_home_dir
-                       : default_path);
+  srv_data_home = xtrabackup_backup && (innobase_data_home_dir != nullptr &&
+                                        *innobase_data_home_dir != '\0')
+                      ? innobase_data_home_dir
+                      : default_path;
   Fil_path::normalize(srv_data_home);
   xb::info() << "innodb_data_home_dir = " << srv_data_home;
 
@@ -2146,7 +2139,7 @@ static bool innodb_init_param(void) {
 
   /* The default dir for log files is the datadir of MySQL */
 
-  if (!((xtrabackup_backup || xtrabackup_stats) && srv_log_group_home_dir)) {
+  if (!(xtrabackup_backup && srv_log_group_home_dir)) {
     srv_log_group_home_dir = default_path;
   }
   if (xtrabackup_prepare && xtrabackup_incremental_dir) {
@@ -4405,417 +4398,6 @@ void xtrabackup_backup_func(void) {
 
   xb_keyring_shutdown();
 
-  cleanup_mysql_environment();
-}
-
-/* ================= stats ================= */
-static bool xtrabackup_stats_level(dict_index_t *index, ulint level) {
-  ulint space;
-  page_t *page;
-
-  rec_t *node_ptr;
-
-  ulint right_page_no;
-
-  page_cur_t cursor;
-
-  mtr_t mtr;
-  mem_heap_t *heap = mem_heap_create(256, UT_LOCATION_HERE);
-
-  ulint *offsets = NULL;
-
-  ulonglong n_pages, n_pages_extern;
-  ulonglong sum_data, sum_data_extern;
-  ulonglong n_recs;
-  buf_block_t *block;
-  page_size_t page_size(0, 0, false);
-  bool found;
-
-  n_pages = sum_data = n_recs = 0;
-  n_pages_extern = sum_data_extern = 0;
-
-  if (level == 0)
-    fprintf(stdout, "        leaf pages: ");
-  else
-    fprintf(stdout, "     level %lu pages: ", level);
-
-  mtr_start(&mtr);
-
-  mtr_x_lock(&(index->lock), &mtr, UT_LOCATION_HERE);
-  block = btr_root_block_get(index, RW_X_LATCH, &mtr);
-  page = buf_block_get_frame(block);
-
-  space = page_get_space_id(page);
-  page_size.copy_from(fil_space_get_page_size(space, &found));
-
-  ut_a(found);
-
-  while (level != btr_page_get_level(page)) {
-    ut_a(space == block->page.id.space());
-    ut_a(space == page_get_space_id(page));
-    ut_a(!page_is_leaf(page));
-
-    page_cur_set_before_first(block, &cursor);
-    page_cur_move_to_next(&cursor);
-
-    node_ptr = page_cur_get_rec(&cursor);
-    offsets = rec_get_offsets(node_ptr, index, offsets, ULINT_UNDEFINED,
-                              UT_LOCATION_HERE, &heap);
-    block = btr_node_ptr_get_child(node_ptr, index, offsets, &mtr);
-    page = buf_block_get_frame(block);
-  }
-
-loop:
-  mem_heap_empty(heap);
-  offsets = NULL;
-  mtr_x_lock(&(index->lock), &mtr, UT_LOCATION_HERE);
-
-  right_page_no = btr_page_get_next(page, &mtr);
-
-  n_pages++;
-  sum_data += page_get_data_size(page);
-  n_recs += page_get_n_recs(page);
-
-  if (level == 0) {
-    page_cur_t cur;
-    ulint n_fields;
-    ulint i;
-    mem_heap_t *local_heap = NULL;
-    ulint offsets_[REC_OFFS_NORMAL_SIZE];
-    ulint *local_offsets = offsets_;
-
-    *offsets_ = (sizeof offsets_) / sizeof *offsets_;
-
-    page_cur_set_before_first(block, &cur);
-    page_cur_move_to_next(&cur);
-
-    for (;;) {
-      if (page_cur_is_after_last(&cur)) {
-        break;
-      }
-
-      local_offsets =
-          rec_get_offsets(cur.rec, index, local_offsets, ULINT_UNDEFINED,
-                          UT_LOCATION_HERE, &local_heap);
-      n_fields = rec_offs_n_fields(local_offsets);
-
-      for (i = 0; i < n_fields; i++) {
-        if (rec_offs_nth_extern(nullptr, local_offsets, i)) {
-          page_t *local_page;
-          ulint space_id;
-          ulint page_no;
-          ulint offset;
-          byte *blob_header;
-          ulint part_len;
-          mtr_t local_mtr;
-          ulint local_len;
-          byte *data;
-          buf_block_t *local_block;
-
-          data =
-
-              rec_get_nth_field(nullptr, cur.rec, local_offsets, i, &local_len);
-
-          ut_a(local_len >= BTR_EXTERN_FIELD_REF_SIZE);
-          local_len -= BTR_EXTERN_FIELD_REF_SIZE;
-
-          space_id =
-              mach_read_from_4(data + local_len + lob::BTR_EXTERN_SPACE_ID);
-          page_no =
-              mach_read_from_4(data + local_len + lob::BTR_EXTERN_PAGE_NO);
-          offset = mach_read_from_4(data + local_len + lob::BTR_EXTERN_OFFSET);
-
-          if (offset == 1) {
-            // see lob0impl.cc::insert
-            part_len =
-                mach_read_from_4(data + local_len + lob::BTR_EXTERN_LEN + 4);
-            sum_data_extern += part_len;
-            continue;
-          }
-
-          for (;;) {
-            mtr_start(&local_mtr);
-
-            local_block =
-                btr_block_get(page_id_t(space_id, page_no), page_size,
-                              RW_S_LATCH, UT_LOCATION_HERE, index, &local_mtr);
-            local_page = buf_block_get_frame(local_block);
-            blob_header = local_page + offset;
-#define BTR_BLOB_HDR_PART_LEN 0
-#define BTR_BLOB_HDR_NEXT_PAGE_NO 4
-            // part_len = btr_blob_get_part_len(blob_header);
-            part_len = mach_read_from_4(blob_header + BTR_BLOB_HDR_PART_LEN);
-
-            // page_no = btr_blob_get_next_page_no(blob_header);
-            page_no = mach_read_from_4(blob_header + BTR_BLOB_HDR_NEXT_PAGE_NO);
-
-            offset = FIL_PAGE_DATA;
-
-            /*=================================*/
-            // fprintf(stdout, "[%lu] ", (ulint) buf_frame_get_page_no(page));
-
-            n_pages_extern++;
-            sum_data_extern += part_len;
-
-            mtr_commit(&local_mtr);
-
-            if (page_no == FIL_NULL) break;
-          }
-        }
-      }
-
-      page_cur_move_to_next(&cur);
-    }
-  }
-
-  mtr_commit(&mtr);
-  if (right_page_no != FIL_NULL) {
-    mtr_start(&mtr);
-    block = btr_block_get(page_id_t(space, dict_index_get_page(index)),
-                          page_size, RW_X_LATCH, UT_LOCATION_HERE, index, &mtr);
-    page = buf_block_get_frame(block);
-    goto loop;
-  }
-  mem_heap_free(heap);
-
-  if (level == 0) fprintf(stdout, "recs=%llu, ", n_recs);
-
-  fprintf(stdout, "pages=%llu, data=%llu bytes, data/pages=%lld%%", n_pages,
-          sum_data, ((sum_data * 100) / page_size.physical()) / n_pages);
-
-  if (level == 0 && n_pages_extern) {
-    putc('\n', stdout);
-    /* also scan blob pages*/
-    fprintf(stdout, "    external pages: ");
-
-    fprintf(stdout, "pages=%llu, data=%llu bytes, data/pages=%lld%%",
-            n_pages_extern, sum_data_extern,
-            ((sum_data_extern * 100) / page_size.physical()) / n_pages_extern);
-  }
-
-  putc('\n', stdout);
-
-  if (level > 0) {
-    xtrabackup_stats_level(index, level - 1);
-  }
-
-  return (true);
-}
-
-static void stat_with_rec(dict_table_t *table, THD *thd,
-                          MDL_ticket *mdl_on_tab) {
-  mutex_exit(&(dict_sys->mutex));
-  if (table != nullptr) {
-    if (!check_if_skip_table(table->name.m_name)) {
-      dict_index_t *index;
-      if (table->first_index()) {
-        dict_stats_update_transient(table);
-      }
-
-      index = UT_LIST_GET_FIRST(table->indexes);
-      while (index != NULL) {
-        uint64_t n_vals;
-        bool found;
-
-        if (index->n_user_defined_cols > 0) {
-          n_vals = index->stat_n_diff_key_vals[index->n_user_defined_cols];
-        } else {
-          n_vals = index->stat_n_diff_key_vals[1];
-        }
-
-        fprintf(
-            stdout,
-            "	table: %s, index: %s, space id: %lu, root page: %lu"
-            ", zip size: %lu"
-            "\n	estimated statistics in dictionary:\n"
-            "		key vals: %lu, leaf pages: %lu, size pages: %lu\n"
-            "	real statistics:\n",
-            table->name.m_name, index->name(), (ulong)index->space,
-            (ulong)index->page,
-            (ulong)fil_space_get_page_size(index->space, &found).physical(),
-            (ulong)n_vals, (ulong)index->stat_n_leaf_pages,
-            (ulong)index->stat_index_size);
-
-        {
-          mtr_t local_mtr;
-          page_t *root;
-          ulint page_level;
-
-          mtr_start(&local_mtr);
-
-          mtr_x_lock(&(index->lock), &local_mtr, UT_LOCATION_HERE);
-
-          root = btr_root_get(index, &local_mtr);
-          page_level = btr_page_get_level(root);
-
-          xtrabackup_stats_level(index, page_level);
-
-          mtr_commit(&local_mtr);
-        }
-
-        putc('\n', stdout);
-        index = UT_LIST_GET_NEXT(indexes, index);
-      }
-    }
-  }
-  mutex_enter(&(dict_sys->mutex));
-  if (table != nullptr) {
-    dd_table_close(table, thd, &mdl_on_tab, true);
-  }
-}
-
-static void xtrabackup_stats_func(int argc, char **argv) {
-  /* cd to datadir */
-
-  if (my_setwd(mysql_real_data_home, MYF(MY_WME))) {
-    xb::error() << "cannot my_setwd " << mysql_real_data_home;
-    exit(EXIT_FAILURE);
-  }
-  xb::info() << "cd to " << mysql_real_data_home;
-
-  mysql_data_home = mysql_data_home_buff;
-  mysql_data_home[0] = FN_CURLIB;  // all paths are relative from here
-  mysql_data_home[1] = 0;
-
-  /* set read only */
-  srv_read_only_mode = true;
-
-  init_mysql_environment();
-  my_thread_init();
-  THD *thd = create_internal_thd();
-  if (!xtrabackup::components::keyring_init_offline()) {
-    xb::error() << "failed to init keyring component";
-    exit(EXIT_FAILURE);
-  }
-  if (!xtrabackup::components::keyring_component_initialized &&
-      !xb_keyring_init_for_stats(argc, argv)) {
-    xb::error() << "failed to init keyring plugin.";
-    exit(EXIT_FAILURE);
-  }
-  xtrabackup::components::inititialize_service_handles();
-  if (!validate_options("my", orig_argc, orig_argv)) {
-    exit(EXIT_FAILURE);
-  }
-
-  srv_max_n_threads = 1000;
-
-  srv_page_size_shift = 14;
-  srv_page_size = (1 << srv_page_size_shift);
-
-  /* initialize components */
-  if (innodb_init_param()) {
-    exit(EXIT_FAILURE);
-  }
-
-  /* Check if the log files have been created, otherwise innodb_init()
-  will crash when called with srv_read_only == true */
-  auto log_files_ctx =
-      Log_files_context{srv_log_group_home_dir, Log_files_ruleset::CURRENT};
-  ut::vector<Log_file_id> listed_files;
-  const dberr_t err = log_list_existing_files(log_files_ctx, listed_files);
-
-  if (err != DB_SUCCESS || listed_files.size() == 0) {
-    xb::error()
-        << "Cannot find correct redo log files, To use the statistics feature, "
-           "you need a clean copy of the database version 8.0.30 or higher "
-           "and with correctly sized log files, so if it is backup directory "
-           "start server once after prepare to use --stats functionality ";
-
-    exit(EXIT_FAILURE);
-  }
-
-  xb::info() << "Starting 'read-only' InnoDB instance to gather "
-                "index statistics.";
-  xb::info() << "Using " << xtrabackup_use_memory
-             << " bytes for buffer pool (set by "
-             << ((estimate_memory) ? "--use-free-memory-pct" : "--use-memory")
-             << " parameter)";
-
-  srv_redo_log_capacity = 1024 * 1024 * 1024;  // default 1G
-  srv_redo_log_capacity_used = 0;
-
-  if (innodb_init(true, false)) exit(EXIT_FAILURE);
-
-  xb_filters_init();
-
-  fprintf(stdout, "\n\n<INDEX STATISTICS>\n");
-
-  /* gather stats */
-
-  {
-    dict_table_t *sys_tables = nullptr;
-    dict_table_t *table = nullptr;
-    btr_pcur_t pcur;
-    const rec_t *rec = nullptr;
-    mtr_t mtr;
-    MDL_ticket *mdl = nullptr;
-    mem_heap_t *heap = mem_heap_create(1000, UT_LOCATION_HERE);
-
-    mutex_enter(&(dict_sys->mutex));
-
-    mtr_start(&mtr);
-
-    rec = dd_startscan_system(thd, &mdl, &pcur, &mtr, "mysql/tables",
-                              &sys_tables);
-
-    while (rec) {
-      MDL_ticket *mdl_on_tab = nullptr;
-      dd_process_dd_tables_rec_and_mtr_commit(heap, rec, &table, sys_tables,
-                                              &mdl_on_tab, &mtr);
-
-      stat_with_rec(table, thd, mdl_on_tab);
-
-      mem_heap_empty(heap);
-
-      mtr_start(&mtr);
-
-      rec = (rec_t *)dd_getnext_system_rec(&pcur, &mtr);
-    }
-
-    mtr_commit(&mtr);
-    dd_table_close(sys_tables, thd, &mdl, true);
-    mem_heap_empty(heap);
-
-    mtr_start(&mtr);
-
-    rec = dd_startscan_system(thd, &mdl, &pcur, &mtr, "mysql/table_partitions",
-                              &sys_tables);
-
-    while (rec) {
-      MDL_ticket *mdl_on_tab = nullptr;
-      dd_process_dd_partitions_rec_and_mtr_commit(heap, rec, &table, sys_tables,
-                                                  &mdl_on_tab, &mtr);
-
-      stat_with_rec(table, thd, mdl_on_tab);
-
-      mem_heap_empty(heap);
-
-      mtr_start(&mtr);
-
-      rec = (rec_t *)dd_getnext_system_rec(&pcur, &mtr);
-    }
-
-    mtr_commit(&mtr);
-    dd_table_close(sys_tables, thd, &mdl, true);
-    mem_heap_free(heap);
-
-    mutex_exit(&(dict_sys->mutex));
-
-  }
-
-  putc('\n', stdout);
-
-  fflush(stdout);
-
-  xb_filters_free();
-
-  /* shutdown InnoDB */
-  if (innodb_end()) exit(EXIT_FAILURE);
-
-  xb_keyring_shutdown();
-
-  destroy_internal_thd(thd);
-  my_thread_end();
   cleanup_mysql_environment();
 }
 
@@ -8000,7 +7582,6 @@ int main(int argc, char **argv) {
     int num = 0;
 
     if (xtrabackup_backup) num++;
-    if (xtrabackup_stats) num++;
     if (xtrabackup_prepare) num++;
     if (xtrabackup_copy_back) num++;
     if (xtrabackup_move_back) num++;
@@ -8032,11 +7613,6 @@ int main(int argc, char **argv) {
   /* --backup */
   if (xtrabackup_backup) {
     xtrabackup_backup_func();
-  }
-
-  /* --stats */
-  if (xtrabackup_stats) {
-    xtrabackup_stats_func(server_argc, server_defaults);
   }
 
   /* --prepare */

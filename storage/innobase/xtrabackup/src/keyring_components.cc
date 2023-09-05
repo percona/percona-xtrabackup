@@ -194,12 +194,6 @@ bool set_component_config_path(const char *component_config, char *fname) {
       return (true);
     }
     return (false);
-  } else if (xtrabackup_stats) {
-    if (fn_format(fname, component_config, mysql_real_data_home, "",
-                  MY_UNPACK_FILENAME | MY_SAFE_PATH) == NULL) {
-      return (false);
-    }
-
   } else {
     if (xtrabackup_incremental_dir != nullptr) {
       if (fn_format(fname, component_config, xtrabackup_incremental_dir, "",
