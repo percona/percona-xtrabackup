@@ -39,15 +39,3 @@ ib_part_restore $TEST_VAR_ROOT/remote $mysql_datadir
 start_server
 
 ib_part_assert_checksum $checksum_a
-
-mysql -e "set global innodb_fast_shutdown=0"
-shutdown_server
-
-COUNT=`xtrabackup --stats --tables-file=$TEST_VAR_ROOT/remote/tables --datadir=$mysql_datadir \
-       | grep table: | grep -v mysql/ | grep -v SYS_ \
-       | awk '{print $2}' | sort -u | wc -l`
-echo "COUNT = $COUNT"
-if [ $COUNT != 5 ] ; then
-	vlog "xtrabackup --stats does not work"
-	exit -1
-fi

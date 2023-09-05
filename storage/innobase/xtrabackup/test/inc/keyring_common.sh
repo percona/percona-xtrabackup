@@ -105,13 +105,11 @@ EOF
   xtrabackup --prepare --export --target-dir=$topdir/backup \
        $prepare_options
 
-  # check that stats works
   if [ -z ${plugin_load+x} ]; then
     plugin_load_arg=""
   else
     plugin_load_arg="--plugin-load=${plugin_load}"
   fi
- # xtrabackup --stats --datadir=$topdir/backup ${plugin_load_arg}
 
   # make sure t1.ibd is still encrypted
   vlog "-- running strings "

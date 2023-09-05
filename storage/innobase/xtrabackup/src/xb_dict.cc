@@ -817,7 +817,6 @@ static dberr_t scan_mysql_index_partitions(THD *thd) {
 
 /** Build dictionary required for prepare phase. Currently used
 for rollback of transactions, export of tables (.cfg file creation)
-and --stats features
 @param[in] thd Server thread context
 @return DB_SUCCESS on success or other DB_* codes on errors */
 static dberr_t build_dictionary(THD *thd) {

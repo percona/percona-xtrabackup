@@ -331,34 +331,7 @@ bool xb_keyring_init_for_backup(MYSQL *connection) {
   return (true);
 }
 
-/** Initialize keyring plugin for stats mode. Configuration is read from
-argc and argv.
-@param[in, out]	argc	Command line options (count)
-@param[in, out]	argv	Command line options (values)
-@return true if success */
-bool xb_keyring_init_for_stats(int argc, char **argv) {
-  char *plugin_load = NULL;
-
-  my_option keyring_options[] = {
-      {"plugin-load", 0, "", &plugin_load, &plugin_load, 0, GET_STR,
-       REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-      {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
-
-  if (handle_options(&argc, &argv, keyring_options, NULL)) {
-    return (false);
-  }
-
-  if (plugin_load != NULL) {
-    opt_plugin_load_list_ptr->push_back(new i_string(
-        my_strdup(PSI_NOT_INSTRUMENTED, plugin_load, MYF(MY_FAE))));
-  }
-
-  init_plugins(argc, argv);
-
-  return (true);
-}
-
-/** Initialize keyring plugin for stats mode. Configuration is read from
+/** Initialize keyring plugin for prepare mode. Configuration is read from
 argc and argv, server uuid and plugin name is read from backup-my.cnf.
 @param[in, out]	argc	Command line options (count)
 @param[in, out]	argv	Command line options (values)
@@ -407,7 +380,7 @@ static bool get_plugin_load_option(
   return (false);
 }
 
-/** Initialize keyring plugin for stats mode. Configuration is read from
+/** Initialize keyring plugin for copy-back mode. Configuration is read from
 argc and argv, server uuid is read from backup-my.cnf, plugin name is read
 from my.cnf.
 @param[in, out]	argc	Command line options (count)

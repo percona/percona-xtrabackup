@@ -105,7 +105,6 @@ extern bool xtrabackup_encrypt;
 
 extern bool xtrabackup_backup;
 extern bool xtrabackup_prepare;
-extern bool xtrabackup_stats;
 extern bool xtrabackup_apply_log_only;
 extern bool xtrabackup_copy_back;
 extern bool xtrabackup_move_back;

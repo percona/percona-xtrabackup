@@ -78,8 +78,6 @@ bool check_if_skip_table(
     /******************/
     const char *name); /*!< in: path to the table */
 
-extern bool xtrabackup_stats;
-
 /** Amount of memory calculated at --backup for recovery hash records */
 extern size_t real_redo_memory;
 

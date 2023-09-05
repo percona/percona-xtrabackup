@@ -60,14 +60,11 @@ Dictionary is required for these purposes in PXB:
 2. Export of tables (--export). For every file_per_table tablespace, a table
    object (dict_table_t) and a server table object (dd::Table) if table has
    instant columns.
-3. --stats. For every table in tablespace, we iterate over all indexes and print
-   free page ratio, cardinality etc. This also requies InnoDB table object
-   (dict_table_t)
 
-4. dynamic metadata apply etc require InnoDB dictionary table
+3. dynamic metadata apply etc require InnoDB dictionary table
 mysql.dynamic_metadata to be be available
 
-5. Duplicate SDI (opens mysql.tables and mysql.schemata)
+4. Duplicate SDI (opens mysql.tables and mysql.schemata)
 
 Rollback Flow:
 -------------
@@ -102,12 +99,6 @@ partition has all the SDI and the other partitions are 'empty'. Hence, from a
 partition IBD, multiple dict_table_t objects are loaded.
 
 4. For each dict_table_t object, we create a .cfg, .cfp file
-
-Stats flow
-----------
-1. The flow is similar to steps mentioned in export
-2. After a dict_table_t is available, iterate over dict_table_t->indexes to
-calculate and print stats
 
 Dynamic metadata flow
 ---------------------
