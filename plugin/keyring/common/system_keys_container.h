@@ -38,7 +38,7 @@ namespace keyring {
 class System_keys_container : public ISystem_keys_container {
  public:
   System_keys_container(ILogger *logger) : logger(logger) {}
-  ~System_keys_container();
+  ~System_keys_container() override;
 
   /**
     Returns key with latest version when called with plain system key (ex.

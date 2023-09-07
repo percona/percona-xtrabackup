@@ -493,7 +493,7 @@ static void extract_worker_thread_func(extract_ctxt_t &ctxt) {
   xb_rstream_t *stream = NULL;
   xb_rstream_chunk_t chunk;
   file_entry_t *entry;
-  xb_rstream_result_t res;
+  xb_rstream_result_t res = XB_STREAM_READ_CHUNK;
 
   ctxt.mutex->lock();
   stream = ctxt.streams->front();

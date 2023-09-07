@@ -27,7 +27,8 @@ class IVault_io;
 
 class Vault_keys_container : public Keys_container, private boost::noncopyable {
  public:
-  Vault_keys_container(ILogger *logger) noexcept : Keys_container(logger) {}
+  Vault_keys_container(ILogger *logger_value) noexcept
+      : Keys_container(logger_value) {}
 
   bool init(IKeyring_io *keyring_io, std::string keyring_storage_url) override;
   IKey *fetch_key(IKey *key) override;

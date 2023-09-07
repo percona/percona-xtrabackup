@@ -32,7 +32,7 @@ class Vault_keys_list final : public ISerialized_object,
   void push_back(IKey *key);
   size_t size() const;
 
-  ~Vault_keys_list();
+  ~Vault_keys_list() override;
 
  private:
   typedef std::list<IKey *> Keys_list;
