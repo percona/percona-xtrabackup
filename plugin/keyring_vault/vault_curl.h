@@ -44,7 +44,7 @@ class Vault_curl final : public IVault_curl, private boost::noncopyable {
         directory_path_(),
         resolved_secret_mount_point_version_(Vault_version_unknown) {}
 
-  ~Vault_curl() {
+  ~Vault_curl() override {
     if (list != nullptr) curl_slist_free_all(list);
   }
 

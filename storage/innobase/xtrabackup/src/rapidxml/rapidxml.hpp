@@ -82,10 +82,7 @@ namespace rapidxml
 
         //! Gets human readable description of error.
         //! \return Pointer to null terminated description of the error.
-        virtual const char *what() const throw() override
-        {
-            return m_what;
-        }
+        virtual const char *what() const noexcept override { return m_what; }
 
         //! Gets pointer to character data where error happened.
         //! Ch should be the same as char type of xml_document that produced the error.

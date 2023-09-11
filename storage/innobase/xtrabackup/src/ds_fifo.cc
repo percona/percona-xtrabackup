@@ -30,7 +30,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "file_utils.h"
 #include "msg.h"
 
-typedef struct {
+struct ds_fifo_ctxt_t {
   /* List of FIFO files to be used for stream */
   std::unordered_map<std::string, File> FIFO_list;
   /* Mutex protecting FIFO list */
@@ -65,7 +65,9 @@ typedef struct {
     }
     FIFO_list.clear();
   }
-} ds_fifo_ctxt_t;
+};
+
+typedef struct ds_fifo_ctxt_t ds_fifo_ctxt_t;
 
 typedef struct {
   File fd;

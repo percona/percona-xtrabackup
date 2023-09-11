@@ -59,9 +59,9 @@ class Secure_allocator : public std::allocator<T> {
   struct rebind {
     typedef Secure_allocator<U> other;
   };
+
   Secure_allocator() noexcept {}
-  Secure_allocator(const Secure_allocator &secure_allocator) noexcept
-      : std::allocator<T>(secure_allocator) {}
+
   template <class U>
   Secure_allocator(const Secure_allocator<U> &) noexcept {}
 

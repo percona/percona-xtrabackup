@@ -20,11 +20,11 @@
 #include "i_vault_io.h"
 
 namespace keyring {
-bool Vault_keys_container::init(IKeyring_io *keyring_io,
-                                std::string keyring_storage_url) {
-  vault_io = dynamic_cast<IVault_io *>(keyring_io);
+bool Vault_keys_container::init(IKeyring_io *keyring_io_value,
+                                std::string keyring_storage_url_value) {
+  vault_io = dynamic_cast<IVault_io *>(keyring_io_value);
   assert(vault_io != nullptr);
-  return Keys_container::init(keyring_io, keyring_storage_url);
+  return Keys_container::init(keyring_io_value, keyring_storage_url_value);
 }
 
 IKey *Vault_keys_container::fetch_key(IKey *key) {

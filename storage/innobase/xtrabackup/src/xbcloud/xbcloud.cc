@@ -1154,10 +1154,10 @@ void download_func(download_thread_ctxt_t &cntx) {
     cntx.store->async_download_object(
         *cntx.container, chunk, &h,
         std::bind(
-            [&cntx, &thread_state](bool success, const Http_buffer &contents,
-                                   std::string chunk, my_off_t idx,
-                                   std::atomic<bool> *error, uint thread_id,
-                                   File fd, file_metadata_t file) {
+            [&thread_state](bool success, const Http_buffer &contents,
+                            std::string chunk, my_off_t idx,
+                            std::atomic<bool> *error, uint thread_id, File fd,
+                            file_metadata_t file) {
               if (!success) {
                 error->store(true);
                 msg_ts("%s: [%d] Download failed. Cannot download %s.\n",

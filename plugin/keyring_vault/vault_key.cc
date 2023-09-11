@@ -20,12 +20,12 @@
 
 namespace keyring {
 
-bool Vault_key::get_next_key(IKey **key) {
+bool Vault_key::get_next_key(IKey **key_out) {
   if (was_key_retrieved) {
-    *key = nullptr;
+    *key_out = nullptr;
     return true;
   }
-  *key = new Vault_key(*this);
+  *key_out = new Vault_key(*this);
   was_key_retrieved = true;
   return false;
 }

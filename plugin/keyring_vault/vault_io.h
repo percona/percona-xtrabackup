@@ -34,7 +34,7 @@ class Vault_io final : public IVault_io, private boost::noncopyable {
            IVault_parser_composer *vault_parser)
       : logger(logger), vault_curl(vault_curl), vault_parser(vault_parser) {}
 
-  ~Vault_io();
+  ~Vault_io() override;
 
   virtual bool retrieve_key_type_and_data(IKey *key) override;
 
