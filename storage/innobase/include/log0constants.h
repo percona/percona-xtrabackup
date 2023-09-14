@@ -205,8 +205,6 @@ constexpr os_offset_t LOG_HEADER_ENCRYPTION_INFO_OFFSET =
 
 /** Contents of the LOG_HEADER_CREATOR field */
 #define LOG_HEADER_CREATOR_CURRENT "MySQL " INNODB_VERSION_STR
-#define LOG_HEADER_CREATOR_8028 "MySQL 8.0.28"  // (v4 format)
-#define LOG_HEADER_CREATOR_8018 "MySQL 8.0.18"  // (v3 format)
 
 /** Header is created during DB clone */
 #define LOG_HEADER_CREATOR_CLONE "MySQL Clone"
@@ -297,10 +295,6 @@ unexpected end of the log during recovery in similar way as hdr_no does.
 the start_lsn divided by OS_FILE_LOG_BLOCK_SIZE, and then divided by the
 LOG_BLOCK_MAX_NO. */
 constexpr uint32_t LOG_BLOCK_EPOCH_NO = 8;
-#ifdef XTRABACKUP
-/** same offset is used for this in pre8030 */
-constexpr uint32_t LOG_BLOCK_CHECKPOINT_NO = 8;
-#endif  // XTRABACKUP
 
 /** Size of the log block's header in bytes. */
 constexpr uint32_t LOG_BLOCK_HDR_SIZE = 12;

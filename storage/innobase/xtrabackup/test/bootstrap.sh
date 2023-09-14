@@ -64,6 +64,23 @@ parse_arguments() {
     done
 }
 
+check_url() {
+  url=$1
+  tarball=$2
+  retries=10
+  # upstream sometimes reports file does not exists due to transient error
+  # we should retry a few times before failing back
+  tries=0
+  while [[ ${tries} -lt ${retries} ]]; do
+    if ! wget --spider "${url}/${tarball}" 2>/dev/null; then
+      tries=$((tries+1))
+    else
+      return 0;
+    fi
+  done
+  return 1;
+}
+
 main () {
     if [ -f /etc/redhat-release ]; then
         OS="rpm"
@@ -87,10 +104,10 @@ main () {
             url="https://dev.mysql.com/get/Downloads/MySQL-8.1"
             fallback_url="https://downloads.mysql.com/archives/get/p/23/file"
             tarball="mysql-${VERSION}-linux-glibc2.17-${arch}.tar.xz"
-                if ! wget --spider "${url}/${tarball}" 2>/dev/null; then
+            if ! check_url "${url}" "${tarball}"; then
                     unset url
                     url=${fallback_url}
-                fi
+            fi
             ;;
         xtradb80)
             url="https://www.percona.com/downloads/Percona-Server-8.0/Percona-Server-${VERSION}/binary/tarball"
@@ -115,7 +132,7 @@ main () {
     esac
 
     # Check if tarball exist before any download
-    if ! wget --spider "${url}/${tarball}" 2>/dev/null; then            
+    if ! check_url "${url}" "${tarball}"; then
         echo "Version you specified(${VERSION}) does not exist on ${url}/${tarball}"
         exit 1
     else

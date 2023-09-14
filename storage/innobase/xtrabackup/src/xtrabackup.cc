@@ -501,6 +501,12 @@ std::vector<ulint> invalid_encrypted_tablespace_ids;
 /** Enumeration of innodb_flush_method */
 extern TYPELIB innodb_flush_method_typelib;
 
+/* version variables populated by xtrabackup_read_info */
+char mysql_server_version_str[30] = ""; /* 8.0.20.debug| 8.0.20 */
+char xtrabackup_version_str[30] = "";   /* 8.0.20.debug| 8.0.20 */
+char mysql_server_flavor[256] = "";     /* Percona|MariaDB|Oracle */
+unsigned long xb_server_version;
+
 #include "caching_sha2_passwordopt-vars.h"
 #include "sslopt-vars.h"
 
@@ -2387,15 +2393,8 @@ static bool innodb_init(bool init_dd, bool for_apply_log) {
 
   if (for_apply_log && (metadata_type == METADATA_FULL_BACKUP ||
                         xtrabackup_incremental_dir != nullptr)) {
-    /* Backups taken prior to 8.0.23 can have checkoint lsn more than last
-      copied lsn. If so, use checkpoint_lsn instead of last_lsn */
-    if (xtrabackup_incremental_dir == nullptr) {
-      to_lsn = metadata_last_lsn < metadata_to_lsn ? metadata_to_lsn
-                                                   : metadata_last_lsn;
-    } else {
-      to_lsn = incremental_last_lsn < incremental_to_lsn ? incremental_to_lsn
-                                                         : incremental_last_lsn;
-    }
+    to_lsn = (xtrabackup_incremental_dir == nullptr) ? metadata_last_lsn
+                                                     : incremental_last_lsn;
   }
 
   /* If pxb created redo log files (final prepare), the LSNs will be out of
@@ -2479,9 +2478,6 @@ static bool innodb_end(void) {
 static bool xtrabackup_read_info(char *filename) {
   FILE *fp;
   bool r = true;
-  char mysql_server_version_str[30] = ""; /* 8.0.20.debug| 8.0.20 */
-  char xtrabackup_version_str[30] = "";   /* 8.0.20.debug| 8.0.20 */
-  unsigned long xb_server_version;
 
   fp = fopen(filename, "r");
   if (!fp) {
@@ -2505,6 +2501,11 @@ static bool xtrabackup_read_info(char *filename) {
 
   DBUG_EXECUTE_IF("simulate_backup_lower_version", xb_backup_version = 80030;);
   if (fscanf(fp, "server_version = %29s\n", mysql_server_version_str) != 1) {
+    r = false;
+    goto end;
+  }
+
+  if (fscanf(fp, "server_flavor = %255[^\n]", mysql_server_flavor) != 1) {
     r = false;
     goto end;
   }
@@ -3987,8 +3988,6 @@ void xtrabackup_backup_func(void) {
   std::shared_ptr<xb::backup::dd_space_ids> xb_dd_spaces;
   init_mysql_environment();
 
-  if (print_instant_versioned_tables(mysql_connection)) exit(EXIT_FAILURE);
-
   if (opt_dump_innodb_buffer_pool) {
     dump_innodb_buffer_pool(mysql_connection);
   }
@@ -4938,13 +4937,13 @@ static bool xtrabackup_init_temp_log(void) {
     goto skip_modify;
   }
 
-  if (log_format < Log_format::VERSION_8_0_1) {
+  if (log_format < Log_format::CURRENT) {
     xb::error() << "Unsupported redo log format " << to_int(log_format);
     xb::error()
         << "This version of Percona XtraBackup can only perform backups and "
-           "restores against MySQL 8.0 and Percona Server 8.0, please use "
+           "restores against MySQL 8.1 and Percona Server 8.1, please use "
            "Percona "
-           "Xtrabackup 2.4 for this database.";
+           "Xtrabackup 8.0 OR 2.4 for this database.";
 
     goto error;
   }
@@ -6809,6 +6808,11 @@ static void xtrabackup_prepare_func(int argc, char **argv) {
 
   read_metadata();
 
+  /* prepare version check */
+  if (!check_server_version(xb_server_version, mysql_server_version_str,
+                            mysql_server_flavor, mysql_server_version_str))
+    exit(EXIT_FAILURE);
+
   if (!strcmp(metadata_type_str, "full-backuped")) {
     xb::info() << "This target seems to be not prepared yet.";
     metadata_type = METADATA_FULL_BACKUP;
@@ -8105,3 +8109,5 @@ static_assert(XB_UNIV_ZIP_SIZE_MIN == UNIV_ZIP_SIZE_MIN,
               "XB_UNIV_ZIP_SIZE_MIN == UNIV_ZIP_SIZE_MIN");
 static_assert(XB_UNIV_PAGE_SIZE_MAX == UNIV_PAGE_SIZE_MAX,
               "XB_UNIV_PAGE_SIZE_MAX == UNIV_PAGE_SIZE_MAX");
+static_assert(Log_format::CURRENT == Log_format::VERSION_8_0_30,
+              "Log_format::CURRENT == Log_format::VERSION_8_0_30");
