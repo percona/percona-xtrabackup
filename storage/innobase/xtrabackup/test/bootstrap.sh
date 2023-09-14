@@ -22,13 +22,23 @@ function ssl_version() {
         100|101) ;;
         102) unset sslv; sslv="102.$OS" ;;
         *)
-            if ! test -r "${1}"; then
-                >&2 echo "tarball for your openssl version (${sslv}) is not available"
-                exit 1
-            fi
+            >&2 echo "tarball for your openssl version (${sslv}) is not available"
+            exit 1
             ;;
     esac
     echo ${sslv}
+}
+
+function glibc_version() {
+    glibc=$(ldd --version | head -1 | awk '{print $NF}')
+    case ${glibc} in
+        2.12|2.17|2.27|2.28|2.31|2.34|2.35) ;;
+        *)
+            >&2 echo "tarball for your glibc version (${glibc}) is not available"
+            exit 1
+            ;;
+    esac
+    echo ${glibc}
 }
 
 shell_quote_string() {
@@ -114,13 +124,15 @@ main () {
             short_version=$(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1)
             if [[ ${PXB_TYPE} == "Debug" ]] || [[ ${PXB_TYPE} == "debug" ]]; then
                 SUFFIX="-debug"
+              else
+                SUFFIX="-minimal"
             fi
             if [[ ${short_version} -lt "20" ]]; then
                 tarball="Percona-Server-${VERSION}-Linux.${arch}.ssl$(ssl_version).tar.gz"
             elif [[ ${short_version} -ge "20" && ${short_version} -lt "22" ]]; then
                 tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc2.12${SUFFIX}.tar.gz"
             elif [[ ${short_version} -ge "22" ]]; then
-                tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc2.17${SUFFIX}.tar.gz"
+                tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc$(glibc_version)${SUFFIX}.tar.gz"
             fi
             ;;
         *) 
@@ -165,7 +177,7 @@ main () {
 
 TYPE="xtradb80"
 PXB_TYPE="release"
-VERSION="8.0.18-9"
+VERSION="8.0.34-26"
 DESTDIR="./server"
 parse_arguments PICK-ARGS-FROM-ARGV "$@"
 main

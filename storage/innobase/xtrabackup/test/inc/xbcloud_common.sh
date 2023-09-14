@@ -23,8 +23,10 @@ secure-file-priv=$TEST_VAR_ROOT
 is_galera && skip_test "skipping"
 
 function is_xbcloud_credentials_set() {
-  [ "${XBCLOUD_CREDENTIALS:-unset}" == "unset" ] && \
-  skip_test "Requires XBCLOUD_CREDENTIALS"
+  if [ -z ${XBCLOUD_CREDENTIALS+x} ];
+  then
+    skip_test "Requires XBCLOUD_CREDENTIALS"
+  fi
 }
 
 now=$(date +%s)
