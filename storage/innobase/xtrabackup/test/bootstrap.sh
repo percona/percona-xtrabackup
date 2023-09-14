@@ -22,13 +22,23 @@ function ssl_version() {
         100|101) ;;
         102) unset sslv; sslv="102.$OS" ;;
         *)
-            if ! test -r "${1}"; then
-                >&2 echo "tarball for your openssl version (${sslv}) is not available"
-                exit 1
-            fi
+            >&2 echo "tarball for your openssl version (${sslv}) is not available"
+            exit 1
             ;;
     esac
     echo ${sslv}
+}
+
+function glibc_version() {
+    glibc=$(ldd --version | head -1 | awk '{print $NF}')
+    case ${glibc} in
+        2.12|2.17|2.27|2.28|2.31|2.34|2.35) ;;
+        *)
+            >&2 echo "tarball for your glibc version (${glibc}) is not available"
+            exit 1
+            ;;
+    esac
+    echo ${glibc}
 }
 
 shell_quote_string() {
@@ -64,6 +74,23 @@ parse_arguments() {
     done
 }
 
+check_url() {
+  url=$1
+  tarball=$2
+  retries=10
+  # upstream sometimes reports file does not exists due to transient error
+  # we should retry a few times before failing back
+  tries=0
+  while [[ ${tries} -lt ${retries} ]]; do
+    if ! wget --spider "${url}/${tarball}" 2>/dev/null; then
+      tries=$((tries+1))
+    else
+      return 0;
+    fi
+  done
+  return 1;
+}
+
 main () {
     if [ -f /etc/redhat-release ]; then
         OS="rpm"
@@ -87,23 +114,25 @@ main () {
             url="https://dev.mysql.com/get/Downloads/MySQL-8.0"
             fallback_url="https://downloads.mysql.com/archives/get/p/23/file"
             tarball="mysql-${VERSION}-linux-glibc2.12-${arch}.tar.xz"
-                if ! wget --spider "${url}/${tarball}" 2>/dev/null; then
+            if ! check_url "${url}" "${tarball}"; then
                     unset url
                     url=${fallback_url}
-                fi
+            fi
             ;;
         xtradb80)
             url="https://www.percona.com/downloads/Percona-Server-8.0/Percona-Server-${VERSION}/binary/tarball"
             short_version=$(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1)
             if [[ ${PXB_TYPE} == "Debug" ]] || [[ ${PXB_TYPE} == "debug" ]]; then
                 SUFFIX="-debug"
+              else
+                SUFFIX="-minimal"
             fi
             if [[ ${short_version} -lt "20" ]]; then
                 tarball="Percona-Server-${VERSION}-Linux.${arch}.ssl$(ssl_version).tar.gz"
             elif [[ ${short_version} -ge "20" && ${short_version} -lt "22" ]]; then
                 tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc2.12${SUFFIX}.tar.gz"
             elif [[ ${short_version} -ge "22" ]]; then
-                tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc2.17${SUFFIX}.tar.gz"
+                tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc$(glibc_version)${SUFFIX}.tar.gz"
             fi
             ;;
         *) 
@@ -115,7 +144,7 @@ main () {
     esac
 
     # Check if tarball exist before any download
-    if ! wget --spider "${url}/${tarball}" 2>/dev/null; then            
+    if ! check_url "${url}" "${tarball}"; then
         echo "Version you specified(${VERSION}) does not exist on ${url}/${tarball}"
         exit 1
     else
@@ -148,7 +177,7 @@ main () {
 
 TYPE="xtradb80"
 PXB_TYPE="release"
-VERSION="8.0.18-9"
+VERSION="8.0.34-26"
 DESTDIR="./server"
 parse_arguments PICK-ARGS-FROM-ARGV "$@"
 main
