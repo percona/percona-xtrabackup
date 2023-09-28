@@ -25,6 +25,10 @@
 #include <components/keyrings/common/config/config_reader.h> /* Config_reader */
 #include <include/mysql/components/component_implementation.h>
 
+#ifdef XTRABACKUP
+#include <storage/innobase/xtrabackup/src/keyring_components.h>
+#endif
+
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/lexical_cast.hpp>
@@ -167,6 +171,9 @@ bool find_and_read_config_file(std::unique_ptr<Config_pod> &config_pod) {
 
   if (get_global_config_path(global_path)) return true;
 
+#ifdef XTRABACKUP
+  global_path = xtrabackup::components::component_config_path;
+#endif
   /* Read config file that's located at shared library location */
   auto config_reader = std::make_unique<Config_reader>(global_path);
 

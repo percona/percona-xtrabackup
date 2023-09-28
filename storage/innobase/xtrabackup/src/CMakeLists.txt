@@ -66,11 +66,9 @@ CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmake
 
 INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/plugin/keyring
-  ${CMAKE_SOURCE_DIR}/plugin/keyring_vault
   ${BOOST_PATCHES_DIR})
 
 ADD_SUBDIRECTORY(${CMAKE_SOURCE_DIR}/plugin/keyring "${CMAKE_CURRENT_BINARY_DIR}/keyring")
-ADD_SUBDIRECTORY(${CMAKE_SOURCE_DIR}/plugin/keyring_vault "${CMAKE_CURRENT_BINARY_DIR}/keyring_vault")
 
 MY_ADD_COMPILE_DEFINITIONS(
   xtrabackup.cc
