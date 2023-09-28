@@ -50,12 +50,14 @@
 namespace {
 const char errors_key[] = "errors";
 const char data_key[] = "data";
+const char metadata_key[] = "metadata";
 const char keys_key[] = "keys";
 const char type_key[] = "type";
 const char value_key[] = "value";
 const char max_versions_key[] = "max_versions";
 const char cas_required_key[] = "cas_required";
 const char delete_version_after_key[] = "delete_version_after";
+const char deletion_time_key[] = "deletion_time";
 
 }  // anonymous namespace
 
@@ -314,7 +316,7 @@ bool Keyring_vault_parser_composer::parse_key_signature(
   return false;
 }
 
-bool Keyring_vault_parser_composer::parse_key_data(
+ParseStatus Keyring_vault_parser_composer::parse_key_data(
     const pfs_string &payload, Data *data, Vault_version_type vault_version) {
   rapidjson::Document doc;
   doc.Parse(payload.c_str());
@@ -322,41 +324,53 @@ bool Keyring_vault_parser_composer::parse_key_data(
   if (cdoc.HasParseError()) {
     LogComponentErr(ERROR_LEVEL, ER_KEYRING_LOGGER_ERROR_MSG,
                     "Could not parse Vault Server response.");
-    return true;
+    return ParseStatus::Fail;
   }
   if (!cdoc.IsObject()) {
     LogComponentErr(ERROR_LEVEL, ER_KEYRING_LOGGER_ERROR_MSG,
                     "Vault Server response is not an Object");
-    return true;
+    return ParseStatus::Fail;
   }
 
   rapidjson::Document::ConstMemberIterator it = cdoc.FindMember(data_key);
   if (it == cdoc.MemberEnd()) {
     LogComponentErr(ERROR_LEVEL, ER_KEYRING_LOGGER_ERROR_MSG,
                     "Vault Server response does not have \"data\" member");
-    return true;
+    return ParseStatus::Fail;
   }
 
   const rapidjson::Value *data_node = &it->value;
   if (!data_node->IsObject()) {
     LogComponentErr(ERROR_LEVEL, ER_KEYRING_LOGGER_ERROR_MSG,
                     "Vault Server response[\"data\"] is not an Object");
-    return true;
+    return ParseStatus::Fail;
   }
 
   if (vault_version == Vault_version_type::Vault_version_v2) {
+    it = data_node->FindMember(metadata_key);
+
+    if (it != data_node->MemberEnd() && it->value.IsObject()) {
+      const auto *metadata_node = &it->value;
+      it = metadata_node->FindMember(deletion_time_key);
+
+      if (it != metadata_node->MemberEnd() && it->value.IsString() &&
+          strlen(it->value.GetString()) != 0) {
+        return ParseStatus::DataDeleted;
+      }
+    }
+
     it = data_node->FindMember(data_key);
     if (it == data_node->MemberEnd()) {
       LogComponentErr(
           ERROR_LEVEL, ER_KEYRING_LOGGER_ERROR_MSG,
           "Vault Server response[\"data\"] does not have \"data\" member");
-      return true;
+      return ParseStatus::Fail;
     }
     data_node = &it->value;
     if (!data_node->IsObject()) {
       LogComponentErr(ERROR_LEVEL, ER_KEYRING_LOGGER_ERROR_MSG,
                       "Vault Server response data is not an Object");
-      return true;
+      return ParseStatus::Fail;
     }
   }
 
@@ -364,14 +378,14 @@ bool Keyring_vault_parser_composer::parse_key_data(
   if (it == data_node->MemberEnd()) {
     LogComponentErr(ERROR_LEVEL, ER_KEYRING_LOGGER_ERROR_MSG,
                     "Vault Server response data does not have \"type\" member");
-    return true;
+    return ParseStatus::Fail;
   }
 
   const rapidjson::Value &type_node = it->value;
   if (!type_node.IsString()) {
     LogComponentErr(ERROR_LEVEL, ER_KEYRING_LOGGER_ERROR_MSG,
                     "Vault Server response data[\"type\"] is not a String");
-    return true;
+    return ParseStatus::Fail;
   }
 
   pfs_string type(type_node.GetString());
@@ -381,14 +395,14 @@ bool Keyring_vault_parser_composer::parse_key_data(
     LogComponentErr(
         ERROR_LEVEL, ER_KEYRING_LOGGER_ERROR_MSG,
         "Vault Server response data does not have \"value\" member");
-    return true;
+    return ParseStatus::Fail;
   }
 
   const rapidjson::Value &value_node = it->value;
   if (!value_node.IsString()) {
     LogComponentErr(ERROR_LEVEL, ER_KEYRING_LOGGER_ERROR_MSG,
                     "Vault Server response data[\"value\"] is not a String");
-    return true;
+    return ParseStatus::Fail;
   }
 
   pfs_string value(value_node.GetString());
@@ -399,14 +413,14 @@ bool Keyring_vault_parser_composer::parse_key_data(
   if (Vault_base64::decode(value, decoded_key_data, &decoded_key_data_length)) {
     LogComponentErr(ERROR_LEVEL, ER_KEYRING_LOGGER_ERROR_MSG,
                     "Could not decode base64 key's value");
-    return true;
+    return ParseStatus::Fail;
   }
 
   data->set_data(
       Sensitive_data{decoded_key_data.get(), decoded_key_data_length});
   data->set_type(type);
 
-  return false;
+  return ParseStatus::Ok;
 }
 
 bool Keyring_vault_parser_composer::compose_write_key_postdata(

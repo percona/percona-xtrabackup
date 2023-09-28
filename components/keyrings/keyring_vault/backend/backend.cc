@@ -99,17 +99,28 @@ bool Keyring_vault_backend::load_cache(
     if (key_ptr != nullptr && key_ptr->valid()) {
       json_response.clear();
       Data fetched_data;
+      ParseStatus data_parse_status{ParseStatus::Fail};
 
       if (m_vault_curl->read_key(*key_ptr, &json_response) ||
-          Keyring_vault_parser_composer::parse_key_data(
-              json_response, &fetched_data,
-              m_vault_curl->get_resolved_secret_mount_point_version())) {
+          (data_parse_status = Keyring_vault_parser_composer::parse_key_data(
+               json_response, &fetched_data,
+               m_vault_curl->get_resolved_secret_mount_point_version())) ==
+              ParseStatus::Fail) {
         LogComponentErr(
             ERROR_LEVEL, ER_KEYRING_LOGGER_ERROR_MSG,
             ("Could not read key from Vault." +
              Keyring_vault_curl::get_errors_from_response(json_response))
                 .c_str());
         return true;
+      }
+
+      if (data_parse_status == ParseStatus::DataDeleted) {
+        // Skipping deleted key, adjust number of expected records.
+        if (m_size > 0) {
+          --m_size;
+        }
+
+        continue;
       }
 
       if (operations.insert(*key_ptr, fetched_data)) {
