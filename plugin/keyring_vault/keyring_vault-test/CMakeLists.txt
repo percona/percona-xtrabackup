@@ -17,8 +17,6 @@ MYSQL_ADD_EXECUTABLE(keyring_vault-test
                ${CMAKE_SOURCE_DIR}/plugin/keyring/common/keyring_key.cc
                ${CMAKE_SOURCE_DIR}/plugin/keyring/common/keys_container.cc
                ${CMAKE_SOURCE_DIR}/plugin/keyring/common/keys_iterator.cc
-               ${CMAKE_SOURCE_DIR}/plugin/keyring/common/system_key_adapter.cc
-               ${CMAKE_SOURCE_DIR}/plugin/keyring/common/system_keys_container.cc
                ${CMAKE_SOURCE_DIR}/plugin/keyring/common/keyring_impl.cc
                ../vault_io.cc
                ../vault_key.cc
