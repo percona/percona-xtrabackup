@@ -952,6 +952,10 @@ bool Redo_Log_Data_Manager::init() {
         xtrabackup_register_redo_log_consumer = false;
         return (false);
       }
+      /* Consumer queries might not work on some sql_mode.
+       * Forcing it to be empty.
+       */
+      xb_mysql_query(redo_log_consumer_cnx, "SET sql_mode=''", false, true);
       redo_log_consumer.init(redo_log_consumer_cnx);
       redo_log_consumer_can_advance.store(true);
     }
