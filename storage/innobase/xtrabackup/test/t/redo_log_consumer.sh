@@ -72,3 +72,13 @@ kill -SIGCONT $xb_pid
 run_cmd wait $job_pid
 
 xtrabackup --prepare --target-dir=$topdir/backup
+
+# PXB-3147 - register redo log consumer fails with ANSI_QUOTES
+stop_server
+
+MYSQLD_EXTRA_MY_CNF_OPTS="
+sql_mode = 'ANSI_QUOTES'
+"
+
+start_server
+xtrabackup --backup --stream --register-redo-log-consumer > /dev/null
