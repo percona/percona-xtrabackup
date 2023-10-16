@@ -1,0 +1,2 @@
+--innodb-sort-buffer-size=64k
+--innodb_encrypt_online_alter_logs=ON

@@ -4,24 +4,14 @@
 
 . inc/common.sh
 
-plugin_load=keyring_vault.so
-if test -d $PWD/../../../../plugin_output_directory
-then
-  plugin_dir=$PWD/../../../../plugin_output_directory
-else
-  plugin_dir=$PWD/../../lib/plugin/
+if [ -z ${KEYRING_TYPE+x} ]; then
+  KEYRING_TYPE="component"
 fi
-keyring_vault_config=${TEST_VAR_ROOT}/keyring_vault_config
-keyring_args="--keyring-vault-config=${keyring_vault_config}"
 
-MYSQLD_EXTRA_MY_CNF_OPTS="${MYSQLD_EXTRA_MY_CNF_OPTS:-""}
-early-plugin-load=${plugin_load}
-keyring-vault-config=${keyring_vault_config}
-"
+instance_local_manifest=""
+keyring_component_cnf=${TEST_VAR_ROOT}/component_keyring_vault.cnf
+keyring_args="--component-keyring-config=${keyring_component_cnf}"
 
-XB_EXTRA_MY_CNF_OPTS="${XB_EXTRA_MY_CNF_OPTS:-""}
-xtrabackup-plugin-dir=${plugin_dir}
-"
 
 VAULT_URL="${VAULT_URL:-https://vault.public-ci.percona.com:8200}"
 VAULT_MOUNT_POINT=$(uuidgen)
@@ -37,18 +27,31 @@ function keyring_vault_ping()
 	return 1
 }
 
-function keyring_vault_mount()
+function configure_keyring_file_component()
 {
-	local VAULT_CONFIG_VERSION=$1
-	local VAULT_MOUNT_VERSION=$2
 	local VAULT_MOUNT_DATA=""
-	cat > ${keyring_vault_config} <<EOF
-vault_url = ${VAULT_URL}
-secret_mount_point = ${VAULT_MOUNT_POINT}
-secret_mount_point_version = ${VAULT_MOUNT_VERSION}
-token = ${VAULT_TOKEN}
-vault_ca = ${VAULT_CA}
+  if [ "$MYSQL_DEBUG_MODE" = "on" ]; then
+    binary="mysqld-debug"
+  else
+    binary="mysqld"
+  fi
+  instance_local_manifest="${TEST_VAR_ROOT}/${binary}.my"
+  cat <<EOF > "${MYSQLD_DATADIR}/${binary}.my"
+{
+    "components": "file://component_keyring_vault"
+}
 EOF
+  cat <<EOF > "${MYSQLD_DATADIR}/component_keyring_vault.cnf"
+{
+  "vault_url": "${VAULT_URL}",
+  "secret_mount_point": "${VAULT_MOUNT_POINT}",
+  "secret_mount_point_version": "${VAULT_CONFIG_VERSION}",
+  "token": "${VAULT_TOKEN}",
+  "vault_ca": "${VAULT_CA}"
+}
+EOF
+  cp "${MYSQLD_DATADIR}/${binary}.my" ${instance_local_manifest}
+  cp "${MYSQLD_DATADIR}/component_keyring_vault.cnf" ${keyring_component_cnf}
 
 	if [[ "${VAULT_MOUNT_VERSION}" -eq "1" ]];
 	then

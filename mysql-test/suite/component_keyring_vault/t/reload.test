@@ -1,0 +1,27 @@
+--source include/have_component_keyring_vault.inc
+
+--let $vault_conf_mount_point_uuid = `SELECT UUID()`
+--source ../inc/parse_combination.inc
+
+# Create mount points
+--let $mount_point_service_op = CREATE
+--source ../inc/mount_point_service.inc
+
+--source ../inc/setup_component.inc
+
+SELECT * FROM performance_schema.keyring_component_status WHERE STATUS_KEY="timeout";
+
+# Generate new local keyring config with updated 'timeout' value
+--let $vault_conf_timeout = 30
+--source ../inc/generate_comp_config_content.inc
+--let KEYRING_CONFIG_CONTENT = `SELECT CONCAT('{ ', '$config_content', ' }')`
+--source include/keyring_tests/helper/local_keyring_create_config.inc
+
+ALTER INSTANCE RELOAD KEYRING;
+SELECT * FROM performance_schema.keyring_component_status WHERE STATUS_KEY="timeout";
+
+--source ../inc/teardown_component.inc
+
+# Delete mount points
+--let $mount_point_service_op = DELETE
+--source ../inc/mount_point_service.inc

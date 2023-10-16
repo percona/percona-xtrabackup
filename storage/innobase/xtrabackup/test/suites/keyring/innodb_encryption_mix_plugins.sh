@@ -43,13 +43,16 @@ EOF
 
 vlog remove datadir
 stop_server
+VAULT_MOUNT_VERSION=2
+VAULT_CONFIG_VERSION=2
+configure_keyring_file_component
 rm -rf $mysql_datadir
 
 vlog prepare
 xtrabackup --prepare --target-dir=$topdir/backup1 --transition-key=key1
 
 keyring_vault_ping || skip_test "Keyring vault server is not avaliable"
-keyring_vault_mount "2" "2"
+
 
 trap "keyring_vault_unmount" EXIT
 
@@ -57,8 +60,10 @@ vlog copy-back
 run_cmd ${XB_BIN} --defaults-file=${topdir}/my-copy-back.cnf --copy-back \
 	--target-dir=$topdir/backup1 --generate-new-master-key \
 	 --transition-key=key1 \
-	--xtrabackup-plugin-dir=${plugin_dir}
+	--xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
+cp ${instance_local_manifest}  $mysql_datadir
+cp ${keyring_component_cnf} $mysql_datadir
 start_server
 
 verify_db_state test
