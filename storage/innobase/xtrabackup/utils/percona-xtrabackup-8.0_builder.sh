@@ -284,9 +284,6 @@ install_deps() {
                 sleep 1
                 echo "waiting"
             done
-            PKGLIST+=" devtoolset-7-gcc-c++ devtoolset-7-binutils"
-            PKGLIST+=" devtoolset-7-libasan-devel devtoolset-7-libubsan-devel"
-            PKGLIST+=" devtoolset-7-valgrind devtoolset-7-valgrind-devel"
             PKGLIST+=" wget libcurl-devel cmake cmake3 make gcc gcc-c++ libev-devel openssl-devel rpm-build"
             PKGLIST+=" libaio-devel perl-DBD-MySQL vim-common ncurses-devel readline-devel readline"
             PKGLIST+=" zlib-devel libgcrypt-devel bison patchelf"
@@ -302,8 +299,8 @@ install_deps() {
                 sleep 1
             done
             if [[ "${RHEL}" -eq 7 ]]; then
-                yum -y --enablerepo=centos-sclo-rh-testing install devtoolset-10-gcc-c++ devtoolset-10-binutils devtoolset-10-valgrind devtoolset-10-valgrind-devel devtoolset-10-libatomic-devel
-                yum -y --enablerepo=centos-sclo-rh-testing install devtoolset-10-libasan-devel devtoolset-10-libubsan-devel
+                yum -y --enablerepo=centos-sclo-rh-testing install devtoolset-11-gcc-c++ devtoolset-11-binutils devtoolset-11-valgrind devtoolset-11-valgrind-devel devtoolset-11-libatomic-devel
+                yum -y --enablerepo=centos-sclo-rh-testing install devtoolset-11-libasan-devel devtoolset-11-libubsan-devel
                 yum -y update nss
             elif [[ "${RHEL}" -eq 6 ]]; then
                 source /opt/rh/rh-python36/enable
