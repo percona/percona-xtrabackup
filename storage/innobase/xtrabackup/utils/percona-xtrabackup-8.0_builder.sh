@@ -302,6 +302,8 @@ install_deps() {
                 yum -y --enablerepo=centos-sclo-rh-testing install devtoolset-11-gcc-c++ devtoolset-11-binutils devtoolset-11-valgrind devtoolset-11-valgrind-devel devtoolset-11-libatomic-devel
                 yum -y --enablerepo=centos-sclo-rh-testing install devtoolset-11-libasan-devel devtoolset-11-libubsan-devel
                 yum -y update nss
+                scl enable devtoolset-11 bash
+                cp /opt/rh/devtoolset-11/root/usr/bin/gcc /usr/bin/gcc
             elif [[ "${RHEL}" -eq 6 ]]; then
                 source /opt/rh/rh-python36/enable
                 pip install sphinx
@@ -501,7 +503,7 @@ build_source_deb(){
 
     echo "DEB_RELEASE=${DEB_RELEASE}" >> ${CURDIR}/percona-xtrabackup-8.0.properties
 
-    NEWTAR=${NAME}-80_${VERSION}.orig.tar.gz
+    NEWTAR=${NAME}-81_${VERSION}.orig.tar.gz
     mv ${TARFILE} ${NEWTAR}
 
     tar xzf ${NEWTAR}
