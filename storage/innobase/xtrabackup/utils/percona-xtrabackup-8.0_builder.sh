@@ -209,7 +209,7 @@ get_system(){
 enable_venv(){
     if [ "$OS" == "rpm" ]; then
         if [ "${RHEL}" -eq 7 ]; then
-            source /opt/rh/devtoolset-7/enable
+            source /opt/rh/devtoolset-11/enable
             source /opt/rh/rh-python36/enable
             export CMAKE_BIN="cmake3"
         elif [ "${RHEL}" -eq 6 ]; then
@@ -303,7 +303,6 @@ install_deps() {
                 yum -y --enablerepo=centos-sclo-rh-testing install devtoolset-11-libasan-devel devtoolset-11-libubsan-devel
                 yum -y update nss
                 scl enable devtoolset-11 bash
-                cp /opt/rh/devtoolset-11/root/usr/bin/gcc /usr/bin/gcc
             elif [[ "${RHEL}" -eq 6 ]]; then
                 source /opt/rh/rh-python36/enable
                 pip install sphinx
