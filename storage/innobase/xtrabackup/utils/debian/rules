@@ -61,11 +61,11 @@ override_dh_auto_install:
 
 override_dh_install:
 	dh_install
-	mkdir -p debian/percona-xtrabackup-80/usr/lib/private/
-	mkdir -p debian/percona-xtrabackup-80/usr/bin/
-	cp ./$(builddir)/library_output_directory/libprotobuf-lite.so* debian/percona-xtrabackup-80/usr/lib/private/
-	cp ./$(builddirdebug)/runtime_output_directory/xtrabackup debian/percona-xtrabackup-80/usr/bin/xtrabackup-debug
-	patchelf --debug --set-rpath $(rpath) debian/percona-xtrabackup-80/usr/bin/xtrabackup-debug
+	mkdir -p debian/percona-xtrabackup-81/usr/lib/private/
+	mkdir -p debian/percona-xtrabackup-81/usr/bin/
+	cp ./$(builddir)/library_output_directory/libprotobuf-lite.so* debian/percona-xtrabackup-81/usr/lib/private/
+	cp ./$(builddirdebug)/runtime_output_directory/xtrabackup debian/percona-xtrabackup-81/usr/bin/xtrabackup-debug
+	patchelf --debug --set-rpath $(rpath) debian/percona-xtrabackup-81/usr/bin/xtrabackup-debug
 	@echo "RULES.$@"
 
 override_dh_strip:
