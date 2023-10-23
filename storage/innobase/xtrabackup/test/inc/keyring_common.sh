@@ -14,15 +14,15 @@ function test_do()
   vlog "-- transition_key: ${transition_key} --"
   vlog "-- keyring_type: ${keyring_type} --"
   if [[ "$transition_key" = "generate" ]] ; then
-    backup_options="--generate-transition-key"
+    backup_options="--generate-transition-key --xtrabackup-plugin-dir=${plugin_dir}"
     prepare_options="--xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}"
     copyback_options="--xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}"
   elif [[ "$transition_key" = "none" ]] ; then
-    backup_options=
+    backup_options="--xtrabackup-plugin-dir=${plugin_dir}"
     prepare_options="--xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}"
     copyback_options="--xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}"
   else
-    backup_options="--transition-key=$transition_key"
+    backup_options="--transition-key=$transition_key --xtrabackup-plugin-dir=${plugin_dir}"
     prepare_options="--transition-key=$transition_key"
     copyback_options="--transition-key=$transition_key --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}"
   fi
@@ -36,7 +36,7 @@ function test_do()
   run_cmd $MYSQL $MYSQL_ARGS test -e "SELECT @@server_uuid"
 
   # PXB-1540: XB removes and recreate keyring file of 0 size
-  xtrabackup --backup --target-dir=$topdir/backup0
+  xtrabackup --backup --target-dir=$topdir/backup0 $backup_options
 
   rm -rf $topdir/backup0
 
