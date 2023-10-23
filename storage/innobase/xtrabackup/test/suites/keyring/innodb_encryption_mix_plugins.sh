@@ -4,6 +4,8 @@
 
 require_server_version_higher_than 5.7.10
 
+is_xtradb || skip_test "Keyring vault requires Percona Server"
+
 vlog setup keyring_file
 . inc/keyring_file.sh
 
