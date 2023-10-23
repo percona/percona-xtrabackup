@@ -27,6 +27,7 @@ extern std::string component_config_path;
 extern const char *XTRABACKUP_KEYRING_FILE_CONFIG;
 extern const char *XTRABACKUP_KEYRING_KMIP_CONFIG;
 extern const char *XTRABACKUP_KEYRING_KMS_CONFIG;
+extern const char *XTRABACKUP_KEYRING_VAULT_CONFIG;
 
 /** @Return name of component config file */
 const char *xb_component_config_file();

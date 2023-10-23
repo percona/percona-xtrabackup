@@ -3,6 +3,8 @@
 #define PFS_STRING_INCLUDED
 
 #include <limits>
+#include <optional>
+#include <sstream>
 #include "my_sys.h"
 #include "mysql/service_mysql_alloc.h"
 #include "sql/psi_memory_key.h"
@@ -14,7 +16,7 @@ extern PSI_memory_key KEY_mem_keyring;
   instead
 */
 template <class T = void *>
-class Malloc_allocator {
+class Comp_malloc_allocator {
   // This cannot be const if we want to be able to swap.
   PSI_memory_key m_key = KEY_mem_keyring;
 
@@ -32,15 +34,15 @@ class Malloc_allocator {
   pointer address(reference r) const { return &r; }
   const_pointer address(const_reference r) const { return &r; }
 
-  explicit Malloc_allocator() {}
+  explicit Comp_malloc_allocator() {}
 
   template <class U>
-  Malloc_allocator(const Malloc_allocator<U> &other [[maybe_unused]])
+  Comp_malloc_allocator(const Comp_malloc_allocator<U> &other [[maybe_unused]])
       : m_key(other.psi_key()) {}
 
   template <class U>
-  Malloc_allocator &operator=(const Malloc_allocator<U> &other
-                              [[maybe_unused]]) {
+  Comp_malloc_allocator &operator=(const Comp_malloc_allocator<U> &other
+                                   [[maybe_unused]]) {
     assert(m_key == other.psi_key());  // Don't swap key.
   }
 
@@ -81,23 +83,31 @@ class Malloc_allocator {
 
   template <class U>
   struct rebind {
-    typedef Malloc_allocator<U> other;
+    typedef Comp_malloc_allocator<U> other;
   };
 
   PSI_memory_key psi_key() const { return m_key; }
 };
 
 template <class T>
-bool operator==(const Malloc_allocator<T> &a1, const Malloc_allocator<T> &a2) {
+bool operator==(const Comp_malloc_allocator<T> &a1,
+                const Comp_malloc_allocator<T> &a2) {
   return a1.psi_key() == a2.psi_key();
 }
 
 template <class T>
-bool operator!=(const Malloc_allocator<T> &a1, const Malloc_allocator<T> &a2) {
+bool operator!=(const Comp_malloc_allocator<T> &a1,
+                const Comp_malloc_allocator<T> &a2) {
   return a1.psi_key() != a2.psi_key();
 }
 
-using pfs_string =
-    std::basic_string<char, std::char_traits<char>, Malloc_allocator<char>>;
+using pfs_string = std::basic_string<char, std::char_traits<char>,
+                                     Comp_malloc_allocator<char>>;
+
+using pfs_optional_string = std::optional<pfs_string>;
+
+using pfs_secure_ostringstream =
+    std::basic_ostringstream<char, std::char_traits<char>,
+                             Comp_malloc_allocator<char>>;
 
 #endif  // PFS_STRING_INCLUDED

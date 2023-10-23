@@ -1,0 +1,36 @@
+--source include/have_component_keyring_vault.inc
+--source include/have_debug.inc
+
+--let $vault_conf_mount_point_uuid = `SELECT UUID()`
+--source ../inc/parse_combination.inc
+
+# Create mount points
+--let $vault_conf_mount_point_suffix =
+--let $mount_point_service_op = CREATE
+--source ../inc/mount_point_service.inc
+
+--source ../inc/setup_component.inc
+
+# Create encrypted table to be sure there is Innodb Master Key in keyring,
+# which will need to be fetched from keyring on keyring_vault initialization
+CREATE TABLE t1(c1 INT, c2 char(20)) ENCRYPTION="Y" ENGINE=InnoDB;
+INSERT INTO t1 VALUES(1,"aaaaa");
+
+#UNINSTALL PLUGIN keyring_vault;
+--source ../inc/teardown_component.inc
+
+SET SESSION debug="+d,vault_network_lag";
+--source ../inc/setup_component.inc
+
+SELECT * FROM t1;
+
+
+--source ../inc/teardown_component.inc
+
+# cleanup
+SET SESSION debug="-d,vault_network_lag";
+DROP TABLE t1;
+
+# Delete mount points
+--let $mount_point_service_op = DELETE
+--source ../inc/mount_point_service.inc

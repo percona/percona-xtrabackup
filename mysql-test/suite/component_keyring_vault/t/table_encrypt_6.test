@@ -1,0 +1,24 @@
+--source include/have_component_keyring_vault.inc
+# Test negative scenarios, lifted from other innodb/table_encrypt tests
+#
+# Create a table with encryption, should fail since keyring is not
+# loaded
+
+--source include/have_debug.inc
+
+--let $vault_conf_mount_point_uuid = `SELECT UUID()`
+--source ../inc/parse_combination.inc
+
+# Create mount points
+--let $vault_conf_mount_point_suffix = _1
+--let $mount_point_service_op = CREATE
+--source ../inc/mount_point_service.inc
+
+--source ../inc/setup_component.inc
+--source include/keyring_tests/mats/table_encrypt_6.inc
+--source ../inc/teardown_component.inc
+
+# Delete mount points
+--let $vault_conf_mount_point_suffix = _1
+--let $mount_point_service_op = DELETE
+--source ../inc/mount_point_service.inc

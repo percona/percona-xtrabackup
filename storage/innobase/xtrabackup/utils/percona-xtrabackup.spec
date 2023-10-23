@@ -32,7 +32,7 @@ Source:         percona-xtrabackup-%{version}%{xb_version_extra}.tar.gz
 
 BuildRequires:  %{cmake_bin}, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel, libev-devel openssl-devel
 BuildRequires:  libcurl-devel
-Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup, percona-xtrabackup-24
+Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup, percona-xtrabackup-24, percona-xtrabackup-80
 Requires:       perl(DBD::mysql), rsync, zstd
 Requires:	perl(Digest::MD5)
 BuildRoot:      %{_tmppath}/%{name}-%{version}%{xb_version_extra}-root
@@ -130,7 +130,7 @@ rm -rf $RPM_BUILD_ROOT
 /usr/lib/private/libprotobuf*
 /usr/lib/private/icudt73l
 %{_libdir}/xtrabackup/plugin/keyring_file.so
-%{_libdir}/xtrabackup/plugin/keyring_vault.so
+%{_libdir}/xtrabackup/plugin/component_keyring_vault.so
 %{_libdir}/xtrabackup/plugin/component_keyring_file.so
 %{_libdir}/xtrabackup/plugin/component_keyring_kms.so
 %{_includedir}/kmip.h

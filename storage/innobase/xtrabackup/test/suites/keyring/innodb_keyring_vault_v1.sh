@@ -4,7 +4,7 @@
 
 . inc/keyring_common.sh
 . inc/keyring_vault.sh
-KEYRING_TYPE="plugin"
+KEYRING_TYPE="component"
 is_xtradb || skip_test "Keyring vault requires Percona Server"
 keyring_vault_ping || skip_test "Keyring vault server is not avaliable"
 # cleanup environment variables
@@ -16,8 +16,9 @@ log-bin
 "
 XB_EXTRA_MY_CNF_OPTS=
 
+VAULT_MOUNT_VERSION=1
+VAULT_CONFIG_VERSION=1
 . inc/keyring_vault.sh
-keyring_vault_mount "1" "1"
 
 function cleanup_keyring() {
 	keyring_vault_remove_all_keys
