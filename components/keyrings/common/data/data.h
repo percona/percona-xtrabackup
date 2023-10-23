@@ -23,6 +23,7 @@
 #ifndef DATA_INCLUDED
 #define DATA_INCLUDED
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include "pfs_string.h"
