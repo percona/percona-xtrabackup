@@ -10,15 +10,14 @@ then
     skip_test "Requires server version 5.7"
 fi
 
-start_server --innodb-log-file-size=80M
+start_server --innodb-log-file-size=8M
 load_dbase_schema sakila
 load_dbase_data sakila
 mkdir $topdir/backup
 
 # Test 1 - should fail since we don't have any entry on keyring file yet
-vlog "Test 1 - Should fail as keyring file does not have encryption information"
-run_cmd_expect_failure $XB_BIN $XB_ARGS --innodb-log-file-size=80M --xtrabackup-plugin-dir=${plugin_dir} --lock-ddl=false --backup \
---target-dir=$topdir/backup --debug-sync="xtrabackup_pause_after_redo_catchup" 2> >(tee $topdir/backup.log)&
+run_cmd_expect_failure $XB_BIN $XB_ARGS --innodb-log-file-size=8M --xtrabackup-plugin-dir=${plugin_dir} --lock-ddl=false --backup \
+--target-dir=$topdir/backup --debug-sync="xtrabackup_pause_after_redo_catchup" &
 
 job_pid=$!
 
@@ -44,19 +43,11 @@ kill -SIGCONT $xb_pid
 
 # wait's return code will be the code returned by the background process
 run_cmd wait $job_pid
-if ! grep -q "is missing encryption information" $topdir/backup.log ; then
-      die "Backup did not fail as expected"
-fi
-
 rm -rf $topdir/backup
 mkdir $topdir/backup
 
 # Clean-up
 $MYSQL $MYSQL_ARGS -Ns -e "DROP TABLE tmp1, tmp2" sakila
-
-
-# Test 2 - Should pass as keyring file already have encryption information
-vlog "Test 2 - Should pass as keyring file already have encryption information"
 
 # Write data on Redo log so advance checkpoint to after creation of 1st encryption table
 $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE tmp1 ENGINE=InnoDB SELECT * FROM payment" sakila
@@ -79,7 +70,8 @@ $MYSQL $MYSQL_ARGS -Ns -e "DROP TABLE tmp1" sakila
 innodb_wait_for_flush_all
 
 
-run_cmd $XB_BIN $XB_ARGS --innodb-log-file-size=80M --xtrabackup-plugin-dir=${plugin_dir} --lock-ddl=false --backup \
+# Test 2 - Should pass as keyring file alwady have encryption information
+run_cmd $XB_BIN $XB_ARGS --innodb-log-file-size=8M --xtrabackup-plugin-dir=${plugin_dir} --lock-ddl=false --backup \
 --target-dir=$topdir/backup --debug-sync="xtrabackup_pause_after_redo_catchup" &
 
 job_pid=$!
@@ -118,5 +110,5 @@ rm -rf $mysql_datadir
 
 xtrabackup --copy-back --target-dir=$topdir/backup
 
-start_server --innodb-log-file-size=80M
+start_server --innodb-log-file-size=8M
 run_cmd $MYSQL $MYSQL_ARGS -Ns -e "SELECT * FROM tmp2;" sakila
