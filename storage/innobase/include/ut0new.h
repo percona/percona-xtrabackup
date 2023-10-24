@@ -441,6 +441,15 @@ static constexpr const char *auto_event_names[] = {
     "ut0vec",
     "ut0wqueue",
     "zipdecompress",
+#ifdef XTRABACKUP
+    /* added for Percona XtraBackup */
+    "backup_copy",
+    "changed_page_tracking",
+    "fil_cur",
+    "redo_log",
+    "write_filt",
+    "xtrabackup",
+#endif
 };
 
 static constexpr size_t n_auto = UT_ARR_SIZE(auto_event_names);
