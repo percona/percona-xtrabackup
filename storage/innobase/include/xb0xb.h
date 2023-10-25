@@ -99,4 +99,10 @@ const std::string KEYRING_NOT_LOADED =
     "--keyring_file_data. If keyring component is used, check if "
     "--component-keyring-config points to valid configuration";
 
+/** pause xtrabackup and wait for resume.
+@param[in]	name	sync point name */
+void debug_sync_point(const char *name);
+
+extern char *xtrabackup_debug_sync;
+
 #endif
