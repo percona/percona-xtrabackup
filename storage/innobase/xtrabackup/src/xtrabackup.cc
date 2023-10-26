@@ -42,7 +42,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <my_base.h>
 #include <my_default.h>
 #include <my_getopt.h>
-#include <mysql_com.h>
+#include <my_rnd.h>
 #include <mysql_version.h>
 #include <mysqld.h>
 #include "log0files_io.h"
