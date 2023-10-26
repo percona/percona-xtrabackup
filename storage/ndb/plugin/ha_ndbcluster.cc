@@ -1,4 +1,4 @@
-﻿/* Copyright (c) 2004, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2004, 2023, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -144,6 +144,9 @@ static bool opt_ndb_read_backup;
 static ulong opt_ndb_data_node_neighbour;
 static bool opt_ndb_fully_replicated;
 static ulong opt_ndb_row_checksum;
+
+char *opt_ndb_tls_search_path;
+ulong opt_ndb_mgm_tls_level;
 
 // The version where ndbcluster uses DYNAMIC by default when creating columns
 static const ulong NDB_VERSION_DYNAMIC_IS_DEFAULT = 50711;
@@ -11810,9 +11813,10 @@ inline void ha_ndbcluster::release_key_fields() {
   @note This function is called in several different contexts:
    - By same thread which opened or have used NDB before. In this
      case both THD and Thd_ndb is available.
-   - By thread which executes FLUSH TABLES or RESET SOURCE and thus closes all
-     cached table definitions (and thus the related ha_ndbcluster instance). In
-     this case only THD is available since thread hasn't used NDB before.
+   - By thread which executes FLUSH TABLES or RESET BINARY LOGS AND GTIDS
+     and thus closes all  cached table definitions (and thus the related
+     ha_ndbcluster instance).
+     In this case only THD is available since thread hasn't used NDB before.
    - By thread handling SIGHUP which closes all cached table definitions. In
      this case there isn't even a THD available (this is intentional).
 
@@ -14296,9 +14300,9 @@ static void fixup_pushed_access_paths(THD *thd, AccessPath *path,
         break;
       }
       case AccessPath::MATERIALIZE: {
-        for (const MaterializePathParameters::QueryBlock &query_block :
-             subpath->materialize().param->query_blocks) {
-          AccessPath *subquery = query_block.subquery_path;
+        for (const MaterializePathParameters::Operand &operand :
+             subpath->materialize().param->m_operands) {
+          AccessPath *subquery = operand.subquery_path;
           assert(!has_pushed_members_outside_of_branch(subquery, join));
         }
         break;
@@ -17606,6 +17610,22 @@ static MYSQL_SYSVAR_STR(
     nullptr  /* default */
 );
 
+static MYSQL_SYSVAR_STR(tls_search_path,         /* name */
+                        opt_ndb_tls_search_path, /* var */
+                        PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY,
+                        "Directory containing NDB Cluster TLS Private Keys",
+                        NULL, NULL, NDB_TLS_SEARCH_PATH);
+
+static const char *tls_req_levels[] = {"relaxed", "strict", NullS};
+
+static TYPELIB mgm_tls_typelib = {array_elements(tls_req_levels) - 1, "",
+                                  tls_req_levels, nullptr};
+
+static MYSQL_SYSVAR_ENUM(mgm_tls, opt_ndb_mgm_tls_level,
+                         PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY,
+                         "MGM TLS Requirement level", nullptr, nullptr, 0,
+                         &mgm_tls_typelib);
+
 static const int MIN_ACTIVATION_THRESHOLD = 0;
 static const int MAX_ACTIVATION_THRESHOLD = 16;
 
@@ -18442,6 +18462,8 @@ static SYS_VAR *system_variables[] = {
     MYSQL_SYSVAR(optimization_delay),
     MYSQL_SYSVAR(index_stat_enable),
     MYSQL_SYSVAR(index_stat_option),
+    MYSQL_SYSVAR(tls_search_path),
+    MYSQL_SYSVAR(mgm_tls),
     MYSQL_SYSVAR(table_no_logging),
     MYSQL_SYSVAR(table_temporary),
     MYSQL_SYSVAR(log_bin),

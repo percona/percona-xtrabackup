@@ -49,6 +49,8 @@ SET(test_files
   test_auth_digest.cc
   test_classic_quit_sender.cc
   test_classic_reset_connection_sender.cc
+  test_sql_splitting_allowed.cc
+  test_start_transaction_parser.cc
   )
 
 FOREACH(test_file ${test_files})
@@ -97,7 +99,7 @@ ADD_ROUTER_TEST_FILE(
     mysqlxclient_lite
     mysqlxmessages_lite
     connection_pool
-    ${PROTOBUF_LITE_LIBRARY}
+    ext::libprotobuf-lite
   INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -114,7 +116,7 @@ TARGET_COMPILE_DEFINITIONS(${T}
   PRIVATE ROUTING_STATIC_DEFINE=1)
 
 IF(LIBFUZZER_COMPILE_FLAGS)
-  MYSQL_ADD_EXECUTABLE(routertest_fuzz_parser_show_warnings
+  MYSQL_ADD_EXECUTABLE(routertest_fuzz_routing_parser_show_warnings
     fuzz_show_warnings.cc
     ../src/show_warnings_parser.cc
     ../src/sql_lexer.cc
@@ -124,6 +126,18 @@ IF(LIBFUZZER_COMPILE_FLAGS)
     LINK_LIBRARIES harness_stdx;mysys
     SKIP_INSTALL
     )
-  LIBFUZZER_ADD_TEST(routertest_fuzz_parser_show_warnings
+  LIBFUZZER_ADD_TEST(routertest_fuzz_routing_parser_show_warnings
     INITIAL_CORPUS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/corpus/show_warnings)
+
+  MYSQL_ADD_EXECUTABLE(routertest_fuzz_routing_sql_lexer
+    fuzz_sql_lexer.cc
+    ../src/sql_lexer.cc
+    ${CMAKE_SOURCE_DIR}/sql/sql_lex_hash.cc
+    COMPONENT Router
+    DEPENDENCIES GenServerSource
+    LINK_LIBRARIES harness_stdx;mysys
+    SKIP_INSTALL
+    )
+  LIBFUZZER_ADD_TEST(routertest_fuzz_routing_sql_lexer
+    INITIAL_CORPUS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/corpus/sql_lexer)
 ENDIF()

@@ -70,9 +70,6 @@
 #include <utility>
 
 #include "ft_global.h"
-#include "libbinlogevents/include/binlog_event.h"
-#include "libbinlogevents/include/binlog_event.h"  // binary_log::max_log_event_size
-#include "libbinlogevents/include/compression/zstd_comp.h"  // DEFAULT_COMPRESSION_LEVEL
 #include "m_string.h"
 #include "my_aes.h"  // my_aes_opmode_names
 #include "my_command.h"
@@ -86,7 +83,9 @@
 #include "my_thread.h"
 #include "my_thread_local.h"
 #include "my_time.h"
-#include "myisam.h"  // myisam_flush
+#include "myisam.h"                           // myisam_flush
+#include "mysql/binlog/event/binlog_event.h"  // mysql::binlog::event::max_log_event_size
+#include "mysql/binlog/event/compression/zstd_comp.h"  // DEFAULT_COMPRESSION_LEVEL
 #include "mysql/plugin_group_replication.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/strings/dtoa.h"
@@ -94,6 +93,7 @@
 #include "mysql/strings/m_ctype.h"
 #include "mysql_version.h"
 #include "nulls.h"
+#include "sql-common/my_decimal.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // validate_user_plugins
 #include "sql/binlog.h"            // mysql_bin_log
@@ -108,7 +108,6 @@
 #include "sql/hostname_cache.h"  // host_cache_resize
 #include "sql/log.h"
 #include "sql/mdl.h"
-#include "sql/my_decimal.h"
 #include "sql/opt_trace_context.h"
 #include "sql/options_mysqld.h"
 #include "sql/protocol_classic.h"
@@ -212,7 +211,8 @@ static constexpr const unsigned long long OPTIMIZER_SWITCH_DEFAULT{
     OPTIMIZER_SWITCH_COND_FANOUT_FILTER | OPTIMIZER_SWITCH_DERIVED_MERGE |
     OPTIMIZER_SKIP_SCAN | OPTIMIZER_SWITCH_HASH_JOIN |
     OPTIMIZER_SWITCH_PREFER_ORDERING_INDEX |
-    OPTIMIZER_SWITCH_DERIVED_CONDITION_PUSHDOWN};
+    OPTIMIZER_SWITCH_DERIVED_CONDITION_PUSHDOWN |
+    OPTIMIZER_SWITCH_HASH_SET_OPERATIONS};
 
 static constexpr const unsigned long MYSQLD_NET_RETRY_COUNT{10};
 
@@ -407,8 +407,8 @@ static bool check_session_admin(sys_var *self, THD *thd, set_var *setv) {
 
 #ifdef WITH_LOCK_ORDER
 
-#define LO_TRAILING_PROPERTIES                                          \
-  NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(NULL), ON_UPDATE(NULL), NULL, \
+#define LO_TRAILING_PROPERTIES                                             \
+  NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(NULL), ON_UPDATE(NULL), nullptr, \
       sys_var::PARSE_EARLY
 
 static Sys_var_bool Sys_lo_enabled("lock_order", "Enable the lock order.",
@@ -486,8 +486,8 @@ static Sys_var_bool Sys_lo_debug_missing_key(
 #ifdef WITH_PERFSCHEMA_STORAGE_ENGINE
 
 #define PFS_TRAILING_PROPERTIES                                         \
-  NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(NULL), ON_UPDATE(NULL), NULL, \
-      sys_var::PARSE_EARLY
+  NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(nullptr), ON_UPDATE(nullptr), \
+      nullptr, sys_var::PARSE_EARLY
 
 static Sys_var_bool Sys_pfs_enabled("performance_schema",
                                     "Enable the performance schema.",
@@ -502,13 +502,30 @@ static Sys_var_charptr Sys_pfs_instrument(
     CMD_LINE(OPT_ARG, OPT_PFS_INSTRUMENT), IN_FS_CHARSET, DEFAULT(""),
     PFS_TRAILING_PROPERTIES);
 
+/**
+  Update the performance_schema_show_processlist.
+  Warn that the use of information_schema processlist is deprecated.
+*/
+static bool performance_schema_show_processlist_update(sys_var *, THD *thd,
+                                                       enum_var_type) {
+  push_warning_printf(thd, Sql_condition::SL_WARNING,
+                      ER_WARN_DEPRECATED_WITH_NOTE,
+                      ER_THD(thd, ER_WARN_DEPRECATED_WITH_NOTE),
+                      "@@performance_schema_show_processlist",
+                      "When it is removed, SHOW PROCESSLIST will always use the"
+                      " performance schema implementation.");
+
+  return false;
+}
+
 static Sys_var_bool Sys_pfs_processlist(
     "performance_schema_show_processlist",
     "Default startup value to enable SHOW PROCESSLIST "
     "in the performance schema.",
     GLOBAL_VAR(pfs_processlist_enabled), CMD_LINE(OPT_ARG), DEFAULT(false),
-    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(nullptr), ON_UPDATE(nullptr),
-    nullptr, sys_var::PARSE_NORMAL);
+    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(nullptr),
+    ON_UPDATE(performance_schema_show_processlist_update), nullptr,
+    sys_var::PARSE_NORMAL);
 
 static Sys_var_bool Sys_pfs_consumer_events_stages_current(
     "performance_schema_consumer_events_stages_current",
@@ -899,6 +916,20 @@ static Sys_var_ulong Sys_pfs_max_memory_classes(
     READ_ONLY GLOBAL_VAR(pfs_param.m_memory_class_sizing),
     CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 1024), DEFAULT(PFS_MAX_MEMORY_CLASS),
     BLOCK_SIZE(1), PFS_TRAILING_PROPERTIES);
+
+static Sys_var_ulong Sys_pfs_max_meter_classes(
+    "performance_schema_max_meter_classes",
+    "Maximum number of meter source instruments.",
+    READ_ONLY GLOBAL_VAR(pfs_param.m_meter_class_sizing),
+    CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 64), DEFAULT(PFS_MAX_METER_CLASS),
+    BLOCK_SIZE(1), PFS_TRAILING_PROPERTIES);
+
+static Sys_var_ulong Sys_pfs_max_metric_classes(
+    "performance_schema_max_metric_classes",
+    "Maximum number of metric source instruments.",
+    READ_ONLY GLOBAL_VAR(pfs_param.m_metric_class_sizing),
+    CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 11000),
+    DEFAULT(PFS_MAX_METRIC_CLASS), BLOCK_SIZE(1), PFS_TRAILING_PROPERTIES);
 
 static Sys_var_long Sys_pfs_digest_size(
     "performance_schema_digests_size",
@@ -1508,7 +1539,7 @@ static Sys_var_uint Sys_binlog_transaction_compression_level_zstd(
     "transaction compression in the binary log.",
     SESSION_VAR(binlog_trx_compression_level_zstd), CMD_LINE(REQUIRED_ARG),
     VALID_RANGE(1, 22),
-    DEFAULT(binary_log::transaction::compression::Zstd_comp::
+    DEFAULT(mysql::binlog::event::compression::Zstd_comp::
                 default_compression_level),
     BLOCK_SIZE(1), NO_MUTEX_GUARD, NOT_IN_BINLOG,
     ON_CHECK(check_binlog_trx_compression), ON_UPDATE(nullptr));
@@ -2178,49 +2209,14 @@ static Sys_var_enum Sys_event_scheduler(
     NOT_IN_BINLOG, ON_CHECK(event_scheduler_check),
     ON_UPDATE(event_scheduler_update));
 
-static bool check_expire_logs_days(sys_var *, THD *, set_var *var) {
-  const ulonglong expire_logs_days_value = var->save_result.ulonglong_value;
-
-  if (expire_logs_days_value && binlog_expire_logs_seconds) {
-    my_error(ER_BINLOG_EXPIRE_LOG_DAYS_AND_SECS_USED_TOGETHER, MYF(0));
-    return true;
-  }
-  return false;
-}
-
-static bool check_expire_logs_seconds(sys_var *, THD *, set_var *var) {
-  const ulonglong expire_logs_seconds_value = var->save_result.ulonglong_value;
-
-  if (expire_logs_days && expire_logs_seconds_value) {
-    my_error(ER_DA_EXPIRE_LOGS_DAYS_IGNORED, MYF(0));
-    return true;
-  }
-  return false;
-}
-
-static Sys_var_ulong Sys_expire_logs_days(
-    "expire_logs_days",
-    "If non-zero, binary logs will be purged after expire_logs_days "
-    "days; If this option alone is set on the command line or in a "
-    "configuration file, it overrides the default value for "
-    "binlog-expire-logs-seconds. If both options are set to nonzero values, "
-    "binlog-expire-logs-seconds takes priority. Possible purges happen at "
-    "startup and at binary log rotation.",
-    GLOBAL_VAR(expire_logs_days), CMD_LINE(REQUIRED_ARG, OPT_EXPIRE_LOGS_DAYS),
-    VALID_RANGE(0, 99), DEFAULT(0), BLOCK_SIZE(1), NO_MUTEX_GUARD,
-    NOT_IN_BINLOG, ON_CHECK(check_expire_logs_days), ON_UPDATE(nullptr),
-    DEPRECATED_VAR("binlog_expire_logs_seconds"));
-
 static Sys_var_ulong Sys_binlog_expire_logs_seconds(
     "binlog_expire_logs_seconds",
     "If non-zero, binary logs will be purged after binlog_expire_logs_seconds"
-    " seconds; If both this option and expire_logs_days are set to non-zero"
-    "  values, this option takes priority. Purges happen at"
-    " startup and at binary log rotation.",
+    " seconds; Purges happen at startup and at binary log rotation.",
     GLOBAL_VAR(binlog_expire_logs_seconds),
     CMD_LINE(REQUIRED_ARG, OPT_BINLOG_EXPIRE_LOGS_SECONDS),
     VALID_RANGE(0, 0xFFFFFFFF), DEFAULT(2592000), BLOCK_SIZE(1), NO_MUTEX_GUARD,
-    NOT_IN_BINLOG, ON_CHECK(check_expire_logs_seconds), ON_UPDATE(nullptr));
+    NOT_IN_BINLOG, ON_CHECK(nullptr), ON_UPDATE(nullptr));
 
 static Sys_var_bool Sys_binlog_expire_logs_auto_purge(
     "binlog_expire_logs_auto_purge",
@@ -2904,8 +2900,8 @@ static Sys_var_ulong Sys_replica_max_allowed_packet(
     "The maximum size of packets sent from an upstream source server to this "
     "server.",
     GLOBAL_VAR(replica_max_allowed_packet), CMD_LINE(REQUIRED_ARG),
-    VALID_RANGE(1024, binary_log::max_log_event_size),
-    DEFAULT(binary_log::max_log_event_size), BLOCK_SIZE(1024));
+    VALID_RANGE(1024, mysql::binlog::event::max_log_event_size),
+    DEFAULT(mysql::binlog::event::max_log_event_size), BLOCK_SIZE(1024));
 
 static Sys_var_deprecated_alias Sys_slave_max_allowed_packet(
     "slave_max_allowed_packet", Sys_replica_max_allowed_packet);
@@ -3250,11 +3246,16 @@ static Sys_var_ulong Sys_net_retry_count(
 static Sys_var_bool Sys_new_mode("new",
                                  "Use very new possible \"unsafe\" functions",
                                  SESSION_VAR(new_mode), CMD_LINE(OPT_ARG, 'n'),
-                                 DEFAULT(false));
+                                 DEFAULT(false), NO_MUTEX_GUARD, NOT_IN_BINLOG,
+                                 ON_CHECK(nullptr), ON_UPDATE(nullptr),
+                                 DEPRECATED_VAR(""));
 
 static Sys_var_bool Sys_old_mode("old", "Use compatible behavior",
                                  READ_ONLY GLOBAL_VAR(old_mode),
-                                 CMD_LINE(OPT_ARG), DEFAULT(false));
+                                 CMD_LINE(OPT_ARG, OPT_OLD_OPTION),
+                                 DEFAULT(false), NO_MUTEX_GUARD, NOT_IN_BINLOG,
+                                 ON_CHECK(nullptr), ON_UPDATE(nullptr),
+                                 DEPRECATED_VAR(""));
 
 static Sys_var_bool Sys_old_alter_table("old_alter_table",
                                         "Use old, non-optimized alter table",
@@ -3435,6 +3436,7 @@ static const char *optimizer_switch_names[] = {
     "prefer_ordering_index",
     "hypergraph_optimizer",  // Deliberately not documented below.
     "derived_condition_pushdown",
+    "hash_set_operations",
     "default",
     NullS};
 static Sys_var_flagset Sys_optimizer_switch(
@@ -3448,7 +3450,7 @@ static Sys_var_flagset Sys_optimizer_switch(
     " block_nested_loop, batched_key_access, use_index_extensions,"
     " condition_fanout_filter, derived_merge, hash_join,"
     " subquery_to_derived, prefer_ordering_index,"
-    " derived_condition_pushdown} and val is one of "
+    " derived_condition_pushdown, hash_set_operations} and val is one of "
     "{on, off, default}",
     HINT_UPDATEABLE SESSION_VAR(optimizer_switch), CMD_LINE(REQUIRED_ARG),
     optimizer_switch_names, DEFAULT(OPTIMIZER_SWITCH_DEFAULT), NO_MUTEX_GUARD,
@@ -3932,7 +3934,7 @@ static Sys_var_bool Sys_shared_memory(
 static Sys_var_charptr Sys_shared_memory_base_name(
     "shared_memory_base_name", "Base name of shared memory",
     READ_ONLY NON_PERSIST GLOBAL_VAR(shared_memory_base_name),
-    CMD_LINE(REQUIRED_ARG), IN_FS_CHARSET, DEFAULT(0));
+    CMD_LINE(REQUIRED_ARG), IN_FS_CHARSET, DEFAULT(nullptr));
 #endif
 
 // this has to be NO_CMD_LINE as the command-line option has a different name
@@ -4237,10 +4239,12 @@ static Sys_var_enum Binlog_transaction_dependency_tracking(
     "replica_parallel_type=LOGICAL_CLOCK. "
     "Possible values are COMMIT_ORDER, WRITESET and WRITESET_SESSION.",
     GLOBAL_VAR(mysql_bin_log.m_dependency_tracker.m_opt_tracking_mode),
-    CMD_LINE(REQUIRED_ARG), opt_binlog_transaction_dependency_tracking_names,
+    CMD_LINE(REQUIRED_ARG, OPT_BINLOG_TRANSACTION_DEPENDENCY_TRACKING),
+    opt_binlog_transaction_dependency_tracking_names,
     DEFAULT(DEPENDENCY_TRACKING_COMMIT_ORDER), &PLock_slave_trans_dep_tracker,
     NOT_IN_BINLOG, ON_CHECK(check_binlog_transaction_dependency_tracking),
-    ON_UPDATE(update_binlog_transaction_dependency_tracking));
+    ON_UPDATE(update_binlog_transaction_dependency_tracking),
+    DEPRECATED_VAR(""));
 static Sys_var_ulong Binlog_transaction_dependency_history_size(
     "binlog_transaction_dependency_history_size",
     "Maximum number of rows to keep in the writeset history.",
@@ -4297,14 +4301,14 @@ bool Sys_var_enum_binlog_checksum::global_update(THD *thd, set_var *var) {
     mysql_bin_log.rotate(true, &check_purge);
     if (alg_changed)
       mysql_bin_log.checksum_alg_reset =
-          binary_log::BINLOG_CHECKSUM_ALG_UNDEF;  // done
+          mysql::binlog::event::BINLOG_CHECKSUM_ALG_UNDEF;  // done
   } else {
     binlog_checksum_options =
         static_cast<ulong>(var->save_result.ulonglong_value);
   }
   assert(binlog_checksum_options == var->save_result.ulonglong_value);
   assert(mysql_bin_log.checksum_alg_reset ==
-         binary_log::BINLOG_CHECKSUM_ALG_UNDEF);
+         mysql::binlog::event::BINLOG_CHECKSUM_ALG_UNDEF);
   mysql_mutex_unlock(mysql_bin_log.get_log_lock());
 
   if (check_purge) mysql_bin_log.auto_purge();
@@ -4346,11 +4350,11 @@ bool Sys_var_gtid_set::session_update(THD *thd, set_var *var) {
   DBUG_TRACE;
   Gtid_set_or_null *gsn = (Gtid_set_or_null *)session_var_ptr(thd);
   char *value = var->save_result.string_value.str;
-  if (value == NULL)
+  if (value == nullptr)
     gsn->set_null();
   else {
     Gtid_set *gs = gsn->set_non_null(global_sid_map);
-    if (gs == NULL) {
+    if (gs == nullptr) {
       my_error(ER_OUT_OF_RESOURCES, MYF(0));  // allocation failed
       return true;
     }
@@ -4677,16 +4681,14 @@ bool Sys_var_gtid_mode::global_update(THD *thd, set_var *var) {
   }
 
   // Can't set GTID_MODE=OFF with ongoing calls to
-  // WAIT_FOR_EXECUTED_GTID_SET or
-  // WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS.
+  // WAIT_FOR_EXECUTED_GTID_SET.
   DBUG_PRINT("info",
              ("gtid_wait_count=%d", gtid_state->get_gtid_wait_count() > 0));
   if (new_gtid_mode == Gtid_mode::OFF &&
       gtid_state->get_gtid_wait_count() > 0) {
     my_error(ER_CANT_SET_GTID_MODE, MYF(0), "OFF",
              "there are ongoing calls to "
-             "WAIT_FOR_EXECUTED_GTID_SET or "
-             "WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS. Before you set "
+             "WAIT_FOR_EXECUTED_GTID_SET. Before you set "
              "@@GLOBAL.GTID_MODE = OFF, ensure that no other "
              "client is waiting for GTID-transactions to be "
              "committed");
@@ -4806,8 +4808,9 @@ static Sys_var_enum_binlog_checksum Binlog_checksum_enum(
     "log events in the binary log. Possible values are NONE and CRC32; "
     "default is CRC32.",
     GLOBAL_VAR(binlog_checksum_options), CMD_LINE(REQUIRED_ARG),
-    binlog_checksum_type_names, DEFAULT(binary_log::BINLOG_CHECKSUM_ALG_CRC32),
-    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(check_outside_trx));
+    binlog_checksum_type_names,
+    DEFAULT(mysql::binlog::event::BINLOG_CHECKSUM_ALG_CRC32), NO_MUTEX_GUARD,
+    NOT_IN_BINLOG, ON_CHECK(check_outside_trx));
 
 static Sys_var_bool Sys_source_verify_checksum(
     "source_verify_checksum",
@@ -6615,7 +6618,7 @@ static bool check_gtid_next_list(sys_var *self, THD *thd, set_var *var) {
     check and fix - if we ever implement this variable.
   */
   if (global_gtid_mode.get() == Gtid_mode::OFF &&
-      var->save_result.string_value.str != NULL)
+      var->save_result.string_value.str != nullptr)
     my_error(ER_CANT_SET_GTID_NEXT_LIST_TO_NON_NULL_WHEN_GTID_MODE_IS_OFF,
              MYF(0));
   return false;
@@ -6623,7 +6626,7 @@ static bool check_gtid_next_list(sys_var *self, THD *thd, set_var *var) {
 
 static bool update_gtid_next_list(sys_var *self, THD *thd, enum_var_type type) {
   assert(type == OPT_SESSION);
-  if (thd->get_gtid_next_list() != NULL)
+  if (thd->get_gtid_next_list() != nullptr)
     return gtid_acquire_ownership_multiple(thd) != 0 ? true : false;
   return false;
 }
@@ -7638,7 +7641,7 @@ static Sys_var_deprecated_alias Sys_skip_slave_start("skip_slave_start",
                                                      Sys_skip_replica_start);
 
 static const char *terminology_use_previous_names[] = {"NONE", "BEFORE_8_0_26",
-                                                       nullptr};
+                                                       "BEFORE_8_2_0", nullptr};
 
 static Sys_var_enum Sys_terminology_use_previous(
     "terminology_use_previous",
@@ -7652,7 +7655,11 @@ static Sys_var_enum Sys_terminology_use_previous(
     "or SHOW REPLICA STATUS. When the global option is set to BEFORE_8_0_26, "
     "new sessions use BEFORE_8_0_26 as default for the session option, and in "
     "addition the thread commands that were in use until 8.0.25 are written "
-    "to the slow query log.",
+    "to the slow query log. If set to BEFORE_8_2_0 or less the command SHOW "
+    "CREATE EVENT will show how the event would have been created in a server "
+    "of a version lower than 8.2.0. SHOW EVENTS and queries into "
+    "information_schema.events will also output the old terminology for the "
+    "event status field.",
     SESSION_VAR(terminology_use_previous), CMD_LINE(REQUIRED_ARG),
     terminology_use_previous_names, DEFAULT(terminology_use_previous::NONE),
     NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(nullptr), ON_UPDATE(nullptr),
@@ -7712,3 +7719,30 @@ static Sys_var_bool Sys_tls_certificates_enforced_validation(
     READ_ONLY NON_PERSIST GLOBAL_VAR(opt_tls_certificates_enforced_validation),
     CMD_LINE(OPT_ARG), DEFAULT(false), NO_MUTEX_GUARD, NOT_IN_BINLOG,
     ON_CHECK(nullptr), ON_UPDATE(nullptr));
+
+static Sys_var_ulonglong Sys_set_operations_buffer_size(
+    "set_operations_buffer_size",
+    "The maximum size of the buffer used for hash based set operations ",
+    HINT_UPDATEABLE SESSION_VAR(set_operations_buffer_size),
+    CMD_LINE(REQUIRED_ARG), VALID_RANGE(16384 /* 16*1024 */, max_mem_sz),
+    DEFAULT(256ULL * 1024), BLOCK_SIZE(128));
+
+#ifndef NDEBUG
+// If this variable is set, it will inject a secondary overflow in spill to
+// disk of in-memory hash table used for INTERSECT, EXCEPT. Three integers must
+// be given to indicate where to inject the overflow:
+//   a) set index, cf. explanation in comments for class SpillState
+//   b) chunk index
+//   c) row number
+// Syntax: <set-idx:integer 0-based> <chunk-idx:integer 0-based>
+//         <row_no:integer 1-based>
+// Example:
+//       SET SESSION debug_set_operations_secondary_overflow_at = '1 5 7';
+// If the numbers given are outside range on the high side, they will never
+// trigger any secondary spill.
+static Sys_var_charptr Sys_debug_set_operations_secondary_overflow_at(
+    "debug_set_operations_secondary_overflow_at", "Error injection",
+    HINT_UPDATEABLE SESSION_VAR(debug_set_operations_secondary_overflow_at),
+    CMD_LINE(REQUIRED_ARG), IN_FS_CHARSET, DEFAULT(""), NO_MUTEX_GUARD,
+    NOT_IN_BINLOG, ON_CHECK(nullptr), ON_UPDATE(nullptr));
+#endif

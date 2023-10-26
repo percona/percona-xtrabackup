@@ -230,6 +230,16 @@ opt_always_activate_roles_on_login is set to true.
 
  */
 
+bool operator==(const Role_id &a, const std::string &b) {
+  std::string tmp;
+  a.auth_str(&tmp);
+  return tmp == b;
+}
+
+bool operator==(const std::pair<Role_id, bool> &a, const std::string &b) {
+  return a.first == b;
+}
+
 /**
   Class to handle sanity checks for GRANT ... AS ... statement
 */
@@ -382,13 +392,15 @@ bool Grant_validator::validate_dynamic_privileges() {
         dynamic privileges to grant.
       */
       privileges_to_check = new (m_thd->mem_root) List<LEX_CSTRING>;
-      iterate_all_dynamic_privileges(m_thd, [&](const char *str) {
-        LEX_CSTRING *new_str = (LEX_CSTRING *)m_thd->alloc(sizeof(LEX_CSTRING));
-        new_str->str = str;
-        new_str->length = strlen(str);
-        privileges_to_check->push_back(new_str);
-        return false;
-      });
+      iterate_all_dynamic_non_deprecated_privileges(
+          m_thd, [&](const char *str) {
+            LEX_CSTRING *new_str =
+                (LEX_CSTRING *)m_thd->alloc(sizeof(LEX_CSTRING));
+            new_str->str = str;
+            new_str->length = strlen(str);
+            privileges_to_check->push_back(new_str);
+            return false;
+          });
     } else
       privileges_to_check =
           &const_cast<List<LEX_CSTRING> &>(m_dynamic_privilege);
@@ -396,6 +408,15 @@ bool Grant_validator::validate_dynamic_privileges() {
     bool error = false;
     Security_context *sctx = m_thd->security_context();
     while ((priv = priv_it++) && !error) {
+      if (!m_grant_all && !m_revoke) {
+        std::string s(priv->str, priv->length);
+        if (is_dynamic_privilege_deprecated(s))
+          push_warning_printf(
+              m_thd, Sql_condition::SL_WARNING,
+              ER_WARN_DEPRECATED_DYNAMIC_PRIV_IN_GRANT,
+              ER_THD(m_thd, ER_WARN_DEPRECATED_DYNAMIC_PRIV_IN_GRANT),
+              s.c_str());
+      }
       /*
         Privilege to grant dynamic privilege to others is granted if the user
         either has super user privileges (currently UPDATE_ACL on mysql.*) or
@@ -2192,12 +2213,8 @@ bool check_access(THD *thd, ulong want_access, const char *db, ulong *save_priv,
     if (!(sctx->check_access(SELECT_ACL, db_name))) {
       if (db &&
           (!thd->db().str || db_is_pattern || strcmp(db, thd->db().str))) {
-        if (sctx->get_active_roles()->size() > 0) {
-          db_access = sctx->db_acl({db, strlen(db)}, db_is_pattern);
-        } else {
-          db_access = acl_get(thd, sctx->host().str, sctx->ip().str,
-                              sctx->priv_user().str, db, db_is_pattern);
-        }
+        db_access =
+            sctx->check_db_level_access(thd, db, strlen(db), db_is_pattern);
       } else {
         /* get access for current db */
         db_access = sctx->current_db_access();
@@ -2237,17 +2254,9 @@ bool check_access(THD *thd, ulong want_access, const char *db, ulong *save_priv,
     return false;
   }
 
-  if (db && (!thd->db().str || db_is_pattern || strcmp(db, thd->db().str))) {
-    if (sctx->get_active_roles()->size() > 0) {
-      db_access = sctx->db_acl({db, strlen(db)}, db_is_pattern);
-      DBUG_PRINT("info", ("check_access using db-level privilege for %s. "
-                          "ACL: %lu",
-                          db, db_access));
-    } else {
-      db_access = acl_get(thd, sctx->host().str, sctx->ip().str,
-                          sctx->priv_user().str, db, db_is_pattern);
-    }
-  } else
+  if (db && (!thd->db().str || db_is_pattern || strcmp(db, thd->db().str)))
+    db_access = sctx->check_db_level_access(thd, db, strlen(db), db_is_pattern);
+  else
     db_access = sctx->current_db_access();
   DBUG_PRINT("info",
              ("db_access: %lu  want_access: %lu", db_access, want_access));
@@ -2436,6 +2445,8 @@ bool is_granted_table_access(THD *thd, ulong required_acl, Table_ref *table) {
   DBUG_TRACE;
   const char *table_name = table->get_table_name();
   const char *db_name = table->get_db_name();
+  Security_context *sctx = thd->security_context();
+  ulong db_acl = sctx->check_db_level_access(thd, db_name, strlen(db_name));
   if (thd->security_context()->get_active_roles()->size() != 0) {
     /* Check privilege against the role privilege cache */
     const ulong global_acl = thd->security_context()->master_access(db_name);
@@ -2444,9 +2455,7 @@ bool is_granted_table_access(THD *thd, ulong required_acl, Table_ref *table) {
                           db_name, table_name));
       return true;
     }
-    const ulong db_acl =
-        thd->security_context()->db_acl({db_name, strlen(db_name)}, true) |
-        global_acl;
+    db_acl |= global_acl;
     if ((db_acl & required_acl) == required_acl) {
       DBUG_PRINT("info", ("Access granted for %s.%s by schema privileges",
                           db_name, table_name));
@@ -2463,7 +2472,6 @@ bool is_granted_table_access(THD *thd, ulong required_acl, Table_ref *table) {
     }
   } else {
     /* No active roles */
-    Security_context *sctx = thd->security_context();
     if ((sctx->master_access(db_name) & required_acl) == required_acl) {
       DBUG_PRINT("info",
                  ("(no role) Access granted for %s.%s by global privileges",
@@ -2472,8 +2480,7 @@ bool is_granted_table_access(THD *thd, ulong required_acl, Table_ref *table) {
     }
     ulong db_access;
     if ((!thd->db().str || strcmp(db_name, thd->db().str)))
-      db_access = acl_get(thd, sctx->host().str, sctx->ip().str,
-                          sctx->priv_user().str, db_name, false);
+      db_access = db_acl;
     else
       db_access = sctx->current_db_access();
     db_access = (db_access | sctx->master_access(db_name));
@@ -3583,14 +3590,15 @@ bool mysql_grant(THD *thd, const char *db, List<LEX_USER> &list, ulong rights,
             dynamic privileges to grant.
           */
           privileges_to_check = new (thd->mem_root) List<LEX_CSTRING>;
-          iterate_all_dynamic_privileges(thd, [&](const char *str) {
-            LEX_CSTRING *new_str =
-                (LEX_CSTRING *)thd->alloc(sizeof(LEX_CSTRING));
-            new_str->str = str;
-            new_str->length = strlen(str);
-            privileges_to_check->push_back(new_str);
-            return false;
-          });
+          iterate_all_dynamic_non_deprecated_privileges(
+              thd, [&](const char *str) {
+                LEX_CSTRING *new_str =
+                    (LEX_CSTRING *)thd->alloc(sizeof(LEX_CSTRING));
+                new_str->str = str;
+                new_str->length = strlen(str);
+                privileges_to_check->push_back(new_str);
+                return false;
+              });
           granted_dynamic_privs = privileges_to_check;
         } else
           privileges_to_check =
@@ -5485,26 +5493,26 @@ void fill_effective_table_privileges(THD *thd, GRANT_INFO *grant,
                       " (%lu)",
                       (unsigned long)sctx->get_active_roles()->size()));
   const std::string db_name = db ? db : "";
+  const LEX_CSTRING str_db = {db, strlen(db)};
+  ulong db_access = sctx->check_db_level_access(thd, db, strlen(db));
   if (sctx->get_active_roles()->size() > 0) {
     /* global privileges */
     grant->privilege = sctx->master_access(db_name);
-    const LEX_CSTRING str_db = {db, strlen(db)};
     /* db privileges */
-    grant->privilege |= sctx->db_acl(str_db);
+    grant->privilege |= db_access;
     const LEX_CSTRING str_table = {table, strlen(table)};
     /* table privileges */
     grant->privilege |= sctx->table_acl(str_db, str_table);
     grant->grant_table = nullptr;
     DBUG_PRINT("info", ("Role used: %s db: %s db-acl: %lu all-acl: %lu ",
                         sctx->get_active_roles()->at(0).first.str, db,
-                        sctx->db_acl(str_db), grant->privilege));
+                        db_access, grant->privilege));
   } else {
     /* global privileges */
     grant->privilege = sctx->master_access(db_name);
 
     /* db privileges */
-    grant->privilege |= acl_get(thd, sctx->host().str, sctx->ip().str,
-                                priv_user.str, db, false);
+    grant->privilege |= db_access;
 
     DEBUG_SYNC(thd, "fill_effective_table_privileges");
     /* table privileges */
@@ -7431,16 +7439,6 @@ Sctx_ptr<Security_context> Security_context_factory::create() {
   });
 }
 
-bool operator==(const Role_id &a, const std::string &b) {
-  std::string tmp;
-  a.auth_str(&tmp);
-  return tmp == b;
-}
-
-bool operator==(const std::pair<Role_id, bool> &a, const std::string &b) {
-  return a.first == b;
-}
-
 bool operator==(const Role_id &a, const Auth_id_ref &b) {
   return ((a.user().length() == b.first.length) &&
           (a.host().length() == b.second.length) &&
@@ -7451,7 +7449,7 @@ bool operator==(const Role_id &a, const Auth_id_ref &b) {
 
 bool operator==(const Auth_id_ref &a, const Role_id &b) { return b == a; }
 
-bool operator==(const std::pair<const Role_id, const Role_id> &a,
+bool operator==(const std::pair<const Role_id, Role_id> &a,
                 const Auth_id_ref &b) {
   return ((a.second.user().length() == b.first.length) &&
           (a.second.host().length() == b.second.length) &&
@@ -7573,4 +7571,37 @@ bool check_system_user_privilege(THD *thd, List<LEX_USER> list) {
     if (sctx->can_operate_with({user}, consts::system_user)) return (true);
   }
   return (false);
+}
+
+bool check_valid_definer(THD *thd, LEX_USER *definer) {
+  DBUG_TRACE;
+  Security_context *sctx = thd->security_context();
+  if ((strcmp(definer->user.str, sctx->priv_user().str) ||
+       my_strcasecmp(system_charset_info, definer->host.str,
+                     sctx->priv_host().str))) {
+    if (!(sctx->check_access(SUPER_ACL) ||
+          sctx->has_global_grant(STRING_WITH_LEN("SET_USER_ID")).first ||
+          sctx->has_global_grant(STRING_WITH_LEN("SET_ANY_DEFINER")).first)) {
+      my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0),
+               "SUPER, SET_USER_ID or SET_ANY_DEFINER");
+      return true;
+    }
+    if (sctx->can_operate_with({definer}, consts::system_user, true))
+      return true;
+  }
+
+  if (!is_acl_user(thd, definer->host.str, definer->user.str)) {
+    if (!(sctx->check_access(SUPER_ACL) ||
+          sctx->has_global_grant(STRING_WITH_LEN("SET_USER_ID")).first ||
+          sctx->has_global_grant(STRING_WITH_LEN("ALLOW_NONEXISTENT_DEFINER"))
+              .first)) {
+      my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0),
+               "SUPER, SET_USER_ID or ALLOW_NONEXISTENT_DEFINER");
+      return true;
+    } else
+      push_warning_printf(thd, Sql_condition::SL_NOTE, ER_NO_SUCH_USER,
+                          ER_THD(thd, ER_NO_SUCH_USER), definer->user.str,
+                          definer->host.str);
+  }
+  return false;
 }

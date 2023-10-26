@@ -250,8 +250,8 @@ static bool g_injector_v1_warning_emitted = false;
 /*
   @brief Wait until the last committed epoch from the session enters the
          binlog. Wait a maximum of 30 seconds. This wait is necessary in
-         SHOW BINLOG EVENTS so that the user see its own changes. Also
-         in RESET SOURCE before clearing ndbcluster's binlog index.
+         SHOW BINLOG EVENTS so that the user see its own changes. Also in
+         RESET BINARY LOGS AND GTIDS before clearing ndbcluster's binlog index.
   @param thd Thread handle to wait for its changes to enter the binlog.
 */
 static void ndbcluster_binlog_wait(THD *thd) {
@@ -5322,9 +5322,7 @@ NdbEventOperation *Ndb_binlog_client::create_event_op_in_NDB(
     }
 
     /* Check if user explicitly requires monitoring of empty updates */
-    if (opt_ndb_log_empty_update) {
-      op->setAllowEmptyUpdate(true);
-    }
+    op->setAllowEmptyUpdate(opt_ndb_log_empty_update);
 
     // Setup the attributes that should be subscribed.
     const TABLE *table = event_data->shadow_table;
@@ -6035,7 +6033,8 @@ void Ndb_binlog_thread::inject_incident(
   // Record incident in injector
   LEX_CSTRING const msg = {errmsg, strlen(errmsg)};
   if (inj->record_incident(
-          thd, binary_log::Incident_event::INCIDENT_LOST_EVENTS, msg) != 0) {
+          thd, mysql::binlog::event::Incident_event::INCIDENT_LOST_EVENTS,
+          msg) != 0) {
     log_error("Failed to record incident");
   }
 }
@@ -7057,7 +7056,7 @@ bool Ndb_binlog_thread::check_reconnect_incident(
   }
   log_verbose(20, "Writing incident for %s", msg.str);
   (void)inj->record_incident(
-      thd, binary_log::Incident_event::INCIDENT_LOST_EVENTS, msg);
+      thd, mysql::binlog::event::Incident_event::INCIDENT_LOST_EVENTS, msg);
 
   return true;  // Incident written
 }
@@ -7538,7 +7537,7 @@ restart_cluster_failure:
             "cluster has been restarted --initial or with older filesystem. "
             "ndb_latest_handled_binlog_epoch: %u/%u, while current epoch: "
             "%u/%u. "
-            "RESET SOURCE should be issued. Resetting "
+            "RESET BINARY LOGS AND GTIDS should be issued. Resetting "
             "ndb_latest_handled_binlog_epoch.",
             (uint)(ndb_latest_handled_binlog_epoch >> 32),
             (uint)(ndb_latest_handled_binlog_epoch), (uint)(schema_gci >> 32),

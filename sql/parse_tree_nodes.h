@@ -3697,17 +3697,17 @@ class PT_show_keys final : public PT_show_table_base {
   Sql_cmd_show_keys m_sql_cmd;
 };
 
-/// Parse tree node for SHOW MASTER STATUS statement
+/// Parse tree node for SHOW BINARY LOG STATUS statement
 
-class PT_show_master_status final : public PT_show_base {
+class PT_show_binary_log_status final : public PT_show_base {
  public:
-  PT_show_master_status(const POS &pos)
+  PT_show_binary_log_status(const POS &pos)
       : PT_show_base(pos, SQLCOM_SHOW_MASTER_STAT) {}
 
   Sql_cmd *make_cmd(THD *thd) override;
 
  private:
-  Sql_cmd_show_master_status m_sql_cmd;
+  Sql_cmd_show_binary_log_status m_sql_cmd;
 };
 
 /// Parse tree node for SHOW OPEN TABLES statement
@@ -5417,13 +5417,15 @@ class PT_explain : public Parse_tree_root {
  public:
   PT_explain(const POS &pos, Explain_format_type format, bool is_analyze,
              bool is_explicit_format, Parse_tree_root *explainable_stmt,
-             std::optional<std::string_view> explain_into_variable_name)
+             std::optional<std::string_view> explain_into_variable_name,
+             LEX_CSTRING schema_name_for_explain)
       : Parse_tree_root(pos),
         m_format(format),
         m_analyze(is_analyze),
         m_explicit_format(is_explicit_format),
         m_explainable_stmt(explainable_stmt),
-        m_explain_into_variable_name(explain_into_variable_name) {}
+        m_explain_into_variable_name(explain_into_variable_name),
+        m_schema_name_for_explain(schema_name_for_explain) {}
 
   Sql_cmd *make_cmd(THD *thd) override;
 
@@ -5433,28 +5435,32 @@ class PT_explain : public Parse_tree_root {
   const bool m_explicit_format;
   Parse_tree_root *const m_explainable_stmt;
   std::optional<std::string_view> m_explain_into_variable_name;
+  LEX_CSTRING m_schema_name_for_explain;
 };
 
 class PT_load_table final : public Parse_tree_root {
  public:
   PT_load_table(const POS &pos, enum_filetype filetype, thr_lock_type lock_type,
-                bool is_local_file, enum_source_type, const LEX_STRING filename,
-                ulong, bool, On_duplicate on_duplicate, Table_ident *table,
+                bool is_local_file, enum_source_type source_type,
+                const LEX_STRING filename, ulong file_count, bool in_key_order,
+                On_duplicate on_duplicate, Table_ident *table,
                 List<String> *opt_partitions, const CHARSET_INFO *opt_charset,
                 String *opt_xml_rows_identified_by,
                 const Field_separators &opt_field_separators,
                 const Line_separators &opt_line_separators,
                 ulong opt_ignore_lines, PT_item_list *opt_fields_or_vars,
                 PT_item_list *opt_set_fields, PT_item_list *opt_set_exprs,
-                List<String> *opt_set_expr_strings, bool)
+                List<String> *opt_set_expr_strings, ulong parallel,
+                ulonglong memory_size, bool is_bulk_operation)
       : Parse_tree_root(pos),
-        m_cmd(filetype, is_local_file, filename, on_duplicate, table,
-              opt_partitions, opt_charset, opt_xml_rows_identified_by,
-              opt_field_separators, opt_line_separators, opt_ignore_lines,
+        m_cmd(filetype, is_local_file, source_type, filename, file_count,
+              in_key_order, on_duplicate, table, opt_partitions, opt_charset,
+              opt_xml_rows_identified_by, opt_field_separators,
+              opt_line_separators, opt_ignore_lines,
               opt_fields_or_vars ? &opt_fields_or_vars->value : nullptr,
               opt_set_fields ? &opt_set_fields->value : nullptr,
               opt_set_exprs ? &opt_set_exprs->value : nullptr,
-              opt_set_expr_strings),
+              opt_set_expr_strings, parallel, memory_size, is_bulk_operation),
         m_lock_type(lock_type) {
     assert((opt_set_fields == nullptr) ^ (opt_set_exprs != nullptr));
     assert(opt_set_fields == nullptr ||

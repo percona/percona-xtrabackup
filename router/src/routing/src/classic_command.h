@@ -27,6 +27,8 @@
 
 #include "forwarding_processor.h"
 
+#include "await_client_or_server.h"
+
 class CommandProcessor : public ForwardingProcessor {
  public:
   using ForwardingProcessor::ForwardingProcessor;
@@ -34,8 +36,6 @@ class CommandProcessor : public ForwardingProcessor {
   enum class Stage {
     IsAuthed,
     WaitBoth,
-    WaitClientCancelled,
-    WaitServerCancelled,
     Command,
     Done,
   };
@@ -48,13 +48,14 @@ class CommandProcessor : public ForwardingProcessor {
  private:
   stdx::expected<Result, std::error_code> is_authed();
   stdx::expected<Result, std::error_code> wait_both();
-  stdx::expected<Result, std::error_code> wait_client_cancelled();
-  stdx::expected<Result, std::error_code> wait_server_cancelled();
   stdx::expected<Result, std::error_code> command();
 
   void client_idle_timeout();
 
   Stage stage_{Stage::IsAuthed};
+
+  stdx::expected<AwaitClientOrServerProcessor::AwaitResult, std::error_code>
+      wait_both_result_{};
 };
 
 #endif

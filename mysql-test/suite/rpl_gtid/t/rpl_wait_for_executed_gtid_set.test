@@ -17,6 +17,7 @@
 #         should stop immediately.
 #    1.6. If the waiting client statement is killed (KILL QUERY
 #         thread_id), it should return an error.
+#    1.7. Function should return error if timeout value is invalid.
 #
 # 2. If the GTID set is already part of GTID_EXECUTED, return
 #    immediately. This should hold when waiting for:
@@ -79,11 +80,11 @@
 #          function should return quickly; it should not take time
 #          O(number of GTIDs).
 #
-# 9. RESET MASTER should not confuse the function. That is, suppose
+# 9. RESET BINARY LOGS AND GTIDS should not confuse the function. That is, suppose
 #    the following happens:
 #     9a. The function waits for multiple GTIDs.
 #     9b. Some but not all GTIDs are committed.
-#     9c. RESET MASTER is issued.
+#     9c. RESET BINARY LOGS AND GTIDS is issued.
 #     9d. The remaining GTIDs are committed
 #    At this point, despite all GTIDs were committed at some point,
 #    the function should not return, since not all GTIDs are included
@@ -94,6 +95,11 @@
 #    All this should hold in the following cases:
 #     I. The slave binary log is enabled.
 #     II. The slave binary log is disabled.
+#
+# 10. Passing a fractional timeout to the 'WAIT_FOR_EXECUTED_GTID_SET'
+#    10.1. When passing a fractional timeout, timeout value should be
+#          parsed as a double value and WAIT_FOR_EXECUTED_GTID_SET should
+#          return 1 if timeout has been reached
 #
 # ==== References ====
 #
@@ -286,6 +292,25 @@ eval SELECT WAIT_FOR_EXECUTED_GTID_SET('$uuida:9999');
 --source include/kill_wait_for_executed_gtid_set.inc
 
 --source include/rpl_connection_master.inc
+
+--echo ---- 1.7. Function should return error if timeout value is invalid ----
+
+--echo Test WAIT_FOR_EXECUTED_GTID_SET function with negative timeout
+--echo value. When SQL_MODE is strict, then it will throw
+--echo WRONG_ARGUMENTS error.
+SET @save_sql_mode=@@SESSION.SQL_MODE;
+SET @@SESSION.SQL_MODE="STRICT_ALL_TABLES";
+# --replace_result $master_uuid MASTER_UUID
+--error ER_WRONG_ARGUMENTS
+--eval SELECT WAIT_FOR_EXECUTED_GTID_SET('$uuida:100', -1);
+
+--echo When SQL_MODE is non-strict mode the function executes
+--echo same as in strict SQL_MODE and generates WRONG_ARGUMENTS error.
+SET @@SESSION.SQL_MODE="";
+# --replace_result $master_uuid MASTER_UUID
+--error ER_WRONG_ARGUMENTS
+--eval SELECT WAIT_FOR_EXECUTED_GTID_SET('$uuida:100', -1);
+SET @@SESSION.SQL_MODE=@save_sql_mode;
 
 --echo ==== 2. Wait set is already part of GTID_EXECUTED ====
 
@@ -668,7 +693,7 @@ while ($it <= 4)
 DROP TABLE t1;
 --source include/rpl_sync.inc
 --source include/rpl_stop_slaves.inc
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 
 --source include/rpl_connection_master1.inc
 --let $thread_id= `SELECT CONNECTION_ID()`
@@ -685,9 +710,9 @@ eval SET GLOBAL GTID_PURGED = '$uuida:1-1234567890';
 
 --source include/rpl_connection_master.inc
 
---echo ==== 9. RESET MASTER ====
+--echo ==== 9. RESET BINARY LOGS AND GTIDS ====
 
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 
 --source include/rpl_connection_master1.inc
 --send
@@ -702,7 +727,7 @@ eval SET GTID_NEXT = '$uuidb:1';
 COMMIT;
 SET GTID_NEXT = 'AUTOMATIC';
 
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 
 eval SET SESSION GTID_NEXT = '$uuidc:1';
 COMMIT;
@@ -726,7 +751,21 @@ SET GTID_NEXT = 'AUTOMATIC';
 
 --source include/rpl_connection_master.inc
 
---echo ==== 10. Clean up ====
+--echo ==== 10. Passing a fractional timeout ====
+
+--echo ---- 10.1 ----
+--echo
+--echo When passing a fractional timeout, < 0.5, timeout value should be
+--echo parsed as a double value and WAIT_FOR_EXECUTED_GTID_SET should
+--echo return 1 if timeout has been reached
+--echo
+
+--let $assert_text= WAIT_FOR_EXECUTED_GTID_SET returns 1 if the timeout has been exceeded.
+--let $query_result= query_get_value("SELECT WAIT_FOR_EXECUTED_GTID_SET('$uuida:100', 0.4) AS VALUE", VALUE, 1)
+--let $assert_cond= "$query_result" = "1"
+--source include/assert.inc
+
+--echo ==== Clean up ====
 
 --let $rpl_only_running_threads= 1
 --source include/rpl_end.inc

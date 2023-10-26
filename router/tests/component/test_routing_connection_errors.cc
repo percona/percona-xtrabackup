@@ -86,6 +86,8 @@ TEST_F(RoutingConnectionErrorTest, connect_successful) {
 
   {
     MysqlClient cli;
+    cli.username("username");
+    cli.password("password");
 
     auto connect_res = cli.connect(router_host(), router_port);
     EXPECT_TRUE(connect_res) << connect_res.error().message();
@@ -261,6 +263,8 @@ TEST_F(RoutingConnectionErrorTest, connect_from_connection_pool) {
 
   {
     MysqlClient cli;  // first connection.
+    cli.username("username");
+    cli.password("password");
 
     auto connect_res = cli.connect(router_host(), router_port);
     EXPECT_TRUE(connect_res) << connect_res.error().message();
@@ -272,16 +276,11 @@ TEST_F(RoutingConnectionErrorTest, connect_from_connection_pool) {
 
   {
     MysqlClient cli;  // from connection pool
+    cli.username("username");
+    cli.password("password");
 
     auto connect_res = cli.connect(router_host(), router_port);
-    EXPECT_FALSE(connect_res);
-    if (connect_res) {
-      // change-user is issued by the router when it takes the connection from
-      // the pool.
-      //
-      // the mock server doesn't support change-user (command 17) yet.
-      EXPECT_EQ(connect_res.error().message(), "Unsupported command: 17");
-    }
+    ASSERT_TRUE(connect_res) << connect_res.error().message();
   }
 
   // check for connect errors via REST API

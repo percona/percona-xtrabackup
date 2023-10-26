@@ -133,15 +133,6 @@ void SharedServer::prepare_datadir() {
     mysqld_init_once_dir_ = new TempDirectory("mysqld-init-once");
 
     initialize_server(mysqld_init_once_dir_name());
-
-    if (!mysqld_failed_to_start()) {
-      spawn_server_with_datadir(mysqld_init_once_dir_name());
-      setup_mysqld_accounts();
-
-      shutdown();
-      process_manager().wait_for_exit();
-      process_manager().clear();
-    }
   }
 
   // copy the init-once dir to the datadir.
@@ -149,6 +140,7 @@ void SharedServer::prepare_datadir() {
 
   // remove the auto.cnf to get a unique server-uuid
   unlink(mysqld_dir_.file("auto.cnf").c_str());
+  unlink(mysqld_dir_.file("error.log").c_str());
 }
 
 void SharedServer::spawn_server_with_datadir(
@@ -188,7 +180,7 @@ void SharedServer::spawn_server_with_datadir(
   std::string log_file_name = "mysqld-" + std::to_string(starts_) + ".err";
 
   std::vector<std::string> args{
-      "--no-defaults-file",  //
+      "--no-defaults",  //
       "--lc-messages-dir=" + lc_messages_dir.str(),
       "--datadir=" + datadir,             //
       "--plugin_dir=" + plugindir.str(),  //
@@ -335,6 +327,7 @@ END)"));
            caching_sha2_password_account(),
            caching_sha2_empty_password_account(),
            sha256_password_account(),
+           sha256_short_password_account(),
            sha256_empty_password_account(),
        }) {
     create_account(cli, account);
@@ -369,9 +362,17 @@ END)"));
       cli.query("CREATE FUNCTION version_tokens_lock_exclusive"
                 "        RETURNS INT"
                 "         SONAME 'version_token" SO_EXTENSION "'"));
+}
 
-  // clone
+void SharedServer::install_plugins() {
+  SCOPED_TRACE("// install plugins");
+  auto cli_res = admin_cli();
+  ASSERT_NO_ERROR(cli_res);
 
+  install_plugins(*cli_res);
+}
+
+void SharedServer::install_plugins(MysqlClient &cli) {
   ASSERT_NO_ERROR(
       cli.query("INSTALL PLUGIN clone"
                 "        SONAME 'mysql_clone" SO_EXTENSION "'"));
@@ -392,11 +393,21 @@ void SharedServer::flush_privileges(MysqlClient &cli) {
 // get all connections, but ignore internal connections and this
 // connection.
 stdx::expected<std::vector<uint64_t>, MysqlError>
-SharedServer::user_connection_ids(MysqlClient &cli) {
-  auto ids_res = cli.query(R"(SELECT id
- FROM performance_schema.processlist
-WHERE id != CONNECTION_ID() AND
-      Command != "Daemon")");
+SharedServer::user_connection_ids(MysqlClient &cli,
+                                  const std::vector<std::string> &usernames) {
+  std::ostringstream oss;
+
+  for (const auto &username : usernames) {
+    if (oss.tellp() != 0) {
+      oss << ", ";
+    }
+    oss << std::quoted(username);
+  }
+
+  auto ids_res = cli.query(
+      "SELECT id FROM performance_schema.processlist WHERE id != "
+      "CONNECTION_ID() AND User IN (" +
+      oss.str() + ")");
   if (!ids_res) return stdx::make_unexpected(ids_res.error());
 
   std::vector<uint64_t> ids;
@@ -410,27 +421,30 @@ WHERE id != CONNECTION_ID() AND
 }
 
 // close all connections.
-void SharedServer::close_all_connections() {
+stdx::expected<void, MysqlError> SharedServer::close_all_connections(
+    const std::vector<std::string> &usernames) {
   SCOPED_TRACE("// closing all connections at the server.");
 
   auto cli_res = admin_cli();
-  ASSERT_NO_ERROR(cli_res);
+  if (!cli_res) return stdx::make_unexpected(cli_res.error());
 
-  close_all_connections(*cli_res);
+  return close_all_connections(*cli_res, usernames);
 }
 
-void SharedServer::close_all_connections(MysqlClient &cli) {
+stdx::expected<void, MysqlError> SharedServer::close_all_connections(
+    MysqlClient &cli, const std::vector<std::string> &usernames) {
   {
-    auto ids_res = user_connection_ids(cli);
-    ASSERT_NO_ERROR(ids_res);
+    auto ids_res = user_connection_ids(cli, usernames);
+    if (!ids_res) return stdx::make_unexpected(ids_res.error());
 
     for (auto id : *ids_res) {
       auto kill_res = cli.kill(id);
 
       // either it succeeds or "Unknown thread id" because it closed itself
       // between the SELECT and this kill
-      EXPECT_TRUE(kill_res || kill_res.error().value() == 1094)
-          << kill_res.error();
+      if (!kill_res && kill_res.error().value() != 1094) {
+        return stdx::make_unexpected(kill_res.error());
+      }
     }
   }
 
@@ -440,16 +454,20 @@ void SharedServer::close_all_connections(MysqlClient &cli) {
     using clock_type = std::chrono::steady_clock;
     auto end = clock_type::now() + 1000ms;
     do {
-      auto ids_res = user_connection_ids(cli);
-      ASSERT_NO_ERROR(ids_res);
+      auto ids_res = user_connection_ids(cli, usernames);
+      if (!ids_res) return stdx::make_unexpected(ids_res.error());
 
       if ((*ids_res).empty()) break;
 
-      ASSERT_LT(clock_type::now(), end) << ": timeout";
+      if (clock_type::now() >= end) {
+        return stdx::make_unexpected(make_mysql_error_code(2006));
+      }
 
       std::this_thread::sleep_for(10ms);
     } while (true);
   }
+
+  return {};
 }
 
 // set global settings to default values.

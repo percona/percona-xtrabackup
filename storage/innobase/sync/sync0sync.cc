@@ -87,6 +87,7 @@ mysql_pfs_key_t log_write_notifier_mutex_key;
 mysql_pfs_key_t log_flush_notifier_mutex_key;
 mysql_pfs_key_t log_limits_mutex_key;
 mysql_pfs_key_t log_files_mutex_key;
+mysql_pfs_key_t log_governor_mutex_key;
 mysql_pfs_key_t log_cmdq_mutex_key;
 mysql_pfs_key_t log_sn_lock_key;
 mysql_pfs_key_t log_sn_mutex_key;
@@ -247,7 +248,7 @@ void MutexMonitor::enable() {
   LatchMetaData::iterator end = latch_meta.end();
 
   for (LatchMetaData::iterator it = latch_meta.begin(); it != end; ++it) {
-    if (*it != NULL) {
+    if (*it != nullptr) {
       (*it)->get_counter()->enable();
     }
   }
@@ -261,7 +262,7 @@ void MutexMonitor::disable() {
   LatchMetaData::iterator end = latch_meta.end();
 
   for (LatchMetaData::iterator it = latch_meta.begin(); it != end; ++it) {
-    if (*it != NULL) {
+    if (*it != nullptr) {
       (*it)->get_counter()->disable();
     }
   }
@@ -275,7 +276,7 @@ void MutexMonitor::reset() {
   LatchMetaData::iterator end = latch_meta.end();
 
   for (LatchMetaData::iterator it = latch_meta.begin(); it != end; ++it) {
-    if (*it != NULL) {
+    if (*it != nullptr) {
       (*it)->get_counter()->reset();
     }
   }

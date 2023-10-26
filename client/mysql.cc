@@ -39,6 +39,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 #include "client/client_priv.h"
 #include "client/client_query_attributes.h"
+#include "client/multi_option.h"
 #include "client/my_readline.h"
 #include "client/pattern_matcher.h"
 #include "compression.h"
@@ -162,7 +163,7 @@ static MEM_ROOT argv_alloc{PSI_NOT_INSTRUMENTED, 512};
 enum enum_info_type { INFO_INFO, INFO_ERROR, INFO_RESULT };
 typedef enum enum_info_type INFO_TYPE;
 
-static MYSQL mysql; /* The connection */
+static MYSQL mysql_handle; /* The connection */
 static bool ignore_errors = false, wait_flag = false, quick = false,
             connected = false, opt_raw_data = false, unbuffered = false,
             output_tables = false, opt_rehash = true, skip_updates = false,
@@ -197,7 +198,6 @@ static char *current_db;
 static char *current_user = nullptr;
 static char *current_prompt = nullptr;
 static char *delimiter_str = nullptr;
-static char *opt_init_command = nullptr;
 static const char *default_charset = MYSQL_AUTODETECT_CHARSET_NAME;
 #ifdef HAVE_READLINE
 static char *histfile;
@@ -240,7 +240,7 @@ static uint opt_zstd_compress_level = default_zstd_compression_level;
 static char *opt_compress_algorithm = nullptr;
 
 #if defined(_WIN32)
-static char *shared_memory_base_name = 0;
+static char *shared_memory_base_name = nullptr;
 #endif
 static uint opt_protocol = 0;
 static const CHARSET_INFO *charset_info = &my_charset_latin1;
@@ -248,17 +248,27 @@ static const CHARSET_INFO *charset_info = &my_charset_latin1;
 static char *opt_fido_register_factor = nullptr;
 static char *opt_oci_config_file = nullptr;
 static char *opt_authentication_oci_client_config_profile = nullptr;
+static char *opt_register_factor = nullptr;
 
 static bool opt_tel_plugin = false;
 static const char *opt_tel_plugin_name = "telemetry_client";
 
+static struct my_option my_empty_options[] = {
+    {nullptr, 0, nullptr, nullptr, nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0,
+     0, nullptr, 0, nullptr}};
+
+static void usage(int version);
+
 #include "authentication_kerberos_clientopt-vars.h"
+#include "authentication_webauthn_clientopt-vars.h"
 #include "caching_sha2_passwordopt-vars.h"
 #include "multi_factor_passwordopt-vars.h"
 #include "sslopt-vars.h"
 
 const char *default_dbug_option = "d:t:o,/tmp/mysql.trace";
 static void *ssl_session_data = nullptr;
+
+static Multi_option opt_init_commands;
 
 /*
   completion_hash is an auxiliary feature for mysql client to complete
@@ -322,7 +332,7 @@ void tee_putc(int c, FILE *file);
 static void tee_print_sized_data(const char *, unsigned int, unsigned int,
                                  bool);
 /* The names of functions that actually do the manipulation. */
-static int get_options(int argc, char **argv);
+static int get_options(int *argc_ptr, char ***argv_ptr);
 extern "C" bool get_one_option(int optid, const struct my_option *opt,
                                char *argument);
 static int com_quit(String *str, char *), com_go(String *str, char *),
@@ -374,6 +384,10 @@ static void fix_line(String *buffer);
 
 static void get_current_os_user();
 static void get_current_os_sudouser();
+
+static char *skip_over_comments_and_space(char *name, size_t length);
+static void trim_leading_comments_and_space(String *buffer,
+                                            const char *skip_comments_start);
 
 /* A structure which contains information on the commands this program
    can understand. */
@@ -1269,7 +1283,7 @@ BOOL windows_ctrl_handler(DWORD fdwCtrlType) {
 static bool server_supports_dollar_quote(MYSQL *con) {
   // This query will fail with parse error if dollar quotes are supported
   if (mysql_real_query(con, "select $$", 9) &&
-      mysql_errno(&mysql) == ER_PARSE_ERROR) {
+      mysql_errno(&mysql_handle) == ER_PARSE_ERROR) {
     return true;
   }
   return false;
@@ -1343,10 +1357,12 @@ int main(int argc, char *argv[]) {
 
   get_current_os_user();
   get_current_os_sudouser();
-  if (get_options(argc, (char **)argv)) {
+
+  if (get_options(&argc, &argv)) {
     my_end(0);
     return EXIT_FAILURE;
   }
+
   if (status.batch && !status.line_buff &&
       !(status.line_buff = batch_readline_init(MAX_BATCH_BUFFER_SIZE, stdin))) {
     put_info(
@@ -1365,8 +1381,63 @@ int main(int argc, char *argv[]) {
   }
   glob_buffer.mem_realloc((status.batch) ? batch_io_size : 512);
   completion_hash_init(&ht, 128);
-  memset(&mysql, 0, sizeof(mysql));
+  memset(&mysql_handle, 0, sizeof(mysql_handle));
   global_attrs = new client_query_attributes();
+
+  if (opt_tel_plugin) {
+    /*
+      mysql_load_plugin() does not actually need a connection,
+      it only needs the plugin_directory to find the plugin.
+    */
+    MYSQL not_connected;
+    memset(&not_connected, 0, sizeof(not_connected));
+    mysql_options(&not_connected, MYSQL_PLUGIN_DIR, opt_plugin_dir);
+    /*
+      Load a telemetry plugin if required.
+      The plugin may consume command lines arguments in argc, argv.
+    */
+    struct st_mysql_client_plugin *tel_plugin = mysql_load_plugin(
+        &not_connected, opt_tel_plugin_name, MYSQL_CLIENT_TELEMETRY_PLUGIN, 5,
+        my_defaults_file, my_defaults_group_suffix, my_defaults_extra_file,
+        &argc, argv);
+    if (!tel_plugin) {
+      /*
+        Print the actual root cause,
+        it contains details about why dlopen() failed.
+      */
+      put_info(mysql_error(&not_connected), INFO_ERROR);
+      return EXIT_FAILURE;
+    }
+
+    telemetry_client_attrs = new client_query_attributes();
+    snprintf(glob_buffer.ptr(), glob_buffer.alloced_length(),
+             "Telemetry plugin <%s> is loaded.\n", opt_tel_plugin_name);
+    put_info(glob_buffer.ptr(), INFO_INFO);
+  }
+
+  /*
+    Now that every plugin (i.e., client_telemetry) consumed
+    plugin specific options,
+    make sure there are no unknown options remaining.
+  */
+  my_getopt_skip_unknown = false;
+  int ho_error;
+
+  if ((ho_error =
+           handle_options(&argc, &argv, my_empty_options, get_one_option))) {
+    exit(ho_error);
+  }
+
+  if (argc > 1) {
+    usage(0);
+    exit(1);
+  }
+
+  if (argc == 1) {
+    skip_updates = false;
+    my_free(current_db);
+    current_db = my_strdup(PSI_NOT_INSTRUMENTED, *argv, MYF(MY_WME));
+  }
 
   if (sql_connect(current_host, current_db, current_user, opt_silent)) {
     quick = true;  // Avoid history
@@ -1394,29 +1465,11 @@ int main(int argc, char *argv[]) {
            INFO_INFO);
   snprintf(glob_buffer.ptr(), glob_buffer.alloced_length(),
            "Your MySQL connection id is %lu\nServer version: %s\n",
-           mysql_thread_id(&mysql), server_version_string(&mysql));
+           mysql_thread_id(&mysql_handle),
+           server_version_string(&mysql_handle));
   put_info(glob_buffer.ptr(), INFO_INFO);
 
   put_info(ORACLE_WELCOME_COPYRIGHT_NOTICE("2000"), INFO_INFO);
-
-  if (opt_tel_plugin) {
-    /* Load a telemetry plugin if required */
-    struct st_mysql_client_plugin *tel_plugin = mysql_load_plugin(
-        &mysql, opt_tel_plugin_name, MYSQL_CLIENT_TELEMETRY_PLUGIN, 3,
-        my_defaults_file, my_defaults_group_suffix, my_defaults_extra_file);
-    if (!tel_plugin) {
-      snprintf(glob_buffer.ptr(), glob_buffer.alloced_length(),
-               "Cannot load the client telemetry plugin <%s>.\n",
-               opt_tel_plugin_name);
-      put_info(glob_buffer.ptr(), INFO_ERROR);
-      return EXIT_FAILURE;
-    }
-
-    telemetry_client_attrs = new client_query_attributes();
-    snprintf(glob_buffer.ptr(), glob_buffer.alloced_length(),
-             "Telemetry plugin <%s> is loaded.\n", opt_tel_plugin_name);
-    put_info(glob_buffer.ptr(), INFO_INFO);
-  }
 
   if (!status.batch) {
     // history ignore patterns are initialized to default values
@@ -1483,8 +1536,8 @@ int main(int argc, char *argv[]) {
 
   uint protocol = MYSQL_PROTOCOL_DEFAULT;
   uint ssl_mode = 0;
-  if (!mysql_get_option(&mysql, MYSQL_OPT_PROTOCOL, &protocol) &&
-      !mysql_get_option(&mysql, MYSQL_OPT_SSL_MODE, &ssl_mode)) {
+  if (!mysql_get_option(&mysql_handle, MYSQL_OPT_PROTOCOL, &protocol) &&
+      !mysql_get_option(&mysql_handle, MYSQL_OPT_SSL_MODE, &ssl_mode)) {
     if (protocol == MYSQL_PROTOCOL_SOCKET && ssl_mode >= SSL_MODE_REQUIRED)
       put_info(
           "You are enforcing ssl connection via unix socket. Please consider\n"
@@ -1493,7 +1546,7 @@ int main(int argc, char *argv[]) {
           INFO_INFO);
   }
 
-  dollar_quote_supported = server_supports_dollar_quote(&mysql);
+  dollar_quote_supported = server_supports_dollar_quote(&mysql_handle);
 
   status.exit_status = read_and_execute(!status.batch);
 
@@ -1516,8 +1569,9 @@ void mysql_end(int sig) {
   signal(SIGHUP, SIG_IGN);
 #endif
 
-  if (ssl_session_data) mysql_free_ssl_session_data(&mysql, ssl_session_data);
-  mysql_close(&mysql);
+  if (ssl_session_data)
+    mysql_free_ssl_session_data(&mysql_handle, ssl_session_data);
+  mysql_close(&mysql_handle);
 #ifdef HAVE_READLINE
   if (!status.batch && !quick && histfile && histfile[0]) {
     /* write-history */
@@ -1554,6 +1608,7 @@ void mysql_end(int sig) {
   my_free(full_username);
   my_free(part_username);
   my_free(default_prompt);
+  opt_init_commands.free();
 #if defined(_WIN32)
   my_free(shared_memory_base_name);
 #endif
@@ -1672,8 +1727,8 @@ static void kill_query(const char *reason) {
 
   /* mysqld < 5 does not understand KILL QUERY, skip to KILL CONNECTION */
   sprintf(kill_buffer, "KILL %s%lu",
-          (mysql_get_server_version(&mysql) < 50000) ? "" : "QUERY ",
-          mysql_thread_id(&mysql));
+          (mysql_get_server_version(&mysql_handle) < 50000) ? "" : "QUERY ",
+          mysql_thread_id(&mysql_handle));
 
   if (verbose)
     tee_fprintf(stdout, "%s -- sending \"%s\" to server ...\n", reason,
@@ -1807,10 +1862,15 @@ static struct my_option my_long_options[] = {
     {"ignore-spaces", 'i', "Ignore space after function names.", &ignore_spaces,
      &ignore_spaces, nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"init-command", OPT_INIT_COMMAND,
-     "SQL Command to execute when connecting to MySQL server. Will "
+     "Single SQL Command to execute when connecting to MySQL server. Will "
      "automatically be re-executed when reconnecting.",
-     &opt_init_command, &opt_init_command, nullptr, GET_STR, REQUIRED_ARG, 0, 0,
-     0, nullptr, 0, nullptr},
+     nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+     nullptr},
+    {"init-command-add", OPT_INIT_COMMAND_ADD,
+     "Add SQL command to the list to execute when connecting to MySQL server. "
+     "Will automatically be re-executed when reconnecting.",
+     nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+     nullptr},
     {"local-infile", OPT_LOCAL_INFILE, "Enable/disable LOAD DATA LOCAL INFILE.",
      &opt_local_infile, &opt_local_infile, nullptr, GET_BOOL, OPT_ARG, 0, 0, 0,
      nullptr, 0, nullptr},
@@ -1856,8 +1916,8 @@ static struct my_option my_long_options[] = {
 #endif
 #include "multi_factor_passwordopt-longopts.h"
 #ifdef _WIN32
-    {"pipe", 'W', "Use named pipes to connect to server.", 0, 0, 0, GET_NO_ARG,
-     NO_ARG, 0, 0, 0, 0, 0, 0},
+    {"pipe", 'W', "Use named pipes to connect to server.", nullptr, nullptr,
+     nullptr, GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
 #endif
     {"port", 'P',
      "Port number to use for connection or 0 for default to, in "
@@ -1894,8 +1954,8 @@ static struct my_option my_long_options[] = {
 #if defined(_WIN32)
     {"shared-memory-base-name", OPT_SHARED_MEMORY_BASE_NAME,
      "Base name of shared memory.", &shared_memory_base_name,
-     &shared_memory_base_name, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0,
-     0},
+     &shared_memory_base_name, nullptr, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0,
+     nullptr, 0, nullptr},
 #endif
     {"socket", 'S', "The socket file to use for connection.",
      &opt_mysql_unix_port, &opt_mysql_unix_port, nullptr, GET_STR_ALLOC,
@@ -2027,6 +2087,11 @@ static struct my_option my_long_options[] = {
      &opt_tel_plugin, &opt_tel_plugin, nullptr, GET_BOOL, NO_ARG, 0, 0, 0,
      nullptr, 0, nullptr},
 #include "authentication_kerberos_clientopt-longopts.h"
+#include "authentication_webauthn_clientopt-longopts.h"
+    {"register-factor", 0,
+     "Specifies factor for which registration needs to be done for.",
+     &opt_register_factor, &opt_register_factor, nullptr, GET_STR, REQUIRED_ARG,
+     0, 0, 0, nullptr, 0, nullptr},
     {nullptr, 0, nullptr, nullptr, nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0,
      0, nullptr, 0, nullptr}};
 
@@ -2154,6 +2219,7 @@ bool get_one_option(int optid, const struct my_option *opt [[maybe_unused]],
 #include "sslopt-case.h"
 
 #include "authentication_kerberos_clientopt-case.h"
+#include "authentication_webauthn_clientopt-case.h"
 
     case 'V':
       usage(1);
@@ -2169,11 +2235,17 @@ bool get_one_option(int optid, const struct my_option *opt [[maybe_unused]],
     case 'C':
       CLIENT_WARN_DEPRECATED("--compress", "--compression-algorithms");
       break;
+    case OPT_INIT_COMMAND:
+      opt_init_commands.add_value(argument, true);
+      break;
+    case OPT_INIT_COMMAND_ADD:
+      opt_init_commands.add_value(argument, false);
+      break;
   }
   return false;
 }
 
-static int get_options(int argc, char **argv) {
+static int get_options(int *argc_ptr, char ***argv_ptr) {
   char *tmp, *pagpoint;
   int ho_error;
 
@@ -2195,9 +2267,15 @@ static int get_options(int argc, char **argv) {
     exit(1);
   }
 
-  if ((ho_error =
-           handle_options(&argc, &argv, my_long_options, get_one_option)))
+  /*
+    We may have options for the telemetry client plugin, to consume later.
+  */
+  my_getopt_skip_unknown = true;
+
+  if ((ho_error = handle_options(argc_ptr, argv_ptr, my_long_options,
+                                 get_one_option))) {
     exit(ho_error);
+  }
 
   if (mysql_options(nullptr, MYSQL_OPT_MAX_ALLOWED_PACKET,
                     &opt_max_allowed_packet) ||
@@ -2217,15 +2295,6 @@ static int get_options(int argc, char **argv) {
     connect_flag = 0; /* Not in interactive mode */
   }
 
-  if (argc > 1) {
-    usage(0);
-    exit(1);
-  }
-  if (argc == 1) {
-    skip_updates = false;
-    my_free(current_db);
-    current_db = my_strdup(PSI_NOT_INSTRUMENTED, *argv, MYF(MY_WME));
-  }
   if (debug_info_flag) my_end_arg = MY_CHECK_ERROR | MY_GIVE_INFO;
   if (debug_check_flag) my_end_arg = MY_CHECK_ERROR;
 
@@ -2380,22 +2449,45 @@ static int read_and_execute(bool interactive) {
       break;
     }
 
+    char *skip_comments_start = nullptr;
     /*
       Check if line is a mysql command line
-      (We want to allow help, print and clear anywhere at line start
+      We want to allow help, print and clear anywhere at line start,
+      or when the preceeding data in the buffer are comments only.
+      A line is a mysql command line if we're not in a ML comment or a string
+      and:
+       * the nested_commands is on
+       * or it's the first line in a multi-line statement
+       * or the previous lines in multi-line statements are comments and
+          whitespace and preserve_comments is on
     */
-    if ((named_cmds || glob_buffer.is_empty()) && !ml_comment && !in_string &&
-        (com = find_command(line))) {
-      if ((*com->func)(&glob_buffer, line) > 0) {
-        // lets log the exit/quit command.
-        if (interactive && status.add_to_history && com->cmd_char == 'q')
-          add_filtered_history(line);
-        break;
+    if ((named_cmds || glob_buffer.is_empty() ||
+         (!glob_buffer.is_empty() &&
+          ((skip_comments_start = skip_over_comments_and_space(
+                glob_buffer.ptr(), glob_buffer.length())) -
+           glob_buffer.ptr()) >= (off_t)glob_buffer.length())) &&
+        !ml_comment && !in_string) {
+      /* The line itself might start with a comment. Skip that too */
+      char *line_past_comments =
+          skip_over_comments_and_space(line, strlen(line));
+      if ((com = find_command(line_past_comments))) {
+        /*
+          The command buffer contained just comments and whitespace and we've
+          found a mysql command on the current line. It's OK to empty the
+          buffer.
+        */
+        if (skip_comments_start) glob_buffer.length(0);
+        if ((*com->func)(&glob_buffer, line_past_comments) > 0) {
+          // lets log the exit/quit command.
+          if (interactive && status.add_to_history && com->cmd_char == 'q')
+            add_filtered_history(line);
+          break;
+        }
+        if (glob_buffer.is_empty())  // If buffer was emptied
+          in_string = 0;
+        if (interactive && status.add_to_history) add_filtered_history(line);
+        continue;
       }
-      if (glob_buffer.is_empty())  // If buffer was emptied
-        in_string = 0;
-      if (interactive && status.add_to_history) add_filtered_history(line);
-      continue;
     }
     if (add_line(glob_buffer, line, line_length, &in_string, &ml_comment,
                  status.line_buff ? status.line_buff->truncated : false))
@@ -2407,7 +2499,14 @@ static int read_and_execute(bool interactive) {
     remove_cntrl(&glob_buffer);
     if (!glob_buffer.is_empty()) {
       status.exit_status = 1;
-      if (com_go(&glob_buffer, line) <= 0) status.exit_status = 0;
+      char *skip_comments_start =
+          skip_over_comments_and_space(glob_buffer.ptr(), glob_buffer.length());
+      if ((com = find_command(skip_comments_start))) {
+        trim_leading_comments_and_space(&glob_buffer, skip_comments_start);
+        if ((*com->func)(&glob_buffer, glob_buffer.c_ptr()) > 0)
+          status.exit_status = 0;
+      } else if (com_go(&glob_buffer, nullptr) <= 0)
+        status.exit_status = 0;
     }
   }
 
@@ -2467,6 +2566,72 @@ static COMMANDS *find_command(char cmd_char) {
     return &commands[index];
   } else
     return (COMMANDS *)nullptr;
+}
+
+/**
+ Skips over possible multi-line comments (/ * and * /) and whitespace
+ and finds the first non-comment command.
+
+ We only have to worry about multi-line comments since the single line
+ comments (//foo) are sent immediately to the server anyway
+
+ @param ptr Pointer to the start of the command
+ @param length The length of the command text in ptr
+ @return the first non-comment and non-whitespace command.
+
+ @sa @ref trim_leading_comments_and_space
+*/
+static char *skip_over_comments_and_space(char *ptr, size_t length) {
+  if (!preserve_comments) return ptr;
+  char *end = ptr + length;
+  do {
+    while (ptr < end && my_isspace(charset_info, *ptr)) ptr++;
+    if (ptr + 2 < end && *ptr == '/' && ptr[1] == '*') {
+      /* skip a multiline comment */
+      /* skip past the opening / and * */
+      ptr += 2;
+      while (ptr + 2 < end && *ptr != '*' && ptr[1] != '/') ptr++;
+      /* if we found a closing * and / skip past it */
+      if (ptr + 2 < end && *ptr == '*' && ptr[1] == '/') ptr += 2;
+    }
+  } while (ptr < end && (my_isspace(charset_info, *ptr) ||
+                         (ptr + 2 < end && *ptr == '/' && ptr[1] == '*')));
+  return ptr;
+}
+
+/**
+  Trims the leading comments and whitespace from a command
+
+  Useful when @ref skip_over_comments_and_space is used to find if there is
+  something to skip and now it needs to be skipped.
+  Note that the the function expects that skip_comments_start is within
+  buffer.
+
+  @note The idea is that we first look skip non-destructively over the comments
+  and space and then check if it's a MySQL command or not. If it is we then trip
+  the leading comments and space and proceed. If not we send the comments and
+  the command to the server.
+
+  @param [in,out] buffer The string buffer containing the command + the
+  comments/whitespace
+  @param skip_comments_start The place where leading comments end and the actual
+  command starts
+*/
+static void trim_leading_comments_and_space(String *buffer,
+                                            const char *skip_comments_start) {
+  if (!preserve_comments) return;
+  String str;
+
+  assert(buffer->c_ptr() <= skip_comments_start);
+  assert(buffer->c_ptr() + buffer->length() > skip_comments_start);
+
+  if (skip_comments_start != buffer->c_ptr()) {
+    str = buffer->substr(
+        skip_comments_start - buffer->c_ptr(),
+        buffer->length() - (skip_comments_start - buffer->c_ptr()));
+    if (str.uses_buffer_owned_by(buffer)) str.copy();
+    buffer->takeover(str);
+  }
 }
 
 /**
@@ -2535,11 +2700,13 @@ static COMMANDS *find_command(char *name) {
    @param pos                Current position of input line
    @param last_end_of_mb_pos Last byte of previous multi-byte character.
                              Used to check if preceeding char is an mb char.
+   @param start_of_line      Start of input line
    @param end_of_line        End of input line
    @return length of dollar quote, 0 if not found
 */
 static size_t check_for_dollar_quote(const char *pos,
                                      const char *last_end_of_mb_pos,
+                                     const char *start_of_line,
                                      const char *end_of_line) {
   assert(*pos == '$');
   if (!dollar_quote_supported) return 0;
@@ -2549,8 +2716,8 @@ static size_t check_for_dollar_quote(const char *pos,
   // (We need info on valid characters in identifiers to ignore
   // the case when the dollar sign is inside an identifier
   const uchar *ident_map = charset_info->ident_map;
-  if (last_end_of_mb_pos == pos - 1 ||
-      ident_map[static_cast<uchar>(*(pos - 1))])
+  if (pos > start_of_line && (last_end_of_mb_pos == pos - 1 ||
+                              ident_map[static_cast<uchar>(*(pos - 1))]))
     return 0;
 
   // $ is first char of token
@@ -2609,7 +2776,7 @@ static bool add_line(String &buffer, char *line, size_t line_length,
     }
     if (!*ml_comment && inchar == '\\' &&
         !(*in_string &&
-          (mysql.server_status & SERVER_STATUS_NO_BACKSLASH_ESCAPES))) {
+          (mysql_handle.server_status & SERVER_STATUS_NO_BACKSLASH_ESCAPES))) {
       // Found possbile one character command like \c
 
       if (!(inchar = (uchar) * ++pos)) break;  // readline adds one '\'
@@ -2682,7 +2849,10 @@ static bool add_line(String &buffer, char *line, size_t line_length,
 
       pos--;
 
-      if ((com = find_command(buffer.c_ptr()))) {
+      char *skip_comments_start =
+          skip_over_comments_and_space(buffer.ptr(), buffer.length());
+      if (nullptr != (com = find_command(skip_comments_start))) {
+        trim_leading_comments_and_space(&buffer, skip_comments_start);
         if ((*com->func)(&buffer, buffer.c_ptr()) > 0) return true;  // Quit
       } else {
         if (com_go(&buffer, nullptr) > 0)  // < 0 is not fatal
@@ -2779,8 +2949,8 @@ static bool add_line(String &buffer, char *line, size_t line_length,
         if (inchar == '\'' || inchar == '"' || inchar == '`')
           *in_string = (char)inchar;
         else if (inchar == '$') {
-          size_t len =
-              check_for_dollar_quote(pos, last_end_of_mb_pos, end_of_line);
+          size_t len = check_for_dollar_quote(pos, last_end_of_mb_pos, line,
+                                              end_of_line);
           if (len > 0) {
             *in_string = '$';
             for (size_t i = 0; i < len - 1; ++i) {
@@ -3004,9 +3174,9 @@ static void build_completion_hash(bool rehash, bool write_info) {
   /* hash MySQL functions (to be implemented) */
 
   /* hash all database names */
-  if (mysql_query(&mysql, "show databases") == 0) {
-    if (!(databases = mysql_store_result(&mysql)))
-      put_info(mysql_error(&mysql), INFO_INFO);
+  if (mysql_query(&mysql_handle, "show databases") == 0) {
+    if (!(databases = mysql_store_result(&mysql_handle)))
+      put_info(mysql_error(&mysql_handle), INFO_INFO);
     else {
       while ((database_row = mysql_fetch_row(databases))) {
         char *str = strdup_root(&hash_mem_root, (char *)database_row[0]);
@@ -3016,9 +3186,9 @@ static void build_completion_hash(bool rehash, bool write_info) {
     }
   }
   /* hash all table names */
-  if (mysql_query(&mysql, "show tables") == 0) {
-    if (!(tables = mysql_store_result(&mysql)))
-      put_info(mysql_error(&mysql), INFO_INFO);
+  if (mysql_query(&mysql_handle, "show tables") == 0) {
+    if (!(tables = mysql_store_result(&mysql_handle)))
+      put_info(mysql_error(&mysql_handle), INFO_INFO);
     else {
       if (mysql_num_rows(tables) > 0 && !opt_silent && write_info) {
         tee_fprintf(stdout,
@@ -3047,8 +3217,8 @@ You can turn off this feature to get a quicker startup with -A\n\n");
   }
   i = 0;
   while ((table_row = mysql_fetch_row(tables))) {
-    if ((fields =
-             mysql_list_fields(&mysql, (const char *)table_row[0], NullS))) {
+    if ((fields = mysql_list_fields(&mysql_handle, (const char *)table_row[0],
+                                    NullS))) {
       num_fields = mysql_num_fields(fields);
       if (!(field_names[i] = (char **)hash_mem_root.Alloc(
                 sizeof(char *) * (num_fields * 2 + 1)))) {
@@ -3172,7 +3342,7 @@ void add_syslog(const char *line) {
            /* use the cached user/sudo_user value. */
            current_os_sudouser ? current_os_sudouser
                                : current_os_user ? current_os_user : "--",
-           current_user ? current_user : "--", mysql_thread_id(&mysql),
+           current_user ? current_user : "--", mysql_thread_id(&mysql_handle),
            current_host ? current_host : "--", current_db ? current_db : "--",
            line);
 
@@ -3209,8 +3379,8 @@ static bool get_current_db() {
   my_free(current_db);
   current_db = nullptr;
   /* In case of error below current_db will be NULL */
-  if (!mysql_query(&mysql, "SELECT DATABASE()") &&
-      (res = mysql_use_result(&mysql))) {
+  if (!mysql_query(&mysql_handle, "SELECT DATABASE()") &&
+      (res = mysql_use_result(&mysql_handle))) {
     MYSQL_ROW row = mysql_fetch_row(res);
     if (row && row[0])
       current_db = my_strdup(PSI_NOT_INSTRUMENTED, row[0], MYF(MY_WME));
@@ -3233,32 +3403,32 @@ static int mysql_real_query_for_lazy(const char *buf, size_t length,
     error = 0;
 
     if (telemetry_client_attrs != nullptr) {
-      telemetry_client_attrs->set_params(&mysql);
+      telemetry_client_attrs->set_params(&mysql_handle);
     }
 
-    if (set_params && global_attrs->set_params(&mysql)) break;
-    if (!mysql_real_query(&mysql, buf, (ulong)length)) break;
-    error = put_error(&mysql);
-    if ((mysql_errno(&mysql) != CR_SERVER_GONE_ERROR &&
-         mysql_errno(&mysql) != CR_SERVER_LOST &&
-         mysql.net.error != NET_ERROR_SOCKET_UNUSABLE) ||
+    if (set_params && global_attrs->set_params(&mysql_handle)) break;
+    if (!mysql_real_query(&mysql_handle, buf, (ulong)length)) break;
+    error = put_error(&mysql_handle);
+    if ((mysql_errno(&mysql_handle) != CR_SERVER_GONE_ERROR &&
+         mysql_errno(&mysql_handle) != CR_SERVER_LOST &&
+         mysql_handle.net.error != NET_ERROR_SOCKET_UNUSABLE) ||
         retry > 1 || !opt_reconnect)
       break;
     if (reconnect()) break;
   }
 
   if (telemetry_client_attrs != nullptr) {
-    telemetry_client_attrs->clear(connected ? &mysql : nullptr);
+    telemetry_client_attrs->clear(connected ? &mysql_handle : nullptr);
   }
 
-  if (set_params) global_attrs->clear(connected ? &mysql : nullptr);
+  if (set_params) global_attrs->clear(connected ? &mysql_handle : nullptr);
   return error;
 }
 
 static int mysql_store_result_for_lazy(MYSQL_RES **result) {
-  if ((*result = mysql_store_result(&mysql))) return 0;
+  if ((*result = mysql_store_result(&mysql_handle))) return 0;
 
-  if (mysql_error(&mysql)[0]) return put_error(&mysql);
+  if (mysql_error(&mysql_handle)[0]) return put_error(&mysql_handle);
   return 0;
 }
 
@@ -3405,7 +3575,7 @@ static int com_help(String *buffer [[maybe_unused]],
         tee_fprintf(stdout, "%s %s\n", buff, commands[i].doc);
     }
   }
-  if (connected && mysql_get_server_version(&mysql) >= 40100)
+  if (connected && mysql_get_server_version(&mysql_handle) >= 40100)
     put_info("\nFor server side help, type 'help contents'\n", INFO_INFO);
   return 0;
 }
@@ -3430,7 +3600,7 @@ static int com_charset(String *buffer [[maybe_unused]], char *line) {
   new_cs = get_charset_by_csname(param, MY_CS_PRIMARY, MYF(MY_WME));
   if (new_cs) {
     charset_info = new_cs;
-    mysql_set_character_set(&mysql, charset_info->csname);
+    mysql_set_character_set(&mysql_handle, charset_info->csname);
     default_charset = charset_info->csname;
     put_info("Charset changed", INFO_INFO);
   } else
@@ -3500,8 +3670,9 @@ static int com_go_impl(String *buffer, char *line [[maybe_unused]]) {
     buff[0] = 0;
 
     if (quick) {
-      if (!(result = mysql_use_result(&mysql)) && mysql_field_count(&mysql)) {
-        error = put_error(&mysql);
+      if (!(result = mysql_use_result(&mysql_handle)) &&
+          mysql_field_count(&mysql_handle)) {
+        error = put_error(&mysql_handle);
         goto end;
       }
     } else {
@@ -3545,17 +3716,17 @@ static int com_go_impl(String *buffer, char *line [[maybe_unused]]) {
           sprintf(buff, "%" PRId64 " %s in set", mysql_num_rows(result),
                   mysql_num_rows(result) == 1LL ? "row" : "rows");
         end_pager();
-        if (mysql_errno(&mysql)) error = put_error(&mysql);
+        if (mysql_errno(&mysql_handle)) error = put_error(&mysql_handle);
       }
-    } else if (mysql_affected_rows(&mysql) == ~(ulonglong)0)
+    } else if (mysql_affected_rows(&mysql_handle) == ~(ulonglong)0)
       my_stpcpy(buff, "Query OK");
     else if (!batchmode)
       sprintf(buff, "Query OK, %" PRId64 " %s affected",
-              mysql_affected_rows(&mysql),
-              mysql_affected_rows(&mysql) == 1LL ? "row" : "rows");
+              mysql_affected_rows(&mysql_handle),
+              mysql_affected_rows(&mysql_handle) == 1LL ? "row" : "rows");
 
     pos = strend(buff);
-    if ((warnings = mysql_warning_count(&mysql)) && !batchmode) {
+    if ((warnings = mysql_warning_count(&mysql_handle)) && !batchmode) {
       *pos++ = ',';
       *pos++ = ' ';
       pos = longlong10_to_str(warnings, pos, 10);
@@ -3564,23 +3735,24 @@ static int com_go_impl(String *buffer, char *line [[maybe_unused]]) {
     }
     my_stpcpy(pos, time_buff);
     put_info(buff, INFO_RESULT);
-    if (mysql_info(&mysql)) put_info(mysql_info(&mysql), INFO_RESULT);
+    if (mysql_info(&mysql_handle))
+      put_info(mysql_info(&mysql_handle), INFO_RESULT);
     put_info("", INFO_RESULT);  // Empty row
 
     if (result && !mysql_eof(result)) /* Something wrong when using quick */
-      error = put_error(&mysql);
+      error = put_error(&mysql_handle);
     else if (unbuffered)
       fflush(stdout);
     mysql_free_result(result);
-  } while (!(err = mysql_next_result(&mysql)));
-  if (err >= 1) error = put_error(&mysql);
+  } while (!(err = mysql_next_result(&mysql_handle)));
+  if (err >= 1) error = put_error(&mysql_handle);
 
 end:
 
   /* Show warnings if any or error occurred */
   if (show_warnings == 1 && (warnings >= 1 || error)) print_warnings();
 
-  if (!error && (mysql.server_status & SERVER_STATUS_DB_DROPPED))
+  if (!error && (mysql_handle.server_status & SERVER_STATUS_DB_DROPPED))
     get_current_db();
 
   executing_query = false;
@@ -3588,11 +3760,12 @@ end:
 }
 
 static void telemetry_carrier_set(void *carrier_data, const char *key,
-                                  const char *value) {
+                                  size_t key_length, const char *value,
+                                  size_t value_length) {
   client_query_attributes *qa =
       reinterpret_cast<client_query_attributes *>(carrier_data);
   assert(qa != nullptr);
-  qa->push_param(key, value);
+  qa->push_param(key, key_length, value, value_length);
 }
 
 static int com_go(String *buffer, char *line) {
@@ -4068,7 +4241,7 @@ static void print_warnings() {
   uint64_t num_rows;
 
   /* Save current error before calling "show warnings" */
-  const uint error = mysql_errno(&mysql);
+  const uint error = mysql_errno(&mysql_handle);
 
   /* Get the warnings */
   query = "show warnings";
@@ -4370,7 +4543,7 @@ static int com_connect(String *buffer, char *line) {
   opt_rehash = save_rehash;
 
   if (connected) {
-    sprintf(buff, "Connection id:    %lu", mysql_thread_id(&mysql));
+    sprintf(buff, "Connection id:    %lu", mysql_thread_id(&mysql_handle));
     put_info(buff, INFO_INFO);
     sprintf(buff, "Current database: %.128s\n",
             current_db ? current_db : "*** NONE ***");
@@ -4459,7 +4632,8 @@ static int com_use(String *buffer [[maybe_unused]], char *line) {
     In case of quotes used, try to get the normalized db name.
   */
   if (get_quote_count(line) > 0) {
-    if (normalize_dbname(line, buff, sizeof(buff))) return put_error(&mysql);
+    if (normalize_dbname(line, buff, sizeof(buff)))
+      return put_error(&mysql_handle);
     tmp = buff;
   } else {
     strmake(buff, line, sizeof(buff) - 1);
@@ -4503,11 +4677,12 @@ static int com_use(String *buffer [[maybe_unused]], char *line) {
     */
     if (!connected && reconnect())
       return opt_reconnect ? -1 : 1;  // Fatal error
-    if (mysql_select_db(&mysql, tmp)) {
-      if (mysql_errno(&mysql) != CR_SERVER_GONE_ERROR) return put_error(&mysql);
+    if (mysql_select_db(&mysql_handle, tmp)) {
+      if (mysql_errno(&mysql_handle) != CR_SERVER_GONE_ERROR)
+        return put_error(&mysql_handle);
 
       if (reconnect()) return opt_reconnect ? -1 : 1;  // Fatal error
-      if (mysql_select_db(&mysql, tmp)) return put_error(&mysql);
+      if (mysql_select_db(&mysql_handle, tmp)) return put_error(&mysql_handle);
     }
     my_free(current_db);
     current_db = my_strdup(PSI_NOT_INSTRUMENTED, tmp, MYF(MY_WME));
@@ -4516,7 +4691,7 @@ static int com_use(String *buffer [[maybe_unused]], char *line) {
 #endif
   }
 
-  if (0 < (warnings = mysql_warning_count(&mysql))) {
+  if (0 < (warnings = mysql_warning_count(&mysql_handle))) {
     snprintf(buff, sizeof(buff), "Database changed, %u warning%s", warnings,
              warnings > 1 ? "s" : "");
     put_info(buff, INFO_INFO);
@@ -4549,14 +4724,14 @@ static int normalize_dbname(const char *line, char *buff, uint buff_size) {
   MYSQL_RES *res = nullptr;
 
   /* Send the "USE db" command to the server. */
-  if (mysql_query(&mysql, line)) return 1;
+  if (mysql_query(&mysql_handle, line)) return 1;
 
   /*
     Now, get the normalized database name and store it
     into the buff.
   */
-  if (!mysql_query(&mysql, "SELECT DATABASE()") &&
-      (res = mysql_use_result(&mysql))) {
+  if (!mysql_query(&mysql_handle, "SELECT DATABASE()") &&
+      (res = mysql_use_result(&mysql_handle))) {
     MYSQL_ROW row = mysql_fetch_row(res);
     if (row && row[0]) {
       const size_t len = strlen(row[0]);
@@ -4570,7 +4745,7 @@ static int normalize_dbname(const char *line, char *buff, uint buff_size) {
   }
 
   /* Restore the original database. */
-  if (current_db && mysql_select_db(&mysql, current_db)) return 1;
+  if (current_db && mysql_select_db(&mysql_handle, current_db)) return 1;
 
   return 0;
 }
@@ -4594,7 +4769,7 @@ static int com_query_attributes(String *buffer [[maybe_unused]], char *line) {
   memset(buff, 0, sizeof(buff));
   strmake(buff, line, sizeof(buff) - 1);
   param = buff;
-  global_attrs->clear(connected ? &mysql : nullptr);
+  global_attrs->clear(connected ? &mysql_handle : nullptr);
   do {
     param = get_arg(param, param != buff);
     if (!param || !*param) break;
@@ -4635,11 +4810,11 @@ static int com_ssl_session_data_print(String *buffer [[maybe_unused]],
     fo = my_fileno(stdout);
   }
 
-  data =
-      reinterpret_cast<char *>(mysql_get_ssl_session_data(&mysql, 0, nullptr));
+  data = reinterpret_cast<char *>(
+      mysql_get_ssl_session_data(&mysql_handle, 0, nullptr));
   if (!data) {
     err_text = nullptr;
-    put_error(&mysql);
+    put_error(&mysql_handle);
     goto end;
   }
   if (my_write(fo, (uchar *)data, strlen(data), MYF(0)) == MY_FILE_ERROR) {
@@ -4651,7 +4826,7 @@ static int com_ssl_session_data_print(String *buffer [[maybe_unused]],
   if (!use_outfile && fo != -1) my_write(fo, (const uchar *)"\n", 1, MYF(0));
 
 end:
-  if (data) mysql_free_ssl_session_data(&mysql, data);
+  if (data) mysql_free_ssl_session_data(&mysql_handle, data);
   if (use_outfile && fo != -1) (void)my_close(fo, MYF(0));
   if (err_text) return put_info(err_text, INFO_ERROR);
   return 0;
@@ -4730,28 +4905,28 @@ static int sql_real_connect(char *host, char *database, char *user, char *,
 #ifdef HAVE_SETNS
     if (opt_network_namespace) (void)release_network_namespace_resources();
 #endif
-    mysql_close(&mysql);
+    mysql_close(&mysql_handle);
   }
 
-  mysql_init(&mysql);
-  if (init_connection_options(&mysql)) {
-    put_error_if_any(&mysql);
+  mysql_init(&mysql_handle);
+  if (init_connection_options(&mysql_handle)) {
+    put_error_if_any(&mysql_handle);
     (void)fflush(stdout);
     return ignore_errors ? -1 : 1;
   }
 #ifdef _WIN32
   uint cnv_errors;
   String converted_database, converted_user;
-  if (!my_charset_same(&my_charset_utf8mb4_bin, mysql.charset)) {
+  if (!my_charset_same(&my_charset_utf8mb4_bin, mysql_handle.charset)) {
     /* Convert user and database from UTF8MB4 to connection character set */
     if (user) {
       converted_user.copy(user, strlen(user) + 1, &my_charset_utf8mb4_bin,
-                          mysql.charset, &cnv_errors);
+                          mysql_handle.charset, &cnv_errors);
       user = (char *)converted_user.ptr();
     }
     if (database) {
       converted_database.copy(database, strlen(database) + 1,
-                              &my_charset_utf8mb4_bin, mysql.charset,
+                              &my_charset_utf8mb4_bin, mysql_handle.charset,
                               &cnv_errors);
       database = (char *)converted_database.ptr();
     }
@@ -4772,36 +4947,52 @@ static int sql_real_connect(char *host, char *database, char *user, char *,
 #endif
   MYSQL *ret;
   if (dns_srv_name)
-    ret = mysql_real_connect_dns_srv(&mysql, dns_srv_name, user, nullptr,
+    ret = mysql_real_connect_dns_srv(&mysql_handle, dns_srv_name, user, nullptr,
                                      database,
                                      connect_flag | CLIENT_MULTI_STATEMENTS);
   else
-    ret = mysql_real_connect(&mysql, host, user, nullptr, database,
+    ret = mysql_real_connect(&mysql_handle, host, user, nullptr, database,
                              opt_mysql_port, opt_mysql_unix_port,
                              connect_flag | CLIENT_MULTI_STATEMENTS);
   if (!ret) {
 #ifdef HAVE_SETNS
     if (opt_network_namespace) (void)restore_original_network_namespace();
 #endif
-    if (mysql_errno(&mysql) == ER_MUST_CHANGE_PASSWORD_LOGIN) {
+    if (mysql_errno(&mysql_handle) == ER_MUST_CHANGE_PASSWORD_LOGIN) {
       tee_fprintf(stdout,
                   "Please use --connect-expired-password option or "
                   "invoke mysql in interactive mode.\n");
       return ignore_errors ? -1 : 1;
     }
-    if (!silent || (mysql_errno(&mysql) != CR_CONN_HOST_ERROR &&
-                    mysql_errno(&mysql) != CR_CONNECTION_ERROR)) {
-      (void)put_error(&mysql);
+    if (!silent || (mysql_errno(&mysql_handle) != CR_CONN_HOST_ERROR &&
+                    mysql_errno(&mysql_handle) != CR_CONNECTION_ERROR)) {
+      (void)put_error(&mysql_handle);
       (void)fflush(stdout);
       return ignore_errors ? -1 : 1;  // Abort
     }
     return -1;  // Retryable
   }
 
-  /* do user registration */
-  if (opt_fido_register_factor) {
-    char errmsg[FN_REFLEN];
-    if (user_device_registration(&mysql, opt_fido_register_factor, errmsg)) {
+  /* do token device registration */
+  if (opt_fido_register_factor || opt_register_factor) {
+    char errmsg[FN_REFLEN + 1]{0};
+    if (opt_fido_register_factor) {
+      put_info(
+          "--fido-register-factor option is deprecreted, instead use "
+          "--register-factor.",
+          INFO_INFO);
+      if (opt_register_factor) {
+        put_info(
+            "--register-factor is specified. Value of --fido-register-factor "
+            "will be ignored.",
+            INFO_INFO);
+      }
+    }
+
+    if (user_device_registration(&mysql_handle,
+                                 opt_register_factor ? opt_register_factor
+                                                     : opt_fido_register_factor,
+                                 errmsg)) {
       put_info(errmsg, INFO_ERROR);
       return 1;
     }
@@ -4821,13 +5012,14 @@ static int sql_real_connect(char *host, char *database, char *user, char *,
 #endif
 
   if (ssl_client_check_post_connect_ssl_setup(
-          &mysql, [](const char *err) { put_info(err, INFO_ERROR); }))
+          &mysql_handle, [](const char *err) { put_info(err, INFO_ERROR); }))
     return 1;
 
-  void *new_ssl_session_data = mysql_get_ssl_session_data(&mysql, 0, nullptr);
+  void *new_ssl_session_data =
+      mysql_get_ssl_session_data(&mysql_handle, 0, nullptr);
   if (new_ssl_session_data != nullptr) {
     if (ssl_session_data != nullptr)
-      mysql_free_ssl_session_data(&mysql, ssl_session_data);
+      mysql_free_ssl_session_data(&mysql_handle, ssl_session_data);
     ssl_session_data = new_ssl_session_data;
   } else {
     DBUG_PRINT("error", ("unable to save SSL session"));
@@ -4837,7 +5029,7 @@ static int sql_real_connect(char *host, char *database, char *user, char *,
   if (!execute_buffer_conversion_done && status.line_buff &&
       !status.line_buff->file && /* Convert only -e buffer, not real file */
       status.line_buff->buffer < status.line_buff->end && /* Non-empty */
-      !my_charset_same(&my_charset_utf8mb4_bin, mysql.charset)) {
+      !my_charset_same(&my_charset_utf8mb4_bin, mysql_handle.charset)) {
     String tmp;
     size_t len = status.line_buff->end - status.line_buff->buffer;
     uint dummy_errors;
@@ -4848,7 +5040,7 @@ static int sql_real_connect(char *host, char *database, char *user, char *,
     */
     if (status.line_buff->buffer[len - 1] == '\n') len--;
     if (tmp.copy(status.line_buff->buffer, len, &my_charset_utf8mb4_bin,
-                 mysql.charset, &dummy_errors))
+                 mysql_handle.charset, &dummy_errors))
       return 1;
 
     /* Free the old line buffer */
@@ -4861,10 +5053,10 @@ static int sql_real_connect(char *host, char *database, char *user, char *,
   execute_buffer_conversion_done = true;
 #endif /* _WIN32 */
 
-  charset_info = mysql.charset;
+  charset_info = mysql_handle.charset;
 
   connected = true;
-  mysql.reconnect = debug_info_flag;  // We want to know if this happens
+  mysql_handle.reconnect = debug_info_flag;  // We want to know if this happens
 #ifdef HAVE_READLINE
   build_completion_hash(opt_rehash, true);
 #endif
@@ -4875,8 +5067,7 @@ static int sql_real_connect(char *host, char *database, char *user, char *,
 static bool init_connection_options(MYSQL *mysql) {
   bool handle_expired = (opt_connect_expired_password || !status.batch);
 
-  if (opt_init_command)
-    mysql_options(mysql, MYSQL_INIT_COMMAND, opt_init_command);
+  opt_init_commands.set_mysql_options(mysql, MYSQL_INIT_COMMAND);
 
   if (opt_connect_timeout) {
     uint timeout = opt_connect_timeout;
@@ -4989,13 +5180,17 @@ static bool init_connection_options(MYSQL *mysql) {
     }
   }
 
-#if defined(_WIN32)
   char error[256]{0};
+#if defined(_WIN32)
   if (set_authentication_kerberos_client_mode(mysql, error, 255)) {
     put_info(error, INFO_ERROR);
     return 1;
   }
 #endif
+  if (set_authentication_webauthn_options(mysql, error, 255)) {
+    put_info(error, INFO_ERROR);
+    return true;
+  }
 
   return false;
 }
@@ -5041,7 +5236,8 @@ static int com_status(String *buffer [[maybe_unused]],
 
   tee_puts("--------------", stdout);
   usage(1); /* Print version */
-  tee_fprintf(stdout, "\nConnection id:\t\t%lu\n", mysql_thread_id(&mysql));
+  tee_fprintf(stdout, "\nConnection id:\t\t%lu\n",
+              mysql_thread_id(&mysql_handle));
   /*
     Don't remove "limit 1",
     it is protection against SQL_SELECT_LIMIT=0
@@ -5055,7 +5251,7 @@ static int com_status(String *buffer [[maybe_unused]],
     mysql_free_result(result);
   }
 
-  if ((status_str = mysql_get_ssl_cipher(&mysql)))
+  if ((status_str = mysql_get_ssl_cipher(&mysql_handle)))
     tee_fprintf(stdout, "SSL:\t\t\tCipher in use is %s\n", status_str);
   else
     tee_puts("SSL:\t\t\tNot in use", stdout);
@@ -5068,17 +5264,20 @@ static int com_status(String *buffer [[maybe_unused]],
   tee_fprintf(stdout, "Using outfile:\t\t'%s'\n", opt_outfile ? outfile : "");
 #endif
   tee_fprintf(stdout, "Using delimiter:\t%s\n", delimiter);
-  tee_fprintf(stdout, "Server version:\t\t%s\n", server_version_string(&mysql));
-  tee_fprintf(stdout, "Protocol version:\t%d\n", mysql_get_proto_info(&mysql));
-  tee_fprintf(stdout, "Connection:\t\t%s\n", mysql_get_host_info(&mysql));
-  if ((id = mysql_insert_id(&mysql)))
+  tee_fprintf(stdout, "Server version:\t\t%s\n",
+              server_version_string(&mysql_handle));
+  tee_fprintf(stdout, "Protocol version:\t%d\n",
+              mysql_get_proto_info(&mysql_handle));
+  tee_fprintf(stdout, "Connection:\t\t%s\n",
+              mysql_get_host_info(&mysql_handle));
+  if ((id = mysql_insert_id(&mysql_handle)))
     tee_fprintf(stdout, "Insert id:\t\t%s\n", llstr(id, buff));
 
   /* "limit 1" is protection against SQL_SELECT_LIMIT=0 */
   if (mysql_real_query_for_lazy(STRING_WITH_LEN(
           "select @@character_set_client, @@character_set_connection, "
           "@@character_set_server, @@character_set_database limit 1"))) {
-    if (mysql_errno(&mysql) == CR_SERVER_GONE_ERROR) return 0;
+    if (mysql_errno(&mysql_handle) == CR_SERVER_GONE_ERROR) return 0;
   }
   if (!mysql_store_result_for_lazy(&result)) {
     MYSQL_ROW cur = mysql_fetch_row(result);
@@ -5092,22 +5291,25 @@ static int com_status(String *buffer [[maybe_unused]],
   } else {
     /* Probably pre-4.1 server */
     tee_fprintf(stdout, "Client characterset:\t%s\n", charset_info->csname);
-    tee_fprintf(stdout, "Server characterset:\t%s\n", mysql.charset->csname);
+    tee_fprintf(stdout, "Server characterset:\t%s\n",
+                mysql_handle.charset->csname);
   }
 
-  if (strstr(mysql_get_host_info(&mysql), "TCP/IP") || !mysql.unix_socket)
-    tee_fprintf(stdout, "TCP port:\t\t%d\n", mysql.port);
+  if (strstr(mysql_get_host_info(&mysql_handle), "TCP/IP") ||
+      !mysql_handle.unix_socket)
+    tee_fprintf(stdout, "TCP port:\t\t%d\n", mysql_handle.port);
   else
-    tee_fprintf(stdout, "UNIX socket:\t\t%s\n", mysql.unix_socket);
-  if (mysql.net.compress)
+    tee_fprintf(stdout, "UNIX socket:\t\t%s\n", mysql_handle.unix_socket);
+  if (mysql_handle.net.compress)
     tee_fprintf(stdout,
                 "Protocol:\t\tCompressed, algorithms: %s, zstd level: %d\n",
                 opt_compress_algorithm, opt_zstd_compress_level);
   if (opt_binhex) tee_fprintf(stdout, "Binary data as:\t\tHexadecimal\n");
-  if (mysql_get_ssl_session_reused(&mysql))
+  if (mysql_get_ssl_session_reused(&mysql_handle))
     tee_fprintf(stdout, "SSL session reused:\ttrue\n");
 
-  if ((status_str = mysql_stat(&mysql)) && !mysql_error(&mysql)[0]) {
+  if ((status_str = mysql_stat(&mysql_handle)) &&
+      !mysql_error(&mysql_handle)[0]) {
     ulong sec;
     const char *pos = strchr(status_str, ' ');
     /* print label */
@@ -5440,11 +5642,11 @@ static const char *construct_prompt() {
           add_int_to_prompt(++prompt_counter);
           break;
         case 'C':
-          add_int_to_prompt(mysql_thread_id(&mysql));
+          add_int_to_prompt(mysql_thread_id(&mysql_handle));
           break;
         case 'v':
           if (connected)
-            processed_prompt.append(mysql_get_server_info(&mysql));
+            processed_prompt.append(mysql_get_server_info(&mysql_handle));
           else
             processed_prompt.append("not_connected");
           break;
@@ -5453,7 +5655,8 @@ static const char *construct_prompt() {
           break;
         case 'h': {
           const char *prompt;
-          prompt = connected ? mysql_get_host_info(&mysql) : "not_connected";
+          prompt =
+              connected ? mysql_get_host_info(&mysql_handle) : "not_connected";
           if (strstr(prompt, "Localhost"))
             processed_prompt.append("localhost");
           else {
@@ -5468,14 +5671,14 @@ static const char *construct_prompt() {
             break;
           }
 
-          const char *host_info = mysql_get_host_info(&mysql);
+          const char *host_info = mysql_get_host_info(&mysql_handle);
           if (strstr(host_info, "memory")) {
-            processed_prompt.append(mysql.host);
-          } else if (strstr(host_info, "TCP/IP") || !mysql.unix_socket)
-            add_int_to_prompt(mysql.port);
+            processed_prompt.append(mysql_handle.host);
+          } else if (strstr(host_info, "TCP/IP") || !mysql_handle.unix_socket)
+            add_int_to_prompt(mysql_handle.port);
           else {
-            char *pos = strrchr(mysql.unix_socket, '/');
-            processed_prompt.append(pos ? pos + 1 : mysql.unix_socket);
+            char *pos = strrchr(mysql_handle.unix_socket, '/');
+            processed_prompt.append(pos ? pos + 1 : mysql_handle.unix_socket);
           }
         } break;
         case 'U':
@@ -5561,7 +5764,7 @@ static const char *construct_prompt() {
           processed_prompt.append(delimiter_str);
           break;
         case 'T':
-          if (mysql.server_status & SERVER_STATUS_IN_TRANS)
+          if (mysql_handle.server_status & SERVER_STATUS_IN_TRANS)
             processed_prompt.append("*");
           break;
         default:
@@ -5582,8 +5785,8 @@ static void init_username() {
   my_free(part_username);
 
   MYSQL_RES *result = nullptr;
-  if (!mysql_query(&mysql, "select USER()") &&
-      (result = mysql_use_result(&mysql))) {
+  if (!mysql_query(&mysql_handle, "select USER()") &&
+      (result = mysql_use_result(&mysql_handle))) {
     MYSQL_ROW cur = mysql_fetch_row(result);
     full_username = my_strdup(PSI_NOT_INSTRUMENTED, cur[0], MYF(MY_WME));
     part_username =
@@ -5654,11 +5857,11 @@ static int com_prompt(String *buffer [[maybe_unused]], char *line) {
 static int com_resetconnection(String *buffer [[maybe_unused]],
                                char *line [[maybe_unused]]) {
   int error;
-  global_attrs->clear(connected ? &mysql : nullptr);
-  error = mysql_reset_connection(&mysql);
+  global_attrs->clear(connected ? &mysql_handle : nullptr);
+  error = mysql_reset_connection(&mysql_handle);
   if (error) {
     if (status.batch) return 0;
-    return put_error(&mysql);
+    return put_error(&mysql_handle);
   }
   return error;
 }

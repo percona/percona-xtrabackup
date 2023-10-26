@@ -37,6 +37,7 @@
 #include <rapidjson/error/en.h>
 
 #include "config_builder.h"
+#include "mysql/harness/stdx/ranges.h"  // enumerate
 #include "mysqlrouter/mock_server_rest_client.h"
 #include "mysqlrouter/rest_client.h"
 #include "rest_api_testutils.h"
@@ -52,8 +53,9 @@ std::string json_to_string(const JsonValue &json_doc) {
 std::vector<GRNode> classic_ports_to_gr_nodes(
     const std::vector<uint16_t> &classic_ports) {
   std::vector<GRNode> result;
-  for (const auto &port : classic_ports) {
-    result.emplace_back(port);
+
+  for (const auto [id, port] : stdx::views::enumerate(classic_ports)) {
+    result.emplace_back(port, "uuid-" + std::to_string(id + 1));
   }
 
   return result;
@@ -62,8 +64,8 @@ std::vector<GRNode> classic_ports_to_gr_nodes(
 std::vector<ClusterNode> classic_ports_to_cluster_nodes(
     const std::vector<uint16_t> &classic_ports) {
   std::vector<ClusterNode> result;
-  for (const auto &port : classic_ports) {
-    result.emplace_back(port);
+  for (const auto [id, port] : stdx::views::enumerate(classic_ports)) {
+    result.emplace_back(port, "uuid-" + std::to_string(id + 1));
   }
 
   return result;
@@ -74,16 +76,24 @@ JsonValue mock_GR_metadata_as_json(
     unsigned gr_pos, const std::vector<ClusterNode> &cluster_nodes,
     unsigned primary_id, uint64_t view_id, bool error_on_md_query,
     const std::string &gr_node_host, const std::string &router_options,
-    const mysqlrouter::MetadataSchemaVersion &metadata_version) {
+    const mysqlrouter::MetadataSchemaVersion &metadata_version,
+    const std::string &cluster_name) {
   JsonValue json_doc(rapidjson::kObjectType);
   JsonAllocator allocator;
   json_doc.AddMember(
       "gr_id", JsonValue(gr_id.c_str(), gr_id.length(), allocator), allocator);
+  json_doc.AddMember(
+      "cluster_name",
+      JsonValue(cluster_name.c_str(), cluster_name.length(), allocator),
+      allocator);
 
   JsonValue gr_nodes_json(rapidjson::kArrayType);
   JsonValue cluster_nodes_json(rapidjson::kArrayType);
   for (auto &gr_node : gr_nodes) {
     JsonValue node(rapidjson::kArrayType);
+    node.PushBack(JsonValue(gr_node.server_uuid.c_str(),
+                            gr_node.server_uuid.length(), allocator),
+                  allocator);
     node.PushBack(static_cast<int>(gr_node.classic_port), allocator);
     node.PushBack(JsonValue(gr_node.member_status.c_str(),
                             gr_node.member_status.length(), allocator),
@@ -94,6 +104,9 @@ JsonValue mock_GR_metadata_as_json(
 
   for (auto &cluster_node : cluster_nodes) {
     JsonValue node(rapidjson::kArrayType);
+    node.PushBack(JsonValue(cluster_node.server_uuid.c_str(),
+                            cluster_node.server_uuid.length(), allocator),
+                  allocator);
     node.PushBack(static_cast<int>(cluster_node.classic_port), allocator);
     node.PushBack(static_cast<int>(cluster_node.x_port), allocator);
     node.PushBack(JsonValue(cluster_node.attributes.c_str(),
@@ -135,58 +148,14 @@ void set_mock_metadata(
     const std::vector<ClusterNode> &cluster_nodes, unsigned primary_id,
     uint64_t view_id, bool error_on_md_query, const std::string &gr_node_host,
     const std::string &router_options,
-    const mysqlrouter::MetadataSchemaVersion &metadata_version) {
+    const mysqlrouter::MetadataSchemaVersion &metadata_version,
+    const std::string &cluster_name) {
   const auto json_doc = mock_GR_metadata_as_json(
       gr_id, gr_nodes, gr_pos, cluster_nodes, primary_id, view_id,
-      error_on_md_query, gr_node_host, router_options, metadata_version);
+      error_on_md_query, gr_node_host, router_options, metadata_version,
+      cluster_name);
 
   const auto json_str = json_to_string(json_doc);
 
   ASSERT_NO_THROW(MockServerRestClient(http_port).set_globals(json_str));
-}
-
-void set_mock_bootstrap_data(
-    uint16_t http_port, const std::string &cluster_name,
-    const std::vector<std::pair<std::string, unsigned>> &gr_members_ports,
-    const mysqlrouter::MetadataSchemaVersion &metadata_version,
-    const std::string &cluster_specific_id) {
-  JsonValue json_doc(rapidjson::kObjectType);
-  JsonAllocator allocator;
-  json_doc.AddMember(
-      "cluster_name",
-      JsonValue(cluster_name.c_str(), cluster_name.length(), allocator),
-      allocator);
-
-  JsonValue gr_members_json(rapidjson::kArrayType);
-  size_t i{1};
-  for (auto &gr_member : gr_members_ports) {
-    JsonValue member(rapidjson::kArrayType);
-    const std::string id = "uuid-" + std::to_string(i);
-    member.PushBack(JsonValue(id.c_str(), id.length(), allocator), allocator);
-    member.PushBack(
-        JsonValue(gr_member.first.c_str(), gr_member.first.length(), allocator),
-        allocator);
-    member.PushBack(static_cast<int>(gr_member.second), allocator);
-    gr_members_json.PushBack(member, allocator);
-    i++;
-  }
-  JsonValue cluster_instances_json{gr_members_json, allocator};
-  json_doc.AddMember("gr_members", gr_members_json, allocator);
-  json_doc.AddMember("innodb_cluster_instances", cluster_instances_json,
-                     allocator);
-
-  JsonValue md_version(rapidjson::kArrayType);
-  md_version.PushBack(static_cast<int>(metadata_version.major), allocator);
-  md_version.PushBack(static_cast<int>(metadata_version.minor), allocator);
-  md_version.PushBack(static_cast<int>(metadata_version.patch), allocator);
-  json_doc.AddMember("metadata_schema_version", md_version, allocator);
-
-  json_doc.AddMember("gr_id",
-                     JsonValue(cluster_specific_id.c_str(),
-                               cluster_specific_id.length(), allocator),
-                     allocator);
-
-  const auto json_str = json_to_string(json_doc);
-
-  EXPECT_NO_THROW(MockServerRestClient(http_port).set_globals(json_str));
 }

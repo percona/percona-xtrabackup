@@ -56,14 +56,14 @@ class RouterClusterSetBootstrapTest : public RouterComponentClusterSetTest {
  protected:
   ProcessWrapper &launch_router_for_bootstrap(
       std::vector<std::string> params, int expected_exit_code = EXIT_SUCCESS,
-      const bool disable_rest = true,
-      ProcessWrapper::OutputResponder output_responder =
-          RouterComponentBootstrapTest::kBootstrapOutputResponder) {
+      const bool disable_rest = true, const bool add_report_host = true) {
     if (disable_rest) params.push_back("--disable-rest");
+    if (add_report_host) params.push_back("--report-host=dont.query.dns");
 
     return ProcessManager::launch_router(
         params, expected_exit_code, /*catch_stderr=*/true, /*with_sudo=*/false,
-        /*wait_for_notify_ready=*/std::chrono::seconds(-1), output_responder);
+        /*wait_for_notify_ready=*/std::chrono::seconds(-1),
+        RouterComponentBootstrapTest::kBootstrapOutputResponder);
   }
 
   using NodeAddress = std::pair<std::string, uint16_t>;
@@ -1001,10 +1001,12 @@ TEST_F(RouterClusterSetBootstrapTest, PrimaryClusterQueriedFirst) {
  * error message is printed
  */
 TEST_F(RouterClusterSetBootstrapTest, FailToBootstrapFromReadReplica) {
-  const std::vector<size_t> read_replicas_per_cluster{1, 0, 0};
+  const std::vector<size_t> gr_nodes_per_cluster{2, 2};
+  const std::vector<size_t> read_replicas_per_cluster{1, 0};
   create_clusterset(view_id, /*target_cluster_id*/ 0,
                     /*primary_cluster_id*/ 0, "bootstrap_clusterset.js", "",
-                    ".*", false, false, read_replicas_per_cluster);
+                    ".*", false, false, gr_nodes_per_cluster,
+                    read_replicas_per_cluster);
 
   const auto &read_replica_node =
       clusterset_data_.clusters[0]

@@ -684,7 +684,7 @@ WHERE
 t1.col1 = t2.col1
 AND t1.col1 = FLOOR(RAND() / 2 + 2);
 EXPLAIN
--> Filter: (t1.col1 = floor(((rand() / 2) + 2)))  (rows=0.4)
+-> Filter: (t1.col1 = floor(((rand() / 2) + 2)))  (rows=0.04)
     -> Inner hash join (t1.col1 = t2.col1)  (rows=0.4)
         -> Table scan on t1  (rows=2)
         -> Hash
@@ -1021,10 +1021,10 @@ WHERE (NOT EXISTS
 ON alias4.col_varchar = alias3.col_varchar_key)
 WHERE alias3.pk >= table1.pk));
 EXPLAIN
--> Hash antijoin (no condition), extra conditions: (alias3.pk >= table1.pk)  (rows=1.07)
-    -> Nested loop inner join  (rows=1.6)
+-> Hash antijoin (no condition), extra conditions: (alias3.pk >= table1.pk)  (rows=1.33)
+    -> Nested loop inner join  (rows=2)
         -> Table scan on table2  (rows=1)
-        -> Filter: ((table2.pk = table1.pk) or (table1.col_varchar < 'D'))  (rows=1.6)
+        -> Filter: ((table2.pk = table1.pk) or (table1.col_varchar < 'D'))  (rows=2)
             -> Table scan on table1  (rows=4)
     -> Hash
         -> Inner hash join (alias4.col_varchar = alias3.col_varchar_key)  (rows=1)
@@ -1803,6 +1803,9 @@ EXPLAIN
                 -> Group (no aggregates)  (rows=1.41)
                     -> Sort: subquery2_t1.col_varchar  (rows=2)
                         -> Table scan on subquery2_t1  (rows=2)
+    -> Select #4 (subquery in extra conditions; dependent)
+        -> Filter: (<cache>(subquery1_t1.col_varchar) = lower(subquery3_t1.pk))  (rows=1)
+            -> Table scan on subquery3_t1  (rows=1)
 
 SELECT
 table1.col_varchar
@@ -2199,10 +2202,10 @@ WHERE t2.pk = 9
 EXPLAIN
 -> Table scan on t1  (rows=2)
 -> Select #2 (subquery in projection; dependent)
-    -> Nested loop inner join  (rows=0.01)
-        -> Nested loop left join  (rows=0.1)
-            -> Single-row covering index lookup on t2 using PRIMARY (pk=9)  (rows=0.1)
-            -> Filter: ((t3.pk = 9) and (t2.pk = 9))  (rows=0.01)
+    -> Nested loop inner join  (rows=0.1)
+        -> Nested loop left join  (rows=1)
+            -> Single-row covering index lookup on t2 using PRIMARY (pk=9)  (rows=1)
+            -> Filter: ((t3.pk = 9) and (t2.pk = 9))  (rows=0.1)
                 -> Table scan on t3  (rows=1)
         -> Filter: (t4.pk = 9)  (rows=0.1)
             -> Table scan on t4  (rows=1)
@@ -3689,6 +3692,10 @@ EXPLAIN
                 -> Hash
                     -> Table scan on inner_t2  (rows=4)
             -> Table scan on inner_t3  (rows=4)
+    -> Select #3 (subquery in extra conditions; dependent)
+        -> Limit: 1 row(s)  (rows=1)
+            -> Filter: ((inner_t3.pk >= 1) or (table1.f1 = 'G'))  (rows=4)
+                -> Table scan on t1  (rows=4)
 
 Warnings:
 Note	1276	Field or reference 'table2.pk' of SELECT #3 was resolved in SELECT #1
@@ -3872,6 +3879,9 @@ EXPLAIN
     -> Table scan on table1  (rows=1)
     -> Hash
         -> Table scan on t1  (rows=1)
+    -> Select #2 (subquery in extra conditions; dependent)
+        -> Filter: (table1.a <> 6)  (rows=1)
+            -> Table scan on t1  (rows=1)
 
 Warnings:
 Note	1276	Field or reference 'test.table1.a' of SELECT #2 was resolved in SELECT #1
@@ -3886,6 +3896,9 @@ EXPLAIN
     -> Table scan on table1  (rows=1)
     -> Hash
         -> Table scan on t1  (rows=1)
+    -> Select #2 (subquery in condition; dependent)
+        -> Filter: (table1.a <> 6)  (rows=1)
+            -> Table scan on t1  (rows=1)
 
 Warnings:
 Note	1276	Field or reference 'test.table1.a' of SELECT #2 was resolved in SELECT #1
@@ -4226,3 +4239,81 @@ HEX(t1.b)	HEX(t2.b)
 0F6B	0F6B
 1000	1000
 DROP TABLE t;
+#
+# Bug#34940000 Hash join execution may be ineficcient if probe input is empty
+#
+CREATE TABLE t1 (
+a INT NOT NULL,
+b INT NOT NULL
+);
+INSERT INTO t1 VALUES (1,1),(1,2),(2,1),(2,2);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+EXPLAIN ANALYZE FORMAT=tree SELECT * FROM t1 x1 LEFT JOIN t1 x2 ON x1.a=x2.a
+WHERE x1.b < 0;
+EXPLAIN
+-> Nested loop left join  (...) (actual rows=0 loops=1)
+    -> Filter: (x1.b < 0)  (...) (actual rows=0 loops=1)
+        -> Table scan on x1  (...) (actual rows=4 loops=1)
+    -> Filter: (x1.a = x2.a)  (...) (never executed)
+        -> Table scan on x2  (...) (never executed)
+
+EXPLAIN ANALYZE FORMAT=tree SELECT * FROM t1 x1 WHERE x1.a < 0 AND x1.a NOT IN
+(SELECT a FROM t1 x2 WHERE x2.b = x1.b);
+EXPLAIN
+-> Hash antijoin (x1.a = x2.a), (x1.b = x2.b)  (...) (actual rows=0 loops=1)
+    -> Filter: (x1.a < 0)  (...) (actual rows=0 loops=1)
+        -> Table scan on x1  (...) (actual rows=4 loops=1)
+    -> Hash
+        -> Table scan on x2  (...) (never executed)
+
+Warnings:
+Note	1276	Field or reference 'test.x1.b' of SELECT #2 was resolved in SELECT #1
+DROP TABLE t1;
+#
+# Bug#34940000 Hash join execution may be ineficcient if probe input is empty
+#
+CREATE TABLE t1(
+a INT NOT NULL PRIMARY KEY,
+b INT NOT NULL,
+c INT NOT NULL
+);
+INSERT INTO t1
+WITH RECURSIVE qn(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM qn WHERE n<20)
+SELECT n, n%7, n%5 FROM qn;
+ANALYZE TABLE t1 UPDATE HISTOGRAM ON b,c;
+Table	Op	Msg_type	Msg_text
+test.t1	histogram	status	Histogram statistics created for column 'b'.
+test.t1	histogram	status	Histogram statistics created for column 'c'.
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+EXPLAIN ANALYZE SELECT 1 FROM t1 JOIN
+(SELECT SUM(x1.b) s FROM t1 x1, t1 x2 WHERE x1.b<x2.b GROUP BY x1.c) d1
+ON c=d1.s AND c*2<0;
+EXPLAIN
+-> Inner hash join (t1.c = d1.s)  (cost=73.1..78.4 rows=20) (actual rows=0 loops=1)
+    -> Filter: ((t1.c * 2) < 0)  (cost=0.113..2.25 rows=20) (actual rows=0 loops=1)
+        -> Table scan on t1  (cost=0.0125..0.25 rows=20) (actual rows=20 loops=1)
+    -> Hash
+        -> Table scan on d1  (cost=70.2..72.3 rows=5) (never executed)
+            -> Materialize  (cost=69.7..69.7 rows=5) (never executed)
+                -> Group aggregate: sum(x1.b)  (cost=22.6..69.2 rows=5) (never executed)
+                    -> Nested loop inner join  (cost=11.2..55.9 rows=133) (never executed)
+                        -> Sort: x1.c  (cost=10.9..10.9 rows=20) (never executed)
+                            -> Table scan on x1  (cost=0.0125..0.25 rows=20) (never executed)
+                        -> Filter: (x1.b < x2.b)  (cost=0.338..2.25 rows=6.67) (never executed)
+                            -> Table scan on x2  (cost=0.0125..0.25 rows=20) (never executed)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 x1 WHERE b IN
+(SELECT c FROM t1 x2 WHERE b>0) AND x1.c*2<0;
+EXPLAIN
+-> Hash semijoin (x1.b = x2.c)  (cost=4.33..9.7 rows=20) (actual rows=0 loops=1)
+    -> Filter: ((x1.c * 2) < 0)  (cost=0.113..2.25 rows=20) (actual rows=0 loops=1)
+        -> Table scan on x1  (cost=0.0125..0.25 rows=20) (actual rows=20 loops=1)
+    -> Hash
+        -> Filter: (x2.b > 0)  (cost=0.125..2.25 rows=18) (never executed)
+            -> Table scan on x2  (cost=0.0125..0.25 rows=20) (never executed)
+
+DROP TABLE t1;

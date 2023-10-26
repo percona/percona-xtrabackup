@@ -2157,20 +2157,20 @@ void Query_block::clear_sj_expressions(NESTED_JOIN *nested_join) {
   @param nested_join    Join nest
   @param subq_query_block    Query block for the subquery
   @param outer_tables_map Map of tables from original outer query block
-  @param[out] sj_cond   Semi-join condition to be constructed
+  @param[in,out] sj_cond   Semi-join condition to be constructed
+                           Contains non-equalities on input.
+  @param[out]    simple_const true if the returned semi-join condition is
+                              a simple true or false predicate, false otherwise.
 
   @return false if success, true if error
 */
 bool Query_block::build_sj_cond(THD *thd, NESTED_JOIN *nested_join,
                                 Query_block *subq_query_block,
-                                table_map outer_tables_map, Item **sj_cond) {
-  if (nested_join->sj_inner_exprs.empty()) {
-    // Semi-join materialization requires a key, push a constant integer item
-    Item *const_item = new Item_int(1);
-    if (const_item == nullptr) return true;
-    nested_join->sj_inner_exprs.push_back(const_item);
-    nested_join->sj_outer_exprs.push_back(const_item);
-  }
+                                table_map outer_tables_map, Item **sj_cond,
+                                bool *simple_const) {
+  *simple_const = false;
+
+  Item *new_cond = nullptr;
 
   auto ii = nested_join->sj_inner_exprs.begin();
   auto oi = nested_join->sj_outer_exprs.begin();
@@ -2217,13 +2217,8 @@ bool Query_block::build_sj_cond(THD *thd, NESTED_JOIN *nested_join,
           Remove the expression from inner/outer expression list if the
           const condition evaluates to true as Item_cond::fix_fields will
           remove the condition later.
-          Do the above if this is not the last expression in the list.
-          Semijoin processing expects at least one inner/outer expression
-          in the list if there is a sj_nest present.
         */
-        if (nested_join->sj_inner_exprs.size() != 1) {
-          should_remove = true;
-        }
+        should_remove = true;
       } else {
         /*
           Remove all the expressions in inner/outer expression list if
@@ -2235,11 +2230,10 @@ bool Query_block::build_sj_cond(THD *thd, NESTED_JOIN *nested_join,
         Item *new_item = new Item_func_false();
         if (new_item == nullptr) return true;
         (*sj_cond) = new_item;
-        break;
+        *simple_const = true;
+        return false;
       }
     }
-    (*sj_cond) = and_items(*sj_cond, predicate);
-    if (*sj_cond == nullptr) return true; /* purecov: inspected */
     /*
       If the selected expression has a reference to our query block, add it as
       a non-trivially correlated reference (to avoid materialization).
@@ -2259,9 +2253,29 @@ bool Query_block::build_sj_cond(THD *thd, NESTED_JOIN *nested_join,
       ii = nested_join->sj_inner_exprs.erase(ii);
       oi = nested_join->sj_outer_exprs.erase(oi);
     } else {
+      new_cond = and_items(new_cond, predicate);
+      if (new_cond == nullptr) return true; /* purecov: inspected */
+
       ++ii, ++oi;
     }
   }
+  /*
+    Semijoin processing expects at least one inner/outer expression
+    in the list if there is a sj_nest present. This is required for semi-join
+    materialization and loose scan.
+  */
+  if (nested_join->sj_inner_exprs.empty()) {
+    Item *const_item = new Item_int(1);
+    if (const_item == nullptr) return true;
+    nested_join->sj_inner_exprs.push_back(const_item);
+    nested_join->sj_outer_exprs.push_back(const_item);
+    new_cond = new Item_func_true();
+    if (new_cond == nullptr) return true;
+    *simple_const = true;
+  }
+  (*sj_cond) = and_items(*sj_cond, new_cond);
+  if (*sj_cond == nullptr) return true; /* purecov: inspected */
+
   return false;
 }
 
@@ -3017,8 +3031,9 @@ bool Query_block::convert_subquery_to_semijoin(
   });
 
   // Build semijoin condition using the inner/outer expression list
+  bool simple_cond;
   if (build_sj_cond(thd, nested_join, subq_query_block, outer_tables_map,
-                    &sj_cond))
+                    &sj_cond, &simple_cond))
     return true;
 
   // Processing requires a non-empty semi-join condition:
@@ -3073,9 +3088,11 @@ bool Query_block::convert_subquery_to_semijoin(
   // TODO fix QT_
   DBUG_EXECUTE("where", print_where(thd, sj_cond, "SJ-COND", QT_ORDINARY););
 
-  if (do_aj) { /* Condition remains attached to inner table, as for LEFT JOIN
-                */
-  } else if (emb_tbl_nest) {
+  Item *cond = nullptr;
+  if (do_aj) {
+    // Condition remains attached to inner table, as for LEFT JOIN
+    cond = sj_cond;
+  } else if (emb_tbl_nest != nullptr) {
     // Inject semi-join condition into parent's join condition
     emb_tbl_nest->set_join_cond(and_items(emb_tbl_nest->join_cond(), sj_cond));
     if (emb_tbl_nest->join_cond() == nullptr) return true;
@@ -3084,37 +3101,27 @@ bool Query_block::convert_subquery_to_semijoin(
         emb_tbl_nest->join_cond()->fix_fields(thd,
                                               emb_tbl_nest->join_cond_ref()))
       return true;
+    cond = emb_tbl_nest->join_cond();
   } else {
     // Inject semi-join condition into parent's WHERE condition
     m_where_cond = and_items(m_where_cond, sj_cond);
     if (m_where_cond == nullptr) return true;
     m_where_cond->apply_is_true();
     if (m_where_cond->fix_fields(thd, &m_where_cond)) return true;
+    cond = m_where_cond;
   }
-
-  Item *cond = emb_tbl_nest ? emb_tbl_nest->join_cond() : m_where_cond;
-  if (cond && cond->const_item() &&
-      !cond->walk(&Item::is_non_const_over_literals, enum_walk::POSTFIX,
-                  nullptr)) {
-    bool cond_value = true;
-    if (simplify_const_condition(thd, &cond, false, &cond_value)) return true;
-    if (!cond_value) {
-      /*
-        Parent's condition is always FALSE. Thus:
-        (a) the value of the anti/semi-join condition has no influence on the
-        result
-        (b) we don't need to set up lookups (for loosescan or materialization)
-        (c) for a semi-join, the semi-join condition is already lost (it was
-        in parent's condition, which has been replaced with FALSE); the
-        outer/inner sj expressions are Items which point into the SJ
-        condition, so at 2nd execution they won't be fixed => clearing them
-        prevents a bug.
-        (d) for an anti-join, the join condition remains in
-        sj_nest->join_cond() and will possibly be evaluated. (c) doesn't hold,
-        but (a) and (b) do.
-      */
-      clear_sj_expressions(nested_join);
-    }
+  /*
+    If the current semi-join or anti-join condition is always TRUE or
+    always FALSE:
+    (a) there is no need to set up lookups (for loosescan or materialization).
+    (b) if some predicates were eliminated as part of const value optimization,
+        their expressions are still in the inner/outer expression list
+        and must be removed.
+    (If a "simple condition" was added in build_sj_cond(), this is not necessary
+     since the expressions were constant values and are safe to keep.)
+  */
+  if (cond != nullptr && cond->const_item() && !simple_cond) {
+    clear_sj_expressions(nested_join);
   }
 
   if (subq_query_block->ftfunc_list->elements &&
@@ -6502,6 +6509,100 @@ struct Lifted_fields_map {
   std::vector<uint> m_field_positions;
 };
 
+// Add COUNT(*) OVER (PARTITION BY inner-expr, .., inner_expr)
+// to SELECT list of the derived table.
+// Minion of decorrelate_derived_scalar_subquery_pre
+bool Query_block::setup_count_over_partition(
+    THD *thd, Table_ref *derived, Lifted_fields_map *lifted_fields,
+    std::deque<Item_field *> &added_to_group_by, uint hidden_fields) {
+  // 1. Construct PARTITION BY
+  PT_order_list *partition = new (thd->mem_root) PT_order_list(POS());
+  for (auto f : added_to_group_by) {
+    ORDER *o = new (thd->mem_root) PT_order_expr(POS(), f, ORDER_ASC);
+    o->in_field_list = true;
+    (*o->item)->increment_ref_count();
+    bool found [[maybe_unused]] = false;
+    for (size_t idx = 0; idx < base_ref_items.size(); idx++) {
+      if (base_ref_items[idx] == f) {
+        o->item = &base_ref_items[idx];
+        found = true;
+        break;
+      }
+    }
+    assert(found);
+    o->used = f->used_tables();
+    // Add at back of list
+    partition->value.link_in_list(o, &o->next);
+  }
+
+  // 2. Construct default frame
+  auto start_bound =
+      new (thd->mem_root) PT_border(POS(), WBT_UNBOUNDED_PRECEDING);
+  if (start_bound == nullptr) return true;
+  auto end_bound =
+      new (thd->mem_root) PT_border(POS(), WBT_UNBOUNDED_FOLLOWING);
+  if (end_bound == nullptr) return true;
+  auto bounds = new (thd->mem_root) PT_borders(POS(), start_bound, end_bound);
+  if (bounds == nullptr) return true;
+  PT_frame *frame =
+      new (thd->mem_root) PT_frame(POS(), WFU_ROWS, bounds, nullptr);
+  if (frame == nullptr) return true;
+  frame->m_originally_absent = true;
+
+  // 3. Construct window and set it up (mini-version of what is normally done by
+  //    setup_windows1).
+  PT_window *w = new (thd->mem_root)
+      PT_window(POS(), partition, /*order_by*/ nullptr, frame);
+  if (w == nullptr) return true;
+  if (w->setup_ordering_cached_items(thd, this, partition, true)) return true;
+  if (w->check_window_functions1(thd, this)) return true;
+  // initialize the physical sorting order for the partition
+  (void)w->sorting_order(thd, /*implicitly_grouped*/ false);
+  m_windows.push_back(w);
+
+  // 4. Construct window function COUNT and bind it
+  //
+  Item_int *number_0 = new (thd->mem_root) Item_int(int32{0}, 1);
+  if (number_0 == nullptr) return true;
+
+  Item_sum *cnt = new (thd->mem_root) Item_sum_count(POS(), number_0, w);
+  if (cnt == nullptr) return true;
+  cnt->m_is_window_function = true;
+  cnt->set_wf();
+
+  int item_no = fields.size() + 1;
+  baptize_item(thd, cnt, &item_no);
+  m_added_non_hidden_fields++;
+  {
+    // prelude to binding COUNT(*)
+    const bool save_asf = thd->lex->allow_sum_func;
+    Query_block *save_query_block = thd->lex->current_query_block();
+    assert(save_query_block == outer_query_block());
+    thd->lex->set_current_query_block(this);
+    auto save_allow_sum_func = thd->lex->allow_sum_func;
+    thd->lex->allow_sum_func |= (nesting_map)1 << nest_level;
+    Item *count = cnt;
+    if (cnt->fix_fields(thd, &count)) return true;
+
+    // postlude to binding COUNT(*)
+    thd->lex->allow_sum_func = save_asf;
+    thd->lex->set_current_query_block(save_query_block);
+    thd->lex->allow_sum_func = save_allow_sum_func;
+  }
+
+  // 5. Add window function to the SELECT list so we can reference it from
+  //    outside the derived table (the cardinality check)
+
+  base_ref_items[fields.size()] = cnt;
+  lifted_fields->m_field_positions.push_back(fields.size() - hidden_fields);
+  fields.push_back(cnt);
+  cnt->increment_ref_count();
+  // Add a new column to the derived table's query expression
+  derived->derived_query_expression()->types.push_back(cnt);
+
+  return false;
+}
+
 /**
    We have a correlated scalar subquery, so we must do several things:
 
@@ -6541,10 +6642,14 @@ struct Lifted_fields_map {
   @param[out] lifted_fields    mapping of where inner fields end up in the
                                derived table's fields.
   @param[out] added_card_check set to true if we are adding a cardinality check
+  @param[out] added_window_card_check
+                               set to true if the subquery is initially grouped
+                               and we need COUNT(*) OVER (...) to be checked
 */
 bool Query_block::decorrelate_derived_scalar_subquery_pre(
     THD *thd, Table_ref *derived, Item *lifted_where,
-    Lifted_fields_map *lifted_fields, bool *added_card_check) {
+    Lifted_fields_map *lifted_fields, bool *added_card_check,
+    bool *added_window_card_check) {
   const uint hidden_fields = CountHiddenFields(fields);
   const uint first_non_hidden = hidden_fields;
   assert((fields.size() - hidden_fields) == 1);  // scalar subquery
@@ -6627,8 +6732,17 @@ bool Query_block::decorrelate_derived_scalar_subquery_pre(
 
   li.rewind();
 
+  const bool subquery_is_grouped = group_list.size() > 0;
+  std::deque<Item_field *> added_to_group_by;
+
   // Run through the inner fields and add them to GROUP BY if not present
+  //
+  // True if selected field was added by us to the group by list (not originally
+  // present.
+  bool selected_field_added_to_group_by = false;
+  // True if the selected field was already present in group by list.
   bool selected_field_in_group_by = false;
+
   while ((field_or_ref = li++)) {
     Item_field *f = down_cast<Item_field *>(field_or_ref->real_item());
     if (!field_or_ref->is_outer_reference()) {
@@ -6639,6 +6753,9 @@ bool Query_block::decorrelate_derived_scalar_subquery_pre(
         if (item->type() == Item::FIELD_ITEM &&
             down_cast<Item_field *>(item)->field == f->field) {
           found = true;
+          selected_field_in_group_by |= selected_field != nullptr
+                                            ? selected_field->field == f->field
+                                            : false;
           break;
         }
       }
@@ -6650,7 +6767,7 @@ bool Query_block::decorrelate_derived_scalar_subquery_pre(
           // added to the select list above, is the one whose Field was already
           // there, so use that, lest create_tmp_table gets confused.
           in_select = selected_field;
-          selected_field_in_group_by = true;
+          selected_field_added_to_group_by = true;
         }
         ORDER *o =
             new (thd->mem_root) PT_order_expr(POS(), in_select, ORDER_ASC);
@@ -6660,15 +6777,22 @@ bool Query_block::decorrelate_derived_scalar_subquery_pre(
         o->used = in_select->used_tables();
         // Add at back of list
         group_list.link_in_list(o, &o->next);
+        added_to_group_by.push_back(in_select);
       }
     }
   }
 
   // Wrap the field in the select list in Item_func_any_value if it was not
   // added to group by above.
-  if (!selected_field_in_group_by &&
-      !fields[first_non_hidden]->has_aggregation()) {
-    Item *const old_field = fields[first_non_hidden];
+  Item *const fnh = fields[first_non_hidden];
+  if (!selected_field_added_to_group_by && !selected_field_in_group_by &&
+      !fnh->has_aggregation() &&
+      (fnh->type() == Item::FUNC_ITEM &&
+               down_cast<Item_func *>(fnh)->functype() ==
+                   Item_func::ANY_VALUE_FUNC
+           ? false
+           : true)) {
+    Item *const old_field = fnh;
     Item *func_any = new (thd->mem_root) Item_func_any_value(old_field);
     if (func_any == nullptr) return true;
     if (func_any->fix_fields(thd, &func_any)) return true;
@@ -6713,6 +6837,17 @@ bool Query_block::decorrelate_derived_scalar_subquery_pre(
     derived->derived_query_expression()->types.push_back(cnt);
     *added_card_check = true;
   }
+
+  if (subquery_is_grouped && added_to_group_by.size() > 0) {
+    // For this case (not implicit grouping and correlated), we need to make
+    // sure the derived table has no more than one row of each partition on the
+    // added inner expressions: to do this we add a window function COUNT and
+    // check that it is less than or equal to one.
+    if (setup_count_over_partition(thd, derived, lifted_fields,
+                                   added_to_group_by, hidden_fields))
+      return true;
+    *added_window_card_check = true;
+  }
   return false;
 }
 
@@ -6721,7 +6856,7 @@ bool Query_block::decorrelate_derived_scalar_subquery_pre(
 */
 bool Query_block::decorrelate_derived_scalar_subquery_post(
     THD *thd, Table_ref *derived, Lifted_fields_map *lifted_fields,
-    bool added_card_check) {
+    bool added_card_check, bool added_window_card_check) {
   // We added referenced inner fields to select list, now replace occurrences
   // of such fields in the join condition with derived.<Item_field-n>. Since
   // we have now set up materialization the derived table, we now know the
@@ -6736,7 +6871,6 @@ bool Query_block::decorrelate_derived_scalar_subquery_post(
       Field *field_in_derived = derived->table->field[pos_in_fields];
       auto replaces_field = new (thd->mem_root) Item_field(field_in_derived);
       if (replaces_field == nullptr) return true;
-      assert(replaces_field->data_type() == f->data_type());
 
       Item::Item_field_replacement info(f->field, replaces_field, this);
       Item *new_item = derived->join_cond()->transform(
@@ -6766,7 +6900,29 @@ bool Query_block::decorrelate_derived_scalar_subquery_post(
   if (added_card_check) {
     // Add derived.count(0) <= 1 condition to transformed query block's WHERE
     // condition.
-    const uint cnt_pos_in_fields = lifted_fields->m_field_positions[pos];
+    const uint cnt_pos_in_fields = lifted_fields->m_field_positions[pos++];
+    Field *cnt_f = derived->table->field[cnt_pos_in_fields];
+    auto cnt_i = new (thd->mem_root) Item_field(cnt_f);
+    if (cnt_i == nullptr) return true;
+
+    auto number_1 = new (thd->mem_root) Item_int(1);
+    if (number_1 == nullptr) return true;
+    Item *gt = new (thd->mem_root) Item_func_gt(cnt_i, number_1);
+    if (gt == nullptr) return true;
+    Item *check_card = new (thd->mem_root) Item_func_reject_if(gt);
+    if (check_card == nullptr) return true;
+
+    Item *new_cond = and_items(derived->join_cond(), check_card);
+    if (new_cond == nullptr) return true;
+    new_cond->apply_is_true();
+    if (new_cond->fix_fields(thd, &new_cond)) return true;
+    derived->set_join_cond(new_cond);
+    cond_count++;
+  }
+  if (added_window_card_check) {
+    // Add derived.`count(0) over ()` <= 1 condition to transformed query
+    // block's WHERE condition.
+    const uint cnt_pos_in_fields = lifted_fields->m_field_positions[pos++];
     Field *cnt_f = derived->table->field[cnt_pos_in_fields];
     auto cnt_i = new (thd->mem_root) Item_field(cnt_f);
     if (cnt_i == nullptr) return true;
@@ -6893,12 +7049,13 @@ bool Query_block::transform_subquery_to_derived(
 
   Lifted_fields_map lifted_where_fields;
   bool added_cardinality_check = false;
+  bool added_window_cardinality_check = false;
   if (lifted_where_cond != nullptr) {
     assert(!subs_query_expression->is_set_operation());
     if (subs_query_expression->first_query_block()
             ->decorrelate_derived_scalar_subquery_pre(
                 thd, tl, lifted_where_cond, &lifted_where_fields,
-                &added_cardinality_check))
+                &added_cardinality_check, &added_window_cardinality_check))
       return true;
   }
   // We skip resolve_derived(), as the subquery has already been resolved before
@@ -6908,8 +7065,9 @@ bool Query_block::transform_subquery_to_derived(
 
   if (lifted_where_cond != nullptr) {
     assert(tl->join_cond() == lifted_where_cond);
-    if (decorrelate_derived_scalar_subquery_post(thd, tl, &lifted_where_fields,
-                                                 added_cardinality_check))
+    if (decorrelate_derived_scalar_subquery_post(
+            thd, tl, &lifted_where_fields, added_cardinality_check,
+            added_window_cardinality_check))
       return true;
   }
 
@@ -7064,6 +7222,9 @@ bool Query_block::supported_correlated_scalar_subquery(THD *thd,
 
   // Disallow window functions: transform not valid in their presence.
   if (has_windows()) return false;
+
+  // Disallow ROLLUP
+  if (olap == ROLLUP_TYPE) return false;
 
   const size_t first_selected = CountHiddenFields(fields);
   if (is_implicitly_grouped()) {

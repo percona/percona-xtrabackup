@@ -53,6 +53,7 @@
 #include "scope_guard.h"
 #include "sql-common/json_binary.h"  // json_binary::serialize
 #include "sql-common/json_dom.h"     // Json_dom, Json_wrapper
+#include "sql-common/my_decimal.h"
 #include "sql/create_field.h"
 #include "sql/current_thd.h"
 #include "sql/dd/cache/dictionary_client.h"
@@ -70,8 +71,7 @@
 #include "sql/json_diff.h"  // Json_diff_vector
 #include "sql/key.h"
 #include "sql/log_event.h"  // class Table_map_log_event
-#include "sql/my_decimal.h"
-#include "sql/mysqld.h"  // log_10
+#include "sql/mysqld.h"     // log_10
 #include "sql/protocol.h"
 #include "sql/psi_memory_key.h"
 #include "sql/rpl_rli.h"                // Relay_log_info
@@ -1243,6 +1243,8 @@ enum_field_types Field::field_type_merge(enum_field_types a,
   assert(a != MYSQL_TYPE_INVALID && b != MYSQL_TYPE_INVALID);
   return field_types_merge_rules[field_type2index(a)][field_type2index(b)];
 }
+
+void Field::add_to_cost(CostOfItem *cost) const { cost->AddFieldCost(); }
 
 static Item_result field_types_result_type[FIELDTYPE_NUM] = {
     // MYSQL_TYPE_DECIMAL      MYSQL_TYPE_TINY
@@ -2642,9 +2644,9 @@ longlong Field_decimal::val_int() const {
   int not_used;
   if (is_unsigned())
     return my_strntoull(&my_charset_bin, pointer_cast<const char *>(ptr),
-                        field_length, 10, NULL, &not_used);
+                        field_length, 10, nullptr, &not_used);
   return my_strntoll(&my_charset_bin, pointer_cast<const char *>(ptr),
-                     field_length, 10, NULL, &not_used);
+                     field_length, 10, nullptr, &not_used);
 }
 
 String *Field_decimal::val_str(String *, String *val_ptr) const {
@@ -4002,7 +4004,7 @@ int Field_longlong::cmp(const uchar *a_ptr, const uchar *b_ptr) const {
 size_t Field_longlong::make_sort_key(uchar *to, size_t length) const {
   assert(length == PACK_LENGTH);
 #ifdef WORDS_BIGENDIAN
-  if (table == NULL || !table->s->db_low_byte_first)
+  if (table == nullptr || !table->s->db_low_byte_first)
     copy_integer<true>(to, length, ptr, PACK_LENGTH, is_unsigned());
   else
 #endif
@@ -4265,6 +4267,7 @@ type_conversion_status Field_double::store(longlong nr, bool unsigned_val) {
   appropriately.
   Also ensure that the argument is within [min_value; max_value] where
   min_value == 0 if unsigned_flag is set, else -max_value.
+  Set warnings and nulls accordingly in the field object.
 
   @param[in,out] nr         the real number (FLOAT or DOUBLE) to be truncated
   @param[in]     max_value  the maximum (absolute) value of the real type
@@ -4308,6 +4311,56 @@ Field_real::Truncate_result Field_real::truncate(double *nr, double max_value) {
   } else if (*nr > max_value) {
     *nr = max_value;
     set_warning(Sql_condition::SL_WARNING, ER_WARN_DATA_OUT_OF_RANGE, 1);
+    return TR_POSITIVE_OVERFLOW;
+  }
+
+  return TR_OK;
+}
+
+/**
+  If a field has fixed length, truncate the double argument pointed to by 'nr'
+  appropriately.
+  Also ensure that the argument is within [min_value; max_value] where
+  min_value == 0 if unsigned_flag is set, else -max_value.
+  Const overload, doesn't set warnings or null.
+
+  @param[in,out] nr         the real number (FLOAT or DOUBLE) to be truncated
+  @param[in]     max_value  the maximum (absolute) value of the real type
+
+  @returns truncation result
+*/
+Field_real::Truncate_result Field_real::truncate(double *nr,
+                                                 double max_value) const {
+  if (std::isnan(*nr)) {
+    *nr = 0;
+    return TR_POSITIVE_OVERFLOW;
+  } else if (is_unsigned() && *nr < 0) {
+    *nr = 0;
+    return TR_NEGATIVE_OVERFLOW;
+  }
+
+  if (!not_fixed) {
+    double orig_max_value = max_value;
+    uint order = field_length - dec;
+    uint step = array_elements(log_10) - 1;
+    max_value = 1.0;
+    for (; order > step; order -= step) max_value *= log_10[step];
+    max_value *= log_10[order];
+    max_value -= 1.0 / log_10[dec];
+    max_value = std::min(max_value, orig_max_value);
+
+    /* Check for infinity so we don't get NaN in calculations */
+    if (!std::isinf(*nr)) {
+      double tmp = rint((*nr - floor(*nr)) * log_10[dec]) / log_10[dec];
+      *nr = floor(*nr) + tmp;
+    }
+  }
+
+  if (*nr < -max_value) {
+    *nr = -max_value;
+    return TR_NEGATIVE_OVERFLOW;
+  } else if (*nr > max_value) {
+    *nr = max_value;
     return TR_POSITIVE_OVERFLOW;
   }
 
@@ -5572,7 +5625,7 @@ type_conversion_status Field_year::store(const char *from, size_t len,
 }
 
 type_conversion_status Field_year::store(double nr) {
-  if (nr < 0.0 || nr > MAX_YEAR) {
+  if (nr < 0.0 || nr > static_cast<double>(MAX_YEAR)) {
     Field_year::store(-1LL, false);
     return TYPE_WARN_OUT_OF_RANGE;
   }
@@ -6219,6 +6272,8 @@ uint Field_str::is_equal(const Create_field *new_field) const {
   return IS_EQUAL_PACK_LENGTH;
 }
 
+void Field_str::add_to_cost(CostOfItem *cost) const { cost->AddStrFieldCost(); }
+
 type_conversion_status Field_string::store(longlong nr, bool unsigned_val) {
   char buff[64];
   size_t l;
@@ -6348,6 +6403,11 @@ int Field_string::cmp(const uchar *a_ptr, const uchar *b_ptr) const {
 }
 
 size_t Field_string::make_sort_key(uchar *to, size_t length) const {
+  return make_sort_key(to, length, char_length());
+}
+
+size_t Field_string::make_sort_key(uchar *to, size_t length,
+                                   size_t trunc_pos) const {
   /*
     We don't store explicitly how many bytes long this string is.
     Find out by calling charpos, since just using field_length
@@ -6361,7 +6421,7 @@ size_t Field_string::make_sort_key(uchar *to, size_t length) const {
       field_length,
       field_charset->cset->charpos(
           field_charset, pointer_cast<const char *>(ptr),
-          pointer_cast<const char *>(ptr) + field_length, char_length()));
+          pointer_cast<const char *>(ptr) + field_length, trunc_pos));
 
   if (field_charset->pad_attribute == NO_PAD &&
       !(current_thd->variables.sql_mode & MODE_PAD_CHAR_TO_FULL_LENGTH)) {
@@ -6717,13 +6777,24 @@ int Field_varstring::key_cmp(const uchar *a, const uchar *b) const {
 }
 
 size_t Field_varstring::make_sort_key(uchar *to, size_t length) const {
+  return make_sort_key(to, length, char_length());
+}
+
+size_t Field_varstring::make_sort_key(uchar *to, size_t length,
+                                      size_t trunc_pos) const {
   const int flags =
       (field_charset->pad_attribute == NO_PAD) ? 0 : MY_STRXFRM_PAD_TO_MAXLEN;
 
+  size_t f_length = data_length();
+  const uchar *pos = ptr + length_bytes;
+
+  size_t local_char_length =
+      my_charpos(field_charset, pos, pos + f_length, trunc_pos);
+  f_length = std::min(f_length, local_char_length);
+
   assert(char_length_cache == char_length());
   return field_charset->coll->strnxfrm(field_charset, to, length,
-                                       char_length_cache, ptr + length_bytes,
-                                       data_length(), flags);
+                                       char_length_cache, pos, f_length, flags);
 }
 
 enum ha_base_keytype Field_varstring::key_type() const {
@@ -7280,13 +7351,21 @@ int Field_blob::do_save_field_metadata(uchar *metadata_ptr) const {
 }
 
 size_t Field_blob::make_sort_key(uchar *to, size_t length) const {
-  static const uchar EMPTY_BLOB[1] = {0};
-  const uint32 blob_length = get_length();
+  return make_sort_key(to, length, char_length());
+}
 
+size_t Field_blob::make_sort_key(uchar *to, size_t length,
+                                 size_t trunc_pos) const {
+  static const uchar EMPTY_BLOB[1] = {0};
   const int flags =
       (field_charset->pad_attribute == NO_PAD) ? 0 : MY_STRXFRM_PAD_TO_MAXLEN;
 
+  size_t blob_length = get_length();
   const uchar *blob = blob_length > 0 ? get_blob_data() : EMPTY_BLOB;
+
+  size_t local_char_length =
+      my_charpos(field_charset, blob, blob + blob_length, trunc_pos);
+  blob_length = std::min(blob_length, local_char_length);
 
   return field_charset->coll->strnxfrm(field_charset, to, length, length, blob,
                                        blob_length, flags);
@@ -7644,12 +7723,21 @@ type_conversion_status Field_json::store(const char *from, size_t length,
         my_error(ER_INVALID_JSON_TEXT, MYF(0), parse_err, err_offset,
                  s_err.c_ptr_safe());
       },
-      JsonDocumentDefaultDepthHandler));
+      JsonDepthErrorHandler));
 
   if (dom.get() == nullptr) return TYPE_ERR_BAD_VALUE;
 
-  if (json_binary::serialize(current_thd, dom.get(), &value))
+  if (json_binary::serialize(dom.get(), &value, &JsonDepthErrorHandler,
+                             &JsonKeyTooBigErrorHandler,
+                             &JsonValueTooBigErrorHandler))
     return TYPE_ERR_BAD_VALUE;
+
+  if (value.length() > current_thd->variables.max_allowed_packet) {
+    my_error(ER_WARN_ALLOWED_PACKET_OVERFLOWED, MYF(0),
+             "json_binary::serialize",
+             current_thd->variables.max_allowed_packet);
+    return TYPE_ERR_BAD_VALUE;
+  }
 
   return store_binary(value.ptr(), value.length());
 }
@@ -7742,7 +7830,17 @@ type_conversion_status Field_json::store_json(const Json_wrapper *json) {
   StringBuffer<STRING_BUFFER_USUAL_SIZE> tmpstr;
   String *buffer = json->is_binary_backed_by(&value) ? &tmpstr : &value;
 
-  if (json->to_binary(current_thd, buffer)) return TYPE_ERR_BAD_VALUE;
+  if (json->to_binary(buffer, &JsonDepthErrorHandler,
+                      &JsonKeyTooBigErrorHandler, &JsonValueTooBigErrorHandler,
+                      &InvalidJsonErrorHandler))
+    return TYPE_ERR_BAD_VALUE;
+
+  if (buffer->length() > current_thd->variables.max_allowed_packet) {
+    my_error(ER_WARN_ALLOWED_PACKET_OVERFLOWED, MYF(0),
+             "json_binary::serialize",
+             current_thd->variables.max_allowed_packet);
+    return TYPE_ERR_BAD_VALUE;
+  }
 
   return store_binary(buffer->ptr(), buffer->length());
 }
@@ -7816,7 +7914,7 @@ String *Field_json::val_str(String *buf1, String *) const {
 
   Json_wrapper wr;
   if (val_json(&wr) ||
-      wr.to_string(buf1, true, field_name, JsonDocumentDefaultDepthHandler))
+      wr.to_string(buf1, true, field_name, JsonDepthErrorHandler))
     buf1->length(0);
 
   return buf1;

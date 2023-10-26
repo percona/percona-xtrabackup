@@ -6281,7 +6281,11 @@ Prealloced_array<AccessPath *, 4> ApplyDistinctAndOrder(
         AccessPath *dedup_path = NewRemoveDuplicatesAccessPath(
             thd, root_path, group_items, grouping.GetElements().size());
         CopyBasicProperties(*root_path, dedup_path);
-        // TODO(sgunders): Model the actual reduction in rows somehow.
+
+        dedup_path->set_num_output_rows(EstimateAggregateRows(
+            root_path->num_output_rows(),
+            {group_items, grouping.GetElements().size()}, trace));
+
         dedup_path->cost += kAggregateOneRowCost * root_path->num_output_rows();
         receiver.ProposeAccessPath(dedup_path, &new_root_candidates,
                                    /*obsolete_orderings=*/0, "sort elided");
@@ -6956,7 +6960,8 @@ static void PossiblyAddSargableCondition(THD *thd, Item *item,
     // or stored procedures constant, as we don't want to execute them during
     // optimization.
     const bool can_evaluate = right->const_for_execution() &&
-                              !right->has_subquery() && !right->is_expensive();
+                              !right->has_subquery() &&
+                              !right->cost().IsExpensive();
 
     node->sargable_predicates.push_back(
         {predicate_index, field, right, can_evaluate});
@@ -7295,13 +7300,18 @@ static AccessPath *FindBestQueryPlanInner(THD *thd, Query_block *query_block,
 
   // Get the root candidates. If there is a secondary engine cost hook, there
   // may be no candidates, as the hook may have rejected so many access paths
-  // that we could not build a complete plan. Otherwise, expect at least one
-  // candidate.
+  // that we could not build a complete plan, or the hook may have rejected
+  // the plan as not offloadable.
   if (secondary_engine_cost_hook != nullptr &&
       (!receiver.HasSeen(TablesBetween(0, graph.nodes.size())) ||
        receiver.root_candidates().empty())) {
-    my_error(ER_SECONDARY_ENGINE, MYF(0),
-             "All plans were rejected by the secondary storage engine");
+    const char *reason = get_secondary_engine_fail_reason(thd->lex);
+    if (reason != nullptr) {
+      my_error(ER_SECONDARY_ENGINE, MYF(0), reason);
+    } else {
+      my_error(ER_SECONDARY_ENGINE, MYF(0),
+               "All plans were rejected by the secondary storage engine");
+    }
     return nullptr;
   }
   Prealloced_array<AccessPath *, 4> root_candidates =
@@ -7647,12 +7657,17 @@ static AccessPath *FindBestQueryPlanInner(THD *thd, Query_block *query_block,
 
   if (thd->is_error()) return nullptr;
 
-  if (root_candidates.empty()) {
+  if (secondary_engine_cost_hook != nullptr && root_candidates.empty()) {
     // The secondary engine has rejected so many of the post-processing paths
-    // (e.g., sorting, limit, grouping) that we could not build a complete plan.
-    assert(secondary_engine_cost_hook != nullptr);
-    my_error(ER_SECONDARY_ENGINE, MYF(0),
-             "All plans were rejected by the secondary storage engine");
+    // (e.g., sorting, limit, grouping) that we could not build a complete plan,
+    // or the hook has rejected the plan as not offloadable.
+    const char *reason = get_secondary_engine_fail_reason(thd->lex);
+    if (reason != nullptr) {
+      my_error(ER_SECONDARY_ENGINE, MYF(0), reason);
+    } else {
+      my_error(ER_SECONDARY_ENGINE, MYF(0),
+               "All plans were rejected by the secondary storage engine");
+    }
     return nullptr;
   }
 

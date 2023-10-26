@@ -33,7 +33,6 @@
 #include <vector>
 
 #include "lex_string.h"
-#include "libbinlogevents/include/binlog_event.h"
 #include "map_helpers.h"
 #include "my_bitmap.h"
 #include "my_dbug.h"
@@ -41,6 +40,7 @@
 #include "my_io.h"
 #include "my_psi_config.h"
 #include "my_sys.h"
+#include "mysql/binlog/event/binlog_event.h"
 #include "mysql/components/services/bits/mysql_cond_bits.h"
 #include "mysql/components/services/bits/mysql_mutex_bits.h"
 #include "mysql/components/services/bits/psi_mutex_bits.h"
@@ -926,8 +926,8 @@ class Relay_log_info : public Rpl_info {
     skipping one or more events in the master log that have caused
     errors, and have been manually applied by DBA already.
   */
-  volatile uint32 slave_skip_counter;
-  volatile ulong abort_pos_wait; /* Incremented on change master */
+  std::atomic<uint32> slave_skip_counter;
+  std::atomic<ulong> abort_pos_wait; /* Incremented on change master */
   mysql_mutex_t log_space_lock;
   mysql_cond_t log_space_cond;
 
@@ -1182,7 +1182,7 @@ class Relay_log_info : public Rpl_info {
   */
   bool workers_array_initialized;
 
-  volatile ulong pending_jobs;
+  std::atomic<ulong> pending_jobs;
   mysql_mutex_t pending_jobs_lock;
   mysql_cond_t pending_jobs_cond;
   mysql_mutex_t exit_count_lock;  // mutex of worker exit count
@@ -1222,7 +1222,7 @@ class Relay_log_info : public Rpl_info {
      are experiencing and is used as a parameter to compute a nap time for
      Coordinator in order to avoid reaching WQ limits.
   */
-  volatile long mts_wq_excess_cnt;
+  std::atomic<long> mts_wq_excess_cnt;
   long mts_worker_underrun_level;   // % of WQ size at which W is considered
                                     // hungry
   ulong mts_coordinator_basic_nap;  // C sleeps to avoid WQs overrun
@@ -1274,7 +1274,7 @@ class Relay_log_info : public Rpl_info {
   */
   ulonglong mts_events_assigned;  // number of events (statements) scheduled
   ulonglong mts_groups_assigned;  // number of groups (transactions) scheduled
-  volatile ulong
+  std::atomic<ulong>
       mts_wq_overrun_cnt;   // counter of all mts_wq_excess_cnt increments
   ulong wq_size_waits_cnt;  // number of times C slept due to WQ:s oversize
   /*
@@ -2069,6 +2069,10 @@ class Relay_log_info : public Rpl_info {
     return until_option != nullptr &&
            until_option->is_satisfied_after_dispatching_event();
   }
+  bool is_until_satisfied_all_transactions_read_from_relay_log() {
+    return until_option != nullptr &&
+           until_option->is_satisfied_all_transactions_read_from_relay_log();
+  }
   /**
    Initialize until option object when starting slave.
 
@@ -2189,7 +2193,7 @@ bool is_mts_db_partitioned(Relay_log_info *rli);
   @return true  when the event is already committed transactional DDL
 */
 inline bool is_committed_ddl(Log_event *ev) {
-  return ev->get_type_code() == binary_log::QUERY_EVENT &&
+  return ev->get_type_code() == mysql::binlog::event::QUERY_EVENT &&
          /* has been already committed */
          static_cast<Query_log_event *>(ev)->has_ddl_committed;
 }
@@ -2234,7 +2238,7 @@ inline bool is_atomic_ddl_commit_on_slave(THD *thd) {
              ? (rli->is_transactional() &&
                 /* has not yet committed */
                 (rli->current_event->get_type_code() ==
-                     binary_log::QUERY_EVENT &&
+                     mysql::binlog::event::QUERY_EVENT &&
                  !static_cast<Query_log_event *>(rli->current_event)
                       ->has_ddl_committed) &&
                 /* unless slave binlogger identified non-atomic */

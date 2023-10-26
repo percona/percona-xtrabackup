@@ -22,7 +22,7 @@
 
 INCLUDE(GenerateExportHeader)
 
-IF (NOT PROTOBUF_LITE_LIBRARY)
+IF (NOT TARGET ext::libprotobuf-lite)
   MESSAGE(FATAL_ERROR "Routing plugin requires protobuf-lite library")
 ENDIF()
 
@@ -56,8 +56,9 @@ ADD_LIBRARY(routing SHARED
   connection.cc
   blocked_endpoints.cc
 
-  processor.cc
+  await_client_or_server.cc
   forwarding_processor.cc
+  processor.cc
 
   classic_auth.cc
   classic_auth_cleartext.cc
@@ -79,6 +80,7 @@ ADD_LIBRARY(routing SHARED
   classic_binlog_dump_forwarder.cc
   classic_change_user_forwarder.cc
   classic_clone_forwarder.cc
+  classic_debug_forwarder.cc
   classic_greeting_forwarder.cc
   classic_init_schema_forwarder.cc
   classic_kill_forwarder.cc
@@ -112,10 +114,14 @@ ADD_LIBRARY(routing SHARED
 
   classic_greeting_receiver.cc
 
+  classic_query_param.cc
   classic_session_tracker.cc
 
-  sql_value.cc
   show_warnings_parser.cc
+  sql_splitting_allowed.cc
+  sql_value.cc
+  start_transaction_parser.cc
+  implicit_commit_parser.cc
 
   openssl_msg.cc
 )
@@ -127,7 +133,7 @@ TARGET_LINK_LIBRARIES(routing
   mysql_protocol
   router_lib
   router_mysqlxmessages
-  ${PROTOBUF_LITE_LIBRARY}
+  ext::libprotobuf-lite
   metadata_cache
   connection_pool
   destination_status

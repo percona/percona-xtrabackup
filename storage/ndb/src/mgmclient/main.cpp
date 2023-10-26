@@ -25,6 +25,7 @@
 #include <ndb_global.h>
 #include <ndb_opts.h>
 #include "my_getopt.h"
+#include "portlib/ssl_applink.h"
 
 #include "my_alloc.h"
 
@@ -53,6 +54,7 @@ const char *load_default_groups[]= { "mysql_cluster","ndb_mgm",0 };
 static char *opt_execute_str= 0;
 static char *opt_prompt= 0;
 static unsigned opt_verbose = 1;
+static bool opt_test_tls = true;
 
 static ndb_password_state opt_backup_password_state("backup", nullptr);
 static ndb_password_option opt_backup_password(opt_backup_password_state);
@@ -60,6 +62,12 @@ static ndb_password_from_stdin_option opt_backup_password_from_stdin(
                                           opt_backup_password_state);
 
 static bool opt_encrypt_backup = false;
+
+/* ndb_mgm uses an extended form of the --ndb-mgm-tls enum, which accepts
+   an extra option, "disabled"
+*/
+static const char * tls_names[] = { "relaxed", "strict", "deferred", nullptr };
+static TYPELIB mgm_tls_typelib = { 3 , "TLS requirement", tls_names, nullptr };
 
 static struct my_option my_long_options[] =
 {
@@ -72,6 +80,7 @@ static struct my_option my_long_options[] =
   NdbStdOpt::ndb_nodeid,
   NdbStdOpt::connect_retry_delay,
   NdbStdOpt::connect_retries,
+  NdbStdOpt::tls_search_path,
   NDB_STD_OPT_DEBUG
   { "backup-password", NDB_OPT_NOSHORT, "Encryption password for backup file",
     nullptr, nullptr, nullptr, GET_PASSWORD, OPT_ARG,
@@ -96,6 +105,13 @@ static struct my_option my_long_options[] =
   {"try-reconnect", 't', "Same as --connect-retries",
     &opt_connect_retries, nullptr, nullptr, GET_INT, REQUIRED_ARG,
     12, 0, INT_MAX, nullptr, 0, nullptr},
+  { "ndb-mgm-tls", NDB_OPT_NOSHORT,
+    "MGM client TLS requirement level",
+    &opt_mgm_tls, nullptr, &mgm_tls_typelib, GET_ENUM, REQUIRED_ARG,
+    0, 0, 2, nullptr, 0, nullptr},
+  { "test-tls", NDB_OPT_NOSHORT, "Connect using TLS then exit",
+    &opt_test_tls, nullptr, nullptr, GET_BOOL, NO_ARG,
+    0, 0, 0, nullptr, 0, nullptr},
   NdbStdOpt::end_of_options
 };
 
@@ -137,9 +153,16 @@ read_and_execute(Ndb_mgmclient* com, int try_reconnect)
   return com->execute(line_read, try_reconnect, 1);
 }
 
+int ndb_mgm_main(int, char **);
+
 int main(int argc, char** argv){
   NDB_INIT(argv[0]);
+  int r = ndb_mgm_main(argc, argv);
+  ndb_end(opt_ndb_endinfo ? MY_CHECK_ERROR | MY_GIVE_INFO : 0);
+  return r;
+}
 
+int ndb_mgm_main(int argc, char **argv) {
   Ndb_opts opts(argc, argv, my_long_options, load_default_groups);
   opts.set_usage_funcs(short_usage_sub);
 
@@ -148,7 +171,7 @@ int main(int argc, char** argv){
   opt_debug= "d:t:O,/tmp/ndb_mgm.trace";
 #endif
   if ((ho_error = opts.handle_options()))
-    exit(ho_error);
+    return ho_error;
 
   if (ndb_option::post_process_options())
   {
@@ -157,7 +180,7 @@ int main(int argc, char** argv){
     {
       fprintf(stderr, "Error: backup password: %s\n", err_msg.c_str());
     }
-    exit(2);
+    return 2;
   }
 
   BaseString connect_str(opt_ndb_connectstring);
@@ -172,19 +195,26 @@ int main(int argc, char** argv){
     opt_prompt= 0;
   }
 
-  Ndb_mgmclient* com = new Ndb_mgmclient(connect_str.c_str(),
-                                         "ndb_mgm> ",
-                                         opt_verbose,
-                                         opt_connect_retry_delay);
+  int tls_option = opt_mgm_tls;
+  if(opt_test_tls)
+  {
+    tls_option = CLIENT_TLS_STRICT;
+    opt_verbose = 1;
+  }
+
+  auto com = std::make_unique<Ndb_mgmclient>(connect_str.c_str(),
+                                             "ndb_mgm> ",
+                                             opt_verbose,
+                                             opt_connect_retry_delay,
+                                             opt_tls_search_path,
+                                             tls_option);
   com->set_always_encrypt_backup(opt_encrypt_backup);
   if (opt_backup_password_state.get_password())
   {
     if (com->set_default_backup_password(
-                 opt_backup_password_state.get_password()) == 1)
+            opt_backup_password_state.get_password()) == 1)
     {
       fprintf(stderr, "Error: Failed set default backup password.\n");
-      delete com;
-      ndb_end(opt_ndb_endinfo ? MY_CHECK_ERROR | MY_GIVE_INFO : 0);
       return 2;
     }
   }
@@ -196,6 +226,12 @@ int main(int argc, char** argv){
     prompt_args.append(opt_prompt);
     com->execute(prompt_args.c_str(), opt_connect_retries, 0);
   }
+
+  if (opt_test_tls)
+  {
+    return com->test_tls();
+  }
+
   int ret= 0;
   BaseString histfile;
   if (!opt_execute_str)
@@ -214,7 +250,7 @@ int main(int argc, char** argv){
 #endif
 
     ndbout << "-- NDB Cluster -- Management Client --" << endl;
-    while(read_and_execute(com, opt_connect_retries))
+    while(read_and_execute(com.get(), opt_connect_retries))
       ;
 
 #ifdef HAVE_READLINE
@@ -232,8 +268,6 @@ int main(int argc, char** argv){
   {
     com->execute(opt_execute_str, opt_connect_retries, 0, &ret);
   }
-  delete com;
-  ndb_end(opt_ndb_endinfo ? MY_CHECK_ERROR | MY_GIVE_INFO : 0);
 
   // Don't allow negative return code
   if (ret < 0)

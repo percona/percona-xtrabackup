@@ -32,6 +32,7 @@
 #include <sys/types.h>  // TODO: replace with cstdint
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -743,10 +744,10 @@ class Query_expression {
 
   /**
     If there is an unfinished materialization (see optimize()),
-    contains one element for each query block in this query expression.
+    contains one element for each operand (query block) in this query
+    expression.
    */
-  Mem_root_array<MaterializePathParameters::QueryBlock>
-      m_query_blocks_to_materialize;
+  Mem_root_array<MaterializePathParameters::Operand> m_operands;
 
  private:
   /**
@@ -892,14 +893,12 @@ class Query_expression {
   bool force_create_iterators(THD *thd);
 
   /// See optimize().
-  bool unfinished_materialization() const {
-    return !m_query_blocks_to_materialize.empty();
-  }
+  bool unfinished_materialization() const { return !m_operands.empty(); }
 
   /// See optimize().
-  Mem_root_array<MaterializePathParameters::QueryBlock>
+  Mem_root_array<MaterializePathParameters::Operand>
   release_query_blocks_to_materialize() {
-    return std::move(m_query_blocks_to_materialize);
+    return std::move(m_operands);
   }
 
   /// Set new query result object for this query expression
@@ -1855,8 +1854,8 @@ class Query_block : public Query_term {
   /// using the field's index in a derived table.
   Item *get_derived_expr(uint expr_index);
 
-  MaterializePathParameters::QueryBlock setup_materialize_query_block(
-      AccessPath *childPath, TABLE *dst_table);
+  MaterializePathParameters::Operand setup_materialize_query_block(
+      AccessPath *child_path, TABLE *dst_table) const;
 
   // ************************************************
   // * Members (most of these should not be public) *
@@ -2205,7 +2204,7 @@ class Query_block : public Query_term {
   ///  Build semijoin condition for th query block
   bool build_sj_cond(THD *thd, NESTED_JOIN *nested_join,
                      Query_block *subq_query_block, table_map outer_tables_map,
-                     Item **sj_cond);
+                     Item **sj_cond, bool *simple_const);
   bool decorrelate_condition(Semijoin_decorrelation &sj_decor,
                              Table_ref *join_nest);
 
@@ -2221,12 +2220,17 @@ class Query_block : public Query_term {
                                      Item *lifted_where_cond);
   bool transform_table_subquery_to_join_with_derived(
       THD *thd, Item_exists_subselect *subq_pred);
+  bool setup_count_over_partition(THD *thd, Table_ref *derived,
+                                  Lifted_fields_map *lifted_fields,
+                                  std::deque<Item_field *> &added_to_group_by,
+                                  uint hidden_fields);
   bool decorrelate_derived_scalar_subquery_pre(
       THD *thd, Table_ref *derived, Item *lifted_where,
-      Lifted_fields_map *lifted_where_fields, bool *added_card_check);
+      Lifted_fields_map *lifted_where_fields, bool *added_card_check,
+      bool *added_window_card_check);
   bool decorrelate_derived_scalar_subquery_post(
       THD *thd, Table_ref *derived, Lifted_fields_map *lifted_where_fields,
-      bool added_card_check);
+      bool added_card_check, bool added_window_card_check);
   void replace_referenced_item(Item *const old_item, Item *const new_item);
   void remap_tables(THD *thd);
   void mark_item_as_maybe_null_if_rollup_item(Item *item);
@@ -2866,8 +2870,10 @@ class Query_tables_list {
     @retval nonzero if the statement is a row injection
   */
   inline bool is_stmt_row_injection() const {
-    return binlog_stmt_flags &
-           (1U << (BINLOG_STMT_UNSAFE_COUNT + BINLOG_STMT_TYPE_ROW_INJECTION));
+    constexpr uint32_t shift =
+        static_cast<uint32_t>(BINLOG_STMT_UNSAFE_COUNT) +
+        static_cast<uint32_t>(BINLOG_STMT_TYPE_ROW_INJECTION);
+    return binlog_stmt_flags & (1U << shift);
   }
 
   /**
@@ -2876,10 +2882,11 @@ class Query_tables_list {
     the slave SQL thread.
   */
   inline void set_stmt_row_injection() {
+    constexpr uint32_t shift =
+        static_cast<uint32_t>(BINLOG_STMT_UNSAFE_COUNT) +
+        static_cast<uint32_t>(BINLOG_STMT_TYPE_ROW_INJECTION);
     DBUG_TRACE;
-    binlog_stmt_flags |=
-        (1U << (BINLOG_STMT_UNSAFE_COUNT + BINLOG_STMT_TYPE_ROW_INJECTION));
-    return;
+    binlog_stmt_flags |= (1U << shift);
   }
 
   enum enum_stmt_accessed_table {
@@ -3755,7 +3762,7 @@ struct LEX : public Query_tables_list {
   bool using_hypergraph_optimizer = false;
   LEX_STRING name;
   char *help_arg;
-  char *to_log; /* For PURGE MASTER LOGS TO */
+  char *to_log; /* For PURGE BINARY LOGS TO */
   const char *x509_subject, *x509_issuer, *ssl_cipher;
   // Widcard from SHOW ... LIKE <wildcard> statements.
   String *wild;

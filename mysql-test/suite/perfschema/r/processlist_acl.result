@@ -30,7 +30,7 @@ flush privileges;
 show grants for user_all@localhost;
 Grants for user_all@localhost
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, RELOAD, SHUTDOWN, PROCESS, FILE, REFERENCES, INDEX, ALTER, SHOW DATABASES, SUPER, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, REPLICATION SLAVE, REPLICATION CLIENT, CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, CREATE USER, EVENT, TRIGGER, CREATE TABLESPACE, CREATE ROLE, DROP ROLE ON *.* TO `user_all`@`localhost`
-GRANT APPLICATION_PASSWORD_ADMIN,AUDIT_ABORT_EXEMPT,AUDIT_ADMIN,AUTHENTICATION_POLICY_ADMIN,BACKUP_ADMIN,BINLOG_ADMIN,BINLOG_ENCRYPTION_ADMIN,CLONE_ADMIN,CONNECTION_ADMIN,ENCRYPTION_KEY_ADMIN,FIREWALL_EXEMPT,FLUSH_OPTIMIZER_COSTS,FLUSH_STATUS,FLUSH_TABLES,FLUSH_USER_RESOURCES,GROUP_REPLICATION_ADMIN,GROUP_REPLICATION_STREAM,INNODB_REDO_LOG_ARCHIVE,INNODB_REDO_LOG_ENABLE,PASSWORDLESS_USER_ADMIN,PERSIST_RO_VARIABLES_ADMIN,REPLICATION_APPLIER,REPLICATION_SLAVE_ADMIN,RESOURCE_GROUP_ADMIN,RESOURCE_GROUP_USER,ROLE_ADMIN,SENSITIVE_VARIABLES_OBSERVER,SERVICE_CONNECTION_ADMIN,SESSION_VARIABLES_ADMIN,SET_USER_ID,SHOW_ROUTINE,SYSTEM_USER,SYSTEM_VARIABLES_ADMIN,TABLE_ENCRYPTION_ADMIN,TELEMETRY_LOG_ADMIN,XA_RECOVER_ADMIN ON *.* TO `user_all`@`localhost`
+GRANT ALLOW_NONEXISTENT_DEFINER,APPLICATION_PASSWORD_ADMIN,AUDIT_ABORT_EXEMPT,AUDIT_ADMIN,AUTHENTICATION_POLICY_ADMIN,BACKUP_ADMIN,BINLOG_ADMIN,BINLOG_ENCRYPTION_ADMIN,CLONE_ADMIN,CONNECTION_ADMIN,ENCRYPTION_KEY_ADMIN,FIREWALL_EXEMPT,FLUSH_OPTIMIZER_COSTS,FLUSH_STATUS,FLUSH_TABLES,FLUSH_USER_RESOURCES,GROUP_REPLICATION_ADMIN,GROUP_REPLICATION_STREAM,INNODB_REDO_LOG_ARCHIVE,INNODB_REDO_LOG_ENABLE,PASSWORDLESS_USER_ADMIN,PERSIST_RO_VARIABLES_ADMIN,REPLICATION_APPLIER,REPLICATION_SLAVE_ADMIN,RESOURCE_GROUP_ADMIN,RESOURCE_GROUP_USER,ROLE_ADMIN,SENSITIVE_VARIABLES_OBSERVER,SERVICE_CONNECTION_ADMIN,SESSION_VARIABLES_ADMIN,SET_ANY_DEFINER,SHOW_ROUTINE,SYSTEM_USER,SYSTEM_VARIABLES_ADMIN,TABLE_ENCRYPTION_ADMIN,TELEMETRY_LOG_ADMIN,XA_RECOVER_ADMIN ON *.* TO `user_all`@`localhost`
 
 show grants for user_none@localhost;
 Grants for user_none@localhost
@@ -71,6 +71,8 @@ update test.t1 set s1 = s1 + 1, s2 = s2 + 2;;
 
 # New SHOW PROCESSLIST
 set @@global.performance_schema_show_processlist = on;
+Warnings:
+Warning	4166	'@@performance_schema_show_processlist' is deprecated and will be removed in a future release. When it is removed, SHOW PROCESSLIST will always use the performance schema implementation.
 
 SHOW FULL PROCESSLIST;
 Id	User	Host	db	Command	Time	State	Info
@@ -114,12 +116,17 @@ ID	USER	HOST	DB	COMMAND	TIME	STATE	INFO
 <Id>	user_none	<Host>	test	<Command>	<Time>	<State>	NULL
 <Id>	user_none	<Host>	test	<Command>	<Time>	<State>	NULL
 <Id>	user_none	<Host>	test	Query	<Time>	<State>	update test.t1 set s1 = s1 + 1, s2 = s2 + 2
+Warnings:
+<Id>	1287	<Host>
 
 # Legacy SHOW PROCESSLIST
 set @@global.performance_schema_show_processlist = off;
+Warnings:
+Warning	4166	'@@performance_schema_show_processlist' is deprecated and will be removed in a future release. When it is removed, SHOW PROCESSLIST will always use the performance schema implementation.
 
 SHOW FULL PROCESSLIST;
 Id	User	Host	db	Command	Time	State	Info
+<Id>	1287	<Host>
 <Id>	event_scheduler	<Host>	NULL	<Command>	<Time>	<State>	NULL
 <Id>	root	<Host>	test	<Command>	<Time>	<State>	NULL
 <Id>	user_00	<Host>	test	<Command>	<Time>	<State>	NULL
@@ -130,6 +137,7 @@ Id	User	Host	db	Command	Time	State	Info
 <Id>	user_none	<Host>	test	<Command>	<Time>	<State>	NULL
 <Id>	user_none	<Host>	test	<Command>	<Time>	<State>	NULL
 <Id>	user_none	<Host>	test	Query	<Time>	<State>	update test.t1 set s1 = s1 + 1, s2 = s2 + 2
+Warnings:
 
 # Performance Schema processlist table
 
@@ -160,6 +168,8 @@ ID	USER	HOST	DB	COMMAND	TIME	STATE	INFO
 <Id>	user_none	<Host>	test	<Command>	<Time>	<State>	NULL
 <Id>	user_none	<Host>	test	<Command>	<Time>	<State>	NULL
 <Id>	user_none	<Host>	test	Query	<Time>	<State>	update test.t1 set s1 = s1 + 1, s2 = s2 + 2
+Warnings:
+<Id>	1287	<Host>
 
 
 ### Execute SHOW PROCESSLIST with no SELECT and no PROCESS privileges
@@ -167,6 +177,8 @@ ID	USER	HOST	DB	COMMAND	TIME	STATE	INFO
 
 # New SHOW PROCESSLIST
 set @@global.performance_schema_show_processlist = on;
+Warnings:
+Warning	4166	'@@performance_schema_show_processlist' is deprecated and will be removed in a future release. When it is removed, SHOW PROCESSLIST will always use the performance schema implementation.
 
 # Connection con_none_1
 
@@ -194,6 +206,8 @@ ID	USER	HOST	DB	COMMAND	TIME	STATE	INFO
 <Id>	user_none	<Host>	test	<Command>	<Time>	<State>	NULL
 <Id>	user_none	<Host>	test	<Command>	<Time>	<State>	NULL
 <Id>	user_none	<Host>	test	Query	<Time>	<State>	update test.t1 set s1 = s1 + 1, s2 = s2 + 2
+Warnings:
+<Id>	1287	<Host>
 
 # Confirm that only processes from user_none are visible
 
@@ -204,15 +218,19 @@ Expect 0
 
 # Legacy SHOW PROCESSLIST
 set @@global.performance_schema_show_processlist = off;
+Warnings:
+Warning	4166	'@@performance_schema_show_processlist' is deprecated and will be removed in a future release. When it is removed, SHOW PROCESSLIST will always use the performance schema implementation.
 
 # Connection con_none_1
 
 SHOW FULL PROCESSLIST;
 Id	User	Host	db	Command	Time	State	Info
+<Id>	1287	<Host>
 <Id>	user_none	<Host>	test	<Command>	<Time>	<State>	NULL
 <Id>	user_none	<Host>	test	<Command>	<Time>	<State>	NULL
 <Id>	user_none	<Host>	test	Query	<Time>	<State>	SHOW FULL PROCESSLIST
 <Id>	user_none	<Host>	test	Query	<Time>	<State>	update test.t1 set s1 = s1 + 1, s2 = s2 + 2
+Warnings:
 
 # Performance Schema processlist table
 
@@ -231,6 +249,8 @@ ID	USER	HOST	DB	COMMAND	TIME	STATE	INFO
 <Id>	user_none	<Host>	test	<Command>	<Time>	<State>	NULL
 <Id>	user_none	<Host>	test	<Command>	<Time>	<State>	NULL
 <Id>	user_none	<Host>	test	Query	<Time>	<State>	update test.t1 set s1 = s1 + 1, s2 = s2 + 2
+Warnings:
+<Id>	1287	<Host>
 
 
 ### Clean up ###
@@ -254,3 +274,5 @@ drop user user_all@localhost;
 drop user user_none@localhost;
 
 set @@global.performance_schema_show_processlist = @save_processlist;
+Warnings:
+Warning	4166	'@@performance_schema_show_processlist' is deprecated and will be removed in a future release. When it is removed, SHOW PROCESSLIST will always use the performance schema implementation.

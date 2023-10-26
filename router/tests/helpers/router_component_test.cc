@@ -30,6 +30,7 @@
 #include "filesystem_utils.h"
 #include "mock_server_testutils.h"
 #include "random_generator.h"
+#include "router_component_testutils.h"
 
 using namespace std::chrono_literals;
 using namespace std::string_literals;
@@ -87,7 +88,15 @@ bool RouterComponentTest::wait_log_contains(const ProcessWrapper &router,
   return found;
 }
 
-std::string RouterComponentBootstrapTest::my_hostname;
+void RouterComponentTest::check_log_contains(
+    const ProcessWrapper &router, const std::string &expected_string,
+    size_t expected_occurences /*=1*/) {
+  const std::string log_content = router.get_logfile_content();
+  EXPECT_EQ(expected_occurences,
+            count_str_occurences(log_content, expected_string))
+      << log_content;
+}
+
 constexpr const char RouterComponentBootstrapTest::kRootPassword[];
 
 const RouterComponentBootstrapTest::OutputResponder
@@ -118,12 +127,27 @@ void RouterComponentBootstrapTest::bootstrap_failover(
     const std::vector<std::string> &extra_router_options) {
   std::string cluster_name("mycluster");
 
-  std::vector<std::pair<std::string, unsigned>> gr_members;
+  std::vector<GRNode> gr_nodes;
+  std::vector<ClusterNode> cluster_nodes;
   for (const auto &mock_server_config : mock_server_configs) {
-    gr_members.emplace_back(mock_server_config.ip, mock_server_config.port);
+    gr_nodes.emplace_back(mock_server_config.port);
+    cluster_nodes.emplace_back(mock_server_config.port);
   }
 
   std::vector<std::tuple<ProcessWrapper &, unsigned int>> mock_servers;
+
+  // shutdown the mock-servers when bootstrap is done.
+  Scope_guard guard{[&mock_servers]() {
+    // send a shutdown to all mocks
+    for (auto [proc, port] : mock_servers) {
+      proc.send_clean_shutdown_event();
+    }
+
+    // ... then wait for them all to finish.
+    for (auto [proc, port] : mock_servers) {
+      proc.wait_for_exit();
+    }
+  }};
 
   // start the mocks
   for (const auto &mock_server_config : mock_server_configs) {
@@ -138,9 +162,9 @@ void RouterComponentBootstrapTest::bootstrap_failover(
         launch_mysql_server_mock(mock_server_config.js_filename, port,
                                  EXIT_SUCCESS, false, http_port),
         port);
-    set_mock_bootstrap_data(http_port, cluster_name, gr_members,
-                            metadata_version,
-                            mock_server_config.cluster_specific_id);
+    set_mock_metadata(http_port, mock_server_config.cluster_specific_id,
+                      gr_nodes, 0, cluster_nodes, 0, 0, false, "127.0.0.1", "",
+                      metadata_version, cluster_name);
   }
 
   std::vector<std::string> router_cmdline;
@@ -148,11 +172,9 @@ void RouterComponentBootstrapTest::bootstrap_failover(
   if (router_options.size()) {
     router_cmdline = router_options;
   } else {
-    router_cmdline.emplace_back("--bootstrap=" + gr_members[0].first + ":" +
-                                std::to_string(gr_members[0].second));
+    router_cmdline.emplace_back("--bootstrap=127.0.0.1:" +
+                                std::to_string(cluster_nodes[0].classic_port));
 
-    router_cmdline.emplace_back("--report-host");
-    router_cmdline.emplace_back(my_hostname);
     router_cmdline.emplace_back("--connect-timeout");
     router_cmdline.emplace_back("1");
     router_cmdline.emplace_back("-d");

@@ -122,6 +122,11 @@ static bool populate_table(THD *thd, LEX *lex) {
 
   if (unit->execute(thd)) return true;
 
+  if (thd->m_current_query_cost >
+      thd->variables.secondary_engine_cost_threshold) {
+    notify_plugins_after_select(thd, lex->m_sql_cmd);
+  }
+
   return false;
 }
 
@@ -356,6 +361,7 @@ bool Sql_cmd_create_table::execute(THD *thd) {
 
     Query_result_create *result;
     if (!query_expression->is_prepared()) {
+      const Prepare_error_tracker tracker(thd);
       const Prepared_stmt_arena_holder ps_arena_holder(thd);
       result = new (thd->mem_root)
           Query_result_create(create_table, &query_block->fields,
@@ -405,8 +411,11 @@ bool Sql_cmd_create_table::execute(THD *thd) {
     res = populate_table(thd, lex);
 
     // Count the number of statements offloaded to a secondary storage engine.
-    if (using_secondary_storage_engine() && lex->unit->is_executed())
+    if (using_secondary_storage_engine() && lex->unit->is_executed()) {
       ++thd->status_var.secondary_engine_execution_count;
+      global_aggregated_stats.get_shard(thd->thread_id())
+          .secondary_engine_execution_count++;
+    }
 
     if (lex->is_ignore() || thd->is_strict_mode()) thd->pop_internal_handler();
     lex->cleanup(false);
@@ -462,7 +471,7 @@ bool Sql_cmd_create_table::execute(THD *thd) {
 }
 
 const MYSQL_LEX_CSTRING *
-Sql_cmd_create_table::eligible_secondary_storage_engine() const {
+Sql_cmd_create_table::eligible_secondary_storage_engine(THD *) const {
   // Now check if the opened tables are available in a secondary
   // storage engine. Only use the secondary tables if all the tables
   // have a secondary tables, and they are all in the same secondary

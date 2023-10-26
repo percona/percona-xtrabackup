@@ -537,6 +537,11 @@ bool copy_field_info(THD *thd, Item *orig_expr, Item *cloned_expr) {
                            Field_info(context, field->table_ref, depended_from,
                                       field->cached_table, field->field)))
                      return true;
+                   // Clear dependent_from and context so that they are ready
+                   // for another dive that passes over Item_ref objects down
+                   // to the leaf Item_field object.
+                   depended_from = nullptr;
+                   context = nullptr;
                  }
                  return false;
                }))
@@ -629,7 +634,6 @@ static Item *parse_expression(THD *thd, Item *item, Query_block *query_block) {
       if (inner_item->type() == Item::PARAM_ITEM) {
         thd->lex->reparse_derived_table_params_at.push_back(
             down_cast<Item_param *>(inner_item)->pos_in_query);
-        return false;
       }
       return false;
     });
@@ -639,6 +643,28 @@ static Item *parse_expression(THD *thd, Item *item, Query_block *query_block) {
   // Get a newly created item from parser
   const bool result = parse_sql(thd, &parser_state, nullptr);
 
+  // If a statement is being re-prepared, then all the parameters
+  // that are cloned above need to be synced with the original
+  // parameters that are specified in the query. In case of
+  // re-prepare original parameters would have been assigned
+  // a value and therefore the types too. When fix_fields() is
+  // later called for the cloned expression, resolver would be
+  // able to assign the type correctly for the cloned parameter
+  // if it is synced with it's master.
+  if (parser_state.result != nullptr) {
+    List_iterator_fast<Item_param> it(thd->lex->param_list);
+    WalkItem(parser_state.result, enum_walk::POSTFIX, [&it](Item *inner_item) {
+      if (inner_item->type() == Item::PARAM_ITEM) {
+        Item_param *master;
+        while ((master = it++)) {
+          if (master->pos_in_query ==
+              down_cast<Item_param *>(inner_item)->pos_in_query)
+            master->sync_clones();
+        }
+      }
+      return false;
+    });
+  }
   thd->lex->reparse_derived_table_condition = false;
   // lex_end() would try to destroy sphead if set. So we reset it.
   thd->lex->set_sp_current_parsing_ctx(nullptr);
@@ -677,6 +703,10 @@ Item *resolve_expression(THD *thd, Item *item, Query_block *query_block) {
                               << thd->lex->current_query_block()->nest_level;
 
   const bool ret = item->fix_fields(thd, &item);
+  // For items with params, propagate the default data type.
+  if (item->data_type() == MYSQL_TYPE_INVALID &&
+      item->propagate_type(thd, item->default_data_type()))
+    return nullptr;
   // Restore original state back
   thd->want_privilege = save_old_privilege;
   thd->lex->set_current_query_block(saved_current_query_block);

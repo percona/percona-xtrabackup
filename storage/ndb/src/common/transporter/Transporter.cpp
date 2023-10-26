@@ -84,6 +84,8 @@ Transporter::Transporter(TransporterRegistry &t_reg,
     isMgmConnection(_isMgmConnection),
     m_connected(false),
     m_type(_type),
+    m_require_tls(false),
+    m_encrypted(false),
     reportFreq(4096),
     receiveCount(0),
     receiveSize(0),
@@ -145,9 +147,7 @@ Transporter::Transporter(TransporterRegistry &t_reg,
     m_socket_client= nullptr;
   else
   {
-    m_socket_client= new SocketClient(new SocketAuthSimple("ndbd",
-                                                           "ndbd passwd"));
-
+    m_socket_client= new SocketClient(new SocketAuthSimple());
     m_socket_client->set_connect_timeout(m_timeOutMillis);
   }
 
@@ -161,6 +161,16 @@ Transporter::Transporter(TransporterRegistry &t_reg,
 #endif
   
   DBUG_VOID_RETURN;
+}
+
+void
+Transporter::use_tls_client_auth()
+{
+  delete m_socket_client;
+  SocketAuthTls * authTls =
+    new SocketAuthTls(& m_transporter_registry.m_tls_keys, m_require_tls);
+  m_socket_client= new SocketClient(authTls);
+  m_socket_client->set_connect_timeout(m_timeOutMillis);
 }
 
 Transporter::~Transporter()
@@ -201,6 +211,7 @@ Transporter::configure(const TransporterConfiguration* conf)
 {
   if (configure_derived(conf) &&
       conf->s_port == m_s_port &&
+      conf->requireTls == m_require_tls &&
       strcmp(conf->remoteHostName, remoteHostName) == 0 &&
       strcmp(conf->localHostName, localHostName) == 0 &&
       conf->remoteNodeId == remoteNodeId &&
@@ -260,12 +271,26 @@ Transporter::connect_server(NdbSocket & sockfd,
   DBUG_RETURN(true);
 }
 
+inline static void
+tls_error(int code)
+{
+  g_eventLogger->error("TLS error %d '%s'", code, TlsKeyError::message(code));
+}
+
+bool
+Transporter::connect_client_mgm(int port)
+{
+  require(!isPartOfMultiTransporter());
+  NdbSocket secureSocket =
+    m_transporter_registry.connect_ndb_mgmd(remoteHostName, port);
+  return connect_client(secureSocket);
+}
+
 
 bool
 Transporter::connect_client()
 {
   NdbSocket secureSocket;
-  ndb_socket_t sockfd;
   DBUG_ENTER("Transporter::connect_client");
 
   require(!isMultiTransporter());
@@ -286,9 +311,7 @@ Transporter::connect_client()
 
   if(isMgmConnection)
   {
-    require(!isPartOfMultiTransporter());
-    sockfd= m_transporter_registry.connect_ndb_mgmd(remoteHostName, port);
-    secureSocket.init_from_new(sockfd);
+    DBUG_RETURN(connect_client_mgm(port));
   }
   else
   {
@@ -335,6 +358,46 @@ Transporter::connect_client()
       }
     }
     m_socket_client->connect(secureSocket, remote_addr);
+
+   /** Socket Authentication */
+    int auth = m_socket_client->authenticate(secureSocket);
+    g_eventLogger->debug("Transporter client auth result: %d [%s]", auth,
+                         SocketAuthenticator::error(auth));
+    if(auth < SocketAuthenticator::AuthOk)
+    {
+      DBUG_RETURN(false);
+    }
+
+    if(auth == SocketAuthTls::negotiate_tls_ok) // Initiate TLS
+    {
+      struct ssl_ctx_st * ctx = m_transporter_registry.m_tls_keys.ctx();
+      struct ssl_st * ssl = NdbSocket::get_client_ssl(ctx);
+      if(ssl == nullptr)
+      {
+        tls_error(TlsKeyError::no_local_cert);
+        DBUG_RETURN(false);
+      }
+      if(! secureSocket.associate(ssl))
+      {
+        tls_error(TlsKeyError::openssl_error);
+        NdbSocket::free_ssl(ssl);
+        DBUG_RETURN(false);
+      }
+      if(! secureSocket.do_tls_handshake())
+      {
+        tls_error(TlsKeyError::authentication_failure);
+        DBUG_RETURN(false);
+      }
+
+      /* Certificate Authorization */
+      auth = TlsKeyManager::check_server_host_auth(secureSocket,
+                                                   remoteHostName);
+      if(auth)
+      {
+        tls_error(auth);
+        DBUG_RETURN(false);
+      }
+    }
   }
 
   DBUG_RETURN(connect_client(secureSocket));

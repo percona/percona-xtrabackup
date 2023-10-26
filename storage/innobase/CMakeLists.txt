@@ -34,6 +34,9 @@ ADD_DEFINITIONS(-DPFS_DIRECT_CALL)
 IF(MSVC AND NOT WIN32_CLANG)
   # Treat warnings as errors on MSVC for InnoDB
   ADD_COMPILE_OPTIONS("/WX")
+  # Remove /W3 from the flags to avoid the redefined option warning
+  STRING(REPLACE "/W3" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  STRING(REPLACE "/W3" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
   # Add warnings from level 4
   ADD_COMPILE_OPTIONS("/W4")
   # Disable C4324: structure was padded due to __declspec(align())
@@ -88,6 +91,7 @@ SET(INNOBASE_SOURCES
   buf/buf0dump.cc
   buf/buf0flu.cc
   btr/btr0load.cc
+  btr/btr0mtib.cc
   buf/buf0lru.cc
   buf/buf0rea.cc
   clone/clone0api.cc
@@ -112,6 +116,7 @@ SET(INNOBASE_SOURCES
   dict/dict0upgrade.cc
   ddl/ddl0buffer.cc
   ddl/ddl0builder.cc
+  ddl/ddl0bulk.cc
   ddl/ddl0ctx.cc
   ddl/ddl0ddl.cc
   ddl/ddl0fts.cc
@@ -257,7 +262,7 @@ SET(INNOBASE_SOURCES
   ut/ut0wqueue.cc)
 
 # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=98753
-IF(MY_COMPILER_IS_GNU AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11)
+IF(MY_COMPILER_IS_GNU AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 11)
   ADD_COMPILE_FLAGS(
     pars/pars0grm.cc
     COMPILE_FLAGS "-Wno-free-nonheap-object")

@@ -32,6 +32,7 @@ ENDIF()
 # Xcode >= 14 makes noise about sprintf, so silence:
 IF(APPLE)
   STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-deprecated-declarations")
+  STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-shorten-64-to-32")
 ENDIF()
 
 # Inhibit warning messages
@@ -41,6 +42,14 @@ IF(MSVC AND NOT WIN32_CLANG)
 ELSE()
   STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-sign-compare")
   STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-unused-function")
+ENDIF()
+
+MY_CHECK_CXX_COMPILER_WARNING("-Wzero-as-null-pointer-constant" HAS_WARN_FLAG)
+IF(HAS_WARN_FLAG)
+  # For WIN32_CLANG, replace it, since we do not use ICU_LINUX_COMPILE_OPTIONS.
+  STRING(REPLACE "-Wzero-as-null-pointer-constant" ""
+    CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  LIST(APPEND ICU_LINUX_COMPILE_OPTIONS "${HAS_WARN_FLAG}")
 ENDIF()
 
 MY_CHECK_CXX_COMPILER_WARNING("-Wmissing-profile" HAS_MISSING_PROFILE)

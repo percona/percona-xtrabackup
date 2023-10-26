@@ -48,6 +48,10 @@ if (mysqld.global.router_ro_classic_port === undefined) {
   mysqld.global.router_ro_classic_port = "";
 }
 
+if (mysqld.global.router_rw_split_classic_port === undefined) {
+  mysqld.global.router_rw_split_classic_port = "";
+}
+
 if (mysqld.global.router_rw_x_port === undefined) {
   mysqld.global.router_rw_x_port = "";
 }
@@ -85,8 +89,8 @@ var nodes = function(host, port_and_state) {
     return [
       current_value[0],
       host,
-      current_value[0],
       current_value[1],
+      current_value[2],
     ];
   });
 };
@@ -107,6 +111,7 @@ var options = {
   router_version: mysqld.global.router_version,
   router_rw_classic_port: mysqld.global.router_rw_classic_port,
   router_ro_classic_port: mysqld.global.router_ro_classic_port,
+  router_rw_split_classic_port: mysqld.global.router_rw_split_classic_port,
   router_rw_x_port: mysqld.global.router_rw_x_port,
   router_ro_x_port: mysqld.global.router_ro_x_port,
   router_metadata_user: mysqld.global.router_metadata_user,

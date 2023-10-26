@@ -59,6 +59,9 @@ FOREACH(test_file
     test_logging_eventlog.cc
     test_master_key_reader_writer.cc
     test_metadata_ttl.cc
+    test_cluster_metadata.cc
+    test_node_attributes.cc
+    test_gr_state.cc
     test_pidfile.cc
     test_read_replica.cc
     test_rest_api.cc
@@ -76,6 +79,7 @@ FOREACH(test_file
     test_routing_retry.cc
     test_routing_strategy.cc
     test_routing_sharing.cc
+    test_routing_splitting.cc
     test_sd_notify.cc
     test_shutdown.cc
     test_state_file.cc
@@ -101,7 +105,7 @@ add_test_file(${CMAKE_CURRENT_SOURCE_DIR}/${test_file}
   mysql_protocol
   mysqlxclient_lite
   mysqlxmessages_lite
-  ${PROTOBUF_LITE_LIBRARY}
+  ext::libprotobuf-lite
 
   DEPENDS
   http_auth_backend
@@ -137,7 +141,7 @@ add_router_test_file(${CMAKE_CURRENT_SOURCE_DIR}/${test_file}
   LIB_DEPENDS
   mysqlxclient_lite
   mysqlxmessages_lite
-  ${PROTOBUF_LITE_LIBRARY}
+  ext::libprotobuf-lite
 
   DEPENDS
   http_auth_backend

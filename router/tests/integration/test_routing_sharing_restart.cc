@@ -404,7 +404,7 @@ class SharedRouter {
     // wait for the connections appear in the pool.
     if (param.can_share()) {
       ASSERT_NO_ERROR(wait_for_idle_server_connections(
-          std::min(num_destinations, pool_size_), 1s));
+          std::min(num_destinations, pool_size_), 10s));
     }
   }
 
@@ -557,6 +557,8 @@ class TestEnv : public ::testing::Environment {
         if (s->mysqld_failed_to_start()) {
           GTEST_SKIP() << "mysql-server failed to start.";
         }
+        s->setup_mysqld_accounts();
+        s->install_plugins();
       }
     }
 
@@ -776,7 +778,7 @@ class ShareConnectionTestWithRestartedServer
       }
     }
 
-    ASSERT_NO_ERROR(shared_router()->wait_for_idle_server_connections(0, 1s));
+    ASSERT_NO_ERROR(shared_router()->wait_for_idle_server_connections(0, 10s));
   }
 
  private:
@@ -839,8 +841,9 @@ class ShareConnectionTestTemp
       if (s == nullptr || s->mysqld_failed_to_start()) {
         GTEST_SKIP() << "failed to start mysqld";
       } else {
-        s->flush_privileges();       // reset the auth-cache
-        s->close_all_connections();  // reset the router's connection-pool
+        s->flush_privileges();  // reset the auth-cache
+        ASSERT_NO_ERROR(
+            s->close_all_connections());  // reset the router's connection-pool
         s->reset_to_defaults();
       }
     }
@@ -900,7 +903,7 @@ TEST_P(ShareConnectionTestWithRestartedServer,
     // wait until connection is in the pool.
     if (can_share) {
       ASSERT_NO_ERROR(shared_router()->wait_for_idle_server_connections(
-          std::min(ndx + 1, kNumServers), 1s));
+          std::min(ndx + 1, kNumServers), 10s));
     }
   }
 
@@ -999,7 +1002,6 @@ TEST_P(ShareConnectionTestWithRestartedServer,
             case 8:   // deprecated
             case 10:  // process-info
             case 11:  // connect
-            case 13:  // debug
             case 15:  // time
             case 16:  // delayed insert
             case cmd_byte<
@@ -1080,7 +1082,7 @@ TEST_P(ShareConnectionTestWithRestartedServer,
     // wait until connection is in the pool.
     if (can_share) {
       ASSERT_NO_ERROR(shared_router()->wait_for_idle_server_connections(
-          std::min(ndx + 1, kNumServers), 1s));
+          std::min(ndx + 1, kNumServers), 10s));
     }
   }
 
@@ -1159,7 +1161,6 @@ TEST_P(ShareConnectionTestWithRestartedServer,
         case 8:   // deprecated
         case 10:  // process-info
         case 11:  // connect
-        case 13:  // debug
         case 15:  // time
         case 16:  // delayed insert
         case cmd_byte<classic_protocol::message::client::ChangeUser>():  // 17
@@ -1202,8 +1203,8 @@ TEST_P(ShareConnectionTestWithRestartedServer,
         case cmd_byte<classic_protocol::message::client::BinlogDump>():  // 18
         case cmd_byte<
             classic_protocol::message::client::BinlogDumpGtid>():  // 30
-
-          expected_error_code = 1227;  // query was empty
+        case 13:                                                   // debug
+          expected_error_code = 1227;  // access denied; SUPER is needed.
           break;
         case cmd_byte<
             classic_protocol::message::client::RegisterReplica>():  // 21
@@ -1278,7 +1279,7 @@ TEST_P(ShareConnectionTestWithRestartedServer,
 
   if (can_share) {
     SCOPED_TRACE("// wait until connection is pooled.");
-    ASSERT_NO_ERROR(shared_router()->wait_for_idle_server_connections(1, 1s));
+    ASSERT_NO_ERROR(shared_router()->wait_for_idle_server_connections(1, 10s));
 
     SCOPED_TRACE("// force a close of the connections in the pool");
 
@@ -1323,7 +1324,8 @@ TEST_P(ShareConnectionTestWithRestartedServer,
     EXPECT_EQ(my_port, *my_port_num_res);
 
     if (can_share) {
-      ASSERT_NO_ERROR(shared_router()->wait_for_idle_server_connections(1, 1s));
+      ASSERT_NO_ERROR(
+          shared_router()->wait_for_idle_server_connections(1, 10s));
 
       this->wait_for_connections_to_server_expired(my_port);
     }
@@ -1449,7 +1451,7 @@ TEST_P(ShareConnectionTestWithRestartedServer,
   }
 
   if (can_share) {
-    ASSERT_NO_ERROR(shared_router()->wait_for_idle_server_connections(1, 1s));
+    ASSERT_NO_ERROR(shared_router()->wait_for_idle_server_connections(1, 10s));
   }
 
   {
@@ -1487,7 +1489,7 @@ TEST_P(ShareConnectionTestWithRestartedServer,
   }
 
   if (can_share) {
-    ASSERT_NO_ERROR(shared_router()->wait_for_idle_server_connections(1, 1s));
+    ASSERT_NO_ERROR(shared_router()->wait_for_idle_server_connections(1, 10s));
   }
 
   // stop the first router and start another again.
@@ -1610,7 +1612,8 @@ TEST_P(ShareConnectionTestWithRestartedServer,
     my_port = *my_port_num_res;
 
     if (can_share) {
-      ASSERT_NO_ERROR(shared_router()->wait_for_idle_server_connections(1, 1s));
+      ASSERT_NO_ERROR(
+          shared_router()->wait_for_idle_server_connections(1, 10s));
 
       ASSERT_NO_FATAL_FAILURE(
           this->wait_for_connections_to_server_expired(my_port));
@@ -1740,7 +1743,8 @@ TEST_P(ShareConnectionTestWithRestartedServer,
     my_port = *my_port_num_res;
 
     if (can_share) {
-      ASSERT_NO_ERROR(shared_router()->wait_for_idle_server_connections(1, 1s));
+      ASSERT_NO_ERROR(
+          shared_router()->wait_for_idle_server_connections(1, 10s));
     }
 
     // reconnects

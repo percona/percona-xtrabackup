@@ -36,7 +36,6 @@
 #include <utility>
 
 #include "ft_global.h"
-#include "libbinlogevents/include/table_id.h"
 #include "m_string.h"
 #include "map_helpers.h"
 #include "mf_wcomp.h"  // wild_one, wild_many
@@ -55,6 +54,7 @@
 #include "my_systime.h"
 #include "my_table_map.h"
 #include "my_thread_local.h"
+#include "mysql/binlog/event/table_id.h"
 #include "mysql/components/services/bits/mysql_cond_bits.h"
 #include "mysql/components/services/bits/psi_bits.h"
 #include "mysql/components/services/bits/psi_cond_bits.h"
@@ -129,9 +129,10 @@
 #include "sql/sql_class.h"        // THD
 #include "sql/sql_const.h"
 #include "sql/sql_data_change.h"
-#include "sql/sql_db.h"       // check_schema_readonly
-#include "sql/sql_error.h"    // Sql_condition
-#include "sql/sql_handler.h"  // mysql_ha_flush_tables
+#include "sql/sql_db.h"        // check_schema_readonly
+#include "sql/sql_error.h"     // Sql_condition
+#include "sql/sql_executor.h"  // unwrap_rollup_group
+#include "sql/sql_handler.h"   // mysql_ha_flush_tables
 #include "sql/sql_lex.h"
 #include "sql/sql_list.h"
 #include "sql/sql_parse.h"    // is_update_query
@@ -823,6 +824,7 @@ TABLE_SHARE *get_table_share(THD *thd, const char *db, const char *table_name,
         share->table_category =
             get_table_category(share->db, share->table_name);
         thd->status_var.opened_shares++;
+        global_aggregated_stats.get_shard(thd->thread_id()).opened_shares++;
         open_table_err = false;
       }
     } else {
@@ -1875,7 +1877,7 @@ bool close_temporary_tables(THD *thd) {
     to avoid the splitting if a slave server reads from this binlog.
   */
 
-  /* Better add "if exists", in case a RESET MASTER has been done */
+  /* Add "if exists", in case a RESET BINARY LOGS AND GTIDS has been done */
   const char stub[] = "DROP /*!40005 TEMPORARY */ TABLE IF EXISTS ";
   const uint stub_len = sizeof(stub) - 1;
   char buf_trans[256], buf_non_trans[256];
@@ -3218,6 +3220,7 @@ retry_share : {
     table->file->ha_extra(HA_EXTRA_RESET_STATE);
 
     thd->status_var.table_open_cache_hits++;
+    global_aggregated_stats.get_shard(thd->thread_id()).table_open_cache_hits++;
     goto table_found;
   } else if (share) {
     /*
@@ -3468,6 +3471,7 @@ share_found:
     tc->unlock();
   }
   thd->status_var.table_open_cache_misses++;
+  global_aggregated_stats.get_shard(thd->thread_id()).table_open_cache_misses++;
 
 table_found:
   table->mdl_ticket = mdl_ticket;
@@ -3631,7 +3635,7 @@ TABLE *find_table_for_mdl_upgrade(THD *thd, const char *db,
     time).
 
 */
-static Table_id last_table_id;
+static mysql::binlog::event::Table_id last_table_id;
 
 void assign_new_table_id(TABLE_SHARE *share) {
   DBUG_TRACE;
@@ -6667,8 +6671,21 @@ err:
   statement, and if so, replace the opened tables with their secondary
   counterparts.
 
+  The secondary engine state is set according to these rules:
+  - If secondary engine operation is turned off, set state PRIMARY_ONLY
+  - If secondary engine operation is forced:
+      If operation can be evaluated in secondary engine, set state SECONDARY,
+      otherwise set state PRIMARY_ONLY.
+  - Otherwise, secondary engine state remains unchanged.
+
+  If state is SECONDARY, secondary engine tables are opened, unless there
+  is some property about the query or the environment that prevents this,
+  in which case the primary tables remain open. The caller must notice this
+  and issue exceptions according to its policy.
+
   @param thd       thread handler
   @param flags     bitmap of flags to pass to open_table
+
   @return true if an error is raised, false otherwise
 */
 static bool open_secondary_engine_tables(THD *thd, uint flags) {
@@ -6678,27 +6695,46 @@ static bool open_secondary_engine_tables(THD *thd, uint flags) {
   // The previous execution context should have been destroyed.
   assert(lex->secondary_engine_execution_context() == nullptr);
 
-  // If use of secondary engines has been disabled for the statement,
-  // there is nothing to do.
-  if (sql_cmd == nullptr || sql_cmd->secondary_storage_engine_disabled())
-    return false;
+  // Save value of forced secondary engine, as it is not sufficiently persistent
+  thd->set_secondary_engine_forced(thd->variables.use_secondary_engine ==
+                                   SECONDARY_ENGINE_FORCED);
 
-  // If the user has requested the use of a secondary storage engine
-  // for this statement, skip past the initial optimization for the
-  // primary storage engine and go straight to the secondary engine.
+  // If use of primary engine is requested, set state accordingly
+  if (thd->variables.use_secondary_engine == SECONDARY_ENGINE_OFF) {
+    thd->set_secondary_engine_optimization(
+        Secondary_engine_optimization::PRIMARY_ONLY);
+    return false;
+  }
+  // Statements without Sql_cmd representations are for primary engine only:
+  if (sql_cmd == nullptr) {
+    thd->set_secondary_engine_optimization(
+        Secondary_engine_optimization::PRIMARY_ONLY);
+    return false;
+  }
+  // If use of a secondary storage engine is requested for this statement,
+  // skip past the initial optimization for the primary storage engine and
+  // go straight to the secondary engine.
   if (thd->secondary_engine_optimization() ==
           Secondary_engine_optimization::PRIMARY_TENTATIVELY &&
-      thd->variables.use_secondary_engine == SECONDARY_ENGINE_FORCED) {
-    thd->set_secondary_engine_optimization(
-        Secondary_engine_optimization::SECONDARY);
-    mysql_thread_set_secondary_engine(true);
-    mysql_statement_set_secondary_engine(thd->m_statement_psi, true);
+      thd->is_secondary_engine_forced()) {
+    if ((lex->sql_command == SQLCOM_SELECT && lex->table_count >= 1) ||
+        ((lex->sql_command == SQLCOM_INSERT_SELECT ||
+          lex->sql_command == SQLCOM_CREATE_TABLE) &&
+         lex->table_count >= 2)) {
+      thd->set_secondary_engine_optimization(
+          Secondary_engine_optimization::SECONDARY);
+      mysql_thread_set_secondary_engine(true);
+      mysql_statement_set_secondary_engine(thd->m_statement_psi, true);
+    } else {
+      thd->set_secondary_engine_optimization(
+          Secondary_engine_optimization::PRIMARY_ONLY);
+    }
   }
-
   // Only open secondary engine tables if use of a secondary engine
-  // has been requested.
-  if (thd->secondary_engine_optimization() !=
-      Secondary_engine_optimization::SECONDARY)
+  // has been requested, and access has not been disabled previously.
+  if (sql_cmd->secondary_storage_engine_disabled() ||
+      thd->secondary_engine_optimization() !=
+          Secondary_engine_optimization::SECONDARY)
     return false;
 
   // If the statement cannot be executed in a secondary engine because
@@ -6707,7 +6743,7 @@ static bool open_secondary_engine_tables(THD *thd, uint flags) {
   // future executions of the statement, since these properties will
   // not change between executions.
   const LEX_CSTRING *secondary_engine =
-      sql_cmd->eligible_secondary_storage_engine();
+      sql_cmd->eligible_secondary_storage_engine(thd);
   const plugin_ref secondary_engine_plugin =
       secondary_engine == nullptr
           ? nullptr
@@ -8263,12 +8299,12 @@ bool find_item_in_list(THD *thd, Item *find, mem_root_deque<Item *> *items,
           unaliased_counter = i;
         }
       }
-    } else if (find_ident == nullptr || find_ident->table_name == nullptr) {
-      if (item->type() == Item::FUNC_ITEM &&
-          down_cast<const Item_func *>(item)->functype() ==
-              Item_func::ROLLUP_GROUP_ITEM_FUNC) {
-        item = down_cast<Item_rollup_group_item *>(item)->inner_item();
-      }
+    } else if (find_ident == nullptr || find_ident->table_name == nullptr ||
+               is_rollup_group_wrapper(item)) {
+      // Unwrap rollup wrappers, if any
+      item = unwrap_rollup_group(item);
+      find = unwrap_rollup_group(find);
+
       if (find_ident != nullptr && item->item_name.eq_safe(find->item_name)) {
         *found = &*it;
         *counter = i;
@@ -8307,15 +8343,6 @@ bool find_item_in_list(THD *thd, Item *find, mem_root_deque<Item *> *items,
         *found = &*it;
         *counter = i;
         *resolution = RESOLVED_IGNORING_ALIAS;
-        break;
-      }
-    } else if (item->type() == Item::FUNC_ITEM &&
-               down_cast<const Item_func *>(item)->functype() ==
-                   Item_func::ROLLUP_GROUP_ITEM_FUNC) {
-      if (find_ident != nullptr && item->item_name.eq_safe(find->item_name)) {
-        *found = &*it;
-        *counter = i;
-        *resolution = RESOLVED_AGAINST_ALIAS;
         break;
       }
     }

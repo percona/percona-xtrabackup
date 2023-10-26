@@ -38,7 +38,7 @@
 #include "mysql/harness/utility/string.h"  // mysql_harness::join
 #include "mysqlrouter/utils.h"             // set_prompt_password
 #include "print_version.h"                 // build_version
-#include "router_config.h"                 // MYSQL_ROUTER_NAME
+#include "router_config.h"                 // MYSQL_ROUTER_PACKAGE_NAME
 #include "welcome_copyright_notice.h"      // ORACLE_WELCOME_COPYRIGHT_NOTICE
 
 constexpr const char kAppExeFileName[]{"mysqlrouter_passwd"};
@@ -97,7 +97,7 @@ static std::string format_desc_opt(const Option &opt) {
   auto val = opt.arg;
   return join(std::accumulate(
                   opt.opts.begin(), opt.opts.end(), std::vector<std::string>(),
-                  [&val](std::vector<std::string> &acc, std::string cur) {
+                  [&val](std::vector<std::string> acc, std::string cur) {
                     acc.push_back(cur + (val.empty() ? "" : " " + val));
 
                     return acc;

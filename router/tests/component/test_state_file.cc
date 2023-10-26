@@ -75,7 +75,7 @@ using JsonStringBuffer =
 constexpr auto kTTL = 100ms;
 }  // namespace
 
-class StateFileTest : public RouterComponentTest {
+class StateFileTest : public RouterComponentBootstrapTest {
  protected:
   void SetUp() override {
     RouterComponentTest::SetUp();
@@ -1126,9 +1126,7 @@ TEST_F(StateFileDirectoryBootstrapTest, DirectoryBootstrapTest) {
   std::vector<std::string> router_cmdline{
       "--bootstrap=localhost:" + std::to_string(metadata_server_port), "-d",
       temp_test_dir.name()};
-  auto &router = ProcessManager::launch_router(
-      router_cmdline, EXIT_SUCCESS, true, false, -1s,
-      RouterComponentBootstrapTest::kBootstrapOutputResponder);
+  auto &router = launch_router_for_bootstrap(router_cmdline, EXIT_SUCCESS);
 
   ASSERT_NO_FATAL_FAILURE(check_exit_code(router, EXIT_SUCCESS));
 
@@ -1136,7 +1134,7 @@ TEST_F(StateFileDirectoryBootstrapTest, DirectoryBootstrapTest) {
   // what the bootstrap server has reported
   const std::string state_file = temp_test_dir.name() + "/data/state.json";
   check_state_file(state_file, ClusterType::GR_V1, "cluster-specific-id",
-                   {5500, 5510, 5520}, 0, "localhost");
+                   {5500, 5510, 5520});
 
   // check that static file has a proper reference to the dynamic file
   const std::string conf_content =
@@ -1185,9 +1183,7 @@ TEST_F(StateFileSystemBootstrapTest, SystemBootstrapTest) {
   SCOPED_TRACE("// Bootstrap against our metadata server");
   std::vector<std::string> router_cmdline{"--bootstrap=localhost:" +
                                           std::to_string(metadata_server_port)};
-  auto &router = ProcessManager::launch_router(
-      router_cmdline, EXIT_SUCCESS, true, false, -1s,
-      RouterComponentBootstrapTest::kBootstrapOutputResponder);
+  auto &router = launch_router_for_bootstrap(router_cmdline, EXIT_SUCCESS);
 
   ASSERT_NO_FATAL_FAILURE(check_exit_code(router, EXIT_SUCCESS));
 
@@ -1197,7 +1193,7 @@ TEST_F(StateFileSystemBootstrapTest, SystemBootstrapTest) {
       RouterSystemLayout::tmp_dir_ + "/stage/var/lib/mysqlrouter/state.json";
 
   check_state_file(state_file, ClusterType::GR_V1, "cluster-specific-id",
-                   {5500, 5510, 5520}, 0, "localhost");
+                   {5500, 5510, 5520});
 }
 
 #endif  // SKIP_BOOTSTRAP_SYSTEM_DEPLOYMENT_TESTS

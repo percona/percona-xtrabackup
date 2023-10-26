@@ -24,11 +24,11 @@
 
 #include <stddef.h>
 
-#include "libbinlogevents/include/compression/factory.h"
-#include "libbinlogevents/include/control_events.h"  // Transaction_payload_event
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_sqlcommand.h"
+#include "mysql/binlog/event/compression/factory.h"
+#include "mysql/binlog/event/control_events.h"  // Transaction_payload_event
 #include "sql/binlog/group_commit/bgc_ticket_manager.h"  // Bgc_ticket_manager
 #include "sql/binlog_ostream.h"
 #include "sql/psi_memory_resource.h"  // memory_resource
@@ -195,8 +195,10 @@ Last_used_gtid_tracker_ctx::Last_used_gtid_tracker_ctx() {
 
 Last_used_gtid_tracker_ctx::~Last_used_gtid_tracker_ctx() = default;
 
-void Last_used_gtid_tracker_ctx::set_last_used_gtid(const Gtid &gtid) {
+void Last_used_gtid_tracker_ctx::set_last_used_gtid(const Gtid &gtid,
+                                                    const rpl_sid &sid) {
   (*m_last_used_gtid).set(gtid.sidno, gtid.gno);
+  m_last_used_sid.copy_from(sid);
 }
 
 void Last_used_gtid_tracker_ctx::get_last_used_gtid(Gtid &gtid) {
@@ -204,17 +206,23 @@ void Last_used_gtid_tracker_ctx::get_last_used_gtid(Gtid &gtid) {
   gtid.gno = (*m_last_used_gtid).gno;
 }
 
-Transaction_compression_ctx::Transaction_compression_ctx(PSI_memory_key key)
-    : m_managed_buffer_sequence(Grow_calculator_t(), psi_memory_resource(key)) {
+void Last_used_gtid_tracker_ctx::get_last_used_sid(rpl_sid &sid) {
+  m_last_used_sid.copy_to(sid.bytes);
 }
+
+Transaction_compression_ctx::Transaction_compression_ctx(PSI_memory_key key)
+    : m_managed_buffer_memory_resource(psi_memory_resource(key)),
+      m_managed_buffer_sequence(Grow_calculator_t(),
+                                m_managed_buffer_memory_resource) {}
 
 Transaction_compression_ctx::Compressor_ptr_t
 Transaction_compression_ctx::get_compressor(THD *thd) {
-  auto ctype = (binary_log::transaction::compression::type)
+  auto ctype = (mysql::binlog::event::compression::type)
                    thd->variables.binlog_trx_compression_type;
 
   if (m_compressor == nullptr || (m_compressor->get_type_code() != ctype)) {
-    m_compressor = Compressor_ptr_t(Factory_t::build_compressor(ctype));
+    m_compressor = Compressor_ptr_t(
+        Factory_t::build_compressor(ctype, m_managed_buffer_memory_resource));
   }
   return m_compressor;
 }

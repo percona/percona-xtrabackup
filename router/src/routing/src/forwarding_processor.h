@@ -27,6 +27,7 @@
 
 #include <chrono>
 
+#include "classic_connection_base.h"
 #include "processor.h"
 
 /**
@@ -71,6 +72,38 @@ class ForwardingProcessor : public Processor {
       bool noflush = false);
 
   /**
+   * check of the capabilities of the source and the destination are the same
+   * for this message.
+   *
+   * @param src_protocol the source protocol state
+   * @param dst_protocol the destination protocol state
+   * @param msg the message that shall be forwarded
+   *
+   * @retval true if the msg can be forwarded as is.
+   */
+  template <class T>
+  static bool message_can_be_forwarded_as_is(ClassicProtocolState *src_protocol,
+                                             ClassicProtocolState *dst_protocol,
+                                             const T &msg [[maybe_unused]]) {
+    const auto mask = classic_protocol::Codec<T>::depends_on_capabilities();
+
+    return (src_protocol->shared_capabilities() & mask) ==
+           (dst_protocol->shared_capabilities() & mask);
+  }
+
+  /**
+   * adjust the end-of-columns packet.
+   *
+   * if source and destination don't have the same CLIENT_DEPRECATE_EOF, the Eof
+   * packet has to be add/removed between columns and rows.
+   *
+   * @param no_flush if the packet is forwarded, don't force a send as there is
+   * more data coming.
+   */
+  stdx::expected<Processor::Result, std::error_code>
+  skip_or_inject_end_of_columns(bool no_flush = false);
+
+  /**
    * move the server connection to the pool.
    */
   stdx::expected<bool, std::error_code> pool_server_connection();
@@ -96,6 +129,13 @@ class ForwardingProcessor : public Processor {
    */
   stdx::expected<Processor::Result, std::error_code> mysql_reconnect_start(
       TraceEvent *parent_event);
+
+  /**
+   * handle error-code of a failed receive() from the server-socket and check
+   * the status of the client socket.
+   */
+  stdx::expected<Result, std::error_code>
+  recv_server_failed_and_check_client_socket(std::error_code ec);
 
   /**
    * send a Error msg based on the reconnect_error().

@@ -29,7 +29,6 @@
 #include <algorithm>
 #include <regex>
 
-#include "libbinlogevents/include/binlog_event.h"
 #include "mutex_lock.h"  // Mutex_lock
 #include "my_bitmap.h"
 #include "my_dbug.h"
@@ -37,6 +36,7 @@
 #include "my_sqlcommand.h"
 #include "my_systime.h"
 #include "my_thread.h"
+#include "mysql/binlog/event/binlog_event.h"
 #include "mysql/components/services/bits/psi_bits.h"
 #include "mysql/components/services/bits/psi_stage_bits.h"
 #include "mysql/components/services/log_builtins.h"
@@ -135,8 +135,8 @@ Relay_log_info::Relay_log_info(bool is_slave_recovery,
       save_temporary_tables(nullptr),
       mi(nullptr),
       error_on_rli_init_info(false),
-      transaction_parser(
-          Transaction_boundary_parser::TRX_BOUNDARY_PARSER_APPLIER),
+      transaction_parser(mysql::binlog::event::Transaction_boundary_parser::
+                             TRX_BOUNDARY_PARSER_APPLIER),
       group_relay_log_pos(0),
       event_relay_log_number(0),
       event_relay_log_pos(0),
@@ -256,7 +256,8 @@ Relay_log_info::Relay_log_info(bool is_slave_recovery,
       log files.
     */
     if (channel_map.is_group_replication_channel_name(param_channel, true)) {
-      relay_log.relay_log_checksum_alg = binary_log::BINLOG_CHECKSUM_ALG_OFF;
+      relay_log.relay_log_checksum_alg =
+          mysql::binlog::event::BINLOG_CHECKSUM_ALG_OFF;
     }
   }
   gtid_monitoring_info = new Gtid_monitoring_info();
@@ -273,8 +274,10 @@ void Relay_log_info::init_workers(ulong n_workers) {
     Parallel slave parameters initialization is done regardless
     whether the feature is or going to be active or not.
   */
-  mts_groups_assigned = mts_events_assigned = pending_jobs = wq_size_waits_cnt =
-      0;
+  mts_groups_assigned = 0;
+  mts_events_assigned = 0;
+  pending_jobs = 0;
+  wq_size_waits_cnt = 0;
   mts_wq_excess_cnt = mts_wq_no_underrun_cnt = mts_wq_overfill_cnt = 0;
   mts_total_wait_overlap = 0;
   mts_total_wait_worker_avail = 0;
@@ -617,17 +620,15 @@ int Relay_log_info::wait_for_pos(THD *thd, String *log_name, longlong log_pos,
                   &stage_waiting_for_the_replica_thread_to_advance_position,
                   &old_stage);
   /*
-     This function will abort when it notices that some CHANGE MASTER or
-     RESET MASTER has changed the master info.
-     To catch this, these commands modify abort_pos_wait ; We just monitor
-     abort_pos_wait and see if it has changed.
-     Why do we have this mechanism instead of simply monitoring slave_running
-     in the loop (we do this too), as CHANGE MASTER/RESET SLAVE require that
-     the SQL thread be stopped?
-     This is because if someones does:
-     STOP SLAVE;CHANGE MASTER/RESET SLAVE; START SLAVE;
-     the change may happen very quickly and we may not notice that
-     slave_running briefly switches between 1/0/1.
+     This function will abort when it notices that some CHANGE REPLICATION
+     SOURCE or RESET BINARY LOGS AND GTIDS has changed the master info. To catch
+     this, these commands modify abort_pos_wait ; We just monitor abort_pos_wait
+     and see if it has changed. Why do we have this mechanism instead of simply
+     monitoring slave_running in the loop (we do this too), as CHANGE
+     MASTER/RESET SLAVE require that the SQL thread be stopped? This is because
+     if someones does: STOP REPLICA;CHANGE REPLICATION SOURCE/RESET REPLICA;
+     START REPLICA; the change may happen very quickly and we may not notice
+     that slave_running briefly switches between 1/0/1.
   */
   init_abort_pos_wait = abort_pos_wait;
 
@@ -670,7 +671,7 @@ int Relay_log_info::wait_for_pos(THD *thd, String *log_name, longlong log_pos,
     int cmp_result = 0;
 
     DBUG_PRINT("info", ("init_abort_pos_wait: %ld  abort_pos_wait: %ld",
-                        init_abort_pos_wait, abort_pos_wait));
+                        init_abort_pos_wait, abort_pos_wait.load()));
     DBUG_PRINT("info", ("group_source_log_name: '%s'  pos: %lu",
                         group_master_log_name, (ulong)group_master_log_pos));
 
@@ -829,14 +830,14 @@ int Relay_log_info::wait_for_gtid_set(THD *thd, const Gtid_set *wait_gtid_set,
                     &old_stage);
   /*
      This function will abort when it notices that some CHANGE MASTER or
-     RESET MASTER has changed the master info.
+     RESET BINARY LOGS AND GTIDS has changed the master info.
      To catch this, these commands modify abort_pos_wait ; We just monitor
      abort_pos_wait and see if it has changed.
      Why do we have this mechanism instead of simply monitoring slave_running
-     in the loop (we do this too), as CHANGE MASTER/RESET SLAVE require that
-     the SQL thread be stopped?
+     in the loop (we do this too), as CHANGE REPLICATION SOURCE/RESET REPLICA
+     require that the SQL thread be stopped?
      This is because if someones does:
-     STOP SLAVE;CHANGE MASTER/RESET SLAVE; START SLAVE;
+     STOP REPLICA;CHANGE REPLICATION SOURCE/RESET REPLICA; START REPLICA;
      the change may happen very quickly and we may not notice that
      slave_running briefly switches between 1/0/1.
   */
@@ -846,7 +847,7 @@ int Relay_log_info::wait_for_gtid_set(THD *thd, const Gtid_set *wait_gtid_set,
   while (!thd->killed && init_abort_pos_wait == abort_pos_wait &&
          slave_running) {
     DBUG_PRINT("info", ("init_abort_pos_wait: %ld  abort_pos_wait: %ld",
-                        init_abort_pos_wait, abort_pos_wait));
+                        init_abort_pos_wait, abort_pos_wait.load()));
 
     // wait for master update, with optional timeout.
 
@@ -2240,9 +2241,9 @@ bool Relay_log_info::read_info(Rpl_info_handler *from) {
   if (lines >=
       LINES_IN_RELAY_LOG_INFO_WITH_ASSIGN_GTIDS_TO_ANONYMOUS_TRANSACTIONS_VALUE) {
     char temp_assign_gtids_to_anonymous_transactions_value
-        [binary_log::Uuid::TEXT_LENGTH + 1] = {0};
+        [mysql::gtid::Uuid::TEXT_LENGTH + 1] = {0};
     status = from->get_info(temp_assign_gtids_to_anonymous_transactions_value,
-                            binary_log::Uuid::TEXT_LENGTH + 1, "");
+                            mysql::gtid::Uuid::TEXT_LENGTH + 1, "");
     if (status == Rpl_info_handler::enum_field_get_status::FAILURE) return true;
 
     if (temp_assign_gtids_to_anonymous_transactions >
@@ -2752,13 +2753,6 @@ int Relay_log_info::init_until_option(THD *thd,
 
         option = until_g = new Until_after_gtids(this);
         until_condition = UNTIL_SQL_AFTER_GTIDS;
-        if (opt_replica_parallel_workers != 0) {
-          opt_replica_parallel_workers = 0;
-          push_warning_printf(
-              thd, Sql_condition::SL_NOTE, ER_MTA_FEATURE_IS_NOT_SUPPORTED,
-              ER_THD(thd, ER_MTA_FEATURE_IS_NOT_SUPPORTED), "UNTIL condtion",
-              "Replica is started in the sequential execution mode.");
-        }
       }
       ret = until_g->init(master_param->gtid);
     } else if (master_param->until_after_gaps) {
@@ -2929,7 +2923,8 @@ void Relay_log_info::set_group_source_log_start_end_pos(const Log_event *ev) {
                 ev->common_header->data_written, group_source_log_start_pos));
   }
 
-  if (ev->ends_group() || (ev->get_type_code() == binary_log::QUERY_EVENT)) {
+  if (ev->ends_group() ||
+      (ev->get_type_code() == mysql::binlog::event::QUERY_EVENT)) {
     group_source_log_seen_start_pos = false;
     group_source_log_end_pos = ev->common_header->log_pos;
     DBUG_PRINT("exit",
@@ -3348,7 +3343,7 @@ bool Assign_gtids_to_anonymous_transactions_info::set_info(
       global_sid_lock->rdlock();
       m_sidno = global_sid_map->add_sid(rename_sid);
       global_sid_lock->unlock();
-      char normalized_uuid[binary_log::Uuid::TEXT_LENGTH + 1];
+      char normalized_uuid[mysql::gtid::Uuid::TEXT_LENGTH + 1];
       rename_sid.to_string(normalized_uuid);
       m_value.assign(normalized_uuid);
       break;
@@ -3507,7 +3502,8 @@ bool Applier_security_context_guard::has_access(
     for (auto tpl : extra_privileges) {
       std::tie(priv, table, event) = tpl;
 
-      if (event->get_general_type_code() == binary_log::DELETE_ROWS_EVENT) {
+      if (event->get_general_type_code() ==
+          mysql::binlog::event::DELETE_ROWS_EVENT) {
         if (this->m_current->is_table_blocked(priv, table)) return false;
       } else {
         std::vector<std::string> columns;
@@ -3538,9 +3534,10 @@ void Applier_security_context_guard::extract_columns_to_check(
     std::vector<std::string> &columns) const {
   MY_BITMAP const *bitmap{nullptr};
 
-  if (event->get_general_type_code() == binary_log::WRITE_ROWS_EVENT)
+  if (event->get_general_type_code() == mysql::binlog::event::WRITE_ROWS_EVENT)
     bitmap = event->get_cols();
-  else if (event->get_general_type_code() == binary_log::UPDATE_ROWS_EVENT)
+  else if (event->get_general_type_code() ==
+           mysql::binlog::event::UPDATE_ROWS_EVENT)
     bitmap = event->get_cols_ai();
   else
     return;

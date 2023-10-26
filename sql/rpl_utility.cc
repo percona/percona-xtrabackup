@@ -29,10 +29,10 @@
 #include <utility>
 
 #include "lex_string.h"
-#include "libbinlogevents/export/binary_log_funcs.h"
 #include "my_byteorder.h"
 #include "my_dbug.h"
 #include "my_sys.h"
+#include "mysql/binlog/event/export/binary_log_funcs.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/my_loglevel.h"
 #include "mysql/service_mysql_alloc.h"
@@ -44,14 +44,15 @@ struct TYPELIB;
 
 #include <algorithm>
 
-#include "libbinlogevents/include/binlog_event.h"  // checksum_crv32
 #include "m_string.h"
 #include "my_base.h"
 #include "my_bitmap.h"
+#include "mysql/binlog/event/binlog_event.h"  // checksum_crv32
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/psi/psi_memory.h"
 #include "mysql/strings/m_ctype.h"
 #include "mysqld_error.h"
+#include "sql-common/my_decimal.h"
 #include "sql/changestreams/misc/replicated_columns_view_factory.h"  // get_columns_view
 #include "sql/create_field.h"
 #include "sql/dd/dd.h"          // get_dictionary
@@ -60,8 +61,7 @@ struct TYPELIB;
 #include "sql/field.h"          // Field
 #include "sql/log.h"
 #include "sql/log_event.h"  // Log_event
-#include "sql/my_decimal.h"
-#include "sql/mysqld.h"  // replica_type_conversions_options
+#include "sql/mysqld.h"     // replica_type_conversions_options
 #include "sql/psi_memory_key.h"
 #include "sql/rpl_replica.h"
 #include "sql/rpl_rli.h"    // Relay_log_info
@@ -77,7 +77,7 @@ struct TYPELIB;
 #include "template_utils.h"  // delete_container_pointers
 #include "typelib.h"
 
-using binary_log::checksum_crc32;
+using mysql::binlog::event::checksum_crc32;
 using std::max;
 using std::min;
 using std::unique_ptr;
@@ -686,7 +686,7 @@ TABLE *table_def::create_conversion_table(THD *thd, Relay_log_info *rli,
                                   unsigned_flag,  // unsigned_flag
                                   0);
     field_def->charset = default_charset_info;
-    field_def->interval = 0;
+    field_def->interval = nullptr;
   }
 
   for (auto it = fields->begin(); it.filtered_pos() < cols_to_create; ++it) {

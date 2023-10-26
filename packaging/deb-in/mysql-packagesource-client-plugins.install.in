@@ -21,10 +21,12 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 # plugins
-usr/lib/mysql/plugin/authentication_ldap_sasl_client.so
+
 usr/lib/mysql/plugin/authentication_fido_client.so
 usr/lib/mysql/plugin/authentication_kerberos_client.so
+usr/lib/mysql/plugin/authentication_ldap_sasl_client.so
 usr/lib/mysql/plugin/authentication_oci_client.so
+usr/lib/mysql/plugin/authentication_webauthn_client.so
 usr/lib/mysql/private/libfido2.*
 @DEB_INSTALL_CLIENT_PLUGINS@
 # legal

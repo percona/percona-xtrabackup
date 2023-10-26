@@ -193,11 +193,12 @@ MYSQL_ADD_PLUGIN(group_replication
   LINK_LIBRARIES
   ext::lz4
   ext::zlib
-  ${SSL_LIBRARIES}
-  ${PROTOBUF_LITE_LIBRARY}
+  OpenSSL::SSL OpenSSL::Crypto
+  ext::libprotobuf-lite
   ${GR_PROTOBUF_LITE_LIB}
   mysqlgcs
   extra::rapidjson
+  mysql_gtid
   MODULE_ONLY
   MODULE_OUTPUT_NAME "group_replication"
   )

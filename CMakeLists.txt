@@ -109,7 +109,9 @@ ELSEIF(UNIX)
 ENDIF()
 
 # CMake 3.5 is needed for TARGET_SOURCES(... $<TARGET_OBJECTS:${LIB}_objlib>)
-CMAKE_MINIMUM_REQUIRED(VERSION 3.5.1)
+# CMake 3.7 is needeed for VERSION_GREATER_EQUAL
+# For the set of currently supported platforms, we can bump up to:
+CMAKE_MINIMUM_REQUIRED(VERSION 3.14.6)
 
 # Will set GIT_EXECUTABLE and GIT_FOUND
 FIND_PACKAGE(Git)
@@ -653,12 +655,6 @@ IF(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   SET(MY_COMPILER_IS_CLANG 1)
 ELSEIF(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
   SET(MY_COMPILER_IS_GNU 1)
-  IF(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9 AND
-      NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
-    SET(MY_COMPILER_IS_GNU_8 1)
-  ENDIF()
-ELSEIF(CMAKE_CXX_COMPILER_ID MATCHES "SunPro")
-  SET(MY_COMPILER_IS_SUNPRO 1)
 ENDIF()
 
 IF(MY_COMPILER_IS_CLANG OR MY_COMPILER_IS_GNU)
@@ -733,7 +729,9 @@ MESSAGE(STATUS "SIZEOF_VOIDP ${SIZEOF_VOIDP}")
 # On some platforms, cmake may think that CMAKE_SIZEOF_VOID_P == 4
 # even if we have configured for 64bit build....
 SET(CMAKE_SIZEOF_VOID_P ${SIZEOF_VOIDP})
-
+IF(NOT SIZEOF_VOIDP EQUAL 8)
+  MESSAGE(FATAL_ERROR "MySQL supports only 64-bit platforms.")
+ENDIF()
 
 INCLUDE(compile_flags)
 INCLUDE(install_layout)
@@ -789,6 +787,24 @@ IF(WITH_DEFAULT_COMPILER_OPTIONS)
   INCLUDE(${CMAKE_SOURCE_DIR}/cmake/build_configurations/compiler_options.cmake)
 ENDIF()
 
+OPTION(WITH_EXPERIMENTAL_CPP20
+  "Build with -std=c++20, note: this is experimental" OFF)
+
+IF(WITH_EXPERIMENTAL_CPP20)
+  IF(UNIX)
+    STRING(REPLACE "-std=c++17" "-std=c++20"
+      CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  ELSE()
+    FOREACH(flag
+        CMAKE_CXX_FLAGS_MINSIZEREL
+        CMAKE_CXX_FLAGS_RELEASE  CMAKE_CXX_FLAGS_RELWITHDEBINFO
+        CMAKE_CXX_FLAGS_DEBUG    CMAKE_CXX_FLAGS_DEBUG_INIT
+        )
+      STRING(REPLACE "/std:c++17" "/std:c++20" ${flag} "${${flag}}")
+    ENDFOREACH()
+  ENDIF()
+ENDIF()
+
 # Assume, for now at least, that we want build-id for all kinds of Linux builds.
 IF(LINUX)
   OPTION(WITH_BUILD_ID "Add --build-id=sha1 to all executables." ON)
@@ -823,7 +839,6 @@ ENDIF()
 INCLUDE(add_custom_target)
 INCLUDE(pkg-config)
 INCLUDE(character_sets)
-INCLUDE(cmake_parse_arguments)
 INCLUDE(link_options)
 INCLUDE(malloc_utils)
 INCLUDE(cpu_info)
@@ -852,6 +867,7 @@ INCLUDE(fprofile)
 INCLUDE(gloves)
 INCLUDE(fido2)
 INCLUDE(win_jemalloc)
+INCLUDE(libs_mysql_create_library)
 
 IF(UNIX)
   OPTION(WITH_VALGRIND "Valgrind instrumentation" OFF)
@@ -934,8 +950,10 @@ OPTION(WITH_AUTHENTICATION_KERBEROS
 
 IF(WITH_INTERNAL AND (NOT SOLARIS))
   SET(WITH_AUTHENTICATION_FIDO_DEFAULT ON)
+  SET(WITH_AUTHENTICATION_WEBAUTHN_DEFAULT ON)
 ELSE()
   SET(WITH_AUTHENTICATION_FIDO_DEFAULT OFF)
+  SET(WITH_AUTHENTICATION_WEBAUTHN_DEFAULT OFF)
 ENDIF()
 
 IF(WITH_INTERNAL)
@@ -946,11 +964,16 @@ OPTION(WITH_AUTHENTICATION_FIDO
   "Report error if the FIDO authentication plugin cannot be built."
   ${WITH_AUTHENTICATION_FIDO_DEFAULT})
 
+OPTION(WITH_AUTHENTICATION_WEBAUTHN
+  "Report error if the WEBAUTHN authentication plugin cannot be built."
+  ${WITH_AUTHENTICATION_WEBAUTHN_DEFAULT})
+
 # Default ON if we are building server-side plugins.
 # Also default ON in pushbuild, for our community builds.
 IF(WITH_AUTHENTICATION_KERBEROS OR
     WITH_AUTHENTICATION_LDAP OR
     WITH_AUTHENTICATION_FIDO OR
+    WITH_AUTHENTICATION_WEBAUTHN OR
     DEFINED ENV{PB2WORKDIR})
   SET(WITH_AUTHENTICATION_CLIENT_PLUGINS_DEFAULT ON)
 ELSE()
@@ -964,13 +987,18 @@ ENDIF()
 #   authentication_ldap_sasl_client.so
 # The FIDO client authentication plugin
 #   authentication_fido_client.so
+# The WEBAUTHN client authentication plugin
+#   authentication_webauthn_client.so
 OPTION(WITH_AUTHENTICATION_CLIENT_PLUGINS
   "Build client-side authentication plugins, even if server-side are disabled"
   ${WITH_AUTHENTICATION_CLIENT_PLUGINS_DEFAULT})
 
-# On windows we need a non-standard package for CURL.
-IF(WITH_INTERNAL AND UNIX)
-  SET(WITH_CURL_DEFAULT "system")
+IF(WITH_INTERNAL)
+  IF(UNIX)
+    SET(WITH_CURL_DEFAULT "system")
+  ELSE()
+    SET(WITH_CURL_DEFAULT "bundled")
+  ENDIF()
 ELSE()
   SET(WITH_CURL_DEFAULT "none")
 ENDIF()
@@ -1143,7 +1171,8 @@ IF(WITH_ASAN)
 
     # Get the path to the ASAN support libraries.
     GET_FILENAME_COMPONENT(ASAN_LIB_DIR ${CMAKE_CXX_COMPILER} DIRECTORY)
-    SET(ASAN_LIB_DIR "${ASAN_LIB_DIR}/../lib/clang/${CMAKE_CXX_COMPILER_VERSION}/lib/windows")
+    SET(ASAN_LIB_DIR
+      "${ASAN_LIB_DIR}/../lib/clang/${CMAKE_CXX_COMPILER_VERSION}/lib/windows")
     GET_FILENAME_COMPONENT(ASAN_LIB_DIR ${ASAN_LIB_DIR} REALPATH)
   ELSE()
     MY_SANITIZER_CHECK("-fsanitize=address" TRUE WITH_ASAN_OK)
@@ -1631,6 +1660,7 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_CURRENT_BINARY_DIR}/include
   ${CMAKE_SOURCE_DIR}
   ${CMAKE_SOURCE_DIR}/include
+  ${CMAKE_SOURCE_DIR}/libs
   )
 
 IF(WITH_LTO)
@@ -1706,7 +1736,7 @@ IF(WITH_LTO)
 ENDIF(WITH_LTO)
 
 IF(APPLE)
-  OPTION(WITH_DEVELOPER_ENTILEMENTS "Add developer entitlements" OFF)
+  OPTION(WITH_DEVELOPER_ENTITLEMENTS "Add developer entitlements" OFF)
 ENDIF()
 
 # Explicit list of all -DWITH_XXX=system possibilities
@@ -1728,7 +1758,7 @@ SET(SYSTEM_LIBRARIES
   LIBEVENT  # Homebrew  libevent
   LZ4       # Homebrew  lz4
   PROTOBUF  # Homebrew  protobuf
-  SSL       # Homebrew  openssl@1.1
+  SSL       # Homebrew  openssl@1.1 or openssl@3
   ZSTD      # Homebrew  zstd
   FIDO      # Homebrew  libfido2
   )
@@ -1810,6 +1840,8 @@ IF(WITH_CUSTOM_LIBRARIES)
       SET(${WITH_OPT} ${${WITH_OPT}} CACHE INTERNAL "" FORCE)
       MESSAGE(STATUS "${WITH_OPT} ${${WITH_OPT}}")
     ELSE()
+      # WITH_CURL may be set to "none" in the cache, unset normal variable.
+      UNSET(${WITH_OPT})
       MESSAGE(WARNING "${WITH_OPT} not found") # This should be FATAL_ERROR
     ENDIF()
   ENDFOREACH()
@@ -1817,7 +1849,6 @@ ENDIF()
 
 # Add system/custom openssl.
 MYSQL_CHECK_SSL()
-MYSQL_CHECK_SSL_DLLS()
 
 # Other system libs which use OpenSSL must be disabled.
 # This includes: kerberos sasl ldap curl.
@@ -2004,21 +2035,34 @@ IF(APPLE)
   ENDFOREACH()
 ENDIF()
 
-IF(WITH_AUTHENTICATION_FIDO OR WITH_AUTHENTICATION_CLIENT_PLUGINS)
+IF(WITH_AUTHENTICATION_FIDO OR WITH_AUTHENTICATION_WEBAUTHN OR
+  WITH_AUTHENTICATION_CLIENT_PLUGINS)
   IF(WITH_FIDO STREQUAL "system" AND
     NOT WITH_SSL STREQUAL "system")
-      MESSAGE(WARNING "-DWITH_AUTHENTICATION_FIDO=ON")
+      IF (WITH_AUTHENTICATION_FIDO)
+        MESSAGE(WARNING "-DWITH_AUTHENTICATION_FIDO=ON")
+      ENDIF()
+      IF (WITH_AUTHENTICATION_WEBAUTHN)
+        MESSAGE(WARNING "-DWITH_AUTHENTICATION_WEBAUTHN=ON")
+      ENDIF()
       MESSAGE(FATAL_ERROR "Inconsistent options for FIDO/SSL")
   ENDIF()
 
   # FIDO (or libudev) missing, warn about what is missing, and break the build.
-  IF(WITH_AUTHENTICATION_FIDO AND NOT FIDO_FOUND)
+  IF((WITH_AUTHENTICATION_FIDO OR WITH_AUTHENTICATION_WEBAUTHN) AND
+    NOT FIDO_FOUND)
     SET(UDEV_WARN_MISSING)
     SET(FIDO_WARN_MISSING)
     WARN_MISSING_SYSTEM_UDEV(UDEV_WARN_MISSING)
     WARN_MISSING_SYSTEM_FIDO(FIDO_WARN_MISSING)
-    MESSAGE(FATAL_ERROR
-      "-DWITH_AUTHENTICATION_FIDO=ON, but missing required libraries")
+    IF (WITH_AUTHENTICATION_FIDO)
+      MESSAGE(FATAL_ERROR
+        "-DWITH_AUTHENTICATION_FIDO=ON, but missing required libraries")
+    ENDIF()
+    IF (WITH_AUTHENTICATION_WEBAUTHN)
+      MESSAGE(FATAL_ERROR
+        "-DWITH_AUTHENTICATION_WEBAUTHN=ON, but missing required libraries")
+    ENDIF()
   ENDIF()
 ENDIF()
 
@@ -2071,8 +2115,8 @@ IF(WITH_PROTOBUF STREQUAL "bundled" OR WITH_FIDO STREQUAL "bundled")
     # Do not break the build here in case of missing libudev on Linux.
     SET(UDEV_WARN_MISSING FALSE)
     WARN_MISSING_SYSTEM_UDEV(UDEV_WARN_MISSING)
-    IF((WITH_AUTHENTICATION_FIDO OR WITH_AUTHENTICATION_CLIENT_PLUGINS)
-        AND NOT UDEV_WARN_MISSING)
+    IF((WITH_AUTHENTICATION_FIDO OR WITH_AUTHENTICATION_WEBAUTHN
+        OR WITH_AUTHENTICATION_CLIENT_PLUGINS) AND NOT UDEV_WARN_MISSING)
       # Silence warning about CMP0075
       CMAKE_PUSH_CHECK_STATE()
       SET(CMAKE_REQUIRED_LIBRARIES)
@@ -2111,7 +2155,18 @@ INCLUDE(maintainer)
 INCLUDE(msvc_cppcheck)
 DO_MSVC_CPPCHECK()
 
+<<<<<<< HEAD
 IF(WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
+||||||| merged common ancestors
+IF(WITH_UNIT_TESTS)
+=======
+IF(WIN32_CLANG AND CMAKE_BUILD_TYPE_UPPER STREQUAL "DEBUG")
+  # Not yet fixed for Debug code
+  STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-format")
+ENDIF()
+
+IF(WITH_UNIT_TESTS)
+>>>>>>> mysql-8.2.0
   ENABLE_TESTING()
   INCLUDE(googletest)
 ELSE()
@@ -2214,8 +2269,8 @@ ADD_SUBDIRECTORY(strings)
 ADD_SUBDIRECTORY(vio)
 ADD_SUBDIRECTORY(mysys)
 ADD_SUBDIRECTORY(libmysql)
-ADD_SUBDIRECTORY(libbinlogevents)
-ADD_SUBDIRECTORY(libbinlogstandalone)
+# Directory for MySQL Database libraries (Client/Server)
+ADD_SUBDIRECTORY(libs/mysql)
 ADD_SUBDIRECTORY(libchangestreams)
 ADD_SUBDIRECTORY(sql-common/oci)
 
@@ -2299,6 +2354,12 @@ IF(NOT WITHOUT_SERVER AND WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
       IF(HAS_WARN_FLAG)
         MY_TARGET_LINK_OPTIONS(server_unittest_library "${HAS_WARN_FLAG}")
       ENDIF()
+      # The mold linker and RelWithDebInfo build complains about
+      # the new expression in Rpl_info_values::init()
+      IF(MY_COMPILER_IS_GNU)
+        MY_TARGET_LINK_OPTIONS(server_unittest_library
+          "-Wno-alloc-size-larger-than")
+      ENDIF()
     ENDIF()
   ELSE()
     SET(DUMMY_SOURCE_FILE ${CMAKE_BINARY_DIR}/server_unittest_library.c)
@@ -2307,11 +2368,17 @@ IF(NOT WITHOUT_SERVER AND WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
       COMMAND ${CMAKE_COMMAND} -E touch ${DUMMY_SOURCE_FILE}
       DEPENDS sql_main
       )
-    ADD_LIBRARY(server_unittest_library STATIC ${DUMMY_SOURCE_FILE})
+    SET(MYSQLD_EXTRA_SOURCES)
+    IF(WIN32)
+      LIST(APPEND MYSQLD_EXTRA_SOURCES ${CMAKE_SOURCE_DIR}/sql/nt_servc.cc)
+    ENDIF()
+    ADD_LIBRARY(server_unittest_library STATIC
+      ${DUMMY_SOURCE_FILE} ${MYSQLD_EXTRA_SOURCES})
     TARGET_LINK_LIBRARIES(server_unittest_library perfschema)
     TARGET_LINK_LIBRARIES(server_unittest_library sql_main)
     TARGET_LINK_LIBRARIES(server_unittest_library minchassis)
     TARGET_LINK_LIBRARIES(server_unittest_library ext::icu)
+    TARGET_LINK_LIBRARIES(server_unittest_library binlog)
   ENDIF()
 ENDIF()
 

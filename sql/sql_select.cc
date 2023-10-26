@@ -54,12 +54,14 @@
 #include "my_pointer_arithmetic.h"
 #include "my_sqlcommand.h"
 #include "my_sys.h"
+#include "mysql/plugin.h"
 #include "mysql/strings/m_ctype.h"
 #include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
 #include "scope_guard.h"
 #include "sql-common/json_dom.h"
+#include "sql-common/my_decimal.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // *_ACL
 #include "sql/auth/sql_security_ctx.h"
@@ -84,8 +86,7 @@
 #include "sql/join_optimizer/replace_item.h"
 #include "sql/key.h"  // key_copy, key_cmp, key_cmp_if_same
 #include "sql/key_spec.h"
-#include "sql/lock.h"  // mysql_unlock_some_tables,
-#include "sql/my_decimal.h"
+#include "sql/lock.h"    // mysql_unlock_some_tables,
 #include "sql/mysqld.h"  // stage_init
 #include "sql/nested_join.h"
 #include "sql/opt_explain.h"
@@ -112,6 +113,7 @@
 #include "sql/sql_optimizer.h"  // JOIN
 #include "sql/sql_parse.h"      // bind_fields
 #include "sql/sql_planner.h"    // calculate_condition_filter
+#include "sql/sql_plugin.h"
 #include "sql/sql_resolver.h"
 #include "sql/sql_test.h"       // misc. debug printing utilities
 #include "sql/sql_timer.h"      // thd_timer_set
@@ -212,11 +214,15 @@ bool set_statement_timer(THD *thd) {
   thd->timer = thd_timer_set(thd, thd->timer_cache, max_execution_time);
   thd->timer_cache = nullptr;
 
-  if (thd->timer)
+  if (thd->timer) {
     thd->status_var.max_execution_time_set++;
-  else
+    global_aggregated_stats.get_shard(thd->thread_id())
+        .max_execution_time_set++;
+  } else {
     thd->status_var.max_execution_time_set_failed++;
-
+    global_aggregated_stats.get_shard(thd->thread_id())
+        .max_execution_time_set_failed++;
+  }
   return thd->timer;
 }
 
@@ -325,6 +331,9 @@ static const MYSQL_LEX_CSTRING *get_eligible_secondary_engine_from(
     // We're only interested in base tables.
     if (tl->is_placeholder()) continue;
 
+    // check if required pointers are valid before proceeding further
+    if (tl->table == nullptr || tl->table->s == nullptr) continue;
+
     assert(!tl->table->s->is_secondary_engine());
     // Give up, if the table is not in a secondary engine,
     if (!tl->table->s->has_secondary_engine()) return nullptr;
@@ -342,7 +351,7 @@ static const MYSQL_LEX_CSTRING *get_eligible_secondary_engine_from(
 }
 
 const handlerton *get_secondary_engine_handlerton(const LEX *lex) {
-  if (const handlerton *hton = SecondaryEngineHandlerton(lex->thd);
+  if (const handlerton *hton = lex->m_sql_cmd->secondary_engine();
       hton != nullptr) {
     return hton;
   }
@@ -356,19 +365,18 @@ const handlerton *get_secondary_engine_handlerton(const LEX *lex) {
   return nullptr;
 }
 
-static const char *get_secondary_engine_fail_reason(const LEX *lex) {
+const char *get_secondary_engine_fail_reason(const LEX *lex) {
   auto *hton = get_secondary_engine_handlerton(lex);
   if (hton != nullptr &&
       hton->get_secondary_engine_offload_or_exec_fail_reason != nullptr &&
-      lex->thd->variables.use_secondary_engine == SECONDARY_ENGINE_FORCED) {
+      lex->thd->is_secondary_engine_forced()) {
     return hton->get_secondary_engine_offload_or_exec_fail_reason(lex->thd);
   }
   return nullptr;
 }
 
 void set_external_engine_fail_reason(const LEX *lex, const char *reason) {
-  if (lex->thd->variables.use_secondary_engine != SECONDARY_ENGINE_FORCED &&
-      reason != nullptr) {
+  if (!lex->thd->is_secondary_engine_forced() && reason != nullptr) {
     for (Table_ref *ref = lex->query_tables; ref != nullptr;
          ref = ref->next_global) {
       if (ref->is_external()) {
@@ -395,7 +403,7 @@ static bool set_secondary_engine_fail_reason(const LEX *lex,
   auto *hton = get_secondary_engine_handlerton(lex);
   if (hton != nullptr &&
       hton->set_secondary_engine_offload_fail_reason != nullptr &&
-      lex->thd->variables.use_secondary_engine == SECONDARY_ENGINE_FORCED) {
+      lex->thd->is_secondary_engine_forced()) {
     hton->set_secondary_engine_offload_fail_reason(lex->thd, reason);
     return true;
   }
@@ -450,20 +458,10 @@ bool validate_use_secondary_engine(const LEX *lex) {
     }
     return false;
   }
-  // A query must be executed in secondary engine if these conditions are met:
-  //
-  // (1) use_secondary_engine is FORCED.
-  // (and either)
-  // (2) Is a SELECT statement that accesses one or more base tables.
-  // (or)
-  // (3) Is an INSERT SELECT or CREATE TABLE AS SELECT statement that accesses
-  // two or more base tables.
-  if (thd->variables.use_secondary_engine == SECONDARY_ENGINE_FORCED &&  // 1
-      ((sql_cmd->sql_command_code() == SQLCOM_SELECT &&
-        lex->table_count >= 1) ||  // 2
-       ((sql_cmd->sql_command_code() == SQLCOM_INSERT_SELECT ||
-         sql_cmd->sql_command_code() == SQLCOM_CREATE_TABLE) &&
-        lex->table_count >= 2))) {  // 3
+
+  if (thd->secondary_engine_optimization() ==
+          Secondary_engine_optimization::SECONDARY &&
+      thd->is_secondary_engine_forced()) {
     // Gather secondary-engine-specific error message.
     const char *offloadfail_reason = get_secondary_engine_fail_reason(lex);
     if (offloadfail_reason != nullptr && strlen(offloadfail_reason) > 0) {
@@ -569,6 +567,8 @@ bool Sql_cmd_dml::prepare(THD *thd) {
     }
     if (!is_regular()) {
       if (save_cmd_properties(thd)) goto err;
+    }
+    if (needs_explicit_preparation()) {
       lex->set_secondary_engine_execution_context(nullptr);
     }
     set_prepared();
@@ -601,9 +601,9 @@ bool Sql_cmd_select::accept(THD *thd, Select_lex_visitor *visitor) {
   return thd->lex->unit->accept(visitor);
 }
 
-const MYSQL_LEX_CSTRING *Sql_cmd_select::eligible_secondary_storage_engine()
-    const {
-  return get_eligible_secondary_engine();
+const MYSQL_LEX_CSTRING *Sql_cmd_select::eligible_secondary_storage_engine(
+    THD *thd) const {
+  return get_eligible_secondary_engine(thd);
 }
 
 /**
@@ -748,8 +748,7 @@ bool Sql_cmd_dml::execute(THD *thd) {
     }
   } else if ((thd->secondary_engine_optimization() ==
                   Secondary_engine_optimization::PRIMARY_ONLY &&
-              lex->thd->variables.use_secondary_engine !=
-                  SECONDARY_ENGINE_FORCED) &&
+              !thd->is_secondary_engine_forced()) &&
              has_external_table(lex->query_tables)) {
     // throw the propagated error from the external engine in case there is an
     // external table
@@ -793,8 +792,11 @@ bool Sql_cmd_dml::execute(THD *thd) {
   if (execute_inner(thd)) goto err;
 
   // Count the number of statements offloaded to a secondary storage engine.
-  if (using_secondary_storage_engine() && lex->unit->is_executed())
+  if (using_secondary_storage_engine() && lex->unit->is_executed()) {
     ++thd->status_var.secondary_engine_execution_count;
+    global_aggregated_stats.get_shard(thd->thread_id())
+        .secondary_engine_execution_count++;
+  }
 
   assert(!thd->is_error());
 
@@ -921,7 +923,7 @@ static bool retry_with_secondary_engine(THD *thd) {
 
   // Don't retry if there is a property of the statement that prevents use of
   // secondary engines.
-  if (sql_cmd->eligible_secondary_storage_engine() == nullptr) {
+  if (sql_cmd->eligible_secondary_storage_engine(thd) == nullptr) {
     sql_cmd->disable_secondary_storage_engine();
     return false;
   }
@@ -992,6 +994,23 @@ bool optimize_secondary_engine(THD *thd) {
          secondary_engine->optimize_secondary_engine(thd, thd->lex);
 }
 
+void notify_plugins_after_select(THD *thd, const Sql_cmd *cmd) {
+  auto executed_in = (cmd != nullptr && cmd->using_secondary_storage_engine())
+                         ? SelectExecutedIn::kSecondaryEngine
+                         : SelectExecutedIn::kPrimaryEngine;
+
+  plugin_foreach(
+      thd,
+      [](THD *t, plugin_ref plugin, void *arg) -> bool {
+        handlerton *hton = plugin_data<handlerton *>(plugin);
+        if (hton->notify_after_select != nullptr) {
+          hton->notify_after_select(t, *(static_cast<SelectExecutedIn *>(arg)));
+        }
+        return false;
+      },
+      MYSQL_STORAGE_ENGINE_PLUGIN, &executed_in);
+}
+
 /**
   Execute a DML statement.
   This is the default implementation for a DML statement and uses a
@@ -1020,6 +1039,14 @@ bool Sql_cmd_dml::execute_inner(THD *thd) {
     if (explain_query(thd, thd, unit)) return true; /* purecov: inspected */
   } else {
     if (unit->execute(thd)) return true;
+
+    /* Only call the plugin hook if the query cost is higher than the secondary
+     * engine threshold. This prevents calling plugin_foreach for short queries,
+     * reducing the overhead. */
+    if (thd->m_current_query_cost >
+        thd->variables.secondary_engine_cost_threshold) {
+      notify_plugins_after_select(thd, lex->m_sql_cmd);
+    }
   }
 
   return false;
@@ -1204,8 +1231,9 @@ bool Sql_cmd_dml::check_all_table_privileges(THD *thd) {
   return false;
 }
 
-const MYSQL_LEX_CSTRING *Sql_cmd_dml::get_eligible_secondary_engine() const {
-  return get_eligible_secondary_engine_from(lex);
+const MYSQL_LEX_CSTRING *Sql_cmd_dml::get_eligible_secondary_engine(
+    THD *thd) const {
+  return get_eligible_secondary_engine_from(thd->lex);
 }
 
 /*****************************************************************************
@@ -1799,8 +1827,10 @@ void JOIN::reset() {
 
   if (!executed) return;
 
+  // clang-format off
   query_expression()->offset_limit_cnt = (ha_rows)(
       query_block->offset_limit ? query_block->offset_limit->val_uint() : 0ULL);
+  // clang-format on
 
   group_sent = false;
   recursive_iteration_count = 0;
@@ -2652,7 +2682,7 @@ enum store_key::store_key_result store_key_hash_item::copy_inner() {
     // Convert to and from little endian, since that is what gets
     // stored in the hash field we are lookup up against.
     ulonglong h = uint8korr(pointer_cast<char *>(hash));
-    h = unique_hash(to_field, &h);
+    h = calc_field_hash(to_field, &h);
     int8store(pointer_cast<char *>(hash), h);
   }
   return res;
@@ -4390,13 +4420,6 @@ bool JOIN::make_tmp_tables_info() {
   const Opt_trace_array trace_tmp(trace, "considering_tmp_tables");
 
   DBUG_TRACE;
-
-  // This is necessary to undo effects of any previous execute's call to
-  // CreateFramebufferTable->ReplaceMaterializedItems's calls of
-  // update_used_tables: loses PROP_WINDOW_FUNCTION needed here in next
-  // execution round
-  if (m_windows.elements > 0)
-    for (auto f : *fields) f->update_used_tables();
 
   /*
     In this function, we may change having_cond into a condition on a

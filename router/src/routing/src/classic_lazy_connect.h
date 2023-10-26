@@ -28,6 +28,7 @@
 #include <system_error>
 
 #include "forwarding_processor.h"
+#include "mysqlrouter/classic_protocol_message.h"
 
 /**
  * attach a server connection and initialize it.
@@ -79,6 +80,15 @@ class LazyConnector : public ForwardingProcessor {
     SetSchemaDone,
     FetchSysVars,
     FetchSysVarsDone,
+    WaitGtidExecuted,
+    WaitGtidExecutedDone,
+    SetTrxCharacteristics,
+    SetTrxCharacteristicsDone,
+    CheckReadOnly,
+    CheckReadOnlyDone,
+
+    PoolOrClose,
+    FallbackToWrite,
 
     Done,
   };
@@ -87,6 +97,15 @@ class LazyConnector : public ForwardingProcessor {
 
   void stage(Stage stage) { stage_ = stage; }
   [[nodiscard]] Stage stage() const { return stage_; }
+
+  void failed(
+      const std::optional<classic_protocol::message::server::Error> &err) {
+    failed_ = err;
+  }
+
+  std::optional<classic_protocol::message::server::Error> failed() const {
+    return failed_;
+  }
 
  private:
   stdx::expected<Processor::Result, std::error_code> connect();
@@ -100,6 +119,16 @@ class LazyConnector : public ForwardingProcessor {
   stdx::expected<Processor::Result, std::error_code> set_schema_done();
   stdx::expected<Processor::Result, std::error_code> fetch_sys_vars();
   stdx::expected<Processor::Result, std::error_code> fetch_sys_vars_done();
+  stdx::expected<Processor::Result, std::error_code> check_read_only();
+  stdx::expected<Processor::Result, std::error_code> check_read_only_done();
+  stdx::expected<Processor::Result, std::error_code> wait_gtid_executed();
+  stdx::expected<Processor::Result, std::error_code> wait_gtid_executed_done();
+  stdx::expected<Processor::Result, std::error_code> set_trx_characteristics();
+  stdx::expected<Processor::Result, std::error_code>
+  set_trx_characteristics_done();
+
+  stdx::expected<Processor::Result, std::error_code> pool_or_close();
+  stdx::expected<Processor::Result, std::error_code> fallback_to_write();
 
   Stage stage_{Stage::Connect};
 
@@ -114,12 +143,20 @@ class LazyConnector : public ForwardingProcessor {
   std::chrono::steady_clock::time_point started_{
       std::chrono::steady_clock::now()};
 
+  std::optional<classic_protocol::message::server::Error> failed_;
+
+  std::string trx_stmt_;
+
   TraceEvent *parent_event_{};
   TraceEvent *trace_event_connect_{};
   TraceEvent *trace_event_authenticate_{};
   TraceEvent *trace_event_set_vars_{};
   TraceEvent *trace_event_fetch_sys_vars_{};
   TraceEvent *trace_event_set_schema_{};
+  TraceEvent *trace_event_wait_gtid_executed_{};
+  TraceEvent *trace_event_check_read_only_{};
+  TraceEvent *trace_event_fallback_to_write_{};
+  TraceEvent *trace_event_set_trx_characteristics_{};
 };
 
 #endif

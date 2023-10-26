@@ -59,9 +59,9 @@ static inline size_t _cache_line_size() {
   size_t line_size{0};
   DWORD buffer_size = 0;
   DWORD i = 0;
-  SYSTEM_LOGICAL_PROCESSOR_INFORMATION *buffer = 0;
+  SYSTEM_LOGICAL_PROCESSOR_INFORMATION *buffer = nullptr;
 
-  GetLogicalProcessorInformation(0, &buffer_size);
+  GetLogicalProcessorInformation(nullptr, &buffer_size);
   buffer = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION *)malloc(buffer_size);
   GetLogicalProcessorInformation(&buffer[0], &buffer_size);
 
@@ -81,18 +81,19 @@ static inline size_t _cache_line_size() {
 static inline size_t _cache_line_size() {
   long size = sysconf(_SC_LEVEL1_DCACHE_LINESIZE);
   if (size == -1) return 64;
-#if defined(__s390x__)
-  // returns 0 on s390x RHEL 7.x
+
+  // returns 0 on s390x RHEL 7.x and some __arch64__ configurations.
   if (size == 0) {
     FILE *p = fopen(
         "/sys/devices/system/cpu/cpu0/cache/index0/coherency_line_size", "r");
     if (p) {
-      fscanf(p, "%ld", &size);
+      if (fscanf(p, "%ld", &size) != 1) size = 0;
       fclose(p);
     }
   }
-#endif
-  return static_cast<size_t>(size);
+
+  if (size > 0) return static_cast<size_t>(size);
+  return 64;
 }
 
 #else

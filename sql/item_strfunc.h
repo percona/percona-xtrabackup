@@ -30,7 +30,7 @@
 #include <cstdint>  // uint32_t
 
 #include "lex_string.h"
-#include "libbinlogevents/include/uuid.h"  // Uuid
+#include "mysql/gtid/uuid.h"  // Uuid
 
 #include "my_hostname.h"  // HOSTNAME_LENGTH
 #include "my_inttypes.h"
@@ -728,7 +728,7 @@ class Item_func_make_set final : public Item_str_func {
   bool do_itemize(Parse_context *pc, Item **res) override;
   String *val_str(String *str) override;
   bool fix_fields(THD *thd, Item **ref) override {
-    assert(fixed == 0);
+    assert(!fixed);
     bool res = ((!item->fixed && item->fix_fields(thd, &item)) ||
                 item->check_cols(1) || Item_func::fix_fields(thd, ref));
     set_nullable(is_nullable() || item->is_nullable());
@@ -752,6 +752,7 @@ class Item_func_make_set final : public Item_str_func {
   Item *transform(Item_transformer transformer, uchar *arg) override;
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
+  Item *get_item() { return item; }
 };
 
 class Item_func_format final : public Item_str_ascii_func {
@@ -839,7 +840,7 @@ class Item_func_lpad final : public Item_str_func {
 
 class Item_func_uuid_to_bin final : public Item_str_func {
   /// Buffer to store the binary result
-  uchar m_bin_buf[binary_log::Uuid::BYTE_LENGTH];
+  uchar m_bin_buf[mysql::gtid::Uuid::BYTE_LENGTH];
 
  public:
   Item_func_uuid_to_bin(const POS &pos, Item *arg1)
@@ -853,7 +854,7 @@ class Item_func_uuid_to_bin final : public Item_str_func {
 
 class Item_func_bin_to_uuid final : public Item_str_ascii_func {
   /// Buffer to store the text result
-  char m_text_buf[binary_log::Uuid::TEXT_LENGTH + 1];
+  char m_text_buf[mysql::gtid::Uuid::TEXT_LENGTH + 1];
 
  public:
   Item_func_bin_to_uuid(const POS &pos, Item *arg1)
@@ -1172,20 +1173,20 @@ class Item_func_weight_string final : public Item_str_func {
 
   String tmp_value;
   uint flags;
-  const uint num_codepoints;
   const uint result_length;
   Item_field *m_field_ref{nullptr};
   const bool as_binary;
 
  public:
+  const uint num_codepoints;
   Item_func_weight_string(const POS &pos, Item *a, uint result_length_arg,
                           uint num_codepoints_arg, uint flags_arg,
                           bool as_binary_arg = false)
       : Item_str_func(pos, a),
         flags(flags_arg),
-        num_codepoints(num_codepoints_arg),
         result_length(result_length_arg),
-        as_binary(as_binary_arg) {}
+        as_binary(as_binary_arg),
+        num_codepoints(num_codepoints_arg) {}
 
   bool do_itemize(Parse_context *pc, Item **res) override;
 

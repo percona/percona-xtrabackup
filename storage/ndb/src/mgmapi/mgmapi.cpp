@@ -47,6 +47,7 @@
 #include <EventLogger.hpp>
 #include <memory>
 #include "portlib/ndb_sockaddr.h"
+#include "mgmcommon/NdbMgm.hpp"
 
 //#define MGMAPI_LOG
 #define MGM_CMD(name, fun, desc) \
@@ -113,6 +114,7 @@ struct ndb_mgm_handle {
   int mgmd_version_major;
   int mgmd_version_minor;
   int mgmd_version_build;
+  struct ssl_ctx_st * ssl_ctx;
 
   int mgmd_version(void) const {
     // Must be connected
@@ -252,6 +254,7 @@ ndb_mgm_create_handle()
   h->m_bindaddress   = nullptr;
   h->m_bindaddress_port = 0;
   h->ignore_sigpipe  = true;
+  h->ssl_ctx         = nullptr;
 
   strncpy(h->last_error_desc, "No error", NDB_MGM_MAX_ERR_DESC_SIZE);
 
@@ -402,6 +405,7 @@ ndb_mgm_destroy_handle(NdbMgmHandle * handle)
   }
 #endif
   (*handle)->cfg.~LocalConfig();
+  (*handle)->socket.~NdbSocket();
   free((*handle)->m_name);
   free((*handle)->m_bindaddress);
   free(*handle);
@@ -463,6 +467,37 @@ ndb_mgm_get_latest_error_msg(const NdbMgmHandle h)
   }
 
   return "Error"; // Unknown Error message
+}
+
+
+static const Properties *
+handle_authorization_failure(NdbMgmHandle handle, InputStream & in)
+{
+  /* Read the failure details and set the internal error conditions. */
+  handle->last_error = NDB_MGM_NOT_AUTHORIZED;
+
+  const ParserRow<ParserDummy> details[] = {
+    MGM_CMD("Authorization failed",  nullptr, ""),
+    MGM_ARG("Error", String, Mandatory, "Error message"),
+    MGM_END()
+  };
+
+  Parser_t::Context ctx;
+  ParserDummy session(handle->socket);
+  Parser_t parser(details, in);
+  const Properties * reply = parser.parse(ctx, session);
+
+  const char * reason = nullptr;
+  if(reply && reply->get("Error", &reason))
+  {
+    if(strcmp(reason, "Requires TLS Client Certificate") == 0)
+      handle->last_error = NDB_MGM_AUTH_REQUIRES_CLIENT_CERT;
+    else if(strcmp(reason, "Requires TLS") == 0)
+      handle->last_error = NDB_MGM_AUTH_REQUIRES_TLS;
+  }
+
+  delete reply;
+  return nullptr;
 }
 
 
@@ -602,6 +637,14 @@ ndb_mgm_call(NdbMgmHandle handle,
         CHECK_TIMEDOUT_RET(handle, in, out, NULL, cmd);
 	DBUG_RETURN(NULL);
       }
+
+      /* Check for Authorization failure */
+      if(strcmp(ctx.m_tokenBuffer, "Authorization failed") == 0)
+      {
+        RewindInputStream str(in, ctx.m_tokenBuffer);
+        DBUG_RETURN(handle_authorization_failure(handle, str));
+      }
+
       /**
        * Print some info about why the parser returns NULL
        */
@@ -1323,6 +1366,12 @@ ndb_mgm_get_status2(NdbMgmHandle handle, const enum ndb_mgm_node_type types[])
     SET_ERROR(handle, NDB_MGM_ILLEGAL_SERVER_REPLY, "Probably disconnected");
     DBUG_RETURN(NULL);
   }
+  if(strcmp("Authorization failed\n", buf) == 0)
+  {
+    RewindInputStream str(in, buf);
+    (void) handle_authorization_failure(handle, str);
+    DBUG_RETURN(nullptr);
+  }
   if(strcmp("node status\n", buf) != 0) {
     CHECK_TIMEDOUT_RET(handle, in, out, NULL, get_status_str);
     ndbout << in.timedout() << " " << out.timedout() << buf << endl;
@@ -1468,22 +1517,6 @@ ndb_mgm_get_status_node_count(ndb_mgm_cluster_state2 *cs)
   return cs->no_of_nodes;
 }
 
-void
-ndb_mgm_node_state2::init()
-{
-  node_id = 0;
-  node_type = NDB_MGM_NODE_TYPE_UNKNOWN;
-  node_status = NDB_MGM_NODE_STATUS_UNKNOWN;
-  start_phase = 0;
-  dynamic_id = 0;
-  node_group = 0;
-  version = 0;
-  connect_count = 0;
-  mysql_version = 0;
-  is_single_user = 0;
-  memset(connect_address, 0, sizeof(connect_address));
-}
-
 extern "C"
 struct ndb_mgm_cluster_state2 *
 ndb_mgm_get_status3(NdbMgmHandle handle, const enum ndb_mgm_node_type types[])
@@ -1565,6 +1598,12 @@ ndb_mgm_get_status3(NdbMgmHandle handle, const enum ndb_mgm_node_type types[])
     CHECK_TIMEDOUT_RET(handle, in, out, NULL, get_status_str);
     SET_ERROR(handle, NDB_MGM_ILLEGAL_SERVER_REPLY, "Probably disconnected");
     DBUG_RETURN(NULL);
+  }
+  if(strcmp("Authorization failed\n", buf) == 0)
+  {
+    RewindInputStream str(in, buf);
+    (void) handle_authorization_failure(handle, str);
+    DBUG_RETURN(nullptr);
   }
   if(strcmp("node status\n", buf) != 0) {
     CHECK_TIMEDOUT_RET(handle, in, out, NULL, get_status_str);
@@ -2521,21 +2560,25 @@ ndb_mgm_listen_event_internal(NdbMgmHandle handle, const int filter[],
   }
 
   {
-    ndb_mgm_handle * tmp_handle = ndb_mgm_create_handle();
+    ndb_mgm::handle_ptr tmp_handle(ndb_mgm_create_handle());
     tmp_handle->socket.init_from_new(sockfd);
 
+    if(handle->ssl_ctx)
+    {
+      ndb_mgm_set_ssl_ctx(tmp_handle.get(), handle->ssl_ctx);
+      ndb_mgm_start_tls(tmp_handle.get());
+    }
+
     const Properties *reply;
-    reply = ndb_mgm_call(tmp_handle, stat_reply, "listen event", &args);
+    reply = ndb_mgm_call(tmp_handle.get(), stat_reply, "listen event", &args);
 
     if(reply == nullptr) {
       ndb_socket_close(sockfd);
-      CHECK_REPLY(tmp_handle, reply, -1)
+      CHECK_REPLY(tmp_handle.get(), reply, -1)
     } else {
       delete reply;
-      tmp_handle->connected = 0;  // so that destroy_handle() doesn't close it.
+      tmp_handle.get()->connected = 0;  // so that destructor doesn't close it.
     }
-
-    ndb_mgm_destroy_handle(&tmp_handle);
   }
 
   *sock= sockfd;
@@ -2605,6 +2648,95 @@ ndb_mgm_get_configuration_from_node(NdbMgmHandle handle,
 {
   return ndb_mgm_get_configuration2(handle, 0,
                                     NDB_MGM_NODE_TYPE_UNKNOWN, nodeid);
+}
+
+extern "C"
+int
+ndb_mgm_set_ssl_ctx(NdbMgmHandle handle, struct ssl_ctx_st *ctx)
+{
+  if(handle && (handle->ssl_ctx == nullptr)) {
+    handle->ssl_ctx = ctx;
+    return 0;
+  }
+  return -1;
+}
+
+extern "C"
+int
+ndb_mgm_start_tls(NdbMgmHandle handle)
+{
+  bool server_ok = false;
+
+  if(handle->ssl_ctx == nullptr) {
+    SET_ERROR(handle, NDB_MGM_TLS_ERROR, "SSL CTX required");
+    return -1;
+  }
+
+  if(handle->socket.has_tls()) {
+    SET_ERROR(handle, NDB_MGM_TLS_ERROR, "Socket already has TLS");
+    return -2;
+  }
+
+  const ParserRow<ParserDummy> start_tls_reply[] = {
+    MGM_CMD("start tls reply", NULL, ""),
+    MGM_ARG("result", String, Mandatory, "Error message"),
+    MGM_END()
+  };
+
+  Properties args;
+  const Properties * reply =
+    ndb_mgm_call(handle, start_tls_reply, "start tls", &args);
+
+  if(reply) {
+    BaseString result;
+    reply->get("result", result);
+    if(strcmp(result.c_str(), "Ok") == 0) server_ok = true;
+    delete reply;
+  }
+
+  if(! server_ok) {
+    SET_ERROR(handle, NDB_MGM_TLS_REFUSED, "Server refused upgrade");
+    return -3;
+  }
+
+  struct ssl_st * ssl = NdbSocket::get_client_ssl(handle->ssl_ctx);
+  if(! (ssl && handle->socket.associate(ssl))) {
+    SET_ERROR(handle, NDB_MGM_TLS_ERROR, "Failed in client");
+    NdbSocket::free_ssl(ssl);
+    return -4;
+  }
+
+  /* Now run handshake */
+  bool r = handle->socket.do_tls_handshake();
+  if(r) return 0; // success
+
+  SET_ERROR(handle, NDB_MGM_TLS_HANDSHAKE_FAILED, "Handshake failed");
+  return -5;
+}
+
+extern "C"
+int
+ndb_mgm_connect_tls(NdbMgmHandle handle, int retries,
+	            int retry_delay, int verbose, int tls_level)
+{
+  if(tls_level < CLIENT_TLS_RELAXED || tls_level > CLIENT_TLS_STRICT) {
+    SET_ERROR(handle, NDB_MGM_USAGE_ERROR, "Invalid TLS level");
+    return -1;
+  }
+
+  int r = ndb_mgm_connect(handle, retries, retry_delay, verbose);
+  if(r != 0)
+    return r;
+
+  r = ndb_mgm_start_tls(handle);
+
+  if(r == 0)
+    return 0;  // TLS started successfully
+
+  if((tls_level == CLIENT_TLS_RELAXED) && (r != -5))
+    return 0;  // -5 is fatal (handshake failed); otherwise okay.
+
+  return -1;
 }
 
 extern "C"
@@ -3531,6 +3663,7 @@ ndb_mgm_check_connection(NdbMgmHandle handle)
   DBUG_ENTER("ndb_mgm_check_connection");
   CHECK_HANDLE(handle, -1);
   CHECK_CONNECTED(handle, -1);
+  /* Treated as bootstrap command; cannot result in authorization failure */
   SecureSocketOutputStream out(handle->socket, handle->timeout);
   SecureSocketInputStream in(handle->socket, handle->timeout);
   char buf[32];
@@ -3647,43 +3780,28 @@ ndb_mgm_get_connection_int_parameter(NdbMgmHandle handle,
   DBUG_RETURN(res);
 }
 
-ndb_socket_t
-ndb_mgm_convert_to_transporter(NdbMgmHandle *handle)
+void
+ndb_mgm_convert_to_transporter(NdbMgmHandle *handle, NdbSocket *s)
 {
-  DBUG_ENTER("ndb_mgm_convert_to_transporter");
-  ndb_socket_t s;
-
   if(handle == nullptr)
   {
     SET_ERROR(*handle, NDB_MGM_ILLEGAL_SERVER_HANDLE, "");
-    ndb_socket_invalidate(&s);
-    DBUG_RETURN(s);
+    return;
   }
 
   if ((*handle)->connected != 1)
   {
     SET_ERROR(*handle, NDB_MGM_SERVER_NOT_CONNECTED , "");
-    ndb_socket_invalidate(&s);
-    DBUG_RETURN(s);
+    return;
   }
 
-  if ((*handle)->socket.has_tls())
-  {
-    SET_ERROR(*handle, NDB_MGM_CANNOT_CONVERT_TO_TRANSPORTER, "");
-    ndb_socket_invalidate(&s);
-    DBUG_RETURN(s);
-  }
-
-  (*handle)->connected= 0;   // we pretend we're disconnected
-  s= (*handle)->socket.ndb_socket();
-
-  SocketOutputStream s_output(s, (*handle)->timeout);
+  *s = std::move((*handle)->socket);
+  SecureSocketOutputStream s_output(*s, (*handle)->timeout);
   s_output.println("transporter connect");
   s_output.println("%s", "");
 
+  (*handle)->connected= 0;   // The handle no longer owns the connection
   ndb_mgm_destroy_handle(handle); // set connected=0, so won't disconnect
-
-  DBUG_RETURN(s);
 }
 
 extern "C"
@@ -3763,6 +3881,7 @@ int ndb_mgm_end_session(NdbMgmHandle handle)
   s_output.println("%s", end_session_str);
   s_output.println("%s", "");
 
+  /* Treated as bootstrap command; cannot result in authorization failure */
   SecureSocketInputStream in(handle->socket, handle->timeout);
   char buf[32];
   in.gets(buf, sizeof(buf));
@@ -3880,6 +3999,7 @@ ndb_mgm_get_session(NdbMgmHandle handle, Uint64 id,
     MGM_ARG("id", Int, Mandatory, "Node ID"),
     MGM_ARG("m_stopSelf", Int, Optional, "m_stopSelf"),
     MGM_ARG("m_stop", Int, Optional, "stop session"),
+    MGM_ARG("tls", Int, Optional, "session is using TLS"),
     MGM_ARG("nodeid", Int, Optional, "allocated node id"),
     MGM_ARG("parser_buffer_len", Int, Optional, "waiting in buffer"),
     MGM_ARG("parser_status", Int, Optional, "parser status"),
@@ -3922,6 +4042,10 @@ ndb_mgm_get_session(NdbMgmHandle handle, Uint64 id,
     if(prop->get("parser_status",&(s->parser_status)))
       rlen+=sizeof(s->parser_status);
   }
+
+  /* tls is a late addition to the struct, so check length */
+  if(*len > rlen && prop->get("tls",&(s->tls)))
+    rlen+=sizeof(s->tls);
 
   *len= rlen;
   retval= 1;
@@ -4094,6 +4218,122 @@ int ndb_mgm_drop_nodegroup(NdbMgmHandle handle,
 ndb_socket_t _ndb_mgm_get_socket(NdbMgmHandle h)
 {
   return h->socket.ndb_socket();
+}
+
+int ndb_mgm_has_tls(NdbMgmHandle h)
+{
+  return h->socket.has_tls() ? 1 : 0;
+}
+
+static ndb_mgm_cert_table * new_cert_table()
+{
+  ndb_mgm_cert_table * table = new ndb_mgm_cert_table;
+  table->session_id = 0;
+  table->peer_address = nullptr;
+  table->cert_serial = nullptr;
+  table->cert_name = nullptr;
+  table->cert_expires = nullptr;
+  table->next = nullptr;
+  return table;
+}
+
+int ndb_mgm_list_certs(NdbMgmHandle handle, ndb_mgm_cert_table ** data)
+{
+  DBUG_ENTER("ndb_mgm_list_certs");
+  CHECK_HANDLE(handle, -1);
+  CHECK_CONNECTED(handle, -1);
+
+  SecureSocketOutputStream out(handle->socket, handle->timeout);
+  SecureSocketInputStream in(handle->socket, handle->timeout);
+
+  out.println("list certs");
+  out.println("%s", "");
+
+  /* See listCerts() and show_cert() in mgmsrv/Services.cpp for reply format */
+  int ok = false;
+  char buf[1024];
+
+  in.gets(buf, sizeof(buf));
+  if(strcmp("list certs reply\n", buf))
+    DBUG_RETURN(-1);
+
+  int ncerts = 0;
+  struct ndb_mgm_cert_table * current = *data = nullptr;
+  while(in.gets(buf, sizeof(buf))) {
+    if(strcmp("\n", buf) == 0) {  /* Blank line at end of input */
+      ok = true;
+      break;
+    }
+    Vector<BaseString> parts;
+    BaseString line(buf);
+    if(line.split(parts, ":", 2) != 2)
+      break;
+    if(parts[0] == "session") {
+      ncerts++;
+      current = new_cert_table();
+      current->next = *data;
+      *data = current;
+      current->session_id = strtoull(parts[1].c_str(), nullptr, 10);
+    }
+    else {
+      char * value = strdup(parts[1].substr(1).trim("\n").c_str());
+      if(parts[0] == "address")
+        current->peer_address = value;
+      else if(parts[0] == "serial")
+        current->cert_serial = value;
+      else if(parts[0] == "name")
+        current->cert_name = value;
+      else if(parts[0] == "expires")
+        current->cert_expires = value;
+      else
+        free(value);  // unexpected input
+    }
+  }
+
+  if(ok) DBUG_RETURN(ncerts);
+  DBUG_RETURN(-1);
+}
+
+void ndb_mgm_cert_table_free(ndb_mgm_cert_table ** list) {
+  while(*list) {
+    ndb_mgm_cert_table * t = *list;
+    free((void *) t->cert_expires);
+    free((void *) t->cert_name);
+    free((void *) t->cert_serial);
+    free((void *) t->peer_address);
+    *list = t->next;
+    delete t;
+  }
+}
+
+int  ndb_mgm_get_tls_stats(NdbMgmHandle handle, ndb_mgm_tls_stats * result) {
+  DBUG_ENTER("ndb_mgm_get_tls_stats");
+  CHECK_HANDLE(handle, -1);
+  CHECK_CONNECTED(handle, -1);
+
+  const ParserRow<ParserDummy> reply[]= {
+    MGM_CMD("get tls stats reply", nullptr, ""),
+    MGM_ARG("accepted", Int, Mandatory, "Total accepted connections"),
+    MGM_ARG("upgraded", Int, Mandatory, "Total connections upgraded to TLS"),
+    MGM_ARG("current", Int, Mandatory, "Current open connections"),
+    MGM_ARG("tls", Int, Mandatory, "Current connections using TLS"),
+    MGM_ARG("authfail", Int, Mandatory, "Total authorization errors"),
+    MGM_END()
+  };
+
+  const Properties * prop =
+    ndb_mgm_call(handle, reply, "get tls stats", nullptr);
+
+  CHECK_REPLY(handle, prop, 0);
+
+  prop->get("accepted", & (result->accepted));
+  prop->get("upgraded", & (result->upgraded));
+  prop->get("current", & (result->current));
+  prop->get("tls", & (result->tls));
+  prop->get("authfail", & (result->authfail));
+
+  delete prop;
+  DBUG_RETURN(0);
 }
 
 

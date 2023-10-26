@@ -26,13 +26,14 @@
 #include <sys/types.h>
 #include <memory>
 
-#include "libbinlogevents/include/compression/compressor.h"  // binary_log::transaction::compression::Compressor
-#include "libbinlogevents/include/nodiscard.h"
-#include "my_inttypes.h"  // IWYU pragma: keep
+#include "my_inttypes.h"                                // IWYU pragma: keep
+#include "mysql/binlog/event/compression/compressor.h"  // mysql::binlog::event::compression::Compressor
+#include "mysql/binlog/event/nodiscard.h"
 
-#include "libbinlogevents/include/compression/factory.h"
+#include "mysql/binlog/event/compression/factory.h"
 #include "sql/binlog/group_commit/bgc_ticket.h"
 #include "sql/memory/aligned_atomic.h"
+#include "sql/psi_memory_key.h"
 #include "sql/resource_blocker.h"  // resource_blocker::User
 #include "sql/system_variables.h"
 
@@ -254,8 +255,9 @@ class Last_used_gtid_tracker_ctx {
    Set the last used GTID the session.
 
    @param[in]  gtid  the used gtid.
+   @param[in]  sid   the used sid.
   */
-  void set_last_used_gtid(const Gtid &gtid);
+  void set_last_used_gtid(const Gtid &gtid, const rpl_sid &sid);
 
   /**
    Get the last used GTID the session.
@@ -264,18 +266,28 @@ class Last_used_gtid_tracker_ctx {
   */
   void get_last_used_gtid(Gtid &gtid);
 
+  /**
+   Get the last used SID of the session.
+
+   @param[out]  sid the used sid.
+  */
+  void get_last_used_sid(rpl_sid &sid);
+
  private:
   std::unique_ptr<Gtid> m_last_used_gtid;
+  rpl_sid m_last_used_sid;
 };
 
 class Transaction_compression_ctx {
-  using Compressor_t = binary_log::transaction::compression::Compressor;
-  using Grow_calculator_t = mysqlns::buffer::Grow_calculator;
-  using Factory_t = binary_log::transaction::compression::Factory;
+  using Compressor_t = mysql::binlog::event::compression::Compressor;
+  using Grow_calculator_t =
+      mysql::binlog::event::compression::buffer::Grow_calculator;
+  using Factory_t = mysql::binlog::event::compression::Factory;
 
  public:
   using Compressor_ptr_t = std::shared_ptr<Compressor_t>;
   using Managed_buffer_sequence_t = Compressor_t::Managed_buffer_sequence_t;
+  using Memory_resource_t = mysql::binlog::event::resource::Memory_resource;
 
   explicit Transaction_compression_ctx(PSI_memory_key key);
 
@@ -290,6 +302,7 @@ class Transaction_compression_ctx {
   Managed_buffer_sequence_t &managed_buffer_sequence();
 
  private:
+  Memory_resource_t m_managed_buffer_memory_resource;
   Managed_buffer_sequence_t m_managed_buffer_sequence;
   Compressor_ptr_t m_compressor;
 };
@@ -427,9 +440,8 @@ class Rpl_thd_context {
   Rpl_thd_context &operator=(const Rpl_thd_context &rsc);
 
  public:
-  Rpl_thd_context()
-      : m_transaction_compression_ctx(
-            0),  // todo: specify proper key instead of 0
+  Rpl_thd_context(PSI_memory_key transaction_compression_ctx)
+      : m_transaction_compression_ctx(transaction_compression_ctx),
         rpl_channel_type(NO_CHANNEL_INFO) {}
 
   /**

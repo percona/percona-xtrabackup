@@ -96,6 +96,11 @@ Uint32 overload_limit(const TransporterConfiguration* conf)
           conf->tcp.sendBufferSize*4/5);
 }
 
+/* Request a TLS key rotation after this number of bytes are sent
+   by a transporter, as described in WL#15130 and in RFC 8446 sec. 5.5.
+   The number here should have just one bit set.
+*/
+static constexpr Uint64 keyRotateBit = 0x0000000100000000;
 
 TCP_Transporter::TCP_Transporter(TransporterRegistry &t_reg,
 				 const TransporterConfiguration* conf)
@@ -132,6 +137,10 @@ TCP_Transporter::TCP_Transporter(TransporterRegistry &t_reg,
    */
   m_slowdown_limit = m_overload_limit * 6 / 10;
 
+  m_require_tls = conf->requireTls;
+  if(! isServer)
+    use_tls_client_auth();
+
   send_checksum_state.init();
 }
 
@@ -164,6 +173,7 @@ TCP_Transporter::TCP_Transporter(TransporterRegistry &t_reg,
   sockOptTcpMaxSeg = t->sockOptTcpMaxSeg;
   m_overload_limit = t->m_overload_limit;
   m_slowdown_limit = t->m_slowdown_limit;
+  if(! isServer) use_tls_client_auth();
   send_checksum_state.init();
 }
 
@@ -215,13 +225,22 @@ bool TCP_Transporter::connect_client_impl(NdbSocket & socket)
 
 bool TCP_Transporter::connect_common(NdbSocket & socket)
 {
+  struct x509_st * cert = socket.peer_certificate();
+  if(cert)
+  {
+    m_encrypted = true;
+    m_transporter_registry.getTlsKeyManager()->cert_table_set(remoteNodeId,
+                                                              cert);
+    socket.enable_locking();
+  }
+
   setSocketOptions(socket.ndb_socket());
   socket.set_nonblocking(true);
 
-  get_callback_obj()->lock_transporter(remoteNodeId, m_transporter_index);
-  NdbSocket::transfer(theSocket, socket);
+  get_callback_obj()->lock_transporter(m_transporter_index);
+  theSocket = std::move(socket);
   send_checksum_state.init();
-  get_callback_obj()->unlock_transporter(remoteNodeId, m_transporter_index);
+  get_callback_obj()->unlock_transporter(m_transporter_index);
 
   DBUG_PRINT("info", ("Successfully set-up TCP transporter to node %d",
               remoteNodeId));
@@ -394,19 +413,13 @@ TCP_Transporter::doSend(bool need_wakeup)
       }
     }
 
-    if (Uint32(nBytesSent) == remain)  //Completed this send
+    if (likely(Uint32(nBytesSent) == remain))  //Completed this send
     {
       sum_sent += nBytesSent;
       assert(sum >= sum_sent);
       remain = sum - sum_sent;
       //g_eventLogger->info("Sent %d bytes on trp %u", nBytesSent, getTransporterIndex());
       break;
-    }
-    else if (nBytesSent == TLS_BUSY_TRY_AGAIN)
-    {
-      // TLS is doing protocol layer stuff. We need to keep polling and
-      // trying to send until it is done.
-      return true;
     }
     else if (nBytesSent > 0)           //Sent some, more pending
     {
@@ -434,9 +447,15 @@ TCP_Transporter::doSend(bool need_wakeup)
         iov[pos].iov_base = ((char*)(iov[pos].iov_base))+nBytesSent;
       }
     }
-    else                               //Send failed, terminate
+    else                               //Send failed, handle or disconnect?
     {
       const int err = ndb_socket_errno();
+
+      if (nBytesSent == TLS_BUSY_TRY_AGAIN)
+      {
+        // In case TLS was 'BUSY' TransporterRegistry will send-retry later.
+        break;
+      }
 
 #if defined DEBUG_TRANSPORTER
       g_eventLogger->error("Send Failure(disconnect==%d) to node = %d "
@@ -495,11 +514,13 @@ TCP_Transporter::doSend(bool need_wakeup)
       }
       if ((DISCONNECT_ERRNO(err, nBytesSent)))
       {
+        remain = 0;                    //Will stop retries of this send.
         if (!do_disconnect(err, true)) //Initiate pending disconnect
         {
-          return true;
+          // We are 'DISCONNECTING' asynch -> We may still attempt more sends.
+          // -> The send buffers still need to be maintained with the 'sum_sent'
+          // Fall through to break the send loop below.
         }
-        remain = 0;
       }
       break;
     }
@@ -511,7 +532,15 @@ TCP_Transporter::doSend(bool need_wakeup)
   }
   sendCount += send_cnt;
   sendSize  += sum_sent;
+  bool rotateBitPre = ((m_bytes_sent & keyRotateBit) == keyRotateBit);
   m_bytes_sent += sum_sent;
+  bool rotateBitPost = ((m_bytes_sent & keyRotateBit) == keyRotateBit);
+
+  if(rotateBitPost != rotateBitPre)
+  {
+    theSocket.update_keys();
+  }
+
   if(sendCount >= reportFreq)
   {
     get_callback_obj()->reportSendLen(remoteNodeId, sendCount, sendSize);
@@ -527,15 +556,13 @@ TCP_Transporter::shutdown()
 {
   if (theSocket.is_valid())
   {
-    DEB_MULTI_TRP(("Close socket for trp %u",
-                   getTransporterIndex()));
+    DEB_MULTI_TRP(("Close socket for trp %u", getTransporterIndex()));
     theSocket.close();
     theSocket.invalidate();
   }
   else
   {
-    DEB_MULTI_TRP(("Socket already closed for trp %u",
-                   getTransporterIndex()));
+    DEB_MULTI_TRP(("Socket already closed for trp %u", getTransporterIndex()));
   }
   m_connected = false;
 }
@@ -557,7 +584,7 @@ TCP_Transporter::doReceive(TransporterReceiveHandle& recvdata)
 
       if(nBytesRead == TLS_BUSY_TRY_AGAIN) return TLS_BUSY_TRY_AGAIN;
 
-      if (nBytesRead > 0)
+      if (likely(nBytesRead > 0))
       {
         receiveBuffer.sizeOfData += nBytesRead;
         receiveBuffer.insertPtr  += nBytesRead;
@@ -676,11 +703,9 @@ TCP_Transporter::doReceive(TransporterReceiveHandle& recvdata)
 void
 TCP_Transporter::disconnectImpl()
 {
-  NdbSocket sock;
-
-  get_callback_obj()->lock_transporter(remoteNodeId, m_transporter_index);
-  NdbSocket::transfer(sock, theSocket);
-  get_callback_obj()->unlock_transporter(remoteNodeId, m_transporter_index);
+  get_callback_obj()->lock_transporter(m_transporter_index);
+  NdbSocket sock = std::move(theSocket);
+  get_callback_obj()->unlock_transporter(m_transporter_index);
 
   if(sock.is_valid())
   {
@@ -689,4 +714,7 @@ TCP_Transporter::disconnectImpl()
       report_error(TE_ERROR_CLOSING_SOCKET);
     }
   }
+
+  m_encrypted = false;
+  m_transporter_registry.getTlsKeyManager()->cert_table_clear(remoteNodeId);
 }

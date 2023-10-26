@@ -60,17 +60,13 @@ MYSQL_ADD_EXECUTABLE(minimal_chassis_test_driver-t
   DEPENDENCIES component_example_component1
 )
 
-IF(WIN32)
-  TARGET_LINK_LIBRARIES(minimal_chassis_test_driver-t my_nt_servc)
-ENDIF()
-
 IF(NOT WITH_SHARED_UNITTEST_LIBRARY)
   TARGET_LINK_LIBRARIES(minimal_chassis_test_driver-t
     mysql_server_component_services)
 ENDIF()
 
 IF(WIN32)
-  ADD_DEPENDENCIES(minimal_chassis_test_driver-t "${PROTOBUF_LITE_LIBRARY}")
+  ADD_DEPENDENCIES(minimal_chassis_test_driver-t ext::libprotobuf-lite)
   # Copy dlls for libprotobuf-lite and libcrypto/libssl to plugin dir.
   FUNCTION(COPY_DLL_FOR_UNITTEST DLL_FILE_NAME)
     SET(run_dir  "${CMAKE_BINARY_DIR}/runtime_output_directory/")
@@ -98,9 +94,6 @@ MYSQL_ADD_EXECUTABLE(reference_cache-t
   DEPENDENCIES component_reference_cache component_test_reference_cache
 )
 
-IF(WIN32)
-  TARGET_LINK_LIBRARIES(reference_cache-t my_nt_servc)
-ENDIF()
 IF(NOT WITH_SHARED_UNITTEST_LIBRARY)
   TARGET_LINK_LIBRARIES(reference_cache-t mysql_server_component_services)
 ENDIF()

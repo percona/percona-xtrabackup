@@ -79,6 +79,7 @@
 #include "sql/sql_component.h"  // Sql_cmd_component
 #include "sql/sql_const.h"
 #include "sql/sql_data_change.h"
+#include "sql/sql_db.h"
 #include "sql/sql_delete.h"  // Sql_cmd_delete...
 #include "sql/sql_do.h"      // Sql_cmd_do...
 #include "sql/sql_error.h"
@@ -1640,7 +1641,7 @@ void PT_set_operation::merge_descendants(Parse_context *pc,
     for (Query_term *elt : ql.m_elts) {
       // We only collapse same kind, and only if no LIMIT on it. Also, we do
       // not collapse INTERSECT ALL due to difficulty in computing it if we
-      // do, cf. logic in MaterializeIterator<Profiler>::MaterializeQueryBlock.
+      // do, cf. logic in MaterializeIterator<Profiler>::MaterializeOperand.
       if (elt->term_type() == QT_QUERY_BLOCK || /* 1 */
           elt->term_type() != op ||             /* 2 */
           (op == QT_EXCEPT && count > 0) ||     /* 3 */
@@ -2777,7 +2778,7 @@ Sql_cmd *PT_show_events::make_cmd(THD *thd) {
   return &m_sql_cmd;
 }
 
-Sql_cmd *PT_show_master_status::make_cmd(THD *thd) {
+Sql_cmd *PT_show_binary_log_status::make_cmd(THD *thd) {
   LEX *lex = thd->lex;
   lex->sql_command = m_sql_command;
 
@@ -3631,7 +3632,32 @@ Sql_cmd *PT_explain::make_cmd(THD *thd) {
   if (lex->explain_format == nullptr) return nullptr;  // OOM
   lex->is_explain_analyze = m_analyze;
 
+  /*
+    If this EXPLAIN statement is supposed to be run in another schema change to
+    the appropriate schema and save the current schema name.
+  */
+  lex->explain_format->m_schema_name_for_explain = m_schema_name_for_explain;
+  char saved_schema_name_buf[NAME_LEN + 1];
+  LEX_STRING saved_schema_name{saved_schema_name_buf,
+                               sizeof(saved_schema_name_buf)};
+  bool cur_db_changed = false;
+  if (m_schema_name_for_explain.length != 0 &&
+      mysql_opt_change_db(thd, m_schema_name_for_explain, &saved_schema_name,
+                          false, &cur_db_changed)) {
+    return nullptr; /* purecov: inspected */
+  }
+
   Sql_cmd *ret = m_explainable_stmt->make_cmd(thd);
+
+  /*
+    Change back to original schema to make sure current schema stays consistent
+    when preparing a statement or SP with EXPLAIN FOR SCHEMA.
+  */
+  if (cur_db_changed &&
+      mysql_change_db(thd, to_lex_cstring(saved_schema_name), true)) {
+    ret = nullptr; /* purecov: inspected */
+  }
+
   if (ret == nullptr) return nullptr;  // OOM
 
   auto code = ret->sql_command_code();
@@ -3724,14 +3750,24 @@ Sql_cmd *PT_load_table::make_cmd(THD *thd) {
 
   /* Fix lock for LOAD DATA CONCURRENT REPLACE */
   thr_lock_type lock_type = m_lock_type;
-  if (lex->duplicates == DUP_REPLACE && lock_type == TL_WRITE_CONCURRENT_INSERT)
-    lock_type = TL_WRITE_DEFAULT;
+  enum_mdl_type mdl_type = MDL_SHARED_WRITE;
 
-  if (!select->add_table_to_list(
-          thd, m_cmd.m_table, nullptr, TL_OPTION_UPDATING, lock_type,
-          lock_type == TL_WRITE_LOW_PRIORITY ? MDL_SHARED_WRITE_LOW_PRIO
-                                             : MDL_SHARED_WRITE,
-          nullptr, m_cmd.m_opt_partitions))
+  if (m_cmd.is_bulk_load()) {
+    lock_type = TL_WRITE;
+    mdl_type = MDL_EXCLUSIVE;
+  } else {
+    if (lex->duplicates == DUP_REPLACE &&
+        lock_type == TL_WRITE_CONCURRENT_INSERT) {
+      lock_type = TL_WRITE_DEFAULT;
+    }
+    if (lock_type == TL_WRITE_LOW_PRIORITY) {
+      mdl_type = MDL_SHARED_WRITE_LOW_PRIO;
+    }
+  }
+
+  if (!select->add_table_to_list(thd, m_cmd.m_table, nullptr,
+                                 TL_OPTION_UPDATING, lock_type, mdl_type,
+                                 nullptr, m_cmd.m_opt_partitions))
     return nullptr;
 
   /* We can't give an error in the middle when using LOCAL files */

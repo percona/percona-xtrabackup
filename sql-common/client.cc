@@ -68,6 +68,7 @@
 #include "base64.h"
 #include "client_async_authentication.h"
 #include "compression.h"  // validate_compression_attributes
+#include "config.h"
 #include "errmsg.h"
 #include "lex_string.h"
 #include "map_helpers.h"
@@ -88,6 +89,7 @@
 #include "mysql/psi/mysql_memory.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysql/strings/int2str.h"
+#include "mysql_native_authentication_client.h"
 #include "mysql_version.h"
 #include "mysqld_error.h"
 #include "strmake.h"
@@ -143,11 +145,12 @@
 #include "sql/log_event.h"     /* Log_event_type */
 #include "sql/rpl_constants.h" /* mysql_binlog_XXX() */
 
+using mysql::binlog::event::Log_event_type;
 using std::string;
 using std::swap;
 
 #define STATE_DATA(M) \
-  (NULL != (M) ? &(MYSQL_EXTENSION_PTR(M)->state_change) : NULL)
+  (nullptr != (M) ? &(MYSQL_EXTENSION_PTR(M)->state_change) : nullptr)
 
 #define ADD_INFO(M, element, type)                       \
   {                                                      \
@@ -156,7 +159,6 @@ using std::swap;
         list_add(M->info_list[type].head_node, element); \
   }
 
-#define native_password_plugin_name "mysql_native_password"
 #define caching_sha2_password_plugin_name "caching_sha2_password"
 
 PSI_memory_key key_memory_mysql_options;
@@ -432,10 +434,10 @@ static HANDLE create_named_pipe(MYSQL *mysql, DWORD connect_timeout,
     if ((hPipe = CreateFile(pipe_name,
                             FILE_READ_ATTRIBUTES | FILE_READ_DATA |
                                 FILE_WRITE_ATTRIBUTES | FILE_WRITE_DATA,
-                            0, NULL, OPEN_EXISTING,
+                            0, nullptr, OPEN_EXISTING,
                             FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT |
                                 SECURITY_IDENTIFICATION,
-                            NULL)) != INVALID_HANDLE_VALUE)
+                            nullptr)) != INVALID_HANDLE_VALUE)
       break;
     if (GetLastError() != ERROR_PIPE_BUSY) {
       set_mysql_extended_error(mysql, CR_NAMEDPIPEOPEN_ERROR, unknown_sqlstate,
@@ -458,7 +460,7 @@ static HANDLE create_named_pipe(MYSQL *mysql, DWORD connect_timeout,
     return INVALID_HANDLE_VALUE;
   }
   dwMode = PIPE_READMODE_BYTE | PIPE_WAIT;
-  if (!SetNamedPipeHandleState(hPipe, &dwMode, NULL, NULL)) {
+  if (!SetNamedPipeHandleState(hPipe, &dwMode, nullptr, nullptr)) {
     CloseHandle(hPipe);
     set_mysql_extended_error(mysql, CR_NAMEDPIPESETSTATE_ERROR,
                              unknown_sqlstate,
@@ -499,23 +501,23 @@ static HANDLE create_shared_memory(MYSQL *mysql, NET *net,
     event_client_read are events for transfer data between server and client
     handle_file_map is file-mapping object, use for create shared memory
   */
-  HANDLE event_connect_request = NULL;
-  HANDLE event_connect_answer = NULL;
-  HANDLE handle_connect_file_map = NULL;
-  char *handle_connect_map = NULL;
+  HANDLE event_connect_request = nullptr;
+  HANDLE event_connect_answer = nullptr;
+  HANDLE handle_connect_file_map = nullptr;
+  char *handle_connect_map = nullptr;
 
-  char *handle_map = NULL;
-  HANDLE event_server_wrote = NULL;
-  HANDLE event_server_read = NULL;
-  HANDLE event_client_wrote = NULL;
-  HANDLE event_client_read = NULL;
-  HANDLE event_conn_closed = NULL;
-  HANDLE handle_file_map = NULL;
-  HANDLE connect_named_mutex = NULL;
+  char *handle_map = nullptr;
+  HANDLE event_server_wrote = nullptr;
+  HANDLE event_server_read = nullptr;
+  HANDLE event_client_wrote = nullptr;
+  HANDLE event_client_read = nullptr;
+  HANDLE event_conn_closed = nullptr;
+  HANDLE handle_file_map = nullptr;
+  HANDLE connect_named_mutex = nullptr;
   ulong connect_number;
-  char connect_number_char[22], *p;
-  char *tmp = NULL;
-  char *suffix_pos = NULL;
+  char connect_number_char[22];
+  char *tmp = nullptr;
+  char *suffix_pos = nullptr;
   DWORD error_allow = 0;
   DWORD error_code = 0;
   const DWORD event_access_rights = SYNCHRONIZE | EVENT_MODIFY_STATE;
@@ -524,13 +526,13 @@ static HANDLE create_shared_memory(MYSQL *mysql, NET *net,
   const char *prefix;
 
   /*
-    If this is NULL, somebody freed the MYSQL* options.  mysql_close()
+    If this is nullptr, somebody freed the MYSQL* options.  mysql_close()
     is a good candidate.  We don't just silently (re)set it to
     def_shared_memory_base_name as that would create really confusing/buggy
     behavior if the user passed in a different name on the command-line or
     in a my.cnf.
   */
-  assert(shared_memory_base_name != NULL);
+  assert(shared_memory_base_name != nullptr);
 
   /*
      get enough space base-name + '_' + longest suffix we might ever send
@@ -580,7 +582,7 @@ static HANDLE create_shared_memory(MYSQL *mysql, NET *net,
 
   my_stpcpy(suffix_pos, "CONNECT_NAMED_MUTEX");
   connect_named_mutex = OpenMutex(SYNCHRONIZE, false, tmp);
-  if (connect_named_mutex == NULL) {
+  if (connect_named_mutex == nullptr) {
     error_allow = CR_SHARED_MEMORY_CONNECT_SET_ERROR;
     goto err;
   }
@@ -609,9 +611,9 @@ static HANDLE create_shared_memory(MYSQL *mysql, NET *net,
 
   ReleaseMutex(connect_named_mutex);
   CloseHandle(connect_named_mutex);
-  connect_named_mutex = NULL;
+  connect_named_mutex = nullptr;
 
-  p = longlong10_to_str(connect_number, connect_number_char, 10);
+  longlong10_to_str(connect_number, connect_number_char, 10);
 
   /*
     The name of event and file-mapping events create agree next rule:
@@ -625,48 +627,49 @@ static HANDLE create_shared_memory(MYSQL *mysql, NET *net,
   suffix_pos = strxmov(tmp, prefix, shared_memory_base_name, "_",
                        connect_number_char, "_", NullS);
   my_stpcpy(suffix_pos, "DATA");
-  if ((handle_file_map = OpenFileMapping(FILE_MAP_WRITE, false, tmp)) == NULL) {
+  if ((handle_file_map = OpenFileMapping(FILE_MAP_WRITE, false, tmp)) ==
+      nullptr) {
     error_allow = CR_SHARED_MEMORY_FILE_MAP_ERROR;
     goto err2;
   }
   if ((handle_map = static_cast<char *>(MapViewOfFile(
            handle_file_map, FILE_MAP_WRITE, 0, 0, smem_buffer_length))) ==
-      NULL) {
+      nullptr) {
     error_allow = CR_SHARED_MEMORY_MAP_ERROR;
     goto err2;
   }
 
   my_stpcpy(suffix_pos, "SERVER_WROTE");
   if ((event_server_wrote = OpenEvent(event_access_rights, false, tmp)) ==
-      NULL) {
+      nullptr) {
     error_allow = CR_SHARED_MEMORY_EVENT_ERROR;
     goto err2;
   }
 
   my_stpcpy(suffix_pos, "SERVER_READ");
   if ((event_server_read = OpenEvent(event_access_rights, false, tmp)) ==
-      NULL) {
+      nullptr) {
     error_allow = CR_SHARED_MEMORY_EVENT_ERROR;
     goto err2;
   }
 
   my_stpcpy(suffix_pos, "CLIENT_WROTE");
   if ((event_client_wrote = OpenEvent(event_access_rights, false, tmp)) ==
-      NULL) {
+      nullptr) {
     error_allow = CR_SHARED_MEMORY_EVENT_ERROR;
     goto err2;
   }
 
   my_stpcpy(suffix_pos, "CLIENT_READ");
   if ((event_client_read = OpenEvent(event_access_rights, false, tmp)) ==
-      NULL) {
+      nullptr) {
     error_allow = CR_SHARED_MEMORY_EVENT_ERROR;
     goto err2;
   }
 
   my_stpcpy(suffix_pos, "CONNECTION_CLOSED");
   if ((event_conn_closed = OpenEvent(event_access_rights, false, tmp)) ==
-      NULL) {
+      nullptr) {
     error_allow = CR_SHARED_MEMORY_EVENT_ERROR;
     goto err2;
   }
@@ -1868,7 +1871,7 @@ static int check_license(MYSQL *mysql) {
   if (!(res = mysql_use_result(mysql))) return 1;
   row = mysql_fetch_row(res);
   /*
-    If no rows in result set, or column value is NULL (none of these
+    If no rows in result set, or column value is nullptr (none of these
     two is ever true for server variables now), or column value
     mismatch, set wrong license error.
   */
@@ -3652,10 +3655,10 @@ static int ssl_verify_server_cert(Vio *vio, const char *server_hostname,
 
 #if !(OPENSSL_VERSION_NUMBER >= 0x10002000L)
   int cn_loc = -1;
-  char *cn = NULL;
-  ASN1_STRING *cn_asn1 = NULL;
-  X509_NAME_ENTRY *cn_entry = NULL;
-  X509_NAME *subject = NULL;
+  char *cn = nullptr;
+  ASN1_STRING *cn_asn1 = nullptr;
+  X509_NAME_ENTRY *cn_entry = nullptr;
+  X509_NAME *subject = nullptr;
 #endif
 
   DBUG_TRACE;
@@ -3710,14 +3713,14 @@ static int ssl_verify_server_cert(Vio *vio, const char *server_hostname,
 
   // Get the CN entry for given location
   cn_entry = X509_NAME_get_entry(subject, cn_loc);
-  if (cn_entry == NULL) {
+  if (cn_entry == nullptr) {
     *errptr = "Failed to get CN entry using CN location";
     goto error;
   }
 
   // Get CN from common name entry
   cn_asn1 = X509_NAME_ENTRY_get_data(cn_entry);
-  if (cn_asn1 == NULL) {
+  if (cn_asn1 == nullptr) {
     *errptr = "Failed to get CN from CN entry";
     goto error;
   }
@@ -4004,26 +4007,7 @@ int mysql_init_character_set(MYSQL *mysql) {
 static int client_mpvio_write_packet(MYSQL_PLUGIN_VIO *, const uchar *, int);
 static net_async_status client_mpvio_write_packet_nonblocking(
     struct MYSQL_PLUGIN_VIO *, const uchar *, int, int *);
-static int native_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql);
-static net_async_status native_password_auth_client_nonblocking(
-    MYSQL_PLUGIN_VIO *vio, MYSQL *mysql, int *result);
 static int clear_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql);
-
-static auth_plugin_t native_password_client_plugin = {
-    MYSQL_CLIENT_AUTHENTICATION_PLUGIN,
-    MYSQL_CLIENT_AUTHENTICATION_PLUGIN_INTERFACE_VERSION,
-    native_password_plugin_name,
-    MYSQL_CLIENT_PLUGIN_AUTHOR_ORACLE,
-    "Native MySQL authentication",
-    {1, 0, 0},
-    "GPL",
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    native_password_auth_client,
-    native_password_auth_client_nonblocking};
 
 static auth_plugin_t clear_password_client_plugin = {
     MYSQL_CLIENT_AUTHENTICATION_PLUGIN,
@@ -4088,7 +4072,10 @@ extern auth_plugin_t test_trace_plugin;
 #endif
 
 struct st_mysql_client_plugin *mysql_client_builtins[] = {
+#if !defined(WITHOUT_MYSQL_NATIVE_PASSWORD) || \
+    WITHOUT_MYSQL_NATIVE_PASSWORD == 0
     (struct st_mysql_client_plugin *)&native_password_client_plugin,
+#endif
     (struct st_mysql_client_plugin *)&clear_password_client_plugin,
     (struct st_mysql_client_plugin *)&sha256_password_client_plugin,
     (struct st_mysql_client_plugin *)&caching_sha2_password_client_plugin,
@@ -4164,7 +4151,7 @@ static size_t get_length_store_length(size_t length) {
  @param src Source buff of size src_len
  @param src_end One byte past the end of the src buffer
 
- @return pointer dest+src_len+header size or NULL if
+ @return pointer dest+src_len+header size or nullptr if
 */
 
 static char *write_length_encoded_string4(char *dest, char *dest_end,
@@ -5757,11 +5744,24 @@ static mysql_state_machine_status authsm_begin_plugin_auth(
   }
 
   if (ctx->auth_plugin_name == nullptr || ctx->auth_plugin == nullptr) {
-    /*
-      If everything else fail we use the built in plugin
-    */
-    ctx->auth_plugin = &caching_sha2_password_client_plugin;
-    ctx->auth_plugin_name = ctx->auth_plugin->name;
+    auth_plugin_t *client_plugin{nullptr};
+    if (mysql->options.extension && mysql->options.extension->default_auth &&
+        (client_plugin = (auth_plugin_t *)mysql_client_find_plugin(
+             mysql, mysql->options.extension->default_auth,
+             MYSQL_CLIENT_AUTHENTICATION_PLUGIN))) {
+      // try default_auth again in case CLIENT_PLUGIN_AUTH wasn't on.
+      ctx->auth_plugin_name = mysql->options.extension->default_auth;
+      ctx->auth_plugin = client_plugin;
+    } else {
+      /*
+        If everything else fail we use the built in plugin: caching sha if the
+        server is new enough or native if not.
+      */
+      ctx->auth_plugin = (mysql->server_capabilities & CLIENT_PLUGIN_AUTH)
+                             ? &caching_sha2_password_client_plugin
+                             : &native_password_client_plugin;
+      ctx->auth_plugin_name = ctx->auth_plugin->name;
+    }
   }
 
   if (check_plugin_enabled(mysql, ctx)) return STATE_MACHINE_FAILED;
@@ -6457,7 +6457,7 @@ static mysql_state_machine_status csm_begin_connect(mysql_async_connect *ctx) {
       net_clear_error(net);
     } else {
       mysql->options.protocol = MYSQL_PROTOCOL_MEMORY;
-      unix_socket = 0;
+      unix_socket = nullptr;
       host = mysql->options.shared_memory_base_name;
       snprintf(ctx->host_info = ctx->buff, sizeof(ctx->buff) - 1,
                ER_CLIENT(CR_SHARED_MEMORY_CONNECTION), host);
@@ -7445,8 +7445,8 @@ int STDCALL mysql_binlog_fetch(MYSQL *mysql, MYSQL_RPL *rpl) {
     if (rpl->flags & MYSQL_RPL_SKIP_HEARTBEAT) {
       const Log_event_type event_type =
           (Log_event_type)net->read_pos[1 + EVENT_TYPE_OFFSET];
-      if ((event_type == binary_log::HEARTBEAT_LOG_EVENT) ||
-          (event_type == binary_log::HEARTBEAT_LOG_EVENT_V2))
+      if ((event_type == mysql::binlog::event::HEARTBEAT_LOG_EVENT) ||
+          (event_type == mysql::binlog::event::HEARTBEAT_LOG_EVENT_V2))
         continue;
     }
 
@@ -9519,136 +9519,6 @@ const char *STDCALL mysql_sqlstate(MYSQL *mysql) {
   return mysql ? mysql->net.sqlstate : cant_connect_sqlstate;
 }
 
-/**
-  Client authentication plugin that does native MySQL authentication
-   using a 20-byte (4.1+) scramble
-
-   @param vio    the channel to operate on
-   @param mysql  the MYSQL structure to operate on
-
-   @retval -1    ::CR_OK : Success
-   @retval 1     ::CR_ERROR : error reading
-   @retval 2012  ::CR_SERVER_HANDSHAKE_ERR : malformed handshake data
-*/
-static int native_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql) {
-  int pkt_len;
-  uchar *pkt;
-
-  DBUG_TRACE;
-
-  /* read the scramble */
-  if ((pkt_len = vio->read_packet(vio, &pkt)) < 0) return CR_ERROR;
-
-  if (pkt_len != SCRAMBLE_LENGTH + 1) return CR_SERVER_HANDSHAKE_ERR;
-
-  /* save it in MYSQL */
-  memcpy(mysql->scramble, pkt, SCRAMBLE_LENGTH);
-  mysql->scramble[SCRAMBLE_LENGTH] = 0;
-
-  if (mysql->passwd[0]) {
-    char scrambled[SCRAMBLE_LENGTH + 1];
-    DBUG_PRINT("info", ("sending scramble"));
-    scramble(scrambled, (char *)pkt, mysql->passwd);
-    if (vio->write_packet(vio, (uchar *)scrambled, SCRAMBLE_LENGTH))
-      return CR_ERROR;
-  } else {
-    DBUG_PRINT("info", ("no password"));
-    if (vio->write_packet(vio, nullptr, 0)) /* no password */
-      return CR_ERROR;
-  }
-
-  return CR_OK;
-}
-
-/**
-  Client authentication plugin that does native MySQL authentication
-  in a nonblocking way.
-
-   @param[in]    vio    the channel to operate on
-   @param[in]    mysql  the MYSQL structure to operate on
-   @param[out]   result CR_OK : Success, CR_ERROR : error reading,
-                        CR_SERVER_HANDSHAKE_ERR : malformed handshake data
-
-   @retval     NET_ASYNC_NOT_READY  authentication not yet complete
-   @retval     NET_ASYNC_COMPLETE   authentication done
-*/
-static net_async_status native_password_auth_client_nonblocking(
-    MYSQL_PLUGIN_VIO *vio, MYSQL *mysql, int *result) {
-  DBUG_TRACE;
-  int io_result;
-  uchar *pkt;
-  mysql_async_auth *ctx = ASYNC_DATA(mysql)->connect_context->auth_context;
-
-  switch (static_cast<client_auth_native_password_plugin_status>(
-      ctx->client_auth_plugin_state)) {
-    case client_auth_native_password_plugin_status::NATIVE_READING_PASSWORD:
-      if (((MCPVIO_EXT *)vio)->mysql_change_user) {
-        /* mysql_change_user_nonblocking not implemented yet. */
-        assert(false);
-      } else {
-        /* read the scramble */
-        const net_async_status status =
-            vio->read_packet_nonblocking(vio, &pkt, &io_result);
-        if (status == NET_ASYNC_NOT_READY) {
-          return NET_ASYNC_NOT_READY;
-        }
-
-        if (io_result < 0) {
-          *result = CR_ERROR;
-          return NET_ASYNC_COMPLETE;
-        }
-
-        if (io_result != SCRAMBLE_LENGTH + 1) {
-          *result = CR_SERVER_HANDSHAKE_ERR;
-          return NET_ASYNC_COMPLETE;
-        }
-
-        /* save it in MYSQL */
-        memcpy(mysql->scramble, pkt, SCRAMBLE_LENGTH);
-        mysql->scramble[SCRAMBLE_LENGTH] = 0;
-      }
-      ctx->client_auth_plugin_state = (int)
-          client_auth_native_password_plugin_status::NATIVE_WRITING_RESPONSE;
-
-      [[fallthrough]];
-
-    case client_auth_native_password_plugin_status::NATIVE_WRITING_RESPONSE:
-      if (mysql->passwd[0]) {
-        char scrambled[SCRAMBLE_LENGTH + 1];
-        DBUG_PRINT("info", ("sending scramble"));
-        scramble(scrambled, (char *)pkt, mysql->passwd);
-        const net_async_status status = vio->write_packet_nonblocking(
-            vio, (uchar *)scrambled, SCRAMBLE_LENGTH, &io_result);
-        if (status == NET_ASYNC_NOT_READY) {
-          return NET_ASYNC_NOT_READY;
-        }
-
-        if (io_result < 0) {
-          *result = CR_ERROR;
-          return NET_ASYNC_COMPLETE;
-        }
-      } else {
-        DBUG_PRINT("info", ("no password"));
-        const net_async_status status = vio->write_packet_nonblocking(
-            vio, nullptr, 0, &io_result); /* no password */
-
-        if (status == NET_ASYNC_NOT_READY) {
-          return NET_ASYNC_NOT_READY;
-        }
-
-        if (io_result < 0) {
-          *result = CR_ERROR;
-          return NET_ASYNC_COMPLETE;
-        }
-      }
-      break;
-    default:
-      assert(0);
-  }
-
-  *result = CR_OK;
-  return NET_ASYNC_COMPLETE;
-}
 /* clang-format off */
 /**
   @page page_protocol_connection_phase_authentication_methods_clear_text_password Clear text client plugin

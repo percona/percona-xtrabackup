@@ -60,6 +60,15 @@ ENDIF()
 # Xcode >= 14 makes noise about sprintf, so silence:
 IF(APPLE)
   LIST(APPEND ICU_LINUX_COMPILE_OPTIONS "-Wno-deprecated-declarations")
+  LIST(APPEND ICU_LINUX_COMPILE_OPTIONS "-Wno-shorten-64-to-32")
+ENDIF()
+
+MY_CHECK_CXX_COMPILER_WARNING("-Wzero-as-null-pointer-constant" HAS_WARN_FLAG)
+IF(HAS_WARN_FLAG)
+  # For WIN32_CLANG, replace it, since we do not use ICU_LINUX_COMPILE_OPTIONS.
+  STRING(REPLACE "-Wzero-as-null-pointer-constant" ""
+    CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  LIST(APPEND ICU_LINUX_COMPILE_OPTIONS "${HAS_WARN_FLAG}")
 ENDIF()
 
 MY_CHECK_CXX_COMPILER_WARNING("-Wreturn-local-addr" HAS_WARN_FLAG)
@@ -77,6 +86,11 @@ IF(HAS_WARN_FLAG)
 ENDIF()
 
 MY_CHECK_CXX_COMPILER_WARNING("-Wmisleading-indentation" HAS_WARN_FLAG)
+IF(HAS_WARN_FLAG)
+  LIST(APPEND ICU_LINUX_COMPILE_OPTIONS "${HAS_WARN_FLAG}")
+ENDIF()
+
+MY_CHECK_CXX_COMPILER_WARNING("-Wuninitialized" HAS_WARN_FLAG)
 IF(HAS_WARN_FLAG)
   LIST(APPEND ICU_LINUX_COMPILE_OPTIONS "${HAS_WARN_FLAG}")
 ENDIF()
@@ -120,6 +134,31 @@ ENDIF()
 
 # warning: dangling pointer to an unnamed temporary may be used
 MY_CHECK_CXX_COMPILER_WARNING("-Wdangling-pointer" HAS_WARN_FLAG)
+IF(HAS_WARN_FLAG)
+  LIST(APPEND ICU_LINUX_COMPILE_OPTIONS "${HAS_WARN_FLAG}")
+ENDIF()
+
+# typedef int8_t UBool; results in
+# error: return type of virtual UBool xxx::operator==(const xxx&) is not bool
+IF(CMAKE_CXX_FLAGS MATCHES "-std=c..20")
+  STRING(REPLACE "-std=c++20" "-std=c++17" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+ENDIF()
+
+IF(WIN32)
+  # In case we have switched on c++20 elsewhere
+  FOREACH(flag
+      CMAKE_CXX_FLAGS_MINSIZEREL
+      CMAKE_CXX_FLAGS_RELEASE  CMAKE_CXX_FLAGS_RELWITHDEBINFO
+      CMAKE_CXX_FLAGS_DEBUG    CMAKE_CXX_FLAGS_DEBUG_INIT
+      )
+    IF("${${flag}}" MATCHES "/std:c..20")
+      STRING(REPLACE "/std:c++20" "/std:c++17" ${flag} "${${flag}}")
+    ENDIF()
+  ENDFOREACH()
+ENDIF()
+
+# warning: arithmetic between different enumeration types is deprecated
+MY_CHECK_CXX_COMPILER_WARNING("-Wdeprecated-enum-enum-conversion" HAS_WARN_FLAG)
 IF(HAS_WARN_FLAG)
   LIST(APPEND ICU_LINUX_COMPILE_OPTIONS "${HAS_WARN_FLAG}")
 ENDIF()

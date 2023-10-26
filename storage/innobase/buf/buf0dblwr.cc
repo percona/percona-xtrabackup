@@ -1728,9 +1728,11 @@ void Double_write::reset_file(dblwr::File &file, bool truncate) noexcept {
     }
 
   } else if (new_size > cur_size) {
-    auto err = os_file_write_zeros(pfs_file, file.m_name.c_str(),
-                                   univ_page_size.physical(), cur_size,
-                                   new_size - cur_size);
+    const auto start =
+        ut_uint64_align_down(cur_size, univ_page_size.physical());
+    auto err =
+        os_file_write_zeros(pfs_file, file.m_name.c_str(),
+                            univ_page_size.physical(), start, new_size - start);
 
     if (err != DB_SUCCESS) {
       ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_DBLWR_1321, file.m_name.c_str());
@@ -1750,8 +1752,9 @@ void Double_write::reduced_reset_file(dblwr::File &file,
   auto pfs_file = file.m_pfs;
 
   if (new_size > cur_size) {
+    const auto start = ut_uint64_align_down(cur_size, phy_size);
     auto err = os_file_write_zeros(pfs_file, file.m_name.c_str(), phy_size,
-                                   cur_size, new_size - cur_size);
+                                   start, new_size - start);
 
     if (err != DB_SUCCESS) {
       ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_DBLWR_1321, file.m_name.c_str());
@@ -1974,8 +1977,8 @@ dberr_t Double_write::load(dblwr::File &file, recv::Pages *pages) noexcept {
   }
 
   if ((size % univ_page_size.physical())) {
-    ib::warn(ER_IB_MSG_DBLWR_1319, file.m_name.c_str(), (ulint)size,
-             (ulint)univ_page_size.physical());
+    ib::warn(ER_IB_MSG_DBLWR_LOAD_WRONG_SIZE, file.m_name.c_str(),
+             ulonglong{size}, univ_page_size.physical());
   }
 
   const uint32_t n_pages = size / univ_page_size.physical();
@@ -2140,8 +2143,8 @@ dberr_t Double_write::load_reduced_batch(dblwr::File &file,
   }
 
   if ((size % REDUCED_BATCH_PAGE_SIZE) != 0) {
-    ib::warn(ER_IB_MSG_DBLWR_1319, file.m_name.c_str(), (ulint)size,
-             (ulint)REDUCED_BATCH_PAGE_SIZE);
+    ib::warn(ER_IB_MSG_DBLWR_LOAD_WRONG_SIZE, file.m_name.c_str(),
+             ulonglong{size}, size_t{REDUCED_BATCH_PAGE_SIZE});
   }
 
   const uint32_t n_pages = size / REDUCED_BATCH_PAGE_SIZE;
@@ -2420,7 +2423,8 @@ dberr_t Double_write::create_single_segments() noexcept {
   return DB_SUCCESS;
 }
 
-file::Block *dblwr::get_encrypted_frame(buf_page_t *bpage) noexcept {
+file::Block *dblwr::get_encrypted_frame(buf_page_t *bpage,
+                                        IORequest &type) noexcept {
   space_id_t space_id = bpage->space();
   page_no_t page_no = bpage->page_no();
 
@@ -2446,7 +2450,6 @@ file::Block *dblwr::get_encrypted_frame(buf_page_t *bpage) noexcept {
     return nullptr;
   }
 
-  IORequest type(IORequest::WRITE);
   void *frame{};
   uint32_t len{};
 
@@ -2534,7 +2537,8 @@ dberr_t dblwr::write(buf_flush_t flush_type, buf_page_t *bpage,
 
     /* Encrypt the page here, so that the same encrypted contents are written
     to the dblwr file and the data file. */
-    file::Block *e_block = dblwr::get_encrypted_frame(bpage);
+    IORequest type(IORequest::WRITE);
+    file::Block *e_block = dblwr::get_encrypted_frame(bpage, type);
 
     if (!sync && flush_type != BUF_FLUSH_SINGLE_PAGE) {
       MONITOR_INC(MONITOR_DBLWR_ASYNC_REQUESTS);
@@ -2747,8 +2751,8 @@ dberr_t dblwr::reduced_open() noexcept {
   auto file_size = os_file_get_size(file.m_pfs);
 
   if (file_size == 0 || (file_size % phy_size)) {
-    ib::warn(ER_IB_MSG_DBLWR_1322, file.m_name.c_str(), (ulint)file_size,
-             (ulint)phy_size);
+    ib::warn(ER_IB_MSG_DBLWR_OPEN_OR_CREATE_WRONG_SIZE, file.m_name.c_str(),
+             ulonglong{file_size}, size_t{phy_size});
   }
 
   Double_write::reduced_reset_file(file, pages_per_file, phy_size);
@@ -2822,8 +2826,8 @@ dberr_t dblwr::open() noexcept {
     auto file_size = os_file_get_size(file.m_pfs);
 
     if (file_size == 0 || (file_size % univ_page_size.physical())) {
-      ib::warn(ER_IB_MSG_DBLWR_1322, file.m_name.c_str(), (ulint)file_size,
-               (ulint)univ_page_size.physical());
+      ib::warn(ER_IB_MSG_DBLWR_OPEN_OR_CREATE_WRONG_SIZE, file.m_name.c_str(),
+               ulonglong{file_size}, univ_page_size.physical());
     }
 
     /* Truncate the size after recovery: false. */
@@ -3626,9 +3630,11 @@ bool has_encrypted_pages() noexcept {
       byte *frame = buffer.begin();
       page_type_t page_type = fil_page_get_type(frame);
 
-      TLOG("space_id=" << page_get_space_id(frame)
-                       << ", page_no=" << page_get_page_no(frame)
-                       << ", page_type=" << fil_get_page_type_str(page_type));
+      if (page_type != FIL_PAGE_TYPE_ALLOCATED) {
+        TLOG("space_id=" << page_get_space_id(frame)
+                         << ", page_no=" << page_get_page_no(frame)
+                         << ", page_type=" << fil_get_page_type_str(page_type));
+      }
 
       if (is_encrypted_page(frame)) {
         st = true;

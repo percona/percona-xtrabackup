@@ -439,17 +439,21 @@ class ha_innobase : public handler {
   be used across all parallel_scan methods. Also, gets the number of threads
   that would be spawned for parallel scan.
   @param[out]   scan_ctx              A scan context created by this method
-                                      that has to be used in
-                                      parallel_scan
+                                      that has to be used in parallel_scan
   @param[out]   num_threads           Number of threads to be spawned
   @param[in]    use_reserved_threads  true if reserved threads are to be used
                                       if we exhaust the max cap of number of
                                       parallel read threads that can be
                                       spawned at a time
+  @param[in]    max_desired_threads   Maximum number of desired read threads;
+                                      passing 0 has no effect, it is ignored;
+                                      upper-limited by the current value of
+                                      innodb_parallel_read_threads.
   @return error code
   @retval 0 on success */
   int parallel_scan_init(void *&scan_ctx, size_t *num_threads,
-                         bool use_reserved_threads) override;
+                         bool use_reserved_threads,
+                         size_t max_desired_threads) override;
 
   /** Start parallel read of InnoDB records.
   @param[in]  scan_ctx          A scan context created by parallel_scan_init
@@ -468,6 +472,45 @@ class ha_innobase : public handler {
   /** End of the parallel scan.
   @param[in]      scan_ctx      A scan context created by parallel_scan_init. */
   void parallel_scan_end(void *scan_ctx) override;
+
+  /** Check if the table is ready for bulk load
+  @param[in] thd user session
+  @return true iff bulk load can be done on the table. */
+  bool bulk_load_check(THD *thd) const override;
+
+  /** Get the total memory available for bulk load in innodb buffer pool.
+  @param[in] thd user session
+  @return available memory for bulk load */
+  size_t bulk_load_available_memory(THD *thd) const override;
+
+  /** Begin parallel bulk data load to the table.
+  @param[in] thd       user session
+  @param[in] data_size total data size in bytes
+  @param[in] memory buffer pool memory to be used
+  @param[in] num_threads Number of concurrent threads used for load.
+  @return bulk load context or nullptr if unsuccessful. */
+  void *bulk_load_begin(THD *thd, size_t data_size, size_t memory,
+                        size_t num_threads) override;
+
+  /** Execute bulk load operation. To be called by each of the concurrent
+  threads idenified by thread index.
+  @param[in,out]  thd         user session
+  @param[in,out]  load_ctx    load execution context
+  @param[in]      thread_idx  index of the thread executing
+  @param[in]      rows        rows to be loaded to the table
+  @param[in]      wait_cbk    Stat callbacks
+  @return error code. */
+  int bulk_load_execute(THD *thd, void *load_ctx, size_t thread_idx,
+                        const Rows_mysql &rows,
+                        Bulk_load::Stat_callbacks &wait_cbk) override;
+
+  /** End bulk load operation. Must be called after all execution threads have
+  completed. Must be called even if the bulk load execution failed.
+  @param[in,out]  thd       user session
+  @param[in,out]  load_ctx  load execution context
+  @param[in]      is_error  true, if bulk load execution have failed
+  @return error code. */
+  int bulk_load_end(THD *thd, void *load_ctx, bool is_error) override;
 
   bool check_if_incompatible_data(HA_CREATE_INFO *info,
                                   uint table_changes) override;

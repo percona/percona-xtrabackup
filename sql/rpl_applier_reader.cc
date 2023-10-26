@@ -218,6 +218,12 @@ Log_event *Rpl_applier_reader::read_next_event() {
       /* Check it again to avoid missing update signals from receiver thread */
       if (read_active_log_end_pos()) break;
 
+      if (m_rli->is_until_satisfied_all_transactions_read_from_relay_log()) {
+        // Make it stop on the next execution
+        m_rli->abort_slave = true;
+        return nullptr;
+      }
+
       reset_seconds_behind_master();
       /* It should be protected by relay_log.LOCK_binlog_end_pos */
       if (m_rli->ign_master_log_name_end[0]) return generate_rotate_event();
@@ -522,7 +528,7 @@ void Rpl_applier_reader::debug_print_next_event_positions() {
   DBUG_PRINT(
       "info",
       ("assertion skip %u file pos %llu event relay log pos %llu file %s\n",
-       m_rli->slave_skip_counter, m_relaylog_file_reader.position(),
+       m_rli->slave_skip_counter.load(), m_relaylog_file_reader.position(),
        m_rli->get_event_relay_log_pos(), m_rli->get_event_relay_log_name()));
 
   /* This is an assertion which sometimes fails, let's try to track it */

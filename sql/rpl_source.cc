@@ -265,7 +265,7 @@ bool show_replicas(THD *thd) {
     protocol->store((uint32)si->master_id);
 
     if (si->valid_replica_uuid) {
-      char text_buf[binary_log::Uuid::TEXT_LENGTH + 1];
+      char text_buf[mysql::gtid::Uuid::TEXT_LENGTH + 1];
       si->replica_uuid.to_string(text_buf);
       protocol->store(text_buf, &my_charset_bin);
     } else {
@@ -834,7 +834,7 @@ bool show_replicas(THD *thd) {
       <td>seconds since unix epoch</td></tr>
   <tr><td>@ref a_protocol_type_int1 "int&lt;1&gt;"</td>
       <td>event_type</td>
-      <td>See binary_log::Log_event_type</td></tr>
+      <td>See mysql::binlog::event::Log_event_type</td></tr>
   <tr><td>@ref a_protocol_type_int4 "int&lt;4&gt;"</td>
       <td>server-id</td>
       <td>server-id of the originating mysql-server. Used to filter out events
@@ -939,6 +939,7 @@ bool com_binlog_dump(THD *thd, char *packet, size_t packet_length) {
 
   assert(!thd->status_var_aggregated);
   thd->status_var.com_other++;
+  global_aggregated_stats.get_shard(thd->thread_id()).com_other++;
   thd->enable_slow_log = opt_log_slow_admin_statements;
   if (check_global_access(thd, REPL_SLAVE_ACL)) return false;
 
@@ -1001,6 +1002,7 @@ bool com_binlog_dump_gtid(THD *thd, char *packet, size_t packet_length) {
 
   assert(!thd->status_var_aggregated);
   thd->status_var.com_other++;
+  global_aggregated_stats.get_shard(thd->thread_id()).com_other++;
   thd->enable_slow_log = opt_log_slow_admin_statements;
   if (check_global_access(thd, REPL_SLAVE_ACL)) return false;
 
@@ -1183,31 +1185,34 @@ void kill_zombie_dump_threads(THD *thd) {
 }
 
 /**
-  Execute a RESET MASTER statement.
+  Execute a RESET BINARY LOGS AND GTIDS statement.
 
   @param thd Pointer to THD object of the client thread executing the
   statement.
-  @param unlock_global_read_lock Unlock the global read lock acquired
-  by RESET MASTER.
+
+  @param unlock_global_read_lock Unlock the global read lock aquired
+  by RESET BINARY LOGS AND GTIDS.
+
   @retval false success
   @retval true error
 */
-bool reset_master(THD *thd, bool unlock_global_read_lock) {
+bool reset_binary_logs_and_gtids(THD *thd, bool unlock_global_read_lock) {
   bool ret = false;
 
   /*
-    RESET MASTER command should ignore 'read-only' and 'super_read_only'
-    options so that it can update 'mysql.gtid_executed' replication repository
-    table.
+    RESET BINARY LOGS AND GTIDS command should ignore 'read-only' and
+    'super_read_only' options so that it can update 'mysql.gtid_executed'
+    replication repository table.
 
     Please note that skip_readonly_check flag should be set even when binary log
-    is not enabled, as RESET MASTER command will clear 'gtid_executed' table.
+    is not enabled, as RESET BINARY LOGS AND GTIDS command will clear
+    'gtid_executed' table.
   */
   thd->set_skip_readonly_check();
 
   /*
-    No RESET MASTER commands are allowed while Group Replication is running
-    unless executed during a clone operation as part of the process.
+    No RESET BINARY LOGS AND GTIDS commands are allowed while Group Replication
+    is running unless executed during a clone operation as part of the process.
   */
   if (is_group_replication_running() && !is_group_replication_cloning()) {
     my_error(ER_CANT_RESET_SOURCE, MYF(0), "Group Replication is running");
@@ -1237,7 +1242,7 @@ bool reset_master(THD *thd, bool unlock_global_read_lock) {
 end:
   /*
     Unlock the global read lock (which was acquired by this
-    session as part of RESET MASTER) before running the hook
+    session as part of RESET BINARY LOGS AND GTIDS) before running the hook
     which informs plugins.
   */
   if (unlock_global_read_lock) {
@@ -1255,7 +1260,7 @@ end:
 }
 
 /**
-  Execute a SHOW MASTER STATUS statement.
+  Execute a SHOW BINARY LOG STATUS statement.
 
   @param thd Pointer to THD object for the client thread executing the
   statement.
@@ -1263,7 +1268,7 @@ end:
   @retval false success
   @retval true failure
 */
-bool show_master_status(THD *thd) {
+bool show_binary_log_status(THD *thd) {
   Protocol *protocol = thd->get_protocol();
   char *gtid_set_buffer = nullptr;
   int gtid_set_size = 0;

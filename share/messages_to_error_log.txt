@@ -2139,7 +2139,7 @@ OBSOLETE_ER_NDB_BINLOG_SERVER_SHUTDOWN_DURING_NDB_CLUSTER_START
   eng "NDB Binlog: Server shutdown detected while waiting for ndbcluster to start..."
 
 OBSOLETE_ER_NDB_BINLOG_CLUSTER_RESTARTED_RESET_MASTER_SUGGESTED
-  eng "NDB Binlog: cluster has been restarted --initial or with older filesystem. ndb_latest_handled_binlog_epoch: %u/%u, while current epoch: %u/%u. RESET SOURCE should be issued. Resetting ndb_latest_handled_binlog_epoch."
+  eng "NDB Binlog: cluster has been restarted --initial or with older filesystem. ndb_latest_handled_binlog_epoch: %u/%u, while current epoch: %u/%u. RESET BINARY LOGS AND GTIDS should be issued. Resetting ndb_latest_handled_binlog_epoch."
 
 OBSOLETE_ER_NDB_BINLOG_CLUSTER_HAS_RECONNECTED
   eng "NDB Binlog: cluster has reconnected. Changes to the database that occurred while disconnected will not be in the binlog"
@@ -3293,7 +3293,7 @@ ER_ERROR_DURING_FLUSH_LOG_COMMIT_PHASE
 ER_DROP_DATABASE_FAILED_RMDIR_MANUALLY
   eng "Problem while dropping database. Can't remove database directory (%s). Please remove it manually."
 
-ER_EXPIRE_LOGS_DAYS_IGNORED
+OBSOLETE_ER_EXPIRE_LOGS_DAYS_IGNORED
   eng "The option expire_logs_days cannot be used together with option binlog_expire_logs_seconds. Therefore, value of expire_logs_days is ignored."
 
 ER_BINLOG_MALFORMED_OR_OLD_RELAY_LOG
@@ -4650,7 +4650,7 @@ ER_GRP_RPL_MEMBER_STOP_RPL_CHANNELS_ERROR
   eng "Error stopping all replication channels while server was leaving the group. %s"
 
 ER_GRP_RPL_PURGE_APPLIER_LOGS
-  eng "Detected previous RESET SOURCE invocation or an issue exists in the group replication applier relay log. Purging existing applier logs."
+  eng "Detected previous RESET BINARY LOGS AND GTIDS invocation or an issue exists in the group replication applier relay log. Purging existing applier logs."
 
 ER_GRP_RPL_RESET_APPLIER_MODULE_LOGS_ERROR
   eng "Unknown error occurred while resetting applier's module logs."
@@ -10755,8 +10755,8 @@ ER_IB_MSG_DBLWR_1317
 ER_IB_MSG_DBLWR_1318
   eng "%s"
 
-ER_IB_MSG_DBLWR_1319
-  eng "Doublewrite load file %s size %lu is not a multiple of the configured page size %lu""
+ER_IB_MSG_DBLWR_LOAD_WRONG_SIZE
+  eng "Doublewrite load file %s size %llu is not a multiple of the configured page size %zu"
 
 ER_IB_MSG_DBLWR_1320
   eng "Doublewrite file %s truncate failed"
@@ -10764,8 +10764,8 @@ ER_IB_MSG_DBLWR_1320
 ER_IB_MSG_DBLWR_1321
   eng "Doublewrite file %s failed to writ zeros"
 
-ER_IB_MSG_DBLWR_1322
-  eng "Doublewrite create file %s size %lu is not a multiple of the configured page size %lu""
+ER_IB_MSG_DBLWR_OPEN_OR_CREATE_WRONG_SIZE
+  eng "Doublewrite open or create file %s size %llu is not a multiple of the configured page size %zu"
 
 ER_IB_MSG_DBLWR_1323
   eng "%s"
@@ -11950,7 +11950,7 @@ ER_IB_MSG_INVALID_PAGE_TYPE
   eng "Found page type mismatch. Expected %u, found %u, in page: space_id=%lu page_no= %lu"
 
 ER_IB_PARALLEL_READER_WORKER_INFO
-  eng "preader: space_id=%zu, table=%s, index=%s, scan_ctx=%zu, ctx=%zu, thread_id=%zu, n_threads=%zu"
+  eng "preader: thread_id=%zu, n_threads=%zu, n_ctx=%zu, one_range_per_thread=%s, n_index=%zu, index_list=%s, err=%zu"
 
 ER_IB_BULK_LOAD_SUBTREE_INFO
   eng "bulkload: space_id=%zu, table=%s, index=%s, height=%zu, n_extents=%zu, n_pages=%zu"
@@ -12240,13 +12240,52 @@ ER_AUDIT_LOG_INVALID_FLUSH_INTERVAL_VALUE
 ER_LOG_CANNOT_PURGE_BINLOG_WITH_BACKUP_LOCK
   eng "Could not purge binary logs since another session is executing LOCK INSTANCE FOR BACKUP. Wait for that session to release the lock."
 
+ER_CONVERT_MULTI_VALUE
+   eng "Multi-values cannot be converted to MySQL format: %s"
+
+ER_IB_DDL_CONVERT_HEAP_NOT_FOUND
+  eng "Heap required to convert columns is not present."
+
+ER_SERVER_DOWNGRADE_FROM_VERSION
+  eng "MySQL server downgrading from version '%u' to '%u'."
+
+ER_BEYOND_SERVER_DOWNGRADE_THRESHOLD
+  eng "Invalid MySQL server downgrade: Cannot downgrade from %u to %u. Target MySQL server version is lower than the server downgrade threshold %u."
+
+ER_BEYOND_SERVER_UPGRADE_THRESHOLD
+  eng "Invalid MySQL server upgrade: Cannot upgrade from %u to %u. Target MySQL server version is lower than the server upgrade threshold %u."
+
+ER_INVALID_SERVER_UPGRADE_NOT_LTS
+  eng "Invalid MySQL server upgrade: Cannot upgrade from %u to %u. Upgrade to next major version is only allowed from the last LTS release, which version %u is not."
+
+ER_INVALID_SERVER_DOWNGRADE_NOT_PATCH
+  eng "Invalid MySQL server downgrade: Cannot downgrade from %u to %u. Downgrade is only permitted between patch releases."
+
+ER_FAILED_GET_DD_PROPERTY
+  eng "Failed to get the data dictionary property %s."
+
+ER_FAILED_SET_DD_PROPERTY
+  eng "Failed to set the data dictionary property %s."
+
+ER_SERVER_DOWNGRADE_STATUS
+  eng "Server downgrade from '%d' to '%d' %s."
+
+ER_INFORMATION_SCHEMA_VERSION_CHANGE
+  eng "%s information schema from version %u to %u."
+
+ER_PERFORMANCE_SCHEMA_VERSION_CHANGE
+  eng "%s performance schema from version %u to %u."
+
+ER_WARN_DEPRECATED_OR_BLOCKED_CIPHER
+   eng "Value for option '%s' contains cipher '%s' that is either blocked or deprecated (and will be removed in a future release). Please refer to the documentation for more details."
+
 #
 # End of 8.0 error messages intended to be written to the server error log.
 #
 
 
 #
-# Start of 8.1 error messages intended to be written to the server error log.
+# Start of 8.1+ error messages intended to be written to the server error log.
 # Append 8.0 error log messages to the end of the _previous_ section.
 # Messages intended to be sent to _clients_ go in messages_to_clients.txt!
 #
@@ -12337,6 +12376,61 @@ ER_NUM_THREADS_STILL_ALIVE
 ER_GRP_RPL_MYSQL_NETWORK_PROVIDER_SERVER_ERROR_COMMAND_ERR
    eng "Failed to accept a MySQL connection for Group Replication. %s. Please retry."
 
+<<<<<<< HEAD
+||||||| merged common ancestors
+||||||||| b5da0b9817c
+=========
+ER_LOG_CANNOT_PURGE_BINLOG_WITH_BACKUP_LOCK
+  eng "Could not purge binary logs since another session is executing LOCK INSTANCE FOR BACKUP. Wait for that session to release the lock."
+
+>>>>>>>>> Temporary merge branch 2
+=======
+ER_COMPONENT_KEYRING_OCI_INVALID_CONFIG_VAR
+   eng "Invalid value of argument %s (%s)."
+
+ER_WARN_OPTION_RESET_AND_IGNORED_DURING_INITIALIZE
+   eng "Ignoring a non-default value for %s during --initialize."
+
+ER_FIREWALL_SCHEDULER_REGISTER_FAILED
+  eng "Automatic registration of the scheduler failed."
+
+ER_FIREWALL_INVALID_RELOAD_INTERVAL_VALUE
+  eng "Invalid reload interval specified: %lu. Valid values are 0 (off) or greater than or equal to %d. Adjusting to %d."
+
+ER_WARN_DEPRECATED_DYNAMIC_PRIV_FOR_USER
+   eng "'%s' (granted to '%s@%s') is deprecated and will be removed in a future release."
+
+ER_BULK_MULTI_READER_INFO
+  eng "Bulk Multi Reader: %s"
+
+ER_BULK_MERGE_LOADER_INFO
+  eng "Bulk Merge Loader: %s"
+
+ER_BULK_SORTING_LOADER_INFO
+  eng "Bulk Sorting Loader: %s"
+
+ER_BULK_WRITER_INFO
+  eng "Bulk Writer: %s"
+
+ER_BULK_WRITER_LIBCURL_INIT_FAILED_LOG
+  eng "Bulk writer failed to initialize libcurl"
+
+ER_BULK_WRITER_LIBCURL_ERROR_LOG
+  eng "Bulk writer got libcurl error: %s"
+
+ER_IB_WRONG_PAGE_ID
+  eng "Detected wrong page_id: buf_block_t[space_id=%zu, page_no=%zu], buf_frame_t[space_id=%zu, page_no=%zu], file=%s"
+
+ER_IB_FIXED_PAGE_ID
+  eng "Fixed wrong page_id with sync read: buf_block_t[space_id=%zu, page_no=%zu], buf_frame_t[space_id=%zu, page_no=%zu], file=%s, retry=%zu"
+
+ER_IB_WRONG_PAGEID_AFTER_SYNC_READ
+  eng "Wrong page_id after sync read: buf_block_t[space_id=%zu, page_no=%zu], buf_frame_t[space_id=%zu, page_no=%zu], file=%s, retry=%zu"
+
+ER_IB_SYNC_READ_FAILED
+  eng "Sync read to fix wrong page_id failed: buf_block_t[space_id=%zu, page_no=%zu], file=%s, err=%zu, retry=%zu"
+
+>>>>>>> mysql-8.2.0
 # DO NOT add server-to-client messages here;
 # they go in messages_to_clients.txt
 # in the same directory as this file.
@@ -12349,7 +12443,7 @@ ER_GRP_RPL_MYSQL_NETWORK_PROVIDER_SERVER_ERROR_COMMAND_ERR
 
 
 #
-# End of 8.1 error messages intended to be written to the server error log.
+# End of 8.1+ error messages intended to be written to the server error log.
 #
 
 #

@@ -1,3 +1,4 @@
+SET @@GLOBAL.concurrent_insert = 0;
 include/master-slave.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
@@ -243,8 +244,8 @@ include/stop_slave.inc
 RESET SLAVE;
 Warnings:
 Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
-RESET MASTER;
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
+RESET BINARY LOGS AND GTIDS;
 FLUSH LOGS;
 include/start_slave.inc
 include/sync_slave_sql_with_master.inc
@@ -253,3 +254,4 @@ DROP TABLE t2;
 SET SQL_MODE='';
 include/sync_slave_sql_with_master.inc
 include/rpl_end.inc
+SET @@GLOBAL.concurrent_insert = SAVED_CONCURRENT_INSERT;

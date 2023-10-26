@@ -51,13 +51,13 @@
 #include "mysql/udf_registration_types.h"
 #include "mysql_time.h"
 #include "mysqld_error.h"
+#include "sql-common/my_decimal.h"
 #include "sql/enum_query_type.h"
 #include "sql/gis/geometries_cs.h"
 #include "sql/gis/wkb.h"
 #include "sql/item.h"       // Item_result_field
 #include "sql/item_func.h"  // Item_int_func
 #include "sql/mem_root_array.h"
-#include "sql/my_decimal.h"
 #include "sql/parse_location.h"     // POS
 #include "sql/parse_tree_window.h"  // PT_window
 #include "sql/sql_base.h"
@@ -505,6 +505,12 @@ class Item_sum : public Item_func {
     The value must be reset to false after execution.
   */
   bool forced_const{false};
+
+  /// true if the function is resolved to be always NULL
+  bool m_null_resolved{false};
+  /// true if the function is determined to be NULL at start of execution
+  bool m_null_executed{false};
+
   static ulonglong ram_limitation(THD *thd);
 
  public:
@@ -960,7 +966,7 @@ class Item_sum_num : public Item_sum {
 
   bool fix_fields(THD *, Item **) override;
   longlong val_int() override {
-    assert(fixed == 1);
+    assert(fixed);
     return llrint_with_overflow_check(val_real()); /* Real as default */
   }
   String *val_str(String *str) override;
@@ -1951,7 +1957,7 @@ class Item_udf_sum : public Item_sum {
   bool do_itemize(Parse_context *pc, Item **res) override;
   const char *func_name() const override { return udf.name(); }
   bool fix_fields(THD *thd, Item **ref) override {
-    assert(fixed == 0);
+    assert(!fixed);
 
     if (init_sum_func_check(thd)) return true;
 
@@ -1978,7 +1984,7 @@ class Item_sum_udf_float final : public Item_udf_sum {
   Item_sum_udf_float(THD *thd, Item_sum_udf_float *item)
       : Item_udf_sum(thd, item) {}
   longlong val_int() override {
-    assert(fixed == 1);
+    assert(fixed);
     return (longlong)rint(Item_sum_udf_float::val_real());
   }
   double val_real() override;
@@ -2006,7 +2012,7 @@ class Item_sum_udf_int final : public Item_udf_sum {
       : Item_udf_sum(thd, item) {}
   longlong val_int() override;
   double val_real() override {
-    assert(fixed == 1);
+    assert(fixed);
     return (double)Item_sum_udf_int::val_int();
   }
   String *val_str(String *str) override;
@@ -2099,8 +2105,6 @@ class Item_func_group_concat final : public Item_sum {
 
   /// True if GROUP CONCAT has the DISTINCT attribute
   bool distinct;
-  /// True if the result is always NULL
-  bool always_null{false};
   /// The number of ORDER BY items.
   uint m_order_arg_count;
   /// The number of selected items, aka the concat field list

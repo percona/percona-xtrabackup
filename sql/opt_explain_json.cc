@@ -1911,6 +1911,7 @@ bool Explain_format_JSON::begin_context(enum_parsing_context ctx_arg,
              // subqueries:
              current_context->type == CTX_SELECT_LIST ||
              current_context->type == CTX_UPDATE_VALUE ||
+             current_context->type == CTX_INSERT_VALUES ||
              current_context->type == CTX_DERIVED ||
              current_context->type == CTX_OPTIMIZED_AWAY_SUBQUERY ||
              current_context->type == CTX_WHERE ||
@@ -2106,7 +2107,7 @@ std::string Explain_format_JSON::ExplainJsonToString(Json_object *json) {
   Json_wrapper wrapper(json, /*alias=*/true);
   StringBuffer<STRING_BUFFER_USUAL_SIZE> explain;
   if (wrapper.to_pretty_string(&explain, "ExplainJsonToString()",
-                               JsonDocumentDefaultDepthHandler)) {
+                               JsonDepthErrorHandler)) {
     return "";
   }
   return {explain.ptr(), explain.length()};

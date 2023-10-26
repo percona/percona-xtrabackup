@@ -29,6 +29,7 @@
 #include <ndbd_exit_codes.h>
 
 #include <util/BaseString.hpp>
+#include "util/TlsKeyManager.hpp"
 #include <util/Vector.hpp>
 #include <kernel/BlockNumbers.h>
 #include <kernel/signaldata/DumpStateOrd.hpp>
@@ -51,7 +52,9 @@ public:
   CommandInterpreter(const char* host,
                      const char* default_prompt,
                      int verbose,
-                     int connect_retry_delay);
+                     int connect_retry_delay,
+                     const char * tls_search_path,
+                     int tls_start_type);
   ~CommandInterpreter();
   
   int setDefaultBackupPassword(const char backup_password[]);
@@ -146,12 +149,15 @@ public:
                     int *node_ids, int no_of_nodes);
   int executeCreateNodeGroup(char* parameters);
   int executeDropNodeGroup(char* parameters);
+  int executeStartTls();
+  void executeShowTlsInfo(const char* parameters);
   const char* get_current_prompt() const
   {
     // return the current prompt
     return m_prompt;
   }
 public:
+  int test_tls();
   bool connect(bool interactive);
   void disconnect(void);
 
@@ -175,6 +181,7 @@ private:
 		     ExecuteFunction fun,
 		     const char * param);
 
+  TlsKeyManager m_tlsKeyManager;
   NdbMgmHandle m_mgmsrv;
   NdbMgmHandle m_mgmsrv2;
   const char *m_constr;
@@ -192,6 +199,7 @@ private:
   bool m_always_encrypt_backup;
   char m_onetime_backup_password[1024];
   bool m_onetime_backup_password_set;
+  int m_tls_start_type;
 };
 
 NdbMutex* print_mutex;
@@ -203,10 +211,12 @@ NdbMutex* print_mutex;
 #include "ndb_mgmclient.hpp"
 
 Ndb_mgmclient::Ndb_mgmclient(const char *host, const char* default_prompt,
-                             int verbose, int connect_retry_delay)
+                             int verbose, int connect_retry_delay,
+                             const char * tls_search_path, int tls_start_type)
 {
   m_cmd= new CommandInterpreter(host, default_prompt,
-                                verbose, connect_retry_delay);
+                                verbose, connect_retry_delay,
+                                tls_search_path, tls_start_type);
 }
 Ndb_mgmclient::~Ndb_mgmclient()
 {
@@ -232,6 +242,11 @@ int Ndb_mgmclient::set_default_backup_password(
 int Ndb_mgmclient::set_always_encrypt_backup(bool on) const
 {
   return m_cmd->setAlwaysEncryptBackup(on);
+}
+
+int Ndb_mgmclient::test_tls()
+{
+  return m_cmd->test_tls();
 }
 
 /*
@@ -265,6 +280,8 @@ static const char* helpText =
 "SHOW                                   Print information about cluster\n"
 "CREATE NODEGROUP <id>,<id>...          Add a Nodegroup containing nodes\n"
 "DROP NODEGROUP <NG>                    Drop nodegroup with id NG\n"
+"START TLS                              Start TLS on connection\n"
+"TLS INFO                               Display TLS connection certificates\n"
 "START BACKUP [<backup id>] [ENCRYPT [PASSWORD='<password>']] "
   "[SNAPSHOTSTART | SNAPSHOTEND] [NOWAIT | WAIT STARTED | WAIT COMPLETED]\n"
 "                                       Start backup "
@@ -722,7 +739,9 @@ convert(const char* s, int& val) {
  */
 CommandInterpreter::CommandInterpreter(const char *host,
                                        const char* default_prompt,
-                                       int verbose, int connect_retry_delay) :
+                                       int verbose, int connect_retry_delay,
+                                       const char * tls_search_path,
+                                       int tls_start_type) :
   m_constr(host),
   m_connected(false),
   m_verbose(verbose),
@@ -734,8 +753,10 @@ CommandInterpreter::CommandInterpreter(const char *host,
   m_prompt(default_prompt),
   m_default_backup_password(nullptr),
   m_always_encrypt_backup(false),
-  m_onetime_backup_password_set(false)
+  m_onetime_backup_password_set(false),
+  m_tls_start_type(tls_start_type)
 {
+  m_tlsKeyManager.init_mgm_client(tls_search_path);
   m_print_mutex= NdbMutex_Create();
 }
 
@@ -951,6 +972,7 @@ printLogEvent(struct ndb_logevent* event)
 struct event_thread_param {
   NdbMgmHandle *m;
   NdbMutex **p;
+  int tls_req;
 };
 
 static int do_event_thread = 0;
@@ -963,6 +985,7 @@ event_thread_run(void* p)
   struct event_thread_param param= *(struct event_thread_param*)p;
   NdbMgmHandle handle= *(param.m);
   NdbMutex* printmutex= *(param.p);
+  int tls_req = param.tls_req;
 
   int filter[] = { 15, NDB_MGM_EVENT_CATEGORY_BACKUP,
 		   1, NDB_MGM_EVENT_CATEGORY_STARTUP,
@@ -971,6 +994,16 @@ event_thread_run(void* p)
 
   NdbLogEventHandle log_handle= NULL;
   struct ndb_logevent log_event;
+
+  if(tls_req != CLIENT_TLS_DEFERRED)
+  {
+    int r = ndb_mgm_start_tls(handle);
+    if(r != 0 && tls_req == CLIENT_TLS_STRICT)
+    {
+      do_event_thread = -1;
+      DBUG_RETURN(NULL);
+    }
+  }
 
   log_handle= ndb_mgm_create_logevent_handle(handle, filter);
   if (log_handle) 
@@ -996,6 +1029,13 @@ event_thread_run(void* p)
   DBUG_RETURN(NULL);
 }
 
+int
+CommandInterpreter::test_tls()
+{
+  m_try_reconnect = 1;
+  return connect(false) ? 0 : 1;
+}
+
 bool
 CommandInterpreter::connect(bool interactive)
 {
@@ -1007,6 +1047,14 @@ CommandInterpreter::connect(bool interactive)
   m_mgmsrv = ndb_mgm_create_handle();
   if(m_mgmsrv == NULL) {
     ndbout_c("Can't create handle to management server.");
+    exit(-1);
+  }
+  ndb_mgm_set_ssl_ctx(m_mgmsrv, m_tlsKeyManager.ctx());
+
+  if((m_tls_start_type == CLIENT_TLS_STRICT) &&
+     (m_tlsKeyManager.ctx() == nullptr))
+  {
+    ndbout_c("No valid certificate.");
     exit(-1);
   }
 
@@ -1022,6 +1070,9 @@ CommandInterpreter::connect(bool interactive)
       ndb_mgm_destroy_handle(&m_mgmsrv);
       exit(-1);
     }
+    ndb_mgm_set_ssl_ctx(m_mgmsrv2, m_tlsKeyManager.ctx());
+  } else {
+    m_mgmsrv2 = nullptr;
   }
 
   if (ndb_mgm_set_connectstring(m_mgmsrv, m_constr))
@@ -1045,6 +1096,29 @@ CommandInterpreter::connect(bool interactive)
     DBUG_RETURN(m_connected); // couldn't connect, always false
   }
 
+  ndb_mgm_set_ssl_ctx(m_mgmsrv, m_tlsKeyManager.ctx());
+
+  if(m_tls_start_type != CLIENT_TLS_DEFERRED)
+  {
+    if(ndb_mgm_start_tls(m_mgmsrv) != 0)
+    {
+      if(interactive)
+      {
+        ndbout_c("Connected to server, but failed to start TLS.");
+      }
+
+      if(m_tls_start_type == CLIENT_TLS_STRICT)
+      {
+        printError();
+        ndb_mgm_destroy_handle(&m_mgmsrv);
+        if(interactive)
+        {
+          ndb_mgm_destroy_handle(&m_mgmsrv2);
+        }
+        DBUG_RETURN(m_connected);
+      }
+    }
+  }
 
   const char *host= ndb_mgm_get_connected_host(m_mgmsrv);
   unsigned port= ndb_mgm_get_connected_port(m_mgmsrv);
@@ -1056,12 +1130,17 @@ CommandInterpreter::connect(bool interactive)
     {
       DBUG_PRINT("info",("2:ndb connected to Management Server ok at: %s:%d",
                          host, port));
+      if(m_tls_start_type != CLIENT_TLS_DEFERRED)
+      {
+        ndb_mgm_start_tls(m_mgmsrv2);
+      }
       assert(m_event_thread == NULL);
       assert(do_event_thread == 0);
       do_event_thread= 0;
       struct event_thread_param p;
       p.m= &m_mgmsrv2;
       p.p= &m_print_mutex;
+      p.tls_req= m_tls_start_type;
       m_event_thread = NdbThread_Create(event_thread_run,
                                         (void**)&p,
                                         0, // default stack size
@@ -1361,6 +1440,18 @@ CommandInterpreter::execute_impl(const char *_line, bool interactive)
   }
   else if (native_strcasecmp(firstToken, "CLUSTERLOG") == 0){
     executeClusterLog(allAfterFirstToken);
+    DBUG_RETURN(true);
+  }
+  else if (native_strcasecmp(firstToken, "TLS") == 0 &&
+           allAfterFirstToken != nullptr &&
+	   native_strncasecmp(allAfterFirstToken, "INFO", 4) == 0) {
+    executeShowTlsInfo(allAfterFirstToken);
+    DBUG_RETURN(true);
+  }
+  else if(native_strcasecmp(firstToken, "START") == 0 &&
+	  allAfterFirstToken != NULL &&
+	  native_strncasecmp(allAfterFirstToken, "TLS", 3) == 0) {
+    m_error = executeStartTls();
     DBUG_RETURN(true);
   }
   else if(native_strcasecmp(firstToken, "START") == 0 &&
@@ -2055,6 +2146,71 @@ CommandInterpreter::executeConnect(char* parameters, bool interactive)
     delete basestring;
 
   return 0;
+}
+
+int
+CommandInterpreter::executeStartTls()
+{
+  int result = ndb_mgm_start_tls(m_mgmsrv);
+  if(result == 0) ndbout_c("TLS started.");
+  else printError();
+  return result;
+}
+
+static void describeConnection(const char * name, NdbMgmHandle h)
+{
+  if(h)
+  {
+    if(ndb_mgm_has_tls(h))
+      ndbout_c("%s is using TLS", name);
+    else if(ndb_mgm_get_connected_host(h))
+      ndbout_c("%s is using cleartext.", name);
+    else
+      ndbout_c("%s is not connected.", name);
+  }
+  else ndbout_c("%s is not connected.", name);
+}
+
+void
+CommandInterpreter::executeShowTlsInfo(const char *)
+{
+  ndbout_c(" ");
+  describeConnection("Main interactive connection", m_mgmsrv);
+  describeConnection("Event listener connection", m_mgmsrv2);
+
+  ndb_mgm_cert_table * info;
+  int r = ndb_mgm_list_certs(m_mgmsrv, &info);
+  if(r < 0) {
+    ndbout_c(" failed. ");
+    return;
+  }
+  ndbout_c(" ");
+  ndbout_c("Server reports %d TLS connection%s.\n", r, r==1 ? "":"s");
+  ndb_mgm_cert_table * c = info;
+  while(c) {
+    ndbout_c("  Session ID:          %ju", uintmax_t(c->session_id));
+    ndbout_c("  Peer address:        %s", c->peer_address);
+    ndbout_c("  Certificate name:    %s", c->cert_name);
+    ndbout_c("  Certificate serial:  %s", c->cert_serial);
+    ndbout_c("  Certificate expires: %s", c->cert_expires);
+    ndbout_c(" ");
+    c = c->next;
+  }
+  ndb_mgm_cert_table_free(&info);
+
+  ndb_mgm_tls_stats stats;
+  r = ndb_mgm_get_tls_stats(m_mgmsrv, &stats);
+  if(r < 0) {
+    ndbout_c(" Failed to obtain TLS statistics. ");
+    return;
+  }
+  ndbout_c(" ");
+  ndbout_c("    Server statistics since restart");
+  ndbout_c("  Total accepted connections:        %u", stats.accepted);
+  ndbout_c("  Total connections upgraded to TLS: %u", stats.upgraded);
+  ndbout_c("  Current connections:               %u", stats.current);
+  ndbout_c("  Current connections using TLS:     %u", stats.tls);
+  ndbout_c("  Authorization failures:            %u", stats.authfail);
 }
 
 //*****************************************************************************

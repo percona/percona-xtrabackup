@@ -123,6 +123,17 @@ Type_properties::Type_properties(Item &item)
 
 static enum_field_types real_data_type(Item *item);
 
+void CostOfItem::ComputeInternal(const Item &root) {
+  assert(!m_computed);
+
+  WalkItem(&root, enum_walk::POSTFIX, [this](const Item *item) {
+    item->compute_cost(this);
+    return false;
+  });
+
+  m_computed = true;
+}
+
 /*****************************************************************************
 ** Item functions
 *****************************************************************************/
@@ -147,7 +158,6 @@ Item::Item()
       marker(MARKER_NONE),
       cmp_context(INVALID_RESULT),
       is_parser_item(false),
-      is_expensive_cache(-1),
       m_data_type(MYSQL_TYPE_INVALID),
       fixed(false),
       decimals(0),
@@ -175,7 +185,6 @@ Item::Item(THD *thd, const Item *item)
       marker(MARKER_NONE),
       cmp_context(item->cmp_context),
       is_parser_item(false),
-      is_expensive_cache(-1),
       m_data_type(item->data_type()),
       fixed(item->fixed),
       decimals(item->decimals),
@@ -204,7 +213,6 @@ Item::Item(const POS &pos)
       marker(MARKER_NONE),
       cmp_context(INVALID_RESULT),
       is_parser_item(true),
-      is_expensive_cache(-1),
       m_data_type(MYSQL_TYPE_INVALID),
       fixed(false),
       decimals(0),
@@ -307,7 +315,7 @@ String *Item::val_string_from_decimal(String *str) {
 }
 
 String *Item::val_string_from_datetime(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   MYSQL_TIME ltime;
   if (get_date(&ltime, TIME_FUZZY_DATE) ||
       (null_value = str->alloc(MAX_DATE_STRING_REP_LENGTH)))
@@ -317,7 +325,7 @@ String *Item::val_string_from_datetime(String *str) {
 }
 
 String *Item::val_string_from_date(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   MYSQL_TIME ltime;
   if (get_date(&ltime, TIME_FUZZY_DATE) ||
       (null_value = str->alloc(MAX_DATE_STRING_REP_LENGTH)))
@@ -327,7 +335,7 @@ String *Item::val_string_from_date(String *str) {
 }
 
 String *Item::val_string_from_time(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   MYSQL_TIME ltime;
   if (get_time(&ltime) || (null_value = str->alloc(MAX_DATE_STRING_REP_LENGTH)))
     return error_str();
@@ -370,7 +378,7 @@ my_decimal *Item::val_decimal_from_string(my_decimal *decimal_value) {
 }
 
 my_decimal *Item::val_decimal_from_date(my_decimal *decimal_value) {
-  assert(fixed == 1);
+  assert(fixed);
   MYSQL_TIME ltime;
   if (get_date(&ltime, TIME_FUZZY_DATE)) {
     return error_decimal(decimal_value);
@@ -379,7 +387,7 @@ my_decimal *Item::val_decimal_from_date(my_decimal *decimal_value) {
 }
 
 my_decimal *Item::val_decimal_from_time(my_decimal *decimal_value) {
-  assert(fixed == 1);
+  assert(fixed);
   MYSQL_TIME ltime;
   if (get_time(&ltime)) {
     return error_decimal(decimal_value);
@@ -472,7 +480,7 @@ longlong Item::val_int_from_decimal() {
 }
 
 longlong Item::val_int_from_time() {
-  assert(fixed == 1);
+  assert(fixed);
   MYSQL_TIME ltime;
   ulonglong value = 0;
   if (get_time(&ltime)) return 0LL;
@@ -486,7 +494,7 @@ longlong Item::val_int_from_time() {
 }
 
 longlong Item::val_int_from_date() {
-  assert(fixed == 1);
+  assert(fixed);
   MYSQL_TIME ltime;
   return get_date(&ltime, TIME_FUZZY_DATE)
              ? 0LL
@@ -494,7 +502,7 @@ longlong Item::val_int_from_date() {
 }
 
 longlong Item::val_int_from_datetime() {
-  assert(fixed == 1);
+  assert(fixed);
   MYSQL_TIME ltime;
   if (get_date(&ltime, TIME_FUZZY_DATE)) return 0LL;
 
@@ -1079,7 +1087,15 @@ bool Item_field::is_valid_for_pushdown(uchar *arg) {
     // having them.
     // Expressions which have system variables in the underlying derived
     // table cannot be pushed as of now because Item_func_get_system_var::print
-    // does not print the original expression which leads to an incorrect clone.
+    // does not print the original expression which leads to an incorrect
+    // clone.
+    // Constant expressions from a merged derived table (Item_view_ref to a
+    // const item) which is on the inner side of an outer join has special
+    // handling. However, when such expressions are cloned, they would be
+    // cloned as basic constants i.e. view references are stripped off after
+    // cloning. This leads to wrong results as the used_tables information
+    // (See Item_view_ref::used_tables()) is lost. So we disable condition
+    // pushdown if we have such expressions.
     Query_expression *derived_query_expression =
         derived_table->derived_query_expression();
     Item_result result_type = INVALID_RESULT;
@@ -1091,24 +1107,32 @@ bool Item_field::is_valid_for_pushdown(uchar *arg) {
       } else if (result_type != item->result_type()) {
         return true;
       }
-      bool has_trigger_field = false;
-      bool has_system_var = false;
-      WalkItem(item, enum_walk::PREFIX,
-               [&has_trigger_field, &has_system_var](Item *inner_item) {
-                 if (inner_item->type() == Item::TRIGGER_FIELD_ITEM) {
-                   has_trigger_field = true;
-                   return true;
-                 }
-                 if (inner_item->type() == Item::FUNC_ITEM &&
-                     down_cast<Item_func *>(inner_item)->functype() ==
-                         Item_func::GSYSVAR_FUNC) {
-                   has_system_var = true;
-                   return true;
-                 }
-                 return false;
-               });
-      if (item->has_subquery() || item->is_non_deterministic() ||
-          has_trigger_field || has_system_var)
+      if (item->has_subquery() || item->is_non_deterministic()) return true;
+      if (WalkItem(item, enum_walk::PREFIX, [](Item *inner_item) {
+            if (inner_item->type() == Item::TRIGGER_FIELD_ITEM) {
+              return true;
+            }
+            if (inner_item->type() == Item::FUNC_ITEM &&
+                down_cast<Item_func *>(inner_item)->functype() ==
+                    Item_func::GSYSVAR_FUNC) {
+              return true;
+            }
+            if (inner_item->type() == Item::REF_ITEM &&
+                down_cast<Item_ref *>(inner_item)->ref_type() ==
+                    Item_ref::VIEW_REF) {
+              Item *ref_item = down_cast<Item_ref *>(inner_item);
+              Item *real_item = ref_item->real_item();
+              // A const item from a merged derived inner table that
+              // is part of an outer join may return NULL values and
+              // is hence not const and cannot be pushed down. This is
+              // indicated by having the actual field const and the ref
+              // item non-const.
+              if (real_item->const_item() && !ref_item->const_item()) {
+                return true;
+              }
+            }
+            return false;
+          }))
         return true;
     }
     return false;
@@ -1393,6 +1417,7 @@ void Item_name_string::copy(const char *str_arg, size_t length_arg,
 */
 
 bool Item::eq(const Item *item, bool) const {
+  if (this == item) return true;
   /*
     Note, that this is never true if item is a Item_param:
     for all basic constants we have special checks, and Item_param's
@@ -1695,7 +1720,7 @@ bool Item::get_time_from_int(MYSQL_TIME *ltime) {
 }
 
 bool Item::get_time_from_date(MYSQL_TIME *ltime) {
-  assert(fixed == 1);
+  assert(fixed);
   if (get_date(ltime, TIME_FUZZY_DATE))  // Need this check if NULL value
     return true;
   set_zero_time(ltime, MYSQL_TIMESTAMP_TIME);
@@ -1703,7 +1728,7 @@ bool Item::get_time_from_date(MYSQL_TIME *ltime) {
 }
 
 bool Item::get_time_from_datetime(MYSQL_TIME *ltime) {
-  assert(fixed == 1);
+  assert(fixed);
   if (get_date(ltime, TIME_FUZZY_DATE)) return true;
   datetime_to_time(ltime);
   return false;
@@ -3130,7 +3155,7 @@ TYPELIB *Item_field::get_typelib() const {
 }
 
 String *Item_field::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   if ((null_value = field->is_null())) return nullptr;
   str->set_charset(str_value.charset());
   return field->val_str(str, &str_value);
@@ -3145,37 +3170,37 @@ bool Item_field::val_json(Json_wrapper *result) {
 }
 
 double Item_field::val_real() {
-  assert(fixed == 1);
+  assert(fixed);
   if ((null_value = field->is_null())) return 0.0;
   return field->val_real();
 }
 
 longlong Item_field::val_int() {
-  assert(fixed == 1);
+  assert(fixed);
   if ((null_value = field->is_null())) return 0;
   return field->val_int();
 }
 
 longlong Item_field::val_time_temporal() {
-  assert(fixed == 1);
+  assert(fixed);
   if ((null_value = field->is_null())) return 0;
   return field->val_time_temporal();
 }
 
 longlong Item_field::val_date_temporal() {
-  assert(fixed == 1);
+  assert(fixed);
   if ((null_value = field->is_null())) return 0;
   return field->val_date_temporal();
 }
 
 longlong Item_field::val_time_temporal_at_utc() {
-  assert(fixed == 1);
+  assert(fixed);
   if ((null_value = field->is_null())) return 0;
   return field->val_time_temporal_at_utc();
 }
 
 longlong Item_field::val_date_temporal_at_utc() {
-  assert(fixed == 1);
+  assert(fixed);
   if ((null_value = field->is_null())) return 0;
   return field->val_date_temporal_at_utc();
 }
@@ -3372,7 +3397,7 @@ my_decimal *Item_int::val_decimal(my_decimal *decimal_value) {
 
 String *Item_int::val_str(String *str) {
   // following assert is redundant, because fixed=1 assigned in constructor
-  assert(fixed == 1);
+  assert(fixed);
   str->set_int(value, unsigned_flag, collation.collation);
   return str;
 }
@@ -3401,7 +3426,7 @@ void Item_int::print(const THD *, String *str,
 
 String *Item_uint::val_str(String *str) {
   // following assert is redundant, because fixed=1 assigned in constructor
-  assert(fixed == 1);
+  assert(fixed);
   str->set((ulonglong)value, collation.collation);
   return str;
 }
@@ -3528,14 +3553,14 @@ void Item_decimal::set_decimal_value(const my_decimal *value_par) {
 
 String *Item_float::val_str(String *str) {
   // following assert is redundant, because fixed=1 assigned in constructor
-  assert(fixed == 1);
+  assert(fixed);
   str->set_real(value, decimals, &my_charset_bin);
   return str;
 }
 
 my_decimal *Item_float::val_decimal(my_decimal *decimal_value) {
   // following assert is redundant, because fixed=1 assigned in constructor
-  assert(fixed == 1);
+  assert(fixed);
   double2my_decimal(E_DEC_FATAL_ERROR, value, decimal_value);
   return (decimal_value);
 }
@@ -3636,7 +3661,7 @@ double double_from_string_with_check(const CHARSET_INFO *cs, const char *cptr,
 }
 
 double Item_string::val_real() {
-  assert(fixed == 1);
+  assert(fixed);
   return double_from_string_with_check(str_value.charset(), str_value.ptr(),
                                        str_value.ptr() + str_value.length());
 }
@@ -3701,20 +3726,20 @@ bool Item_null::eq(const Item *item, bool) const {
 
 double Item_null::val_real() {
   // following assert is redundant, because fixed=1 assigned in constructor
-  assert(fixed == 1);
+  assert(fixed);
   null_value = true;
   return 0.0;
 }
 longlong Item_null::val_int() {
   // following assert is redundant, because fixed=1 assigned in constructor
-  assert(fixed == 1);
+  assert(fixed);
   null_value = true;
   return 0;
 }
 
 String *Item_null::val_str(String *) {
   // following assert is redundant, because fixed=1 assigned in constructor
-  assert(fixed == 1);
+  assert(fixed);
   null_value = true;
   return nullptr;
 }
@@ -3778,8 +3803,20 @@ bool Item_param::do_itemize(Parse_context *pc, Item **res) {
     List_iterator_fast<Item_param> it(lex->param_list);
     Item_param *master;
     auto master_pos = lex->reparse_derived_table_params_at.begin();
+    bool found = false;
     while ((master = it++)) {
-      if (*master_pos == master->pos_in_query) {
+      if (*master_pos == master->pos_in_query) found = true;
+      // If the position does not match with the parameter in the list,
+      // check if it matches with one of the clones of the param.
+      // This can happen when we are trying to pushdown a condition
+      // to a CTE which has re-parsed it's definition (See a few lines
+      // above). For such a case, params would have been cloned.
+      if (!found) {
+        for (auto p : master->m_clones) {
+          if (*master_pos == p->pos_in_query) found = true;
+        }
+      }
+      if (found) {
         lex->reparse_derived_table_params_at.erase(master_pos);
         // Register it against its master
         pos_in_query = master->pos_in_query;
@@ -5012,7 +5049,7 @@ bool Item::fix_fields(THD *, Item **) {
   assert(is_contextualized());
 
   // We do not check fields which are fixed during construction
-  assert(fixed == 0 || basic_const_item());
+  assert(!fixed || basic_const_item());
   fixed = true;
   return false;
 }
@@ -5561,7 +5598,7 @@ int Item_field::fix_outer_field(THD *thd, Field **from_field,
                               context->query_block, this,
                               ref_type == REF_ITEM || ref_type == FIELD_ITEM
                                   ? down_cast<Item_ident *>(*reference)
-                                  : NULL);
+                                  : nullptr);
           /*
             A reference to a view field had been found and we
             substituted it instead of this Item (find_field_in_tables
@@ -6673,7 +6710,10 @@ static inline type_conversion_status field_conv_with_cache(
       *to_is_memcpyable = -1;
     }
   }
-  if (*to_is_memcpyable != static_cast<uint32_t>(-1)) {
+  if (*to_is_memcpyable != static_cast<uint32_t>(-1) &&
+      *to_is_memcpyable == to->pack_length() && from->type() == to->type() &&
+      (from->type() != MYSQL_TYPE_NEWDECIMAL ||
+       from->decimals() == to->decimals())) {
     memcpy(to->field_ptr(), from->field_ptr(), *to_is_memcpyable);
     return TYPE_OK;
   } else {
@@ -7131,7 +7171,7 @@ bool Item_float::eq(const Item *arg, bool) const {
   return false;
 }
 
-inline uint char_val(char X) {
+static inline uint char_val(char X) {
   return (uint)(X >= '0' && X <= '9'
                     ? X - '0'
                     : X >= 'A' && X <= 'Z' ? X - 'A' + 10 : X - 'a' + 10);
@@ -7139,13 +7179,20 @@ inline uint char_val(char X) {
 
 Item_hex_string::Item_hex_string() { hex_string_init("", 0); }
 
-Item_hex_string::Item_hex_string(const char *str, uint str_length) {
-  hex_string_init(str, str_length);
-}
-
 Item_hex_string::Item_hex_string(const POS &pos, const LEX_STRING &literal)
     : super(pos) {
   hex_string_init(literal.str, literal.length);
+}
+
+Item *Item_hex_string::clone_item() const {
+  Item_hex_string *retval = new Item_hex_string();
+  if (retval == nullptr) return nullptr;
+  retval->str_value.set(
+      current_thd->strmake(str_value.ptr(), str_value.length()),
+      str_value.length(), &my_charset_bin);
+  retval->cmp_context = cmp_context;
+  retval->max_length = max_length;
+  return retval;
 }
 
 LEX_CSTRING Item_hex_string::make_hex_str(const char *str, size_t str_length) {
@@ -7202,7 +7249,7 @@ void Item_hex_string::hex_string_init(const char *str, uint str_length) {
 
 longlong Item_hex_string::val_int() {
   // following assert is redundant, because fixed=1 assigned in constructor
-  assert(fixed == 1);
+  assert(fixed);
   const char *end = str_value.ptr() + str_value.length();
   const char *ptr;
 
@@ -7241,7 +7288,7 @@ longlong Item_hex_string::val_int() {
 
 my_decimal *Item_hex_string::val_decimal(my_decimal *decimal_value) {
   // following assert is redundant, because fixed=1 assigned in constructor
-  assert(fixed == 1);
+  assert(fixed);
   const ulonglong value = (ulonglong)val_int();
   int2my_decimal(E_DEC_FATAL_ERROR, value, true, decimal_value);
   return (decimal_value);
@@ -7383,7 +7430,7 @@ Item_json::~Item_json() = default;
 
 void Item_json::print(const THD *, String *str, enum_query_type) const {
   str->append("json'");
-  m_value->to_string(str, true, "", JsonDocumentDefaultDepthHandler);
+  m_value->to_string(str, true, "", JsonDepthErrorHandler);
   str->append("'");
 }
 
@@ -7405,8 +7452,7 @@ longlong Item_json::val_int() { return m_value->coerce_int(item_name.ptr()); }
 
 String *Item_json::val_str(String *str) {
   str->length(0);
-  if (m_value->to_string(str, true, item_name.ptr(),
-                         JsonDocumentDefaultDepthHandler))
+  if (m_value->to_string(str, true, item_name.ptr(), JsonDepthErrorHandler))
     return error_str();
   return str;
 }
@@ -9301,7 +9347,7 @@ bool Item_trigger_field::fix_fields(THD *thd, Item **) {
     parsing! So we have little to do in fix_fields. :)
   */
 
-  assert(fixed == 0);
+  assert(!fixed);
 
   /* Set field. */
 
@@ -9601,14 +9647,10 @@ int stored_field_cmp_to_item(THD *thd, Field *field, Item *item) {
     field_val = field->val_decimal(&field_buf);
     return my_decimal_cmp(field_val, item_val);
   }
-  /*
-    The patch for Bug#13463415 started using this function for comparing
-    BIGINTs. That uncovered a bug in Visual Studio 32bit optimized mode.
-    Prefixing the auto variables with volatile fixes the problem....
-  */
-  volatile double result = item->val_real();
+
+  const double result = item->val_real();
   if (item->null_value) return 0;
-  volatile double field_result = field->val_real();
+  const double field_result = field->val_real();
   if (field_result < result)
     return -1;
   else if (field_result > result)
@@ -9725,28 +9767,28 @@ void Item_cache_int::store_value(Item *item, longlong val_arg) {
 }
 
 String *Item_cache_int::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   if (!has_value()) return nullptr;
   str->set_int(value, unsigned_flag, default_charset());
   return str;
 }
 
 my_decimal *Item_cache_int::val_decimal(my_decimal *decimal_val) {
-  assert(fixed == 1);
+  assert(fixed);
   if (!has_value()) return nullptr;
   int2my_decimal(E_DEC_FATAL_ERROR, value, unsigned_flag, decimal_val);
   return decimal_val;
 }
 
 double Item_cache_int::val_real() {
-  assert(fixed == 1);
+  assert(fixed);
   if (!has_value()) return 0.0;
   if (unsigned_flag) return static_cast<unsigned long long>(value);
   return value;
 }
 
 longlong Item_cache_int::val_int() {
-  assert(fixed == 1);
+  assert(fixed);
   if (!has_value()) return 0;
   return value;
 }
@@ -9812,7 +9854,7 @@ void Item_cache_datetime::store(Item *item) {
 }
 
 String *Item_cache_datetime::val_str(String *) {
-  assert(fixed == 1);
+  assert(fixed);
 
   if ((value_cached || str_value_cached) && null_value) return nullptr;
 
@@ -9840,7 +9882,7 @@ String *Item_cache_datetime::val_str(String *) {
 }
 
 my_decimal *Item_cache_datetime::val_decimal(my_decimal *decimal_val) {
-  assert(fixed == 1);
+  assert(fixed);
 
   if (str_value_cached) {
     switch (data_type()) {
@@ -9923,7 +9965,7 @@ bool Item_cache_datetime::get_time(MYSQL_TIME *ltime) {
 double Item_cache_datetime::val_real() { return val_real_from_decimal(); }
 
 longlong Item_cache_datetime::val_time_temporal() {
-  assert(fixed == 1);
+  assert(fixed);
   if ((!value_cached && !cache_value_int()) || null_value) return 0;
   if (is_temporal_with_date()) {
     /* Convert packed date to packed time */
@@ -9936,7 +9978,7 @@ longlong Item_cache_datetime::val_time_temporal() {
 }
 
 longlong Item_cache_datetime::val_date_temporal() {
-  assert(fixed == 1);
+  assert(fixed);
   if ((!value_cached && !cache_value_int()) || null_value) return 0;
   if (data_type() == MYSQL_TYPE_TIME) {
     /* Convert packed time to packed date */
@@ -10006,8 +10048,7 @@ inline static const char *whence(const Item_field *cached_field) {
 String *Item_cache_json::val_str(String *tmp) {
   if (has_value()) {
     tmp->length(0);
-    m_value->to_string(tmp, true, whence(cached_field),
-                       JsonDocumentDefaultDepthHandler);
+    m_value->to_string(tmp, true, whence(cached_field), JsonDepthErrorHandler);
     return tmp;
   }
 
@@ -10086,26 +10127,26 @@ void Item_cache_real::store_value(Item *expr, double d) {
 }
 
 double Item_cache_real::val_real() {
-  assert(fixed == 1);
+  assert(fixed);
   if (!has_value()) return 0.0;
   return value;
 }
 
 longlong Item_cache_real::val_int() {
-  assert(fixed == 1);
+  assert(fixed);
   if (!has_value()) return 0;
   return (longlong)rint(value);
 }
 
 String *Item_cache_real::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   if (!has_value()) return nullptr;
   str->set_real(value, decimals, default_charset());
   return str;
 }
 
 my_decimal *Item_cache_real::val_decimal(my_decimal *decimal_val) {
-  assert(fixed == 1);
+  assert(fixed);
   if (!has_value()) return nullptr;
   double2my_decimal(E_DEC_FATAL_ERROR, value, decimal_val);
   return decimal_val;
@@ -10191,7 +10232,7 @@ void Item_cache_str::store_value(Item *expr, String &s) {
 }
 
 double Item_cache_str::val_real() {
-  assert(fixed == 1);
+  assert(fixed);
   int err_not_used;
   const char *end_not_used;
   if (!has_value()) return 0.0;
@@ -10202,7 +10243,7 @@ double Item_cache_str::val_real() {
 }
 
 longlong Item_cache_str::val_int() {
-  assert(fixed == 1);
+  assert(fixed);
   int err;
   if (!has_value()) return 0;
   if (value)
@@ -10213,13 +10254,13 @@ longlong Item_cache_str::val_int() {
 }
 
 String *Item_cache_str::val_str(String *) {
-  assert(fixed == 1);
+  assert(fixed);
   if (!has_value()) return nullptr;
   return value;
 }
 
 my_decimal *Item_cache_str::val_decimal(my_decimal *decimal_val) {
-  assert(fixed == 1);
+  assert(fixed);
   if (!has_value()) return nullptr;
   if (value)
     str2my_decimal(E_DEC_FATAL_ERROR, value->ptr(), value->length(),

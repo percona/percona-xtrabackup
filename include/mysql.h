@@ -458,9 +458,12 @@ const char *STDCALL mysql_character_set_name(MYSQL *mysql);
 int STDCALL mysql_set_character_set(MYSQL *mysql, const char *csname);
 
 MYSQL *STDCALL mysql_init(MYSQL *mysql);
-bool STDCALL mysql_ssl_set(MYSQL *mysql, const char *key, const char *cert,
-                           const char *ca, const char *capath,
-                           const char *cipher);
+#if defined(__cplusplus) && (__cplusplus >= 201402L)
+[[deprecated("Use mysql_options() instead.")]]
+#endif
+bool STDCALL
+mysql_ssl_set(MYSQL *mysql, const char *key, const char *cert, const char *ca,
+              const char *capath, const char *cipher);
 const char *STDCALL mysql_get_ssl_cipher(MYSQL *mysql);
 bool STDCALL mysql_get_ssl_session_reused(MYSQL *mysql);
 void *STDCALL mysql_get_ssl_session_data(MYSQL *mysql, unsigned int n_ticket,
@@ -763,6 +766,8 @@ bool STDCALL mysql_stmt_attr_get(MYSQL_STMT *stmt,
                                  enum enum_stmt_attr_type attr_type,
                                  void *attr);
 bool STDCALL mysql_stmt_bind_param(MYSQL_STMT *stmt, MYSQL_BIND *bnd);
+bool STDCALL mysql_stmt_bind_named_param(MYSQL_STMT *stmt, MYSQL_BIND *binds,
+                                         unsigned n_params, const char **names);
 bool STDCALL mysql_stmt_bind_result(MYSQL_STMT *stmt, MYSQL_BIND *bnd);
 bool STDCALL mysql_stmt_close(MYSQL_STMT *stmt);
 bool STDCALL mysql_stmt_reset(MYSQL_STMT *stmt);

@@ -36,6 +36,7 @@
 #include "mutex_lock.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
+#include "my_rnd.h"
 #include "my_systime.h"
 #include "my_thread.h"
 #include "my_time.h"
@@ -702,6 +703,7 @@ THD::THD(bool enable_plugins)
 #ifdef HAVE_GTID_NEXT_LIST
       owned_gtid_set(global_sid_map),
 #endif
+      rpl_thd_ctx(key_memory_rpl_thd_context),
       skip_gtid_rollback(false),
       is_commit_in_middle_of_statement(false),
       has_gtid_consistency_violation(false),
@@ -3116,8 +3118,6 @@ bool THD::is_secondary_storage_engine_eligible() const {
   if ((in_multi_stmt_transaction_mode() &&
        lex->sql_command != SQLCOM_CREATE_TABLE))
     return false;
-  //  It is a sub-statement of a stored procedure
-  if (sp_runtime_ctx != nullptr) return false;
   return true;
 }
 
@@ -3675,5 +3675,18 @@ void my_eof(THD *thd) {
   if (thd->variables.session_track_transaction_info > TX_TRACK_NONE) {
     TX_TRACKER_GET(tst);
     tst->add_trx_state(thd, TX_RESULT_SET);
+  }
+}
+
+void THD::init_cost_model() {
+  m_cost_model.init(Optimizer::kOriginal);
+  m_cost_model_hypergraph.init(Optimizer::kHypergraph);
+}
+
+const Cost_model_server *THD::cost_model() const {
+  if (lex->using_hypergraph_optimizer) {
+    return &m_cost_model_hypergraph;
+  } else {
+    return &m_cost_model;
   }
 }

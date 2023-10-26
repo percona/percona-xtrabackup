@@ -67,6 +67,19 @@ class RouterComponentTest : public ProcessManager, public ::testing::Test {
                                        const std::string &pattern,
                                        std::chrono::milliseconds timeout);
 
+  /** @brief Checks if the process' log contains specific number of occurences
+   * of a given string
+   *
+   * @param process             process handle
+   * @param expected_string     the string to look for in the logfile
+   * @param expected_occurences number of string occurences expected in the
+   *                            logfile
+   *
+   */
+  void check_log_contains(const ProcessWrapper &process,
+                          const std::string &expected_string,
+                          size_t expected_occurences = 1);
+
   /** @brief Sleep for a duration given as a parameter. The duration is
    * increased 10 times for the run with VALGRIND.
    */
@@ -102,6 +115,15 @@ class RouterComponentTest : public ProcessManager, public ::testing::Test {
     MySQLSession session;
     EXPECT_NO_THROW(session.connect("127.0.0.1", router_port, "username",
                                     "password", "", ""));
+
+    auto result{session.query_one("select @@port")};
+    return static_cast<uint16_t>(std::strtoul((*result)[0], nullptr, 10));
+  }
+
+  uint16_t make_new_connection_ok(const std::string &router_socket) {
+    MySQLSession session;
+    EXPECT_NO_THROW(
+        session.connect("", 0, "username", "password", router_socket, ""));
 
     auto result{session.query_one("select @@port")};
     return static_cast<uint16_t>(std::strtoul((*result)[0], nullptr, 10));
@@ -160,12 +182,10 @@ class RouterComponentBootstrapTest : virtual public RouterComponentTest {
  public:
   using OutputResponder = ProcessWrapper::OutputResponder;
 
-  static void SetUpTestCase() { my_hostname = "dont.query.dns"; }
   static const OutputResponder kBootstrapOutputResponder;
 
  protected:
   TempDirectory bootstrap_dir;
-  static std::string my_hostname;
   std::string config_file;
 
   struct Config {
@@ -194,13 +214,15 @@ class RouterComponentBootstrapTest : virtual public RouterComponentTest {
 
   ProcessWrapper &launch_router_for_bootstrap(
       std::vector<std::string> params, int expected_exit_code = EXIT_SUCCESS,
-      const bool disable_rest = true,
+      const bool disable_rest = true, const bool add_report_host = true,
+      const bool catch_stderr = true,
       ProcessWrapper::OutputResponder output_responder =
           RouterComponentBootstrapTest::kBootstrapOutputResponder) {
     if (disable_rest) params.push_back("--disable-rest");
+    if (add_report_host) params.push_back("--report-host=dont.query.dns");
 
     return ProcessManager::launch_router(
-        params, expected_exit_code, /*catch_stderr=*/true, /*with_sudo=*/false,
+        params, expected_exit_code, catch_stderr, /*with_sudo=*/false,
         /*wait_for_notify_ready=*/std::chrono::seconds(-1), output_responder);
   }
 

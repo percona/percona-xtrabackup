@@ -188,6 +188,17 @@ ClusterMetadata::get_and_check_metadata_schema_version(
         to_string(version).c_str()));
   }
 
+  if (metadata_schema_version_is_deprecated(version)) {
+    const auto instance = session.get_address();
+    const auto message =
+        "Instance '" + instance +
+        "': " + mysqlrouter::get_metadata_schema_deprecated_msg(version);
+
+    LogSuppressor::instance().log_message(
+        LogSuppressor::MessageId::kDeprecatedMetadataVersion, instance, message,
+        true);
+  }
+
   return version;
 }
 
@@ -271,11 +282,12 @@ bool ClusterMetadata::update_router_attributes(
     query =
         "UPDATE mysql_innodb_cluster_metadata.routers "
         "SET attributes = "
-        "JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET( "
+        "JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET( "
         "IF(attributes IS NULL, '{}', attributes), "
         "'$.version', ?), "
         "'$.RWEndpoint', ?), "
         "'$.ROEndpoint', ?), "
+        "'$.RWSplitEndpoint', ?), "
         "'$.RWXEndpoint', ?), "
         "'$.ROXEndpoint', ?), "
         "'$.MetadataUser', ?) "
@@ -284,10 +296,11 @@ bool ClusterMetadata::update_router_attributes(
     query =
         "UPDATE mysql_innodb_cluster_metadata.v2_routers "
         "SET version = ?, last_check_in = NOW(), attributes = "
-        "JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET( "
+        "JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET( "
         "IF(attributes IS NULL, '{}', attributes), "
         "'$.RWEndpoint', ?), "
         "'$.ROEndpoint', ?), "
+        "'$.RWSplitEndpoint', ?), "
         "'$.RWXEndpoint', ?), "
         "'$.ROXEndpoint', ?), "
         "'$.MetadataUser', ?) "
@@ -296,8 +309,8 @@ bool ClusterMetadata::update_router_attributes(
 
   const auto &ra{router_attributes};
   query << MYSQL_ROUTER_VERSION << ra.rw_classic_port << ra.ro_classic_port
-        << ra.rw_x_port << ra.ro_x_port << ra.metadata_user_name << router_id
-        << sqlstring::end;
+        << ra.rw_split_classic_port << ra.rw_x_port << ra.ro_x_port
+        << ra.metadata_user_name << router_id << sqlstring::end;
 
   connection->execute(query);
 
@@ -450,7 +463,8 @@ std::optional<metadata_cache::metadata_server_t>
 ClusterMetadata::find_rw_server(
     const std::vector<metadata_cache::ManagedCluster> &clusters) {
   for (auto &cluster : clusters) {
-    if (cluster.is_primary) return find_rw_server(cluster.members);
+    if (cluster.is_primary && cluster.has_quorum)
+      return find_rw_server(cluster.members);
   }
 
   return {};

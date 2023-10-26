@@ -19,6 +19,10 @@
 #       start libevent.sln
 #
 
+IF(APPLE)
+  STRING_APPEND(CMAKE_C_FLAGS " -Wno-shorten-64-to-32")
+ENDIF()
+
 MY_CHECK_CXX_COMPILER_WARNING("-Wdangling-pointer" HAS_WARN_FLAG)
 IF(HAS_WARN_FLAG)
   STRING_APPEND(CMAKE_C_FLAGS " ${HAS_WARN_FLAG}")
@@ -43,6 +47,8 @@ ENDIF()
 IF(WIN32_CLANG)
   STRING_APPEND(CMAKE_C_FLAGS " -Wno-assign-enum")
   STRING_APPEND(CMAKE_C_FLAGS " -Wno-cast-align")
+  STRING_APPEND(CMAKE_C_FLAGS " -Wno-cast-function-type")
+  STRING_APPEND(CMAKE_C_FLAGS " -Wno-cast-function-type-strict")
   STRING_APPEND(CMAKE_C_FLAGS " -Wno-cast-qual")
   STRING_APPEND(CMAKE_C_FLAGS " -Wno-covered-switch-default")
   STRING_APPEND(CMAKE_C_FLAGS " -Wno-disabled-macro-expansion")
@@ -64,8 +70,12 @@ IF(WIN32_CLANG)
   STRING_APPEND(CMAKE_C_FLAGS " -Wno-shadow")
   STRING_APPEND(CMAKE_C_FLAGS " -Wno-sign-conversion")
   STRING_APPEND(CMAKE_C_FLAGS " -Wno-shorten-64-to-32")
+  STRING_APPEND(CMAKE_C_FLAGS " -Wno-strict-prototypes")
   STRING_APPEND(CMAKE_C_FLAGS " -Wno-switch-enum")
+  STRING_APPEND(CMAKE_C_FLAGS " -Wno-unreachable-code-fallthrough")
   STRING_APPEND(CMAKE_C_FLAGS " -Wno-unreachable-code-return")
+  STRING_APPEND(CMAKE_C_FLAGS " -Wno-unsafe-buffer-usage")
+  STRING_APPEND(CMAKE_C_FLAGS " -Wno-unused-but-set-variable")
   STRING_APPEND(CMAKE_C_FLAGS " -Wno-unused-macros")
 ENDIF()
 
@@ -997,6 +1007,7 @@ configure_file(
 add_library(event_core STATIC ${SRC_CORE})
 add_library(event_extra STATIC ${SRC_EXTRA})
 add_library(event_openssl STATIC ${SRC_OPENSSL})
+TARGET_LINK_LIBRARIES(event_openssl OpenSSL::SSL OpenSSL::Crypto)
 # These are interdependent libraries.
 TARGET_LINK_LIBRARIES(event_extra event_core)
 TARGET_LINK_LIBRARIES(event_openssl event_core)

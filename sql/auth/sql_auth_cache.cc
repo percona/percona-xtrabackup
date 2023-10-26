@@ -1326,8 +1326,12 @@ static void insert_entry_in_db_cache(THD *thd, acl_entry *entry) {
   Get privilege for a host, user, and db
   combination.
 
-  @note db_cache is not used if db_is_pattern
-  is set.
+  NOTES
+    1) db_cache is not used if db_is_pattern is set.
+    2) This function does not take into account privileges granted via active
+       roles.
+    3) This should not be used outside ACL subsystem code (sql/auth). Use
+       check_db_level_access() instead.
 
   @param thd   Thread handler
   @param host  Host name
@@ -1359,7 +1363,8 @@ ulong acl_get(THD *thd, const char *host, const char *ip, const char *user,
   if (!acl_cache_lock.lock(false)) return db_access;
 
   end = my_stpcpy(
-      (tmp_db = my_stpcpy(my_stpcpy(key, ip ? ip : "") + 1, user) + 1), db);
+      (tmp_db = my_stpcpy(my_stpcpy(key, ip ? ip : "") + 1, user) + 1),
+      db ? db : "");
   if (lower_case_table_names) {
     my_casedn_str(files_charset_info, tmp_db);
     db = tmp_db;
@@ -2649,11 +2654,14 @@ bool grant_reload(THD *thd, bool mdl_locked) {
                                MYSQL_OPEN_IGNORE_FLUSH
                          : MYSQL_LOCK_IGNORE_TIMEOUT;
   Acl_cache_lock_guard acl_cache_lock(thd, Acl_cache_lock_mode::WRITE_MODE);
+  const sql_mode_t old_sql_mode = thd->variables.sql_mode;
 
   DBUG_TRACE;
 
   /* Don't do anything if running with --skip-grant-tables */
   if (!initialized) return false;
+
+  thd->variables.sql_mode &= ~MODE_PAD_CHAR_TO_FULL_LENGTH;
 
   Table_ref tables[3] = {
 
@@ -2714,6 +2722,7 @@ bool grant_reload(THD *thd, bool mdl_locked) {
   }
 
 end:
+  thd->variables.sql_mode = old_sql_mode;
   if (!mdl_locked)
     commit_and_close_mysql_tables(thd);
   else
