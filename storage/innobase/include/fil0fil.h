@@ -2340,7 +2340,6 @@ size_t fil_count_undo_deleted(space_id_t undo_num);
 @param[in]  type  the page type to be checked for validity.
 @return true if it is valid page type, false otherwise. */
 [[nodiscard]] bool fil_is_page_type_valid(page_type_t type) noexcept;
-<<<<<<< HEAD
 
 #ifdef XTRABACKUP
 /** Save tablespace error in cache. This is retrieved later on
@@ -2359,9 +2358,6 @@ stage. This is used at rollback phase
 dberr_t fil_xb_get_tablespace_error(space_id_t space_id);
 #endif /* XTRABACKUP */
 
-||||||| merged common ancestors
-=======
-
 dberr_t fil_prepare_file_for_io(space_id_t space_id, page_no_t &page_no,
                                 fil_node_t **node_out);
 void fil_complete_write(space_id_t space_id, fil_node_t *node);
@@ -2373,5 +2369,4 @@ inline bool fil_node_t::is_offset_valid(os_offset_t byte_offset) const {
   return byte_offset < max_offset;
 }
 
->>>>>>> mysql-8.2.0
 #endif /* fil0fil_h */

@@ -81,14 +81,8 @@ ENDIF()
 
 SET(KEYRING_FILE_LIBRARIES
   keyring_common
-<<<<<<< HEAD
-  ${SSL_LIBRARIES}
-  ${XTRABACKUP_UNDEFINED_SYMBOLS}
-||||||| merged common ancestors
-  ${SSL_LIBRARIES}
-=======
   OpenSSL::SSL OpenSSL::Crypto
->>>>>>> mysql-8.2.0
+  ${XTRABACKUP_UNDEFINED_SYMBOLS}
 )
 
 MYSQL_ADD_COMPONENT(keyring_file

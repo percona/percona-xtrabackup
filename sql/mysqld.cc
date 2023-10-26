@@ -2147,16 +2147,8 @@ static bool mysql_component_infrastructure_init() {
   @retval false success
   @retval true failure
 */
-<<<<<<< HEAD
 bool component_infrastructure_deinit() {
-  if (!opt_initialize)
-||||||| merged common ancestors
-static bool component_infrastructure_deinit() {
-  if (!opt_initialize)
-=======
-static bool component_infrastructure_deinit() {
   if (!opt_initialize) {
->>>>>>> mysql-8.2.0
     LogErr(INFORMATION_LEVEL, ER_COMPONENTS_INFRASTRUCTURE_SHUTDOWN_START);
     sysd::notify("Shutdown of components in progress\n");
   }

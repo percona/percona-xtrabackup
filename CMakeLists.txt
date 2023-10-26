@@ -2155,18 +2155,12 @@ INCLUDE(maintainer)
 INCLUDE(msvc_cppcheck)
 DO_MSVC_CPPCHECK()
 
-<<<<<<< HEAD
-IF(WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
-||||||| merged common ancestors
-IF(WITH_UNIT_TESTS)
-=======
 IF(WIN32_CLANG AND CMAKE_BUILD_TYPE_UPPER STREQUAL "DEBUG")
   # Not yet fixed for Debug code
   STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-format")
 ENDIF()
 
-IF(WITH_UNIT_TESTS)
->>>>>>> mysql-8.2.0
+IF(WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
   ENABLE_TESTING()
   INCLUDE(googletest)
 ELSE()

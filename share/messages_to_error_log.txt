@@ -12376,15 +12376,6 @@ ER_NUM_THREADS_STILL_ALIVE
 ER_GRP_RPL_MYSQL_NETWORK_PROVIDER_SERVER_ERROR_COMMAND_ERR
    eng "Failed to accept a MySQL connection for Group Replication. %s. Please retry."
 
-<<<<<<< HEAD
-||||||| merged common ancestors
-||||||||| b5da0b9817c
-=========
-ER_LOG_CANNOT_PURGE_BINLOG_WITH_BACKUP_LOCK
-  eng "Could not purge binary logs since another session is executing LOCK INSTANCE FOR BACKUP. Wait for that session to release the lock."
-
->>>>>>>>> Temporary merge branch 2
-=======
 ER_COMPONENT_KEYRING_OCI_INVALID_CONFIG_VAR
    eng "Invalid value of argument %s (%s)."
 
@@ -12430,7 +12421,6 @@ ER_IB_WRONG_PAGEID_AFTER_SYNC_READ
 ER_IB_SYNC_READ_FAILED
   eng "Sync read to fix wrong page_id failed: buf_block_t[space_id=%zu, page_no=%zu], file=%s, err=%zu, retry=%zu"
 
->>>>>>> mysql-8.2.0
 # DO NOT add server-to-client messages here;
 # they go in messages_to_clients.txt
 # in the same directory as this file.
