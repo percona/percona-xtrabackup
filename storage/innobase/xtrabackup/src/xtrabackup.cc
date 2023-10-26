@@ -2305,7 +2305,6 @@ static bool innodb_init_param(void) {
 #elif defined(LINUX_NATIVE_AIO)
 
   if (srv_use_native_aio) {
-    ut_print_timestamp(stderr);
     ib::info() << "Using Linux native AIO";
   }
 #else
