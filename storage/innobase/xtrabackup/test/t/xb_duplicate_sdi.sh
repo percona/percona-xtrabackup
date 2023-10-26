@@ -65,18 +65,29 @@ mysql -e "ALTER TABLE pt1 EXCHANGE PARTITION p1 WITH TABLE t1" test
 innodb_wait_for_flush_all
 run_cmd backup_and_restore test
 
-vlog "case#4 check prepare works with backup of 8.0.23"
+# Use datadir upgraded from 8.0.23 with duplicate SDI
+# to print SDI:
+# for f in $(ls datadir/test); do echo $f; ibd2sdi $f |  jq '.[1].id'; done
+vlog "case#4 check prepare works with backup having duplicate SDI"
 stop_server
-#cleanup backup and place 8.0.23 backupdir
-rm -rf $topdir/backup && mkdir -p $topdir/backup
-run_cmd tar -xf inc/duplicate_sdi_backup.tar.gz -C $topdir/backup
+#cleanup backup and place backup with duplicate SDI
+rm -rf $mysql_datadir $topdir/backup && mkdir -p $mysql_datadir
+
+run_cmd tar -xf inc/duplicate_sdi_datadir.tar.gz -C $mysql_datadir
+
+MYSQLD_START_TIMEOUT=1200
+#start server
+start_server
+
+#backup
+xtrabackup --backup --target-dir=$topdir/backup
 #prepare
 xtrabackup --prepare --target-dir=$topdir/backup
 #restore
-[[ -d $mysql_datadir ]] && rm -rf $mysql_datadir && mkdir -p $mysql_datadir
+stop_server
+rm -rf $mysql_datadir && mkdir -p $mysql_datadir
 xtrabackup --copy-back --target-dir=$topdir/backup
 
-MYSQLD_START_TIMEOUT=1200
 start_server
-run_cmd check_count test t1 5 
+run_cmd check_count test t1 5
 run_cmd check_count test pt1 4

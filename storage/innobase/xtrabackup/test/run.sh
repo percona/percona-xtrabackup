@@ -482,7 +482,7 @@ function get_version_info()
     fi
 
     # version check - Allow 8.1 to 8.4
-    if [[ "$MYSQL_VERSION_MAJOR" -ne 8 ]] || [[ "$MYSQL_VERSION_MINOR" -ne 1 ]]
+    if [[ "$MYSQL_VERSION_MAJOR" -ne 8 ]] || [[ "$MYSQL_VERSION_MINOR" -lt 1 ]] && [[ "$MYSQL_VERSION_MINOR" -gt 4 ]]
     then
         vlog "Unknown MySQL/InnoDB version: $MYSQL_VERSION/$INNODB_VERSION"
         exit -1
