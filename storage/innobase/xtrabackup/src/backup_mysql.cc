@@ -355,10 +355,32 @@ bool check_server_version(unsigned long version_number,
                           const char *version_string,
                           const char *version_comment,
                           const char *innodb_version) {
-  bool version_supported = false;
   bool mysql51 = false;
   bool pxb24 = false;
-  bool pxb80 = false;
+  std::string pxb_version;
+  std::string server_version;
+  DBUG_EXECUTE_IF("simulate_24_version", version_number = 50744;
+                  version_string = "5.7.1";);
+  DBUG_EXECUTE_IF("simulate_80_version", version_number = 80035;
+                  version_string = "8.0.1";);
+  DBUG_EXECUTE_IF("simulate_81_version", version_number = 80100;
+                  version_string = "8.1.1";);
+  DBUG_EXECUTE_IF("simulate_90_version", version_number = 90000;
+                  version_string = "9.0.1";);
+  DBUG_EXECUTE_IF("simulate_higher_version", version_number = 80499;
+                  version_string = "8.4.99";);
+  if (!xtrabackup::utils::get_major_minor_version(MYSQL_SERVER_VERSION,
+                                                  pxb_version)) {
+    xb::error() << "Failed to parse Percona Xtrabackup version: "
+                << MYSQL_SERVER_VERSION;
+    return false;
+  }
+
+  if (!xtrabackup::utils::get_major_minor_version(version_string,
+                                                  server_version)) {
+    xb::error() << "Failed to parse version: " << version_string;
+    return false;
+  }
 
   mysql_server_version = version_number;
   mysql_server_version_comment = version_comment;
@@ -378,24 +400,17 @@ bool check_server_version(unsigned long version_number,
     return false;
   }
 
-  DBUG_EXECUTE_IF("simulate_lower_version", version_number = 80499;);
-
-  /* PXB 8.1 supports server version 8.1.0 until 8.1.99 */
-  version_supported =
-      version_supported || (version_number >= 80100 && version_number <= 80199);
-
   mysql51 = version_number > 50100 && version_number < 50500;
   pxb24 = pxb24 || (mysql51 && innodb_version != NULL);
   pxb24 = pxb24 || (version_number > 50500 && version_number < 50800);
   pxb24 = pxb24 || ((version_number > 100000 && version_number < 100300) &&
                     server_flavor == FLAVOR_MARIADB);
-  pxb80 = pxb80 || (version_number > 80000 && version_number < 80100);
-
-  if (!version_supported) {
+  if (pxb_version != server_version) {
     xb::error() << "Unsupported server version: " << SQUOTE(version_string);
     xb::error()
         << "This version of Percona XtraBackup can only perform backups and "
-           "restores against MySQL and Percona Server 8.1";
+           "restores against MySQL and Percona Server "
+        << SQUOTE(pxb_version);
     if (mysql51 && innodb_version == NULL) {
       xb::error()
           << "You can use Percona XtraBackup 2.0 for MySQL 5.1 with built-in "
@@ -407,16 +422,16 @@ bool check_server_version(unsigned long version_number,
       xb::info() << "Please use Percona XtraBackup 2.4 for this database.";
       return false;
     }
-    if (pxb80) {
-      xb::info() << "Please use Percona XtraBackup 8.0 for this database.";
-      return false;
-    }
-
+    if (version_number >= 80000) {
+      xb::info() << "Please use Percona XtraBackup " << server_version
+                 << " for this database.";
+      /* we block backup of 8.0 */
+      if (version_number < 80100) {
+        return false;
+      }
     auto pxb_base_ver =
         xtrabackup::utils::get_version_number(MYSQL_SERVER_VERSION);
-
-    if (pxb_base_ver < version_number && version_number >= 80100 &&
-        version_number <= 80499) {
+    if (pxb_base_ver < version_number && version_number <= 80499) {
       if (!opt_no_server_version_check) {
         xb::error()
             << "Please upgrade PXB, if a new "
@@ -427,11 +442,9 @@ bool check_server_version(unsigned long version_number,
         return true;
       }
     }
-
-    return (version_supported);
+    }
     return false;
   }
-
   return true;
 }
 

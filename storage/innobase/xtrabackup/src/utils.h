@@ -44,6 +44,16 @@ bool read_server_uuid();
 @return version_number like 80022 */
 unsigned long get_version_number(std::string version_str);
 
+/**
+  Convert version_str to major.minor version
+
+  @param[in] version_str version string like 8.2.0.debug
+  @param[in/out] version version string like 8.2
+  @return true in case of success, false otherwise
+*/
+bool get_major_minor_version(const std::string &version_str,
+                             std::string &version);
+
 unsigned long host_total_memory();
 unsigned long host_free_memory();
 

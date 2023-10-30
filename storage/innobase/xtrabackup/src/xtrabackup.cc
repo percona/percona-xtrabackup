@@ -4520,12 +4520,8 @@ static bool xtrabackup_init_temp_log(void) {
 
   if (log_format < Log_format::CURRENT) {
     xb::error() << "Unsupported redo log format " << to_int(log_format);
-    xb::error()
-        << "This version of Percona XtraBackup can only perform backups and "
-           "restores against MySQL 8.1 and Percona Server 8.1, please use "
-           "Percona "
-           "Xtrabackup 8.0 OR 2.4 for this database.";
-
+    xb::error() << "Please use an older version of Xtrabackup matching your "
+                   "redo log format for this database.";
     goto error;
   }
 
