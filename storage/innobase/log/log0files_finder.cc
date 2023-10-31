@@ -249,6 +249,9 @@ Log_files_find_result log_files_find_and_analyze(
     Log_files_dict &files, Log_format &format, std::string &creator_name,
     Log_flags &log_flags, Log_uuid &log_uuid) {
   ut::vector<Log_file_id_and_size> file_sizes;
+#ifdef XTRABACKUP
+  std::set<Log_file_id> missing_files;
+#endif
 
   switch (log_collect_existing_files(files.ctx(), read_only, file_sizes)) {
     case DB_NOT_FOUND:
@@ -267,7 +270,10 @@ Log_files_find_result log_files_find_and_analyze(
   ut::vector<Log_file_id_and_header> file_headers;
 #ifdef XTRABACKUP
   auto last_file_id = file_sizes.at(file_sizes.size() - 1).m_id;
+  debug_sync_point("log_files_find_and_analyze");
+
 #endif
+
   for (const auto &file : file_sizes) {
     Log_file_header file_header;
 
@@ -281,7 +287,12 @@ Log_files_find_result log_files_find_and_analyze(
     /* The file can be opened - checked by
     the log_collect_existing_files() */
     if (!file_handle.is_open()) {
+#ifdef XTRABACKUP
+      missing_files.insert(file.m_id);
+      continue;
+#else
       return Log_files_find_result::SYSTEM_ERROR;
+#endif /* XTRABACKUP */
     }
 
     if (log_file_header_read(file_handle, file_header) != DB_SUCCESS) {
@@ -302,6 +313,18 @@ Log_files_find_result log_files_find_and_analyze(
 
     file_headers.emplace_back(file.m_id, file_header);
   }
+
+#ifdef XTRABACKUP
+  if (missing_files.size() == file_sizes.size()) {
+    /* All files are missing. */
+    return Log_files_find_result::FOUND_NO_FILES;
+  }
+  file_sizes.erase(std::remove_if(file_sizes.begin(), file_sizes.end(),
+                                  [&missing_files](const auto &file) {
+                                    return missing_files.count(file.m_id) > 0;
+                                  }),
+                   file_sizes.end());
+#endif /* XTRABACKUP */
 
   /* Read properties global to the whole set of redo log files:
     - format,

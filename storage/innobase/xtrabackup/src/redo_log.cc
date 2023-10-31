@@ -46,6 +46,7 @@ static bool archive_first_block_zero = false;
 std::atomic<bool> Redo_Log_Reader::m_error;
 lsn_t Redo_Log_Reader::checkpoint_lsn_start;
 os_offset_t Redo_Log_Reader::checkpoint_offset_start;
+IF_DEBUG(bool force_reopen = false;);
 
 Redo_Log_Reader::Redo_Log_Reader() {
   log_hdr_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
@@ -138,7 +139,6 @@ not.
 
 static bool reopen_log_files(lsn_t desired_lsn) {
   log_t &log = *log_sys;
-
   Log_files_dict files{log.m_files_ctx};
   Log_format format;
   std::string creator_name;
@@ -153,7 +153,14 @@ static bool reopen_log_files(lsn_t desired_lsn) {
     return false;
   }
 
-  ut_a(res == Log_files_find_result::FOUND_VALID_FILES);
+  if (res != Log_files_find_result::FOUND_VALID_FILES) {
+    xb::error()
+        << "reopen_log_files did not find valid files. Possibly the "
+           "redo log files have been removed by the server. Consider "
+           "using redo log archiving via --redo-log-arch-dir=name or "
+           "registering redo log consumer via --register-redo-log-consumer.";
+    return false;
+  }
 
   log.m_format = format;
   log.m_creator_name = creator_name;
@@ -245,11 +252,22 @@ lsn_t Redo_Log_Reader::read_log_seg_8030(log_t &log, byte *buf, lsn_t start_lsn,
   ut_a(start_lsn < end_lsn);
 
   // update the in-memory structure log files by scanning
-  if (log.m_files.find(start_lsn) == log.m_files.end() &&
-      !reopen_log_files(start_lsn)) {
+  if (IF_DEBUG((force_reopen && !reopen_log_files(start_lsn)) ||)(
+          log.m_files.find(start_lsn) == log.m_files.end() &&
+          !reopen_log_files(start_lsn))) {
     m_error = true;
     return 0;
   }
+
+  DBUG_EXECUTE_IF(
+      "xtrabackup_reopen_files_after_catchup",
+      if (xtrabackup_debug_sync != nullptr &&
+          strstr(xtrabackup_debug_sync, "log_files_find_and_analyze") !=
+              nullptr) {
+        *const_cast<const char **>(&xtrabackup_debug_sync) = nullptr;
+        DBUG_SET("-d,xtrabackup_reopen_files_after_catchup");
+        force_reopen = false;
+      });
 
   auto file = log.m_files.find(start_lsn);
 
@@ -1292,6 +1310,11 @@ bool Redo_Log_Data_Manager::start() {
   }
 
   debug_sync_point("xtrabackup_pause_after_redo_catchup");
+
+  DBUG_EXECUTE_IF("xtrabackup_reopen_files_after_catchup",
+                  const char *key = "log_files_find_and_analyze";
+                  *const_cast<const char **>(&xtrabackup_debug_sync) = key;
+                  force_reopen = true;);
 
   thread.start();
 

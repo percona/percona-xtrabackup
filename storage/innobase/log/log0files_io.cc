@@ -247,8 +247,13 @@ Log_file_handle::Log_file_handle(const Log_files_context &ctx, Log_file_id id,
   const dberr_t err = open();
   if (err != DB_SUCCESS) {
     ut_a(!m_is_open);
+#ifdef XTRABACKUP
+    ib::info(ER_IB_MSG_LOG_FILE_OPEN_FAILED, m_file_path.c_str(),
+             static_cast<int>(err));
+#else
     ib::error(ER_IB_MSG_LOG_FILE_OPEN_FAILED, m_file_path.c_str(),
               static_cast<int>(err));
+#endif /* XTRABACKUP */
   }
 }
 
