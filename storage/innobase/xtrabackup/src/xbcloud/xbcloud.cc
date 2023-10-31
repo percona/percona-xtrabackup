@@ -1218,7 +1218,7 @@ bool xbcloud_download(Object_store *store, const std::string &container,
   /* Create FIFO files if necessary */
 
   if (opt_threads > 1) {
-    if (my_mkdir(opt_fifo_dir, 0600, MYF(0)) < 0 && my_errno() != EEXIST &&
+    if (my_mkdir(opt_fifo_dir, 0777, MYF(0)) < 0 && my_errno() != EEXIST &&
         my_errno() != EISDIR) {
       char errbuf[MYSYS_STRERROR_SIZE];
       msg_ts("%s: Error creating dir: %s. (%d) %s\n", my_progname, opt_fifo_dir,

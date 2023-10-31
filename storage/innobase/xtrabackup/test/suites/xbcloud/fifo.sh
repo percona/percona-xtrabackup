@@ -28,6 +28,7 @@ take_backup_fifo_xbcloud ${topdir}/stream "--parallel=4 --fifo-streams=3 --incre
 record_db_state test
 
 vlog "download & prepare"
+rm -rf ${topdir}/stream
 download_fifo_xbcloud ${topdir}/stream "--parallel=10 --fifo-streams=3 ${full_backup_name}" "-x -C ${topdir}/full --fifo-streams=3"
 download_fifo_xbcloud ${topdir}/stream "--parallel=10 --fifo-streams=3 ${inc_backup_name}" "-x -C ${topdir}/inc1 --fifo-streams=3"
 download_fifo_xbcloud ${topdir}/stream "--parallel=10 --fifo-streams=3 ${inc2_backup_name}" "-x -C ${topdir}/inc2 --fifo-streams=3"

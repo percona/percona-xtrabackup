@@ -111,7 +111,7 @@ static ds_ctxt_t *fifo_init(const char *root) {
   ds_ctxt_t *ctxt = new ds_ctxt_t;
   char fullpath[FN_REFLEN];
 
-  if (my_mkdir(root, 0600, MYF(0)) < 0 && my_errno() != EEXIST &&
+  if (my_mkdir(root, 0777, MYF(0)) < 0 && my_errno() != EEXIST &&
       my_errno() != EISDIR) {
     char errbuf[MYSYS_STRERROR_SIZE];
     my_error(EE_CANT_MKDIR, MYF(0), root, my_errno(),
