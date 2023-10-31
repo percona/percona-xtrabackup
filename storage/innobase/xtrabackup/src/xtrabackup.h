@@ -260,9 +260,6 @@ bool check_if_skip_database_by_path(
     const char *path /*!< in: path to the db directory. */
 );
 
-/* pause xtrabackup and wait for resume */
-void debug_sync_point(const char *name);
-
 /************************************************************************
 Check if parameter is set in defaults file or via command line argument
 @return true if parameter is set. */

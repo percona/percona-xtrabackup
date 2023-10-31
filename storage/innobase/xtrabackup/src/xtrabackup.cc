@@ -363,7 +363,7 @@ it every INNOBASE_WAKE_INTERVAL'th step. */
 #define INNOBASE_WAKE_INTERVAL 32
 ulong innobase_active_counter = 0;
 
-static char *xtrabackup_debug_sync = NULL;
+char *xtrabackup_debug_sync = NULL;
 static const char *dbug_setting = nullptr;
 
 bool xtrabackup_incremental_force_scan = false;
@@ -7608,9 +7608,7 @@ int main(int argc, char **argv) {
   }
 
 #ifndef __WIN__
-  if (xtrabackup_debug_sync) {
-    signal(SIGCONT, sigcont_handler);
-  }
+  signal(SIGCONT, sigcont_handler);
 #endif
 
   /* --backup */
