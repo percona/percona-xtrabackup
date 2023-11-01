@@ -77,6 +77,7 @@
 #include "mysqlrouter/utils.h"
 #include "random_generator.h"
 #include "router_app.h"
+#include "router_config.h"
 #include "sha1.h"  // compute_sha1_hash() from mysql's include/
 IMPORT_LOG_FUNCTIONS()
 
@@ -446,6 +447,13 @@ void ConfigGenerator::init(
         "got %s",
         to_string(kRequiredBootstrapSchemaVersion).c_str(),
         to_string(schema_version_).c_str()));
+  }
+
+  if (metadata_schema_version_is_deprecated(schema_version_)) {
+    std::cout << "\n"
+              << Vt100::foreground(Vt100::Color::BrightRed) << "WARNING: "
+              << get_metadata_schema_deprecated_msg(schema_version_)
+              << Vt100::render(Vt100::Render::ForegroundDefault) << "\n\n";
   }
 
   metadata_ = mysqlrouter::create_metadata(schema_version_, mysql_.get(),
@@ -2516,10 +2524,13 @@ void ConfigGenerator::print_bootstrap_start_msg(
   }
   out_stream_ << Vt100::foreground(Vt100::Color::Yellow) << prefix;
   if (directory_deployment) {
-    out_stream_ << " MySQL Router instance at '" << config_file_path.dirname()
-                << "'...";
+    out_stream_ << " " << MYSQL_ROUTER_PACKAGE_NAME << " "
+                << MYSQL_ROUTER_VERSION << " (" MYSQL_ROUTER_VERSION_EDITION
+                << ") instance at '" << config_file_path.dirname() << "'...";
   } else {
-    out_stream_ << " system MySQL Router instance...";
+    out_stream_ << " system " << MYSQL_ROUTER_PACKAGE_NAME << " "
+                << MYSQL_ROUTER_VERSION << " (" MYSQL_ROUTER_VERSION_EDITION
+                << ") instance...";
   }
   out_stream_ << Vt100::render(Vt100::Render::ForegroundDefault) << "\n"
               << std::endl;

@@ -6547,7 +6547,10 @@ static inline type_conversion_status field_conv_with_cache(
       *to_is_memcpyable = -1;
     }
   }
-  if (*to_is_memcpyable != static_cast<uint32_t>(-1)) {
+  if (*to_is_memcpyable != static_cast<uint32_t>(-1) &&
+      *to_is_memcpyable == to->pack_length() && from->type() == to->type() &&
+      (from->type() != MYSQL_TYPE_NEWDECIMAL ||
+       from->decimals() == to->decimals())) {
     memcpy(to->field_ptr(), from->field_ptr(), *to_is_memcpyable);
     return TYPE_OK;
   } else {
@@ -7160,6 +7163,13 @@ void Item_hex_string::print(const THD *, String *str,
   }
   const uchar *ptr = pointer_cast<const uchar *>(str_value.ptr());
   const uchar *end = ptr + str_value.length();
+  // If it is an empty string, print X''. Printing "0x" makes it not
+  // parse correctly when this printed string is re-used to parse
+  // this expression.
+  if (ptr == end) {
+    str->append("X''");
+    return;
+  }
   str->append("0x");
   for (; ptr != end; ptr++) {
     str->append(_dig_vec_lower[*ptr >> 4]);

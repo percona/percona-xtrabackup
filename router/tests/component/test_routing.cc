@@ -68,7 +68,7 @@ std::ostream &operator<<(std::ostream &os,
 using mysql_harness::ConfigBuilder;
 using mysqlrouter::MySQLSession;
 
-class RouterRoutingTest : public RouterComponentTest {
+class RouterRoutingTest : public RouterComponentBootstrapTest {
  public:
   std::string get_static_routing_section(
       const std::string &name, uint16_t bind_port, uint16_t server_port,
@@ -151,16 +151,13 @@ TEST_F(RouterRoutingTest, RoutingOk) {
 
   // launch another router to do the bootstrap connecting to the mock server
   // via first router instance
-  auto &router_bootstrapping = launch_router(
+  auto &router_bootstrapping = launch_router_for_bootstrap(
       {
           "--bootstrap=localhost:" + std::to_string(router_port),
-          "--report-host",
-          "dont.query.dns",
           "-d",
           bootstrap_dir.name(),
       },
-      EXIT_SUCCESS, true, false, -1s,
-      RouterComponentBootstrapTest::kBootstrapOutputResponder);
+      EXIT_SUCCESS);
 
   ASSERT_NO_FATAL_FAILURE(check_exit_code(router_bootstrapping, EXIT_SUCCESS));
 
@@ -200,7 +197,9 @@ TEST_P(RouterRoutingConnectTimeoutTest, ConnectTimeout) {
   std::vector<std::pair<std::string, std::string>> routing_section_options{
       {"bind_port", std::to_string(router_port)},
       {"mode", "read-write"},
-      {"destinations", "example.org:81"}};
+      // we use example.org's IP here to avoid DNS resolution which on PB2
+      // often takes too long and causes the test timeout assumption to fail
+      {"destinations", "93.184.216.34:81"}};
 
   if (!GetParam().config_file_timeout.empty()) {
     routing_section_options.emplace_back("connect_timeout",
@@ -277,7 +276,7 @@ TEST_F(RouterRoutingTest, ConnectTimeoutShutdownEarly) {
       {{"bind_port", std::to_string(router_port)},
        {"mode", "read-write"},
        {"connect_timeout", std::to_string(connect_timeout.count())},
-       {"destinations", "example.org:81"}});
+       {"destinations", "93.184.216.34:81"}});
 
   TempDirectory conf_dir("conf");
   std::string conf_file = create_config_file(conf_dir.name(), routing_section);
@@ -377,7 +376,9 @@ TEST_F(RouterRoutingTest, ConnectTimeoutShutdownEarlyXProtocol) {
        {"mode", "read-write"},
        {"connect_timeout", std::to_string(connect_timeout.count())},
        {"protocol", "x"},
-       {"destinations", "example.org:81"}});
+       // we use example.org's IP here to avoid DNS resolution which on PB2
+       // often takes too long and causes the test timeout assumption to fail
+       {"destinations", "93.184.216.34:81"}});
 
   TempDirectory conf_dir("conf");
   std::string conf_file = create_config_file(conf_dir.name(), routing_section);
@@ -403,10 +404,12 @@ TEST_F(RouterRoutingTest, ConnectTimeoutShutdownEarlyXProtocol) {
   });
 
   const auto start = clock_type::now();
+
   // give the connect thread chance to initiate the connection, even if it
   // sometimes does not it should be fine, we just test a different scenario
   // then
   std::this_thread::sleep_for(200ms);
+  std::this_thread::sleep_for(500ms);
   // now force shutdown the router
   const auto kill_res = router.kill();
   EXPECT_EQ(0, kill_res);
@@ -1084,7 +1087,8 @@ TEST_F(RouterRoutingTest, named_socket_has_right_permissions) {
   EXPECT_THAT(wait_for_correct_perms(5000), testing::Eq(true));
   EXPECT_TRUE(wait_log_contains(router,
                                 "Start accepting connections for routing "
-                                "routing:basic listening on named socket",
+                                "routing:basic listening on '" +
+                                    socket_file + "'",
                                 5s));
 }
 #endif

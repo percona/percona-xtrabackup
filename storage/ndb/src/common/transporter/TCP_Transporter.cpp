@@ -218,10 +218,10 @@ bool TCP_Transporter::connect_common(NdbSocket & socket)
   setSocketOptions(socket.ndb_socket());
   socket.set_nonblocking(true);
 
-  get_callback_obj()->lock_transporter(remoteNodeId, m_transporter_index);
-  NdbSocket::transfer(theSocket, socket);
+  get_callback_obj()->lock_transporter(m_transporter_index);
+  theSocket = std::move(socket);
   send_checksum_state.init();
-  get_callback_obj()->unlock_transporter(remoteNodeId, m_transporter_index);
+  get_callback_obj()->unlock_transporter(m_transporter_index);
 
   DBUG_PRINT("info", ("Successfully set-up TCP transporter to node %d",
               remoteNodeId));
@@ -394,19 +394,13 @@ TCP_Transporter::doSend(bool need_wakeup)
       }
     }
 
-    if (Uint32(nBytesSent) == remain)  //Completed this send
+    if (likely(Uint32(nBytesSent) == remain))  //Completed this send
     {
       sum_sent += nBytesSent;
       assert(sum >= sum_sent);
       remain = sum - sum_sent;
       //g_eventLogger->info("Sent %d bytes on trp %u", nBytesSent, getTransporterIndex());
       break;
-    }
-    else if (nBytesSent == TLS_BUSY_TRY_AGAIN)
-    {
-      // TLS is doing protocol layer stuff. We need to keep polling and
-      // trying to send until it is done.
-      return true;
     }
     else if (nBytesSent > 0)           //Sent some, more pending
     {
@@ -434,9 +428,15 @@ TCP_Transporter::doSend(bool need_wakeup)
         iov[pos].iov_base = ((char*)(iov[pos].iov_base))+nBytesSent;
       }
     }
-    else                               //Send failed, terminate
+    else                               //Send failed, handle or disconnect?
     {
       const int err = ndb_socket_errno();
+
+      if (nBytesSent == TLS_BUSY_TRY_AGAIN)
+      {
+        // In case TLS was 'BUSY' TransporterRegistry will send-retry later.
+        break;
+      }
 
 #if defined DEBUG_TRANSPORTER
       g_eventLogger->error("Send Failure(disconnect==%d) to node = %d "
@@ -495,11 +495,13 @@ TCP_Transporter::doSend(bool need_wakeup)
       }
       if ((DISCONNECT_ERRNO(err, nBytesSent)))
       {
+        remain = 0;                    //Will stop retries of this send.
         if (!do_disconnect(err, true)) //Initiate pending disconnect
         {
-          return true;
+          // We are 'DISCONNECTING' asynch -> We may still attempt more sends.
+          // -> The send buffers still need to be maintained with the 'sum_sent'
+          // Fall through to break the send loop below.
         }
-        remain = 0;
       }
       break;
     }
@@ -557,7 +559,7 @@ TCP_Transporter::doReceive(TransporterReceiveHandle& recvdata)
 
       if(nBytesRead == TLS_BUSY_TRY_AGAIN) return TLS_BUSY_TRY_AGAIN;
 
-      if (nBytesRead > 0)
+      if (likely(nBytesRead > 0))
       {
         receiveBuffer.sizeOfData += nBytesRead;
         receiveBuffer.insertPtr  += nBytesRead;
@@ -676,11 +678,9 @@ TCP_Transporter::doReceive(TransporterReceiveHandle& recvdata)
 void
 TCP_Transporter::disconnectImpl()
 {
-  NdbSocket sock;
-
-  get_callback_obj()->lock_transporter(remoteNodeId, m_transporter_index);
-  NdbSocket::transfer(sock, theSocket);
-  get_callback_obj()->unlock_transporter(remoteNodeId, m_transporter_index);
+  get_callback_obj()->lock_transporter(m_transporter_index);
+  NdbSocket sock = std::move(theSocket);
+  get_callback_obj()->unlock_transporter(m_transporter_index);
 
   if(sock.is_valid())
   {

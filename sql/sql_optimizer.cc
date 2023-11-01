@@ -1819,11 +1819,13 @@ int test_if_order_by_key(ORDER_with_src *order_src, TABLE *table, uint idx,
     /*
       Skip key parts that are constants in the WHERE clause if these are
       already removed in the ORDER expression by check_field_is_const().
+      If they are not removed in the ORDER expression yet, then we skip
+      the constant keyparts that are not part of the ORDER expression.
     */
-    if (order_src->is_const_optimized()) {
-      for (; const_key_parts & 1 && key_part < key_part_end;
-           const_key_parts >>= 1)
-        key_part++;
+    for (; const_key_parts & 1 && key_part < key_part_end &&
+           (order_src->is_const_optimized() || key_part->field != field);
+         const_key_parts >>= 1) {
+      key_part++;
     }
 
     /* Avoid usage of prefix index for sorting a partition table */
@@ -1850,11 +1852,13 @@ int test_if_order_by_key(ORDER_with_src *order_src, TABLE *table, uint idx,
         /*
           Skip key parts that are constants in the WHERE clause if these are
           already removed in the ORDER expression by check_field_is_const().
+          If they are not removed in the ORDER expression yet, then we skip
+          the constant keyparts that are not part of the ORDER expression.
         */
-        if (order_src->is_const_optimized()) {
-          for (; const_key_parts & 1 && key_part < key_part_end;
-               const_key_parts >>= 1)
-            key_part++;
+        for (; const_key_parts & 1 && key_part < key_part_end &&
+               (order_src->is_const_optimized() || key_part->field != field);
+             const_key_parts >>= 1) {
+          key_part++;
         }
         /*
          The primary and secondary key parts were all const (i.e. there's
@@ -6099,26 +6103,50 @@ static void semijoin_types_allow_materialization(Table_ref *sj_nest) {
      b) No subquery is present.
      c) Fulltext Index is not involved.
      d) No GROUP-BY or DISTINCT clause.
-     e) No ORDER-BY clause.
+     e.I) No ORDER-BY clause or
+     e.II) The given index can provide the order.
 
   F2) Not applicable to multi-table query.
-
-  F3) This optimization is not applicable to EXPLAIN queries.
 
   @param tab   JOIN_TAB object.
   @param thd   THD object.
 */
+
 static bool check_skip_records_in_range_qualification(JOIN_TAB *tab, THD *thd) {
   Query_block *select = thd->lex->current_query_block();
   TABLE *table = tab->table();
-  return ((table->force_index &&
-           table->keys_in_use_for_query.bits_set() == 1) &&     // F1.a
-          select->parent_lex->is_single_level_stmt() &&         // F1.b
-          !select->has_ft_funcs() &&                            // F1.c
-          (!select->is_grouped() && !select->is_distinct()) &&  // F1.d
-          !select->is_ordered() &&                              // F1.e
-          select->m_current_table_nest->size() == 1 &&          // F2
-          !thd->lex->is_explain());                             // F3
+
+  if ((!table->force_index ||
+       table->keys_in_use_for_query.bits_set() != 1) ||   // F1.a
+      !select->parent_lex->is_single_level_stmt() ||      // F1.b
+      select->has_ft_funcs() ||                           // F1.c
+      (select->is_grouped() || select->is_distinct()) ||  // F1.d
+      select->m_current_table_nest->size() != 1)          // F2
+    return false;
+
+  /*
+    Index dive is needed to get accurate cost from storage engine. When all
+    above criteria is met, there are 2 use for the cost. Row access and sort.
+
+    F1.e.I) If there is no ORDER BY then getting accurate cost is not needed as
+    row access is enforced by force index.
+
+    F1.e.II) If there is an ORDER BY and the chosen index (enforced by FORCE
+    INDEX) for row access can provide order then the cost is not really used.
+    Hence accurate cost calculation is not needed.
+  */
+
+  // F1.e.I
+  if (!select->is_ordered()) return true;
+
+  int idx = table->keys_in_use_for_query.get_first_set();
+  uint used_key_parts;
+  bool skip_quick;
+  ORDER_with_src order_src(select->order_list.first, ESC_ORDER_BY);
+  int key_order = test_if_order_by_key(&order_src, table, idx, &used_key_parts,
+                                       &skip_quick);
+  // Condition F1.e.II
+  return key_order != 0;
 }
 
 /*****************************************************************************
@@ -9776,7 +9804,9 @@ static bool make_join_query_block(JOIN *join, Item *cond) {
                 */
                 if (read_direction == 1 ||
                     (read_direction == -1 &&
-                     is_reverse_sorted_range(tab->range_scan()))) {
+                     reverse_sort_possible(tab->range_scan()) &&
+                     !make_reverse(get_used_key_parts(tab->range_scan()),
+                                   tab->range_scan()))) {
                   recheck_reason = DONT_RECHECK;
                 }
               }

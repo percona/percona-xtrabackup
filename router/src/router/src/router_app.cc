@@ -95,8 +95,6 @@ using mysql_harness::DIM;
 using mysql_harness::truncate_string;
 using mysql_harness::utility::string_format;
 using mysql_harness::utility::wrap_string;
-using mysqlrouter::substitute_envvar;
-using mysqlrouter::SysUserOperations;
 using mysqlrouter::SysUserOperationsBase;
 
 static const char *kDefaultKeyringFileName = "keyring";
@@ -118,7 +116,8 @@ void check_and_add_conf(std::vector<std::string> &configs,
 
   if (cfg_file_path.is_regular()) {
     configs.push_back(cfg_file_path.real_path().str());
-  } else if (!cfg_file_path.exists()) {
+  } else if (cfg_file_path.type() ==
+             mysql_harness::Path::FileType::FILE_NOT_FOUND) {
     throw std::runtime_error(string_format(
         "The configuration file '%s' does not exist.", value.c_str()));
   } else {
@@ -616,6 +615,25 @@ void MySQLRouter::start() {
     }
   }
 
+  register_on_switch_to_configured_loggers_callback([]() {
+    // once we switched to the configured logger(s) log the Router version
+    log_system("Starting '%s', version: %s (%s)", MYSQL_ROUTER_PACKAGE_NAME,
+               MYSQL_ROUTER_VERSION, MYSQL_ROUTER_VERSION_EDITION);
+  });
+
+  mysql_harness::ProcessStateComponent::get_instance()
+      .register_on_shutdown_request_callback(
+          [](mysql_harness::ShutdownPending::Reason reason,
+             const std::string &msg) {
+            // once we received the shutdown request, we want to log that along
+            // with the Router version
+            log_system(
+                "Stopping '%s', version: %s (%s), reason: %s%s",
+                MYSQL_ROUTER_PACKAGE_NAME, MYSQL_ROUTER_VERSION,
+                MYSQL_ROUTER_VERSION_EDITION, to_string(reason).c_str(),
+                msg.empty() ? "" : std::string(" ("s + msg + ")").c_str());
+          });
+
   init_loader(config);  // throws std::runtime_error
 
   if (!pid_file_path_.empty()) {
@@ -713,24 +731,29 @@ void MySQLRouter::start() {
               mysql_harness::ShutdownPending::Reason::FATAL_ERROR, errmsg);
     });
 
-    signal_handler_.add_sig_handler(SIGHUP, [&log_reopener](int /* sig */) {
-      // is run by the signal-thread.
-      log_reopener->request_reopen();
-    });
+    signal_handler_.add_sig_handler(
+        SIGHUP,
+        [&log_reopener](int /* sig */, const std::string & /*signal_info*/) {
+          // is run by the signal-thread.
+          log_reopener->request_reopen();
+        });
 
     mysql_harness::on_service_ready(kLogReopenServiceName);
 
     // signal-handler
-    signal_handler_.add_sig_handler(SIGTERM, [](int /* sig */) {
-      mysql_harness::ProcessStateComponent::get_instance()
-          .request_application_shutdown(
-              mysql_harness::ShutdownPending::Reason::REQUESTED);
-    });
+    signal_handler_.add_sig_handler(
+        SIGTERM, [](int /* sig */, const std::string &signal_info) {
+          mysql_harness::ProcessStateComponent::get_instance()
+              .request_application_shutdown(
+                  mysql_harness::ShutdownPending::Reason::REQUESTED,
+                  signal_info);
+        });
 
-    signal_handler_.add_sig_handler(SIGINT, [](int /* sig */) {
+    signal_handler_.add_sig_handler(SIGINT, [](int /* sig */,
+                                               const std::string &signal_info) {
       mysql_harness::ProcessStateComponent::get_instance()
           .request_application_shutdown(
-              mysql_harness::ShutdownPending::Reason::REQUESTED);
+              mysql_harness::ShutdownPending::Reason::REQUESTED, signal_info);
     });
 
     mysql_harness::on_service_ready(kSignalHandlerServiceName);

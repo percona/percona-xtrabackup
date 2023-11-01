@@ -2812,7 +2812,10 @@ class List_process_list : public Do_THD_Impl {
       : m_user(user_value),
         m_thread_infos(thread_infos),
         m_client_thd(thd_value),
-        m_max_query_length(max_query_length) {}
+        m_max_query_length(max_query_length) {
+    push_deprecated_warn(m_client_thd, "INFORMATION_SCHEMA.PROCESSLIST",
+                         "performance_schema.processlist");
+  }
 
   void operator()(THD *inspect_thd) override {
     DBUG_TRACE;
@@ -3041,7 +3044,10 @@ class Fill_process_list : public Do_THD_Impl {
 
  public:
   Fill_process_list(THD *thd_value, Table_ref *tables_value)
-      : m_client_thd(thd_value), m_tables(tables_value) {}
+      : m_client_thd(thd_value), m_tables(tables_value) {
+    push_deprecated_warn(m_client_thd, "INFORMATION_SCHEMA.PROCESSLIST",
+                         "performance_schema.processlist");
+  }
 
   ~Fill_process_list() override {
     DBUG_EXECUTE_IF("test_fill_proc_with_x_root",
@@ -4636,10 +4642,16 @@ static TABLE *create_schema_table(THD *thd, Table_ref *table_list) {
             query_block->active_options() | TMP_TABLE_ALL_COLUMNS, HA_POS_ERROR,
             table_list->alias)))
     return nullptr;
+
+  // create_tmp_table() makes read_set and write_set share the same buffer, so
+  // they are always identical, and always have all bits set. For information
+  // schema tables we need to distinguish between read and write, so break the
+  // link between them here.
   my_bitmap_map *bitmaps =
       (my_bitmap_map *)thd->alloc(bitmap_buffer_size(field_count));
   bitmap_init(&table->def_read_set, bitmaps, field_count);
   table->read_set = &table->def_read_set;
+  table->read_set_internal = table->def_read_set;
   bitmap_clear_all(table->read_set);
   return table;
 }

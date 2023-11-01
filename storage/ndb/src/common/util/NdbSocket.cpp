@@ -20,6 +20,9 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
+
+#include <utility> // std::move
+
 #include "openssl/ssl.h"
 #include "openssl/err.h"
 
@@ -189,7 +192,11 @@ static ssize_t handle_ssl_error(int err, const char * fn) {
       return 0;           // caller should close the socket
     case SSL_ERROR_WANT_READ:
     case SSL_ERROR_WANT_WRITE:
-      return TLS_BUSY_TRY_AGAIN;
+      // FIXME Bug#3569340:
+      //
+      // Note that for upper transporter layers we expect either 0 or -1
+      // to be returned in case of failures.
+      return TLS_BUSY_TRY_AGAIN;  // <- return -1;
     case SSL_ERROR_SYSCALL:
       return -1;          // caller should check errno and close the socket
     case SSL_ERROR_ZERO_RETURN:
@@ -318,34 +325,21 @@ int NdbSocket::consolidate(const struct iovec *vec,
 
 ssize_t NdbSocket::ssl_writev(const struct iovec *vec, int nvec) const
 {
-  while(nvec > 0 && vec->iov_len == 0) {
-    vec++;
-    nvec--;
-  }
+  if (unlikely(nvec <= 0)) return 0;
 
-  ssize_t total = 0;
-  while(nvec > 0) {
-    int sent;
-    int n = consolidate(vec, nvec);
-    if(n > 1) {
-      sent = send_several_iov(vec, n);
-    } else {
-      sent = ssl_send((const char *) vec[0].iov_base, vec[0].iov_len);
-    }
-
-    if(sent > 0) {
-      vec += n;
-      nvec -= n;
-      total += sent;
-    } else if(total > 0) {
-      break;  // return total bytes sent prior to error
-    } else {
-      return sent; // no data has been sent; return error code
-    }
+  int sent;
+  const int n = consolidate(vec, nvec);
+  if(n > 1) {
+    sent = send_several_iov(vec, n);
+  } else {
+    sent = ssl_send((const char *) vec[0].iov_base, vec[0].iov_len);
   }
-  return total;
+  // Note that handling of partial sends is the responsibility of
+  // upper transporter levels -> We should not retry here!
+  return sent;
 }
 
+/* Bundle several small iovecs into a single TLS record < 16 KB */
 int NdbSocket::send_several_iov(const struct iovec * vec, int n) const {
   size_t len = 0;
   char buff[MaxTlsRecord];
