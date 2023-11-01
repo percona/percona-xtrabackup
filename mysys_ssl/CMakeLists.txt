@@ -1,4 +1,4 @@
-# Copyright (c) 2012, 2022, Oracle and/or its affiliates.
+# Copyright (c) 2012, 2023, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -30,6 +30,11 @@ INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/include
 IF(SSL_DEFINES)
 ADD_DEFINITIONS(${SSL_DEFINES})
 ENDIF()
+
+DOWNGRADE_OPENSSL3_DEPRECATION_WARNINGS(
+    crypt_genhash_impl.cc
+    my_md5.cc
+    my_sha1.cc)
 
 SET(MYSYS_AES_IMPLEMENTATION my_aes_openssl.cc)
 

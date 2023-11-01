@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 # -*- cperl -*-
 
-# Copyright (c) 2004, 2022, Oracle and/or its affiliates.
+# Copyright (c) 2004, 2023, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -2999,6 +2999,18 @@ sub environment_setup {
   my $pathsep= ":";
   $pathsep= ";" if IS_WINDOWS && ! IS_CYGWIN;
   $ENV{'PATH'}= "$ENV{'PATH'}".$pathsep.$perldir;
+
+  # ----------------------------------------------------
+  # openssl3 helper
+  # ----------------------------------------------------
+  # Provide path to openssl configuration file allowing old TLSv1.0 and TLSv1.1.
+  # In tests that need it add to test cnf-file:
+  #
+  #   [ENV]
+  #   OPENSSL_CONF=@env.OPENSSL3_LEGACY_TLS_CNF
+  #
+  $ENV{'OPENSSL3_LEGACY_TLS_CNF'}=
+    native_path(${glob_mysql_test_dir}."/include/openssl3_legacy_tls.cnf");
 }
 
 

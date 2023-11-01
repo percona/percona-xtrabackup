@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -97,6 +97,9 @@ const char *client_errors[]=
   "There is an attribute with the same name already",
   "Authentication plugin '%s' reported error: %s",
   "Insecure API function call: '%s' Use instead: '%s'",
+  "'%-.32s' character set is having more than 1 byte minimum character "
+  "length, which cannot be used as a client character set. Please use any "
+  "of the single byte minimum ones, e.g. utf8mb4, latin1 etc.",
   ""
 };
 

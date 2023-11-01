@@ -1,4 +1,4 @@
-# Copyright (c) 2014, 2022, Oracle and/or its affiliates.
+# Copyright (c) 2014, 2023, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -165,6 +165,8 @@ ADD_DEFINITIONS(${SSL_DEFINES})
 # add the definition to build XCom with SSL support
 ADD_DEFINITIONS(-DXCOM_HAVE_OPENSSL)
 
+DOWNGRADE_OPENSSL3_DEPRECATION_WARNINGS(
+    libmysqlgcs/src/bindings/xcom/xcom/xcom_ssl_transport.c)
 
 IF(WITH_UNIT_TESTS)
   ADD_CONVENIENCE_LIBRARY(gr_unit_test_resource

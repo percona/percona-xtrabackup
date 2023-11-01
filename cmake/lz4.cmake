@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2022, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2023, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -34,8 +34,8 @@ MACRO (FIND_SYSTEM_LZ4)
   ENDIF()
 ENDMACRO()
 
-SET(LZ4_VERSION "lz4-1.9.3")
-SET(BUNDLED_LZ4_PATH "${CMAKE_SOURCE_DIR}/extra/lz4/${LZ4_VERSION}")
+SET(LZ4_VERSION "lz4-1.9.4")
+SET(BUNDLED_LZ4_PATH "${CMAKE_SOURCE_DIR}/extra/lz4/${LZ4_VERSION}/lib")
 
 MACRO (MYSQL_USE_BUNDLED_LZ4)
   SET(WITH_LZ4 "bundled" CACHE STRING "Bundled lz4 library")

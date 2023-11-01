@@ -1,7 +1,7 @@
 #ifndef ITEM_INCLUDED
 #define ITEM_INCLUDED
 
-/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1931,14 +1931,6 @@ public:
   virtual bool clean_up_after_removal(uchar *arg) { return false; }
 
   /**
-     Check if the item is of type direct_view_ref.
-     @param  arg  Unused, needed to match the signature of the
-                  "Item_processor" of the "walk" function.
-     @retval      true if the item is of type direct_view_ref
-  */
-  virtual bool is_direct_view_ref(uchar *arg) { return false; }
-
-  /**
     Propagate components that use referenced columns from derived tables.
     Some columns from derived tables may be determined to be unused, but
     may actually reference other columns that are used. This function will
@@ -2189,18 +2181,24 @@ public:
             compared as DATETIME values by the Arg_comparator.
       FALSE otherwise.
   */
-  inline bool has_compatible_context(Item *item) const
-  {
-    /* Same context. */
-    if (cmp_context == (Item_result)-1 || item->cmp_context == cmp_context)
+  inline bool has_compatible_context(Item *item) const {
+    // If no explicit context has been set, assume the same type as the item
+    const Item_result this_context =
+        cmp_context == (Item_result)-1 ? result_type() : cmp_context;
+    const Item_result other_context = item->cmp_context == (Item_result)-1
+                                          ? item->result_type()
+                                          : item->cmp_context;
+
+    // Check if both items have the same context
+    if (this_context == other_context) {
       return TRUE;
+    }
     /* DATETIME comparison context. */
     if (is_temporal_with_date())
-      return item->is_temporal_with_date() ||
-             item->cmp_context == STRING_RESULT;
+      return item->is_temporal_with_date() || other_context == STRING_RESULT;
     if (item->is_temporal_with_date())
-      return is_temporal_with_date() || cmp_context == STRING_RESULT;
-    return FALSE;
+      return is_temporal_with_date() || this_context == STRING_RESULT;
+    return false;
   }
   virtual Field::geometry_type get_geometry_type() const
     { return Field::GEOM_GEOMETRY; };
@@ -4452,7 +4450,6 @@ public:
   virtual bool val_json(Json_wrapper *wr);
   virtual bool is_null();
   virtual bool send(Protocol *prot, String *tmp);
-  virtual bool is_direct_view_ref(uchar *arg) { return true; }
 
 protected:
   virtual type_conversion_status save_in_field_inner(Field *field,

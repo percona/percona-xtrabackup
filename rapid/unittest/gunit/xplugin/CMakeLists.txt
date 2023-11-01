@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2022, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2023, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -40,6 +40,16 @@ MYSQLX_PROTOBUF_GENERATE_CPP_NAMES(protobuf_SRC ${PROTOBUF_MYSQLX_FILES})
 
 IF(MSVC)
   ADD_COMPILE_FLAGS(${protobuf_SRC} COMPILE_FLAGS "/wd4018")
+  DOWNGRADE_OPENSSL3_DEPRECATION_WARNINGS(
+    "${PROJECT_SOURCE_DIR}/rapid/plugin/x/mysqlxtest_src/mysql41_hash.cc")
+ELSE()
+  # DOWNGRADE_OPENSSL3_DEPRECATION_WARNINGS macro does not work in this
+  # directory when using GCC 4.4.7 compiler.
+  MY_CHECK_CXX_COMPILER_FLAG("-Wno-deprecated-declarations"
+    HAVE_NO_DEPRECATED_DECLARATIONS)
+  IF(HAVE_NO_DEPRECATED_DECLARATIONS)
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
+  ENDIF()
 ENDIF(MSVC)
 
 # Turn off some warning flags when compiling GUnit and proto files.

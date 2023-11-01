@@ -1,7 +1,7 @@
 #ifndef ERRMSG_INCLUDED
 #define ERRMSG_INCLUDED
 
-/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -115,7 +115,8 @@ extern const char *client_errors[];	/* Error messages */
 #define CR_DUPLICATE_CONNECTION_ATTR            2060
 #define CR_AUTH_PLUGIN_ERR                      2061
 #define CR_INSECURE_API_ERR                     2062
-#define CR_ERROR_LAST  /*Copy last error nr:*/  2062
+#define CR_INVALID_CLIENT_CHARSET               2063
+#define CR_ERROR_LAST  /*Copy last error nr:*/  2063
 /* Add error numbers before CR_ERROR_LAST and change it accordingly. */
 
 #endif /* ERRMSG_INCLUDED */
