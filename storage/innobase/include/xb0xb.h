@@ -25,7 +25,6 @@ extern bool innodb_log_checksums_specified;
 extern bool innodb_checksum_algorithm_specified;
 
 extern bool opt_lock_ddl_per_table;
-extern bool opt_lock_ddl;
 extern bool redo_catchup_completed;
 extern bool opt_page_tracking;
 extern char *xtrabackup_incremental;
@@ -34,6 +33,8 @@ extern lsn_t xtrabackup_start_checkpoint;
 extern bool use_dumped_tablespace_keys;
 extern unsigned long xb_backup_version;
 extern bool xb_generated_redo;
+enum lock_ddl_type_t { LOCK_DDL_OFF, LOCK_DDL_ON, LOCK_DDL_REDUCED };
+extern lock_ddl_type_t opt_lock_ddl;
 
 extern std::vector<ulint> invalid_encrypted_tablespace_ids;
 
