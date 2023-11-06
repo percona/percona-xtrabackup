@@ -1664,7 +1664,8 @@ static byte *recv_parse_or_apply_log_rec_body(
 #ifdef XTRABACKUP
       /* error out backup if undo truncation happens during backup */
       if (srv_backup_mode && fsp_is_undo_tablespace(space_id) &&
-          backup_redo_log_flushed_lsn < recv_sys->recovered_lsn) {
+          backup_redo_log_flushed_lsn < recv_sys->recovered_lsn &&
+          ddl_tracker == nullptr) {
         xb::info() << "Last flushed lsn: " << backup_redo_log_flushed_lsn
                    << " undo_delete lsn " << recv_sys->recovered_lsn;
 
@@ -1678,6 +1679,10 @@ static byte *recv_parse_or_apply_log_rec_body(
             << " operation later or with --lock-ddl";
         exit(EXIT_FAILURE);
       }
+      if (ddl_tracker && redo_catchup_completed)
+        ddl_tracker->backup_file_op(space_id, MLOG_FILE_DELETE, ptr,
+                                    static_cast<ulint>(end_ptr - ptr),
+                                    start_lsn);
 #endif /* XTRABACKUP */
 
       return fil_tablespace_redo_delete(
@@ -1688,6 +1693,12 @@ static byte *recv_parse_or_apply_log_rec_body(
 
     case MLOG_FILE_CREATE:
 
+#ifdef XTRABACKUP
+      if (ddl_tracker && redo_catchup_completed)
+        ddl_tracker->backup_file_op(space_id, MLOG_FILE_CREATE, ptr,
+                                    static_cast<ulint>(end_ptr - ptr),
+                                    start_lsn);
+#endif /* XTRABACKUP */
       return fil_tablespace_redo_create(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
           recv_sys->bytes_to_ignore_before_checkpoint !=
@@ -1695,7 +1706,12 @@ static byte *recv_parse_or_apply_log_rec_body(
                              backup_redo_log_flushed_lsn));
 
     case MLOG_FILE_RENAME:
-
+#ifdef XTRABACKUP
+      if (ddl_tracker && redo_catchup_completed)
+        ddl_tracker->backup_file_op(space_id, MLOG_FILE_RENAME, ptr,
+                                    static_cast<ulint>(end_ptr - ptr),
+                                    start_lsn);
+#endif /* XTRABACKUP */
       return fil_tablespace_redo_rename(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
           recv_sys->bytes_to_ignore_before_checkpoint !=
@@ -1744,27 +1760,32 @@ static byte *recv_parse_or_apply_log_rec_body(
       if (!recv_recovery_on) {
         if (redo_catchup_completed) {
           if (backup_redo_log_flushed_lsn < recv_sys->recovered_lsn) {
-            xb::info() << "Last flushed lsn: " << backup_redo_log_flushed_lsn
-                       << " load_index lsn " << recv_sys->recovered_lsn;
+            if (ddl_tracker) {
+              ddl_tracker->backup_file_op(space_id, MLOG_INDEX_LOAD, nullptr, 0,
+                                          start_lsn);
+            } else {
+              xb::info() << "Last flushed lsn: " << backup_redo_log_flushed_lsn
+                         << " load_index lsn " << recv_sys->recovered_lsn;
 
-            if (backup_redo_log_flushed_lsn == 0) {
-              xb::error(ER_IB_MSG_715) << "PXB was not able"
-                                       << " to determine the"
-                                       << " InnoDB Engine"
-                                       << " Status";
+              if (backup_redo_log_flushed_lsn == 0) {
+                xb::error(ER_IB_MSG_715) << "PXB was not able"
+                                         << " to determine the"
+                                         << " InnoDB Engine"
+                                         << " Status";
+              }
+
+              xb::error(ER_IB_MSG_716) << "An optimized (without"
+                                       << " redo logging) DDL"
+                                       << " operation has been"
+                                       << " performed. All modified"
+                                       << " pages may not have been"
+                                       << " flushed to the disk yet.\n"
+                                       << "    PXB will not be able to"
+                                       << " take a consistent backup."
+                                       << " Retry the backup"
+                                       << " operation";
+              exit(EXIT_FAILURE);
             }
-
-            xb::error(ER_IB_MSG_716) << "An optimized (without"
-                                     << " redo logging) DDL"
-                                     << " operation has been"
-                                     << " performed. All modified"
-                                     << " pages may not have been"
-                                     << " flushed to the disk yet.\n"
-                                     << "    PXB will not be able to"
-                                     << " take a consistent backup."
-                                     << " Retry the backup"
-                                     << " operation";
-            exit(EXIT_FAILURE);
           }
           /** else the index is flushed to disk before
           backup started hence no error */
@@ -1827,6 +1848,10 @@ static byte *recv_parse_or_apply_log_rec_body(
               recv_sys->recovered_lsn > incremental_start_checkpoint_lsn) {
             full_scan_tables.insert(space_id);
           }
+
+          if (ddl_tracker && redo_catchup_completed)
+            ddl_tracker->backup_file_op(space_id, MLOG_WRITE_STRING, nullptr, 0,
+                                        start_lsn);
 #endif /* XTRABACKUP */
 
           ut_ad(LSN_MAX != start_lsn);
