@@ -80,7 +80,7 @@ run_cmd_expect_failure $XB_BIN $XB_ARGS --backup --slave-info --no-lock \
   --target-dir=$topdir/backup
 
 vlog "Full backup of the slave server"
-xtrabackup --backup --lock-ddl=false --target-dir=$topdir/backup --slave-info --safe-slave-backup 2>&1 | tee $topdir/pxb.log
+xtrabackup --backup --lock-ddl=OFF --target-dir=$topdir/backup --slave-info --safe-slave-backup 2>&1 | tee $topdir/pxb.log
 
 grep_general_log > $topdir/log1
 
@@ -107,6 +107,12 @@ run_cmd egrep "MySQL slave binlog position: $pxb_log_slave_info_pattern" $topdir
 # PXB-3033 - Execute STOP SLAVE before copying non-InnoDB tables
 grep -A 5 'Slave is safe to backup.' $topdir/pxb.log | grep -q 'Starting to backup non-InnoDB tables and files' || die 'STOP REPLICA in wrong place'
 
+# PXB-3034 - STOP SLAVE should be executed after copying InnoDB tables if lock-ddl=reduced
+xtrabackup --backup --lock-ddl=REDUCED --target-dir=$topdir/backup_reduced --slave-info --safe-slave-backup 2>&1 | tee $topdir/pxb_reduced.log
+
+grep -A 10 'Slave is safe to backup.' $topdir/pxb_reduced.log | grep -q 'Starting to backup non-InnoDB tables and files' || die 'STOP SLAVE in wrong place'
+
+
 run_cmd egrep -q "$binlog_slave_info_pattern" \
     $topdir/backup/xtrabackup_slave_info
 
@@ -117,7 +123,7 @@ mysql -e "TRUNCATE TABLE mysql.general_log;"
 mkdir $topdir/xbstream_backup
 
 vlog "Full backup of the slave server to a xbstream stream"
-xtrabackup --backup --lock-ddl=false --slave-info --safe-slave-backup \
+xtrabackup --backup --lock-ddl=OFF --slave-info --safe-slave-backup \
 --stream=xbstream | xbstream -xv -C $topdir/xbstream_backup
 
 cat $topdir/xbstream_backup/xtrabackup_slave_info
@@ -165,7 +171,7 @@ setup_slave GTID $slave2_id $master_id
 mysql -e "SET GLOBAL general_log=1; SET GLOBAL log_output='TABLE';"
 
 vlog "Full backup of the GTID with AUTO_POSITION slave server"
-xtrabackup --backup --lock-ddl=false --slave-info --target-dir=$topdir/backup
+xtrabackup --backup --lock-ddl=OFF --slave-info --target-dir=$topdir/backup
 
 grep_general_log > $topdir/log3
 
@@ -196,7 +202,7 @@ start_server_with_id $slave3_id
 setup_slave $slave3_id $master_id
 
 vlog "Full backup of the GTID slave server"
-xtrabackup --backup --lock-ddl=false --slave-info --target-dir=$topdir/backup
+xtrabackup --backup --lock-ddl=OFF --slave-info --target-dir=$topdir/backup
 
 run_cmd egrep -q "$binlog_slave_info_pattern" \
     $topdir/backup/xtrabackup_slave_info

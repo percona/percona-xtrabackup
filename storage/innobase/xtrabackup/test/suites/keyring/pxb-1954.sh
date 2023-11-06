@@ -31,7 +31,7 @@ mysql -e "INSERT INTO t SELECT * FROM t" test
       mysql -e "ALTER TABLE t ROW_FORMAT=REDUNDANT;" test
   done ) >/dev/null 2>/dev/null &
 
-xtrabackup --lock-ddl --backup --target-dir=$topdir/backup \
+xtrabackup --backup --target-dir=$topdir/backup \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
 xtrabackup --prepare --target-dir=$topdir/backup \

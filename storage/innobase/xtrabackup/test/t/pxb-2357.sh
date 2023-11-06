@@ -12,7 +12,7 @@ start_server --innodb-redo-log-archive-dirs=":$TEST_VAR_ROOT/b"
 
 mkdir $topdir/backup
 
-xtrabackup --backup --lock-ddl=false --target-dir=$topdir/backup \
+xtrabackup --backup --lock-ddl=OFF --target-dir=$topdir/backup \
            --debug-sync="stop_before_redo_archive" \
            2> >(tee $topdir/backup.log)&
 

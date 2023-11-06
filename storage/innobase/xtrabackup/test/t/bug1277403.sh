@@ -12,7 +12,7 @@ has_backup_locks && skip_test "Requires server without backup locks support"
 
 mysql -e 'CREATE TABLE t1 (a INT) engine=MyISAM' test
 
-xtrabackup --backup --lock-ddl=false --target-dir=$topdir/full_backup
+xtrabackup --backup --lock-ddl=OFF --target-dir=$topdir/full_backup
 
 grep_general_log > $topdir/log1
 
