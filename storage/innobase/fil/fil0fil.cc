@@ -11509,6 +11509,11 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
   err = file.validate_first_page(SPACE_UNKNOWN, &flush_lsn, false);
 
   space_id_t space_id = file.space_id();
+
+  if (ddl_tracker && (err == DB_PAGE_IS_BLANK || err == DB_SUCCESS)) {
+    ddl_tracker->add_table(space_id, path);
+  }
+
   if (err == DB_PAGE_IS_BLANK) {
     /* allow corrupted first page for xtrabackup, it could be just
     zero-filled page, which we'll restore from redo log later */
