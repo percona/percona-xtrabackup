@@ -1047,13 +1047,14 @@ bool Redo_Log_Data_Manager::start() {
 
   /*
    * From this point forward, recv_parse_or_apply_log_rec_body should fail if
-   * MLOG_INDEX_LOAD event is parsed as its not safe to continue the backup
-   * in any situation (with or without --lock-ddl-per-table).
+   * MLOG_INDEX_LOAD event is parsed and lock-ddl == false as its not safe to
+   * continue the backup in any situation (with or without
+   * --lock-ddl-per-table).
    */
   redo_catchup_completed = true;
   full_scan_tables_count = full_scan_tables.size();
 
-  if (opt_lock_ddl) {
+  if (opt_lock_ddl == LOCK_DDL_ON) {
     ut_ad(reader.get_scanned_lsn() >= backup_redo_log_flushed_lsn);
   }
 
@@ -1263,7 +1264,7 @@ bool Redo_Log_Data_Manager::stop_at(lsn_t lsn, lsn_t checkpoint_lsn) {
 
   /* to ensure redo logs are not disabled during the backup, reopen the log
   files to read HEADER. */
-  if (opt_lock_ddl == false && archived_log_state == ARCHIVED_LOG_NONE &&
+  if (opt_lock_ddl != LOCK_DDL_ON && archived_log_state == ARCHIVED_LOG_NONE &&
       !reopen_log_files(0)) {
     xb::error() << "Failed to open redo log files. ";
     return (false);

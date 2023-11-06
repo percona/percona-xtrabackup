@@ -1390,7 +1390,7 @@ static bool backup_rocksdb_checkpoint(Backup_context &context, bool final) {
 bool backup_start(Backup_context &context) {
   if (!opt_no_lock) {
     /* STOP SLAVE if lock-ddl=OFF */
-    if (!opt_lock_ddl && opt_safe_slave_backup) {
+    if (opt_lock_ddl != LOCK_DDL_ON && opt_safe_slave_backup) {
       if (!wait_for_safe_slave(mysql_connection)) {
         return (false);
       }
