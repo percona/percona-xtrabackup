@@ -208,6 +208,8 @@ extern uint opt_dump_innodb_buffer_pool_timeout;
 extern uint opt_dump_innodb_buffer_pool_pct;
 extern bool opt_dump_innodb_buffer_pool;
 
+extern TYPELIB opt_lock_ddl_typelib;
+
 extern bool punch_hole_supported;
 extern bool compile_regex(const char *regex_string, const char *error_context,
                           xb_regex_t *compiled_re);
