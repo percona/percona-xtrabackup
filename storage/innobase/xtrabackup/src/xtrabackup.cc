@@ -103,6 +103,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "backup_mysql.h"
 #include "changed_page_tracking.h"
 #include "crc_glue.h"
+#include "ddl_tracker.h"
 #include "ds_buffer.h"
 #include "ds_encrypt.h"
 #include "ds_tmpfile.h"
@@ -513,6 +514,7 @@ bool redo_catchup_completed = false;
 extern struct rand_struct sql_rand;
 extern mysql_mutex_t LOCK_sql_rand;
 bool xb_generated_redo = false;
+ddl_tracker_t *ddl_tracker = nullptr;
 
 static void check_all_privileges();
 static bool validate_options(const char *file, int argc, char **argv);
@@ -4034,6 +4036,8 @@ void xtrabackup_backup_func(void) {
   if (opt_lock_ddl == LOCK_DDL_ON) {
     xb_dd_spaces = xb::backup::build_space_id_set(mysql_connection);
     ut_ad(xb_dd_spaces->size());
+  } else if (opt_lock_ddl == LOCK_DDL_REDUCED) {
+    ddl_tracker = new ddl_tracker_t;
   }
 
   /* We can safely close files if we don't allow DDL during the
@@ -4421,6 +4425,8 @@ void xtrabackup_backup_func(void) {
   xb_keyring_shutdown();
 
   cleanup_mysql_environment();
+
+  delete ddl_tracker;
 }
 
 /* ================= prepare ================= */

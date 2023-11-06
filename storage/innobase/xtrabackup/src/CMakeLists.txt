@@ -83,6 +83,7 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   xtrabackup.cc
   changed_page_tracking.cc
   datasink.cc
+  ddl_tracker.cc
   ds_buffer.cc
   ds_compress.cc
   ds_compress_lz4.cc
