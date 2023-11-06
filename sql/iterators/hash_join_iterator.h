@@ -250,6 +250,15 @@ struct ChunkPair {
 /// a lookup structure using a row ID as the key. Due to this, we will
 /// reconsider this if the hash join type IN_MEMORY_WITH_HASH_TABLE_REFILL goes
 /// away.
+
+/// The two inputs that we read from when executing a hash join.
+enum class HashJoinInput {
+  /// We build the hash table from this input.
+  kBuild,
+  /// For each row from this input, we try to find a match in the hash table.
+  kProbe
+};
+
 class HashJoinIterator final : public RowIterator {
  public:
   /// Construct a HashJoinIterator.
@@ -296,6 +305,9 @@ class HashJoinIterator final : public RowIterator {
   ///   A list of extra conditions that the iterator will evaluate after a
   ///   lookup in the hash table is done, but before the row is returned. The
   ///   conditions are AND-ed together into a single Item.
+  /// @param first_input
+  ///   The first input (build or probe) to read from. (If this is empty, we
+  ///   will not have to read from the other.)
   /// @param probe_input_batch_mode
   ///   Whether we need to enable batch mode on the probe input table.
   ///   Only make sense if it is a single table, and we are not on the
@@ -316,7 +328,7 @@ class HashJoinIterator final : public RowIterator {
                    const std::vector<HashJoinCondition> &join_conditions,
                    bool allow_spill_to_disk, JoinType join_type,
                    const Mem_root_array<Item *> &extra_conditions,
-                   bool probe_input_batch_mode,
+                   HashJoinInput first_input, bool probe_input_batch_mode,
                    uint64_t *hash_table_generation);
 
   bool Init() override;
@@ -535,6 +547,15 @@ class HashJoinIterator final : public RowIterator {
   // It is incremented during the state LOADING_NEXT_CHUNK_PAIR.
   int m_current_chunk{-1};
 
+  // Which row we currently are reading from each of the hash join chunk file.
+  ha_rows m_build_chunk_current_row = 0;
+  ha_rows m_probe_chunk_current_row = 0;
+
+  // How many rows we assume there will be when reading the build input.
+  // This is used to choose how many chunks we break it into on disk.
+  const double m_estimated_build_rows;
+
+ public:
   // The seed that is by xxHash64 when calculating the hash from a join
   // key. We use xxHash64 when calculating the hash that is used for
   // determining which chunk file a row should be placed in (in case of
@@ -544,14 +565,6 @@ class HashJoinIterator final : public RowIterator {
   // no special meaning.
   static constexpr uint32_t kChunkPartitioningHashSeed{899339};
 
-  // Which row we currently are reading from each of the hash join chunk file.
-  ha_rows m_build_chunk_current_row = 0;
-  ha_rows m_probe_chunk_current_row = 0;
-
-  // How many rows we assume there will be when reading the build input.
-  // This is used to choose how many chunks we break it into on disk.
-  const double m_estimated_build_rows;
-
   // The maximum number of HashJoinChunks that is allocated for each of the
   // inputs in case we spill to disk. We might very well end up with an amount
   // less than this number, but we keep an upper limit so we don't risk running
@@ -560,6 +573,7 @@ class HashJoinIterator final : public RowIterator {
   // should be placed in.
   static constexpr size_t kMaxChunks = 128;
 
+ private:
   // A buffer that is used during two phases:
   // 1) when constructing a join key from join conditions.
   // 2) when moving a row between tables' record buffers and the hash table.
@@ -574,6 +588,10 @@ class HashJoinIterator final : public RowIterator {
   // row size is calculated per row. The allocated memory is kept for the
   // duration of the iterator, so that we (most likely) avoid reallocations.
   String m_temporary_row_and_join_key_buffer;
+
+  /// The first input (build or probe) to read from. (If this is empty, we will
+  /// not have to read from the other.)
+  HashJoinInput m_first_input;
 
   // Whether we should turn on batch mode for the probe input. Batch mode is
   // enabled if the probe input consists of exactly one table, and said table
@@ -654,6 +672,11 @@ class HashJoinIterator final : public RowIterator {
   // row, causing any local match flag to lose the match flag info from the last
   // probe row read.
   bool m_probe_row_match_flag{false};
+
+  /// If true, a row was already read from the probe input, in order to check if
+  /// that input was empty. If so, we should process that row before reading
+  /// another.
+  bool m_probe_row_read{false};
 };
 
 #endif  // SQL_ITERATORS_HASH_JOIN_ITERATOR_H_

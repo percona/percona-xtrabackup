@@ -113,6 +113,24 @@ unsigned long get_version_number(std::string version_str) {
   return major * 10000 + minor * 100 + version;
 }
 
+bool get_major_minor_version(const std::string &version_str,
+                             std::string &version) {
+  unsigned long major = 0, minor = 0;
+
+  std::size_t major_p = version_str.find(".");
+  if (major_p == std::string::npos) return false;
+
+  major = stoi(version_str.substr(0, major_p));
+
+  std::size_t minor_p = version_str.find(".", major_p + 1);
+  if (minor_p == std::string::npos) return false;
+
+  minor = stoi(version_str.substr(major_p + 1, minor_p - major_p));
+
+  version = std::to_string(major) + "." + std::to_string(minor);
+  return true;
+}
+
 #ifdef __APPLE__
 unsigned long host_total_memory() {
   unsigned long total_mem = sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGESIZE);

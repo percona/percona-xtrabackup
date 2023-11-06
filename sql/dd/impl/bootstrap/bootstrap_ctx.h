@@ -63,6 +63,7 @@ static constexpr uint DD_VERSION_80017 = 80017;
 static constexpr uint DD_VERSION_80021 = 80021;
 static constexpr uint DD_VERSION_80022 = 80022;
 static constexpr uint DD_VERSION_80023 = 80023;
+static constexpr uint DD_VERSION_80200 = 80200;
 
 /*
   Set of supported DD version labels. A supported DD version is a version
@@ -75,7 +76,7 @@ static constexpr uint DD_VERSION_80023 = 80023;
 static std::set<uint> supported_dd_versions = {
     DD_VERSION_80011, DD_VERSION_80012, DD_VERSION_80013, DD_VERSION_80014,
     DD_VERSION_80015, DD_VERSION_80016, DD_VERSION_80017, DD_VERSION_80021,
-    DD_VERSION_80022, DD_VERSION_80023};
+    DD_VERSION_80022, DD_VERSION_80023, DD_VERSION_80200};
 
 // Individual server version labels that we can refer to.
 static constexpr uint SERVER_VERSION_50700 = 50700;
@@ -87,7 +88,7 @@ static constexpr uint SERVER_VERSION_80016 = 80016;
 
 /*
   Set of unsupported server version labels. An unsupported server version is a
-  version from which we can't upgrade.
+  version from which we can't upgrade or downgrade.
 */
 static std::set<uint> unsupported_server_versions = {};
 
@@ -149,11 +150,20 @@ class DD_bootstrap_ctx {
   bool supported_server_version(uint version) const {
     return (unsupported_server_versions.find(version) ==
             unsupported_server_versions.end()) &&
-           MYSQL_VERSION_ID > version;
+           (MYSQL_VERSION_ID > version || is_server_patch_downgrade(version));
   }
 
   bool supported_server_version() const {
     return supported_server_version(m_upgraded_server_version);
+  }
+
+  bool is_server_patch_downgrade(uint compare_server_version) const {
+    return (compare_server_version / 100 == MYSQL_VERSION_ID / 100) &&
+           (compare_server_version % 100 > MYSQL_VERSION_ID % 100);
+  }
+
+  bool is_server_patch_downgrade() const {
+    return is_server_patch_downgrade(m_upgraded_server_version);
   }
 
   void set_upgraded_server_version(uint upgraded_server_version) {

@@ -112,6 +112,7 @@ Query_term *Query_term::pushdown_limit_order_by(Query_term_set_op *parent) {
             child_block->select_limit == nullptr) {
           child_block->order_list = this_block->order_list;
           child_block->absorb_limit_of(this_block);
+          child_block->m_windows.prepend(&this_block->m_windows);
 
           if (this_block->first_inner_query_expression() != nullptr) {
             // Change context of any items in ORDER BY to child block
@@ -252,8 +253,7 @@ static void dumpAccessPath(int level, AccessPath *p, std::ostringstream &buf) {
   std::string str;
   char buffer[256];
   while (p) {
-    Mem_root_array<MaterializePathParameters::QueryBlock> *query_blocks =
-        nullptr;
+    Mem_root_array<MaterializePathParameters::Operand> *operands = nullptr;
     Mem_root_array<AppendPathParameters> *append_children = nullptr;
     snprintf(buffer, sizeof(buffer), "AP: %p ", p);
     str.append(buffer);
@@ -276,7 +276,7 @@ static void dumpAccessPath(int level, AccessPath *p, std::ostringstream &buf) {
         break;
       case AccessPath::MATERIALIZE:
         str.append("AccessPath::MATERIALIZE ");
-        query_blocks = &p->materialize().param->query_blocks;
+        operands = &p->materialize().param->m_operands;
         str.append(p->materialize().param->table->alias);
         p = p->materialize().table_path;
         break;
@@ -364,8 +364,8 @@ static void dumpAccessPath(int level, AccessPath *p, std::ostringstream &buf) {
     ret.clear();
     str.clear();
     ++level;
-    if (query_blocks != nullptr)
-      for (MaterializePathParameters::QueryBlock subp : *query_blocks) {
+    if (operands != nullptr)
+      for (MaterializePathParameters::Operand subp : *operands) {
         dumpAccessPath(level + 1, subp.subquery_path, buf);
       }
     if (append_children != nullptr)

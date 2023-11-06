@@ -86,6 +86,7 @@
 #include "nulls.h"
 #include "sha1.h"  // SHA1_HASH_SIZE
 #include "sha2.h"
+#include "sql-common/my_decimal.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // check_password_policy
 #include "sql/auth/sql_security_ctx.h"
@@ -104,7 +105,6 @@
 #include "sql/events.h"          // Events::reconstruct_interval_expression
 #include "sql/filesort.h"
 #include "sql/handler.h"
-#include "sql/my_decimal.h"
 #include "sql/mysqld.h"                             // binary_keyword etc
 #include "sql/parse_tree_node_base.h"               // Parse_context
 #include "sql/resourcegroups/resource_group_mgr.h"  // num_vcpus
@@ -145,7 +145,7 @@ using std::vector;
   returned instead.
 */
 String *Item_str_func::val_str_from_val_str_ascii(String *str, String *str2) {
-  assert(fixed == 1);
+  assert(fixed);
 
   if (my_charset_is_ascii_based(collation.collation)) {
     String *res = val_str_ascii(str);
@@ -177,7 +177,7 @@ bool Item_str_func::fix_fields(THD *thd, Item **ref) {
 }
 
 my_decimal *Item_str_func::val_decimal(my_decimal *decimal_value) {
-  assert(fixed == 1);
+  assert(fixed);
   char buff[64];
   String *res, tmp(buff, sizeof(buff), &my_charset_bin);
   res = val_str(&tmp);
@@ -188,7 +188,7 @@ my_decimal *Item_str_func::val_decimal(my_decimal *decimal_value) {
 }
 
 String *Item_func_md5::val_str_ascii(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   String *sptr = args[0]->val_str(str);
   str->set_charset(&my_charset_bin);
   if (sptr) {
@@ -239,7 +239,7 @@ bool Item_func_md5::resolve_type(THD *thd) {
 }
 
 String *Item_func_sha::val_str_ascii(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   String *sptr = args[0]->val_str(str);
   str->set_charset(&my_charset_bin);
   if (sptr) /* If we got value different from NULL */
@@ -275,7 +275,7 @@ bool Item_func_sha::resolve_type(THD *thd) {
   (which is equivalent to 256).
 */
 String *Item_func_sha2::val_str_ascii(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   unsigned char digest_buf[SHA512_DIGEST_LENGTH];
   uint digest_length = 0;
 
@@ -583,7 +583,7 @@ bool Item_func_aes_encrypt::do_itemize(Parse_context *pc, Item **res) {
 }
 
 String *Item_func_aes_encrypt::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   char key_buff[80]{'\0'};
   String tmp_key_value(key_buff, sizeof(key_buff), system_charset_info);
   THD *thd = current_thd;
@@ -657,7 +657,7 @@ bool Item_func_aes_decrypt::do_itemize(Parse_context *pc, Item **res) {
 }
 
 String *Item_func_aes_decrypt::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   char key_buff[80];
   String tmp_key_value(key_buff, sizeof(key_buff), system_charset_info);
   THD *thd = current_thd;
@@ -734,7 +734,7 @@ bool Item_func_random_bytes::resolve_type(THD *thd) {
 }
 
 String *Item_func_random_bytes::val_str(String *) {
-  assert(fixed == 1);
+  assert(fixed);
   const ulonglong n_bytes = args[0]->val_uint();
   null_value = args[0]->null_value;
 
@@ -1189,7 +1189,7 @@ bool Item_func_concat_ws::resolve_type(THD *thd) {
 }
 
 String *Item_func_reverse::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   String *res = args[0]->val_str(str);
   const char *ptr, *end;
   char *tmp;
@@ -1388,7 +1388,7 @@ bool Item_func_insert::resolve_type(THD *thd) {
 }
 
 String *Item_str_conv::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   String *res;
   if (!(res = args[0]->val_str(str))) {
     null_value = true; /* purecov: inspected */
@@ -1442,7 +1442,7 @@ bool Item_func_upper::resolve_type(THD *thd) {
 }
 
 String *Item_func_left::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   String *res = args[0]->val_str(str);
   if ((null_value = args[0]->null_value)) return error_str();
 
@@ -1498,7 +1498,7 @@ bool Item_func_left::resolve_type(THD *thd) {
 }
 
 String *Item_func_right::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   String *res = args[0]->val_str(str);
   if ((null_value = args[0]->null_value)) return error_str();
 
@@ -1936,7 +1936,7 @@ bool Item_func_database::do_itemize(Parse_context *pc, Item **res) {
 }
 
 String *Item_func_database::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   THD *thd = current_thd;
   if (thd->db().str == nullptr) {
     null_value = true;
@@ -2073,7 +2073,7 @@ static bool my_uni_isalpha(int wc) {
 }
 
 String *Item_func_soundex::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   String *res = args[0]->val_str(str);
   char last_ch, ch;
   const CHARSET_INFO *cs = collation.collation;
@@ -2220,7 +2220,7 @@ String *Item_func_format::val_str_ascii(String *str) {
   /* Number of characters used to represent the decimals, including '.' */
   uint32 dec_length;
   MY_LOCALE *lc;
-  assert(fixed == 1);
+  assert(fixed);
 
   dec = (int)args[1]->val_int();
   if (args[1]->null_value) {
@@ -2336,7 +2336,7 @@ bool Item_func_elt::resolve_type(THD *thd) {
 }
 
 double Item_func_elt::val_real() {
-  assert(fixed == 1);
+  assert(fixed);
   uint tmp;
   null_value = true;
   if ((tmp = (uint)args[0]->val_int()) == 0 || args[0]->null_value ||
@@ -2348,7 +2348,7 @@ double Item_func_elt::val_real() {
 }
 
 longlong Item_func_elt::val_int() {
-  assert(fixed == 1);
+  assert(fixed);
   uint tmp;
   null_value = true;
   if ((tmp = (uint)args[0]->val_int()) == 0 || args[0]->null_value ||
@@ -2478,7 +2478,7 @@ void Item_func_make_set::print(const THD *thd, String *str,
 }
 
 String *Item_func_char::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   null_value = false;
   str->length(0);
   str->set_charset(collation.collation);
@@ -2534,22 +2534,15 @@ bool Item_func_repeat::resolve_type(THD *thd) {
   if (agg_arg_charsets_for_string_result(collation, args, 1)) return true;
   assert(collation.collation != nullptr);
   if (args[1]->const_item() && args[1]->may_eval_const_item(thd)) {
-    /* must be longlong to avoid truncation */
-    longlong count = args[1]->val_int();
+    ulonglong count = args[1]->val_uint();
     if (args[1]->null_value) goto end;
-
-    // If count is less than 1, returns an empty string.
-    const Integer_value count_val(count, args[1]->unsigned_flag);
-    if (count_val.is_negative()) count = 0;
-
-    unsigned long long count_ull = static_cast<unsigned long long>(count);
 
     /* Assumes that the maximum length of a String is < INT_MAX32. */
     /* Set here so that rest of code sees out-of-bound value as such. */
-    if (count_ull > INT_MAX32) count_ull = INT_MAX32;
+    if (count > INT_MAX32) count = INT_MAX32;
 
     const ulonglong char_length =
-        static_cast<ulonglong>(args[0]->max_char_length()) * count_ull;
+        static_cast<ulonglong>(args[0]->max_char_length()) * count;
     set_data_type_string(char_length);
     set_nullable(is_nullable() ||
                  max_length > thd->variables.max_allowed_packet);
@@ -2568,7 +2561,7 @@ end:
 */
 
 String *Item_func_repeat::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
 
   /* must be longlong to avoid truncation */
   longlong count = args[1]->val_int();
@@ -2798,7 +2791,7 @@ end:
 bool Item_func_uuid_to_bin::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 1, 2, MYSQL_TYPE_LONGLONG)) return true;
   if (Item_str_func::resolve_type(thd)) return true;
-  set_data_type_string(uint32(binary_log::Uuid::BYTE_LENGTH), &my_charset_bin);
+  set_data_type_string(uint32(mysql::gtid::Uuid::BYTE_LENGTH), &my_charset_bin);
   set_nullable(true);
   return false;
 }
@@ -2810,7 +2803,11 @@ String *Item_func_uuid_to_bin::val_str(String *str) {
   String *res = args[0]->val_str(str);
   if (!res || args[0]->null_value) return nullptr;
 
-  if (binary_log::Uuid::parse(res->ptr(), res->length(), m_bin_buf)) goto err;
+  if (mysql::gtid::Uuid::parse(res->ptr(), res->length(), m_bin_buf) != 0) {
+    const ErrConvString err(res);
+    my_error(ER_WRONG_VALUE_FOR_TYPE, MYF(0), "string", err.ptr(), func_name());
+    return nullptr;
+  }
 
   /*
     If there is a second argument which is true, it means
@@ -2826,21 +2823,15 @@ String *Item_func_uuid_to_bin::val_str(String *str) {
   }
 
   null_value = false;
-  str->set(reinterpret_cast<char *>(m_bin_buf), binary_log::Uuid::BYTE_LENGTH,
+  str->set(reinterpret_cast<char *>(m_bin_buf), mysql::gtid::Uuid::BYTE_LENGTH,
            &my_charset_bin);
   return str;
-
-err:
-  const ErrConvString err(res);
-  my_error(ER_WRONG_VALUE_FOR_TYPE, MYF(0), "string", err.ptr(), func_name());
-
-  return nullptr;
 }
 
 bool Item_func_bin_to_uuid::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 1, 2, MYSQL_TYPE_LONGLONG)) return true;
   if (Item_str_func::resolve_type(thd)) return true;
-  set_data_type_string(uint32(binary_log::Uuid::TEXT_LENGTH),
+  set_data_type_string(uint32(mysql::gtid::Uuid::TEXT_LENGTH),
                        default_charset());
   set_nullable(true);
   return false;
@@ -2853,7 +2844,11 @@ String *Item_func_bin_to_uuid::val_str_ascii(String *str) {
   String *res = args[0]->val_str(str);
   if (!res || args[0]->null_value) return nullptr;
 
-  if (res->length() != binary_log::Uuid::BYTE_LENGTH) goto err;
+  if (res->length() != mysql::gtid::Uuid::BYTE_LENGTH) {
+    const ErrConvString err(res);
+    my_error(ER_WRONG_VALUE_FOR_TYPE, MYF(0), "string", err.ptr(), func_name());
+    return nullptr;
+  }
 
   /*
     If there is a second argument which is true,
@@ -2863,7 +2858,7 @@ String *Item_func_bin_to_uuid::val_str_ascii(String *str) {
     (time-high)-(time-mid)-(time-low) => (time-low)-(time-mid)-(time-high)
   */
   if (arg_count == 2 && args[1]->val_bool()) {
-    uchar rearranged[binary_log::Uuid::BYTE_LENGTH];
+    uchar rearranged[mysql::gtid::Uuid::BYTE_LENGTH];
     // The first 4 bytes are restored to "time-low".
     std::copy_n(&res->ptr()[4], 4, &rearranged[0]);
     // Bytes starting with 4th will be restored to "time-mid".
@@ -2872,20 +2867,14 @@ String *Item_func_bin_to_uuid::val_str_ascii(String *str) {
     std::copy_n(&res->ptr()[0], 2, &rearranged[6]);
     // The last 8 bytes were not changed so we just copy them.
     std::copy_n(&res->ptr()[8], 8, &rearranged[8]);
-    binary_log::Uuid::to_string(rearranged, m_text_buf);
+    mysql::gtid::Uuid::to_string(rearranged, m_text_buf);
   } else
-    binary_log::Uuid::to_string(reinterpret_cast<const uchar *>(res->ptr()),
-                                m_text_buf);
+    mysql::gtid::Uuid::to_string(reinterpret_cast<const uchar *>(res->ptr()),
+                                 m_text_buf);
 
   null_value = false;
-  str->set(m_text_buf, binary_log::Uuid::TEXT_LENGTH, default_charset());
+  str->set(m_text_buf, mysql::gtid::Uuid::TEXT_LENGTH, default_charset());
   return str;
-
-err:
-  const ErrConvString err(res);
-  my_error(ER_WRONG_VALUE_FOR_TYPE, MYF(0), "string", err.ptr(), func_name());
-
-  return nullptr;
 }
 
 longlong Item_func_is_uuid::val_int() {
@@ -2898,7 +2887,8 @@ longlong Item_func_is_uuid::val_int() {
   if (!arg_str) return 0;
 
   null_value = false;
-  return binary_log::Uuid::is_valid(arg_str->ptr(), arg_str->length());
+  return static_cast<longlong>(
+      mysql::gtid::Uuid::is_valid(arg_str->ptr(), arg_str->length()));
 }
 
 String *Item_func_lpad::val_str(String *str) {
@@ -2982,7 +2972,7 @@ bool Item_func_conv::resolve_type(THD *thd) {
 }
 
 String *Item_func_conv::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   String *res = args[0]->val_str(str);
   if ((null_value = args[0]->null_value)) return error_str();
 
@@ -3072,7 +3062,7 @@ bool Item_func_set_collation::do_itemize(Parse_context *pc, Item **res) {
 }
 
 String *Item_func_set_collation::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   str = args[0]->val_str(str);
   if ((null_value = args[0]->null_value)) return nullptr;
   str->set_charset(collation.collation);
@@ -3146,7 +3136,7 @@ void Item_func_set_collation::print(const THD *thd, String *str,
 }
 
 String *Item_func_charset::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   uint dummy_errors;
 
   const CHARSET_INFO *cs = args[0]->charset_for_protocol();
@@ -3160,7 +3150,7 @@ String *Item_func_charset::val_str(String *str) {
 }
 
 String *Item_func_collation::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   uint dummy_errors;
   const CHARSET_INFO *cs = args[0]->charset_for_protocol();
 
@@ -3251,7 +3241,7 @@ String *Item_func_weight_string::val_str(String *str) {
   const CHARSET_INFO *cs = args[0]->collation.collation;
   size_t output_buf_size, output_length;
   bool rounded_up = false;
-  assert(fixed == 1);
+  assert(fixed);
 
   // Ask filesort what type it would sort this as. Currently, we support strings
   // and integers (the latter include temporal types).
@@ -3350,7 +3340,7 @@ bool Item_func_hex::resolve_type(THD *thd) {
 
 String *Item_func_hex::val_str_ascii(String *str) {
   String *res;
-  assert(fixed == 1);
+  assert(fixed);
   if (args[0]->result_type() != STRING_RESULT) {
     /* Return hex of signed longlong value */
     const longlong dec = args[0]->val_int();
@@ -3394,7 +3384,7 @@ String *Item_func_unhex::val_str(String *str) {
   String *res;
   size_t length;
   null_value = true;
-  assert(fixed == 1);
+  assert(fixed);
 
   res = args[0]->val_str(str);
   // For a NULL input value return NULL without any warning
@@ -3423,7 +3413,7 @@ err:
 
 #ifndef NDEBUG
 String *Item_func_like_range::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   const longlong nbytes = args[1]->val_int();
   String *res = args[0]->val_str(str);
   size_t min_len, max_len;
@@ -3654,7 +3644,7 @@ bool Item_load_file::do_itemize(Parse_context *pc, Item **res) {
 }
 
 String *Item_load_file::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   String *file_name;
   File file;
   MY_STAT stat_info;
@@ -3818,6 +3808,8 @@ bool Item_func_quote::resolve_type(THD *thd) {
   ulonglong max_result_length = max<ulonglong>(
       4, static_cast<ulonglong>(args[0]->max_char_length()) * 2U + 2U);
   collation.set(args[0]->collation);
+  if (collation.collation == &my_charset_bin)
+    collation.set(thd->variables.collation_connection);
   set_data_type_string(max_result_length);
   set_nullable(is_nullable() || max_length > thd->variables.max_allowed_packet);
   return false;
@@ -3845,7 +3837,7 @@ bool Item_func_quote::resolve_type(THD *thd) {
 */
 
 String *Item_func_quote::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   /*
     Bit mask that has 1 for set for the position of the following characters:
     0, \, ' and ^Z
@@ -3858,7 +3850,8 @@ String *Item_func_quote::val_str(String *str) {
 
   char *to;
   const char *from, *end, *start;
-  String *arg = args[0]->val_str(str);
+  String *arg = eval_string_arg(collation.collation, args[0], str);
+  if (current_thd->is_error()) return error_str();
   if (arg == nullptr)  // Null argument
   {
     /* Return the string 'NULL' */
@@ -3877,38 +3870,47 @@ String *Item_func_quote::val_str(String *str) {
     return str;
   }
 
-  size_t arg_length = arg->length();
   size_t new_length;
+  size_t arg_length = arg->length();
 
   if (collation.collation->mbmaxlen == 1) {
     new_length = arg_length + 2; /* for beginning and ending ' signs */
     for (from = arg->ptr(), end = from + arg_length; from < end; from++)
-      new_length += get_esc_bit(escmask, (uchar)*from);
+      new_length += get_esc_bit(escmask, static_cast<uchar>(*from));
   } else {
     new_length = (arg_length * 2) + /* For string characters */
                  (2 * collation.collation->mbmaxlen); /* For quotes */
   }
 
-  if (tmp_value.alloc(new_length)) goto null;
+  if (tmp_value.alloc(new_length)) return error_str();
 
   if (collation.collation->mbmaxlen > 1) {
     const CHARSET_INFO *cs = collation.collation;
-    int mblen;
-    uchar *to_end;
     to = tmp_value.ptr();
-    to_end = (uchar *)to + new_length;
+    uchar *to_end = pointer_cast<uchar *>(to) + new_length;
 
     /* Put leading quote */
-    if ((mblen = cs->cset->wc_mb(cs, '\'', (uchar *)to, to_end)) <= 0)
-      goto null;
+    int mblen = cs->cset->wc_mb(cs, '\'', pointer_cast<uchar *>(to), to_end);
+    if (mblen <= 0) {
+      my_error(ER_INTERNAL_ERROR, MYF(0), func_name());
+      return make_empty_result();
+    }
     to += mblen;
 
     for (start = arg->ptr(), end = start + arg_length; start < end;) {
       my_wc_t wc;
       bool escape;
-      if ((mblen = cs->cset->mb_wc(cs, &wc, pointer_cast<const uchar *>(start),
-                                   pointer_cast<const uchar *>(end))) <= 0)
-        goto null;
+      mblen = cs->cset->mb_wc(cs, &wc, pointer_cast<const uchar *>(start),
+                              pointer_cast<const uchar *>(end));
+      if (mblen <= 0) {
+        // See e.g. my_mb_wc_euc_jp() which has special handling of valid,
+        // but un-assigned characters.
+        if ((mblen == -2 || mblen == -3)) {
+          mblen = -mblen;
+          wc = '?';
+        } else
+          return make_empty_result(); /* EOL or invalid byte sequence */
+      }
       start += mblen;
       switch (wc) {
         case 0:
@@ -3930,18 +3932,27 @@ String *Item_func_quote::val_str(String *str) {
           break;
       }
       if (escape) {
-        if ((mblen = cs->cset->wc_mb(cs, '\\', (uchar *)to, to_end)) <= 0)
-          goto null;
+        mblen = cs->cset->wc_mb(cs, '\\', pointer_cast<uchar *>(to), to_end);
+        if (mblen <= 0) {
+          my_error(ER_INTERNAL_ERROR, MYF(0), func_name());
+          return make_empty_result();
+        }
         to += mblen;
       }
-      if ((mblen = cs->cset->wc_mb(cs, wc, (uchar *)to, to_end)) <= 0)
-        goto null;
+      mblen = cs->cset->wc_mb(cs, wc, pointer_cast<uchar *>(to), to_end);
+      if (mblen <= 0) {
+        my_error(ER_INTERNAL_ERROR, MYF(0), func_name());
+        return make_empty_result();
+      }
       to += mblen;
     }
 
     /* Put trailing quote */
-    if ((mblen = cs->cset->wc_mb(cs, '\'', (uchar *)to, to_end)) <= 0)
-      goto null;
+    mblen = cs->cset->wc_mb(cs, '\'', pointer_cast<uchar *>(to), to_end);
+    if (mblen <= 0) {
+      my_error(ER_INTERNAL_ERROR, MYF(0), func_name());
+      return make_empty_result();
+    }
     to += mblen;
     new_length = to - tmp_value.ptr();
     goto ret;
@@ -3987,10 +3998,6 @@ ret:
   tmp_value.set_charset(collation.collation);
   null_value = false;
   return &tmp_value;
-
-null:
-  null_value = true;
-  return nullptr;
 }
 
 /**
@@ -4006,7 +4013,7 @@ null:
   Item_func_compress::val_str, we issue a warning and return 0.
  */
 longlong Item_func_uncompressed_length::val_int() {
-  assert(fixed == 1);
+  assert(fixed);
   String *res = args[0]->val_str(&value);
 
   if ((null_value = args[0]->null_value)) return 0;
@@ -4035,7 +4042,7 @@ longlong Item_func_uncompressed_length::val_int() {
 }
 
 longlong Item_func_crc32::val_int() {
-  assert(fixed == 1);
+  assert(fixed);
   String *res = args[0]->val_str(&value);
   if (!res) {
     null_value = true;
@@ -4059,7 +4066,7 @@ String *Item_func_compress::val_str(String *str) {
   String *res;
   Byte *body;
   char *last_char;
-  assert(fixed == 1);
+  assert(fixed);
 
   if (!(res = args[0]->val_str(str))) {
     null_value = true;
@@ -4104,7 +4111,7 @@ String *Item_func_compress::val_str(String *str) {
 }
 
 String *Item_func_uncompress::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   String *res = args[0]->val_str(str);
   ulong new_size;
   int err;
@@ -4312,7 +4319,7 @@ String *mysql_generate_uuid(String *str) {
 }
 
 String *Item_func_uuid::val_str(String *str) {
-  assert(fixed == 1);
+  assert(fixed);
   return mysql_generate_uuid(str);
 }
 

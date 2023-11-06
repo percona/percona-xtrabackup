@@ -81,9 +81,10 @@ bool EarlyNormalizeConditions(THD *thd, RelationalExpression *join,
                               Mem_root_array<Item *> *conditions,
                               bool *always_false);
 
-inline bool IsMultipleEquals(Item *cond) {
+inline bool IsMultipleEquals(const Item *cond) {
   return cond->type() == Item::FUNC_ITEM &&
-         down_cast<Item_func *>(cond)->functype() == Item_func::MULT_EQUAL_FUNC;
+         down_cast<const Item_func *>(cond)->functype() ==
+             Item_func::MULT_EQUAL_FUNC;
 }
 
 Item_func_eq *MakeEqItem(Item *a, Item *b,
@@ -105,12 +106,13 @@ Item_func_eq *MakeEqItem(Item *a, Item *b,
   equalities will be split into one or more single equalities later, referencing
   no more than two tables each.
  */
-int CountTablesInEquiJoinCondition(Item *cond) {
-  assert(cond->type() == Item::FUNC_ITEM &&
-         down_cast<Item_func *>(cond)->contains_only_equi_join_condition());
+int CountTablesInEquiJoinCondition(const Item *cond) {
+  assert(
+      cond->type() == Item::FUNC_ITEM &&
+      down_cast<const Item_func *>(cond)->contains_only_equi_join_condition());
   if (IsMultipleEquals(cond)) {
     // It's not a join condition if it has a constant argument.
-    assert(down_cast<Item_equal *>(cond)->const_arg() == nullptr);
+    assert(down_cast<const Item_equal *>(cond)->const_arg() == nullptr);
     return 2;
   } else {
     return PopulationCount(cond->used_tables());
@@ -145,20 +147,24 @@ void ReorderConditions(Mem_root_array<Item *> *condition_parts) {
   // subqueries (which can be expensive), then stored procedures
   // (which are unknown, so potentially _very_ expensive).
   const auto equi_cond_end = std::stable_partition(
-      condition_parts->begin(), condition_parts->end(), [](Item *item) {
+      condition_parts->begin(), condition_parts->end(), [](const Item *item) {
         return item->type() == Item::FUNC_ITEM &&
-               down_cast<Item_func *>(item)
+               down_cast<const Item_func *>(item)
                    ->contains_only_equi_join_condition();
       });
+
   std::stable_sort(condition_parts->begin(), equi_cond_end,
-                   [](Item *a, Item *b) {
+                   [](const Item *a, const Item *b) {
                      return CountTablesInEquiJoinCondition(a) <
                             CountTablesInEquiJoinCondition(b);
                    });
+
   std::stable_partition(condition_parts->begin(), condition_parts->end(),
-                        [](Item *item) { return !item->has_subquery(); });
-  std::stable_partition(condition_parts->begin(), condition_parts->end(),
-                        [](Item *item) { return !item->is_expensive(); });
+                        [](const Item *item) { return !item->has_subquery(); });
+
+  std::stable_partition(
+      condition_parts->begin(), condition_parts->end(),
+      [](const Item *item) { return item->cost().IsExpensive(); });
 }
 
 /**
@@ -2115,7 +2121,7 @@ bool CanonicalizeJoinConditions(THD *thd, RelationalExpression *expr) {
   // (in ClearImpossibleJoinConditions(), where we also propagate this
   // property up the tree).
   for (Item *cond : expr->join_conditions) {
-    if (cond->has_subquery() || cond->is_expensive()) {
+    if (cond->has_subquery() || cond->cost().IsExpensive()) {
       continue;
     }
     if (cond->const_for_execution() && cond->val_int() == 0) {
@@ -2773,9 +2779,24 @@ size_t EstimateRowWidthForJoin(const JoinHypergraph &graph,
 void SortPredicates(Predicate *begin, Predicate *end) {
   if (std::distance(begin, end) <= 1) return;  // Nothing to sort.
 
-  // Move the most selective predicates first.
-  std::stable_sort(begin, end, [](const Predicate &p1, const Predicate &p2) {
-    return p1.selectivity < p2.selectivity;
+  /*
+    By ordering the predicates by rank(predicate) in ascending order, we should
+    minimize the expected cost of evaluating the conjunction.
+
+    The formulae is taken from:
+    "J. M. Hellerstein, M. Stonebraker,
+    Predicate migration: Optimizing queries with expensive predicates,
+    In Proceedings of the ACM SIGMOD Conference, 1993".
+  */
+  const auto rank = [](const Predicate &p) {
+    return (p.selectivity - 1.0) / std::max(1e-18,  // Prevent divide by zero.
+                                            p.condition->cost().FieldCost());
+  };
+
+  // Order the predicates so that we minimize the expected cost of evaluating
+  // the conjuction.
+  std::stable_sort(begin, end, [&](const Predicate &p1, const Predicate &p2) {
+    return rank(p1) < rank(p2);
   });
 
   // If the predicates contain subqueries, move them towards the end, regardless
@@ -2787,8 +2808,8 @@ void SortPredicates(Predicate *begin, Predicate *end) {
 
   // UDFs and stored procedures have unknown and potentially very high cost.
   // Move them last.
-  std::stable_partition(begin, end, [](const Predicate &pred) {
-    return !pred.condition->is_expensive();
+  std::stable_partition(begin, end, [](const Predicate &p) {
+    return !p.condition->cost().IsExpensive();
   });
 }
 
@@ -2798,8 +2819,9 @@ void SortPredicates(Predicate *begin, Predicate *end) {
  */
 int AddPredicate(THD *thd, Item *condition, bool was_join_condition,
                  int source_multiple_equality_idx,
-                 const RelationalExpression *root, JoinHypergraph *graph,
-                 string *trace) {
+                 const RelationalExpression *root,
+                 const CompanionSetCollection &companion_collection,
+                 JoinHypergraph *graph, string *trace) {
   if (source_multiple_equality_idx != -1) {
     assert(was_join_condition);
   }
@@ -2821,8 +2843,26 @@ int AddPredicate(THD *thd, Item *condition, bool was_join_condition,
   }
   pred.total_eligibility_set = GetNodeMapFromTableMap(
       total_eligibility_set, graph->table_num_to_node_num);
-  pred.selectivity =
-      EstimateSelectivity(thd, condition, *root->companion_set, trace);
+
+  if ((condition->used_tables() & ~PSEUDO_TABLE_BITS) ==
+      0) {  // No regular tables.
+    pred.selectivity =
+        EstimateSelectivity(thd, condition, CompanionSet(), trace);
+
+  } else {
+    const CompanionSet *const companion_set =
+        companion_collection.Find(condition->used_tables());
+
+    if (companion_set ==
+        nullptr) {  // No equijoin between condition->used_tables().
+      pred.selectivity =
+          EstimateSelectivity(thd, condition, CompanionSet(), trace);
+    } else {
+      pred.selectivity =
+          EstimateSelectivity(thd, condition, *companion_set, trace);
+    }
+  }
+
   pred.was_join_condition = was_join_condition;
   pred.source_multiple_equality_idx = source_multiple_equality_idx;
   pred.functional_dependencies_idx.init(thd->mem_root);
@@ -3053,7 +3093,8 @@ void AddCycleEdges(THD *thd, const Mem_root_array<Item *> &cycle_inducing_edges,
 void PromoteCycleJoinPredicates(
     THD *thd, const RelationalExpression *root,
     const Mem_root_array<Item_equal *> &multiple_equalities,
-    JoinHypergraph *graph, string *trace) {
+    const CompanionSetCollection &companion_collection, JoinHypergraph *graph,
+    string *trace) {
   for (size_t edge_idx = 0; edge_idx < graph->graph.edges.size();
        edge_idx += 2) {
     if (!IsPartOfCycle(graph, edge_idx)) {
@@ -3064,12 +3105,12 @@ void PromoteCycleJoinPredicates(
     for (Item *condition : expr->equijoin_conditions) {
       AddPredicate(thd, condition, /*was_join_condition=*/true,
                    FindSourceMultipleEquality(condition, multiple_equalities),
-                   root, graph, trace);
+                   root, companion_collection, graph, trace);
     }
     for (Item *condition : expr->join_conditions) {
       AddPredicate(thd, condition, /*was_join_condition=*/true,
                    FindSourceMultipleEquality(condition, multiple_equalities),
-                   root, graph, trace);
+                   root, companion_collection, graph, trace);
     }
     expr->join_predicate_last = graph->predicates.size();
     SortPredicates(graph->predicates.begin() + expr->join_predicate_first,
@@ -3417,7 +3458,8 @@ bool MakeSingleTableHypergraph(THD *thd, const Query_block *query_block,
 
     for (Item *item : where_conditions) {
       AddPredicate(thd, item, /*was_join_condition=*/false,
-                   /*source_multiple_equality_idx=*/-1, root, graph, trace);
+                   /*source_multiple_equality_idx=*/-1, root,
+                   companion_collection, graph, trace);
     }
     graph->num_where_predicates = graph->predicates.size();
 
@@ -3633,7 +3675,8 @@ bool MakeJoinHypergraph(THD *thd, string *trace, JoinHypergraph *graph,
                                         companion_collection, graph, trace);
   if (graph->graph.edges.size() != old_graph_edges) {
     // We added at least one cycle-inducing edge.
-    PromoteCycleJoinPredicates(thd, root, multiple_equalities, graph, trace);
+    PromoteCycleJoinPredicates(thd, root, multiple_equalities,
+                               companion_collection, graph, trace);
   }
 
   if (trace != nullptr) {
@@ -3676,7 +3719,8 @@ bool MakeJoinHypergraph(THD *thd, string *trace, JoinHypergraph *graph,
   // down earlier.
   for (Item *condition : where_conditions) {
     AddPredicate(thd, condition, /*was_join_condition=*/false,
-                 /*source_multiple_equality_idx=*/-1, root, graph, trace);
+                 /*source_multiple_equality_idx=*/-1, root,
+                 companion_collection, graph, trace);
   }
 
   // Table filters should be applied at the bottom, without extending the TES.

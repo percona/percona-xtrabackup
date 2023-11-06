@@ -91,6 +91,7 @@
 #include "sql/persisted_variable.h"  // Persisted_variables_cache
 #include "sql/protocol_classic.h"
 #include "sql/psi_memory_key.h"
+#include "sql/sd_notify.h"  // sysd::notify(..) calls
 #include "sql/set_var.h"
 #include "sql/sql_audit.h"        // mysql_audit_acquire_plugins
 #include "sql/sql_backup_lock.h"  // acquire_shared_backup_lock
@@ -692,7 +693,14 @@ static st_plugin_dl *plugin_dl_add(const LEX_STRING *dl, int report,
   plugin_dl.ref_count = 1;
   /* Open new dll handle */
   mysql_mutex_assert_owner(&LOCK_plugin);
-  if (!(plugin_dl.handle = dlopen(dlpath, RTLD_NOW))) {
+  // We cannot use the RTLD_NODELETE trick for HAVE_ASAN | HAVE_LSAN here,
+  // since we still have plugins which depend on running static destructors
+  // at dlclose().
+  // If a test has valgrind/LSAN/ASAN leaks, then use the debug flag
+  // preserve_shared_objects_after_unload (see elsewhere in this file).
+  plugin_dl.handle = dlopen(dlpath, RTLD_NOW);
+
+  if (plugin_dl.handle == nullptr) {
     const char *errmsg;
     const int error_number = dlopen_errno;
     /*
@@ -2098,7 +2106,10 @@ void plugin_shutdown() {
 
     reap_needed = true;
 
-    if (!opt_initialize) LogErr(INFORMATION_LEVEL, ER_PLUGINS_SHUTDOWN_START);
+    if (!opt_initialize) {
+      LogErr(INFORMATION_LEVEL, ER_PLUGINS_SHUTDOWN_START);
+      sysd::notify("STATUS=Shutdown of plugins in progress\n");
+    }
 
     /*
       We want to shut down plugins in a reasonable order, this will
@@ -2142,7 +2153,10 @@ void plugin_shutdown() {
         plugins[i]->state = PLUGIN_IS_DYING;
     }
 
-    if (!opt_initialize) LogErr(INFORMATION_LEVEL, ER_PLUGINS_SHUTDOWN_END);
+    if (!opt_initialize) {
+      LogErr(INFORMATION_LEVEL, ER_PLUGINS_SHUTDOWN_END);
+      sysd::notify("STATUS=Shutdown of plugins complete\n");
+    }
 
     mysql_mutex_unlock(&LOCK_plugin);
 
@@ -2361,11 +2375,15 @@ static bool mysql_install_plugin(THD *thd, LEX_CSTRING name,
     }
     my_getopt_use_args_separator = false;
     /*
-     Append static variables present in mysqld-auto.cnf file for the
-     newly installed plugin to process those options which are specific
+     Append parse early and static variables present in mysqld-auto.cnf file
+     for the newly installed plugin to process those options which are specific
      to this plugin.
     */
-    if (pv && pv->append_read_only_variables(&argc, &argv, false, true)) {
+    bool arg_separator_added = false;
+    if (pv &&
+        (pv->append_parse_early_variables(&argc, &argv, arg_separator_added) ||
+         pv->append_read_only_variables(&argc, &argv, arg_separator_added,
+                                        true))) {
       mysql_mutex_unlock(&LOCK_plugin);
       mysql_rwlock_unlock(&LOCK_system_variables_hash);
       report_error(REPORT_TO_USER, ER_PLUGIN_IS_NOT_LOADED, name.str);
@@ -3113,6 +3131,7 @@ void plugin_thdvar_cleanup(THD *thd, bool enable_plugins) {
   DBUG_TRACE;
 
   if (enable_plugins) {
+    ha_reset_plugin_vars(thd);
     MUTEX_LOCK(plugin_lock, &LOCK_plugin);
     unlock_variables(&thd->variables);
     size_t idx;

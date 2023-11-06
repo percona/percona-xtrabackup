@@ -142,17 +142,21 @@ is not fast enough to keep pace with the workload.
 @return true if success. */
 bool buf_flush_single_page_from_LRU(buf_pool_t *buf_pool);
 
-/** Waits until a flush batch of the given type ends.
-@param[in] buf_pool             Buffer pool instance.
-@param[in] flush_type           Flush type. */
-void buf_flush_wait_batch_end(buf_pool_t *buf_pool, buf_flush_t flush_type);
+/** Waits until there's no flush of the given type from given BP instance.
+Note that in case of BUF_FLUSH_LIST and BUF_FLUSH_LRU we also make sure there's
+no ongoing batch initialization (which could lead to flushes).
+The BUF_FLUSH_SINGLE_PAGE does not have batch initialization.
+Note, that we return as soon as there is no flush, but in general a new one
+could start right after we've returned (it's up to the caller to prevent this).
+If buf_pool is nullptr, then it will await a moment with no flushes for each
+BP instance in turn, which in general doesn't imply there was a single moment
+when all instances were quiescent - it's up to the caller to ensure that.
 
-/** Waits until a flush batch of the given type ends. This is called by a
-thread that only wants to wait for a flush to end but doesn't do any flushing
-itself.
-@param[in]      buf_pool        buffer pool instance
-@param[in]      type            BUF_FLUSH_LRU or BUF_FLUSH_LIST */
-void buf_flush_wait_batch_end_wait_only(buf_pool_t *buf_pool, buf_flush_t type);
+@param[in] buf_pool
+              The specific buffer pool instance to check.
+              Can be null, if we want to wait for each buf_pool in turn.
+@param[in] flush_type           Flush type. */
+void buf_flush_await_no_flushing(buf_pool_t *buf_pool, buf_flush_t flush_type);
 
 /** This function should be called at a mini-transaction commit, if a page was
 modified in it. Puts the block to the list of modified blocks, if it not
@@ -197,9 +201,6 @@ void buf_flush_page_cleaner_disabled_debug_update(THD *thd, SYS_VAR *var,
 
 /** Initialize page_cleaner.  */
 void buf_flush_page_cleaner_init();
-
-/** Wait for any possible LRU flushes that are in progress to end. */
-void buf_flush_wait_LRU_batch_end();
 
 #if defined UNIV_DEBUG || defined UNIV_BUF_DEBUG
 /** Validates the flush list.
@@ -278,14 +279,20 @@ class Flush_observer {
   /** Destructor */
   ~Flush_observer() noexcept;
 
+  /** Print information about the current object.
+  @param[in,out]  out  output stream to be used.
+  @return the output stream. */
+  std::ostream &print(std::ostream &out) const;
+
   /** Check pages have been flushed and removed from the flush list
   in a buffer pool instance.
   @param[in]    instance_no     buffer pool instance no
   @return true if the pages were removed from the flush list */
   bool is_complete(size_t instance_no) {
-    return m_flushed[instance_no].fetch_add(0, std::memory_order_relaxed) ==
-               m_removed[instance_no].fetch_add(0, std::memory_order_relaxed) ||
-           m_interrupted;
+    ut_ad(m_flushed[instance_no].load() >= 0);
+    ut_ad(m_removed[instance_no].load() >= 0);
+    return m_interrupted ||
+           (m_flushed[instance_no].load() == m_removed[instance_no].load());
   }
 
   /** Interrupt observer not to wait. */
@@ -311,6 +318,10 @@ class Flush_observer {
  private:
   using Counter = std::atomic_int;
   using Counters = std::vector<Counter, ut::allocator<Counter>>;
+
+#ifdef UNIV_DEBUG
+  [[nodiscard]] bool validate() const noexcept;
+#endif /* UNIV_DEBUG */
 
   /** Tablespace ID. */
   space_id_t m_space_id{};

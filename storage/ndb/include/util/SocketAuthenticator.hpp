@@ -27,26 +27,53 @@
 
 #include "util/NdbSocket.h"
 
+/* client_authenticate() and server_authenticate() return a value
+   less than AuthOk on failure. They return a value greater than or
+   equal to AuthOk on success.
+*/
+
 class SocketAuthenticator
 {
 public:
   SocketAuthenticator() {}
   virtual ~SocketAuthenticator() {}
-  virtual bool client_authenticate(NdbSocket &) = 0;
-  virtual bool server_authenticate(NdbSocket &) = 0;
+  virtual int client_authenticate(NdbSocket &) = 0;
+  virtual int server_authenticate(NdbSocket &) = 0;
+
+  static constexpr int AuthOk = 0;
+  static const char * error(int);   // returns error message for code
+
+  static constexpr int
+    negotiation_failed      = -4,
+    unexpected_response     = -3,
+    peer_requires_cleartext = -2,
+    peer_requires_tls       = -1,
+    negotiate_cleartext_ok  =  0,  /* AuthOk */
+    negotiate_tls_ok        =  1;
 };
 
 
 class SocketAuthSimple : public SocketAuthenticator
 {
-  char *m_passwd;
-  char *m_username;
 public:
-  SocketAuthSimple(const char *username, const char *passwd);
-  ~SocketAuthSimple() override;
-  bool client_authenticate(NdbSocket &) override;
-  bool server_authenticate(NdbSocket &) override;
+  SocketAuthSimple() {}
+  ~SocketAuthSimple() override {}
+  int client_authenticate(NdbSocket &) override;
+  int server_authenticate(NdbSocket &) override;
 };
 
+class SocketAuthTls : public SocketAuthenticator
+{
+public:
+  SocketAuthTls(const class TlsKeyManager * km, bool requireTls) :
+    m_tls_keys(km), tls_required(requireTls) {}
+  ~SocketAuthTls() override {}
+  int client_authenticate(NdbSocket &) override;
+  int server_authenticate(NdbSocket &) override;
+
+private:
+  const class TlsKeyManager * m_tls_keys;
+  const bool tls_required;
+};
 
 #endif // SOCKET_AUTHENTICATOR_HPP

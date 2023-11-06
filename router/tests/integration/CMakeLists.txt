@@ -28,6 +28,7 @@ FOREACH(test_file
     test_routing_sharing.cc
     test_routing_sharing_constrained_pools.cc
     test_routing_sharing_restart.cc
+    test_routing_splitting.cc
     test_routing_tracing.cc
     )
 ADD_TEST_FILE(${CMAKE_CURRENT_SOURCE_DIR}/${test_file}
@@ -38,6 +39,6 @@ ADD_TEST_FILE(${CMAKE_CURRENT_SOURCE_DIR}/${test_file}
   mysqlxclient
   mysqlxmessages
   mysql_protocol
-  ${PROTOBUF_LIBRARY}
+  ext::libprotobuf
   )
 ENDFOREACH()

@@ -45,6 +45,7 @@ ADD_CONVENIENCE_LIBRARY(ndbgeneral
   NdbPack.cpp
   NdbSocket.cpp
   NdbSqlUtil.cpp
+  NodeCertificate.cpp
   ndb_az31.cpp
   ndb_ndbxfrm1.cpp
   ndb_openssl3_compat.cpp
@@ -60,6 +61,7 @@ ADD_CONVENIENCE_LIBRARY(ndbgeneral
   SocketAuthenticator.cpp
   SocketClient.cpp
   SocketServer.cpp
+  TlsKeyManager.cpp
   Vector.cpp
   basename.cpp
   decimal_utils.cpp
@@ -80,18 +82,26 @@ ADD_CONVENIENCE_LIBRARY(ndbgeneral
 SET_TARGET_PROPERTIES(ndbgeneral PROPERTIES LINK_INTERFACE_MULTIPLICITY 3)
 
 FOREACH(tests BaseString Bitmask SparseBitmask Parser HashMap2 LinkedStack
-        ndb_zlib cstrbuf span)
+    NodeCertificate
+    TlsKeyManager ndb_zlib cstrbuf span)
   NDB_ADD_TEST("${tests}-t" "${tests}.cpp" LIBS ndbgeneral)
 ENDFOREACH(tests)
 
 # This looks like a gcc bug, there *are* ATTRIBUTE_FORMAT annotations for
 # cstrbuf::appendf()
-IF(MY_COMPILER_IS_GNU AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 13)
-  TARGET_COMPILE_OPTIONS(cstrbuf-t PRIVATE
-    "-Wno-error=suggest-attribute=format")
+IF(WITH_UNIT_TESTS)
+  IF(MY_COMPILER_IS_GNU AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 13)
+    TARGET_COMPILE_OPTIONS(cstrbuf-t PRIVATE
+      "-Wno-error=suggest-attribute=format")
+  ENDIF()
 ENDIF()
 
 NDB_ADD_TEST(ndb_version-t version.cpp LIBS ndbgeneral)
+
+SET_PROPERTY(SOURCE ndb_opts.cpp
+             PROPERTY COMPILE_DEFINITIONS
+             NDB_TLS_SEARCH_PATH="${WITH_NDB_TLS_SEARCH_PATH}")
+
 
 FOREACH(tests
     NdbPack
@@ -105,6 +115,8 @@ FOREACH(tests
     testProp
     testSecureSocket
     testConfigValues
+    testTlsKeyManager
+    testNdbProcess
     )
   NDB_ADD_TEST("${tests}-t" "${tests}.cpp" LIBS ndbmgmapi ndbgeneral ndbportlib)
 ENDFOREACH(tests)

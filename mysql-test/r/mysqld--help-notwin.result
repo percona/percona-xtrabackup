@@ -7,11 +7,8 @@ The following options may be given as the first argument:
 --defaults-group-suffix=#
  Also read groups with concat(group, suffix)
 --login-path=# Read this path from the login file.
+--no-login-paths Don't read login paths from the login path file.
 
- --abort-slave-event-count=# 
- Option used by mysql-test for debugging and testing of
- replication.This option is deprecated and will be removed
- in a future version. 
  --activate-all-roles-on-login 
  Automatically set all granted roles as active after the
  user has authenticated successfully.
@@ -133,10 +130,8 @@ The following options may be given as the first argument:
  (Defaults to on; use --skip-binlog-expire-logs-auto-purge to disable.)
  --binlog-expire-logs-seconds=# 
  If non-zero, binary logs will be purged after
- binlog_expire_logs_seconds seconds; If both this option
- and expire_logs_days are set to non-zero  values, this
- option takes priority. Purges happen at startup and at
- binary log rotation.
+ binlog_expire_logs_seconds seconds; Purges happen at
+ startup and at binary log rotation.
  --binlog-format=name 
  The format used when writing the binary log. ROW writes
  each changed row in a binary format. STATEMENT writes SQL
@@ -254,8 +249,8 @@ The following options may be given as the first argument:
  A fully qualified path to the public RSA key used for
  authentication.
  --character-set-client-handshake 
- Don't ignore client side character set value sent during
- handshake.
+ Deprecated. Don't ignore client side character set value
+ sent during handshake.
  (Defaults to on; use --skip-character-set-client-handshake to disable.)
  --character-set-filesystem=name 
  Set the filesystem character set.
@@ -339,10 +334,6 @@ The following options may be given as the first argument:
  support execution time error(s) instead of connection
  error
  (Defaults to on; use --skip-disconnect-on-expired-password to disable.)
- --disconnect-slave-event-count=# 
- Option used by mysql-test for debugging and testing of
- replication.This option is deprecated and will be removed
- in a future version.
  --div-precision-increment=# 
  Precision of the result of '/' operator will be increased
  on that value
@@ -371,14 +362,6 @@ The following options may be given as the first argument:
  and DISABLED (keep the event scheduler completely
  deactivated, it cannot be activated run-time)
  -T, --exit-info[=#] Used for debugging. Use at your own risk.
- --expire-logs-days=# 
- If non-zero, binary logs will be purged after
- expire_logs_days days; If this option alone is set on the
- command line or in a configuration file, it overrides the
- default value for binlog-expire-logs-seconds. If both
- options are set to nonzero values,
- binlog-expire-logs-seconds takes priority. Possible
- purges happen at startup and at binary log rotation.
  --explain-format[=name] 
  The default format in which the EXPLAIN statement
  displays information. Valid values are TRADITIONAL
@@ -753,6 +736,10 @@ The following options may be given as the first argument:
  NULLS_UNEQUAL (default behavior for 4.1 and later),
  NULLS_EQUAL (emulate 4.0 behavior), and NULLS_IGNORED
  --myisam-use-mmap   Use memory mapping for reading and writing MyISAM tables
+ --mysql-native-password[=name] 
+ Enable or disable mysql_native_password plugin. Possible
+ values are ON, OFF, FORCE (don't start if the plugin
+ fails to load).
  --mysql-native-password-proxy-users 
  If set to FALSE (the default), then the
  mysql_native_password plugin will not signal for
@@ -822,8 +809,8 @@ The following options may be given as the first argument:
  block_nested_loop, batched_key_access,
  use_index_extensions, condition_fanout_filter,
  derived_merge, hash_join, subquery_to_derived,
- prefer_ordering_index, derived_condition_pushdown} and
- val is one of {on, off, default}
+ prefer_ordering_index, derived_condition_pushdown,
+ hash_set_operations} and val is one of {on, off, default}
  --optimizer-trace=name 
  Controls tracing of the Optimizer:
  optimizer_trace=option=val[,option=val...], where option
@@ -980,6 +967,10 @@ The following options may be given as the first argument:
  --performance-schema-max-metadata-locks=# 
  Maximum number of metadata locks. Use 0 to disable, -1
  for automated scaling.
+ --performance-schema-max-meter-classes=# 
+ Maximum number of meter source instruments.
+ --performance-schema-max-metric-classes=# 
+ Maximum number of metric source instruments.
  --performance-schema-max-mutex-classes=# 
  Maximum number of mutex instruments.
  --performance-schema-max-mutex-instances=# 
@@ -1372,6 +1363,9 @@ The following options may be given as the first argument:
  characteristics (isolation level, read only/read write,
  snapshot - but not any work done / data modified within
  the transaction).
+ --set-operations-buffer-size=# 
+ The maximum size of the buffer used for hash based set
+ operations 
  --sha256-password-proxy-users 
  If set to FALSE (the default), then the sha256_password
  authentication plugin will not signal for authenticated
@@ -1578,7 +1572,12 @@ The following options may be given as the first argument:
  option is set to BEFORE_8_0_26, new sessions use
  BEFORE_8_0_26 as default for the session option, and in
  addition the thread commands that were in use until
- 8.0.25 are written to the slow query log.
+ 8.0.25 are written to the slow query log. If set to
+ BEFORE_8_2_0 or less the command SHOW CREATE EVENT will
+ show how the event would have been created in a server of
+ a version lower than 8.2.0. SHOW EVENTS and queries into
+ information_schema.events will also output the old
+ terminology for the event status field.
  --thread-cache-size=# 
  How many threads we should keep in a cache for reuse
  --thread-handling=name 
@@ -1653,7 +1652,6 @@ The following options may be given as the first argument:
  (Defaults to on; use --skip-xa-detach-on-prepare to disable.)
 
 Variables (--variable-name=value)
-abort-slave-event-count 0
 activate-all-roles-on-login FALSE
 admin-address (No default value)
 admin-port 33062
@@ -1734,13 +1732,11 @@ delayed-insert-timeout 300
 delayed-queue-size 1000
 disabled-storage-engines 
 disconnect-on-expired-password TRUE
-disconnect-slave-event-count 0
 div-precision-increment 4
 end-markers-in-json FALSE
 enforce-gtid-consistency FALSE
 eq-range-index-dive-limit 200
 event-scheduler ON
-expire-logs-days 0
 explain-format TRADITIONAL
 explicit-defaults-for-timestamp TRUE
 external-locking FALSE
@@ -1853,6 +1849,7 @@ myisam-recover-options OFF
 myisam-sort-buffer-size 8388608
 myisam-stats-method nulls_unequal
 myisam-use-mmap FALSE
+mysql-native-password ON
 mysql-native-password-proxy-users FALSE
 net-buffer-length 16384
 net-read-timeout 30
@@ -1867,7 +1864,7 @@ old-style-user-limits FALSE
 optimizer-max-subgraph-pairs 100000
 optimizer-prune-level 1
 optimizer-search-depth 62
-optimizer-switch index_merge=on,index_merge_union=on,index_merge_sort_union=on,index_merge_intersection=on,engine_condition_pushdown=on,index_condition_pushdown=on,mrr=on,mrr_cost_based=on,block_nested_loop=on,batched_key_access=off,materialization=on,semijoin=on,loosescan=on,firstmatch=on,duplicateweedout=on,subquery_materialization_cost_based=on,use_index_extensions=on,condition_fanout_filter=on,derived_merge=on,use_invisible_indexes=off,skip_scan=on,hash_join=on,subquery_to_derived=off,prefer_ordering_index=on,hypergraph_optimizer=off,derived_condition_pushdown=on
+optimizer-switch index_merge=on,index_merge_union=on,index_merge_sort_union=on,index_merge_intersection=on,engine_condition_pushdown=on,index_condition_pushdown=on,mrr=on,mrr_cost_based=on,block_nested_loop=on,batched_key_access=off,materialization=on,semijoin=on,loosescan=on,firstmatch=on,duplicateweedout=on,subquery_materialization_cost_based=on,use_index_extensions=on,condition_fanout_filter=on,derived_merge=on,use_invisible_indexes=off,skip_scan=on,hash_join=on,subquery_to_derived=off,prefer_ordering_index=on,hypergraph_optimizer=off,derived_condition_pushdown=on,hash_set_operations=on
 optimizer-trace 
 optimizer-trace-features greedy_search=on,range_optimizer=on,dynamic_range=on,repeated_subselect=on
 optimizer-trace-limit 1
@@ -1916,13 +1913,15 @@ performance-schema-max-file-classes 80
 performance-schema-max-file-handles 32768
 performance-schema-max-file-instances -1
 performance-schema-max-index-stat -1
-performance-schema-max-memory-classes 450
+performance-schema-max-memory-classes 470
 performance-schema-max-metadata-locks -1
+performance-schema-max-meter-classes 30
+performance-schema-max-metric-classes 600
 performance-schema-max-mutex-classes 350
 performance-schema-max-mutex-instances -1
 performance-schema-max-prepared-statements-instances -1
 performance-schema-max-program-instances -1
-performance-schema-max-rwlock-classes 60
+performance-schema-max-rwlock-classes 100
 performance-schema-max-rwlock-instances -1
 performance-schema-max-socket-classes 10
 performance-schema-max-socket-instances -1
@@ -2004,6 +2003,7 @@ session-track-schema TRUE
 session-track-state-change FALSE
 session-track-system-variables time_zone,autocommit,character_set_client,character_set_results,character_set_connection
 session-track-transaction-info OFF
+set-operations-buffer-size 262144
 sha256-password-proxy-users FALSE
 show-create-table-verbosity FALSE
 show-gipk-in-create-table-and-information-schema TRUE

@@ -1718,17 +1718,17 @@ BackupRestore::update_apply_status(const RestoreMetaData &metaData, bool snapsho
       return false;
     }
     if (op->writeTuple() ||
-        op->equal(0u, (const char *)&server_id, sizeof(server_id)) ||
-        op->setValue(1u, (const char *)&epoch, sizeof(epoch)))
+        op->equal(0u, server_id) ||
+        op->setValue(1u, epoch))
     {
       restoreLogger.log_error("%s : failed to set epoch value in --restore-epoch: %u:%s",
           NDB_APPLY_TABLE, op->getNdbError().code, op->getNdbError().message);
       return false;
     }
     if ((apply_table_format == 2) &&
-        (op->setValue(2u, (const char *)&empty_string, 1) ||
-         op->setValue(3u, (const char *)&zero, sizeof(zero)) ||
-         op->setValue(4u, (const char *)&zero, sizeof(zero))))
+        (op->setValue(2u, empty_string) ||
+         op->setValue(3u, zero) ||
+         op->setValue(4u, zero)))
     {
       restoreLogger.log_error("%s : failed to set values in --restore-epoch: %u:%s",
           NDB_APPLY_TABLE, op->getNdbError().code, op->getNdbError().message);
@@ -1816,7 +1816,7 @@ BackupRestore::delete_epoch_tuple()
 
     Uint32 server_id= 0;
     if (op->deleteTuple() ||
-        op->equal(0u, (const char *)&server_id, sizeof(server_id)))
+        op->equal(0u, server_id))
     {
       restoreLogger.log_error("%s : failed to delete tuple with server_id=0 in --with-apply-status: %u: %s",
           NDB_APPLY_TABLE, op->getNdbError().code, op->getNdbError().message);
@@ -3676,7 +3676,7 @@ bool BackupRestore::tuple(const TupleS & tup, Uint32 fragmentId)
 
   while (m_free_callback == 0)
   {
-    assert(m_transactions == m_parallelism);
+    assert(m_transactions.load(std::memory_order_relaxed) == m_parallelism);
     // send-poll all transactions
     // close transaction is done in callback
     m_ndb->sendPollNdb(3000, 1);
@@ -3872,15 +3872,15 @@ void BackupRestore::tuple_a(restore_callback_t *cb)
 	if (col_pk_in_kernel)
 	{
 	  if (j == 1) continue;
-	  ret = op->equal(attr_desc->attrId, dataPtr, length);
+	  ret = op->equal(attr_desc->attrId, dataPtr);
 	}
 	else
 	{
 	  if (j == 0) continue;
 	  if (attr_data->null) 
-	    ret = op->setValue(attr_desc->attrId, NULL, 0);
+	    ret = op->setValue(attr_desc->attrId, nullptr);
 	  else
-	    ret = op->setValue(attr_desc->attrId, dataPtr, length);
+	    ret = op->setValue(attr_desc->attrId, dataPtr);
 	}
 	if (ret < 0) {
 	  ndbout_c("Column: %d type %d %d %d %d",i,
@@ -3912,7 +3912,7 @@ void BackupRestore::tuple_a(restore_callback_t *cb)
     cb->n_bytes= n_bytes;
     cb->connection->executeAsynchPrepare(NdbTransaction::Commit,
 					 &callback, cb);
-    m_transactions++;
+    m_transactions.fetch_add(1, std::memory_order_relaxed);
     return;
   }
   restoreLogger.log_error("Retried transaction %u times.\nLast error %u %s"
@@ -3971,7 +3971,8 @@ bool BackupRestore::isMissingTable(const TableS& table)
 void BackupRestore::cback(int result, restore_callback_t *cb)
 {
 #ifdef ERROR_INSERT
-    if (m_error_insert == NDB_RESTORE_ERROR_INSERT_FAIL_RESTORE_TUPLE && m_transactions > 10)
+    if (m_error_insert == NDB_RESTORE_ERROR_INSERT_FAIL_RESTORE_TUPLE &&
+        m_transactions.load(std::memory_order_relaxed) > 10)
     {
       restoreLogger.log_error("Error insert NDB_RESTORE_ERROR_INSERT_FAIL_RESTORE_TUPLE");
       m_error_insert = 0;
@@ -3979,7 +3980,7 @@ void BackupRestore::cback(int result, restore_callback_t *cb)
     }
 #endif
 
-  m_transactions--;
+  m_transactions.fetch_sub(1, std::memory_order_relaxed);
 
   if (result < 0)
   {
@@ -4077,7 +4078,7 @@ BackupRestore::tuple_free()
     return;
 
   // Poll all transactions
-  while (m_transactions)
+  while (m_transactions.load(std::memory_order_relaxed))
   {
     m_ndb->sendPollNdb(3000);
   }
@@ -4449,7 +4450,7 @@ BackupRestore::logEntry(const LogEntry &le)
   logEntry_a(cb);
 
   // Poll existing logentry transaction
-  while (m_transactions > 0)
+  while (m_transactions.load(std::memory_order_relaxed) > 0)
   {
     m_ndb->sendPollNdb(3000);
   }
@@ -4493,7 +4494,6 @@ BackupRestore::logEntry_a(restore_callback_t *cb)
   }
 
 retry:
-  Uint32 mapping_idx_key_count = 0;
 #ifdef ERROR_INSERT
   if (m_error_insert == NDB_RESTORE_ERROR_INSERT_FAIL_REPLAY_LOG && m_logCount == 25)
   {
@@ -4590,24 +4590,25 @@ retry:
       op->setPartitionId(tup.m_frag_id);
   }
 
-  Bitmask<4096> keys;
+  Bitmask<MAXNROFATTRIBUTESINWORDS> keys;
   for (Uint32 pass= 0; pass < 2; pass++)  // Keys then Values
   {
+    Uint32 mapping_idx_key_count = 0;
     for (Uint32 i= 0; i < tup.size(); i++)
     {
       const AttributeS * attr = tup[i];
-      int size = attr->Desc->size;
-      int arraySize = attr->Desc->arraySize;
+      const int size = attr->Desc->size;
+      const int arraySize = attr->Desc->arraySize;
       const char * dataPtr = attr->Data.string_value;
       const bool col_pk_in_backup = attr->Desc->m_column->getPrimaryKey();
 
       if (attr->Desc->m_exclude)
         continue;
 
-      const bool col_pk_in_kernel =
-        table->getColumn(attr->Desc->attrId)->getPrimaryKey();
+      const Uint32 attrId = attr->Desc->attrId;
+      const bool col_pk_in_kernel = table->getColumn(attrId)->getPrimaryKey();
       bool col_is_key = col_pk_in_kernel;
-      Uint32 keyAttrId = attr->Desc->attrId;
+      Uint32 keyAttrId = attrId;
 
       if (unlikely(use_mapping_idx))
       {
@@ -4636,7 +4637,7 @@ retry:
 
       /* Check for unsupported PK update */
       if (unlikely(!col_pk_in_backup && col_pk_in_kernel))
-     {
+      {
         if (unlikely(tup.m_type == LogEntry::LE_UPDATE))
         {
           if ((m_tableChangesMask & TCM_IGNORE_EXTENDED_PK_UPDATES) != 0)
@@ -4665,8 +4666,9 @@ retry:
             return;
           }
         }
-     }
-      if (tup.m_table->have_auto_inc(attr->Desc->attrId))
+      }
+
+      if (tup.m_table->have_auto_inc(attrId))
       {
         Uint64 usedAutoVal = extract_auto_val(dataPtr,
                                               size * arraySize,
@@ -4708,10 +4710,17 @@ retry:
       {
         assert(pass == 0);
 
-        if(!keys.get(keyAttrId))
+        if (!keys.get(attrId))
         {
-          keys.set(keyAttrId);
-          check= op->equal(keyAttrId, dataPtr, length);
+          keys.set(attrId);
+          check= op->equal(keyAttrId, dataPtr);
+        }
+        else if (tup.m_type == LogEntry::LE_UPDATE)
+        {
+          // If an LE_UPDATE entry contains the same 'key' twice,
+          // the second log entry is an update of the value.
+          // (As we request only changed values in the triggers)
+          check= op->setValue(attrId, dataPtr);
         }
       }
       else
@@ -4719,7 +4728,7 @@ retry:
         assert(pass == 1);
         if (tup.m_type != LogEntry::LE_DELETE)
         {
-          check= op->setValue(attr->Desc->attrId, dataPtr, length);
+          check= op->setValue(attrId, dataPtr);
         }
       }
 
@@ -4742,13 +4751,13 @@ retry:
 
   trans->executeAsynchPrepare(NdbTransaction::Commit,
                                  &callback_logentry, cb);
-  m_transactions++;
+  m_transactions.fetch_add(1, std::memory_order_relaxed);
   return;
 }
 
 void BackupRestore::cback_logentry(int result, restore_callback_t *cb)
 {
-  m_transactions--;
+  m_transactions.fetch_sub(1, std::memory_order_relaxed);
   const NdbError errobj = cb->connection->getNdbError();
   m_ndb->closeTransaction(cb->connection);
   cb->connection = NULL;

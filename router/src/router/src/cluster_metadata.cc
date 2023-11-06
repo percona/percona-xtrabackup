@@ -176,18 +176,19 @@ std::string to_string_md(const ClusterType cluster_type) {
 void update_router_info_v1(const uint32_t router_id,
                            const std::string &rw_endpoint,
                            const std::string &ro_endpoint,
+                           const std::string &rw_split_endpoint,
                            const std::string &rw_x_endpoint,
                            const std::string &ro_x_endpoint,
                            const std::string &username, MySQLSession *mysql) {
   sqlstring query(
       "UPDATE mysql_innodb_cluster_metadata.routers"
       " SET attributes = "
-      "   JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(IF("
-      "attributes "
-      "IS NULL, '{}', attributes),"
+      "JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET("
+      "IF(attributes IS NULL, '{}', attributes),"
       "    '$.version', ?),"
       "    '$.RWEndpoint', ?),"
       "    '$.ROEndpoint', ?),"
+      "    '$.RWSplitEndpoint', ?),"
       "    '$.RWXEndpoint', ?),"
       "    '$.ROXEndpoint', ?),"
       "    '$.MetadataUser', ?),"
@@ -195,7 +196,8 @@ void update_router_info_v1(const uint32_t router_id,
       " WHERE router_id = ?");
 
   query << MYSQL_ROUTER_VERSION;
-  query << rw_endpoint << ro_endpoint << rw_x_endpoint << ro_x_endpoint;
+  query << rw_endpoint << ro_endpoint << rw_split_endpoint << rw_x_endpoint
+        << ro_x_endpoint;
   query << username << to_string_md(ClusterType::GR_V1);
   query << router_id << sqlstring::end;
 
@@ -206,19 +208,20 @@ void update_router_info_v2(
     const mysqlrouter::ClusterType cluster_type, const uint32_t router_id,
     const std::string &cluster_id, const std::string &target_cluster,
     const std::string &rw_endpoint, const std::string &ro_endpoint,
-    const std::string &rw_x_endpoint, const std::string &ro_x_endpoint,
-    const std::string &username, MySQLSession *mysql) {
+    const std::string &rw_split_endpoint, const std::string &rw_x_endpoint,
+    const std::string &ro_x_endpoint, const std::string &username,
+    MySQLSession *mysql) {
   const std::string cluster_id_field =
       cluster_type == mysqlrouter::ClusterType::GR_CS ? "clusterset_id"
                                                       : "cluster_id";
   sqlstring query(
       "UPDATE mysql_innodb_cluster_metadata.v2_routers"
       " SET attributes = "
-      "   JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(IF(attributes "
-      "IS NULL, "
-      "'{}', attributes),"
+      "JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET("
+      "IF(attributes IS NULL, '{}', attributes),"
       "    '$.RWEndpoint', ?),"
       "    '$.ROEndpoint', ?),"
+      "    '$.RWSplitEndpoint', ?),"
       "    '$.RWXEndpoint', ?),"
       "    '$.ROXEndpoint', ?),"
       "    '$.MetadataUser', ?),"
@@ -227,9 +230,10 @@ void update_router_info_v2(
       " WHERE router_id = ?",
       {mysqlrouter::QuoteOnlyIfNeeded});
 
-  query << rw_endpoint << ro_endpoint << rw_x_endpoint << ro_x_endpoint
-        << username << to_string_md(cluster_type) << MYSQL_ROUTER_VERSION
-        << cluster_id_field << cluster_id << router_id << sqlstring::end;
+  query << rw_endpoint << ro_endpoint << rw_split_endpoint << rw_x_endpoint
+        << ro_x_endpoint << username << to_string_md(cluster_type)
+        << MYSQL_ROUTER_VERSION << cluster_id_field << cluster_id << router_id
+        << sqlstring::end;
 
   mysql->execute(query);
 
@@ -251,40 +255,47 @@ void update_router_info_v2(
 void ClusterMetadataGRV1::update_router_info(
     const uint32_t router_id, const std::string & /*cluster_id*/,
     const std::string & /*target_cluster*/, const std::string &rw_endpoint,
-    const std::string &ro_endpoint, const std::string &rw_x_endpoint,
-    const std::string &ro_x_endpoint, const std::string &username) {
-  update_router_info_v1(router_id, rw_endpoint, ro_endpoint, rw_x_endpoint,
-                        ro_x_endpoint, username, mysql_);
+    const std::string &ro_endpoint, const std::string &rw_split_endpoint,
+    const std::string &rw_x_endpoint, const std::string &ro_x_endpoint,
+    const std::string &username) {
+  update_router_info_v1(router_id, rw_endpoint, ro_endpoint, rw_split_endpoint,
+                        rw_x_endpoint, ro_x_endpoint, username, mysql_);
 }
 
 void ClusterMetadataGRV2::update_router_info(
     const uint32_t router_id, const std::string &cluster_id,
     const std::string &target_cluster, const std::string &rw_endpoint,
-    const std::string &ro_endpoint, const std::string &rw_x_endpoint,
-    const std::string &ro_x_endpoint, const std::string &username) {
+    const std::string &ro_endpoint, const std::string &rw_split_endpoint,
+    const std::string &rw_x_endpoint, const std::string &ro_x_endpoint,
+    const std::string &username) {
   update_router_info_v2(mysqlrouter::ClusterType::GR_V2, router_id, cluster_id,
-                        target_cluster, rw_endpoint, ro_endpoint, rw_x_endpoint,
-                        ro_x_endpoint, username, mysql_);
+                        target_cluster, rw_endpoint, ro_endpoint,
+                        rw_split_endpoint, rw_x_endpoint, ro_x_endpoint,
+                        username, mysql_);
 }
 
 void ClusterMetadataAR::update_router_info(
     const uint32_t router_id, const std::string &cluster_id,
     const std::string &target_cluster, const std::string &rw_endpoint,
-    const std::string &ro_endpoint, const std::string &rw_x_endpoint,
-    const std::string &ro_x_endpoint, const std::string &username) {
+    const std::string &ro_endpoint, const std::string &rw_split_endpoint,
+    const std::string &rw_x_endpoint, const std::string &ro_x_endpoint,
+    const std::string &username) {
   update_router_info_v2(mysqlrouter::ClusterType::RS_V2, router_id, cluster_id,
-                        target_cluster, rw_endpoint, ro_endpoint, rw_x_endpoint,
-                        ro_x_endpoint, username, mysql_);
+                        target_cluster, rw_endpoint, ro_endpoint,
+                        rw_split_endpoint, rw_x_endpoint, ro_x_endpoint,
+                        username, mysql_);
 }
 
 void ClusterMetadataGRInClusterSet::update_router_info(
     const uint32_t router_id, const std::string &cluster_id,
     const std::string &target_cluster, const std::string &rw_endpoint,
-    const std::string &ro_endpoint, const std::string &rw_x_endpoint,
-    const std::string &ro_x_endpoint, const std::string &username) {
+    const std::string &ro_endpoint, const std::string &rw_split_endpoint,
+    const std::string &rw_x_endpoint, const std::string &ro_x_endpoint,
+    const std::string &username) {
   update_router_info_v2(mysqlrouter::ClusterType::GR_CS, router_id, cluster_id,
-                        target_cluster, rw_endpoint, ro_endpoint, rw_x_endpoint,
-                        ro_x_endpoint, username, mysql_);
+                        target_cluster, rw_endpoint, ro_endpoint,
+                        rw_split_endpoint, rw_x_endpoint, ro_x_endpoint,
+                        username, mysql_);
 }
 
 namespace {
@@ -443,6 +454,20 @@ bool metadata_schema_version_is_compatible(
   return true;
 }
 
+bool ROUTER_LIB_EXPORT metadata_schema_version_is_deprecated(
+    const mysqlrouter::MetadataSchemaVersion &version) {
+  return version < kNewMetadataVersion;
+}
+
+std::string ROUTER_LIB_EXPORT get_metadata_schema_deprecated_msg(
+    const mysqlrouter::MetadataSchemaVersion &version) {
+  return "The target Cluster's Metadata version ('" + to_string(version) +
+         "') is deprecated. Please use the latest MySQL Shell to upgrade it "
+         "using 'dba.upgradeMetadata()'. Although this version of MySQL Router "
+         "still supports it, future versions will no longer work with this "
+         "Cluster unless its metadata is upgraded.";
+}
+
 std::string to_string(const MetadataSchemaVersion &version) {
   return std::to_string(version.major) + "." + std::to_string(version.minor) +
          "." + std::to_string(version.patch);
@@ -518,24 +543,26 @@ bool check_group_replication_online(MySQLSession *mysql) {
 
 bool check_group_has_quorum(MySQLSession *mysql) {
   std::string q =
-      "SELECT SUM(IF(member_state = 'ONLINE', 1, 0)) as num_onlines, COUNT(*) "
-      "as num_total"
-      " FROM performance_schema.replication_group_members";
+      "SELECT SUM(IF(member_state = 'ONLINE', 1, 0)) as num_onlines, "
+      "SUM(IF(member_state = 'RECOVERING', 1, 0)) as num_recovering, "
+      "COUNT(*) as num_total "
+      "FROM performance_schema.replication_group_members";
 
   std::unique_ptr<MySQLSession::ResultRow> result(
       mysql->query_one(q));  // throws MySQLSession::Error
   if (result) {
-    if (result->size() != 2) {
+    if (result->size() != 3) {
       throw std::out_of_range(
           "Invalid number of values returned from "
           "performance_schema.replication_group_members: "
-          "expected 2 got " +
+          "expected 3 got " +
           std::to_string(result->size()));
     }
     int online = strtoi_checked((*result)[0]);
-    int all = strtoi_checked((*result)[1]);
-    // log_info("%d members online out of %d", online, all);
-    if (online >= all / 2 + 1) return true;
+    int recovering = strtoi_checked((*result)[1]);
+    int all = strtoi_checked((*result)[2]);
+
+    if ((online + recovering) > all / 2) return true;
     return false;
   }
 

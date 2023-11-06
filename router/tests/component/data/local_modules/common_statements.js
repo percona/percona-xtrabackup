@@ -103,6 +103,7 @@ var defaults = {
   router_version: "",
   router_rw_classic_port: "",
   router_ro_classic_port: "",
+  router_rw_split_classic_port: "",
   router_rw_x_port: "",
   router_ro_x_port: "",
   router_metadata_user: "",
@@ -112,6 +113,7 @@ var defaults = {
   router_options: "",
   gr_member_state: "ONLINE",
   gr_members_all: 3,
+  gr_members_recovering: 0,
   gr_members_online: 3,
   current_instance_attributes: null,
 };
@@ -420,13 +422,17 @@ function get_response(stmt_key, options) {
     case "router_select_members_count":
       return {
         "stmt":
-            "SELECT SUM(IF(member_state = 'ONLINE', 1, 0)) as num_onlines, COUNT(*) as num_total FROM performance_schema.replication_group_members",
+            "SELECT SUM(IF(member_state = 'ONLINE', 1, 0)) as num_onlines, SUM(IF(member_state = 'RECOVERING', 1, 0)) as num_recovering, COUNT(*) as num_total FROM performance_schema.replication_group_members",
         "result": {
           "columns": [
             {"type": "LONGLONG", "name": "num_onlines"},
+            {"type": "LONGLONG", "name": "num_recovering"},
             {"type": "LONGLONG", "name": "num_total"}
           ],
-          "rows": [[options.gr_members_online, options.gr_members_all]]
+          "rows": [[
+            options.gr_members_online, , options.gr_members_recovering,
+            options.gr_members_all
+          ]]
         }
       };
     case "router_select_replication_group_name":
@@ -439,7 +445,21 @@ function get_response(stmt_key, options) {
         },
       };
     case "router_start_transaction":
-      return {"stmt": "START TRANSACTION", "ok": {}};
+      return {
+        "stmt": "START TRANSACTION",
+        "ok": {
+          session_trackers: [
+            {
+              type: "trx_characteristics",
+              trx_stmt: "START TRANSACTION;",
+            },
+            {
+              type: "trx_state",
+              state: "________",
+            },
+          ]
+        }
+      };
     case "router_select_router_address":
       return {
         stmt_regex:
@@ -555,9 +575,9 @@ function get_response(stmt_key, options) {
     case "router_update_routers_in_metadata_v1":
       return {
         "stmt_regex":
-            "^UPDATE mysql_innodb_cluster_metadata\\.routers SET attributes =    " +
-            "JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(IF\\(attributes IS NULL, '\\{\\}', attributes\\),    " +
-            "'\\$\\.version', '.*'\\),    '\\$\\.RWEndpoint', '.*'\\),    '\\$\\.ROEndpoint', '.*'\\),    '\\$\\.RWXEndpoint', '.*'\\),    " +
+            "^UPDATE mysql_innodb_cluster_metadata\\.routers SET attributes = " +
+            "JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(IF\\(attributes IS NULL, '\\{\\}', attributes\\),    " +
+            "'\\$\\.version', '.*'\\),    '\\$\\.RWEndpoint', '.*'\\),    '\\$\\.ROEndpoint', '.*'\\),    '\\$\\.RWSplitEndpoint', '.*'\\),    '\\$\\.RWXEndpoint', '.*'\\),    " +
             "'\\$\\.ROXEndpoint', '.*'\\),    '\\$.MetadataUser', 'mysql_router.*'\\),    '\\$.bootstrapTargetType', '.*'\\) " +
             "WHERE router_id = .*",
         "ok": {}
@@ -565,9 +585,9 @@ function get_response(stmt_key, options) {
     case "router_update_routers_in_metadata":
       return {
         "stmt_regex":
-            "^UPDATE mysql_innodb_cluster_metadata\\.v2_routers SET attributes =    " +
-            "JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(IF\\(attributes IS NULL, '\\{\\}', attributes\\),    " +
-            "'\\$\\.RWEndpoint', '.*'\\),    '\\$\\.ROEndpoint', '.*'\\),    '\\$\\.RWXEndpoint', '.*'\\),    " +
+            "^UPDATE mysql_innodb_cluster_metadata\\.v2_routers SET attributes = " +
+            "JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(IF\\(attributes IS NULL, '\\{\\}', attributes\\),    " +
+            "'\\$\\.RWEndpoint', '.*'\\),    '\\$\\.ROEndpoint', '.*'\\),    '\\$\\.RWSplitEndpoint', '.*'\\),    '\\$\\.RWXEndpoint', '.*'\\),    " +
             "'\\$\\.ROXEndpoint', '.*'\\),    '\\$\\.MetadataUser', '.*'\\),    '\\$\\.bootstrapTargetType', '.*'\\), " +
             "version = '.*', cluster_id = '.*' " +
             "WHERE router_id = .*",
@@ -576,9 +596,9 @@ function get_response(stmt_key, options) {
     case "router_clusterset_update_routers_in_metadata":
       return {
         "stmt_regex":
-            "^UPDATE mysql_innodb_cluster_metadata\\.v2_routers SET attributes =    " +
-            "JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(IF\\(attributes IS NULL, '\\{\\}', attributes\\),    " +
-            "'\\$\\.RWEndpoint', '.*'\\),    '\\$\\.ROEndpoint', '.*'\\),    '\\$\\.RWXEndpoint', '.*'\\),    " +
+            "^UPDATE mysql_innodb_cluster_metadata\\.v2_routers SET attributes = " +
+            "JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(IF\\(attributes IS NULL, '\\{\\}', attributes\\),    " +
+            "'\\$\\.RWEndpoint', '.*'\\),    '\\$\\.ROEndpoint', '.*'\\),    '\\$\\.RWSplitEndpoint', '.*'\\),    '\\$\\.RWXEndpoint', '.*'\\),    " +
             "'\\$\\.ROXEndpoint', '.*'\\),    '\\$\\.MetadataUser', '.*'\\),    '\\$\\.bootstrapTargetType', '.*'\\), " +
             "version = '.*', clusterset_id = '.*' " +
             "WHERE router_id = .*",
@@ -594,9 +614,41 @@ function get_response(stmt_key, options) {
         "ok": {}
       };
     case "router_commit":
-      return {stmt: "COMMIT", ok: {}};
+      return {
+        stmt: "COMMIT",
+        ok: {
+          session_trackers: [
+            {
+              type: "trx_characteristics",
+              value: "",
+            },
+            {
+              type: "trx_state",
+              state: "________",
+            },
+            {
+              type: "gtid",
+              gtid: "3E11FA47-71CA-11E1-9E33-C80AA9429562:23",
+            }
+          ]
+        }
+      };
     case "router_rollback":
-      return {stmt: "ROLLBACK", ok: {}};
+      return {
+        stmt: "ROLLBACK",
+        ok: {
+          session_trackers: [
+            {
+              type: "trx_characteristics",
+              value: "",
+            },
+            {
+              type: "trx_state",
+              state: "________",
+            },
+          ]
+        }
+      };
     case "router_replication_group_members":
       return {
         stmt:
@@ -840,9 +892,9 @@ function get_response(stmt_key, options) {
     case "router_update_attributes_v1":
       return {
         "stmt_regex": "UPDATE mysql_innodb_cluster_metadata\\.routers" +
-            " SET attributes = JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(" +
+            " SET attributes = JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(" +
             " IF\\(attributes IS NULL, '\\{\\}', attributes\\), '\\$\\.version', '.*'\\)," +
-            " '\\$\\.RWEndpoint', '.*'\\), '\\$\\.ROEndpoint', '.*'\\), '\\$\\.RWXEndpoint', '.*'\\)," +
+            " '\\$\\.RWEndpoint', '.*'\\), '\\$\\.ROEndpoint', '.*'\\), '\\$\\.RWSplitEndpoint', '.*'\\), '\\$\\.RWXEndpoint', '.*'\\)," +
             " '\\$\\.ROXEndpoint', '.*'\\), '\\$\\.MetadataUser', '.*'\\) WHERE router_id = " +
             options.router_id,
         "ok": {}
@@ -851,14 +903,16 @@ function get_response(stmt_key, options) {
       // the exact match, not regex
       return {
         "stmt": "UPDATE mysql_innodb_cluster_metadata.routers" +
-            " SET attributes = JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(" +
+            " SET attributes = JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(" +
             " IF(attributes IS NULL, '{}', attributes)," +
             " '$.version', '" + options.router_version +
             "'), '$.RWEndpoint', '" + options.router_rw_classic_port +
             "'), '$.ROEndpoint', '" + options.router_ro_classic_port +
-            "'), '$.RWXEndpoint', '" + options.router_rw_x_port +
-            "'), '$.ROXEndpoint', '" + options.router_ro_x_port +
-            "'), '$.MetadataUser', '" + options.router_metadata_user +
+            "'), '$.RWSplitEndpoint', '" +
+            options.router_rw_split_classic_port + "'), '$.RWXEndpoint', '" +
+            options.router_rw_x_port + "'), '$.ROXEndpoint', '" +
+            options.router_ro_x_port + "'), '$.MetadataUser', '" +
+            options.router_metadata_user +
             "') WHERE router_id = " + options.router_id,
         "ok": {}
       };
@@ -885,9 +939,9 @@ function get_response(stmt_key, options) {
     case "router_update_attributes_v2":
       return {
         "stmt_regex": "UPDATE mysql_innodb_cluster_metadata\\.v2_routers" +
-            " SET version = .*, last_check_in = NOW\\(\\), attributes = JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(" +
+            " SET version = .*, last_check_in = NOW\\(\\), attributes = JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(JSON_SET\\(" +
             " IF\\(attributes IS NULL, '\\{\\}', attributes\\)," +
-            " '\\$\\.RWEndpoint', '.*'\\), '\\$\\.ROEndpoint', '.*'\\), '\\$\\.RWXEndpoint', '.*'\\)," +
+            " '\\$\\.RWEndpoint', '.*'\\), '\\$\\.ROEndpoint', '.*'\\), '\\$\\.RWSplitEndpoint', '.*'\\), '\\$\\.RWXEndpoint', '.*'\\)," +
             " '\\$\\.ROXEndpoint', '.*'\\), '\\$\\.MetadataUser', '.*'\\) WHERE router_id = .*",
         "ok": {}
       };
@@ -896,13 +950,15 @@ function get_response(stmt_key, options) {
         "stmt": "UPDATE mysql_innodb_cluster_metadata.v2_routers" +
             " SET version = '" + options.router_version +
             "', last_check_in = NOW()" +
-            ", attributes = JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(" +
+            ", attributes = JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(JSON_SET(" +
             " IF(attributes IS NULL, '{}', attributes)," +
             " '$.RWEndpoint', '" + options.router_rw_classic_port +
             "'), '$.ROEndpoint', '" + options.router_ro_classic_port +
-            "'), '$.RWXEndpoint', '" + options.router_rw_x_port +
-            "'), '$.ROXEndpoint', '" + options.router_ro_x_port +
-            "'), '$.MetadataUser', '" + options.router_metadata_user +
+            "'), '$.RWSplitEndpoint', '" +
+            options.router_rw_split_classic_port + "'), '$.RWXEndpoint', '" +
+            options.router_rw_x_port + "'), '$.ROXEndpoint', '" +
+            options.router_ro_x_port + "'), '$.MetadataUser', '" +
+            options.router_metadata_user +
             "') WHERE router_id = " + options.router_id,
         "ok": {}
       };
@@ -1367,9 +1423,10 @@ function get_response(stmt_key, options) {
           ],
           rows: options.clusterset_data
                     .clusters[options.clusterset_data.this_cluster_id]
-                    .nodes.map(function(node) {
+                    .gr_nodes.map(function(node) {
                       return [
-                        node.uuid, node.host, node.classic_port, "ONLINE", 1
+                        node.uuid, "127.0.0.1", node.classic_port, node.status,
+                        1
                       ];
                     }),
         }

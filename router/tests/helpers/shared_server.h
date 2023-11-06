@@ -91,6 +91,10 @@ class SharedServer {
 
   void setup_mysqld_accounts();
 
+  void install_plugins();
+
+  static void install_plugins(MysqlClient &cli);
+
   void flush_privileges();
 
   void flush_privileges(MysqlClient &cli);
@@ -98,12 +102,41 @@ class SharedServer {
   // get all connections, but ignore internal connections and this
   // connection.
   static stdx::expected<std::vector<uint64_t>, MysqlError> user_connection_ids(
-      MysqlClient &cli);
+      MysqlClient &cli) {
+    return user_connection_ids(cli, default_usernames());
+  }
+
+  static stdx::expected<std::vector<uint64_t>, MysqlError> user_connection_ids(
+      MysqlClient &cli, const std::vector<std::string> &usernames);
+
+  static std::vector<std::string> default_usernames() {
+    return {
+        admin_account().username,
+        caching_sha2_empty_password_account().username,
+        caching_sha2_password_account().username,
+        native_empty_password_account().username,
+        native_password_account().username,
+        sha256_empty_password_account().username,
+        sha256_password_account().username,
+        sha256_short_password_account().username,
+    };
+  }
 
   // close all connections.
-  void close_all_connections();
+  stdx::expected<void, MysqlError> close_all_connections() {
+    return close_all_connections(default_usernames());
+  }
 
-  void close_all_connections(MysqlClient &cli);
+  stdx::expected<void, MysqlError> close_all_connections(
+      const std::vector<std::string> &usernames);
+
+  static stdx::expected<void, MysqlError> close_all_connections(
+      MysqlClient &cli) {
+    return close_all_connections(cli, default_usernames());
+  }
+
+  static stdx::expected<void, MysqlError> close_all_connections(
+      MysqlClient &cli, const std::vector<std::string> &usernames);
 
   // set some session-vars back to defaults.
   void reset_to_defaults();
@@ -155,6 +188,14 @@ class SharedServer {
     static_assert(pass.size() > 20);
 
     return {"sha256_pass", std::string(pass), "sha256_password"};
+  }
+
+  static Account sha256_short_password_account() {
+    constexpr const std::string_view pass("sha256password");
+
+    static_assert(pass.size() < 20);
+
+    return {"sha256_short", std::string(pass), "sha256_password"};
   }
 
   static Account sha256_empty_password_account() {

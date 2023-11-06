@@ -181,9 +181,13 @@ class Sql_cmd {
     the statement is not eligible for execution in a secondary storage
     engine
   */
-  virtual const MYSQL_LEX_CSTRING *eligible_secondary_storage_engine() const {
+  virtual const MYSQL_LEX_CSTRING *eligible_secondary_storage_engine(
+      THD *) const {
     return nullptr;
   }
+
+  /** @return true if the operation is BULK LOAD. */
+  virtual bool is_bulk_load() const { return false; }
 
   /**
     Disable use of secondary storage engines in this statement. After
@@ -194,6 +198,8 @@ class Sql_cmd {
     assert(m_secondary_engine == nullptr);
     m_secondary_engine_enabled = false;
   }
+
+  void enable_secondary_storage_engine() { m_secondary_engine_enabled = true; }
 
   /**
     Has use of secondary storage engines been disabled for this statement?

@@ -46,14 +46,13 @@
 #include "mysql/service_mysql_alloc.h"
 #include "mysql/strings/m_ctype.h"
 #include "mysql/udf_registration_types.h"
-#include "mysql_com.h"
 #include "mysql_time.h"
 #include "mysqld_error.h"
+#include "sql-common/my_decimal.h"  // str2my_decimal
 #include "sql/enum_query_type.h"
 #include "sql/field.h"
 #include "sql/handler.h"
 #include "sql/item.h"            // Item_result_field
-#include "sql/my_decimal.h"      // str2my_decimal
 #include "sql/parse_location.h"  // POS
 #include "sql/set_var.h"         // enum_var_type
 #include "sql/sql_const.h"
@@ -310,7 +309,8 @@ class Item_func : public Item_result_field {
     PERIODADD_FUNC,
     PERIODDIFF_FUNC,
     SEC_TO_TIME_FUNC,
-    GET_FORMAT_FUNC
+    GET_FORMAT_FUNC,
+    ANY_VALUE_FUNC
   };
   enum optimize_type {
     OPTIMIZE_NONE,
@@ -701,6 +701,7 @@ class Item_func : public Item_result_field {
     [1] "At least one" for multiple equality (X = Y = Z = ...), "all"
     for the rest (e.g. BETWEEN)
 
+    @param thd               The current thread.
     @param read_tables       Tables earlier in the join sequence.
                              Predicates for table 'filter_for_table' that
                              rely on values from these tables can be part of
@@ -718,7 +719,7 @@ class Item_func : public Item_result_field {
     placed in Item_func.
   */
   const Item_field *contributes_to_filter(
-      table_map read_tables, table_map filter_for_table,
+      THD *thd, table_map read_tables, table_map filter_for_table,
       const MY_BITMAP *fields_to_ignore) const;
   /**
     Named parameters are allowed in a parameter list
@@ -2135,7 +2136,6 @@ class Item_udf_func : public Item_func {
 
  protected:
   udf_handler udf;
-  bool is_expensive_processor(uchar *) override { return true; }
 
  public:
   Item_udf_func(const POS &pos, udf_func *udf_arg, PT_item_list *opt_list)
@@ -2153,7 +2153,6 @@ class Item_udf_func : public Item_func {
   bool fix_fields(THD *thd, Item **ref) override;
   void cleanup() override;
   Item_result result_type() const override { return udf.result_type(); }
-  bool is_expensive() override { return true; }
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
 
@@ -2163,6 +2162,10 @@ class Item_udf_func : public Item_func {
             checker_args);
     func_arg->banned_function_name = func_name();
     return true;
+  }
+
+  void compute_cost(CostOfItem *root_cost) const override {
+    root_cost->MarkExpensive();
   }
 
  protected:
@@ -2181,7 +2184,7 @@ class Item_func_udf_float final : public Item_udf_func {
   Item_func_udf_float(const POS &pos, udf_func *udf_arg, PT_item_list *opt_list)
       : Item_udf_func(pos, udf_arg, opt_list) {}
   longlong val_int() override {
-    assert(fixed == 1);
+    assert(fixed);
     return (longlong)rint(Item_func_udf_float::val_real());
   }
   my_decimal *val_decimal(my_decimal *dec_buf) override {
@@ -3809,8 +3812,6 @@ class Item_func_sp final : public Item_func {
   bool init_result_field(THD *thd);
 
  protected:
-  bool is_expensive_processor(uchar *) override { return true; }
-
  public:
   Item_func_sp(const POS &pos, const LEX_STRING &db_name,
                const LEX_STRING &fn_name, bool use_explicit_name,
@@ -3854,8 +3855,6 @@ class Item_func_sp final : public Item_func {
   bool fix_fields(THD *thd, Item **ref) override;
   bool resolve_type(THD *thd) override;
 
-  bool is_expensive() override { return true; }
-
   inline Field *get_sp_result_field() { return sp_result_field; }
   bool check_function_as_value_generator(uchar *checker_args) override {
     Check_function_as_value_generator_parameters *func_arg =
@@ -3863,6 +3862,10 @@ class Item_func_sp final : public Item_func {
             checker_args);
     func_arg->banned_function_name = func_name();
     return true;
+  }
+
+  void compute_cost(CostOfItem *root_cost) const override {
+    root_cost->MarkExpensive();
   }
 };
 
@@ -3939,6 +3942,21 @@ class Item_func_internal_is_mandatory_role : public Item_int_func {
   longlong val_int() override;
   const char *func_name() const override {
     return "internal_is_mandatory_role";
+  }
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
+  bool resolve_type(THD *) override {
+    set_nullable(true);
+    return false;
+  }
+};
+
+class Item_func_internal_use_terminology_previous : public Item_int_func {
+ public:
+  Item_func_internal_use_terminology_previous(const POS &pos)
+      : Item_int_func(pos) {}
+  longlong val_int() override;
+  const char *func_name() const override {
+    return "internal_use_terminology_previous";
   }
   enum Functype functype() const override { return DD_INTERNAL_FUNC; }
   bool resolve_type(THD *) override {

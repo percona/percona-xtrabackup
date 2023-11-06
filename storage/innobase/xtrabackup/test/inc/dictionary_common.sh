@@ -204,19 +204,27 @@ function test_partition() {
 function duplicate_sdi() {
 
   stop_server
-  rm -rf $topdir/backup && mkdir -p $topdir/backup
-  run_cmd tar -xf inc/duplicate_sdi_backup.tar.gz -C $topdir/backup
-  vlog "prepare the backup dir with dup SDI"
-  xtrabackup --prepare --target-dir=$topdir/backup
-  #restore
   [[ -d $mysql_datadir ]] && rm -rf $mysql_datadir && mkdir -p $mysql_datadir
-  vlog "Restoring the dup SDI prepared backup"
-  xtrabackup --copy-back --target-dir=$topdir/backup
-
+  run_cmd tar -xf inc/duplicate_sdi_datadir.tar.gz -C $mysql_datadir
+  MYSQLD_START_TIMEOUT=1200
+  #start server
   MYSQLD_START_TIMEOUT=1200
   MYSQLD_EXTRA_MY_CNF_OPTS="
   lower_case_table_names
   "
+  start_server
+
+  #backup
+  rm -rf $topdir/backup && mkdir -p $topdir/backup
+  xtrabackup --backup --target-dir=$topdir/backup
+  vlog "prepare the backup dir with dup SDI"
+  xtrabackup --prepare --target-dir=$topdir/backup
+  #restore
+  stop_server
+  [[ -d $mysql_datadir ]] && rm -rf $mysql_datadir && mkdir -p $mysql_datadir
+  vlog "Restoring the dup SDI prepared backup"
+  xtrabackup --copy-back --target-dir=$topdir/backup
+
   start_server
 
   vlog "Load more data to tables with duplicate SDI"

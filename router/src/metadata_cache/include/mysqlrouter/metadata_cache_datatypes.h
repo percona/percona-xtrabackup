@@ -90,7 +90,7 @@ inline std::error_code make_error_code(metadata_errc e) noexcept {
   return std::error_code(static_cast<int>(e), metadata_cache_category());
 }
 
-enum class ServerMode { ReadWrite, ReadOnly, Unavailable };
+using ServerMode = mysqlrouter::ServerMode;
 enum class ServerRole { Primary, Secondary, Unavailable };
 
 /** @class ManagedInstance
@@ -163,6 +163,8 @@ class METADATA_CACHE_EXPORT ManagedCluster {
    * the GR cluster when the data in the GR metadata is not consistent with the
    * cluster metadata)*/
   bool md_discrepancy{false};
+
+  bool has_quorum{true};
 
   /** @brief Is this a PRIMARY Cluster in case of ClusterSet */
   bool is_primary{true};
@@ -237,6 +239,7 @@ struct RouterAttributes {
   std::string metadata_user_name;
   std::string rw_classic_port;
   std::string ro_classic_port;
+  std::string rw_split_classic_port;
   std::string rw_x_port;
   std::string ro_x_port;
 };

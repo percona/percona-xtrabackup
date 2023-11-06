@@ -73,13 +73,8 @@ while ($i != 11)
 --source include/assert.inc
 
 --echo SQL thread must stop *after* INSERT 5
-# SQL_AFTER_GTIDS is not working fine with MTS which is 'TODO'.  Hence post
-# BUG14767986 fix 'ER_MTA_FEATURE_IS_NOT_SUPPORTED' warning will be thrown
-# when MTS is enabled and server will be started in single threaded mode.
---disable_warnings
 --replace_result $master_uuid MASTER_UUID
 --eval START SLAVE SQL_THREAD UNTIL SQL_AFTER_GTIDS= "$master_uuid:4-5"
---enable_warnings
 --source include/wait_for_slave_sql_to_stop.inc
 --let $assert_cond= MAX(c1)=5 FROM t1
 --let $assert_text= Rows until 5 in t1 must be replicated now
@@ -95,13 +90,8 @@ while ($i != 11)
 
 --echo SQL thread must stop *after* INSERT 5
 --echo 1-5 are already applied so it will stop immediately
-# SQL_AFTER_GTIDS is not working fine with MTS which is 'TODO'.  Hence post
-# BUG14767986 fix 'ER_MTA_FEATURE_IS_NOT_SUPPORTED' warning will be thrown
-# when MTS is enabled and server will be started in single threaded mode.
---disable_warnings
 --replace_result $master_uuid MASTER_UUID
 --eval START SLAVE SQL_THREAD, IO_THREAD UNTIL SQL_AFTER_GTIDS= "$master_uuid:1-5"
---enable_warnings
 --source include/wait_for_slave_sql_to_stop.inc
 --let $assert_cond= MAX(c1)=5 FROM t1
 --let $assert_text= Rows until 5 in t1 must be replicated now
@@ -138,45 +128,11 @@ while ($i != 11)
 --source include/start_slave.inc
 --replace_result $master_uuid MASTER_UUID
 --disable_result_log
---eval SELECT WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS('$master_uuid:10')
+--eval SELECT WAIT_FOR_EXECUTED_GTID_SET('$master_uuid:10')
 --enable_result_log
 --let $assert_cond= MAX(c1)=10 FROM t1
 --let $assert_text= Rows until 10 in t1 must be replicated now
 --source include/assert.inc
-
-#
-# Bug#24976304 WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS TIMEOUT VALUE HANDLES SOME
-# INPUTS BADLY
-#
---echo Test WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS function with negative timeout
---echo value. When SQL_MODE is strict, then it will throw
---echo WRONG_ARGUMENTS error.
-SET @save_sql_mode=@@SESSION.SQL_MODE;
-SET @@SESSION.SQL_MODE="STRICT_ALL_TABLES";
---replace_result $master_uuid MASTER_UUID
---error ER_WRONG_ARGUMENTS
---eval SELECT WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS('$master_uuid:100', -1);
-
---echo When SQL_MODE is non-strict mode the function executes
---echo same as in strict SQL_MODE and generates WRONG_ARGUMENTS error.
-SET @@SESSION.SQL_MODE="";
---replace_result $master_uuid MASTER_UUID
---error ER_WRONG_ARGUMENTS
---eval SELECT WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS('$master_uuid:100', -1);
-SET @@SESSION.SQL_MODE=@save_sql_mode;
-
---echo Test WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS function with fractional timeout
---echo value. Earlier(before fix), 0.4 is read as integer value '0' and
---echo the function hanged forever (or till all the specified gtids are
---echo executed). Now(after fix) 0.4 will be read as double 0.4 and will waitfor
---echo atleast 0.4 seconds (or till all the specified  gtids are executed).
---echo Also check that function returns -1 if the timeout has been exceeded.
---let $assert_text= WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS returns -1 if the timeout has been exceeded.
---let $query_result= query_get_value("SELECT WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS('$master_uuid:100', 0.4) AS VALUE", VALUE, 1)
---let $assert_cond= "$query_result" = "-1"
---source include/assert.inc
-
-# End of Test Bug#24976304
 
 # Cleanup
 --connection master

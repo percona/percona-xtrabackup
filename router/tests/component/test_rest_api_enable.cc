@@ -61,10 +61,10 @@ using namespace std::chrono_literals;
 
 using mysql_harness::utility::string_format;
 
-class TestRestApiEnable : public RouterComponentTest {
+class TestRestApiEnable : public RouterComponentBootstrapTest {
  public:
   void SetUp() override {
-    RouterComponentTest::SetUp();
+    RouterComponentBootstrapTest::SetUp();
 
     cluster_node_port = port_pool_.get_next_available();
     cluster_http_port = port_pool_.get_next_available();
@@ -109,7 +109,8 @@ class TestRestApiEnable : public RouterComponentTest {
 
     std::move(std::begin(additional_config), std::end(additional_config),
               std::back_inserter(cmdline));
-    auto &router_bootstrap = launch_router(cmdline, EXIT_SUCCESS);
+    auto &router_bootstrap = launch_router_for_bootstrap(
+        cmdline, EXIT_SUCCESS, /*disable_rest=*/false);
 
     check_exit_code(router_bootstrap, EXIT_SUCCESS);
 
@@ -292,7 +293,8 @@ class TestRestApiEnable : public RouterComponentTest {
     std::vector<std::string> cmdline = {
         "--bootstrap=" + gr_member_ip + ":" + std::to_string(cluster_node_port),
         "-d", path.str()};
-    auto &router_bootstrap = launch_router(cmdline, EXIT_SUCCESS);
+    auto &router_bootstrap = launch_router_for_bootstrap(
+        cmdline, EXIT_SUCCESS, /*disable_rest=*/false);
 
     check_exit_code(router_bootstrap, EXIT_SUCCESS);
 
@@ -388,26 +390,9 @@ class TestRestApiEnable : public RouterComponentTest {
 
  protected:
   void set_globals(std::string cluster_id = "") {
-    auto json_doc = mock_GR_metadata_as_json(
-        cluster_id, {cluster_node_port}, 0, {cluster_node_port},
-        0 /*primary_id*/, 0 /*view_id*/, false /*error_on_md_query*/);
-    JsonAllocator allocator;
-    JsonValue gr_members_json(rapidjson::kArrayType);
-    JsonValue member(rapidjson::kArrayType);
-    member.PushBack(JsonValue("uuid-1", strlen("uuid-1"), allocator),
-                    allocator);
-    member.PushBack(
-        JsonValue(gr_member_ip.c_str(), gr_member_ip.length(), allocator),
-        allocator);
-    member.PushBack(cluster_node_port, allocator);
-    gr_members_json.PushBack(member, allocator);
-
-    json_doc.AddMember("innodb_cluster_instances", gr_members_json, allocator);
-
-    const auto json_str = json_to_string(json_doc);
-
-    EXPECT_NO_THROW(
-        MockServerRestClient(cluster_http_port).set_globals(json_str));
+    set_mock_metadata(cluster_http_port, cluster_id, {cluster_node_port}, 0,
+                      {cluster_node_port}, 0 /*primary_id*/, 0 /*view_id*/,
+                      false /*error_on_md_query*/);
   }
 
   void setup_paths() {
@@ -531,7 +516,11 @@ VeZwMK4Cb8EO7PzsnX2tD6AA5Ums6GhNgYsbJgdq4MdKb3x6YWZ8DpksSIX2
  * WL13906:TS_FR06_01
  */
 TEST_F(TestRestApiEnable, ensure_rest_is_disabled) {
-  do_bootstrap({"--disable-rest", "--client-ssl-mode", "PASSTHROUGH"});
+  do_bootstrap({
+      "--disable-rest",                    //
+      "--client-ssl-mode", "PASSTHROUGH",  //
+      "--disable-rw-split",                //
+  });
 
   EXPECT_FALSE(certificate_files_exists(
       {cert_file_t::k_ca_key, cert_file_t::k_ca_cert, cert_file_t::k_router_key,
@@ -625,7 +614,7 @@ TEST_P(EnableWrongHttpsPort, ensure_bootstrap_fails_for_invalid_https_port) {
   std::vector<std::string> cmdline = {
       "--bootstrap=" + gr_member_ip + ":" + std::to_string(cluster_node_port),
       "-d", temp_test_dir.name(), "--https-port", std::to_string(GetParam())};
-  auto &router_bootstrap = launch_router(cmdline, EXIT_FAILURE);
+  auto &router_bootstrap = launch_router_for_bootstrap(cmdline, EXIT_FAILURE);
 
   check_exit_code(router_bootstrap, EXIT_FAILURE);
 
@@ -682,7 +671,7 @@ TEST_F(TestRestApiEnable, bootstrap_conflicting_options) {
       "--https-port",
       std::to_string(custom_port),
       "--disable-rest"};
-  auto &router_bootstrap = launch_router(cmdline, EXIT_FAILURE);
+  auto &router_bootstrap = launch_router_for_bootstrap(cmdline, EXIT_FAILURE);
 
   check_exit_code(router_bootstrap, EXIT_FAILURE);
 
@@ -759,7 +748,7 @@ TEST_P(RestApiEnableNotEnoughFiles, ensure_rest_fail) {
   std::vector<std::string> cmdline = {
       "--bootstrap=" + gr_member_ip + ":" + std::to_string(cluster_node_port),
       "-d", temp_test_dir.name()};
-  auto &router_bootstrap = launch_router(cmdline, EXIT_FAILURE);
+  auto &router_bootstrap = launch_router_for_bootstrap(cmdline, EXIT_FAILURE);
   check_exit_code(router_bootstrap, EXIT_FAILURE);
 
   const auto &files = GetParam();
@@ -936,7 +925,7 @@ TEST_F(TestRestApiEnable, ensure_certificate_files_cleanup) {
   // 2. Account verification fails due to the '--strict' option and missing
   //    queries in the rest_api_enable.js file.
   // 3. Certificates are cleaned up.
-  auto &router_bootstrap = launch_router(cmdline, EXIT_FAILURE);
+  auto &router_bootstrap = launch_router_for_bootstrap(cmdline, EXIT_FAILURE);
 
   check_exit_code(router_bootstrap, EXIT_FAILURE);
   EXPECT_THAT(router_bootstrap.get_full_output(),
@@ -957,12 +946,14 @@ class TestRestApiEnableBootstrapFailover : public TestRestApiEnable {
 
   void setup_mocks(const bool failover_successful) {
     for (auto i = 0; i < k_node_count; ++i) {
-      gr_members.emplace_back(gr_member_ip, port_pool_.get_next_available());
+      const auto port = port_pool_.get_next_available();
+      gr_nodes.emplace_back(port);
+      cluster_nodes.emplace_back(port);
     }
 
     for (auto i = 0; i < k_node_count; ++i) {
       cluster_http_port = port_pool_.get_next_available();
-      auto port = gr_members[i].second;
+      auto port = gr_nodes[i].classic_port;
 
       std::string trace_file;
       if (i == 0 || !failover_successful) {
@@ -982,11 +973,12 @@ class TestRestApiEnableBootstrapFailover : public TestRestApiEnable {
       ASSERT_TRUE(MockServerRestClient(cluster_http_port)
                       .wait_for_rest_endpoint_ready());
 
-      set_mock_bootstrap_data(cluster_http_port, cluster_name, gr_members,
-                              metadata_version, cluster_id);
+      set_mock_metadata(cluster_http_port, cluster_id, gr_nodes, 0,
+                        cluster_nodes, 0, 0, false, gr_member_ip, "",
+                        metadata_version, cluster_name);
     }
 
-    cluster_node_port = gr_members[0].second;
+    cluster_node_port = gr_nodes[0].classic_port;
     router_port_rw = port_pool_.get_next_available();
     router_port_ro = port_pool_.get_next_available();
     router_port_x_rw = port_pool_.get_next_available();
@@ -994,10 +986,11 @@ class TestRestApiEnableBootstrapFailover : public TestRestApiEnable {
   }
 
  private:
-  const mysqlrouter::MetadataSchemaVersion metadata_version{2, 0, 3};
+  const mysqlrouter::MetadataSchemaVersion metadata_version{2, 2, 0};
   const std::string cluster_name{"mycluster"};
   std::vector<std::pair<uint16_t, ProcessWrapper &>> mock_servers;
-  std::vector<std::pair<std::string, unsigned>> gr_members;
+  std::vector<GRNode> gr_nodes;
+  std::vector<ClusterNode> cluster_nodes;
   static const uint8_t k_node_count{3};
 };
 
@@ -1045,7 +1038,7 @@ TEST_F(TestRestApiEnableBootstrapFailover,
   std::vector<std::string> cmdline = {
       "--bootstrap=" + gr_member_ip + ":" + std::to_string(cluster_node_port),
       "-d", temp_test_dir.name(), "--strict"};
-  auto &router_bootstrap = launch_router(cmdline, EXIT_FAILURE);
+  auto &router_bootstrap = launch_router_for_bootstrap(cmdline, EXIT_FAILURE);
 
   check_exit_code(router_bootstrap, EXIT_FAILURE);
   EXPECT_THAT(router_bootstrap.get_full_output(),
@@ -1073,7 +1066,7 @@ TEST_F(TestRestApiEnableBootstrapFailover,
   std::vector<std::string> cmdline = {
       "--bootstrap=" + gr_member_ip + ":" + std::to_string(cluster_node_port),
       "-d", temp_test_dir.name()};
-  auto &router_bootstrap = launch_router(cmdline, EXIT_FAILURE);
+  auto &router_bootstrap = launch_router_for_bootstrap(cmdline, EXIT_FAILURE);
 
   check_exit_code(router_bootstrap, EXIT_FAILURE);
   EXPECT_THAT(

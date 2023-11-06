@@ -26,7 +26,6 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <memory>
-#include <sstream>
 #include <string>
 
 #include "m_string.h"
@@ -43,98 +42,10 @@
 #include "vio/vio_priv.h"
 
 #include <dh_ecdh_config.h>
+#include <tls_ciphers.h>
 
 #include "my_openssl_fips.h"
 #define TLS_VERSION_OPTION_SIZE 256
-
-/*
-  1. Cipher preference order: P1 > A1 > A2 > D1
-  2. Blocked ciphers are not allowed
-*/
-
-static const char mandatory_p1[] = {
-    "ECDHE-ECDSA-AES128-GCM-SHA256:"
-    "ECDHE-ECDSA-AES256-GCM-SHA384:"
-    "ECDHE-RSA-AES128-GCM-SHA256:"
-    "ECDHE-ECDSA-AES128-SHA256:"
-    "ECDHE-RSA-AES128-SHA256"};
-
-static const char optional_a1[] = {
-    "ECDHE-RSA-AES256-GCM-SHA384:"
-    "ECDHE-ECDSA-AES256-SHA384:"
-    "ECDHE-RSA-AES256-SHA384:"
-    "DHE-RSA-AES128-GCM-SHA256:"
-    "DHE-DSS-AES128-GCM-SHA256:"
-    "DHE-RSA-AES128-SHA256:"
-    "DHE-DSS-AES128-SHA256:"
-    "DHE-DSS-AES256-GCM-SHA384:"
-    "DHE-RSA-AES256-SHA256:"
-    "DHE-DSS-AES256-SHA256:"
-    "DHE-RSA-AES256-GCM-SHA384"};
-
-static const char optional_a2[] = {
-    "DH-DSS-AES128-GCM-SHA256:"
-    "ECDH-ECDSA-AES128-GCM-SHA256:"
-    "DH-DSS-AES256-GCM-SHA384:"
-    "ECDH-ECDSA-AES256-GCM-SHA384:"
-    "DH-DSS-AES128-SHA256:"
-    "ECDH-ECDSA-AES128-SHA256:"
-    "DH-DSS-AES256-SHA256:"
-    "ECDH-ECDSA-AES256-SHA384:"
-    "DH-RSA-AES128-GCM-SHA256:"
-    "ECDH-RSA-AES128-GCM-SHA256:"
-    "DH-RSA-AES256-GCM-SHA384:"
-    "ECDH-RSA-AES256-GCM-SHA384:"
-    "DH-RSA-AES128-SHA256:"
-    "ECDH-RSA-AES128-SHA256:"
-    "DH-RSA-AES256-SHA256:"
-    "ECDH-RSA-AES256-SHA384"};
-
-static const char optional_d1[] = {
-    "ECDHE-RSA-AES128-SHA:"
-    "ECDHE-ECDSA-AES128-SHA:"
-    "ECDHE-RSA-AES256-SHA:"
-    "ECDHE-ECDSA-AES256-SHA:"
-    "DHE-DSS-AES128-SHA:"
-    "DHE-RSA-AES128-SHA:"
-    "DHE-DSS-AES256-SHA:"
-    "DHE-RSA-AES256-SHA:"
-    "DH-DSS-AES128-SHA:"
-    "ECDH-ECDSA-AES128-SHA:"
-    "AES256-SHA:"
-    "DH-DSS-AES256-SHA:"
-    "ECDH-ECDSA-AES256-SHA:"
-    "DH-RSA-AES128-SHA:"
-    "ECDH-RSA-AES128-SHA:"
-    "DH-RSA-AES256-SHA:"
-    "ECDH-RSA-AES256-SHA:"
-    "CAMELLIA256-SHA:"
-    "CAMELLIA128-SHA:"
-    "AES128-GCM-SHA256:"
-    "AES256-GCM-SHA384:"
-    "AES128-SHA256:"
-    "AES256-SHA256:"
-    "AES128-SHA"};
-
-static const char tls_cipher_blocked[] = {
-    "!aNULL:"
-    "!eNULL:"
-    "!EXPORT:"
-    "!LOW:"
-    "!MD5:"
-    "!DES:"
-    "!RC2:"
-    "!RC4:"
-    "!PSK:"
-    "!DES-CBC3-SHA:"
-    "!DHE-DSS-DES-CBC3-SHA:"
-    "!DHE-RSA-DES-CBC3-SHA:"
-    "!ECDH-RSA-DES-CBC3-SHA:"
-    "!ECDH-ECDSA-DES-CBC3-SHA:"
-    "!ECDHE-RSA-DES-CBC3-SHA:"
-    "!ECDHE-ECDSA-DES-CBC3-SHA:"
-    "!DH-RSA-DES-CBC3-SHA:"
-    "!DH-DSS-DES-CBC3-SHA"};
 
 static bool ssl_initialized = false;
 
@@ -362,11 +273,11 @@ static void init_ssl_locks() {
 }
 
 static void set_lock_callback_functions(bool init) {
-  CRYPTO_set_locking_callback(init ? openssl_lock_function : NULL);
-  CRYPTO_set_id_callback(init ? openssl_id_function : NULL);
-  CRYPTO_set_dynlock_create_callback(init ? openssl_dynlock_create : NULL);
-  CRYPTO_set_dynlock_destroy_callback(init ? openssl_dynlock_destroy : NULL);
-  CRYPTO_set_dynlock_lock_callback(init ? openssl_lock : NULL);
+  CRYPTO_set_locking_callback(init ? openssl_lock_function : nullptr);
+  CRYPTO_set_id_callback(init ? openssl_id_function : nullptr);
+  CRYPTO_set_dynlock_create_callback(init ? openssl_dynlock_create : nullptr);
+  CRYPTO_set_dynlock_destroy_callback(init ? openssl_dynlock_destroy : nullptr);
+  CRYPTO_set_dynlock_lock_callback(init ? openssl_lock : nullptr);
 }
 
 static void init_lock_callback_functions() {
@@ -472,8 +383,7 @@ static struct st_VioSSLFd *new_VioSSLFd(
   struct st_VioSSLFd *ssl_fd;
   long ssl_ctx_options =
       SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1;
-  int ret_set_cipherlist = 0;
-  std::string cipher_list;
+  std::string tls12_cipher_list, tls13_cipher_list;
   DBUG_TRACE;
   DBUG_PRINT(
       "enter",
@@ -523,16 +433,20 @@ static struct st_VioSSLFd *new_VioSSLFd(
     Set OpenSSL TLS v1.3 ciphersuites.
     Note that an empty list is permissible.
   */
-  if (nullptr != ciphersuites) {
-    /*
-      Note: if TLSv1.3 is enabled but TLSv1.3 ciphersuite list is empty
-      (that's permissible and mentioned in the documentation),
-      the connection will fail with "no ciphers available" error.
-    */
-    if (0 == SSL_CTX_set_ciphersuites(ssl_fd->ssl_context, ciphersuites)) {
-      *error = SSL_INITERR_CIPHERS;
-      goto error;
-    }
+  if (nullptr != ciphersuites)
+    tls13_cipher_list = ciphersuites;
+  else
+    tls13_cipher_list = default_tls13_ciphers;
+
+  /*
+    Note: if TLSv1.3 is enabled but TLSv1.3 ciphersuite list is empty
+    (that's permissible and mentioned in the documentation),
+    the connection will fail with "no ciphers available" error.
+  */
+  if (0 == SSL_CTX_set_ciphersuites(ssl_fd->ssl_context,
+                                    tls13_cipher_list.c_str())) {
+    *error = SSL_INITERR_CIPHERS;
+    goto error;
   }
 #endif /* HAVE_TLSv13 */
 
@@ -541,27 +455,24 @@ static struct st_VioSSLFd *new_VioSSLFd(
     NOTE: SSL_CTX_set_cipher_list will return 0 if
     none of the provided ciphers could be selected
   */
-  cipher_list += tls_cipher_blocked;
-  cipher_list += ":";
+  tls12_cipher_list += blocked_tls12_ciphers;
+  tls12_cipher_list += ":";
 
   /*
     If ciphers are specified explicitly by caller, use them.
     Otherwise, fallback to the default list.
-
-    In either case, we make sure we stay within the valid bounds.
-    Note that we have already consumed tls_cipher_blocked
-    worth of space.
   */
   if (cipher == nullptr) {
-    std::stringstream sstream;
-    sstream << mandatory_p1 << ":" << optional_a1 << ":" << optional_a2 << ":"
-            << optional_d1;
-    cipher_list.append(sstream.str());
+    tls12_cipher_list.append(default_tls12_ciphers);
+    if (is_client) {
+      tls12_cipher_list.append(":");
+      tls12_cipher_list.append(additional_client_ciphers);
+    }
   } else
-    cipher_list.append(cipher);
+    tls12_cipher_list.append(cipher);
 
-  if (ret_set_cipherlist ==
-      SSL_CTX_set_cipher_list(ssl_fd->ssl_context, cipher_list.c_str())) {
+  if (0 ==
+      SSL_CTX_set_cipher_list(ssl_fd->ssl_context, tls12_cipher_list.c_str())) {
     *error = SSL_INITERR_CIPHERS;
     goto error;
   }
@@ -610,7 +521,7 @@ static struct st_VioSSLFd *new_VioSSLFd(
 
   /* DH stuff */
   if (set_dh(ssl_fd->ssl_context)) {
-    printf("%s\n", ERR_error_string(ERR_get_error(), NULL));
+    printf("%s\n", ERR_error_string(ERR_get_error(), nullptr));
     *error = SSL_INITERR_DHFAIL;
     goto error;
   }
@@ -670,7 +581,7 @@ struct st_VioSSLFd *new_VioSSLConnectorFd(
 
   /*
     Turn off verification of servers certificate if both
-    ca_file and ca_path is set to NULL
+    ca_file and ca_path is set to nullptr
   */
   if (ca_file == nullptr && ca_path == nullptr) verify = SSL_VERIFY_NONE;
 

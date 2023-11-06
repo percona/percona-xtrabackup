@@ -449,11 +449,11 @@
 #include "mysql/strings/m_ctype.h"
 #include "mysqld_error.h"
 #include "mysys_err.h"
+#include "sql-common/my_decimal.h"
 #include "sql/field.h"
 #include "sql/item.h"
 #include "sql/item_func.h"  // Item_func_set_user_var
-#include "sql/my_decimal.h"
-#include "sql/mysqld.h"  // global_system_variables
+#include "sql/mysqld.h"     // global_system_variables
 #include "sql/session_tracker.h"
 #include "sql/sql_class.h"  // THD
 #include "sql/sql_error.h"
@@ -2781,8 +2781,9 @@ static bool parse_query_bind_params(
       if (!has_new_types && i >= stmt_data->m_param_count) return true;
 
       const enum enum_field_types type =
-          has_new_types ? params[i].type
-                        : stmt_data->m_param_array[i]->data_type_source();
+          (has_new_types || i >= stmt_data->m_param_count)
+              ? params[i].type
+              : stmt_data->m_param_array[i]->data_type_source();
       if (type == MYSQL_TYPE_BOOL)
         return true;  // unsupported in this version of the Server
       if (stmt_data && i < stmt_data->m_param_count &&

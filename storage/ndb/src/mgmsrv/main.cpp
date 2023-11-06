@@ -36,6 +36,7 @@
 #include <NdbConfig.h>
 #include <NdbSleep.h>
 #include <portlib/NdbDir.hpp>
+#include "portlib/ssl_applink.h"
 #include <ndb_version.h>
 #include <mgmapi_config_parameters.h>
 #include <NdbAutoPtr.hpp>
@@ -44,7 +45,6 @@
 #include <EventLogger.hpp>
 #include <LogBuffer.hpp>
 #include <OutputStream.hpp>
-
 
 #if defined VM_TRACE || defined ERROR_INSERT
 extern int g_errorInsert;
@@ -113,6 +113,8 @@ static struct my_option my_long_options[] =
   NdbStdOpt::ndb_nodeid,
   NdbStdOpt::mgmd_host,
   NdbStdOpt::connectstring,
+  NdbStdOpt::tls_search_path,
+  NdbStdOpt::mgm_tls,
   NDB_STD_OPT_DEBUG
   { "config-file", 'f', "Specify cluster configuration file",
     &opts.config_filename, nullptr, nullptr, GET_STR, REQUIRED_ARG,
@@ -299,7 +301,8 @@ static void mgmd_run()
       con_str.appfmt("host=%s %d", opts.bind_address, port);
     else
       con_str.appfmt("localhost:%d", port);
-    Ndb_mgmclient com(con_str.c_str(), "ndb_mgm> ", 1, 5);
+    Ndb_mgmclient com(con_str.c_str(), "ndb_mgm> ", 1, 5, opt_tls_search_path,
+                      CLIENT_TLS_RELAXED);
     while(!g_StopServer){
       if (!read_and_execute(&com, "ndb_mgm> ", 1))
         g_StopServer = true;
@@ -456,6 +459,9 @@ static int mgmd_main(int argc, char** argv)
       opts.bind_address = strdup(opts.bind_address);
     }
   }
+
+  opts.tls_search_path = opt_tls_search_path;
+  opts.mgm_tls = opt_mgm_tls;
 
   /* Setup use of event logger */
   g_eventLogger->setCategory(opt_logname);

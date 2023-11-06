@@ -58,7 +58,6 @@
 #include "mysql_time.h"
 #include "mysqld_error.h"
 #include "nulls.h"
-#include "password.h" /* my_make_scrambled_password */
 #include "scope_guard.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"
@@ -2569,36 +2568,46 @@ end:
 /**
   This function checks if a user which is referenced as a definer account
   in objects like view, trigger, event, procedure or function has SET_USER_ID
-  privilege or not and report error or warning based on that.
+  privilege (or the replacement ALLOW_NONEXISTENT_DEFINER) or not and
+  report error or warning based on that.
 
   @param thd               The current thread
   @param user_name         user name which is referenced as a definer account
   @param object_type       Can be a view, trigger, event, procedure or function
 
-  @retval false      user_name has SET_USER_ID privilege
-  @retval true       user_name does not have SET_USER_ID privilege
+  @retval false      user_name is allowed as an orphaned definer
+  @retval true       user_name cannot be used as an orphaned definer
 */
-bool check_set_user_id_priv(THD *thd, const LEX_USER *user_name,
-                            const std::string &object_type) {
+static bool stop_if_orphaned_definer(THD *thd, const LEX_USER *user_name,
+                                     const std::string &object_type) {
   String wrong_user;
-  std::string operation;
-  switch (thd->lex->sql_command) {
-    case SQLCOM_CREATE_USER:
-      operation = "CREATE USER";
-      break;
-    case SQLCOM_DROP_USER:
-      operation = "DROP USER";
-      break;
-    case SQLCOM_RENAME_USER:
-      operation = "RENAME USER";
-      break;
-    default:
-      assert(0);
-  }
   log_user(thd, &wrong_user, const_cast<LEX_USER *>(user_name), false);
   if (!(thd->security_context()
             ->has_global_grant(STRING_WITH_LEN("SET_USER_ID"))
+            .first ||
+        thd->security_context()
+            ->has_global_grant(STRING_WITH_LEN("ALLOW_NONEXISTENT_DEFINER"))
             .first)) {
+    std::string operation;
+    switch (thd->lex->sql_command) {
+      case SQLCOM_CREATE_USER:
+        operation = "CREATE USER";
+        break;
+      case SQLCOM_DROP_USER:
+        operation = "DROP USER";
+        break;
+      case SQLCOM_RENAME_USER:
+        operation = "RENAME USER";
+        break;
+      case SQLCOM_CREATE_ROLE:
+        operation = "CREATE ROLE";
+        break;
+      case SQLCOM_DROP_ROLE:
+        operation = "DROP ROLE";
+        break;
+      default:
+        assert(0);
+    }
     my_error(ER_CANNOT_USER_REFERENCED_AS_DEFINER, MYF(0), operation.c_str(),
              wrong_user.c_ptr_safe(), object_type.c_str());
     return true;
@@ -2647,25 +2656,25 @@ static bool check_orphaned_definers(THD *thd, List<LEX_USER> &list) {
 
     // Check events.
     if (thd->dd_client()->is_user_definer<dd::Event>(*user_name, &is_definer) ||
-        (is_definer && check_set_user_id_priv(thd, user_name, "an event")))
+        (is_definer && stop_if_orphaned_definer(thd, user_name, "an event")))
       return true;
 
     // Check views.
     if (thd->dd_client()->is_user_definer<dd::View>(*user_name, &is_definer) ||
-        (is_definer && check_set_user_id_priv(thd, user_name, "a view")))
+        (is_definer && stop_if_orphaned_definer(thd, user_name, "a view")))
       return true;
 
     // Check stored routines.
     if (thd->dd_client()->is_user_definer<dd::Routine>(*user_name,
                                                        &is_definer) ||
         (is_definer &&
-         check_set_user_id_priv(thd, user_name, "a stored routine")))
+         stop_if_orphaned_definer(thd, user_name, "a stored routine")))
       return true;
 
     // Check triggers.
     if (thd->dd_client()->is_user_definer<dd::Trigger>(*user_name,
                                                        &is_definer) ||
-        (is_definer && check_set_user_id_priv(thd, user_name, "a trigger")))
+        (is_definer && stop_if_orphaned_definer(thd, user_name, "a trigger")))
       return true;
   }
 
@@ -2681,7 +2690,6 @@ static bool check_orphaned_definers(THD *thd, List<LEX_USER> &list) {
     mysql_create_user()
     thd                         The current thread.
     list                        The users to create.
-
   RETURN
     false       OK.
     true        Error.
@@ -3337,7 +3345,7 @@ bool mysql_alter_user(THD *thd, List<LEX_USER> &list, bool if_exists) {
   std::set<LEX_USER *> reset_users;
   std::set<LEX_USER *> mfa_users;
   Userhostpassword_list generated_passwords;
-  std::vector<std::string> server_challenge;
+  server_challenge_info_vector server_challenge;
   DBUG_TRACE;
 
   /*
@@ -3576,7 +3584,7 @@ bool mysql_alter_user(THD *thd, List<LEX_USER> &list, bool if_exists) {
                                  : pointer_cast<const char *>("")),
               (user->host.length ? user->host.str
                                  : pointer_cast<const char *>("")));
-          acl_user->m_mfa->get_server_challenge(server_challenge);
+          acl_user->m_mfa->get_server_challenge_info(server_challenge);
         }
       }
     }
@@ -3595,15 +3603,20 @@ bool mysql_alter_user(THD *thd, List<LEX_USER> &list, bool if_exists) {
         mem_root_deque<Item *> field_list(thd->mem_root);
         field_list.push_back(
             new Item_string("Server_challenge", 16, system_charset_info));
+        field_list.push_back(
+            new Item_string("Client_plugin", 13, system_charset_info));
         Query_result_send output;
         if (output.send_result_set_metadata(thd, field_list,
                                             Protocol::SEND_NUM_ROWS))
           result = 1;
         mem_root_deque<Item *> item_list(thd->mem_root);
         for (auto sc : server_challenge) {
-          Item *item =
-              new Item_string(sc.c_str(), sc.length(), system_charset_info);
-          item_list.push_back(item);
+          Item *item_challenge = new Item_string(
+              sc.first.c_str(), sc.first.length(), system_charset_info);
+          Item *item_plugin = new Item_string(
+              sc.second.c_str(), sc.second.length(), system_charset_info);
+          item_list.push_back(item_challenge);
+          item_list.push_back(item_plugin);
           if (output.send_data(thd, item_list)) result = 1;
           item_list.clear();
         }

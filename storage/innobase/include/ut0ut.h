@@ -52,7 +52,13 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <iterator>
 #include <ostream>
 #include <sstream>
+#include <thread>
 #include <type_traits>
+
+#ifdef UNIV_DEBUG
+#include <limits>
+#include <random>
+#endif /* UNIV_DEBUG */
 
 #include "db0err.h"
 
@@ -393,7 +399,23 @@ class Throttler {
   one. */
   static constexpr uint64_t THROTTLE_DELAY_SEC = 10;
 };
+
 }  // namespace ib
+
+namespace ut {
+
+template <typename T, typename U>
+constexpr bool can_type_fit_value(const U value) {
+  return ((value > U(0)) == (T(value) > T(0))) && U(T(value)) == value;
+}
+template <typename T, typename U>
+T clamp(U x) {
+  return can_type_fit_value<T>(x) ? T(x)
+                                  : x < 0 ? std::numeric_limits<T>::min()
+                                          : std::numeric_limits<T>::max();
+}
+
+}  // namespace ut
 
 #include "ut0ut.ic"
 

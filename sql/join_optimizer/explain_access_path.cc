@@ -219,58 +219,66 @@ string HashJoinTypeToString(RelationalExpression::Type join_type,
   }
 }
 
-static bool GetAccessPathsFromItem(Item *item_arg, const char *source_text,
-                                   vector<ExplainChild> *children) {
-  return WalkItem(
-      item_arg, enum_walk::POSTFIX, [children, source_text](Item *item) {
-        if (item->type() != Item::SUBSELECT_ITEM) {
-          return false;
-        }
+/**
+   For each Item_subselect descendant of 'item_arg', add the corresponding
+   root AccessPath object to 'children'.
+   @param[in] item_arg The root of the Item tree to examine.
+   @param[in] source_text A context description for the objects we add to
+              'children'.
+   @param[in,out] children
+   @returns 'true' if there was an error.
+ */
+static bool AddSubqueryPaths(const Item *item_arg, const char *source_text,
+                             vector<ExplainChild> *children) {
+  const auto add_subqueries = [children, source_text](const Item *item) {
+    if (item->type() != Item::SUBSELECT_ITEM) {
+      return false;
+    }
 
-        Item_subselect *subquery = down_cast<Item_subselect *>(item);
-        Query_expression *qe = subquery->query_expr();
-        Query_block *query_block = qe->first_query_block();
-        char description[256];
-        if (query_block->is_dependent()) {
-          snprintf(description, sizeof(description),
-                   "Select #%d (subquery in %s; dependent)",
-                   query_block->select_number, source_text);
-        } else if (!query_block->is_cacheable()) {
-          snprintf(description, sizeof(description),
-                   "Select #%d (subquery in %s; uncacheable)",
-                   query_block->select_number, source_text);
-        } else {
-          snprintf(description, sizeof(description),
-                   "Select #%d (subquery in %s; run only once)",
-                   query_block->select_number, source_text);
-        }
-        if (query_block->join->needs_finalize) {
-          qe->finalize(current_thd);
-        }
-        AccessPath *path;
-        if (qe->root_access_path() != nullptr) {
-          path = qe->root_access_path();
-        } else {
-          path = qe->item->root_access_path();
-        }
-        Json_object *child_obj = new (std::nothrow) Json_object();
-        if (child_obj == nullptr) return true;
-        // Populate the subquery-specific json fields.
-        bool error = false;
-        error |= AddMemberToObject<Json_boolean>(child_obj, "subquery", true);
-        error |= AddMemberToObject<Json_string>(child_obj, "subquery_location",
-                                                source_text);
-        if (query_block->is_dependent())
-          error |=
-              AddMemberToObject<Json_boolean>(child_obj, "dependent", true);
-        if (query_block->is_cacheable())
-          error |=
-              AddMemberToObject<Json_boolean>(child_obj, "cacheable", true);
+    const Item_subselect *subquery = down_cast<const Item_subselect *>(item);
+    Query_expression *qe = subquery->query_expr();
+    Query_block *query_block = qe->first_query_block();
+    char description[256];
+    if (query_block->is_dependent()) {
+      snprintf(description, sizeof(description),
+               "Select #%d (subquery in %s; dependent)",
+               query_block->select_number, source_text);
+    } else if (!query_block->is_cacheable()) {
+      snprintf(description, sizeof(description),
+               "Select #%d (subquery in %s; uncacheable)",
+               query_block->select_number, source_text);
+    } else {
+      snprintf(description, sizeof(description),
+               "Select #%d (subquery in %s; run only once)",
+               query_block->select_number, source_text);
+    }
+    if (query_block->join->needs_finalize) {
+      qe->finalize(current_thd);
+    }
+    AccessPath *path;
+    if (qe->root_access_path() != nullptr) {
+      path = qe->root_access_path();
+    } else {
+      path = qe->item->root_access_path();
+    }
+    Json_object *child_obj = new (std::nothrow) Json_object();
+    if (child_obj == nullptr) return true;
+    // Populate the subquery-specific json fields.
+    bool error = false;
+    error |= AddMemberToObject<Json_boolean>(child_obj, "subquery", true);
+    error |= AddMemberToObject<Json_string>(child_obj, "subquery_location",
+                                            source_text);
+    if (query_block->is_dependent())
+      error |= AddMemberToObject<Json_boolean>(child_obj, "dependent", true);
+    if (query_block->is_cacheable())
+      error |= AddMemberToObject<Json_boolean>(child_obj, "cacheable", true);
 
-        children->push_back({path, description, query_block->join, child_obj});
+    children->push_back({path, description, query_block->join, child_obj});
 
-        return error != 0;
-      });
+    return error != 0;
+  };
+
+  return WalkItem(item_arg, enum_walk::POSTFIX, add_subqueries);
 }
 
 static bool GetAccessPathsFromSelectList(JOIN *join,
@@ -281,7 +289,7 @@ static bool GetAccessPathsFromSelectList(JOIN *join,
 
   // Look for any Items in the projection list itself.
   for (Item *item : *join->get_current_fields()) {
-    if (GetAccessPathsFromItem(item, "projection", children)) return true;
+    if (AddSubqueryPaths(item, "projection", children)) return true;
   }
 
   // Look for any Items that were materialized into fields during execution.
@@ -290,8 +298,7 @@ static bool GetAccessPathsFromSelectList(JOIN *join,
     QEP_TAB *qep_tab = &join->qep_tab[table_idx];
     if (qep_tab != nullptr && qep_tab->tmp_table_param != nullptr) {
       for (Func_ptr &func : *qep_tab->tmp_table_param->items_to_copy) {
-        if (GetAccessPathsFromItem(func.func(), "projection", children))
-          return true;
+        if (AddSubqueryPaths(func.func(), "projection", children)) return true;
       }
     }
   }
@@ -334,7 +341,7 @@ static std::unique_ptr<Json_object> ExplainMaterializeAccessPath(
     }
   }();
 
-  const bool is_set_operation = param->query_blocks.size() > 1;
+  const bool is_set_operation = param->m_operands.size() > 1;
   string str;
   const bool doing_dedup = MaterializeIsDoingDeduplication(param->table);
   if (param->cte != nullptr) {
@@ -452,11 +459,10 @@ static std::unique_ptr<Json_object> ExplainMaterializeAccessPath(
   // We don't list the table iterator as an explicit child; we mark it in
   // our description instead. (Anything else would look confusingly much
   // like a join.)
-  for (const MaterializePathParameters::QueryBlock &query_block :
-       param->query_blocks) {
+  for (const MaterializePathParameters::Operand &operand : param->m_operands) {
     string this_heading = heading;
 
-    if (query_block.disable_deduplication_by_hash_field) {
+    if (operand.disable_deduplication_by_hash_field) {
       if (this_heading.empty()) {
         this_heading = "Disable deduplication";
       } else {
@@ -465,8 +471,8 @@ static std::unique_ptr<Json_object> ExplainMaterializeAccessPath(
     }
     if (!param->table->is_union_or_table() &&
         (param->table->is_except() && param->table->is_distinct()) &&
-        query_block.m_operand_idx > 0 &&
-        (query_block.m_operand_idx < query_block.m_first_distinct)) {
+        operand.m_operand_idx > 0 &&
+        (operand.m_operand_idx < operand.m_first_distinct)) {
       if (this_heading.empty()) {
         this_heading = "Disable deduplication";
       } else {
@@ -474,7 +480,7 @@ static std::unique_ptr<Json_object> ExplainMaterializeAccessPath(
       }
     }
 
-    if (query_block.is_recursive_reference) {
+    if (operand.is_recursive_reference) {
       if (this_heading.empty()) {
         this_heading = "Repeat until convergence";
       } else {
@@ -482,8 +488,7 @@ static std::unique_ptr<Json_object> ExplainMaterializeAccessPath(
       }
     }
 
-    children->push_back(
-        {query_block.subquery_path, this_heading, query_block.join});
+    children->push_back({operand.subquery_path, this_heading, operand.join});
   }
 
   return (error ? nullptr : std::move(ret_obj));
@@ -672,7 +677,7 @@ static bool AddChildrenFromPushedCondition(const TABLE &table,
   Item *pushed_cond = const_cast<Item *>(table.file->pushed_cond);
 
   if (pushed_cond != nullptr) {
-    if (GetAccessPathsFromItem(pushed_cond, "pushed condition", children))
+    if (AddSubqueryPaths(pushed_cond, "pushed condition", children))
       return true;
   }
   return false;
@@ -1297,6 +1302,16 @@ static std::unique_ptr<Json_object> SetObjectMembers(
       error |= AddMemberToObject<Json_string>(obj, "join_algorithm", "hash");
       children->push_back({path->hash_join().outer});
       children->push_back({path->hash_join().inner, "Hash"});
+
+      const RelationalExpression *join_predicate =
+          path->hash_join().join_predicate->expr;
+      for (Item_eq_base *cond : join_predicate->equijoin_conditions) {
+        AddSubqueryPaths(cond, "condition", children);
+      }
+      for (Item *cond : join_predicate->join_conditions) {
+        AddSubqueryPaths(cond, "extra conditions", children);
+      }
+
       break;
     }
     case AccessPath::FILTER: {
@@ -1305,7 +1320,7 @@ static std::unique_ptr<Json_object> SetObjectMembers(
       error |= AddMemberToObject<Json_string>(obj, "condition", filter);
       description = "Filter: " + filter;
       children->push_back({path->filter().child});
-      GetAccessPathsFromItem(path->filter().condition, "condition", children);
+      AddSubqueryPaths(path->filter().condition, "condition", children);
       break;
     }
     case AccessPath::SORT: {

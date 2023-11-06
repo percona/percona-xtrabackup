@@ -1,7 +1,7 @@
 set binlog_format='row';
 Warnings:
 Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 drop database if exists my_replicated_db;
 call mtr.add_suppression("Unsafe statement written to the binary log using statement format since BINLOG_FORMAT = STATEMENT");
 create database my_replicated_db;
@@ -22,6 +22,8 @@ insert into my_non_tx_table(a)
 select thread_id from performance_schema.threads;
 insert into my_non_tx_table(a)
 select id from information_schema.processlist;
+Warnings:
+Warning	1287	'INFORMATION_SCHEMA.PROCESSLIST' is deprecated and will be removed in a future release. Please use performance_schema.processlist instead
 insert into my_non_tx_table(a)
 select thread_id from mysql.general_log;
 insert into my_non_tx_table(a)

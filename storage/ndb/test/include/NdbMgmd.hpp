@@ -104,6 +104,10 @@ public:
     return m_handle;
   }
 
+  void convert_to_transporter(NdbSocket * s) {
+    ndb_mgm_convert_to_transporter(& m_handle, s);
+  }
+
   ndb_socket_t socket(void) const {
     return _ndb_mgm_get_socket(m_handle);
   }
@@ -189,6 +193,11 @@ public:
     }
 
     return true;
+  }
+
+  int start_tls(struct ssl_ctx_st * ctx) {
+    ndb_mgm_set_ssl_ctx(m_handle, ctx);
+    return ndb_mgm_start_tls(m_handle);
   }
 
   bool is_connected(void) {

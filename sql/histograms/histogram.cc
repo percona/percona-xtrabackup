@@ -53,6 +53,7 @@
 #include "mysqld_error.h"
 #include "scope_guard.h"          // create_scope_guard
 #include "sql-common/json_dom.h"  // Json_*
+#include "sql-common/my_decimal.h"
 #include "sql/auth/auth_common.h"
 #include "sql/create_field.h"
 #include "sql/dd/cache/dictionary_client.h"
@@ -70,8 +71,7 @@
 #include "sql/item.h"
 #include "sql/item_json_func.h"  // parse_json
 #include "sql/key.h"
-#include "sql/mdl.h"  // MDL_request
-#include "sql/my_decimal.h"
+#include "sql/mdl.h"             // MDL_request
 #include "sql/psi_memory_key.h"  // key_memory_histograms
 #include "sql/sql_base.h"        // open_and_lock_tables,
 #include "sql/sql_bitmap.h"
@@ -1347,7 +1347,7 @@ bool update_histogram(THD *thd, Table_ref *table, const columns_set &columns,
       Histogram_error_handler error_handler(thd);
       JsonParseDefaultErrorHandler parse_handler("UPDATE HISTOGRAM", 0);
       if (parse_json(parse_input, &dom, true, parse_handler,
-                     JsonDocumentDefaultDepthHandler) ||
+                     JsonDepthErrorHandler) ||
           error_handler.has_error()) {
         results.emplace("", Message::JSON_FORMAT_ERROR);
         return true;
@@ -1964,12 +1964,13 @@ bool Histogram::get_raw_selectivity(Item **items, size_t item_count,
       assert(item_count == 2);
       /*
         Verify that one side of the predicate is a column/field, and that the
-        other side is a constant value.
+        other side is a constant value (except for EQUALS_TO and NOT_EQUALS_TO).
 
-        Make sure that we have the constant item as the right side argument of
+        Make sure that we have the field item as the left side argument of
         the predicate internally.
       */
-      if (items[0]->const_item() && items[1]->type() == Item::FIELD_ITEM) {
+      if (items[0]->type() != Item::FIELD_ITEM &&
+          items[1]->type() == Item::FIELD_ITEM) {
         // Flip the operators as well as the operator itself.
         switch (op) {
           case enum_operator::GREATER_THAN:
@@ -1992,7 +1993,8 @@ bool Histogram::get_raw_selectivity(Item **items, size_t item_count,
         items_flipped[1] = items[0];
         return get_selectivity(items_flipped, item_count, op, selectivity);
       } else if (items[0]->type() != Item::FIELD_ITEM ||
-                 !items[1]->const_item()) {
+                 (!items[1]->const_item() && op != enum_operator::EQUALS_TO &&
+                  op != enum_operator::NOT_EQUALS_TO)) {
         return true;
       }
       break;
@@ -2036,10 +2038,26 @@ bool Histogram::get_raw_selectivity(Item **items, size_t item_count,
 
   switch (op) {
     case enum_operator::LESS_THAN:
-    case enum_operator::EQUALS_TO:
     case enum_operator::GREATER_THAN: {
       return get_selectivity_dispatcher(items[1], op, typelib, selectivity);
     }
+    case enum_operator::EQUALS_TO:
+      if (items[1]->const_item()) {
+        return get_selectivity_dispatcher(items[1], op, typelib, selectivity);
+      } else if (empty(*this)) {
+        return true;
+      } else {
+        // We do not know the value of items[1], but we assume that it
+        // is uniformely distributed over the distinct values of
+        // items[0] (i.e. the field for which '*this' is the
+        // histogram).
+        *selectivity =
+            get_num_distinct_values() == 0
+                ? 0.0
+                : get_non_null_values_fraction() / get_num_distinct_values();
+
+        return false;
+      }
     case enum_operator::LESS_THAN_OR_EQUAL: {
       double greater_than_selectivity;
       if (get_selectivity_dispatcher(items[1], enum_operator::GREATER_THAN,
@@ -2060,16 +2078,33 @@ bool Histogram::get_raw_selectivity(Item **items, size_t item_count,
           std::max(get_non_null_values_fraction() - less_than_selectivity, 0.0);
       return false;
     }
-    case enum_operator::NOT_EQUALS_TO: {
-      double equals_to_selectivity;
-      if (get_selectivity_dispatcher(items[1], enum_operator::EQUALS_TO,
-                                     typelib, &equals_to_selectivity))
-        return true;
+    case enum_operator::NOT_EQUALS_TO:
+      if (items[1]->const_item()) {
+        double equals_to_selectivity;
+        if (get_selectivity_dispatcher(items[1], enum_operator::EQUALS_TO,
+                                       typelib, &equals_to_selectivity))
+          return true;
 
-      *selectivity =
-          std::max(get_non_null_values_fraction() - equals_to_selectivity, 0.0);
-      return false;
-    }
+        *selectivity = std::max(
+            get_non_null_values_fraction() - equals_to_selectivity, 0.0);
+        return false;
+      } else if (empty(*this)) {
+        return true;
+      } else {
+        const size_t distinct_values = get_num_distinct_values();
+        if (distinct_values == 0) {
+          *selectivity = 0.0;  // Field is NULL for all rows.
+        } else {
+          // We do not know the value of items[1], but we assume that it
+          // is uniformely distributed over the distinct values of
+          // items[0] (i.e. the field for which '*this' is the
+          // histogram).
+          *selectivity = get_non_null_values_fraction() *
+                         (distinct_values - 1.0) / distinct_values;
+        }
+        return false;
+      }
+
     case enum_operator::BETWEEN: {
       double less_than_selectivity;
       double greater_than_selectivity;

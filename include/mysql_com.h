@@ -221,16 +221,21 @@
 #define REFRESH_STATUS 16  /**< Flush status variables, FLUSH STATUS */
 #define REFRESH_THREADS 32 /**< Flush thread cache */
 #define REFRESH_REPLICA                         \
-  64 /**< Reset master info and restart replica \
+  64 /**< Reset source info and restart replica \
         thread, RESET REPLICA */
 #define REFRESH_SLAVE                                        \
-  REFRESH_REPLICA /**< Reset master info and restart replica \
+  REFRESH_REPLICA /**< Reset source info and restart replica \
         thread, RESET REPLICA. This is deprecated,           \
         use REFRESH_REPLICA instead. */
 
-#define REFRESH_MASTER                                                 \
-  128                            /**< Remove all bin logs in the index \
-                                    and truncate the index, RESET MASTER */
+#define REFRESH_SOURCE                       \
+  128 /**< Remove all bin logs in the index  \
+         and truncate the index. Also resets \
+         GTID information. Command:          \
+         RESET BINARY LOGS AND GTIDS */
+#define REFRESH_MASTER \
+  REFRESH_SOURCE /**< This is deprecated, use REFRESH_SOURCE instead. */
+
 #define REFRESH_ERROR_LOG 256    /**< Rotate only the error log */
 #define REFRESH_ENGINE_LOG 512   /**< Flush all storage engine logs */
 #define REFRESH_BINARY_LOG 1024  /**< Flush the binary log */
@@ -1124,31 +1129,7 @@ struct rand_struct {
 
 /* Prototypes to password functions */
 
-/*
-  These functions are used for authentication by client and server and
-  implemented in sql/password.c
-*/
-
-void randominit(struct rand_struct *, unsigned long seed1, unsigned long seed2);
-double my_rnd(struct rand_struct *);
-void create_random_string(char *to, unsigned int length,
-                          struct rand_struct *rand_st);
-
-void hash_password(unsigned long *to, const char *password,
-                   unsigned int password_len);
-void make_scrambled_password_323(char *to, const char *password);
-void scramble_323(char *to, const char *message, const char *password);
-bool check_scramble_323(const unsigned char *reply, const char *message,
-                        unsigned long *salt);
-void get_salt_from_password_323(unsigned long *res, const char *password);
-void make_password_from_salt_323(char *to, const unsigned long *salt);
-
-void make_scrambled_password(char *to, const char *password);
-void scramble(char *to, const char *message, const char *password);
-bool check_scramble(const unsigned char *reply, const char *message,
-                    const unsigned char *hash_stage2);
-void get_salt_from_password(unsigned char *res, const char *password);
-void make_password_from_salt(char *to, const unsigned char *hash_stage2);
+/* used in both client and server */
 char *octet2hex(char *to, const char *str, unsigned int len);
 
 /* end of password.c */

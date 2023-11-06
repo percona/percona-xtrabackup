@@ -170,6 +170,15 @@
 extern "C" {
 #endif
 
+/*
+ * ssl_ctx_ct is explicitly declared to allow API also be used when user
+ * application do not explicitly use OpenSSL and do not have header files like
+ * openssl/ossl_typ.h or openssl/types.h installed.
+ *
+ * SSL_CTX is an alias for struct ssl_ctx_st in OpenSSL.
+ */
+struct ssl_ctx_st;
+
   /**
    * The NdbMgmHandle.
    */
@@ -323,8 +332,6 @@ extern "C" {
        INET6_ADDRSTRLEN
 #endif
     ];
-
-    void init();
   };
   
   /**
@@ -793,7 +800,7 @@ extern "C" {
    * @return Node state of cs at position i
    */
   struct ndb_mgm_node_state2 *
-  ndb_mgm_get_node_status(ndb_mgm_cluster_state2 *cs, int i);
+  ndb_mgm_get_node_status(struct ndb_mgm_cluster_state2 *cs, int i);
 
   /**
    * Get the number of nodes in a cluster state
@@ -802,7 +809,7 @@ extern "C" {
    * @return Number of nodes in the cluster state
    */
   int
-  ndb_mgm_get_status_node_count(ndb_mgm_cluster_state2 *cs);
+  ndb_mgm_get_status_node_count(struct ndb_mgm_cluster_state2 *cs);
 
   /**
    * Dump state
@@ -1572,6 +1579,124 @@ extern "C" {
   struct ndb_mgm_events*
   ndb_mgm_dump_events(NdbMgmHandle handle, enum Ndb_logevent_type type,
                       int no_of_nodes, const int * node_list);
+
+  /** @} *********************************************************************/
+  /**
+   * @name Functions: Transport Layer Security (TLS)
+   * @{
+   */
+
+  /**
+   * Set an SSL CTX for a handle.
+   *
+   * @param handle          Management handle
+   * @param ctx             SSL_ctx to be used for TLS and HTTPS connections
+   *
+   * @return                0 on success, -1 if ctx has already been set
+   *
+   */
+  int ndb_mgm_set_ssl_ctx(NdbMgmHandle handle, struct ssl_ctx_st *ctx);
+
+   /**
+   * Start TLS. Upgrade an open, unencrypted connection to a secure one.
+   *
+   * @param handle          Management handle
+   *
+   * @return                0 on success.
+   */
+  int ndb_mgm_start_tls(NdbMgmHandle handle);
+
+  /**
+   * Connects to a management server. This function wraps a call to
+   * ndb_mgm_connect(), followed by a call to ndb_mgm_start_tls().
+   *
+   * In order to attempt TLS, the user must first have called
+   * ndb_mgm_set_ssl_ctx().
+   *
+   * If tls_req_level is CLIENT_TLS_RELAXED, TLS authentication failures still
+   * result in errors, but a missing certificate or server refusal will result
+   * in a succesful cleartext connection.
+   *
+   * If tls_req_level is CLIENT_TLS_STRICT, then any failure to establish TLS
+   * will be treated as an error, and the connection will be closed.
+   *
+   * @param   handle        Management handle.
+   * @param   no_retries    Number of retries to connect
+   *                        (0 means connect once).
+   * @param   retry_delay_in_seconds
+   *                        How long to wait until retry is performed.
+   * @param   verbose       Make printout regarding connect retries.
+   * @param   tls_req_level TLS requirement level
+   *
+   * @return                0 on success, -1 on failure.
+   */
+  int ndb_mgm_connect_tls(NdbMgmHandle handle, int no_retries,
+                          int retry_delay_in_seconds, int verbose,
+                          int tls_req_level);
+
+  /**
+   * Check whether a connected handle is using TLS
+   *
+   * @param   handle        Management handle.
+   *
+   * @return                0  if handle is not using TLS.
+   *                        12 if handle is using TLS version 1.2
+   *                        13 if handle is using TLS version 1.3
+   */
+  int ndb_mgm_has_tls(NdbMgmHandle);
+
+  /**
+   * Struct ndb\_mgm\_cert\_table is a linked structure describing a
+   * TLS client session.
+   */
+  struct ndb_mgm_cert_table {
+    Uint64 session_id;
+    char * peer_address;
+    char * cert_serial;
+    char * cert_name;
+    char * cert_expires;
+    struct ndb_mgm_cert_table * next;
+  };
+
+  /**
+   * Query TLS certificates of connected MGM clients
+   *
+   * @param   handle        Management handle.
+   * @param   list          Address of pointer to ndb_mgm_cert_table (out)
+   *
+   * @return                The total number of linked decriptions, if positive.
+   *                        If zero, success, but no TLS connections to report.
+   *                        -1 on error.
+   *
+   * On return, list will be populated with a pointer to a table. The table
+   * should be freed after use by calling ndb\_mgm\_cert\_table\_free().
+   */
+  int ndb_mgm_list_certs(NdbMgmHandle, struct ndb_mgm_cert_table ** list);
+
+  /**
+   * Free a linked list of certificate descriptions.
+   */
+  void ndb_mgm_cert_table_free(struct ndb_mgm_cert_table ** list);
+
+  /**
+   * Struct ndb\_mgm\_tls\_stats stores TLS-related statistics from the server.
+   */
+  struct ndb_mgm_tls_stats {
+    Uint32 accepted;  // total client connections accepted
+    Uint32 upgraded;  // client connections upgraded to TLS
+    Uint32 current;   // total current open client sessions
+    Uint32 tls;       // current open client sessions using TLS
+    Uint32 authfail;  // total authorization failures
+  };
+
+  /**
+   * Query server TLS statistics
+   * @param   handle        Management handle
+   * @param   result        Pointer to structure that will hold result data
+   *
+   * @return  0 on success, -1 on error
+   */
+   int ndb_mgm_get_tls_stats(NdbMgmHandle handle, struct ndb_mgm_tls_stats * result);
 
 #ifdef __cplusplus
 }

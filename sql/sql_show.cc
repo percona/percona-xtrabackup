@@ -550,12 +550,12 @@ bool Sql_cmd_show_grants::execute_inner(THD *thd) {
                            have_using_clause);
 }
 
-bool Sql_cmd_show_master_status::check_privileges(THD *thd) {
+bool Sql_cmd_show_binary_log_status::check_privileges(THD *thd) {
   return check_global_access(thd, SUPER_ACL | REPL_CLIENT_ACL);
 }
 
-bool Sql_cmd_show_master_status::execute_inner(THD *thd) {
-  return show_master_status(thd);
+bool Sql_cmd_show_binary_log_status::execute_inner(THD *thd) {
+  return show_binary_log_status(thd);
 }
 
 bool Sql_cmd_show_profiles::execute_inner(THD *thd [[maybe_unused]]) {
@@ -1268,19 +1268,14 @@ bool mysqld_show_create_db(THD *thd, char *dbname,
   strcpy(orig_dbname, dbname);
   if (lower_case_table_names && dbname != any_db)
     my_casedn_str(files_charset_info, dbname);
-
   if (sctx->check_access(DB_OP_ACLS, orig_dbname))
     db_access = DB_OP_ACLS;
-  else {
-    if (sctx->get_active_roles()->size() > 0 && dbname != nullptr) {
-      db_access = (sctx->db_acl({dbname, strlen(dbname)}) |
-                   sctx->master_access(dbname ? dbname : ""));
-    } else {
-      db_access = (acl_get(thd, sctx->host().str, sctx->ip().str,
-                           sctx->priv_user().str, dbname, false) |
-                   sctx->master_access(dbname ? dbname : ""));
-    }
-  }
+  else
+    db_access =
+        (Security_context::check_db_level_access(
+             thd, dbname ? sctx : nullptr, sctx->host().str, sctx->ip().str,
+             sctx->priv_user().str, dbname, strlen(dbname)) |
+         sctx->master_access(dbname ? dbname : ""));
   if (!(db_access & DB_OP_ACLS) && check_grant_db(thd, dbname, true)) {
     my_error(ER_DBACCESS_DENIED_ERROR, MYF(0), sctx->priv_user().str,
              sctx->host_or_ip().str, dbname);
@@ -2819,7 +2814,10 @@ class List_process_list : public Do_THD_Impl {
       : m_user(user_value),
         m_thread_infos(thread_infos),
         m_client_thd(thd_value),
-        m_max_query_length(max_query_length) {}
+        m_max_query_length(max_query_length) {
+    push_deprecated_warn(m_client_thd, "INFORMATION_SCHEMA.PROCESSLIST",
+                         "performance_schema.processlist");
+  }
 
   void operator()(THD *inspect_thd) override {
     DBUG_TRACE;
@@ -3048,7 +3046,10 @@ class Fill_process_list : public Do_THD_Impl {
 
  public:
   Fill_process_list(THD *thd_value, Table_ref *tables_value)
-      : m_client_thd(thd_value), m_tables(tables_value) {}
+      : m_client_thd(thd_value), m_tables(tables_value) {
+    push_deprecated_warn(m_client_thd, "INFORMATION_SCHEMA.PROCESSLIST",
+                         "performance_schema.processlist");
+  }
 
   ~Fill_process_list() override {
     DBUG_EXECUTE_IF("test_fill_proc_with_x_root",

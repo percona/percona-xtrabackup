@@ -48,15 +48,12 @@ extern "C" u_long xdr_sizeof(xdrproc_t, void *);
  */
 #define def_free_xdr_array(name) \
   static inline void free_##name##_array(name##_array *x)
-#define free_xdr_array(name)   \
-  def_free_xdr_array(name) {   \
-    free(x->name##_array_val); \
-    x->name##_array_val = 0;   \
-    x->name##_array_len = 0;   \
+#define free_xdr_array(name)       \
+  def_free_xdr_array(name) {       \
+    free(x->name##_array_val);     \
+    x->name##_array_val = nullptr; \
+    x->name##_array_len = 0;       \
   }
-
-#define in_range(x, name, n) \
-  (((int)n) >= 0 && ((int)n) < ((int)(x).name##_array_len))
 
 /**
     Resize an array

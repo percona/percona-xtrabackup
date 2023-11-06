@@ -37,20 +37,25 @@ class SqlParser {
   SqlParser(SqlLexer::iterator first, SqlLexer::iterator last)
       : cur_{first}, end_{last} {}
 
- protected:
   class TokenText {
    public:
     TokenText() = default;
-    TokenText(std::string_view txt) : txt_{txt} {}
+    TokenText(SqlLexer::TokenId id, std::string_view txt)
+        : id_{id}, txt_{txt} {}
 
     operator bool() const { return !txt_.empty(); }
 
     [[nodiscard]] std::string_view text() const { return txt_; }
+    [[nodiscard]] SqlLexer::TokenId id() const { return id_; }
 
    private:
+    SqlLexer::TokenId id_{};
     std::string_view txt_{};
   };
 
+  TokenText token() const { return {cur_->id, cur_->text}; }
+
+ protected:
   TokenText ident() {
     if (auto ident_tkn = accept(IDENT)) {
       return ident_tkn;
@@ -61,13 +66,27 @@ class SqlParser {
     }
   }
 
+  TokenText accept_if_not(int sym) {
+    if (has_error()) return {};
+
+    if (cur_->id != sym) {
+      auto id = cur_->id;
+      auto txt = cur_->text;
+      ++cur_;
+      return {id, txt};
+    }
+
+    return {};
+  }
+
   TokenText accept(int sym) {
     if (has_error()) return {};
 
     if (cur_->id == sym) {
+      auto id = cur_->id;
       auto txt = cur_->text;
       ++cur_;
-      return txt;
+      return {id, txt};
     }
 
     return {};

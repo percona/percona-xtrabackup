@@ -42,6 +42,7 @@
 #include <string>
 #include <string_view>
 
+#include <mysql/components/services/bulk_data_service.h>
 #include <mysql/components/services/page_track_service.h>
 #include "ft_global.h"  // ft_hints
 #include "lex_string.h"
@@ -204,6 +205,11 @@ enum enum_alter_inplace_result {
   HA_ALTER_INPLACE_NO_LOCK,
   HA_ALTER_INPLACE_INSTANT
 };
+
+/**
+ * Used to identify which engine executed a SELECT query.
+ */
+enum class SelectExecutedIn : bool { kPrimaryEngine, kSecondaryEngine };
 
 /* Bits in table_flags() to show what database can do */
 
@@ -1348,6 +1354,13 @@ typedef void (*kill_connection_t)(handlerton *hton, THD *thd);
   the data dictionary, before the main shutdown.
 */
 typedef void (*pre_dd_shutdown_t)(handlerton *hton);
+
+/**
+  Some plugin session variables may require some special handling
+  upon clean up. Reset appropriately these variables before
+  ending the THD connection
+*/
+typedef void (*reset_plugin_vars_t)(THD *thd);
 
 /**
   sv points to a storage area, that was earlier passed
@@ -2532,15 +2545,33 @@ const handlerton *SecondaryEngineHandlerton(const THD *thd);
 
 // FIXME: Temporary workaround to enable storage engine plugins to use the
 // before_commit hook. Remove after WL#11320 has been completed.
-typedef void (*se_before_commit_t)(void *arg);
+using se_before_commit_t = void (*)(void *arg);
 
 // FIXME: Temporary workaround to enable storage engine plugins to use the
 // after_commit hook. Remove after WL#11320 has been completed.
-typedef void (*se_after_commit_t)(void *arg);
+using se_after_commit_t = void (*)(void *arg);
 
 // FIXME: Temporary workaround to enable storage engine plugins to use the
 // before_rollback hook. Remove after WL#11320 has been completed.
-typedef void (*se_before_rollback_t)(void *arg);
+using se_before_rollback_t = void (*)(void *arg);
+
+/**
+ * Notify plugins when a SELECT query was executed. The plugins will be notified
+ * only if the query is not considered "fast-running", i.e., its estimated cost
+ * is less than the currently configured 'secondary_engine_cost_threshold'.
+ */
+using notify_after_select_t = void (*)(THD *thd, SelectExecutedIn executed_in);
+
+/**
+ * Notify plugins when a table is created.
+ */
+using notify_create_table_t = void (*)(struct HA_CREATE_INFO *create_info,
+                                       const char *db, const char *table_name);
+
+/**
+ * Notify plugins when a table is dropped.
+ */
+using notify_drop_table_t = void (*)(Table_ref *tab);
 
 /*
   Page Tracking : interfaces to handlerton functions which starts/stops page
@@ -2695,6 +2726,7 @@ struct handlerton {
   close_connection_t close_connection;
   kill_connection_t kill_connection;
   pre_dd_shutdown_t pre_dd_shutdown;
+  reset_plugin_vars_t reset_plugin_vars;
   savepoint_set_t savepoint_set;
   savepoint_rollback_t savepoint_rollback;
   savepoint_rollback_can_release_mdl_t savepoint_rollback_can_release_mdl;
@@ -2901,6 +2933,11 @@ struct handlerton {
   se_after_commit_t se_after_commit;
   se_before_rollback_t se_before_rollback;
 
+  notify_after_select_t notify_after_select;
+
+  notify_create_table_t notify_create_table;
+  notify_drop_table_t notify_drop_table;
+
   /** Page tracking interface */
   Page_track_t page_track;
 };
@@ -2974,8 +3011,10 @@ constexpr const decltype(handlerton::flags) HTON_SUPPORTS_ENGINE_ATTRIBUTE{
     1 << 17};
 
 /** Engine supports Generated invisible primary key. */
+// clang-format off
 constexpr const decltype(
     handlerton::flags) HTON_SUPPORTS_GENERATED_INVISIBLE_PK{1 << 18};
+// clang-format on
 
 /** Whether the secondary engine supports DDLs. No meaning if the engine is not
  * secondary. */
@@ -2991,6 +3030,8 @@ constexpr const decltype(
    a primary engine only.
  */
 #define HTON_SUPPORTS_EXTERNAL_SOURCE (1 << 21)
+
+constexpr const decltype(handlerton::flags) HTON_SUPPORTS_BULK_LOAD{1 << 22};
 
 inline bool secondary_engine_supports_ddl(const handlerton *hton) {
   assert(hton->flags & HTON_IS_SECONDARY_ENGINE);
@@ -4847,7 +4888,7 @@ class handler {
   int ha_create(const char *name, TABLE *form, HA_CREATE_INFO *info,
                 dd::Table *table_def);
 
-  int ha_load_table(const TABLE &table);
+  int ha_load_table(const TABLE &table, bool *skip_metadata_update);
 
   int ha_unload_table(const char *db_name, const char *table_name,
                       bool error_if_not_loaded);
@@ -4862,12 +4903,15 @@ class handler {
                                       if we exhaust the max cap of number of
                                       parallel read threads that can be
                                       spawned at a time
+    @param[in]  max_desired_threads   Maximum number of desired scan threads;
+                                      passing 0 has no effect, it is ignored.
     @return error code
     @retval 0 on success
   */
   virtual int parallel_scan_init(void *&scan_ctx [[maybe_unused]],
                                  size_t *num_threads [[maybe_unused]],
-                                 bool use_reserved_threads [[maybe_unused]]) {
+                                 bool use_reserved_threads [[maybe_unused]],
+                                 size_t max_desired_threads [[maybe_unused]]) {
     return 0;
   }
 
@@ -4942,6 +4986,61 @@ class handler {
     @param[in]      scan_ctx      A scan context created by parallel_scan_init.
   */
   virtual void parallel_scan_end(void *scan_ctx [[maybe_unused]]) { return; }
+
+  /** Check if the table is ready for bulk load
+  @param[in] thd user session
+  @return true iff bulk load can be done on the table. */
+  virtual bool bulk_load_check(THD *thd [[maybe_unused]]) const {
+    return false;
+  }
+
+  /** Get the total memory available for bulk load in SE.
+   @param[in] thd user session
+   @return available memory for bulk load */
+  virtual size_t bulk_load_available_memory(THD *thd [[maybe_unused]]) const {
+    return 0;
+  }
+
+  /** Begin parallel bulk data load to the table.
+  @param[in] thd user session
+  @param[in] data_size total data size to load
+  @param[in] memory memory to be used by SE
+  @param[in] num_threads number of concurrent threads used for load.
+  @return bulk load context or nullptr if unsuccessful. */
+  virtual void *bulk_load_begin(THD *thd [[maybe_unused]],
+                                size_t data_size [[maybe_unused]],
+                                size_t memory [[maybe_unused]],
+                                size_t num_threads [[maybe_unused]]) {
+    return nullptr;
+  }
+
+  /** Execute bulk load operation. To be called by each of the concurrent
+  threads idenified by thread index.
+  @param[in,out]  thd         user session
+  @param[in,out]  load_ctx    load execution context
+  @param[in]      thread_idx  index of the thread executing
+  @param[in]      rows        rows to be loaded to the table
+  @return error code. */
+  virtual int bulk_load_execute(THD *thd [[maybe_unused]],
+                                void *load_ctx [[maybe_unused]],
+                                size_t thread_idx [[maybe_unused]],
+                                const Rows_mysql &rows [[maybe_unused]],
+                                Bulk_load::Stat_callbacks &wait_cbk
+                                [[maybe_unused]]) {
+    return HA_ERR_UNSUPPORTED;
+  }
+
+  /** End bulk load operation. Must be called after all execution threads have
+  completed. Must be called even if the bulk load execution failed.
+  @param[in,out]  thd       user session
+  @param[in,out]  load_ctx  load execution context
+  @param[in]      is_error  true, if bulk load execution have failed
+  @return error code. */
+  virtual int bulk_load_end(THD *thd [[maybe_unused]],
+                            void *load_ctx [[maybe_unused]],
+                            bool is_error [[maybe_unused]]) {
+    return false;
+  }
 
   /**
     Submit a dd::Table object representing a core DD table having
@@ -6669,12 +6768,15 @@ class handler {
   /**
    * Loads a table into its defined secondary storage engine.
    *
-   * @param table Table opened in primary storage engine. Its read_set tells
-   * which columns to load.
+   * @param[in] table - Table opened in primary storage engine. Its read_set
+   * tells which columns to load.
+   * @param[out] skip_metadata_update - should the DD metadata be updated for
+   * the load of this table
    *
    * @return 0 if success, error code otherwise.
    */
-  virtual int load_table(const TABLE &table [[maybe_unused]]) {
+  virtual int load_table(const TABLE &table [[maybe_unused]],
+                         bool *skip_metadata_update [[maybe_unused]]) {
     /* purecov: begin inspected */
     assert(false);
     return HA_ERR_WRONG_COMMAND;
@@ -7254,6 +7356,7 @@ int ha_finalize_handlerton(st_plugin_int *plugin);
 
 TYPELIB *ha_known_exts();
 int ha_panic(enum ha_panic_function flag);
+void ha_reset_plugin_vars(THD *thd);
 void ha_close_connection(THD *thd);
 void ha_kill_connection(THD *thd);
 /** Invoke handlerton::pre_dd_shutdown() on every storage engine plugin. */

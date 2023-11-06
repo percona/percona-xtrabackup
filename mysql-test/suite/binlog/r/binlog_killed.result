@@ -5,7 +5,7 @@ create table t3 (a int auto_increment, b int, PRIMARY KEY (a)) ENGINE=InnoDB;
 select get_lock("a", 20);
 get_lock("a", 20)
 1
-reset master;
+reset binary logs and gtids;
 insert into t2 values (null, null), (null, get_lock("a", 10));
 kill query ID;
 select
@@ -74,7 +74,7 @@ Warnings:
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
 delete from t4;
 insert into t4 values (1,1), (1,1);
-reset master;
+reset binary logs and gtids;
 select get_lock("a", 20);
 get_lock("a", 20)
 1
@@ -83,6 +83,8 @@ update t4 set b=b + bug27563(b);
 select count(*) FROM INFORMATION_SCHEMA.PROCESSLIST where state='User lock';
 count(*)
 1
+Warnings:
+Warning	1287	'INFORMATION_SCHEMA.PROCESSLIST' is deprecated and will be removed in a future release. Please use performance_schema.processlist instead
 kill query ID;
 ERROR 70100: Query execution was interrupted
 select * from t4 order by b /* must be (1,1), (1,2) */;
@@ -115,7 +117,7 @@ RELEASE_LOCK("a")
 1
 delete from t4;
 insert into t4 values (1,1), (2,2);
-reset master;
+reset binary logs and gtids;
 select get_lock("a", 20);
 get_lock("a", 20)
 1
@@ -124,6 +126,8 @@ delete from t4 where b=bug27563(1) or b=bug27563(2);
 select count(*) FROM INFORMATION_SCHEMA.PROCESSLIST where state='User lock';
 count(*)
 1
+Warnings:
+Warning	1287	'INFORMATION_SCHEMA.PROCESSLIST' is deprecated and will be removed in a future release. Please use performance_schema.processlist instead
 kill query ID;
 ERROR 70100: Query execution was interrupted
 select count(*) from t4 /* must be 1 */;

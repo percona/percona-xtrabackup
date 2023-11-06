@@ -54,6 +54,7 @@
 #include "sql/dd/impl/utils.h"                 // dd::escape
 #include "sql/dd/performance_schema/init.h"    // performance_schema::
                                                //   set_PS_version_for_table
+#include "sql-common/my_decimal.h"
 #include "sql/create_field.h"
 #include "sql/dd/dd_version.h"  // DD_VERSION
 #include "sql/dd/properties.h"  // dd::Properties
@@ -86,7 +87,6 @@
 #include "sql/log.h"
 #include "sql/mdl.h"
 #include "sql/mem_root_array.h"
-#include "sql/my_decimal.h"
 #include "sql/mysqld.h"  // lower_case_table_names
 #include "sql/partition_element.h"
 #include "sql/partition_info.h"        // partition_info
@@ -954,6 +954,12 @@ static bool is_candidate_primary_key(THD *thd, const KEY *key,
       if (i == key_part->fieldnr) break;
       i++;
     }
+
+    // cfield can be nullptr if the while-loop above terminates without
+    // finding the column, which is highly unlikely to happen. In this
+    // situation, a crash would be more appropriate.
+    assert(cfield != nullptr);
+
     if (cfield->is_array) return false;
     /* Prepare Field* object from Create_field */
 
@@ -2597,8 +2603,8 @@ bool table_legacy_db_type(THD *thd, const char *schema_name,
       ha_resolve_by_name_raw(thd, lex_cstring_handle(table->engine()));
 
   // Return DB_TYPE_UNKNOWN and no error if engine is not loaded.
-  *db_type =
-      ha_legacy_type(tmp_plugin ? plugin_data<handlerton *>(tmp_plugin) : NULL);
+  *db_type = ha_legacy_type(tmp_plugin ? plugin_data<handlerton *>(tmp_plugin)
+                                       : nullptr);
 
   return false;
 }

@@ -44,7 +44,6 @@
 
 #include <TransporterRegistry.hpp>
 
-#include <ConfigRetriever.hpp>
 #include <LogLevel.hpp>
 
 #if defined NDB_SOLARIS
@@ -57,8 +56,12 @@
 #include <LogBuffer.hpp>
 #include <OutputStream.hpp>
 
+#include "util/ndb_openssl3_compat.h"
+
 #define JAM_FILE_ID 484
 
+static constexpr bool openssl_version_ok =
+  (OPENSSL_VERSION_NUMBER >= NDB_TLS_MINIMUM_OPENSSL);
 
 static void
 systemInfo(const Configuration & config, const LogLevel & logLevel)
@@ -1030,7 +1033,7 @@ ndbd_run(bool foreground, int report_fd,
          const char* connect_str, int force_nodeid, const char* bind_address,
          bool no_start, bool initial, bool initialstart,
          unsigned allocated_nodeid, int connect_retries, int connect_delay,
-         size_t logbuffer_size)
+         size_t logbuffer_size, const char * tls_search_path, int mgm_tls_req)
 {
   log_memusage("ndbd_run");
   LogBuffer* logBuf = new LogBuffer(logbuffer_size);
@@ -1147,9 +1150,9 @@ ndbd_run(bool foreground, int report_fd,
     already assigned the nodeid, either by the operator or by the angel
     process.
   */
-  theConfig->fetch_configuration(connect_str, force_nodeid, bind_address,
-                                 allocated_nodeid, connect_retries,
-                                 connect_delay);
+  theConfig->fetch_configuration(connect_str, force_nodeid,
+      bind_address, allocated_nodeid, connect_retries, connect_delay,
+      tls_search_path, opt_mgm_tls);
 
   /**
     Set the NDB DataDir, this is where we will locate log files and data
@@ -1169,6 +1172,31 @@ ndbd_run(bool foreground, int report_fd,
 
   theConfig->setupConfiguration();
 
+  globalTransporterRegistry.init_tls(tls_search_path, NODE_TYPE_DB, true,
+                                     opt_mgm_tls);
+
+  const ndb_mgm_configuration_iterator *p =
+      globalEmulatorData.theConfiguration->getOwnConfigIterator();
+  require(p != nullptr);
+
+  if(openssl_version_ok)
+  {
+    Uint32 require_cert = 0, require_tls = 0;
+    ndb_mgm_get_int_parameter(p, CFG_NODE_REQUIRE_CERT, &require_cert);
+    ndb_mgm_get_int_parameter(p, CFG_DB_REQUIRE_TLS, &require_tls);
+    if((require_cert || require_tls) &&
+        ! globalTransporterRegistry.hasTlsCert())
+    {
+      g_eventLogger->error(
+        "Shutting down. This node does not have a valid TLS certificate.");
+      stop_async_log_func(log_threadvar, thread_args);
+      ndbd_exit(-1);
+    }
+    if(require_tls)
+    {
+      g_eventLogger->info("This node will require TLS for all connections.");
+    }
+  }
 
   /**
     Printout various information about the threads in the
@@ -1211,10 +1239,6 @@ ndbd_run(bool foreground, int report_fd,
   g_eventLogger->info("Memory Allocation for global memory pools Completed");
 
   log_memusage("Global memory pools allocated");
-
-  const ndb_mgm_configuration_iterator *p =
-      globalEmulatorData.theConfiguration->getOwnConfigIterator();
-  require(p != nullptr);
 
   bool have_password_option = g_filesystem_password_state.have_password_option();
   Uint32 encrypted_file_system = 0;
@@ -1345,8 +1369,7 @@ ndbd_run(bool foreground, int report_fd,
     ndbd_exit(-1);
   }
   // Re-use the mgm handle as a transporter
-  if(!globalTransporterRegistry.connect_client(
-		 theConfig->get_config_retriever()->get_mgmHandlePtr()))
+  if(!globalTransporterRegistry.connect_client(theConfig->get_mgm_handle_ptr()))
       ERROR_SET(fatal, NDBD_EXIT_CONNECTION_SETUP_FAILED,
                 "Failed to convert mgm connection to a transporter",
                 __FILE__);

@@ -779,7 +779,8 @@ int ReplSemiSyncMaster::commitTrx(const char *trx_wait_binlog_name,
       /*
         After we release LOCK_binlog_ above while waiting for the condition,
         it can happen that some other parallel client session executed
-        RESET MASTER. That can set rpl_semi_sync_source_wait_sessions to zero.
+        RESET BINARY LOGS AND GTIDS.
+        That can set rpl_semi_sync_source_wait_sessions to zero.
         Hence check the value before decrementing it and decrement it only if it
         is non-zero value.
       */
@@ -1249,7 +1250,7 @@ int AckContainer::resize(unsigned int size, const AckInfo **ackinfo) {
   m_ack_array = nullptr;
   if (m_size) {
     m_ack_array = (AckInfo *)DBUG_EVALUATE_IF(
-        "rpl_semisync_simulate_allocate_ack_container_failure", NULL,
+        "rpl_semisync_simulate_allocate_ack_container_failure", nullptr,
         my_malloc(0, sizeof(AckInfo) * (size - 1), MYF(MY_ZEROFILL)));
     if (m_ack_array == nullptr) {
       m_ack_array = old_ack_array;

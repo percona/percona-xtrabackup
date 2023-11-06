@@ -83,7 +83,7 @@ static bool opt_show_warnings = false;
 static uint opt_zstd_compress_level = default_zstd_compression_level;
 static char *opt_compress_algorithm = nullptr;
 #if defined(_WIN32)
-static char *shared_memory_base_name = 0;
+static char *shared_memory_base_name = nullptr;
 #endif
 static uint opt_protocol = 0;
 static myf error_flags; /* flags to pass to my_printf_error, like ME_BELL */
@@ -236,8 +236,8 @@ static struct my_option my_long_options[] = {
      nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
 #include "multi_factor_passwordopt-longopts.h"
 #ifdef _WIN32
-    {"pipe", 'W', "Use named pipes to connect to server.", 0, 0, 0, GET_NO_ARG,
-     NO_ARG, 0, 0, 0, 0, 0, 0},
+    {"pipe", 'W', "Use named pipes to connect to server.", nullptr, nullptr,
+     nullptr, GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
 #endif
     {"port", 'P',
      "Port number to use for connection or 0 for default to, in "
@@ -259,8 +259,8 @@ static struct my_option my_long_options[] = {
 #if defined(_WIN32)
     {"shared-memory-base-name", OPT_SHARED_MEMORY_BASE_NAME,
      "Base name of shared memory.", &shared_memory_base_name,
-     &shared_memory_base_name, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0,
-     0},
+     &shared_memory_base_name, nullptr, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0,
+     nullptr, 0, nullptr},
 #endif
     {"silent", 's', "Silently exit if one can't connect to server.", nullptr,
      nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
@@ -675,8 +675,6 @@ static int execute_commands(MYSQL *mysql, int argc, char **argv) {
     If this behaviour is ever changed, Docs should be notified.
   */
 
-  struct rand_struct rand_st;
-
   for (; argc > 0; argv++, argc--) {
     int option;
     bool log_warnings = true;
@@ -753,7 +751,7 @@ static int execute_commands(MYSQL *mysql, int argc, char **argv) {
       case ADMIN_REFRESH:
         if (mysql_refresh(mysql, (uint) ~(REFRESH_GRANT | REFRESH_STATUS |
                                           REFRESH_READ_LOCK | REFRESH_REPLICA |
-                                          REFRESH_MASTER))) {
+                                          REFRESH_SOURCE))) {
           my_printf_error(0, "refresh failed; error: '%s'", error_flags,
                           mysql_error(mysql));
           return -1;
@@ -995,14 +993,9 @@ static int execute_commands(MYSQL *mysql, int argc, char **argv) {
       }
       case ADMIN_PASSWORD: {
         char buff[128];
-        time_t start_time;
         char *typed_password = nullptr, *verified = nullptr, *tmp = nullptr;
         bool log_off = true, err = false;
         size_t password_len;
-
-        /* Do initialization the same way as we do in mysqld */
-        start_time = time((time_t *)nullptr);
-        randominit(&rand_st, (ulong)start_time, (ulong)start_time / 2);
 
         if (argc < 1) {
           my_printf_error(0, "Too few arguments to change password",

@@ -635,21 +635,30 @@ bool FTS::Parser::doc_tokenize(doc_id_t doc_id, fts_doc_t *doc,
   auto parser = m_dup->m_index->parser;
   auto is_ngram = m_dup->m_index->is_ngram;
 
-  /* Tokenize the data and add each word string, its corresponding
-  doc id and position to sort buffer */
+  /* When using a plug-in parser, the whole document is tokenized first
+  by the plugin and written to t_ctx->m_token_list. The list is not
+  empty at this point iff the buffer was filled without processing all
+  tokens (function returned false on same document). In this case the
+  list contains the remaining tokens to be processed. */
+  if (parser != nullptr) {
+    ut_ad(t_ctx->m_processed_len == 0);
+
+    if (UT_LIST_GET_LEN(t_ctx->m_token_list) == 0) {
+      /* Parse the whole doc and cache tokens. */
+      tokenize(doc, parser, t_ctx);
+    }
+  }
+
+  /* Iterate over each word string and add it with its corresponding
+  doc id and position to sort buffer. In non-plugin mode
+  t_ctx->m_processed_len indicates the position of the next unprocessed
+  token. With a plugin parser it is only updated once all remaining tokens
+  produced by the plugin are processed. */
   while (t_ctx->m_processed_len < doc->text.f_len) {
     Token *fts_token{};
 
+    /* Get the next unprocessed token */
     if (parser != nullptr) {
-      if (t_ctx->m_processed_len == 0) {
-        /* Parse the whole doc and cache tokens. */
-        tokenize(doc, parser, t_ctx);
-
-        /* Just indicate we have parsed all the word. */
-        t_ctx->m_processed_len += 1;
-      }
-
-      /* Then get a token. */
       fts_token = UT_LIST_GET_FIRST(t_ctx->m_token_list);
 
       if (fts_token != nullptr) {
@@ -669,6 +678,7 @@ bool FTS::Parser::doc_tokenize(doc_id_t doc_id, fts_doc_t *doc,
 
       ut_a(inc > 0);
     }
+    /* str now contains the token */
 
     /* Ignore string whose character number is less than
     "fts_min_token_size" or more than "fts_max_token_size" */
@@ -950,9 +960,22 @@ void FTS::Parser::parse(Builder *builder) noexcept {
     clean_up(DB_SUCCESS);
   };
 
-  for (;;) {
-    doc_id_t last_doc_id{};
+  /* Items provided by get_next_doc_item are individual fields
+  of a potentially multi-field document. Subsequent fields in
+  multi-field document must arrive consecutively, not
+  interleaved by fields from other documents; last_doc_id
+  is used to determine whether a new item is part of the same
+  document as the previous one. */
+  doc_id_t last_doc_id{};
 
+  /* get_next_doc_item() reads items from a non-blocking queue.
+  It may therefore yield a nullptr result even when there are more
+  documents to be read. The inner loop reads doc items from the
+  queue as long as they are available and there is space to store
+  the item on the buffer. When either of these conditions is not
+  met, control will break out to the outer loop, which handles
+  buffer flushing and polling for more data. */
+  for (;;) {
     while (doc_item != nullptr) {
       auto dfield = doc_item->m_field;
 

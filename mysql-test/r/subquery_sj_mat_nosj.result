@@ -5864,8 +5864,20 @@ EXPLAIN
         -> Table scan on ot1  (cost=1.05 rows=8)
         -> Hash
             -> Table scan on ot2  (cost=0.0813 rows=4)
+        -> Select #2 (subquery in extra conditions; run only once)
+            -> Filter: ((ot1.a = `<materialized_subquery>`.a))  (cost=0.95..0.95 rows=1)
+                -> Limit: 1 row(s)  (cost=0.85..0.85 rows=1)
+                    -> Index lookup on <materialized_subquery> using <auto_distinct_key> (a=ot1.a)
+                        -> Materialize with deduplication  (cost=0.85..0.85 rows=3)
+                            -> Table scan on it3  (cost=0.55 rows=3)
     -> Hash
         -> Table scan on ot3  (cost=0.0172 rows=3)
+    -> Select #3 (subquery in extra conditions; run only once)
+        -> Filter: ((ot2.a = `<materialized_subquery>`.a))  (cost=0.95..0.95 rows=1)
+            -> Limit: 1 row(s)  (cost=0.85..0.85 rows=1)
+                -> Index lookup on <materialized_subquery> using <auto_distinct_key> (a=ot2.a)
+                    -> Materialize with deduplication  (cost=0.85..0.85 rows=3)
+                        -> Table scan on it3  (cost=0.55 rows=3)
 
 SELECT *
 FROM ot1 LEFT JOIN ot2 ON ot1.a=ot2.a AND ot1.a IN (SELECT a FROM it3)
@@ -8292,6 +8304,13 @@ insert into t3 select @a:=@a+1, t2.a from t2, t0;
 Warnings:
 Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Consider alternatives: 'SET variable=expression, ...', or 'SELECT expression(s) INTO variables(s)'.
 alter table t3 add primary key(id), add key(a);
+SET GLOBAL innodb_stats_persistent_sample_pages = 60;
+ANALYZE TABLE t2;
+Table	Op	Msg_type	Msg_text
+test.t2	analyze	status	OK
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
 The following must use loose index scan over t3, key a:
 explain select count(a) from t2 where a in ( SELECT  a FROM t3);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
@@ -8303,6 +8322,7 @@ select count(a) from t2 where a in ( SELECT  a FROM t3);
 count(a)
 1000
 drop table t0,t1,t2,t3;
+SET GLOBAL innodb_stats_persistent_sample_pages = DEFAULT;
 #
 # Bug#33062: subquery in stored routine cause crash
 #

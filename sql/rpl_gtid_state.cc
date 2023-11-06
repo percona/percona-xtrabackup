@@ -24,12 +24,12 @@
 #include <atomic>
 
 #include "lex_string.h"
-#include "libbinlogevents/include/control_events.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "my_systime.h"
+#include "mysql/binlog/event/control_events.h"
 #include "mysql/components/services/bits/psi_stage_bits.h"
 #include "mysql/components/services/log_builtins.h"  //LogErr
 #include "mysql/psi/mysql_mutex.h"
@@ -96,7 +96,8 @@ enum_return_status Gtid_state::acquire_ownership(THD *thd, const Gtid &gtid) {
     thd->owned_gtid = gtid;
     thd->owned_gtid.dbug_print(nullptr, "set owned_gtid in acquire_ownership");
     thd->owned_sid = sid_map->sidno_to_sid(gtid.sidno);
-    thd->rpl_thd_ctx.last_used_gtid_tracker_ctx().set_last_used_gtid(gtid);
+    thd->rpl_thd_ctx.last_used_gtid_tracker_ctx().set_last_used_gtid(
+        gtid, thd->owned_sid);
   }
   RETURN_OK;
 err:
@@ -328,15 +329,15 @@ bool Gtid_state::wait_for_gtid_set(THD *thd, Gtid_set *wait_for, double timeout,
 
     Once the loop over SIDNOs has completed, 'todo' is guaranteed to
     be empty.  However, it may still be the case that not all GTIDs of
-    wait_for are included in gtid_executed, since RESET MASTER may
-    have been executed while we were waiting.
+    wait_for are included in gtid_executed, since RESET BINARY LOGS AND GTIDS
+    may have been executed while we were waiting.
 
-    RESET MASTER requires global_sid_lock.wrlock.  We hold
+    RESET BINARY LOGS AND GTIDS requires global_sid_lock.wrlock.  We hold
     global_sid_lock.rdlock while removing GTIDs from 'todo', but the
     wait operation releases global_sid_lock.rdlock.  So if we
     completed the 'for' loop without waiting, we know for sure that
     global_sid_lock.rdlock was held while emptying 'todo', and thus
-    RESET MASTER cannot have executed in the meantime.  But if we
+    RESET BINARY LOGS AND GTIDS cannot have executed in the meantime.  But if we
     waited at some point during the execution of the 'for' loop, RESET
     MASTER may have been called.  Thus, we repeatedly run 'for' loop
     until it completes without waiting (this is the outermost 'while'
@@ -662,7 +663,7 @@ int Gtid_state::init() {
   global_sid_lock->assert_some_wrlock();
 
   rpl_sid server_sid{};
-  if (server_sid.parse(server_uuid, binary_log::Uuid::TEXT_LENGTH) != 0)
+  if (server_sid.parse(server_uuid, mysql::gtid::Uuid::TEXT_LENGTH) != 0)
     return 1;
   rpl_sidno sidno = sid_map->add_sid(server_sid);
   if (sidno <= 0) return 1;

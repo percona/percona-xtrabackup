@@ -38,6 +38,17 @@ class QueryForwarder : public ForwardingProcessor {
   enum class Stage {
     Command,
 
+    ExplicitCommitConnect,
+    ExplicitCommitConnectDone,
+    ExplicitCommit,
+    ExplicitCommitDone,
+
+    ClassifyQuery,
+
+    PoolBackend,
+    SwitchBackend,
+    PrepareBackend,
+
     Connect,
     Connected,
 
@@ -71,8 +82,25 @@ class QueryForwarder : public ForwardingProcessor {
   void stage(Stage stage) { stage_ = stage; }
   [[nodiscard]] Stage stage() const { return stage_; }
 
+  void failed(
+      const std::optional<classic_protocol::message::server::Error> &err) {
+    failed_ = err;
+  }
+
+  std::optional<classic_protocol::message::server::Error> failed() const {
+    return failed_;
+  }
+
  private:
   stdx::expected<Result, std::error_code> command();
+  stdx::expected<Result, std::error_code> explicit_commit_connect();
+  stdx::expected<Result, std::error_code> explicit_commit_connect_done();
+  stdx::expected<Result, std::error_code> explicit_commit();
+  stdx::expected<Result, std::error_code> explicit_commit_done();
+  stdx::expected<Result, std::error_code> classify_query();
+  stdx::expected<Result, std::error_code> pool_backend();
+  stdx::expected<Result, std::error_code> switch_backend();
+  stdx::expected<Result, std::error_code> prepare_backend();
   stdx::expected<Result, std::error_code> connect();
   stdx::expected<Result, std::error_code> connected();
   stdx::expected<Result, std::error_code> forward();
@@ -98,6 +126,8 @@ class QueryForwarder : public ForwardingProcessor {
       net::const_buffer session_trackers,
       classic_protocol::capabilities::value_type caps);
 
+  TraceEvent *trace_connect_and_explicit_commit(TraceEvent *parent_span);
+
   stdx::flags<StmtClassifier> stmt_classified_{};
 
   Stage stage_{Stage::Command};
@@ -105,9 +135,12 @@ class QueryForwarder : public ForwardingProcessor {
   uint64_t columns_left_{0};
 
   TraceEvent *trace_event_command_{};
+  TraceEvent *trace_event_connect_and_explicit_commit_{};
   TraceEvent *trace_event_connect_and_forward_command_{};
   TraceEvent *trace_event_forward_command_{};
   TraceEvent *trace_event_query_result_{};
+
+  std::optional<classic_protocol::message::server::Error> failed_;
 };
 
 #endif

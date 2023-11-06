@@ -2448,7 +2448,9 @@ dberr_t row_update_for_mysql(const byte *mysql_rec, row_prebuilt_t *prebuilt) {
   if (prebuilt->table->is_intrinsic()) {
     return (row_del_upd_for_mysql_using_cursor(prebuilt));
   } else {
-    ut_a(prebuilt->template_type == ROW_MYSQL_WHOLE_ROW);
+    ut_a(prebuilt->template_type == ROW_MYSQL_WHOLE_ROW ||
+         (dict_table_get_n_v_cols(prebuilt->table) > 0 &&
+          prebuilt->read_just_key));
     return (row_update_for_mysql_using_upd_graph(mysql_rec, prebuilt));
   }
 }
@@ -4787,8 +4789,9 @@ bool row_prebuilt_t::skip_concurrency_ticket() const {
 
   /* Skip concurrency ticket while implicitly updating GTID table. This is to
   avoid deadlock otherwise possible with low innodb_thread_concurrency.
-  Session: RESET MASTER -> FLUSH LOGS -> get innodb ticket -> wait for GTID
-  flush GTID Background: Write to GTID table -> wait for innodb ticket. */
+  Session: RESET BINARY LOGS AND GTIDS -> FLUSH LOGS -> get innodb ticket
+           -> wait for GTID flush GTID
+  Background: Write to GTID table -> wait for innodb ticket. */
   auto thd = trx->mysql_thd;
   if (thd == nullptr) {
     thd = current_thd;

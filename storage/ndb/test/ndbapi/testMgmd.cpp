@@ -23,7 +23,13 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
+#include <fstream>
+#include <iostream>
+#include <string>
+
+#include "util/ndb_openssl3_compat.h"
 #include "util/require.h"
+#include "util/TlsKeyManager.hpp"
 #include <NDBT.hpp>
 #include <NDBT_Test.hpp>
 #include <portlib/NdbDir.hpp>
@@ -163,10 +169,8 @@ public:
     return (m_proc != NULL);
   }
 
-  bool start_from_config_ini(const char* working_dir,
-                             const char* first_extra_arg = NULL, ...)
+  void common_args(NdbProcess::Args & args, const char * working_dir)
   {
-    NdbProcess::Args args;
     args.add("--no-defaults");
     args.add("--configdir=", working_dir);
     args.add("-f config.ini");
@@ -177,6 +181,13 @@ public:
     args.add("--nodaemon");
     args.add("--log-name=", name());
     args.add("--verbose");
+  }
+
+  bool start_from_config_ini(const char* working_dir,
+                             const char* first_extra_arg = NULL, ...)
+  {
+    NdbProcess::Args args;
+    common_args(args, working_dir);
 
     if (first_extra_arg)
     {
@@ -234,7 +245,7 @@ public:
       return false; // Can't kill with -9 -> fatal error
     }
     int ret;
-    if (!m_proc->wait(ret, 300))
+    if (!m_proc->wait(ret, 1000))
     {
       fprintf(stderr, "Failed to wait for process %s\n", name());
       return false; // Can't wait after kill with -9 -> fatal error
@@ -299,6 +310,11 @@ public:
                                  retry_delay_in_seconds);
   }
 
+  int client_start_tls(struct ssl_ctx_st * ctx)
+  {
+    return m_mgmd_client.start_tls(ctx);
+  }
+
   bool wait_confirmed_config(int timeout = 30)
   {
     if (!m_mgmd_client.is_connected())
@@ -330,6 +346,10 @@ public:
   }
 
   NdbMgmHandle handle() { return m_mgmd_client.handle(); }
+
+  void convert_to_transporter(NdbSocket * sock) {
+    m_mgmd_client.convert_to_transporter(sock);
+  }
 
 private:
 
@@ -383,20 +403,26 @@ public:
 class Ndbd : public Mgmd
 {
 public:
-  Ndbd(int nodeid) : Mgmd(nodeid)
+  Ndbd(int nodeid) : Mgmd(nodeid), m_args()
   {
+    m_args.add("--ndb-nodeid=", m_nodeid);
+    m_args.add("--foreground");
     m_name.assfmt("ndbd_%d", nodeid);
     NDBT_find_ndbd(m_exe);
   }
 
+  NdbProcess::Args & args() { return m_args; }
+
+  void set_connect_string(BaseString connect_string)
+  {
+    m_args.add("-c");
+    m_args.add(connect_string.c_str());
+  }
+
   bool start(const char *working_dir, BaseString connect_string)
   {
-    NdbProcess::Args args;
-    args.add("-c");
-    args.add(connect_string.c_str());
-    args.add("--ndb-nodeid=", m_nodeid);
-    args.add("--foreground");
-    return Mgmd::start(working_dir, args);
+    set_connect_string(connect_string);
+    return Mgmd::start(working_dir, m_args);
   }
 
   bool wait_started(NdbMgmHandle & mgm_handle,
@@ -431,12 +457,81 @@ public:
     return false;
   }
 
+private:
+  NdbProcess::Args m_args;
 };
 
+static
+bool create_CA(NDBT_Workingdir & wd, const BaseString &exe)
+{
+  int ret;
+  NdbProcess::Args args;
 
-#include <fstream>
-#include <iostream>
-#include <string>
+  args.add("--passphrase=", "Trondheim");
+  args.add("--create-CA");
+  args.add("--CA-search-path=", wd.path());
+  NdbProcess * proc = NdbProcess::create("Create CA", exe, wd.path(), args);
+  bool r = proc->wait(ret, 3000);
+  delete proc;
+
+  return (r && (ret == 0));
+}
+
+static
+bool sign_tls_keys(NDBT_Workingdir & wd)
+{
+  int ret;
+  BaseString cfg_path = path(wd.path(), "config.ini", nullptr);
+
+  /* Find executable */
+  BaseString exe;
+  NDBT_find_sign_keys(exe);
+
+  /* Create CA */
+  if(! create_CA(wd, exe))
+    return false;
+
+  /* Create keys and certificates for all nodes in config */
+  NdbProcess::Args args;
+  args.add("--config-file=", cfg_path.c_str());
+  args.add("--passphrase=", "Trondheim");
+  args.add("--ndb-tls-search-path=", wd.path());
+  args.add("--create-key");
+  NdbProcess * proc = NdbProcess::create("Create Keys", exe, wd.path(), args);
+  bool r = proc->wait(ret, 3000);
+  delete proc;
+  return (r && (ret == 0));
+}
+
+static
+bool create_expired_cert(NDBT_Workingdir & wd)
+{
+  int ret;
+
+  BaseString cfg_path = path(wd.path(), "config.ini", nullptr);
+
+  /* Find executable */
+  BaseString exe;
+  NDBT_find_sign_keys(exe);
+
+  /* Create CA */
+  if(! create_CA(wd, exe))
+    return false;
+
+  /* Create an expired certificate for a data node */
+  NdbProcess::Args args;
+  args.add("--create-key");
+  args.add("--ndb-tls-search-path=", wd.path());
+  args.add("--passphrase=", "Trondheim");
+  args.add("-l");   // no-config mode
+  args.add("-t db"); // type db
+  args.add("--duration=", "-50000");  // negative seconds; already expired
+
+  NdbProcess * proc = NdbProcess::create("Create Keys", exe, wd.path(), args);
+  bool r = proc->wait(ret, 3000);
+  delete proc;
+  return (r && (ret == 0));
+}
 
 bool Print_find_in_file(const char* path, Vector<BaseString> search_string)
 {
@@ -1810,6 +1905,321 @@ runTestMultiMGMDDisconnection(NDBT_Context* ctx, NDBT_Step* step)
   return NDBT_OK;
 }
 
+int
+runTestSshKeySigning(NDBT_Context* ctx, NDBT_Step* step)
+{
+  /* Skip this test in PB2 environments, where "ssh localhost"
+     does not necessarily work.
+  */
+  if(getenv("PB2WORKDIR")) {
+    printf("Skipping test SshKeySigning\n");
+    return NDBT_OK;
+  }
+
+  NDBT_Workingdir wd("test_mgmd"); // temporary working directory
+  Properties config = ConfigFactory::create();
+  BaseString cfg_path = path(wd.path(), "config.ini", nullptr);
+  CHECK(ConfigFactory::write_config_ini(config, cfg_path.c_str()));
+
+  /* Find executable */
+  BaseString exe;
+  NDBT_find_sign_keys(exe);
+
+  /* Create CA */
+  if(! create_CA(wd, exe))
+    return false;
+
+  /* Create keys and certificates for all nodes, via ssh to localhost */
+  /* There will be a parent ndb_sign_keys process plus 3 ssh invocations */
+  NdbProcess::Args args;
+  int ret;
+  args.add("--config-file=", cfg_path.c_str());
+  args.add("--passphrase=", "Trondheim");
+  args.add("--ndb-tls-search-path=", wd.path());
+  args.add("--create-key");
+  args.add("--remote-CA-host=", "localhost");
+  NdbProcess * proc = NdbProcess::create("Create Keys", exe, wd.path(), args);
+  bool r = proc->wait(ret, 3000);
+  CHECK(r);
+  if(! r) proc->stop();
+  delete proc;
+
+  CHECK(ret == 0);
+  return NDBT_OK;
+}
+
+int
+runTestMgmdWithoutCert(NDBT_Context* ctx, NDBT_Step* step)
+{
+  NDBT_Workingdir wd("test_mgmd"); // temporary working directory
+  BaseString cfg_path = path(wd.path(), "config.ini", nullptr);
+
+  Properties config = ConfigFactory::create();
+  ConfigFactory::put(config, "ndb_mgmd", 1, "RequireCertificate", "true");
+  CHECK(ConfigFactory::write_config_ini(config, cfg_path.c_str()));
+
+  Mgmd mgmd(1);
+  CHECK(mgmd.start_from_config_ini(wd.path()));    // Start management node
+  CHECK(! mgmd.connect(config));                   // Cannot connect
+  return NDBT_OK;
+}
+
+int runTestApiWithoutCert(NDBT_Context* ctx, NDBT_Step* step)
+{
+  NDBT_Workingdir wd("test_tls"); // temporary working directory
+
+  BaseString cfg_path = path(wd.path(), "config.ini", nullptr);
+  Properties config = ConfigFactory::create();
+  CHECK(ConfigFactory::put(config, "ndbd", 2, "RequireTls", "true"));
+  CHECK(ConfigFactory::write_config_ini(config, cfg_path.c_str()));
+
+  CHECK(sign_tls_keys(wd));
+
+  Mgmd mgmd(1);
+  Ndbd ndbd(2);
+
+  NdbProcess::Args mgmdArgs;
+  mgmd.common_args(mgmdArgs, wd.path());
+
+  CHECK(mgmd.start(wd.path(), mgmdArgs));          // Start management node
+  CHECK(mgmd.connect(config));                     // Connect to management node
+  CHECK(mgmd.wait_confirmed_config());             // Wait for configuration
+
+  ndbd.args().add("--ndb-tls-search-path=", wd.path());
+  ndbd.start(wd.path(), mgmd.connectstring(config)); // Start data node
+  NdbMgmHandle handle = mgmd.handle() ;
+  CHECK(ndbd.wait_started(handle));
+
+  /* API has no TLS context and should fail to connect */
+  Ndb_cluster_connection con(mgmd.connectstring(config).c_str());
+  con.set_name("api_without_cert");
+  int r = con.connect(0,0,1);
+  CHECK(r == -1);
+  printf("ERROR %d: %s\n", con.get_latest_error(), con.get_latest_error_msg());
+
+  ndbd.stop();
+  mgmd.stop();
+  return NDBT_OK;
+}
+
+int
+runTestNdbdWithoutCert(NDBT_Context* ctx, NDBT_Step* step)
+{
+  NDBT_Workingdir wd("test_mgmd"); // temporary working directory
+  BaseString cfg_path = path(wd.path(), "config.ini", nullptr);
+
+  Properties config = ConfigFactory::create();
+  Properties db;
+  db.put("RequireCertificate", "true");
+  config.put("DB Default", & db);
+
+  CHECK(ConfigFactory::write_config_ini(config, cfg_path.c_str()));
+
+  Mgmd mgmd(1);
+  Ndbd ndbd(2);
+
+  CHECK(mgmd.start_from_config_ini(wd.path()));    // Start management node
+  CHECK(mgmd.connect(config));                     // Connect to management node
+  CHECK(mgmd.wait_confirmed_config());             // Wait for configuration
+
+  int exit_code;                                   // Start ndbd; it will fail
+  CHECK(ndbd.start(wd.path(), mgmd.connectstring(config)));
+  CHECK(ndbd.wait(exit_code, 100));                // should fail quickly
+  require(exit_code == 255);
+
+  CHECK(mgmd.stop());
+  return NDBT_OK;
+}
+
+int
+runTestNdbdWithExpiredCert(NDBT_Context* ctx, NDBT_Step* step)
+{
+  NDBT_Workingdir wd("test_tls"); // temporary working directory
+
+  BaseString cfg_path = path(wd.path(), "config.ini", nullptr);
+
+  Properties config = ConfigFactory::create();
+  Properties db;
+  db.put("RequireCertificate", "true");
+  config.put("DB Default", & db);
+  CHECK(ConfigFactory::write_config_ini(config, cfg_path.c_str()));
+
+  CHECK(create_expired_cert(wd));
+
+  Mgmd mgmd(1);
+  Ndbd ndbd(2);
+
+  CHECK(mgmd.start_from_config_ini(wd.path()));    // Start management node
+  CHECK(mgmd.connect(config));                     // Connect to management node
+  CHECK(mgmd.wait_confirmed_config());             // Wait for configuration
+
+  ndbd.args().add("--ndb-tls-search-path=", wd.path());
+  ndbd.start(wd.path(), mgmd.connectstring(config)); // Start data node
+
+  int exit_code;
+  CHECK(ndbd.wait(exit_code, 100));                // should fail quickly
+  CHECK(exit_code == 255);
+
+  CHECK(mgmd.stop());
+  return NDBT_OK;
+}
+
+int
+runTestNdbdWithCert(NDBT_Context* ctx, NDBT_Step* step)
+{
+  NDBT_Workingdir wd("test_tls"); // temporary working directory
+
+  BaseString cfg_path = path(wd.path(), "config.ini", nullptr);
+  Properties config = ConfigFactory::create();
+  Properties db;
+  db.put("RequireCertificate", "true");
+  config.put("DB Default", & db);
+  ConfigFactory::put(config, "ndb_mgmd", 1, "RequireTls", "true");
+  CHECK(ConfigFactory::write_config_ini(config, cfg_path.c_str()));
+
+  CHECK(sign_tls_keys(wd));
+
+  Mgmd mgmd(1);
+  Ndbd ndbd(2);
+
+  NdbProcess::Args mgmdArgs;
+  mgmd.common_args(mgmdArgs, wd.path());
+  mgmdArgs.add("--ndb-tls-search-path=", wd.path());
+
+  TlsKeyManager tls_km;
+  tls_km.init_mgm_client(wd.path(), Node::Type::DB);
+
+  CHECK(mgmd.start(wd.path(), mgmdArgs));          // Start management node
+  CHECK(mgmd.connect(config));                     // Connect to management node
+  CHECK(mgmd.client_start_tls(tls_km.ctx()) == 0); // Start TLS
+  CHECK(mgmd.wait_confirmed_config());             // Wait for configuration
+
+  ndbd.args().add("--ndb-tls-search-path=", wd.path());
+  ndbd.args().add("--ndb-mgm-tls=strict");
+  ndbd.start(wd.path(), mgmd.connectstring(config)); // Start data node
+  NdbMgmHandle handle = mgmd.handle();
+  CHECK(ndbd.wait_started(handle));
+
+  CHECK(mgmd.stop());
+  CHECK(ndbd.stop());
+  return NDBT_OK;
+}
+
+int runTestStartTls(NDBT_Context* ctx, NDBT_Step* step)
+{
+  NDBT_Workingdir wd("test_tls"); // temporary working directory
+  TlsKeyManager tls_km;
+  int major, minor, build, r;
+  char ver[128];
+  static constexpr int len = sizeof(ver);
+
+  BaseString cfg_path = path(wd.path(), "config.ini", nullptr);
+  Properties config = ConfigFactory::create();
+  CHECK(ConfigFactory::write_config_ini(config, cfg_path.c_str()));
+
+  sign_tls_keys(wd);
+
+  Mgmd mgmd(1);
+
+  NdbProcess::Args mgmdArgs;
+  mgmd.common_args(mgmdArgs, wd.path());
+  mgmdArgs.add("--ndb-tls-search-path=", wd.path());
+
+  CHECK(mgmd.start(wd.path(), mgmdArgs));          // Start management node
+  CHECK(mgmd.connect(config));                     // Connect to management node
+  CHECK(mgmd.wait_confirmed_config());             // Wait for configuration
+
+  tls_km.init(wd.path(), 0, NODE_TYPE_API, true);
+  CHECK(tls_km.ctx());
+
+  r = ndb_mgm_get_version(mgmd.handle(), &major, &minor, &build, len, ver);
+  CHECK(r == 1);
+  printf("Version: %d.%d.%d %s\n", major, minor, build, ver);
+
+  r = ndb_mgm_start_tls(mgmd.handle());
+  CHECK(r == -1);  // -1 is "SSL CTX required"
+  CHECK(ndb_mgm_get_latest_error(mgmd.handle()) == NDB_MGM_TLS_ERROR);
+
+  r = ndb_mgm_set_ssl_ctx(mgmd.handle(), tls_km.ctx());
+  CHECK(r == 0);   // first time setting ctx succeeds
+  r = ndb_mgm_set_ssl_ctx(mgmd.handle(), nullptr);
+  CHECK(r == -1);  // second time setting ctx fails
+
+  r = ndb_mgm_start_tls(mgmd.handle());
+  printf("ndb_mgm_start_tls(): %d\n", r);
+  CHECK(r == 0);
+
+  r = ndb_mgm_start_tls(mgmd.handle());
+  CHECK(r == -2); // -2 is "Socket already has TLS"
+
+  /* We have switched to TLS. Now run a command. */
+  r = ndb_mgm_get_version(mgmd.handle(), &major, &minor, &build, len, ver);
+  CHECK(r == 1);
+
+  /* And run another command. */
+  struct ndb_mgm_cluster_state *state = ndb_mgm_get_status(mgmd.handle());
+  CHECK(state != nullptr);
+
+  /* Now convert the socket to a transporter */
+  NdbSocket s;
+  mgmd.convert_to_transporter(&s);
+  CHECK(s.is_valid());
+
+  return NDBT_OK;
+}
+
+int runTestRequireTls(NDBT_Context* ctx, NDBT_Step* step)
+{
+  /* Create a configuration file in the working directory */
+  NDBT_Workingdir wd("test_tls");
+  BaseString cfg_path = path(wd.path(), "config.ini", nullptr);
+  Properties config = ConfigFactory::create();
+  ConfigFactory::put(config, "ndb_mgmd", 1, "RequireTls", "true");
+  CHECK(ConfigFactory::write_config_ini(config, cfg_path.c_str()));
+
+  /* Create keys in test_tls, and initialize our own TLS context */
+  TlsKeyManager tls_km;
+  bool k = sign_tls_keys(wd);
+  CHECK(k);
+  tls_km.init_mgm_client(wd.path());
+  CHECK(tls_km.ctx());
+
+  /* Start a management server that will require TLS */
+  Mgmd mgmd(1);
+  NdbProcess::Args mgmdArgs;
+  mgmd.common_args(mgmdArgs, wd.path());
+  mgmdArgs.add("--ndb-tls-search-path=", wd.path());
+  CHECK(mgmd.start(wd.path(), mgmdArgs));     // Start management node
+  sleep(1);                                   // Wait for confirmed config
+
+  /* Our management client */
+  NdbMgmHandle handle = ndb_mgm_create_handle();
+  ndb_mgm_set_connectstring(handle, mgmd.connectstring(config).c_str());
+  ndb_mgm_set_ssl_ctx(handle, tls_km.ctx());
+
+  int r = ndb_mgm_connect(handle, 3, 5, 1);   // Connect to management node
+  CHECK(r == 0);
+
+  ndb_mgm_severity sev = { NDB_MGM_EVENT_SEVERITY_ON, 1 };
+  r = ndb_mgm_get_clusterlog_severity_filter(handle, &sev, 1);
+  CHECK(r < 1);                               // COMMAND IS NOT YET ALLOWED
+  int err = ndb_mgm_get_latest_error(handle);
+  CHECK(err == NDB_MGM_AUTH_REQUIRES_TLS);
+
+  struct ndb_mgm_cluster_state * st = ndb_mgm_get_status(handle);
+  CHECK(st == nullptr);                       // COMMAND IS NOT YET ALLOWED
+  err = ndb_mgm_get_latest_error(handle);
+  CHECK(err == NDB_MGM_AUTH_REQUIRES_TLS);
+
+  r = ndb_mgm_start_tls(handle);
+  printf("ndb_mgm_start_tls(): %d\n", r);     // START TLS
+  CHECK(r == 0);
+
+  r = ndb_mgm_get_clusterlog_severity_filter(handle, &sev, 1);
+  CHECK(r == 1);                              // NOW COMMAND IS ALLOWED
+
+  return NDBT_OK;
+}
 
 NDBT_TESTSUITE(testMgmd);
 DRIVER(DummyDriver); /* turn off use of NdbApi */
@@ -1904,6 +2314,55 @@ TESTCASE("MultiMGMDDisconnection",
 {
   INITIALIZER(runTestMultiMGMDDisconnection);
 }
+
+#if OPENSSL_VERSION_NUMBER >= NDB_TLS_MINIMUM_OPENSSL
+
+TESTCASE("SshKeySigning",
+         "Test remote key signing over ssh using ndb_sign_keys")
+{
+  INITIALIZER(runTestSshKeySigning);
+}
+
+TESTCASE("MgmdWithoutCertificate",
+         "Test MGM server startup with TLS required but no certificate")
+{
+  INITIALIZER(runTestMgmdWithoutCert)
+}
+
+TESTCASE("NdbdWithoutCertificate",
+         "Test data node startup with TLS required but no certificate")
+{
+  INITIALIZER(runTestNdbdWithoutCert)
+}
+
+TESTCASE("ApiWithoutCertificate",
+         "Test API node without certificate where TRP TLS is required")
+{
+  INITIALIZER(runTestApiWithoutCert)
+}
+
+TESTCASE("NdbdWithExpiredCertificate",
+        "Test data node startup with expired certificate")
+{
+  INITIALIZER(runTestNdbdWithExpiredCert)
+}
+
+TESTCASE("NdbdWithCertificate", "Test data node startup with certificate")
+{
+  INITIALIZER(runTestNdbdWithCert)
+}
+
+TESTCASE("StartTls", "Test START TLS in MGM protocol")
+{
+  INITIALIZER(runTestStartTls);
+}
+
+TESTCASE("RequireTls", "Test MGM server that requires TLS")
+{
+  INITIALIZER(runTestRequireTls);
+}
+
+#endif
 
 NDBT_TESTSUITE_END(testMgmd)
 

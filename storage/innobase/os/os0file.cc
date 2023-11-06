@@ -47,6 +47,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 #include "fil0fil.h"
 #include "ha_prototypes.h"
+#include "my_macros.h"
 #include "os0file.h"
 #include "sql_const.h"
 #include "srv0srv.h"
@@ -106,9 +107,6 @@ unsigned long long os_fsync_threshold = 0;
 /** Insert buffer segment id */
 static const ulint IO_IBUF_SEGMENT = 0;
 
-/** Number of retries for partial I/O's */
-static const ulint NUM_RETRIES_ON_PARTIAL_IO = 10;
-
 /** For storing the allocated blocks */
 using Blocks = std::vector<file::Block>;
 
@@ -128,7 +126,7 @@ static ulint os_io_ptr_align = UNIV_SECTOR_SIZE;
 @retval true    if O_DIRECT is supported.
 @retval false   if O_DIRECT is not supported. */
 bool os_is_o_direct_supported() {
-#if !defined(NO_FALLOCATE) && defined(UNIV_LINUX)
+#ifdef UNIV_LINUX
   char *path = srv_data_home;
   char *file_name;
   os_file_t file_handle;
@@ -186,7 +184,7 @@ bool os_is_o_direct_supported() {
   return (true);
 #else
   return (false);
-#endif /* !NO_FALLOCATE && UNIV_LINUX */
+#endif /* UNIV_LINUX */
 }
 
 /* This specifies the file permissions InnoDB uses when it creates files in
@@ -317,6 +315,8 @@ struct Slot {
   when partial IO is required and not buf */
   byte *ptr{nullptr};
 
+  bool is_read() const { return type.is_read(); }
+
   /** OS_FILE_READ or OS_FILE_WRITE */
   IORequest type{IORequest::UNSET};
 
@@ -328,7 +328,7 @@ struct Slot {
 #ifdef UNIV_PFS_IO
       nullptr,  // m_psi
 #endif
-      0  // m_file
+      IF_WIN(nullptr, 0)  // m_file
   };
 
   /** file name or path */
@@ -406,11 +406,12 @@ struct Slot {
 
 std::string Slot::to_json() const noexcept {
   std::ostringstream out;
-  out << "{";
-  out << "\"className\": \"Slot\",";
-  out << "\"objectPtr\": \"" << (void *)this << "\",";
-  out << "\"buf_block\": \"" << (void *)buf_block << "\"";
-  out << "}";
+  out << "{\"type\": \"Slot\", \"pos\":" << pos << ", \"objectPtr\": \""
+      << (void *)this << "\", "
+      << "\"buf_block\": \"" << (void *)buf_block << "\""
+      << ", \"n_bytes\": " << n_bytes << ", \"len\":" << len
+      << ", \"orig_len\":" << type.get_original_size()
+      << ", \"offset\":" << offset << "}";
   return out.str();
 }
 
@@ -566,11 +567,11 @@ class AIO {
   static void wake_at_shutdown() {
     s_reads->signal();
 
-    if (s_writes != NULL) {
+    if (s_writes != nullptr) {
       s_writes->signal();
     }
 
-    if (s_ibuf != NULL) {
+    if (s_ibuf != nullptr) {
       s_ibuf->signal();
     }
   }
@@ -1101,55 +1102,6 @@ class AIOHandler {
   static dberr_t check_read(Slot *slot, ulint n_bytes);
 };
 #endif /* !UNIV_HOTBACKUP */
-
-/** Helper class for doing synchronous file IO. Currently, the objective
-is to hide the OS specific code, so that the higher level functions aren't
-peppered with "#ifdef". Makes the code flow difficult to follow.  */
-class SyncFileIO {
- public:
-  /** Constructor
-  @param[in]    fh      File handle
-  @param[in,out]        buf     Buffer to read/write
-  @param[in]    n       Number of bytes to read/write
-  @param[in]    offset  Offset where to read or write */
-  SyncFileIO(os_file_t fh, void *buf, ulint n, os_offset_t offset)
-      : m_fh(fh), m_buf(buf), m_n(static_cast<ssize_t>(n)), m_offset(offset) {
-    ut_ad(m_n > 0);
-  }
-
-  /** Destructor */
-  ~SyncFileIO() = default;
-
-  /** Do the read/write
-  @param[in]    request The IO context and type
-  @return the number of bytes read/written or negative value on error */
-  ssize_t execute(const IORequest &request);
-
-  /** Move the read/write offset up to where the partial IO succeeded.
-  @param[in]    n_bytes The number of bytes to advance */
-  void advance(ssize_t n_bytes) {
-    m_offset += n_bytes;
-
-    ut_ad(m_n >= n_bytes);
-
-    m_n -= n_bytes;
-
-    m_buf = reinterpret_cast<uchar *>(m_buf) + n_bytes;
-  }
-
- private:
-  /** Open file handle */
-  os_file_t m_fh;
-
-  /** Buffer to read/write */
-  void *m_buf;
-
-  /** Number of bytes to read/write */
-  ssize_t m_n;
-
-  /** Offset from where to read/write */
-  os_offset_t m_offset;
-};
 
 /** If it is a compressed page return the compressed page data + footer size
 @param[in]      buf             Buffer to check, must include header + 10 bytes
@@ -1793,7 +1745,7 @@ static char *os_file_get_parent_dir(const char *path) {
 void test_os_file_get_parent_dir(const char *child_dir,
                                  const char *expected_dir) {
   char *child = mem_strdup(child_dir);
-  char *expected = expected_dir == NULL ? NULL : mem_strdup(expected_dir);
+  char *expected = expected_dir == nullptr ? nullptr : mem_strdup(expected_dir);
 
   /* os_file_get_parent_dir() assumes that separators are
   converted to OS_PATH_SEPARATOR. */
@@ -1802,8 +1754,8 @@ void test_os_file_get_parent_dir(const char *child_dir,
 
   char *parent = os_file_get_parent_dir(child);
 
-  bool unexpected =
-      (expected == NULL ? (parent != NULL) : (0 != strcmp(parent, expected)));
+  bool unexpected = (expected == nullptr ? (parent != nullptr)
+                                         : (0 != strcmp(parent, expected)));
   if (unexpected) {
     ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_752)
         << "os_file_get_parent_dir('" << child << "') returned '" << parent
@@ -1817,23 +1769,23 @@ void test_os_file_get_parent_dir(const char *child_dir,
 /* Test the function os_file_get_parent_dir. */
 void unit_test_os_file_get_parent_dir() {
   test_os_file_get_parent_dir("/usr/lib/a", "/usr/lib");
-  test_os_file_get_parent_dir("/usr/", NULL);
-  test_os_file_get_parent_dir("//usr//", NULL);
-  test_os_file_get_parent_dir("usr", NULL);
-  test_os_file_get_parent_dir("usr//", NULL);
-  test_os_file_get_parent_dir("/", NULL);
-  test_os_file_get_parent_dir("//", NULL);
-  test_os_file_get_parent_dir(".", NULL);
-  test_os_file_get_parent_dir("..", NULL);
+  test_os_file_get_parent_dir("/usr/", nullptr);
+  test_os_file_get_parent_dir("//usr//", nullptr);
+  test_os_file_get_parent_dir("usr", nullptr);
+  test_os_file_get_parent_dir("usr//", nullptr);
+  test_os_file_get_parent_dir("/", nullptr);
+  test_os_file_get_parent_dir("//", nullptr);
+  test_os_file_get_parent_dir(".", nullptr);
+  test_os_file_get_parent_dir("..", nullptr);
 #ifdef _WIN32
-  test_os_file_get_parent_dir("D:", NULL);
-  test_os_file_get_parent_dir("D:/", NULL);
-  test_os_file_get_parent_dir("D:\\", NULL);
-  test_os_file_get_parent_dir("D:/data", NULL);
-  test_os_file_get_parent_dir("D:/data/", NULL);
-  test_os_file_get_parent_dir("D:\\data\\", NULL);
-  test_os_file_get_parent_dir("D:///data/////", NULL);
-  test_os_file_get_parent_dir("D:\\\\\\data\\\\\\\\", NULL);
+  test_os_file_get_parent_dir("D:", nullptr);
+  test_os_file_get_parent_dir("D:/", nullptr);
+  test_os_file_get_parent_dir("D:\\", nullptr);
+  test_os_file_get_parent_dir("D:/data", nullptr);
+  test_os_file_get_parent_dir("D:/data/", nullptr);
+  test_os_file_get_parent_dir("D:\\data\\", nullptr);
+  test_os_file_get_parent_dir("D:///data/////", nullptr);
+  test_os_file_get_parent_dir("D:\\\\\\data\\\\\\\\", nullptr);
   test_os_file_get_parent_dir("D:/data//a", "D:/data");
   test_os_file_get_parent_dir("D:\\data\\\\a", "D:\\data");
   test_os_file_get_parent_dir("D:///data//a///b/", "D:///data//a");
@@ -1947,6 +1899,7 @@ file::Block *os_file_compress_page(IORequest &type, void *&buf, ulint *n) {
 
     buf = buf_ptr;
     *n = compressed_len;
+    block->m_size = compressed_len;
 
     if (compressed_len >= old_compressed_len &&
         !type.is_punch_hole_optimisation_disabled()) {
@@ -2034,6 +1987,31 @@ static file::Block *os_file_encrypt_log(const IORequest &type, void *&buf,
   }
   buf = buf_ptr;
   return block;
+}
+
+dberr_t SyncFileIO::execute_with_retry(const IORequest &request,
+                                       const size_t max_retries) {
+  dberr_t err{DB_SUCCESS};
+  size_t total_bytes = 0;
+  for (size_t i = 0; i < max_retries; ++i) {
+    ssize_t n_bytes = execute(request);
+    if (n_bytes < 0) {
+      err = DB_IO_ERROR;
+      break;
+    }
+    total_bytes += n_bytes;
+    if (total_bytes == m_orig_bytes) {
+      break;
+    }
+    advance(n_bytes);
+  }
+  if (total_bytes != m_orig_bytes) {
+    /* If the number of retries has reached the maximum allowed, and still the
+    requested number of bytes is not read/written, then an error is returned.
+    So, ensure that the number of retries is high enough. */
+    err = DB_IO_ERROR;
+  }
+  return err;
 }
 
 #ifndef _WIN32
@@ -2219,7 +2197,7 @@ dberr_t LinuxAIOHandler::resubmit(Slot *slot) {
     errno = -ret;
   }
 
-  return (ret < 0 ? DB_IO_PARTIAL_FAILED : DB_SUCCESS);
+  return (ret == 1 ? DB_SUCCESS : DB_IO_PARTIAL_FAILED);
 }
 
 /** Check if the AIO succeeded
@@ -2309,10 +2287,10 @@ void LinuxAIOHandler::collect() {
   io_context *io_ctx = m_array->io_ctx(m_segment);
 
   /* Starting point of the m_segment we will be working on. */
-  ulint start_pos = m_segment * m_n_slots;
+  const ulint start_pos = m_segment * m_n_slots;
 
   /* End point. */
-  ulint end_pos = start_pos + m_n_slots;
+  const ulint end_pos = start_pos + m_n_slots;
 
   for (;;) {
     struct io_event *events;
@@ -2332,6 +2310,9 @@ void LinuxAIOHandler::collect() {
 
     auto ret = io_getevents(io_ctx, 1, m_n_slots, events, &timeout);
 
+    /* Cannot be bigger than the events array provided. */
+    ut_a(ret < 0 || (ulint)ret <= m_n_slots);
+
     for (int i = 0; i < ret; ++i) {
       auto iocb = reinterpret_cast<struct iocb *>(events[i].obj);
       ut_a(iocb != nullptr);
@@ -2341,6 +2322,11 @@ void LinuxAIOHandler::collect() {
       /* Some sanity checks. */
       ut_a(slot != nullptr);
       ut_a(slot->is_reserved);
+      ut_a(!slot->io_already_done);
+
+      /* What is provided in iocb->data is returned in the data member of the
+      completion event i.e., io_event::data */
+      ut_a(iocb->data == events[i].data);
 
       /* We are not scribbling previous segment. */
       ut_a(slot->pos >= start_pos);
@@ -2546,11 +2532,9 @@ bool AIO::linux_dispatch(Slot *slot) {
   /* Find out what we are going to work with.
   The iocb struct is directly in the slot.
   The io_context is one per segment. */
-
-  ulint io_ctx_index;
   struct iocb *iocb = &slot->control;
-
-  io_ctx_index = (slot->pos * m_n_segments) / m_slots.size();
+  const ulint io_ctx_index = (slot->pos * m_n_segments) / m_slots.size();
+  ut_a(io_ctx_index < m_n_segments);
 
   int ret = io_submit(m_aio_ctx[io_ctx_index], 1, &iocb);
 
@@ -3711,6 +3695,7 @@ void Dir_Walker::walk_posix(const Path &basedir, bool recursive, Function &&f) {
 @return the number of bytes read/written or negative value on error */
 ssize_t SyncFileIO::execute(const IORequest &request) {
   OVERLAPPED overlapped{};
+  ut_ad(buf_page_t::is_zeroes((page_t *)&overlapped, sizeof(overlapped)));
 
   /* We need a fresh, not shared instance of Event for the OVERLAPPED structure.
   Both are stopped being used at most at the end of this method, as we wait for
@@ -3729,7 +3714,7 @@ ssize_t SyncFileIO::execute(const IORequest &request) {
   overlapped.Offset = (DWORD)m_offset & 0xFFFFFFFF;
   overlapped.OffsetHigh = (DWORD)(m_offset >> 32);
 
-  ut_a(overlapped.hEvent != NULL);
+  ut_a(overlapped.hEvent != nullptr);
 
   BOOL result;
   DWORD n_bytes_transfered = 0;
@@ -3746,7 +3731,9 @@ ssize_t SyncFileIO::execute(const IORequest &request) {
   }
 
   if (!result) {
-    if (GetLastError() == ERROR_IO_PENDING) {
+    const DWORD error = GetLastError();
+    ut_a(error != ERROR_INVALID_PARAMETER);
+    if (error == ERROR_IO_PENDING) {
       result =
           GetOverlappedResult(m_fh, &overlapped, &n_bytes_transfered, true);
     }
@@ -3793,12 +3780,12 @@ static dberr_t os_file_punch_hole_win32(os_file_t fh, os_offset_t off,
   OVERLAPPED overlapped{};
   overlapped.hEvent = local_event.get_handle();
 
-  ut_a(overlapped.hEvent != NULL);
+  ut_a(overlapped.hEvent != nullptr);
 
   DWORD temp;
 
   BOOL result = DeviceIoControl(fh, FSCTL_SET_ZERO_DATA, &punch, sizeof(punch),
-                                NULL, 0, &temp, &overlapped);
+                                nullptr, 0, &temp, &overlapped);
 
   if (!result) {
     if (GetLastError() == ERROR_IO_PENDING) {
@@ -3911,7 +3898,7 @@ bool os_file_flush_func(os_file_t file) {
     return (true);
   }
 
-  os_file_handle_error(NULL, "flush");
+  os_file_handle_error(nullptr, "flush");
 
   /* It is a fatal error if a file flush does not succeed, because then
   the database can get corrupt on disk */
@@ -4113,8 +4100,8 @@ os_file_t os_file_create_simple_func(const char *name, ulint create_mode,
   do {
     /* Use default security attributes and no template file. */
 
-    file = CreateFile((LPCTSTR)name, access, share_mode, NULL, create_flag,
-                      attributes, NULL);
+    file = CreateFile((LPCTSTR)name, access, share_mode, nullptr, create_flag,
+                      attributes, nullptr);
 
     if (file == INVALID_HANDLE_VALUE) {
       *success = false;
@@ -4131,7 +4118,8 @@ os_file_t os_file_create_simple_func(const char *name, ulint create_mode,
 
       /* This is a best effort use case, if it fails then we will find out when
       we try and punch the hole. */
-      DeviceIoControl(file, FSCTL_SET_SPARSE, NULL, 0, NULL, 0, &temp, NULL);
+      DeviceIoControl(file, FSCTL_SET_SPARSE, nullptr, 0, nullptr, 0, &temp,
+                      nullptr);
     }
 
   } while (retry);
@@ -4152,7 +4140,7 @@ but reports the error and returns false.
 bool os_file_create_directory(const char *pathname, bool fail_if_exists) {
   BOOL rcode;
 
-  rcode = CreateDirectory((LPCTSTR)pathname, NULL);
+  rcode = CreateDirectory((LPCTSTR)pathname, nullptr);
   if (!(rcode != 0 ||
         (GetLastError() == ERROR_ALREADY_EXISTS && !fail_if_exists))) {
     os_file_handle_error_no_exit(pathname, "CreateDirectory", false);
@@ -4333,8 +4321,8 @@ pfs_os_file_t os_file_create_func(const char *name, ulint create_mode,
 
   do {
     /* Use default security attributes and no template file. */
-    file.m_file = CreateFile((LPCTSTR)name, access, share_mode, NULL,
-                             create_flag, attributes, NULL);
+    file.m_file = CreateFile((LPCTSTR)name, access, share_mode, nullptr,
+                             create_flag, attributes, nullptr);
 
     if (file.m_file == INVALID_HANDLE_VALUE) {
       const char *operation;
@@ -4358,8 +4346,8 @@ pfs_os_file_t os_file_create_func(const char *name, ulint create_mode,
 
       /* This is a best effort use case, if it fails then
       we will find out when we try and punch the hole. */
-      DeviceIoControl(file.m_file, FSCTL_SET_SPARSE, NULL, 0, NULL, 0, &temp,
-                      NULL);
+      DeviceIoControl(file.m_file, FSCTL_SET_SPARSE, nullptr, 0, nullptr, 0,
+                      &temp, nullptr);
     }
 
   } while (retry);
@@ -4448,9 +4436,9 @@ pfs_os_file_t os_file_create_simple_no_error_handling_func(const char *name,
   }
 
   file.m_file = CreateFile((LPCTSTR)name, access, share_mode,
-                           NULL,  // Security attributes
+                           nullptr,  // Security attributes
                            create_flag, attributes,
-                           NULL);  // No template file
+                           nullptr);  // No template file
 
   *success = (file.m_file != INVALID_HANDLE_VALUE);
 
@@ -4458,8 +4446,8 @@ pfs_os_file_t os_file_create_simple_no_error_handling_func(const char *name,
     DWORD temp;
     /* This is a best effort use case, if it fails then we will find out when
     we try and punch the hole. */
-    DeviceIoControl(file.m_file, FSCTL_SET_SPARSE, NULL, 0, NULL, 0, &temp,
-                    NULL);
+    DeviceIoControl(file.m_file, FSCTL_SET_SPARSE, nullptr, 0, nullptr, 0,
+                    &temp, nullptr);
   }
 
   return (file);
@@ -4517,7 +4505,7 @@ bool os_file_delete_if_exists_func(const char *name, bool *exist) {
 
     if (lasterr == ERROR_FILE_NOT_FOUND || lasterr == ERROR_PATH_NOT_FOUND) {
       /* The file does not exist, this not an error */
-      if (exist != NULL) {
+      if (exist != nullptr) {
         *exist = false;
       }
 
@@ -4605,7 +4593,7 @@ bool os_file_close_func(os_file_t file) {
     return (true);
   }
 
-  os_file_handle_error(NULL, "close");
+  os_file_handle_error(nullptr, "close");
 
   return (false);
 }
@@ -4744,10 +4732,10 @@ static dberr_t os_file_get_status_win32(const char *path,
 
       fh = CreateFile((LPCTSTR)path,  // File to open
                       access, FILE_SHARE_READ,
-                      NULL,                   // Default security
+                      nullptr,                // Default security
                       OPEN_EXISTING,          // Existing file only
                       FILE_ATTRIBUTE_NORMAL,  // Normal file
-                      NULL);                  // No attr. template
+                      nullptr);               // No attr. template
 
       if (fh == INVALID_HANDLE_VALUE) {
         stat_info->rw_perm = false;
@@ -4805,7 +4793,7 @@ static bool os_file_truncate_win32(const char *pathname, pfs_os_file_t file,
 
   length.QuadPart = size;
 
-  BOOL success = SetFilePointerEx(file.m_file, length, NULL, FILE_BEGIN);
+  BOOL success = SetFilePointerEx(file.m_file, length, nullptr, FILE_BEGIN);
 
   if (!success) {
     os_file_handle_error_no_exit(pathname, "SetFilePointerEx", false);
@@ -5112,8 +5100,7 @@ NUM_RETRIES_ON_PARTIAL_IO times to read/write the complete data.
         << "Retry attempts for " << (type.is_read() ? "reading" : "writing")
         << " partial data failed.";
   }
-
-  return (bytes_returned);
+  return bytes_returned;
 }
 
 /** Does a synchronous write operation in Posix.
@@ -5500,8 +5487,7 @@ void os_file_set_nocache(int fd [[maybe_unused]],
 
 bool os_file_set_size_fast(const char *name, pfs_os_file_t pfs_file,
                            os_offset_t offset, os_offset_t size, bool flush) {
-#if !defined(NO_FALLOCATE) && defined(UNIV_LINUX) && \
-    defined(HAVE_FALLOC_FL_ZERO_RANGE)
+#if defined(UNIV_LINUX) && defined(HAVE_FALLOC_FL_ZERO_RANGE)
   ut_a(size >= offset);
 
   static bool print_message = true;
@@ -5525,7 +5511,7 @@ bool os_file_set_size_fast(const char *name, pfs_os_file_t pfs_file,
                              << " - falling back to writing NULLs.";
     print_message = false;
   }
-#endif /* !NO_FALLOCATE && UNIV_LINUX && HAVE_FALLOC_FL_ZERO_RANGE */
+#endif /* UNIV_LINUX && HAVE_FALLOC_FL_ZERO_RANGE */
 
   return os_file_set_size(name, pfs_file, offset, size, flush);
 }
@@ -5652,7 +5638,7 @@ bool os_file_seek(const char *pathname, os_file_t file, os_offset_t offset) {
 
   length.QuadPart = offset;
 
-  success = SetFilePointerEx(file, length, NULL, FILE_BEGIN);
+  success = SetFilePointerEx(file, length, nullptr, FILE_BEGIN);
 
 #else  /* _WIN32 */
   off_t ret;
@@ -6131,7 +6117,7 @@ dberr_t AIO::init_slots() {
 
 #ifdef WIN_ASYNC_IO
 
-    slot.handle = CreateEvent(NULL, TRUE, FALSE, NULL);
+    slot.handle = CreateEvent(nullptr, TRUE, FALSE, nullptr);
 
     OVERLAPPED *over = &slot.control;
 
@@ -6192,7 +6178,7 @@ dberr_t AIO::init() {
   ut_a(!m_slots.empty());
 
 #ifdef _WIN32
-  ut_a(m_handles == NULL);
+  ut_a(m_handles == nullptr);
 
   m_handles =
       ut::new_withkey<Handles>(UT_NEW_THIS_FILE_PSI_KEY, m_slots.size());
@@ -6396,7 +6382,7 @@ void AIO::shutdown() {
   s_reads = nullptr;
 }
 #endif /* !UNIV_HOTBACKUP*/
-#if !defined(NO_FALLOCATE) && defined(UNIV_LINUX)
+#ifdef UNIV_LINUX
 
 /** Max disk sector size */
 static const ulint MAX_SECTOR_SIZE = 4096;
@@ -6479,7 +6465,7 @@ void os_fusionio_get_sector_size() {
     os_io_ptr_align = sector_size;
   }
 }
-#endif /* !NO_FALLOCATE && UNIV_LINUX */
+#endif /* UNIV_LINUX */
 
 /** Creates and initializes block_cache. Creates array of MAX_BLOCKS
 and allocates the memory in each block to hold BUFFER_BLOCK_SIZE
@@ -6543,9 +6529,9 @@ bool os_aio_init(ulint n_readers, ulint n_writers) {
 
   /* Get sector size for DIRECT_IO. In this case, we need to
   know the sector size for aligning the write buffer. */
-#if !defined(NO_FALLOCATE) && defined(UNIV_LINUX)
+#ifdef UNIV_LINUX
   os_fusionio_get_sector_size();
-#endif /* !NO_FALLOCATE && UNIV_LINUX */
+#endif /* UNIV_LINUX */
 
   return (AIO::start(limit, n_readers, n_writers));
 }
@@ -6739,6 +6725,9 @@ Slot *AIO::reserve_slot(IORequest &type, fil_node_t *m1, void *m2,
   slot->type = type;
   slot->buf = static_cast<byte *>(buf);
   slot->ptr = slot->buf;
+
+  ut_ad(m1->is_offset_valid(offset));
+
   slot->offset = offset;
   slot->err = DB_SUCCESS;
   if (type.is_read()) {
@@ -6986,8 +6975,8 @@ static dberr_t os_aio_windows_handler(ulint segment, fil_node_t **m1, void **m2,
 
     if (srv_shutdown_state.load() == SRV_SHUTDOWN_EXIT_THREADS &&
         array->is_empty() && !buf_flush_page_cleaner_is_active()) {
-      *m1 = NULL;
-      *m2 = NULL;
+      *m1 = nullptr;
+      *m2 = nullptr;
 
       array->release();
 
@@ -7033,7 +7022,7 @@ static dberr_t os_aio_windows_handler(ulint segment, fil_node_t **m1, void **m2,
       /* This read/write does not go through os_file_read
       and os_file_write APIs, need to register with
       performance schema explicitly here. */
-      struct PSI_file_locker *locker = NULL;
+      struct PSI_file_locker *locker = nullptr;
       PSI_file_locker_state state;
       register_pfs_file_io_begin(
           &state, locker, slot->file, slot->len,
@@ -7963,4 +7952,47 @@ dberr_t os_file_write_retry(IORequest &type, const char *name,
     }
   }
   return err;
+}
+
+std::string IORequest::type_str(const ulint type) {
+  std::ostringstream os;
+  if (type & READ) {
+    os << " READ";
+  } else if (type & WRITE) {
+    os << " WRITE";
+  } else if (type & DBLWR) {
+    os << " DBLWR";
+  }
+
+  /** Enumerations below can be ORed to READ/WRITE above*/
+
+  /** Data file */
+  if (type & DATA_FILE) {
+    os << " | DATA_FILE";
+  }
+
+  if (type & LOG) {
+    os << " | LOG";
+  }
+
+  if (type & DISABLE_PARTIAL_IO_WARNINGS) {
+    os << " | DISABLE_PARTIAL_IO_WARNINGS";
+  }
+
+  if (type & DO_NOT_WAKE) {
+    os << " | DO_NOT_WAKE";
+  }
+
+  if (type & IGNORE_MISSING) {
+    os << " | IGNORE_MISSING";
+  }
+
+  if (type & PUNCH_HOLE) {
+    os << " | PUNCH_HOLE";
+  }
+
+  if (type & NO_COMPRESSION) {
+    os << " | NO_COMPRESSION";
+  }
+  return os.str();
 }

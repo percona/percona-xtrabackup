@@ -1,0 +1,18 @@
+--source include/have_ndb.inc
+--source suite/ndb_tls/include/check_openssl.inc
+
+# Require MGM TLS, but not transporter TLS
+
+# The server is up
+#
+SELECT 1;
+
+## Expect 2 encrypted links
+SELECT node_id, remote_node_id, encrypted from ndbinfo.transporters
+WHERE status = 'CONNECTED' ORDER BY node_id, remote_node_id;
+
+# ndb_desc fails without TLS
+--replace_regex /^.*--//
+--error 1
+--exec $NDB_DESC --connect-retries=0
+

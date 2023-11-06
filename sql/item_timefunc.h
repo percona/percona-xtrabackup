@@ -303,6 +303,8 @@ class Item_typecast_year final : public Item_int_func {
   const char *func_name() const override { return "cast_as_year"; }
   enum Functype functype() const override { return TYPECAST_FUNC; }
   bool resolve_type(THD *thd) override;
+  void print(const THD *thd, String *str,
+             enum_query_type query_type) const override;
 };
 
 /**
@@ -323,7 +325,7 @@ class Item_func_weekday : public Item_func {
     return static_cast<double>(val_int());
   }
   String *val_str(String *str) override {
-    assert(fixed == 1);
+    assert(fixed);
     str->set(val_int(), &my_charset_bin);
     return null_value ? nullptr : str;
   }
@@ -557,7 +559,7 @@ class Item_temporal_hybrid_func : public Item_str_func {
       or using collation.collation when VARCHAR
       (which is fixed from @collation_connection in resolve_type()).
     */
-    assert(fixed == 1);
+    assert(fixed);
     return data_type() == MYSQL_TYPE_STRING ? collation.collation
                                             : &my_charset_bin;
   }
@@ -618,7 +620,7 @@ class Item_date_func : public Item_temporal_func {
   enum Functype functype() const override { return DATE_FUNC; }
   bool resolve_type(THD *) override { return false; }
   my_decimal *val_decimal(my_decimal *decimal_value) override {
-    assert(fixed == 1);
+    assert(fixed);
     return val_decimal_from_date(decimal_value);
   }
   // All date functions must implement get_date()
@@ -676,7 +678,7 @@ class Item_datetime_func : public Item_temporal_func {
   longlong val_int() override { return val_int_from_datetime(); }
   longlong val_date_temporal() override;
   my_decimal *val_decimal(my_decimal *decimal_value) override {
-    assert(fixed == 1);
+    assert(fixed);
     return val_decimal_from_date(decimal_value);
   }
   bool get_time(MYSQL_TIME *ltime) override {
@@ -1666,7 +1668,8 @@ class Item_func_get_format final : public Item_str_ascii_func {
   String *val_str_ascii(String *str) override;
   const char *func_name() const override { return "get_format"; }
   enum Functype functype() const override { return GET_FORMAT_FUNC; }
-  bool resolve_type(THD *) override {
+  bool resolve_type(THD *thd) override {
+    if (param_type_is_default(thd, 0, -1)) return true;
     set_nullable(true);
     set_data_type_string(17, default_charset());
     return false;

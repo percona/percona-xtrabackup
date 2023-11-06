@@ -815,3 +815,287 @@ Table	Op	Msg_type	Msg_text
 test.t2	analyze	status	OK
 test.t3	analyze	status	OK
 DROP TABLE t1, t2, t3, num10;
+#
+# Bug#34762651 Too high row estimates for DISTINCT
+#
+CREATE TABLE t1(
+a INT PRIMARY KEY,
+b INT,
+KEY(b),
+c INT
+);
+INSERT INTO t1
+WITH RECURSIVE qn(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM qn WHERE n<100)
+SELECT n,  n%5, n%7 FROM qn;
+ANALYZE TABLE t1 UPDATE HISTOGRAM ON c;
+Table	Op	Msg_type	Msg_text
+test.t1	histogram	status	Histogram statistics created for column 'c'.
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+EXPLAIN ANALYZE SELECT DISTINCT b FROM t1;
+EXPLAIN
+-> Remove duplicates from input grouped on t1.b  (rows=5) (actual rows=5 loops=1)
+    -> Covering index scan on t1 using b  (rows=100) (actual rows=100 loops=1)
+
+EXPLAIN ANALYZE SELECT DISTINCT c FROM t1;
+EXPLAIN
+-> Sort with duplicate removal: t1.c  (rows=7) (actual rows=7 loops=1)
+    -> Table scan on t1  (rows=100) (actual rows=100 loops=1)
+
+EXPLAIN ANALYZE SELECT DISTINCT b,c FROM t1;
+EXPLAIN
+-> Sort with duplicate removal: t1.b, t1.c  (rows=20.6) (actual rows=35 loops=1)
+    -> Table scan on t1  (rows=100) (actual rows=100 loops=1)
+
+DROP TABLE t1;
+#
+# Bug#34763224 Hypergraph orders and-terms inefficiently in subquery
+#
+CREATE TABLE num (n INT);
+INSERT INTO num VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9);
+CREATE TABLE t1(
+a INT PRIMARY KEY,
+b VARCHAR(128),
+c INT
+);
+INSERT INTO t1 SELECT k, CAST(100+k AS CHAR(10)), k
+FROM (SELECT x1.n+x2.n*10 AS k FROM num x1, num x2) d1;
+ANALYZE TABLE t1 UPDATE HISTOGRAM ON b, c;
+Table	Op	Msg_type	Msg_text
+test.t1	histogram	status	Histogram statistics created for column 'b'.
+test.t1	histogram	status	Histogram statistics created for column 'c'.
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+EXPLAIN FORMAT=TREE SELECT 1 FROM t1 x1 WHERE x1.c IN
+(SELECT c FROM t1 x2 WHERE  b<"150" AND c<70);
+EXPLAIN
+-> Hash semijoin (x1.c = x2.c)  (rows=35)
+    -> Table scan on x1  (rows=100)
+    -> Hash
+        -> Filter: ((x2.c < 70) and (x2.b < '150'))  (rows=35)
+            -> Table scan on x2  (rows=100)
+
+EXPLAIN  FORMAT=TREE SELECT 1 FROM t1 WHERE b<"150" AND c<70;
+EXPLAIN
+-> Filter: ((t1.c < 70) and (t1.b < '150'))  (rows=35)
+    -> Table scan on t1  (rows=100)
+
+EXPLAIN  FORMAT=TREE SELECT 1 FROM t1 WHERE b<"150" AND c<80;
+EXPLAIN
+-> Filter: ((t1.b < '150') and (t1.c < 80))  (rows=40)
+    -> Table scan on t1  (rows=100)
+
+#
+# BUG 35507456
+# Assertion `[&]() { for (const Predicate *first = begin; first < end; first++)
+#
+EXPLAIN FORMAT=TREE SELECT 1 FROM t1
+WHERE  b<"150" AND RAND(0)>-1 AND c< 70;
+EXPLAIN
+-> Filter: ((t1.c < 70) and (t1.b < '150') and (rand(0) > <cache>(-(1))))  (rows=35)
+    -> Table scan on t1  (rows=100)
+
+CREATE FUNCTION foo(i INT)
+RETURNS INT
+LANGUAGE SQL
+BEGIN
+RETURN i+1;
+END $$
+EXPLAIN FORMAT=TREE SELECT 1 FROM t1 WHERE foo(2)=3 AND c=5;
+EXPLAIN
+-> Filter: ((t1.c = 5) and (foo(2) = 3))  (rows=1)
+    -> Table scan on t1  (rows=100)
+
+DROP FUNCTION foo;
+DROP TABLE num, t1;
+#
+# Bug#34787357 Hypergraph: row estimates for field=non_field_term
+# ignores indexes and histogram
+#
+CREATE TABLE t1 (
+a INT,
+b INT,
+c INT,
+d INT,
+e INT,
+f INT,
+g INT,
+PRIMARY KEY(a),
+KEY k1 (b,d), --  'b' and 'd' are indepdendent.
+KEY k2 (b,e), -- 'b' is funtionally dependent on 'e'.
+KEY k3 (b,g), -- 'b' is funtionally dependent on 'g'.
+KEY k4 (f,g) -- 'f' and 'g' are independet.
+);
+INSERT INTO t1
+WITH RECURSIVE qn(n) AS
+(SELECT 0 UNION ALL SELECT n+1 FROM qn WHERE n<255)
+SELECT n AS a, n DIV 16 AS b, n % 16 AS c, n % 16 AS d, n DIV 8 AS e,
+n % 32 AS f, n DIV 8 AS g FROM qn;
+ANALYZE TABLE t1 UPDATE HISTOGRAM ON c;
+Table	Op	Msg_type	Msg_text
+test.t1	histogram	status	Histogram statistics created for column 'c'.
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE b=FLOOR(RAND(0));
+EXPLAIN
+-> Filter: (t1.b = floor(rand(0)))  (rows=16) (actual rows=16 loops=1)
+    -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE c=FLOOR(RAND(0));
+EXPLAIN
+-> Filter: (t1.c = floor(rand(0)))  (rows=16) (actual rows=16 loops=1)
+    -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE FLOOR(RAND(0))=c;
+EXPLAIN
+-> Filter: (floor(rand(0)) = t1.c)  (rows=16) (actual rows=16 loops=1)
+    -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE d=FLOOR(RAND(0));
+EXPLAIN
+-> Filter: (t1.d = floor(rand(0)))  (rows=4) (actual rows=16 loops=1)
+    -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE e=FLOOR(RAND(0));
+EXPLAIN
+-> Filter: (t1.e = floor(rand(0)))  (rows=32) (actual rows=8 loops=1)
+    -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE d=0;
+EXPLAIN
+-> Covering index skip scan on t1 using k1 over d = 0  (rows=4) (actual rows=16 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE e=0;
+EXPLAIN
+-> Filter: (t1.e = 0)  (rows=32) (actual rows=8 loops=1)
+    -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE g=FLOOR(RAND(0));
+EXPLAIN
+-> Filter: (t1.g = floor(rand(0)))  (rows=13.5) (actual rows=8 loops=1)
+    -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE b=(SELECT MIN(b) FROM t1);
+EXPLAIN
+-> Filter: (t1.b = (select #2))  (rows=16) (actual rows=16 loops=1)
+    -> Covering index lookup on t1 using k1 (b=(select #2))  (rows=16) (actual rows=16 loops=1)
+    -> Select #2 (subquery in condition; run only once)
+        -> Aggregate: min(t1.b)  (rows=1) (actual rows=1 loops=1)
+            -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE c=(SELECT MIN(b) FROM t1);
+EXPLAIN
+-> Filter: (t1.c = (select #2))  (rows=16) (actual rows=16 loops=1)
+    -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+    -> Select #2 (subquery in condition; run only once)
+        -> Aggregate: min(t1.b)  (rows=1) (actual rows=1 loops=1)
+            -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE b<>FLOOR(RAND(0));
+EXPLAIN
+-> Filter: (t1.b <> floor(rand(0)))  (rows=240) (actual rows=240 loops=1)
+    -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE c<>FLOOR(RAND(0));
+EXPLAIN
+-> Filter: (t1.c <> floor(rand(0)))  (rows=240) (actual rows=240 loops=1)
+    -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE FLOOR(RAND(0))<>c;
+EXPLAIN
+-> Filter: (floor(rand(0)) <> t1.c)  (rows=240) (actual rows=240 loops=1)
+    -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE b<>(SELECT MIN(b) FROM t1);
+EXPLAIN
+-> Filter: (t1.b <> (select #2))  (rows=240) (actual rows=240 loops=1)
+    -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+    -> Select #2 (subquery in condition; run only once)
+        -> Aggregate: min(t1.b)  (rows=1) (actual rows=1 loops=1)
+            -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE c<>(SELECT MIN(b) FROM t1);
+EXPLAIN
+-> Filter: (t1.c <> (select #2))  (rows=240) (actual rows=240 loops=1)
+    -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+    -> Select #2 (subquery in condition; run only once)
+        -> Aggregate: min(t1.b)  (rows=1) (actual rows=1 loops=1)
+            -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE d<>(SELECT MIN(b) FROM t1);
+EXPLAIN
+-> Filter: (t1.d <> (select #2))  (rows=252) (actual rows=240 loops=1)
+    -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+    -> Select #2 (subquery in condition; run only once)
+        -> Aggregate: min(t1.b)  (rows=1) (actual rows=1 loops=1)
+            -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+
+EXPLAIN ANALYZE SELECT 1 FROM t1 WHERE e<>(SELECT MIN(b) FROM t1);
+EXPLAIN
+-> Filter: (t1.e <> (select #2))  (rows=224) (actual rows=248 loops=1)
+    -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+    -> Select #2 (subquery in condition; run only once)
+        -> Aggregate: min(t1.b)  (rows=1) (actual rows=1 loops=1)
+            -> Table scan on t1  (rows=256) (actual rows=256 loops=1)
+
+EXPLAIN ANALYZE FORMAT=TREE SELECT * FROM t1 x1 WHERE d =
+(SELECT MIN(g) FROM t1 x2 WHERE x1.b<>x2.b);
+EXPLAIN
+-> Filter: (x1.d = (select #2))  (rows=256) (actual rows=16 loops=1)
+    -> Table scan on x1  (rows=256) (actual rows=256 loops=1)
+    -> Select #2 (subquery in condition; dependent)
+        -> Aggregate: min(x2.g)  (rows=1) (actual rows=1 loops=256)
+            -> Filter: (x1.b <> x2.b)  (rows=240) (actual rows=240 loops=256)
+                -> Table scan on x2  (rows=256) (actual rows=256 loops=256)
+
+Warnings:
+Note	1276	Field or reference 'test.x1.b' of SELECT #2 was resolved in SELECT #1
+DROP TABLE t1;
+# Bug#35439787 Assertion `false && "Inconsistent row counts for
+# different AccessPath objects."'
+#
+CREATE TABLE t1 (
+a INT PRIMARY KEY,
+b INT,
+c INT,
+d INT,
+e INT,
+KEY k1 (b,c)
+);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+EXPLAIN FORMAT=TREE SELECT 1 FROM t1 x1 WHERE EXISTS
+(SELECT 1 FROM t1 x2, t1 x3, t1 x4
+WHERE x2.b=x3.d AND x2.c=x3.e AND x3.d=x4.b AND x2.e=x4.e);
+EXPLAIN
+-> Nested loop semijoin  (rows=0.1)
+    -> Table scan on x1  (rows=1)
+    -> Nested loop inner join  (rows=0.1)
+        -> Table scan on x3  (rows=1)
+        -> Filter: ((x2.b = x3.d) and (x2.c = x3.e))  (rows=0.1)
+            -> Nested loop inner join  (rows=0.1)
+                -> Table scan on x2  (rows=1)
+                -> Filter: ((x2.e = x4.e) and (x2.b = x4.b))  (rows=0.1)
+                    -> Table scan on x4  (rows=1)
+
+DROP TABLE t1;
+CREATE TABLE t1 (a int, b int);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+EXPLAIN FORMAT=TREE SELECT * FROM  t1 x1 LEFT JOIN (t1 x2, t1 x3)
+ON x1.a=x3.a WHERE x1.b<x2.b OR x2.a IS NULL;
+EXPLAIN
+-> Filter: ((x1.b < x2.b) or (x2.a is null))  (rows=1)
+    -> Nested loop left join  (rows=1)
+        -> Table scan on x1  (rows=1)
+        -> Filter: (x1.a = x3.a)  (rows=0.1)
+            -> Nested loop inner join  (rows=1)
+                -> Table scan on x2  (rows=1)
+                -> Table scan on x3  (rows=1)
+
+DROP TABLE t1;

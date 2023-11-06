@@ -68,10 +68,10 @@ std::ostream &operator<<(std::ostream &os,
 using mysql_harness::ConfigBuilder;
 using mysqlrouter::MySQLSession;
 
-class RouterRoutingTest : public RouterComponentTest {
+class RouterRoutingTest : public RouterComponentBootstrapTest {
  public:
   std::string get_static_routing_section(
-      const std::string &name, uint16_t bind_port,
+      const std::string &name, uint16_t bind_port, const std::string &socket,
       std::vector<uint16_t> dest_ports, const std::string &protocol,
       const std::vector<ConfigBuilder::kv_type> &custom_settings = {}) {
     std::vector<std::string> destinations;
@@ -79,11 +79,16 @@ class RouterRoutingTest : public RouterComponentTest {
       destinations.push_back("127.0.0.1:" + std::to_string(port));
     }
     std::vector<ConfigBuilder::kv_type> options{
-        {"bind_port", std::to_string(bind_port)},
         {"mode", "read-write"},
         {"destinations", mysql_harness::join(destinations, ",")},
         {"routing_strategy", "round-robin"},
         {"protocol", protocol}};
+
+    if (socket.empty()) {
+      options.push_back({"bind_port", std::to_string(bind_port)});
+    } else {
+      options.push_back({"socket", socket});
+    }
 
     for (const auto &s : custom_settings) {
       options.push_back(s);
@@ -96,13 +101,9 @@ class RouterRoutingTest : public RouterComponentTest {
 
 using XProtocolSession = std::shared_ptr<xcl::XSession>;
 
-static xcl::XError make_x_connection(XProtocolSession &session,
-                                     const std::string &host,
-                                     const uint16_t port,
-                                     const std::string &username,
-                                     const std::string &password,
-                                     int64_t connect_timeout = 10000 /*10s*/) {
-  session = xcl::create_session();
+static xcl::XError setup_x_session(XProtocolSession &session,
+                                   int64_t connect_timeout = 10000 /*10s*/,
+                                   const std::string &ssl_mode = "PREFERRED") {
   xcl::XError err;
 
   err = session->set_mysql_option(
@@ -110,7 +111,7 @@ static xcl::XError make_x_connection(XProtocolSession &session,
   if (err) return err;
 
   err = session->set_mysql_option(xcl::XSession::Mysqlx_option::Ssl_mode,
-                                  "PREFERRED");
+                                  ssl_mode);
   if (err) return err;
 
   err = session->set_mysql_option(
@@ -121,9 +122,36 @@ static xcl::XError make_x_connection(XProtocolSession &session,
                                   connect_timeout);
   if (err) return err;
 
+  return {};
+}
+
+static xcl::XError make_x_connection(
+    XProtocolSession &session, const std::string &host, const uint16_t port,
+    const std::string &username, const std::string &password,
+    int64_t connect_timeout = 10000 /*10s*/,
+    const std::string &ssl_mode = "PREFERRED") {
+  session = xcl::create_session();
+  xcl::XError err = setup_x_session(session, connect_timeout, ssl_mode);
+  if (err) return err;
+
   return session->connect(host.c_str(), port, username.c_str(),
                           password.c_str(), "");
 }
+
+#ifndef _WIN32
+static xcl::XError make_x_connection(XProtocolSession &session,
+                                     const std::string &socket,
+                                     const std::string &username,
+                                     const std::string &password,
+                                     int64_t connect_timeout = 10000 /*10s*/) {
+  session = xcl::create_session();
+  xcl::XError err = setup_x_session(session, connect_timeout);
+  if (err) return err;
+
+  return session->connect(socket.c_str(), username.c_str(), password.c_str(),
+                          "");
+}
+#endif  // _WIN32
 
 TEST_F(RouterRoutingTest, RoutingOk) {
   const auto server_port = port_pool_.get_next_available();
@@ -140,7 +168,7 @@ TEST_F(RouterRoutingTest, RoutingOk) {
       false /*expecting huge data, can't print on the console*/);
 
   const std::string routing_section = get_static_routing_section(
-      "basic", router_port, {server_port}, "classic");
+      "basic", router_port, "", {server_port}, "classic");
 
   TempDirectory conf_dir("conf");
   std::string conf_file = create_config_file(conf_dir.name(), routing_section);
@@ -150,16 +178,13 @@ TEST_F(RouterRoutingTest, RoutingOk) {
 
   // launch another router to do the bootstrap connecting to the mock server
   // via first router instance
-  auto &router_bootstrapping = launch_router(
+  auto &router_bootstrapping = launch_router_for_bootstrap(
       {
           "--bootstrap=localhost:" + std::to_string(router_port),
-          "--report-host",
-          "dont.query.dns",
           "-d",
           bootstrap_dir.name(),
       },
-      EXIT_SUCCESS, true, false, -1s,
-      RouterComponentBootstrapTest::kBootstrapOutputResponder);
+      EXIT_SUCCESS);
 
   ASSERT_NO_FATAL_FAILURE(check_exit_code(router_bootstrapping, EXIT_SUCCESS));
 
@@ -199,7 +224,9 @@ TEST_P(RouterRoutingConnectTimeoutTest, ConnectTimeout) {
   std::vector<std::pair<std::string, std::string>> routing_section_options{
       {"bind_port", std::to_string(router_port)},
       {"mode", "read-write"},
-      {"destinations", "example.org:81"}};
+      // we use example.org's IP here to avoid DNS resolution which on PB2
+      // often takes too long and causes the test timeout assumption to fail
+      {"destinations", "93.184.216.34:81"}};
 
   if (!GetParam().config_file_timeout.empty()) {
     routing_section_options.emplace_back("connect_timeout",
@@ -276,7 +303,7 @@ TEST_F(RouterRoutingTest, ConnectTimeoutShutdownEarly) {
       {{"bind_port", std::to_string(router_port)},
        {"mode", "read-write"},
        {"connect_timeout", std::to_string(connect_timeout.count())},
-       {"destinations", "example.org:81"}});
+       {"destinations", "93.184.216.34:81"}});
 
   TempDirectory conf_dir("conf");
   std::string conf_file = create_config_file(conf_dir.name(), routing_section);
@@ -376,7 +403,9 @@ TEST_F(RouterRoutingTest, ConnectTimeoutShutdownEarlyXProtocol) {
        {"mode", "read-write"},
        {"connect_timeout", std::to_string(connect_timeout.count())},
        {"protocol", "x"},
-       {"destinations", "example.org:81"}});
+       // we use example.org's IP here to avoid DNS resolution which on PB2
+       // often takes too long and causes the test timeout assumption to fail
+       {"destinations", "93.184.216.34:81"}});
 
   TempDirectory conf_dir("conf");
   std::string conf_file = create_config_file(conf_dir.name(), routing_section);
@@ -403,14 +432,10 @@ TEST_F(RouterRoutingTest, ConnectTimeoutShutdownEarlyXProtocol) {
 
   const auto start = clock_type::now();
 
-  // give the connect thread enough time to:
-  //
-  // - resolve example.org (may take ~200ms)
-  // - start a connect() to its IP
-  //
-  // there is no better way to ensure that the connect() has been started
-  // and is still blocked other then waiting.
-
+  // give the connect thread chance to initiate the connection, even if it
+  // sometimes does not it should be fine, we just test a different scenario
+  // then
+  std::this_thread::sleep_for(200ms);
   std::this_thread::sleep_for(500ms);
   // now force shutdown the router
   const auto kill_res = router.kill();
@@ -605,8 +630,9 @@ TEST_F(RouterMaxConnectionsTest, RoutingTooManyConnections) {
   launch_mysql_server_mock(json_stmts, server_port, EXIT_SUCCESS, false);
 
   // create a config with routing that has max_connections == 2
-  const std::string routing_section = get_static_routing_section(
-      "A", router_port, {server_port}, "classic", {{"max_connections", "2"}});
+  const std::string routing_section =
+      get_static_routing_section("A", router_port, "", {server_port}, "classic",
+                                 {{"max_connections", "2"}});
 
   TempDirectory conf_dir("conf");
   std::string conf_file = create_config_file(conf_dir.name(), routing_section);
@@ -647,11 +673,11 @@ TEST_F(RouterMaxConnectionsTest, RoutingTooManyServerConnections) {
   // launch the server mock
   launch_mysql_server_mock(json_stmts, server_port, EXIT_SUCCESS, false);
 
-  const std::string routing_section =
-      get_static_routing_section("basic", router_port, {server_port}, "classic",
-                                 {
-                                     {"connect_retry_timeout", "0"},
-                                 });
+  const std::string routing_section = get_static_routing_section(
+      "basic", router_port, "", {server_port}, "classic",
+      {
+          {"connect_retry_timeout", "0"},
+      });
 
   TempDirectory conf_dir("conf");
   std::string conf_file = create_config_file(conf_dir.name(), routing_section);
@@ -699,10 +725,10 @@ TEST_F(RouterMaxConnectionsTest, RoutingTotalMaxConnectionsExceeded) {
   launch_mysql_server_mock(json_stmts, server_port, EXIT_SUCCESS, false);
 
   // create a config with 2 routing sections and max_total_connections = 2
-  const std::string routing_section1 =
-      get_static_routing_section("A", router_portA, {server_port}, "classic");
-  const std::string routing_section2 =
-      get_static_routing_section("B", router_portB, {server_port}, "classic");
+  const std::string routing_section1 = get_static_routing_section(
+      "A", router_portA, "", {server_port}, "classic");
+  const std::string routing_section2 = get_static_routing_section(
+      "B", router_portB, "", {server_port}, "classic");
 
   TempDirectory conf_dir("conf");
 
@@ -775,18 +801,18 @@ TEST_F(RouterMaxConnectionsTest,
   // each has "local" limit of 5 max_connections
   // the total_max_connections is 10
   const std::string routing_section_classic_rw = get_static_routing_section(
-      "classic_rw", router_classic_rw_port, {server_classic_port}, "classic",
-      {{"max_connections", "5"}});
+      "classic_rw", router_classic_rw_port, "", {server_classic_port},
+      "classic", {{"max_connections", "5"}});
   const std::string routing_section_classic_ro = get_static_routing_section(
-      "classic_ro", router_classic_ro_port, {server_classic_port}, "classic",
-      {{"max_connections", "5"}});
+      "classic_ro", router_classic_ro_port, "", {server_classic_port},
+      "classic", {{"max_connections", "5"}});
 
   const std::string routing_section_x_rw =
-      get_static_routing_section("x_rw", router_x_rw_port, {server_x_port}, "x",
-                                 {{"max_connections", "2"}});
+      get_static_routing_section("x_rw", router_x_rw_port, "", {server_x_port},
+                                 "x", {{"max_connections", "2"}});
   const std::string routing_section_x_ro =
-      get_static_routing_section("x_ro", router_x_ro_port, {server_x_port}, "x",
-                                 {{"max_connections", "2"}});
+      get_static_routing_section("x_ro", router_x_ro_port, "", {server_x_port},
+                                 "x", {{"max_connections", "2"}});
 
   TempDirectory conf_dir("conf");
 
@@ -874,18 +900,18 @@ TEST_F(RouterMaxConnectionsTest,
   // each has "local" limit of 5 max_connections
   // the total_max_connections is 25
   const std::string routing_section_classic_rw = get_static_routing_section(
-      "classic_rw", router_classic_rw_port, {server_classic_port}, "classic",
-      {{"max_connections", "5"}});
+      "classic_rw", router_classic_rw_port, "", {server_classic_port},
+      "classic", {{"max_connections", "5"}});
   const std::string routing_section_classic_ro = get_static_routing_section(
-      "classic_ro", router_classic_ro_port, {server_classic_port}, "classic",
-      {{"max_connections", "5"}});
+      "classic_ro", router_classic_ro_port, "", {server_classic_port},
+      "classic", {{"max_connections", "5"}});
 
   const std::string routing_section_x_rw =
-      get_static_routing_section("x_rw", router_x_rw_port, {server_x_port}, "x",
-                                 {{"max_connections", "5"}});
+      get_static_routing_section("x_rw", router_x_rw_port, "", {server_x_port},
+                                 "x", {{"max_connections", "5"}});
   const std::string routing_section_x_ro =
-      get_static_routing_section("x_ro", router_x_ro_port, {server_x_port}, "x",
-                                 {{"max_connections", "5"}});
+      get_static_routing_section("x_ro", router_x_ro_port, "", {server_x_port},
+                                 "x", {{"max_connections", "5"}});
 
   TempDirectory conf_dir("conf");
 
@@ -1020,8 +1046,8 @@ TEST_F(RouterMaxConnectionsTest, WarningWhenLocalMaxConGreaterThanTotalMaxCon) {
   // create a configuration with 1 route (classic rw) that has  "local" limit of
   // 600 max_connections the total_max_connections is default 512
   const std::string routing_section_classic_rw = get_static_routing_section(
-      "classic_rw", router_classic_rw_port, {server_classic_port}, "classic",
-      {{"max_connections", "600"}});
+      "classic_rw", router_classic_rw_port, "", {server_classic_port},
+      "classic", {{"max_connections", "600"}});
   TempDirectory conf_dir("conf");
 
   std::string conf_file = create_config_file(
@@ -1089,8 +1115,47 @@ TEST_F(RouterRoutingTest, named_socket_has_right_permissions) {
   EXPECT_THAT(wait_for_correct_perms(5000), testing::Eq(true));
   EXPECT_TRUE(wait_log_contains(router,
                                 "Start accepting connections for routing "
-                                "routing:basic listening on named socket",
+                                "routing:basic listening on '" +
+                                    socket_file + "'",
                                 5s));
+}
+
+TEST_F(RouterRoutingTest, named_socket_fails_with_socket_is_not_readable) {
+  TempDirectory bootstrap_dir;
+
+  // launch Router with unix socket
+  const std::string socket_file = bootstrap_dir.name() + "/sockfile";
+
+  // create the file that's not readable to trigger a permission denied check.
+  {
+    int fd = open(socket_file.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0000);
+    ASSERT_NE(fd, -1) << errno;
+    close(fd);
+  }
+
+  auto writer = config_writer(bootstrap_dir.name());
+
+  writer.section("routing:basic", {
+                                      {"socket", socket_file},
+                                      {"mode", "read-write"},
+                                      {"destinations", "127.0.0.1:1234"},
+                                  });
+  auto &router = router_spawner()
+                     .wait_for_sync_point(Spawner::SyncPoint::NONE)
+                     .expected_exit_code(EXIT_FAILURE)
+                     .spawn({"-c", writer.write()});
+
+  ASSERT_NO_THROW(router.wait_for_exit());
+
+  EXPECT_THAT(router.get_logfile_content(),
+              ::testing::AnyOf(
+                  ::testing::HasSubstr(
+                      "is bound by another process failed: Permission denied"),
+                  ::testing::HasSubstr("is bound by another process failed: "
+                                       "Socket operation on non-socket")));
+
+  // check if the file still exists and hasn't been deleted
+  EXPECT_EQ(access(socket_file.c_str(), F_OK), 0);
 }
 #endif
 
@@ -1845,8 +1910,8 @@ TEST_P(RouterRoutingXProtocolInvalidInitMessageTest,
   launch_mysql_server_mock(json_stmts, server_classic_port, EXIT_SUCCESS, false,
                            /*http_port*/ 0, server_x_port);
 
-  const std::string routing_x_section =
-      get_static_routing_section("x", router_x_rw_port, {server_x_port}, "x");
+  const std::string routing_x_section = get_static_routing_section(
+      "x", router_x_rw_port, "", {server_x_port}, "x");
 
   TempDirectory conf_dir("conf");
 
@@ -1948,8 +2013,8 @@ TEST_F(RouterRoutingTest, CloseConnection) {
   launch_mysql_server_mock(json_stmts, server_classic_port, EXIT_SUCCESS, false,
                            /*http_port*/ 0, server_x_port);
 
-  const std::string routing_x_section =
-      get_static_routing_section("x", router_x_rw_port, {server_x_port}, "x");
+  const std::string routing_x_section = get_static_routing_section(
+      "x", router_x_rw_port, "", {server_x_port}, "x");
 
   TempDirectory conf_dir("conf");
   std::string conf_file = create_config_file(conf_dir.name(), routing_x_section,
@@ -1987,6 +2052,192 @@ TEST_F(RouterRoutingTest, CloseConnection) {
 
   EXPECT_THAT(read_buf, ::testing::ContainerEq(ok_bye_msg_buf));
 }
+
+/**
+ * @test Check that the Router logs expected debug lines when connection is
+ * established and closed.
+ */
+TEST_F(RouterRoutingTest, ConnectionDebugLogsTcp) {
+  const auto server_classic_port = port_pool_.get_next_available();
+  const auto server_x_port = port_pool_.get_next_available();
+  const auto router_classic_rw_port = port_pool_.get_next_available();
+  const auto router_x_rw_port = port_pool_.get_next_available();
+
+  const std::string json_stmts = get_data_dir().join("my_port.js").str();
+
+  launch_mysql_server_mock(json_stmts, server_classic_port, EXIT_SUCCESS, false,
+                           /*http_port*/ 0, server_x_port);
+
+  const std::string routing_classic_section = get_static_routing_section(
+      "classic", router_classic_rw_port, "", {server_classic_port}, "classic");
+
+  const std::string routing_x_section = get_static_routing_section(
+      "x", router_x_rw_port, "", {server_x_port}, "x");
+
+  TempDirectory conf_dir("conf");
+  std::string conf_file = create_config_file(
+      conf_dir.name(), routing_classic_section + routing_x_section, nullptr,
+      "mysqlrouter.conf");
+
+  // launch the router with the created configuration
+  auto &router = launch_router({"-c", conf_file});
+
+  auto check_conn_debug_logs = [&](const uint16_t accepting_port,
+                                   const uint16_t dest_port) {
+  // clang-format off
+  // 2023-06-12 11:37:08 routing DEBUG [0x16f423000] [routing:x] fd=24 connection accepted at 127.0.0.1:11013
+  // 2023-06-12 10:37:08 routing DEBUG [0x16de8f000] [routing:x] fd=26 connected 127.0.0.1:56065 -> 127.0.0.1:6001
+  // 2023-06-12 10:37:12 routing DEBUG [0x16de8f000] [routing:x] fd=26 127.0.0.1:56065 -> 127.0.0.1:6001: connection closed (up: 2288b; down: 955b)
+  // clang-format on
+#ifdef GTEST_USES_SIMPLE_RE
+    const std::string line_con_accepted_regex =
+        ".* routing DEBUG .* \\[routing:.*\\] fd=\\d+ connection accepted "
+        "at 127\\.0\\.0\\.1:" +
+        std::to_string(accepting_port);
+
+    const std::string line_con_connected_regex =
+        ".* routing DEBUG .* \\[routing:.*\\] fd=\\d+ connected "
+        "127.0.0.1:\\d+ -> 127.0.0.1:" +
+        std::to_string(dest_port);
+
+    const std::string line_con_closed_regex =
+        ".* routing DEBUG .* \\[routing:.*\\] fd=\\d+ 127.0.0.1:\\d+ -> "
+        "127.0.0.1:" +
+        std::to_string(dest_port) +
+        ": connection closed \\(up: \\d+b; down: \\d+b\\)";
+#else
+    const std::string line_con_accepted_regex =
+        ".* routing DEBUG .* \\[routing:.*\\] fd=[0-9]+ connection accepted "
+        "at 127\\.0\\.0\\.1:" +
+        std::to_string(accepting_port);
+
+    const std::string line_con_connected_regex =
+        ".* routing DEBUG .* \\[routing:.*\\] fd=[0-9]+ connected "
+        "127.0.0.1:[0-9]+ -> 127.0.0.1:" +
+        std::to_string(dest_port);
+
+    const std::string line_con_closed_regex =
+        ".* routing DEBUG .* \\[routing:.*\\] fd=[0-9]+ "
+        "127.0.0.1:[0-9]+ -> 127.0.0.1:" +
+        std::to_string(dest_port) +
+        ": connection closed \\(up: [0-9]+b; down: [0-9]+b\\)";
+#endif
+
+    EXPECT_TRUE(wait_log_contains(router, line_con_accepted_regex, 1s))
+        << line_con_accepted_regex;
+    EXPECT_TRUE(wait_log_contains(router, line_con_connected_regex, 1s))
+        << line_con_connected_regex;
+    EXPECT_TRUE(wait_log_contains(router, line_con_closed_regex, 1s))
+        << line_con_closed_regex;
+  };
+
+  {
+    // open and close classic connection
+    make_new_connection_ok(router_classic_rw_port);
+
+    // open and close x connection
+    XProtocolSession x_session;
+
+    const auto res = make_x_connection(x_session, "127.0.0.1", router_x_rw_port,
+                                       "user", "pass");
+  }
+
+  // check that there are expected debug logs for both
+  check_conn_debug_logs(router_classic_rw_port, server_classic_port);
+  check_conn_debug_logs(router_x_rw_port, server_x_port);
+}
+
+#ifndef _WIN32
+/**
+ * @test Check that the Router logs expected debug lines when connection is
+ * established and closed via the Unix socket.
+ */
+TEST_F(RouterRoutingTest, ConnectionDebugLogsSocket) {
+  const auto server_classic_port = port_pool_.get_next_available();
+  const auto server_x_port = port_pool_.get_next_available();
+
+  const std::string json_stmts = get_data_dir().join("my_port.js").str();
+
+  launch_mysql_server_mock(json_stmts, server_classic_port, EXIT_SUCCESS, false,
+                           /*http_port*/ 0, server_x_port);
+
+  TempDirectory conf_dir("conf");
+
+  const std::string classic_socket =
+      Path(conf_dir.name()).join("mysql.sock").str();
+  const std::string x_socket = Path(conf_dir.name()).join("mysqlx.sock").str();
+
+  const std::string routing_classic_section = get_static_routing_section(
+      "classic", 0, classic_socket, {server_classic_port}, "classic");
+  const std::string routing_x_section =
+      get_static_routing_section("x", 0, x_socket, {server_x_port}, "x");
+
+  std::string conf_file = create_config_file(
+      conf_dir.name(), routing_classic_section + routing_x_section, nullptr,
+      "mysqlrouter.conf");
+
+  // launch the router with the created configuration
+  auto &router = launch_router({"-c", conf_file});
+
+  auto check_conn_debug_logs = [&](const std::string &socket,
+                                   const uint16_t dest_port) {
+  // clang-format off
+  // 2023-06-12 09:19:37 routing DEBUG [0x170353000] [routing:bootstrap_rw] fd=37 connection accepted at /tmp/mysql.sock
+  // 2023-06-12 09:19:37 routing DEBUG [0x16fddb000] [routing:bootstrap_rw] connected /tmp/mysql.sock -> 127.0.0.1:6000
+  // 2023-06-12 09:19:51 routing DEBUG [0x16fddb000] [routing:bootstrap_rw] /tmp/mysql.sock -> 127.0.0.1:6000: connection closed (up: 344b; down: 875b)
+  // clang-format on
+#ifdef GTEST_USES_SIMPLE_RE
+    const std::string line_con_accepted_regex =
+        ".* routing DEBUG .* \\[routing:.*\\] fd=\\d+ connection accepted "
+        "at " +
+        socket;
+
+    const std::string line_con_connected_regex =
+        ".* routing DEBUG .* \\[routing:.*\\] fd=\\d+ connected " + socket +
+        " -> 127.0.0.1:" + std::to_string(dest_port);
+
+    const std::string line_con_closed_regex =
+        ".* routing DEBUG .* \\[routing:.*\\] " + socket +
+        " -> 127.0.0.1:" + std::to_string(dest_port) +
+        ": connection closed \\(up: \\d+b; down: \\d+b\\)";
+#else
+    const std::string line_con_accepted_regex =
+        ".* routing DEBUG .* \\[routing:.*\\] fd=[0-9]+ connection accepted "
+        "at " +
+        socket;
+
+    const std::string line_con_connected_regex =
+        ".* routing DEBUG .* \\[routing:.*\\] fd=[0-9]+ connected " + socket +
+        " -> 127.0.0.1:" + std::to_string(dest_port);
+
+    const std::string line_con_closed_regex =
+        ".* routing DEBUG .* \\[routing:.*\\] fd=[0-9]+ " + socket +
+        " -> 127.0.0.1:" + std::to_string(dest_port) +
+        ": connection closed \\(up: [0-9]+b; down: [0-9]+b\\)";
+#endif
+    EXPECT_TRUE(wait_log_contains(router, line_con_accepted_regex, 1s))
+        << line_con_accepted_regex;
+    EXPECT_TRUE(wait_log_contains(router, line_con_connected_regex, 1s))
+        << line_con_connected_regex;
+    EXPECT_TRUE(wait_log_contains(router, line_con_closed_regex, 1s))
+        << line_con_closed_regex;
+  };
+
+  {
+    // open and close classic connection
+    make_new_connection_ok(classic_socket);
+
+    // open and close x connection
+    XProtocolSession x_session;
+
+    const auto res = make_x_connection(x_session, x_socket, "user", "pass");
+  }
+
+  // check that there are expected debug logs for both
+  check_conn_debug_logs(classic_socket, server_classic_port);
+  check_conn_debug_logs(x_socket, server_x_port);
+}
+#endif
 
 using OptionalStr = std::optional<std::string>;
 
@@ -2028,6 +2279,44 @@ class RoutingSessionReuseTest : public RouterRoutingTest {
     return result;
   }
 
+  void get_cache_hits_classic(uint16_t dest_port, size_t &result) {
+    // connect with no SSL to not affect the SSL related counters and check the
+    // cache hits number
+
+    MySQLSession session_no_ssl;
+    session_no_ssl.set_ssl_options(mysql_ssl_mode::SSL_MODE_DISABLED, "", "",
+                                   "", "", "", "");
+    ASSERT_NO_FATAL_FAILURE(session_no_ssl.connect(
+        "127.0.0.1", dest_port, "username", "password", "", ""));
+    std::unique_ptr<mysqlrouter::MySQLSession::ResultRow> resultset{
+        session_no_ssl.query_one("SHOW STATUS LIKE 'Ssl_session_cache_hits'")};
+    ASSERT_NE(nullptr, resultset.get());
+    ASSERT_EQ(1u, resultset->size());
+    result = std::atoi((*resultset)[0]);
+  }
+
+  void get_cache_hits_x(uint16_t dest_port, size_t &result) {
+    // connect with no SSL to not affect the SSL related counters and check the
+    // cache hits number
+    XProtocolSession x_session_no_ssl;
+    const auto res =
+        make_x_connection(x_session_no_ssl, "127.0.0.1", dest_port, "username",
+                          "password", 2000, "DISABLED");
+    ASSERT_EQ(res.error(), 0);
+
+    xcl::XError xerr;
+    const auto resultset = x_session_no_ssl->execute_sql(
+        "SHOW STATUS LIKE 'Ssl_session_cache_hits'", &xerr);
+    ASSERT_TRUE(resultset) << xerr;
+
+    const auto row = resultset->get_next_row();
+    ASSERT_NE(row, nullptr);
+    int64_t cache_hits;
+    ASSERT_TRUE(row->get_int64(0, &cache_hits));
+
+    result = static_cast<size_t>(cache_hits);
+  }
+
   void check_session_reuse_classic(const uint16_t port,
                                    const bool expected_reuse_client,
                                    const bool expected_reuse_server,
@@ -2060,18 +2349,8 @@ class RoutingSessionReuseTest : public RouterRoutingTest {
       dest_port = static_cast<uint16_t>(std::stoul(std::string((*result)[0])));
     }
 
-    // connect with no SSL to not affect the SSL related counters and check the
-    // cache hits number
-    MySQLSession session_no_ssl;
-    session_no_ssl.set_ssl_options(mysql_ssl_mode::SSL_MODE_DISABLED, "", "",
-                                   "", "", "", "");
-    ASSERT_NO_FATAL_FAILURE(session_no_ssl.connect(
-        "127.0.0.1", dest_port, "username", "password", "", ""));
-    std::unique_ptr<mysqlrouter::MySQLSession::ResultRow> result{
-        session_no_ssl.query_one("SHOW STATUS LIKE 'Ssl_session_cache_hits'")};
-    ASSERT_NE(nullptr, result.get());
-    ASSERT_EQ(1u, result->size());
-    const size_t cache_hits = std::atoi((*result)[0]);
+    size_t cache_hits;
+    get_cache_hits_classic(dest_port, cache_hits);
 
     const size_t expected_hits =
         expected_reuse_server ? expected_server_reuse_counter : 0;
@@ -2087,8 +2366,9 @@ class RoutingSessionReuseTest : public RouterRoutingTest {
     {
       XProtocolSession x_session;
       const auto start = std::chrono::steady_clock::now();
-      const auto res = make_x_connection(x_session, "127.0.0.1", port,
-                                         "username", "password", 2000);
+      const auto res =
+          make_x_connection(x_session, "127.0.0.1", port, "username",
+                            "password", 2000, "REQUIRED");
       const auto stop = std::chrono::steady_clock::now();
 
       std::stringstream oss;
@@ -2112,26 +2392,12 @@ class RoutingSessionReuseTest : public RouterRoutingTest {
       dest_port = static_cast<uint16_t>(dest_port_int64);
     }
 
-    // connect with no SSL to not affect the SSL related counters and check the
-    // cache hits number
-    XProtocolSession x_session_no_ssl;
-    const auto res = make_x_connection(x_session_no_ssl, "127.0.0.1", dest_port,
-                                       "username", "password", 2000);
-    ASSERT_EQ(res.error(), 0);
+    size_t cache_hits;
+    get_cache_hits_x(dest_port, cache_hits);
 
-    xcl::XError xerr;
-    const auto result = x_session_no_ssl->execute_sql(
-        "SHOW STATUS LIKE 'Ssl_session_cache_hits'", &xerr);
-    ASSERT_TRUE(result) << xerr;
-
-    const auto row = result->get_next_row();
-    ASSERT_NE(row, nullptr);
-    int64_t cache_hits;
-    ASSERT_TRUE(row->get_int64(0, &cache_hits));
-
-    const size_t expected_cache_hits =
+    const size_t expected_hits =
         expected_reuse_server ? expected_server_reuse_counter : 0;
-    EXPECT_EQ(expected_cache_hits, (size_t)cache_hits);
+    EXPECT_EQ(expected_hits, cache_hits);
   }
 
   void launch_destinations(const size_t num) {
@@ -2163,11 +2429,11 @@ class RoutingSessionReuseTest : public RouterRoutingTest {
     }
 
     const std::string routing_classic_section = get_static_routing_section(
-        "classic", router_classic_port_, dest_classic_ports_, "classic",
+        "classic", router_classic_port_, "", dest_classic_ports_, "classic",
         to_config_options(conf));
 
     const std::string routing_x_section = get_static_routing_section(
-        "x", router_x_port_, dest_x_ports_, "x", to_config_options(conf));
+        "x", router_x_port_, "", dest_x_ports_, "x", to_config_options(conf));
 
     const std::string server_ssl_mode = "REQUIRED";
     const std::string client_ssl_mode = "REQUIRED";
@@ -2453,15 +2719,7 @@ struct SessionReuseInvalidOptionValueParam {
 class RoutingSessionReuseInvalidOptionValueTest
     : public RoutingSessionReuseTest,
       public ::testing::WithParamInterface<
-          SessionReuseInvalidOptionValueParam> {
- protected:
-  void check_log_contains(ProcessWrapper &router,
-                          const std::string &expected_string) {
-    const std::string log_content = router.get_logfile_content();
-    EXPECT_EQ(1, count_str_occurences(log_content, expected_string))
-        << log_content;
-  }
-};
+          SessionReuseInvalidOptionValueParam> {};
 
 TEST_P(RoutingSessionReuseInvalidOptionValueTest, Spec) {
   const auto test_param = GetParam();
@@ -2661,6 +2919,63 @@ INSTANTIATE_TEST_SUITE_P(
             "was '$"}),
     [](const ::testing::TestParamInfo<SessionReuseInvalidOptionValueParam>
            &info) { return info.param.test_name; });
+
+TEST_F(RoutingSessionReuseTest, ReuseAfterInvalidAuth) {
+  const size_t kDestinations = 1;
+  std::string performance;
+
+  launch_destinations(kDestinations);
+
+  launch_router({/* client_ssl_session_cache_mode */ "1",
+                 /* client_ssl_session_cache_size */ std::nullopt,
+                 /* client_ssl_session_cache_timeout */ std::nullopt,
+                 /* server_ssl_session_cache_mode */ "1",
+                 /* server_ssl_session_cache_size */ std::nullopt,
+                 /* server_ssl_session_cache_timeout */ std::nullopt},
+                EXIT_SUCCESS);
+
+  SCOPED_TRACE(
+      "// check if server-side and client-side sessions are reused as "
+      "expected");
+
+  auto check_server_session_reuse_invalid_auth_classic =
+      [&](const size_t expected_reuse_counter) {
+        MySQLSession session;
+        session.set_ssl_options(mysql_ssl_mode::SSL_MODE_REQUIRED, "", "", "",
+                                "", "", "");
+
+        EXPECT_THROW_LIKE(
+            session.connect("127.0.0.1", router_classic_port_, "username",
+                            "invalid-password", "", ""),
+            std::exception, "Access Denied for user");
+        size_t cache_hits;
+        get_cache_hits_classic(dest_classic_ports_[0], cache_hits);
+        EXPECT_EQ(expected_reuse_counter, cache_hits);
+      };
+
+  // make a few consecutive connections with invalid auth data, check that the
+  // server sessions are reused
+  check_server_session_reuse_invalid_auth_classic(/*expected_reuse_counter*/ 0);
+  check_server_session_reuse_invalid_auth_classic(/*expected_reuse_counter*/ 1);
+  check_server_session_reuse_invalid_auth_classic(/*expected_reuse_counter*/ 2);
+
+  auto check_server_session_reuse_invalid_auth_x =
+      [&](const size_t expected_reuse_counter) {
+        XProtocolSession x_session;
+        const auto res =
+            make_x_connection(x_session, "127.0.0.1", router_x_port_,
+                              "username", "password", 2000, "REQUIRED");
+        size_t cache_hits;
+        get_cache_hits_x(dest_x_ports_[0], cache_hits);
+        EXPECT_EQ(expected_reuse_counter, cache_hits);
+      };
+
+  // make a few consecutive connections with invalid auth data, check that the
+  // server sessions are reused
+  check_server_session_reuse_invalid_auth_x(/*expected_reuse_counter*/ 0);
+  check_server_session_reuse_invalid_auth_x(/*expected_reuse_counter*/ 1);
+  check_server_session_reuse_invalid_auth_x(/*expected_reuse_counter*/ 2);
+}
 
 int main(int argc, char *argv[]) {
   init_windows_sockets();

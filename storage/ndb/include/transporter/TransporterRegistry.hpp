@@ -54,6 +54,7 @@
 #include "portlib/NdbTick.h"
 #include "portlib/ndb_sockaddr.h"
 #include "util/NdbSocket.h"
+#include "util/TlsKeyManager.hpp"
 
 #ifndef _WIN32
 /*
@@ -162,15 +163,21 @@ struct TransporterReceiveData
   /**
    * Bitmask of transporters having received corrupted or unsupported
    * message. No more unpacking and delivery of messages allowed.
+   *
+   * OJA FIXME:
+   *    Documented as 'Bitmask of transporters' (TrpBitmask)
+   *    Declared and used(!) as a NodeBitMask!
+   *
+   * Could it possibly be the root cause of the multiTransporter checksum bug?
    */
   NodeBitmask m_bad_data_transporters;
 
   /**
-   * Last node received from if unable to complete all transporters
+   * Last transporter received from if unable to complete all transporters
    * in previous ::performReceive(). Next ::performReceive will
    * resume from first transporter after this.
    */
-  Uint32 m_last_trp_id;
+  TrpId m_last_trp_id;
 
   /**
    * Spintime calculated as maximum of currently connected transporters.
@@ -234,6 +241,13 @@ public:
   bool init(TransporterReceiveHandle&);
 
   /**
+   * Initialize TLS context. Cannot be called prior to init(NodeId).
+   * Returns true on success.
+   */
+  bool init_tls(const char * search_path, int node_type,
+                bool is_primary, int mgm_tls_requirement_level);
+
+  /**
      Perform handshaking of a client connection to accept it
      as transporter.
 
@@ -255,26 +269,20 @@ public:
                       bool& close_with_reset,
                       bool& log_failure);
 
-  bool connect_server(ndb_socket_t sockfd, BaseString & msg,
-                      bool & close_with_reset, bool & log_failure) {
-    NdbSocket sock(sockfd, NdbSocket::From::Existing);
-    return connect_server(sock, msg, close_with_reset, log_failure);
-  }
-
   bool connect_client(NdbMgmHandle *h);
 
   /**
    * Given a hostname and port, creates a NdbMgmHandle, turns it into
    * a transporter, and returns the socket.
    */
-  ndb_socket_t connect_ndb_mgmd(const char* server_name,
-                                unsigned short server_port);
+  NdbSocket connect_ndb_mgmd(const char* server_name,
+                             unsigned short server_port);
 
   /**
    * Given a connected NdbMgmHandle, turns it into a transporter
    * and returns the socket.
    */
-  ndb_socket_t connect_ndb_mgmd(NdbMgmHandle *h);
+  NdbSocket connect_ndb_mgmd(NdbMgmHandle *h);
 
   /**
    * Manage allTransporters and theNodeIdTransporters when using
@@ -409,7 +417,7 @@ private:
   bool createSHMTransporter(TransporterConfiguration * config);
 
 public:
-  bool createMultiTransporter(Uint32 node_id, Uint32 num_trps);
+  bool createMultiTransporter(NodeId node_id, Uint32 num_trps);
   /**
    *   configureTransporter
    *
@@ -434,31 +442,31 @@ public:
   /**
    * Get transporter's connect count
    */
-  Uint32 get_connect_count(Uint32 nodeId);
+  Uint32 get_connect_count(NodeId nodeId);
 
   /**
    * Set or clear overloaded bit.
    * Query if any overloaded bit is set.
    */
-  void set_status_overloaded(Uint32 nodeId, bool val);
+  void set_status_overloaded(NodeId nodeId, bool val);
   const NodeBitmask& get_status_overloaded() const;
   
   /**
    * Get transporter's overload count since connect
    */
-  Uint32 get_overload_count(Uint32 nodeId);
+  Uint32 get_overload_count(NodeId nodeId);
 
   /**
    * Set or clear slowdown bit.
    * Query if any slowdown bit is set.
    */
-  void set_status_slowdown(Uint32 nodeId, bool val);
+  void set_status_slowdown(NodeId nodeId, bool val);
   const NodeBitmask& get_status_slowdown() const;
  
   /** 
    * Get transporter's slowdown count since connect
    */
-  Uint32 get_slowdown_count(Uint32 nodeId);
+  Uint32 get_slowdown_count(NodeId nodeId);
 
   /**
    * prepareSend
@@ -511,6 +519,7 @@ public:
                          Uint8 prio,
                          const Uint32 *signalData,
                          NodeId nodeId,
+                         TrpId &trp_id,
                          const GenericSectionPtr ptr[3]);
 
   SendStatus prepareSendOverAllLinks(
@@ -523,8 +532,6 @@ public:
 
   /* Send on a specific transporter */
   bool performSend(TrpId id, bool need_wakeup = true);
-  /* performSendNode is only used from NDB API */
-  bool performSendNode(NodeId nodeId, bool need_wakeup = true);
   void performSend();
   
   void printState();
@@ -534,16 +541,18 @@ public:
     NodeId m_remote_nodeId;
     int m_s_service_port;			// signed port number
     const char *m_interface;
+    bool m_require_tls;
   };
   Vector<Transporter_interface> m_transporter_interface;
   void add_transporter_interface(NodeId remoteNodeId, const char *interf,
-		  		 int s_port);	// signed port. <0 is dynamic
+                                 int s_port, bool requireTls);
 
   int get_transporter_count() const;
   Transporter* get_transporter(TrpId id) const;
   Transporter* get_node_transporter(NodeId nodeId) const;
   bool is_shm_transporter(NodeId nodeId);
   ndb_sockaddr get_connect_address(NodeId node_id) const;
+  bool is_encrypted_link(NodeId) const;
 
   Uint64 get_bytes_sent(NodeId nodeId) const;
   Uint64 get_bytes_received(NodeId nodeId) const;
@@ -568,6 +577,8 @@ private:
   Uint32 nMultiTransporters;
   Uint32 nTCPTransporters;
   Uint32 nSHMTransporters;
+  TlsKeyManager m_tls_keys;
+  int m_mgm_tls_req;
 
 #ifdef ERROR_INSERT
   NodeBitmask m_blocked;
@@ -688,27 +699,30 @@ private:
 
   Uint32 *getWritePtr(TransporterSendBufferHandle *handle,
                       Transporter*,
-                      Uint32 trp_id,
+                      TrpId trp_id,
                       Uint32 lenBytes,
                       Uint32 prio,
                       SendStatus *error);
   void updateWritePtr(TransporterSendBufferHandle *handle,
                       Transporter*,
-                      Uint32 trp_id,
+                      TrpId trp_id,
                       Uint32 lenBytes,
                       Uint32 prio);
 
 public:
   /* Various internal */
-  void inc_overload_count(Uint32 nodeId);
-  void inc_slowdown_count(Uint32 nodeId);
+  void inc_overload_count(NodeId nodeId);
+  void inc_slowdown_count(NodeId nodeId);
 
-  void get_trps_for_node(Uint32 nodeId,
+  void get_trps_for_node(NodeId nodeId,
                          TrpId *trp_ids,
                          Uint32 &num_trp_ids,
                          Uint32 max_trp_ids);
 
   Uint32 get_num_trps();
+  TlsKeyManager * getTlsKeyManager()  { return & m_tls_keys; }
+  bool hasTlsCert() const             { return (bool) m_tls_keys.ctx(); }
+
 private:
   /**
    * Sum of max transporter memory for each transporter.
@@ -770,7 +784,7 @@ TransporterRegistry::get_num_trps()
 }
 
 inline void
-TransporterRegistry::set_status_overloaded(Uint32 nodeId, bool val)
+TransporterRegistry::set_status_overloaded(NodeId nodeId, bool val)
 {
   assert(nodeId < MAX_NODES);
   if (val != m_status_overloaded.get(nodeId))
@@ -790,7 +804,7 @@ TransporterRegistry::get_status_overloaded() const
 }
 
 inline void
-TransporterRegistry::set_status_slowdown(Uint32 nodeId, bool val)
+TransporterRegistry::set_status_slowdown(NodeId nodeId, bool val)
 {
   assert(nodeId < MAX_NODES);
   if (val != m_status_slowdown.get(nodeId))

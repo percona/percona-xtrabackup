@@ -28,6 +28,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
  Smart ALTER TABLE
  *******************************************************/
 
+#include <algorithm>
+
 /* Include necessary SQL headers */
 #include <assert.h>
 #include <current_thd.h>
@@ -43,6 +45,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <sys/types.h>
 #include "ha_prototypes.h"
 
+#include "db0err.h"
 #include "dd/cache/dictionary_client.h"
 #include "dd/dd.h"
 #include "dd/dictionary.h"
@@ -60,6 +63,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "dd_table_share.h"
 
 #include "btr0sea.h"
+#include "ddl0bulk.h"
 #include "dict0crea.h"
 #include "dict0dd.h"
 #include "dict0dict.h"
@@ -78,6 +82,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "log0buf.h"
 #include "log0chkp.h"
 
+#include "log0ddl.h"
 #include "my_dbug.h"
 #include "my_io.h"
 #include "mysql/strings/m_ctype.h"
@@ -89,6 +94,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "fts0priv.h"
 #include "handler0alter.h"
 #include "lock0lock.h"
+#include "mysqld_error.h"
 #include "pars0pars.h"
 #include "partition_info.h"
 #include "rem0types.h"
@@ -1449,7 +1455,8 @@ bool ha_innobase::prepare_inplace_alter_table(TABLE *altered_table,
 }
 
 int ha_innobase::parallel_scan_init(void *&scan_ctx, size_t *num_threads,
-                                    bool use_reserved_threads) {
+                                    bool use_reserved_threads,
+                                    size_t max_desired_threads) {
   if (dict_table_is_discarded(m_prebuilt->table)) {
     ib_senderrf(ha_thd(), IB_LOG_LEVEL_ERROR, ER_TABLESPACE_DISCARDED,
                 m_prebuilt->table->name.m_name);
@@ -1470,6 +1477,10 @@ int ha_innobase::parallel_scan_init(void *&scan_ctx, size_t *num_threads,
   trx_assign_read_view(trx);
 
   size_t max_threads = thd_parallel_read_threads(m_prebuilt->trx->mysql_thd);
+
+  if (max_desired_threads > 0) {
+    max_threads = std::min(max_threads, max_desired_threads);
+  }
 
   max_threads =
       Parallel_reader::available_threads(max_threads, use_reserved_threads);
@@ -2052,7 +2063,7 @@ added
     tbl_name_len = strlen(tbl_name);
     tbl_namep = &tbl_name[0];
 
-    if (fk_key->ref_db.str != NULL) {
+    if (fk_key->ref_db.str != nullptr) {
       tablename_to_filename(fk_key->ref_db.str, db_name, MAX_DATABASE_NAME_LEN);
       innobase_casedn_str(db_name);
       db_name_len = strlen(db_name);
@@ -6137,7 +6148,8 @@ bool ha_innobase::inplace_alter_table_impl(TABLE *altered_table,
 
   DEBUG_SYNC(m_user_thd, "innodb_inplace_alter_table_enter");
 
-  auto all_ok = [=]() -> bool {
+  auto all_ok = [this]() -> bool {
+    (void)this;
     DEBUG_SYNC(m_user_thd, "innodb_after_inplace_alter_table");
     return false;
   };
@@ -6461,6 +6473,9 @@ during prepare, but might not be during commit).
     assert(!(ha_alter_info->handler_flags & Alter_inplace_info::ADD_PK_INDEX));
     assert(ctx->new_table == prebuilt->table);
 
+    /* Wait for background stats processing to stop using the table, so
+    we can drop the index */
+    dict_stats_wait_bg_to_stop_using_table(prebuilt->table, ctx->trx);
     innobase_rollback_sec_index(prebuilt->table, table, false, ctx->trx);
   }
 
@@ -10002,8 +10017,13 @@ static inline Instant_Type innopart_support_instant(
 }
 
 int ha_innopart::parallel_scan_init(void *&scan_ctx, size_t *num_threads,
-                                    bool use_reserved_threads) {
-  auto max_threads = thd_parallel_read_threads(m_prebuilt->trx->mysql_thd);
+                                    bool use_reserved_threads,
+                                    size_t max_desired_threads) {
+  size_t max_threads = thd_parallel_read_threads(m_prebuilt->trx->mysql_thd);
+  if (max_desired_threads > 0) {
+    max_threads = std::min(max_threads, max_desired_threads);
+  }
+
   ut_a(max_threads <= Parallel_reader::MAX_THREADS);
 
   max_threads = static_cast<ulong>(
@@ -11090,4 +11110,205 @@ func_exit:
   free(part_name);
 
   return error;
+}
+
+bool ha_innobase::bulk_load_check(THD *) const {
+  /* Check if the table is empty (not even del-marked records). */
+  dict_table_t *table = m_prebuilt->table;
+
+  rec_format_t format = dict_tf_get_rec_format(table->flags);
+
+  if (format != REC_FORMAT_DYNAMIC) {
+    my_error(ER_FEATURE_UNSUPPORTED, MYF(0),
+             "ROW_FORMAT=COMPRESSED/COMPACT/REDUNDANT", "by LOAD BULK DATA");
+    return false;
+  }
+
+  if (!table->has_pk()) {
+    my_error(ER_TABLE_NO_PRIMARY_KEY, MYF(0), table->name.m_name);
+    return false;
+  }
+
+  /* Table should not have indexes other than clustered index. */
+  if (table->get_index_count() > 1) {
+    my_error(ER_INDEX_OTHER_THAN_PK, MYF(0), table->name.m_name);
+    return false;
+  }
+
+  if (dict_table_in_shared_tablespace(table)) {
+    my_error(ER_TABLE_IN_SHARED_TABLESPACE, MYF(0), table->name.m_name);
+    return false;
+  }
+
+  if (table->has_row_versions() || table->has_instant_cols()) {
+    my_error(ER_BULK_LOAD_TABLE_HAS_INSTANT_COLS, MYF(0), table->name.m_name);
+    return false;
+  }
+
+  if (!btr_is_index_empty(table->first_index())) {
+    my_error(ER_TABLE_NOT_EMPTY, MYF(0), table->name.m_name);
+    return false;
+  }
+
+  return true;
+}
+
+size_t ha_innobase::bulk_load_available_memory(THD *) const {
+  /* Occupy up to 25% of buffer pool memory. */
+  const size_t max_memory = srv_buf_pool_size / 4;
+  return max_memory;
+}
+
+void *ha_innobase::bulk_load_begin(THD *thd, size_t data_size, size_t memory,
+                                   size_t num_threads) {
+  DEBUG_SYNC_C("innodb_bulk_load_begin");
+
+  if (!bulk_load_check(thd)) {
+    return nullptr;
+  }
+
+  /* Check if the buffer pool size is enough for the threads requested. */
+  dict_table_t *table = m_prebuilt->table;
+
+  /* Build the template to convert between the two database formats */
+  if (m_prebuilt->mysql_template == nullptr ||
+      m_prebuilt->template_type != ROW_MYSQL_WHOLE_ROW) {
+    build_template(true);
+  }
+
+  /* Update user_thd and allocates Innodb transaction if not there. */
+  update_thd(thd);
+
+  auto trx = m_prebuilt->trx;
+  innobase_register_trx(ht, ha_thd(), trx);
+  trx_start_if_not_started_xa(trx, true, UT_LOCATION_HERE);
+
+  auto observer = ut::new_withkey<Flush_observer>(
+      ut::make_psi_memory_key(mem_key_ddl), table->space, trx, nullptr);
+
+  trx_set_flush_observer(trx, observer);
+
+  auto loader = ut::new_withkey<ddl_bulk::Loader>(
+      ut::make_psi_memory_key(mem_key_ddl), num_threads);
+
+  auto db_err = loader->begin(m_prebuilt, data_size, memory);
+
+  if (db_err != DB_SUCCESS) {
+    my_error(ER_LOAD_BULK_DATA_FAILED, MYF(0), table->name.m_name,
+             "Error extending Innodb tablespace");
+    ut::delete_(loader);
+    loader = nullptr;
+  }
+  return static_cast<void *>(loader);
+}
+
+int ha_innobase::bulk_load_execute(THD *thd, void *load_ctx, size_t thread_idx,
+                                   const Rows_mysql &rows,
+                                   Bulk_load::Stat_callbacks &wait_cbk) {
+  ut_d(auto trx = m_prebuilt->trx);
+  ut_ad(trx_is_started(trx));
+
+  /* Use with bulk_loader.concurrency = 1 to avoid getting hit concurrently. */
+  DEBUG_SYNC(thd, "innodb_bulk_load_exec");
+
+  auto loader = static_cast<ddl_bulk::Loader *>(load_ctx);
+
+  auto db_err = loader->load(m_prebuilt, thread_idx, rows, wait_cbk);
+
+  ut_ad(trx_is_started(trx));
+
+  /* Avoid convert_error_code_to_mysql here as it raises my_error(). This
+  interface is not called on main session thread. We raise the saved error
+  later in main thread when bulk_load_end() is called. Any non zero error
+  code is fine here. */
+  return (db_err == DB_SUCCESS) ? 0 : HA_ERR_GENERIC;
+}
+
+int ha_innobase::bulk_load_end(THD *thd, void *load_ctx, bool is_error) {
+  auto trx = m_prebuilt->trx;
+  ut_ad(load_ctx == nullptr || trx_is_started(trx));
+
+  if (load_ctx == nullptr) {
+    /* Nothing to do here, if load_ctx is null, it means we didn't even begin */
+    return 0;
+  }
+
+  auto report_error = [](ddl_bulk::Loader *loader, dberr_t err, int code) {
+    if (err == DB_SUCCESS) {
+      return;
+    }
+    /* Raise error here. We are in session thread. */
+    if (code == 0) {
+      code = (err == DB_INTERRUPTED) ? ER_QUERY_INTERRUPTED
+                                     : ER_LOAD_BULK_DATA_FAILED;
+    }
+
+    switch (code) {
+      case ER_LOAD_BULK_DATA_UNSORTED:
+        my_error(code, MYF(0), loader->get_error_string().c_str());
+        break;
+
+      case ER_LOAD_BULK_DATA_FAILED:
+        my_error(code, MYF(0), loader->get_table_name(),
+                 loader->get_error_string().c_str());
+        break;
+
+      case ER_DUP_ENTRY_WITH_KEY_NAME:
+        my_error(code, MYF(0), loader->get_error_string().c_str(),
+                 loader->get_index_name());
+        break;
+
+      case ER_INTERNAL_ERROR:
+        my_error(ER_INTERNAL_ERROR, MYF(0), loader->get_error_string().c_str());
+        break;
+
+      case ER_QUERY_INTERRUPTED:
+        my_error(ER_QUERY_INTERRUPTED, MYF(0));
+        break;
+
+      default:
+        my_error(ER_INTERNAL_ERROR, MYF(0), "Bulk Loader Failed");
+        break;
+    }
+  };
+
+  DEBUG_SYNC(thd, "innodb_bulk_load_end");
+
+  auto loader = static_cast<ddl_bulk::Loader *>(load_ctx);
+
+  auto prev_err = loader->get_error();
+  int prev_code = loader->get_error_code();
+
+  report_error(loader, prev_err, prev_code);
+  if (prev_err != DB_SUCCESS) {
+    is_error = true;
+  }
+
+  auto db_err = loader->end(m_prebuilt, is_error);
+
+  report_error(loader, db_err, 0);
+  if (db_err != DB_SUCCESS) {
+    is_error = true;
+  }
+
+  auto observer = trx->flush_observer;
+  ut_a(observer != nullptr);
+
+  if (is_error) {
+    observer->interrupted();
+  }
+  observer->flush();
+  trx->flush_observer = nullptr;
+
+  ut::delete_(observer);
+
+  if (!is_error) {
+    DBUG_EXECUTE_IF("crash_load_bulk_before_trx_commit", DBUG_SUICIDE(););
+    /* Sync all pages written without redo log. */
+    auto table = m_prebuilt->table;
+    fil_flush(table->space);
+  }
+  ut::delete_(loader);
+  /* We raise the error in report_error. */
+  return (db_err == DB_SUCCESS) ? 0 : HA_ERR_GENERIC;
 }

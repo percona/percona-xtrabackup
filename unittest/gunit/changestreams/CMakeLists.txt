@@ -35,7 +35,7 @@ SET(TESTS
 
 SET(TESTS_LINK_LIBRARIES
   changestreams_standalone_static
-  binlogstandalone_static
+  mysql_binlog_event_standalone
   mysqlclient
   gunit_small)
 
@@ -45,7 +45,7 @@ IF (WITH_CS_PROTOBUF)
 
   LIST(APPEND TESTS_LINK_LIBRARIES
     changestreams_pb_static
-    ${PROTOBUF_LITE_LIBRARY})
+    ext::libprotobuf-lite)
 ENDIF()
 
 FOREACH(test ${TESTS})

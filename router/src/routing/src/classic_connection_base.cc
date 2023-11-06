@@ -161,13 +161,6 @@ void MysqlRoutingClassicConnectionBase::server_socket_failed(std::error_code ec,
   auto &server_conn = this->socket_splicer()->server_conn();
 
   if (server_conn.is_open()) {
-    auto &client_conn = this->socket_splicer()->client_conn();
-
-    log_debug("[%s] fd=%d -- %d: connection closed (up: %zub; down: %zub)",
-              this->context().get_name().c_str(), client_conn.native_handle(),
-              server_conn.native_handle(), this->get_bytes_up(),
-              this->get_bytes_down());
-
     if (ec != net::stream_errc::eof) {
       (void)server_conn.shutdown(net::socket_base::shutdown_send);
     }
@@ -193,21 +186,6 @@ void MysqlRoutingClassicConnectionBase::client_socket_failed(std::error_code ec,
       on_handshake_aborted();
     }
 
-    auto &server_conn = this->socket_splicer()->server_conn();
-
-    if (server_conn.is_open()) {
-      log_debug("[%s] fd=%d -- %d: connection closed (up: %zub; down: %zub)",
-                this->context().get_name().c_str(), client_conn.native_handle(),
-                server_conn.native_handle(), this->get_bytes_up(),
-                this->get_bytes_down());
-    } else {
-      log_debug(
-          "[%s] fd=%d -- (not connected): connection closed (up: %zub; down: "
-          "%zub)",
-          this->context().get_name().c_str(), client_conn.native_handle(),
-          this->get_bytes_up(), this->get_bytes_down());
-    }
-
     if (ec != net::stream_errc::eof) {
       // the other side hasn't closed yet, shutdown our send-side.
       (void)client_conn.shutdown(net::socket_base::shutdown_send);
@@ -226,6 +204,10 @@ void MysqlRoutingClassicConnectionBase::client_socket_failed(std::error_code ec,
 void MysqlRoutingClassicConnectionBase::async_send_client(Function next) {
   auto socket_splicer = this->socket_splicer();
   auto dst_channel = socket_splicer->client_channel();
+
+  if (disconnect_requested()) {
+    return send_client_failed(make_error_code(std::errc::operation_canceled));
+  }
 
   ++active_work_;
   socket_splicer->async_send_client(
@@ -247,6 +229,10 @@ void MysqlRoutingClassicConnectionBase::async_send_client(Function next) {
 }
 
 void MysqlRoutingClassicConnectionBase::async_recv_client(Function next) {
+  if (disconnect_requested()) {
+    return recv_client_failed(make_error_code(std::errc::operation_canceled));
+  }
+
   ++active_work_;
   this->socket_splicer()->async_recv_client([this, next](std::error_code ec,
                                                          size_t transferred) {
@@ -284,6 +270,10 @@ void MysqlRoutingClassicConnectionBase::async_recv_client(Function next) {
 }
 
 void MysqlRoutingClassicConnectionBase::async_send_server(Function next) {
+  if (disconnect_requested()) {
+    return send_server_failed(make_error_code(std::errc::operation_canceled));
+  }
+
   auto socket_splicer = this->socket_splicer();
   auto dst_channel = socket_splicer->server_channel();
 
@@ -307,6 +297,10 @@ void MysqlRoutingClassicConnectionBase::async_send_server(Function next) {
 }
 
 void MysqlRoutingClassicConnectionBase::async_recv_server(Function next) {
+  if (disconnect_requested()) {
+    return recv_server_failed(make_error_code(std::errc::operation_canceled));
+  }
+
   ++active_work_;
   this->socket_splicer()->async_recv_server([this, next](std::error_code ec,
                                                          size_t transferred) {
@@ -418,6 +412,7 @@ void MysqlRoutingClassicConnectionBase::finish() {
   }
 
   if (active_work_ == 0) {
+    log_connection_summary();
     if (server_socket.is_open()) {
       trace(Tracer::Event()
                 .stage("close::server")
@@ -481,7 +476,9 @@ MysqlRoutingClassicConnectionBase::track_session_changes(
             classic_protocol::borrowed::session_track::SystemVariable>(
             net::buffer(decode_session_res->second.data()), caps);
         if (!decode_value_res) {
-          // ignore errors?
+          log_debug(
+              "decoding session_track::SystemVariable from server failed: %s",
+              decode_value_res.error().message().c_str());
         } else {
           const auto kv = decode_value_res->second;
 
@@ -514,7 +511,8 @@ MysqlRoutingClassicConnectionBase::track_session_changes(
             classic_protocol::borrowed::session_track::Schema>(
             net::buffer(decode_session_res->second.data()), caps);
         if (!decode_value_res) {
-          // ignore errors?
+          log_debug("decoding session_track::Schema from server failed: %s",
+                    decode_value_res.error().message().c_str());
         } else {
           auto schema = std::string(decode_value_res->second.schema());
 
@@ -536,7 +534,8 @@ MysqlRoutingClassicConnectionBase::track_session_changes(
             classic_protocol::borrowed::session_track::State>(
             net::buffer(decode_session_res->second.data()), caps);
         if (!decode_value_res) {
-          // ignore errors?
+          log_debug("decoding session_track::State from server failed: %s",
+                    decode_value_res.error().message().c_str());
         } else {
           // .state() is always '1'
 
@@ -559,9 +558,12 @@ MysqlRoutingClassicConnectionBase::track_session_changes(
             classic_protocol::borrowed::session_track::Gtid>(
             net::buffer(decode_session_res->second.data()), caps);
         if (!decode_value_res) {
-          // ignore errors?
+          log_debug("decoding session_track::Gtid from server failed: %s",
+                    decode_value_res.error().message().c_str());
         } else {
-          auto gtid = decode_value_res->second;
+          const auto gtid = decode_value_res->second;
+
+          client_protocol()->gtid_executed(std::string(gtid.gtid()));
 
           if (auto &tr = tracer()) {
             std::ostringstream oss;
@@ -579,7 +581,9 @@ MysqlRoutingClassicConnectionBase::track_session_changes(
             classic_protocol::borrowed::session_track::TransactionState>(
             net::buffer(decode_session_res->second.data()), caps);
         if (!decode_value_res) {
-          // ignore errors?
+          log_debug(
+              "decoding session_track::TransactionState from server failed: %s",
+              decode_value_res.error().message().c_str());
         } else {
           auto trx_state = decode_value_res->second;
 
@@ -694,7 +698,10 @@ MysqlRoutingClassicConnectionBase::track_session_changes(
                                          TransactionCharacteristics>(
                 net::buffer(decode_session_res->second.data()), caps);
         if (!decode_value_res) {
-          // ignore errors?
+          log_debug(
+              "decoding session_track::TransactionCharacteristics from server "
+              "failed: %s",
+              decode_value_res.error().message().c_str());
         } else {
           auto trx_characteristics = decode_value_res->second;
 
@@ -789,14 +796,110 @@ bool MysqlRoutingClassicConnectionBase::connection_sharing_possible() const {
              Value("CHARACTERISTICS");
 }
 
+static bool trx_characteristics_is_sharable(
+    const std::optional<
+        classic_protocol::session_track::TransactionCharacteristics>
+        &trx_chars) {
+  if (!trx_chars.has_value()) return false;
+
+  auto stmt = trx_chars->characteristics();
+  if (stmt.empty()) return true;
+
+  std::string_view stmt_view(stmt);
+
+  constexpr const std::string_view kSetTrx("SET TRANSACTION ");
+  constexpr const std::string_view kSetTrxIsolationLevel(
+      "SET TRANSACTION ISOLATION LEVEL ");
+  constexpr const std::string_view kStartTrx("START TRANSACTION");
+
+  if (stmt_view.substr(0, kSetTrxIsolationLevel.size()) ==
+      kSetTrxIsolationLevel) {
+    using namespace std::string_view_literals;
+
+    stmt_view = stmt_view.substr(kSetTrxIsolationLevel.size());
+
+    auto match_isolation_level =
+        [](std::string_view stmt_view) -> std::optional<size_t> {
+      for (auto isolation_level : {
+               "READ COMMITTED"sv,
+               "READ UNCOMMITTED"sv,
+               "REPEATABLE READ"sv,
+               "SERIALIZABLE"sv,
+           }) {
+        if (stmt_view.substr(0, isolation_level.size()) == isolation_level) {
+          return isolation_level.size();
+        }
+      }
+      return {};
+    };
+
+    auto isolation_level_res = match_isolation_level(stmt_view);
+    if (!isolation_level_res) return false;
+
+    // skip the isolation level.
+    stmt_view = stmt_view.substr(isolation_level_res.value());
+
+    auto semi = stmt_view.substr(0, 2);
+
+    if (semi == ";") return true;  // end
+
+    if (semi != "; ") return false;  // unexpected
+
+    // SET TRANSACTION READ ... may follow
+    stmt_view = stmt_view.substr(semi.size());
+  }
+
+  if (stmt_view.substr(0, kSetTrx.size()) == kSetTrx) {
+    stmt_view = stmt_view.substr(kSetTrx.size());
+
+    using namespace std::string_view_literals;
+    for (auto suffix : {
+             "READ ONLY;"sv,
+             "READ WRITE;"sv,
+             ";"sv,
+         }) {
+      if (stmt_view == suffix) return true;
+    }
+  } else if (stmt_view.substr(0, kStartTrx.size()) == kStartTrx) {
+    stmt_view = stmt_view.substr(kStartTrx.size());
+
+    using namespace std::string_view_literals;
+    for (auto suffix : {
+             " READ ONLY;"sv,
+             " READ WRITE;"sv,
+             ";"sv,
+         }) {
+      if (stmt_view == suffix) return true;
+    }
+  }
+
+  return false;
+}
+
+static bool trx_state_is_sharable(
+    const std::optional<classic_protocol::session_track::TransactionState>
+        &trx_state) {
+  // at the start trx_state is not set.
+  if (!trx_state.has_value()) return true;
+
+  auto st = *trx_state;
+
+  // trx-type: _|T|I are "no", "explicit", "implicit" started transactions
+  //
+  // they have been started, but nothing has been executed in them yet which
+  // allows to replay the statements via session-tracker.trx_characteristics.
+  return (st.trx_type() == '_' || st.trx_type() == 'T' ||
+          st.trx_type() == 'I') &&
+         st.read_unsafe() == '_' && st.read_trx() == '_' &&    //
+         st.write_unsafe() == '_' && st.write_trx() == '_' &&  //
+         st.stmt_unsafe() == '_' && st.resultset() == '_' &&   //
+         st.locked_tables() == '_';
+}
+
 bool MysqlRoutingClassicConnectionBase::connection_sharing_allowed() const {
-  return connection_sharing_possible() &&
-         (!trx_state_.has_value() ||  // at the start trx_state is not set
-          *trx_state_ ==
-              classic_protocol::session_track::TransactionState{
-                  '_', '_', '_', '_', '_', '_', '_', '_'}) &&
-         (trx_characteristics_.has_value() &&
-          trx_characteristics_->characteristics().empty()) &&
+  return connection_sharing_possible() &&                          //
+         trx_state_is_sharable(trx_state_) &&                      //
+         trx_characteristics_is_sharable(trx_characteristics_) &&  //
          !some_state_changed_;
 }
 
@@ -836,4 +939,34 @@ void MysqlRoutingClassicConnectionBase::connection_sharing_allowed_reset() {
   trx_state_.reset();
   trx_characteristics_.reset();
   some_state_changed_ = false;
+}
+
+void MysqlRoutingClassicConnectionBase::reset_to_initial() {
+  auto *src_protocol = client_protocol();
+
+  // allow connection sharing again.
+  connection_sharing_allowed_reset();
+
+  // clear the warnings
+  execution_context().diagnostics_area().warnings().clear();
+
+  // clear the prepared statements.
+  src_protocol->prepared_statements().clear();
+
+  // back to 'auto'
+  src_protocol->access_mode({});
+
+  // disable the tracer.
+  src_protocol->trace_commands(false);
+  events().active(false);
+
+  // reset the sticky read-only backend.
+  read_only_destination_id({});
+
+  // reset to initial values.
+  src_protocol->gtid_executed({});
+
+  src_protocol->wait_for_my_writes(context().wait_for_my_writes());
+  src_protocol->wait_for_my_writes_timeout(
+      context().wait_for_my_writes_timeout());
 }

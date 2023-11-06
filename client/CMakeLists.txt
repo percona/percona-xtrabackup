@@ -44,6 +44,7 @@ MYSQL_ADD_EXECUTABLE(mysql
   readline.cc
   client_query_attributes.cc
   multi_factor_passwordopt-vars.cc
+  multi_option.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/common/user_registration.cc
   LINK_LIBRARIES mysqlclient client_base ${EDITLINE_LIBRARY}
   )
@@ -80,6 +81,7 @@ MYSQL_ADD_EXECUTABLE(mysqlcheck
 MYSQL_ADD_EXECUTABLE(mysqldump
   mysqldump.cc
   multi_factor_passwordopt-vars.cc
+  multi_option.cc
   LINK_LIBRARIES mysqlclient
   )
 MYSQL_ADD_EXECUTABLE(mysqlimport
@@ -136,7 +138,7 @@ ADD_SHARED_LIBRARY(json_binlog
   COMPILE_DEFINITIONS DISABLE_PSI_MUTEX EXPORT_JSON_FUNCTIONS
   DEPENDENCIES GenError
   ${INSTALL_JSON_BINLOG_LIBRARY}
-  LINK_LIBRARIES mysys extra::rapidjson ext::zlib
+  LINK_LIBRARIES mysys extra::rapidjson ext::zlib decimal
   LINUX_VERSION_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/json_binlog.ver"
   VERSION "${json_binlog_VERSION}"
   NO_UNDEFINED
@@ -158,11 +160,16 @@ ADD_CONVENIENCE_LIBRARY(json_client_library
   DEPENDENCIES GenError
   )
 
+ADD_CONVENIENCE_LIBRARY(decimal
+  ${CMAKE_SOURCE_DIR}/sql-common/my_decimal.cc
+  )
+
 SET(JSON_BINLOG_LIBS_TO_MERGE
   json_client_library
   mysys
   mytime
   strings
+  decimal
   )
 
 MERGE_CONVENIENCE_LIBRARIES(json_binlog_static
@@ -176,13 +183,13 @@ MERGE_CONVENIENCE_LIBRARIES(json_binlog_static
 MYSQL_ADD_EXECUTABLE(json_client_library_main
   json_client_library_main.cc
   INCLUDE_DIRECTORIES ../sql
-  LINK_LIBRARIES json_client_library  strings mysys
+  LINK_LIBRARIES json_client_library  strings mysys decimal
   SKIP_INSTALL
   )
 
 # A test executable which does nothing, except verify that symbols are visible.
 # To test standalone build:
-#   cmake -DINSTALL_MYSQLTESTDIR=0
+#   cmake -DINSTALL_MYSQLTESTDIR=0 -DWITH_JSON_BINLOG_LIBRARY=1
 #   make install DESTDIR=/tmp/foo
 #   g++ -I/tmp/foo/usr/local/mysql/include json_binlog_main.cc
 #       -L/tmp/foo/usr/local/mysql/lib -Wl,-R,/tmp/foo/usr/local/mysql/lib
@@ -231,11 +238,17 @@ SET(MYSQLBINLOG_SOURCES
   ${CMAKE_SOURCE_DIR}/sql/binlog_reader.cc
   ${CMAKE_SOURCE_DIR}/sql/stream_cipher.cc
   ${CMAKE_SOURCE_DIR}/sql/rpl_log_encryption.cc
-  ${CMAKE_SOURCE_DIR}/libbinlogevents/src/trx_boundary_parser.cpp
   )
 
+# duplicate explicit instantiation of 'net_field_length_checked'
+# ignored as a Microsoft extension
+IF(WIN32_CLANG)
+  ADD_COMPILE_FLAGS(${CMAKE_SOURCE_DIR}/sql/log_event.cc
+    COMPILE_FLAGS " -Wno-microsoft-template")
+ENDIF()
+
 SET(MYSQLBINLOG_LIBRARIES
-  binlogevents_static
+  mysql_binlog_event
   client_base
   mysqlclient
   )

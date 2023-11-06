@@ -5,7 +5,7 @@ use ndbinfo;
 ##
 ## ndb$tables
 select count(*) from ndb$tables;
-count(*)	49
+count(*)	50
 explain select count(*) from ndb$tables;
 id	1
 select_type	SIMPLE
@@ -45,12 +45,12 @@ Select tables optimized away
 NULL
 
 ## Information schema reveals row counts as seen by optimizer
-## (but filter out cpu-related tables where results are not predictable)
 set ndbinfo_show_hidden=1;
 SELECT table_name, table_rows, avg_row_length
   FROM information_schema.tables
   WHERE table_schema='ndbinfo' AND table_type = 'BASE TABLE'
   AND table_name not like '%cpu%'
+  AND table_name not in ('ndb$config_params', 'ndb$config_values')
   ORDER BY table_name;
 TABLE_NAME	TABLE_ROWS	AVG_ROW_LENGTH
 blobs	10	84
@@ -62,10 +62,9 @@ index_columns	20	80
 ndb$acc_operations	15	64
 ndb$backup_id	1	20
 ndb$blocks	29	20
-ndb$columns	530	44
+ndb$certificates	34	44
+ndb$columns	536	44
 ndb$config_nodes	34	28
-ndb$config_params	167	120
-ndb$config_values	330	24
 ndb$counters	200	24
 ndb$dblqh_tcconnect_state	19	52
 ndb$dbtc_apiconnect_state	25	52
@@ -76,7 +75,7 @@ ndb$disk_write_speed_base	488	48
 ndb$diskpagebuffer	10	64
 ndb$diskstat	10	48
 ndb$diskstats_1sec	200	52
-ndb$error_messages	792	52
+ndb$error_messages	795	52
 ndb$frag_locks	344	96
 ndb$frag_mem_use	344	100
 ndb$frag_operations	344	192
@@ -99,17 +98,26 @@ ndb$table_fragments	344	60
 ndb$table_fragments_all	344	60
 ndb$table_replicas	344	64
 ndb$table_replicas_all	344	64
-ndb$tables	49	40
+ndb$tables	50	40
 ndb$tc_time_track_stats	384	104
 ndb$test	8000	24
 ndb$threadblocks	124	16
 ndb$threads	26	40
 ndb$threadstat	22	144
 ndb$transactions	5	44
-ndb$transporters	32	64
+ndb$transporters	32	68
 
-## List the tables where estimated size equals actual size.
 CALL populate_sizes();
+
+SELECT table_name, est_rows, actual_rows from rowcounts
+WHERE table_name = "ndb$config_values";
+table_name	est_rows	actual_rows
+ndb$config_values	334	334
+## Note:
+## the estimate for config_values relies on a constant in NdbinfoTables.cpp
+## which must be manually maintained in order for the test to pass.
+##
+## List the tables where estimated size equals actual size.
 SELECT count(*) from rowcounts WHERE est_rows = actual_rows;
 count(*)
 29

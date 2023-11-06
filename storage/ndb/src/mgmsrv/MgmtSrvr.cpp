@@ -25,6 +25,7 @@
 #include "util/require.h"
 #include <ndb_global.h>
 #include <cstring>
+#include "openssl/ssl.h"
 
 #include "MgmtSrvr.hpp"
 #include "ndb_mgmd_error.h"
@@ -59,6 +60,7 @@
 #include <NdbSleep.h>
 #include <portlib/NdbDir.hpp>
 #include "portlib/ndb_sockaddr.h"
+#include "portlib/ndb_openssl_version.h"
 #include <EventLogger.hpp>
 #include <logger/FileLogHandler.hpp>
 #include <logger/ConsoleLogHandler.hpp>
@@ -95,6 +97,9 @@ int g_errorInsert = 0;
       return result;\
     }\
   }
+
+static constexpr bool openssl_version_ok =
+  (OPENSSL_VERSION_NUMBER >= NDB_TLS_MINIMUM_OPENSSL);
 
 void *
 MgmtSrvr::logLevelThread_C(void* m)
@@ -249,6 +254,8 @@ MgmtSrvr::MgmtSrvr(const MgmtOpts& opts) :
   m_local_config(NULL),
   _ownReference(0),
   m_config_manager(NULL),
+  m_tls_search_path(opts.tls_search_path),
+  m_client_tls_req(opts.mgm_tls),
   m_need_restart(false),
   theFacade(NULL),
   _isStopThread(false),
@@ -278,7 +285,6 @@ MgmtSrvr::MgmtSrvr(const MgmtOpts& opts) :
   /* Setup clusterlog as client[0] in m_event_listner */
   {
     Ndb_mgmd_event_service::Event_listener se;
-    ndb_socket_initialize(&(se.m_socket));
     for(size_t t = 0; t<LogLevel::LOGLEVEL_CATEGORIES; t++){
       se.m_logLevel.setLogLevel((LogLevel::EventCategory)t, 7);
     }
@@ -391,21 +397,20 @@ MgmtSrvr::init()
 
   assert(_ownNodeId);
 
-  DBUG_RETURN(true);
-}
-
-
-bool
-MgmtSrvr::start_transporter(const Config* config)
-{
-  DBUG_ENTER("MgmtSrvr::start_transporter");
-
   theFacade= new TransporterFacade(0);
   if (theFacade == 0)
   {
     g_eventLogger->error("Could not create TransporterFacade.");
     DBUG_RETURN(false);
   }
+
+  DBUG_RETURN(true);
+}
+
+bool
+MgmtSrvr::start_transporter(const Config* config)
+{
+  DBUG_ENTER("MgmtSrvr::start_transporter");
 
   assert(_blockNumber == 0); // Blocknumber shouldn't been allocated yet
 
@@ -482,6 +487,18 @@ MgmtSrvr::start_mgm_service(const Config* config)
       g_eventLogger->error("PortNumber not defined for node %d", _ownNodeId);
       DBUG_RETURN(false);
     }
+
+    // Find the TLS requirement level
+    Uint32 requireCert = 0;
+    Uint32 requireTls = 0;
+
+    if(openssl_version_ok)
+    {
+      require(iter.get(CFG_MGM_REQUIRE_TLS, &requireTls) == 0);
+      require(iter.get(CFG_NODE_REQUIRE_CERT, &requireCert) == 0);
+    }
+    m_require_tls = requireTls;
+    m_require_cert = requireCert;
   }
 
   unsigned short port= m_port;
@@ -572,6 +589,10 @@ MgmtSrvr::start()
 {
   DBUG_ENTER("MgmtSrvr::start");
 
+  /* Configure TlsKeyManager */
+  require(m_tls_search_path);
+  theFacade->mgm_configure_tls(m_tls_search_path, m_client_tls_req);
+
   /* Start transporter */
   if(!start_transporter(m_local_config))
   {
@@ -585,6 +606,19 @@ MgmtSrvr::start()
     g_eventLogger->error("Failed to start mangement service!");
     DBUG_RETURN(false);
   }
+
+  /* Check for required TLS certificate */
+  ssl_ctx_st * ctx = theFacade->get_registry()->getTlsKeyManager()->ctx();
+  if(require_cert() && ! ctx)
+  {
+    g_eventLogger->error(
+      "Shutting down. This node does not have a valid TLS certificate.");
+    DBUG_RETURN(false);
+  }
+
+  g_eventLogger->info(require_tls() ?
+                      "This server will require all MGM clients to use TLS" :
+                      "Not requiring TLS");
 
   /* Use local MGM port for TransporterRegistry */
   if(!connect_to_self())
@@ -1295,7 +1329,8 @@ int MgmtSrvr::sendStopMgmd(NodeId nodeId,
   if ( h && connect_string.length() > 0 )
   {
     ndb_mgm_set_connectstring(h,connect_string.c_str());
-    if(ndb_mgm_connect(h,1,0,0))
+    ndb_mgm_set_ssl_ctx(h, ssl_ctx());
+    if(ndb_mgm_connect_tls(h,1,0,0, m_client_tls_req))
     {
       DBUG_PRINT("info",("failed ndb_mgm_connect"));
       ndb_mgm_destroy_handle(&h);
@@ -1486,10 +1521,10 @@ MgmtSrvr::sendall_STOP_REQ(NodeBitmask &stoppedNodes,
 int
 MgmtSrvr::guess_master_node(SignalSender& ss)
 {
+  NodeId guess = m_master_node;
   /**
    * First check if m_master_node is started
    */
-  NodeId guess = m_master_node;
   if (guess != 0)
   {
     trp_node node = ss.getNodeInfo(guess);
@@ -1498,41 +1533,56 @@ MgmtSrvr::guess_master_node(SignalSender& ss)
   }
 
   /**
-   * Check for any started node
+   * Check started nodes based on dynamicId
    */
-  guess = 0;
-  while(getNextNodeId(&guess, NDB_MGM_NODE_TYPE_NDB))
+  Uint32 min = UINT32_MAX;
+  NodeId node_id = 0;
+  while(getNextNodeId(&node_id, NDB_MGM_NODE_TYPE_NDB))
   {
-    trp_node node = ss.getNodeInfo(guess);
-    if (node.m_state.startLevel == NodeState::SL_STARTED)
+    trp_node node = ss.getNodeInfo(node_id);
+    if(node.m_state.dynamicId < min)
     {
-      return guess;
+      if(node.m_state.startLevel == NodeState::SL_STARTED)
+      {
+        min = node.m_state.dynamicId;
+        guess = node_id;
+      }
     }
   }
+  //found
+  if(min < UINT32_MAX)
+    return guess;
 
   /**
-   * Check any confirmed node
+   * Check confirmed nodes based on dynamicId
    */
-  guess = 0;
-  while(getNextNodeId(&guess, NDB_MGM_NODE_TYPE_NDB))
+  node_id = 0;
+  while(getNextNodeId(&node_id, NDB_MGM_NODE_TYPE_NDB))
   {
-    trp_node node = ss.getNodeInfo(guess);
-    if (node.is_confirmed())
+    trp_node node = ss.getNodeInfo(node_id);
+    if(node.m_state.dynamicId < min)
     {
-      return guess;
+      if(node.is_confirmed())
+      {
+        min = node.m_state.dynamicId;
+        guess = node_id;
+      }
     }
   }
+  //found
+  if(min < UINT32_MAX)
+    return guess;
 
   /**
    * Check any connected node
    */
-  guess = 0;
-  while(getNextNodeId(&guess, NDB_MGM_NODE_TYPE_NDB))
+  node_id = 0;
+  while(getNextNodeId(&node_id, NDB_MGM_NODE_TYPE_NDB))
   {
-    trp_node node = ss.getNodeInfo(guess);
+    trp_node node = ss.getNodeInfo(node_id);
     if (node.is_connected())
     {
-      return guess;
+      return node_id;
     }
   }
 
@@ -3679,8 +3729,13 @@ MgmtSrvr::trp_deliver_signal(const NdbApiSignal* signal,
 
       /* Clear local nodeid reservation(if any) */
       release_local_nodeid_reservation(i);
-
       clear_connect_address_cache(i);
+
+      /* Clear m_master_node when master disconnects */
+      if(i == m_master_node)
+      {
+        m_master_node = 0;
+      }
     }
     return;
   }
@@ -4688,16 +4743,7 @@ MgmtSrvr::startBackup(Uint32& backupId, int waitCompleted,
   SignalSender ss(theFacade);
   ss.lock(); // lock will be released on exit
 
-  NodeId nodeId = m_master_node;
-  if (okToSendTo(nodeId, false) != 0)
-  {
-    bool next;
-    nodeId = m_master_node = 0;
-    while((next = getNextNodeId(&nodeId, NDB_MGM_NODE_TYPE_NDB)) == true &&
-          okToSendTo(nodeId, false) != 0);
-    if(!next)
-      return NO_CONTACT_WITH_DB_NODES;
-  }
+  NodeId nodeId = guess_master_node(ss);
 
   SimpleSignal ssig;
   BackupReq* req = CAST_PTR(BackupReq, ssig.getDataPtrSend());
@@ -4772,11 +4818,26 @@ MgmtSrvr::startBackup(Uint32& backupId, int waitCompleted,
   while (1) {
     if (do_send)
     {
+      nodeId = guess_master_node(ss);
+
+      if(waitCompleted == 0 &&
+          ndbd_start_backup_nowait_reply(getNodeInfo(nodeId).m_info.m_version))
+      {
+        req->flags |= BackupReq::NOWAIT_REPLY;
+      }
+      else
+      {
+        req->flags &= ~((Uint32)BackupReq::NOWAIT_REPLY);
+      }
+
       if (ss.sendSignal(nodeId, &ssig) != SEND_OK) {
 	return SEND_OR_RECEIVE_FAILED;
       }
-      if (waitCompleted == 0)
-	return 0;
+      if (waitCompleted == 0 &&
+          !ndbd_start_backup_nowait_reply(getNodeInfo(nodeId).m_info.m_version))
+      {
+        return 0;
+      }
       do_send = 0;
     }
     SimpleSignal *signal = ss.waitFor();
@@ -4784,6 +4845,21 @@ MgmtSrvr::startBackup(Uint32& backupId, int waitCompleted,
     int gsn = signal->readSignalNumber();
     switch (gsn) {
     case GSN_BACKUP_CONF:{
+
+  /*
+   * BACKUP NOWAIT case.
+   * BACKUP_CONF received from Backup. It is only used to confirm that
+   * the node is the master node and the backup can proceed.
+   * No more feedback expected from data node in this case.
+   */
+    if(waitCompleted == 0)
+    {
+      return 0;
+    }
+
+    /*
+     * BACKUP WAIT case.
+     */
       const BackupConf * const conf = 
 	CAST_CONSTPTR(BackupConf, signal->getDataPtr());
 #ifdef VM_TRACE
@@ -5076,14 +5152,14 @@ MgmtSrvr::getConnectionDbParameter(int node1, int node2,
 
 
 bool
-MgmtSrvr::transporter_connect(ndb_socket_t sockfd,
+MgmtSrvr::transporter_connect(NdbSocket & socket,
                               BaseString& msg,
                               bool& close_with_reset,
                               bool& log_failure)
 {
   DBUG_ENTER("MgmtSrvr::transporter_connect");
   TransporterRegistry* tr= theFacade->get_registry();
-  if (!tr->connect_server(sockfd, msg, close_with_reset, log_failure))
+  if (!tr->connect_server(socket, msg, close_with_reset, log_failure))
     DBUG_RETURN(false);
 
   /**
@@ -5110,7 +5186,8 @@ bool MgmtSrvr::connect_to_self()
              m_port);
   ndb_mgm_set_connectstring(mgm_handle, buf.c_str());
 
-  if(ndb_mgm_connect(mgm_handle, 0, 0, 0) < 0)
+  ndb_mgm_set_ssl_ctx(mgm_handle, ssl_ctx());
+  if(ndb_mgm_connect_tls(mgm_handle, 0, 0, 0, m_client_tls_req) < 0)
   {
     g_eventLogger->warning("%d %s",
                            ndb_mgm_get_latest_error(mgm_handle),
@@ -5586,6 +5663,16 @@ MgmtSrvr::request_events(NdbNodeBitmask nodes, Uint32 reports_per_node,
   ss.unlock();
 
   return true;
+}
+
+void MgmtSrvr::tls_stat_increment(unsigned int idx) {
+  if(idx < sizeof(m_tls_stats))
+    m_tls_stats[idx]++;
+}
+
+void MgmtSrvr::tls_stat_decrement(unsigned int idx) {
+  if(idx < sizeof(m_tls_stats))
+    m_tls_stats[idx]--;
 }
 
 template class MutexVector<NodeId>;

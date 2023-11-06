@@ -590,6 +590,12 @@ bool JOIN::optimize(bool finalize_access_paths) {
         m_windows_sort = true;
         break;
       }
+    // This is necessary to undo effects of any previous execute's call to
+    // CreateFramebufferTable->ReplaceMaterializedItems's calls of
+    // update_used_tables: loses PROP_WINDOW_FUNCTION needed here in next
+    // execution round
+    if (m_windows.elements > 0)
+      for (auto f : *fields) f->update_used_tables();
   }
 
   sort_by_table = get_sort_by_table(order.order, group_list.order,
@@ -922,7 +928,7 @@ bool JOIN::optimize(bool finalize_access_paths) {
     for (ORDER *tmp_order = order.order; tmp_order;
          tmp_order = tmp_order->next) {
       Item *item = *tmp_order->item;
-      if (item->is_expensive()) {
+      if (item->cost().IsExpensive()) {
         /* Force tmp table without sort */
         simple_order = simple_group = false;
         break;
@@ -1819,11 +1825,13 @@ int test_if_order_by_key(ORDER_with_src *order_src, TABLE *table, uint idx,
     /*
       Skip key parts that are constants in the WHERE clause if these are
       already removed in the ORDER expression by check_field_is_const().
+      If they are not removed in the ORDER expression yet, then we skip
+      the constant keyparts that are not part of the ORDER expression.
     */
-    if (order_src->is_const_optimized()) {
-      for (; const_key_parts & 1 && key_part < key_part_end;
-           const_key_parts >>= 1)
-        key_part++;
+    for (; const_key_parts & 1 && key_part < key_part_end &&
+           (order_src->is_const_optimized() || key_part->field != field);
+         const_key_parts >>= 1) {
+      key_part++;
     }
 
     /* Avoid usage of prefix index for sorting a partition table */
@@ -1850,11 +1858,13 @@ int test_if_order_by_key(ORDER_with_src *order_src, TABLE *table, uint idx,
         /*
           Skip key parts that are constants in the WHERE clause if these are
           already removed in the ORDER expression by check_field_is_const().
+          If they are not removed in the ORDER expression yet, then we skip
+          the constant keyparts that are not part of the ORDER expression.
         */
-        if (order_src->is_const_optimized()) {
-          for (; const_key_parts & 1 && key_part < key_part_end;
-               const_key_parts >>= 1)
-            key_part++;
+        for (; const_key_parts & 1 && key_part < key_part_end &&
+               (order_src->is_const_optimized() || key_part->field != field);
+             const_key_parts >>= 1) {
+          key_part++;
         }
         /*
          The primary and secondary key parts were all const (i.e. there's
@@ -5732,7 +5742,7 @@ bool JOIN::extract_func_dependent_tables() {
         if (table->file->stats.records <= 1L &&                             // 1
             (table->file->ha_table_flags() & HA_STATS_RECORDS_IS_EXACT) &&  // 1
             !tl->outer_join_nest() &&                                       // 2
-            !(tab->join_cond() && tab->join_cond()->is_expensive()))        // 3
+            !(tab->join_cond() && tab->join_cond()->cost().IsExpensive()))  // 3
         {  // system table
           mark_const_table(tab, nullptr);
           const int status =
@@ -5779,10 +5789,11 @@ bool JOIN::extract_func_dependent_tables() {
                 (see Query_expression::can_materialize_directly_into_result()).
           */
           if (eq_part.is_prefix(table->key_info[key].user_defined_key_parts) &&
-              !tl->is_fulltext_searched() &&                              // 1
-              !tl->outer_join_nest() &&                                   // 2
-              !(tl->embedding && tl->embedding->is_sj_or_aj_nest()) &&    // 3
-              !(tab->join_cond() && tab->join_cond()->is_expensive()) &&  // 4
+              !tl->is_fulltext_searched() &&                            // 1
+              !tl->outer_join_nest() &&                                 // 2
+              !(tl->embedding && tl->embedding->is_sj_or_aj_nest()) &&  // 3
+              !(tab->join_cond() &&
+                tab->join_cond()->cost().IsExpensive()) &&                // 4
               !(table->file->ha_table_flags() & HA_BLOCK_CONST_TABLE) &&  // 5
               table->is_created()) {                                      // 6
             if (table->key_info[key].flags & HA_NOSAME) {
@@ -6101,26 +6112,50 @@ static void semijoin_types_allow_materialization(Table_ref *sj_nest) {
      b) No subquery is present.
      c) Fulltext Index is not involved.
      d) No GROUP-BY or DISTINCT clause.
-     e) No ORDER-BY clause.
+     e.I) No ORDER-BY clause or
+     e.II) The given index can provide the order.
 
   F2) Not applicable to multi-table query.
-
-  F3) This optimization is not applicable to EXPLAIN queries.
 
   @param tab   JOIN_TAB object.
   @param thd   THD object.
 */
+
 static bool check_skip_records_in_range_qualification(JOIN_TAB *tab, THD *thd) {
   Query_block *select = thd->lex->current_query_block();
   TABLE *table = tab->table();
-  return ((table->force_index &&
-           table->keys_in_use_for_query.bits_set() == 1) &&     // F1.a
-          select->parent_lex->is_single_level_stmt() &&         // F1.b
-          !select->has_ft_funcs() &&                            // F1.c
-          (!select->is_grouped() && !select->is_distinct()) &&  // F1.d
-          !select->is_ordered() &&                              // F1.e
-          select->m_current_table_nest->size() == 1 &&          // F2
-          !thd->lex->is_explain());                             // F3
+
+  if ((!table->force_index ||
+       table->keys_in_use_for_query.bits_set() != 1) ||   // F1.a
+      !select->parent_lex->is_single_level_stmt() ||      // F1.b
+      select->has_ft_funcs() ||                           // F1.c
+      (select->is_grouped() || select->is_distinct()) ||  // F1.d
+      select->m_current_table_nest->size() != 1)          // F2
+    return false;
+
+  /*
+    Index dive is needed to get accurate cost from storage engine. When all
+    above criteria is met, there are 2 use for the cost. Row access and sort.
+
+    F1.e.I) If there is no ORDER BY then getting accurate cost is not needed as
+    row access is enforced by force index.
+
+    F1.e.II) If there is an ORDER BY and the chosen index (enforced by FORCE
+    INDEX) for row access can provide order then the cost is not really used.
+    Hence accurate cost calculation is not needed.
+  */
+
+  // F1.e.I
+  if (!select->is_ordered()) return true;
+
+  int idx = table->keys_in_use_for_query.get_first_set();
+  uint used_key_parts;
+  bool skip_quick;
+  ORDER_with_src order_src(select->order_list.first, ESC_ORDER_BY);
+  int key_order = test_if_order_by_key(&order_src, table, idx, &used_key_parts,
+                                       &skip_quick);
+  // Condition F1.e.II
+  return key_order != 0;
 }
 
 /*****************************************************************************
@@ -9441,9 +9476,9 @@ Item *make_cond_for_table(THD *thd, Item *cond, table_map tables,
         this is the first table we are extracting conditions for.
        (Assuming that used_table == tables for the first table.)
   */
-  if (used_table &&                                     // 1
-      !(cond->used_tables() & used_table) &&            // 2
-      !(cond->is_expensive() && used_table == tables))  // 3
+  if (used_table &&                                           // 1
+      !(cond->used_tables() & used_table) &&                  // 2
+      !(cond->cost().IsExpensive() && used_table == tables))  // 3
     return nullptr;
 
   if (cond->type() == Item::COND_ITEM) {
@@ -9490,8 +9525,9 @@ Item *make_cond_for_table(THD *thd, Item *cond, table_map tables,
         considered 'expensive', and we want to delay evaluation of such
         conditions to the execution phase.
   */
-  if ((cond->used_tables() & ~tables) ||                                // 1
-      (!used_table && exclude_expensive_cond && cond->is_expensive()))  // 2
+  if ((cond->used_tables() & ~tables) ||  // 1
+      (!used_table && exclude_expensive_cond &&
+       cond->cost().IsExpensive()))  // 2
     return nullptr;
 
   return cond;
@@ -9571,7 +9607,7 @@ static bool make_join_query_block(JOIN *join, Item *cond) {
       */
       if (join->plan_is_const() &&
           !(cond->used_tables() & ~join->const_table_map) &&
-          !cond->is_expensive()) {
+          !cond->cost().IsExpensive()) {
         DBUG_PRINT("info", ("Found always true WHERE condition"));
         join->where_cond = nullptr;
       }
@@ -9780,7 +9816,9 @@ static bool make_join_query_block(JOIN *join, Item *cond) {
                 */
                 if (read_direction == 1 ||
                     (read_direction == -1 &&
-                     is_reverse_sorted_range(tab->range_scan()))) {
+                     reverse_sort_possible(tab->range_scan()) &&
+                     !make_reverse(get_used_key_parts(tab->range_scan()),
+                                   tab->range_scan()))) {
                   recheck_reason = DONT_RECHECK;
                 }
               }
@@ -10343,7 +10381,7 @@ bool optimize_cond(THD *thd, Item **cond, COND_EQUAL **cond_equal,
   OPTION_NO_SUBQUERY_DURING_OPTIMIZATION is active.
 */
 static bool can_evaluate_condition(THD *thd, Item *condition) {
-  return condition->const_for_execution() && !condition->is_expensive() &&
+  return condition->const_for_execution() && !condition->cost().IsExpensive() &&
          evaluate_during_optimization(condition,
                                       thd->lex->current_query_block());
 }
@@ -11574,9 +11612,9 @@ double EstimateRowAccesses(const AccessPath *path, double num_evaluations,
             const double num_materializations =
                 subpath->materialize().param->rematerialize ? num_evaluations
                                                             : 1.0;
-            for (const MaterializePathParameters::QueryBlock &query_block :
-                 subpath->materialize().param->query_blocks) {
-              rows += EstimateRowAccesses(query_block.subquery_path,
+            for (const MaterializePathParameters::Operand &operand :
+                 subpath->materialize().param->m_operands) {
+              rows += EstimateRowAccesses(operand.subquery_path,
                                           num_materializations, kNoLimit);
             }
             return true;

@@ -86,6 +86,10 @@ static struct view {
     {"ndbinfo", "blocks",
      "SELECT block_number, block_name "
      "FROM `ndbinfo`.`ndb$blocks`"},
+    {"ndbinfo", "certificates",
+     "SELECT distinct node_id as Node_id, name as Name, "
+     "from_unixtime(expires, '%d-%b-%Y') as Expires, serial as Serial "
+     "FROM `ndbinfo`.ndb$certificates"},
     {"ndbinfo", "cluster_locks",
      "SELECT "
      "`ndbinfo`.`ndb$acc_operations`.`node_id` AS `node_id`,"
@@ -656,7 +660,7 @@ static struct view {
      " END AS status, "
      " remote_address, bytes_sent, bytes_received, "
      " connect_count, "
-     " overloaded, overload_count, slowdown, slowdown_count "
+     " overloaded, overload_count, slowdown, slowdown_count, encrypted "
      "FROM `ndbinfo`.`ndb$transporters`"},
 };
 

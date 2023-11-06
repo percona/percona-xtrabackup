@@ -30,21 +30,21 @@
 #                set of complete transactions stored in the previous relay
 #                logs.
 #
-# 3. Guarantee that RESET SLAVE/RESET MASTER cleans the appropriate states.
+# 3. Guarantee that RESET SLAVE/RESET BINARY LOGS AND GTIDS cleans the appropriate states.
 #
 # Property 3.1 - RESET SLAVE cleans the GTIDs and previous GTIDs' state
 #                stored in the relay log.
 #
-# Property 3.2 - RESET MASTER cleans the GTIDs and previous GTIDs' state
+# Property 3.2 - RESET BINARY LOGS AND GTIDS cleans the GTIDs and previous GTIDs' state
 #                stored in the binary log.
 #
 # 4. With CHANGE MASTER TO MASTER_AUTO_POSITION coordinates are not used.
 #
 # Property 4.1 - When MASTER_AUTO_POSITION is specified only missing data
 #                transactions on the slave are retrieved from the master.
-#          
+#
 # We check if the aforementioned properties hold after generating a set
-# of transactions and rotating logs through different methods: 
+# of transactions and rotating logs through different methods:
 #
 # 1. On both master and slave, rotate logs through FLUSH LOGS.
 # 2. On the slave, generate spreaded events by rotating the relay log using
@@ -164,7 +164,7 @@ while ($i != 5)
     --let $gtid_end= `SELECT $i`
   }
   --source extra/rpl_tests/rpl_check_gtid.inc
-  
+
   # Check property 1.3 and 2.2.
   --let $binlog= relaylog
   --let $server_uuid= $master_uuid
@@ -366,7 +366,7 @@ while ($i != 5)
 
   #  3.2 - Makes the slave to retrieve and apply these transactions.
   --source include/sync_slave_sql_with_master.inc
- 
+
   # Check property 1.2 and 2.1.
   --connection slave
   --let $binlog= binlog
@@ -414,7 +414,7 @@ while ($i != 5)
   --disable_warnings
   --source include/start_slave.inc
   --enable_warnings
-  
+
   #  3.4 - Rotates both the binary logs on the slave and master.
   FLUSH LOGS;
   --connection master
@@ -477,7 +477,7 @@ while ($i != 5)
 
   #  4.2 - Makes the slave to retrieve and apply these transactions.
   --source include/sync_slave_sql_with_master.inc
- 
+
   # Check property 1.2 and 2.1.
   --connection slave
   --let $binlog= binlog
@@ -527,7 +527,7 @@ while ($i != 5)
   --disable_warnings
   --source include/start_slave.inc
   --enable_warnings
-  
+
   #  4.4 - Rotates both the binary logs on the slave and master.
   FLUSH LOGS;
   --connection master
@@ -562,9 +562,9 @@ while ($i != 5)
   --connection slave
   --source include/stop_slave.inc
   RESET SLAVE;
-  RESET MASTER;
+  RESET BINARY LOGS AND GTIDS;
   --connection master
-  RESET MASTER;
+  RESET BINARY LOGS AND GTIDS;
   --connection slave
   --disable_warnings
   --source include/start_slave.inc
@@ -620,9 +620,9 @@ while ($i != 5)
 --connection slave
 --source include/stop_slave.inc
 RESET SLAVE;
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 --connection master
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 --connection slave
 --let $slave_master_host= query_get_value(SHOW SLAVE STATUS, Master_Host, 1)
 --error ER_BAD_REPLICA_AUTO_POSITION
@@ -647,25 +647,25 @@ while ($i != 5)
   INSERT INTO t1 VALUES(2);
   COMMIT;
 
-  --let $wait_gtids_first= query_get_value(SHOW MASTER STATUS, Executed_Gtid_Set, 1)
+  --let $wait_gtids_first= query_get_value(SHOW BINARY LOG STATUS, Executed_Gtid_Set, 1)
 
   BEGIN;
   INSERT INTO t1 VALUES(1);
   INSERT INTO t1 VALUES(2);
   COMMIT;
 
-  --let $wait_gtids_second= query_get_value(SHOW MASTER STATUS, Executed_Gtid_Set, 1)
+  --let $wait_gtids_second= query_get_value(SHOW BINARY LOG STATUS, Executed_Gtid_Set, 1)
 
   if (`SELECT ($i % 2) = 0`)
   {
     --connection slave
     --replace_result $master_uuid MASTER_UUID $replica_uuid SLAVE_UUID
     --disable_result_log
-    --eval SELECT WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS('$wait_gtids_first', 300)
+    --eval SELECT WAIT_FOR_EXECUTED_GTID_SET('$wait_gtids_first', 300)
     --enable_result_log
     --replace_result $master_uuid MASTER_UUID $replica_uuid SLAVE_UUID
     --disable_result_log
-    --eval SELECT WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS('$wait_gtids_second', 300)
+    --eval SELECT WAIT_FOR_EXECUTED_GTID_SET('$wait_gtids_second', 300)
     --enable_result_log
   }
 
@@ -674,11 +674,11 @@ while ($i != 5)
     --connection slave
     --replace_result $master_uuid MASTER_UUID $replica_uuid SLAVE_UUID
     --disable_result_log
-    --eval SELECT WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS('$wait_gtids_first')
+    --eval SELECT WAIT_FOR_EXECUTED_GTID_SET('$wait_gtids_first')
     --enable_result_log
     --replace_result $master_uuid MASTER_UUID $replica_uuid SLAVE_UUID
     --disable_result_log
-    --eval SELECT WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS('$wait_gtids_second')
+    --eval SELECT WAIT_FOR_EXECUTED_GTID_SET('$wait_gtids_second')
     --enable_result_log
   }
 
@@ -722,9 +722,9 @@ while ($i != 5)
 --connection slave
 --source include/stop_slave.inc
 RESET SLAVE;
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 --connection master
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 --connection slave
 --let $slave_master_host= query_get_value(SHOW SLAVE STATUS, Master_Host, 1)
 --replace_result $slave_master_host SLAVE_MASTER_HOST
@@ -791,11 +791,11 @@ while ($i != 5)
 
 --connection slave
 --source include/stop_slave.inc
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 RESET SLAVE;
 --eval CHANGE REPLICATION SOURCE TO SOURCE_HOST= '$slave_master_host', SOURCE_AUTO_POSITION= 0
 --connection master
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 --connection slave
 --disable_warnings
 --source include/start_slave.inc
@@ -815,7 +815,7 @@ while ($i != 5)
 
   #  8.2 - Makes the slave to retrieve and apply these transactions.
   --source include/sync_slave_sql_with_master.inc
- 
+
   # Check property 1.2 and 2.1.
   --connection slave
   --let $binlog= binlog
@@ -913,7 +913,7 @@ while ($i != 5)
 
   #  9.2 - Makes the slave to retrieve and apply these transactions.
   --source include/sync_slave_sql_with_master.inc
- 
+
   # Check property 1.2 and 2.1.
   --connection slave
   --let $binlog= binlog

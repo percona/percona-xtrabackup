@@ -50,8 +50,10 @@
 #include "mysql/harness/stdx/expected.h"
 #include "mysql/harness/tls_error.h"
 #include "mysqld_error.h"  // mysql-server error-codes
+#include "mysqlrouter/classic_protocol_codec_error.h"
 #include "mysqlrouter/classic_protocol_constants.h"
 #include "mysqlrouter/connection_base.h"
+#include "mysqlrouter/routing.h"
 #include "openssl_msg.h"
 #include "openssl_version.h"
 #include "processor.h"
@@ -103,6 +105,8 @@ stdx::expected<Processor::Result, std::error_code> ClientGreetor::process() {
       return request_plaintext_password();
     case Stage::PlaintextPassword:
       return plaintext_password();
+    case Stage::DecryptPassword:
+      return decrypt_password();
 
     case Stage::Accepted:
       return accepted();
@@ -311,14 +315,42 @@ ClientGreetor::client_greeting() {
   auto msg_res =
       ClassicFrame::recv_msg<classic_protocol::message::client::Greeting>(
           src_channel, src_protocol, src_protocol->server_capabilities());
-  if (!msg_res) return recv_client_failed(msg_res.error());
+  if (!msg_res) {
+    const auto ec = msg_res.error();
 
-  auto msg = std::move(*msg_res);
+    if (ec.category() != classic_protocol::codec_category()) {
+      return recv_client_failed(ec);
+    }
+
+    discard_current_msg(src_channel, src_protocol);
+
+    // server sends Bad Handshake instead of Malformed message.
+    const auto send_msg = ClassicFrame::send_msg<
+        classic_protocol::borrowed::message::server::Error>(
+        src_channel, src_protocol,
+        {ER_HANDSHAKE_ERROR, "Bad handshake", "08S01"});
+    if (!send_msg) send_client_failed(send_msg.error());
+
+    stage(Stage::Error);
+
+    return Result::SendToClient;
+  }
 
   if (src_protocol->seq_id() != 1) {
-    // client-greeting has seq-id 1
-    return recv_client_failed(make_error_code(std::errc::bad_message));
+    discard_current_msg(src_channel, src_protocol);
+
+    const auto send_msg = ClassicFrame::send_msg<
+        classic_protocol::borrowed::message::server::Error>(
+        src_channel, src_protocol,
+        {ER_NET_PACKETS_OUT_OF_ORDER, "Got packets out of order", "08S01"});
+    if (!send_msg) send_client_failed(send_msg.error());
+
+    stage(Stage::Error);
+
+    return Result::SendToClient;
   }
+
+  auto msg = std::move(*msg_res);
 
   if (auto &tr = tracer()) {
     tr.trace(Tracer::Event().stage("client::greeting"));
@@ -367,14 +399,25 @@ ClientGreetor::client_greeting() {
           classic_protocol::capabilities::pos::ssl)) {
     // client wants to stay with plaintext
 
-    if (msg.auth_method_data() == "\x00"sv) {
+    // libmysqlclient sends auth-data: \x00 for empty password
+    // php sends auth-data: <empty> for empty password.
+    //
+    // check that the auth-method-name matches the auth method sent in the
+    // server-greeting the client received.
+    if (src_protocol->server_greeting()->auth_method_name() ==
+            AuthCachingSha2Password::kName &&
+        src_protocol->auth_method_name() == AuthCachingSha2Password::kName &&
+        (msg.auth_method_data() == "\x00"sv ||
+         msg.auth_method_data().empty())) {
       // password is empty.
       src_protocol->password("");
-    } else {
+    } else if (connection()->source_ssl_mode() != SslMode::kPassthrough) {
       const bool client_conn_is_secure =
           connection()->socket_splicer()->client_conn().is_secure_transport();
 
-      if (client_conn_is_secure &&
+      if ((client_conn_is_secure ||
+           connection()->context().source_ssl_ctx() != nullptr) &&
+          connection()->context().connection_sharing() &&
           src_protocol->auth_method_name() == AuthCachingSha2Password::kName) {
         stage(Stage::RequestPlaintextPassword);
         return Result::Again;
@@ -474,9 +517,12 @@ stdx::expected<Processor::Result, std::error_code> ClientGreetor::tls_accept() {
 
       if (ec == TlsErrc::kWantRead) return Result::RecvFromClient;
 
-      log_fatal_error_code("tls-accept failed", ec);
+      log_info("accepting TLS connection from %s failed: %s",
+               connection()->get_client_address().c_str(),
+               ec.message().c_str());
 
-      return recv_client_failed(ec);
+      stage(Stage::Error);
+      return Result::Again;
     }
   }
 
@@ -644,14 +690,11 @@ ClientGreetor::request_plaintext_password() {
  * @returns the payload without the trailing NUL-char.
  * @retval false in there is no password.
  */
-static std::optional<std::string> password_from_auth_method_data(
-    std::string auth_data) {
+static std::optional<std::string_view> password_from_auth_method_data(
+    std::string_view auth_data) {
   if (auth_data.empty() || auth_data.back() != '\0') return std::nullopt;
 
-  // strip the trailing \0
-  auth_data.pop_back();
-
-  return auth_data;
+  return auth_data.substr(0, auth_data.size() - 1);
 }
 
 /**
@@ -664,17 +707,113 @@ ClientGreetor::plaintext_password() {
   auto *src_channel = connection()->socket_splicer()->client_channel();
   auto *src_protocol = connection()->client_protocol();
 
-  auto msg_res = ClassicFrame::recv_msg<classic_protocol::wire::String>(
+  auto msg_res = ClassicFrame::recv_msg<
+      classic_protocol::borrowed::message::client::AuthMethodData>(
+      src_channel, src_protocol);
+  if (!msg_res) return recv_client_failed(msg_res.error());
+
+  const bool client_conn_is_secure =
+      connection()->socket_splicer()->client_conn().is_secure_transport();
+
+  if (client_conn_is_secure) {
+    if (auto &tr = tracer()) {
+      tr.trace(Tracer::Event().stage("client::auth::plain"));
+    }
+
+    if (auto pwd =
+            password_from_auth_method_data(msg_res->auth_method_data())) {
+      src_protocol->password(std::string(*pwd));
+    }
+    // discard the current frame.
+    discard_current_msg(src_channel, src_protocol);
+
+    stage(Stage::Accepted);
+    return Result::Again;
+  }
+
+  if (AuthCachingSha2Password::is_public_key_request(
+          msg_res->auth_method_data())) {
+    if (auto &tr = tracer()) {
+      tr.trace(Tracer::Event().stage("client::auth::public_key_request"));
+    }
+
+    auto pubkey_res = AuthCachingSha2Password::public_key_from_ssl_ctx_as_pem(
+        connection()->context().source_ssl_ctx()->get());
+    if (!pubkey_res) {
+      // couldn't get the public key, fail the auth.
+      auto send_res = ClassicFrame::send_msg<
+          classic_protocol::borrowed::message::server::Error>(
+          src_channel, src_protocol,
+          {ER_ACCESS_DENIED_ERROR, "Access denied", "HY000"});
+      if (!send_res) return send_client_failed(send_res.error());
+
+      discard_current_msg(src_channel, src_protocol);
+
+      stage(Stage::Error);
+      return Result::SendToClient;
+    }
+
+    auto send_res = AuthCachingSha2Password::send_public_key(
+        src_channel, src_protocol, *pubkey_res);
+    if (!send_res) return send_client_failed(send_res.error());
+
+    discard_current_msg(src_channel, src_protocol);
+
+    stage(Stage::DecryptPassword);
+    return Result::SendToClient;
+  }
+
+  if (auto &tr = tracer()) {
+    tr.trace(Tracer::Event().stage("client::auth::???"));
+  }
+
+  const auto send_res = ClassicFrame::send_msg<
+      classic_protocol::borrowed::message::server::Error>(
+      src_channel, src_protocol,
+      {CR_AUTH_PLUGIN_CANNOT_LOAD, "Unexpected message ...", "HY000"});
+  if (!send_res) return send_client_failed(send_res.error());
+
+  discard_current_msg(src_channel, src_protocol);
+
+  stage(Stage::Error);
+  return Result::SendToClient;
+}
+
+stdx::expected<Processor::Result, std::error_code>
+ClientGreetor::decrypt_password() {
+  auto *src_channel = connection()->socket_splicer()->client_channel();
+  auto *src_protocol = connection()->client_protocol();
+
+  auto msg_res = ClassicFrame::recv_msg<
+      classic_protocol::borrowed::message::client::AuthMethodData>(
       src_channel, src_protocol);
   if (!msg_res) return recv_client_failed(msg_res.error());
 
   if (auto &tr = tracer()) {
-    tr.trace(Tracer::Event().stage("client::auth::plain"));
+    tr.trace(Tracer::Event().stage("client::auth::encrypted"));
   }
 
-  if (auto pwd = password_from_auth_method_data(msg_res->value())) {
-    src_protocol->password(*pwd);
+  auto nonce = src_protocol->server_greeting()->auth_method_data();
+
+  // if there is a trailing zero, strip it.
+  if (nonce.size() == AuthCachingSha2Password::kNonceLength + 1 &&
+      nonce[AuthCachingSha2Password::kNonceLength] == 0x00) {
+    nonce = nonce.substr(0, AuthCachingSha2Password::kNonceLength);
   }
+
+  auto recv_res = AuthCachingSha2Password::rsa_decrypt_password(
+      connection()->context().source_ssl_ctx()->get(),
+      msg_res->auth_method_data(), nonce);
+  if (!recv_res) {
+    if (auto &tr = tracer()) {
+      tr.trace(Tracer::Event().stage("client::auth::encrypted::failed: " +
+                                     recv_res.error().message()));
+    }
+
+    return recv_client_failed(recv_res.error());
+  }
+
+  src_protocol->password(*recv_res);
 
   // discard the current frame.
   discard_current_msg(src_channel, src_protocol);
@@ -688,6 +827,7 @@ stdx::expected<Processor::Result, std::error_code> ClientGreetor::accepted() {
     tr.trace(Tracer::Event().stage("client::greeting::client_done"));
   }
 
+  auto *src_protocol = connection()->client_protocol();
   auto *dst_protocol = connection()->server_protocol();
 
   stage(Stage::Authenticated);
@@ -712,6 +852,19 @@ stdx::expected<Processor::Result, std::error_code> ClientGreetor::accepted() {
                                (dest_ssl_mode == SslMode::kAsClient &&
                                 (source_ssl_mode == SslMode::kPreferred ||
                                  source_ssl_mode == SslMode::kRequired)));
+
+    if (connection()->context().access_mode() == routing::AccessMode::kAuto &&
+        !src_protocol->password().has_value()) {
+      // by default, authentication can be done on any server if rw-splitting is
+      // enabled.
+      //
+      // But if there is no password yet, router may also not get it in the
+      // authentication round, which would mean that the connection can't be
+      // shared and switched to the read-write server when needed.
+      //
+      // Therefore, force authentication on a read-write server
+      connection()->expected_server_mode(mysqlrouter::ServerMode::ReadWrite);
+    }
 
     connection()->push_processor(std::make_unique<LazyConnector>(
         connection(), true /* in handshake */,

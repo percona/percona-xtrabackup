@@ -631,6 +631,7 @@ static void log_sys_create() {
   mutex_create(LATCH_ID_LOG_LIMITS, &log.limits_mutex);
   mutex_create(LATCH_ID_LOG_FILES, &log.m_files_mutex);
   mutex_create(LATCH_ID_LOG_SN_MUTEX, &log.sn_x_lock_mutex);
+  mutex_create(LATCH_ID_LOG_GOVERNOR_MUTEX, &log.governor_iteration_mutex);
 
 #ifdef UNIV_PFS_RWLOCK
   /* pfs_psi is separated from sn_lock_inst,
@@ -826,6 +827,7 @@ static void log_sys_free() {
   mutex_free(&log.writer_mutex);
   mutex_free(&log.closer_mutex);
   mutex_free(&log.checkpointer_mutex);
+  mutex_free(&log.governor_iteration_mutex);
 
   os_event_destroy(log.next_checkpoint_event);
   os_event_destroy(log.write_notifier_event);
@@ -1716,14 +1718,11 @@ dberr_t log_sys_init(bool expect_no_files, lsn_t flushed_lsn,
 #endif
       };
 
-#ifdef _WIN32
-  Log_file_handle::s_skip_fsyncs =
-      (srv_win_file_flush_method == SRV_WIN_IO_UNBUFFERED);
-#else
+#ifndef _WIN32
   Log_file_handle::s_skip_fsyncs =
       (srv_unix_file_flush_method == SRV_UNIX_O_DSYNC ||
        srv_unix_file_flush_method == SRV_UNIX_NOSYNC);
-#endif /* _WIN32 */
+#endif /* !_WIN32 */
 
   if (!found_files_in_root) {
     log_files_ctx =

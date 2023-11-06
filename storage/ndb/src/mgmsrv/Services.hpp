@@ -38,6 +38,7 @@ class MgmApiSession : public SocketServer::Session
 {
   static void list_session(SocketServer::Session *_s, void *data);
   static void get_session(SocketServer::Session *_s, void *data);
+  static void show_cert(SocketServer::Session *_s, void *data);
 private:
   typedef Parser<MgmApiSession> Parser_t;
 
@@ -50,9 +51,12 @@ private:
   int m_stopSelf; // -1 is restart, 0 do nothing, 1 stop
   NdbMutex *m_mutex;
 
+  unsigned int m_sessionAuthLevel {0};
+
   // for listing sessions and other fun:
   Parser_t::Context *m_ctx;
   Uint64 m_session_id;
+  struct x509_st * m_cert {nullptr};
 
   int m_errorInsert;
 
@@ -73,6 +77,10 @@ public:
   void runSession() override;
 
   static const unsigned SOCKET_TIMEOUT = 30000;
+
+  int checkAuth(struct CmdAuth *) const;
+  void reportAuthFailure(int code);
+  int on_verify(int, struct x509_store_ctx_st *);
 
   void getConfig(Parser_t::Context &ctx, const class Properties &args, bool v2);
   void getConfig_v1(Parser_t::Context &ctx, const class Properties &args);
@@ -108,6 +116,7 @@ public:
   void stopAll(Parser_t::Context &ctx, const class Properties &args);
   void start(Parser_t::Context &ctx, const class Properties &args);
   void startAll(Parser_t::Context &ctx, const class Properties &args);
+  void startTls(Parser_t::Context &ctx, const class Properties &args);
   void bye(Parser_t::Context &ctx, const class Properties &args);
   void endSession(Parser_t::Context &ctx, const class Properties &args);
   void setLogLevel(Parser_t::Context &ctx, const class Properties &args);
@@ -137,6 +146,8 @@ public:
   void report_event(Parser_t::Context &ctx, Properties const &args);
 
   void listSessions(Parser_t::Context &ctx, Properties const &args);
+  void listCerts(Parser_t::Context &ctx, Properties const &args);
+  void getTlsStats(Parser_t::Context &ctx, Properties const &args);
 
   void getSessionId(Parser_t::Context &ctx, Properties const &args);
   void getSession(Parser_t::Context &ctx, Properties const &args);
@@ -159,7 +170,7 @@ public:
     m_mgmsrv(mgm),
     m_next_session_id(1) {}
 
-  SocketServer::Session * newSession(ndb_socket_t socket) override{
+  SocketServer::Session * newSession(ndb_socket_t socket) override {
     return new MgmApiSession(m_mgmsrv, socket, m_next_session_id++);
   }
 };

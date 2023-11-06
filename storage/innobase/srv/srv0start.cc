@@ -189,6 +189,8 @@ mysql_pfs_key_t srv_worker_thread_key;
 mysql_pfs_key_t trx_recovery_rollback_thread_key;
 mysql_pfs_key_t srv_ts_alter_encrypt_thread_key;
 mysql_pfs_key_t parallel_rseg_init_thread_key;
+mysql_pfs_key_t bulk_flusher_thread_key;
+mysql_pfs_key_t bulk_alloc_thread_key;
 #endif /* UNIV_PFS_THREAD */
 
 #ifdef HAVE_PSI_STAGE_INTERFACE
@@ -592,7 +594,7 @@ dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space) {
   }
 
   /* Check if this file supports atomic write. */
-#if !defined(NO_FALLOCATE) && defined(UNIV_LINUX)
+#ifdef UNIV_LINUX
   if (!dblwr::is_enabled()) {
     atomic_write = fil_fusionio_enable_atomic_write(fh);
   } else {
@@ -600,7 +602,7 @@ dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space) {
   }
 #else
   atomic_write = false;
-#endif /* !NO_FALLOCATE && UNIV_LINUX */
+#endif /* UNIV_LINUX */
 
   if (space == nullptr) {
     /* Load the tablespace into InnoDB's internal data structures.

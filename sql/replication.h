@@ -119,6 +119,7 @@ typedef struct Trans_context_info {
   This represents the GTID context of the transaction.
  */
 typedef struct Trans_gtid_info {
+  rpl_sid sid;        // transaction sid
   ulong type;         // enum values in enum_gtid_type
   int sidno;          // transaction sidno
   long long int gno;  // transaction gno
@@ -546,8 +547,8 @@ typedef int (*after_send_event_t)(Binlog_transmit_param *param,
 /**
   This callback is called after resetting master status
 
-  This is called when executing the command RESET MASTER, and is
-  used to reset status variables added by observers.
+  This is called when executing the command RESET BINARY LOGS AND GTIDS,
+  and is used to reset status variables added by observers.
 
   @param param Observer common parameter
 

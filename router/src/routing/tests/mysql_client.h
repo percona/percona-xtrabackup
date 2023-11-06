@@ -538,6 +538,16 @@ class MysqlClient {
     return {r};
   }
 
+  stdx::expected<void, MysqlError> dump_debug_info() {
+    const auto res = mysql_dump_debug_info(m_.get());
+
+    if (res != 0) {
+      return stdx::make_unexpected(make_mysql_error_code(m_.get()));
+    }
+
+    return {};
+  }
+
   stdx::expected<unsigned int, MysqlError> warning_count() {
     return mysql_warning_count(m_.get());
   }
@@ -1190,6 +1200,88 @@ class MysqlClient {
     if (!res) return res.get_unexpected();
 
     return st;
+  }
+
+  class SessionTrackers {
+   public:
+    SessionTrackers(MYSQL *m, int first, int last)
+        : m_(m), first_(first), last_(last) {}
+
+    class Iterator {
+     public:
+      using value_type = std::tuple<enum_session_state_type, std::string_view>;
+
+      Iterator(MYSQL *m, int cur) : m_(m), cur_(cur) {
+        // either a tracker was found or cur_ is == .end()
+
+        for (; cur_ <= SESSION_TRACK_END; ++cur_) {
+          if (0 == mysql_session_track_get_first(
+                       m_, static_cast<enum_session_state_type>(cur_), &data_,
+                       &data_len_)) {
+            break;
+          }
+        }
+      }
+
+      Iterator &operator++() {
+        if (0 == mysql_session_track_get_next(
+                     m_, static_cast<enum_session_state_type>(cur_), &data_,
+                     &data_len_)) {
+          return *this;
+        }
+
+        // move to the next tracker-id
+
+        ++cur_;
+
+        data_ = nullptr;
+        data_len_ = 0;
+
+        for (; cur_ <= SESSION_TRACK_END; ++cur_) {
+          if (0 == mysql_session_track_get_first(
+                       m_, static_cast<enum_session_state_type>(cur_), &data_,
+                       &data_len_)) {
+            break;
+          }
+        }
+
+        return *this;
+      }
+
+      bool operator==(const Iterator &other) const {
+        return m_ == other.m_ && cur_ == other.cur_;
+      }
+
+      bool operator!=(const Iterator &other) const { return !(*this == other); }
+
+      value_type operator*() const {
+        return {static_cast<enum_session_state_type>(cur_), {data_, data_len_}};
+      }
+
+     private:
+      MYSQL *m_;
+      int cur_;
+
+      const char *data_{};
+      size_t data_len_{};
+    };
+
+    Iterator begin() const { return {m_, first_}; }
+    Iterator end() const {
+      return {m_, static_cast<enum_session_state_type>(static_cast<int>(last_) +
+                                                       1)};
+    }
+
+    using value_type = Iterator::value_type;
+
+   private:
+    MYSQL *m_;
+    int first_;
+    int last_;
+  };
+
+  SessionTrackers session_trackers() {
+    return {m_.get(), SESSION_TRACK_BEGIN, SESSION_TRACK_END};
   }
 
   stdx::expected<void, MysqlError> binlog_dump(MYSQL_RPL &rpl) {

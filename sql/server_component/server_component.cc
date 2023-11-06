@@ -70,6 +70,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include "mysql_audit_print_service_double_data_source_imp.h"
 #include "mysql_audit_print_service_longlong_data_source_imp.h"
 #include "mysql_backup_lock_imp.h"
+#include "mysql_bulk_data.h"
 #include "mysql_clone_protocol_imp.h"
 #include "mysql_command_consumer_imp.h"
 #include "mysql_command_services_imp.h"
@@ -136,6 +137,11 @@ mysql_persistent_dynamic_loader_imp::load,
 BEGIN_SERVICE_IMPLEMENTATION(mysql_server, dynamic_privilege_register)
 dynamic_privilege_services_impl::register_privilege,
     dynamic_privilege_services_impl::unregister_privilege
+    END_SERVICE_IMPLEMENTATION();
+
+BEGIN_SERVICE_IMPLEMENTATION(mysql_server, dynamic_privilege_deprecation)
+dynamic_privilege_services_impl::add_deprecated,
+    dynamic_privilege_services_impl::remove_deprecated
     END_SERVICE_IMPLEMENTATION();
 
 BEGIN_SERVICE_IMPLEMENTATION(mysql_server, global_grants_check)
@@ -320,6 +326,17 @@ mysql_clone_start_statement, mysql_clone_finish_statement,
     mysql_clone_disconnect, mysql_clone_get_error, mysql_clone_get_command,
     mysql_clone_send_response,
     mysql_clone_send_error END_SERVICE_IMPLEMENTATION();
+
+BEGIN_SERVICE_IMPLEMENTATION(mysql_server, bulk_data_convert)
+Bulk_data_convert::mysql_format, Bulk_data_convert::mysql_format_from_raw,
+    Bulk_data_convert::mysql_format_using_key, Bulk_data_convert::is_killed,
+    Bulk_data_convert::compare_keys,
+    Bulk_data_convert::get_row_metadata END_SERVICE_IMPLEMENTATION();
+
+BEGIN_SERVICE_IMPLEMENTATION(mysql_server, bulk_data_load)
+Bulk_data_load::begin, Bulk_data_load::load, Bulk_data_load::end,
+    Bulk_data_load::is_table_supported, Bulk_data_load::get_se_memory_size,
+    END_SERVICE_IMPLEMENTATION();
 
 BEGIN_SERVICE_IMPLEMENTATION(mysql_server, mysql_thd_security_context)
 mysql_security_context_imp::get,
@@ -813,6 +830,8 @@ PROVIDES_SERVICE(mysql_server_path_filter, dynamic_loader_scheme_file),
     PROVIDES_SERVICE(mysql_server, system_variable_source),
     PROVIDES_SERVICE(mysql_server, mysql_backup_lock),
     PROVIDES_SERVICE(mysql_server, clone_protocol),
+    PROVIDES_SERVICE(mysql_server, bulk_data_convert),
+    PROVIDES_SERVICE(mysql_server, bulk_data_load),
     PROVIDES_SERVICE(mysql_server, mysql_thd_security_context),
     PROVIDES_SERVICE(mysql_server, mysql_security_context_factory),
     PROVIDES_SERVICE(mysql_server,
@@ -884,7 +903,9 @@ PROVIDES_SERVICE(mysql_server_path_filter, dynamic_loader_scheme_file),
     PROVIDES_SERVICE(performance_schema, pfs_plugin_column_timestamp_v2),
     PROVIDES_SERVICE(performance_schema, pfs_plugin_column_year_v1),
     PROVIDES_SERVICE(performance_schema, psi_tls_channel_v1),
+    PROVIDES_SERVICE(performance_schema, mysql_server_telemetry_metrics_v1),
     PROVIDES_SERVICE(performance_schema, mysql_server_telemetry_traces_v1),
+    PROVIDES_SERVICE(performance_schema, psi_metric_v1),
     PROVIDES_SERVICE(performance_schema, pfs_plugin_column_text_v1),
 
     PROVIDES_SERVICE(mysql_server, mysql_query_attributes_iterator),
@@ -977,6 +998,7 @@ PROVIDES_SERVICE(mysql_server_path_filter, dynamic_loader_scheme_file),
     PROVIDES_SERVICE(mysql_server, mysql_debug_keyword_service),
     PROVIDES_SERVICE(mysql_server, mysql_debug_sync_service),
 #endif
+    PROVIDES_SERVICE(mysql_server, dynamic_privilege_deprecation),
     END_COMPONENT_PROVIDES();
 
 static BEGIN_COMPONENT_REQUIRES(mysql_server) END_COMPONENT_REQUIRES();

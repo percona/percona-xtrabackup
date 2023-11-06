@@ -572,7 +572,7 @@ void dict_col_t::set_default(const byte *value, size_t length,
   instant_default->len = length;
 }
 
-bool dict_col_default_t::operator==(const dict_col_default_t &other) {
+bool dict_col_default_t::operator==(const dict_col_default_t &other) const {
   /* If the lengths are different, trivially the default values are not
   the same, return false immediately */
   if (len != other.len) {
@@ -594,7 +594,7 @@ bool dict_col_default_t::operator==(const dict_col_default_t &other) {
   return true;
 }
 
-bool dict_col_default_t::operator!=(const dict_col_default_t &other) {
+bool dict_col_default_t::operator!=(const dict_col_default_t &other) const {
   return !(*this == other);
 }
 
@@ -893,4 +893,11 @@ std::ostream &operator<<(std::ostream &out, const dict_foreign_set &fk_set) {
 
 page_size_t dict_index_t::get_page_size() const {
   return (dict_table_page_size(table));
+}
+
+bool dict_table_t::has_pk() const {
+  const dict_index_t *first = first_index();
+  const size_t len = strlen(innobase_index_reserve_name);
+  const int cmp = strncmp(innobase_index_reserve_name, first->name(), len);
+  return cmp != 0;
 }

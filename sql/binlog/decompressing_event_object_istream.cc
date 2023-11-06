@@ -25,21 +25,24 @@
 #include "sql/mysqld.h"     // PSI_stage_info
 #include "sql/sql_class.h"  // current_thd, THD
 
-#include "libbinlogevents/include/compression/payload_event_buffer_istream.h"
+#include "mysql/binlog/event/compression/payload_event_buffer_istream.h"
 
 namespace binlog {
 
 Decompressing_event_object_istream::Decompressing_event_object_istream(
-    IBasic_binlog_file_reader &reader)
+    IBasic_binlog_file_reader &reader, const Memory_resource_t &memory_resource)
     : m_binlog_reader(&reader),
+      m_memory_resource(memory_resource),
       m_get_format_description_event([&]() -> Fde_ref_t {
         return m_binlog_reader->format_description_event();
       }) {}
 
 Decompressing_event_object_istream::Decompressing_event_object_istream(
     const Tple_ptr_t &transaction_payload_log_event,
-    Fde_ref_t format_description_event)
+    Fde_ref_t format_description_event,
+    const Memory_resource_t &memory_resource)
     : m_binlog_reader(nullptr),
+      m_memory_resource(memory_resource),
       m_get_format_description_event(
           [&]() -> Fde_ref_t { return format_description_event; }) {
   begin_payload_event(transaction_payload_log_event);
@@ -47,8 +50,10 @@ Decompressing_event_object_istream::Decompressing_event_object_istream(
 
 Decompressing_event_object_istream::Decompressing_event_object_istream(
     const Transaction_payload_log_event &transaction_payload_log_event,
-    Fde_ref_t format_description_event)
+    Fde_ref_t format_description_event,
+    const Memory_resource_t &memory_resource)
     : m_binlog_reader(nullptr),
+      m_memory_resource(memory_resource),
       m_get_format_description_event(
           [&]() -> Fde_ref_t { return format_description_event; }) {
   begin_payload_event(transaction_payload_log_event);
@@ -162,7 +167,7 @@ bool Decompressing_event_object_istream::decode_from_buffer(
   // disable checksums while decoding such an inner event.  The API to
   // control if we verify checksums is to set this member variable in
   // the footer of the format_description_log_event.
-  fde.footer()->checksum_alg = binary_log::BINLOG_CHECKSUM_ALG_OFF;
+  fde.footer()->checksum_alg = mysql::binlog::event::BINLOG_CHECKSUM_ALG_OFF;
   Log_event *ev{nullptr};
   auto error = binlog_event_deserialize(buffer_view.data(), buffer_view.size(),
                                         &fde, m_verify_checksum, &ev);
@@ -245,7 +250,7 @@ bool Decompressing_event_object_istream::read_from_binlog_stream(
   // If we got a TPLE, prepare to unfold it on next invocation. Return
   // the TPLE itself this time. Share pointer ownership between the
   // Payload_event_buffer_istream and the API client.
-  if (ev->get_type_code() == binary_log::TRANSACTION_PAYLOAD_EVENT)
+  if (ev->get_type_code() == mysql::binlog::event::TRANSACTION_PAYLOAD_EVENT)
     begin_payload_event(
         std::const_pointer_cast<const Transaction_payload_log_event>(
             std::dynamic_pointer_cast<Transaction_payload_log_event>(out)));

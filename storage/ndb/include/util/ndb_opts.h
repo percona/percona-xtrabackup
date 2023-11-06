@@ -30,6 +30,7 @@
 #include "my_alloc.h" // MEM_ROOT
 #include "my_sys.h"   // loglevel needed by my_getopt.h
 #include "my_getopt.h"
+#include "typelib.h"
 #include "util/BaseString.hpp"
 #include "util/require.h"
 
@@ -47,6 +48,8 @@ OPT_EXTERN(const char *,opt_ndb_connectstring,=0);
 OPT_EXTERN(int, opt_connect_retry_delay,NONE);
 OPT_EXTERN(int, opt_connect_retries,NONE);
 OPT_EXTERN(const char *,opt_charsets_dir,=0);
+OPT_EXTERN(const char *,opt_tls_search_path,=NDB_TLS_SEARCH_PATH);
+OPT_EXTERN(unsigned long long,opt_mgm_tls,=0);
 
 #ifndef NDEBUG
 OPT_EXTERN(const char *,opt_debug,= 0);
@@ -74,6 +77,9 @@ enum ndb_std_options {
 
 
 namespace NdbStdOpt {
+
+static const char * tls_names[] = { "relaxed", "strict", nullptr };
+static TYPELIB mgm_tls_typelib = { 2 , "TLS requirement", tls_names, nullptr };
 
 static constexpr struct my_option usage =
   { "usage", '?', "Display this help and exit.",
@@ -140,6 +146,19 @@ static constexpr struct my_option connect_retries =
     " to the cluster. -1 for eternal retries",
     &opt_connect_retries, nullptr, nullptr, GET_INT, REQUIRED_ARG,
     12, -1, INT_MAX, nullptr, 0, nullptr};
+
+static constexpr struct my_option tls_search_path =
+  { "ndb-tls-search-path", NDB_OPT_NOSHORT,
+    "List of directories containing TLS keys and certificates",
+    &opt_tls_search_path, nullptr, nullptr, GET_STR, REQUIRED_ARG,
+    0, 0, 0, nullptr, 0, nullptr};
+
+static constexpr struct my_option mgm_tls =
+  { "ndb-mgm-tls", NDB_OPT_NOSHORT,
+    "MGM client TLS requirement level",
+    &opt_mgm_tls, nullptr, &mgm_tls_typelib, GET_ENUM, REQUIRED_ARG,
+    0 /* default=CLIENT_TLS_RELAXED */, 0 /*min*/, 1 /*max*/,
+    nullptr, 0, nullptr};
 
 #ifndef NDEBUG
 static constexpr struct my_option debug =
