@@ -13,7 +13,7 @@ debug-sync=xtrabackup_load_tablespaces_pause
 start_server
 
 function backup_local() {
-	xtrabackup --backup --lock-ddl=false --target-dir=$topdir/backup
+	xtrabackup --backup --lock-ddl=OFF --target-dir=$topdir/backup
 }
 
 function prepare_local() {
@@ -21,7 +21,7 @@ function prepare_local() {
 }
 
 function backup_xbstream() {
-	xtrabackup --backup --lock-ddl=false --stream=xbstream --target-dir=$topdir/backup > $topdir/backup.xbs
+	xtrabackup --backup --lock-ddl=OFF --stream=xbstream --target-dir=$topdir/backup > $topdir/backup.xbs
 }
 
 function prepare_xbstream() {
@@ -30,7 +30,7 @@ function prepare_xbstream() {
 }
 
 function backup_rsync() {
-	xtrabackup --backup --lock-ddl=false --rsync --target-dir=$topdir/backup
+	xtrabackup --backup --lock-ddl=OFF --rsync --target-dir=$topdir/backup
 }
 
 function prepare_rsync() {

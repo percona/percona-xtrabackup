@@ -65,10 +65,10 @@ if [ $(grep 'Warning.*space.*does not exist' $topdir/pxb.log | wc -l) -eq 1 ]
        die "not exactly 1 tablespace missing "
 fi
 
-vlog "Case#2 backup should copy FTS in backup with lock-ddl=false"
+vlog "Case#2 backup should copy FTS in backup with lock-ddl=OFF"
 
 rm -rf ${topdir}/backup
-run_cmd xtrabackup --backup --lock-ddl=false  --target-dir=${topdir}/backup
+run_cmd xtrabackup --backup --lock-ddl=OFF  --target-dir=${topdir}/backup
 
 vlog "Case#2 prepare should work with orphan ibd copied"
 

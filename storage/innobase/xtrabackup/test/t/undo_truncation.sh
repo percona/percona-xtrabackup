@@ -18,5 +18,5 @@ for i in {1..100} ; do
 done &
 
 sleep 1s
-run_cmd_expect_failure $XB_BIN $XB_ARGS --backup --lock-ddl=false --target-dir=$topdir/backup
+run_cmd_expect_failure $XB_BIN $XB_ARGS --backup --lock-ddl=OFF --target-dir=$topdir/backup
 

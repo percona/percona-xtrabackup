@@ -45,10 +45,10 @@ while true ; do
       mysql -e "TRUNCATE test.sbtest1"
 done >/dev/null 2>/dev/null &
 
-xtrabackup --lock-ddl --backup --target-dir=$topdir/backup --parallel=8
-xtrabackup --lock-ddl --backup --incremental-basedir=$topdir/backup \
+xtrabackup --backup --target-dir=$topdir/backup --parallel=8
+xtrabackup --backup --incremental-basedir=$topdir/backup \
 	   --target-dir=$topdir/inc --parallel=8
-xtrabackup --lock-ddl --backup --incremental-basedir=$topdir/inc \
+xtrabackup --backup --incremental-basedir=$topdir/inc \
 	   --target-dir=$topdir/inc1 --parallel=8
 
 if ! grep -q flushed_lsn $topdir/backup/xtrabackup_checkpoints ; then

@@ -1397,6 +1397,7 @@ bool backup_start(Backup_context &context) {
     }
     /* LTFB/LIFB has to be executed before copying MyISAM */
     if (ddl_tracker != nullptr) {
+      debug_sync_point("ddl_tracker_before_lock_ddl");
       if (!lock_tables_for_backup(mysql_connection, opt_backup_lock_timeout,
                                   opt_backup_lock_retry_count)) {
         return (false);

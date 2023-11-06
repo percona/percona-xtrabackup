@@ -53,7 +53,7 @@ function alter_table() {
 		-e "ALTER TABLE sakila.payment ADD COLUMN col1 INT"
 }
 
-xtrabackup --backup --lock-ddl \
+xtrabackup --backup --lock-ddl=ON \
 	--lock-ddl-timeout=2 --target-dir=$topdir/backup1
 
 start_transaction &
@@ -72,7 +72,7 @@ done
 
 # SELECT blocks ALTER TABLE, ALTER TABLE blocks LOCK TABLES FOR BACKUP
 run_cmd_expect_failure \
-	$XB_BIN $XB_ARGS --backup --lock-ddl --lock-ddl-timeout=2 \
+	$XB_BIN $XB_ARGS --backup --lock-ddl=ON --lock-ddl-timeout=2 \
 			 --target-dir=$topdir/backup2
 
 mysql -Ne "SELECT CONCAT('KILL ', id, ';') FROM \
@@ -82,7 +82,7 @@ OR info LIKE 'ALTER TABLE%'" | mysql
 wait $tr_job_id
 wait $ddl_job_id
 
-xtrabackup --backup --lock-ddl \
+xtrabackup --backup --lock-ddl=ON \
 	--lock-ddl-timeout=2 --target-dir=$topdir/backup3
 
 mysql -e "CREATE TABLE rcount (val INT)" test
@@ -108,7 +108,7 @@ done
 
 if has_backup_locks ;
 then
-	xtrabackup --backup --lock-ddl --target-dir=$topdir/backup6
+	xtrabackup --backup --lock-ddl=ON --target-dir=$topdir/backup6
 	xtrabackup --prepare --target-dir=$topdir/backup6
 fi
 
