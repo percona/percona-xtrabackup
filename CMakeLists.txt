@@ -1690,7 +1690,7 @@ IF(WITH_LTO)
 ENDIF(WITH_LTO)
 
 IF(APPLE)
-  OPTION(WITH_DEVELOPER_ENTILEMENTS "Add developer entitlements" OFF)
+  OPTION(WITH_DEVELOPER_ENTITLEMENTS "Add developer entitlements" OFF)
 ENDIF()
 
 # Explicit list of all -DWITH_XXX=system possibilities
@@ -2269,6 +2269,12 @@ IF(NOT WITHOUT_SERVER AND WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
       MY_CHECK_CXX_COMPILER_WARNING("error=maybe-uninitialized" HAS_WARN_FLAG)
       IF(HAS_WARN_FLAG)
         MY_TARGET_LINK_OPTIONS(server_unittest_library "${HAS_WARN_FLAG}")
+      ENDIF()
+      # The mold linker and RelWithDebInfo build complains about
+      # the new expression in Rpl_info_values::init()
+      IF(MY_COMPILER_IS_GNU)
+        MY_TARGET_LINK_OPTIONS(server_unittest_library
+          "-Wno-alloc-size-larger-than")
       ENDIF()
     ENDIF()
   ELSE()

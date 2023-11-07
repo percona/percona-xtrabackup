@@ -109,6 +109,7 @@ federated_bug_25714.test
 check_openssl_version.inc
 have_tlsv13.inc
 not_have_tlsv13.inc
+not_tlsv13.inc
 not_min_protocol_tlsv12.inc
 
 # 4.5 Reason for inclusion: Tests should run only with supported innodb page
@@ -323,3 +324,6 @@ not_tlsv13.inc
 # language component which is not supported for now
 have_python.inc
 have_ruby.inc
+
+# 33. Skip tests on platforms that don't support the FIDO plugins
+have_fido_plugin.inc

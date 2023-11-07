@@ -1,4 +1,4 @@
-if is_server_version_higher_than 8.0.34
+if is_server_version_higher_than 8.0.35
 then
     die "We should check if smart memory is mature to transition to GA."
 fi

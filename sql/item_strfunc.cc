@@ -3804,6 +3804,8 @@ bool Item_func_quote::resolve_type(THD *thd) {
   ulonglong max_result_length = max<ulonglong>(
       4, static_cast<ulonglong>(args[0]->max_char_length()) * 2U + 2U);
   collation.set(args[0]->collation);
+  if (collation.collation == &my_charset_bin)
+    collation.set(thd->variables.collation_connection);
   set_data_type_string(max_result_length);
   set_nullable(is_nullable() || max_length > thd->variables.max_allowed_packet);
   return false;
@@ -3844,8 +3846,8 @@ String *Item_func_quote::val_str(String *str) {
 
   char *to;
   const char *from, *end, *start;
-  String *arg = args[0]->val_str(str);
-  size_t arg_length, new_length;
+  String *arg = eval_string_arg(collation.collation, args[0], str);
+  if (current_thd->is_error()) return error_str();
   if (!arg)  // Null argument
   {
     /* Return the string 'NULL' */
@@ -3854,37 +3856,47 @@ String *Item_func_quote::val_str(String *str) {
     return str;
   }
 
-  arg_length = arg->length();
+  size_t new_length;
+  size_t arg_length = arg->length();
 
   if (collation.collation->mbmaxlen == 1) {
     new_length = arg_length + 2; /* for beginning and ending ' signs */
     for (from = arg->ptr(), end = from + arg_length; from < end; from++)
-      new_length += get_esc_bit(escmask, (uchar)*from);
+      new_length += get_esc_bit(escmask, static_cast<uchar>(*from));
   } else {
     new_length = (arg_length * 2) + /* For string characters */
                  (2 * collation.collation->mbmaxlen); /* For quotes */
   }
 
-  if (tmp_value.alloc(new_length)) goto null;
+  if (tmp_value.alloc(new_length)) return error_str();
 
   if (collation.collation->mbmaxlen > 1) {
     const CHARSET_INFO *cs = collation.collation;
-    int mblen;
-    uchar *to_end;
     to = tmp_value.ptr();
-    to_end = (uchar *)to + new_length;
+    uchar *to_end = pointer_cast<uchar *>(to) + new_length;
 
     /* Put leading quote */
-    if ((mblen = cs->cset->wc_mb(cs, '\'', (uchar *)to, to_end)) <= 0)
-      goto null;
+    int mblen = cs->cset->wc_mb(cs, '\'', pointer_cast<uchar *>(to), to_end);
+    if (mblen <= 0) {
+      my_error(ER_INTERNAL_ERROR, MYF(0), func_name());
+      return make_empty_result();
+    }
     to += mblen;
 
     for (start = arg->ptr(), end = start + arg_length; start < end;) {
       my_wc_t wc;
       bool escape;
-      if ((mblen = cs->cset->mb_wc(cs, &wc, pointer_cast<const uchar *>(start),
-                                   pointer_cast<const uchar *>(end))) <= 0)
-        goto null;
+      mblen = cs->cset->mb_wc(cs, &wc, pointer_cast<const uchar *>(start),
+                              pointer_cast<const uchar *>(end));
+      if (mblen <= 0) {
+        // See e.g. my_mb_wc_euc_jp() which has special handling of valid,
+        // but un-assigned characters.
+        if ((mblen == -2 || mblen == -3)) {
+          mblen = -mblen;
+          wc = '?';
+        } else
+          return make_empty_result(); /* EOL or invalid byte sequence */
+      }
       start += mblen;
       switch (wc) {
         case 0:
@@ -3906,18 +3918,27 @@ String *Item_func_quote::val_str(String *str) {
           break;
       }
       if (escape) {
-        if ((mblen = cs->cset->wc_mb(cs, '\\', (uchar *)to, to_end)) <= 0)
-          goto null;
+        mblen = cs->cset->wc_mb(cs, '\\', pointer_cast<uchar *>(to), to_end);
+        if (mblen <= 0) {
+          my_error(ER_INTERNAL_ERROR, MYF(0), func_name());
+          return make_empty_result();
+        }
         to += mblen;
       }
-      if ((mblen = cs->cset->wc_mb(cs, wc, (uchar *)to, to_end)) <= 0)
-        goto null;
+      mblen = cs->cset->wc_mb(cs, wc, pointer_cast<uchar *>(to), to_end);
+      if (mblen <= 0) {
+        my_error(ER_INTERNAL_ERROR, MYF(0), func_name());
+        return make_empty_result();
+      }
       to += mblen;
     }
 
     /* Put trailing quote */
-    if ((mblen = cs->cset->wc_mb(cs, '\'', (uchar *)to, to_end)) <= 0)
-      goto null;
+    mblen = cs->cset->wc_mb(cs, '\'', pointer_cast<uchar *>(to), to_end);
+    if (mblen <= 0) {
+      my_error(ER_INTERNAL_ERROR, MYF(0), func_name());
+      return make_empty_result();
+    }
     to += mblen;
     new_length = to - tmp_value.ptr();
     goto ret;
@@ -3963,10 +3984,6 @@ ret:
   tmp_value.set_charset(collation.collation);
   null_value = false;
   return &tmp_value;
-
-null:
-  null_value = true;
-  return nullptr;
 }
 
 /**

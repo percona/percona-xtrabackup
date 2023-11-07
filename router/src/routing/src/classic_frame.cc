@@ -167,31 +167,32 @@ ClassicFrame::ensure_has_full_frame(Channel *src_channel,
   return stdx::make_unexpected(make_error_code(TlsErrc::kWantRead));
 }
 
-[[nodiscard]] stdx::expected<void, std::error_code>
+[[nodiscard]] stdx::expected<size_t, std::error_code>
 ClassicFrame::recv_frame_sequence(Channel *src_channel,
                                   ClassicProtocolState *src_protocol) {
-  auto &recv_buf = src_channel->recv_plain_view();
-
   bool expect_header{true};  // toggle between header and payload
   const size_t hdr_size{4};
   size_t expected_size{hdr_size};
   bool is_multi_frame{true};
   uint8_t seq_id{};
+  size_t num_of_frames{};
 
   src_protocol->current_frame().reset();
 
   for (;;) {
+    auto recv_buf_size = src_channel->recv_plain_view().size();
+
     // fill the recv-buf with the expected bytes.
-    if (recv_buf.size() < expected_size) {
-      auto read_res =
-          src_channel->read_to_plain(expected_size - recv_buf.size());
+    if (recv_buf_size < expected_size) {
+      auto read_res = src_channel->read_to_plain(expected_size - recv_buf_size);
       if (!read_res) return read_res.get_unexpected();
 
-      if (recv_buf.size() < expected_size) {
+      if (src_channel->recv_plain_view().size() < expected_size) {
         return stdx::make_unexpected(make_error_code(TlsErrc::kWantRead));
       }
     }
 
+    auto &recv_buf = src_channel->recv_plain_view();
     if (expect_header) {
       const auto hdr_res =
           classic_protocol::decode<classic_protocol::frame::Header>(
@@ -211,10 +212,16 @@ ClassicFrame::recv_frame_sequence(Channel *src_channel,
             ClassicProtocolState::FrameInfo{seq_id, expected_size, 0};
       }
 
+      if (!src_channel->ssl()) {
+        src_channel->recv_buffer().reserve(expected_size);
+      }
+
       expect_header = false;
 
       // remember if there is another frame after this one.
       is_multi_frame = (payload_size == 0xffffff);
+
+      ++num_of_frames;
     } else {
       // payload.
       if (is_multi_frame) {
@@ -224,7 +231,7 @@ ClassicFrame::recv_frame_sequence(Channel *src_channel,
         expected_size += hdr_size;
       } else {
         src_protocol->seq_id(seq_id);
-        return {};
+        return {num_of_frames};
       }
     }
   }

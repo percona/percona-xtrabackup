@@ -188,7 +188,7 @@ void SharedServer::spawn_server_with_datadir(
   std::string log_file_name = "mysqld-" + std::to_string(starts_) + ".err";
 
   std::vector<std::string> args{
-      "--no-defaults-file",  //
+      "--no-defaults",  //
       "--lc-messages-dir=" + lc_messages_dir.str(),
       "--datadir=" + datadir,             //
       "--plugin_dir=" + plugindir.str(),  //
@@ -335,6 +335,7 @@ END)"));
            caching_sha2_password_account(),
            caching_sha2_empty_password_account(),
            sha256_password_account(),
+           sha256_short_password_account(),
            sha256_empty_password_account(),
        }) {
     create_account(cli, account);

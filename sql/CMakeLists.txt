@@ -26,7 +26,7 @@ ADD_WSHADOW_WARNING()
 
 # Lots of warnings about -Walloc-size-larger-than= from my_malloc.cc
 # but it is basically impossible to trace the actual origin.
-IF(FPROFILE_GENERATE OR FPROFILE_USE)
+IF(FPROFILE_GENERATE OR FPROFILE_USE OR CMAKE_COMPILER_FLAG_WITH_LTO)
   IF(MY_COMPILER_IS_GNU AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10)
     # -Walloc-size-larger-than=PTRDIFF_MAX is enabled by default.
     STRING_APPEND(CMAKE_EXE_LINKER_FLAGS " -Wno-alloc-size-larger-than")
@@ -555,7 +555,6 @@ SET(SQL_SHARED_SOURCES
   sql_help.cc
   sql_import.cc
   sql_insert.cc
-  sql_join_buffer.cc
   sql_lex.cc
   sql_lex_hash.cc
   sql_lex_hints.cc
@@ -888,6 +887,13 @@ IF(WIN32 AND NOT WIN32_CLANG)
     COMPILE_FLAGS "/d2OptimizeHugeFunctions")
 ENDIF()
 
+# 'yyexhtaustedlab': unreferenced label
+IF(WIN32 AND NOT WIN32_CLANG)
+  ADD_COMPILE_FLAGS(${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
+                    ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
+                    COMPILE_FLAGS "/wd4102")
+ENDIF()
+
 # Common for all versions of GCC/Clang
 # Bison output uses undefined symbols in #if checks
 IF(MY_COMPILER_IS_GNU_OR_CLANG)
@@ -940,7 +946,7 @@ TARGET_LINK_LIBRARIES(sql_main ${MYSQLD_STATIC_PLUGIN_LIBS}
 # sql/immutable_string.h uses
 # google::protobuf::io::CodedOutputStream::WriteVarint64ToArray
 # which may or may not be inlined.
-TARGET_LINK_LIBRARIES(sql_main ${PROTOBUF_LITE_LIBRARY})
+TARGET_LINK_LIBRARIES(sql_main ext::libprotobuf-lite)
 
 ADD_LIBRARY(sql_gis STATIC ${SQL_GIS_SOURCES})
 ADD_DEPENDENCIES(sql_gis GenServerSource)
@@ -1085,7 +1091,7 @@ SET (RPL_REPLICA_SRCS
 ADD_LIBRARY(rpl_replica STATIC ${RPL_REPLICA_SRCS})
 ADD_DEPENDENCIES(rpl_replica GenError)
 TARGET_LINK_LIBRARIES(rpl_replica
-  binlog sql_main ${PROTOBUF_LITE_LIBRARY} ${RPL_PROTOBUF_LITE_LIB})
+  binlog sql_main ext::libprotobuf-lite ${RPL_PROTOBUF_LITE_LIB})
 
 IF(WIN32)
   # Silence warnings about: needs to have dll-interface

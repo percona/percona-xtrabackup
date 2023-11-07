@@ -366,7 +366,7 @@ b
 11
 EXPLAIN SELECT b FROM t1 FORCE INDEX(b) WHERE b BETWEEN 1 AND 5;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	NULL	range	b	b	4	NULL	3	100.00	Using where; Using index
+1	SIMPLE	t1	NULL	range	b	b	4	NULL	1	100.00	Using where; Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`b` AS `b` from `test`.`t1` FORCE INDEX (`b`) where (`test`.`t1`.`b` between 1 and 5)
 SELECT b FROM t1 FORCE INDEX(b) WHERE b BETWEEN 1 AND 5;
@@ -1621,7 +1621,7 @@ i
 EXPLAIN SELECT i FROM t1 FORCE INDEX (gc2_key_prefix)
 WHERE gc2 <= 'ksatefksatefx';
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	NULL	range	gc2_key_prefix	gc2_key_prefix	22	NULL	3	100.00	Using where
+1	SIMPLE	t1	NULL	range	gc2_key_prefix	gc2_key_prefix	22	NULL	1	100.00	Using where
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`i` AS `i` from `test`.`t1` FORCE INDEX (`gc2_key_prefix`) where (`test`.`t1`.`gc2` <= 'ksatefksatefx')
 SELECT i FROM t1 FORCE INDEX (gc2_key_prefix)
@@ -1719,6 +1719,28 @@ SELECT * FROM t WHERE REVERSE(vc) BETWEEN 'c' AND 'e';
 vc	gc
 abc	cba
 abcabc	cbacba
+DROP TABLE t;
+#
+# Bug#35178672: Assertion `dptr <= buffer->ptr() +
+#               buffer->alloced_length()' failed.
+#
+CREATE TABLE t (
+pk INT PRIMARY KEY AUTO_INCREMENT,
+x VARCHAR(1) NOT NULL,
+gc VARCHAR(2) GENERATED ALWAYS AS (CONCAT(x, x)),
+KEY (gc)
+);
+INSERT INTO t (pk, x) VALUES (1, 'a'), (2, 'b'), (3, 'c');
+SELECT COUNT(*) FROM t GROUP BY gc;
+COUNT(*)
+1
+1
+1
+SELECT gc FROM t ORDER BY HEX(gc);
+gc
+aa
+bb
+cc
 DROP TABLE t;
 #
 #
