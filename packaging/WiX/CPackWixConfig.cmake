@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2022, Oracle and/or its affiliates.
+# Copyright (c) 2010, 2023, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -41,7 +41,6 @@ IF("${VERSION}" MATCHES "-ndb-")
     ClusterManagementServer
     ClusterManagementClient
     ClusterJ
-    nodejs
     )
 ENDIF()
 
@@ -156,9 +155,4 @@ IF("${VERSION}" MATCHES "-ndb-")
   SET(CPACK_COMPONENT_CLUSTERJ_GROUP "Devel")
   SET(CPACK_COMPONENT_CLUSTERJ_DISPLAY_NAME "ClusterJ Java Connector for Cluster")
   SET(CPACK_COMPONENT_CLUSTERJ_DESCRIPTION "Installs ClusterJ")
-
-  #Subfeature "nodejs"
-  SET(CPACK_COMPONENT_NODEJS_GROUP "Devel")
-  SET(CPACK_COMPONENT_NODEJS_DISPLAY_NAME "nodejs Connector for Cluster")
-  SET(CPACK_COMPONENT_NODEJS_DESCRIPTION "Installs nodejs connector")
 ENDIF()

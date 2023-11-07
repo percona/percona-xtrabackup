@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2022, Oracle and/or its affiliates.
+Copyright (c) 1997, 2023, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -2712,7 +2712,7 @@ ibuf_merge_in_background(
 		mutex_enter(&ibuf_mutex);
 
 		/* If the ibuf->size is more than half the max_size
-		then we make more agreesive contraction.
+		then we make more aggressive contraction.
 		+1 is to avoid division by zero. */
 		if (ibuf->size > ibuf->max_size / 2) {
 			ulint diff = ibuf->size - ibuf->max_size / 2;

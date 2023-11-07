@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2022, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2023, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -967,9 +967,10 @@ void Item_func_concat::fix_length_and_dec()
   if (agg_arg_charsets_for_string_result(collation, args, arg_count))
     return;
 
-  for (uint i=0 ; i < arg_count ; i++)
+  for (uint i=0 ; i < arg_count ; i++) {
+    args[i]->cmp_context = STRING_RESULT;
     char_length+= args[i]->max_char_length();
-
+  }
   fix_char_length_ulonglong(char_length);
 }
 
@@ -1233,8 +1234,10 @@ void Item_func_concat_ws::fix_length_and_dec()
      so, (arg_count - 2) is safe here.
   */
   char_length= (ulonglong) args[0]->max_char_length() * (arg_count - 2);
-  for (uint i=1 ; i < arg_count ; i++)
+  for (uint i=1 ; i < arg_count ; i++) {
+    args[i]->cmp_context = STRING_RESULT;
     char_length+= args[i]->max_char_length();
+  }
 
   fix_char_length_ulonglong(char_length);
 }

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2006, 2022, Oracle and/or its affiliates.
+Copyright (c) 2006, 2023, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -178,8 +178,8 @@ innobase_mysql_print_thd(
 /*=====================*/
 	FILE*	f,		/*!< in: output stream */
 	THD*	thd,		/*!< in: pointer to a MySQL THD object */
-	uint	max_query_len);	/*!< in: max query length to print, or 0 to
-				   use the default max length */
+	uint	max_query_len);	/*!< in: max query length to print, 
+				 must be positive */
 
 /** Converts a MySQL type to an InnoDB type. Note that this function returns
 the 'mtype' of InnoDB. InnoDB differentiates between MySQL's old <= 4.1

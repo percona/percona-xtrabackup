@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -2471,9 +2471,19 @@ bool SELECT_LEX::merge_derived(THD *thd, TABLE_LIST *derived_table)
       {
         Mark_field mf(thd->mark_used_columns);
         for (ORDER *o = derived_select->order_list.first; o != NULL;
-             o = o->next)
+             o = o->next) {
           o->item[0]->walk(&Item::mark_field_in_map, Item::WALK_POSTFIX,
                            pointer_cast<uchar *>(&mf));
+          /*
+            If the expression in order by was part of the select list
+            of the merged derived query block and if it is unused in the
+            outer query block, delete_unused_merged_columns() could
+            delete the select expression. So, we set that the merged
+            order by expression is used and therefore should not be deleted.
+          */
+          o->item[0]->walk(&Item::propagate_set_derived_used,
+                           Item::WALK_POSTFIX, NULL);
+        }
       }
     }
     else
@@ -3105,10 +3115,7 @@ void SELECT_LEX::empty_order_list(SELECT_LEX *sl)
       reference. There is possibility that this view reference could
       be used elsewhere in the query
     */
-    if (*o->item == o->item_ptr &&
-        (!o->item_ptr->has_subquery() ||
-         !o->item_ptr->walk(&Item::is_direct_view_ref,
-                            Item::WALK_SUBQUERY_PREFIX, NULL))) {
+    if (*o->item == o->item_ptr) {
       (*o->item)->walk(&Item::clean_up_after_removal, walk_subquery,
                        pointer_cast<uchar *>(sl));
     }

@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2022, Oracle and/or its affiliates.
+# Copyright (c) 2006, 2023, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -281,6 +281,7 @@ SET(SQL_SOURCE
   conn_handler/connection_handler_per_thread.cc
   conn_handler/connection_handler_one_thread.cc
   conn_handler/socket_connection.cc
+  conn_handler/init_net_server_extension.cc
   des_key_file.cc
   event_data_objects.cc
   event_db_repository.cc 
@@ -300,6 +301,14 @@ SET(SQL_SOURCE
   srv_session_service.cc
   auth/sha2_password_common.cc
   )
+
+DOWNGRADE_OPENSSL3_DEPRECATION_WARNINGS(
+  ${CMAKE_SOURCE_DIR}/sql-common/client_authentication.cc
+  ${CMAKE_SOURCE_DIR}/sql/auth/auth_common.h
+  ${CMAKE_SOURCE_DIR}/sql/auth/sql_authentication.cc
+  ${CMAKE_SOURCE_DIR}/sql/auth/sql_authentication.h
+  ${CMAKE_SOURCE_DIR}/sql/des_key_file.cc
+  ${CMAKE_SOURCE_DIR}/sql/item_strfunc.cc)
 
 IF(NOT WIN32)
   LIST(APPEND SQL_SOURCE mysqld_daemon.cc)
@@ -399,7 +408,7 @@ IF(MY_COMPILER_IS_GNU AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11)
   ADD_COMPILE_FLAGS(
     ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
     ${CMAKE_CURRENT_BINARY_DIR}/sql_hints.yy.cc
-    COMPILE_FLAGS "-Wno-free-nonheap-object")
+    COMPILE_FLAGS "-Wno-free-nonheap-object -Wno-unused-label")
 ENDIF()
 
 MY_CHECK_CXX_COMPILER_FLAG("-fno-builtin-memcmp" HAVE_NO_BUILTIN_MEMCMP)
@@ -545,9 +554,18 @@ IF(UNIX AND STATIC_SSL_LIBRARY)
       -Wl,-force_load ${OPENSSL_LIBRARY}
       )
   ELSE()
-    TARGET_LINK_LIBRARIES(mysqld
-      -Wl,--whole-archive ${SSL_LIBRARIES} -Wl,--no-whole-archive
-      )
+    # OpenSSL 3.0.8 has an issue with duplicate symbols between static crypto
+    # and ssl libraries. See https://github.com/openssl/openssl/issues/20238
+    IF("${OPENSSL_VERSION}" VERSION_EQUAL "3.0.8")
+      TARGET_LINK_LIBRARIES(mysqld
+        -Wl,--whole-archive,--allow-multiple-definition ${SSL_LIBRARIES}
+        -Wl,--no-whole-archive
+        )
+    ELSE()
+      TARGET_LINK_LIBRARIES(mysqld
+        -Wl,--whole-archive ${SSL_LIBRARIES} -Wl,--no-whole-archive
+        )
+    ENDIF()
   ENDIF()
 ENDIF()
 

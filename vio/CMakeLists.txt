@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2022, Oracle and/or its affiliates.
+# Copyright (c) 2006, 2023, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -30,6 +30,10 @@ SET(VIO_SOURCES
   viossl.c
   viosslfactories.c
 )
+
+DOWNGRADE_OPENSSL3_DEPRECATION_WARNINGS(
+  viossl.c
+  viosslfactories.c)
 
 IF(WIN32)
   LIST(APPEND VIO_SOURCES

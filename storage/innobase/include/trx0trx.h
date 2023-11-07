@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2022, Oracle and/or its affiliates.
+Copyright (c) 1996, 2023, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -378,7 +378,7 @@ trx_print_low(
 			/*!< in: transaction */
 	ulint		max_query_len,
 			/*!< in: max query length to print,
-			or 0 to use the default max length */
+			must be positive */ 
 	ulint		n_rec_locks,
 			/*!< in: lock_number_of_rows_locked(&trx->lock) */
 	ulint		n_trx_locks,
@@ -396,7 +396,7 @@ trx_print_latched(
 	FILE*		f,		/*!< in: output stream */
 	const trx_t*	trx,		/*!< in: transaction */
 	ulint		max_query_len);	/*!< in: max query length to print,
-					or 0 to use the default max length */
+					  must be positive */
 
 /**********************************************************************//**
 Prints info about a transaction.
@@ -407,7 +407,7 @@ trx_print(
 	FILE*		f,		/*!< in: output stream */
 	const trx_t*	trx,		/*!< in: transaction */
 	ulint		max_query_len);	/*!< in: max query length to print,
-					or 0 to use the default max length */
+					 must be positive */
 
 /**********************************************************************//**
 Determine if a transaction is a dictionary operation.

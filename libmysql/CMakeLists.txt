@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2022, Oracle and/or its affiliates.
+# Copyright (c) 2006, 2023, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -196,6 +196,9 @@ SET(CLIENT_SOURCES
   ../sql/auth/password.c
   ../sql/auth/sha2_password_common.cc
 )
+
+DOWNGRADE_OPENSSL3_DEPRECATION_WARNINGS(
+    ../sql-common/client_authentication.cc)
 
 IF (WIN32 AND OPENSSL_APPLINK_C)
   SET_SOURCE_FILES_PROPERTIES(

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2022, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -6380,7 +6380,7 @@ static SEL_TREE *get_func_mm_tree_from_in_predicate(RANGE_OPT_PARAM *param,
         if (and_tree == NULL)
           return NULL;
       }
-      or_tree= tree_or(param, and_tree, or_tree);
+      or_tree= tree_or(param, or_tree, and_tree);
     }
     return or_tree;
   }
