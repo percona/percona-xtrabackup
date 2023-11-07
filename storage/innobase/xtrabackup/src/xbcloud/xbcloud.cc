@@ -140,7 +140,8 @@ static std::map<std::string, std::string> extra_http_headers;
 
 const char *s3_api_version_names[] = {"AUTO", "2", "4", NullS};
 
-static std::set<std::string> file_list;
+/* list of partial files to be downloaded or delete*/
+static std::set<std::string> partial_file_list;
 
 TYPELIB storage_typelib = {array_elements(storage_names) - 1, "", storage_names,
                            nullptr};
@@ -736,7 +737,7 @@ static bool parse_args(int argc, char **argv) {
   }
 
   while (argc > 0) {
-    file_list.insert(*argv);
+    partial_file_list.insert(*argv);
     --argc;
     ++argv;
   }
@@ -780,6 +781,24 @@ std::string build_file_name(const std::string &file_name, my_off_t idx) {
   file_name_s << file_name << "." << std::setw(chunk_index_prefix_len)
               << std::setfill('0') << idx;
   return file_name_s.str();
+}
+
+/**
+  Check if file should be skipped due to user specified list of files.
+  This is used on Download and Delete
+
+@param [in]    file_name   filename to check
+@param [in]    backup_name backup name
+
+@return true in case we should skip this file */
+
+static bool skip_file(const std::string &file_name,
+                      const std::string &backup_name) {
+  if (!partial_file_list.empty() &&
+      partial_file_list.count(file_name.substr(backup_name.length() + 1)) < 1)
+    return true;
+
+  return false;
 }
 
 void put_func(put_thread_ctxt_t &cntx) {
@@ -1058,8 +1077,7 @@ bool xbcloud_delete(Object_store *store, const std::string &container,
     if (!chunk_name_to_file_name(obj, file_name, idx)) {
       continue;
     }
-    if (!file_list.empty() &&
-        file_list.count(file_name.substr(backup_name.length() + 1)) < 1) {
+    if (skip_file(file_name, backup_name)) {
       continue;
     }
     msg_ts("%s: Deleting %s.\n", my_progname, obj.c_str());
@@ -1210,6 +1228,9 @@ bool xbcloud_download(Object_store *store, const std::string &container,
     my_off_t idx;
     std::string file_name;
     if (!chunk_name_to_file_name(obj, file_name, idx)) {
+      continue;
+    }
+    if (skip_file(file_name, backup_name)) {
       continue;
     }
     global_list->add(file_name, idx);
