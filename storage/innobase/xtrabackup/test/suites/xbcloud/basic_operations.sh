@@ -67,7 +67,7 @@ xbstream -xv -C $topdir/partial < $topdir/partial/partial.xbs \
 
 sort -o $topdir/partial/partial.list $topdir/partial/partial.list
 
-diff -u $topdir/partial/partial.list - <<EOF
+run_cmd diff -u $topdir/partial/partial.list - <<EOF
 ibdata1
 sakila/payment.ibd
 EOF
