@@ -113,7 +113,10 @@ std::string S3_signerV4::build_hashed_canonical_request(
 
   std::string content_sha256 = hex_encode(request.payload().sha256());
   request.add_header(AWS_CONTENT_SHA256_HEADER, content_sha256);
-
+  
+  std::string content_md5 = base64_encode(request.payload().md5());
+  request.add_header("Content-MD5", content_md5);
+  
   /* canonical URI */
   canonical_request << request.path() << "\n";
 
