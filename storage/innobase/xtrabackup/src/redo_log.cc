@@ -45,7 +45,20 @@ constexpr size_t HEADER_BLOCK_SIZE = 4096;
 static bool archive_first_block_zero = false;
 std::atomic<bool> Redo_Log_Reader::m_error;
 lsn_t Redo_Log_Reader::checkpoint_lsn_start;
+Log_file_id Redo_Log_Reader::log_file_id;
 os_offset_t Redo_Log_Reader::checkpoint_offset_start;
+
+static void print_log_files(string from) {
+  xb::info() << "PXB-3168: " << from << " current files: "
+             << log_files_number_of_existing_files(log_sys->m_files)
+             << " list log files:";
+  for (const auto &file : log_sys->m_files) {
+    xb::info() << "PXB-3168: " << file.m_id << " with start LSN "
+               << file.m_start_lsn << " and end LSN " << file.m_end_lsn
+               << " and size " << file.m_size_in_bytes << " and consumed "
+               << file.m_consumed << " and full " << file.m_full;
+  }
+}
 
 Redo_Log_Reader::Redo_Log_Reader() {
   log_hdr_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
@@ -137,6 +150,8 @@ not.
 @return true if re-open was sucessful */
 
 static bool reopen_log_files(lsn_t desired_lsn) {
+  xb::info() << "PXB-3168: Reopening redo log files with desired LSN "
+             << desired_lsn;
   log_t &log = *log_sys;
 
   Log_files_dict files{log.m_files_ctx};
@@ -160,6 +175,7 @@ static bool reopen_log_files(lsn_t desired_lsn) {
   log.m_log_flags = log_flags;
   log.m_log_uuid = log_uuid;
   log.m_files = std::move(files);
+  print_log_files("reopen_log_files");
   if (log.m_files.ctx().m_files_ruleset == Log_files_ruleset::CURRENT) {
     if (desired_lsn == 0) {
       return true;
@@ -252,6 +268,7 @@ lsn_t Redo_Log_Reader::read_log_seg_8030(log_t &log, byte *buf, lsn_t start_lsn,
   }
 
   auto file = log.m_files.find(start_lsn);
+  log_file_id = file->m_id;
 
   ut_ad(file != log.m_files.end());
 
@@ -303,7 +320,12 @@ lsn_t Redo_Log_Reader::read_log_seg_8030(log_t &log, byte *buf, lsn_t start_lsn,
       file_handle.close();
 
       file = next_file;
-
+      log_file_id = file->m_id;
+      xb::info() << "PXB-3168: Switching to next log file " << log_file_id
+                 << " with start LSN " << file->m_start_lsn << " and end LSN "
+                 << file->m_end_lsn << " and size " << file->m_size_in_bytes
+                 << " and consumed " << file->m_consumed << " and full "
+                 << file->m_full;
       file_handle = file->open(Log_file_access_mode::READ_ONLY);
       ut_a(file_handle.is_open());
     }
@@ -500,6 +522,8 @@ ssize_t Redo_Log_Reader::scan_log_recs_8030(byte *buf, bool is_last,
     auto checksum_is_ok = log_block_checksum_is_ok(log_block);
 
     if (block_header.m_hdr_no != expected_hdr_no && checksum_is_ok) {
+      /* PXB-3168 */
+      xb::info() << "PXB-3168: block mismatch at LSN " << scanned_lsn;
       /* old log block, do nothing */
       if (block_header.m_hdr_no < expected_hdr_no) {
         *finished = true;
@@ -509,6 +533,77 @@ ssize_t Redo_Log_Reader::scan_log_recs_8030(byte *buf, bool is_last,
       xb::error() << "expected log block no. " << expected_hdr_no
                   << ", but got no. " << block_header.m_hdr_no
                   << " from the log file.";
+
+      print_log_files("scan_log_recs_8030_mismatch");
+      xb::info() << "PXB-3168: current log file: " << log_file_id
+                 << " with start LSN "
+                 << log_sys->m_files.file(log_file_id)->m_start_lsn
+                 << " and end LSN "
+                 << log_sys->m_files.file(log_file_id)->m_end_lsn
+                 << " and size "
+                 << log_sys->m_files.file(log_file_id)->m_size_in_bytes
+                 << " and consumed "
+                 << log_sys->m_files.file(log_file_id)->m_consumed
+                 << " and full " << log_sys->m_files.file(log_file_id)->m_full;
+      Log_data_block_header prev_block_header;
+      log_data_block_header_deserialize(log_block - OS_FILE_LOG_BLOCK_SIZE,
+                                        prev_block_header);
+
+      xb::info() << "PXB-3168: prev block hr no: " << prev_block_header.m_hdr_no
+                 << " and epoch no: " << prev_block_header.m_epoch_no;
+      xb::info() << "PXB-3168: prev block data:";
+      ut_print_buf(stderr, log_block - OS_FILE_LOG_BLOCK_SIZE,
+                   OS_FILE_LOG_BLOCK_SIZE);
+      xb::info() << "";
+      xb::info()
+          << "-------------------------------------------------------------";
+      xb::info() << "PXB-3168: current block hr no: " << block_header.m_hdr_no
+                 << " and epoch no: " << block_header.m_epoch_no;
+      xb::info() << "PXB-3168: current block:";
+      ut_print_buf(stderr, log_block, OS_FILE_LOG_BLOCK_SIZE);
+
+      if (log_block + OS_FILE_LOG_BLOCK_SIZE < buf + RECV_SCAN_SIZE) {
+        Log_data_block_header next_block_header;
+        log_data_block_header_deserialize(log_block + OS_FILE_LOG_BLOCK_SIZE,
+                                          next_block_header);
+
+        xb::info() << "";
+        xb::info()
+            << "-------------------------------------------------------------";
+        xb::info() << "PXB-3168: next block hr no: "
+                   << next_block_header.m_hdr_no
+                   << " and epoch no: " << next_block_header.m_epoch_no;
+        xb::info() << "PXB-3168: next block:";
+        ut_print_buf(stderr, log_block + OS_FILE_LOG_BLOCK_SIZE,
+                     OS_FILE_LOG_BLOCK_SIZE);
+      }
+
+      size_t n_files = log_files_number_of_existing_files(log_sys->m_files);
+      size_t file_size = log_sys->m_files.file(0)->m_size_in_bytes;
+
+      const lsn_t lsn_real_capacity = n_files * (file_size - LOG_FILE_HDR_SIZE);
+      // Capacity of blocks before they start to get overwritten
+      auto blocks_capacity =
+          log_block_convert_lsn_to_hdr_no(lsn_real_capacity) - 1;
+
+      // Calculation to check if the block is the tail of the reused log file
+      // 0x40000000UL =  LOG_BLOCK_MAX_NO
+      bool is_wrap_arround =
+          ((expected_hdr_no | LOG_BLOCK_MAX_NO) - block_header.m_hdr_no) %
+              blocks_capacity ==
+          0;
+
+      xb::info() << "";
+      xb::info() << "PXB-3168: is_wrap_arround: " << is_wrap_arround;
+
+      xb::info() << "";
+      xb::info() << "";
+      xb::info() << "";
+      xb::info() << "";
+      xb::info()
+          << "-------------------------------------------------------------";
+      xb::info() << "Full Recv Buffer:";
+      ut_print_buf(stderr, buf, RECV_SCAN_SIZE);
 
       return (-1);
 

@@ -72,6 +72,8 @@ class Redo_Log_Reader {
   /** Whether there was an error. */
   bool is_error() const;
 
+  Log_file_id get_log_file_id() const { return log_file_id; }
+
  private:
   /** log header buffer. */
   ut::aligned_array_pointer<byte, UNIV_PAGE_SIZE_MAX> log_hdr_buf;
@@ -128,6 +130,9 @@ class Redo_Log_Reader {
 
   /** error flag. */
   static std::atomic<bool> m_error;
+
+  /** last parsed log file id */
+  static Log_file_id log_file_id;
 };
 
 /** Redo log parser. */
@@ -327,6 +332,9 @@ class Redo_Log_Data_Manager {
   bool is_error() const;
 
   ~Redo_Log_Data_Manager();
+
+  /** Last parse file */
+  Log_file_id get_log_file_id() const { return reader.get_log_file_id(); }
 
  private:
   /** Log copying func. */

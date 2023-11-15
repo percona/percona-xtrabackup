@@ -4256,7 +4256,14 @@ void xtrabackup_backup_func(void) {
       break;
     }
     if (redo_mgr.is_error()) {
+      /* PXB-3168 - copy failed redo log */
+      std::string redo_log_path = "#innodb_redo/#ib_redo";
+      Log_file_id id = redo_mgr.get_log_file_id();
+      redo_log_path += std::to_string(id);
+      copy_file(ds_data, redo_log_path.c_str(), std::to_string(id).c_str(), 0,
+                FILE_PURPOSE_REDO_LOG);
       xb::error() << "log copying failed.";
+      ut_a(0);
       exit(EXIT_FAILURE);
     }
     mutex_exit(&count_mutex);
