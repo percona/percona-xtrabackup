@@ -1690,10 +1690,7 @@ static void log_status_local_parse(const char *s, log_status_t &log_status) {
   }
 }
 
-/** Read binary log position, InnoDB LSN and other storage engine information
-from p_s.log_status and update global log_status variable.
-@param[in]   conn         mysql connection handle */
-void log_status_get(MYSQL *conn) {
+void log_status_get(MYSQL *conn, bool consumer_can_advance) {
   xb::info() << "Selecting LSN and binary log position from p_s.log_status";
 
   debug_sync_point("log_status_get");
@@ -1702,7 +1699,7 @@ void log_status_get(MYSQL *conn) {
         opt_no_lock || opt_lock_ddl_per_table);
 
   if (xtrabackup_register_redo_log_consumer)
-    redo_log_consumer_can_advance.store(false);
+    redo_log_consumer_can_advance.store(consumer_can_advance);
 
   const char *query =
       "SELECT server_uuid, local, replication, "
@@ -1798,52 +1795,56 @@ char *get_xtrabackup_info(MYSQL *connection) {
   ut_a(uuid);
   ut_a(server_version);
   char *result = NULL;
-  int ret = asprintf(&result,
-                     "uuid = %s\n"
-                     "name = %s\n"
-                     "tool_name = %s\n"
-                     "tool_command = %s\n"
-                     "tool_version = %s\n"
-                     "ibbackup_version = %s\n"
-                     "server_version = %s\n"
-                     "server_flavor = %s\n"
-                     "start_time = %s\n"
-                     "end_time = %s\n"
-                     "lock_time = %ld\n"
-                     "binlog_pos = %s\n"
-                     "innodb_from_lsn = " LSN_PF
-                     "\n"
-                     "innodb_to_lsn = " LSN_PF
-                     "\n"
-                     "partial = %s\n"
-                     "incremental = %s\n"
-                     "format = %s\n"
-                     "compressed = %s\n"
-                     "encrypted = %s\n",
-                     uuid,                           /* uuid */
-                     opt_history ? opt_history : "", /* name */
-                     tool_name,                      /* tool_name */
-                     tool_args,                      /* tool_command */
-                     XTRABACKUP_VERSION,             /* tool_version */
-                     XTRABACKUP_VERSION,             /* ibbackup_version */
-                     server_version,                 /* server_version */
-                     mysql_server_version_comment.c_str(), /* server_flavor */
-                     buf_start_time,                       /* start_time */
-                     buf_end_time,                         /* end_time */
-                     (long int)history_lock_time,          /* lock_time */
-                     mysql_binlog_position.c_str(),        /* binlog_pos */
-                     incremental_lsn,                      /* innodb_from_lsn */
-                     metadata_to_lsn,                      /* innodb_to_lsn */
-                     (xtrabackup_tables                    /* partial */
-                      || xtrabackup_tables_exclude || xtrabackup_tables_file ||
-                      xtrabackup_databases || xtrabackup_databases_exclude ||
-                      xtrabackup_databases_file)
-                         ? "Y"
-                         : "N",
-                     xtrabackup_incremental ? "Y" : "N", /* incremental */
-                     xb_stream_format_name[xtrabackup_stream_fmt], /* format */
-                     xtrabackup_compress ? "compressed" : "N", /* compressed */
-                     xtrabackup_encrypt ? "Y" : "N");          /* encrypted */
+  int ret =
+      asprintf(&result,
+               "uuid = %s\n"
+               "name = %s\n"
+               "tool_name = %s\n"
+               "tool_command = %s\n"
+               "tool_version = %s\n"
+               "ibbackup_version = %s\n"
+               "server_version = %s\n"
+               "server_flavor = %s\n"
+               "start_time = %s\n"
+               "end_time = %s\n"
+               "lock_time = %ld\n"
+               "binlog_pos = %s\n"
+               "innodb_from_lsn = " LSN_PF
+               "\n"
+               "innodb_to_lsn = " LSN_PF
+               "\n"
+               "partial = %s\n"
+               "incremental = %s\n"
+               "format = %s\n"
+               "compressed = %s\n"
+               "encrypted = %s\n"
+               "lock_ddl_type = %s\n",
+               uuid,                                 /* uuid */
+               opt_history ? opt_history : "",       /* name */
+               tool_name,                            /* tool_name */
+               tool_args,                            /* tool_command */
+               XTRABACKUP_VERSION,                   /* tool_version */
+               XTRABACKUP_VERSION,                   /* ibbackup_version */
+               server_version,                       /* server_version */
+               mysql_server_version_comment.c_str(), /* server_flavor */
+               buf_start_time,                       /* start_time */
+               buf_end_time,                         /* end_time */
+               (long int)history_lock_time,          /* lock_time */
+               mysql_binlog_position.c_str(),        /* binlog_pos */
+               incremental_lsn,                      /* innodb_from_lsn */
+               metadata_to_lsn,                      /* innodb_to_lsn */
+               (xtrabackup_tables                    /* partial */
+                || xtrabackup_tables_exclude || xtrabackup_tables_file ||
+                xtrabackup_databases || xtrabackup_databases_exclude ||
+                xtrabackup_databases_file)
+                   ? "Y"
+                   : "N",
+               xtrabackup_incremental ? "Y" : "N",           /* incremental */
+               xb_stream_format_name[xtrabackup_stream_fmt], /* format */
+               xtrabackup_compress ? "compressed" : "N",     /* compressed */
+               xtrabackup_encrypt ? "Y" : "N",               /* encrypted */
+               ddl_lock_type_to_str(static_cast<lock_ddl_type_t>(opt_lock_ddl))
+                   .c_str()); /* lock-ddl */
 
   ut_a(ret != 0);
 

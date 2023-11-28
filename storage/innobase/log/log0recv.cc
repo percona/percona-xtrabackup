@@ -1688,8 +1688,10 @@ static byte *recv_parse_or_apply_log_rec_body(
       return fil_tablespace_redo_delete(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
           recv_sys->bytes_to_ignore_before_checkpoint !=
-              0 IF_XB(|| recv_sys->recovered_lsn + parsed_bytes <
-                             backup_redo_log_flushed_lsn));
+              0 IF_XB(||
+                      recv_sys->recovered_lsn + parsed_bytes <
+                          backup_redo_log_flushed_lsn ||
+                      opt_lock_ddl == LOCK_DDL_REDUCED));
 
     case MLOG_FILE_CREATE:
 
@@ -1702,8 +1704,10 @@ static byte *recv_parse_or_apply_log_rec_body(
       return fil_tablespace_redo_create(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
           recv_sys->bytes_to_ignore_before_checkpoint !=
-              0 IF_XB(|| recv_sys->recovered_lsn + parsed_bytes <
-                             backup_redo_log_flushed_lsn));
+              0 IF_XB(||
+                      recv_sys->recovered_lsn + parsed_bytes <
+                          backup_redo_log_flushed_lsn ||
+                      opt_lock_ddl == LOCK_DDL_REDUCED));
 
     case MLOG_FILE_RENAME:
 #ifdef XTRABACKUP
@@ -1715,8 +1719,10 @@ static byte *recv_parse_or_apply_log_rec_body(
       return fil_tablespace_redo_rename(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
           recv_sys->bytes_to_ignore_before_checkpoint !=
-              0 IF_XB(|| recv_sys->recovered_lsn + parsed_bytes <
-                             backup_redo_log_flushed_lsn));
+              0 IF_XB(||
+                      recv_sys->recovered_lsn + parsed_bytes <
+                          backup_redo_log_flushed_lsn ||
+                      opt_lock_ddl == LOCK_DDL_REDUCED));
 
     case MLOG_FILE_EXTEND:
 
