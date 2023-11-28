@@ -357,6 +357,10 @@ ssize_t Redo_Log_Reader::scan_log_recs(byte *buf, bool is_last, lsn_t start_lsn,
 
 void Redo_Log_Reader::seek_logfile(lsn_t lsn) { log_scanned_lsn = lsn; }
 
+lsn_t Redo_Log_Parser::get_last_parsed_lsn() const {
+  return (last_parsed_lsn.load());
+}
+
 bool Redo_Log_Parser::parse_log(const byte *buf, size_t len, lsn_t start_lsn) {
   const byte *log_block = buf;
   lsn_t scanned_lsn = start_lsn;
@@ -452,6 +456,8 @@ bool Redo_Log_Parser::parse_log(const byte *buf, size_t len, lsn_t start_lsn) {
     /* Try to parse more log records */
 
     recv_parse_log_recs();
+    /* update parsed lsn after we have completed parsing */
+    last_parsed_lsn.store(scanned_lsn);
 
     if (recv_sys->recovered_offset > recv_sys->buf_len / 4) {
       /* Move parsing buffer data to the buffer start */
@@ -1103,6 +1109,14 @@ void Redo_Log_Data_Manager::track_archived_log(lsn_t start_lsn, const byte *buf,
   }
 }
 
+bool Redo_Log_Data_Manager::has_parsed_lsn(lsn_t lsn) const {
+  /* check if we have parsed up to desired lsn, or if we have not parsed
+   * anything (no redo) or are in the middle of last block */
+  return (parser.get_last_parsed_lsn() >= lsn ||
+          parser.get_last_parsed_lsn() == 0 ||
+          lsn - parser.get_last_parsed_lsn() < OS_FILE_LOG_BLOCK_SIZE);
+}
+
 bool Redo_Log_Data_Manager::copy_once(bool is_last, bool *finished) {
   auto start_lsn = reader.get_contiguous_lsn();
 
@@ -1126,7 +1140,7 @@ bool Redo_Log_Data_Manager::copy_once(bool is_last, bool *finished) {
         }
 
         reader.seek_logfile(archive_reader.get_contiguous_lsn());
-
+        scanned_lsn = archive_reader.get_contiguous_lsn();
         return (true);
       }
 
@@ -1155,7 +1169,7 @@ bool Redo_Log_Data_Manager::copy_once(bool is_last, bool *finished) {
   if (!writer.write_buffer(reader.get_buffer(), len)) {
     return (false);
   }
-
+  scanned_lsn = reader.get_scanned_lsn();
   return (true);
 }
 
@@ -1226,9 +1240,15 @@ lsn_t Redo_Log_Data_Manager::get_start_checkpoint_lsn() const {
 
 lsn_t Redo_Log_Data_Manager::get_scanned_lsn() const { return (scanned_lsn); }
 
+lsn_t Redo_Log_Data_Manager::get_parsed_lsn() const {
+  return parser.get_last_parsed_lsn();
+}
+
 void Redo_Log_Data_Manager::set_copy_interval(ulint interval) {
   copy_interval = interval;
 }
+
+ulint Redo_Log_Data_Manager::get_copy_interval() const { return copy_interval; }
 
 void Redo_Log_Data_Manager::abort() {
   aborted = true;

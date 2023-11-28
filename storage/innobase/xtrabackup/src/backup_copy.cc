@@ -1395,6 +1395,35 @@ bool backup_start(Backup_context &context) {
         return (false);
       }
     }
+    /* LTFB/LIFB has to be executed before copying MyISAM */
+    if (ddl_tracker != nullptr) {
+      if (!lock_tables_for_backup(mysql_connection, opt_backup_lock_timeout,
+                                  opt_backup_lock_retry_count)) {
+        return (false);
+      }
+      /**
+       * Gather log_status for ddl_tracker. We want to ensure that when we start
+       * processing DDL entries from ddl_tracker, no new DDL will happen in the
+       * server and we have parsed all DDL from before LTFB. We instruct InnoDB
+       * to flush the log ensuring the log_status query sees the most recent
+       * updates. We gather log_status here (even before copying MyISAM tables)
+       * so we allow the background redo thread to catchup later when we start
+       * to process the DDL's all we care is that redo has parsed at least up to
+       * the LSN where new DDL's are possible, as this will can change the
+       * in-memory structure of ddl_tracker. Ensuring no new DDL happens when we
+       * process handle_ddl_operations allows PXB to operate without a mutex
+       * here.
+       */
+      if (have_flush_engine_logs) {
+        xb::info() << "Executing FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS...";
+        xb_mysql_query(mysql_connection, "FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS",
+                       false);
+      }
+      log_status_get(mysql_connection, true);
+      xb::info() << "DDL tracking :  log_status current checkpoint lsn is "
+                 << log_status.lsn_checkpoint << " and current lsn is "
+                 << log_status.lsn;
+    }
 
     if (!backup_files(MySQL_datadir_path.path().c_str(), true, context)) {
       return (false);
@@ -1451,11 +1480,25 @@ bool backup_start(Backup_context &context) {
     context.myrocks_checkpoint.create(mysql_connection, true);
   }
 
+  if (ddl_tracker != nullptr) {
+    std::this_thread::sleep_for(
+        std::chrono::milliseconds(context.redo_mgr->get_copy_interval()));
+    while (context.redo_mgr->get_scanned_lsn() < log_status.lsn &&
+           !context.redo_mgr->has_parsed_lsn(log_status.lsn)) {
+      xb::info() << "Waiting for redo thread to catchup to LSN "
+                 << log_status.lsn << " (currently parsing at "
+                 << context.redo_mgr->get_parsed_lsn() << ")";
+      std::this_thread::sleep_for(
+          std::chrono::milliseconds(context.redo_mgr->get_copy_interval()));
+    }
+    ddl_tracker->handle_ddl_operations();
+  }
+
   xb::info() << "Executing FLUSH NO_WRITE_TO_BINLOG BINARY LOGS";
   xb_mysql_query(mysql_connection, "FLUSH NO_WRITE_TO_BINLOG BINARY LOGS",
                  false);
 
-  log_status_get(mysql_connection);
+  log_status_get(mysql_connection, false);
 
   /* Wait until we have checkpoint LSN greater than the page tracking start LSN.
   Page tracking start LSN is system LSN (lets say 105) and Backup End LSN is
@@ -1485,7 +1528,7 @@ bool backup_start(Backup_context &context) {
                    << " to reach to page tracking start lsn "
                    << page_tracking_start_lsn;
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        log_status_get(mysql_connection);
+        log_status_get(mysql_connection, false);
       }
     }
   }
