@@ -50,5 +50,7 @@ class ddl_tracker_t {
   @param[in] start_lsn  lsn for REDO record */
   void backup_file_op(uint32_t space_id, mlog_id_t type, const byte *buf,
                       ulint len, lsn_t start_lsn);
+  /** Function responsible to generate files based on DDL operations */
+  void handle_ddl_operations();
 };
 #endif  // DDL_TRACKER_H

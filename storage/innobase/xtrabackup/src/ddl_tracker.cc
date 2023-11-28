@@ -118,3 +118,100 @@ void ddl_tracker_t::add_table(const space_id_t &space_id, std::string name) {
   }
   tables_in_backup[space_id] = name;
 }
+
+void ddl_tracker_t::handle_ddl_operations() {
+  // TODO: Make copy multi thread
+
+  xb::info() << "DDL tracking :  handling DDL operations";
+
+  if (new_tables.empty() && renames.empty() && drops.empty() &&
+      recopy_tables.empty()) {
+    xb::info()
+        << "DDL tracking : Finished handling DDL operations - No changes";
+    return;
+  }
+  dberr_t err;
+
+  /* Some tables might get to the new list if the DDL happen in between
+   * redo_mgr.start and xb_load_tablespaces. This causes we ending up with two
+   * tablespaces with the same spaceID. Remove them from new tables */
+  for (auto &table : tables_in_backup) {
+    if (new_tables.find(table.first) != new_tables.end()) {
+      new_tables.erase(table.first);
+    }
+  }
+
+  /* recopy_tables will be handled as follow:
+    * not in the backup - nothign to do. This is a new table that was created
+     during the backup. It will be re-copied anyway as .new in the backup.
+    * in the backup - we add it to be recopied if renamed - we delete the old
+    file during prepare rename logic will then instruct adjust the proper file
+    name to be copied
+  */
+  for (auto &table : recopy_tables) {
+    if (tables_in_backup.find(table) != tables_in_backup.end()) {
+      if (renames.find(table) != renames.end()) {
+        backup_file_printf((renames[table].first + ".del").c_str(), "%s", "");
+      }
+      string name = tables_in_backup[table];
+      new_tables[table] = name;
+    }
+  }
+
+  for (auto &table : drops) {
+    if (check_if_skip_table(table.second.c_str())) {
+      continue;
+    }
+    /* Remove from rename */
+    renames.erase(table.first);
+
+    /* Remove from new tables and skip drop*/
+    if (new_tables.find(table.first) != new_tables.end()) {
+      new_tables.erase(table.first);
+      continue;
+    }
+    backup_file_printf((table.second + ".del").c_str(), "%s", "");
+  }
+
+  for (auto &table : renames) {
+    if (check_if_skip_table(table.second.second.c_str())) {
+      continue;
+    }
+    if (check_if_skip_table(table.second.first.c_str())) {
+      continue;
+    }
+    /* renamed new table. update new table entry to renamed table name */
+    if (new_tables.find(table.first) != new_tables.end()) {
+      new_tables[table.first] = table.second.second;
+      continue;
+    }
+    backup_file_printf((table.second.first + ".ren").c_str(), "%s",
+                       table.second.second.c_str());
+  }
+
+  fil_close_all_files();
+  for (auto table = new_tables.begin(); table != new_tables.end();) {
+    if (check_if_skip_table(table->second.c_str())) {
+      table = new_tables.erase(table);
+      continue;
+    }
+    std::tie(err, std::ignore) = fil_open_for_xtrabackup(
+        table->second, table->second.substr(0, table->second.length() - 4));
+    table++;
+  }
+
+  datafiles_iter_t *it = datafiles_iter_new(nullptr);
+  while (fil_node_t *node = datafiles_iter_next(it)) {
+    if (new_tables.find(node->space->id) == new_tables.end()) {
+      continue;
+    }
+    if (check_if_skip_table(node->name)) {
+      continue;
+    }
+    std::string dest_name = node->name;
+    dest_name.append(".new");
+    xtrabackup_copy_datafile(node, 0, dest_name.c_str());
+  }
+  datafiles_iter_free(it);
+  xb::info() << "DDL tracking :  Finished handling DDL operations";
+}
