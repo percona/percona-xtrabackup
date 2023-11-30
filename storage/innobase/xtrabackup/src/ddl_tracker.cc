@@ -19,11 +19,13 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 *******************************************************/
 #include "ddl_tracker.h"
 #include <fil0fil.h>
+#include <os0thread-create.h>  // os_thread_create
 #include <univ.i>
 #include "backup_copy.h"
 #include "file_utils.h"
-#include "xb0xb.h"       // check_if_skip_table
-#include "xtrabackup.h"  // datafiles_iter_t
+#include "sql_thd_internal_api.h"  // create_thd, destroy_thd
+#include "xb0xb.h"                 // check_if_skip_table
+#include "xtrabackup.h"            // datafiles_iter_t
 
 void ddl_tracker_t::backup_file_op(uint32_t space_id, mlog_id_t type,
                                    const byte *buf, ulint len,
@@ -119,10 +121,54 @@ void ddl_tracker_t::add_table(const space_id_t &space_id, std::string name) {
   tables_in_backup[space_id] = name;
 }
 
-void ddl_tracker_t::handle_ddl_operations() {
-  // TODO: Make copy multi thread
+/* ======== Data copying thread context ======== */
 
-  xb::info() << "DDL tracking :  handling DDL operations";
+typedef struct {
+  datafiles_iter_t *it;
+  uint num;
+  uint *count;
+  ib_mutex_t *count_mutex;
+  bool *error;
+  std::thread::id id;
+  space_id_to_name_t *new_tables;
+} copy_thread_ctxt_t;
+
+static void data_copy_thread_func(copy_thread_ctxt_t *ctxt) {
+  uint num = ctxt->num;
+  fil_node_t *node;
+
+  /*
+    Initialize mysys thread-specific memory so we can
+    use mysys functions in this thread.
+  */
+  my_thread_init();
+
+  /* create THD to get thread number in the error log */
+  THD *thd = create_thd(false, false, true, 0, 0);
+  debug_sync_point("data_copy_thread_func");
+
+  while ((node = datafiles_iter_next(ctxt->it)) != NULL && !*(ctxt->error)) {
+    if (ctxt->new_tables->find(node->space->id) == ctxt->new_tables->end()) {
+      continue;
+    }
+    std::string dest_name = node->name;
+    dest_name.append(".new");
+    if (xtrabackup_copy_datafile(node, num, dest_name.c_str())) {
+      xb::error() << "failed to copy datafile " << node->name;
+      *(ctxt->error) = true;
+    }
+  }
+
+  mutex_enter(ctxt->count_mutex);
+  (*ctxt->count)--;
+  mutex_exit(ctxt->count_mutex);
+
+  destroy_thd(thd);
+  my_thread_end();
+}
+
+void ddl_tracker_t::handle_ddl_operations() {
+  xb::info() << "DDL tracking : handling DDL operations";
 
   if (new_tables.empty() && renames.empty() && drops.empty() &&
       recopy_tables.empty()) {
@@ -200,18 +246,46 @@ void ddl_tracker_t::handle_ddl_operations() {
     table++;
   }
 
+  if (new_tables.empty()) return;
+
+  /* Create data copying threads */
+  copy_thread_ctxt_t *data_threads = (copy_thread_ctxt_t *)ut::malloc_withkey(
+      UT_NEW_THIS_FILE_PSI_KEY,
+      sizeof(copy_thread_ctxt_t) * xtrabackup_parallel);
+  uint count = xtrabackup_parallel;
+  ib_mutex_t count_mutex;
+  mutex_create(LATCH_ID_XTRA_COUNT_MUTEX, &count_mutex);
+  bool data_copying_error = false;
   datafiles_iter_t *it = datafiles_iter_new(nullptr);
-  while (fil_node_t *node = datafiles_iter_next(it)) {
-    if (new_tables.find(node->space->id) == new_tables.end()) {
-      continue;
-    }
-    if (check_if_skip_table(node->name)) {
-      continue;
-    }
-    std::string dest_name = node->name;
-    dest_name.append(".new");
-    xtrabackup_copy_datafile(node, 0, dest_name.c_str());
+  for (uint i = 0; i < (uint)xtrabackup_parallel; i++) {
+    data_threads[i].it = it;
+    data_threads[i].num = i + 1;
+    data_threads[i].count = &count;
+    data_threads[i].count_mutex = &count_mutex;
+    data_threads[i].error = &data_copying_error;
+    data_threads[i].new_tables = &new_tables;
+    os_thread_create(PFS_NOT_INSTRUMENTED, i, data_copy_thread_func,
+                     data_threads + i)
+        .start();
   }
+
+  /* Wait for threads to exit */
+  while (1) {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    mutex_enter(&count_mutex);
+    if (count == 0) {
+      mutex_exit(&count_mutex);
+      break;
+    }
+    mutex_exit(&count_mutex);
+  }
+
+  if (data_copying_error) {
+    exit(EXIT_FAILURE);
+  }
+
+  mutex_free(&count_mutex);
+  ut::free(data_threads);
   datafiles_iter_free(it);
   xb::info() << "DDL tracking :  Finished handling DDL operations";
 }
