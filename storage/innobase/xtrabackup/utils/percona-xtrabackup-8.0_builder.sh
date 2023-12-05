@@ -272,6 +272,7 @@ install_deps() {
                     sleep 1
                 done
                 yum -y remove centos-release-stream
+                source /opt/rh/gcc-toolset-10/enable
             fi
         else
             until yum -y install epel-release centos-release-scl; do
