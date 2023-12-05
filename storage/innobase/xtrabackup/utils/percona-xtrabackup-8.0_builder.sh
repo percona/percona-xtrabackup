@@ -339,6 +339,13 @@ install_deps() {
             echo "waiting"
         done
 
+        if [ "${OS_NAME}" == "focal" ]; then
+            gcc --version
+            update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 10
+            update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 10
+            gcc --version
+        fi
+
     fi
     return;
 }
