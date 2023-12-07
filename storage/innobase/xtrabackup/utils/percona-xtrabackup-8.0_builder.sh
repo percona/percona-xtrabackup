@@ -263,15 +263,15 @@ install_deps() {
                 sleep 1
             done
             if [ $RHEL = 8 ]; then
-                DEVTOOLSET12_PKGLIST+=" gcc-toolset-12-gcc-c++ gcc-toolset-12-binutils"
-                DEVTOOLSET12_PKGLIST+=" gcc-toolset-12-libatomic-devel"
-                DEVTOOLSET12_PKGLIST+=" gcc-toolset-12-libasan-devel gcc-toolset-12-libubsan-devel"
-                until yum -y install ${DEVTOOLSET12_PKGLIST}; do
+                DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-gcc-c++ gcc-toolset-10-binutils"
+                DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-libatomic-devel gcc-toolset-10-valgrind gcc-toolset-10-valgrind-devel"
+                DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-libasan-devel gcc-toolset-10-libubsan-devel gcc-toolset-10-annobin"
+                until yum -y install ${DEVTOOLSET10_PKGLIST}; do
                     echo "waiting"
                     sleep 1
                 done
-                update-alternatives --install /usr/bin/gcc gcc /opt/rh/gcc-toolset-12/root/usr/bin/gcc 10
-                update-alternatives --install /usr/bin/g++ g++ /opt/rh/gcc-toolset-12/root/usr/bin/g++ 10
+                update-alternatives --install /usr/bin/gcc gcc /opt/rh/gcc-toolset-10/root/usr/bin/gcc 10
+                update-alternatives --install /usr/bin/g++ g++ /opt/rh/gcc-toolset-10/root/usr/bin/g++ 10
                 gcc --version
             fi
         else
