@@ -246,11 +246,11 @@ install_deps() {
         percona-release enable tools testing
         if [ ${RHEL} = 8 -o ${RHEL} = 9 ]; then
             PKGLIST+=" binutils-devel python3-pip python3-setuptools"
-            PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make gcc"
-            PKGLIST+=" rpm-build libgcrypt-devel ncurses-devel readline-devel openssl-devel gcc-c++"
+            PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make"
+            PKGLIST+=" rpm-build libgcrypt-devel ncurses-devel readline-devel openssl-devel"
             PKGLIST+=" vim-common rpmlint patchelf python3-wheel libudev-devel"
             if [ $RHEL = 9 ]; then
-                PKGLIST+=" rsync procps-ng-devel python3-sphinx"
+                PKGLIST+=" rsync procps-ng-devel python3-sphinx gcc gcc-c++"
             else
                 yum-config-manager --enable powertools
                 wget https://jenkins.percona.com/downloads/rpm/procps-ng-devel-3.3.15-6.el8.x86_64.rpm
