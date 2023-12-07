@@ -246,11 +246,11 @@ install_deps() {
         percona-release enable tools testing
         if [ ${RHEL} = 8 -o ${RHEL} = 9 ]; then
             PKGLIST+=" binutils-devel python3-pip python3-setuptools"
-            PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make gcc"
-            PKGLIST+=" rpm-build libgcrypt-devel ncurses-devel readline-devel openssl-devel gcc-c++"
+            PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make"
+            PKGLIST+=" rpm-build libgcrypt-devel ncurses-devel readline-devel openssl-devel"
             PKGLIST+=" vim-common rpmlint patchelf python3-wheel libudev-devel"
             if [ $RHEL = 9 ]; then
-                PKGLIST+=" rsync procps-ng-devel python3-sphinx"
+                PKGLIST+=" rsync procps-ng-devel python3-sphinx gcc gcc-c++"
             else
                 yum-config-manager --enable powertools
                 wget https://jenkins.percona.com/downloads/rpm/procps-ng-devel-3.3.15-6.el8.x86_64.rpm
@@ -264,14 +264,15 @@ install_deps() {
             done
             if [ $RHEL = 8 ]; then
                 DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-gcc-c++ gcc-toolset-10-binutils"
-                DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-valgrind gcc-toolset-10-valgrind-devel gcc-toolset-10-libatomic-devel"
+                DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-libatomic-devel gcc-toolset-10-valgrind gcc-toolset-10-valgrind-devel"
                 DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-libasan-devel gcc-toolset-10-libubsan-devel gcc-toolset-10-annobin"
-                yum -y install centos-release-stream
                 until yum -y install ${DEVTOOLSET10_PKGLIST}; do
                     echo "waiting"
                     sleep 1
                 done
-                yum -y remove centos-release-stream
+                update-alternatives --install /usr/bin/gcc gcc /opt/rh/gcc-toolset-10/root/usr/bin/gcc 10
+                update-alternatives --install /usr/bin/g++ g++ /opt/rh/gcc-toolset-10/root/usr/bin/g++ 10
+                gcc --version
             fi
         else
             until yum -y install epel-release centos-release-scl; do
@@ -325,8 +326,8 @@ install_deps() {
         else
             PKGLIST+=" libproc2-dev"
         fi
-        if [ "${OS_NAME}" == "bionic" ]; then
-            PKGLIST+=" gcc-8 g++-8"
+        if [ "${OS_NAME}" == "focal" ]; then
+            PKGLIST+=" gcc-10 g++-10"
 	fi
         if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" -o "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "jammy" ]; then
             PKGLIST+=" python3-sphinx python3-docutils"
@@ -338,6 +339,13 @@ install_deps() {
             sleep 1
             echo "waiting"
         done
+
+        if [ "${OS_NAME}" == "focal" ]; then
+            gcc --version
+            update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 10
+            update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 10
+            gcc --version
+        fi
 
     fi
     return;
