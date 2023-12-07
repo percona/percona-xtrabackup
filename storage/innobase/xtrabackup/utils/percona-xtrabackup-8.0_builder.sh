@@ -270,7 +270,8 @@ install_deps() {
                     echo "waiting"
                     sleep 1
                 done
-                source /opt/rh/gcc-toolset-12/enable
+                update-alternatives --install /usr/bin/gcc gcc /opt/rh/gcc-toolset-12/root/usr/bin/gcc 10
+                update-alternatives --install /usr/bin/g++ g++ /opt/rh/gcc-toolset-12/root/usr/bin/g++ 10
                 gcc --version
             fi
         else
