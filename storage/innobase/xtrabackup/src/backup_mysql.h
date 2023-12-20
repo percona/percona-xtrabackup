@@ -205,8 +205,9 @@ bool write_current_binlog_file(MYSQL *connection);
 
 /** Read binary log position, InnoDB LSN and other storage engine information
 from p_s.log_status and update global log_status variable.
-@param[in]   conn         mysql connection handle */
-void log_status_get(MYSQL *conn);
+@param[in]   conn                     mysql connection handle
+@param[in]   consumer_can_advance     bool to define if consumer can advance */
+void log_status_get(MYSQL *conn, bool consumer_can_advance);
 
 /*********************************************************************/ /**
  Retrieves MySQL binlog position and

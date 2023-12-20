@@ -111,7 +111,7 @@ main () {
 
     case "${TYPE}" in
         innodb80)
-            url="https://dev.mysql.com/get/Downloads/MySQL-8.1"
+            url="https://dev.mysql.com/get/Downloads/MySQL-8.2"
             fallback_url="https://downloads.mysql.com/archives/get/p/23/file"
             tarball="mysql-${VERSION}-linux-glibc2.17-${arch}.tar.xz"
             if ! check_url "${url}" "${tarball}"; then

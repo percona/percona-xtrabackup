@@ -20,12 +20,12 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #ifndef xb0xb_h
 #define xb0xb_h
+#include "storage/innobase/xtrabackup/src/ddl_tracker.h"
 
 extern bool innodb_log_checksums_specified;
 extern bool innodb_checksum_algorithm_specified;
 
 extern bool opt_lock_ddl_per_table;
-extern bool opt_lock_ddl;
 extern bool redo_catchup_completed;
 extern bool opt_page_tracking;
 extern char *xtrabackup_incremental;
@@ -34,7 +34,10 @@ extern lsn_t xtrabackup_start_checkpoint;
 extern bool use_dumped_tablespace_keys;
 extern unsigned long xb_backup_version;
 extern bool xb_generated_redo;
+enum lock_ddl_type_t { LOCK_DDL_OFF, LOCK_DDL_ON, LOCK_DDL_REDUCED };
+extern lock_ddl_type_t opt_lock_ddl;
 
+extern ddl_tracker_t *ddl_tracker;
 extern std::vector<ulint> invalid_encrypted_tablespace_ids;
 
 /** Fetch tablespace key from "xtrabackup_keys".

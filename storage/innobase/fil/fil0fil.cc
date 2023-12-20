@@ -2704,6 +2704,8 @@ dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
   }
 
   if (space_id != space->id) {
+    if (srv_backup_mode && opt_lock_ddl == LOCK_DDL_REDUCED) return DB_ERROR;
+
     ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_270)
         << "Tablespace id is " << space->id
         << " in the data dictionary but in file " << file->name << " it is "
@@ -11509,6 +11511,11 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
   err = file.validate_first_page(SPACE_UNKNOWN, &flush_lsn, false);
 
   space_id_t space_id = file.space_id();
+
+  if (ddl_tracker && (err == DB_PAGE_IS_BLANK || err == DB_SUCCESS)) {
+    ddl_tracker->add_table(space_id, path);
+  }
+
   if (err == DB_PAGE_IS_BLANK) {
     /* allow corrupted first page for xtrabackup, it could be just
     zero-filled page, which we'll restore from redo log later */
@@ -11561,6 +11568,12 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
   /* by opening the tablespace we forcing node and space objects
   in the cache to be populated with fields from space header */
   if (!fil_space_open(space->id)) {
+    if (srv_backup_mode && opt_lock_ddl == LOCK_DDL_REDUCED) {
+      if (fil_close_tablespace(space->id) != DB_SUCCESS)
+        xb::warn() << "Failed to close space_id: " << space->id;
+      return {DB_ERROR, space_id};
+    }
+
     xb::error() << "Failed to open tablespace " << space->name;
   }
 
@@ -11580,6 +11593,7 @@ void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
                                size_t thread_id, bool &result) {
   if (!result) return;
 
+  uint8_t max_attempt_retries = (opt_lock_ddl == LOCK_DDL_REDUCED) ? 10 : 1;
   for (auto it = start; it != end; ++it) {
     const std::string filename = it->second;
     const auto &files = m_dirs[it->first];
@@ -11592,12 +11606,16 @@ void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
     /* cannot use auto [err, space_id] = fil_open_for_xtrabackup() as space_id
     is unused here and we get unused variable error during compilation */
     dberr_t err;
-    std::tie(err, std::ignore) = fil_open_for_xtrabackup(
-        phy_filename, filename.substr(0, filename.length() - 4));
-    /* PXB-2275 - Allow DB_INVALID_ENCRYPTION_META as we will test it in the
-    end of the backup */
-    if (err != DB_SUCCESS && err != DB_INVALID_ENCRYPTION_META) {
-      result = false;
+    uint8_t attempts = 0;
+    while (attempts < max_attempt_retries) {
+      attempts++;
+      std::tie(err, std::ignore) = fil_open_for_xtrabackup(
+          phy_filename, filename.substr(0, filename.length() - 4));
+      /* PXB-2275 - Allow DB_INVALID_ENCRYPTION_META as we will test it in the
+      end of the backup */
+      if (err == DB_SUCCESS || err == DB_INVALID_ENCRYPTION_META) break;
+
+      if (attempts == max_attempt_retries) result = false;
     }
   }
 }

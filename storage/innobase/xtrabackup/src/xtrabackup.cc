@@ -102,6 +102,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "backup_mysql.h"
 #include "changed_page_tracking.h"
 #include "crc_glue.h"
+#include "ddl_tracker.h"
 #include "ds_buffer.h"
 #include "ds_encrypt.h"
 #include "ds_tmpfile.h"
@@ -467,7 +468,8 @@ bool opt_dump_innodb_buffer_pool = false;
 
 bool punch_hole_supported = false;
 
-bool opt_lock_ddl = false;
+const char *xtrabackup_lock_ddl_str = NULL;
+lock_ddl_type_t opt_lock_ddl = LOCK_DDL_ON;
 bool opt_lock_ddl_per_table = false;
 uint opt_lock_ddl_timeout = 0;
 uint opt_backup_lock_timeout = 0;
@@ -513,6 +515,7 @@ bool redo_catchup_completed = false;
 extern struct rand_struct sql_rand;
 extern mysql_mutex_t LOCK_sql_rand;
 bool xb_generated_redo = false;
+ddl_tracker_t *ddl_tracker = nullptr;
 
 static void check_all_privileges();
 static bool validate_options(const char *file, int argc, char **argv);
@@ -547,8 +550,8 @@ datafiles_iter_t *datafiles_iter_new(
   Fil_iterator::for_each_file([&](fil_node_t *file) {
     auto space_id = file->space->id;
 
-    ut_ad(dd_spaces == nullptr ||
-          (dd_spaces != nullptr && srv_backup_mode && opt_lock_ddl));
+    ut_ad(dd_spaces == nullptr || (dd_spaces != nullptr && srv_backup_mode &&
+                                   opt_lock_ddl == LOCK_DDL_ON));
 
     if (dd_spaces != nullptr && fsp_is_ibd_tablespace(space_id) &&
         !fsp_is_system_or_temp_tablespace(space_id) &&
@@ -1051,10 +1054,18 @@ struct my_option xb_client_options[] = {
 
     {"lock-ddl", OPT_LOCK_DDL,
      "Issue LOCK TABLES/LOCK INSTANCE FOR BACKUP if it is "
-     "supported by server at the beginning of the backup to block all DDL "
-     "operations.",
-     (uchar *)&opt_lock_ddl, (uchar *)&opt_lock_ddl, 0, GET_BOOL, NO_ARG, 1, 0,
-     0, 0, 0, 0},
+     "supported by server. Possible options are: "
+     "ON - LTFB/LIFB is executed at the beginning of the backup to block all "
+     "DDLs;"
+     "OFF- LTFB/LIFB is not executed;"
+     "REDUCED - PXB does a copy of InnoDB tables without taking "
+     "any lock, while keeping track of tables affected by DDL. Before starting "
+     "to copy Non-InnoDB tables, LTFB/LIFB is executed and all InnoDB tables "
+     "affected by DDL are handled(either recopied or a special file is placed "
+     "in backup dir to handle the DDL operation during --prepare);"
+     "Default is ON.",
+     (uchar *)&xtrabackup_lock_ddl_str, (uchar *)&xtrabackup_lock_ddl_str, 0,
+     GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
     {"lock-ddl-timeout", OPT_LOCK_DDL_TIMEOUT,
      "If LOCK TABLES FOR BACKUP does not return within given timeout, abort "
@@ -1930,6 +1941,21 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
         opt_history = "";
       }
       break;
+    case OPT_LOCK_DDL:
+      if (argument == NULL || strcasecmp(argument, "on") == 0 ||
+          strcasecmp(argument, "1") == 0 || strcasecmp(argument, "true") == 0) {
+        opt_lock_ddl = LOCK_DDL_ON;
+      } else if (strcasecmp(argument, "off") == 0 ||
+                 strcasecmp(argument, "0") == 0 ||
+                 strcasecmp(argument, "false") == 0) {
+        opt_lock_ddl = LOCK_DDL_OFF;
+      } else if (strcasecmp(argument, "reduced") == 0) {
+        opt_lock_ddl = LOCK_DDL_REDUCED;
+      } else {
+        xb::error() << "Invalid --lock-ddl argument: " << argument;
+        return 1;
+      }
+      break;
     case 'p':
       if (argument == disabled_my_option)
         argument = (char *)""; /* Don't require password */
@@ -2515,6 +2541,22 @@ static bool xtrabackup_read_info(char *filename) {
   } else if (xb_server_version < 80029) {
     cfg_version = IB_EXPORT_CFG_VERSION_V6;
   }
+  /* skip start_time, end_time, lock_time, binlog_pos, innodb_from_lsn,
+   * innodb_to_lsn, partial, incremental, format, compressed, encrypt */
+  for (int i = 0; i < 12; i++) {
+    char c;
+    do {
+      c = fgetc(fp);
+    } while (c != '\n');
+  }
+
+  char lock[8];
+  if (fscanf(fp, "lock_ddl_type = %7s\n", lock) != 1) {
+    r = false;
+    goto end;
+  }
+  /* used at log0recv.cc to apply or not file operations */
+  opt_lock_ddl = ddl_lock_type_from_str(string(lock));
 end:
   fclose(fp);
   return (r);
@@ -2587,7 +2629,8 @@ static void xtrabackup_print_metadata(char *buf, size_t buf_len) {
            "redo_memory = %ld\n"
            "redo_frames = %ld\n",
            metadata_type_str, metadata_from_lsn, metadata_to_lsn,
-           metadata_last_lsn, opt_lock_ddl ? backup_redo_log_flushed_lsn : 0,
+           metadata_last_lsn,
+           opt_lock_ddl == LOCK_DDL_ON ? backup_redo_log_flushed_lsn : 0,
            redo_memory, redo_frames);
 }
 
@@ -2753,6 +2796,30 @@ static bool xtrabackup_write_info(const char *filepath) {
   return result;
 }
 
+std::string ddl_lock_type_to_str(lock_ddl_type_t type) {
+  switch (type) {
+    case LOCK_DDL_ON:
+      return "ON";
+    case LOCK_DDL_OFF:
+      return "OFF";
+    case LOCK_DDL_REDUCED:
+      return "REDUCED";
+    default:
+      ut_error;
+  }
+}
+
+lock_ddl_type_t ddl_lock_type_from_str(std::string type) {
+  if (type == "ON") {
+    return LOCK_DDL_ON;
+  } else if (type == "OFF") {
+    return LOCK_DDL_OFF;
+  } else if (type == "REDUCED") {
+    return LOCK_DDL_REDUCED;
+  } else {
+    ut_error;
+  }
+}
 /* ================= backup ================= */
 void xtrabackup_io_throttling(void) {
   if (xtrabackup_throttle && (--io_ticket) < 0) {
@@ -2999,6 +3066,11 @@ const char *xb_get_copy_action(const char *dflt) {
 /* TODO: We may tune the behavior (e.g. by fil_aio)*/
 
 static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
+  return xtrabackup_copy_datafile(node, thread_n, nullptr);
+}
+
+bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n,
+                              const char *dest_name) {
   char dst_name[FN_REFLEN];
   ds_file_t *dstfile = NULL;
   xb_fil_cur_t cursor;
@@ -3040,7 +3112,9 @@ static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
     goto error;
   }
 
-  strcpy(dst_name, cursor.rel_path);
+  strncpy(dst_name, dest_name ? dest_name : cursor.rel_path,
+          sizeof dst_name - 1);
+  dst_name[sizeof(dst_name) - 1] = '\0';
 
   /* Setup the page write filter */
   if (xtrabackup_incremental) {
@@ -3131,7 +3205,7 @@ skip:
     write_filter->deinit(&write_filt_ctxt);
   }
 
-  if (!opt_lock_ddl) {
+  if (opt_lock_ddl != LOCK_DDL_ON) {
     xb::warn() << "We assume the "
                << "table was dropped during xtrabackup execution "
                << "and ignore the file.";
@@ -4007,14 +4081,16 @@ void xtrabackup_backup_func(void) {
 
   srv_backup_mode = true;
 
-  if (opt_lock_ddl) {
+  if (opt_lock_ddl == LOCK_DDL_ON) {
     xb_dd_spaces = xb::backup::build_space_id_set(mysql_connection);
     ut_ad(xb_dd_spaces->size());
+  } else if (opt_lock_ddl == LOCK_DDL_REDUCED) {
+    ddl_tracker = new ddl_tracker_t;
   }
 
   /* We can safely close files if we don't allow DDL during the
   backup */
-  srv_close_files = xb_close_files || opt_lock_ddl;
+  srv_close_files = xb_close_files || opt_lock_ddl == LOCK_DDL_ON;
 
   if (xb_close_files)
     xb::warn()
@@ -4397,6 +4473,8 @@ void xtrabackup_backup_func(void) {
   xb_keyring_shutdown();
 
   cleanup_mysql_environment();
+
+  delete ddl_tracker;
 }
 
 /* ================= prepare ================= */
@@ -5345,6 +5423,123 @@ error:
   return false;
 }
 
+static void delete_force(const std::string &path) {
+  if (access(path.c_str(), R_OK) == 0) {
+    if (my_delete(path.c_str(), MYF(MY_WME))) {
+      exit(EXIT_FAILURE);
+    }
+  }
+}
+
+static void rename_file(const std::string &from, const std::string &to) {
+  if (my_rename(from.c_str(), to.c_str(), MY_WME)) {
+    xb::error() << "Can't rename " << from << " to " << to << " errno "
+                << errno;
+    exit(EXIT_FAILURE);
+  }
+}
+
+static void rename_force(const std::string &from, const std::string &to) {
+  MY_STAT stat_info;
+  if (access(to.c_str(), R_OK) == 0) {
+    if (my_delete(to.c_str(), MYF(MY_WME))) {
+      exit(EXIT_FAILURE);
+    }
+  }
+  /* check if dest folder exists */
+  std::string dest_dir = to.substr(0, to.find_last_of("/"));
+  /* create target dir if not exist */
+  if (!my_stat(dest_dir.c_str(), &stat_info, MYF(0)) &&
+      (my_mkdir(dest_dir.c_str(), 0750, MYF(0)) < 0)) {
+    xb::error() << "cannot mkdir: " << my_errno() << " " << dest_dir;
+    exit(EXIT_FAILURE);
+  }
+  rename_file(from, to);
+}
+
+/* Handle DDL for new files */
+static bool prepare_handle_new_files(
+    const datadir_entry_t &entry, /*!<in: datadir entry */
+    void *arg __attribute__((unused))) {
+  if (entry.is_empty_dir) return true;
+  std::string src_path = entry.path;
+  std::string dest_path = src_path;
+  xb::info() << "prepare_handle_new_files: " << src_path;
+  size_t index = dest_path.find(".new");
+#ifdef UNIV_DEBUG
+  assert(index != std::string::npos);
+#endif  // UNIV_DEBUG
+  dest_path.erase(index, 4);
+  rename_force(src_path, dest_path);
+
+  return true;
+}
+
+/** Read file content into STL string */
+static std::string read_file_as_string(const std::string file) {
+  char content[FN_REFLEN];
+  FILE *f = fopen(file.c_str(), "r");
+  if (!f) {
+    return "";
+  }
+  size_t len = fread(content, 1, FN_REFLEN, f);
+  fclose(f);
+  return std::string(content, len);
+}
+/* Handle DDL for renamed files */
+static bool prepare_handle_ren_files(
+    const datadir_entry_t &entry, /*!<in: datadir entry */
+    void *arg __attribute__((unused))) {
+  if (entry.is_empty_dir) return true;
+
+  std::string ren_file = entry.path;
+  std::string ren_path = entry.rel_path;
+  std::string from_base = entry.datadir;
+  std::string to_base = entry.datadir;
+#ifdef UNIV_DEBUG
+  size_t index = ren_file.find(".ren");
+  assert(index != std::string::npos);
+#endif  // UNIV_DEBUG
+  std::string from = ren_path.substr(0, ren_path.length() - 4);
+  from_base += from;
+  std::string to = read_file_as_string(ren_file);
+  to_base += to;
+  if (to.empty()) {
+    xb::error() << "Can not read " << ren_file;
+    return false;
+  }
+  xb::info() << "prepare_handle_ren_files: From: " << from << " To: " << to;
+  rename_force(from, to);
+  if (xtrabackup_incremental) {
+    rename_force(from_base + ".delta", to_base + ".delta");
+    rename_force(from_base + ".meta", to_base + ".meta");
+  }
+  os_file_delete(0, ren_file.c_str());
+  return true;
+}
+/* Handle DDL for deleted files */
+static bool prepare_handle_del_files(
+    const datadir_entry_t &entry, /*!<in: datadir entry */
+    void *arg __attribute__((unused))) {
+  if (entry.is_empty_dir) return true;
+
+  std::string del_file = entry.path;
+  std::string dest_path = entry.rel_path;
+  xb::info() << "prepare_handle_del_files: " << del_file;
+#ifdef UNIV_DEBUG
+  size_t index = dest_path.find(".del");
+  assert(index != std::string::npos);
+#endif  // UNIV_DEBUG
+  os_file_delete(0, del_file.c_str());
+  del_file.erase(del_file.length() - 4);
+  delete_force(dest_path.substr(0, dest_path.length() - 4).c_str());
+  if (xtrabackup_incremental) {
+    delete_force(del_file + ".delta");
+    delete_force(del_file + ".meta");
+  }
+
+  return true;
+}
 /************************************************************************
 Callback to handle datadir entry. Deletes entry if it has no matching
 fil_space in fil_system directory.
@@ -6424,6 +6619,27 @@ skip_check:
     backup_redo_log_flushed_lsn = incremental_flushed_lsn;
   }
 
+  /* Handle DDL files produced by DDL tracking during backup */
+  xb_process_datadir(
+      xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".", ".del",
+      prepare_handle_del_files, NULL);
+  xb_process_datadir(
+      xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".", ".ren",
+      prepare_handle_ren_files, NULL);
+  if (xtrabackup_incremental_dir) {
+    /** This is the new file, this might be less than the original .ibd because
+     * we are copying the file while there are still dirty pages in the BP.
+     * Those changes will later be conciliated via redo log*/
+    xb_process_datadir(xtrabackup_incremental_dir, ".new.meta",
+                       prepare_handle_new_files, NULL);
+    xb_process_datadir(xtrabackup_incremental_dir, ".new.delta",
+                       prepare_handle_new_files, NULL);
+    xb_process_datadir(xtrabackup_incremental_dir, ".new",
+                       prepare_handle_new_files, NULL);
+  } else {
+    xb_process_datadir(".", ".new", prepare_handle_new_files, NULL);
+  }
+
   init_mysql_environment();
   my_thread_init();
   THD *thd = create_internal_thd();
@@ -6806,13 +7022,13 @@ bool xb_init() {
   const char *mixed_options[4] = {NULL, NULL, NULL, NULL};
   int n_mixed_options;
 
-  if (opt_no_lock || opt_no_backup_locks) opt_lock_ddl = false;
+  if (opt_no_lock || opt_no_backup_locks) opt_lock_ddl = LOCK_DDL_OFF;
 
   /* sanity checks */
-  if (opt_lock_ddl && opt_lock_ddl_per_table) {
+  if (opt_lock_ddl != LOCK_DDL_OFF && opt_lock_ddl_per_table) {
     xb::error()
         << "--lock-ddl and --lock-ddl-per-table are mutually exclusive. "
-           "Please specify --lock-ddl=false to use --lock-ddl-per-table.";
+           "Please specify --lock-ddl=OFF to use --lock-ddl-per-table.";
     return (false);
   }
 
@@ -6896,13 +7112,13 @@ bool xb_init() {
     history_start_time = time(NULL);
 
     /* stop slave before taking backup up locks if lock-ddl=ON*/
-    if (!opt_no_lock && opt_lock_ddl && opt_safe_slave_backup) {
+    if (!opt_no_lock && opt_lock_ddl == LOCK_DDL_ON && opt_safe_slave_backup) {
       if (!wait_for_safe_slave(mysql_connection)) {
         return (false);
       }
     }
 
-    if (opt_lock_ddl &&
+    if (opt_lock_ddl == LOCK_DDL_ON &&
         !lock_tables_for_backup(mysql_connection, opt_lock_ddl_timeout, 0)) {
       return (false);
     }

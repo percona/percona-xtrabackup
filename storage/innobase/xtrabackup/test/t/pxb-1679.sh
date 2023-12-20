@@ -27,7 +27,7 @@ CREATE TABLE test02 (id int auto_increment primary key, a TEXT, b TEXT);
 INSERT INTO test02 SELECT * FROM test01;
 EOF
 
-xtrabackup --backup --lock-ddl=false --target-dir=$topdir/backup 2>&1 | tee /dev/stderr | \
+xtrabackup --backup --lock-ddl=OFF --target-dir=$topdir/backup 2>&1 | tee /dev/stderr | \
     while read line ; do
         echo $line
         if [ $( echo $line | grep -i -c './test/test01#p#p3.ibd') -eq 1 ]; then
