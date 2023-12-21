@@ -439,6 +439,7 @@ ulint get_innobase_type_from_dd(const dd::Column *col, ulint &unsigned_type) {
   return MYSQL_TYPE_LONG;
 }
 
+#ifdef XTRABACKUP
 dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
                                         const dd::Partition *dd_part,
                                         const dd::String_type *schema_name,
@@ -982,7 +983,11 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
         if (c->is_virtual() == dd_col->is_virtual()) col_pos++;
       }
 
-      bool is_asc = (idx_elem->order() == dd::Index_element::ORDER_ASC);
+      /* FULLTEXT and HASH indexes can have UNDEF order, we should treat UNDEF
+       * as ASC */
+      bool is_asc = (idx_elem->order() == dd::Index_element::ORDER_ASC ||
+                     idx_elem->order() == dd::Index_element::ORDER_UNDEF);
+
       ulint prefix_len = 0;
 
       if (dd_index->type() == dd::Index::IT_SPATIAL) {
@@ -1212,6 +1217,7 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
 
   return (table);
 }
+#endif /* XTRABACKUP */
 
 table_id_t dd_table_id_and_part(space_id_t space_id, const dd::Table &dd_table,
                                 const dd::Partition *&dd_part) {
