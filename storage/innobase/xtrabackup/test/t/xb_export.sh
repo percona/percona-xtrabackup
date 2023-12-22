@@ -244,3 +244,71 @@ vlog "Checksums are OK"
 stop_server
 
 rm -rf $backup_dir
+rm -rf $mysql_datadir
+rm -rf $topdir/backup/
+
+vlog "#PXB-2797: Schema mismatch when importing table with full-text index from backup"
+
+start_server
+
+mysql test <<EOF
+CREATE TABLE test.t1 (
+  c1 int NOT NULL AUTO_INCREMENT,
+  c2 varchar(50) NOT NULL,
+  PRIMARY KEY (c1),
+  FULLTEXT KEY idx (c2)
+) ENGINE=InnoDB;
+INSERT INTO test.t1 (c2) values ("text1");
+INSERT INTO test.t1 (c2) values ("text2");
+
+CREATE TABLE test.t2 (
+  c1 int NOT NULL AUTO_INCREMENT,
+  c2 int NOT NULL,
+  c3 int NOT NULL,
+  PRIMARY KEY (c1),
+  INDEX idx1 (c2 ASC),
+  UNIQUE INDEX idx2 (c2 DESC),
+  INDEX idx3 (c2 ASC, c3 DESC)
+) ENGINE=InnoDB;
+INSERT INTO test.t2 (c2, c3) values (1000, 2000);
+INSERT INTO test.t2 (c2, c3) values (2000, 3000);
+INSERT INTO test.t2 (c2, c3) values (3000, 4000);
+
+CREATE TABLE test.t3 (
+  c1 int NOT NULL AUTO_INCREMENT,
+  c2 GEOMETRY NOT NULL,
+  PRIMARY KEY (c1),
+  SPATIAL INDEX idx (c2)
+) ENGINE=InnoDB;
+INSERT INTO test.t3 (c2) values (ST_GeomFromText('POINT(1 1)'));
+INSERT INTO test.t3 (c2) values (ST_GeomFromText('LINESTRING(15 5,15 25)'));
+INSERT INTO test.t3 (c2) values (ST_GeomFromText('POLYGON((65 0,75 25,85 0,75 5,65 0))'));
+EOF
+
+xtrabackup --backup --target-dir=$topdir/backup 
+
+record_db_state test
+
+shutdown_server
+
+xtrabackup --prepare --export --target-dir=$topdir/backup
+
+start_server
+
+mysql -e "ALTER TABLE test.t1 DISCARD TABLESPACE;"
+cp $topdir/backup/test/t1.ibd $mysql_datadir/test/t1.ibd
+cp $topdir/backup/test/t1.cfg $mysql_datadir/test/t1.cfg
+mysql -e "ALTER TABLE test.t1 IMPORT TABLESPACE;"
+
+mysql -e "ALTER TABLE test.t2 DISCARD TABLESPACE;"
+cp $topdir/backup/test/t2.ibd $mysql_datadir/test/t2.ibd
+cp $topdir/backup/test/t2.cfg $mysql_datadir/test/t2.cfg
+mysql -e "ALTER TABLE test.t2 IMPORT TABLESPACE;"
+
+mysql -e "ALTER TABLE test.t3 DISCARD TABLESPACE;"
+cp $topdir/backup/test/t3.ibd $mysql_datadir/test/t3.ibd
+cp $topdir/backup/test/t3.cfg $mysql_datadir/test/t3.cfg
+mysql -e "ALTER TABLE test.t3 IMPORT TABLESPACE;"
+
+verify_db_state test
+rm -rf $topdir/backup/
