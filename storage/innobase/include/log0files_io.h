@@ -567,7 +567,7 @@ inline uint32_t log_block_convert_lsn_to_hdr_no(lsn_t lsn) {
 @param[in] header_num		log_block_number
 @param[in] start_lsn		the current start_LSN set in system
 @return LSN number */
-inline lsn_t log_block_convert_hdr_to_lsn_no(uint32_t header_num,
+inline lsn_t log_block_convert_hdr_to_lsn_no(uint64_t header_num,
                                              lsn_t start_lsn) {
   ut_ad(header_num <= LOG_BLOCK_MAX_NO);
 
