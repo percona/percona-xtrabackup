@@ -611,9 +611,6 @@ ERROR 0A000: RESET is not allowed in stored function or trigger
 create function bug8409() returns int begin reset slave;
 return 1; end|
 ERROR 0A000: RESET is not allowed in stored function or trigger
-create function bug8409() returns int begin flush hosts;
-return 1; end|
-ERROR 0A000: FLUSH is not allowed in stored function or trigger
 create function bug8409() returns int begin flush privileges;
 return 1; end|
 ERROR 0A000: FLUSH is not allowed in stored function or trigger
@@ -2833,7 +2830,7 @@ ERROR 42000: Incorrect database name 'mysqltest111111111122222222223333333333444
 # Test cases to verify error scenarios.
 #
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 # Case 1. Test case to verify length of stored routine name length.
 #         STORED PROCEDURE -- name with maximum length
 my_column

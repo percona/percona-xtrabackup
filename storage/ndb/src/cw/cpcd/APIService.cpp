@@ -126,16 +126,18 @@ const ParserRow<CPCDAPISession> commands[] = {
     CPCD_ARG("version", Int, Mandatory, "Protocol version to use"),
 
     CPCD_END()};
-CPCDAPISession::CPCDAPISession(ndb_socket_t sock, CPCD &cpcd)
-    : SocketServer::Session(sock), m_cpcd(cpcd), m_protocol_version(1) {
-  m_secure_socket.init_from_new(sock);
-  m_input = new SecureSocketInputStream(m_secure_socket, 7 * 24 * 60 * 60000);
-  m_output = new SecureSocketOutputStream(m_secure_socket);
+CPCDAPISession::CPCDAPISession(NdbSocket &&sock, CPCD &cpcd)
+    : SocketServer::Session(m_secure_socket),
+      m_cpcd(cpcd),
+      m_secure_socket(std::move(sock)),
+      m_protocol_version(1) {
+  m_input = new SocketInputStream(m_secure_socket, 7 * 24 * 60 * 60000);
+  m_output = new SocketOutputStream(m_secure_socket);
   m_parser = new Parser<CPCDAPISession>(commands, *m_input);
 }
 
 CPCDAPISession::CPCDAPISession(FILE *f, CPCD &cpcd)
-    : SocketServer::Session(ndb_socket_t{}),
+    : SocketServer::Session(m_secure_socket),
       m_cpcd(cpcd),
       m_protocol_version(1) {
   m_input = new FileInputStream(f);
@@ -172,7 +174,6 @@ void CPCDAPISession::runSession() {
     }
   }
   m_secure_socket.close();
-  m_secure_socket.invalidate();
 }
 
 void CPCDAPISession::stopSession() {
@@ -396,8 +397,7 @@ void CPCDAPISession::listProcesses(Parser_t::Context & /* unused */,
 }
 
 void CPCDAPISession::showVersion(Parser_t::Context & /* unused */,
-                                 const class Properties & /*args*/)
-{
+                                 const class Properties & /*args*/) {
   CPCD::RequestStatus rs;
 
   m_output->println("show version");

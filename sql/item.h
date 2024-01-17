@@ -77,6 +77,7 @@
 
 class Item;
 class Item_field;
+class Item_func;
 class Item_singlerow_subselect;
 class Item_sum;
 class Json_wrapper;
@@ -2485,10 +2486,11 @@ class Item : public Parse_tree_node {
   */
   virtual void update_used_tables() {}
 
-  virtual void split_sum_func(THD *, Ref_item_array, mem_root_deque<Item *> *) {
+  virtual bool split_sum_func(THD *, Ref_item_array, mem_root_deque<Item *> *) {
+    return false;
   }
   /* Called for items that really have to be split */
-  void split_sum_func2(THD *thd, Ref_item_array ref_item_array,
+  bool split_sum_func2(THD *thd, Ref_item_array ref_item_array,
                        mem_root_deque<Item *> *fields, Item **ref,
                        bool skip_registered);
   virtual bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) = 0;
@@ -2876,6 +2878,7 @@ class Item : public Parse_tree_node {
     */
     Query_block *const m_root;
 
+    friend class Item;
     friend class Item_sum;
     friend class Item_subselect;
     friend class Item_ref;
@@ -2884,11 +2887,12 @@ class Item : public Parse_tree_node {
      Clean up after removing the item from the item tree.
 
      param arg pointer to a Cleanup_after_removal_context object
+     @todo: If class ORDER is refactored so that all indirect
+     grouping/ordering expressions are represented with Item_ref
+     objects, all implementations of cleanup_after_removal() except
+     the one for Item_ref can be removed.
   */
-  virtual bool clean_up_after_removal(uchar *arg [[maybe_unused]]) {
-    assert(arg != nullptr);
-    return false;
-  }
+  virtual bool clean_up_after_removal(uchar *arg);
 
   /// @see Distinct_check::check_query()
   virtual bool aggregate_check_distinct(uchar *) { return false; }
@@ -3023,7 +3027,13 @@ class Item : public Parse_tree_node {
   virtual Item *equal_fields_propagator(uchar *) { return this; }
   // Mark the item to not be part of substitution.
   virtual bool disable_constant_propagation(uchar *) { return false; }
+
+  struct Replace_equal {
+    // Stack of pointers to enclosing functions
+    List<Item_func> stack;
+  };
   virtual Item *replace_equal_field(uchar *) { return this; }
+  virtual bool replace_equal_field_checker(uchar **) { return true; }
   /*
     Check if an expression value has allowed arguments, like DATE/DATETIME
     for date functions. Also used by partitioning code to reject
@@ -3340,6 +3350,9 @@ class Item : public Parse_tree_node {
   */
   bool is_blob_field() const;
 
+  /// @returns number of references to an item.
+  uint reference_count() const { return m_ref_count; }
+
   /// Increment reference count
   void increment_ref_count() {
     assert(!m_abandoned);
@@ -3395,13 +3408,20 @@ class Item : public Parse_tree_node {
   void set_wf() { m_accum_properties |= PROP_WINDOW_FUNCTION; }
 
   /**
-    @return true if this item or any of its descendants within the same query
-    has a reference to a ROLLUP expression
-  */
-  bool has_rollup_expr() const { return m_accum_properties & PROP_ROLLUP_EXPR; }
+     @return true if this item or any of its descendants within the same query
+     has a reference to a GROUP BY modifier (such as ROLLUP)
+   */
+  bool has_grouping_set_dep() const {
+    return (m_accum_properties & PROP_HAS_GROUPING_SET_DEP);
+  }
 
-  /// Set the property: this item (tree) contains a reference to a ROLLUP expr
-  void set_rollup_expr() { m_accum_properties |= PROP_ROLLUP_EXPR; }
+  /**
+    Set the property: this item (tree) contains a reference to a GROUP BY
+    modifier (such as ROLLUP)
+  */
+  void set_group_by_modifier() {
+    m_accum_properties |= PROP_HAS_GROUPING_SET_DEP;
+  }
 
   /**
     @return true if this item or any of underlying items is a GROUPING function
@@ -3477,6 +3497,8 @@ class Item : public Parse_tree_node {
      @param root_cost The cost object to which the cost should be added.
   */
   virtual void compute_cost(CostOfItem *root_cost [[maybe_unused]]) const {}
+
+  bool is_abandoned() const { return m_abandoned; }
 
  private:
   virtual bool subq_opt_away_processor(uchar *) { return false; }
@@ -3659,14 +3681,15 @@ class Item : public Parse_tree_node {
   static constexpr uint8 PROP_WINDOW_FUNCTION = 0x08;
   /**
     Set if the item or one or more of the underlying items contains a
-    ROLLUP expression. The rolled up expression itself is not so marked.
+    GROUP BY modifier (such as ROLLUP).
   */
-  static constexpr uint8 PROP_ROLLUP_EXPR = 0x10;
+  static constexpr uint8 PROP_HAS_GROUPING_SET_DEP = 0x10;
   /**
     Set if the item or one or more of the underlying items is a GROUPING
     function.
   */
   static constexpr uint8 PROP_GROUPING_FUNC = 0x20;
+
   uint8 m_accum_properties;
 
  public:
@@ -5873,9 +5896,6 @@ class Item_ref : public Item_ident {
   bool pusheddown_depended_from{false};
 
  private:
-  /// True if referenced item has been unlinked, used during item tree removal
-  bool m_unlinked{false};
-
   Field *result_field{nullptr}; /* Save result here */
 
  protected:
@@ -5961,16 +5981,16 @@ class Item_ref : public Item_ident {
     const table_map map = ref_item()->used_tables();
     if (map != 0) return map;
     // rollup constant: ensure it is non-constant by returning RAND_TABLE_BIT
-    if (has_rollup_expr()) return RAND_TABLE_BIT;
+    if (has_grouping_set_dep()) return RAND_TABLE_BIT;
     return 0;
   }
   void update_used_tables() override {
     if (depended_from == nullptr) ref_item()->update_used_tables();
     /*
-      Reset all flags except rollup, since we do not mark the rollup expression
-      itself.
+      Reset all flags except GROUP BY modifier, since we do not mark the rollup
+      expression itself.
     */
-    m_accum_properties &= PROP_ROLLUP_EXPR;
+    m_accum_properties &= PROP_HAS_GROUPING_SET_DEP;
     add_accum_properties(ref_item());
   }
 
@@ -6511,7 +6531,7 @@ class Cached_item {
              return value should be ignored.
   */
   virtual bool cmp() = 0;
-  Item *get_item() { return item; }
+  Item *get_item() const { return item; }
   Item **get_item_ptr() { return &item; }
 };
 

@@ -25,6 +25,8 @@
 #include <math.h>
 #include <stdio.h>
 #include <algorithm>
+#include <bit>
+#include <iterator>
 
 #include "mem_root_deque.h"
 #include "my_base.h"
@@ -53,6 +55,7 @@
 #include "template_utils.h"
 
 using std::min;
+using std::popcount;
 using std::string;
 
 double EstimateCostForRefAccess(THD *thd, TABLE *table, unsigned key_idx,
@@ -119,7 +122,7 @@ void EstimateSortCost(AccessPath *path) {
       sort_items.push_back(*order->item);
     }
 
-    const double aggregate_rows = EstimateAggregateRows(
+    const double aggregate_rows = EstimateDistinctRows(
         num_input_rows, {sort_items.cbegin(), sort_items.size()}, nullptr);
 
     path->set_num_output_rows(std::min(num_output_rows, aggregate_rows));
@@ -127,10 +130,11 @@ void EstimateSortCost(AccessPath *path) {
     path->set_num_output_rows(num_output_rows);
   }
 
-  path->cost = path->init_cost = child->cost + sort_cost;
-  path->init_once_cost = 0.0;
+  path->set_cost(child->cost() + sort_cost);
+  path->set_init_cost(path->cost());
+  path->set_init_once_cost(0.0);
   path->num_output_rows_before_filter = path->num_output_rows();
-  path->cost_before_filter = path->cost;
+  path->set_cost_before_filter(path->cost());
 }
 
 void AddCost(THD *thd, const ContainedSubquery &subquery, double num_rows,
@@ -152,21 +156,21 @@ void AddCost(THD *thd, const ContainedSubquery &subquery, double num_rows,
           tmp_table_type, /*write_rows=*/0,
           /*read_rows=*/num_rows);
       cost->cost_to_materialize +=
-          subquery.path->cost +
+          subquery.path->cost() +
           kMaterializeOneRowCost * subquery.path->num_output_rows();
 
-      cost->cost_if_not_materialized += num_rows * subquery.path->cost;
+      cost->cost_if_not_materialized += num_rows * subquery.path->cost();
     } break;
 
     case ContainedSubquery::Strategy::kNonMaterializable:
-      cost->cost_if_not_materialized += num_rows * subquery.path->cost;
-      cost->cost_if_materialized += num_rows * subquery.path->cost;
+      cost->cost_if_not_materialized += num_rows * subquery.path->cost();
+      cost->cost_if_materialized += num_rows * subquery.path->cost();
       break;
 
     case ContainedSubquery::Strategy::kIndependentSingleRow:
-      cost->cost_if_materialized += subquery.path->cost;
-      cost->cost_if_not_materialized += subquery.path->cost;
-      cost->init_cost_if_not_materialized += subquery.path->cost;
+      cost->cost_if_materialized += subquery.path->cost();
+      cost->cost_if_not_materialized += subquery.path->cost();
+      cost->init_cost_if_not_materialized += subquery.path->cost();
       break;
 
     default:
@@ -216,11 +220,11 @@ void EstimateMaterializeCost(THD *thd, AccessPath *path) {
       // For implicit grouping operand.subquery_path->num_output_rows() may be
       // set (to 1.0) even if operand.subquery_path->cost is undefined (cf.
       // Bug#35240913).
-      if (operand.subquery_path->cost > 0.0) {
-        subquery_cost += operand.subquery_path->cost;
+      if (operand.subquery_path->cost() > 0.0) {
+        subquery_cost += operand.subquery_path->cost();
         if (operand.join != nullptr &&
             operand.join->query_block->is_cacheable()) {
-          cost_for_cacheable += operand.subquery_path->cost;
+          cost_for_cacheable += operand.subquery_path->cost();
         }
       }
     }
@@ -228,17 +232,17 @@ void EstimateMaterializeCost(THD *thd, AccessPath *path) {
   }
 
   if (table_path->type == AccessPath::TABLE_SCAN) {
-    path->cost = 0.0;
-    path->init_cost = 0.0;
-    path->init_once_cost = 0.0;
+    path->set_cost(0.0);
+    path->set_init_cost(0.0);
+    path->set_init_once_cost(0.0);
     table_path->set_num_output_rows(path->num_output_rows());
-    table_path->init_cost = subquery_cost;
-    table_path->init_once_cost = cost_for_cacheable;
+    table_path->set_init_cost(subquery_cost);
+    table_path->set_init_once_cost(cost_for_cacheable);
 
     if (Overlaps(test_flags, TEST_NO_TEMP_TABLES)) {
       // Unit tests don't load any temporary table engines,
       // so just make up a number.
-      table_path->cost = subquery_cost + path->num_output_rows() * 0.1;
+      table_path->set_cost(subquery_cost + path->num_output_rows() * 0.1);
     } else {
       TABLE dummy_table;
       TABLE *temp_table = table_path->table_scan().table;
@@ -257,23 +261,25 @@ void EstimateMaterializeCost(THD *thd, AccessPath *path) {
       // TempTable.
       temp_table->file->stats.records =
           min(path->num_output_rows(), LLONG_MAX_DOUBLE);
-      table_path->cost =
-          subquery_cost + temp_table->file->table_scan_cost().total_cost();
+      table_path->set_cost(subquery_cost +
+                           temp_table->file->table_scan_cost().total_cost());
     }
   } else {
     // Use the costs of the subquery.
-    path->init_cost = subquery_cost;
-    path->init_once_cost = cost_for_cacheable;
-    path->cost = subquery_cost;
+    path->set_init_cost(subquery_cost);
+    path->set_init_once_cost(cost_for_cacheable);
+    path->set_cost(subquery_cost);
   }
 
-  path->init_cost += std::max(table_path->init_cost, 0.0) +
-                     kMaterializeOneRowCost * path->num_output_rows();
+  path->set_init_cost(path->init_cost() +
+                      std::max(table_path->init_cost(), 0.0) +
+                      kMaterializeOneRowCost * path->num_output_rows());
 
-  path->init_once_cost += std::max(table_path->init_once_cost, 0.0);
+  path->set_init_once_cost(path->init_once_cost() +
+                           std::max(table_path->init_once_cost(), 0.0));
 
-  path->cost += std::max(table_path->cost, 0.0) +
-                kMaterializeOneRowCost * path->num_output_rows();
+  path->set_cost(path->cost() + std::max(table_path->cost(), 0.0) +
+                 kMaterializeOneRowCost * path->num_output_rows());
 }
 
 namespace {
@@ -374,7 +380,9 @@ AggregateRowEstimator::AggregateRowEstimator(TermArray terms, string *trace)
      - One or more of 'terms' form a prefix of the key.
      - Records per key estimates are available for some prefix of the key.
   */
-  for (const Item *aggregate_term : terms) {
+  for (const Item *term : terms) {
+    const Item *aggregate_term = term->real_item();
+
     if (aggregate_term->type() == Item::FIELD_ITEM) {
       // aggregate_term is a field, so it may be the first field of an index.
       const Field *const field =
@@ -504,14 +512,32 @@ string AggregateRowEstimator::Prefix::Print() const {
   return result;
 }
 
-/**
- Estimate row count for an aggregate operation (except for any rollup rows).
- We use the following data to make a row estimate, in that priority:
+TermArray GetAggregationTerms(const JOIN &join) {
+  auto terms = Bounds_checked_array<const Item *>::Alloc(
+      join.thd->mem_root, join.group_fields.size());
 
- 1. (Non-hash) indexes where the aggregation terms form some prefix of the
+  // JOIN::group_fields contains the grouping expressions in reverse order.
+  // While the order does not matter for regular GROUP BY, it may affect the
+  // number of output rows for ROLLUP. Reverse the order again so that the terms
+  // have the same order as in the query text.
+  transform(join.group_fields.cbegin(), join.group_fields.cend(),
+            std::make_reverse_iterator(terms.end()),
+            [](const Cached_item &cached) {
+              return unwrap_rollup_group(cached.get_item());
+            });
+
+  return {terms.data(), terms.size()};
+}
+
+/**
+ Estimate the number of distinct tuples in the projection defined by
+ 'terms'.  We use the following data to make a row estimate, in that
+ priority:
+
+ 1. (Non-hash) indexes where the terms form some prefix of the
   index key. The handler can give good estimates for these.
 
- 2. Histograms for aggregation terms that are fields. The histograms
+ 2. Histograms for terms that are fields. The histograms
  give an estimate of the number of unique values.
 
  3. The table size (in rows) for terms that are fields without histograms.
@@ -542,21 +568,22 @@ string AggregateRowEstimator::Prefix::Print() const {
  combined estimate that falls between the two extremes of
  functional dependence and no correlation.
 
-@param terms The aggregation terms.
+@param terms The terms for which we estimate the number of distinct
+             combinations.
 @param child_rows The row estimate for the input path.
 @param trace Append optimizer trace text to this if non-null.
 @returns The row estimate for the aggregate operation.
 */
-double EstimateAggregateNoRollupRows(TermArray terms, double child_rows,
-                                     string *trace) {
+double EstimateDistinctRowsFromStatistics(TermArray terms, double child_rows,
+                                          string *trace) {
   // Estimated number of output rows.
   double output_rows = 1.0;
-  // No of individual estimates (for disjoint subsets of the aggregation terms).
+  // No of individual estimates (for disjoint subsets of the terms).
   size_t estimate_count = 0;
   // The largest individual estimate.
   double top_estimate = 1.0;
 
-  // Make row estimates for sets of aggregation terms that form prefixes
+  // Make row estimates for sets of terms that form prefixes
   // of (non-hash) indexes.
   AggregateRowEstimator index_estimator(terms, trace);
 
@@ -573,7 +600,7 @@ double EstimateAggregateNoRollupRows(TermArray terms, double child_rows,
   size_t remaining_term_cnt =
       terms.size() - PopulationCount(index_estimator.GetConsumedTerms());
 
-  // Loop over the remaining aggregation terms, i.e. those that were not part of
+  // Loop over the remaining terms, i.e. those that were not part of
   // a key prefix. Make row estimates for those that are fields.
   for (TermArray::const_iterator term = terms.cbegin(); term < terms.cend();
        term++) {
@@ -601,8 +628,8 @@ double EstimateAggregateNoRollupRows(TermArray terms, double child_rows,
         distinct_values = histogram->get_num_distinct_values();
 
         if (histogram->get_null_values_fraction() > 0.0) {
-          // If there are NULL values, those will form a separate row in the
-          // aggregate.
+          // If there are NULL values, those will also form distinct
+          // combinations of terms.
           ++distinct_values;
         }
 
@@ -747,7 +774,8 @@ double EstimateRollupRowsAdvanced(double aggregate_rows, TermArray terms,
       *trace += StringPrintf(
           "\nEstimating row count for ROLLUP on %zu terms.\n", terms.size());
     }
-    rollup_rows += EstimateAggregateNoRollupRows(terms, aggregate_rows, trace);
+    rollup_rows +=
+        EstimateDistinctRowsFromStatistics(terms, aggregate_rows, trace);
   }
   return rollup_rows;
 }
@@ -764,58 +792,36 @@ double EstimateRollupRowsAdvanced(double aggregate_rows, TermArray terms,
 double EstimateAggregateRows(const AccessPath *child,
                              const Query_block *query_block, bool rollup,
                              string *trace) {
-  const double child_rows = child->num_output_rows();
-  // 'path' may represent 'GROUP BY' or (if not using Hypergraph) 'DISTINCT'. In
-  // the latter case, we fetch the aggregation terms from
-  // query_block->join->group_fields.
-  const bool distinct = query_block->group_list.first == nullptr;
-  const size_t term_count = distinct ? query_block->join->group_fields.size()
-                                     : query_block->group_list.size();
+  if (query_block->is_implicitly_grouped()) {
+    // For implicit grouping there will be 1 output row.
+    return 1.0;
+  }
 
-  if (trace != nullptr && !query_block->is_implicitly_grouped()) {
-    *trace += StringPrintf(
-        "\nEstimating row count for aggregation on %zu terms.\n", term_count);
+  const double child_rows = child->num_output_rows();
+  if (child_rows < 1.0) {
+    // No rows in the input gives no groups.
+    return child_rows;
   }
 
   // The aggregation terms.
-  Mem_root_array<const Item *> terms(current_thd->mem_root);
-  double output_rows;
-
-  if (query_block->is_implicitly_grouped()) {
-    // For implicit grouping there will be 1 output row.
-    output_rows = 1.0;
-
-  } else if (child_rows < 1.0) {
-    output_rows = child_rows;
-
-  } else {
-    if (distinct) {
-      for (Cached_item &cached : query_block->join->group_fields) {
-        terms.push_back(cached.get_item());
-      }
-    } else {
-      for (ORDER *group = query_block->group_list.first; group;
-           group = group->next) {
-        terms.push_back(unwrap_rollup_group(*group->item));
-      }
-    }
-
-    output_rows = ::EstimateAggregateRows(
-        child_rows, TermArray(terms.data(), terms.size()), trace);
+  TermArray terms = GetAggregationTerms(*query_block->join);
+  if (trace != nullptr) {
+    *trace += StringPrintf(
+        "\nEstimating row count for aggregation on %zu terms.\n", terms.size());
   }
+
+  double output_rows = EstimateDistinctRows(child_rows, terms, trace);
 
   if (rollup) {
     // Do a simple and cheap calculation for small result sets.
     constexpr double simple_rollup_limit = 50.0;
 
     output_rows += SmoothTransition(
-        [&](double aggregate_rows) {
+        [terms](double aggregate_rows) {
           return EstimateRollupRowsPrimitively(aggregate_rows, terms.size());
         },
-        [&](double aggregate_rows) {
-          assert(terms.size() == term_count);
-          return EstimateRollupRowsAdvanced(
-              aggregate_rows, TermArray(terms.data(), terms.size()), trace);
+        [terms, trace](double aggregate_rows) {
+          return EstimateRollupRowsAdvanced(aggregate_rows, terms, trace);
         },
         simple_rollup_limit, simple_rollup_limit * 1.1, output_rows);
   }
@@ -825,23 +831,33 @@ double EstimateAggregateRows(const AccessPath *child,
 
 }  // Anonymous namespace.
 
-double EstimateAggregateRows(double child_rows, TermArray aggregate_terms,
-                             string *trace) {
+double EstimateDistinctRows(double child_rows, TermArray terms, string *trace) {
+  if (terms.empty()) {
+    // DISTINCT/GROUP BY on a constant gives at most one row.
+    return min(1.0, child_rows);
+  }
   if (child_rows < 1.0) {
     return child_rows;
-  } else {
-    // Do a simple but fast calculation of the row estimate if child_rows is
-    // less than this.
-    constexpr double simple_limit = 10.0;
-
-    return SmoothTransition(
-        [&](double input_rows) { return std::sqrt(input_rows); },
-        [&](double input_rows) {
-          return EstimateAggregateNoRollupRows(aggregate_terms, input_rows,
-                                               trace);
-        },
-        simple_limit, simple_limit * 1.1, child_rows);
   }
+
+  // Do a simple but fast calculation of the row estimate if child_rows is
+  // less than this.
+  constexpr double simple_limit = 10.0;
+
+  // EstimateDistinctRows() must be a continuous function of
+  // child_rows.  If two alternative access paths have slightly
+  // different child_rows values (e.g. 9.9999 and 10.0001) due to
+  // rounding errors, EstimateDistinctRows() must return estimates
+  // that are very close to each other. If not, cost calculation and
+  // comparison for these two paths would be distorted. Therefore, we
+  // cannot have a discrete jump at child_rows==10.0 (or any other
+  // value). See also bug #34795264.
+  return SmoothTransition(
+      [&](double input_rows) { return std::sqrt(input_rows); },
+      [&](double input_rows) {
+        return EstimateDistinctRowsFromStatistics(terms, input_rows, trace);
+      },
+      simple_limit, simple_limit * 1.1, child_rows);
 }
 
 void EstimateAggregateCost(AccessPath *path, const Query_block *query_block,
@@ -849,17 +865,17 @@ void EstimateAggregateCost(AccessPath *path, const Query_block *query_block,
   const AccessPath *child = path->aggregate().child;
   if (path->num_output_rows() == kUnknownRowCount) {
     path->set_num_output_rows(EstimateAggregateRows(
-        child, query_block, path->aggregate().rollup, trace));
+        child, query_block, path->aggregate().olap == ROLLUP_TYPE, trace));
   }
 
-  path->init_cost = child->init_cost;
-  path->init_once_cost = child->init_once_cost;
+  path->set_init_cost(child->init_cost());
+  path->set_init_once_cost(child->init_once_cost());
 
-  path->cost = child->cost +
-               kAggregateOneRowCost * std::max(0.0, child->num_output_rows());
+  path->set_cost(child->cost() + kAggregateOneRowCost *
+                                     std::max(0.0, child->num_output_rows()));
 
   path->num_output_rows_before_filter = path->num_output_rows();
-  path->cost_before_filter = path->cost;
+  path->set_cost_before_filter(path->cost());
   path->ordering_state = child->ordering_state;
 }
 
@@ -868,16 +884,16 @@ void EstimateDeleteRowsCost(AccessPath *path) {
   const AccessPath *child = param.child;
 
   path->set_num_output_rows(child->num_output_rows());
-  path->init_once_cost = child->init_once_cost;
-  path->init_cost = child->init_cost;
+  path->set_init_once_cost(child->init_once_cost());
+  path->set_init_cost(child->init_cost());
 
   // Include the cost of building the temporary tables for the non-immediate
   // (buffered) deletes in the cost estimate.
   const table_map buffered_tables =
       param.tables_to_delete_from & ~param.immediate_tables;
-  path->cost = child->cost + kMaterializeOneRowCost *
-                                 PopulationCount(buffered_tables) *
-                                 child->num_output_rows();
+  path->set_cost(child->cost() + kMaterializeOneRowCost *
+                                     popcount(buffered_tables) *
+                                     child->num_output_rows());
 }
 
 void EstimateUpdateRowsCost(AccessPath *path) {
@@ -885,26 +901,26 @@ void EstimateUpdateRowsCost(AccessPath *path) {
   const AccessPath *child = param.child;
 
   path->set_num_output_rows(child->num_output_rows());
-  path->init_once_cost = child->init_once_cost;
-  path->init_cost = child->init_cost;
+  path->set_init_once_cost(child->init_once_cost());
+  path->set_init_cost(child->init_cost());
 
   // Include the cost of building the temporary tables for the non-immediate
   // (buffered) updates in the cost estimate.
   const table_map buffered_tables =
       param.tables_to_update & ~param.immediate_tables;
-  path->cost = child->cost + kMaterializeOneRowCost *
-                                 PopulationCount(buffered_tables) *
-                                 child->num_output_rows();
+  path->set_cost(child->cost() + kMaterializeOneRowCost *
+                                     popcount(buffered_tables) *
+                                     child->num_output_rows());
 }
 
 void EstimateStreamCost(AccessPath *path) {
   AccessPath &child = *path->stream().child;
   path->set_num_output_rows(child.num_output_rows());
-  path->cost = child.cost;
-  path->init_cost = child.init_cost;
-  path->init_once_cost = 0.0;  // Never recoverable across query blocks.
+  path->set_cost(child.cost());
+  path->set_init_cost(child.init_cost());
+  path->set_init_once_cost(0.0);  // Never recoverable across query blocks.
   path->num_output_rows_before_filter = path->num_output_rows();
-  path->cost_before_filter = path->cost;
+  path->set_cost_before_filter(path->cost());
   path->ordering_state = child.ordering_state;
   path->safe_for_rowid = child.safe_for_rowid;
   // Streaming paths are usually added after all filters have been applied, so
@@ -927,20 +943,71 @@ void EstimateLimitOffsetCost(AccessPath *path) {
     path->set_num_output_rows(-1.0);
   }
 
-  if (child->init_cost < 0.0) {
+  if (child->init_cost() < 0.0) {
     // We have nothing better, since we don't know how much is startup cost.
-    path->cost = child->cost;
-    path->init_cost = -1.0;
+    path->set_cost(child->cost());
+    path->set_init_cost(kUnknownCost);
   } else if (child->num_output_rows() < 1e-6) {
-    path->cost = path->init_cost = child->init_cost;
+    path->set_cost(child->init_cost());
+    path->set_init_cost(child->init_cost());
   } else {
     const double fraction_start_read =
         std::min(1.0, double(lim.offset) / child->num_output_rows());
     const double fraction_full_read =
         std::min(1.0, double(lim.limit) / child->num_output_rows());
-    path->cost = child->init_cost +
-                 fraction_full_read * (child->cost - child->init_cost);
-    path->init_cost = child->init_cost +
-                      fraction_start_read * (child->cost - child->init_cost);
+    path->set_cost(child->init_cost() +
+                   fraction_full_read * (child->cost() - child->init_cost()));
+    path->set_init_cost(child->init_cost() +
+                        fraction_start_read *
+                            (child->cost() - child->init_cost()));
   }
+}
+
+void EstimateWindowCost(AccessPath *path) {
+  auto &win = path->window();
+  AccessPath *child = win.child;
+
+  path->set_num_output_rows(child->num_output_rows());
+  path->set_init_cost(child->init_cost());
+  path->set_init_once_cost(child->init_once_cost());
+  path->set_cost(child->cost() + kWindowOneRowCost * child->num_output_rows());
+}
+
+double EstimateSemijoinFanOut(double right_rows, const JoinPredicate &edge) {
+  // The fields from edge.expr->right that appear in the join condition.
+  Prealloced_array<const Item *, 6> condition_fields(PSI_NOT_INSTRUMENTED);
+
+  // For any Item_field in the subtree of 'item', add it to condition_fields
+  // if it belongs to any table in edge.expr->right.
+  const auto collect_field = [&](const Item *item) {
+    if (item->type() == Item::FIELD_ITEM &&
+        (item->used_tables() & edge.expr->right->tables_in_subtree) != 0) {
+      const Item_field *const field = down_cast<const Item_field *>(item);
+
+      // Make sure that we do not add the same field twice.
+      if (std::none_of(
+              condition_fields.cbegin(), condition_fields.cend(),
+              [&](const Item *other_field) {
+                return down_cast<const Item_field *>(other_field)->field ==
+                       field->field;
+              })) {
+        condition_fields.push_back(field);
+      }
+    }
+    return false;
+  };
+
+  for (const Item_eq_base *eq : edge.expr->equijoin_conditions) {
+    WalkItem(eq, enum_walk::PREFIX, collect_field);
+  }
+
+  // Non-equijoin conditions.
+  for (const Item *item : edge.expr->join_conditions) {
+    WalkItem(item, enum_walk::PREFIX, collect_field);
+  }
+
+  const double distinct_rows = EstimateDistinctRows(
+      right_rows, {condition_fields.begin(), condition_fields.size()});
+
+  return std::min(1.0, distinct_rows * edge.selectivity);
 }

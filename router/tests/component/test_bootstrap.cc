@@ -121,7 +121,7 @@ TEST_F(RouterBootstrapTest, bootstrap_and_run_from_symlinked_dir) {
   launch_mysql_server_mock(runtime_json_stmts, server_port, EXIT_SUCCESS, false,
                            http_port);
   set_mock_metadata(http_port, "cluster-specific-id",
-                    {GRNode{server_port, "uuid-1"}}, 0,
+                    {GRNode{server_port, "uuid-1", "ONLINE", "PRIMARY"}}, 0,
                     {ClusterNode{server_port, "uuid-1", server_x_port}});
 
   SCOPED_TRACE("// launch router with bootstrapped config");
@@ -184,133 +184,163 @@ TEST_P(RouterBootstrapOkTest, BootstrapOk) {
   ASSERT_NO_FATAL_FAILURE(bootstrap_failover(config, param.cluster_type, {},
                                              EXIT_SUCCESS, expected_output));
 
-  // let's check if the actual config file output is what we expect:
-
-  const char *expected_config_default_part = "unknown_config_option=error";
-
-  const char *expected_config_gr_part1 =
-      R"([metadata_cache:bootstrap]
-cluster_type=gr
-router_id=1)";
-  // we skip user as it is random and would require regex matching which would
-  // require tons of escaping
-  // user=mysql_router1_daxi69tk9btt
-  const char *expected_config_gr_part2 =
-      R"(metadata_cluster=mycluster
-ttl=0.5
-auth_cache_ttl=-1
-auth_cache_refresh_interval=2
-use_gr_notifications=0
-
-[routing:bootstrap_rw]
-bind_address=0.0.0.0
-bind_port=6446
-destinations=metadata-cache://mycluster/?role=PRIMARY
-routing_strategy=first-available
-protocol=classic
-
-[routing:bootstrap_ro]
-bind_address=0.0.0.0
-bind_port=6447
-destinations=metadata-cache://mycluster/?role=SECONDARY
-routing_strategy=round-robin-with-fallback
-protocol=classic
-
-[routing:bootstrap_rw_split]
-bind_address=0.0.0.0
-bind_port=6450
-destinations=metadata-cache://mycluster/?role=PRIMARY_AND_SECONDARY
-routing_strategy=round-robin
-protocol=classic
-connection_sharing=1
-client_ssl_mode=PREFERRED
-server_ssl_mode=PREFERRED
-access_mode=auto
-
-[routing:bootstrap_x_rw]
-bind_address=0.0.0.0
-bind_port=6448
-destinations=metadata-cache://mycluster/?role=PRIMARY
-routing_strategy=first-available
-protocol=x
-
-[routing:bootstrap_x_ro]
-bind_address=0.0.0.0
-bind_port=6449
-destinations=metadata-cache://mycluster/?role=SECONDARY
-routing_strategy=round-robin-with-fallback
-protocol=x)";
-
-  const char *expected_config_ar_part1 =
-      R"([metadata_cache:bootstrap]
-cluster_type=rs
-router_id=1)";
-  // we skip user as it is random and would require regex matching which would
-  // require tons of escaping
-  // user=mysql_router1_ritc56yrjz42
-  const char *expected_config_ar_part2 =
-      R"(metadata_cluster=mycluster
-ttl=0.5
-auth_cache_ttl=-1
-auth_cache_refresh_interval=2
-
-[routing:bootstrap_rw]
-bind_address=0.0.0.0
-bind_port=6446
-destinations=metadata-cache://mycluster/?role=PRIMARY
-routing_strategy=first-available
-protocol=classic
-
-[routing:bootstrap_ro]
-bind_address=0.0.0.0
-bind_port=6447
-destinations=metadata-cache://mycluster/?role=SECONDARY
-routing_strategy=round-robin-with-fallback
-protocol=classic
-
-[routing:bootstrap_rw_split]
-bind_address=0.0.0.0
-bind_port=6450
-destinations=metadata-cache://mycluster/?role=PRIMARY_AND_SECONDARY
-routing_strategy=round-robin
-protocol=classic
-connection_sharing=1
-client_ssl_mode=PREFERRED
-server_ssl_mode=PREFERRED
-access_mode=auto
-
-[routing:bootstrap_x_rw]
-bind_address=0.0.0.0
-bind_port=6448
-destinations=metadata-cache://mycluster/?role=PRIMARY
-routing_strategy=first-available
-protocol=x
-
-[routing:bootstrap_x_ro]
-bind_address=0.0.0.0
-bind_port=6449
-destinations=metadata-cache://mycluster/?role=SECONDARY
-routing_strategy=round-robin-with-fallback
-protocol=x)";
-
-  const std::string config_file_expected1 =
-      GetParam().cluster_type == ClusterType::RS_V2 ? expected_config_ar_part1
-                                                    : expected_config_gr_part1;
-
-  const std::string config_file_expected2 =
-      GetParam().cluster_type == ClusterType::RS_V2 ? expected_config_ar_part2
-                                                    : expected_config_gr_part2;
-
   // 'config_file' is set as side-effect of bootstrap_failover()
   ASSERT_THAT(config_file, ::testing::Not(::testing::IsEmpty()));
 
   const std::string config_file_str = get_file_output(config_file);
 
+  std::map<std::string, std::vector<std::string>> sections;
+
+  {
+    std::istringstream iss(config_file_str);
+    std::string section_name;
+    std::vector<std::string> kvs;
+    for (std::string line; std::getline(iss, line);) {
+      if (line.empty()) continue;
+      if (line.front() == '#') continue;
+
+      if (line.front() == '[' && line.back() == ']') {
+        if (!section_name.empty()) {
+          sections[section_name] = kvs;
+          kvs.clear();
+        }
+        section_name = line.substr(1, line.size() - 2);
+      } else {
+        ASSERT_THAT(line, ::testing::HasSubstr("="));
+
+        kvs.emplace_back(line);
+      }
+    }
+
+    if (!section_name.empty()) {
+      sections[section_name] = kvs;
+      kvs.clear();
+    }
+  }
+
+  using testing::ElementsAre;
+  using testing::Eq;
+  using testing::Key;
+  using testing::StartsWith;
+
+  ASSERT_THAT(sections,
+              ElementsAre(                            //
+                  Key("DEFAULT"),                     //
+                  Key("logger"),                      //
+                  Key("metadata_cache:bootstrap"),    //
+                  Key("routing:bootstrap_ro"),        //
+                  Key("routing:bootstrap_rw"),        //
+                  Key("routing:bootstrap_rw_split"),  //
+                  Key("routing:bootstrap_x_ro"),      //
+                  Key("routing:bootstrap_x_rw")       //
+                  ));
+
+  EXPECT_THAT(sections["DEFAULT"],
+              ElementsAre(                               //
+                  StartsWith("logging_folder="),         //
+                  StartsWith("runtime_folder="),         //
+                  StartsWith("data_folder="),            //
+                  StartsWith("keyring_path="),           //
+                  StartsWith("master_key_path="),        //
+                  Eq("connect_timeout=1"),               //
+                  Eq("read_timeout=30"),                 //
+                  StartsWith("dynamic_state="),          //
+                  StartsWith("client_ssl_cert="),        //
+                  StartsWith("client_ssl_key="),         //
+                  Eq("client_ssl_mode=PREFERRED"),       //
+                  Eq("server_ssl_mode=PREFERRED"),       //
+                  Eq("server_ssl_verify=DISABLED"),      //
+                  Eq("unknown_config_option=error"),     //
+                  Eq("max_idle_server_connections=64"),  //
+                  Eq("router_require_enforce=1")         //
+                  ));
+
+  if (GetParam().cluster_type == ClusterType::RS_V2) {
+    EXPECT_THAT(sections["metadata_cache:bootstrap"],
+                ElementsAre(                             //
+                    Eq("cluster_type=rs"),               //
+                    Eq("router_id=1"),                   //
+                    StartsWith("user="),                 //
+                    Eq("metadata_cluster=mycluster"),    //
+                    Eq("ttl=0.5"),                       //
+                    Eq("auth_cache_ttl=-1"),             //
+                    Eq("auth_cache_refresh_interval=2")  //
+                    ));
+  } else {
+    EXPECT_THAT(sections["metadata_cache:bootstrap"],
+                ElementsAre(                              //
+                    Eq("cluster_type=gr"),                //
+                    Eq("router_id=1"),                    //
+                    StartsWith("user="),                  //
+                    Eq("metadata_cluster=mycluster"),     //
+                    Eq("ttl=0.5"),                        //
+                    Eq("auth_cache_ttl=-1"),              //
+                    Eq("auth_cache_refresh_interval=2"),  //
+                    Eq("use_gr_notifications=0")          //
+                    ));
+  }
+
+  EXPECT_THAT(sections["routing:bootstrap_rw"],
+              ElementsAre(                     //
+                  Eq("bind_address=0.0.0.0"),  //
+                  Eq("bind_port=6446"),        //
+                  Eq("destinations=metadata-cache://mycluster/"
+                     "?role=PRIMARY"),                     //
+                  Eq("routing_strategy=first-available"),  //
+                  Eq("protocol=classic")                   //
+                  ));
+
+  EXPECT_THAT(sections["routing:bootstrap_ro"],
+              ElementsAre(                     //
+                  Eq("bind_address=0.0.0.0"),  //
+                  Eq("bind_port=6447"),        //
+                  Eq("destinations=metadata-cache://mycluster/"
+                     "?role=SECONDARY"),                             //
+                  Eq("routing_strategy=round-robin-with-fallback"),  //
+                  Eq("protocol=classic")                             //
+                  ));
+
+  EXPECT_THAT(sections["routing:bootstrap_rw_split"],
+              ElementsAre(                     //
+                  Eq("bind_address=0.0.0.0"),  //
+                  Eq("bind_port=6450"),        //
+                  Eq("destinations=metadata-cache://mycluster/"
+                     "?role=PRIMARY_AND_SECONDARY"),   //
+                  Eq("routing_strategy=round-robin"),  //
+                  Eq("protocol=classic"),              //
+                  Eq("connection_sharing=1"),          //
+                  Eq("client_ssl_mode=PREFERRED"),     //
+                  Eq("server_ssl_mode=PREFERRED"),     //
+                  Eq("access_mode=auto")               //
+                  ));
+
   EXPECT_THAT(
-      config_file_str,
-      ::testing::AllOf(::testing::HasSubstr(expected_config_default_part),
-                       ::testing::HasSubstr(config_file_expected1),
-                       ::testing::HasSubstr(config_file_expected2)));
+      sections["routing:bootstrap_x_rw"],
+      ElementsAre(                                                      //
+          Eq("bind_address=0.0.0.0"),                                   //
+          Eq("bind_port=6448"),                                         //
+          Eq("destinations=metadata-cache://mycluster/?role=PRIMARY"),  //
+          Eq("routing_strategy=first-available"),                       //
+          Eq("protocol=x"),                                             //
+          Eq("router_require_enforce=0"),                               //
+          Eq("client_ssl_ca="),                                         //
+          Eq("server_ssl_key="),                                        //
+          Eq("server_ssl_cert=")                                        //
+          ));
+
+  EXPECT_THAT(
+      sections["routing:bootstrap_x_ro"],
+      ElementsAre(                                                        //
+          Eq("bind_address=0.0.0.0"),                                     //
+          Eq("bind_port=6449"),                                           //
+          Eq("destinations=metadata-cache://mycluster/?role=SECONDARY"),  //
+          Eq("routing_strategy=round-robin-with-fallback"),               //
+          Eq("protocol=x"),                                               //
+          Eq("router_require_enforce=0"),                                 //
+          Eq("client_ssl_ca="),                                           //
+          Eq("server_ssl_key="),                                          //
+          Eq("server_ssl_cert=")                                          //
+          ));
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -1687,8 +1717,9 @@ TEST_P(ConfUseGrNotificationParamTest, ConfUseGrNotificationParam) {
   auto &server_mock = launch_mysql_server_mock(json_stmts, server_port,
                                                EXIT_SUCCESS, false, http_port);
 
-  set_mock_metadata(http_port, "cluster-specific-id", {server_port}, 0,
-                    {server_port}, 0, 0, false, "127.0.0.1", "",
+  set_mock_metadata(http_port, "cluster-specific-id",
+                    classic_ports_to_gr_nodes({server_port}), 0, {server_port},
+                    0, false, "127.0.0.1", "",
                     GetParam().metadata_schema_version);
 
   const auto router_port_rw = port_pool_.get_next_available();
@@ -1738,7 +1769,7 @@ TEST_P(ConfUseGrNotificationParamTest, ConfUseGrNotificationParam) {
   launch_mysql_server_mock(runtime_json_stmts, server_port, EXIT_SUCCESS, false,
                            http_port);
   set_mock_metadata(http_port, "cluster-specific-id",
-                    {GRNode{server_port, "uuid-1"}}, 0,
+                    {GRNode{server_port, "uuid-1", "ONLINE", "PRIMARY"}}, 0,
                     {ClusterNode{server_port, "uuid-1", server_x_port}});
 
   // check that the Router accepts the config file
@@ -2042,7 +2073,7 @@ TEST_F(RouterBootstrapTest, BootstrapRouterDuplicateEntry) {
   launch_mysql_server_mock(json_stmts, bootstrap_server_port, EXIT_SUCCESS,
                            false, bootstrap_server_http_port);
   set_mock_metadata(bootstrap_server_http_port, "cluster-specific-id",
-                    {server_port}, 0, {server_port});
+                    classic_ports_to_gr_nodes({server_port}), 0, {server_port});
 
   // launch the router in bootstrap mode
   auto &router = launch_router_for_bootstrap(
@@ -2077,8 +2108,9 @@ TEST_F(RouterBootstrapTest, CheckAuthBackendWhenOldMetadata) {
   launch_mysql_server_mock(json_stmts, server_port, EXIT_SUCCESS, false,
                            http_port);
 
-  set_mock_metadata(http_port, "cluster-specific-id", {server_port}, 0,
-                    {server_port}, 0, 0, false, "127.0.0.1", "", {1, 0, 0});
+  set_mock_metadata(http_port, "cluster-specific-id",
+                    classic_ports_to_gr_nodes({server_port}), 0, {server_port},
+                    0, false, "127.0.0.1", "", {1, 0, 0});
 
   const auto base_listening_port = port_pool_.get_next_available();
   std::vector<std::string> bootsrtap_params{
@@ -2526,7 +2558,7 @@ TEST_F(RouterBootstrapTest, SSLOptions) {
                                                EXIT_SUCCESS, false, http_port);
 
   set_mock_metadata(http_port, "00000000-0000-0000-0000-0000000000g1",
-                    {server_port, server_port2}, 0,
+                    classic_ports_to_gr_nodes({server_port, server_port2}), 0,
                     {server_port, server_port2});
 
   const auto router_port_rw = port_pool_.get_next_available();
@@ -2584,7 +2616,7 @@ TEST_F(RouterBootstrapTest, SSLOptions) {
   launch_mysql_server_mock(runtime_json_stmts, server_port, EXIT_SUCCESS, false,
                            http_port);
   set_mock_metadata(http_port, "00000000-0000-0000-0000-0000000000g1",
-                    {server_port}, 0, {server_port});
+                    classic_ports_to_gr_nodes({server_port}), 0, {server_port});
 
   // check that the Router is running fine with this configuration file
   ASSERT_NO_FATAL_FAILURE(launch_router({"-c", conf_file}));
@@ -2607,8 +2639,10 @@ TEST_F(RouterComponentBootstrapTest, RouterReBootstrapClusterNameChange) {
   launch_mysql_server_mock(json_stmts, classic_port, EXIT_SUCCESS, false,
                            http_port);
 
-  set_mock_metadata(http_port, "gr-uuid", {classic_port}, 0, {classic_port}, 0,
-                    0, false, "127.0.0.1", "", {2, 2, 0}, kInitialClusterName);
+  set_mock_metadata(http_port, "gr-uuid",
+                    classic_ports_to_gr_nodes({classic_port}), 0,
+                    {classic_port}, 0, false, "127.0.0.1", "", {2, 2, 0},
+                    kInitialClusterName);
 
   // do the first bootstrap
   std::vector<std::string> cmdline_bs = {"--bootstrap=root:"s + kRootPassword +
@@ -2620,8 +2654,10 @@ TEST_F(RouterComponentBootstrapTest, RouterReBootstrapClusterNameChange) {
   check_exit_code(router_bs1, EXIT_SUCCESS);
 
   // change the cluster name
-  set_mock_metadata(http_port, "gr-uuid", {classic_port}, 0, {classic_port}, 0,
-                    0, false, "127.0.0.1", "", {2, 2, 0}, kChangedClusterName);
+  set_mock_metadata(http_port, "gr-uuid",
+                    classic_ports_to_gr_nodes({classic_port}), 0,
+                    {classic_port}, 0, false, "127.0.0.1", "", {2, 2, 0},
+                    kChangedClusterName);
 
   // do the second bootstrap using the same directory
   auto &router_bs2 = launch_router_for_bootstrap(cmdline_bs);
@@ -2630,11 +2666,11 @@ TEST_F(RouterComponentBootstrapTest, RouterReBootstrapClusterNameChange) {
 
 /**
  * @test
- *       verify that using --force-password-validation when bootstrapping works
- * ok
+ *       verify that using --force-password-validation is still supported for
+ * backward compatibility
  */
 TEST_F(RouterComponentBootstrapTest, ForcePasswordValidation) {
-  const std::string tracefile = "bootstrap_gr_unhashed_passwd.js";
+  const std::string tracefile = "bootstrap_gr.js";
 
   const auto classic_port = port_pool_.get_next_available();
   const auto http_port = port_pool_.get_next_available();
@@ -2642,7 +2678,9 @@ TEST_F(RouterComponentBootstrapTest, ForcePasswordValidation) {
   launch_mysql_server_mock(json_stmts, classic_port, EXIT_SUCCESS, false,
                            http_port);
 
-  set_mock_metadata(http_port, "gr-uuid", {classic_port}, 0, {classic_port});
+  set_mock_metadata(http_port, "gr-uuid",
+                    classic_ports_to_gr_nodes({classic_port}), 0,
+                    {classic_port});
 
   // do the first bootstrap
   std::vector<std::string> cmdline_bs = {
@@ -2665,7 +2703,8 @@ TEST_F(RouterComponentBootstrapTest, ShowCipherInvalidResult) {
   launch_mysql_server_mock(tracefile, mock_server_port, EXIT_SUCCESS, false,
                            mock_http_port);
 
-  set_mock_metadata(mock_http_port, "gr-uuid", {mock_server_port}, 0,
+  set_mock_metadata(mock_http_port, "gr-uuid",
+                    classic_ports_to_gr_nodes({mock_server_port}), 0,
                     {mock_server_port});
 
   std::vector<std::string> cmdline = {
@@ -2796,6 +2835,290 @@ INSTANTIATE_TEST_SUITE_P(
             {"--password-retries="},
             "Configuration error: --password-retries needs value between 1 and "
             "10000 inclusive, was ''"}));
+
+struct AuthPluginTestParam {
+  // what are the host/plugin pairs in the mysql.user table for the bootstrap
+  // user
+  std::vector<std::pair<std::string, std::string>> auth_host_plugins;
+
+  // what is the default authentication plugin on the server we bootstrap
+  // against
+  std::string default_auth_plugin;
+
+  // vector of strings expected on the console after the bootstrap
+  std::vector<std::string> expected_output_strings;
+
+  // vector of strings NOT expected on the console after the bootstrap
+  std::vector<std::string> unexpected_output_strings;
+
+  // describes the test scenario and expectations
+  std::string test_description;
+
+  // should the "select host, plugin.." query fail on the server
+  bool fail_host_plugin_query{false};
+
+  // should the "select @@default_authentication_plugin" query fail on the
+  // server
+  bool fail_default_auth_plugin_query{false};
+
+  // should the "alter user" query fail on the server
+  bool fail_alter_user_query{false};
+};
+
+class BootstrapChangeAuthPluginTest
+    : public RouterComponentBootstrapTest,
+      public ::testing::WithParamInterface<AuthPluginTestParam> {};
+
+/**
+ * @test
+ *       verify that the functionality that checks if the existing user account
+ * is not using depracated mysql_native_password and tries to upgrade it works
+ * correctly.
+ */
+TEST_P(BootstrapChangeAuthPluginTest, Spec) {
+  RecordProperty("Description", GetParam().test_description);
+
+  TempDirectory bootstrap_directory;
+  const auto server_port = port_pool_.get_next_available();
+  const auto http_port = port_pool_.get_next_available();
+  const std::string json_stmts =
+      get_data_dir().join("bootstrap_change_auth_plugin.js").str();
+
+  // launch mock server that is our metadata server for the bootstrap
+  launch_mysql_server_mock(json_stmts, server_port, EXIT_SUCCESS, false,
+                           http_port);
+
+  set_mock_metadata(http_port, "cluster-specific-id",
+                    classic_ports_to_gr_nodes({server_port}), 0, {server_port});
+
+  {
+    std::string server_globals =
+        MockServerRestClient(http_port).get_globals_as_json_string();
+    JsonDocument globals;
+    if (globals.Parse<0>(server_globals.c_str()).HasParseError()) {
+      FAIL() << "Failed parsing mock server globals";
+    }
+
+    JsonAllocator allocator;
+    JsonValue auth_host_plugins_json(rapidjson::kArrayType);
+
+    for (const auto &auth_host_plugin : GetParam().auth_host_plugins) {
+      JsonValue auth_host_plugin_json(rapidjson::kArrayType);
+
+      auth_host_plugin_json.PushBack(
+          JsonValue(auth_host_plugin.first.c_str(),
+                    auth_host_plugin.first.length(), allocator),
+          allocator);
+
+      auth_host_plugin_json.PushBack(
+          JsonValue(auth_host_plugin.second.c_str(),
+                    auth_host_plugin.second.length(), allocator),
+          allocator);
+
+      auth_host_plugins_json.PushBack(auth_host_plugin_json, allocator);
+    }
+
+    globals.AddMember("auth_host_plugins", auth_host_plugins_json, allocator);
+    globals.AddMember(
+        "default_auth_plugin",
+        JsonValue(GetParam().default_auth_plugin.c_str(),
+                  GetParam().default_auth_plugin.length(), allocator),
+        allocator);
+
+    globals.AddMember("fail_host_plugin_query",
+                      GetParam().fail_host_plugin_query, allocator);
+    globals.AddMember("fail_default_auth_plugin_query",
+                      GetParam().fail_default_auth_plugin_query, allocator);
+    globals.AddMember("fail_alter_user_query", GetParam().fail_alter_user_query,
+                      allocator);
+
+    server_globals = json_to_string(globals);
+    MockServerRestClient(http_port).set_globals(server_globals);
+  }
+
+  std::vector<std::string> bootsrtap_params{
+      "--bootstrap=127.0.0.1:" + std::to_string(server_port), "-d",
+      bootstrap_directory.name()};
+
+  // launch the router in bootstrap mode
+  auto &router = launch_router_for_bootstrap(bootsrtap_params, EXIT_SUCCESS);
+
+  check_exit_code(router, EXIT_SUCCESS);
+
+  const std::string router_console_output = router.get_full_output();
+  for (const auto &expected_output_string :
+       GetParam().expected_output_strings) {
+    EXPECT_TRUE(pattern_found(router_console_output, expected_output_string))
+        << router_console_output;
+  }
+
+  for (const auto &unexpected_output_string :
+       GetParam().unexpected_output_strings) {
+    EXPECT_FALSE(pattern_found(router_console_output, unexpected_output_string))
+        << router_console_output;
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Spec, BootstrapChangeAuthPluginTest,
+    ::testing::Values(
+        AuthPluginTestParam{
+            /* auth_host_plugins */
+            {{"localhost", "caching_sha2_password"}},
+            /* default_auth_plugin */
+            "caching_sha2_password",
+            /*expected_output_strings*/
+            {},
+            /*unexpected_output_strings*/
+            {"Successfully changed the authentication plugin for .*"},
+            /*test_description*/
+            "There is single existing account for our router user but is uses "
+            "caching_sha2_password. There is no need for any auth_plugin "
+            "change."},
+        AuthPluginTestParam{
+            /* auth_host_plugins */
+            {{"localhost", "caching_sha2_password"},
+             {"10.20.*.*", "caching_sha2_password"}},
+            /* default_auth_plugin */
+            "caching_sha2_password",
+            /*expected_output_strings*/
+            {},
+            /*unexpected_output_strings*/
+            {"Successfully changed the authentication plugin for .*"},
+            /*test_description*/
+            "There are 2 existing accounts for our router user but both use "
+            "caching_sha2_password. There is no need for any auth_plugin "
+            "change."},
+        AuthPluginTestParam{
+            /* auth_host_plugins */
+            {{"localhost", "mysql_native_password"}},
+            /* default_auth_plugin */
+            "caching_sha2_password",
+            /*expected_output_strings*/
+            {"Existing account '.*'@localhost is using authentication plugin "
+             "'mysql_native_password'. Changing the "
+             "authentication plugin to 'caching_sha2_password'",
+             "Successfully changed the authentication plugin for "
+             "'.*'@localhost from mysql_native_password to "
+             "caching_sha2_password"},
+            /*unexpected_output_strings*/
+            {},
+            /*test_description*/
+            "There is single existing account for our user that uses "
+            "mysql_native_password. The default auth_plugin on the server is "
+            "caching_sha2_password. We expect successful change of the "
+            "auth_plugin for our account"},
+        AuthPluginTestParam{
+            /* auth_host_plugins */
+            {{"%", "mysql_native_password"},
+             {"localhost", "mysql_native_password"}},
+            /* default_auth_plugin */
+            "caching_sha2_password",
+            /*expected_output_strings*/
+            {"Account '.*'@% is using depracated 'mysql_native_password' "
+             "authentication plugin. Change the authentication plugin using "
+             "'alter user' SQL statement.",
+             "Account '.*'@localhost is using depracated "
+             "'mysql_native_password' authentication plugin. Change the "
+             "authentication plugin using 'alter user' SQL statement."},
+            /*unexpected_output_strings*/
+            {"Successfully changed the authentication plugin for .*"},
+            /*test_description*/
+            "There is more than one host account for our user. Both use "
+            "mysql_native_password. Since there is more than one we do not "
+            "attempt to change the auth_plugin, only give a warning advising "
+            "the user to do so manually. We expect that warning twice, once "
+            "per each user@host combination."},
+        AuthPluginTestParam{
+            /* auth_host_plugins */
+            {{"%", "mysql_native_password"},
+             {"localhost", "caching_sha2_password"}},
+            /* default_auth_plugin */
+            "caching_sha2_password",
+            /*expected_output_strings*/
+            {"Account '.*'@% is using depracated 'mysql_native_password' "
+             "authentication plugin. Change the authentication plugin using "
+             "'alter user' SQL statement."},
+            /*unexpected_output_strings*/
+            {"Successfully changed the authentication plugin for .*",
+             "Account '.*'@localhost is using depracated "
+             "'mysql_native_password' authentication plugin. Change the "
+             "authentication plugin using 'alter user' SQL statement."},
+            /*test_description*/
+            "There are 2 host accounts for our user. Only one uses "
+            "mysql_native_password. Since there is more than one we do not "
+            "attempt to change the auth_plugin, only give a warning advising "
+            "the user to do so manually. We expect that warning only once, for "
+            "the account that uses mysql_native_password."},
+        AuthPluginTestParam{
+            /* auth_host_plugins */
+            {{"localhost", "mysql_native_password"}},
+            /* default_auth_plugin */
+            "mysql_native_password",
+            /*expected_output_strings*/
+            {"Failed changing the authentication plugin for account "
+             "'.*'@'localhost':  mysql_native_password which is deprecated is "
+             "the default authentication plugin on this server."},
+            /*unexpected_output_strings*/
+            {"Successfully changed the authentication plugin for .*"},
+            /*test_description*/
+            "There is single existing account for our user that uses "
+            "mysql_native_password. The default auth_plugin on the server is "
+            "mysql_native_password so we can't change the auth_plugin. We are "
+            "only expected to give a warning."},
+        AuthPluginTestParam{
+            /* auth_host_plugins */
+            {{"localhost", "mysql_native_password"}},
+            /* default_auth_plugin */
+            "",
+            /*expected_output_strings*/
+            {"Failed checking the Router account authentication plugin: Error "
+             "executing MySQL query \"select host, plugin from mysql.user "
+             "where user = '.*'\": Unexpected error .*"},
+            /*unexpected_output_strings*/
+            {"Successfully changed the authentication plugin for .*"},
+            /*test_description*/
+            "Querying for the host, plugin accounts for our user fails. We "
+            "expect a proper warning.",
+            /*fail_host_plugin_query*/ true},
+        AuthPluginTestParam{
+            /* auth_host_plugins */
+            {{"localhost", "mysql_native_password"}},
+            /* default_auth_plugin */
+            "",
+            /*expected_output_strings*/
+            {"Failed getting default authentication plugin while changing the "
+             "authentication plugin for account "
+             "'.*'@'localhost': Error executing MySQL query \"select "
+             "@@default_authentication_plugin\": Unexpected "
+             "error .*"},
+            /*unexpected_output_strings*/
+            {"Successfully changed the authentication plugin for .*"},
+            /*test_description*/
+            "Querying for the the default auth plugin fails. We expect a "
+            "proper warning.",
+            /*fail_host_plugin_query*/ false,
+            /*fail_default_auth_plugin_query*/ true},
+        AuthPluginTestParam{
+            /* auth_host_plugins */
+            {{"localhost", "mysql_native_password"}},
+            /* default_auth_plugin */
+            "caching_sha2_password",
+            /*expected_output_strings*/
+            {"Existing account '.*'@localhost is using authentication plugin "
+             "'mysql_native_password'. Changing the authentication plugin to "
+             "'caching_sha2_password'",
+             "Failed changing the authentication plugin for account "
+             "'.*'@'localhost': Error executing MySQL query \"alter user "
+             "'.*'@'localhost' identified with `caching_sha2_password` by "
+             "'.*'\": Unexpected error .*"},
+            /*unexpected_output_strings*/
+            {"Successfully changed the authentication plugin for .*"},
+            /*test_description*/
+            "'alter user' statement fails. We expect a proper warning.",
+            /*fail_host_plugin_query*/ false,
+            /*fail_default_auth_plugin_query*/ false,
+            /*fail_alter_user_query*/ true}));
 
 int main(int argc, char *argv[]) {
   init_windows_sockets();

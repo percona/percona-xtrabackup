@@ -377,7 +377,7 @@ SET sql_mode= default;
 --echo #
 
 CREATE FUNCTION crc(_text TEXT) RETURNS BIGINT(20) UNSIGNED DETERMINISTIC
-  RETURN CONV(LEFT(MD5(_text),16),16,10);
+  RETURN CONV(LEFT(SHA2(_text, 0),16),16,10);
 
 CREATE TABLE t1 (
   id bigint(20) UNSIGNED NOT NULL
@@ -420,7 +420,7 @@ DROP TABLE t1;
 --echo #
 --echo # Bug#28122841 - CREATE EVENT/PROCEDURE/FUNCTION CRASHES WITH ACCENT INSENSITIVE NAMES.
 --echo #
-SET NAMES utf8;
+SET NAMES utf8mb3;
 
 --echo #
 --echo # Test case to verify stored procedure with case and accent insensitive names.

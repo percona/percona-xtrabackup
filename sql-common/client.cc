@@ -2370,8 +2370,6 @@ static void cli_fetch_lengths(ulong *to, MYSQL_ROW column,
 
   @param mysql          connection handle
   @param alloc          memory allocator root
-  @param default_value  flag telling if default values should be read from
-                        descriptor
   @param server_capabilities  protocol capability flags which determine format
   of the descriptor
   @param row            field descriptor
@@ -2380,9 +2378,8 @@ static void cli_fetch_lengths(ulong *to, MYSQL_ROW column,
   @returns 0 on success.
 */
 
-static int unpack_field(MYSQL *mysql, MEM_ROOT *alloc, bool default_value,
-                        uint server_capabilities, MYSQL_ROWS *row,
-                        MYSQL_FIELD *field) {
+static int unpack_field(MYSQL *mysql, MEM_ROOT *alloc, uint server_capabilities,
+                        MYSQL_ROWS *row, MYSQL_FIELD *field) {
   ulong lengths[9]; /* Max length of each field */
   DBUG_TRACE;
 
@@ -2396,7 +2393,7 @@ static int unpack_field(MYSQL *mysql, MEM_ROOT *alloc, bool default_value,
   if (server_capabilities & CLIENT_PROTOCOL_41) {
     uchar *pos;
     /* fields count may be wrong */
-    cli_fetch_lengths(&lengths[0], row->data, default_value ? 8 : 7);
+    cli_fetch_lengths(&lengths[0], row->data, 7);
     field->catalog = strmake_root(alloc, (char *)row->data[0], lengths[0]);
     field->db = strmake_root(alloc, (char *)row->data[1], lengths[1]);
     field->table = strmake_root(alloc, (char *)row->data[2], lengths[2]);
@@ -2426,11 +2423,6 @@ static int unpack_field(MYSQL *mysql, MEM_ROOT *alloc, bool default_value,
     field->decimals = (uint)pos[9];
 
     if (IS_NUM(field->type)) field->flags |= NUM_FLAG;
-    if (default_value && row->data[7]) {
-      field->def = strmake_root(alloc, (char *)row->data[7], lengths[7]);
-      field->def_length = lengths[7];
-    } else
-      field->def = nullptr;
     field->max_length = 0;
   }
 #ifndef DELETE_SUPPORT_OF_4_0_PROTOCOL
@@ -2446,7 +2438,7 @@ static int unpack_field(MYSQL *mysql, MEM_ROOT *alloc, bool default_value,
       return 1;
     }
 
-    cli_fetch_lengths(&lengths[0], row->data, default_value ? 6 : 5);
+    cli_fetch_lengths(&lengths[0], row->data, 5);
     field->org_table = field->table =
         strmake_root(alloc, (char *)row->data[0], lengths[0]);
     field->name = strmake_root(alloc, (char *)row->data[1], lengths[1]);
@@ -2478,45 +2470,10 @@ static int unpack_field(MYSQL *mysql, MEM_ROOT *alloc, bool default_value,
       field->decimals = (uint)(uchar)row->data[4][1];
     }
     if (IS_NUM(field->type)) field->flags |= NUM_FLAG;
-    if (default_value && row->data[5]) {
-      field->def = strmake_root(alloc, (char *)row->data[5], lengths[5]);
-      field->def_length = lengths[5];
-    } else
-      field->def = nullptr;
     field->max_length = 0;
   }
 #endif /* DELETE_SUPPORT_OF_4_0_PROTOCOL */
   return 0;
-}
-
-/***************************************************************************
-  Change field rows to field structs
-***************************************************************************/
-
-MYSQL_FIELD *unpack_fields(MYSQL *mysql, MYSQL_ROWS *data, MEM_ROOT *alloc,
-                           uint fields, bool default_value,
-                           uint server_capabilities) {
-  MYSQL_ROWS *row;
-  MYSQL_FIELD *field, *result;
-  DBUG_TRACE;
-
-  field = result = (MYSQL_FIELD *)alloc->Alloc((uint)sizeof(*field) * fields);
-  if (!result) {
-    set_mysql_error(mysql, CR_OUT_OF_MEMORY, unknown_sqlstate);
-    return nullptr;
-  }
-  memset(field, 0, sizeof(MYSQL_FIELD) * fields);
-  for (row = data; row; row = row->next, field++) {
-    /* fields count may be wrong */
-    if (field < result || static_cast<uint>(field - result) >= fields) {
-      return nullptr;
-    }
-    if (unpack_field(mysql, alloc, default_value, server_capabilities, row,
-                     field)) {
-      return nullptr;
-    }
-  }
-  return result;
 }
 
 /**
@@ -2583,7 +2540,7 @@ net_async_status cli_read_metadata_ex_nonblocking(MYSQL *mysql, MEM_ROOT *alloc,
       goto end;
     }
 
-    if (unpack_field(mysql, alloc, false, mysql->server_capabilities,
+    if (unpack_field(mysql, alloc, mysql->server_capabilities,
                      &async_data->async_read_metadata_data,
                      async_data->async_read_metadata_fields +
                          async_data->async_read_metadata_cur_field)) {
@@ -2675,8 +2632,7 @@ MYSQL_FIELD *cli_read_metadata_ex(MYSQL *mysql, MEM_ROOT *alloc,
   */
   for (f = 0; f < field_count; ++f) {
     if (read_one_row(mysql, field, data.data, len) == -1) return nullptr;
-    if (unpack_field(mysql, alloc, false, mysql->server_capabilities, &data,
-                     fields++))
+    if (unpack_field(mysql, alloc, mysql->server_capabilities, &data, fields++))
       return nullptr;
   }
   /* Read EOF packet in case of old client */
@@ -3239,7 +3195,6 @@ static MYSQL_METHODS client_methods = {
     cli_read_change_user_result /* read_change_user_result */
 #if !defined(MYSQL_SERVER) || defined(XTRABACKUP)
     ,
-    cli_list_fields,         /* list_fields */
     cli_read_prepare_result, /* read_prepare_result */
     cli_stmt_execute,        /* stmt_execute */
     cli_read_binary_rows,    /* read_binary_rows */
@@ -3408,29 +3363,6 @@ void mysql_extension_free(MYSQL_EXTENSION *ext) {
   free_state_change_info(ext);
   mysql_extension_bind_free(ext);
   my_free(ext);
-}
-
-/*
-  Fill in SSL part of MYSQL structure and set 'use_ssl' flag.
-  NB! Errors are not reported until you do mysql_real_connect.
-*/
-
-bool STDCALL mysql_ssl_set(MYSQL *mysql [[maybe_unused]],
-                           const char *key [[maybe_unused]],
-                           const char *cert [[maybe_unused]],
-                           const char *ca [[maybe_unused]],
-                           const char *capath [[maybe_unused]],
-                           const char *cipher [[maybe_unused]]) {
-  bool result = false;
-  DBUG_TRACE;
-  result = mysql_options(mysql, MYSQL_OPT_SSL_KEY, key) +
-                   mysql_options(mysql, MYSQL_OPT_SSL_CERT, cert) +
-                   mysql_options(mysql, MYSQL_OPT_SSL_CA, ca) +
-                   mysql_options(mysql, MYSQL_OPT_SSL_CAPATH, capath) +
-                   mysql_options(mysql, MYSQL_OPT_SSL_CIPHER, cipher)
-               ? true
-               : false;
-  return result;
 }
 
 /*
@@ -5144,7 +5076,7 @@ static bool prep_client_reply_packet(MCPVIO_EXT *mpvio, const uchar *data,
     if (strcmp(mpvio->plugin->name, "authentication_ldap_sasl_client") == 0) {
       if (!mysql->user[0]) {
         set_mysql_error(mysql, CR_KERBEROS_USER_NOT_FOUND, unknown_sqlstate);
-        return true;
+        goto error;
       }
     } else
 #endif
@@ -6704,9 +6636,9 @@ static mysql_state_machine_status csm_begin_connect(mysql_async_connect *ctx) {
 
       DBUG_PRINT("info", ("No success, try next address."));
     }
-    DBUG_PRINT("info",
-               ("End of connect attempts, sock: %d  status: %d  error: %d",
-                sock, status, saved_error));
+    DBUG_PRINT("info", ("End of connect attempts, sock: " MY_SOCKET_FMT
+                        "  status: %d  error: %d",
+                        sock, status, saved_error));
 
     freeaddrinfo(res_lst);
     if (client_bind_ai_lst) freeaddrinfo(client_bind_ai_lst);

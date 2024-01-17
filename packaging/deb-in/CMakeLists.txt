@@ -176,15 +176,15 @@ override_dh_strip:
 	dh_strip -pmysql-server
 	dh_strip -pmysql-client
 	dh_strip -pmysql-testsuite
-	dh_strip -plibmysqlclient22 --dbg-package=libmysqlclient22-dbgsym
+	dh_strip -plibmysqlclient23 --dbg-package=libmysqlclient23-dbgsym
 	dh_strip -plibmysqlclient-dev
 ")
 SET (DEB_CONTROL_DBGSYM_DEFAULT
 "
-Package: libmysqlclient22-dbgsym
+Package: libmysqlclient23-dbgsym
 Architecture: any
 Section: debug
-Depends: libmysqlclient22 (=\${binary:Version}), \${misc:Depends}
+Depends: libmysqlclient23 (=\${binary:Version}), \${misc:Depends}
 Description: Debugging symbols for client library
 
 Package: mysql-${DEB_PRODUCTNAME}-test-dbgsym
@@ -257,11 +257,7 @@ ENDIF()
 
 # Enable various apparmor systems for Ubuntu
 IF(DEB_ID STREQUAL "ubuntu")
-  IF(DEB_CODENAME STREQUAL "bionic")
-    SET (DEB_CONTROL_BDEPS ", dh-apparmor, gcc-8, g++-8")
-  ELSE()
-    SET (DEB_CONTROL_BDEPS ", dh-apparmor")
-  ENDIF()
+  SET (DEB_CONTROL_BDEPS ", dh-apparmor")
   SET (DEB_RULES_INSTALL_APPARMOR "install -g root -o root -m 0644 -D debian/extra/apparmor-profile debian/tmp/etc/apparmor.d/usr.sbin.mysqld")
   SET (DEB_RULES_APPARMOR_LOAD "dh_apparmor -pmysql-${DEB_PRODUCTNAME}-server --profile-name=usr.sbin.mysqld")
   SET (DEB_INSTALL_SERVER_APPARMOR "etc/apparmor.d/usr.sbin.mysqld")
@@ -269,11 +265,6 @@ IF(DEB_ID STREQUAL "ubuntu")
   SET (DEB_INIT_SERVER_APPARMOR "/lib/apparmor/profile-load usr.sbin.mysqld")
   SET (DEB_INIT_ROUTER_APPARMOR "/lib/apparmor/profile-load usr.bin.mysqlrouter")
 
-  # Ubuntu 16.04 doesn't automatically create debug symbol packages
-  IF(DEB_CODENAME STREQUAL "xenial")
-    SET (DEB_CONTROL_DBGSYM ${DEB_CONTROL_DBGSYM_DEFAULT})
-    SET (DEB_RULES_STRIP ${DEB_RULES_STRIP_DEFAULT})
-  ENDIF()
 ENDIF()
 
 IF (NOT DEFINED DEB_NOROUTER)

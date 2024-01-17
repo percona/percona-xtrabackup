@@ -124,7 +124,6 @@ typedef struct MYSQL_FIELD {
   char *org_table;          /* Org table name, if table was an alias */
   char *db;                 /* Database for table */
   char *catalog;            /* Catalog for table */
-  char *def;                /* Default value (set by mysql_list_fields) */
   unsigned long length;     /* Width of column (create length) */
   unsigned long max_length; /* Max width for selected set */
   unsigned int name_length;
@@ -133,7 +132,6 @@ typedef struct MYSQL_FIELD {
   unsigned int org_table_length;
   unsigned int db_length;
   unsigned int catalog_length;
-  unsigned int def_length;
   unsigned int flags;         /* Div flags */
   unsigned int decimals;      /* Number of decimals in field */
   unsigned int charsetnr;     /* Character set */
@@ -372,6 +370,16 @@ typedef struct MYSQL_RES {
 #define USE_HEARTBEAT_EVENT_V2 (1 << 1)
 
 /**
+ Flag to indicate that tagged GTIDS will be skipped in COM_BINLOG_DUMP_GTIDS
+*/
+#define MYSQL_RPL_SKIP_TAGGED_GTIDS (1 << 2)
+
+/**
+ Tagged GTIDS are supported starting from below version of MySQL
+*/
+#define MYSQL_TAGGED_GTIDS_VERSION_SUPPORT 80300
+
+/**
   Struct for information about a replication stream.
 
   @sa mysql_binlog_open()
@@ -458,12 +466,6 @@ const char *STDCALL mysql_character_set_name(MYSQL *mysql);
 int STDCALL mysql_set_character_set(MYSQL *mysql, const char *csname);
 
 MYSQL *STDCALL mysql_init(MYSQL *mysql);
-#if defined(__cplusplus) && (__cplusplus >= 201402L)
-[[deprecated("Use mysql_options() instead.")]]
-#endif
-bool STDCALL
-mysql_ssl_set(MYSQL *mysql, const char *key, const char *cert, const char *ca,
-              const char *capath, const char *cipher);
 const char *STDCALL mysql_get_ssl_cipher(MYSQL *mysql);
 bool STDCALL mysql_get_ssl_session_reused(MYSQL *mysql);
 void *STDCALL mysql_get_ssl_session_data(MYSQL *mysql, unsigned int n_ticket,
@@ -517,11 +519,7 @@ void mysql_set_local_infile_handler(
     int (*local_infile_error)(void *, char *, unsigned int), void *);
 
 void mysql_set_local_infile_default(MYSQL *mysql);
-int STDCALL mysql_shutdown(MYSQL *mysql,
-                           enum mysql_enum_shutdown_level shutdown_level);
 int STDCALL mysql_dump_debug_info(MYSQL *mysql);
-int STDCALL mysql_refresh(MYSQL *mysql, unsigned int refresh_options);
-int STDCALL mysql_kill(MYSQL *mysql, unsigned long pid);
 int STDCALL mysql_set_server_option(MYSQL *mysql,
                                     enum enum_mysql_set_option option);
 int STDCALL mysql_ping(MYSQL *mysql);
@@ -534,7 +532,6 @@ unsigned long STDCALL mysql_get_server_version(MYSQL *mysql);
 unsigned int STDCALL mysql_get_proto_info(MYSQL *mysql);
 MYSQL_RES *STDCALL mysql_list_dbs(MYSQL *mysql, const char *wild);
 MYSQL_RES *STDCALL mysql_list_tables(MYSQL *mysql, const char *wild);
-MYSQL_RES *STDCALL mysql_list_processes(MYSQL *mysql);
 int STDCALL mysql_options(MYSQL *mysql, enum mysql_option option,
                           const void *arg);
 int STDCALL mysql_options4(MYSQL *mysql, enum mysql_option option,
@@ -554,8 +551,6 @@ enum net_async_status STDCALL mysql_fetch_row_nonblocking(MYSQL_RES *res,
 
 unsigned long *STDCALL mysql_fetch_lengths(MYSQL_RES *result);
 MYSQL_FIELD *STDCALL mysql_fetch_field(MYSQL_RES *result);
-MYSQL_RES *STDCALL mysql_list_fields(MYSQL *mysql, const char *table,
-                                     const char *wild);
 unsigned long STDCALL mysql_escape_string(char *to, const char *from,
                                           unsigned long from_length);
 unsigned long STDCALL mysql_hex_string(char *to, const char *from,
@@ -765,7 +760,11 @@ bool STDCALL mysql_stmt_attr_set(MYSQL_STMT *stmt,
 bool STDCALL mysql_stmt_attr_get(MYSQL_STMT *stmt,
                                  enum enum_stmt_attr_type attr_type,
                                  void *attr);
-bool STDCALL mysql_stmt_bind_param(MYSQL_STMT *stmt, MYSQL_BIND *bnd);
+#if defined(__cplusplus) && (__cplusplus >= 201402L)
+[[deprecated("Use mysql_stmt_bind_named_param() instead.")]]
+#endif
+bool STDCALL
+mysql_stmt_bind_param(MYSQL_STMT *stmt, MYSQL_BIND *bnd);
 bool STDCALL mysql_stmt_bind_named_param(MYSQL_STMT *stmt, MYSQL_BIND *binds,
                                          unsigned n_params, const char **names);
 bool STDCALL mysql_stmt_bind_result(MYSQL_STMT *stmt, MYSQL_BIND *bnd);
@@ -803,8 +802,6 @@ void STDCALL mysql_reset_server_public_key(void);
 /* status return codes */
 #define MYSQL_NO_DATA 100
 #define MYSQL_DATA_TRUNCATED 101
-
-#define mysql_reload(mysql) mysql_refresh((mysql), REFRESH_GRANT)
 
 #define HAVE_MYSQL_REAL_CONNECT
 

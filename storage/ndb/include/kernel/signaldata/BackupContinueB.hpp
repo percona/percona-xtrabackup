@@ -29,28 +29,29 @@
 
 #define JAM_FILE_ID 47
 
-
 class BackupContinueB {
   /**
    * Sender(s)/Reciver(s)
    */
   friend class Backup;
-  friend bool printCONTINUEB_BACKUP(FILE * output, const Uint32 * theData, Uint32 len);
-private:
+  friend bool printCONTINUEB_BACKUP(FILE *output, const Uint32 *theData,
+                                    Uint32 len);
+
+ private:
   enum {
     START_FILE_THREAD = 0,
-    BUFFER_UNDERFLOW  = 1,
-    BUFFER_FULL_SCAN  = 2,
+    BUFFER_UNDERFLOW = 1,
+    BUFFER_FULL_SCAN = 2,
     BUFFER_FULL_FRAG_COMPLETE = 3,
-    BUFFER_FULL_META  = 4,
+    BUFFER_FULL_META = 4,
     BACKUP_FRAGMENT_INFO = 5,
     RESET_DISK_SPEED_COUNTER = 6,
     ZGET_NEXT_FRAGMENT = 7,
     ZDELETE_LCP_FILE = 8,
-    ZCHECK_PGMAN_PREP_LCP = 9
+    ZCHECK_PGMAN_PREP_LCP = 9,
+    ZERROR_DELAY_SEND_SIGNAL = 10
   };
 };
-
 
 #undef JAM_FILE_ID
 

@@ -291,7 +291,7 @@ ER_SECURE_AUTH_VALUE_UNSUPPORTED
   eng "Unsupported value 0 for secure-auth"
 
 ER_INVALID_INSTRUMENT
-  eng "Invalid instrument name or value for performance_schema_instrument '%s'",
+  eng "Invalid instrument name or value for performance_schema_instrument '%s'."
 
 ER_INNODB_MANDATORY
   eng "The use of InnoDB is mandatory since MySQL 5.7. The former options like '--innodb=0/1/OFF/ON' or '--skip-innodb' are ignored."
@@ -1292,28 +1292,28 @@ ER_RPL_INCONSISTENT_TIMESTAMPS_IN_TRX
 ER_RPL_INCONSISTENT_SEQUENCE_NO_IN_TRX
   eng "Transaction's sequence number is inconsistent with that of a preceding one: sequence_number (%lld) <= previous sequence_number (%lld)"
 
-ER_RPL_CHANNELS_REQUIRE_TABLES_AS_INFO_REPOSITORIES
+OBSOLETE_ER_RPL_CHANNELS_REQUIRE_TABLES_AS_INFO_REPOSITORIES
   eng "For the creation of replication channels the connection metadata and applier metadata repositories must be set to TABLE"
 
 ER_RPL_CHANNELS_REQUIRE_NON_ZERO_SERVER_ID
   eng "For the creation of replication channels the server id must be different from 0"
 
-ER_RPL_REPO_SHOULD_BE_TABLE
+OBSOLETE_ER_RPL_REPO_SHOULD_BE_TABLE
   eng "Replica: Wrong repository. Repository should be TABLE"
 
 ER_RPL_ERROR_CREATING_CONNECTION_METADATA
   eng "Error creating connection metadata: %s."
 
-ER_RPL_ERROR_CHANGING_CONNECTION_METADATA_REPO_TYPE
+OBSOLETE_ER_RPL_ERROR_CHANGING_CONNECTION_METADATA_REPO_TYPE
   eng "Error changing the type of connection metadata's repository: %s."
 
-ER_RPL_CHANGING_APPLIER_METADATA_REPO_TYPE_FAILED_DUE_TO_GAPS
+OBSOLETE_ER_RPL_CHANGING_AM_TYPE_FAILED_DUE_TO_GAPS
   eng "It is not possible to change the type of the relay log repository because there are workers repositories with possible execution gaps. The value of --relay_log_info_repository is altered to one of the found Worker repositories. The gaps have to be sorted out before resuming with the type change."
 
 ER_RPL_ERROR_CREATING_APPLIER_METADATA
   eng "Error creating applier metadata: %s."
 
-ER_RPL_ERROR_CHANGING_APPLIER_METADATA_REPO_TYPE
+OBSOLETE_ER_RPL_ERROR_CHANGING_APPLIER_METADATA_REPO_TYPE
   eng "Error changing the type of applier metadata's repository: %s."
 
 ER_RPL_FAILED_TO_DELETE_FROM_REPLICA_WORKERS_INFO_REPOSITORY
@@ -1322,8 +1322,8 @@ ER_RPL_FAILED_TO_DELETE_FROM_REPLICA_WORKERS_INFO_REPOSITORY
 ER_RPL_FAILED_TO_RESET_STATE_IN_REPLICA_INFO_REPOSITORY
   eng "Could not store the reset Replica Worker state into the replica info repository."
 
-ER_RPL_ERROR_CHECKING_REPOSITORY
-  eng "Error in checking %s repository info type of %s."
+OBSOLETE_ER_RPL_ERROR_CHECKING_REPOSITORY
+  eng "Error in checking %s repository."
 
 ER_RPL_REPLICA_GENERIC_MESSAGE
   eng "Replica: %s"
@@ -1386,7 +1386,7 @@ ER_RPL_UNSUPPORTED_UNIGNORABLE_EVENT_IN_STREAM
   eng "Unsupported non-ignorable event fed into the event stream."
 
 ER_RPL_GTID_LOG_EVENT_IN_STREAM
-  eng "GTID_LOG_EVENT or ANONYMOUS_GTID_LOG_EVENT is not expected in an event stream %s."
+  eng "GTID_LOG_EVENT, GTID_TAGGED_LOG_EVENT or ANONYMOUS_GTID_LOG_EVENT is not expected in an event stream %s."
 
 ER_RPL_UNEXPECTED_BEGIN_IN_STREAM
   eng "QUERY(BEGIN) is not expected in an event stream in the middle of a %s."
@@ -2921,7 +2921,7 @@ ER_CANNOT_SET_LOG_ERROR_SERVICES
 ER_PERFSCHEMA_TABLES_INIT_FAILED
   eng "Performance schema tables initialization failed."
 
-ER_TX_EXTRACTION_ALGORITHM_FOR_BINLOG_TX_DEPEDENCY_TRACKING
+OBSOLETE_ER_TX_EXTRACTION_ALGORITHM_FOR_BINLOG_TX_DEPEDENCY
   eng "The transaction_write_set_extraction must be set to %s when binlog_transaction_dependency_tracking is %s."
 
 OBSOLETE_ER_INVALID_REPLICATION_TIMESTAMPS
@@ -4421,10 +4421,10 @@ ER_GRP_RPL_ERROR_STOPPING_CHANNELS
 ER_GRP_RPL_ERROR_SENDING_SINGLE_PRIMARY_MSSG
   eng "Error sending single primary message informing that primary did apply relay logs."
 
-ER_GRP_RPL_UPDATE_TRANS_SNAPSHOT_VER_ERROR
+OBSOLETE_ER_GRP_RPL_UPDATE_TRANS_SNAPSHOT_VER_ERROR
   eng "Error updating transaction snapshot version after transaction being positively certified."
 
-ER_GRP_RPL_SIDNO_FETCH_ERROR
+OBSOLETE_ER_GRP_RPL_SIDNO_FETCH_ERROR
   eng "Error fetching transaction sidno after transaction being positively certified."
 
 ER_GRP_RPL_BROADCAST_COMMIT_TRANS_MSSG_FAILED
@@ -4466,10 +4466,10 @@ ER_GRP_RPL_UPDATE_LAST_CONFLICT_FREE_TRANS_ERROR
 ER_GRP_RPL_UPDATE_TRANS_SNAPSHOT_REF_VER_ERROR
   eng "Error updating transaction snapshot version reference for internal storage."
 
-ER_GRP_RPL_FETCH_TRANS_SIDNO_ERROR
+OBSOLETE_ER_GRP_RPL_FETCH_TRANS_SIDNO_ERROR
   eng "Error fetching transaction sidno while adding to the group_gtid_executed set."
 
-ER_GRP_RPL_ERROR_VERIFYING_SIDNO
+OBSOLETE_ER_GRP_RPL_ERROR_VERIFYING_SIDNO
   eng "Error while ensuring the sidno be present in the group_gtid_executed."
 
 ER_GRP_RPL_CANT_GENERATE_GTID
@@ -4847,7 +4847,7 @@ ER_GRP_RPL_INVALID_BINLOG_FORMAT
 OBSOLETE_ER_GRP_RPL_BINLOG_CHECKSUM_SET
   eng "binlog_checksum should be NONE for Group Replication"
 
-ER_GRP_RPL_TRANS_WRITE_SET_EXTRACTION_NOT_SET
+OBSOLETE_ER_GRP_RPL_TRANS_WRITE_SET_EXTRACTION_NOT_SET
   eng "A transaction_write_set_extraction algorithm should be selected when running Group Replication"
 
 ER_GRP_RPL_UNSUPPORTED_TRANS_ISOLATION
@@ -5090,7 +5090,7 @@ ER_GRP_RPL_GTID_MODE_OFF
 ER_GRP_RPL_LOG_REPLICA_UPDATES_NOT_SET
   eng "LOG_REPLICA_UPDATES should be ON for Group Replication"
 
-ER_GRP_RPL_INVALID_TRANS_WRITE_SET_EXTRACTION_VALUE
+OBSOLETE_ER_GRP_RPL_INVALID_TRANS_WRITE_SET_EXTRACTION_VALUE
   eng "Extraction of transaction write sets requires an hash algorithm configuration. Please, double check that the parameter transaction-write-set-extraction is set to a valid algorithm."
 
 ER_GRP_RPL_APPLIER_METADATA_REPO_MUST_BE_TABLE
@@ -7682,8 +7682,8 @@ ER_IB_MSG_715
 ER_IB_MSG_716
   eng "%s"
 
-ER_IB_MSG_717
-  eng "An optimized(without redo logging) DDL operation has been performed. All modified pages may not have been flushed to the disk yet.\nThis offline backup may not be consistent"
+OBSOLETE_ER_IB_MSG_717
+  eng "An optimized (without redo logging) DDL operation has been performed. All modified pages may not have been flushed to the disk yet. This offline backup may not be consistent."
 
 ER_IB_MSG_718
   eng "Extending tablespace : %lu space name: %s to new size: %lu pages during recovery."
@@ -7704,7 +7704,7 @@ ER_IB_MSG_723
   eng "Log parsing buffer overflow. Recovery may have failed! Please set log_buffer_size to a value higher than %lu."
 
 ER_IB_MSG_724
-  eng "Set innodb_force_recovery to ignore this error.";
+  eng "Set innodb_force_recovery to ignore this error."
 
 ER_IB_MSG_725
   eng "Doing recovery: scanned up to log sequence number %llu"
@@ -9362,7 +9362,7 @@ OBSOLETE_ER_RPL_GTID_UNSAFE_STMT_ON_TEMPORARY_TABLE
 ER_BINLOG_ROW_VALUE_OPTION_IGNORED
   eng "When %.192s, the option binlog_row_value_options=%.192s will be ignored and updates will be written in full format to binary log."
 
-ER_BINLOG_USE_V1_ROW_EVENTS_IGNORED
+OBSOLETE_ER_BINLOG_USE_V1_ROW_EVENTS_IGNORED
   eng "When %.192s, the option log_bin_use_v1_row_events=1 will be ignored and row events will be written in new format to binary log."
 
 ER_BINLOG_ROW_VALUE_OPTION_USED_ONLY_FOR_AFTER_IMAGES
@@ -9486,7 +9486,7 @@ ER_SERVER_COL_COUNT_DOESNT_MATCH_PLEASE_UPDATE_V2
   eng "The column count of %s.%s is wrong. Expected %d, found %d. Created with MySQL %d, now running %d. Please perform the MySQL upgrade procedure."
 
 ER_SERVER_COL_COUNT_DOESNT_MATCH_CORRUPTED_V2
-  eng "Column count of %s.%s is wrong. Expected %d, found %d. The table is probably corrupted"
+  eng "Column count of %s.%s is wrong. Expected %d, found %d. The table is probably corrupted."
 
 ER_SERVER_ACL_TABLE_ERROR
   eng ""
@@ -10108,7 +10108,7 @@ ER_LDAP_MAPPING_PROCESS_DELIMITER_EQUAL_NOT_FOUND
   eng "Processing delimiter, separator = not found, resetting position"
 
 ER_LDAP_MAPPING_PROCESS_DELIMITER_TRY_COMMA
-  eng ""Processing delimiter, failed to get data for = separator try for separator ,.""
+  eng "Processing delimiter, failed to get data for = separator try for separator ,."
 
 ER_LDAP_MAPPING_PROCESS_DELIMITER_COMMA_NOT_FOUND
   eng "Processing delimiter, separator , not found, resetting position"
@@ -10330,7 +10330,7 @@ ER_IB_MSG_CLOCK_GETTIME_FAILED
   eng "clock_gettime() failed: %s"
 
 ER_PLUGIN_NOT_EARLY_DUP
-  eng "Plugin '%s' is not to be used as an "early" plugin. Don't add it to --early-plugin-load, keyring migration etc."
+  eng "Plugin '%s' is not to be used as an \"early\" plugin. Don't add it to --early-plugin-load, keyring migration etc."
   bgn "Приставката '%s' не може да се използва като ранна приставка. Не я добавайте в --early-plugin-load и т.н."
 
 ER_PLUGIN_NO_INSTALL_DUP
@@ -10837,16 +10837,16 @@ ER_GRP_RPL_IS_STARTING
   eng "Plugin 'group_replication' is starting."
 
 ER_IB_MSG_INVALID_LOCATION_FOR_TABLESPACE
-  eng "Cannot create tablespace %s because the directory is not a valid location. %s";
+  eng "Cannot create tablespace %s because the directory is not a valid location. %s"
 
 ER_IB_MSG_INVALID_LOCATION_WRONG_DB
-  eng "Scanned file '%s' for tablespace %s cannot be opened because it is not in a sub-directory named for the schema.");
+  eng "Scanned file '%s' for tablespace %s cannot be opened because it is not in a sub-directory named for the schema."
 
 ER_IB_MSG_CANNOT_FIND_DD_UNDO_SPACE
   eng "Cannot find undo tablespace %s with filename '%s' as indicated by the Data Dictionary. Did you move or delete this tablespace? Any undo logs in it cannot be used."
 
 ER_GRP_RPL_RECOVERY_ENDPOINT_FORMAT
-  eng "Invalid input value for recovery socket endpoints '%s'. Please, provide a valid, comma separated, list of endpoints (IP:port)".
+  eng "Invalid input value for recovery socket endpoints '%s'. Please, provide a valid, comma separated, list of endpoints (IP:port)."
 
 ER_GRP_RPL_RECOVERY_ENDPOINT_INVALID
   eng "The server is not listening on endpoint '%s'. Only endpoints that the server is listening on are valid recovery endpoints."
@@ -11124,7 +11124,7 @@ ER_RPL_ASYNC_CHANNEL_STOPPED_QUORUM_LOST
 ER_RPL_ASYNC_CHANNEL_CANT_CONNECT_NO_QUORUM
   eng "The IO thread detected that the source (host:%s port:%u network_namespace:%s) does not belong to the group majority, thence the channel '%s' will try to connect to another source."
 
-ER_RPL_ASYNC_EXECUTING_QUERY
+OBSOLETE_ER_RPL_ASYNC_EXECUTING_QUERY
   eng "%s on the source (host:%s port:%u network_namespace:%s) for channel '%s'."
 
 ER_RPL_REPLICA_MONITOR_IO_THREAD_EXITING
@@ -11266,13 +11266,13 @@ ER_NET_WAIT_ERROR2
   eng "'wait_timeout' period of %s seconds was exceeded for %s. The idle time since last command was too long."
 
 ER_GRP_RPL_MEMBER_ACTION_TRIGGERED
-  eng "The member action "%s" for event "%s" with priority "%u" will be run."
+  eng "The member action \"%s\" for event \"%s\" with priority \"%u\" will be run."
 
 ER_GRP_RPL_MEMBER_ACTION_FAILURE_IGNORE
-  eng "The member action "%s" for event "%s" with priority "%u" failed, this error is ignored as instructed. Please check previous messages in the error log for hints about what could have caused this failure."
+  eng "The member action \"%s\" for event \"%s\" with priority \"%u\" failed, this error is ignored as instructed. Please check previous messages in the error log for hints about what could have caused this failure."
 
 ER_GRP_RPL_MEMBER_ACTION_FAILURE
-  eng "The member action "%s" for event "%s" with priority "%u" failed. Please check previous messages in the error log for hints about what could have caused this failure."
+  eng "The member action \"%s\" for event \"%s\" with priority \"%u\" failed. Please check previous messages in the error log for hints about what could have caused this failure."
 
 ER_GRP_RPL_MEMBER_ACTION_PARSE_ON_RECEIVE
   eng "Unable to parse the member actions configuration sent by the primary."
@@ -11299,10 +11299,10 @@ ER_GRP_RPL_MEMBER_ACTION_INVALID_ACTIONS_ON_MEMBER_JOIN
   eng "The group members were unable to send their member actions configuration. Please check the tables 'mysql.replication_group_member_actions' and 'mysql.replication_group_configuration_version' on all members."
 
 ER_GRP_RPL_MEMBER_ACTION_ENABLED
-  eng "Member action enabled: "%s", type: "%s", event: "%s", priority: "%u", error_handling: "%s"."
+  eng "Member action enabled: \"%s\", type: \"%s\", event: \"%s\", priority: \"%u\", error_handling: \"%s\"."
 
 ER_GRP_RPL_MEMBER_ACTION_DISABLED
-  eng "Member action disabled: "%s", type: "%s", event: "%s", priority: "%u", error_handling: "%s"."
+  eng "Member action disabled: \"%s\", type: \"%s\", event: \"%s\", priority: \"%u\", error_handling: \"%s\"."
 
 ER_GRP_RPL_MEMBER_ACTIONS_RESET
   eng "Member actions configuration was reset."
@@ -11489,7 +11489,7 @@ ER_AUTHENTICATION_PLUGIN_OOM
   eng "Out of memory."
 
 ER_AUTHENTICATION_PLUGIN_LOG
-  eng "Can't initialize logging service".
+  eng "Can't initialize logging service."
 
 ER_WARN_REPLICA_GTID_ONLY_AND_GTID_MODE_NOT_ON
   eng "Replication channel '%.192s' is configured with GTID_ONLY=1, which is invalid when GTID_MODE <> ON. If you intend to disable GTIDs in the replication topology, change GTID_ONLY to 0."
@@ -11887,7 +11887,7 @@ ER_IB_MSG_PARSE_OLD_REDO_INDEX_VERSION
   eng "Recovery: Generating index information for INSTANT DDL Table in 8.0.29 format"
 
 OBSOLETE_ER_RES_GRP_FAILED_TO_SWITCH_RESOURCE_GROUP
-  eng "Failed to switch resource group. %s".
+  eng "Failed to switch resource group. %s"
 
 OBSOLETE_ER_RES_GRP_SWITCH_FAILED_COULD_NOT_ACQUIRE_GLOBAL_LOCK
   eng "Failed to switch resource group. Could not acquire resource groups global lock."
@@ -11962,7 +11962,7 @@ ER_IB_BUFFER_POOL_OVERUSE
   eng "%s: Over 67 percent of the buffer pool (curr_size=%zu MB) is occupied by lock heaps or the adaptive hash index or BUF_BLOCK_MEMORY pages. Check that your transactions do not set too many row locks. Maybe you should make the buffer pool bigger?. Starting the InnoDB Monitor to print diagnostics."
 
 ER_IB_BUFFER_POOL_FULL
-  eng "%s: Over 95 percent of the buffer pool (curr_size=%zu MB) is occupied by lock heaps or the adaptive hash index or BUF_BLOCK_MEMORY pages. Check that your transactions do not set too many row locks. Maybe you should make the buffer pool bigger?. We intentionally generate a seg fault to print a stack trace on Linux!";
+  eng "%s: Over 95 percent of the buffer pool (curr_size=%zu MB) is occupied by lock heaps or the adaptive hash index or BUF_BLOCK_MEMORY pages. Check that your transactions do not set too many row locks. Maybe you should make the buffer pool bigger?. We intentionally generate a seg fault to print a stack trace on Linux!"
 
 ER_IB_DUPLICATE_KEY
   eng "%s: table=%s, index=%s, n_uniq=%zu, n_fields=%zu, lhs=(%s), rhs=(%s)"
@@ -12013,7 +12013,7 @@ ER_BULK_PARSER_UNEXPECTED_CHAR_AFTER_ENDING_ENCLOSED_BY_LOG
   eng "Unexpected characters after ending ENCLOSED BY character found at row %ld in file '%s'."
 
 ER_BULK_PARSER_UNEXPECTED_CHAR_AFTER_NULL_ESCAPE_LOG
-  eng "Unexpected characters after NULL escape (\N) found at row %ld in file '%s'."
+  eng "Unexpected characters after NULL escape (\\N) found at row %ld in file '%s'."
 
 ER_BULK_PARSER_UNEXPECTED_CHAR_AFTER_COLUMN_TERMINATOR_LOG
   eng "Unexpected characters after column terminator found at row %ld in file '%s'."
@@ -12279,6 +12279,15 @@ ER_PERFORMANCE_SCHEMA_VERSION_CHANGE
 ER_WARN_DEPRECATED_OR_BLOCKED_CIPHER
    eng "Value for option '%s' contains cipher '%s' that is either blocked or deprecated (and will be removed in a future release). Please refer to the documentation for more details."
 
+ER_IB_MSG_DDL_FAIL_NO_BUILDER
+  eng "DDL failed as Builder is already freed. Builder: state=%u, error_state=%u. Index: id=%zu, name='%s', space_id=%u, page=%u. Table: old_name='%s', new_name='%s'."
+
+ER_GRP_RPL_MEMBER_INFO_DOES_NOT_EXIST
+  eng "Member identified %s: '%s' does not exist on Group Replication membership during %s."
+
+ER_USAGE_DEPRECATION_COUNTER
+  eng "Deprecated '%s' used %s times, last time used '%s'."
+
 #
 # End of 8.0 error messages intended to be written to the server error log.
 #
@@ -12420,6 +12429,168 @@ ER_IB_WRONG_PAGEID_AFTER_SYNC_READ
 
 ER_IB_SYNC_READ_FAILED
   eng "Sync read to fix wrong page_id failed: buf_block_t[space_id=%zu, page_no=%zu], file=%s, err=%zu, retry=%zu"
+
+ER_START_REPLICA_CHANNEL_INVALID_CONFIGURATION_LOG
+  eng "Cannot start replication channel '%s' because %s."
+
+ER_GROUP_REPLICATION_CERTIFIER_MESSAGE_LARGE
+  eng "The certification information, part of the required information to the new member join the group, is too big and cannot be send. Please wait until the value of the column COUNT_TRANSACTIONS_ROWS_VALIDATING of the table performance_schema.replication_group_member_stats decreases and try to join the new member again."
+
+ER_GROUP_REPLICATION_METADATA_SENDER_IS_REMOTE
+  eng "The member %s:%u will be the one sending the recovery metadata message."
+
+ER_GROUP_REPLICATION_METADATA_SENDER
+  eng "This member %s:%u will be the one sending the recovery metadata message."
+
+ER_GROUP_REPLICATION_ERROR_COMPRESS_INITIALIZE
+  eng "Error initializing the %s compression context. Data cannot be compressed."
+
+ER_GROUP_REPLICATION_COMPRESS_PROCESS
+  eng "Error while compressing data using %s compression. Data cannot be decompressed."
+
+ER_GROUP_REPLICATION_UNKOWN_COMPRESSION_TYPE
+  eng "Error unknown Compression Library requested."
+
+ER_GROUP_REPLICATION_COMPRESS_EXCEEDS_MAX_SIZE
+  eng "Error while compressing data using %s compression. The operation could not be performed as buffer size exceeded configured maximum size. Please wait until the value of the column COUNT_TRANSACTIONS_ROWS_VALIDATING of the table performance_schema.replication_group_member_stats decreases and try to join the new member again."
+
+ER_GROUP_REPLICATION_COMPRESS_OUT_OF_MEMORY
+  eng "Error while compressing data using %s compression. The operation could not be performed as memory allocation failed."
+
+ER_GROUP_REPLICATION_ERROR_DECOMPRESS_INITIALIZE
+  eng "Error initializing the %s decompression context. Data cannot be decompressed."
+
+ER_GROUP_REPLICATION_DECOMPRESS_EXCEEDS_MAX_SIZE
+  eng "Error while decompressing data using %s compression. The operation could not be performed as buffer size exceeded configured maximum size. Please wait until the value of the column COUNT_TRANSACTIONS_ROWS_VALIDATING of the table performance_schema.replication_group_member_stats decreases and try to join the new member again."
+
+ER_GROUP_REPLICATION_DECOMPRESS_OUT_OF_MEMORY
+  eng "Error while decompressing data using %s compression. The operation could not be performed as memory allocation failed."
+
+ER_GROUP_REPLICATION_DECOMPRESS_TRUNCATED
+  eng "Error while decompressing data using %s compression. The operation could not be performed as all the input provided to decompress is consumed, but the decompressed output produced is less than required."
+
+ER_GROUP_REPLICATION_DECOMPRESS_CORRUPTED
+  eng "Error while decompressing data using %s compression. The operation could not be performed as the compression library reported an error."
+
+ER_GROUP_REPLICATION_DECOMPRESS_END
+  eng "Error while decompressing data using %s compression. The operation could not be performed as no more input bytes remaining to decompress. The decompressed output has not been changed."
+
+ER_GROUP_REPLICATION_DECOMPRESS_PROCESS
+  eng "Error while decompressing data using %s compression. Data cannot be decompressed."
+
+ER_GRP_RPL_VCLE_NOT_BEING_LOGGED
+  eng "View_change_log_event will not be logged further on the binary log, as all members of the group are 8.3.0 or greater."
+
+ER_GROUP_REPLICATION_METADATA_PROTOBUF_PARSING
+  eng "Error while parsing serialzed Certification_info from received Recovery Metadata to Protobuf format using Protobuf library."
+
+ER_GROUP_REPLICATION_PROTOBUF_SERIALIZING_ERROR
+  eng "Error while serializing % data using Protobuf library."
+
+ER_GROUP_REPLICATION_ERROR_RECEIVED_WAITING_METADATA
+  eng "Error received while the Recovery thread was waiting for the Recovery Metadata. The Recovery will be terminated."
+
+ER_GROUP_REPLICATION_TIMEOUT_ERROR_FETCHING_METADATA
+  eng "Error fetching AFTER_GTIDS from Recovery Metadata by Recovery thread. The Recovery thread timeout after waiting for %d seconds. The Recovery will be terminated."
+
+ER_GROUP_REPLICATION_METADATA_PAYLOAD_EMPTY
+  eng "Error while decoding the received Recovery Metadata Message. The received payload is empty which could be due to error in decoding of received Recovery Metadata Message. The joining member will leave the group."
+
+ER_GROUP_REPLICATION_METADATA_MESSAGE_PAYLOAD_EMPTY
+  eng "The %s payload type of the received Recovery Metadata Message is empty."
+
+ER_GROUP_REPLICATION_METADATA_READ_GTID_EXECUTED
+  eng "Error reading gtid_executed from the received Recovery Metadata Message."
+
+ER_GROUP_REPLICATION_METADATA_PAYLOAD_DECODING
+  eng "Error while decoding the received Recovery Metadata Message."
+
+ER_GROUP_REPLICATION_METADATA_SEND_ERROR
+  eng "The group was unable to send the Recovery Metadata to a joining member."
+
+ER_GROUP_REPLICATION_METADATA_SAVE_RECOVERY_COPY
+  eng "Error while saving copy of Recovery Metadata Message."
+
+ER_GROUP_REPLICATION_METADATA_CERT_INFO_ERROR_PROCESSING
+  eng "Error while processing received Certification Information from the Recovery Metadata Message."
+
+ER_GROUP_REPLICATION_METADATA_CERT_INFO_PACKET_EMPTY
+  eng "Error Certification Information packet from the received Recovery Metadata Message is empty."
+
+ER_GROUP_REPLICATION_METADATA_ERROR_ON_SEND_ERROR_MESSAGE
+  eng "Error while sending Recovery metadata error message. If this is a temporary failure of send message and member itself hasn't left the group, then joiner will timeout waiting for Recovery metadata message. If this is a permanent failure, the member will leave the group and another member will send the Recovery metadata message."
+
+ER_GROUP_REPLICATION_METADATA_SET_IN_RECOVERY_FAILED
+  eng "Error when transferring Recovery Metadata Message to Recovery. The joining member will leave the group."
+
+ER_GROUP_REPLICATION_CERTIFICATION_MODULE_FAILURE
+  eng "Error Certification module wasn't properly initialized."
+
+ER_GROUP_REPLICATION_METADATA_INITIALIZATION_FAILURE
+  eng "Error Recovery Metadata Message module wasn't properly initialized."
+
+ER_GROUP_REPLICATION_METADATA_MEMORY_ALLOC
+  eng "Error while %s. The operation could not be performed as memory allocation failed."
+
+ER_GROUP_REPLICATION_RECOVERY_SKIPPED_GTID_PRESENT
+  eng "The group replication recovery is skipped as the joiner's gtid executed set %s already has all the transactions of the donor's gtid set %s."
+
+ER_GROUP_REPLICATION_RECOVERY_FETCHING_GTID_EXECUTED_SET
+  eng "Error in Group Replication Recovery while getting member's global GTID executed set."
+
+ER_GROUP_REPLICATION_RECOVERY_ERROR_ADD_GTID_EXECUTED
+  eng "Error in Group Replication Recovery while adding GTIDs in string format to Gtid_set."
+
+ER_GROUP_REPLICATION_RECOVERY_METADATA_SENDER_NOT_FOUND
+  eng "Error computing the current Recovery metadata sender. Check if this MEMBER is not leaving the group and the joiner is able to successfully fetch the recovery metadata or not."
+
+ER_GROUP_REPLICATION_METADATA_CERT_INFO_PACKET_COUNT_ERROR
+  eng "Error in the received Recovery Metadata Message the number of compressed Certification Information packet count mismatch with the number of sent compressed Certification Information packets."
+
+ER_GROUP_REPLICATION_METADATA_CERT_INFO_ENCODING_ERROR
+  eng "Error while encoding Certification Information for the Recovery Metadata Message."
+
+ER_GROUP_REPLICATION_METADATA_NO_VALID_DONOR
+  eng "There are no valid recovery metadata donors. The joining member will leave the group."
+
+ER_GROUP_REPLICATION_NO_CERTIFICATION_DONOR_AVAILABLE
+  eng "No donor available to provide the certification information, part of the required information to the new member join the group. Please wait until there are ONLINE members on the group and try to join the new member again."
+
+ER_GROUP_REPLICATION_RECOVERY_STOPPED_GTID_PRESENT
+  eng "The group replication recovery is complete, joiner gtid executed set has all the transactions of the donor's gtid set %s."
+
+ER_RPL_ASYNC_CHECK_CONNECTION_ERROR
+  eng "The Monitor IO thread encountered an error while executing the query to check connection to the source server. Error: %s. The query failed to execute on the source (host:%s port:%u network_namespace:%s) for channel '%s'."
+
+ER_RPL_ASYNC_MONITOR_IO_THD_FETCH_GROUP_MAJORITY_ERROR
+  eng "The Monitor IO thread failed to detect if the source belongs to the group majority. Error: %s. The query failed to execute on the source (host:%s port:%u network_namespace:%s) for channel '%s'."
+
+ER_RPL_ASYNC_REPLICA_IO_THD_FETCH_GROUP_MAJORITY_ERROR
+  eng "The replica IO thread failed to detect if the source belongs to the group majority. Error: %s. The query failed to execute on the source (host:%s port:%u network_namespace:%s) for channel '%s'."
+
+ER_RPL_ASYNC_GET_GROUP_MEMBERSHIP_DETAILS_ERROR
+  eng "The Monitor IO thread failed to get group membership details. Error: %s. The query failed to execute on the source (host:%s port:%u network_namespace:%s) for channel '%s'."
+
+ER_IB_ERR_CORRUPT_TABLESPACE_UNRECOVERABLE
+  eng "Tablespace '%u' mentioned in the redo log is corrupted in a way it is unrecoverable by double-write buffer, so further redo log recovery is not possible!"
+
+ER_IB_BULK_LOAD_STATS_WARN
+  eng "%s: Failed to save statistics for table=%s err=%zu"
+
+ER_COMPONENT_MASKING_INVALID_FLUSH_INTERVAL_VALUE
+   eng "Invalid flush interval specified: %lu. Valid values are 0 (off) or greater than or equal to %d. Adjusting to %d."
+
+ER_COMPONENT_MASKING_VAR_REGISTRATION_FAILURE
+  eng "Cannot register variable '%s'.'%s'."
+
+ER_COMPONENT_MASKING_NOTIFICATION_REGISTRATION_FAILURE
+  eng "Masking component failed to register notification service. Periodical masking dictionaries flush will not work."
+
+ER_GRP_RPL_MSG_DECODING_FAILED
+  eng "Failed to decode Group Replication message: %s. Reason : %s"
+
+ER_GRP_RPL_APPLIER_ERROR_PACKET_RECEIVED
+  eng "The Applier process of Group Replication found an error and was requested to stop: %s"
 
 # DO NOT add server-to-client messages here;
 # they go in messages_to_clients.txt

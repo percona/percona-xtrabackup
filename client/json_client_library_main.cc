@@ -25,21 +25,44 @@
   Json_dom::seek, Json_dom::parse, json_binary::parse_binary,
   json_binary::serialize functions are visible and can be called.
  */
+
+#include <cassert>
 #include <cstring>
 #include <iostream>
+#include <memory>
+#include <new>
 #include <string>
+#include <string_view>
 
+#include "field_types.h"
+#include "mysql/components/services/bits/psi_bits.h"
+#include "mysql_time.h"
 #include "sql-common/json_binary.h"
 #include "sql-common/json_dom.h"
-#include "sql-common/json_path.h"
-
 #include "sql-common/json_error_handler.h"
+#include "sql-common/json_path.h"
+#include "sql-common/my_decimal.h"
 #include "sql_string.h"
 
+namespace {
 void CoutDefaultDepthHandler() { std::cout << "Doc too deep"; }
-void CoutDefaultKeyErrorHandler() { std::cout << "Key too big"; }
-void CoutDefaultValueErrorHandler() { std::cout << "Value too big"; }
-void InvalidJsonErrorHandler() { std::cout << "Invalid JSON"; }
+
+class CoutSerializationErrorHandler : public JsonSerializationErrorHandler {
+ public:
+  void KeyTooBig() const override { std::cout << "Key too big"; }
+  void ValueTooBig() const override { std::cout << "Value too big"; }
+  void TooDeep() const override { CoutDefaultDepthHandler(); }
+  void InvalidJson() const override { std::cout << "Invalid JSON"; }
+  void InternalError(const char *message) const override {
+    std::cout << "Internal error: " << message;
+  }
+  bool CheckStack() const override {
+    std::cout << "Checking stack\n";
+    return false;
+  }
+};
+
+}  // namespace
 
 int main() {
   Json_object o;
@@ -55,15 +78,13 @@ int main() {
   const char *json_path = R"($**."512")";
   Json_path path(PSI_NOT_INSTRUMENTED);
   size_t bad_index;
-  parse_path(std::strlen(json_path), json_path, &path, &bad_index,
-             [] { assert(false); });
+  parse_path(std::strlen(json_path), json_path, &path, &bad_index);
 
   Json_wrapper wr(&o);
   wr.set_alias();
 
   StringBuffer<20000> buf;
-  if (wr.to_binary(&buf, CoutDefaultDepthHandler, CoutDefaultKeyErrorHandler,
-                   CoutDefaultValueErrorHandler, InvalidJsonErrorHandler)) {
+  if (wr.to_binary(CoutSerializationErrorHandler(), &buf)) {
     std::cout << "error";
   } else {
     const json_binary::Value v(
@@ -122,9 +143,7 @@ int main() {
     my_decimal m;
     double2my_decimal(0, 3.14000000001, &m);
     const Json_decimal jd(m);
-    if (json_binary::serialize(&jd, &buf, CoutDefaultDepthHandler,
-                               CoutDefaultKeyErrorHandler,
-                               CoutDefaultValueErrorHandler))
+    if (json_binary::serialize(&jd, CoutSerializationErrorHandler(), &buf))
       std::cout << "ERRROR!!" << std::endl;
 
     json_binary::Value v = json_binary::parse_binary(buf.ptr(), buf.length());
@@ -144,9 +163,7 @@ int main() {
     dt.time_type = MYSQL_TIMESTAMP_DATE;
     const Json_datetime jd(dt, MYSQL_TYPE_DATETIME);
 
-    if (json_binary::serialize(&jd, &buf, CoutDefaultDepthHandler,
-                               CoutDefaultKeyErrorHandler,
-                               CoutDefaultValueErrorHandler))
+    if (json_binary::serialize(&jd, CoutSerializationErrorHandler(), &buf))
       std::cout << "ERRROR!!" << std::endl;
 
     json_binary::Value v = json_binary::parse_binary(buf.ptr(), buf.length());

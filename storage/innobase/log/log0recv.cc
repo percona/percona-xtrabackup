@@ -1175,7 +1175,7 @@ static void recv_apply_log_rec(recv_addr_t *recv_addr) {
   }
 }
 
-dberr_t recv_apply_hashed_log_recs(log_t &log, bool allow_ibuf) {
+void recv_apply_hashed_log_recs(log_t &log, bool allow_ibuf) {
   for (;;) {
     mutex_enter(&recv_sys->mutex);
 
@@ -1213,20 +1213,19 @@ dberr_t recv_apply_hashed_log_recs(log_t &log, bool allow_ibuf) {
   auto start_time = std::chrono::steady_clock::now();
 
   for (const auto &space : *recv_sys->spaces) {
-    bool dropped;
+    bool dropped = false;
 
-    if (space.first == TRX_SYS_SPACE) {
-      dropped = false;
-    } else {
+    if (space.first != TRX_SYS_SPACE) {
       dberr_t err = fil_tablespace_open_for_recovery(space.first);
-      if (err == DB_SUCCESS) {
-        dropped = false;
-      } else if (err == DB_CORRUPTION) {
-        /* Page couldn't be recovered from doublewrite, we cannot proceed
+      if (err == DB_CORRUPTION) {
+        /* Page couldn't be recovered from double-write, we cannot proceed
         with recovery. Skip applying redos and abort the startup. */
         mutex_exit(&recv_sys->mutex);
-        return err;
-      } else {
+        ib::fatal(UT_LOCATION_HERE, ER_IB_ERR_CORRUPT_TABLESPACE_UNRECOVERABLE,
+                  space.first);
+      } else if (err != DB_SUCCESS) {
+        ut_a_eq(err, DB_FAIL);
+
         /* Tablespace was dropped. It should not have been scanned unless it
         is an undo space that was under construction. */
 
@@ -1322,7 +1321,6 @@ dberr_t recv_apply_hashed_log_recs(log_t &log, bool allow_ibuf) {
   mutex_exit(&recv_sys->mutex);
 
   ib::info(ER_IB_MSG_710);
-  return DB_SUCCESS;
 }
 
 #else /* !UNIV_HOTBACKUP */
@@ -2855,6 +2853,7 @@ bool recv_page_is_brand_new(buf_block_t *block) {
   return false;
 }
 
+#ifndef UNIV_HOTBACKUP
 /** Applies the hashed log records to the page, if the page lsn is less than
 the lsn of a log record. This can be called when a buffer page has just been
 read in, or also for a page already in the buffer pool.
@@ -2862,6 +2861,13 @@ read in, or also for a page already in the buffer pool.
 @param[in]      just_read_in    true if the IO handler calls this for a freshly
                                 read page
 @param[in,out]  block           buffer block */
+#else
+/** Applies the hashed log records to the page, if the page lsn is less than
+the lsn of a log record. This can be called when a buffer page has just been
+read in, or also for a page already in the buffer pool.
+
+@param[in,out]  block           buffer block */
+#endif
 void recv_recover_page_func(
 #ifndef UNIV_HOTBACKUP
     bool just_read_in,
@@ -2924,11 +2930,6 @@ void recv_recover_page_func(
   DBUG_PRINT("ib_log", ("Applying log to page %u:%u", recv_addr->space,
                         recv_addr->page_no));
 
-#ifdef UNIV_DEBUG
-  lsn_t max_lsn;
-
-  ut_d(max_lsn = log_sys->m_scanned_lsn);
-#endif /* UNIV_DEBUG */
 #else  /* !UNIV_HOTBACKUP */
   ib::trace_2() << "Applying log to space_id " << recv_addr->space
                 << " page_nr " << recv_addr->page_no;
@@ -2988,17 +2989,14 @@ void recv_recover_page_func(
   size_t skipped_recs = 0;
 #endif /* !UNIV_HOTBACKUP */
 
-#ifndef UNIV_HOTBACKUP
   lsn_t end_lsn = 0;
-#endif /* !UNIV_HOTBACKUP */
   lsn_t start_lsn = 0;
   bool modification_to_page = false;
 
   for (auto recv : recv_addr->rec_list) {
-#ifndef UNIV_HOTBACKUP
     end_lsn = recv->end_lsn;
-
-    ut_ad(end_lsn <= max_lsn);
+#ifndef UNIV_HOTBACKUP
+    ut_ad(end_lsn <= log_sys->m_scanned_lsn);
 #endif /* !UNIV_HOTBACKUP */
 
     byte *buf = nullptr;
@@ -3047,8 +3045,6 @@ void recv_recover_page_func(
 #endif /* !UNIV_HOTBACKUP */
     ) {
 
-      lsn_t end_lsn;
-
       if (!modification_to_page) {
 #ifndef UNIV_HOTBACKUP
         ut_a(recv_needed_recovery);
@@ -3073,16 +3069,6 @@ void recv_recover_page_func(
                                        recv_addr->space, recv_addr->page_no,
                                        block, &mtr, ULINT_UNDEFINED, LSN_MAX);
 
-      end_lsn = recv->start_lsn + recv->len;
-
-      mach_write_to_8(FIL_PAGE_LSN + page, end_lsn);
-
-      mach_write_to_8(UNIV_PAGE_SIZE - FIL_PAGE_END_LSN_OLD_CHKSUM + page,
-                      end_lsn);
-
-      if (page_zip) {
-        mach_write_to_8(FIL_PAGE_LSN + page_zip->data, end_lsn);
-      }
 #ifdef UNIV_HOTBACKUP
       ++applied_recs;
     } else {
@@ -3103,13 +3089,20 @@ void recv_recover_page_func(
   }
 #endif /* UNIV_ZIP_DEBUG */
 
-#ifndef UNIV_HOTBACKUP
   if (modification_to_page) {
-    buf_flush_recv_note_modification(block, start_lsn, end_lsn);
-  }
+    /* page lsn must be less than the lsn of a log record here. Otherwise,
+    it would mean we are moving the page back in time. Also, indirectly this
+    verifies the end_lsn is not 0. */
+    ut_a(page_lsn < end_lsn);
+#ifdef UNIV_HOTBACKUP
+    UT_NOT_USED(start_lsn);
+    /* MEB uses this PAGE_LSN to init page for writing in the
+    meb_apply_log_record() */
+    mach_write_to_8(FIL_PAGE_LSN + page, end_lsn);
 #else  /* !UNIV_HOTBACKUP */
-  UT_NOT_USED(start_lsn);
+    buf_flush_recv_note_modification(block, start_lsn, end_lsn);
 #endif /* !UNIV_HOTBACKUP */
+  }
 
   /* Make sure that committing mtr does not change the modification
   LSN values of page */
@@ -4103,9 +4096,20 @@ static void recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn,
       break;
     }
 
+<<<<<<< HEAD
     finished = recv_scan_log_recs(log, &delta_hashmap_max_mem, log.buf, end_lsn - start_lsn,
                                   start_lsn, &log.m_scanned_lsn, to_lsn);
 
+||||||| 87307d4ddd8
+    finished =
+        recv_scan_log_recs(log, delta_hashmap_max_mem, log.buf,
+                           end_lsn - start_lsn, start_lsn, &log.m_scanned_lsn);
+
+=======
+    finished =
+        recv_scan_log_recs(log, delta_hashmap_max_mem, log.buf,
+                           end_lsn - start_lsn, start_lsn, &log.m_scanned_lsn);
+>>>>>>> mysql-8.3.0
     start_lsn = end_lsn;
   }
 

@@ -220,6 +220,7 @@ class Query_fetch_protocol_binary final : public Query_result_send {
                                 uint flags) override;
   bool send_data(THD *thd, const mem_root_deque<Item *> &items) override;
   bool send_eof(THD *thd) override;
+  bool use_protocol_adapter() const override { return false; }
 };
 
 }  // namespace
@@ -1055,8 +1056,8 @@ static bool mysql_test_set_fields(THD *thd,
   DBUG_TRACE;
   assert(stmt->m_arena.is_stmt_prepare());
 
-  thd->lex->using_hypergraph_optimizer =
-      thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER);
+  thd->lex->set_using_hypergraph_optimizer(
+      thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER));
 
   if (tables &&
       check_table_access(thd, SELECT_ACL, tables, false, UINT_MAX, false))
@@ -1064,6 +1065,9 @@ static bool mysql_test_set_fields(THD *thd,
 
   if (open_tables_for_query(thd, tables, MYSQL_OPEN_FORCE_SHARED_MDL))
     return true; /* purecov: inspected */
+
+  thd->lex->set_using_hypergraph_optimizer(
+      thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER));
 
   const Prepared_stmt_arena_holder ps_arena_holder(thd);
 
@@ -1133,9 +1137,8 @@ bool Sql_cmd_create_table::prepare(THD *thd) {
 
     query_block->context.resolve_in_select_list = true;
 
-    // Use the hypergraph optimizer for the SELECT statement, if enabled.
-    lex->using_hypergraph_optimizer =
-        thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER);
+    lex->set_using_hypergraph_optimizer(
+        thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER));
 
     const Prepared_stmt_arena_holder ps_arena_holder(thd);
 
@@ -1159,9 +1162,13 @@ bool Sql_cmd_create_table::prepare(THD *thd) {
     if (open_tables_for_query(thd, lex->query_tables,
                               MYSQL_OPEN_FORCE_SHARED_MDL))
       return true;
+
+    lex->set_using_hypergraph_optimizer(
+        thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER));
   }
 
   set_prepared();
+
   return false;
 }
 
@@ -1902,7 +1909,6 @@ void mysqld_stmt_execute(THD *thd, Prepared_statement *stmt, bool has_new_types,
   // Initially, optimize the statement for the primary storage engine.
   // If an eligible secondary storage engine is found, the statement
   // may be reprepared for the secondary storage engine later.
-  const auto saved_secondary_engine = thd->secondary_engine_optimization();
   thd->set_secondary_engine_optimization(
       Secondary_engine_optimization::PRIMARY_TENTATIVELY);
 
@@ -1916,8 +1922,6 @@ void mysqld_stmt_execute(THD *thd, Prepared_statement *stmt, bool has_new_types,
     const bool open_cursor = execute_flags & (ulong)CURSOR_TYPE_READ_ONLY;
     stmt->execute_loop(thd, &expanded_query, open_cursor);
   }
-
-  thd->set_secondary_engine_optimization(saved_secondary_engine);
 
   if (switch_protocol) thd->pop_protocol();
 
@@ -2370,9 +2374,9 @@ Prepared_statement::~Prepared_statement() {
   if (m_used_as_cursor) {
     close_cursor();
   }
-  if (m_regular_result != nullptr) destroy(m_regular_result);
-  if (m_cursor_result != nullptr) destroy(m_cursor_result);
-  if (m_aux_result != nullptr) destroy(m_aux_result);
+  if (m_regular_result != nullptr) ::destroy_at(m_regular_result);
+  if (m_cursor_result != nullptr) ::destroy_at(m_cursor_result);
+  if (m_aux_result != nullptr) ::destroy_at(m_aux_result);
   m_cursor = nullptr;
   m_cursor_result = nullptr;
   m_regular_result = nullptr;
@@ -3021,7 +3025,9 @@ bool Prepared_statement::execute_loop(THD *thd, String *expanded_query,
   bool general_log_temporarily_disabled = false;
 
   // Reprepare statement unconditionally if it contains UDF references
-  if (m_lex->has_udf() && reprepare(thd)) return true;
+  if (m_lex->has_udf() && reprepare(thd)) {
+    return true;
+  }
 
   // Reprepare statement if protocol has changed.
   // Note: this is not possible in current code base, hence the assert.
@@ -3121,10 +3127,6 @@ reexecute:
           thd->secondary_engine_optimization() ==
               Secondary_engine_optimization::SECONDARY &&
           !m_lex->unit->is_executed()) {
-        if (has_external_table(m_lex->query_tables)) {
-          set_external_engine_fail_reason(m_lex,
-                                          thd->get_stmt_da()->message_text());
-        }
         if (!thd->is_secondary_engine_forced()) {
           thd->clear_error();
           thd->set_secondary_engine_optimization(
@@ -3609,7 +3611,7 @@ bool Prepared_statement::execute(THD *thd, String *expanded_query,
       if (new_result == nullptr) return true;  // OOM
       m_cursor_result = new_cursor_result(m_arena.mem_root, new_result);
       if (m_cursor_result == nullptr) {
-        destroy(new_result);
+        ::destroy_at(new_result);
         return true;
       }
       // Saved result for proper destruction

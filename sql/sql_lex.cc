@@ -29,6 +29,7 @@
 #include <climits>
 #include <cstdlib>
 #include <initializer_list>
+#include <memory>
 
 #include "field_types.h"
 #include "m_string.h"
@@ -395,6 +396,7 @@ LEX::~LEX() {
   unit = nullptr;  // Created in mem_root - no destructor
   query_block = nullptr;
   m_current_query_block = nullptr;
+  assert(m_secondary_engine_context == nullptr);
 }
 
 /**
@@ -460,7 +462,7 @@ void LEX::reset() {
   server_options.reset();
   explain_format = nullptr;
   is_explain_analyze = false;
-  using_hypergraph_optimizer = false;
+  set_using_hypergraph_optimizer(false);
   is_lex_started = true;
   reset_slave_info.all = false;
   mi.channel = nullptr;
@@ -486,6 +488,13 @@ void LEX::reset() {
   grant_if_exists = false;
   ignore_unknown_user = false;
   reset_rewrite_required();
+
+  set_execute_only_in_secondary_engine(
+      /*execute_only_in_secondary_engine_param=*/false, SUPPORTED_IN_PRIMARY);
+
+  set_execute_only_in_hypergraph_optimizer(
+      /*execute_in_hypergraph_optimizer_param=*/false,
+      SUPPORTED_IN_BOTH_OPTIMIZERS);
 }
 
 /**
@@ -2230,6 +2239,7 @@ Query_expression::Query_expression(enum_parsing_context parsing_context)
     case CTX_INSERT_UPDATE:
     case CTX_WHERE:
     case CTX_DERIVED:
+    case CTX_QUALIFY:
     case CTX_NONE:  // A subquery in a non-select
       explain_marker = parsing_context;
       break;
@@ -3058,6 +3068,7 @@ void Query_block::print_query_block(const THD *thd, String *str,
   print_group_by(thd, str, query_type);
   print_having(thd, str, query_type);
   print_windows(thd, str, query_type);
+  print_qualify(thd, str, query_type);
   print_order_by(thd, str, query_type);
   print_limit(thd, str, query_type);
   // PROCEDURE unsupported here
@@ -3427,10 +3438,16 @@ void Query_block::print_group_by(const THD *thd, String *str,
   // group by & olap
   if (group_list.elements) {
     str->append(STRING_WITH_LEN(" group by "));
+    if (olap == CUBE_TYPE) {
+      str->append(STRING_WITH_LEN("cube ("));
+    }
     print_order(thd, str, group_list.first, query_type);
     switch (olap) {
       case ROLLUP_TYPE:
         str->append(STRING_WITH_LEN(" with rollup"));
+        break;
+      case CUBE_TYPE:
+        str->append(STRING_WITH_LEN(")"));
         break;
       default:;  // satisfy compiler
     }
@@ -3450,6 +3467,14 @@ void Query_block::print_having(const THD *thd, String *str,
       cur_having->print(thd, str, query_type);
     else
       str->append(having_value != Item::COND_FALSE ? "true" : "false");
+  }
+}
+
+void Query_block::print_qualify(const THD *thd, String *str,
+                                enum_query_type query_type) const {
+  if (qualify_cond() != nullptr) {
+    str->append(STRING_WITH_LEN(" qualify "));
+    qualify_cond()->print(thd, str, query_type);
   }
 }
 
@@ -3774,6 +3799,9 @@ bool LEX::can_not_use_merged() {
 */
 
 bool LEX::need_correct_ident() {
+  if (is_explain() && explain_format->is_iterator_based() &&
+      explain_format->is_hierarchical())
+    return true;
   switch (sql_command) {
     case SQLCOM_SHOW_CREATE:
     case SQLCOM_SHOW_TABLES:
@@ -3955,7 +3983,9 @@ bool Query_expression::save_cmd_properties(THD *thd) {
   including binding data for all associated tables.
 */
 void Query_expression::restore_cmd_properties() {
-  for (auto qt : query_terms<>()) qt->query_block()->restore_cmd_properties();
+  for (auto qt : query_terms<>()) {
+    qt->query_block()->restore_cmd_properties();
+  }
 }
 
 /**
@@ -4918,6 +4948,12 @@ void Query_block::restore_cmd_properties() {
     Window *w;
     while ((w = li++)) w->reset_round();
   }
+  /*
+    Unconditionally update used table information for all items referenced from
+    query block. This is required in case const table substitution, or other
+    kind of optimization, has been performed in earlier rounds.
+  */
+  update_used_tables();
 }
 
 bool Query_options::merge(const Query_options &a, const Query_options &b) {
@@ -5180,8 +5216,22 @@ void binlog_unsafe_map_init() {
 void LEX::set_secondary_engine_execution_context(
     Secondary_engine_execution_context *context) {
   assert(m_secondary_engine_context == nullptr || context == nullptr);
-  ::destroy(m_secondary_engine_context);
+  if (m_secondary_engine_context != nullptr)
+    ::destroy_at(m_secondary_engine_context);
   m_secondary_engine_context = context;
+}
+
+bool LEX::validate_use_in_old_optimizer() {
+  if (sql_command == SQLCOM_CREATE_VIEW || sql_command == SQLCOM_SHOW_CREATE)
+    return false;
+  if (can_execute_only_in_hypergraph_optimizer() &&
+      !using_hypergraph_optimizer()) {
+    // Certain queries cannot be executed in the old optimizer.
+    my_error(ER_SUPPORTED_ONLY_WITH_HYPERGRAPH, MYF(0),
+             get_only_supported_in_hypergraph_reason_str());
+    return true;
+  }
+  return false;
 }
 
 void LEX_GRANT_AS::cleanup() {

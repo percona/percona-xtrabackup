@@ -28,8 +28,6 @@ SET PERSIST_ONLY keyring_operations = DEFAULT;
 --error $persist_only_admin_x509_subject_vars_result
 SET PERSIST_ONLY lc_messages_dir = DEFAULT;
 --error $persist_only_admin_x509_subject_vars_result
-SET PERSIST_ONLY log_bin_use_v1_row_events = DEFAULT;
---error $persist_only_admin_x509_subject_vars_result
 SET PERSIST_ONLY log_error = DEFAULT;
 --error $persist_only_admin_x509_subject_vars_result
 SET PERSIST_ONLY pid_file = DEFAULT;
@@ -39,8 +37,6 @@ SET PERSIST_ONLY plugin_dir = DEFAULT;
 SET PERSIST_ONLY port = DEFAULT;
 --error $persist_only_admin_x509_subject_vars_result
 SET PERSIST_ONLY relay_log = DEFAULT;
---error $persist_only_admin_x509_subject_vars_result
-SET PERSIST_ONLY relay_log_info_file = DEFAULT;
 --error $persist_only_admin_x509_subject_vars_result
 SET PERSIST_ONLY secure_file_priv = DEFAULT;
 --error $persist_only_admin_x509_subject_vars_result

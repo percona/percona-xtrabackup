@@ -45,8 +45,6 @@ SET PERSIST_ONLY keyring_operations = DEFAULT;
 ERROR HY000: Variable 'keyring_operations' is a non persistent variable
 SET PERSIST_ONLY lc_messages_dir = DEFAULT;
 ERROR HY000: Variable 'lc_messages_dir' is a non persistent read only variable
-SET PERSIST_ONLY log_bin_use_v1_row_events = DEFAULT;
-ERROR HY000: Variable 'log_bin_use_v1_row_events' is a non persistent variable
 SET PERSIST_ONLY log_error = DEFAULT;
 ERROR HY000: Variable 'log_error' is a non persistent read only variable
 SET PERSIST_ONLY pid_file = DEFAULT;
@@ -57,8 +55,6 @@ SET PERSIST_ONLY port = DEFAULT;
 ERROR HY000: Variable 'port' is a non persistent read only variable
 SET PERSIST_ONLY relay_log = DEFAULT;
 ERROR HY000: Variable 'relay_log' is a non persistent read only variable
-SET PERSIST_ONLY relay_log_info_file = DEFAULT;
-ERROR HY000: Variable 'relay_log_info_file' is a non persistent read only variable
 SET PERSIST_ONLY secure_file_priv = DEFAULT;
 ERROR HY000: Variable 'secure_file_priv' is a non persistent read only variable
 SET PERSIST_ONLY skip_networking = DEFAULT;

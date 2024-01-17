@@ -20,20 +20,25 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
 #include <sys/types.h>
 #include <cstring>
-#include <fstream>
-#include <iostream>
+#include <memory>
+#include <new>
 #include <string>
 #include <utility>
 
-#include "mysql/strings/m_ctype.h"
+#include "gtest/gtest.h"
+
+#include "mysql/components/services/bits/psi_bits.h"
+#include "sql-common/json_binary.h"
 #include "sql-common/json_dom.h"
+#include "sql-common/json_error_handler.h"
 #include "sql-common/json_path.h"
+#include "sql/psi_memory_key.h"
 #include "sql_string.h"
 #include "unittest/gunit/test_utils.h"
+
+class THD;
 
 /**
  Test json path abstraction.
@@ -152,7 +157,7 @@ char *concat(char *dest, const char *left, const char *right) {
 void good_path_common(const char *path_expression, Json_path *json_path) {
   size_t bad_idx = 0;
   EXPECT_FALSE(parse_path(strlen(path_expression), path_expression, json_path,
-                          &bad_idx, [] { ASSERT_TRUE(false); }));
+                          &bad_idx));
 
   EXPECT_EQ(0U, bad_idx) << "bad_idx != 0 for " << path_expression;
 }
@@ -270,7 +275,7 @@ void bad_path(const char *path_expression, size_t expected_index) {
   size_t actual_index = 0;
   Json_path json_path(key_memory_JSON);
   EXPECT_TRUE(parse_path(strlen(path_expression), path_expression, &json_path,
-                         &actual_index, [] { ASSERT_TRUE(false); }))
+                         &actual_index))
       << "Unexpectedly parsed " << path_expression;
   EXPECT_EQ(expected_index, actual_index)
       << "Unexpected index for " << path_expression;
@@ -346,8 +351,8 @@ void JsonPathTest::vet_wrapper_seek(const char *json_text,
 
   String serialized_form;
   EXPECT_FALSE(json_binary::serialize(
-      dom.get(), &serialized_form, &JsonDepthErrorHandler,
-      &JsonKeyTooBigErrorHandler, &JsonValueTooBigErrorHandler));
+      dom.get(), JsonSerializationDefaultErrorHandler(thd()),
+      &serialized_form));
   json_binary::Value binary = json_binary::parse_binary(
       serialized_form.ptr(), serialized_form.length());
 
@@ -404,20 +409,20 @@ void vet_only_needs_one(Json_wrapper &wrapper, const Json_path &path,
   Vet the short-circuiting effects of the only_needs_one argument
   of Json_wrapper.seek().
 
+  @param[in] thd                    Session object.
   @param[in] json_text              Text of the json document to search.
   @param[in] path_text              Text of the path expression to use.
   @param[in] expected_hits          Total number of expected matches.
 */
-void vet_only_needs_one(const char *json_text, const char *path_text,
-                        uint expected_hits) {
+void vet_only_needs_one(const THD *thd, const char *json_text,
+                        const char *path_text, uint expected_hits) {
   Json_dom_ptr dom = Json_dom::parse(
       json_text, std::strlen(json_text), [](const char *, size_t) {},
       [] { ASSERT_TRUE(false); });
 
   String serialized_form;
   EXPECT_FALSE(json_binary::serialize(
-      dom.get(), &serialized_form, &JsonDepthErrorHandler,
-      &JsonKeyTooBigErrorHandler, &JsonValueTooBigErrorHandler));
+      dom.get(), JsonSerializationDefaultErrorHandler(thd), &serialized_form));
   json_binary::Value binary = json_binary::parse_binary(
       serialized_form.ptr(), serialized_form.length());
 
@@ -1404,7 +1409,7 @@ static const Ono_tuple ono_tuples[] = {
 /** Test good paths without column scope */
 TEST_P(JsonGoodOnoTestP, GoodOno) {
   Ono_tuple param = GetParam();
-  vet_only_needs_one(param.m_json_text, param.m_path_expression,
+  vet_only_needs_one(thd(), param.m_json_text, param.m_path_expression,
                      param.m_expected_hits);
 }
 
@@ -1441,8 +1446,7 @@ TEST_P(JsonPathLegAutowrapP, Autowrap) {
 
   Json_path path(key_memory_JSON);
   size_t idx = 0;
-  EXPECT_FALSE(parse_path(path_text.length(), path_text.data(), &path, &idx,
-                          [] { ASSERT_TRUE(false); }));
+  EXPECT_FALSE(parse_path(path_text.length(), path_text.data(), &path, &idx));
   EXPECT_EQ(0U, idx);
   EXPECT_EQ(2U, path.leg_count());
   EXPECT_EQ(expected_result, (*path.begin())->is_autowrap());

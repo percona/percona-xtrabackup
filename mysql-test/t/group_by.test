@@ -589,7 +589,7 @@ create table t2 (
   d varchar(100) NOT NULL,
   primary key (a,b(132),c,d),
   key a (a,b)
-) ENGINE=INNODB charset=utf8;
+) ENGINE=INNODB charset=utf8mb3;
 
 insert into t2 select 
    x3.a,  -- 3
@@ -2362,14 +2362,14 @@ set sql_mode='';
 CREATE TABLE AA (
 col_varchar_1024_latin1 varchar(1024)  CHARACTER SET latin1,
 pk integer auto_increment,
-col_varchar_1024_utf8_key varchar(1024)  CHARACTER SET utf8,
+col_varchar_1024_utf8_key varchar(1024)  CHARACTER SET utf8mb3,
 col_varchar_1024_latin1_key varchar(1024)  CHARACTER SET latin1,
-col_varchar_10_utf8_key varchar(10)  CHARACTER SET utf8,
+col_varchar_10_utf8_key varchar(10)  CHARACTER SET utf8mb3,
 col_varchar_10_latin1_key varchar(10)  CHARACTER SET latin1,
 col_int int,
 col_varchar_10_latin1 varchar(10)  CHARACTER SET latin1,
-col_varchar_10_utf8 varchar(10)  CHARACTER SET utf8,
-col_varchar_1024_utf8 varchar(1024)  CHARACTER SET utf8,
+col_varchar_10_utf8 varchar(10)  CHARACTER SET utf8mb3,
+col_varchar_1024_utf8 varchar(1024)  CHARACTER SET utf8mb3,
 col_int_key int,
 primary key (pk),
 key (col_varchar_1024_utf8_key ),
@@ -2383,15 +2383,15 @@ CREATE OR REPLACE VIEW view_AA AS SELECT * FROM AA;
 CREATE TABLE B (
 col_varchar_1024_latin1_key varchar(1024)  CHARACTER SET latin1,
 col_varchar_10_latin1 varchar(10)  CHARACTER SET latin1,
-col_varchar_10_utf8_key varchar(10)  CHARACTER SET utf8,
+col_varchar_10_utf8_key varchar(10)  CHARACTER SET utf8mb3,
 col_int_key int,
 col_varchar_1024_latin1 varchar(1024)  CHARACTER SET latin1,
-col_varchar_1024_utf8_key varchar(1024)  CHARACTER SET utf8,
-col_varchar_10_utf8 varchar(10)  CHARACTER SET utf8,
+col_varchar_1024_utf8_key varchar(1024)  CHARACTER SET utf8mb3,
+col_varchar_10_utf8 varchar(10)  CHARACTER SET utf8mb3,
 col_int int,
 pk integer auto_increment,
 col_varchar_10_latin1_key varchar(10)  CHARACTER SET latin1,
-col_varchar_1024_utf8 varchar(1024)  CHARACTER SET utf8,
+col_varchar_1024_utf8 varchar(1024)  CHARACTER SET utf8mb3,
 key (col_varchar_1024_latin1_key ),
 key (col_varchar_10_utf8_key ),
 key (col_int_key ),
@@ -3589,3 +3589,40 @@ SELECT COUNT(DISTINCT f), COUNT(DISTINCT d), AVG(DISTINCT f), AVG(DISTINCT d) FR
 SELECT COUNT(DISTINCT f, id), GROUP_CONCAT(DISTINCT f, id) FROM t;
 SELECT COUNT(DISTINCT d, id), GROUP_CONCAT(DISTINCT d, id) FROM t;
 DROP TABLE t;
+
+--echo #
+--echo # Bug#34959356: Poor performance when using HASH field to check unique
+--echo #
+CREATE TABLE product (
+  value INT NOT NULL AUTO_INCREMENT,
+  code VARCHAR(255),
+  name VARCHAR(255),
+  comment VARCHAR(255),
+  platform VARCHAR(50),
+  KEY idx_key (value)
+);
+
+DELIMITER //;
+CREATE PROCEDURE BatchInsert(IN row_count int)
+BEGIN
+  START TRANSACTION;
+  SET @n = 1;
+  REPEAT
+      SET @str = (CONCAT('test', CAST(@n AS CHAR)));
+      INSERT INTO product(code, name) VALUES(@str, @str);
+      SET @n = @n + 1;
+  UNTIL @n > row_count
+  END REPEAT;
+  COMMIT;
+END;
+//
+DELIMITER ;//
+
+CALL BatchInsert(200); # original repro had 20000.
+SELECT COUNT(*)
+FROM ( SELECT ANY_VALUE(value)
+       FROM product
+       GROUP BY code, name, comment, platform ) derived;
+
+DROP PROCEDURE BatchInsert;
+DROP TABLE product;

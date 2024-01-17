@@ -344,7 +344,7 @@ class Network_provider {
   virtual std::function<void()> get_secure_connections_context_cleaner() {
     std::function<void()> retval = []() {
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
-      ERR_remove_thread_state(0);
+      ERR_remove_thread_state(nullptr);
 #endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
     };
 
@@ -361,7 +361,7 @@ class Network_provider {
    * @param port port of the remote endpoint
    * @param security_credentials security credentials to connect to the remote
    *                             endpoint
-   * @param connection_timeout
+   * @param connection_timeout connection timeout
    * @return std::unique_ptr<Network_connection> an established connection.
    *                                                 nullptr in case of failure.
    */

@@ -852,6 +852,16 @@ class Log_event {
   Log_event(mysql::binlog::event::Log_event_header *header,
             mysql::binlog::event::Log_event_footer *footer);
 
+  /**
+   Allow thread to CLAIM or DISCLAIM the ownership of this object
+   depends on the parameter value passed
+
+   @param claim
+          True  - claim ownership of the memory
+          False - disclaim ownership of the memory
+  */
+  virtual void claim_memory_ownership([[maybe_unused]] bool claim) {}
+
   virtual ~Log_event() { free_temp_buf(); }
   void register_temp_buf(char *buf, bool free_in_destructor = true) {
     m_free_temp_buf_in_destructor = free_in_destructor;
@@ -1389,6 +1399,9 @@ class Query_log_event : public virtual mysql::binlog::event::Query_event,
   ~Query_log_event() override {
     if (data_buf) my_free(data_buf);
   }
+
+  void claim_memory_ownership(bool claim) override;
+
 #ifdef MYSQL_SERVER
   bool write(Basic_ostream *ostream) override;
   virtual bool write_post_header_for_derived(Basic_ostream *) { return false; }
@@ -1551,6 +1564,8 @@ class Format_description_log_event
         FORMAT_DESCRIPTION_HEADER_LEN;
   }
 
+  void claim_memory_ownership(bool claim) override;
+
  protected:
 #if defined(MYSQL_SERVER)
   int do_apply_event(Relay_log_info const *rli) override;
@@ -1610,6 +1625,9 @@ class Intvar_log_event : public mysql::binlog::event::Intvar_event,
       const char *buf,
       const mysql::binlog::event::Format_description_event *description_event);
   ~Intvar_log_event() override = default;
+
+  void claim_memory_ownership(bool claim) override;
+
   size_t get_data_size() override {
     return 9; /* sizeof(type) + sizeof(val) */
     ;
@@ -1680,6 +1698,9 @@ class Rand_log_event : public mysql::binlog::event::Rand_event,
       const char *buf,
       const mysql::binlog::event::Format_description_event *description_event);
   ~Rand_log_event() override = default;
+
+  void claim_memory_ownership(bool claim) override;
+
   size_t get_data_size() override { return 16; /* sizeof(ulonglong) * 2*/ }
 #ifdef MYSQL_SERVER
   bool write(Basic_ostream *ostream) override;
@@ -1770,6 +1791,9 @@ class Xid_log_event : public mysql::binlog::event::Xid_event,
       const char *buf,
       const mysql::binlog::event::Format_description_event *description_event);
   ~Xid_log_event() override = default;
+
+  void claim_memory_ownership(bool claim) override;
+
   size_t get_data_size() override { return sizeof(xid); }
 #ifdef MYSQL_SERVER
   bool write(Basic_ostream *ostream) override;
@@ -1821,6 +1845,9 @@ class XA_prepare_log_event : public mysql::binlog::event::XA_prepare_event,
   size_t get_data_size() override {
     return xid_bufs_size + my_xid.gtrid_length + my_xid.bqual_length;
   }
+
+  void claim_memory_ownership(bool claim) override;
+
 #ifdef MYSQL_SERVER
   bool write(Basic_ostream *ostream) override;
 #else
@@ -1886,6 +1913,9 @@ class User_var_log_event : public mysql::binlog::event::User_var_event,
       const char *buf,
       const mysql::binlog::event::Format_description_event *description_event);
   ~User_var_log_event() override = default;
+
+  void claim_memory_ownership(bool claim) override;
+
 #ifdef MYSQL_SERVER
   bool write(Basic_ostream *ostream) override;
   /*
@@ -1952,6 +1982,8 @@ class Stop_log_event : public mysql::binlog::event::Stop_event,
     return mysql::binlog::event::STOP_EVENT;
   }
 
+  void claim_memory_ownership(bool claim) override;
+
  private:
 #if defined(MYSQL_SERVER)
   int do_update_pos(Relay_log_info *rli) override;
@@ -2017,6 +2049,9 @@ class Rotate_log_event : public mysql::binlog::event::Rotate_event,
     return ident_len +
            mysql::binlog::event::Binary_log_event::ROTATE_HEADER_LEN;
   }
+
+  void claim_memory_ownership(bool claim) override;
+
 #ifdef MYSQL_SERVER
   bool write(Basic_ostream *ostream) override;
 #endif
@@ -2077,6 +2112,9 @@ class Append_block_log_event
       const char *buf,
       const mysql::binlog::event::Format_description_event *description_event);
   ~Append_block_log_event() override = default;
+
+  void claim_memory_ownership(bool claim) override;
+
   size_t get_data_size() override {
     return block_len +
            mysql::binlog::event::Binary_log_event::APPEND_BLOCK_HEADER_LEN;
@@ -2144,6 +2182,9 @@ class Delete_file_log_event : public mysql::binlog::event::Delete_file_event,
       const char *buf,
       const mysql::binlog::event::Format_description_event *description_event);
   ~Delete_file_log_event() override = default;
+
+  void claim_memory_ownership(bool claim) override;
+
   size_t get_data_size() override {
     return mysql::binlog::event::Binary_log_event::DELETE_FILE_HEADER_LEN;
   }
@@ -2220,6 +2261,8 @@ class Begin_load_query_log_event
       const mysql::binlog::event::Format_description_event *description_event);
   ~Begin_load_query_log_event() override = default;
 
+  void claim_memory_ownership(bool claim) override;
+
  private:
 #if defined(MYSQL_SERVER)
   enum_skip_reason do_shall_skip(Relay_log_info *rli) override;
@@ -2290,6 +2333,8 @@ class Execute_load_query_log_event
 #endif
 
   bool is_sbr_logging_format() const override { return true; }
+
+  void claim_memory_ownership(bool claim) override;
 
  private:
 #if defined(MYSQL_SERVER)
@@ -2439,6 +2484,8 @@ class Table_map_log_event : public mysql::binlog::event::Table_map_event,
       const char *buf,
       const mysql::binlog::event::Format_description_event *description_event);
 
+  void claim_memory_ownership(bool claim) override;
+
   ~Table_map_log_event() override;
 
 #ifndef MYSQL_SERVER
@@ -2506,7 +2553,7 @@ class Table_map_log_event : public mysql::binlog::event::Table_map_event,
     only type is printed.
 
     @param[out] file the place where colume metadata is printed
-    @param[in]  The metadata extracted from optional metadata fields
+    @param[in]  fields The metadata extracted from optional metadata fields
    */
   void print_columns(IO_CACHE *file,
                      const Optional_metadata_fields &fields) const;
@@ -2517,7 +2564,7 @@ class Table_map_log_event : public mysql::binlog::event::Table_map_event,
     colume index is printed.
 
     @param[out] file the place where primary key is printed
-    @param[in]  The metadata extracted from optional metadata fields
+    @param[in]  fields The metadata extracted from optional metadata fields
    */
   void print_primary_key(IO_CACHE *file,
                          const Optional_metadata_fields &fields) const;
@@ -3287,6 +3334,8 @@ class Write_rows_log_event : public Rows_log_event,
   }
 #endif
 
+  void claim_memory_ownership(bool claim) override;
+
  protected:
   int write_row(const Relay_log_info *const, const bool);
 
@@ -3385,6 +3434,8 @@ class Update_rows_log_event : public Rows_log_event,
             bitmap_cmp(get_cols_ai(), table->write_set));
   }
 #endif
+
+  void claim_memory_ownership(bool claim) override;
 
  protected:
   mysql::binlog::event::Log_event_type get_general_type_code() override {
@@ -3492,6 +3543,8 @@ class Delete_rows_log_event : public Rows_log_event,
   }
 #endif
 
+  void claim_memory_ownership(bool claim) override;
+
  protected:
   mysql::binlog::event::Log_event_type get_general_type_code() override {
     return (mysql::binlog::event::Log_event_type)TYPE_CODE;
@@ -3592,6 +3645,8 @@ class Incident_log_event : public mysql::binlog::event::Incident_event,
 
   ~Incident_log_event() override;
 
+  void claim_memory_ownership(bool claim) override;
+
 #ifndef MYSQL_SERVER
   void print(FILE *file, PRINT_EVENT_INFO *print_event_info) const override;
 #endif
@@ -3662,6 +3717,8 @@ class Ignorable_log_event
       const char *buf,
       const mysql::binlog::event::Format_description_event *descr_event);
   ~Ignorable_log_event() override;
+
+  void claim_memory_ownership(bool claim) override;
 
 #ifdef MYSQL_SERVER
   int pack_info(Protocol *) override;
@@ -3736,6 +3793,8 @@ class Rows_query_log_event : public Ignorable_log_event,
   Rows_query_log_event(
       const char *buf,
       const mysql::binlog::event::Format_description_event *descr_event);
+
+  void claim_memory_ownership(bool claim) override;
 
   ~Rows_query_log_event() override {
     if (m_rows_query) my_free(m_rows_query);
@@ -3840,6 +3899,8 @@ class Transaction_payload_log_event
 
   ~Transaction_payload_log_event() override = default;
 
+  void claim_memory_ownership(bool claim) override;
+
 #ifndef MYSQL_SERVER
   void print(FILE *file, PRINT_EVENT_INFO *print_event_info) const override;
 #endif
@@ -3931,19 +3992,35 @@ class Gtid_log_event : public mysql::binlog::event::Gtid_event,
 
   ~Gtid_log_event() override = default;
 
+  void claim_memory_ownership(bool claim) override;
+
+  using Tsid = mysql::gtid::Tsid;
+
   size_t get_data_size() override {
+    if (is_tagged()) {
+      auto size_calculated = Encoder_type::get_size(*this);
+      DBUG_EXECUTE_IF("add_unknown_ignorable_fields_to_gtid_log_event",
+                      { size_calculated += 2; });
+      return size_calculated;
+    }
     DBUG_EXECUTE_IF("do_not_write_rpl_timestamps", return POST_HEADER_LENGTH;);
     return POST_HEADER_LENGTH + get_commit_timestamp_length() +
-           net_length_size(transaction_length) + get_server_version_length() +
+           net_length_size(get_trx_length()) + get_server_version_length() +
            get_commit_group_ticket_length();
   }
 
+  /// @brief Clears tsid and spec
+  void clear_gtid_and_spec();
+
+  /// @brief Updates parent tsid and gtid info structure
+  void update_parent_gtid_info();
+
   size_t get_event_length() { return LOG_EVENT_HEADER_LEN + get_data_size(); }
 
- private:
   /// Used internally by both print() and pack_info().
   size_t to_string(char *buf) const;
 
+ private:
 #ifdef MYSQL_SERVER
   /**
     Writes the post-header to the given output stream.
@@ -3984,6 +4061,11 @@ class Gtid_log_event : public mysql::binlog::event::Gtid_event,
               FULL_COMMIT_TIMESTAMP_LENGTH.
   */
   uint32 write_body_to_memory(uchar *buff);
+
+  /// @copydoc write_body_to_memory
+  /// @details Version for tagged Gtid log event
+  uint32 write_tagged_event_body_to_memory(uchar *buffer);
+
 #endif
 
  public:
@@ -4004,38 +4086,38 @@ class Gtid_log_event : public mysql::binlog::event::Gtid_event,
   enum_gtid_type get_type() const { return spec.type; }
 
   /**
-    Return the SID for this GTID.  The SID is shared with the
+    Return the TSID for this GTID.  The TSID is shared with the
     Log_event so it should not be modified.
   */
-  const rpl_sid *get_sid() const { return &sid; }
+  const Tsid &get_tsid() const { return tsid; }
   /**
-    Return the SIDNO relative to the global sid_map for this GTID.
+    Return the SIDNO relative to the global tsid_map for this GTID.
 
-    This requires a lookup and possibly even update of global_sid_map,
-    hence global_sid_lock must be held.  If global_sid_lock is not
+    This requires a lookup and possibly even update of global_tsid_map,
+    hence global_tsid_lock must be held.  If global_tsid_lock is not
     held, the caller must pass need_lock=true.  If there is an error
-    (e.g. out of memory) while updating global_sid_map, this function
+    (e.g. out of memory) while updating global_tsid_map, this function
     returns a negative number.
 
-    @param need_lock If true, the read lock on global_sid_lock is
+    @param need_lock If true, the read lock on global_tsid_lock is
     acquired and released inside this function; if false, the read
     lock or write lock must be held prior to calling this function.
     @retval SIDNO if successful
-    @retval negative if adding SID to global_sid_map causes an error.
+    @retval negative if adding TSID to global_tsid_map causes an error.
   */
   rpl_sidno get_sidno(bool need_lock);
 
   /**
-    Return the SIDNO relative to the given Sid_map for this GTID.
+    Return the SIDNO relative to the given Tsid_map for this GTID.
 
-    This assumes that the Sid_map is local to the thread, and thus
+    This assumes that the Tsid_map is local to the thread, and thus
     does not use locks.
 
-    @param sid_map The sid_map to use.
+    @param tsid_map The tsid_map to use.
     @retval SIDNO if successful.
-    @retval negative if adding SID to sid_map causes an error.
+    @retval negative if adding TSID to tsid_map causes an error.
   */
-  rpl_sidno get_sidno(Sid_map *sid_map) { return sid_map->add_sid(sid); }
+  rpl_sidno get_sidno(Tsid_map *tsid_map) { return tsid_map->add_tsid(tsid); }
   /// Return the GNO for this GTID.
   rpl_gno get_gno() const override { return spec.gtid.gno; }
 
@@ -4047,8 +4129,8 @@ class Gtid_log_event : public mysql::binlog::event::Gtid_event,
   static const size_t SET_STRING_PREFIX_LENGTH = 26;
   /// The maximal length of the entire "SET ..." query.
   static const size_t MAX_SET_STRING_LENGTH = SET_STRING_PREFIX_LENGTH +
-                                              mysql::gtid::Uuid::TEXT_LENGTH +
-                                              1 + MAX_GNO_TEXT_LENGTH + 1;
+                                              mysql::gtid::tsid_max_length + 1 +
+                                              MAX_GNO_TEXT_LENGTH + 1;
 
  private:
   /**
@@ -4056,8 +4138,8 @@ class Gtid_log_event : public mysql::binlog::event::Gtid_event,
     uninitialized (value -1) until the first call to get_sidno(bool).
   */
   Gtid_specification spec;
-  /// SID for this GTID.
-  rpl_sid sid;
+  /// TSID for this GTID.
+  Tsid tsid;
 
  public:
   /**
@@ -4082,6 +4164,12 @@ class Gtid_log_event : public mysql::binlog::event::Gtid_event,
   void set_trx_length_by_cache_size(ulonglong cache_size,
                                     bool is_checksum_enabled = false,
                                     int event_counter = 0);
+
+  /// @copydoc set_trx_length_by_cache_size
+  /// @detail tagged version of event
+  void set_trx_length_by_cache_size_tagged(ulonglong cache_size,
+                                           bool is_checksum_enabled = false,
+                                           int event_counter = 0);
 };
 
 /**
@@ -4134,6 +4222,8 @@ class Previous_gtids_log_event
   ~Previous_gtids_log_event() override = default;
 
   size_t get_data_size() override { return buf_size; }
+
+  void claim_memory_ownership(bool claim) override;
 
 #ifndef MYSQL_SERVER
   void print(FILE *file, PRINT_EVENT_INFO *print_event_info) const override;
@@ -4232,8 +4322,8 @@ class Transaction_context_log_event
     : public mysql::binlog::event::Transaction_context_event,
       public Log_event {
  private:
-  /// The Sid_map to use for creating the Gtid_set.
-  Sid_map *sid_map;
+  /// The Tsid_map to use for creating the Gtid_set.
+  Tsid_map *tsid_map;
   /// A gtid_set which is used to store the transaction set used for
   /// conflict detection.
   Gtid_set *snapshot_version;
@@ -4256,9 +4346,11 @@ class Transaction_context_log_event
 
  public:
 #ifdef MYSQL_SERVER
+
   Transaction_context_log_event(const char *server_uuid_arg, bool using_trans,
                                 my_thread_id thread_id_arg,
-                                bool is_gtid_specified_arg);
+                                bool is_gtid_specified);
+
 #endif
 
   Transaction_context_log_event(
@@ -4266,6 +4358,8 @@ class Transaction_context_log_event
       const mysql::binlog::event::Format_description_event *descr_event);
 
   ~Transaction_context_log_event() override;
+
+  void claim_memory_ownership(bool claim) override;
 
   size_t get_data_size() override;
 
@@ -4330,12 +4424,14 @@ class Transaction_context_log_event
   /**
     Return the id of the committing thread.
    */
-  my_thread_id get_thread_id() { return static_cast<my_thread_id>(thread_id); }
+  my_thread_id get_thread_id() const {
+    return static_cast<my_thread_id>(thread_id);
+  }
 
   /**
-   Return true if transaction has GTID_NEXT specified, false otherwise.
+   Return true if transaction has GTID fully specified, false otherwise.
    */
-  bool is_gtid_specified() { return gtid_specified == true; }
+  bool is_gtid_specified() const { return gtid_specified; }
 };
 
 /**
@@ -4394,6 +4490,8 @@ class View_change_log_event : public mysql::binlog::event::View_change_event,
 
   ~View_change_log_event() override;
 
+  void claim_memory_ownership(bool claim) override;
+
   size_t get_data_size() override;
 
 #ifdef MYSQL_SERVER
@@ -4447,10 +4545,9 @@ class View_change_log_event : public mysql::binlog::event::View_change_event,
   rpl_gno get_seq_number() { return seq_number; }
 };
 
-inline bool is_gtid_event(const Log_event *evt) {
-  return (evt->get_type_code() == mysql::binlog::event::GTID_LOG_EVENT ||
-          evt->get_type_code() ==
-              mysql::binlog::event::ANONYMOUS_GTID_LOG_EVENT);
+inline bool is_any_gtid_event(const Log_event *evt) {
+  return (mysql::binlog::event::Log_event_type_helper::is_any_gtid_event(
+      evt->get_type_code()));
 }
 
 /**

@@ -371,7 +371,6 @@ set names latin1;
 create table bug20536 (id bigint not null auto_increment primary key, name
 varchar(255) character set ucs2 not null);
 insert into `bug20536` (`id`,`name`) values (1, _latin1 x'7465737431'), (2, "'test\\_2'");
-select md5(name) from bug20536;
 select sha1(name) from bug20536;
 select make_set(3, name, upper(name)) from bug20536;
 select export_set(5, name, upper(name)) from bug20536;
@@ -469,7 +468,7 @@ set names latin1;
 #
 # Bug #14290: character_maximum_length for text fields
 #
-create table t1(a blob, b text charset utf8, c text charset ucs2);
+create table t1(a blob, b text charset utf8mb3, c text charset ucs2);
 --sorted_result
 select data_type, character_octet_length, character_maximum_length
   from information_schema.columns where table_name='t1';
@@ -563,7 +562,7 @@ SELECT UPPER(MONTHNAME(19700101));
 SELECT HEX(MONTHNAME(19700101));
 SELECT HEX(DAYNAME(19700101));
 SET LC_TIME_NAMES=ru_RU;
-SET NAMES utf8;
+SET NAMES utf8mb3;
 SET character_set_connection=ucs2;
 SELECT CHARSET(DAYNAME(19700101));
 SELECT CHARSET(MONTHNAME(19700101));

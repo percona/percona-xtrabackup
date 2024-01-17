@@ -488,38 +488,8 @@ class MysqlClient {
     return {};
   }
 
-  stdx::expected<void, MysqlError> refresh(unsigned int options = 0) {
-    const auto r = mysql_refresh(m_.get(), options);
-
-    if (r != 0) {
-      return stdx::make_unexpected(make_mysql_error_code(m_.get()));
-    }
-
-    return {};
-  }
-
-  stdx::expected<void, MysqlError> reload() {
-    const auto r = mysql_reload(m_.get());
-
-    if (r != 0) {
-      return stdx::make_unexpected(make_mysql_error_code(m_.get()));
-    }
-
-    return {};
-  }
-
   stdx::expected<void, MysqlError> shutdown() {
-    const auto r = mysql_shutdown(m_.get(), SHUTDOWN_DEFAULT);
-
-    if (r != 0) {
-      return stdx::make_unexpected(make_mysql_error_code(m_.get()));
-    }
-
-    return {};
-  }
-
-  stdx::expected<void, MysqlError> kill(uint32_t id) {
-    const auto r = mysql_kill(m_.get(), id);
+    const auto r = mysql_query(m_.get(), "SHUTDOWN");
 
     if (r != 0) {
       return stdx::make_unexpected(make_mysql_error_code(m_.get()));
@@ -895,17 +865,6 @@ class MysqlClient {
     return {std::in_place, m_.get(), res};
   }
 
-  stdx::expected<Statement::ResultSet, MysqlError> list_fields(
-      std::string tablename) {
-    const auto res = mysql_list_fields(m_.get(), tablename.c_str(), nullptr);
-
-    if (res == nullptr) {
-      return stdx::make_unexpected(make_mysql_error_code(m_.get()));
-    }
-
-    return {std::in_place, m_.get(), res};
-  }
-
   stdx::expected<Statement::Result, MysqlError> query(
       std::string_view stmt, const stdx::span<MYSQL_BIND> &params,
       const stdx::span<const char *> &names) {
@@ -952,8 +911,8 @@ class MysqlClient {
       return {};
     }
 
-    stdx::expected<void, MysqlError> prepare(const std::string &stmt) {
-      auto r = mysql_stmt_prepare(st_.get(), stmt.c_str(), stmt.size());
+    stdx::expected<void, MysqlError> prepare(std::string_view stmt) {
+      auto r = mysql_stmt_prepare(st_.get(), stmt.data(), stmt.size());
 
       if (r != 0) {
         return stdx::make_unexpected(make_mysql_error_code(st_.get()));
@@ -966,22 +925,38 @@ class MysqlClient {
       return mysql_stmt_param_count(stmt);
     }
 
-    template <class T>
-    typename std::enable_if<
-        std::conjunction<std::is_same<typename T::value_type, MYSQL_BIND>,
-                         std::is_same<decltype(std::declval<T>().data()),
-                                      typename T::value_type *>>::value,
-        stdx::expected<void, MysqlError>>::type
-    bind_params(const T &params) {
+    stdx::expected<void, MysqlError> bind_params(
+        const stdx::span<MYSQL_BIND> &params,
+        const stdx::span<const char *> &names) {
       auto *stmt = st_.get();
 
       if (params.size() != param_count()) {
         return stdx::make_unexpected(make_mysql_error_code(1));
       }
 
-      auto r =
-          mysql_stmt_bind_param(stmt, const_cast<MYSQL_BIND *>(params.data()));
+      if (params.size() != names.size()) {
+        return stdx::make_unexpected(make_mysql_error_code(1));
+      }
 
+      auto r = mysql_stmt_bind_named_param(stmt, params.data(), params.size(),
+                                           names.data());
+      if (r != 0) {
+        return stdx::make_unexpected(make_mysql_error_code(stmt));
+      }
+
+      return {};
+    }
+
+    stdx::expected<void, MysqlError> bind_params(
+        const stdx::span<MYSQL_BIND> &params) {
+      auto *stmt = st_.get();
+
+      if (params.size() != param_count()) {
+        return stdx::make_unexpected(make_mysql_error_code(1));
+      }
+
+      auto r = mysql_stmt_bind_named_param(stmt, params.data(), params.size(),
+                                           nullptr);
       if (r != 0) {
         return stdx::make_unexpected(make_mysql_error_code(stmt));
       }
@@ -1191,8 +1166,7 @@ class MysqlClient {
     std::unique_ptr<MYSQL_STMT, StmtDeleter> st_{mysql_stmt_init(nullptr)};
   };
 
-  stdx::expected<PreparedStatement, MysqlError> prepare(
-      const std::string &stmt) {
+  stdx::expected<PreparedStatement, MysqlError> prepare(std::string_view stmt) {
     PreparedStatement st(m_.get());
 
     auto res = st.prepare(stmt);

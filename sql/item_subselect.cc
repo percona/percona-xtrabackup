@@ -34,6 +34,7 @@
 #include <cstdio>
 #include <cstring>
 #include <initializer_list>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -314,9 +315,9 @@ void Item_subselect::cleanup() {
   Item_result_field::cleanup();
   if (m_query_result != nullptr) m_query_result->cleanup();
 
-  if (indexsubquery_engine) {
+  if (indexsubquery_engine != nullptr) {
     indexsubquery_engine->cleanup();
-    destroy(indexsubquery_engine);
+    ::destroy_at(indexsubquery_engine);
     indexsubquery_engine = nullptr;
   }
   reset();
@@ -525,7 +526,7 @@ bool Item_in_subselect::finalize_materialization_transform(THD *thd,
       Delete all materialization-related objects, and return error.
     */
     new_engine->cleanup();
-    destroy(new_engine);
+    ::destroy_at(new_engine);
     return true;
   }
   indexsubquery_engine = new_engine;
@@ -538,7 +539,7 @@ void Item_in_subselect::cleanup() {
   DBUG_TRACE;
   if (m_left_expr_cache != nullptr) {
     m_left_expr_cache->destroy_elements();
-    destroy(m_left_expr_cache);
+    ::destroy_at(m_left_expr_cache);
     m_left_expr_cache = nullptr;
   }
   m_left_expr_cache_filled = false;
@@ -582,7 +583,7 @@ AccessPath *Item_in_subselect::root_access_path() const {
     // the query to the log for debugging, it isn't fully optimized
     // yet and might not yet have an iterator. Thus, return nullptr instead of
     // assert-failing.
-    assert(current_thd->lex->using_hypergraph_optimizer);
+    assert(current_thd->lex->using_hypergraph_optimizer());
     return nullptr;
   }
 }
@@ -644,7 +645,7 @@ bool Item_subselect::walk(Item_processor processor, enum_walk walk,
 
   @param arg    qep_row to which the subquery belongs
 
-  @retval false
+  @returns false
 
   @note We always return "false" as far as we don't want to dive deeper because
         we explain inner subqueries in their joins contexts.
@@ -1120,6 +1121,10 @@ void Item_singlerow_subselect::store(uint i, Item *item) {
   m_row[i]->cache_value();
 }
 
+bool Item_singlerow_subselect::is_single_column_scalar_subquery() const {
+  return query_expr()->first_query_block()->single_visible_field() != nullptr;
+}
+
 enum Item_result Item_singlerow_subselect::result_type() const {
   if (cols() > 1) return ROW_RESULT;
   return type_to_result(data_type());
@@ -1566,7 +1571,7 @@ bool Item_exists_subselect::is_semijoin_candidate(THD *thd) {
       !inner->has_windows() &&                                     // 5
       (outer->resolve_place == Query_block::RESOLVE_CONDITION ||   // 6a
        (outer->resolve_place == Query_block::RESOLVE_JOIN_NEST &&  // 6a
-        (!thd->lex->using_hypergraph_optimizer ||
+        (!thd->lex->using_hypergraph_optimizer() ||
          (thd->secondary_engine_optimization() ==
               Secondary_engine_optimization::SECONDARY &&
           !Overlaps(
@@ -2728,6 +2733,7 @@ void Item_in_subselect::update_used_tables() {
   Item_subselect::update_used_tables();
   left_expr->update_used_tables();
   m_used_tables_cache |= left_expr->used_tables();
+  add_accum_properties(left_expr);
 }
 
 /**
@@ -2874,6 +2880,12 @@ bool Item_subselect::clean_up_after_removal(uchar *arg) {
   // Check whether this item should be removed
   if (ctx->is_stopped(this)) return false;
 
+  if (reference_count() > 1) {
+    (void)decrement_ref_count();
+    ctx->stop_at(this);
+    return false;
+  }
+
   // Remove item on upward traversal, not downward:
   if (marker == MARKER_NONE) {
     marker = MARKER_TRAVERSAL;
@@ -2929,16 +2941,17 @@ bool Item_singlerow_subselect::collect_scalar_subqueries(uchar *arg) {
   auto *info = pointer_cast<Collect_scalar_subquery_info *>(arg);
   Item *i = query_expr()->first_query_block()->single_visible_field();
 
+  // Skip transformations for row subqueries:
+  if (i == nullptr) return false;
+
   if (!info->m_collect_unconditionally) {
-    // Skip transformation if more than one column is selected [1]
-    // or column contains a non-deterministic function [3]
-    // Also exclude scalar subqueries with references to outer query blocks [2]
-    // and Item_maxmin_subselect (ALL/ANY -> MAX/MIN transform artifact) [4]
+    // Skip transformation if column contains a non-deterministic function [2]
+    // Also exclude scalar subqueries with references to outer query blocks [1]
+    // and Item_maxmin_subselect (ALL/ANY -> MAX/MIN transform artifact) [3]
     // Merely correlation to the current query block are ok
-    if (i == nullptr ||                                    // [1]
-        info->is_stopped(this) || is_outer_reference() ||  // [2]
-        is_non_deterministic() ||                          // [3]
-        is_maxmin()) {                                     // [4]
+    if (info->is_stopped(this) || is_outer_reference() ||  // [1]
+        is_non_deterministic() ||                          // [2]
+        is_maxmin()) {                                     // [3]
       return false;
     }
   }
@@ -3021,7 +3034,7 @@ Item *Item_singlerow_subselect::replace_scalar_subquery(uchar *arg) {
     result = new (current_thd->mem_root)
         Item_ref(&info->m_outer_query_block->context, ref, scalar_item->db_name,
                  scalar_item->table_name, scalar_item->field_name);
-    // nullptr is error, but no separate return needed here
+    if (result == nullptr) return nullptr;
   } else {
     result = scalar_item;
   }
@@ -3564,7 +3577,7 @@ subselect_hash_sj_engine::~subselect_hash_sj_engine() {
   /* Assure that cleanup has been called for this engine. */
   assert(!table);
 
-  destroy(result);
+  if (result != nullptr) ::destroy_at(result);
 }
 
 /**
@@ -3675,6 +3688,7 @@ bool subselect_hash_sj_engine::exec(THD *thd) {
       is UNKNOWN. Do as if searching with all triggered conditions disabled:
       this would surely find a row. The caller will translate this to UNKNOWN.
     */
+    assert(item->left_expr->element_index(0)->is_nullable());
     assert(item->left_expr->cols() == 1);
     item->m_value = true;
     return false;

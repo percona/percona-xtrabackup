@@ -69,12 +69,6 @@
 %global license_type          GPLv2
 %endif
 
-%if 0%{?suse_version} == 1315
-%global dist                  .sles12
-%global sles12                1
-%global add_fido_plugins      0
-%endif
-
 %if 0%{?suse_version} == 1500
 %global dist                  .sl15
 %global sles15                1
@@ -102,7 +96,6 @@ Source0:        https://cdn.mysql.com/Downloads/MySQL-@MYSQL_BASE_VERSION@/%{src
 URL:            http://www.mysql.com/
 Packager:       MySQL Release Engineering <mysql-build@oss.oracle.com>
 Vendor:         %{mysql_vendor}
-Source10:       @BOOST_DOWNLOAD_URL@
 BuildRequires:  cmake >= 2.8.2
 BuildRequires:  bison >= 2.1
 BuildRequires:  elfutils
@@ -134,8 +127,7 @@ BuildRequires:  libnuma-devel
 BuildRequires:  ncurses-devel
 BuildRequires:  openssl-devel
 BuildRequires:  zlib-devel
-%{?sles12:BuildRequires: gcc10 gcc10-c++}
-%{?sles15:BuildRequires: gcc9 gcc9-c++}
+%{?sles15:BuildRequires: gcc12 gcc12-c++}
 %{?sles15:BuildRequires: rpcgen pkgconfig(libtirpc)}
 BuildRequires:  systemd
 BuildRequires:  pkgconfig(systemd)
@@ -146,7 +138,7 @@ BuildRequires:  openldap2-devel
 %global _privatelibs libprotobuf.*|libmysqlharness\.so.*|libmysqlharness_stdx\.so.*|libmysqlharness_tls\.so.*|libmysqlrouter\.so\..*|libmysqlrouter_.*\.so\..*|libfido2.*
 %global _privateperl perl\\((GD|hostnames|lib::mtr|lib::v1|mtr_|My::)
 %global __requires_exclude ^((%{_privatelibs})|(%{_privateperl}))
-%global __provides_exclude_from ^(/usr/share/(mysql|mysql-test)/.*|%{_libdir}/mysql/plugin/.*\\.so|%{_libdir}/mysql/private/.*|%{_libdir}/mysqlrouter/%{?sles12:libprotobuf-lite}.*|%{_libdir}/mysqlrouter/private/.*)$
+%global __provides_exclude_from ^(/usr/share/(mysql|mysql-test)/.*|%{_libdir}/mysql/plugin/.*\\.so|%{_libdir}/mysql/private/.*|%{_libdir}/mysqlrouter/.*|%{_libdir}/mysqlrouter/private/.*)$
 
 %description
 The MySQL(TM) software delivers a very fast, multi-threaded, multi-user,
@@ -586,7 +578,7 @@ necessary to develop MySQL Router applications.
 %endif
 
 %prep
-%setup -q -T -a 0 -a 10 -c -n %{src_dir}
+%setup -q -T -a 0 -c -n %{src_dir}
 pushd %{src_dir}
 
 %build
@@ -612,10 +604,8 @@ mkdir debug
            -DPIDFILE_RPM="/var/run/mysql/mysqld.pid" \
            -DLOGFILE_RPM="/var/log/mysql/mysqld.log" \
            -DCMAKE_BUILD_TYPE=Debug \
-           -DWITH_BOOST=.. \
            -DCMAKE_C_FLAGS="$optflags" \
            -DCMAKE_CXX_FLAGS="$optflags" \
-           -DUSE_LD_LLD=0 \
            -DWITH_SYSTEMD=1 \
            -DSYSTEMD_SERVICE_NAME="mysql" \
            -DSYSTEMD_PID_DIR="/run/mysql" \
@@ -634,7 +624,6 @@ mkdir debug
            -DWITH_CURL=system \
            %{?aws_sdk_option} \
 %endif
-           -DWITH_INNODB_MEMCACHED=1 \
            -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
            -DMYSQLX_UNIX_ADDR="/var/run/mysql/mysqlx.sock" \
            -DWITH_NUMA=ON \
@@ -656,10 +645,8 @@ mkdir release
            -DPIDFILE_RPM="/var/run/mysql/mysqld.pid" \
            -DLOGFILE_RPM="/var/log/mysql/mysqld.log" \
            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-           -DWITH_BOOST=.. \
            -DCMAKE_C_FLAGS="%{optflags}" \
            -DCMAKE_CXX_FLAGS="%{optflags}" \
-           -DUSE_LD_LLD=0 \
            -DWITH_SYSTEMD=1 \
            -DSYSTEMD_SERVICE_NAME="mysql" \
            -DSYSTEMD_PID_DIR="/run/mysql" \
@@ -678,7 +665,6 @@ mkdir release
            -DWITH_CURL=system \
            %{?aws_sdk_option} \
 %endif
-           -DWITH_INNODB_MEMCACHED=1 \
            -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
            -DMYSQLX_UNIX_ADDR="/var/run/mysql/mysqlx.sock" \
            -DWITH_NUMA=ON \
@@ -757,7 +743,9 @@ rm -r $(readlink var) var
 [ -e /var/log/mysqld.log ] || install -m0640 -omysql -gmysql /dev/null /var/log/mysqld.log >/dev/null 2>&1 || :
 %service_add_post mysql.service
 /usr/bin/systemd-tmpfiles --create %{_tmpfilesdir}/mysql.conf >/dev/null 2>&1 || :
-/bin/systemctl enable mysql.service >/dev/null 2>&1 || :
+if [ $1 -eq 1 ]; then
+    /bin/systemctl enable mysql.service >/dev/null 2>&1 || :
+fi
 
 %preun server
 %service_del_preun mysql.service
@@ -860,10 +848,8 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/group_replication.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/ha_example.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/ha_mock.so
-%attr(755, root, root) %{_libdir}/mysql/plugin/innodb_engine.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_file.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_udf.so
-%attr(755, root, root) %{_libdir}/mysql/plugin/libmemcached.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/locking_service.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/mypluglib.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/mysql_clone.so
@@ -919,7 +905,6 @@ rm -r $(readlink var) var
 %endif # commercial
 
 %attr(644, root, root) %{_datadir}/mysql-*/dictionary.txt
-%attr(644, root, root) %{_datadir}/mysql-*/innodb_memcached_config.sql
 %attr(644, root, root) %{_datadir}/mysql-*/install_rewriter.sql
 %attr(644, root, root) %{_datadir}/mysql-*/mysql-log-rotate
 %attr(644, root, root) %{_datadir}/mysql-*/uninstall_rewriter.sql
@@ -953,10 +938,8 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/group_replication.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/ha_example.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/ha_mock.so
-%attr(755, root, root) %{_libdir}/mysql/plugin/debug/innodb_engine.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/keyring_file.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/keyring_udf.so
-%attr(755, root, root) %{_libdir}/mysql/plugin/debug/libmemcached.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/locking_service.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/mypluglib.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/mysql_clone.so
@@ -1153,7 +1136,7 @@ rm -r $(readlink var) var
 %doc %{?license_files_server}
 %dir %attr(755, root, root) %{_libdir}/mysql
 %attr(644, root, root) %{_sysconfdir}/ld.so.conf.d/mysql-%{_arch}.conf
-%{_libdir}/mysql/libmysqlclient.so.22*
+%{_libdir}/mysql/libmysqlclient.so.23*
 
 %files client-plugins
 %defattr(-, root, root, -)
@@ -1487,6 +1470,9 @@ rm -r $(readlink var) var
 %endif # with_router
 
 %changelog
+* Tue Sep 19 2023 Miroslav Rajcic <miroslav.rajcic@oracle.com> - 8.3.0-1
+- Some C API removed, so increase the libmysqlclient major version to 23.
+
 * Mon Jul 24 2023 Miroslav Rajcic <miroslav.rajcic@oracle.com> - 8.2.0-1
 - Added component_test_server_telemetry_metrics
 

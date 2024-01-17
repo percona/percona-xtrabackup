@@ -31,13 +31,15 @@
 #include <sys/types.h>
 
 #include <climits>
+#include <string_view>
 
 #include "my_base.h"
 
 #include "my_inttypes.h"
 #include "my_sqlcommand.h"
 #include "my_table_map.h"
-#include "sql/field.h"         // Copy_field
+#include "sql/field.h"  // Copy_field
+#include "sql/handler.h"
 #include "sql/item_cmpfunc.h"  // Item_cond_and
 #include "sql/opt_costmodel.h"
 #include "sql/sql_bitmap.h"
@@ -1062,9 +1064,9 @@ const handlerton *get_secondary_engine_handlerton(const LEX *lex);
   Checks if any of the tables referenced belong to an external engine.
   If an external table is found, return true, false otherwise.
 
-  @param query_tables the referenced tables.
+  @param lex the statement
 */
-bool has_external_table(Table_ref *query_tables);
+bool has_external_table(const LEX *lex);
 
 /**
   Sets the reason of failure for the statement to the external engine.
@@ -1082,6 +1084,16 @@ void set_external_engine_fail_reason(const LEX *lex, const char *reason);
 */
 void notify_plugins_after_select(THD *thd, const Sql_cmd *cmd);
 
-const char *get_secondary_engine_fail_reason(const LEX *lex);
+std::string_view get_secondary_engine_fail_reason(const LEX *lex);
+
+void set_fail_reason_and_raise_error(const LEX *lex, std::string_view reason);
+
+const MYSQL_LEX_CSTRING *get_eligible_secondary_engine_from(const LEX *lex);
+
+std::string_view find_secondary_engine_fail_reason(const LEX *lex);
+
+void find_and_set_offload_fail_reason(const LEX *lex);
+
+bool reads_not_secondary_columns(const LEX *lex);
 
 #endif /* SQL_SELECT_INCLUDED */

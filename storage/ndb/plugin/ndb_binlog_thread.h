@@ -30,7 +30,9 @@
 #include <unordered_set>
 #include <vector>
 
+#include "storage/ndb/include/ndbapi/NdbDictionary.hpp"
 #include "storage/ndb/plugin/ndb_binlog_hooks.h"
+#include "storage/ndb/plugin/ndb_binlog_index_rows.h"
 #include "storage/ndb/plugin/ndb_component.h"
 #include "storage/ndb/plugin/ndb_metadata_sync.h"
 
@@ -38,7 +40,6 @@ class Ndb;
 class NdbEventOperation;
 class Ndb_sync_pending_objects_table;
 class Ndb_sync_excluded_objects_table;
-struct ndb_binlog_index_row;
 class injector;
 class injector_transaction;
 struct TABLE;
@@ -59,22 +60,22 @@ class Ndb_binlog_thread : public Ndb_component {
     // Binlog cache disk use
     ulong disk_use{0};
 
-    // Mask to bound warnings of disk spills by the binlog injector thread
-    static constexpr uint32 freq_mask = 0x3FE1;
+    // Bound warnings of disk spills by the binlog injector thread
+    ulong next_bound = 1;
 
     /**
-       Checks if val is in the mask. If val is greater than the
-       absolute value of the mask, then check that val is a multiple
-       of mask.
+       Checks if val is in next_bound boundary. If val matches
+       next_bound then increment next_bound by 64 and remove any bits
+       below 64 to avoid repeated warnings.
 
        @param    val    Value to test
-       @param    mask   Bit mask to test against
-       @return          True if val is present in mask or is in the
-       boundary, false otherwise
+       @return          True if val is on boundary, false otherwise
     */
-    bool is_on_significant_boundary(uint32 val, uint32 mask) const {
-      if (val > mask) return val % mask == 0;
-      return val == (val & mask);
+    bool is_on_significant_boundary(uint32 val) {
+      constexpr uint64 mask = ~0x3F;  // not(63)
+      bool ret = val == next_bound;
+      if (ret) next_bound = (next_bound + 64) & mask;
+      return ret;
     }
 
    public:
@@ -97,7 +98,7 @@ class Ndb_binlog_thread : public Ndb_component {
       }
       disk_use = value;
       m_disk_spills++;
-      return is_on_significant_boundary(m_disk_spills, freq_mask);
+      return is_on_significant_boundary(m_disk_spills);
     }
 
   } m_cache_spill_checker;
@@ -308,6 +309,22 @@ class Ndb_binlog_thread : public Ndb_component {
    */
   void fix_per_epoch_trans_settings(THD *thd);
 
+  /**
+    @brief Release THD resources (if necessary).
+    @note The common use case for THD's usage in a session thread is to reset
+    its state and clear used memory after each statement, thus most
+    called MySQL functions assume that memory can be allocated in any of the
+    mem_root's of THD and it will be released at a later time.  The THD owned
+    by the long lived ndb_binlog thread also need to release resources
+    at regular intervals, this functon is called after each epoch
+    (instead of statement) to check if there are any resources to release.
+
+     @param thd Thread handle
+  */
+  static void release_thd_resources(THD *thd);
+
+  Ndb_binlog_index_rows m_binlog_index_rows;
+
   // Functions for handling received events
   int handle_data_get_blobs(const TABLE *table,
                             const NdbValue *const value_array,
@@ -316,11 +333,10 @@ class Ndb_binlog_thread : public Ndb_component {
                                  MY_BITMAP *defined, uchar *buf) const;
   int handle_error(NdbEventOperation *pOp) const;
   void handle_non_data_event(THD *thd, NdbEventOperation *pOp,
-                             ndb_binlog_index_row &row);
+                             NdbDictionary::Event::TableEvent type);
   int handle_data_event(const NdbEventOperation *pOp,
-                        ndb_binlog_index_row **rows,
                         injector_transaction &trans, unsigned &trans_row_count,
-                        unsigned &replicated_row_count) const;
+                        unsigned &replicated_row_count);
   bool handle_events_for_epoch(THD *thd, injector *inj, Ndb *i_ndb,
                                NdbEventOperation *&i_pOp,
                                const Uint64 current_epoch);
@@ -333,8 +349,7 @@ class Ndb_binlog_thread : public Ndb_component {
                        Uint64 gap_epoch) const;
   void inject_table_map(injector_transaction &trans, Ndb *ndb) const;
   void commit_trans(injector_transaction &trans, THD *thd, Uint64 current_epoch,
-                    ndb_binlog_index_row *rows, unsigned trans_row_count,
-                    unsigned replicated_row_count);
+                    unsigned trans_row_count, unsigned replicated_row_count);
 
   // Cache for NDB metadata
   class Metadata_cache {
@@ -349,6 +364,10 @@ class Ndb_binlog_thread : public Ndb_component {
       return load_fk_parents(dict);
     }
   } metadata_cache;
+
+#ifndef NDEBUG
+  void dbug_log_table_maps(Ndb *ndb, Uint64 current_epoch);
+#endif
 };
 
 /*

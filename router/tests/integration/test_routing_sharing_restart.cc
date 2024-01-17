@@ -79,15 +79,7 @@ using namespace std::string_literals;
 using namespace std::chrono_literals;
 using namespace std::string_view_literals;
 
-using ::testing::AllOf;
 using ::testing::AnyOf;
-using ::testing::Contains;
-using ::testing::ElementsAre;
-using ::testing::IsEmpty;
-using ::testing::IsSupersetOf;
-using ::testing::Not;
-using ::testing::Pair;
-using ::testing::SizeIs;
 using ::testing::StartsWith;
 
 static constexpr const auto kIdleServerConnectionsSleepTime{10ms};
@@ -841,10 +833,17 @@ class ShareConnectionTestTemp
       if (s == nullptr || s->mysqld_failed_to_start()) {
         GTEST_SKIP() << "failed to start mysqld";
       } else {
-        s->flush_privileges();  // reset the auth-cache
-        ASSERT_NO_ERROR(
-            s->close_all_connections());  // reset the router's connection-pool
-        s->reset_to_defaults();
+        auto admin_cli_res = s->admin_cli();
+        ASSERT_NO_ERROR(admin_cli_res);
+
+        auto cli = std::move(*admin_cli_res);
+
+        // reset the auth-cache
+        SharedServer::flush_privileges(cli);
+
+        // reset the router's connection-pool
+        ASSERT_NO_ERROR(SharedServer::close_all_connections(cli));
+        SharedServer::reset_to_defaults(cli);
       }
     }
   }
@@ -1156,11 +1155,14 @@ TEST_P(ShareConnectionTestWithRestartedServer,
       int expected_error_code = 1835;  // malformed packet
       switch (ndx) {
         case 0:   // sleep
+        case 4:   // list-fields
         case 5:   // create-db
         case 6:   // drop-db
+        case 7:   // refresh
         case 8:   // deprecated
         case 10:  // process-info
         case 11:  // connect
+        case 12:  // process-kill
         case 15:  // time
         case 16:  // delayed insert
         case cmd_byte<classic_protocol::message::client::ChangeUser>():  // 17

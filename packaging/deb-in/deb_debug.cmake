@@ -31,14 +31,12 @@ SET (DEB_RULES_DEBUG_CMAKE
 		-DINSTALL_LIBDIR=lib/$(DEB_HOST_MULTIARCH) \\
 		-DSYSCONFDIR=/etc/mysql \\
 		-DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock \\
-		-DWITH_INNODB_MEMCACHED=1 \\
 		-DWITH_MECAB=system \\
 		-DWITH_NUMA=ON \\
 		-DCOMPILATION_COMMENT=\"MySQL ${DEB_PRODUCTNAMEC} - ${DEB_LICENSENAME} - Debug\" \\
 		-DCOMPILATION_COMMENT_SERVER=\"MySQL ${DEB_PRODUCTNAMEC} Server - ${DEB_LICENSENAME} - Debug\" \\
 		-DINSTALL_LAYOUT=DEB \\
 		-DREPRODUCIBLE_BUILD=OFF \\
-		-DUSE_LD_LLD=OFF \\
 		-DDEB_PRODUCT=${DEB_PRODUCT} \\
 		${DEB_CMAKE_EXTRAS}
 ")
@@ -76,10 +74,8 @@ usr/lib/mysql/plugin/debug/component_reference_cache.so
 usr/lib/mysql/plugin/debug/ddl_rewriter.so
 usr/lib/mysql/plugin/debug/group_replication.so
 usr/lib/mysql/plugin/debug/connection_control.so
-usr/lib/mysql/plugin/debug/innodb_engine.so
 usr/lib/mysql/plugin/debug/keyring_file.so
 usr/lib/mysql/plugin/debug/keyring_udf.so
-usr/lib/mysql/plugin/debug/libmemcached.so
 usr/lib/mysql/plugin/debug/libpluginmecab.so
 usr/lib/mysql/plugin/debug/locking_service.so
 usr/lib/mysql/plugin/debug/mypluglib.so

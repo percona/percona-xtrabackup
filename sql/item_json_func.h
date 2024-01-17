@@ -26,12 +26,14 @@
 #include <assert.h>
 #include <sys/types.h>
 
-#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <utility>  // std::forward
 
+#include "field_types.h"
+#include "my_alloc.h"
 #include "my_inttypes.h"
+#include "my_table_map.h"
 #include "my_time.h"
 #include "mysql/strings/m_ctype.h"
 #include "mysql/udf_registration_types.h"
@@ -53,7 +55,9 @@
 
 class Json_schema_validator;
 class Json_array;
+class Json_diff_vector;
 class Json_dom;
+class Json_object;
 class Json_scalar_holder;
 class Json_wrapper;
 class PT_item_list;
@@ -61,6 +65,8 @@ class THD;
 class my_decimal;
 enum Cast_target : unsigned char;
 enum class Json_on_response_type : uint16;
+enum class enum_json_diff_status;
+
 struct Cast_type;
 struct TABLE;
 
@@ -511,6 +517,7 @@ class Item_func_json_length final : public Item_int_func {
   }
 
   const char *func_name() const override { return "json_length"; }
+  enum Functype functype() const override { return JSON_LENGTH_FUNC; }
 
   longlong val_int() override;
 };
@@ -525,6 +532,7 @@ class Item_func_json_depth final : public Item_int_func {
   Item_func_json_depth(const POS &pos, Item *a) : Item_int_func(pos, a) {}
 
   const char *func_name() const override { return "json_depth"; }
+  enum Functype functype() const override { return JSON_DEPTH_FUNC; }
 
   bool resolve_type(THD *thd) override {
     if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_JSON)) return true;
@@ -574,6 +582,7 @@ class Item_func_json_extract final : public Item_json_func {
       : Item_json_func(thd, pos, a, b) {}
 
   const char *func_name() const override { return "json_extract"; }
+  enum Functype functype() const override { return JSON_EXTRACT_FUNC; }
 
   bool resolve_type(THD *thd) override {
     if (Item_json_func::resolve_type(thd)) return true;
@@ -711,6 +720,7 @@ class Item_func_json_array final : public Item_json_func {
   }
 
   const char *func_name() const override { return "json_array"; }
+  enum Functype functype() const override { return JSON_ARRAY_FUNC; }
 
   bool resolve_type(THD *thd) override {
     if (Item_json_func::resolve_type(thd)) return true;
@@ -737,6 +747,7 @@ class Item_func_json_row_object final : public Item_json_func {
   }
 
   const char *func_name() const override { return "json_object"; }
+  enum Functype functype() const override { return JSON_OBJECT_FUNC; }
 
   bool resolve_type(THD *thd) override {
     if (Item_json_func::resolve_type(thd)) return true;
@@ -1247,6 +1258,17 @@ using Json_dom_ptr = std::unique_ptr<Json_dom>;
 bool parse_json(const String &res, Json_dom_ptr *dom, bool require_str_or_json,
                 const JsonParseErrorHandler &error_handler,
                 const JsonErrorHandler &depth_handler);
+
+/**
+  Apply a sequence of JSON diffs to the value stored in a JSON column.
+
+    @param field  the column to update
+    @param diffs  the diffs to apply
+    @return an enum_json_diff_status value that tells if the diffs were
+    applied successfully
+ */
+enum_json_diff_status apply_json_diffs(Field_json *field,
+                                       const Json_diff_vector *diffs);
 
 typedef Prealloced_array<size_t, 16> Sorted_index_array;
 bool sort_and_remove_dups(const Json_wrapper &orig, Sorted_index_array *v);

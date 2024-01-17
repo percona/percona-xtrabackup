@@ -38,6 +38,7 @@
 #include <limits.h>
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <cmath>
 #include <deque>
 #include <limits>
@@ -50,7 +51,6 @@
 #include "ft_global.h"
 #include "mem_root_deque.h"
 #include "memory_debugging.h"
-#include "my_bit.h"  // my_count_bits
 #include "my_bitmap.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
@@ -77,7 +77,9 @@
 #include "sql/iterators/basic_row_iterators.h"
 #include "sql/iterators/timing_iterator.h"
 #include "sql/join_optimizer/access_path.h"
+#include "sql/join_optimizer/bit_utils.h"
 #include "sql/join_optimizer/join_optimizer.h"
+#include "sql/join_optimizer/relational_expression.h"
 #include "sql/join_optimizer/walk_access_paths.h"
 #include "sql/key.h"
 #include "sql/key_spec.h"
@@ -252,7 +254,7 @@ static void SaveCondEqualLists(COND_EQUAL *cond_equal) {
 
 bool JOIN::check_access_path_with_fts() const {
   // Only relevant to the old optimizer.
-  assert(!thd->lex->using_hypergraph_optimizer);
+  assert(!thd->lex->using_hypergraph_optimizer());
 
   assert(query_block->has_ft_funcs());
   assert(rollup_state != RollupState::NONE);
@@ -417,7 +419,7 @@ bool JOIN::optimize(bool finalize_access_paths) {
     }
   }
 
-  if (thd->lex->using_hypergraph_optimizer) {
+  if (thd->lex->using_hypergraph_optimizer()) {
     // The hypergraph optimizer also wants all subselect items to be optimized,
     // so that it has cost information to attach to filter nodes.
     for (Query_expression *unit = query_block->first_inner_query_expression();
@@ -567,7 +569,12 @@ bool JOIN::optimize(bool finalize_access_paths) {
         goto setup_subq_exit;
     }
   }
-  if (tables_list == nullptr) {
+
+  if (thd->lex->using_hypergraph_optimizer() &&
+      query_block->is_table_value_constructor) {
+    // Let the hypergraph optimizer handle table value constructors, even though
+    // they are table-less queries.
+  } else if (tables_list == nullptr) {
     DBUG_PRINT("info", ("No tables"));
     best_rowcount = 1;
     error = 0;
@@ -590,16 +597,12 @@ bool JOIN::optimize(bool finalize_access_paths) {
         m_windows_sort = true;
         break;
       }
-    // This is necessary to undo effects of any previous execute's call to
-    // CreateFramebufferTable->ReplaceMaterializedItems's calls of
-    // update_used_tables: loses PROP_WINDOW_FUNCTION needed here in next
-    // execution round
-    if (m_windows.elements > 0)
-      for (auto f : *fields) f->update_used_tables();
   }
 
-  sort_by_table = get_sort_by_table(order.order, group_list.order,
-                                    query_block->leaf_tables);
+  if (!thd->lex->using_hypergraph_optimizer()) {
+    sort_by_table = get_sort_by_table(order.order, group_list.order,
+                                      query_block->leaf_tables);
+  }
 
   if ((where_cond || !group_list.empty() || !order.empty()) &&
       substitute_gc(thd, query_block, where_cond, group_list.order,
@@ -611,7 +614,7 @@ bool JOIN::optimize(bool finalize_access_paths) {
   // Ensure there are no errors prior making query plan
   if (thd->is_error()) return true;
 
-  if (thd->lex->using_hypergraph_optimizer) {
+  if (thd->lex->using_hypergraph_optimizer()) {
     // Get the WHERE and HAVING clauses with the IN-to-EXISTS predicates
     // removed, so that we can plan both with and without the IN-to-EXISTS
     // conversion.
@@ -686,12 +689,9 @@ bool JOIN::optimize(bool finalize_access_paths) {
   //       All of this is never called for the hypergraph join optimizer!
   // ----------------------------------------------------------------------------
 
-  assert(!thd->lex->using_hypergraph_optimizer);
+  assert(!thd->lex->using_hypergraph_optimizer());
   // Don't expect to get here if the hypergraph optimizer is enabled via an
-  // optimizer switch. We only check it for regular statements. Prepared
-  // statements and stored programs use the optimizer that was active when the
-  // statement was prepared, and don't check the optimizer switch for each
-  // subsequent execution.
+  // optimizer switch. The "is_regular()" case is necessary for SET statements.
   assert(!thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER) ||
          !thd->stmt_arena->is_regular());
 
@@ -711,7 +711,7 @@ bool JOIN::optimize(bool finalize_access_paths) {
     goto setup_subq_exit;
   }
 
-  if (rollup_state == RollupState::NONE) {
+  if (!query_block->is_non_primitive_grouped()) {
     /* Remove distinct if only const tables */
     select_distinct &= !plan_is_const();
   }
@@ -2524,7 +2524,7 @@ static bool test_if_skip_sort_order(JOIN_TAB *tab, ORDER_with_src &order,
             3 - constructed right above
           In this case we drop quick #2 as #3 is expected to be better.
         */
-        destroy(tab->range_scan());
+        ::destroy_at(tab->range_scan());
         tab->set_range_scan(nullptr);
       }
       /*
@@ -2730,11 +2730,12 @@ fix_ICP:
     }
 
     // Keep current (ordered) tab->range_scan()
-    if (save_range_scan != tab->range_scan()) destroy(save_range_scan);
+    if (save_range_scan != nullptr && save_range_scan != tab->range_scan())
+      ::destroy_at(save_range_scan);
   } else {
     // Restore original save_range_scan
     if (tab->range_scan() != save_range_scan) {
-      destroy(tab->range_scan());
+      if (tab->range_scan() != nullptr) ::destroy_at(tab->range_scan());
       tab->set_range_scan(save_range_scan);
     }
   }
@@ -2902,14 +2903,14 @@ static bool can_switch_from_ref_to_range(THD *thd, JOIN_TAB *tab,
                 &tab->needed_reg, recheck_range, tab->join()->query_block,
                 &range_scan) > 0) {
           if (length < get_max_used_key_length(range_scan)) {
-            destroy(tab->range_scan());
+            if (tab->range_scan() != nullptr) ::destroy_at(tab->range_scan());
             tab->set_range_scan(range_scan);
             return true;
           }
           Opt_trace_object(trace, "access_type_unchanged")
               .add("ref_key_length", length)
               .add("range_key_length", get_max_used_key_length(range_scan));
-          destroy(range_scan);
+          ::destroy_at(range_scan);
         }
       } else
         return length < get_max_used_key_length(tab->range_scan());  // 5)
@@ -2982,8 +2983,10 @@ void JOIN::adjust_access_methods() {
         tab->position()->filter_effect = COND_FILTER_STALE;
       } else {
         // Cleanup quick, REF/REF_OR_NULL/EQ_REF, will be clarified later
-        ::destroy(tab->range_scan());
-        tab->set_range_scan(nullptr);
+        if (tab->range_scan() != nullptr) {
+          ::destroy_at(tab->range_scan());
+          tab->set_range_scan(nullptr);
+        }
       }
     }
     // Ensure AM consistency
@@ -3189,7 +3192,7 @@ bool JOIN::get_best_combination() {
           We must use the duplicate-eliminating index, so this QUICK is not
           an option.
         */
-        ::destroy(tab->range_scan());
+        ::destroy_at(tab->range_scan());
         tab->set_range_scan(nullptr);
       }
       if (table->is_intersect() || table->is_except()) {
@@ -4811,9 +4814,10 @@ Item *substitute_for_best_equal_field(THD *thd, Item *cond,
       cond_equal = cond_equal->upper_levels;
     return eliminate_item_equal(thd, nullptr, cond_equal, item_equal);
   } else {
-    uchar *dummy = nullptr;
-    if (cond->compile(&Item::visit_all_analyzer, &dummy,
-                      &Item::replace_equal_field, nullptr) == nullptr)
+    Item::Replace_equal replace;
+    uchar *arg = pointer_cast<uchar *>(&replace);
+    if (cond->compile(&Item::replace_equal_field_checker, &arg,
+                      &Item::replace_equal_field, arg) == nullptr)
       return nullptr;
   }
   return cond;
@@ -5945,7 +5949,8 @@ bool JOIN::estimate_rowcount() {
         always_false_cond = true;
       if (records != HA_POS_ERROR) {
         tab->found_records = records;
-        tab->read_time = tab->range_scan() ? tab->range_scan()->cost : 0.0;
+        tab->read_time =
+            tab->range_scan() != nullptr ? tab->range_scan()->cost() : 0.0;
       }
       range_analysis_done = true;
     } else if (tab->join_cond() != nullptr && tab->join_cond()->const_item() &&
@@ -6602,7 +6607,7 @@ static bool optimize_semijoin_nests_for_materialization(JOIN *join) {
 
       if (Optimize_table_order(join->thd, join, sj_nest).choose_table_order())
         return true;
-      const uint n_tables = my_count_bits(sj_nest->sj_inner_tables);
+      const uint n_tables = std::popcount(sj_nest->sj_inner_tables);
       calculate_materialization_costs(join, sj_nest, n_tables,
                                       &sj_nest->nested_join->sjm);
       /*
@@ -8005,7 +8010,7 @@ static bool add_key_fields_for_nj(THD *thd, JOIN *join,
   @param[out] out_args   Collect the arguments of the aggregate functions
                          to a list. We don't worry about duplicates as
                          these will be sorted out later in
-                         get_best_group_min_max.
+                         get_best_group_skip_scan.
 
   @return                does the query qualify for indexed AGGFN(DISTINCT)
     @retval   true       it does
@@ -8018,9 +8023,11 @@ bool is_indexed_agg_distinct(JOIN *join,
   bool result = false;
   Field_map first_aggdistinct_fields;
 
-  if (join->primary_tables > 1 ||             /* reference more than 1 table */
-      join->select_distinct ||                /* or a DISTINCT */
-      join->query_block->olap == ROLLUP_TYPE) /* Check (B3) for ROLLUP */
+  if (join->primary_tables > 1 || /* reference more than 1 table */
+      join->select_distinct ||    /* or a DISTINCT */
+
+      join->query_block->is_non_primitive_grouped()) /* Check (B3) for
+                                                      non-primitive grouping */
     return false;
 
   if (join->make_sum_func_list(*join->fields, true)) return false;
@@ -9694,7 +9701,7 @@ static bool make_join_query_block(JOIN *join, Item *cond) {
               get_quick_record_count().
             */
           } else {
-            destroy(tab->range_scan());
+            ::destroy_at(tab->range_scan());
             tab->set_range_scan(nullptr);
           }
         }
@@ -9856,7 +9863,7 @@ static bool make_join_query_block(JOIN *join, Item *cond) {
             bool search_if_impossible = recheck_reason != DONT_RECHECK;
             if (search_if_impossible) {
               if (tab->range_scan()) {
-                destroy(tab->range_scan());
+                ::destroy_at(tab->range_scan());
                 tab->set_type(JT_ALL);
               }
               AccessPath *range_scan;
@@ -9887,7 +9894,7 @@ static bool make_join_query_block(JOIN *join, Item *cond) {
               const Opt_trace_object trace_without_on(trace,
                                                       "without_ON_clause");
               if (tab->range_scan()) {
-                destroy(tab->range_scan());
+                ::destroy_at(tab->range_scan());
                 tab->set_type(JT_ALL);
               }
               AccessPath *range_scan;
@@ -10817,7 +10824,7 @@ bool JOIN::optimize_fts_query() {
   assert(query_block->has_ft_funcs());
 
   // Only used by the old optimizer.
-  assert(!thd->lex->using_hypergraph_optimizer);
+  assert(!thd->lex->using_hypergraph_optimizer());
 
   for (uint i = const_tables; i < tables; i++) {
     JOIN_TAB *tab = best_ref[i];
@@ -10974,11 +10981,10 @@ static void calculate_materialization_costs(JOIN *join, Table_ref *sj_nest,
       map |= item->used_tables();
     }
     map &= ~PSEUDO_TABLE_BITS;
-    Table_map_iterator tm_it(map);
-    int tableno;
     double rows = 1.0;
-    while ((tableno = tm_it.next_bit()) != Table_map_iterator::BITMAP_END)
+    for (size_t tableno : BitsSetIn(map)) {
       rows *= join->map2table[tableno]->table()->quick_condition_rows;
+    }
     distinct_rowcount = min(mat_rowcount, rows);
   }
   /*
@@ -11566,7 +11572,7 @@ double EstimateRowAccesses(const AccessPath *path, double num_evaluations,
           // may be too low. Get the cardinality from the handler's statistics
           // instead.
           if (subpath->type == AccessPath::INDEX_SCAN &&
-              !current_thd->lex->using_hypergraph_optimizer) {
+              !current_thd->lex->using_hypergraph_optimizer()) {
             num_output_rows = table->file->stats.records;
           }
 

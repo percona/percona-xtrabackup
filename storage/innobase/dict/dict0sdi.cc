@@ -164,7 +164,7 @@ when SDI is corrupted.
 @param[in,out]  tablespace      tablespace object
 @retval         false           success
 @retval         true            failure */
-bool dict_sdi_drop(dd::Tablespace *) {
+bool dict_sdi_drop(dd::Tablespace *tablespace [[maybe_unused]]) {
 #if 0  /* TODO: Enable in WL#9761 */
         uint32  space_id;
         if (dict_sdi_exists(tablespace, &space_id)
@@ -314,9 +314,6 @@ bool dict_sdi_set(handlerton *hton, const dd::Tablespace &tablespace,
                                 << " sdi_key: type: " << sdi_key->type
                                 << " id: " << sdi_key->id << ")";);
 
-  /* Used for testing purpose for DDLs from Memcached */
-  DBUG_EXECUTE_IF("skip_sdi", return (false););
-
   if (dd_tablespace_is_discarded(&tablespace)) {
     /* Claim success. */
     return (false);
@@ -420,9 +417,6 @@ bool dict_sdi_delete(const dd::Tablespace &tablespace, const dd::Table *table,
                                 << "," << tablespace.id()
                                 << " sdi_key: type: " << sdi_key->type
                                 << " id: " << sdi_key->id << ")";);
-
-  /* Used for testing purpose for DDLs from Memcached */
-  DBUG_EXECUTE_IF("skip_sdi", return (false););
 
   if (dd_tablespace_is_discarded(&tablespace)) {
     /* Claim success. */

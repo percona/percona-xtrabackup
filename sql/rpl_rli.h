@@ -142,7 +142,7 @@ Relay_log_info is initialized from a repository, i.e. table or file, if there is
 one. Otherwise, data members are initialized with defaults by calling
 init_relay_log_info().
 
-The relay.info table/file shall be updated whenever: (i) the relay log file
+The applier metadata shall be updated whenever: (i) the relay log file
 is rotated, (ii) SQL Thread is stopped, (iii) while processing a Xid_log_event,
 (iv) after a Query_log_event (i.e. commit or rollback) and (v) after processing
 any statement written to the binary log without a transaction context.
@@ -835,13 +835,13 @@ class Relay_log_info : public Rpl_info {
  public:
   bool is_relay_log_truncated() { return m_relay_log_truncated; }
 
-  Sid_map *get_sid_map() { return gtid_set->get_sid_map(); }
+  Tsid_map *get_tsid_map() { return gtid_set->get_tsid_map(); }
 
-  Checkable_rwlock *get_sid_lock() { return get_sid_map()->get_sid_lock(); }
+  Checkable_rwlock *get_tsid_lock() { return get_tsid_map()->get_tsid_lock(); }
 
   void add_logged_gtid(rpl_sidno sidno, rpl_gno gno) {
-    get_sid_lock()->assert_some_lock();
-    assert(sidno <= get_sid_map()->get_max_sidno());
+    get_tsid_lock()->assert_some_lock();
+    assert(sidno <= get_tsid_map()->get_max_sidno());
     gtid_set->ensure_sidno(sidno);
     gtid_set->_add_gtid(sidno, gno);
   }
@@ -1272,6 +1272,8 @@ class Relay_log_info : public Rpl_info {
   /*
     MTS statistics:
   */
+  long mts_online_stat_curr;      // counter to decide on generating
+                                  // ER_RPL_MTA_STATISTICS message
   ulonglong mts_events_assigned;  // number of events (statements) scheduled
   ulonglong mts_groups_assigned;  // number of groups (transactions) scheduled
   std::atomic<ulong>
@@ -1871,33 +1873,37 @@ class Relay_log_info : public Rpl_info {
   uint32 m_flags;
 
   /*
-    Before the MASTER_DELAY parameter was added (WL#344), relay_log.info
+    Historically, the number of entires in applier metadata was the number
+    of lines in applier metadata file. Since WL#13959, applier metadata can
+    be stored only in table, but the notion of number of line is still
+    preserved.
+    Before the MASTER_DELAY parameter was added (WL#344), applier metadata
     had 4 lines. Now it has 5 lines.
   */
-  static const int LINES_IN_RELAY_LOG_INFO_WITH_DELAY = 5;
+  static const int APPLIER_METADATA_LINES_WITH_DELAY = 5;
 
   /*
-    Before the WL#5599, relay_log.info had 5 lines. Now it has 6 lines.
+    Before the WL#5599, applier metadata had 5 lines. Now it has 6 lines.
   */
-  static const int LINES_IN_RELAY_LOG_INFO_WITH_WORKERS = 6;
+  static const int APPLIER_METADATA_LINES_WITH_WORKERS = 6;
 
   /*
-    Before the Id was added (BUG#2334346), relay_log.info
+    Before the Id was added (BUG#2334346), applier metadata
     had 6 lines. Now it has 7 lines.
   */
-  static const int LINES_IN_RELAY_LOG_INFO_WITH_ID = 7;
+  static const int APPLIER_METADATA_LINES_WITH_ID = 7;
 
   /*
-    Add a channel in the slave relay log info
+    Add a channel in the applier metadata
   */
-  static const int LINES_IN_RELAY_LOG_INFO_WITH_CHANNEL = 8;
+  static const int APPLIER_METADATA_LINES_WITH_CHANNEL = 8;
 
   /*
-    Represents line number in relay_log.info to save PRIVILEGE_CHECKS_USERNAME.
-    It is username part of PRIVILEGES_CHECKS_USER column in
-    performance_schema.replication_applier_configuration.
+    Represents entry id in applier metadata to save
+    PRIVILEGE_CHECKS_USERNAME. It is username part of PRIVILEGES_CHECKS_USER
+    column in performance_schema.replication_applier_configuration.
   */
-  static const int LINES_IN_RELAY_LOG_INFO_WITH_PRIV_CHECKS_USERNAME = 9;
+  static const int APPLIER_METADATA_LINES_WITH_PRIV_CHECKS_USERNAME = 9;
 
   /*
     Maximum length of PRIVILEGE_CHECKS_USERNAME.
@@ -1905,11 +1911,11 @@ class Relay_log_info : public Rpl_info {
   static const int PRIV_CHECKS_USERNAME_LENGTH = 32;
 
   /*
-    Represents line number in relay_log.info to save PRIVILEGE_CHECKS_HOSTNAME.
-    It is hostname part of PRIVILEGES_CHECKS_USER column in
-    performance_schema.replication_applier_configuration.
+    Represents entry id in applier metadata to save
+    PRIVILEGE_CHECKS_HOSTNAME. It is hostname part of PRIVILEGES_CHECKS_USER
+    column in performance_schema.replication_applier_configuration.
   */
-  static const int LINES_IN_RELAY_LOG_INFO_WITH_PRIV_CHECKS_HOSTNAME = 10;
+  static const int APPLIER_METADATA_LINES_WITH_PRIV_CHECKS_HOSTNAME = 10;
 
   /*
     Maximum length of PRIVILEGE_CHECKS_USERNAME.
@@ -1917,38 +1923,42 @@ class Relay_log_info : public Rpl_info {
   static const int PRIV_CHECKS_HOSTNAME_LENGTH = 255;
 
   /*
-    Represents line number in relay_log.info to save REQUIRE_ROW_FORMAT
+    Represents entry id in applier metadata to save REQUIRE_ROW_FORMAT
   */
-  static const int LINES_IN_RELAY_LOG_INFO_WITH_REQUIRE_ROW_FORMAT = 11;
+  static const int APPLIER_METADATA_LINES_WITH_REQUIRE_ROW_FORMAT = 11;
 
   /*
-    Represents line number in relay_log.info to save
+    Represents entry id in applier metadata to save
     REQUIRE_TABLE_PRIMARY_KEY_CHECK
   */
-  static const int
-      LINES_IN_RELAY_LOG_INFO_WITH_REQUIRE_TABLE_PRIMARY_KEY_CHECK = 12;
+  static const int APPLIER_METADATA_LINES_WITH_REQUIRE_TABLE_PRIMARY_KEY_CHECK =
+      12;
 
   /*
-    Represent line number in relay_log.info to save
+    Represent entry id in applier metadata to save
     ASSIGN_GTIDS_TO_ANONYMOUS_TRANSACTIONS_TYPE.
   */
   static const int
-      LINES_IN_RELAY_LOG_INFO_WITH_ASSIGN_GTIDS_TO_ANONYMOUS_TRANSACTIONS_TYPE =
+      APPLIER_METADATA_LINES_WITH_ASSIGN_GTIDS_TO_ANONYMOUS_TRANSACTIONS_TYPE =
           13;
 
   /*
-    Represent line number in relay_log.info to save
+    Represent entry id in applier metadata to save
     ASSIGN_GTIDS_TO_ANONYMOUS_TRANSACTIONS_VALUE.
   */
   static const int
-      LINES_IN_RELAY_LOG_INFO_WITH_ASSIGN_GTIDS_TO_ANONYMOUS_TRANSACTIONS_VALUE =
+      APPLIER_METADATA_LINES_WITH_ASSIGN_GTIDS_TO_ANONYMOUS_TRANSACTIONS_VALUE =
           14;
   /*
-    Total lines in relay_log.info.
+    Total lines in applier metadata.
     This has to be updated every time a member is added or removed.
+    Historically, the number of entires in applier metadata was the number
+    of lines in applier metadata file. Since WL#13959, applier metadata can
+    be stored only in table, but the notion of number of line is still
+    preserved.
   */
-  static const int MAXIMUM_LINES_IN_RELAY_LOG_INFO_FILE =
-      LINES_IN_RELAY_LOG_INFO_WITH_ASSIGN_GTIDS_TO_ANONYMOUS_TRANSACTIONS_VALUE;
+  static const int MAXIMUM_APPLIER_METADATA_LINES =
+      APPLIER_METADATA_LINES_WITH_ASSIGN_GTIDS_TO_ANONYMOUS_TRANSACTIONS_VALUE;
 
   bool read_info(Rpl_info_handler *from) override;
   bool write_info(Rpl_info_handler *to) override;

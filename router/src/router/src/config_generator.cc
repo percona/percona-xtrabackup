@@ -76,9 +76,11 @@
 #include "mysqlrouter/supported_routing_options.h"
 #include "mysqlrouter/uri.h"
 #include "mysqlrouter/utils.h"
+#include "mysqlrouter/utils_sqlstring.h"
 #include "random_generator.h"
 #include "router_app.h"
 #include "router_config.h"
+#include "scope_guard.h"
 #include "sha1.h"  // compute_sha1_hash() from mysql's include/
 IMPORT_LOG_FUNCTIONS()
 
@@ -134,7 +136,6 @@ static constexpr unsigned kMaxPasswordRetries = 10000;
 
 static const std::string kDefaultMetadataCacheSectionKey = "bootstrap";
 
-using mysql_harness::DIM;
 using mysql_harness::get_from_map;
 using mysql_harness::Path;
 using mysql_harness::truncate_string;
@@ -143,10 +144,6 @@ using namespace std::string_literals;
 
 namespace {
 struct password_too_weak : public std::runtime_error {
-  using std::runtime_error::runtime_error;
-};
-
-struct plugin_not_loaded : public std::runtime_error {
   using std::runtime_error::runtime_error;
 };
 struct account_exists : public std::runtime_error {
@@ -566,8 +563,7 @@ void ConfigGenerator::bootstrap_system_deployment(
   }
 
   // on bootstrap failure, DROP USER for all created accounts
-  std::unique_ptr<void, std::function<void(void *)>> create_user_undo(
-      (void *)1, [&](void *) { undo_create_user_for_new_accounts(); });
+  Scope_guard create_user_undo([&]() { undo_create_user_for_new_accounts(); });
 
   const std::string bootstrap_report_text = bootstrap_deployment(
       program_name, config_files[0], config_files[1], config_file_path,
@@ -611,7 +607,7 @@ void ConfigGenerator::bootstrap_system_deployment(
     set_file_owner(options, path);
   }
   auto_clean.clear();
-  create_user_undo.release();
+  create_user_undo.commit();
   out_stream_ << bootstrap_report_text;
 }
 
@@ -773,8 +769,7 @@ void ConfigGenerator::bootstrap_directory_deployment(
   set_keyring_info_real_paths(options, path);
 
   // on bootstrap failure, DROP USER for all created accounts
-  std::unique_ptr<void, std::function<void(void *)>> create_user_undo(
-      (void *)1, [&](void *) { undo_create_user_for_new_accounts(); });
+  Scope_guard create_user_undo([&]() { undo_create_user_for_new_accounts(); });
 
   const std::string bootstrap_report_text = bootstrap_deployment(
       program_name, config_files[0], config_files[1], config_files_names[0],
@@ -859,7 +854,7 @@ void ConfigGenerator::bootstrap_directory_deployment(
 #endif
 
   auto_clean.clear();
-  create_user_undo.release();
+  create_user_undo.commit();
   out_stream_ << bootstrap_report_text;
 }
 
@@ -1000,8 +995,9 @@ ConfigGenerator::Options ConfigGenerator::fill_options(
 
   options.client_ssl_mode =
       get_opt(user_options, "client_ssl_mode", "PREFERRED");
-  options.server_ssl_mode =
-      get_opt(user_options, "server_ssl_mode", "AS_CLIENT");
+  options.server_ssl_mode = get_opt(
+      user_options, "server_ssl_mode",
+      options.client_ssl_mode == "PASSTHROUGH" ? "AS_CLIENT" : "PREFERRED");
 
   // default depends on client-ssl-mode and server-ssl-mode
   std::string default_client_ssl_cert;
@@ -1064,22 +1060,6 @@ unsigned get_password_retries(
 
   return mysql_harness::option_as_uint<unsigned long>(
       it->second, "--password-retries", 1, kMaxPasswordRetries);
-}
-
-std::string compute_password_hash(const std::string &password) {
-  uint8_t hash_stage1[SHA1_HASH_SIZE];
-  compute_sha1_hash(hash_stage1, password.c_str(), password.length());
-  uint8_t hash_stage2[SHA1_HASH_SIZE];
-  compute_sha1_hash(hash_stage2, (const char *)hash_stage1, SHA1_HASH_SIZE);
-
-  std::stringstream ss;
-  ss << "*";
-  ss << std::hex << std::setfill('0') << std::uppercase;
-  for (unsigned i = 0; i < SHA1_HASH_SIZE; ++i) {
-    ss << std::setw(2) << (int)hash_stage2[i];
-  }
-
-  return ss.str();
 }
 
 inline std::string str(
@@ -1772,6 +1752,142 @@ static std::string get_target_cluster_value(
   return "primary";
 }
 
+namespace {
+class ChangeRouterAccountPlugin {
+ public:
+  ChangeRouterAccountPlugin(MySQLSession &mysql, std::ostream &out_stream,
+                            std::ostream &err_stream)
+      : mysql_(mysql), out_stream_(out_stream), err_stream_(err_stream) {}
+
+  /* If the existing Router account is using mysql_native_password
+   * authentication plugin we attempt to change it to the Cluster's default
+   * authentication plugin. We only try that if there is a single user/host
+   * entry in the mysql.users table for our Router user. If there is more, we
+   * only give a warning advising the user to upgrade the account manually.*/
+  void execute(const std::string &username, const std::string &password) {
+    sqlstring query = "select host, plugin from mysql.user where user = ?";
+    query << username << sqlstring::end;
+    std::vector<std::pair<std::string, std::string>> accounts;
+
+    auto result_processor = [&accounts](const MySQLSession::Row &row) -> bool {
+      assert(row.size() == 2);
+      accounts.emplace_back(to_string(row[0]), to_string(row[1]));
+
+      return true;
+    };
+
+    try {
+      mysql_.query(query, result_processor);
+    } catch (const std::exception &e) {
+      log_error_msg(
+          "Failed checking the Router account authentication plugin: "s +
+          e.what());
+      return;
+    }
+
+    if (accounts.size() == 0) {
+      return;
+    }
+
+    if (accounts.size() > 1) {
+      for (const auto &account : accounts) {
+        const std::string &hostname = account.first;
+        const std::string &auth_plugin_name = account.second;
+        if (auth_plugin_name == "mysql_native_password") {
+          log_error_msg(
+              "Account '" + username + "'@" + hostname +
+              " is using depracated 'mysql_native_password' authentication "
+              "plugin. Change the authentication plugin using 'alter user' SQL "
+              "statement.");
+        }
+      }
+      return;
+    }
+
+    const std::string &hostname = accounts[0].first;
+    const std::string &auth_plugin_name = accounts[0].second;
+    if (auth_plugin_name != "mysql_native_password") {
+      // nothing to fix
+      return;
+    }
+
+    const auto result = get_default_auth_plugin();
+    if (!result) {
+      log_error_msg(
+          "Failed getting default authentication plugin while changing "
+          "the authentication plugin for account '" +
+          username + "'@'" + hostname +
+          "': " + result.get_unexpected().value());
+      return;
+    }
+
+    const std::string default_auth_plugin = result.value();
+    if (default_auth_plugin == "mysql_native_password") {
+      log_error_msg("Failed changing the authentication plugin for account '" +
+                    username + "'@'" + hostname + "': " +
+                    " mysql_native_password which is deprecated is the default "
+                    "authentication plugin on this server.");
+      return;
+    }
+
+    log_info_msg("Existing account '" + username + "'@" + hostname +
+                 " is using authentication plugin 'mysql_native_password'. "
+                 "Changing the authentication plugin to '" +
+                 default_auth_plugin + "'");
+
+    sqlstring alter_user_sql = "alter user ?@? identified with ! by ?";
+    alter_user_sql << username << hostname << default_auth_plugin << password
+                   << sqlstring::end;
+
+    try {
+      mysql_.execute(alter_user_sql);
+    } catch (const std::exception &e) {
+      log_error_msg("Failed changing the authentication plugin for account '" +
+                    username + "'@'" + hostname + "': " + e.what());
+      return;
+    }
+
+    log_info_msg("Successfully changed the authentication plugin for '" +
+                 username + "'@" + hostname +
+                 " from mysql_native_password to " + default_auth_plugin);
+  }
+
+ private:
+  stdx::expected<std::string, std::string> get_default_auth_plugin() {
+    const std::string query = "select @@default_authentication_plugin";
+    try {
+      std::unique_ptr<MySQLSession::ResultRow> result(mysql_.query_one(query));
+
+      if (result && result->size() == 1) {
+        return (*result)[0];
+      }
+    } catch (const std::exception &e) {
+      return stdx::make_unexpected(e.what());
+    }
+
+    return stdx::make_unexpected("unexpected resultset");
+  }
+
+  std::string as_string(const char *input_str) {
+    return {input_str == nullptr ? "" : input_str};
+  }
+
+  void log_error_msg(const std::string &msg) {
+    err_stream_ << Vt100::foreground(Vt100::Color::Yellow);
+    err_stream_ << msg;
+    err_stream_ << Vt100::render(Vt100::Render::ForegroundDefault) << "\n";
+  }
+
+  void log_info_msg(const std::string &msg) {
+    out_stream_ << "- " << msg << "\n";
+  }
+
+  MySQLSession &mysql_;
+  std::ostream &out_stream_;
+  std::ostream &err_stream_;
+};
+}  // namespace
+
 std::tuple<std::string> ConfigGenerator::try_bootstrap_deployment(
     uint32_t &router_id, std::string &username, std::string &password,
     const std::string &router_name, const ClusterInfo &cluster_info,
@@ -1819,6 +1935,11 @@ std::tuple<std::string> ConfigGenerator::try_bootstrap_deployment(
   bool password_change_ok = !user_options.count("account");
   password = create_router_accounts(user_options, hostnames_cmd, username,
                                     password, password_change_ok);
+
+  // Check if our user is not using deprecated mysql_native_password
+  // authentication plugin and try to change it.
+  ChangeRouterAccountPlugin(*mysql_.get(), out_stream_, err_stream_)
+      .execute(username, password);
 
   const std::string rw_endpoint = str(options.rw_endpoint);
   const std::string ro_endpoint = str(options.ro_endpoint);
@@ -2054,17 +2175,20 @@ class ConfigSectionPrinter {
   }
 
   ConfigSectionPrinter &add_line(const std::string &key,
-                                 const std::string &value) {
+                                 const std::string &value,
+                                 bool force_empty = false) {
     std::string cmdln_option_key = section_name_ + "." + key;
     std::transform(cmdln_option_key.begin(), cmdln_option_key.end(),
                    cmdln_option_key.begin(), ::tolower);
-    if (config_cmdln_options_.count(cmdln_option_key) > 0) {
-      section_options_.push_back(
-          {key, config_cmdln_options_.at(cmdln_option_key)});
+
+    // cmdline options overwrite internal defaults.
+    if (config_cmdln_options_.contains(cmdln_option_key)) {
+      section_options_.emplace_back(key,
+                                    config_cmdln_options_.at(cmdln_option_key));
 
       used_cmdln_options_.insert(key);
-    } else if (!value.empty()) {
-      section_options_.push_back({key, value});
+    } else if (!value.empty() || force_empty) {
+      section_options_.emplace_back(key, value);
     }
 
     return *this;
@@ -2089,8 +2213,8 @@ class ConfigSectionPrinter {
       const std::string option =
           cmdln_option_key.substr(dot + 1, cmdln_option_key.length() - dot - 1);
 
-      if (used_cmdln_options_.count(option) == 0)
-        section_options_.push_back({option, cmdln_option.second});
+      if (!used_cmdln_options_.contains(option))
+        section_options_.emplace_back(option, cmdln_option.second);
     }
 
     ostream_ << ConfigBuilder::build_section(section_name_, section_options_);
@@ -2108,7 +2232,7 @@ class ConfigSectionPrinter {
       // that should be checked before
       assert(dot != std::string::npos);
       const std::string section_name = cmdln_option_key.substr(0, dot);
-      if (used_sections_.count(section_name) > 0) {
+      if (used_sections_.contains(section_name)) {
         continue;
       }
 
@@ -2124,7 +2248,7 @@ class ConfigSectionPrinter {
       const std::string option =
           cmdln_option_key.substr(dot + 1, cmdln_option_key.length() - dot - 1);
 
-      section_options.push_back({option, cmdln_option.second});
+      section_options.emplace_back(option, cmdln_option.second);
     }
 
     if (!current_section.empty()) {
@@ -2149,7 +2273,12 @@ using mysql_harness::loader_supported_options;
 
 #define ADD_CONFIG_LINE_CHECKED(section, option, value, supported_options)    \
   static_assert(mysql_harness::str_in_collection(supported_options, option)); \
-  section.add_line(option, value);
+  (section).add_line(option, value);
+
+#define ADD_CONFIG_LINE_CHECKED_WITH_EMPTY(section, option, value,            \
+                                           supported_options)                 \
+  static_assert(mysql_harness::str_in_collection(supported_options, option)); \
+  (section).add_line(option, value, true);
 
 void add_endpoint_option(ConfigSectionPrinter &routing_section,
                          const ConfigGenerator::Options &options,
@@ -2223,6 +2352,19 @@ void add_metadata_cache_routing_section(
                           routing_supported_options);
   ADD_CONFIG_LINE_CHECKED(routing_section, "protocol", protocol,
                           routing_supported_options);
+
+  if (options.client_ssl_mode == "PASSTHROUGH" || !is_classic) {
+    ADD_CONFIG_LINE_CHECKED(routing_section, "router_require_enforce", "0",
+                            routing_supported_options);
+    // write empty ssl-options to force them to empty.
+    ADD_CONFIG_LINE_CHECKED_WITH_EMPTY(routing_section, "client_ssl_ca", "",
+                                       routing_supported_options);
+    ADD_CONFIG_LINE_CHECKED_WITH_EMPTY(routing_section, "server_ssl_key", "",
+                                       routing_supported_options);
+    ADD_CONFIG_LINE_CHECKED_WITH_EMPTY(routing_section, "server_ssl_cert", "",
+                                       routing_supported_options);
+  }
+
   if (endpoint_mode == EndpointMode::kEndpointModeRWSplit) {
     ADD_CONFIG_LINE_CHECKED(routing_section, "connection_sharing", "1",
                             routing_supported_options);
@@ -2462,6 +2604,8 @@ void ConfigGenerator::create_config(
                             loader_supported_options);
     ADD_CONFIG_LINE_CHECKED(default_section, "max_idle_server_connections",
                             "64", connection_pool_supported_options);
+    ADD_CONFIG_LINE_CHECKED(default_section, "router_require_enforce", "1",
+                            routing_supported_options);
   }
 
   save_initial_dynamic_state(state_file, *metadata_.get(), cluster_specific_id_,
@@ -2782,49 +2926,26 @@ std::string ConfigGenerator::create_accounts_with_compliant_password(
   using RandomGen = mysql_harness::RandomGeneratorInterface;
   RandomGen &rg = mysql_harness::DIM::instance().get_RandomGenerator();
 
-  const bool force_password_validation =
-      user_options.find("force-password-validation") != user_options.end();
-  std::string password_candidate;
-  unsigned retries =
+  auto retries =
       get_password_retries(user_options);  // throws std::invalid_argument
-  if (!force_password_validation) {
-    // 1) Try to create an account using mysql_native_password with the hashed
-    // password to avoid validate_password verification (hashing is done inside
-    // create_accounts())
-    password_candidate =
-        password.empty() && password_change_ok
-            ? rg.generate_strong_password(kMetadataServerPasswordLength)
-            : password;
-    try {
-      // create_accounts() throws many things, see its description
-      create_accounts(username, hostnames, password_candidate,
-                      true /*hash password*/, if_not_exists);
-      return password_candidate;
-    } catch (const plugin_not_loaded &) {
-      // fallback to 2)
-    }
-  }
 
-  // 2) If 1) failed because of the missing mysql_native_password plugin,
-  //    or "-force-password-validation" parameter has being used
-  //    try to create an account using the password directly
+  // try to create an account using the password directly
   while (true) {
-    password_candidate =
+    const std::string password_candidate =
         password.empty() && password_change_ok
             ? rg.generate_strong_password(kMetadataServerPasswordLength)
             : password;
 
     try {
       // create_accounts() throws many things, see its description
-      create_accounts(username, hostnames, password_candidate,
-                      false /*hash password*/, if_not_exists);
+      create_accounts(username, hostnames, password_candidate, if_not_exists);
       return password_candidate;
     } catch (const password_too_weak &e) {
       if (--retries == 0          // retries used up
           || !password.empty()    // \_ retrying is pointless b/c the password
           || !password_change_ok  // /  will be the same every time
       ) {
-        // 3) If 2) failed issue an error suggesting the change to
+        // If this failed issue an error suggesting the change to
         // validate_password rules
         std::stringstream err_msg;
         err_msg << "Error creating user account: " << e.what() << std::endl
@@ -2903,18 +3024,13 @@ void ConfigGenerator::throw_account_exists(const MySQLSession::Error &e,
 void ConfigGenerator::create_users(const std::string &username,
                                    const std::set<std::string> &hostnames,
                                    const std::string &password,
-                                   bool hash_password /*=false*/,
                                    bool if_not_exists /*=false*/) {
   harness_assert(hostnames.size());
 
   // build string containing account/auth list
   std::string accounts_with_auth;
   {
-    const std::string auth_part =
-        " IDENTIFIED "s +
-        (hash_password ? "WITH mysql_native_password AS " : "BY ") +
-        mysql_->quote(hash_password ? compute_password_hash(password)
-                                    : password);
+    const std::string auth_part = " IDENTIFIED BY "s + mysql_->quote(password);
 
     const std::string quoted_username = mysql_->quote(username);
     bool is_first{true};
@@ -2947,9 +3063,6 @@ void ConfigGenerator::create_users(const std::string &username,
     if (e.code() == ER_NOT_VALID_PASSWORD) {  // password does not satisfy the
                                               // current policy requirements
       throw password_too_weak(err_msg);
-    }
-    if (e.code() == ER_PLUGIN_IS_NOT_LOADED) {  // auth plugin not loaded
-      throw plugin_not_loaded(err_msg);
     }
     if (e.code() == ER_CANNOT_USER) {  // user already exists
       // this should only happen when running with --account-create always,
@@ -3127,7 +3240,6 @@ std::string ConfigGenerator::make_account_list(
 void ConfigGenerator::create_accounts(const std::string &username,
                                       const std::set<std::string> &hostnames,
                                       const std::string &password,
-                                      bool hash_password /*=false*/,
                                       bool if_not_exists /*=false*/) {
   harness_assert(hostnames.size());
   harness_assert(undo_create_account_list_.type ==
@@ -3139,7 +3251,7 @@ void ConfigGenerator::create_accounts(const std::string &username,
 
   // when this throws, it may trigger failover (depends on what exception it
   // throws)
-  create_users(username, hostnames, password, hash_password, if_not_exists);
+  create_users(username, hostnames, password, if_not_exists);
 
   // Now that we created users, we can no longer fail-over on subsequent
   // errors, because that write operation may automatically get propagated to

@@ -189,9 +189,9 @@ IF(CMAKE_GENERATOR MATCHES "Visual Studio [1-9][0-9].*" AND
   SET(CMAKE_GENERATOR_TOOLSET "host=x64")
 ENDIF()
 
-# On Linux el6/el7/el8/el9 the default gcc is too old,
+# On Linux el7/el8/el9 the default gcc is too old,
 # see if devtoolset/gcc-toolset is installed.
-# Same with SUSE linux, look for gcc 10/12 there.
+# Same with SUSE linux 15, look for gcc 12 there.
 # We need to look for gcc before calling PROJECT below.
 OPTION(FORCE_UNSUPPORTED_COMPILER "Disable compiler version checks" OFF)
 MARK_AS_ADVANCED(WITHOUT_SERVER FORCE_UNSUPPORTED_COMPILER)
@@ -266,11 +266,6 @@ IF(NOT LINUX_RHEL AND MY_HOST_SYSTEM_NAME MATCHES "Linux")
       SET(LINUX_DEBIAN 1)
     ELSEIF(MY_OS_RELEASE MATCHES "Ubuntu")
       SET(LINUX_UBUNTU 1)
-      IF(MY_OS_RELEASE MATCHES "16.04")
-        SET(LINUX_UBUNTU_16_04 1)
-      ELSEIF(MY_OS_RELEASE MATCHES "18.04")
-        SET(LINUX_UBUNTU_18_04 1)
-      ENDIF()
       # /etc/os-release contains a line like
       # VERSION_ID="20.04"
       # Match the numeric value, including the dot, ignore the rest:
@@ -289,9 +284,7 @@ ENDIF()
 
 IF(LINUX_SUSE)
   FILE(READ "/etc/SuSE-release" MY_OS_RELEASE)
-  IF(MY_OS_RELEASE MATCHES "SUSE Linux Enterprise Server 12")
-    SET(LINUX_SUSE_12 1)
-  ELSEIF(MY_OS_RELEASE MATCHES "SUSE Linux Enterprise Server 15" OR
+  IF(MY_OS_RELEASE MATCHES "SUSE Linux Enterprise Server 15" OR
       MY_OS_RELEASE MATCHES "openSUSE .* 15")
     SET(LINUX_SUSE_15 1)
   ELSE()
@@ -321,9 +314,7 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
     ENDIF()
     IF(LINUX_RHEL)
       MESSAGE(STATUS "Looking for a devtoolset compiler")
-      IF(LINUX_RHEL6)
-        SET(ALTERNATIVE_PATHS "/opt/rh/devtoolset-8")
-      ELSEIF(LINUX_RHEL7)
+      IF(LINUX_RHEL7)
         # gcc11 not available yet
         IF(MY_HOST_MACHINE_NAME MATCHES "aarch64")
           SET(ALTERNATIVE_PATHS "/opt/rh/devtoolset-10")
@@ -377,10 +368,7 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
         MESSAGE(STATUS "Using ${ALTERNATIVE_GCC}")
         MESSAGE(STATUS "Using ${ALTERNATIVE_GPP}")
       ELSE()
-        IF(LINUX_RHEL6)
-          SET(DEV_PACKAGES
-            "devtoolset-8-gcc devtoolset-8-gcc-c++ devtoolset-8-binutils")
-        ELSEIF(LINUX_RHEL7)
+        IF(LINUX_RHEL7)
           IF(MY_HOST_MACHINE_NAME MATCHES "aarch64")
             SET(DEV_PACKAGES
               "devtoolset-10-gcc devtoolset-10-gcc-c++ devtoolset-10-binutils")
@@ -402,56 +390,9 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
           "Or you can set CMAKE_C_COMPILER and CMAKE_CXX_COMPILER explicitly.")
       ENDIF()
 
-    ELSEIF(LINUX_UBUNTU_18_04)
-      MESSAGE(STATUS "Looking for gcc-8 on Ubuntu 18.04")
-      FIND_PROGRAM(ALTERNATIVE_GCC gcc-8
-        NO_DEFAULT_PATH
-        PATHS "/usr/bin")
-      FIND_PROGRAM(ALTERNATIVE_GPP g++-8
-        NO_DEFAULT_PATH
-        PATHS "/usr/bin")
-      FIND_PROGRAM(GCC_AR_EXECUTABLE gcc-ar-8
-        NO_DEFAULT_PATH
-        PATHS "/usr/bin")
-      FIND_PROGRAM(GCC_RANLIB_EXECUTABLE gcc-ranlib-8
-        NO_DEFAULT_PATH
-        PATHS "/usr/bin")
-      IF(GCC_AR_EXECUTABLE)
-        SET(CMAKE_AR ${GCC_AR_EXECUTABLE})
-        SET(CMAKE_AR ${GCC_AR_EXECUTABLE} CACHE PATH "Alternative ar")
-      ENDIF()
-      IF(GCC_RANLIB_EXECUTABLE)
-        SET(CMAKE_RANLIB ${GCC_RANLIB_EXECUTABLE})
-        SET(CMAKE_RANLIB ${GCC_RANLIB_EXECUTABLE} CACHE PATH "Alternative ranlib")
-      ENDIF()
-      IF (ALTERNATIVE_GCC AND ALTERNATIVE_GPP)
-        SET(CMAKE_C_COMPILER ${ALTERNATIVE_GCC})
-        SET(CMAKE_CXX_COMPILER ${ALTERNATIVE_GPP})
-        MESSAGE(STATUS "Using ${ALTERNATIVE_GCC}")
-        MESSAGE(STATUS "Using ${ALTERNATIVE_GPP}")
-      ELSE()
-        MESSAGE(WARNING "Could not find gcc-8")
-        MESSAGE(FATAL_ERROR
-          "Please do 'apt install gcc-8 g++-8'\n"
-          "or set CMAKE_C_COMPILER and CMAKE_CXX_COMPILER explicitly.")
-      ENDIF()
-
-    ELSEIF(LINUX_SUSE_12 OR LINUX_SUSE_15)
+    ELSEIF(LINUX_SUSE_15)
       MESSAGE(STATUS "We need to look for a newer GCC on SUSE Linux.")
-      IF(LINUX_SUSE_12)
-        FIND_PROGRAM(ALTERNATIVE_GCC gcc-10
-          NO_DEFAULT_PATH
-          PATHS "/usr/bin")
-        FIND_PROGRAM(ALTERNATIVE_GPP g++-10
-          NO_DEFAULT_PATH
-          PATHS "/usr/bin")
-        FIND_PROGRAM(GCC_AR_EXECUTABLE gcc-ar-10
-          NO_DEFAULT_PATH
-          PATHS "/usr/bin")
-        FIND_PROGRAM(GCC_RANLIB_EXECUTABLE gcc-ranlib-10
-          NO_DEFAULT_PATH
-          PATHS "/usr/bin")
-      ELSEIF(LINUX_SUSE_15)
+      IF(LINUX_SUSE_15)
         FIND_PROGRAM(ALTERNATIVE_GCC gcc-12
           NO_DEFAULT_PATH
           PATHS "/usr/bin")
@@ -478,20 +419,10 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
         SET(CMAKE_CXX_COMPILER ${ALTERNATIVE_GPP})
         MESSAGE(STATUS "Using ${ALTERNATIVE_GCC}")
         MESSAGE(STATUS "Using ${ALTERNATIVE_GPP}")
-        # Use the new ABI so that std::string can be used with allocators
-        # that are not default-constructible (e.g. Memroot_allocator)
-        IF(LINUX_SUSE_12)
-          ADD_DEFINITIONS(-D_GLIBCXX_USE_CXX11_ABI=1)
-        ENDIF()
       ELSE()
         MESSAGE(WARNING "Could not find newer gcc.")
-        IF(LINUX_SUSE_12)
-          MESSAGE(FATAL_ERROR "Please do zypper install gcc10 gcc10-c++\n"
-            "or set CMAKE_C_COMPILER and CMAKE_CXX_COMPILER explicitly.")
-        ELSE()
-          MESSAGE(FATAL_ERROR "Please do zypper install gcc12 gcc12-c++\n"
-            "or set CMAKE_C_COMPILER and CMAKE_CXX_COMPILER explicitly.")
-        ENDIF()
+        MESSAGE(FATAL_ERROR "Please do zypper install gcc12 gcc12-c++\n"
+          "or set CMAKE_C_COMPILER and CMAKE_CXX_COMPILER explicitly.")
       ENDIF()
     ELSEIF(SOLARIS)
       MESSAGE(STATUS "Looking for GCC 10 on Solaris.")
@@ -709,14 +640,6 @@ FOREACH(_base
 ENDFOREACH()
 
 
-IF(UNIX)
-  OPTION(WITH_INNODB_MEMCACHED "" OFF)
-  OPTION(ENABLE_MEMCACHED_SASL "Enable SASL on InnoDB Memcached" OFF)
-  OPTION(ENABLE_MEMCACHED_SASL_PWDB "Enable SASL on InnoDB Memcached" OFF)
-ELSE()
-  OPTION(WITH_INNODB_MEMCACHED "" OFF)
-ENDIF()
- 
 # Following autotools tradition, add preprocessor definitions
 # specified in environment variable CPPFLAGS
 IF(DEFINED ENV{CPPFLAGS})
@@ -787,24 +710,6 @@ IF(WITH_DEFAULT_COMPILER_OPTIONS)
   INCLUDE(${CMAKE_SOURCE_DIR}/cmake/build_configurations/compiler_options.cmake)
 ENDIF()
 
-OPTION(WITH_EXPERIMENTAL_CPP20
-  "Build with -std=c++20, note: this is experimental" OFF)
-
-IF(WITH_EXPERIMENTAL_CPP20)
-  IF(UNIX)
-    STRING(REPLACE "-std=c++17" "-std=c++20"
-      CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-  ELSE()
-    FOREACH(flag
-        CMAKE_CXX_FLAGS_MINSIZEREL
-        CMAKE_CXX_FLAGS_RELEASE  CMAKE_CXX_FLAGS_RELWITHDEBINFO
-        CMAKE_CXX_FLAGS_DEBUG    CMAKE_CXX_FLAGS_DEBUG_INIT
-        )
-      STRING(REPLACE "/std:c++17" "/std:c++20" ${flag} "${${flag}}")
-    ENDFOREACH()
-  ENDIF()
-ENDIF()
-
 # Assume, for now at least, that we want build-id for all kinds of Linux builds.
 IF(LINUX)
   OPTION(WITH_BUILD_ID "Add --build-id=sha1 to all executables." ON)
@@ -847,6 +752,7 @@ INCLUDE(zlib)
 INCLUDE(zstd)
 INCLUDE(lz4)
 INCLUDE(icu)
+INCLUDE(libbacktrace)
 INCLUDE(libevent)
 INCLUDE(ssl)
 INCLUDE(sasl)
@@ -868,6 +774,17 @@ INCLUDE(gloves)
 INCLUDE(fido2)
 INCLUDE(win_jemalloc)
 INCLUDE(libs_mysql_create_library)
+
+# To simplify building of JET, skip all dependencies for other targets.
+IF(EXISTS ${CMAKE_SOURCE_DIR}/internal/CMakeLists.txt)
+  OPTION(WITH_JET_ONLY "Build JET only. No C/C++ targets." OFF)
+  IF(WITH_JET_ONLY)
+    SET(WITH_JET ON)
+    SET(WITH_JET ON CACHE INTERNAL "Build JET" FORCE)
+    ADD_SUBDIRECTORY(internal/jet)
+    RETURN()
+  ENDIF()
+ENDIF()
 
 IF(UNIX)
   OPTION(WITH_VALGRIND "Valgrind instrumentation" OFF)
@@ -989,9 +906,18 @@ ENDIF()
 #   authentication_fido_client.so
 # The WEBAUTHN client authentication plugin
 #   authentication_webauthn_client.so
+# The OCI client authentication plugin
+#   authentication_oci_client.so
 OPTION(WITH_AUTHENTICATION_CLIENT_PLUGINS
   "Build client-side authentication plugins, even if server-side are disabled"
   ${WITH_AUTHENTICATION_CLIENT_PLUGINS_DEFAULT})
+
+IF(NOT WITH_AUTHENTICATION_WEBAUTHN AND
+    NOT WITH_AUTHENTICATION_FIDO AND
+    NOT WITH_AUTHENTICATION_CLIENT_PLUGINS)
+  SET(WITH_FIDO "none")
+  SET(WITH_FIDO "none" CACHE STRING "fido2 is disabled")
+ENDIF()
 
 IF(WITH_INTERNAL)
   IF(UNIX)
@@ -1268,7 +1194,13 @@ IF (ENABLE_GCOV AND NOT WIN32 AND NOT APPLE)
   " -fprofile-arcs -ftest-coverage -fprofile-update=prefer-atomic -DHAVE_GCOV")
   STRING_APPEND(CMAKE_CXX_FLAGS
   " -fprofile-arcs -ftest-coverage -fprofile-update=prefer-atomic -DHAVE_GCOV")
+  STRING_APPEND(CMAKE_C_LINK_FLAGS " -Wl,--dynamic-list-data")
+  STRING_APPEND(CMAKE_CXX_LINK_FLAGS " -Wl,--dynamic-list-data")
   STRING_APPEND(CMAKE_EXE_LINKER_FLAGS
+  " -fprofile-arcs -ftest-coverage -fprofile-update=prefer-atomic -lgcov")
+  STRING_APPEND(CMAKE_SHARED_LINKER_FLAGS
+  " -fprofile-arcs -ftest-coverage -fprofile-update=prefer-atomic -lgcov")
+  STRING_APPEND(CMAKE_MODULE_LINKER_FLAGS
   " -fprofile-arcs -ftest-coverage -fprofile-update=prefer-atomic -lgcov")
 ENDIF()
 
@@ -1279,29 +1211,33 @@ IF (ENABLE_GPROF AND NOT WIN32 AND NOT APPLE)
   STRING_APPEND(CMAKE_EXE_LINKER_FLAGS " -pg")
 ENDIF()
 
-# Use lld on Linux if available and not explicitly disabled.
-# You need to install the 'lld' RPM/DEB package.
-# LTO build fails with lld, so turn it off by default.
-IF(LINUX AND NOT ALTERNATIVE_LD AND
-    NOT WITH_LTO AND NOT CMAKE_COMPILER_FLAG_WITH_LTO)
-  OPTION(USE_LD_LLD "Use llvm lld linker" ON)
-ELSE()
-  OPTION(USE_LD_LLD "Use llvm lld linker" OFF)
+# If LINUX, and not any special build (profiling, devtoolset) then provide
+# -DWITH_LD=mold|lld
+# We restrict the list of known linkers to the ones we have actually tested.
+# LTO builds have failed earlier with "lld", so use this feature with care.
+IF(LINUX AND NOT ALTERNATIVE_LD AND NOT FPROFILE_GENERATE AND NOT FPROFILE_USE)
+  UNSET(USING_LD_LLD)
+  UNSET(USING_LD_LLD CACHE)
+  UNSET(USING_LD_MOLD)
+  UNSET(USING_LD_MOLD CACHE)
+  SET(KNOWN_LINKERS "mold" "lld")
+  IF(WITH_LD)
+    LIST(FIND KNOWN_LINKERS ${WITH_LD} FOUND_LINKER_INDEX)
+    IF(FOUND_LINKER_INDEX EQUAL -1)
+      MESSAGE(FATAL_ERROR "Unknown linker -fuse-ld=${WITH_LD}")
+    ENDIF()
+    UNSET(ALTERNATIVE_LINKER_RESULT)
+    CHECK_ALTERNATIVE_LINKER(${WITH_LD} ALTERNATIVE_LINKER_RESULT)
+    IF(ALTERNATIVE_LINKER_RESULT)
+      STRING(TOUPPER "${WITH_LD}" WITH_LD_UPPER)
+      # See ADD_GDB_INDEX below:
+      SET(USING_LD_${WITH_LD_UPPER} ON)
+      SET(USING_LD_${WITH_LD_UPPER} ON CACHE INTERNAL "")
+    ELSE()
+      MESSAGE(FATAL_ERROR "failed to link using: -fuse-ld=${WITH_LD}")
+    ENDIF()
+  ENDIF()
 ENDIF()
-
-# If ALTERNATIVE_LD is set, we must use it.
-IF(ALTERNATIVE_LD AND USE_LD_LLD)
-  MESSAGE(WARNING
-    "The compiler ${ALTERNATIVE_GPP} is not compatible with lld")
-  SET(USE_LD_LLD 0)
-  SET(USE_LD_LLD 0 CACHE INTERNAL "" FORCE)
-ENDIF()
-
-SET(USING_LD_LLD 0)
-IF(USE_LD_LLD)
-  CHECK_ALTERNATIVE_LINKER("lld" USING_LD_LLD)
-ENDIF()
-SET(USING_LD_LLD ${USING_LD_LLD} CACHE INTERNAL "")
 
 IF(LINUX_STANDALONE)
   # ON by default in pushbuild, but only for standalone builds.
@@ -1452,16 +1388,22 @@ IF(LINK_RANDOMIZE)
   SET(CMAKE_C_ARCHIVE_CREATE_APPEND ${CMAKE_CXX_ARCHIVE_CREATE_APPEND})
 ENDIF()
 
-# Gold and LLD support the --gdb-index option, which adds a .gdb_index
+# Mold and LLD support the --gdb-index option, which adds a .gdb_index
 # section to the binaries. It makes loading the binaries in gdb much
-# faster. The overhead of generating the index is small in LLD.
+# faster. The overhead of generating the index is small in.
 OPTION(ADD_GDB_INDEX "Generate a .gdb_index section in the binaries." OFF)
 
-IF(ADD_GDB_INDEX AND CMAKE_EXE_LINKER_FLAGS MATCHES "-fuse-ld=lld")
+IF(ADD_GDB_INDEX AND (USING_LD_MOLD OR USING_LD_LLD))
   # -fuse-ld=lld is not enough to ensure that ld.lld will actually be used.
   # On some platforms we need an extra check for -Wl,--gdb-index
+  IF(USING_LD_LLD)
+    SET(FUSE_LD "-fuse-ld=lld")
+  ELSE()
+    SET(FUSE_LD "-fuse-ld=mold")
+  ENDIF()
+
   CMAKE_PUSH_CHECK_STATE()
-  SET(CMAKE_REQUIRED_LIBRARIES "-fuse-ld=lld -Wl,--gdb-index")
+  SET(CMAKE_REQUIRED_LIBRARIES "${FUSE_LD} -Wl,--gdb-index")
   CHECK_CXX_SOURCE_COMPILES("int main() {}" CXX_LD_GDB_INDEX_RESULT)
   CMAKE_POP_CHECK_STATE()
 
@@ -1761,6 +1703,7 @@ SET(SYSTEM_LIBRARIES
   SSL       # Homebrew  openssl@1.1 or openssl@3
   ZSTD      # Homebrew  zstd
   FIDO      # Homebrew  libfido2
+  ZLIB      # Xcode
   )
 
 IF(APPLE)
@@ -1783,6 +1726,14 @@ IF(LINUX_UBUNTU)
   IF(LINUX_UBUNTU_VERSION_ID VERSION_LESS "21.04")
     LIST(REMOVE_ITEM SYSTEM_LIBRARIES FIDO)
   ENDIF()
+  # Ubuntu 22.04 has 1.2.11 which is too old.
+  IF(LINUX_UBUNTU_VERSION_ID VERSION_LESS "23.04")
+    LIST(REMOVE_ITEM SYSTEM_LIBRARIES ZLIB)
+  ENDIF()
+ENDIF()
+# Do not change it back to "system"
+IF(WITH_FIDO AND WITH_FIDO STREQUAL "none")
+  LIST(REMOVE_ITEM SYSTEM_LIBRARIES FIDO)
 ENDIF()
 
 GET_CMAKE_PROPERTY(CACHE_VARS CACHE_VARIABLES)
@@ -1853,6 +1804,8 @@ MYSQL_CHECK_SSL()
 # Other system libs which use OpenSSL must be disabled.
 # This includes: kerberos sasl ldap curl.
 IF(ALTERNATIVE_SYSTEM_SSL)
+  SET(WITH_AUTHENTICATION_KERBEROS OFF)
+  SET(WITH_AUTHENTICATION_KERBEROS OFF CACHE INTERNAL "" FORCE)
   SET(WITH_AUTHENTICATION_LDAP OFF)
   SET(WITH_AUTHENTICATION_LDAP OFF CACHE INTERNAL "" FORCE)
   SET(WITH_AUTHENTICATION_CLIENT_PLUGINS OFF)
@@ -1912,9 +1865,11 @@ IF(WITH_AUTHENTICATION_LDAP)
     ENDIF()
   ELSEIF(WIN32)
     # system LDAP, but SASL needs to be explicitly added
-    IF(NOT SASL_LIBRARY_DLL OR NOT SASL_SCRAM_PLUGIN)
+    # and support SCRAM or GSSAPI
+    IF(NOT SASL_LIBRARY_DLL OR NOT (SASL_SCRAM_PLUGIN OR SASL_GSSAPI_PLUGIN))
       MESSAGE(WARNING "-DWITH_AUTHENTICATION_LDAP=ON")
-      MESSAGE(FATAL_ERROR "Missing SASL and/or SCRAM libraries.")
+      MESSAGE(FATAL_ERROR
+        "Missing SASL library or none supported SASL mechanism is available.")
     ENDIF()
   ELSEIF(APPLE)
     # system LDAP and SASL, but there is no scram plugin.
@@ -2091,7 +2046,7 @@ IF(LINUX)
 ENDIF()
 
 # Cannot use system tirpc with custom OpenSSL
-IF(WITH_SSL_PATH AND (LINUX_RHEL8 OR LINUX_RHEL9))
+IF((WITH_SSL_PATH OR ALTERNATIVE_SYSTEM_SSL) AND (LINUX_RHEL8 OR LINUX_RHEL9))
   SET(WITH_TIRPC "bundled")
 ENDIF()
 
@@ -2155,12 +2110,23 @@ INCLUDE(maintainer)
 INCLUDE(msvc_cppcheck)
 DO_MSVC_CPPCHECK()
 
+<<<<<<< HEAD
 IF(WIN32_CLANG AND CMAKE_BUILD_TYPE_UPPER STREQUAL "DEBUG")
   # Not yet fixed for Debug code
   STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-format")
 ENDIF()
 
 IF(WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
+||||||| 87307d4ddd8
+IF(WIN32_CLANG AND CMAKE_BUILD_TYPE_UPPER STREQUAL "DEBUG")
+  # Not yet fixed for Debug code
+  STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-format")
+ENDIF()
+
+IF(WITH_UNIT_TESTS)
+=======
+IF(WITH_UNIT_TESTS)
+>>>>>>> mysql-8.3.0
   ENABLE_TESTING()
   INCLUDE(googletest)
 ELSE()
@@ -2578,15 +2544,6 @@ IF(NOT INSTALL_LAYOUT MATCHES "RPM")
   SET(MYSQL_DOCS_LOCATION "" CACHE PATH
     "Location from where documentation is copied")
   MARK_AS_ADVANCED(MYSQL_DOCS_LOCATION)
-  INSTALL(DIRECTORY Docs/ DESTINATION ${INSTALL_DOCDIR}
-    COMPONENT Documentation
-    PATTERN "Makefile.*" EXCLUDE
-    PATTERN "glibc*" EXCLUDE
-    PATTERN "linuxthreads.txt" EXCLUDE
-    PATTERN "myisam.txt" EXCLUDE
-    PATTERN "sp-imp-spec.txt" EXCLUDE
-    PATTERN "README.build" EXCLUDE
-  )
 ENDIF()
 
 # Now that we're done with all ADD_SUBDIRECTORY and thus all feature tests,

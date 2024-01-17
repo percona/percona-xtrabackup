@@ -27,19 +27,12 @@
 #include <float.h>
 #include <stddef.h>
 
-#include "my_config.h"
-#include "mysql/strings/m_ctype.h"
-#ifdef HAVE_SYS_TIME_H
-#include <sys/time.h>
-#endif
-
 #include <algorithm>
 #include <cmath>   // isnan
 #include <memory>  // unique_ptr
 #include <optional>
 
 #include "decimal.h"
-#include "m_string.h"
 #include "my_alloc.h"
 #include "my_byteorder.h"
 #include "my_compare.h"
@@ -47,12 +40,18 @@
 #include "my_dbug.h"
 #include "my_double2ulonglong.h"
 #include "my_sqlcommand.h"
+#include "my_sys.h"
+#include "my_time_t.h"
 #include "myisampack.h"
 #include "mysql/strings/dtoa.h"
 #include "mysql/strings/int2str.h"
+#include "mysql/strings/m_ctype.h"
+#include "mysqld_error.h"
 #include "scope_guard.h"
 #include "sql-common/json_binary.h"  // json_binary::serialize
+#include "sql-common/json_diff.h"    // Json_diff_vector
 #include "sql-common/json_dom.h"     // Json_dom, Json_wrapper
+#include "sql-common/json_error_handler.h"
 #include "sql-common/my_decimal.h"
 #include "sql/create_field.h"
 #include "sql/current_thd.h"
@@ -68,13 +67,12 @@
 #include "sql/item_json_func.h"  // ensure_utf8mb4
 #include "sql/item_timefunc.h"   // Item_func_now_local
 #include "sql/join_optimizer/bit_utils.h"
-#include "sql/json_diff.h"  // Json_diff_vector
 #include "sql/key.h"
 #include "sql/log_event.h"  // class Table_map_log_event
 #include "sql/mysqld.h"     // log_10
+#include "sql/mysqld_cs.h"
 #include "sql/protocol.h"
 #include "sql/psi_memory_key.h"
-#include "sql/rpl_rli.h"                // Relay_log_info
 #include "sql/spatial.h"                // Geometry
 #include "sql/sql_class.h"              // THD
 #include "sql/sql_exception_handler.h"  // handle_std_exception
@@ -82,10 +80,8 @@
 #include "sql/sql_time.h"       // str_to_datetime_with_warn
 #include "sql/sql_tmp_table.h"  // create_tmp_field
 #include "sql/srs_fetcher.h"
-#include "sql/stateless_allocator.h"
 #include "sql/strfunc.h"  // find_type2
 #include "sql/system_variables.h"
-#include "sql/time_zone_common.h"
 #include "sql/transaction_info.h"
 #include "sql/tztime.h"  // Time_zone
 #include "string_with_len.h"
@@ -7727,15 +7723,15 @@ type_conversion_status Field_json::store(const char *from, size_t length,
 
   if (dom.get() == nullptr) return TYPE_ERR_BAD_VALUE;
 
-  if (json_binary::serialize(dom.get(), &value, &JsonDepthErrorHandler,
-                             &JsonKeyTooBigErrorHandler,
-                             &JsonValueTooBigErrorHandler))
+  const THD *const thd = current_thd;
+  if (json_binary::serialize(
+          dom.get(), JsonSerializationDefaultErrorHandler(thd), &value)) {
     return TYPE_ERR_BAD_VALUE;
+  }
 
-  if (value.length() > current_thd->variables.max_allowed_packet) {
+  if (value.length() > thd->variables.max_allowed_packet) {
     my_error(ER_WARN_ALLOWED_PACKET_OVERFLOWED, MYF(0),
-             "json_binary::serialize",
-             current_thd->variables.max_allowed_packet);
+             "json_binary::serialize", thd->variables.max_allowed_packet);
     return TYPE_ERR_BAD_VALUE;
   }
 
@@ -7830,15 +7826,13 @@ type_conversion_status Field_json::store_json(const Json_wrapper *json) {
   StringBuffer<STRING_BUFFER_USUAL_SIZE> tmpstr;
   String *buffer = json->is_binary_backed_by(&value) ? &tmpstr : &value;
 
-  if (json->to_binary(buffer, &JsonDepthErrorHandler,
-                      &JsonKeyTooBigErrorHandler, &JsonValueTooBigErrorHandler,
-                      &InvalidJsonErrorHandler))
+  const THD *const thd = current_thd;
+  if (json->to_binary(JsonSerializationDefaultErrorHandler(thd), buffer))
     return TYPE_ERR_BAD_VALUE;
 
-  if (buffer->length() > current_thd->variables.max_allowed_packet) {
+  if (buffer->length() > thd->variables.max_allowed_packet) {
     my_error(ER_WARN_ALLOWED_PACKET_OVERFLOWED, MYF(0),
-             "json_binary::serialize",
-             current_thd->variables.max_allowed_packet);
+             "json_binary::serialize", thd->variables.max_allowed_packet);
     return TYPE_ERR_BAD_VALUE;
   }
 
@@ -10580,11 +10574,10 @@ Create_field *generate_create_field(THD *thd, Item *source_item,
     assert(table);
     const dd::Table *table_obj =
         table->s->tmp_table ? table->s->tmp_table_def : nullptr;
+    const dd::cache::Dictionary_client::Auto_releaser releaser(
+        thd->dd_client());
 
     if (!table_obj && table->s->table_category != TABLE_UNKNOWN_CATEGORY) {
-      const dd::cache::Dictionary_client::Auto_releaser releaser(
-          thd->dd_client());
-
       if (thd->dd_client()->acquire(table->s->db.str, table->s->table_name.str,
                                     &table_obj)) {
         return nullptr; /* purecov: inspected */

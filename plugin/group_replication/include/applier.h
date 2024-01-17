@@ -44,11 +44,12 @@
 
 // Define the applier packet types
 #define ACTION_PACKET_TYPE 2
-#define VIEW_CHANGE_PACKET_TYPE 3
 #define SINGLE_PRIMARY_PACKET_TYPE 4
 #define SYNC_BEFORE_EXECUTION_PACKET_TYPE 5
 #define TRANSACTION_PREPARED_PACKET_TYPE 6
 #define LEAVING_MEMBERS_PACKET_TYPE 7
+#define RECOVERY_METADATA_PROCESSING_PACKET_TYPE 8
+#define ERROR_PACKET_TYPE 9  ///< Make the applier fail
 
 // Define the applier return error codes
 #define APPLIER_GTID_CHECK_TIMEOUT_ERROR -1
@@ -84,23 +85,29 @@ class Action_packet : public Packet {
 };
 
 /**
-  @class View_change_packet
-  A packet to send view change related info to the applier
+  @class Recovery_metadata_processing_packets
+  A packet to send Metadata related processing.
 */
-class View_change_packet : public Packet {
+class Recovery_metadata_processing_packets : public Packet {
  public:
   /**
     Create a new data packet with associated data.
-
-    @param  view_id_arg    The view id associated to this view
   */
-  View_change_packet(std::string &view_id_arg)
-      : Packet(VIEW_CHANGE_PACKET_TYPE), view_id(view_id_arg) {}
+  Recovery_metadata_processing_packets()
+      : Packet(RECOVERY_METADATA_PROCESSING_PACKET_TYPE) {}
 
-  ~View_change_packet() override = default;
+  virtual ~Recovery_metadata_processing_packets() override = default;
 
-  std::string view_id;
-  std::vector<std::string> group_executed_set;
+  /*
+    List of view-id of which metadata is received.
+  */
+  std::vector<std::string> m_view_id_to_be_deleted;
+
+  /* List of member that left the group. */
+  std::vector<Gcs_member_identifier> m_member_left_the_group;
+
+  /* A flag that indicates all the recovery metadata should be cleared. */
+  bool m_current_member_leaving_the_group{false};
 };
 
 /**
@@ -154,32 +161,40 @@ class Transaction_prepared_action_packet : public Packet {
   /**
     Create a new transaction prepared action.
 
-    @param  sid              the prepared transaction sid
+    @param  tsid             the prepared transaction tsid
+    @param  is_tsid_specified information on whether tsid is specified
     @param  gno              the prepared transaction gno
     @param  gcs_member_id    the member id that did prepare the
                              transaction
   */
-  Transaction_prepared_action_packet(const rpl_sid *sid, rpl_gno gno,
+  Transaction_prepared_action_packet(const gr::Gtid_tsid &tsid,
+                                     bool is_tsid_specified, rpl_gno gno,
                                      const Gcs_member_identifier &gcs_member_id)
       : Packet(TRANSACTION_PREPARED_PACKET_TYPE),
-        m_sid_specified(sid != nullptr ? true : false),
+        m_tsid_specified(is_tsid_specified),
         m_gno(gno),
         m_gcs_member_id(gcs_member_id.get_member_id()) {
-    if (sid != nullptr) {
-      m_sid.copy_from(*sid);
+    if (m_tsid_specified) {
+      m_tsid = tsid;
     }
   }
 
   ~Transaction_prepared_action_packet() override = default;
 
-  const bool m_sid_specified;
+  const bool m_tsid_specified;
   const rpl_gno m_gno;
   const Gcs_member_identifier m_gcs_member_id;
 
-  const rpl_sid *get_sid() { return m_sid_specified ? &m_sid : nullptr; }
+  /// @brief tsid accessor
+  /// @return tsid const reference
+  const gr::Gtid_tsid &get_tsid() const { return m_tsid; }
+
+  /// @brief returns information on whether TSID is specified for this trx
+  /// @return information on whether TSID is specified for this trx
+  bool is_tsid_specified() const { return m_tsid_specified; }
 
  private:
-  rpl_sid m_sid;
+  gr::Gtid_tsid m_tsid;
 };
 
 /**
@@ -230,6 +245,27 @@ class Leaving_members_action_packet : public Packet {
   const std::vector<Gcs_member_identifier> m_leaving_members;
 };
 
+/// @class Error_action_packet
+/// A packet to inform the applier it should fail.
+/// It should include a message about the failure
+class Error_action_packet : public Packet {
+ public:
+  /// Create a new error packet.
+  /// @param  error_message  the error that will make the applier stop
+  Error_action_packet(const char *error_message)
+      : Packet(ERROR_PACKET_TYPE), m_error_message(error_message) {}
+
+  ~Error_action_packet() override = default;
+
+  /// @brief Returns the error message for the failure
+  /// @return the error message
+  const char *get_error_message() { return m_error_message; }
+
+ private:
+  /// The error message for the failure process
+  const char *m_error_message;
+};
+
 typedef enum enum_applier_state {
   APPLIER_STATE_ON = 1,
   APPLIER_STATE_OFF,
@@ -256,7 +292,10 @@ class Applier_module_interface {
   virtual size_t get_message_queue_size() = 0;
   virtual Member_applier_state get_applier_status() = 0;
   virtual void add_suspension_packet() = 0;
+  virtual void add_packet(Packet *packet) = 0;
   virtual void add_view_change_packet(View_change_packet *packet) = 0;
+  virtual void add_metadata_processing_packet(
+      Recovery_metadata_processing_packets *packet) = 0;
   virtual void add_single_primary_action_packet(
       Single_primary_action_packet *packet) = 0;
   virtual void add_transaction_prepared_action_packet(
@@ -489,6 +528,10 @@ class Applier_module : public Applier_module_interface {
     this->incoming->push(new Action_packet(TERMINATION_PACKET));
   }
 
+  /// @brief Generic add packet method
+  /// @param packet the packet to be queued in the applier
+  void add_packet(Packet *packet) override { incoming->push(packet); }
+
   /**
     Queues a view change packet into the applier.
     This packets contain the new view id and they mark the exact frontier
@@ -499,6 +542,11 @@ class Applier_module : public Applier_module_interface {
     @param[in]  packet              The view change packet to be queued
   */
   void add_view_change_packet(View_change_packet *packet) override {
+    incoming->push(packet);
+  }
+
+  void add_metadata_processing_packet(
+      Recovery_metadata_processing_packets *packet) override {
     incoming->push(packet);
   }
 
@@ -747,6 +795,18 @@ class Applier_module : public Applier_module_interface {
   int apply_view_change_packet(View_change_packet *view_change_packet,
                                Format_description_log_event *fde_evt,
                                Continuation *cont);
+
+  /**
+    Apply a Recovery metadata processing information received from the GCS.
+
+    @param metadata_processing_packet Information of member left the group
+
+    @return the operation status
+      @retval 0      OK
+      @retval !=0    Error when injecting event
+  */
+  int apply_metadata_processing_packet(
+      Recovery_metadata_processing_packets *metadata_processing_packet);
 
   /**
     Apply a Data packet received by the applier.

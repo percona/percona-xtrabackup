@@ -724,7 +724,7 @@ class Item_sum : public Item_func {
     return false;
   }
 
-  void split_sum_func(THD *thd, Ref_item_array ref_item_array,
+  bool split_sum_func(THD *thd, Ref_item_array ref_item_array,
                       mem_root_deque<Item *> *fields) override;
 
   void cleanup() override;
@@ -1664,7 +1664,7 @@ class Item_sum_hybrid : public Item_sum {
   bool fix_fields(THD *, Item **) override;
   void clear() override;
   void update_after_wf_arguments_changed(THD *thd) override;
-  void split_sum_func(THD *thd, Ref_item_array ref_item_array,
+  bool split_sum_func(THD *thd, Ref_item_array ref_item_array,
                       mem_root_deque<Item *> *fields) override;
   double val_real() override;
   longlong val_int() override;
@@ -2530,7 +2530,7 @@ class Item_lead_lag : public Item_non_framing_wf {
     return true;
   }
 
-  void split_sum_func(THD *thd, Ref_item_array ref_item_array,
+  bool split_sum_func(THD *thd, Ref_item_array ref_item_array,
                       mem_root_deque<Item *> *fields) override;
 
   void set_has_value(bool value) { m_has_value = value; }
@@ -2601,7 +2601,7 @@ class Item_first_last_value : public Item_sum {
     return false;
   }
 
-  void split_sum_func(THD *thd, Ref_item_array ref_item_array,
+  bool split_sum_func(THD *thd, Ref_item_array ref_item_array,
                       mem_root_deque<Item *> *fields) override;
   bool uses_only_one_row() const override { return true; }
 
@@ -2672,7 +2672,7 @@ class Item_nth_value : public Item_sum {
     return false;
   }
 
-  void split_sum_func(THD *thd, Ref_item_array ref_item_array,
+  bool split_sum_func(THD *thd, Ref_item_array ref_item_array,
                       mem_root_deque<Item *> *fields) override;
   bool uses_only_one_row() const override { return true; }
 
@@ -2839,12 +2839,11 @@ class Item_sum_collect : public Item_sum {
        In contrast to Item_sum, Item_sum_collect always uses Aggregator_simple,
        and only needs to reset its aggregator when called.
        */
-    if (aggr) {
+    if (aggr != nullptr) {
       aggr->clear();
       return false;
     }
 
-    destroy(aggr);
     aggr = new (*THR_MALLOC) Aggregator_simple(this);
     return aggr ? false : true;
   }

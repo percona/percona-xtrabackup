@@ -1189,6 +1189,9 @@ class Query_block : public Query_term {
   Item *having_cond() const { return m_having_cond; }
   Item **having_cond_ref() { return &m_having_cond; }
   void set_having_cond(Item *cond) { m_having_cond = cond; }
+  Item *qualify_cond() const { return m_qualify_cond; }
+  Item **qualify_cond_ref() { return &m_qualify_cond; }
+  void set_qualify_cond(Item *cond) { m_qualify_cond = cond; }
   void set_query_result(Query_result *result) { m_query_result = result; }
   Query_result *query_result() const { return m_query_result; }
   bool change_query_result(THD *thd, Query_result_interceptor *new_result,
@@ -1272,6 +1275,13 @@ class Query_block : public Query_term {
   */
   bool is_implicitly_grouped() const {
     return m_agg_func_used && group_list.elements == 0;
+  }
+
+  /**
+    @return true if this query block has GROUP BY modifier.
+  */
+  bool is_non_primitive_grouped() const {
+    return (olap != UNSPECIFIED_OLAP_TYPE);
   }
 
   /**
@@ -1690,6 +1700,16 @@ class Query_block : public Query_term {
   void print_having(const THD *thd, String *str, enum_query_type query_type);
 
   /**
+      Print list of items in QUALIFY clause.
+
+      @param      thd          Thread handle
+      @param[out] str          String of output
+      @param      query_type   Options to print out string output
+    */
+  void print_qualify(const THD *thd, String *str,
+                     enum_query_type query_type) const;
+
+  /**
     Print details of Windowing functions.
 
     @param      thd          Thread handler
@@ -2026,6 +2046,8 @@ class Query_block : public Query_term {
   enum_parsing_context parsing_place{CTX_NONE};
   /// Parse context: is inside a set function if this is positive
   uint in_sum_expr{0};
+  ///  Parse context: is inside a window function if this is positive
+  uint in_window_expr{0};
 
   /**
     Three fields used by semi-join transformations to know when semi-join is
@@ -2036,6 +2058,7 @@ class Query_block : public Query_term {
     RESOLVE_JOIN_NEST,
     RESOLVE_CONDITION,
     RESOLVE_HAVING,
+    RESOLVE_QUALIFY,
     RESOLVE_SELECT_LIST
   };
   Resolve_place resolve_place{
@@ -2047,9 +2070,10 @@ class Query_block : public Query_term {
   */
   uint select_n_where_fields{0};
   /**
-    number of items in select_list and HAVING clause used to get number
-    bigger then can be number of entries that will be added to all item
-    list during split_sum_func
+    Number of items in the select list, HAVING clause, QUALIFY clause and ORDER
+    BY clause. It is used to reserve space in the base_ref_items array so that
+    it is big enough to hold hidden items for any of the expressions or
+    sub-expressions in those clauses.
   */
   uint select_n_having_items{0};
   /// Number of arguments of and/or/xor in where/having/on
@@ -2099,7 +2123,10 @@ class Query_block : public Query_term {
   */
   int nest_level{0};
 
-  /// Indicates whether this query block contains the WITH ROLLUP clause
+  /**
+    Indicates whether this query block contains non-primitive grouping (such as
+    ROLLUP).
+  */
   olap_type olap{UNSPECIFIED_OLAP_TYPE};
 
   /// @see enum_condition_context
@@ -2220,20 +2247,20 @@ class Query_block : public Query_term {
                                      Item *lifted_where_cond);
   bool transform_table_subquery_to_join_with_derived(
       THD *thd, Item_exists_subselect *subq_pred);
-  bool setup_count_over_partition(THD *thd, Table_ref *derived,
-                                  Lifted_fields_map *lifted_fields,
-                                  std::deque<Item_field *> &added_to_group_by,
-                                  uint hidden_fields);
+  bool setup_counts_over_partitions(THD *thd, Table_ref *derived,
+                                    Lifted_fields_map *lifted_fields,
+                                    std::deque<Item_field *> &added_to_group_by,
+                                    uint hidden_fields);
   bool decorrelate_derived_scalar_subquery_pre(
       THD *thd, Table_ref *derived, Item *lifted_where,
       Lifted_fields_map *lifted_where_fields, bool *added_card_check,
-      bool *added_window_card_check);
+      size_t *added_window_card_checks);
   bool decorrelate_derived_scalar_subquery_post(
       THD *thd, Table_ref *derived, Lifted_fields_map *lifted_where_fields,
-      bool added_card_check, bool added_window_card_check);
+      bool added_card_check, size_t added_window_card_checks);
   void replace_referenced_item(Item *const old_item, Item *const new_item);
   void remap_tables(THD *thd);
-  void mark_item_as_maybe_null_if_rollup_item(Item *item);
+  void mark_item_as_maybe_null_if_non_primitive_grouped(Item *item) const;
   Item *resolve_rollup_item(THD *thd, Item *item);
   bool resolve_rollup(THD *thd);
 
@@ -2242,8 +2269,7 @@ class Query_block : public Query_term {
   bool setup_group(THD *thd);
   void fix_after_pullout(Query_block *parent_query_block,
                          Query_block *removed_query_block);
-  bool remove_redundant_subquery_clauses(THD *thd,
-                                         int hidden_group_field_count);
+  bool remove_redundant_subquery_clauses(THD *thd);
   void repoint_contexts_of_join_nests(mem_root_deque<Table_ref *> join_list);
   bool empty_order_list(Query_block *sl);
   bool setup_join_cond(THD *thd, mem_root_deque<Table_ref *> *tables,
@@ -2353,9 +2379,30 @@ class Query_block : public Query_term {
   */
   ulonglong m_active_options{0};
 
+  /**
+    If the query block includes non-primitive grouping, then these modifiers are
+    represented as grouping sets. The variable 'm_num_grouping_sets' holds the
+    count of grouping sets.
+  */
+  int m_num_grouping_sets{0};
+
  public:
   Table_ref *resolve_nest{
       nullptr};  ///< Used when resolving outer join condition
+
+  /**
+    Initializes the grouping set if the query block includes GROUP BY
+    modifiers.
+  */
+  bool allocate_grouping_sets(THD *thd);
+
+  /**
+    Populates the grouping sets if the query block includes non-primitive
+    grouping.
+  */
+  bool populate_grouping_sets(THD *thd);
+  int get_number_of_grouping_sets() const { return m_num_grouping_sets; }
+
  private:
   /**
     Condition to be evaluated after all tables in a query block are joined.
@@ -2369,6 +2416,9 @@ class Query_block : public Query_term {
 
   /// Condition to be evaluated on grouped rows after grouping.
   Item *m_having_cond;
+
+  /// Condition to be evaluated after window functions.
+  Item *m_qualify_cond{nullptr};
 
   /// Number of GROUP BY expressions added to all_fields
   int hidden_group_field_count;
@@ -3670,6 +3720,22 @@ class LEX_GRANT_AS {
   List<LEX_USER> *role_list;
 };
 
+/*
+  Some queries can be executed only using the secondary engine. The enum
+  "execute_only_in_secondary_reasons" retains the explanations for queries that
+  cannot be executed using the primary engine.
+*/
+enum execute_only_in_secondary_reasons { SUPPORTED_IN_PRIMARY, CUBE };
+
+/*
+  Some queries can be executed only in using the hypergraph optimizer. The enum
+  "execute_only_in_hypergraph_reasons" retains the explanations for the same.
+*/
+enum execute_only_in_hypergraph_reasons {
+  SUPPORTED_IN_BOTH_OPTIMIZERS,
+  QUALIFY_CLAUSE
+};
+
 /**
   The LEX object currently serves three different purposes:
 
@@ -3733,6 +3799,23 @@ struct LEX : public Query_tables_list {
   /* current Query_block in parsing */
   Query_block *m_current_query_block;
 
+  /*
+    Some queries can only be executed on a secondary engine, for example,
+    queries with non-primitive grouping like CUBE.
+  */
+  bool m_can_execute_only_in_secondary_engine = false;
+
+  execute_only_in_secondary_reasons m_execute_only_in_secondary_engine_reason{
+      SUPPORTED_IN_PRIMARY};
+
+  /*
+    Some queries can only be executed in hypergraph optimizer, for example,
+    queries with QUALIFY clause.
+  */
+  bool m_can_execute_only_in_hypergraph_optimizer = false;
+  execute_only_in_hypergraph_reasons m_execute_only_in_hypergraph_reason =
+      SUPPORTED_IN_BOTH_OPTIMIZERS;
+
  public:
   inline Query_block *current_query_block() const {
     return m_current_query_block;
@@ -3752,14 +3835,28 @@ struct LEX : public Query_tables_list {
   /// @return true if this is an EXPLAIN statement
   bool is_explain() const { return explain_format != nullptr; }
   bool is_explain_analyze = false;
+
   /**
-    Whether the currently-running query should be (attempted) executed in
-    the hypergraph optimizer. This will not change after the query is
-    done parsing, so you can use it in any query phase to e.g. figure out
+    Whether the currently-running statement should be prepared and executed
+    with the hypergraph optimizer. This will not change after the statement is
+    prepared, so you can use it in any optimization phase to e.g. figure out
     whether to inhibit some transformation that the hypergraph optimizer
-    does not properly understand yet.
+    does not properly understand yet. If a different optimizer is requested,
+    the statement must be re-prepared with the proper optimizer settings.
    */
-  bool using_hypergraph_optimizer = false;
+
+  bool using_hypergraph_optimizer() const {
+    return m_using_hypergraph_optimizer;
+  }
+
+  void set_using_hypergraph_optimizer(bool use_hypergraph) {
+    m_using_hypergraph_optimizer = use_hypergraph;
+  }
+
+ private:
+  bool m_using_hypergraph_optimizer{false};
+
+ public:
   LEX_STRING name;
   char *help_arg;
   char *to_log; /* For PURGE BINARY LOGS TO */
@@ -3854,6 +3951,50 @@ struct LEX : public Query_tables_list {
   }
   std::map<Item_field *, Field *>::iterator end_values_map() {
     return insert_update_values_map->end();
+  }
+  bool can_execute_only_in_secondary_engine() const {
+    return m_can_execute_only_in_secondary_engine;
+  }
+  void set_execute_only_in_secondary_engine(
+      const bool execute_only_in_secondary_engine_param,
+      execute_only_in_secondary_reasons reason) {
+    m_can_execute_only_in_secondary_engine =
+        execute_only_in_secondary_engine_param;
+    m_execute_only_in_secondary_engine_reason = reason;
+    assert(m_can_execute_only_in_secondary_engine ||
+           reason == SUPPORTED_IN_PRIMARY);
+  }
+
+  const char *get_not_supported_in_primary_reason() {
+    assert(can_execute_only_in_secondary_engine());
+    switch (m_execute_only_in_secondary_engine_reason) {
+      case CUBE:
+        return "CUBE";
+      default:
+        return "UNDEFINED";
+    }
+  }
+  bool can_execute_only_in_hypergraph_optimizer() const {
+    return m_can_execute_only_in_hypergraph_optimizer;
+  }
+  void set_execute_only_in_hypergraph_optimizer(
+      bool execute_in_hypergraph_optimizer_param,
+      execute_only_in_hypergraph_reasons reason) {
+    m_can_execute_only_in_hypergraph_optimizer =
+        execute_in_hypergraph_optimizer_param;
+    m_execute_only_in_hypergraph_reason = reason;
+  }
+
+  const char *get_only_supported_in_hypergraph_reason_str() const {
+    assert(can_execute_only_in_hypergraph_optimizer());
+    return (m_execute_only_in_hypergraph_reason == QUALIFY_CLAUSE)
+               ? "QUALIFY clause"
+               : "UNDEFINED";
+  }
+
+  execute_only_in_hypergraph_reasons get_only_supported_in_hypergraph_reason()
+      const {
+    return m_execute_only_in_hypergraph_reason;
   }
 
  private:
@@ -4169,7 +4310,7 @@ struct LEX : public Query_tables_list {
   /// Set to true while resolving values in ON DUPLICATE KEY UPDATE clause
   bool in_update_value_clause;
 
-  class Explain_format *explain_format;
+  class Explain_format *explain_format{nullptr};
 
   // Maximum execution time for a statement.
   ulong max_execution_time;
@@ -4198,6 +4339,7 @@ struct LEX : public Query_tables_list {
     query_block = nullptr;
     all_query_blocks_list = nullptr;
     m_current_query_block = nullptr;
+    explain_format = nullptr;
     destroy_values_map();
   }
 
@@ -4403,6 +4545,12 @@ struct LEX : public Query_tables_list {
   */
   void set_secondary_engine_execution_context(
       Secondary_engine_execution_context *context);
+
+  /**
+    Validates if a query can run with the old optimizer.
+    @return True if the query cannot be run with old optimizer, false otherwise.
+  */
+  bool validate_use_in_old_optimizer();
 
  private:
   bool m_is_replication_deprecated_syntax_used{false};

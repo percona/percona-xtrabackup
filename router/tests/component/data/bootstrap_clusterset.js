@@ -42,8 +42,7 @@ var common_responses = common_stmts.prepare_statement_responses(
 
       // account verification
       //"router_select_metadata_v2_gr",
-      //"router_select_group_replication_primary_member",
-      //"router_select_group_membership_with_primary_mode",
+      //"router_select_group_membership",
 
       // clusterset specific
       "router_clusterset_cluster_info_by_name",
@@ -59,6 +58,7 @@ var common_responses = common_stmts.prepare_statement_responses(
 var common_responses_regex = common_stmts.prepare_statement_responses_regex(
     [
       "router_create_user_if_not_exists",
+      "router_check_auth_plugin",
       "router_grant_on_metadata_db",
       "router_grant_on_pfs_db",
       "router_grant_on_routers",

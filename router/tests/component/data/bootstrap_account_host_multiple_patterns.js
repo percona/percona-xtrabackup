@@ -29,8 +29,7 @@ var common_stmts = require("common_statements");
 
           // account verification
           "router_select_metadata_v2_gr",
-          "router_select_group_replication_primary_member",
-          "router_select_group_membership_with_primary_mode",
+          "router_select_group_membership",
         ],
         options);
 
@@ -38,6 +37,7 @@ var common_stmts = require("common_statements");
         [
           "router_insert_into_routers",
           "router_create_user_if_not_exists",
+          "router_check_auth_plugin",
           "router_grant_on_metadata_db",
           "router_grant_on_pfs_db",
           "router_grant_on_routers",
@@ -54,9 +54,9 @@ var common_stmts = require("common_statements");
             options);
 
     var cu_regex = "CREATE USER IF NOT EXISTS " +
-        "'mysql_router1_.*'@'.*' IDENTIFIED WITH mysql_native_password AS '.*'," +
-        "'mysql_router1_.*'@'.*' IDENTIFIED WITH mysql_native_password AS '.*'," +
-        "'mysql_router1_.*'@'.*' IDENTIFIED WITH mysql_native_password AS '.*'";
+        "'mysql_router1_.*'@'.*' IDENTIFIED BY '.*'," +
+        "'mysql_router1_.*'@'.*' IDENTIFIED BY '.*'," +
+        "'mysql_router1_.*'@'.*' IDENTIFIED BY '.*'";
 
     if (stmt.match(cu_regex)) {
       return {"ok": {}};

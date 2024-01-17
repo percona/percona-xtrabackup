@@ -245,6 +245,8 @@ class Arg_comparator {
 
   Arg_comparator *get_child_comparators() const { return comparators; }
 
+  bool compare_as_json() const { return func == &Arg_comparator::compare_json; }
+
   /// @returns true if the class has decided that values should be extracted
   ///   from the Items using function pointers set up by this class.
   bool use_custom_value_extractors() const {
@@ -506,7 +508,7 @@ class Item_in_optimizer final : public Item_bool_func {
   bool fix_left(THD *thd);
   void fix_after_pullout(Query_block *parent_query_block,
                          Query_block *removed_query_block) override;
-  void split_sum_func(THD *thd, Ref_item_array ref_item_array,
+  bool split_sum_func(THD *thd, Ref_item_array ref_item_array,
                       mem_root_deque<Item *> *fields) override;
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
@@ -674,6 +676,14 @@ class Item_bool_func2 : public Item_bool_func {
   const Arg_comparator *get_comparator() const { return &cmp; }
   Item *replace_scalar_subquery(uchar *) override;
   friend class Arg_comparator;
+  bool allow_replacement(Item_field *const original,
+                         Item_field *const subst) override {
+    /*
+      If UNKNOWN results can be treated as false (e.g when placed in WHERE, ON
+      or HAVING), a non-nullable field can be replaced with a nullable one.
+    */
+    return ignore_unknown() || original->is_nullable() || !subst->is_nullable();
+  }
 };
 
 /**
@@ -1238,6 +1248,9 @@ class Item_func_lt final : public Item_func_inequality {
 */
 class Item_func_ne final : public Item_func_comparison {
  public:
+  /// A lower limit for the selectivity of 'field != unknown_value'.
+  static constexpr double kMinSelectivityForUnknownValue = 0.2;
+
   Item_func_ne(Item *a, Item *b) : Item_func_comparison(a, b) {}
   longlong val_int() override;
   enum Functype functype() const override { return NE_FUNC; }
@@ -1285,6 +1298,15 @@ class Item_func_opt_neg : public Item_int_func {
     negated = !negated;
     return this;
   }
+  bool allow_replacement(Item_field *const original,
+                         Item_field *const subst) override {
+    /*
+      If UNKNOWN results can be treated as false (e.g when placed in WHERE, ON
+      or HAVING), a non-nullable field can be replaced with a nullable one.
+    */
+    return ignore_unknown() || original->is_nullable() || !subst->is_nullable();
+  }
+
   bool eq(const Item *item, bool binary_cmp) const override;
   bool subst_argument_checker(uchar **) override { return true; }
 
@@ -2469,7 +2491,7 @@ class Item_cond : public Item_bool_func {
   void update_used_tables() override;
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
-  void split_sum_func(THD *thd, Ref_item_array ref_item_array,
+  bool split_sum_func(THD *thd, Ref_item_array ref_item_array,
                       mem_root_deque<Item *> *fields) override;
   void apply_is_true() override { abort_on_null = true; }
   void copy_andor_arguments(THD *thd, Item_cond *item);

@@ -194,8 +194,11 @@ class RoutingSplittingTestBase : public RouterComponentTest {
     std::vector<ClusterNode> cluster_nodes;
 
     SCOPED_TRACE("// start mock-server");
+    std::vector<uint16_t> classic_ports;
     for (auto &node : nodes_) {
-      node.classic_port = port_pool_.get_next_available();
+      const auto classic_port = port_pool_.get_next_available();
+      node.classic_port = classic_port;
+      classic_ports.push_back(classic_port);
       node.x_port = port_pool_.get_next_available();
       node.http_port = port_pool_.get_next_available();
 
@@ -207,10 +210,10 @@ class RoutingSplittingTestBase : public RouterComponentTest {
           30s,  // wait notify.
           true  // enable-ssl
       );
-
-      gr_nodes.push_back(node.classic_port);
-      cluster_nodes.push_back(node.classic_port);
     }
+
+    gr_nodes = classic_ports_to_gr_nodes(classic_ports);
+    cluster_nodes = classic_ports_to_cluster_nodes(classic_ports);
 
     SCOPED_TRACE("// configure mock-servers");
     for (auto [ndx, node] : stdx::views::enumerate(nodes_)) {
@@ -222,7 +225,6 @@ class RoutingSplittingTestBase : public RouterComponentTest {
                         gr_nodes,       // gr-nodes
                         ndx,            // gr-pos
                         cluster_nodes,  // cluster-nodes
-                        0,              // primary-id
                         0,              // view-id
                         false,          // error-on-md-query
                         "127.0.0.1"     // gr-node-host
@@ -2203,6 +2205,14 @@ TEST_F(RoutingSplittingTest, multi_statements_are_forbidden) {
       EXPECT_EQ(query_res.error().value(),
                 4501);  // multi-statements are forbidden.
     }
+
+    // trailing comma is ok.
+    {
+      auto query_res = cli.query("DO 2;");
+      ASSERT_ERROR(query_res);
+      EXPECT_EQ(query_res.error().value(),
+                1273);  // syntax error (from mock-server)
+    }
   }
 }
 
@@ -2271,10 +2281,8 @@ TEST_F(RoutingSplittingTest, wait_for_my_writes_default) {
                        rapidjson::Value("mysql/authenticate")},
              std::pair{"/events/1/events/0/events/2/name",
                        rapidjson::Value("mysql/set_var")},
-             std::pair{"/events/1/events/0/events/3/name",
-                       rapidjson::Value("mysql/check_read_only")},
              // it waited.
-             std::pair{"/events/1/events/0/events/4/name",
+             std::pair{"/events/1/events/0/events/3/name",
                        rapidjson::Value("mysql/wait_gtid_executed")},
              // if wait-gtid-executed passes, next will be forward.
              std::pair{"/events/1/events/1/name",
@@ -2360,8 +2368,6 @@ TEST_F(RoutingSplittingTest, router_set_wait_for_my_writes_off) {
                        rapidjson::Value("mysql/authenticate")},
              std::pair{"/events/1/events/0/events/2/name",
                        rapidjson::Value("mysql/set_var")},
-             std::pair{"/events/1/events/0/events/3/name",
-                       rapidjson::Value("mysql/check_read_only")},
              // if wait-gtid-executed passes, next will be forward.
              std::pair{"/events/1/events/1/name",
                        rapidjson::Value("mysql/forward")},
@@ -2453,10 +2459,8 @@ TEST_F(RoutingSplittingTest, router_set_wait_for_my_writes_timeout_0) {
                        rapidjson::Value("mysql/authenticate")},
              std::pair{"/events/1/events/0/events/2/name",
                        rapidjson::Value("mysql/set_var")},
-             std::pair{"/events/1/events/0/events/3/name",
-                       rapidjson::Value("mysql/check_read_only")},
              // it waited, with timeout 0.
-             std::pair{"/events/1/events/0/events/4/name",
+             std::pair{"/events/1/events/0/events/3/name",
                        rapidjson::Value("mysql/wait_gtid_executed")},
              // if wait-gtid-executed passes, next will be forward.
              std::pair{"/events/1/events/1/name",
@@ -2549,10 +2553,8 @@ TEST_F(RoutingSplittingManualTest, config_wait_for_my_writes_is_not_set) {
                        rapidjson::Value("mysql/authenticate")},
              std::pair{"/events/1/events/0/events/2/name",
                        rapidjson::Value("mysql/set_var")},
-             std::pair{"/events/1/events/0/events/3/name",
-                       rapidjson::Value("mysql/check_read_only")},
              // it waited.
-             std::pair{"/events/1/events/0/events/4/name",
+             std::pair{"/events/1/events/0/events/3/name",
                        rapidjson::Value("mysql/wait_gtid_executed")},
              // if wait-gtid-executed passes, next will be forward.
              std::pair{"/events/1/events/1/name",
@@ -2635,8 +2637,6 @@ TEST_F(RoutingSplittingManualTest, config_wait_for_my_writes_is_zero) {
                        rapidjson::Value("mysql/authenticate")},
              std::pair{"/events/1/events/0/events/2/name",
                        rapidjson::Value("mysql/set_var")},
-             std::pair{"/events/1/events/0/events/3/name",
-                       rapidjson::Value("mysql/check_read_only")},
              // if wait-gtid-executed passes, next will be forward.
              std::pair{"/events/1/events/1/name",
                        rapidjson::Value("mysql/forward")},
@@ -3323,8 +3323,11 @@ class RoutingSplittingConfigInvalid
     std::vector<ClusterNode> cluster_nodes;
 
     SCOPED_TRACE("// start mock-server");
+    std::vector<uint16_t> classic_ports;
     for (auto &node : nodes_) {
-      node.classic_port = port_pool_.get_next_available();
+      const auto classic_port = port_pool_.get_next_available();
+      node.classic_port = classic_port;
+      classic_ports.push_back(classic_port);
       node.x_port = port_pool_.get_next_available();
       node.http_port = port_pool_.get_next_available();
 
@@ -3336,10 +3339,10 @@ class RoutingSplittingConfigInvalid
           30s,  // wait notify.
           true  // enable-ssl
       );
-
-      gr_nodes.push_back(node.classic_port);
-      cluster_nodes.push_back(node.classic_port);
     }
+
+    gr_nodes = classic_ports_to_gr_nodes(classic_ports);
+    cluster_nodes = classic_ports_to_cluster_nodes(classic_ports);
 
     SCOPED_TRACE("// configure mock-servers");
     for (auto [ndx, node] : stdx::views::enumerate(nodes_)) {
@@ -3351,7 +3354,6 @@ class RoutingSplittingConfigInvalid
                         gr_nodes,       // gr-nodes
                         ndx,            // gr-pos
                         cluster_nodes,  // cluster-nodes
-                        0,              // primary-id
                         0,              // view-id
                         false,          // error-on-md-query
                         "127.0.0.1"     // gr-node-host

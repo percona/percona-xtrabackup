@@ -1147,10 +1147,10 @@ void intern_close_table(TABLE *table) {  // Free all structures
     table->histograms = nullptr;
   }
   free_io_cache(table);
-  destroy(table->triggers);
+  if (table->triggers != nullptr) ::destroy_at(table->triggers);
   if (table->file)                // Not true if placeholder
     (void)closefrm(table, true);  // close file
-  destroy(table);
+  ::destroy_at(table);
   my_free(table);
 }
 
@@ -2439,7 +2439,7 @@ void close_temporary(THD *thd, TABLE *table, bool free_share,
 
   if (free_share) {
     free_table_share(table->s);
-    destroy(table);
+    ::destroy_at(table);
     my_free(table);
   }
 }
@@ -3422,7 +3422,7 @@ share_found:
         EXTRA_RECORD, thd->open_options, table, false, table_def);
 
     if (error) {
-      destroy(table);
+      ::destroy_at(table);
       my_free(table);
 
       if (error == 7)
@@ -3444,7 +3444,7 @@ share_found:
           break;
         default:
           closefrm(table, false);
-          destroy(table);
+          ::destroy_at(table);
           my_free(table);
           my_error(ER_CRASHED_ON_USAGE, MYF(0), share->table_name.str);
           goto err_lock;
@@ -3453,7 +3453,7 @@ share_found:
 
     if (open_table_entry_fini(thd, share, table_def, table)) {
       closefrm(table, false);
-      destroy(table);
+      ::destroy_at(table);
       my_free(table);
       goto err_lock;
     }
@@ -3821,8 +3821,9 @@ static bool open_table_entry_fini(THD *thd, TABLE_SHARE *share,
   if (table != nullptr && table->has_trigger()) {
     Table_trigger_dispatcher *d = Table_trigger_dispatcher::create(entry);
 
-    if (!d || d->check_n_load(thd, *table)) {
-      destroy(d);
+    if (d == nullptr) return true;
+    if (d->check_n_load(thd, *table)) {
+      ::destroy_at(d);
       return true;
     }
 
@@ -3861,7 +3862,7 @@ static bool open_table_entry_fini(THD *thd, TABLE_SHARE *share,
         LogErr(ERROR_LEVEL,
                ER_BINLOG_OOM_WRITING_DELETE_WHILE_OPENING_HEAP_TABLE,
                share->db.str, share->table_name.str);
-        destroy(entry->triggers);
+        ::destroy_at(entry->triggers);
         return true;
       }
       /*
@@ -4064,7 +4065,7 @@ static bool fix_row_type(THD *thd, Table_ref *table_list) {
     if (file != nullptr) {
       const row_type correct_row_type = file->get_real_row_type(&create_info);
       bool result = dd::fix_row_type(thd, table_def, correct_row_type);
-      destroy(file);
+      ::destroy_at(file);
 
       if (result) {
         trans_rollback_stmt(thd);
@@ -6701,6 +6702,13 @@ static bool open_secondary_engine_tables(THD *thd, uint flags) {
 
   // If use of primary engine is requested, set state accordingly
   if (thd->variables.use_secondary_engine == SECONDARY_ENGINE_OFF) {
+    // Check if properties of query conflicts with engine mode:
+    if (lex->can_execute_only_in_secondary_engine()) {
+      my_error(ER_CANNOT_EXECUTE_IN_PRIMARY, MYF(0),
+               lex->get_not_supported_in_primary_reason());
+      return true;
+    }
+
     thd->set_secondary_engine_optimization(
         Secondary_engine_optimization::PRIMARY_ONLY);
     return false;
@@ -6711,21 +6719,46 @@ static bool open_secondary_engine_tables(THD *thd, uint flags) {
         Secondary_engine_optimization::PRIMARY_ONLY);
     return false;
   }
-  // If use of a secondary storage engine is requested for this statement,
-  // skip past the initial optimization for the primary storage engine and
-  // go straight to the secondary engine.
+
+  /*
+    Only some SQL commands can be offloaded to secondary table offload.
+    Note that table-less queries are always executed in primary engine.
+  */
+  const bool offload_possible =
+      (lex->sql_command == SQLCOM_SELECT && lex->table_count > 0) ||
+      ((lex->sql_command == SQLCOM_INSERT_SELECT ||
+        lex->sql_command == SQLCOM_CREATE_TABLE) &&
+       lex->table_count > 1);
+  /*
+    If query can only execute in secondary engine, effectively set it as
+    a forced secondary execution.
+  */
+  if (lex->can_execute_only_in_secondary_engine()) {
+    thd->set_secondary_engine_forced(true);
+  }
+  /*
+    If use of a secondary storage engine is requested for this statement,
+    skip past the initial optimization for the primary storage engine and
+    go straight to the secondary engine.
+    Notice the little difference between commands that must execute in
+    secondary engine, vs those that are forced to secondary engine:
+    the latter ones execute in primary engine if they are table-less.
+  */
   if (thd->secondary_engine_optimization() ==
           Secondary_engine_optimization::PRIMARY_TENTATIVELY &&
       thd->is_secondary_engine_forced()) {
-    if ((lex->sql_command == SQLCOM_SELECT && lex->table_count >= 1) ||
-        ((lex->sql_command == SQLCOM_INSERT_SELECT ||
-          lex->sql_command == SQLCOM_CREATE_TABLE) &&
-         lex->table_count >= 2)) {
+    if (offload_possible) {
       thd->set_secondary_engine_optimization(
           Secondary_engine_optimization::SECONDARY);
       mysql_thread_set_secondary_engine(true);
       mysql_statement_set_secondary_engine(thd->m_statement_psi, true);
     } else {
+      // Table-less queries cannot be executed in secondary engine
+      if (lex->can_execute_only_in_secondary_engine()) {
+        my_error(ER_CANNOT_EXECUTE_IN_PRIMARY, MYF(0),
+                 lex->get_not_supported_in_primary_reason());
+        return true;
+      }
       thd->set_secondary_engine_optimization(
           Secondary_engine_optimization::PRIMARY_ONLY);
     }
@@ -7290,7 +7323,7 @@ TABLE *open_table_uncached(THD *thd, const char *path, const char *db,
   if (open_table_def(thd, share, table_def)) {
     /* No need to lock share->mutex as this is not needed for tmp tables */
     free_table_share(share);
-    destroy(tmp_table);
+    ::destroy_at(tmp_table);
     my_free(tmp_table);
     return nullptr;
   }
@@ -7314,7 +7347,7 @@ TABLE *open_table_uncached(THD *thd, const char *path, const char *db,
           (open_in_engine ? false : true), &table_def)) {
     /* No need to lock share->mutex as this is not needed for tmp tables */
     free_table_share(share);
-    destroy(tmp_table);
+    ::destroy_at(tmp_table);
     my_free(tmp_table);
     return nullptr;
   }
@@ -7374,7 +7407,7 @@ bool rm_temporary_table(THD *thd, handlerton *base, const char *path,
     error = true;
     LogErr(WARNING_LEVEL, ER_FAILED_TO_REMOVE_TEMP_TABLE, path, my_errno());
   }
-  destroy(file);
+  ::destroy_at(file);
   return error;
 }
 
@@ -8211,6 +8244,19 @@ bool find_item_in_list(THD *thd, Item *find, mem_root_deque<Item *> *items,
       find->type() == Item::FIELD_ITEM || find->type() == Item::REF_ITEM
           ? down_cast<Item_ident *>(find)
           : nullptr;
+  /*
+    Some items, such as Item_aggregate_ref, do not have a name and hence
+    can never be found.
+  */
+  assert(find_ident == nullptr || find_ident->field_name != nullptr);
+
+  /*
+    Some items, such as Item_aggregate_ref, do not have a name and hence
+    can never be found.
+  */
+  if (find_ident != nullptr && find_ident->field_name == nullptr) {
+    return false;
+  }
 
   int i = 0;
   for (auto it = VisibleFields(*items).begin();
@@ -9077,7 +9123,7 @@ bool setup_fields(THD *thd, ulong want_privilege, bool allow_sum_func,
   select->is_item_list_lookup = false;
 
   /*
-    To prevent fail on forward lookup we fill it with zerows,
+    To prevent fail on forward lookup we fill it with zeros,
     then if we got pointer on zero after find_item_in_list we will know
     that it is forward lookup.
 
@@ -9202,7 +9248,9 @@ bool setup_fields(THD *thd, ulong want_privilege, bool allow_sum_func,
       if ((item->has_aggregation() && !(item->type() == Item::SUM_FUNC_ITEM &&
                                         !item->m_is_window_function)) ||  //(1)
           item->has_wf())                                                 // (2)
-        item->split_sum_func(thd, ref_item_array, fields);
+        if (item->split_sum_func(thd, ref_item_array, fields)) {
+          return true;
+        }
     }
 
     select->select_list_tables |= item->used_tables();
@@ -10398,7 +10446,7 @@ bool init_ftfuncs(THD *thd, Query_block *query_block) {
   DBUG_PRINT("info", ("Performing FULLTEXT search"));
   THD_STAGE_INFO(thd, stage_fulltext_initialization);
 
-  if (thd->lex->using_hypergraph_optimizer) {
+  if (thd->lex->using_hypergraph_optimizer()) {
     // Set the no_ranking hint if ranking of the results is not required. The
     // old optimizer does this when it determines which scan to use. The
     // hypergraph optimizer doesn't know until the full plan is built, so do it

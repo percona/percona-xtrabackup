@@ -15,8 +15,6 @@
 /extra/** !filter
 /internal/extra/** !filter
 /include/boost_*/** !filter
-/plugin/innodb_memcached/daemon_memcached/** !filter
-/plugin/innodb_memcached/innodb_memcache/cache-src/** !filter
 /internal/plugin/keyring_okv/okv_client_sdk/** !filter
 /plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/windeps/** !filter
 
@@ -39,12 +37,3 @@
 /strings/uca_data.h !filter
 /internal/meb/meb/mysqloption_list.cpp !filter
 
-# Some NDB source is currently exempt
-/storage/ndb/clusterj/** !filter
-/storage/ndb/include/** !filter
-/storage/ndb/memcache/** !filter
-/storage/ndb/ndbapi-examples/** !filter
-/storage/ndb/nodejs/** !filter
-/storage/ndb/src/** !filter
-/storage/ndb/test/** !filter
-/storage/ndb/tools/** !filter

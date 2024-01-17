@@ -1,4 +1,3 @@
-
 /* Copyright (c) 2015, 2023, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
@@ -23,8 +22,11 @@
 
 #include "sql-common/json_error_handler.h"
 
+#include "my_inttypes.h"
 #include "my_sys.h"
 #include "mysqld_error.h"
+#include "sql/check_stack.h"
+#include "sql/sql_const.h"
 
 void JsonParseDefaultErrorHandler::operator()(const char *parse_err,
                                               size_t err_offset) const {
@@ -33,8 +35,28 @@ void JsonParseDefaultErrorHandler::operator()(const char *parse_err,
 }
 
 void JsonDepthErrorHandler() { my_error(ER_JSON_DOCUMENT_TOO_DEEP, MYF(0)); }
-void JsonKeyTooBigErrorHandler() { my_error(ER_JSON_KEY_TOO_BIG, MYF(0)); }
-void JsonValueTooBigErrorHandler() { my_error(ER_JSON_VALUE_TOO_BIG, MYF(0)); }
-void InvalidJsonErrorHandler() {
+
+void JsonSerializationDefaultErrorHandler::KeyTooBig() const {
+  my_error(ER_JSON_KEY_TOO_BIG, MYF(0));
+}
+
+void JsonSerializationDefaultErrorHandler::ValueTooBig() const {
+  my_error(ER_JSON_VALUE_TOO_BIG, MYF(0));
+}
+
+void JsonSerializationDefaultErrorHandler::TooDeep() const {
+  JsonDepthErrorHandler();
+}
+
+void JsonSerializationDefaultErrorHandler::InvalidJson() const {
   my_error(ER_INVALID_JSON_BINARY_DATA, MYF(0));
+}
+
+void JsonSerializationDefaultErrorHandler::InternalError(
+    const char *message) const {
+  my_error(ER_INTERNAL_ERROR, MYF(0), message);
+}
+
+bool JsonSerializationDefaultErrorHandler::CheckStack() const {
+  return check_stack_overrun(m_thd, STACK_MIN_SIZE, nullptr);
 }

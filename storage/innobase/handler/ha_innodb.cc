@@ -62,6 +62,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <time.h>
 
 #include <algorithm>
+#include <memory>
 
 #include <sql_table.h>
 #include "mysql/components/services/system_variable_source.h"
@@ -1773,7 +1774,7 @@ static handler *innobase_create_handler(handlerton *hton, TABLE_SHARE *table,
   if (partitioned) {
     ha_innopart *file = new (mem_root) ha_innopart(hton, table);
     if (file && file->init_partitioning(mem_root)) {
-      destroy(file);
+      ::destroy_at(file);
       return (nullptr);
     }
     return (file);
@@ -3439,10 +3440,17 @@ void Validate_files::check(const Const_iter &begin, const Const_iter &end,
 
   auto heap = mem_heap_create(FN_REFLEN * 2 + 1, UT_LOCATION_HERE);
 
-  /* If the setting for innodb_validate_tablespace_paths is NO and we are
-  not in recovery, then only validate undo tablespaces. */
+  /* Validate all tablespaces if innodb_validate_tablespace_paths=ON OR
+  server is in recovery  OR Change buffer is not empty. Change buffer
+  applier background thread will skip the change buffer entries of the
+  tablespaces which are not loaded which will cause corruption of
+  secondary indexes, so it is important to load the tablespaces for which
+  entry is present in the change buffer. Presently we are loading all the
+  tablespaces. If all the conditions mentioned above are false then
+  validate only undo tablespaces */
+
   const bool ibd_validate =
-      srv_validate_tablespace_paths || recv_needed_recovery;
+      srv_validate_tablespace_paths || recv_needed_recovery || !ibuf_is_empty();
 
   std::string prefix;
   if (m_n_threads > 0) {
@@ -3506,7 +3514,8 @@ void Validate_files::check(const Const_iter &begin, const Const_iter &end,
     }
 
     /* If --innodb_validate_tablespace_paths=OFF and
-    startup is not in recovery, then skip all IBD files. */
+    startup is not in recovery and change buffer is empty,
+    then skip all IBD files. */
     if (!ibd_validate && !fsp_is_undo_tablespace(space_id)) {
       ++m_n_skipped;
       continue;
@@ -3780,7 +3789,8 @@ dberr_t Validate_files::validate(const DD_tablespaces &tablespaces) {
   m_n_threads = fil_get_scan_threads(m_n_to_check);
   m_start_time = std::chrono::steady_clock::now();
 
-  if (!srv_validate_tablespace_paths && !recv_needed_recovery) {
+  if (!srv_validate_tablespace_paths && !recv_needed_recovery &&
+      ibuf_is_empty()) {
     ib::info(ER_IB_TABLESPACE_PATH_VALIDATION_SKIPPED);
   }
 
@@ -5495,6 +5505,8 @@ static int innodb_init(void *p) {
       HTON_SUPPORTS_ATOMIC_DDL | HTON_CAN_RECREATE |
       HTON_SUPPORTS_SECONDARY_ENGINE | HTON_SUPPORTS_TABLE_ENCRYPTION |
       HTON_SUPPORTS_GENERATED_INVISIBLE_PK | HTON_SUPPORTS_BULK_LOAD;
+  // TODO(WL9440): to be enabled when distance scan is implemented in innodb.
+  //| HTON_SUPPORTS_DISTANCE_SCAN;
 
   innobase_hton->replace_native_transaction_in_thd = innodb_replace_trx_in_thd;
   innobase_hton->file_extensions = ha_innobase_exts;
@@ -10423,6 +10435,8 @@ page_cur_mode_t convert_search_mode_to_innobase(ha_rkey_function find_flag) {
       return (PAGE_CUR_DISJOINT);
     case HA_READ_MBR_EQUAL:
       return (PAGE_CUR_MBR_EQUAL);
+    case HA_READ_NEAREST_NEIGHBOR:
+      return (PAGE_CUR_NN);
     case HA_READ_PREFIX:
       return (PAGE_CUR_UNSUPP);
     case HA_READ_INVALID:

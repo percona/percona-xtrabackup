@@ -234,10 +234,12 @@ ANALYZE TABLE t1;
 EXPLAIN FORMAT=tree SELECT * FROM t1 WHERE a > 3 ORDER BY b;
 DROP TABLE t1;
 
-# Single-table modifications don't have a JOIN, so are not explainable with a tree.
+# Single-table modifications don't have a JOIN, so they have a simple explain.
 CREATE TABLE t1 (i INT);
 EXPLAIN INSERT INTO t1 VALUES (10);
 EXPLAIN FORMAT=tree INSERT INTO t1 VALUES (10);
+EXPLAIN REPLACE INTO t1 VALUES (10);
+EXPLAIN FORMAT=tree REPLACE INTO t1 VALUES (10);
 DROP TABLE t1;
 
 # Limit pushed into filesort.
@@ -761,5 +763,19 @@ SELECT * FROM t1 x1 JOIN t1 x2 ON x2.a=
 EXPLAIN FORMAT=TREE
 SELECT * FROM t1 x1 LEFT JOIN t1 x2 ON x2.a<
 (SELECT MIN(x3.a) FROM t1 x3 WHERE x1.a=x3.a);
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#34569685 No explain output for subquery
+--echo #
+
+CREATE TABLE t1 (a INT PRIMARY KEY, b INT);
+
+ANALYZE TABLE  t1;
+
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT LAST_VALUE((SELECT x1.a FROM t1))
+OVER (PARTITION BY b) FROM t1 x1;
 
 DROP TABLE t1;

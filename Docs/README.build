@@ -91,7 +91,7 @@ cmake -G Ninja -DFORCE_UNSUPPORTED_COMPILER=1
   -DCMAKE_C_COMPILER="C:/Program Files/LLVM/bin/clang-cl.exe"
   -DCMAKE_CXX_COMPILER="C:/Program Files/LLVM/bin/clang-cl.exe"
   -DCMAKE_LINKER="C:/Program Files/LLVM/bin/lld-link.exe"
-  -DWITH_BOOST=<path to Boost> ..
+  ..
 
 ninja
 
@@ -101,7 +101,3 @@ Note that leak sanitizer is *not* supported.
 
 For running tests with --parallel, you may need to add --build-thread= (500 is
 a reasonable value to try).
-
-===
-
-Note: You need to tell cmake where to find boost, see ../cmake/boost.cmake

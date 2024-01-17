@@ -234,39 +234,19 @@ void MysqlRoutingClassicConnectionBase::async_recv_client(Function next) {
   }
 
   ++active_work_;
-  this->socket_splicer()->async_recv_client([this, next](std::error_code ec,
-                                                         size_t transferred) {
-    (void)transferred;
+  this->socket_splicer()->async_recv_client(
+      [this, next](std::error_code ec, size_t transferred [[maybe_unused]]) {
+        --active_work_;
 
-    --active_work_;
+        if (ec != std::errc::operation_canceled) {
+          read_timer().cancel();
+        }
 
-    if (ec == std::errc::operation_canceled) {
-      // cancelled by:
-      //
-      // - request to shutdown
-      // - timer
-      // - read-from-client-xor-server
-      if (recv_from_either() ==
-          MysqlRoutingClassicConnectionBase::FromEither::RecvedFromServer) {
-        recv_from_either(MysqlRoutingClassicConnectionBase::FromEither::None);
+        if (ec) return recv_client_failed(ec);
 
-        return call_next_function(next);
-      }
-    } else {
-      read_timer().cancel();
-    }
-
-    if (ec) return recv_client_failed(ec);
-
-    if (recv_from_either() ==
-        MysqlRoutingClassicConnectionBase::FromEither::Started) {
-      recv_from_either(
-          MysqlRoutingClassicConnectionBase::FromEither::RecvedFromClient);
-    }
-
-    return trace_and_call_function(Tracer::Event::Direction::kClientToRouter,
-                                   "io::recv", next);
-  });
+        return trace_and_call_function(
+            Tracer::Event::Direction::kClientToRouter, "io::recv", next);
+      });
 }
 
 void MysqlRoutingClassicConnectionBase::async_send_server(Function next) {
@@ -302,6 +282,59 @@ void MysqlRoutingClassicConnectionBase::async_recv_server(Function next) {
   }
 
   ++active_work_;
+
+  this->socket_splicer()->async_recv_server(
+      [this, next](std::error_code ec, size_t transferred [[maybe_unused]]) {
+        --active_work_;
+
+        if (ec) return recv_server_failed(ec);
+
+        return trace_and_call_function(
+            Tracer::Event::Direction::kServerToRouter, "io::recv", next);
+      });
+}
+
+void MysqlRoutingClassicConnectionBase::async_recv_both(Function next) {
+  if (disconnect_requested()) {
+    return recv_client_failed(make_error_code(std::errc::operation_canceled));
+  }
+
+  recv_from_either(MysqlRoutingClassicConnectionBase::FromEither::Started);
+
+  ++active_work_;  // client
+  ++active_work_;  // server
+
+  this->socket_splicer()->async_recv_client([this, next](std::error_code ec,
+                                                         size_t transferred
+                                                         [[maybe_unused]]) {
+    --active_work_;
+
+    if (ec == std::errc::operation_canceled) {
+      // cancelled by:
+      //
+      // - request to shutdown
+      // - timer
+      // - read-from-client-xor-server
+      if (recv_from_either() ==
+          MysqlRoutingClassicConnectionBase::FromEither::RecvedFromServer) {
+        recv_from_either(MysqlRoutingClassicConnectionBase::FromEither::None);
+
+        return call_next_function(next);
+      }
+    }
+
+    if (ec) return recv_client_failed(ec);
+
+    if (recv_from_either() ==
+        MysqlRoutingClassicConnectionBase::FromEither::Started) {
+      recv_from_either(
+          MysqlRoutingClassicConnectionBase::FromEither::RecvedFromClient);
+    }
+
+    return trace_and_call_function(Tracer::Event::Direction::kClientToRouter,
+                                   "io::recv", next);
+  });
+
   this->socket_splicer()->async_recv_server([this, next](std::error_code ec,
                                                          size_t transferred) {
     (void)transferred;
@@ -492,8 +525,21 @@ MysqlRoutingClassicConnectionBase::track_session_changes(
             set_names_sysvar.set(3);
           }
 
+          auto value_from_kv = [](auto kv) -> Value {
+            // the session tracker can't report NULL. Instead it reports "".
+            //
+            // In the case of 'character_set_results' setting "" leads to an
+            // error which means "" needs to be converted back to NULL again.
+            if (kv.value().empty() &&
+                (kv.key() == "character_set_results" ||
+                 kv.key() == "innodb_ft_user_stopword_table")) {
+              return {std::nullopt};
+            }
+            return {std::string(kv.value())};
+          };
+
           exec_ctx_.system_variables().set(std::string(kv.key()),
-                                           Value(std::string(kv.value())));
+                                           value_from_kv(kv));
 
           if (auto &tr = tracer()) {
             std::ostringstream oss;
@@ -764,9 +810,7 @@ void MysqlRoutingClassicConnectionBase::loop() {
       case Processor::Result::RecvFromServer:
         return async_recv_server(Function::kLoop);
       case Processor::Result::RecvFromBoth:
-        async_recv_client(Function::kLoop);
-        async_recv_server(Function::kLoop);
-        return;
+        return async_recv_both(Function::kLoop);
       case Processor::Result::SendToClient:
         return async_send_client(Function::kLoop);
       case Processor::Result::SendToServer:
@@ -789,11 +833,10 @@ bool MysqlRoutingClassicConnectionBase::connection_sharing_possible() const {
 
   return context_.connection_sharing() &&              // config must allow it.
          client_protocol()->password().has_value() &&  // a password is required
-         sysvars.get("session_track_gtids") == Value("OWN_GTID") &&
-         sysvars.get("session_track_state_change") == Value("ON") &&
-         sysvars.get("session_track_system_variables") == Value("*") &&
-         sysvars.get("session_track_transaction_info") ==
-             Value("CHARACTERISTICS");
+         sysvars.get("session_track_gtids") == "OWN_GTID" &&
+         sysvars.get("session_track_state_change") == "ON" &&
+         sysvars.get("session_track_system_variables") == "*" &&
+         sysvars.get("session_track_transaction_info") == "CHARACTERISTICS";
 }
 
 static bool trx_characteristics_is_sharable(

@@ -1057,7 +1057,7 @@ void make_database_privilege_statement(THD *thd, ACL_USER *role,
   };
   auto make_partial_db_revoke_stmts = [thd, protocol,
                                        restrictions](ACL_USER *acl_user) {
-    if (mysqld_partial_revokes()) {
+    if (mysqld_partial_revokes() && !restrictions.is_empty()) {
       /*
        Copy the unordered restrictions into an array.
        Send the sorted partial revokes to the client.
@@ -2616,6 +2616,7 @@ bool report_missing_user_grant_message(THD *thd, bool user_exists,
     columns             List of columns to give grant
     rights              Table level grant
     revoke_grant        Set to true if this is a REVOKE command
+    all_current_privileges Set to true if this is GRANT/REVOKE ALL
 
   RETURN
     false ok
@@ -2624,7 +2625,8 @@ bool report_missing_user_grant_message(THD *thd, bool user_exists,
 
 int mysql_table_grant(THD *thd, Table_ref *table_list,
                       List<LEX_USER> &user_list, List<LEX_COLUMN> &columns,
-                      ulong rights, bool revoke_grant) {
+                      ulong rights, bool revoke_grant,
+                      bool all_current_privileges) {
   ulong column_priv = 0;
   List_iterator<LEX_USER> str_list(user_list);
   LEX_USER *Str, *tmp_Str;
@@ -2843,7 +2845,8 @@ int mysql_table_grant(THD *thd, Table_ref *table_list,
       if ((error = replace_table_table(
                thd, grant_table, &deleted_grant_table,
                tables[ACL_TABLES::TABLE_TABLES_PRIV].table, *Str, db_name,
-               table_name, rights, column_priv, revoke_grant))) {
+               table_name, rights, column_priv, revoke_grant,
+               all_current_privileges))) {
         result = true;
         if (error < 0) break;
 
@@ -2904,6 +2907,7 @@ int mysql_table_grant(THD *thd, Table_ref *table_list,
   @param rights Table level grant
   @param revoke_grant Is this is a REVOKE command?
   @param write_to_binlog True if this statement should be written to binlog
+  @param   all_current_privileges Set to true if this is GRANT/REVOKE ALL
 
   @retval false Success.
   @retval true An error occurred.
@@ -2911,7 +2915,8 @@ int mysql_table_grant(THD *thd, Table_ref *table_list,
 
 bool mysql_routine_grant(THD *thd, Table_ref *table_list, bool is_proc,
                          List<LEX_USER> &user_list, ulong rights,
-                         bool revoke_grant, bool write_to_binlog) {
+                         bool revoke_grant, bool write_to_binlog,
+                         bool all_current_privileges) {
   List_iterator<LEX_USER> str_list(user_list);
   LEX_USER *Str, *tmp_Str;
   Table_ref tables[ACL_TABLES::LAST_ENTRY];
@@ -3014,9 +3019,9 @@ bool mysql_routine_grant(THD *thd, Table_ref *table_list, bool is_proc,
               unique_ptr_destroy_only<GRANT_NAME>(grant_name));
       }
 
-      if ((error = replace_routine_table(thd, grant_name, tables[4].table, *Str,
-                                         db_name, table_name, is_proc, rights,
-                                         revoke_grant))) {
+      if ((error = replace_routine_table(
+               thd, grant_name, tables[4].table, *Str, db_name, table_name,
+               is_proc, rights, revoke_grant, all_current_privileges))) {
         result = true;  // Remember error
         if (error < 0) break;
 
@@ -3557,7 +3562,8 @@ bool mysql_grant(THD *thd, const char *db, List<LEX_USER> &list, ulong rights,
         const ulong db_rights = filtered_rights & DB_ACLS;
         if (db_rights == filtered_rights) {
           if ((ret = replace_db_table(thd, tables[ACL_TABLES::TABLE_DB].table,
-                                      db, *user, db_rights, revoke_grant))) {
+                                      db, *user, db_rights, revoke_grant,
+                                      grant_all_current_privileges))) {
             error = true;
             if (ret < 0) break;
 
@@ -4927,8 +4933,8 @@ static int remove_db_access_privileges(THD *thd, TABLE *table,
 
       if (!strcmp(lex_user.user.str, user) &&
           !strcmp(lex_user.host.str, host)) {
-        const int ret =
-            replace_db_table(thd, table, acl_db->db, lex_user, ~(ulong)0, true);
+        const int ret = replace_db_table(thd, table, acl_db->db, lex_user,
+                                         ~(ulong)0, true, true);
         if (!ret) {
           /*
             Don't increment loop variable as replace_db_table deleted the
@@ -5004,7 +5010,7 @@ static int remove_column_access_privileges(THD *thd, TABLE *tables_priv_table,
 
         int ret = replace_table_table(
             thd, grant_table, &deleted_grant_table, tables_priv_table, lex_user,
-            grant_table->db, grant_table->tname, ~(ulong)0, 0, true);
+            grant_table->db, grant_table->tname, ~(ulong)0, 0, true, true);
         if (ret < 0) {
           return ret;
         } else if (ret > 0) {
@@ -5085,7 +5091,7 @@ static int remove_procedure_access_privileges(THD *thd, TABLE *procs_priv_table,
             !strcmp(lex_user.host.str, host)) {
           const int ret = replace_routine_table(
               thd, grant_proc, procs_priv_table, lex_user, grant_proc->db,
-              grant_proc->tname, is_proc, ~(ulong)0, true);
+              grant_proc->tname, is_proc, ~(ulong)0, true, true);
 
           if (!ret) {
             revoked = true;
@@ -5346,7 +5352,7 @@ bool sp_revoke_privileges(THD *thd, const char *sp_db, const char *sp_name,
 
         const int ret = replace_routine_table(
             thd, grant_proc, tables[4].table, lex_user, grant_proc->db,
-            grant_proc->tname, is_proc, ~(ulong)0, true);
+            grant_proc->tname, is_proc, ~(ulong)0, true, true);
         if (ret < 0) {
           result = true;
           revoked = false;
@@ -5433,7 +5439,7 @@ bool sp_grant_privileges(THD *thd, const char *sp_db, const char *sp_name,
   */
   thd->push_internal_handler(&error_handler);
   result = mysql_routine_grant(thd, tables, is_proc, user_list,
-                               DEFAULT_CREATE_PROC_ACLS, false, false);
+                               DEFAULT_CREATE_PROC_ACLS, false, false, false);
   thd->pop_internal_handler();
 end:
   return result;

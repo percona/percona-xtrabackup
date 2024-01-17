@@ -57,7 +57,6 @@ SET(MYSYS_SOURCES
   my_access.cc
   my_aligned_malloc.cc
   my_alloc.cc
-  my_bit.cc
   my_bitmap.cc
   my_chmod.cc
   my_chsize.cc
@@ -198,6 +197,11 @@ ADD_CONVENIENCE_LIBRARY(mysys ${MYSYS_SOURCES}
   ${LIBUNWIND_LDFLAGS}
   OpenSSL::SSL OpenSSL::Crypto
   )
+
+IF(WITH_EXT_BACKTRACE)
+  TARGET_LINK_LIBRARIES(mysys ext::backtrace)
+  TARGET_LINK_LIBRARIES(mysys_objlib ext::backtrace)
+ENDIF()
 
 # For targets that link with mysys, and are independent of other targets.
 IF(TARGET copy_openssl_dlls)

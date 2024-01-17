@@ -849,9 +849,9 @@ c varchar(50) NOT NULL,
 d varchar(100) NOT NULL,
 primary key (a,b(132),c,d),
 key a (a,b)
-) ENGINE=INNODB charset=utf8;
+) ENGINE=INNODB charset=utf8mb3;
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 insert into t2 select 
 x3.a,  -- 3
 concat('val-', x3.a + 3*x4.a), -- 12
@@ -3268,14 +3268,14 @@ set sql_mode='';
 CREATE TABLE AA (
 col_varchar_1024_latin1 varchar(1024)  CHARACTER SET latin1,
 pk integer auto_increment,
-col_varchar_1024_utf8_key varchar(1024)  CHARACTER SET utf8,
+col_varchar_1024_utf8_key varchar(1024)  CHARACTER SET utf8mb3,
 col_varchar_1024_latin1_key varchar(1024)  CHARACTER SET latin1,
-col_varchar_10_utf8_key varchar(10)  CHARACTER SET utf8,
+col_varchar_10_utf8_key varchar(10)  CHARACTER SET utf8mb3,
 col_varchar_10_latin1_key varchar(10)  CHARACTER SET latin1,
 col_int int,
 col_varchar_10_latin1 varchar(10)  CHARACTER SET latin1,
-col_varchar_10_utf8 varchar(10)  CHARACTER SET utf8,
-col_varchar_1024_utf8 varchar(1024)  CHARACTER SET utf8,
+col_varchar_10_utf8 varchar(10)  CHARACTER SET utf8mb3,
+col_varchar_1024_utf8 varchar(1024)  CHARACTER SET utf8mb3,
 col_int_key int,
 primary key (pk),
 key (col_varchar_1024_utf8_key ),
@@ -3284,23 +3284,23 @@ key (col_varchar_10_utf8_key ),
 key (col_varchar_10_latin1_key ),
 key (col_int_key )) ENGINE=innodb ROW_FORMAT=DYNAMIC;
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 CREATE OR REPLACE VIEW view_AA AS SELECT * FROM AA;
 CREATE TABLE B (
 col_varchar_1024_latin1_key varchar(1024)  CHARACTER SET latin1,
 col_varchar_10_latin1 varchar(10)  CHARACTER SET latin1,
-col_varchar_10_utf8_key varchar(10)  CHARACTER SET utf8,
+col_varchar_10_utf8_key varchar(10)  CHARACTER SET utf8mb3,
 col_int_key int,
 col_varchar_1024_latin1 varchar(1024)  CHARACTER SET latin1,
-col_varchar_1024_utf8_key varchar(1024)  CHARACTER SET utf8,
-col_varchar_10_utf8 varchar(10)  CHARACTER SET utf8,
+col_varchar_1024_utf8_key varchar(1024)  CHARACTER SET utf8mb3,
+col_varchar_10_utf8 varchar(10)  CHARACTER SET utf8mb3,
 col_int int,
 pk integer auto_increment,
 col_varchar_10_latin1_key varchar(10)  CHARACTER SET latin1,
-col_varchar_1024_utf8 varchar(1024)  CHARACTER SET utf8,
+col_varchar_1024_utf8 varchar(1024)  CHARACTER SET utf8mb3,
 key (col_varchar_1024_latin1_key ),
 key (col_varchar_10_utf8_key ),
 key (col_int_key ),
@@ -3308,10 +3308,10 @@ key (col_varchar_1024_utf8_key ),
 primary key (pk),
 key (col_varchar_10_latin1_key )) ENGINE=INNODB;
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 INSERT INTO B VALUES  ('at', repeat('a',1000), 'the',
 -1622540288, 'as', repeat('a',1000), 'want', 1810890752, NULL, 'v', 'just');
 Warnings:
@@ -4916,3 +4916,36 @@ SELECT COUNT(DISTINCT d, id), GROUP_CONCAT(DISTINCT d, id) FROM t;
 COUNT(DISTINCT d, id)	GROUP_CONCAT(DISTINCT d, id)
 3	01,-02,100100
 DROP TABLE t;
+#
+# Bug#34959356: Poor performance when using HASH field to check unique
+#
+CREATE TABLE product (
+value INT NOT NULL AUTO_INCREMENT,
+code VARCHAR(255),
+name VARCHAR(255),
+comment VARCHAR(255),
+platform VARCHAR(50),
+KEY idx_key (value)
+);
+CREATE PROCEDURE BatchInsert(IN row_count int)
+BEGIN
+START TRANSACTION;
+SET @n = 1;
+REPEAT
+SET @str = (CONCAT('test', CAST(@n AS CHAR)));
+INSERT INTO product(code, name) VALUES(@str, @str);
+SET @n = @n + 1;
+UNTIL @n > row_count
+END REPEAT;
+COMMIT;
+END;
+//
+CALL BatchInsert(200);
+SELECT COUNT(*)
+FROM ( SELECT ANY_VALUE(value)
+FROM product
+GROUP BY code, name, comment, platform ) derived;
+COUNT(*)
+200
+DROP PROCEDURE BatchInsert;
+DROP TABLE product;

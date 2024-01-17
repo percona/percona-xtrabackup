@@ -130,6 +130,7 @@ class Ndb_schema_dist_client {
   class THD *const m_thd;
   class Thd_ndb *const m_thd_ndb;
   struct NDB_SHARE *m_share{nullptr};
+  struct NDB_SHARE *m_result_share{nullptr};
   const std::string m_share_reference;
   class Prepared_keys {
     using Key = std::pair<std::string, std::string>;
@@ -196,6 +197,11 @@ class Ndb_schema_dist_client {
      @brief Acquire the ACL change mutex
    */
   void acquire_acl_lock();
+
+  /**
+     @brief Check if local schema distribution mechanism available
+   */
+  bool check_local_schema_dist_available() const;
 
  public:
   Ndb_schema_dist_client() = delete;

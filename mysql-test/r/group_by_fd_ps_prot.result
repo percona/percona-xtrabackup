@@ -1334,19 +1334,19 @@ DROP VIEW v1;
 # Bug #20031708 ASSERT ON GROUP_CHECK::IS_FD_ON_SOURCE
 #
 CREATE TABLE t1 (
-col_varchar_10_utf8 VARCHAR(10) CHARACTER SET utf8,
+col_varchar_10_utf8 VARCHAR(10) CHARACTER SET utf8mb3,
 col_int_key INT,
 pk INT PRIMARY KEY
 );
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 CREATE TABLE t2 (
-col_varchar_10_utf8 VARCHAR(10) CHARACTER SET utf8 DEFAULT NULL,
+col_varchar_10_utf8 VARCHAR(10) CHARACTER SET utf8mb3 DEFAULT NULL,
 col_int_key INT DEFAULT NULL,
 pk INT PRIMARY KEY
 );
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 CREATE VIEW v2 AS SELECT * FROM t2;
 # The reporter's testcase:
 SELECT COUNT(*), t1.col_int_key
@@ -1577,7 +1577,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 2	DEPENDENT SUBQUERY	t3	NULL	index	NULL	b	15	NULL	1	100.00	Using where; Not exists; Using index; Using join buffer (hash join)
 Warnings:
 Note	1276	Field or reference 'test.t1.b' of SELECT #3 was resolved in SELECT #1
-Note	1003	/* select#1 */ select (/* select#2 */ select 2 from `test`.`t2` anti join (`test`.`t3`) on((1 = 1)) where true) AS `col` from `test`.`t1` group by `test`.`t1`.`a`
+Note	1003	/* select#1 */ select (/* select#2 */ select 2 from `test`.`t2` anti join (`test`.`t3`) on(true) where true) AS `col` from `test`.`t1` group by `test`.`t1`.`a`
 explain select (select 2 from t2 where exists(select 1 from t3 where t1.b)) as col from t1 group by t1.a;
 ERROR 42000: Expression #1 of SELECT list is not in GROUP BY clause and contains nonaggregated column 'test.t1.b' which is not functionally dependent on columns in GROUP BY clause; this is incompatible with sql_mode=only_full_group_by
 explain select (select 2 from t2 where not exists(select 1 from t3 where t1.b)) as col from t1 group by t1.a;

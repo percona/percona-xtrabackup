@@ -27,6 +27,7 @@
 #include <math.h>
 #include <string.h>
 #include <algorithm>
+#include <memory>
 
 #include "my_bitmap.h"
 #include "my_dbug.h"
@@ -525,6 +526,7 @@ bool find_skip_scans(
     if (find_all_skip_scans) {
       IndexSkipScanParameters *cur_skip_scan_info =
           new (param->return_mem_root) IndexSkipScanParameters;
+      if (cur_skip_scan_info == nullptr) return true;
 
       cur_skip_scan_info->index = cur_index;
       cur_skip_scan_info->index_info = cur_index_info;
@@ -543,7 +545,7 @@ bool find_skip_scans(
                                      cur_skip_scan_info)) {
         skip_scan_info_list->push_back(cur_skip_scan_info);
       } else {
-        destroy(cur_skip_scan_info);
+        ::destroy_at(cur_skip_scan_info);
       }
     } else if (cur_read_cost < (best_read_cost - min_diff_cost)) {
       best_index = cur_index;
@@ -568,6 +570,7 @@ bool find_skip_scans(
   if (!find_all_skip_scans && best_index_info) {  // save only the best scan
     IndexSkipScanParameters *best_skip_scan_info =
         new (param->return_mem_root) IndexSkipScanParameters;
+    if (best_skip_scan_info == nullptr) return true;
 
     best_skip_scan_info->index = best_index;
     best_skip_scan_info->index_info = best_index_info;
@@ -586,7 +589,7 @@ bool find_skip_scans(
                                    best_skip_scan_info)) {
       skip_scan_info_list->push_back(best_skip_scan_info);
     } else {
-      destroy(best_skip_scan_info);
+      ::destroy_at(best_skip_scan_info);
     }
   }
   trace_indices.end();
@@ -656,7 +659,8 @@ AccessPath *make_skip_scan_path(RANGE_OPT_PARAM *param, bool force_skip_scan,
 
   AccessPath *path = new (param->return_mem_root) AccessPath;
   path->type = AccessPath::INDEX_SKIP_SCAN;
-  path->cost = skip_scan_info->read_cost;
+  path->set_cost(skip_scan_info->read_cost);
+  path->set_init_cost(0.0);
   path->set_num_output_rows(skip_scan_info->num_output_rows);
 
   path->index_skip_scan().table = param->table;

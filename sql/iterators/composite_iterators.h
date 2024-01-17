@@ -40,8 +40,10 @@
 
 #include <assert.h>
 #include <stdint.h>
-#include <stdio.h>
+#include <sys/types.h>
+#include <limits>
 #include <memory>
+#include <new>
 #include <string>
 #include <utility>
 #include <vector>
@@ -49,15 +51,18 @@
 #include "my_alloc.h"
 #include "my_base.h"
 #include "my_inttypes.h"
+#include "my_sys.h"
 #include "my_table_map.h"
+#include "mysqld_error.h"
 #include "sql/immutable_string.h"
 #include "sql/iterators/hash_join_buffer.h"
+#include "sql/iterators/hash_join_chunk.h"
 #include "sql/iterators/hash_join_iterator.h"
 #include "sql/iterators/row_iterator.h"
 #include "sql/join_type.h"
 #include "sql/mem_root_array.h"
 #include "sql/pack_rows.h"
-#include "sql/table.h"
+#include "sql/sql_array.h"
 #include "sql_string.h"
 
 #include "extra/robin-hood-hashing/robin_hood.h"
@@ -67,11 +72,12 @@ class Item;
 class JOIN;
 class KEY;
 struct MaterializePathParameters;
-class Query_expression;
 class SJ_TMP_TABLE;
+class Table_ref;
 class THD;
 class Table_function;
 class Temp_table_param;
+struct TABLE;
 
 /**
   An iterator that takes in a stream of rows and passes through only those that
@@ -920,6 +926,7 @@ class SpillState {
   // Save away the contents of the row that made the hash table run out of
   // memory - for later processing
   bool save_offending_row();
+  THD *thd() { return m_thd; }
 
  private:
   /**
@@ -1014,13 +1021,6 @@ class SpillState {
   size_t current_chunk_file_set() const { return m_current_chunk_file_set; }
 
  private:
-  /// The set of chunk files for saving rows in temporary files indexed by
-  /// a hash of the row's contents ("tertiary hash" in contrast to "secondary
-  /// hash" which allocates a row a slot in the in-memory hash map.
-  /// Each chunk file can have rows from one or more chunk file sets, cf.
-  /// counters in m_row_counts.
-  Mem_root_array<ChunkPair> *m_chunk_pairs{nullptr};
-
   /// Keeps the row that was just read from the left operand when we discovered
   /// that we were out of space in the in-memory hash map. Save it for
   /// writing it to IF-k.
@@ -1092,8 +1092,6 @@ class SpillState {
   /// away in the chunk files for each set in each chunk file of the current
   /// generation. Used to allow us to read back the correct set of rows from
   /// each chunk given the current m_current_chunk_file_set.
-  /// Invariant:
-  ///     m_row_counts.size() == m_chunk_pairs.size()
   /// It is indexed thus:
   ///     m_row_counts[ chunk index ][ set index ]
   Mem_root_array<SetCounts> m_row_counts;

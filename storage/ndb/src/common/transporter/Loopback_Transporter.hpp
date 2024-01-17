@@ -32,13 +32,13 @@
  *   by using a socketpair...
  * where theSocket is the receive part, and m_send_socket is the write part
  */
-class Loopback_Transporter : public TCP_Transporter
-{
+class Loopback_Transporter : public TCP_Transporter {
   friend class TransporterRegistry;
-private:
+
+ private:
   // Initialize member variables
-  Loopback_Transporter(TransporterRegistry&,
-                       const TransporterConfiguration* conf);
+  Loopback_Transporter(TransporterRegistry &,
+                       const TransporterConfiguration *conf);
 
   // Disconnect, delete send buffers and receive buffer
   ~Loopback_Transporter() override;
@@ -58,9 +58,11 @@ private:
    * @overload TCP_Transporter::disconnectImpl
    */
   void disconnectImpl() override;
-protected:
 
-private:
+  void releaseAfterDisconnect() override;
+
+ protected:
+ private:
   /**
    * m_send_socket is used to send
    * theSocket (in base class) is used for receive
@@ -73,4 +75,4 @@ private:
   bool send_is_possible(int timeout_millisec) const override;
 };
 
-#endif // Define of TCP_Transporter_H
+#endif  // Define of TCP_Transporter_H

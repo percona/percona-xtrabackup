@@ -92,6 +92,7 @@ using std::to_string;
 using std::unordered_map;
 using std::vector;
 using testing::_;
+using testing::AnyOf;
 using testing::ElementsAre;
 using testing::Pair;
 using testing::Return;
@@ -2218,9 +2219,9 @@ TEST_F(HypergraphOptimizerTest, DoNotApplyBothSargableJoinAndFilterJoin) {
       [](THD *, const JoinHypergraph &, AccessPath *path) {
         if (path->type == AccessPath::REF &&
             strcmp(path->ref().table->alias, "t1") == 0) {
-          path->cost *= 0.01;
-          path->init_cost *= 0.01;
-          path->cost_before_filter *= 0.01;
+          path->set_cost(path->cost() * 0.01);
+          path->set_init_cost(path->init_cost() * 0.01);
+          path->set_cost_before_filter(path->cost_before_filter() * 0.01);
         }
         return false;
       };
@@ -4270,6 +4271,35 @@ TEST_F(HypergraphOptimizerTest, DistinctSubsumesOrderBy) {
   query_block->cleanup(/*full=*/true);
 }
 
+TEST_F(HypergraphOptimizerTest, DistinctWithEquivalence) {
+  Query_block *query_block = ParseAndResolve(
+      "SELECT DISTINCT t1.x, t2.x FROM t1, t2 WHERE t1.x = t2.x",
+      /*nullable=*/true);
+
+  m_fake_tables["t1"]->file->stats.records = 100;
+  m_fake_tables["t1"]->file->stats.data_file_length = 1e6;
+  m_fake_tables["t2"]->file->stats.records = 100;
+  m_fake_tables["t2"]->file->stats.data_file_length = 1e6;
+
+  string trace;
+  AccessPath *root = FindBestQueryPlan(m_thd, query_block, &trace);
+  SCOPED_TRACE(trace);  // Prints out the trace on failure.
+  // Prints out the query plan on failure.
+  SCOPED_TRACE(PrintQueryPlan(0, root, query_block->join,
+                              /*is_root_of_join=*/true));
+
+  // Expect a sort with duplicate removal. Because of the equivalence in the
+  // join condition, it should suffice to sort on one column.
+  ASSERT_EQ(AccessPath::SORT, root->type);
+  EXPECT_TRUE(root->sort().remove_duplicates);
+  const ORDER *order = root->sort().order;
+  // Sort on exactly one column.
+  ASSERT_NE(nullptr, order);
+  EXPECT_EQ(nullptr, order->next);
+  // The result should be sorted on t1.x or on t2.x. We don't care which.
+  EXPECT_THAT(ItemToString(*order->item), AnyOf("t1.x", "t2.x"));
+}
+
 TEST_F(HypergraphOptimizerTest, SortAheadSingleTable) {
   Query_block *query_block =
       ParseAndResolve("SELECT t1.x, t2.x FROM t1, t2 ORDER BY t2.x",
@@ -4640,6 +4670,75 @@ TEST_F(HypergraphOptimizerTest, ElideSortDueToIndex) {
   EXPECT_EQ(0, root->index_scan().idx);
   EXPECT_TRUE(root->index_scan().use_order);
   EXPECT_TRUE(root->index_scan().reverse);
+
+  query_block->cleanup(/*full=*/true);
+}
+
+TEST_F(HypergraphOptimizerTest, ElideSortDueToSpatialIndex) {
+  Query_block *query_block = ParseAndResolve(
+      "SELECT t1.x from t1 ORDER by ST_Distance(t1.x, POINT(0, 0))",
+      /*nullable=*/true);
+
+  CreateOrderedIndex({m_fake_tables["t1"]->field[0]}, HA_SPATIAL);
+  m_fake_tables["t1"]->file->stats.records = 100;
+  m_fake_tables["t1"]->file->stats.data_file_length = 1e6;
+
+  auto hton = new (m_thd->mem_root) Fake_handlerton;
+  hton->flags = HTON_SUPPORTS_DISTANCE_SCAN;
+  m_fake_tables["t1"]->file->ht = hton;
+
+  string trace;
+  AccessPath *root = FindBestQueryPlanAndFinalize(m_thd, query_block, &trace);
+  SCOPED_TRACE(trace);  // Prints out the trace on failure.
+  // Prints out the query plan on failure.
+  SCOPED_TRACE(PrintQueryPlan(0, root, query_block->join,
+                              true));  //=is_root_of_join
+
+  // The sort should be elided entirely due to index.
+  ASSERT_EQ(AccessPath::INDEX_DISTANCE_SCAN, root->type);
+  EXPECT_STREQ("t1", root->index_distance_scan().table->alias);
+  EXPECT_EQ(0, root->index_distance_scan().idx);
+
+  query_block->cleanup(/*full=*/true);
+}
+
+TEST_F(HypergraphOptimizerTest, IndexDistanceScanMulti) {
+  Query_block *query_block = ParseAndResolve(
+      "SELECT RANK() OVER (ORDER by ST_Distance(t1.x, POINT(0, 0))),\
+              RANK() OVER (ORDER by ST_Distance(t1.x, POINT(5, 5))),\
+              ROW_NUMBER() OVER (ORDER BY ST_DISTANCE(t1.x, POINT(5, 5)))\
+              FROM t1",
+      /*nullable=*/true);
+
+  CreateOrderedIndex({m_fake_tables["t1"]->field[0]}, HA_SPATIAL);
+  m_fake_tables["t1"]->file->stats.records = 100;
+  m_fake_tables["t1"]->file->stats.data_file_length = 1e6;
+
+  auto hton = new (m_thd->mem_root) Fake_handlerton;
+  hton->flags = HTON_SUPPORTS_DISTANCE_SCAN;
+  m_fake_tables["t1"]->file->ht = hton;
+
+  string trace;
+  AccessPath *root = FindBestQueryPlan(m_thd, query_block, &trace);
+  SCOPED_TRACE(trace);  // Prints out the trace on failure.
+  // Prints out the query plan on failure.
+  SCOPED_TRACE(PrintQueryPlan(0, root, query_block->join,
+                              true));  //=is_root_of_join
+  // Check that the optimizer considers both orders
+  std::smatch matches1;
+  std::regex_search(
+      trace, matches1,
+      std::regex(
+          "INDEX_DISTANCE_SCAN, cost=([0-9]+).([0-9]+), "
+          "init_cost=([0-9]+).([0-9]+), rows=([0-9]+).([0-9]+), order=1"));
+  EXPECT_GT(matches1.size(), 0);
+  std::smatch matches2;
+  std::regex_search(
+      trace, matches2,
+      std::regex(
+          "INDEX_DISTANCE_SCAN, cost=([0-9]+).([0-9]+), "
+          "init_cost=([0-9]+).([0-9]+), rows=([0-9]+).([0-9]+), order=2"));
+  EXPECT_GT(matches2.size(), 0);
 
   query_block->cleanup(/*full=*/true);
 }
@@ -5558,6 +5657,46 @@ TEST_F(HypergraphOptimizerTest, IndexMergeInexactRangeWithOverflowBitset) {
   EXPECT_EQ(predicates, ItemToString(root->filter().condition));
 }
 
+TEST_F(HypergraphOptimizerTest, RORUnionInexactRangeWithOverflowBitset) {
+  // We want to test a query that uses an inexact ROR Union, achieved by having
+  // a predicate on a non-indexed column (t1.w) AND-ed to one of the predicates
+  // inside the OR that gets translated to a ROR Union. We also want to have so
+  // many predicates that they don't fit in an inlined OverflowBitset (at least
+  // 64 predicates).
+  constexpr int number_of_predicates = 70;
+  string predicates = "(((t1.x = 1) or ((t1.y = 3) and (t1.w = 4)))";
+  for (int i = 1; i < number_of_predicates; ++i) {
+    predicates += " and (t1.z <> " + to_string(i) + ')';
+  }
+  predicates += ')';
+
+  string query = "SELECT 1 FROM t1 WHERE " + predicates;
+  Query_block *query_block = ParseAndResolve(query.c_str(),
+                                             /*nullable=*/false);
+
+  Fake_TABLE *t1 = m_fake_tables["t1"];
+  t1->file->stats.records = 10000;
+  t1->file->stats.data_file_length = 1e6;
+  CreateOrderedIndex({t1->field[0]});
+  CreateOrderedIndex({t1->field[1]});
+  m_fake_tables["t1"] = t1;
+
+  string trace;
+  AccessPath *root = FindBestQueryPlan(m_thd, query_block, &trace);
+  SCOPED_TRACE(trace);  // Prints out the trace on failure.
+  ASSERT_NE(nullptr, root);
+  // Prints out the query plan on failure.
+  SCOPED_TRACE(PrintQueryPlan(0, root, query_block->join,
+                              /*is_root_of_join=*/true));
+
+  ASSERT_EQ(AccessPath::FILTER, root->type);
+  EXPECT_EQ(AccessPath::ROWID_UNION, root->filter().child->type);
+
+  // Since an inexact ROWID_UNION is used, all predicates should be kept in the
+  // filter node on top.
+  EXPECT_EQ(predicates, ItemToString(root->filter().condition));
+}
+
 TEST_F(HypergraphOptimizerTest, RORUnion) {
   Query_block *query_block =
       ParseAndResolve("SELECT 1 FROM t1 WHERE t1.x = 3 OR t1.y = 4",
@@ -5972,7 +6111,7 @@ TEST_F(HypergraphOptimizerTest, PropagateCondConstants) {
       ParseAndResolve("SELECT t1.x FROM t1 WHERE t1.x = 10 and t1.x <> 11",
                       /*nullable=*/true);
 
-  m_initializer.thd()->lex->using_hypergraph_optimizer = true;
+  m_initializer.thd()->lex->set_using_hypergraph_optimizer(true);
   COND_EQUAL *cond_equal = nullptr;
   EXPECT_FALSE(optimize_cond(m_thd, query_block->where_cond_ref(), &cond_equal,
                              nullptr, &query_block->cond_value));
@@ -6458,6 +6597,56 @@ TEST_F(HypergraphOptimizerTest, IndexSkipScanMultiPredicate) {
   query_block->cleanup(/*full=*/true);
 }
 
+TEST_F(HypergraphOptimizerTest, GroupIndexSkipScanAgg) {
+  Query_block *query_block = ParseAndResolve(
+      "SELECT t1.x, t1.y FROM t1 GROUP BY t1.x, t1.y", /*nullable=*/true);
+  Fake_TABLE *t1 = m_fake_tables["t1"];
+  t1->file->stats.records = 10000;
+  t1->file->stats.block_size = 4096;
+  t1->file->stats.data_file_length = 100e6;
+  CreateOrderedIndex({t1->field[0], t1->field[1], t1->field[2]}, HA_NOSAME);
+  CreateOrderedIndex({t1->field[0], t1->field[1]}, HA_NOSAME);
+  t1->covering_keys.clear_all();
+  t1->covering_keys.set_bit(0);  // covering index on (x,y,z)
+  t1->covering_keys.set_bit(1);  // covering index on (x.y)
+  t1->s->key_info = t1->key_info;
+
+  string trace;
+  AccessPath *root = FindBestQueryPlan(m_thd, query_block, &trace);
+  SCOPED_TRACE(trace);  // Prints out the trace on failure.
+  // Prints out the query plan on failure.
+  SCOPED_TRACE(PrintQueryPlan(0, root, query_block->join,
+                              /*is_root_of_join=*/true));
+
+  ASSERT_EQ(AccessPath::GROUP_INDEX_SKIP_SCAN, root->type);
+  query_block->cleanup(/*full=*/true);
+}
+
+TEST_F(HypergraphOptimizerTest, GroupIndexSkipScanDedup) {
+  Query_block *query_block =
+      ParseAndResolve("SELECT DISTINCT t1.x, t1.y FROM t1", /*nullable=*/true);
+  Fake_TABLE *t1 = m_fake_tables["t1"];
+  t1->file->stats.records = 10000;
+  t1->file->stats.block_size = 4096;
+  t1->file->stats.data_file_length = 100e6;
+  CreateOrderedIndex({t1->field[0], t1->field[1], t1->field[2]}, HA_NOSAME);
+  CreateOrderedIndex({t1->field[0], t1->field[1]}, HA_NOSAME);
+  t1->covering_keys.clear_all();
+  t1->covering_keys.set_bit(0);  // covering index on (x,y,z)
+  t1->covering_keys.set_bit(1);  // covering index on (x.y)
+  t1->s->key_info = t1->key_info;
+
+  string trace;
+  AccessPath *root = FindBestQueryPlan(m_thd, query_block, &trace);
+  SCOPED_TRACE(trace);  // Prints out the trace on failure.
+  // Prints out the query plan on failure.
+  SCOPED_TRACE(PrintQueryPlan(0, root, query_block->join,
+                              /*is_root_of_join=*/true));
+
+  ASSERT_EQ(AccessPath::GROUP_INDEX_SKIP_SCAN, root->type);
+  query_block->cleanup(/*full=*/true);
+}
+
 // An alias for better naming.
 using HypergraphSecondaryEngineTest = HypergraphOptimizerTest;
 
@@ -6744,7 +6933,7 @@ TEST_F(HypergraphSecondaryEngineTest, SemiJoinWithOuterJoinMultipleEqual) {
   // happens as intended. If not, resolver would think its the old join
   // optimizer and does the transformation anyways which makes testing
   // this use case harder.
-  m_initializer.thd()->lex->using_hypergraph_optimizer = true;
+  m_initializer.thd()->lex->set_using_hypergraph_optimizer(true);
   m_initializer.thd()->set_secondary_engine_optimization(
       Secondary_engine_optimization::SECONDARY);
   handlerton *hton = EnableSecondaryEngine(/*aggregation_is_unordered=*/false);
@@ -6811,7 +7000,7 @@ TEST_F(HypergraphSecondaryEngineTest, SemiJoinWithOuterJoin) {
   // happens as intended. If not, resolver would think its the old join
   // optimizer and does the transformation anyways which makes testing
   // this use case harder.
-  m_initializer.thd()->lex->using_hypergraph_optimizer = true;
+  m_initializer.thd()->lex->set_using_hypergraph_optimizer(true);
   m_initializer.thd()->set_secondary_engine_optimization(
       Secondary_engine_optimization::SECONDARY);
   handlerton *hton = EnableSecondaryEngine(/*aggregation_is_unordered=*/false);
@@ -7108,8 +7297,10 @@ TEST_F(HypergraphSecondaryEngineTest, DontCallCostHookForEmptyJoins) {
   EXPECT_STREQ("t2", paths[0].table_scan().table->alias);
 }
 
-TEST_F(HypergraphSecondaryEngineTest,
-       SecondaryEngineGraphSimplificationRestart) {
+// An alias for better naming.
+using SecondaryEngineGraphSimplificationTest = HypergraphSecondaryEngineTest;
+
+TEST_F(SecondaryEngineGraphSimplificationTest, Restart) {
   Query_block *query_block = ParseAndResolve(
       "SELECT 1 FROM t1 JOIN t2 ON t1.x=t2.x JOIN t3 ON t2.y=t3.y",
       /*nullable=*/true);
@@ -7153,8 +7344,7 @@ TEST_F(HypergraphSecondaryEngineTest,
   ASSERT_NE(pos_of_construct_after_reset, std::string::npos);
 }
 
-TEST_F(HypergraphSecondaryEngineTest,
-       SecondaryEngineGraphSimplificationTriggered) {
+TEST_F(SecondaryEngineGraphSimplificationTest, Triggered) {
   Query_block *query_block = ParseAndResolve(
       "SELECT 1 FROM t1 JOIN t2 ON t1.x=t2.x JOIN t3 ON t2.y=t3.y",
       /*nullable=*/true);
@@ -7204,9 +7394,55 @@ TEST_F(HypergraphSecondaryEngineTest,
   size_t pos_of_simplification_after_trigger =
       trace.find("doing heuristic graph simplification.",
                  /* pos= */ pos_of_trigger_keyword);
-  // Ensure hypergraph triggered simplidication after the requested by secondary
-  // engine
+  // Ensure hypergraph triggered simplification after the request by secondary
+  // engine.
   ASSERT_NE(pos_of_simplification_after_trigger, std::string::npos);
+}
+
+TEST_F(SecondaryEngineGraphSimplificationTest, RedundantOrderElements) {
+  // Query with redundant elements in ORDER BY used to fail if the secondary
+  // engine requested a restart of the optimization. In this query, one of the
+  // columns in the ORDER BY can be removed because the WHERE clause ensures the
+  // two columns have the same value.
+  Query_block *query_block = ParseAndResolve(
+      "SELECT 1 FROM t1, t2 WHERE t1.x = t2.x ORDER BY t1.x, t2.x",
+      /*nullable=*/true);
+
+  thread_local bool was_restarted;
+  was_restarted = false;
+
+  handlerton *hton = EnableSecondaryEngine(/*aggregation_is_unordered=*/true);
+  hton->secondary_engine_check_optimizer_request =
+      [](THD *, const JoinHypergraph &, const AccessPath *, int, int,
+         bool is_root_access_path,
+         std::string *) -> SecondaryEngineGraphSimplificationRequestParameters {
+    if (is_root_access_path && !was_restarted) {
+      was_restarted = true;
+      return {SecondaryEngineGraphSimplificationRequest::kRestart, 100};
+    }
+    return {SecondaryEngineGraphSimplificationRequest::kContinue, 0};
+  };
+
+  string trace;
+  AccessPath *root = FindBestQueryPlanAndFinalize(m_thd, query_block, &trace);
+  SCOPED_TRACE(trace);  // Prints out the trace on failure.
+  ASSERT_NE(nullptr, root);
+
+  // Prints out the query plan on failure.
+  SCOPED_TRACE(PrintQueryPlan(0, root, query_block->join,
+                              /*is_root_of_join=*/true));
+
+  EXPECT_TRUE(was_restarted);
+
+  // We don't care which exact plan is chosen. But verify that the sort key does
+  // not include a redundant column.
+  ASSERT_EQ(AccessPath::SORT, root->type);
+  const ORDER *order = root->sort().order;
+  // Sort on exactly one column.
+  ASSERT_NE(nullptr, order);
+  EXPECT_EQ(nullptr, order->next);
+  // The result should be sorted on t1.x or on t2.x. We don't care which.
+  EXPECT_THAT(ItemToString(*order->item), AnyOf("t1.x", "t2.x"));
 }
 
 /*

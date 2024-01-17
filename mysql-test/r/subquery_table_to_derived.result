@@ -338,7 +338,7 @@ WHERE NOT EXISTS(SELECT * FROM t2 WHERE t1.a<>t2.b);
 a
 EXPLAIN SELECT * FROM t1
 WHERE NOT EXISTS(SELECT * FROM t2 WHERE t1.a<>t2.b) OR t1.a>0;
-ERROR HY000: Statement requires a transform of a subquery to a non-SET operation (like IN2EXISTS, or subquery-to-LATERAL-derived-table). This is not allowed with optimizer switch 'subquery_to_derived' on
+ERROR HY000: Statement requires a transform of a subquery to a non-SET operation (like IN2EXISTS, or subquery-to-LATERAL-derived-table). This is not allowed with optimizer switch 'subquery_to_derived' on.
 EXPLAIN SELECT * FROM t1
 WHERE NOT EXISTS(SELECT * FROM t2 WHERE t1.a<>t2.b) AND t1.a>0;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
@@ -354,7 +354,7 @@ a
 EXPLAIN
 SELECT * FROM t1
 WHERE EXISTS(SELECT * FROM t2 WHERE t1.a<>t2.b) AND t1.a>0;
-ERROR HY000: Statement requires a transform of a subquery to a non-SET operation (like IN2EXISTS, or subquery-to-LATERAL-derived-table). This is not allowed with optimizer switch 'subquery_to_derived' on
+ERROR HY000: Statement requires a transform of a subquery to a non-SET operation (like IN2EXISTS, or subquery-to-LATERAL-derived-table). This is not allowed with optimizer switch 'subquery_to_derived' on.
 # Verify that >=, <=, >, < are also decorrelated.
 EXPLAIN
 SELECT * FROM t1
@@ -496,4 +496,12 @@ c0
 1
 2
 DROP PREPARE p;
+DROP TABLE t1;
+# Bug#35804794: mysqld assertion failure in
+#               Query_block::replace_subquery_in_expr
+CREATE TABLE t1 (col varchar(1));
+SELECT col
+FROM t1
+WHERE col >= (SELECT MAX(CONCAT('nz' COLLATE utf8mb4_la_0900_as_cs)) FROM t1);
+ERROR HY000: Illegal mix of collations (utf8mb4_0900_ai_ci,IMPLICIT) and (utf8mb4_la_0900_as_cs,IMPLICIT) for operation '>='
 DROP TABLE t1;

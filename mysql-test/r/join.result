@@ -1511,7 +1511,7 @@ CREATE TABLE t1
 (pk INT,
 col_int_key INT DEFAULT NULL,
 col_varchar_10_latin1_key VARCHAR(10) DEFAULT NULL,
-col_varchar_255_utf8 VARCHAR(255) CHARACTER SET utf8 DEFAULT NULL,
+col_varchar_255_utf8 VARCHAR(255) CHARACTER SET utf8mb3 DEFAULT NULL,
 col_int INT DEFAULT NULL,
 col_datetime_key datetime DEFAULT NULL,
 col_varchar_255_latin1_key VARCHAR(255) DEFAULT NULL,
@@ -1521,7 +1521,7 @@ PRIMARY KEY (pk),
 KEY col_date_key (col_date_key)
 ) charset latin1 ENGINE=MyISAM;
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 INSERT INTO t1 VALUES
 (8,9,'h','FDUMQ',-1356726272,'2007-09-02 05:48:23','she','2002-04-02','2002-12-20 17:54:07');
 CREATE TABLE t2
@@ -2799,3 +2799,17 @@ ON ra3.k = ra3.k
 WHERE ra3.k <= ra1.k;
 ERROR 22032: Invalid JSON text in argument 1 to function cast_as_json: "The document root must not be followed by other values." at position 3.
 DROP TABLE t1;
+#
+# Bug#35049440: Mysqld assert in Item_typecast_signed::val_int
+#
+CREATE TABLE t1 (pk INTEGER AUTO_INCREMENT, col_int INT, col_date DATE,
+PRIMARY KEY (pk));
+INSERT INTO t1 (pk, col_int, col_date) VALUES (1, NULL, '1997-04-21');
+CREATE TABLE t2(pk INTEGER AUTO_INCREMENT, PRIMARY KEY (pk));
+INSERT INTO t2 (pk) VALUES (1);
+SELECT DISTINCT t1.col_int
+FROM t2 LEFT OUTER JOIN t1 ON t2.pk = t1.col_int
+WHERE CAST(t2.pk AS SIGNED INTEGER) <> t1.col_date;
+col_int
+DROP TABLE t1;
+DROP TABLE t2;

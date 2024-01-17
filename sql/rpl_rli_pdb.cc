@@ -649,6 +649,7 @@ bool Slave_worker::commit_positions(Log_event *ev, Slave_job_group *ptr_g,
     after a rotation.
   */
   if (ptr_g->group_master_log_name != nullptr) {
+    my_claim(ptr_g->group_master_log_name, /*claim=*/true);
     strmake(group_master_log_name, ptr_g->group_master_log_name,
             sizeof(group_master_log_name) - 1);
     my_free(ptr_g->group_master_log_name);
@@ -657,6 +658,9 @@ bool Slave_worker::commit_positions(Log_event *ev, Slave_job_group *ptr_g,
             sizeof(checkpoint_master_log_name) - 1);
   }
   if (ptr_g->checkpoint_log_name != nullptr) {
+    my_claim(ptr_g->checkpoint_log_name, /*claim=*/true);
+    my_claim(ptr_g->checkpoint_relay_log_name, /*claim=*/true);
+
     strmake(checkpoint_relay_log_name, ptr_g->checkpoint_relay_log_name,
             sizeof(checkpoint_relay_log_name) - 1);
     checkpoint_relay_log_pos = ptr_g->checkpoint_relay_log_pos;
@@ -1530,6 +1534,13 @@ void Slave_committed_queue::free_dynamic_items() {
 
 void Slave_worker::do_report(loglevel level, int err_code, const char *msg,
                              va_list args) const {
+  const Gtid_specification *gtid_next = &info_thd->variables.gtid_next;
+  do_report(level, err_code, gtid_next, msg, args);
+}
+
+void Slave_worker::do_report(loglevel level, int err_code,
+                             const Gtid_specification *gtid_next,
+                             const char *msg, va_list args) const {
   char buff_coord[MAX_SLAVE_ERRMSG];
   char buff_gtid[Gtid::MAX_TEXT_LENGTH + 1];
   const char *log_name =
@@ -1537,10 +1548,9 @@ void Slave_worker::do_report(loglevel level, int err_code, const char *msg,
   ulonglong log_pos = const_cast<Slave_worker *>(this)->get_master_log_pos();
   bool is_group_replication_applier_channel =
       channel_map.is_group_replication_channel_name(c_rli->get_channel(), true);
-  const Gtid_specification *gtid_next = &info_thd->variables.gtid_next;
   THD *thd = info_thd;
 
-  gtid_next->to_string(global_sid_map, buff_gtid, true);
+  gtid_next->to_string(global_tsid_map, buff_gtid, true);
 
   if (level == ERROR_LEVEL && (!has_temporary_error(thd, err_code) ||
                                thd->get_transaction()->cannot_safely_rollback(
@@ -1606,6 +1616,7 @@ static bool may_have_timestamp(Log_event *ev) {
   switch (ev->get_type_code()) {
     case mysql::binlog::event::QUERY_EVENT:
     case mysql::binlog::event::GTID_LOG_EVENT:
+    case mysql::binlog::event::GTID_TAGGED_LOG_EVENT:
       res = true;
       break;
 
@@ -1621,6 +1632,7 @@ static int64 get_last_committed(Log_event *ev) {
 
   switch (ev->get_type_code()) {
     case mysql::binlog::event::GTID_LOG_EVENT:
+    case mysql::binlog::event::GTID_TAGGED_LOG_EVENT:
       res = static_cast<Gtid_log_event *>(ev)->last_committed;
       break;
 
@@ -1636,6 +1648,7 @@ static int64 get_sequence_number(Log_event *ev) {
 
   switch (ev->get_type_code()) {
     case mysql::binlog::event::GTID_LOG_EVENT:
+    case mysql::binlog::event::GTID_TAGGED_LOG_EVENT:
       res = static_cast<Gtid_log_event *>(ev)->sequence_number;
       break;
 
@@ -1704,7 +1717,7 @@ int Slave_worker::slave_worker_exec_event(Log_event *ev) {
 #endif
 
   // Address partitioning only in database mode
-  if (!is_gtid_event(ev) && is_mts_db_partitioned(rli)) {
+  if (!is_any_gtid_event(ev) && is_mts_db_partitioned(rli)) {
     if (ev->contains_partition_info(end_group_sets_max_dbs)) {
       uint num_dbs = ev->mts_number_dbs();
 
@@ -2100,6 +2113,8 @@ bool append_item_to_jobs(slave_job_item *job_item, Slave_worker *worker,
   mysql_mutex_lock(&rli->pending_jobs_lock);
   new_pend_size = rli->mts_pending_jobs_size + ev_size;
   bool big_event = (ev_size > rli->mts_pending_jobs_size_max);
+  Slave_job_group *ptr_g =
+      rli->gaq->get_job_group(rli->gaq->assigned_group_index);
   /*
     C waits basing on *data* sizes in the queues.
     If it is a big event (event size is greater than
@@ -2140,6 +2155,7 @@ bool append_item_to_jobs(slave_job_item *job_item, Slave_worker *worker,
   rli->pending_jobs++;
   rli->mts_pending_jobs_size = new_pend_size;
   rli->mts_events_assigned++;
+  rli->mts_online_stat_curr++;
 
   mysql_mutex_unlock(&rli->pending_jobs_lock);
 
@@ -2172,6 +2188,16 @@ bool append_item_to_jobs(slave_job_item *job_item, Slave_worker *worker,
     rli->mts_wq_no_underrun_cnt++;
   }
 
+  // unclaim ownership of the event log memory
+  job_item->data->claim_memory_ownership(/*claim=*/false);
+  if (worker->checkpoint_notified) {
+    my_claim(ptr_g->checkpoint_log_name, /*claim=*/false);
+    my_claim(ptr_g->checkpoint_relay_log_name, /*claim=*/false);
+  }
+  if (worker->master_log_change_notified) {
+    my_claim(ptr_g->group_master_log_name, /*claim=*/false);
+  }
+
   mysql_mutex_lock(&worker->jobs_lock);
 
   // possible WQ overfill
@@ -2201,6 +2227,16 @@ bool append_item_to_jobs(slave_job_item *job_item, Slave_worker *worker,
     rli->pending_jobs--;  // roll back of the prev incr
     rli->mts_pending_jobs_size -= ev_size;
     mysql_mutex_unlock(&rli->pending_jobs_lock);
+
+    // claim back ownership of the event log memory
+    job_item->data->claim_memory_ownership(/*claim=*/true);
+    if (worker->checkpoint_notified) {
+      my_claim(ptr_g->checkpoint_log_name, /*claim=*/true);
+      my_claim(ptr_g->checkpoint_relay_log_name, /*claim=*/true);
+    }
+    if (worker->master_log_change_notified) {
+      my_claim(ptr_g->group_master_log_name, /*claim=*/true);
+    }
   }
 
   return (Slave_jobs_queue::error_result != ret) ? false : true;
@@ -2454,6 +2490,10 @@ int slave_worker_exec_job_group(Slave_worker *worker, Relay_log_info *rli) {
 
     ev = job_item->data;
     assert(ev != nullptr);
+
+    // claim ownership of the event log memory
+    ev->claim_memory_ownership(/*claim=*/true);
+
     DBUG_PRINT("info", ("W_%lu <- job item: %p data: %p thd: %p", worker->id,
                         job_item, ev, thd));
     /*
@@ -2465,7 +2505,7 @@ int slave_worker_exec_job_group(Slave_worker *worker, Relay_log_info *rli) {
     */
     worker_curr_ev.set_current_event(ev);
 
-    if (is_gtid_event(ev)) seen_gtid = true;
+    if (is_any_gtid_event(ev)) seen_gtid = true;
     if (!seen_begin && ev->starts_group()) {
       seen_begin = true;  // The current group is started with B-event
       worker->end_group_sets_max_dbs = true;
@@ -2503,12 +2543,12 @@ int slave_worker_exec_job_group(Slave_worker *worker, Relay_log_info *rli) {
       WL#7592 refines the original assert disjunction formula
       with the final disjunct.
     */
-    assert(seen_begin || is_gtid_event(ev) ||
+    assert(seen_begin || is_any_gtid_event(ev) ||
            ev->get_type_code() == mysql::binlog::event::QUERY_EVENT ||
            is_mts_db_partitioned(rli) || worker->id == 0 || seen_gtid);
 
     if (ev->ends_group() ||
-        (!seen_begin && !is_gtid_event(ev) &&
+        (!seen_begin && !is_any_gtid_event(ev) &&
          (ev->get_type_code() == mysql::binlog::event::QUERY_EVENT ||
           /* break through by LC only in GTID off */
           (!seen_gtid && !is_mts_db_partitioned(rli)))))

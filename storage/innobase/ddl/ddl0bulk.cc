@@ -31,8 +31,10 @@ BULK Data Load. Currently treated like DDL */
 #include <cstdint>
 #include <iostream>
 #include "btr0mtib.h"
+#include "dict0stats.h"
 #include "field_types.h"
 #include "mach0data.h"
+#include "trx0roll.h"
 #include "trx0sys.h"
 #include "trx0undo.h"
 
@@ -296,6 +298,34 @@ dberr_t Loader::end(const row_prebuilt_t *prebuilt, bool is_error) {
   fil_space_t *space = fil_space_acquire(table->space);
   space->end_bulk_operation();
   fil_space_release(space);
+
+  if (db_err == DB_SUCCESS) {
+    const dict_stats_upd_option_t option =
+        dict_stats_is_persistent_enabled(table) ? DICT_STATS_RECALC_PERSISTENT
+                                                : DICT_STATS_RECALC_TRANSIENT;
+
+    const size_t MAX_RETRY = 5;
+    for (size_t retry = 0; retry < MAX_RETRY; ++retry) {
+      auto savept = trx_savept_take(prebuilt->trx);
+      const auto st = dict_stats_update(table, option, prebuilt->trx);
+
+      if (st != DB_SUCCESS) {
+        LogErr(WARNING_LEVEL, ER_IB_BULK_LOAD_STATS_WARN,
+               "ddl_bulk::Loader::end()", table->name.m_name,
+               static_cast<size_t>(st));
+        if (st == DB_LOCK_WAIT_TIMEOUT) {
+          const auto ms = std::chrono::milliseconds{10 * (1 + retry)};
+          std::this_thread::sleep_for(ms);
+          trx_rollback_to_savepoint(prebuilt->trx, &savept);
+          continue;
+        }
+      }
+
+      break;
+    }
+  }
+
+  DBUG_EXECUTE_IF("crash_bulk_load_after_stats", DBUG_SUICIDE(););
 
   return db_err;
 }

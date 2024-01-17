@@ -25,39 +25,38 @@
 #include "sql/item_json_func.h"
 
 #include <assert.h>
-#include <stdint.h>
-#include <string.h>
 #include <algorithm>  // std::fill
-#include <cassert>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <new>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "decimal.h"
 #include "field_types.h"  // enum_field_types
 #include "lex_string.h"
-#include "m_string.h"
 #include "my_alloc.h"
-
+#include "my_dbug.h"
 #include "my_sys.h"
 #include "mysql/mysql_lex_string.h"
 #include "mysql/strings/m_ctype.h"
 #include "mysqld_error.h"
 #include "prealloced_array.h"  // Prealloced_array
 #include "scope_guard.h"
+#include "sql-common/json_diff.h"
 #include "sql-common/json_dom.h"
 #include "sql-common/json_path.h"
 #include "sql-common/json_syntax_check.h"
 #include "sql-common/my_decimal.h"
 #include "sql/current_thd.h"  // current_thd
+#include "sql/debug_sync.h"
 #include "sql/error_handler.h"
 #include "sql/field.h"
+#include "sql/field_common_properties.h"
 #include "sql/item_cmpfunc.h"  // Item_func_like
 #include "sql/item_create.h"
-#include "sql/item_subselect.h"
-#include "sql/json_diff.h"
 #include "sql/json_schema.h"
 #include "sql/parser_yystype.h"
 #include "sql/psi_memory_key.h"  // key_memory_JSON
@@ -152,6 +151,103 @@ bool parse_json(const String &res, Json_dom_ptr *dom, bool require_str_or_json,
   *dom = Json_dom::parse(safep, safe_length, error_handler, depth_handler);
 
   return *dom == nullptr;
+}
+
+enum_json_diff_status apply_json_diffs(Field_json *field,
+                                       const Json_diff_vector *diffs) {
+  DBUG_TRACE;
+  // Cannot apply a diff to NULL.
+  if (field->is_null()) return enum_json_diff_status::REJECTED;
+
+  DBUG_EXECUTE_IF("simulate_oom_in_apply_json_diffs", {
+    DBUG_SET("+d,simulate_out_of_memory");
+    DBUG_SET("-d,simulate_oom_in_apply_json_diffs");
+  });
+
+  Json_wrapper doc;
+  if (field->val_json(&doc))
+    return enum_json_diff_status::ERROR; /* purecov: inspected */
+
+  doc.dbug_print("apply_json_diffs: before-doc", JsonDepthErrorHandler);
+
+  // Should we collect logical diffs while applying them?
+  const bool collect_logical_diffs =
+      field->table->is_logical_diff_enabled(field);
+
+  // Should we try to perform the update in place using binary diffs?
+  bool binary_inplace_update = field->table->is_binary_diff_enabled(field);
+
+  StringBuffer<STRING_BUFFER_USUAL_SIZE> buffer;
+
+  for (const Json_diff &diff : *diffs) {
+    Json_wrapper val = diff.value();
+
+    auto &path = diff.path();
+
+    if (path.leg_count() == 0) {
+      /*
+        Cannot replace the root (then a full update will be used
+        instead of creating a diff), or insert the root, or remove the
+        root, so reject this diff.
+      */
+      return enum_json_diff_status::REJECTED;
+    }
+
+    if (collect_logical_diffs)
+      field->table->add_logical_diff(field, path, diff.operation(), &val);
+
+    if (binary_inplace_update) {
+      if (diff.operation() == enum_json_diff_operation::REPLACE) {
+        bool partially_updated = false;
+        bool replaced_path = false;
+        if (doc.attempt_binary_update(field, path, &val, false, &buffer,
+                                      &partially_updated, &replaced_path))
+          return enum_json_diff_status::ERROR; /* purecov: inspected */
+
+        if (partially_updated) {
+          if (!replaced_path) return enum_json_diff_status::REJECTED;
+          DBUG_EXECUTE_IF("rpl_row_jsondiff_binarydiff", {
+            const char act[] =
+                "now SIGNAL signal.rpl_row_jsondiff_binarydiff_created";
+            assert(opt_debug_sync_timeout > 0);
+            assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
+          };);
+          continue;
+        }
+      } else if (diff.operation() == enum_json_diff_operation::REMOVE) {
+        Json_wrapper_vector hits(key_memory_JSON);
+        bool found_path = false;
+        if (doc.binary_remove(field, path, &buffer, &found_path))
+          return enum_json_diff_status::ERROR; /* purecov: inspected */
+        if (!found_path) return enum_json_diff_status::REJECTED;
+        continue;
+      }
+
+      // Couldn't update in place, so try full update.
+      binary_inplace_update = false;
+      field->table->disable_binary_diffs_for_current_row(field);
+    }
+
+    Json_dom *dom = doc.to_dom();
+    if (doc.to_dom() == nullptr)
+      return enum_json_diff_status::ERROR; /* purecov: inspected */
+
+    enum_json_diff_status res = apply_json_diff(diff, dom);
+
+    // If the diff was not applied successfully exit with the error status,
+    // otherwise continue to the next diff
+    if (res == enum_json_diff_status::ERROR ||
+        res == enum_json_diff_status::REJECTED) {
+      return res;
+    } else {
+      continue;
+    }
+  }
+
+  if (field->store_json(&doc) != TYPE_OK)
+    return enum_json_diff_status::ERROR; /* purecov: inspected */
+
+  return enum_json_diff_status::SUCCESS;
 }
 
 /**
@@ -364,8 +460,7 @@ bool parse_path(const String &path_value, bool forbid_wildcards,
 
   // OK, we have a string encoded in utf-8. Does it parse?
   size_t bad_idx = 0;
-  if (parse_path(path_length, path_chars, json_path, &bad_idx,
-                 JsonDepthErrorHandler)) {
+  if (parse_path(path_length, path_chars, json_path, &bad_idx)) {
     /*
       Issue an error message. The last argument is no longer used, but kept to
       avoid changing error message format.
@@ -3388,15 +3483,13 @@ longlong Item_func_json_storage_size::val_int() {
   null_value = args[0]->null_value;
   if (null_value) return 0;
 
-  if (wrapper.to_binary(&buffer, &JsonDepthErrorHandler,
-                        &JsonKeyTooBigErrorHandler,
-                        &JsonValueTooBigErrorHandler, &InvalidJsonErrorHandler))
+  const THD *const thd = current_thd;
+  if (wrapper.to_binary(JsonSerializationDefaultErrorHandler(thd), &buffer))
     return error_int(); /* purecov: inspected */
 
-  if (buffer.length() > current_thd->variables.max_allowed_packet) {
+  if (buffer.length() > thd->variables.max_allowed_packet) {
     my_error(ER_WARN_ALLOWED_PACKET_OVERFLOWED, MYF(0),
-             "json_binary::serialize",
-             current_thd->variables.max_allowed_packet);
+             "json_binary::serialize", thd->variables.max_allowed_packet);
     return error_int();
   }
   return buffer.length();
