@@ -4096,20 +4096,9 @@ static void recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn,
       break;
     }
 
-<<<<<<< HEAD
     finished = recv_scan_log_recs(log, &delta_hashmap_max_mem, log.buf, end_lsn - start_lsn,
                                   start_lsn, &log.m_scanned_lsn, to_lsn);
 
-||||||| 87307d4ddd8
-    finished =
-        recv_scan_log_recs(log, delta_hashmap_max_mem, log.buf,
-                           end_lsn - start_lsn, start_lsn, &log.m_scanned_lsn);
-
-=======
-    finished =
-        recv_scan_log_recs(log, delta_hashmap_max_mem, log.buf,
-                           end_lsn - start_lsn, start_lsn, &log.m_scanned_lsn);
->>>>>>> mysql-8.3.0
     start_lsn = end_lsn;
   }
 

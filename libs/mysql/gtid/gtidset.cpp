@@ -275,23 +275,12 @@ bool Gtid_set::is_empty() const { return m_gtid_set.empty(); }
 
 std::size_t Gtid_set::count() const {
   std::size_t count{0};
-<<<<<<< HEAD
-  for (auto it = m_gtid_set.begin(); it != m_gtid_set.end(); ++it) {
-    for (auto &interval : it->second) {
-      count += interval.count();
-||||||| 87307d4ddd8
-
-  for (auto const &[uuid, intervals] : m_gtid_set) {
-    for (auto &interval : intervals) {
-      count += interval.count();
-=======
 
   for (auto const &[uuid, tag_map] : m_gtid_set) {
     for (auto const &[tag, intervals] : tag_map) {
       for (auto &interval : intervals) {
         count += interval.count();
       }
->>>>>>> mysql-8.3.0
     }
   }
 

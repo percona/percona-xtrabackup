@@ -2155,16 +2155,8 @@ static bool mysql_component_infrastructure_init() {
   @retval false success
   @retval true failure
 */
-<<<<<<< HEAD
-bool component_infrastructure_deinit() {
-  if (!opt_initialize) {
-||||||| 87307d4ddd8
-static bool component_infrastructure_deinit() {
-  if (!opt_initialize) {
-=======
-static bool component_infrastructure_deinit(bool print_message) {
+bool component_infrastructure_deinit(bool print_message) {
   if (print_message) {
->>>>>>> mysql-8.3.0
     LogErr(INFORMATION_LEVEL, ER_COMPONENTS_INFRASTRUCTURE_SHUTDOWN_START);
     sysd::notify("Shutdown of components in progress\n");
   }
