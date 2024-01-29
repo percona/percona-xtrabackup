@@ -11998,6 +11998,7 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache) {
     err = DB_SUCCESS;
   }
 
+  debug_sync_point("xtrabackup_suspend_between_file_discovery_and_open");
   if (err == DB_SUCCESS && populate_fil_cache) {
     bool result = true;
     std::function<void(const Const_iter &, const Const_iter &, size_t, bool &)>
