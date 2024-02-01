@@ -195,10 +195,18 @@ void ddl_tracker_t::handle_ddl_operations() {
 
   /* Some tables might get to the new list if the DDL happen in between
    * redo_mgr.start and xb_load_tablespaces. This causes we ending up with two
-   * tablespaces with the same spaceID. Remove them from new tables */
+   * tablespaces with the same spaceID. Remove them from new tables
+   *
+   * Rename DDL can happen in between redo_mgr.start and xb_load_tablespaces
+   * as well. In this case we should erase rename DDL cause we already scanned
+   * the table with new name */
   for (auto &table : tables_in_backup) {
     if (new_tables.find(table.first) != new_tables.end()) {
       new_tables.erase(table.first);
+    }
+    if (renames.find(table.first) != renames.end() &&
+        renames[table.first].second == table.second) {
+      renames.erase(table.first);
     }
   }
 
@@ -223,15 +231,36 @@ void ddl_tracker_t::handle_ddl_operations() {
     if (check_if_skip_table(table.second.c_str())) {
       continue;
     }
-    /* Remove from rename */
-    renames.erase(table.first);
 
-    /* Remove from new tables and skip drop*/
+    /* Remove from new tables and skip drop */
     if (new_tables.find(table.first) != new_tables.end()) {
       new_tables.erase(table.first);
+
+      /* Remove from rename */
+      renames.erase(table.first);
       continue;
     }
-    backup_file_printf((table.second + ".del").c_str(), "%s", "");
+
+    /* If table_space_id does not exist in new_tables nor in tables_in_backup
+      then this drop ddl happened between redo_mgr.start and xb_tablespace_load.
+      We skip drop.
+    */
+    if (new_tables.find(table.first) == new_tables.end() &&
+        tables_in_backup.find(table.first) == tables_in_backup.end()) {
+      continue;
+    }
+
+    if (renames.find(table.first) != renames.end()) {
+      /* If original table was there before backup start and have been copied
+        then we should delete it */
+      backup_file_printf((renames[table.first].first + ".del").c_str(), "%s",
+                         "");
+
+      /* Remove from rename */
+      renames.erase(table.first);
+    } else {
+      backup_file_printf((table.second + ".del").c_str(), "%s", "");
+    }
   }
 
   for (auto &table : renames) {

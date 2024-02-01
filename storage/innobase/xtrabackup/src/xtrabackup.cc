@@ -4254,6 +4254,9 @@ void xtrabackup_backup_func(void) {
 
   Tablespace_map::instance().scan(mysql_connection);
 
+  debug_sync_point(
+      "xtrabackup_suspend_between_redo_mgr_start_and_xb_load_tablespaces");
+
   /* Populate fil_system with tablespaces to copy */
   dberr_t err = xb_load_tablespaces();
   if (err != DB_SUCCESS) {
