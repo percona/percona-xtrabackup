@@ -121,6 +121,21 @@ void ddl_tracker_t::add_table(const space_id_t &space_id, std::string name) {
   tables_in_backup[space_id] = name;
 }
 
+void ddl_tracker_t::add_missing_table(std::string path) {
+  Fil_path::normalize(path);
+  if (Fil_path::has_prefix(path, Fil_path::DOT_SLASH)) {
+    path.erase(0, 2);
+  }
+  missing_tables.insert(path);
+}
+
+bool ddl_tracker_t::is_missing_table(const std::string &name) {
+  if (missing_tables.count(name)) {
+    return true;
+  }
+  return false;
+}
+
 /* ======== Data copying thread context ======== */
 
 typedef struct {
@@ -180,10 +195,18 @@ void ddl_tracker_t::handle_ddl_operations() {
 
   /* Some tables might get to the new list if the DDL happen in between
    * redo_mgr.start and xb_load_tablespaces. This causes we ending up with two
-   * tablespaces with the same spaceID. Remove them from new tables */
+   * tablespaces with the same spaceID. Remove them from new tables
+   *
+   * Rename DDL can happen in between redo_mgr.start and xb_load_tablespaces
+   * as well. In this case we should erase rename DDL cause we already scanned
+   * the table with new name */
   for (auto &table : tables_in_backup) {
     if (new_tables.find(table.first) != new_tables.end()) {
       new_tables.erase(table.first);
+    }
+    if (renames.find(table.first) != renames.end() &&
+        renames[table.first].second == table.second) {
+      renames.erase(table.first);
     }
   }
 
@@ -208,15 +231,36 @@ void ddl_tracker_t::handle_ddl_operations() {
     if (check_if_skip_table(table.second.c_str())) {
       continue;
     }
-    /* Remove from rename */
-    renames.erase(table.first);
 
-    /* Remove from new tables and skip drop*/
+    /* Remove from new tables and skip drop */
     if (new_tables.find(table.first) != new_tables.end()) {
       new_tables.erase(table.first);
+
+      /* Remove from rename */
+      renames.erase(table.first);
       continue;
     }
-    backup_file_printf((table.second + ".del").c_str(), "%s", "");
+
+    /* If table_space_id does not exist in new_tables nor in tables_in_backup
+      then this drop ddl happened between redo_mgr.start and xb_tablespace_load.
+      We skip drop.
+    */
+    if (new_tables.find(table.first) == new_tables.end() &&
+        tables_in_backup.find(table.first) == tables_in_backup.end()) {
+      continue;
+    }
+
+    if (renames.find(table.first) != renames.end()) {
+      /* If original table was there before backup start and have been copied
+        then we should delete it */
+      backup_file_printf((renames[table.first].first + ".del").c_str(), "%s",
+                         "");
+
+      /* Remove from rename */
+      renames.erase(table.first);
+    } else {
+      backup_file_printf((table.second + ".del").c_str(), "%s", "");
+    }
   }
 
   for (auto &table : renames) {
@@ -226,8 +270,17 @@ void ddl_tracker_t::handle_ddl_operations() {
     if (check_if_skip_table(table.second.first.c_str())) {
       continue;
     }
-    /* renamed new table. update new table entry to renamed table name */
-    if (new_tables.find(table.first) != new_tables.end()) {
+
+    /* renamed new table. update new table entry to renamed table name
+      or if table is missing and renamed, add the renamed table to the new_table
+      list. for example: 1. t1.ibd is discovered
+                   2. t1.ibd renamed to t2.ibd
+                   3. t2.ibd is opened and loaded to cache to copy
+                   4. t1.ibd is missing now
+      so we should add t2.ibd to new_tables and skip .ren file so that we don't
+      try to rename t1.ibd to t2.idb where t1.ibd is missing   */
+    if (new_tables.find(table.first) != new_tables.end() ||
+        is_missing_table(table.second.first)) {
       new_tables[table.first] = table.second.second;
       continue;
     }

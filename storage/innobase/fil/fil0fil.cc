@@ -1610,7 +1610,6 @@ class Fil_system {
   @param[in]  f   Callback
   @return any error returned by the callback function. */
   [[nodiscard]] dberr_t iterate_spaces(Fil_space_iterator::Function &f);
-
 #endif /* XTRABACKUP */
   /** Iterate through all persistent tablespace files
   (FIL_TYPE_TABLESPACE) returning the nodes via callback function cbk.
@@ -4097,7 +4096,6 @@ void fil_node_close_file(fil_node_t *file) {
 
   shard->mutex_release();
 }
-
 #endif /* XTRABACKUP */
 
 /** Iterate through all tablespaces
@@ -11593,7 +11591,6 @@ void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
                                size_t thread_id, bool &result) {
   if (!result) return;
 
-  uint8_t max_attempt_retries = (opt_lock_ddl == LOCK_DDL_REDUCED) ? 10 : 1;
   for (auto it = start; it != end; ++it) {
     const std::string filename = it->second;
     const auto &files = m_dirs[it->first];
@@ -11606,17 +11603,19 @@ void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
     /* cannot use auto [err, space_id] = fil_open_for_xtrabackup() as space_id
     is unused here and we get unused variable error during compilation */
     dberr_t err;
-    uint8_t attempts = 0;
-    while (attempts < max_attempt_retries) {
-      attempts++;
-      std::tie(err, std::ignore) = fil_open_for_xtrabackup(
-          phy_filename, filename.substr(0, filename.length() - 4));
-      /* PXB-2275 - Allow DB_INVALID_ENCRYPTION_META as we will test it in the
-      end of the backup */
-      if (err == DB_SUCCESS || err == DB_INVALID_ENCRYPTION_META) break;
+    std::tie(err, std::ignore) = fil_open_for_xtrabackup(
+        phy_filename, filename.substr(0, filename.length() - 4));
 
-      if (attempts == max_attempt_retries) result = false;
-    }
+    /* Allow deleted tables between disovery and file open when
+     LOCK_DDL_REDUCED, they will be handled by ddl_tracker */
+    if (err == DB_CANNOT_OPEN_FILE && opt_lock_ddl == LOCK_DDL_REDUCED) {
+      ddl_tracker->add_missing_table(phy_filename);
+    } else
+      /* PXB-2275 - Allow DB_INVALID_ENCRYPTION_META as we will test it in
+      the end of the backup */
+      if (err != DB_SUCCESS && err != DB_INVALID_ENCRYPTION_META) {
+        result = false;
+      }
   }
 }
 
@@ -11999,6 +11998,7 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache) {
     err = DB_SUCCESS;
   }
 
+  debug_sync_point("xtrabackup_suspend_between_file_discovery_and_open");
   if (err == DB_SUCCESS && populate_fil_cache) {
     bool result = true;
     std::function<void(const Const_iter &, const Const_iter &, size_t, bool &)>
