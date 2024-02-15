@@ -5486,59 +5486,141 @@ static std::string read_file_as_string(const std::string file) {
   fclose(f);
   return std::string(content, len);
 }
-/* Handle DDL for renamed files */
+
+/**
+Handle DDL for renamed files
+example input: test/10.ibd.ren file with content = test/new_name.ibd ;
+      -> tablespace with space_id = 10 will be renamed to test/new_name.ibd
+@return true on success */
 static bool prepare_handle_ren_files(
     const datadir_entry_t &entry, /*!<in: datadir entry */
-    void *arg __attribute__((unused))) {
+    void * /*data*/) {
   if (entry.is_empty_dir) return true;
 
-  std::string ren_file = entry.path;
-  std::string ren_path = entry.rel_path;
-  std::string from_base = entry.datadir;
-  std::string to_base = entry.datadir;
-#ifdef UNIV_DEBUG
-  size_t index = ren_file.find(".ren");
-  assert(index != std::string::npos);
-#endif  // UNIV_DEBUG
-  std::string from = ren_path.substr(0, ren_path.length() - 4);
-  from_base += from;
-  std::string to = read_file_as_string(ren_file);
-  to_base += to;
-  if (to.empty()) {
-    xb::error() << "Can not read " << ren_file;
+  char dest_space_name[FN_REFLEN];
+  space_id_t source_space_id;
+  std::string ren_file_content;
+  std::string ren_file_name = entry.file_name;
+  std::string ren_path = entry.path;
+
+  Fil_path::normalize(ren_path);
+  // trim .ibd.ren
+  source_space_id =
+      atoi(ren_file_name.substr(0, ren_file_name.length() - 8).c_str());
+  ren_file_content = read_file_as_string(ren_path);
+
+  if (ren_file_content.empty()) {
+    xb::error() << "prepare_handle_ren_files: " << ren_path << " is empty.";
     return false;
   }
-  xb::info() << "prepare_handle_ren_files: From: " << from << " To: " << to;
-  rename_force(from, to);
-  if (xtrabackup_incremental) {
-    rename_force(from_base + ".delta", to_base + ".delta");
-    rename_force(from_base + ".meta", to_base + ".meta");
+  // trim .ibd
+  snprintf(dest_space_name, FN_REFLEN, "%s",
+           ren_file_content.substr(0, ren_file_content.length() - 4).c_str());
+
+  fil_space_t *fil_space = fil_space_get(source_space_id);
+
+  if (fil_space != NULL) {
+    char tmpname[FN_REFLEN];
+    char *oldpath, *space_name;
+    bool res =
+        fil_space_read_name_and_filepath(fil_space->id, &space_name, &oldpath);
+
+    if (!res || !os_file_exists(oldpath)) {
+      xb::error() << "prepare_handle_ren_files: Tablespace " << fil_space->name
+                  << " not found.";
+      ut::free(oldpath);
+      ut::free(space_name);
+      return false;
+    }
+
+    strncpy(tmpname, dest_space_name, sizeof(tmpname) - 1);
+
+    xb::info() << "prepare_handle_ren_files: renaming " << fil_space->name
+               << " to " << dest_space_name;
+
+    if (!fil_rename_tablespace(fil_space->id, oldpath, tmpname, NULL)) {
+      xb::error() << "prepare_handle_ren_files: Cannot rename "
+                  << fil_space->name << " to " << dest_space_name;
+      ut::free(oldpath);
+      ut::free(space_name);
+      return false;
+    }
+    // rename .delta .meta files as well
+    if (xtrabackup_incremental) {
+      std::string from_path =
+          entry.datadir + OS_PATH_SEPARATOR + std::string{space_name};
+      ;
+      std::string to_path = entry.datadir + ren_file_content;
+
+      rename_force(from_path + ".ibd.delta", to_path + ".delta");
+      rename_force(from_path + ".ibd.meta", to_path + ".meta");
+    }
+    // delete the .ren file, we don't need it anymore
+    os_file_delete(0, ren_path.c_str());
+    ut::free(oldpath);
+    ut::free(space_name);
+
+    return true;
   }
-  os_file_delete(0, ren_file.c_str());
-  return true;
+
+  xb::error() << "prepare_handle_ren_files(): failed to handle " << ren_path;
+  return false;
 }
-/* Handle DDL for deleted files */
+
+/**
+Handle DDL for deleted files
+example input: test/10.ibd.del file
+        -> tablespace with space_id = 10 will be deleted
+@return true on success */
 static bool prepare_handle_del_files(
     const datadir_entry_t &entry, /*!<in: datadir entry */
     void *arg __attribute__((unused))) {
   if (entry.is_empty_dir) return true;
 
+  std::string del_file_name = entry.file_name;
   std::string del_file = entry.path;
-  std::string dest_path = entry.rel_path;
-  xb::info() << "prepare_handle_del_files: " << del_file;
-#ifdef UNIV_DEBUG
-  size_t index = dest_path.find(".del");
-  assert(index != std::string::npos);
-#endif  // UNIV_DEBUG
-  os_file_delete(0, del_file.c_str());
-  del_file.erase(del_file.length() - 4);
-  delete_force(dest_path.substr(0, dest_path.length() - 4).c_str());
-  if (xtrabackup_incremental) {
-    delete_force(del_file + ".delta");
-    delete_force(del_file + ".meta");
-  }
+  space_id_t space_id;
 
-  return true;
+  // trim .ibd.del
+  space_id = atoi(del_file_name.substr(0, del_file_name.length() - 8).c_str());
+  fil_space_t *fil_space = fil_space_get(space_id);
+  if (fil_space != NULL) {
+    char *path, *space_name;
+    bool res =
+        fil_space_read_name_and_filepath(fil_space->id, &space_name, &path);
+
+    if (!res || !os_file_exists(path)) {
+      xb::error() << "prepare_handle_del_files: Tablespace " << fil_space->name
+                  << " not found.";
+      ut::free(path);
+      ut::free(space_name);
+      return false;
+    }
+
+    xb::info() << "prepare_handle_del_files: deleting " << fil_space->name;
+
+    dberr_t err = fil_delete_tablespace(fil_space->id, BUF_REMOVE_NONE);
+    if (err != DB_SUCCESS) {
+      xb::error() << "prepare_handle_del_files: Cannot delete "
+                  << fil_space->name;
+      ut::free(path);
+      ut::free(space_name);
+      return false;
+    }
+
+    os_file_delete(0, del_file.c_str());
+    if (xtrabackup_incremental) {
+      std::string del_path =
+          entry.datadir + OS_PATH_SEPARATOR + std::string{space_name};
+      delete_force(del_path + ".ibd.delta");
+      delete_force(del_path + ".ibd.meta");
+    }
+    return true;
+  } else {
+    // if table was already deleted then return true
+    os_file_delete(0, del_file.c_str());
+    return true;
+  }
 }
 /************************************************************************
 Callback to handle datadir entry. Deletes entry if it has no matching
@@ -6619,27 +6701,6 @@ skip_check:
     backup_redo_log_flushed_lsn = incremental_flushed_lsn;
   }
 
-  /* Handle DDL files produced by DDL tracking during backup */
-  xb_process_datadir(
-      xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".", ".del",
-      prepare_handle_del_files, NULL);
-  xb_process_datadir(
-      xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".", ".ren",
-      prepare_handle_ren_files, NULL);
-  if (xtrabackup_incremental_dir) {
-    /** This is the new file, this might be less than the original .ibd because
-     * we are copying the file while there are still dirty pages in the BP.
-     * Those changes will later be conciliated via redo log*/
-    xb_process_datadir(xtrabackup_incremental_dir, ".new.meta",
-                       prepare_handle_new_files, NULL);
-    xb_process_datadir(xtrabackup_incremental_dir, ".new.delta",
-                       prepare_handle_new_files, NULL);
-    xb_process_datadir(xtrabackup_incremental_dir, ".new",
-                       prepare_handle_new_files, NULL);
-  } else {
-    xb_process_datadir(".", ".new", prepare_handle_new_files, NULL);
-  }
-
   init_mysql_environment();
   my_thread_init();
   THD *thd = create_internal_thd();
@@ -6714,6 +6775,50 @@ skip_check:
   xb_normalize_init_values();
 
   Tablespace_map::instance().deserialize("./");
+
+  /* Handle `RENAME/DELETE` DDL files produced by DDL tracking during backup */
+  err = xb_data_files_init();
+  if (err != DB_SUCCESS) {
+    xb::error() << "xb_data_files_init() failed "
+                << "with error code " << err;
+    goto error_cleanup;
+  }
+
+  if (!xb_process_datadir(
+          xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".", ".ren",
+          prepare_handle_ren_files, NULL)) {
+    xb_data_files_close();
+    goto error_cleanup;
+  }
+  if (!xb_process_datadir(
+          xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".", ".del",
+          prepare_handle_del_files, NULL)) {
+    xb_data_files_close();
+    goto error_cleanup;
+  }
+
+  xb_data_files_close();
+  fil_close();
+  innodb_free_param();
+
+  /* Handle `CREATE` DDL files produced by DDL tracking during backup */
+  if (xtrabackup_incremental_dir) {
+    /** This is the new file, this might be less than the original .ibd because
+     * we are copying the file while there are still dirty pages in the BP.
+     * Those changes will later be conciliated via redo log*/
+    xb_process_datadir(xtrabackup_incremental_dir, ".new.meta",
+                       prepare_handle_new_files, NULL);
+    xb_process_datadir(xtrabackup_incremental_dir, ".new.delta",
+                       prepare_handle_new_files, NULL);
+    xb_process_datadir(xtrabackup_incremental_dir, ".new",
+                       prepare_handle_new_files, NULL);
+  } else {
+    xb_process_datadir(".", ".new", prepare_handle_new_files, NULL);
+  }
+
+  if (innodb_init_param()) {
+    goto error_cleanup;
+  }
 
   if (xtrabackup_incremental) {
     Tablespace_map::instance().deserialize(xtrabackup_incremental_dir);
