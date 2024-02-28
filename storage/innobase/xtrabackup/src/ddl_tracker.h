@@ -37,6 +37,9 @@ class ddl_tracker_t {
   std::unordered_map<space_id_t, std::pair<std::string, std::string>> renames;
   /** Tables that have been deleted between discovery and file open */
   std::unordered_set<std::string> missing_tables;
+  /** Tables that have been renamed during scan. Tablespace_id and new table
+   *  name */
+  space_id_to_name_t renamed_during_scan;
 
  public:
   /** Add a new table in the DDL tracker table list.
@@ -62,5 +65,9 @@ class ddl_tracker_t {
   bool is_missing_table(const std::string &name);
   std::string convert_file_name(space_id_t space_id, std::string file_name,
                                 std::string ext);
+  /** Note that a table was renamed during scan.
+   @param[in]	space_id	tablespace identifier
+   @param[in]	new_name  tablespace new name */
+  void add_renamed_table(const space_id_t &space_id, std::string new_name);
 };
 #endif  // DDL_TRACKER_H
