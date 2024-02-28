@@ -136,6 +136,15 @@ bool ddl_tracker_t::is_missing_table(const std::string &name) {
   return false;
 }
 
+void ddl_tracker_t::add_renamed_table(const space_id_t &space_id,
+                                      std::string new_name) {
+  Fil_path::normalize(new_name);
+  if (Fil_path::has_prefix(new_name, Fil_path::DOT_SLASH)) {
+    new_name.erase(0, 2);
+  }
+  renamed_during_scan[space_id] = new_name;
+}
+
 /* ======== Data copying thread context ======== */
 
 typedef struct {
