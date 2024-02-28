@@ -36,4 +36,32 @@ class Sql_cmd_ddl : public Sql_cmd {
   }
 };
 
+/**
+  This is a dummy class for old-style commands whose code is in sql_parse.cc,
+  not in the execute() function. This Sql_cmd sub-class presently exists
+  solely to provide a correct sql_cmd_type() for the command; it does nothing
+  else.
+*/
+class Sql_cmd_ddl_dummy final : public Sql_cmd_ddl {
+ private:
+  enum_sql_command my_sql_command{SQLCOM_END};
+
+ public:
+  void set_sql_command_code(enum_sql_command scc) {
+    assert(my_sql_command == SQLCOM_END);  // ensure value was not set up yet
+    my_sql_command = scc;
+  }
+
+  enum_sql_command sql_command_code() const override {
+    assert(my_sql_command != SQLCOM_END);  // ensure value was set up
+    return my_sql_command;
+  }
+
+  // Error: we should never get here! (see explanation above)
+  bool execute(THD *thd [[maybe_unused]]) override {
+    assert(false);
+    return false;
+  }
+};
+
 #endif  // SQL_CMD_DDL_INCLUDED

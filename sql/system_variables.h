@@ -80,13 +80,6 @@ enum enum_binlog_row_metadata {
   BINLOG_ROW_METADATA_FULL = 1
 };
 
-// Values for transaction_write_set_extraction sysvar
-enum enum_transaction_write_set_hashing_algorithm {
-  HASH_ALGORITHM_OFF = 0,
-  HASH_ALGORITHM_MURMUR32 = 1,
-  HASH_ALGORITHM_XXHASH64 = 2
-};
-
 // Values for session_track_gtids sysvar
 enum enum_session_track_gtids {
   SESSION_TRACK_GTIDS_OFF = 0,
@@ -287,8 +280,6 @@ struct System_variables {
   uint binlog_trx_compression_level_zstd;
   ulonglong binlog_row_value_options;
   bool sql_log_bin;
-  // see enum_transaction_write_set_hashing_algorithm
-  ulong transaction_write_set_extraction;
   ulong completion_type;
   ulong transaction_isolation;
   ulong updatable_views_with_limit;
@@ -507,12 +498,23 @@ struct System_variables {
    */
   Explain_format_type explain_format;
 
+  /**
+    Used to specify the JSON format version used by EXPLAIN FORMAT=JSON with
+    the old (non-hypergraph) join optimizer.
+    @sa Sys_explain_json_format_version
+   */
+  uint explain_json_format_version;
+
   /// Max size of set operations hash buffer size.
   ulonglong set_operations_buffer_size;
 #ifndef NDEBUG
   char *debug_set_operations_secondary_overflow_at;
 #endif
 };
+
+static_assert(std::is_trivially_copyable<System_variables>::value);
+static_assert(std::is_trivial<System_variables>::value);
+static_assert(std::is_standard_layout<System_variables>::value);
 
 /**
   Per thread status variables.

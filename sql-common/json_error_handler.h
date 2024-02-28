@@ -26,9 +26,45 @@
 #include <cstdlib>
 #include <functional>
 
+class THD;
+
 using JsonParseErrorHandler =
     std::function<void(const char *parse_err, size_t err_offset)>;
 using JsonErrorHandler = std::function<void()>;
+
+/**
+  Error handler for the functions that serialize a JSON value in the JSON binary
+  storage format. The member functions are called when an error occurs, and they
+  should report the error the way the caller has specified. When called from the
+  server, my_error() should be called to signal the error. The subclass
+  JsonSerializationDefaultErrorHandler, which calls my_error(), should be used
+  when called from server code.
+*/
+class JsonSerializationErrorHandler {
+ public:
+  virtual ~JsonSerializationErrorHandler() = default;
+
+  /// Called when a JSON object contains a member with a name that is longer
+  /// than supported by the JSON binary format.
+  virtual void KeyTooBig() const = 0;
+
+  /// Called when a JSON document is too big to be stored in the JSON binary
+  /// format.
+  virtual void ValueTooBig() const = 0;
+
+  /// Called when a JSON document has more nesting levels than supported.
+  virtual void TooDeep() const = 0;
+
+  /// Called when an invalid JSON value is encountered.
+  virtual void InvalidJson() const = 0;
+
+  /// Called when an internal error occurs.
+  virtual void InternalError(const char *message) const = 0;
+
+  /// Check if the stack is about to be exhausted, and report the error.
+  /// @return true if the stack is about to be exhausted, false otherwise.
+  virtual bool CheckStack() const = 0;
+};
 
 #ifdef MYSQL_SERVER
 
@@ -45,9 +81,25 @@ class JsonParseDefaultErrorHandler {
 };
 
 void JsonDepthErrorHandler();
-void JsonKeyTooBigErrorHandler();
-void JsonValueTooBigErrorHandler();
-void InvalidJsonErrorHandler();
+
+/**
+  Error handler to be used when serializing JSON binary values in server code.
+  Uses my_error(), so it cannot be used in code outside of the server.
+*/
+class JsonSerializationDefaultErrorHandler final
+    : public JsonSerializationErrorHandler {
+ public:
+  explicit JsonSerializationDefaultErrorHandler(const THD *thd) : m_thd(thd) {}
+  void KeyTooBig() const override;
+  void ValueTooBig() const override;
+  void TooDeep() const override;
+  void InvalidJson() const override;
+  void InternalError(const char *message) const override;
+  bool CheckStack() const override;
+
+ private:
+  const THD *m_thd;
+};
 
 #endif  // MYSQL_SERVER
 #endif  // JSON_ERROR_HANDLER_INCLUDED

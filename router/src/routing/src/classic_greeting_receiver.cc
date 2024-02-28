@@ -853,6 +853,11 @@ stdx::expected<Processor::Result, std::error_code> ClientGreetor::accepted() {
                                 (source_ssl_mode == SslMode::kPreferred ||
                                  source_ssl_mode == SslMode::kRequired)));
 
+    if (connection()->requires_tls() &&
+        !connection()->context().dest_ssl_cert().empty()) {
+      connection()->requires_client_cert(true);
+    }
+
     if (connection()->context().access_mode() == routing::AccessMode::kAuto &&
         !src_protocol->password().has_value()) {
       // by default, authentication can be done on any server if rw-splitting is
@@ -885,15 +890,6 @@ ClientGreetor::authenticated() {
 
     if (auto &tr = tracer()) {
       tr.trace(Tracer::Event().stage("greeting::error"));
-    }
-
-    if (log_level_is_handled(mysql_harness::logging::LogLevel::kDebug)) {
-      // RouterRoutingTest.RoutingTooManyServerConnections expects this
-      // message.
-      log_debug(
-          "Error from the server while waiting for greetings message: "
-          "%u, '%s'",
-          connect_err_.error_code(), connect_err_.message().c_str());
     }
 
     stage(Stage::Error);

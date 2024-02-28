@@ -19,8 +19,7 @@ var common_responses = common_stmts.prepare_statement_responses(
       "router_select_cluster_type_v2",
       "router_select_current_instance_attributes",
       "router_select_replication_group_name",
-      "router_select_group_membership_with_primary_mode",
-      "router_select_group_replication_primary_member",
+      "router_select_group_membership",
       "router_select_metadata_v2",
       "router_count_clusters_v2",
       "router_check_member_state",
@@ -39,6 +38,7 @@ var common_responses = common_stmts.prepare_statement_responses(
 var common_responses_regex = common_stmts.prepare_statement_responses_regex(
     [
       "router_create_user_if_not_exists",
+      "router_check_auth_plugin",
       "router_grant_on_metadata_db",
       "router_grant_on_pfs_db",
       "router_grant_on_routers",

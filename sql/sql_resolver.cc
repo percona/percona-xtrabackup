@@ -306,10 +306,13 @@ bool Query_block::prepare(THD *thd, mem_root_deque<Item *> *insert_field_list) {
   // Windowing is not allowed with HAVING
   thd->lex->m_deny_window_func |= (nesting_map)1 << nest_level;
 
-  if (olap == ROLLUP_TYPE) {
+  if (is_non_primitive_grouped()) {
     for (Item *item : fields) {
-      mark_item_as_maybe_null_if_rollup_item(item);
+      mark_item_as_maybe_null_if_non_primitive_grouped(item);
       item->update_used_tables();
+    }
+    if (populate_grouping_sets(thd)) {
+      return true;
     }
   }
 
@@ -358,6 +361,45 @@ bool Query_block::prepare(THD *thd, mem_root_deque<Item *> *insert_field_list) {
         simplify_const_condition(thd, &m_having_cond, false))
       return true;
   }
+
+  if (m_qualify_cond != nullptr) {
+    assert(m_qualify_cond->is_bool_func());
+    thd->where = "qualify clause";
+    resolve_place = RESOLVE_QUALIFY;
+    if (!m_qualify_cond->fixed &&
+        (m_qualify_cond->fix_fields(thd, &m_qualify_cond) ||
+         m_qualify_cond->check_cols(1)))
+      return true;
+
+    assert(m_qualify_cond->data_type() != MYSQL_TYPE_INVALID);
+    resolve_place = RESOLVE_NONE;
+
+    /*
+      Simplify the QUALIFY condition if it is a const item.
+      Leave a TRUE condition if QUALIFY is always true, so that query block
+      is still marked as having a QUALIFY condition.
+    */
+    if (m_qualify_cond->const_item() && !thd->lex->is_view_context_analysis() &&
+        !m_qualify_cond->walk(&Item::is_non_const_over_literals,
+                              enum_walk::POSTFIX, nullptr) &&
+        simplify_const_condition(thd, &m_qualify_cond, false))
+      return true;
+
+    /*
+      The QUALIFY clause requires the inclusion of at least one window function
+      in the query block. The window function can be part of any one of the
+      following: a) SELECT column list. b) Filter predicate of the QUALIFY
+      clause.
+
+      Rejects the query if the QUALIFY clause is present but neither of the
+      above conditions are satisfied.
+    */
+    if (!has_windows() && !m_qualify_cond->has_wf()) {
+      my_error(ER_QUALIFY_WITHOUT_WINDOW_FUNCTION, MYF(0));
+      return true;
+    }
+  }
+
   // Set up the ORDER BY clause
   all_fields_count = fields.size();
   if (order_list.elements) {
@@ -392,8 +434,7 @@ bool Query_block::prepare(THD *thd, mem_root_deque<Item *> *insert_field_list) {
   if (unit->item &&                           // 1)
       !thd->lex->is_view_context_analysis())  // 2)
   {
-    if (remove_redundant_subquery_clauses(thd, hidden_group_field_count))
-      return true;
+    if (remove_redundant_subquery_clauses(thd)) return true;
   }
 
   /*
@@ -463,8 +504,20 @@ bool Query_block::prepare(THD *thd, mem_root_deque<Item *> *insert_field_list) {
   */
   if (m_having_cond && (m_having_cond->has_aggregation() ||
                         m_having_cond->has_grouping_func())) {
-    m_having_cond->split_sum_func2(thd, base_ref_items, &fields, &m_having_cond,
-                                   true);
+    if (m_having_cond->split_sum_func2(thd, base_ref_items, &fields,
+                                       &m_having_cond, true)) {
+      return true;
+    }
+    added_new_sum_funcs = true;
+  }
+  // Move aggregation functions and window functions present in
+  // QUALIFY clause to the field list and replace them with references.
+  if (m_qualify_cond != nullptr &&
+      (m_qualify_cond->has_aggregation() || m_qualify_cond->has_wf())) {
+    if (m_qualify_cond->split_sum_func2(thd, base_ref_items, &fields,
+                                        &m_qualify_cond, true)) {
+      return true;
+    }
     added_new_sum_funcs = true;
   }
   if (inner_sum_func_list) {
@@ -472,7 +525,10 @@ bool Query_block::prepare(THD *thd, mem_root_deque<Item *> *insert_field_list) {
     Item_sum *item_sum = end;
     do {
       item_sum = item_sum->next_sum;
-      item_sum->split_sum_func2(thd, base_ref_items, &fields, nullptr, false);
+      if (item_sum->split_sum_func2(thd, base_ref_items, &fields, nullptr,
+                                    false)) {
+        return true;
+      }
       added_new_sum_funcs = true;
     } while (item_sum != end);
   }
@@ -583,6 +639,24 @@ bool Query_block::prepare(THD *thd, mem_root_deque<Item *> *insert_field_list) {
   if (olap == ROLLUP_TYPE && resolve_rollup_wfs(thd))
     return true; /* purecov: inspected */
 
+  // If CUBE is present in the query, all expressions that include
+  // any GROUP BY expression need to be marked as dependent on
+  // grouping set.
+  if (olap == CUBE_TYPE) {
+    for (Item *item : fields) {
+      bool is_updated = false;
+      WalkItem(item, enum_walk::POSTFIX, [this, &is_updated](Item *inner_item) {
+        if (find_in_group_list(inner_item, /*rollup_level=*/nullptr) !=
+            nullptr) {
+          inner_item->set_group_by_modifier();
+          is_updated = true;
+        }
+        return false;
+      });
+      if (is_updated) item->update_used_tables();
+    }
+  }
+
   assert(!thd->is_error());
   return false;
 }
@@ -653,6 +727,10 @@ bool Query_block::prepare_values(THD *thd) {
 
   if (resolve_table_value_constructor_values(thd)) return true;
 
+  if (setup_tables(thd, get_table_list(), /*select_insert=*/false)) {
+    return true;
+  }
+
   // Setup the HAVING clause, duplicating code from Query_block::prepare. This
   // is strictly necessary in the case of PREPARE statements, where
   // subquery transformations may rewrite its Query_block to use m_having_cond.
@@ -681,6 +759,8 @@ bool Query_block::prepare_values(THD *thd) {
     resolve_place = RESOLVE_NONE;
   }
 
+  assert(qualify_cond() == nullptr);
+
   /*
     A table value constructor may have a defined ordering, thus calling
     setup_order() is needed, however calling setup_order_final() is
@@ -695,6 +775,11 @@ bool Query_block::prepare_values(THD *thd) {
     return true; /* purecov: inspected */
 
   if (resolve_limits(thd)) return true;
+
+  // If this is a subquery, remove redundant clauses (ORDER BY in particular).
+  if (unit->item != nullptr && !thd->lex->is_view_context_analysis()) {
+    if (remove_redundant_subquery_clauses(thd)) return true;
+  }
 
   return false;
 }
@@ -2506,6 +2591,75 @@ bool Query_block::decorrelate_condition(Semijoin_decorrelation &sj_decor,
   return false;
 }
 
+bool Query_block::allocate_grouping_sets(THD *thd) {
+  auto max_group_by_elements = GetMaximumNumGrpByColsSupported(olap);
+
+  if (group_list.elements > static_cast<uint>(max_group_by_elements)) {
+    /* The number of Grouping sets cannot be greater than INT_MAX as IsBitSet
+     * take integer as the input bit*/
+    my_error(ER_TOO_MANY_GROUP_BY_MODIFIER_BRANCHES, MYF(0),
+             GroupByModifierString(olap), max_group_by_elements);
+    return true;
+  }
+  m_num_grouping_sets = (olap == ROLLUP_TYPE)
+                            ? group_list.elements + 1
+                            : pow(static_cast<double>(2),
+                                  static_cast<double>(group_list.elements));
+
+  assert(m_num_grouping_sets != 0);
+
+  /*  Allocate bitmap for grouping sets. */
+  for (ORDER *grp = group_list.first; grp != nullptr; grp = grp->next) {
+    grp->grouping_set_info =
+        pointer_cast<MY_BITMAP *>(thd->alloc(sizeof(MY_BITMAP)));
+    if (grp->grouping_set_info == nullptr) {
+      return true;
+    }
+    my_bitmap_map *bitbuf = pointer_cast<my_bitmap_map *>(
+        thd->alloc(bitmap_buffer_size(m_num_grouping_sets)));
+    bitmap_init(grp->grouping_set_info, bitbuf, m_num_grouping_sets);
+  }
+  return false;
+}
+
+/**
+  Populate the grouping set bitvector if the query block has non-primitive
+  grouping. If the non-primitive grouping is ROLLUP or CUBE, the grouping sets
+  have to be computed. The representation of the grouping set is done using a
+  bitfield in the ORDER object.
+  case ROLLUP : Say the query has GROUP BY ROLLUP (a,b) then the grouping sets
+  will be (a,b) (a) () where () represents single group aggregate without any
+  grouping. Here there are 3 grouping sets ranging from 0 to 2 and 0 is the
+  single group aggregate. The bitfield associated with GROUP BY element 'a'
+  will be 3 (i,e. 2+1) The bitfield associated with Group by element 'b' will
+  be 2 as it is part of only set number 2.
+  case CUBE: Say the query has GROUP BY CUBE (a,b) then the grouping sets
+  will be (a,b) (a) (b) (). The number of grouping sets will be (2^n)
+  where n is the number of elements in the GROUP BY list. The bitfield
+  associated with Group by element 'a' will be 6 (i.e. 4+2).
+  The bitfield associated with Group by element 'b' will be 1.
+*/
+bool Query_block::populate_grouping_sets(THD *thd) {
+  assert(group_list.elements != 0 && olap != UNSPECIFIED_OLAP_TYPE);
+
+  if (allocate_grouping_sets(thd)) {
+    return true;
+  }
+
+  bool rollup = (olap == ROLLUP_TYPE);
+  int gby_idx = 0;
+  for (ORDER *grp = group_list.first; grp != nullptr;
+       grp = grp->next, gby_idx++) {
+    for (int gs = 1; gs < m_num_grouping_sets; gs++) {
+      if ((rollup && gby_idx < gs) || (!rollup && IsBitSet(gby_idx, gs))) {
+        bitmap_set_bit(grp->grouping_set_info, gs);
+      }
+    }
+  }
+
+  return false;
+}
+
 bool walk_join_list(mem_root_deque<Table_ref *> &list,
                     std::function<bool(Table_ref *)> action) {
   for (Table_ref *tl : list) {
@@ -3825,13 +3979,10 @@ void Query_block::merge_contexts(Query_block *inner) {
    for regular queries and on first execution of SP/PS
 
    @param thd               thread handler
-   @param hidden_group_field_count Number of hidden group fields added
-                            by setup_group().
    @return true on error
 */
 
-bool Query_block::remove_redundant_subquery_clauses(
-    THD *thd, int hidden_group_field_count) {
+bool Query_block::remove_redundant_subquery_clauses(THD *thd) {
   Item_subselect *subq_predicate = master_query_expression()->item;
   enum change {
     REMOVE_NONE = 0,
@@ -3866,7 +4017,7 @@ bool Query_block::remove_redundant_subquery_clauses(
 
   /*
     Remove GROUP BY if there are no aggregate functions, no HAVING clause,
-    no ROLLUP and no windowing functions.
+    no non-primitive grouping and no windowing functions.
   */
 
   if ((possible_changes & REMOVE_GROUP) && group_list.elements &&
@@ -4370,8 +4521,9 @@ bool Query_block::setup_order_final(THD *thd) {
     if (is_grouped_aggregate) continue;
 
     if (item->has_aggregation() || item->has_wf()) {
-      item->split_sum_func(thd, base_ref_items, &fields);
-      if (thd->is_error()) return true; /* purecov: inspected */
+      if (item->split_sum_func(thd, base_ref_items, &fields)) {
+        return true; /* purecov: inspected */
+      }
     }
   }
   return false;
@@ -4503,27 +4655,44 @@ static ReplaceResult wrap_grouped_expressions_for_rollup(
   return {ReplaceResult::KEEP_TRAVERSING, nullptr};
 }
 
+/**
+   Helper function for WalkAndReplace() which replaces the Item referenced by
+   "child_ref" if "get_new_item" returns a replacement, or visits the children
+   of "child_ref" otherwise.
+ */
+static bool WalkAndReplaceInner(
+    THD *thd, Item *parent, unsigned argument_idx,
+    const function<ReplaceResult(Item *item, Item *parent,
+                                 unsigned argument_idx)> &get_new_item,
+    Item **child_ref) {
+  ReplaceResult result = get_new_item(*child_ref, parent, argument_idx);
+  if (result.action == ReplaceResult::ERROR) {
+    return true;
+  }
+
+  if (result.action == ReplaceResult::REPLACE) {
+    if (thd->lex->is_exec_started()) {
+      thd->change_item_tree(child_ref, result.replacement);
+    } else {
+      *child_ref = result.replacement;
+    }
+    return false;
+  }
+
+  return WalkAndReplace(thd, *child_ref, get_new_item);
+}
+
 bool WalkAndReplace(
     THD *thd, Item *item,
     const function<ReplaceResult(Item *item, Item *parent,
                                  unsigned argument_idx)> &get_new_item) {
   if (item->type() == Item::FUNC_ITEM ||
       (item->type() == Item::SUM_FUNC_ITEM && item->m_is_window_function)) {
-    Item_func *func_item = down_cast<Item_func *>(item);
-    for (unsigned argument_idx = 0; argument_idx < func_item->arg_count;
-         argument_idx++) {
-      Item *arg = func_item->arguments()[argument_idx];
-      ReplaceResult result = get_new_item(arg, item, argument_idx);
-      if (result.action == ReplaceResult::ERROR) {
-        return true;
-      } else if (result.action == ReplaceResult::REPLACE) {
-        if (thd->lex->is_exec_started()) {
-          thd->change_item_tree(&func_item->arguments()[argument_idx],
-                                result.replacement);
-        } else {
-          func_item->arguments()[argument_idx] = result.replacement;
-        }
-      } else if (WalkAndReplace(thd, arg, get_new_item)) {
+    Item **args = down_cast<Item_func *>(item)->arguments();
+    const unsigned arg_count = down_cast<Item_func *>(item)->argument_count();
+    for (unsigned argument_idx = 0; argument_idx < arg_count; argument_idx++) {
+      if (WalkAndReplaceInner(thd, item, argument_idx, get_new_item,
+                              &args[argument_idx])) {
         return true;
       }
     }
@@ -4536,18 +4705,8 @@ bool WalkAndReplace(
     Item_row *row_item = down_cast<Item_row *>(item);
     for (unsigned argument_idx = 0; argument_idx < row_item->cols();
          argument_idx++) {
-      Item *arg = row_item->element_index(argument_idx);
-      ReplaceResult result = get_new_item(arg, item, argument_idx);
-      if (result.action == ReplaceResult::ERROR) {
-        return true;
-      } else if (result.action == ReplaceResult::REPLACE) {
-        if (thd->lex->is_exec_started()) {
-          thd->change_item_tree(row_item->addr(argument_idx),
-                                result.replacement);
-        } else {
-          *row_item->addr(argument_idx) = result.replacement;
-        }
-      } else if (WalkAndReplace(thd, arg, get_new_item)) {
+      if (WalkAndReplaceInner(thd, item, argument_idx, get_new_item,
+                              row_item->addr(argument_idx))) {
         return true;
       }
     }
@@ -4556,18 +4715,20 @@ bool WalkAndReplace(
     List_iterator<Item> li(*cond_item->argument_list());
     unsigned argument_idx = 0;
     for (Item *arg = li++; arg != nullptr; arg = li++) {
-      ReplaceResult result = get_new_item(arg, item, argument_idx++);
-      if (result.action == ReplaceResult::ERROR) {
-        return true;
-      } else if (result.action == ReplaceResult::REPLACE) {
-        if (thd->lex->is_exec_started()) {
-          thd->change_item_tree(li.ref(), result.replacement);
-        } else {
-          *li.ref() = result.replacement;
-        }
-      } else if (WalkAndReplace(thd, arg, get_new_item)) {
+      if (WalkAndReplaceInner(thd, item, argument_idx++, get_new_item,
+                              li.ref())) {
         return true;
       }
+    }
+  } else if (item->type() == Item::SUBSELECT_ITEM) {
+    const Item_subselect::Subquery_type subquery_type =
+        down_cast<Item_subselect *>(item)->subquery_type();
+    if (subquery_type == Item_subselect::IN_SUBQUERY ||
+        subquery_type == Item_subselect::ALL_SUBQUERY ||
+        subquery_type == Item_subselect::ANY_SUBQUERY) {
+      return WalkAndReplaceInner(
+          thd, item, /*argument_idx=*/0, get_new_item,
+          &down_cast<Item_in_subselect *>(item)->left_expr);
     }
   }
   return false;
@@ -4583,8 +4744,9 @@ bool WalkAndReplace(
 
 */
 
-void Query_block::mark_item_as_maybe_null_if_rollup_item(Item *item) {
-  if (find_in_group_list(item, /*rollup_level=*/nullptr)) {
+void Query_block::mark_item_as_maybe_null_if_non_primitive_grouped(
+    Item *item) const {
+  if (find_in_group_list(item, /*rollup_level=*/nullptr) != nullptr) {
     /*
       If this item is present in GROUP BY clause, set m_nullable
       to true, as ROLLUP will generate NULLs for this column.
@@ -4787,7 +4949,7 @@ static bool fulltext_uses_rollup_column(const Query_block *query_block) {
   // by Item_rollup_group_items. So we can just check if any of the MATCH
   // functions has such an argument.
   for (Item_func_match &match : *query_block->ftfunc_list) {
-    if (match.has_rollup_expr()) {
+    if (match.has_grouping_set_dep()) {
       return true;
     }
   }
@@ -4857,7 +5019,7 @@ bool Query_block::resolve_rollup_wfs(THD *thd) {
                [&any_nullable_wf](Item *inner_item) {
                  if (inner_item->real_item()->type() == Item::SUM_FUNC_ITEM &&
                      inner_item->real_item()->m_is_window_function &&
-                     inner_item->has_rollup_expr()) {
+                     inner_item->has_grouping_set_dep()) {
                    inner_item->set_nullable(true);
                    any_nullable_wf = true;
                  }
@@ -6337,10 +6499,13 @@ bool Query_block::replace_subquery_in_expr(THD *thd, Item::Css_info *subquery,
   // with a field, we need to recompute split_sum_func
   if ((new_item->has_aggregation() &&
        !(new_item->type() == Item::SUM_FUNC_ITEM &&
-         !new_item->m_is_window_function)) ||  //(1)
-      new_item->has_wf())                      // (2)
-    new_item->split_sum_func(thd, base_ref_items, &fields);
-  if (thd->is_error()) return true;
+         !new_item->m_is_window_function)) ||  // (1)
+      new_item->has_wf()) {                    // (2)
+    if (new_item->split_sum_func(thd, base_ref_items, &fields)) {
+      return true;
+    }
+  }
+  assert(!thd->is_error());
   return false;
 }
 
@@ -6509,97 +6674,132 @@ struct Lifted_fields_map {
   std::vector<uint> m_field_positions;
 };
 
-// Add COUNT(*) OVER (PARTITION BY inner-expr, .., inner_expr)
-// to SELECT list of the derived table.
-// Minion of decorrelate_derived_scalar_subquery_pre
-bool Query_block::setup_count_over_partition(
+/**
+  Given an expression, create an ORDER expression for that expression and add
+  it to a window's ORDER BY list in preparation for synthesizing a window
+  function, cf. \c setup_counts_over_partitions
+ */
+static bool add_partition_by_expr(THD *thd, PT_order_list *partition,
+                                  Query_block *qb, Item *expr) {
+  ORDER *o = new (thd->mem_root) PT_order_expr(POS(), expr, ORDER_ASC);
+  if (o == nullptr) return true;
+  o->in_field_list = true;
+  (*o->item)->increment_ref_count();
+  bool found [[maybe_unused]] = false;
+  for (size_t idx = 0; idx < qb->base_ref_items.size(); idx++) {
+    if (qb->base_ref_items[idx] == expr) {
+      o->item = &qb->base_ref_items[idx];
+      found = true;
+      break;
+    }
+  }
+  assert(found);
+  o->used = expr->used_tables();
+  // Add at back of list
+  partition->value.link_in_list(o, &o->next);
+  return false;
+}
+
+/**
+  Add all COUNT(0) to SELECT list of the derived table to be used for
+  cardinality checking of the transformed subquery. Minion of
+  \c decorrelate_derived_scalar_subquery_pre
+
+  a. Add COUNT(0) OVER (PARTITION BY group-by-list)
+  b. Add COUNT(0) OVER (PARTITION BY inner-expr) for each inner-expression
+     not already grouped on.
+*/
+bool Query_block::setup_counts_over_partitions(
     THD *thd, Table_ref *derived, Lifted_fields_map *lifted_fields,
     std::deque<Item_field *> &added_to_group_by, uint hidden_fields) {
-  // 1. Construct PARTITION BY
-  PT_order_list *partition = new (thd->mem_root) PT_order_list(POS());
-  for (auto f : added_to_group_by) {
-    ORDER *o = new (thd->mem_root) PT_order_expr(POS(), f, ORDER_ASC);
-    o->in_field_list = true;
-    (*o->item)->increment_ref_count();
-    bool found [[maybe_unused]] = false;
-    for (size_t idx = 0; idx < base_ref_items.size(); idx++) {
-      if (base_ref_items[idx] == f) {
-        o->item = &base_ref_items[idx];
-        found = true;
-        break;
+  for (size_t i = 0; i < added_to_group_by.size() + 1; i++) {
+    // 1. Construct PARTITION BY
+    PT_order_list *partition = new (thd->mem_root) PT_order_list(POS());
+    if (i == 0) {
+      // 1. a  partition for original group by list
+      for (ORDER *group = group_list.first; group != nullptr;
+           group = group->next) {
+        if (add_partition_by_expr(thd, partition, this, *group->item))
+          return true;
       }
+    } else {
+      // 1. b  partition for each added expression
+      Item *f = added_to_group_by[i - 1];
+      if (add_partition_by_expr(thd, partition, this, f)) return true;
     }
-    assert(found);
-    o->used = f->used_tables();
-    // Add at back of list
-    partition->value.link_in_list(o, &o->next);
+
+    // 2. Construct default frame
+    auto start_bound =
+        new (thd->mem_root) PT_border(POS(), WBT_UNBOUNDED_PRECEDING);
+    if (start_bound == nullptr) return true;
+    auto end_bound =
+        new (thd->mem_root) PT_border(POS(), WBT_UNBOUNDED_FOLLOWING);
+    if (end_bound == nullptr) return true;
+    auto bounds = new (thd->mem_root) PT_borders(POS(), start_bound, end_bound);
+    if (bounds == nullptr) return true;
+    PT_frame *frame =
+        new (thd->mem_root) PT_frame(POS(), WFU_ROWS, bounds, nullptr);
+    if (frame == nullptr) return true;
+    frame->m_originally_absent = true;
+
+    // 3. Construct window and set it up (mini-version of what is normally done
+    // by
+    //    setup_windows1).
+    PT_window *w = new (thd->mem_root)
+        PT_window(POS(), partition, /*order_by*/ nullptr, frame);
+    if (w == nullptr) return true;
+    if (w->setup_ordering_cached_items(thd, this, partition, true)) return true;
+    if (w->check_window_functions1(thd, this)) return true;
+    // initialize the physical sorting order for the partition
+    (void)w->sorting_order(thd, /*implicitly_grouped*/ false);
+    char buff[NAME_LEN + 1];
+    size_t namelen = snprintf(buff, NAME_LEN, "w%u", m_windows.size());
+    Item_string *wname =
+        new (thd->mem_root) Item_string(buff, namelen, thd->collation());
+    if (wname == nullptr) return true;
+    w->set_name(wname);
+    if (m_windows.push_back(w)) return true;
+
+    // 4. Construct window function COUNT and bind it
+    //
+    Item_int *number_0 = new (thd->mem_root) Item_int(int32{0}, 1);
+    if (number_0 == nullptr) return true;
+
+    Item_sum *cnt = new (thd->mem_root) Item_sum_count(POS(), number_0, w);
+    if (cnt == nullptr) return true;
+    cnt->m_is_window_function = true;
+    cnt->set_wf();
+
+    int item_no = fields.size() + 1;
+    baptize_item(thd, cnt, &item_no);
+    m_added_non_hidden_fields++;
+    {
+      // prelude to binding COUNT(*)
+      const bool save_asf = thd->lex->allow_sum_func;
+      Query_block *save_query_block = thd->lex->current_query_block();
+      assert(save_query_block == outer_query_block());
+      thd->lex->set_current_query_block(this);
+      auto save_allow_sum_func = thd->lex->allow_sum_func;
+      thd->lex->allow_sum_func |= (nesting_map)1 << nest_level;
+      Item *count = cnt;
+      if (cnt->fix_fields(thd, &count)) return true;
+
+      // postlude to binding COUNT(*)
+      thd->lex->allow_sum_func = save_asf;
+      thd->lex->set_current_query_block(save_query_block);
+      thd->lex->allow_sum_func = save_allow_sum_func;
+    }
+
+    // 5. Add window function to the SELECT list so we can reference it from
+    //    outside the derived table (the cardinality check)
+
+    base_ref_items[fields.size()] = cnt;
+    lifted_fields->m_field_positions.push_back(fields.size() - hidden_fields);
+    fields.push_back(cnt);
+    cnt->increment_ref_count();
+    // Add a new column to the derived table's query expression
+    derived->derived_query_expression()->types.push_back(cnt);
   }
-
-  // 2. Construct default frame
-  auto start_bound =
-      new (thd->mem_root) PT_border(POS(), WBT_UNBOUNDED_PRECEDING);
-  if (start_bound == nullptr) return true;
-  auto end_bound =
-      new (thd->mem_root) PT_border(POS(), WBT_UNBOUNDED_FOLLOWING);
-  if (end_bound == nullptr) return true;
-  auto bounds = new (thd->mem_root) PT_borders(POS(), start_bound, end_bound);
-  if (bounds == nullptr) return true;
-  PT_frame *frame =
-      new (thd->mem_root) PT_frame(POS(), WFU_ROWS, bounds, nullptr);
-  if (frame == nullptr) return true;
-  frame->m_originally_absent = true;
-
-  // 3. Construct window and set it up (mini-version of what is normally done by
-  //    setup_windows1).
-  PT_window *w = new (thd->mem_root)
-      PT_window(POS(), partition, /*order_by*/ nullptr, frame);
-  if (w == nullptr) return true;
-  if (w->setup_ordering_cached_items(thd, this, partition, true)) return true;
-  if (w->check_window_functions1(thd, this)) return true;
-  // initialize the physical sorting order for the partition
-  (void)w->sorting_order(thd, /*implicitly_grouped*/ false);
-  m_windows.push_back(w);
-
-  // 4. Construct window function COUNT and bind it
-  //
-  Item_int *number_0 = new (thd->mem_root) Item_int(int32{0}, 1);
-  if (number_0 == nullptr) return true;
-
-  Item_sum *cnt = new (thd->mem_root) Item_sum_count(POS(), number_0, w);
-  if (cnt == nullptr) return true;
-  cnt->m_is_window_function = true;
-  cnt->set_wf();
-
-  int item_no = fields.size() + 1;
-  baptize_item(thd, cnt, &item_no);
-  m_added_non_hidden_fields++;
-  {
-    // prelude to binding COUNT(*)
-    const bool save_asf = thd->lex->allow_sum_func;
-    Query_block *save_query_block = thd->lex->current_query_block();
-    assert(save_query_block == outer_query_block());
-    thd->lex->set_current_query_block(this);
-    auto save_allow_sum_func = thd->lex->allow_sum_func;
-    thd->lex->allow_sum_func |= (nesting_map)1 << nest_level;
-    Item *count = cnt;
-    if (cnt->fix_fields(thd, &count)) return true;
-
-    // postlude to binding COUNT(*)
-    thd->lex->allow_sum_func = save_asf;
-    thd->lex->set_current_query_block(save_query_block);
-    thd->lex->allow_sum_func = save_allow_sum_func;
-  }
-
-  // 5. Add window function to the SELECT list so we can reference it from
-  //    outside the derived table (the cardinality check)
-
-  base_ref_items[fields.size()] = cnt;
-  lifted_fields->m_field_positions.push_back(fields.size() - hidden_fields);
-  fields.push_back(cnt);
-  cnt->increment_ref_count();
-  // Add a new column to the derived table's query expression
-  derived->derived_query_expression()->types.push_back(cnt);
-
   return false;
 }
 
@@ -6642,14 +6842,15 @@ bool Query_block::setup_count_over_partition(
   @param[out] lifted_fields    mapping of where inner fields end up in the
                                derived table's fields.
   @param[out] added_card_check set to true if we are adding a cardinality check
-  @param[out] added_window_card_check
-                               set to true if the subquery is initially grouped
-                               and we need COUNT(*) OVER (...) to be checked
+  @param[out] added_window_card_checks
+                               set to # of window functions added to SELECT if
+                              the subquery is initially grouped and we need
+                               COUNT(*) OVER (...) to be checked
 */
 bool Query_block::decorrelate_derived_scalar_subquery_pre(
     THD *thd, Table_ref *derived, Item *lifted_where,
     Lifted_fields_map *lifted_fields, bool *added_card_check,
-    bool *added_window_card_check) {
+    size_t *added_window_card_checks) {
   const uint hidden_fields = CountHiddenFields(fields);
   const uint first_non_hidden = hidden_fields;
   assert((fields.size() - hidden_fields) == 1);  // scalar subquery
@@ -6732,7 +6933,10 @@ bool Query_block::decorrelate_derived_scalar_subquery_pre(
 
   li.rewind();
 
-  const bool subquery_is_grouped = group_list.size() > 0;
+  const bool subquery_was_grouped =
+      group_list.size() > 0 || is_implicitly_grouped();
+  const bool subquery_was_explicitly_grouped = group_list.size() > 0;
+
   std::deque<Item_field *> added_to_group_by;
 
   // Run through the inner fields and add them to GROUP BY if not present
@@ -6740,8 +6944,6 @@ bool Query_block::decorrelate_derived_scalar_subquery_pre(
   // True if selected field was added by us to the group by list (not originally
   // present.
   bool selected_field_added_to_group_by = false;
-  // True if the selected field was already present in group by list.
-  bool selected_field_in_group_by = false;
 
   while ((field_or_ref = li++)) {
     Item_field *f = down_cast<Item_field *>(field_or_ref->real_item());
@@ -6753,9 +6955,6 @@ bool Query_block::decorrelate_derived_scalar_subquery_pre(
         if (item->type() == Item::FIELD_ITEM &&
             down_cast<Item_field *>(item)->field == f->field) {
           found = true;
-          selected_field_in_group_by |= selected_field != nullptr
-                                            ? selected_field->field == f->field
-                                            : false;
           break;
         }
       }
@@ -6782,16 +6981,11 @@ bool Query_block::decorrelate_derived_scalar_subquery_pre(
     }
   }
 
-  // Wrap the field in the select list in Item_func_any_value if it was not
-  // added to group by above.
+  // Wrap the field in the select list in Item_func_any_value if guaranteed
+  // to be functionally dependent and not redundant
   Item *const fnh = fields[first_non_hidden];
-  if (!selected_field_added_to_group_by && !selected_field_in_group_by &&
-      !fnh->has_aggregation() &&
-      (fnh->type() == Item::FUNC_ITEM &&
-               down_cast<Item_func *>(fnh)->functype() ==
-                   Item_func::ANY_VALUE_FUNC
-           ? false
-           : true)) {
+  if (!subquery_was_grouped && !selected_field_added_to_group_by &&
+      !is_function_of_type(fnh, Item_func::ANY_VALUE_FUNC)) {
     Item *const old_field = fnh;
     Item *func_any = new (thd->mem_root) Item_func_any_value(old_field);
     if (func_any == nullptr) return true;
@@ -6800,7 +6994,7 @@ bool Query_block::decorrelate_derived_scalar_subquery_pre(
     replace_referenced_item(old_field, func_any);
   }
 
-  if (!m_agg_func_used) {
+  if (!subquery_was_explicitly_grouped && !m_agg_func_used) {
     // Add COUNT(*) to SELECT list
     Item_int *number_0 = new (thd->mem_root) Item_int(int32{0}, 1);
     if (number_0 == nullptr) return true;
@@ -6838,15 +7032,16 @@ bool Query_block::decorrelate_derived_scalar_subquery_pre(
     *added_card_check = true;
   }
 
-  if (subquery_is_grouped && added_to_group_by.size() > 0) {
+  if (subquery_was_explicitly_grouped) {
     // For this case (not implicit grouping and correlated), we need to make
-    // sure the derived table has no more than one row of each partition on the
-    // added inner expressions: to do this we add a window function COUNT and
-    // check that it is less than or equal to one.
-    if (setup_count_over_partition(thd, derived, lifted_fields,
-                                   added_to_group_by, hidden_fields))
+    // sure the derived table has no more than one row of each partition on
+    // a) the grouped expression list and b) any added inner expression: to do
+    // this we add window function COUNT and check that it is less than or
+    // equal to one.
+    if (setup_counts_over_partitions(thd, derived, lifted_fields,
+                                     added_to_group_by, hidden_fields))
       return true;
-    *added_window_card_check = true;
+    *added_window_card_checks = 1 + added_to_group_by.size();
   }
   return false;
 }
@@ -6856,7 +7051,7 @@ bool Query_block::decorrelate_derived_scalar_subquery_pre(
 */
 bool Query_block::decorrelate_derived_scalar_subquery_post(
     THD *thd, Table_ref *derived, Lifted_fields_map *lifted_fields,
-    bool added_card_check, bool added_window_card_check) {
+    bool added_card_check, size_t added_window_card_checks) {
   // We added referenced inner fields to select list, now replace occurrences
   // of such fields in the join condition with derived.<Item_field-n>. Since
   // we have now set up materialization the derived table, we now know the
@@ -6919,7 +7114,7 @@ bool Query_block::decorrelate_derived_scalar_subquery_post(
     derived->set_join_cond(new_cond);
     cond_count++;
   }
-  if (added_window_card_check) {
+  for (size_t wno = 0; wno < added_window_card_checks; wno++) {
     // Add derived.`count(0) over ()` <= 1 condition to transformed query
     // block's WHERE condition.
     const uint cnt_pos_in_fields = lifted_fields->m_field_positions[pos++];
@@ -7049,13 +7244,13 @@ bool Query_block::transform_subquery_to_derived(
 
   Lifted_fields_map lifted_where_fields;
   bool added_cardinality_check = false;
-  bool added_window_cardinality_check = false;
+  size_t added_window_cardinality_checks = 0;
   if (lifted_where_cond != nullptr) {
     assert(!subs_query_expression->is_set_operation());
     if (subs_query_expression->first_query_block()
             ->decorrelate_derived_scalar_subquery_pre(
                 thd, tl, lifted_where_cond, &lifted_where_fields,
-                &added_cardinality_check, &added_window_cardinality_check))
+                &added_cardinality_check, &added_window_cardinality_checks))
       return true;
   }
   // We skip resolve_derived(), as the subquery has already been resolved before
@@ -7067,7 +7262,7 @@ bool Query_block::transform_subquery_to_derived(
     assert(tl->join_cond() == lifted_where_cond);
     if (decorrelate_derived_scalar_subquery_post(
             thd, tl, &lifted_where_fields, added_cardinality_check,
-            added_window_cardinality_check))
+            added_window_cardinality_checks))
       return true;
   }
 
@@ -7727,7 +7922,7 @@ bool Query_block::lift_fulltext_from_having_to_select_list(THD *thd) {
                      // results from a temporary table instead of evaluating the
                      // expressions if they have been materialized. So we wrap
                      // these items in an Item_ref later.
-                     if (!thd->lex->using_hypergraph_optimizer) {
+                     if (!thd->lex->using_hypergraph_optimizer()) {
                        return refs_to_fulltext.push_back(ref);
                      }
                      return false;
@@ -7737,7 +7932,7 @@ bool Query_block::lift_fulltext_from_having_to_select_list(THD *thd) {
 
   // Add Item_ref indirection in the old optimizer.
   for (Item **item_to_replace : refs_to_fulltext) {
-    assert(!thd->lex->using_hypergraph_optimizer);
+    assert(!thd->lex->using_hypergraph_optimizer());
     having_cond = TransformItem(having_cond, [&](Item *sub_item) -> Item * {
       if (sub_item == *item_to_replace) {
         return new (thd->mem_root)

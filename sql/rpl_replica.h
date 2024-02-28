@@ -52,6 +52,7 @@ class Rpl_channel_filters;
   --log_error_verbosity > 2
 */
 const long mts_online_stat_period = 60 * 2;
+const long mts_online_stat_count = 1024;
 
 typedef struct struct_slave_connection LEX_SLAVE_CONNECTION;
 
@@ -177,9 +178,9 @@ extern bool server_id_supplied;
   Protects some moving members of the struct: counters (log name,
   position).
 
-  ### sid_lock ###
+  ### tsid_lock ###
 
-  Protects the retrieved GTID set and it's SID map from updates.
+  Protects the retrieved GTID set and it's TSID map from updates.
 
   ## In Relay_log_info (rli) ##
 
@@ -213,15 +214,15 @@ extern bool server_id_supplied;
   it set with the position that other threads reading from the currently active
   log file (the "hot" one) should not cross.
 
-  ## Gtid_state (gtid_state, global_sid_map) ##
+  ## Gtid_state (gtid_state, global_tsid_map) ##
 
-  ### global_sid_lock ###
+  ### global_tsid_lock ###
 
   Protects all Gtid_state GTID sets (lost_gtids, executed_gtids,
-  gtids_only_in_table, previous_gtids_logged, owned_gtids) and the global SID
+  gtids_only_in_table, previous_gtids_logged, owned_gtids) and the global TSID
   map from updates.
 
-  The global_sid_lock must not be taken after LOCK_reset_gtid_table.
+  The global_tsid_lock must not be taken after LOCK_reset_gtid_table.
 
   ## Gtid_mode (gtid_mode) ##
 
@@ -241,7 +242,7 @@ extern bool server_id_supplied;
 
     Sys_var_gtid_mode::global_update:
       Gtid_mode::lock.wrlock, channel_map->wrlock, binlog.LOCK_log,
-  global_sid_lock->wrlock
+  global_tsid_lock->wrlock
 
     change_master_cmd:
       channel_map.wrlock, (change_master)
@@ -257,13 +258,13 @@ extern bool server_id_supplied;
       rli.data_lock, (relay_log.reset_logs)
 
     relay_log.reset_logs:
-      .LOCK_log, .LOCK_index, .sid_lock->wrlock
+      .LOCK_log, .LOCK_index, .tsid_lock->wrlock
 
     init_relay_log_pos:
       rli.data_lock
 
     queue_event:
-      rli.LOCK_log, relay_log.sid_lock->rdlock, mi.data_lock
+      rli.LOCK_log, relay_log.tsid_lock->rdlock, mi.data_lock
 
     stop_slave:
       channel_map rdlock,
@@ -274,23 +275,23 @@ extern bool server_id_supplied;
 
     start_slave:
       mi.channel_wrlock, mi.run_lock, rli.run_lock, rli.data_lock,
-      global_sid_lock->wrlock
+      global_tsid_lock->wrlock
 
     mysql_bin_log.reset_logs:
-      .LOCK_log, .LOCK_index, global_sid_lock->wrlock
+      .LOCK_log, .LOCK_index, global_tsid_lock->wrlock
 
     purge_relay_logs:
       rli.data_lock, (relay.reset_logs) THD::LOCK_thd_data,
-      relay.LOCK_log, relay.LOCK_index, global_sid_lock->wrlock
+      relay.LOCK_log, relay.LOCK_index, global_tsid_lock->wrlock
 
     reset_binary_logs_and_gtids:
       (binlog.reset_logs) THD::LOCK_thd_data, binlog.LOCK_log,
-      binlog.LOCK_index, global_sid_lock->wrlock, LOCK_reset_gtid_table
+      binlog.LOCK_index, global_tsid_lock->wrlock, LOCK_reset_gtid_table
 
     reset_slave:
       mi.channel_wrlock, mi.run_lock, rli.run_lock, (purge_relay_logs)
       rli.data_lock, THD::LOCK_thd_data, relay.LOCK_log, relay.LOCK_index,
-      global_sid_lock->wrlock
+      global_tsid_lock->wrlock
 
     purge_logs:
       .LOCK_index, LOCK_thd_list, thd.linfo.lock
@@ -311,7 +312,7 @@ extern bool server_id_supplied;
     MYSQL_BIN_LOG::new_file_impl:
       .LOCK_log, .LOCK_index,
       ( [ if binlog: LOCK_prep_xids ]
-      | global_sid_lock->wrlock
+      | global_tsid_lock->wrlock
       )
 
     rotate_relay_log:
@@ -323,7 +324,7 @@ extern bool server_id_supplied;
     rli_init_info:
       rli.data_lock,
       ( relay.log_lock
-      | global_sid_lock->wrlock
+      | global_tsid_lock->wrlock
       | (relay.open_binlog)
       | (init_relay_log_pos) rli.data_lock, relay.log_lock
       )
@@ -338,7 +339,7 @@ extern bool server_id_supplied;
             ( binlog.LOCK_log, binlog.LOCK_index
             | relay.LOCK_log, relay.LOCK_index
             ),
-            ( rli.log_space_lock | global_sid_lock->wrlock )
+            ( rli.log_space_lock | global_tsid_lock->wrlock )
           | binlog.LOCK_log, binlog.LOCK_index, LOCK_prep_xids
           | thd.LOCK_data
           )
@@ -354,8 +355,6 @@ extern MY_BITMAP slave_error_mask;
 extern char slave_skip_error_names[];
 extern bool use_slave_mask;
 extern char *replica_load_tmpdir;
-extern const char *master_info_file;
-extern const char *relay_log_info_file;
 extern char *opt_relay_logname, *opt_relaylog_index_name;
 extern bool opt_relaylog_index_name_supplied;
 extern bool opt_relay_logname_supplied;
@@ -378,7 +377,7 @@ class ReplicaInitializer {
   /// @param[in] opt_skip_replica_start When true, skips the start of
   /// replication threads
   /// @param[in] filters Replication filters
-  /// @param[in] replica_skip_erors
+  /// @param[in] replica_skip_erors TBD
   ReplicaInitializer(bool opt_initialize, bool opt_skip_replica_start,
                      Rpl_channel_filters &filters, char **replica_skip_erors);
 
@@ -638,8 +637,6 @@ bool net_request_file(NET *net, const char *fname);
 extern bool replicate_same_server_id;
 /* the master variables are defaults read from my.cnf or command line */
 extern uint report_port;
-extern const char *master_info_file;
-extern const char *relay_log_info_file;
 extern char *report_user;
 extern char *report_host, *report_password;
 

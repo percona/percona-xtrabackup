@@ -160,3 +160,27 @@ EXPLAIN FORMAT=TREE SELECT t1.x FROM t t1, t t2 WHERE t1.x < t2.y;
 EXPLAIN ANALYZE SELECT t1.x FROM t t1, t t2 WHERE t1.x < t2.y;
 
 DROP TABLE t;
+
+--echo #
+--echo # Bug#34727172 EXPLAIN FORMAT=JSON returns invalid JSON
+--echo #              on INSERT statements with hypergraph
+--echo #
+
+CREATE TABLE t (i INT);
+INSERT INTO t VALUES (1), (2), (3);
+
+EXPLAIN FORMAT=TREE INSERT INTO t VALUES (4), (5), (6);
+EXPLAIN FORMAT=TREE REPLACE INTO t VALUES (7), (8), (9);
+
+DROP TABLE t;
+
+--echo #
+--echo # Bug#35845129: Missing subqueries in EXPLAIN with hypergraph optimizer
+--echo #
+CREATE TABLE t(x INT, y INT);
+ANALYZE TABLE t;
+# The EXPLAIN output should show the plan for the subquery.
+--replace_regex $elide_costs
+EXPLAIN FORMAT=TREE
+SELECT x IN (SELECT x FROM t) FROM t GROUP BY x ORDER BY MAX(y);
+DROP TABLE t;

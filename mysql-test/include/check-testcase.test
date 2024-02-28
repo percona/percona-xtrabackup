@@ -107,6 +107,20 @@ if ($NDB_BACKUP_DIR)
   --error 1
   file_exists $backup_dir;
 }
+if (`SELECT COUNT(*) = 1 FROM INFORMATION_SCHEMA.ENGINES
+       WHERE engine = 'ndbcluster' AND
+                    support IN ('YES', 'DEFAULT', 'ENABLED')`)
+{
+  echo Check that same data nodes are up and have same node group assignment.;
+  error 0, ER_GET_ERRMSG;
+  SELECT node_id, group_id FROM ndbinfo.ndb$membership ORDER BY node_id, group_id;
+
+  # Check that there are no left over error injections still active.
+  # To allow test with ndbcluster but without any data nodes allow error
+  # ER_GET_ERRMSG.
+  error 0, ER_GET_ERRMSG;
+  SELECT * FROM ndbinfo.ndb$threadblock_details;
+}
 
 # There might be more than one server used by a test and check-testcase.test
 # will be run for each server. The file lists for each server needs to be
@@ -255,4 +269,7 @@ EOF
 
 --enable_query_log
 
+SET @use_secondary_engine_saved = @@use_secondary_engine;
+SET @@use_secondary_engine = OFF;
 CALL mtr.check_testcase();
+SET @@use_secondary_engine = @use_secondary_engine_saved;

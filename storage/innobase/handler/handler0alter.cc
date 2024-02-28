@@ -29,6 +29,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
  *******************************************************/
 
 #include <algorithm>
+#include <bit>
 
 /* Include necessary SQL headers */
 #include <assert.h>
@@ -36,7 +37,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <debug_sync.h>
 #include <key_spec.h>
 #include <log.h>
-#include <my_bit.h>
 #include <mysql/plugin.h>
 #include <sql_class.h>
 #include <sql_lex.h>
@@ -475,7 +475,7 @@ static dd::Column *get_renamed_col(const Alter_inplace_info *ha_alter_info,
   Create_field *cf;
   while ((cf = cf_it++) != nullptr) {
     if (cf->field && cf->field->is_flag_set(FIELD_IS_RENAMED) &&
-        strcmp(cf->change, old_dd_column->name().c_str()) == 0) {
+        innobase_strcasecmp(cf->change, old_dd_column->name().c_str()) == 0) {
       /* This column is being renamed */
       return (const_cast<dd::Column *>(
           dd_find_column(&new_dd_tab->table(), cf->field_name)));
@@ -846,9 +846,9 @@ static inline Instant_Type innobase_support_instant(
     COLUMN_RENAME_ONLY,           /*!< Only column RENAME */
     VIRTUAL_ADD_DROP_ONLY,        /*!< Only virtual column ADD AND DROP */
     VIRTUAL_ADD_DROP_WITH_RENAME, /*!< Virtual column ADD/DROP with RENAME */
-    INSTANT_ADD,  /*< INSTANT ADD possibly with virtual column ADD and
+    INSTANT_ADD,  /*!< INSTANT ADD possibly with virtual column ADD and
                      column RENAME */
-    INSTANT_DROP, /*|< INSTANT DROP possibly with virtual column ADD/DROP and
+    INSTANT_DROP, /*!< INSTANT DROP possibly with virtual column ADD/DROP and
                     column RENAME */
     NONE
   };
@@ -3578,7 +3578,7 @@ PK columns follows rule(2);
 @param[in]      old_clust_index index to be compared
 @param[in]      new_clust_index index to be compared
 @retval true if both indexes have same order.
-@retval false. */
+@retval false . */
 [[nodiscard]] static bool innobase_pk_order_preserved(
     const ulint *col_map, const dict_index_t *old_clust_index,
     const dict_index_t *new_clust_index) {
@@ -5200,7 +5200,7 @@ err_exit:
   row_mysql_unlock_data_dictionary(ctx->prebuilt->trx);
   ut_ad(ctx->trx == ctx->prebuilt->trx);
 
-  destroy(ctx);
+  ::destroy_at(ctx);
   ha_alter_info->handler_ctx = nullptr;
 
   return true;
@@ -7052,19 +7052,9 @@ when rebuilding the table.
   DBUG_EXECUTE_IF("ib_ddl_crash_after_rename", DBUG_SUICIDE(););
   DBUG_EXECUTE_IF("ib_rebuild_cannot_rename", error = DB_ERROR;);
 
-  if (user_table->get_ref_count() > 1) {
-    /* This should only occur when an innodb_memcached
-    connection with innodb_api_enable_mdl=off was started
-    before commit_inplace_alter_table() locked the data
-    dictionary. We must roll back the ALTER TABLE, because
-    we cannot drop a table while it is being used. */
-
-    /* Normally, n_ref_count must be 1, because purge
-    cannot be executing on this very table as we are
-    holding MDL lock. */
-    my_error(ER_TABLE_REFERENCED, MYF(0));
-    return true;
-  }
+  /* Normally, n_ref_count must be 1, because purge cannot be
+  executing on this very table as we are holding MDL lock. */
+  ut_a(user_table->get_ref_count() == 1);
 
   switch (error) {
     case DB_SUCCESS:
@@ -8029,7 +8019,7 @@ class ha_innopart_inplace_ctx : public inplace_alter_handler_ctx {
   ~ha_innopart_inplace_ctx() override {
     if (ctx_array) {
       for (uint i = 0; i < m_tot_parts; i++) {
-        destroy(ctx_array[i]);
+        if (ctx_array[i] != nullptr) ::destroy_at(ctx_array[i]);
       }
       ut::free(ctx_array);
     }
@@ -10192,8 +10182,8 @@ enum_alter_inplace_result ha_innopart::check_if_supported_inplace_alter(
     and ALTER_TABLE_REORG;
     The ALTER_ALL_PARTITION should be screened out, which could only
     be set along with the REBUILD PARTITION */
-    ut_ad(is_single_bit(ha_alter_info->handler_flags &
-                        ~Alter_inplace_info::ALTER_ALL_PARTITION) ||
+    ut_ad(std::has_single_bit(ha_alter_info->handler_flags &
+                              ~Alter_inplace_info::ALTER_ALL_PARTITION) ||
           ha_alter_info->handler_flags ==
               (Alter_inplace_info::COALESCE_PARTITION |
                Alter_inplace_info::ALTER_TABLE_REORG));

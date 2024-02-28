@@ -69,7 +69,6 @@ void append_identifier(const THD *thd, String *packet, const char *name,
 void append_identifier(const THD *thd, String *packet, const char *name,
                        size_t length);
 
-void mysqld_list_fields(THD *thd, Table_ref *table, const char *wild);
 bool mysqld_show_create(THD *thd, Table_ref *table_list);
 bool mysqld_show_create_db(THD *thd, char *dbname, HA_CREATE_INFO *create);
 
@@ -149,6 +148,8 @@ void show_sql_type(enum_field_types type, bool is_array, uint metadata,
 bool do_fill_information_schema_table(THD *thd, Table_ref *table_list,
                                       Item *condition);
 
+extern std::atomic_ulong deprecated_use_i_s_processlist_count;
+extern std::atomic_ullong deprecated_use_i_s_processlist_last_timestamp;
 extern TYPELIB grant_types;
 
 /**

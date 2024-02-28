@@ -25,13 +25,13 @@
 #include <assert.h>
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <utility>
 #include <vector>
 
 #include "extra/robin-hood-hashing/robin_hood.h"
 #include "field_types.h"
 #include "my_alloc.h"
-#include "my_bit.h"
 #include "my_xxhash.h"
 
 #include "my_inttypes.h"
@@ -153,7 +153,68 @@ bool HashJoinIterator::InitProbeIterator() {
   return false;
 }
 
+bool HashJoinIterator::ReadFirstProbeRow() {
+  assert(m_first_input == HashJoinInput::kProbe);
+  m_state = State::READING_ROW_FROM_PROBE_ITERATOR;
+
+  if (InitProbeIterator()) {
+    return true;
+  }
+
+  const int result = m_probe_input->Read();
+  if (result == 1) {
+    return true;
+
+  } else if (result == -1) {
+    m_state = State::END_OF_ROWS;
+    return false;
+
+  } else {
+    assert(result == 0);
+    m_probe_row_read = true;
+    // Prepare to read the build input into the hash map.
+    PrepareForRequestRowId(m_build_input_tables.tables(),
+                           m_tables_to_get_rowid_for);
+
+    return false;
+  }
+}
+
+bool HashJoinIterator::InitHashTable() {
+  if (BuildHashTable()) {
+    return true;
+  }
+
+  if (m_hash_table_generation != nullptr) {
+    m_last_hash_table_generation = *m_hash_table_generation;
+  }
+
+  if (m_state == State::END_OF_ROWS) {
+    // BuildHashTable() decided that the join is done (the build input is
+    // empty, and we are in an inner-/semijoin. Anti-/outer join must output
+    // NULL-complemented rows from the probe input).
+    return false;
+  }
+
+  if (m_join_type == JoinType::ANTI && m_join_conditions.empty() &&
+      m_extra_condition == nullptr && !m_row_buffer.empty()) {
+    // For degenerate antijoins, we know we will never output anything
+    // if there's anything in the hash table, so we can end right away.
+    // (We also don't need to read more than one row, but
+    // CreateHashJoinAccessPath() has already added a LIMIT 1 for us
+    // in this case.)
+    m_state = State::END_OF_ROWS;
+  }
+
+  return false;
+}
+
 bool HashJoinIterator::Init() {
+  // If Init() is called multiple times (e.g., if hash join is inside a
+  // dependent subquery), we must clear the NULL row flag, as it may have been
+  // set by the previous execution of this hash join.
+  m_build_input->SetNullRowFlag(/*is_null_row=*/false);
+
   // If we are entirely in-memory and the JOIN we are part of hasn't been
   // asked to clear its hash tables since last time, we can reuse the table
   // without having to rebuild it. This is useful if we are on the right side
@@ -243,73 +304,35 @@ bool HashJoinIterator::Init() {
                          m_tables_to_get_rowid_for);
 
   if (m_first_input == HashJoinInput::kProbe) {
-    m_state = State::READING_ROW_FROM_PROBE_ITERATOR;
+    const bool error = [&]() {
+      if (ReadFirstProbeRow()) {
+        return true;
+      } else if (m_state == State::END_OF_ROWS) {
+        return false;
+      } else {
+        return m_build_input->Init() || InitHashTable();
+      }
+    }();
 
-    if (InitProbeIterator()) {
-      return true;
+    assert(!error || thd()->is_error() ||
+           thd()->killed);  // my_error should have been called.
+
+    if (m_state == State::END_OF_ROWS || error) {
+      m_probe_input->EndPSIBatchModeIfStarted();
     }
 
-    const int result = m_probe_input->Read();
-    if (result == 1) {
+    return error;
+
+  } else {  // Start with 'build' input.
+    if (InitHashTable()) {
       assert(thd()->is_error() ||
              thd()->killed);  // my_error should have been called.
+
       return true;
-    } else if (result == -1) {
-      m_probe_input->EndPSIBatchModeIfStarted();
-      m_state = State::END_OF_ROWS;
-      return false;
-    } else {
-      assert(result == 0);
-      m_probe_row_read = true;
-      // Prepare to read the build input into the hash map.
-      PrepareForRequestRowId(m_build_input_tables.tables(),
-                             m_tables_to_get_rowid_for);
-      if (m_build_input->Init()) {
-        assert(thd()->is_error() ||
-               thd()->killed);  // my_error should have been called.
-        return true;
-      }
     }
-  }
 
-  // Build the hash table
-  if (BuildHashTable()) {
-    assert(thd()->is_error() ||
-           thd()->killed);  // my_error should have been called.
-    if (m_first_input == HashJoinInput::kProbe) {
-      m_probe_input->EndPSIBatchModeIfStarted();
-    }
-    return true;
+    return m_state == State::END_OF_ROWS ? false : InitProbeIterator();
   }
-  if (m_hash_table_generation != nullptr) {
-    m_last_hash_table_generation = *m_hash_table_generation;
-  }
-
-  if (m_state == State::END_OF_ROWS) {
-    // BuildHashTable() decided that the join is done (the build input is
-    // empty, and we are in an inner-/semijoin. Anti-/outer join must output
-    // NULL-complemented rows from the probe input).
-    if (m_first_input == HashJoinInput::kProbe) {
-      m_probe_input->EndPSIBatchModeIfStarted();
-    }
-    return false;
-  }
-
-  if (m_join_type == JoinType::ANTI && m_join_conditions.empty() &&
-      m_extra_condition == nullptr && !m_row_buffer.empty()) {
-    // For degenerate antijoins, we know we will never output anything
-    // if there's anything in the hash table, so we can end right away.
-    // (We also don't need to read more than one row, but
-    // CreateHashJoinAccessPath() has already added a LIMIT 1 for us
-    // in this case.)
-    if (m_first_input == HashJoinInput::kProbe) {
-      m_probe_input->EndPSIBatchModeIfStarted();
-    }
-    m_state = State::END_OF_ROWS;
-    return false;
-  }
-
-  return m_first_input == HashJoinInput::kProbe ? false : InitProbeIterator();
 }
 
 // Construct a join key from a list of join conditions, where the join key from
@@ -441,7 +464,7 @@ static bool InitializeChunkFiles(size_t estimated_rows_produced_by_join,
   // Ensure that the number of chunks is always a power of two. This allows
   // us to do some optimizations when calculating which chunk a row should
   // be placed in.
-  const size_t num_chunks_pow_2 = my_round_up_to_next_power(num_chunks);
+  const size_t num_chunks_pow_2 = std::bit_ceil(num_chunks);
 
   assert(chunk_pairs != nullptr && chunk_pairs->empty());
   chunk_pairs->resize(num_chunks_pow_2);
@@ -493,11 +516,6 @@ bool HashJoinIterator::BuildHashTable() {
   }
 
   const bool reject_duplicate_keys = RejectDuplicateKeys();
-
-  // If Init() is called multiple times (e.g., if hash join is inside an
-  // dependent subquery), we must clear the NULL row flag, as it may have been
-  // set by the previous executing of this hash join.
-  m_build_input->SetNullRowFlag(/*is_null_row=*/false);
 
   PFSBatchMode batch_mode(m_build_input.get());
   for (;;) {  // Termination condition within loop.

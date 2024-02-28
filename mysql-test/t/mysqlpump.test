@@ -99,7 +99,7 @@ DROP DATABASE db3;
 # --compress-output testing
 --exec $MYSQL_PUMP --default-parallelism=1 --parallel-schemas=3:db1 --include-databases=db1,db2 --compress-output=LZ4 > $MYSQLTEST_VARDIR/tmp/output_file_6.sql
 --exec $MYSQL_PUMP --parallel-schemas=3:db2 --include-databases=db2 --compress-output=ZLIB > $MYSQLTEST_VARDIR/tmp/output_file_7.sql
---exec $MYSQL_PUMP --host=localhost --include-databases=db1_1gb --parallel-schemas=2:db1_1gb --complete-insert --compress --default-character-set=utf8 > $MYSQLTEST_VARDIR/tmp/output_file_8.sql
+--exec $MYSQL_PUMP --host=localhost --include-databases=db1_1gb --parallel-schemas=2:db1_1gb --complete-insert --compress --default-character-set=utf8mb3 > $MYSQLTEST_VARDIR/tmp/output_file_8.sql
 
 --exec $MYSQL_PUMP --parallel-schemas=1:db1_1gb --include-databases=db1_1gb --extended-insert=10 > $MYSQLTEST_VARDIR/tmp/output_file_9.sql
 --exec $MYSQL_PUMP --parallel-schemas=3:db1_1gb --include-databases=db1_1gb --insert-ignore  > $MYSQLTEST_VARDIR/tmp/output_file_10.sql
@@ -122,41 +122,6 @@ DROP DATABASE db1_1gb;
 
 --exec $MYSQL_PUMP --version 2>&1 > $MYSQLTEST_VARDIR/tmp/output_file.txt
 --remove_file $MYSQLTEST_VARDIR/tmp/output_file.txt
-
-#
-# Bug #25469190: MYSQLPUMP SHOULD EXCLUDE REPLICATION
-#                REPOSITORY METADATA TABLES
-#
-
-SHOW VARIABLES LIKE "master_info_repository";
-SHOW VARIABLES LIKE "relay_log_info_repository";
-
-SET GLOBAL master_info_repository= 'FILE';
-SET GLOBAL relay_log_info_repository= 'FILE';
-
-SHOW VARIABLES LIKE "master_info_repository";
-SHOW VARIABLES LIKE "relay_log_info_repository";
-
---exec $MYSQL_PUMP --include-databases=mysql > $MYSQLTEST_VARDIR/tmp/bug25469190.sql
-
-# Search for mysql.slave_master_info in the dump file
---let SEARCH_FILE= $MYSQLTEST_VARDIR/tmp/bug25469190.sql
---let SEARCH_PATTERN= CREATE TABLE `mysql`.`slave_master_info`
---source include/search_pattern.inc
-
-# Search for mysql.slave_relay_log_info in the dump file
---let SEARCH_FILE= $MYSQLTEST_VARDIR/tmp/bug25469190.sql
---let SEARCH_PATTERN= CREATE TABLE `mysql`.`slave_relay_log_info`
---source include/search_pattern.inc
-
-SET GLOBAL master_info_repository= 'TABLE';
-SET GLOBAL relay_log_info_repository= 'TABLE';
-
-SHOW VARIABLES LIKE "master_info_repository";
-SHOW VARIABLES LIKE "relay_log_info_repository";
-
-# Cleanup
---remove_file $SEARCH_FILE
 
 --echo #
 --echo # Dump a table that has column statistics

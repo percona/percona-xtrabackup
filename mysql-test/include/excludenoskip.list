@@ -198,11 +198,6 @@ have_group_replication_plugin.inc
 have_group_replication_plugin_base.inc
 not_group_replication_plugin.inc
 
-# 13.0 Memcached plugin is not available on all PB2 builds. Only supported by
-# Linux, Solaris and OS X platforms.
-have_memcached_plugin.inc
-have_memcached_sasl.inc
-
 # 14.0 MTR tests that runs only with specific rpl modes:
 
 # 14.1 Some rpl tests can run only with MTS_LC, MTS_DB and Non MTS
@@ -214,12 +209,8 @@ only_mts_replica_parallel_type_database.inc
 not_mts_replica_parallel_workers.inc
 only_replica_preserve_commit_order.inc
 # 14.2 rpl misc files
-have_slave_repository_type_table.inc
-not_relay_log_info_file.inc
-not_master_info_file.inc
-have_transaction_write_set_extraction.inc
 have_default_replica_transaction_retries.inc
-have_default_slave_rows_search_algorithms.inc
+
 
 #14.3 Some replication tests cannot run with GTID_ONLY == 1
 not_rpl_gtid_only.inc
@@ -258,10 +249,13 @@ require_icu_version.inc
 not_have_zstd_proper_ver.inc
 have_zstd_proper_ver.inc
 
-#21.0 fips realted test will be run only on system where opensssl fips module is installed
+#21.0 fips related test will be run only on system where OpenSSL fips module is installed
 # currently we are checking via this env $OPENSSL_FIPS_INSTALLED
 not_have_fips.inc
 have_fips.inc
+# Checking via env $OPENSSL3_FIPS_ACTIVE
+fips_active.inc
+not_fips_active.inc
 
 # 22.0 Tests for "disk full" conditions. Need special environment.
 # Shall not run on PB2.

@@ -57,8 +57,6 @@ function run_test()
     multi_row_insert test.m2 \({1..13}\)
 
     start_server_with_id $slave_id \
-        --master-info-repository=TABLE \
-        --relay-log-info-repository=TABLE \
         "$extra_arguments"
 
     setup_slave $slave_mode USE_CHANNELS $slave_id $master1_id $master2_id

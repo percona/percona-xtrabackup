@@ -33,15 +33,15 @@ LIST(APPEND CMAKE_REQUIRED_INCLUDES "/usr/local/include")
 # in order to search include/boost_1_70_0/patches
 # INCLUDE_DIRECTORIES(SYSTEM /usr/local/include)
 
-# We require at least GCC 10 Clang 10
+# We require at least GCC 10 Clang 12
 IF(NOT FORCE_UNSUPPORTED_COMPILER)
   IF(MY_COMPILER_IS_GNU)
     IF(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10)
       MESSAGE(FATAL_ERROR "GCC 10 or newer is required")
     ENDIF()
   ELSEIF(MY_COMPILER_IS_CLANG)
-    IF(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10)
-      MESSAGE(FATAL_ERROR "Clang 10 or newer is required!")
+    IF(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 12)
+      MESSAGE(FATAL_ERROR "Clang 12 or newer is required!")
     ENDIF()
   ELSE()
     MESSAGE(FATAL_ERROR "Unsupported compiler!")

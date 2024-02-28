@@ -26,28 +26,30 @@
 #define NDB_TEST_HPP
 
 /**
- * NdbTest.hpp 
- * This is the main include file to include in test programs 
+ * NdbTest.hpp
+ * This is the main include file to include in test programs
  * It will include all the other include files in the NDBT-toolkit
  *
  */
 
+// ndb_opts.h contains declaration of opt_tls_search_path and opt_mgm_tls
+// including this file will help to enable TLS support in test programs
+#include <ndb_opts.h>
+
 #include "NDBT_ReturnCodes.h"
 
 #ifdef __cplusplus
+#include "NDBT_Error.hpp"
+#include "NDBT_Output.hpp"
+#include "NDBT_ResultRow.hpp"
 #include "NDBT_Table.hpp"
 #include "NDBT_Tables.hpp"
-#include "NDBT_Error.hpp"
-#include "NDBT_ResultRow.hpp"
-#include "NDBT_Output.hpp"
 
-#define CHK_NDB_READY(a) \
-  if ((a)->waitUntilReady() != 0) \
-  { \
-    return NDBT_FAILED; \
+#define CHK_NDB_READY(a)            \
+  if ((a)->waitUntilReady() != 0) { \
+    return NDBT_FAILED;             \
   }
 
 #endif
-
 
 #endif

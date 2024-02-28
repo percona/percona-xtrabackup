@@ -21,6 +21,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 DISABLE_MISSING_PROFILE_WARNING()
+
 ADD_DEFINITIONS(-DLOG_COMPONENT_TAG="replication_observers_example")
 
 MYSQL_ADD_PLUGIN(replication_observers_example

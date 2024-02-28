@@ -118,12 +118,11 @@
 #include "sql/rpl_info_factory.h"       // Rpl_info_factory
 #include "sql/rpl_info_handler.h"       // INFO_REPOSITORY_TABLE
 #include "sql/rpl_log_encryption.h"
-#include "sql/rpl_mi.h"                 // Master_info
-#include "sql/rpl_msr.h"                // channel_map
-#include "sql/rpl_mta_submode.h"        // MTS_PARALLEL_TYPE_DB_NAME
-#include "sql/rpl_replica.h"            // SLAVE_THD_TYPE
-#include "sql/rpl_rli.h"                // Relay_log_info
-#include "sql/rpl_write_set_handler.h"  // transaction_write_set_hashing_algorithms
+#include "sql/rpl_mi.h"           // Master_info
+#include "sql/rpl_msr.h"          // channel_map
+#include "sql/rpl_mta_submode.h"  // MTS_PARALLEL_TYPE_DB_NAME
+#include "sql/rpl_replica.h"      // SLAVE_THD_TYPE
+#include "sql/rpl_rli.h"          // Relay_log_info
 #include "sql/server_component/log_builtins_filter_imp.h"  // until we have pluggable variables
 #include "sql/server_component/log_builtins_imp.h"
 #include "sql/session_tracker.h"
@@ -284,6 +283,42 @@ static bool update_keycache_param(THD *, KEY_CACHE *key_cache, ptrdiff_t offset,
   key_cache->in_init = false;
 
   return error;
+}
+
+/**
+  Check if correct privileges for GTID_NEXT tagged are granted.
+  Throw SQL error if not.
+
+  Use this when setting session variables that are to be protected within
+  replication applier context.
+
+  @retval true failure
+  @retval false success
+
+  @param self the system variable to set value for
+  @param thd the session context
+  @param setv the SET operations metadata
+ */
+static bool check_tagged_gtid_next_privileges(sys_var *self [[maybe_unused]],
+                                              THD *thd, set_var *setv) {
+  assert(self->scope() != sys_var::GLOBAL);
+  Security_context *sctx = thd->security_context();
+  if ((setv->type == OPT_SESSION || setv->type == OPT_DEFAULT) &&
+      ((!sctx->has_global_grant(STRING_WITH_LEN("SESSION_VARIABLES_ADMIN"))
+             .first &&
+        !sctx->has_global_grant(STRING_WITH_LEN("SYSTEM_VARIABLES_ADMIN"))
+             .first &&
+        !sctx->has_global_grant(STRING_WITH_LEN("REPLICATION_APPLIER"))
+             .first) ||
+       !sctx->has_global_grant(STRING_WITH_LEN("TRANSACTION_GTID_TAG"))
+            .first)) {
+    my_error(ER_SPECIFIC_ACCESS_DENIED, MYF(0),
+             "the TRANSACTION_GTID_TAG and at least one of the: "
+             "SYSTEM_VARIABLES_ADMIN, SESSION_VARIABLES_ADMIN or "
+             "REPLICATION_APPLIER");
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -1249,7 +1284,7 @@ static bool check_outside_trx(sys_var *var, THD *thd, set_var *) {
   if (!thd->owned_gtid_is_empty()) {
     char buf[Gtid::MAX_TEXT_LENGTH + 1];
     if (thd->owned_gtid.sidno > 0)
-      thd->owned_gtid.to_string(thd->owned_sid, buf);
+      thd->owned_gtid.to_string(thd->owned_tsid, buf);
     else
       strcpy(buf, "ANONYMOUS");
     my_error(ER_CANT_SET_VARIABLE_WHEN_OWNING_GTID, MYF(0), var->name.str, buf);
@@ -1312,6 +1347,22 @@ static bool check_gtid_next(sys_var *self, THD *thd, set_var *var) {
   if (!is_prepared_trx && thd->in_active_multi_stmt_transaction()) {
     my_error(ER_VARIABLE_NOT_SETTABLE_IN_TRANSACTION, MYF(0), self->name.str);
     return true;
+  }
+  // we need to parse var in order to know which privileges are required
+  char buf[Gtid::MAX_TEXT_LENGTH + 1];
+  // Get the value
+  String str(buf, sizeof(buf), &my_charset_latin1);
+  char *res = nullptr;
+  if (!var->value) {
+    res = var->save_result.string_value.str;
+  } else if (var->value->val_str(&str))
+    res = var->value->val_str(&str)->c_ptr_safe();
+  bool is_tagged = false;
+  if (res) {
+    is_tagged = Gtid_specification::is_tagged(res);
+  }
+  if (is_tagged) {
+    return check_tagged_gtid_next_privileges(self, thd, var);
   }
   return check_session_admin_or_replication_applier(self, thd, var);
 }
@@ -1619,100 +1670,6 @@ static Sys_var_bool Sys_explicit_defaults_for_timestamp(
     DEFAULT(true), NO_MUTEX_GUARD, NOT_IN_BINLOG,
     ON_CHECK(check_explicit_defaults_for_timestamp));
 
-static bool repository_check(sys_var *self, THD *thd, set_var *var,
-                             SLAVE_THD_TYPE thread_mask) {
-  bool ret = false;
-  if (check_session_admin_outside_trx_outside_sf(self, thd, var)) return true;
-  Master_info *mi;
-  int running = 0;
-  const char *msg = nullptr;
-  const bool rpl_info_option =
-      static_cast<uint>(var->save_result.ulonglong_value);
-
-  /* don't convert if the repositories are same */
-  if (rpl_info_option ==
-      (0 != (thread_mask == SLAVE_THD_IO ? opt_mi_repository_id
-                                         : opt_rli_repository_id)))
-    return false;
-
-  channel_map.wrlock();
-
-  /* Repository conversion not possible, when multiple channels exist */
-  if (channel_map.get_num_instances(true) > 1) {
-    msg = "Repository conversion is possible when only default channel exists";
-    my_error(ER_CHANGE_RPL_INFO_REPOSITORY_FAILURE, MYF(0), msg);
-    channel_map.unlock();
-    return true;
-  }
-
-  mi = channel_map.get_default_channel_mi();
-
-  if (mi != nullptr) {
-    mi->channel_wrlock();
-    lock_slave_threads(mi);
-    init_thread_mask(&running, mi, false);
-    if (!running) {
-      bool is_pos_info_invalid{false};
-      switch (thread_mask) {
-        case SLAVE_THD_IO:
-          is_pos_info_invalid = mi->is_receiver_position_info_invalid();
-          mysql_mutex_lock(&mi->data_lock);
-          mi->flush_info(true);
-          mysql_mutex_unlock(&mi->data_lock);
-          if (Rpl_info_factory::change_mi_repository(
-                  mi, static_cast<uint>(var->save_result.ulonglong_value),
-                  &msg)) {
-            ret = true;
-            my_error(ER_CHANGE_RPL_INFO_REPOSITORY_FAILURE, MYF(0), msg);
-          }
-          mi->set_receiver_position_info_invalid(is_pos_info_invalid);
-          break;
-        case SLAVE_THD_SQL:
-          mts_recovery_groups(mi->rli);
-          if (!mi->rli->is_mts_recovery()) {
-            is_pos_info_invalid =
-                mi->rli->is_applier_source_position_info_invalid();
-            if (Rpl_info_factory::reset_workers(mi->rli) ||
-                mi->rli->flush_info(
-                    Relay_log_info::RLI_FLUSH_IGNORE_SYNC_OPT |
-                    Relay_log_info::RLI_FLUSH_IGNORE_GTID_ONLY) ||
-                Rpl_info_factory::change_rli_repository(
-                    mi->rli,
-                    static_cast<uint>(var->save_result.ulonglong_value),
-                    &msg)) {
-              ret = true;
-              my_error(ER_CHANGE_RPL_INFO_REPOSITORY_FAILURE, MYF(0), msg);
-            }
-            mi->rli->set_applier_source_position_info_invalid(
-                is_pos_info_invalid);
-          } else
-            LogErr(WARNING_LEVEL, ER_RPL_REPO_HAS_GAPS);
-          break;
-        default:
-          assert(0);
-          break;
-      }
-    } else {
-      ret = true;
-      my_error(ER_REPLICA_CHANNEL_MUST_STOP, MYF(0), mi->get_channel());
-    }
-    unlock_slave_threads(mi);
-    mi->channel_unlock();
-  }
-  channel_map.unlock();
-  return ret;
-}
-
-static bool relay_log_info_repository_check(sys_var *self, THD *thd,
-                                            set_var *var) {
-  return repository_check(self, thd, var, SLAVE_THD_SQL);
-}
-
-static bool master_info_repository_check(sys_var *self, THD *thd,
-                                         set_var *var) {
-  return repository_check(self, thd, var, SLAVE_THD_IO);
-}
-
 static bool replica_parallel_workers_update(sys_var *, THD *thd,
                                             enum_var_type) {
   if (opt_mts_replica_parallel_workers == 0) {
@@ -1722,33 +1679,6 @@ static bool replica_parallel_workers_update(sys_var *, THD *thd,
   }
   return false;
 }
-
-static const char *repository_names[] = {"FILE", "TABLE",
-#ifndef NDEBUG
-                                         "DUMMY",
-#endif
-                                         nullptr};
-
-ulong opt_mi_repository_id = INFO_REPOSITORY_TABLE;
-static Sys_var_enum Sys_mi_repository(
-    "master_info_repository",
-    "The repository format for the replication connection configuration.",
-    GLOBAL_VAR(opt_mi_repository_id),
-    CMD_LINE(REQUIRED_ARG, OPT_MASTER_INFO_REPOSITORY), repository_names,
-    DEFAULT(INFO_REPOSITORY_TABLE), NO_MUTEX_GUARD, NOT_IN_BINLOG,
-    ON_CHECK(master_info_repository_check), ON_UPDATE(nullptr),
-    DEPRECATED_VAR(""));
-
-ulong opt_rli_repository_id = INFO_REPOSITORY_TABLE;
-static Sys_var_enum Sys_rli_repository(
-    "relay_log_info_repository",
-    "Defines the type of the repository for the relay log information "
-    "and associated workers.",
-    GLOBAL_VAR(opt_rli_repository_id),
-    CMD_LINE(REQUIRED_ARG, OPT_RELAY_LOG_INFO_REPOSITORY), repository_names,
-    DEFAULT(INFO_REPOSITORY_TABLE), NO_MUTEX_GUARD, NOT_IN_BINLOG,
-    ON_CHECK(relay_log_info_repository_check), ON_UPDATE(nullptr),
-    DEPRECATED_VAR(""));
 
 static Sys_var_bool Sys_binlog_rows_query(
     "binlog_rows_query_log_events",
@@ -2408,69 +2338,6 @@ static Sys_var_bool Sys_log_bin("log_bin", "Whether the binary log is enabled",
                                 READ_ONLY NON_PERSIST GLOBAL_VAR(opt_bin_log),
                                 NO_CMD_LINE, DEFAULT(true));
 
-static bool transaction_write_set_check(sys_var *self, THD *thd, set_var *var) {
-  if (check_session_admin(self, thd, var)) return true;
-  // Can't change the algorithm when group replication is enabled.
-  if (is_group_replication_running()) {
-    my_message(
-        ER_GROUP_REPLICATION_RUNNING,
-        "The write set algorithm cannot be changed when Group replication"
-        " is running.",
-        MYF(0));
-    return true;
-  }
-
-  if ((var->is_global_persist()) &&
-      global_system_variables.binlog_format != BINLOG_FORMAT_ROW) {
-    my_error(ER_PREVENTS_VARIABLE_WITHOUT_RBR, MYF(0), self->name.str);
-    return true;
-  }
-
-  if (var->type == OPT_SESSION &&
-      thd->variables.binlog_format != BINLOG_FORMAT_ROW) {
-    my_error(ER_PREVENTS_VARIABLE_WITHOUT_RBR, MYF(0), self->name.str);
-    return true;
-  }
-  /*
-    if in a stored function/trigger, it's too late to change
-  */
-  if (thd->in_sub_stmt) {
-    my_error(ER_VARIABLE_NOT_SETTABLE_IN_TRANSACTION, MYF(0), self->name.str);
-    return true;
-  }
-  /*
-    Make the session variable 'transaction_write_set_extraction' read-only
-    inside a transaction.
-  */
-  if (thd->in_active_multi_stmt_transaction()) {
-    my_error(ER_VARIABLE_NOT_SETTABLE_IN_TRANSACTION, MYF(0), self->name.str);
-    return true;
-  }
-  /*
-    Disallow changing variable 'transaction_write_set_extraction' while
-    binlog_transaction_dependency_tracking is different from COMMIT_ORDER.
-  */
-  if (mysql_bin_log.m_dependency_tracker.m_opt_tracking_mode !=
-      DEPENDENCY_TRACKING_COMMIT_ORDER) {
-    my_error(ER_WRONG_USAGE, MYF(0),
-             "transaction_write_set_extraction (changed)",
-             "binlog_transaction_dependency_tracking (!= COMMIT_ORDER)");
-    return true;
-  }
-
-  return false;
-}
-
-static Sys_var_enum Sys_extract_write_set(
-    "transaction_write_set_extraction",
-    "This option is used to let the server know when to "
-    "extract the write set which will be used for various purposes. ",
-    SESSION_VAR(transaction_write_set_extraction),
-    CMD_LINE(OPT_ARG, OPT_TRANSACTION_WRITE_SET_EXTRACTION),
-    transaction_write_set_hashing_algorithms, DEFAULT(HASH_ALGORITHM_XXHASH64),
-    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(transaction_write_set_check),
-    ON_UPDATE(nullptr), DEPRECATED_VAR(""));
-
 static Sys_var_ulong Sys_rpl_stop_replica_timeout(
     "rpl_stop_replica_timeout",
     "Timeout in seconds to wait for replication threads to stop, before "
@@ -2534,27 +2401,6 @@ static Sys_var_bool Sys_sha256_password_proxy_users(
     "option "
     "check_proxy_users is enabled.",
     GLOBAL_VAR(sha256_password_proxy_users), CMD_LINE(OPT_ARG), DEFAULT(false));
-
-static bool check_log_bin_use_v1_row_events(sys_var *, THD *thd, set_var *var) {
-  if (var->save_result.ulonglong_value == 1 &&
-      global_system_variables.binlog_row_value_options != 0)
-    push_warning_printf(thd, Sql_condition::SL_WARNING,
-                        ER_WARN_BINLOG_V1_ROW_EVENTS_DISABLED,
-                        ER_THD(thd, ER_WARN_BINLOG_V1_ROW_EVENTS_DISABLED),
-                        "binlog_row_value_options=PARTIAL_JSON");
-  return false;
-}
-
-static Sys_var_bool Sys_log_bin_use_v1_row_events(
-    "log_bin_use_v1_row_events",
-    "If equal to 1 then version 1 row events are written to a row based "
-    "binary log.  If equal to 0, then the latest version of events are "
-    "written.  "
-    "This option is useful during some upgrades.",
-    NON_PERSIST GLOBAL_VAR(log_bin_use_v1_row_events),
-    CMD_LINE(OPT_ARG, OPT_LOG_BIN_USE_V1_ROW_EVENTS), DEFAULT(false),
-    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(check_log_bin_use_v1_row_events),
-    ON_UPDATE(nullptr), DEPRECATED_VAR(""));
 
 static Sys_var_charptr Sys_log_error(
     "log_error", "Error log file",
@@ -3365,7 +3211,7 @@ static Sys_var_ulonglong Sys_parser_max_mem_size(
   Also update global_system_variables, so 'SELECT parser_max_mem_size'
   reports correct data.
 */
-export void update_parser_max_mem_size() {
+void update_parser_max_mem_size() {
   const ulonglong max_max = max_system_variables.parser_max_mem_size;
   if (max_max == max_mem_sz) return;
   // In case parser-max-mem-size is also set:
@@ -3373,6 +3219,13 @@ export void update_parser_max_mem_size() {
       std::min(max_max, global_system_variables.parser_max_mem_size);
   Sys_parser_max_mem_size.update_default(new_val);
   global_system_variables.parser_max_mem_size = new_val;
+}
+
+void update_optimizer_switch() {
+#ifndef WITH_HYPERGRAPH_OPTIMIZER
+  global_system_variables.optimizer_switch &=
+      ~OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER;
+#endif
 }
 
 static bool check_optimizer_switch(sys_var *, THD *thd [[maybe_unused]],
@@ -4166,22 +4019,6 @@ static bool check_slave_stopped(sys_var *self, THD *thd, set_var *var) {
   return result;
 }
 
-static const char *slave_rows_search_algorithms_names[] = {
-    "TABLE_SCAN", "INDEX_SCAN", "HASH_SCAN", nullptr};
-static Sys_var_set Slave_rows_search_algorithms(
-    "slave_rows_search_algorithms",
-    "The set of algorithms used by the replication applier while searching the "
-    "table for rows to update or delete. Possible values are: INDEX_SCAN, "
-    "TABLE_SCAN and HASH_SCAN. Any combination is allowed, and the applier "
-    "picks the most efficient among them for any given scenario. "
-    "(Default: INDEX_SCAN, HASH_SCAN).",
-    GLOBAL_VAR(slave_rows_search_algorithms_options),
-    CMD_LINE(REQUIRED_ARG, OPT_SLAVE_ROWS_SEARCH_ALGORITHMS),
-    slave_rows_search_algorithms_names,
-    DEFAULT(SLAVE_ROWS_INDEX_SCAN | SLAVE_ROWS_HASH_SCAN), NO_MUTEX_GUARD,
-    NOT_IN_BINLOG, ON_CHECK(check_not_null_not_empty), ON_UPDATE(nullptr),
-    DEPRECATED_VAR(""));
-
 static const char *mts_parallel_type_names[] = {"DATABASE", "LOGICAL_CLOCK",
                                                 nullptr};
 static Sys_var_enum Sys_replica_parallel_type(
@@ -4201,20 +4038,6 @@ static Sys_var_enum Sys_replica_parallel_type(
 
 static Sys_var_deprecated_alias Sys_slave_parallel_type(
     "slave_parallel_type", Sys_replica_parallel_type);
-
-static bool check_binlog_transaction_dependency_tracking(sys_var *, THD *,
-                                                         set_var *var) {
-  if (global_system_variables.transaction_write_set_extraction ==
-          HASH_ALGORITHM_OFF &&
-      var->save_result.ulonglong_value != DEPENDENCY_TRACKING_COMMIT_ORDER) {
-    my_error(ER_WRONG_USAGE, MYF(0),
-             "binlog_transaction_dependency_tracking (!= COMMIT_ORDER)",
-             "transaction_write_set_extraction (= OFF)");
-
-    return true;
-  }
-  return false;
-}
 
 static bool update_binlog_transaction_dependency_tracking(sys_var *, THD *,
                                                           enum_var_type) {
@@ -4241,8 +4064,8 @@ static Sys_var_enum Binlog_transaction_dependency_tracking(
     GLOBAL_VAR(mysql_bin_log.m_dependency_tracker.m_opt_tracking_mode),
     CMD_LINE(REQUIRED_ARG, OPT_BINLOG_TRANSACTION_DEPENDENCY_TRACKING),
     opt_binlog_transaction_dependency_tracking_names,
-    DEFAULT(DEPENDENCY_TRACKING_COMMIT_ORDER), &PLock_slave_trans_dep_tracker,
-    NOT_IN_BINLOG, ON_CHECK(check_binlog_transaction_dependency_tracking),
+    DEFAULT(DEPENDENCY_TRACKING_WRITESET), &PLock_slave_trans_dep_tracker,
+    NOT_IN_BINLOG, ON_CHECK(nullptr),
     ON_UPDATE(update_binlog_transaction_dependency_tracking),
     DEPRECATED_VAR(""));
 static Sys_var_ulong Binlog_transaction_dependency_history_size(
@@ -4333,15 +4156,15 @@ bool Sys_var_gtid_next::session_update(THD *thd, set_var *var) {
     my_error(ER_WRONG_VALUE_FOR_VAR, MYF(0), name.str, "NULL");
     return true;
   }
-  global_sid_lock->rdlock();
+  global_tsid_lock->rdlock();
   Gtid_specification spec;
-  if (spec.parse(global_sid_map, res) != RETURN_STATUS_OK) {
-    global_sid_lock->unlock();
+  if (spec.parse(global_tsid_map, res) != mysql::utils::Return_status::ok) {
+    global_tsid_lock->unlock();
     return true;
   }
 
   bool ret = set_gtid_next(thd, spec);
-  // set_gtid_next releases global_sid_lock
+  // set_gtid_next releases global_tsid_lock
   return ret;
 }
 
@@ -4353,7 +4176,7 @@ bool Sys_var_gtid_set::session_update(THD *thd, set_var *var) {
   if (value == nullptr)
     gsn->set_null();
   else {
-    Gtid_set *gs = gsn->set_non_null(global_sid_map);
+    Gtid_set *gs = gsn->set_non_null(global_tsid_map);
     if (gs == nullptr) {
       my_error(ER_OUT_OF_RESOURCES, MYF(0));  // allocation failed
       return true;
@@ -4368,9 +4191,9 @@ bool Sys_var_gtid_set::session_update(THD *thd, set_var *var) {
     else
       gs->clear();
     // Add specified set of groups to Gtid_set.
-    global_sid_lock->rdlock();
+    global_tsid_lock->rdlock();
     enum_return_status ret = gs->add_gtid_text(value);
-    global_sid_lock->unlock();
+    global_tsid_lock->unlock();
     if (ret != RETURN_STATUS_OK) {
       gsn->set_null();
       return true;
@@ -4381,7 +4204,7 @@ bool Sys_var_gtid_set::session_update(THD *thd, set_var *var) {
 #endif  // HAVE_GTID_NEXT_LIST
 
 /**
-  This function shall issue a deprecation warning
+  This function shall return true
   if the new gtid mode is set to GTID_MODE_ON and
   there is at least one replication channel with
   IGNORE_SERVER_IDS configured (i.e., not empty).
@@ -4389,37 +4212,27 @@ bool Sys_var_gtid_set::session_update(THD *thd, set_var *var) {
   The caller must have acquired a lock on the
   channel_map object before calling this function.
 
-  The warning emitted is: ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT .
-
-  @param thd The current session thread context.
-  @param oldmode The old value of @@global.gtid_mode.
   @param newmode The new value for @@global.gtid_mode.
 
 */
-static void issue_deprecation_warnings_gtid_mode(
-    THD *thd, Gtid_mode::value_type oldmode [[maybe_unused]],
+static bool is_error_gtid_mode_with_ignore_server_ids(
     Gtid_mode::value_type newmode) {
   channel_map.assert_some_lock();
 
   /*
     Check that if changing to gtid_mode=on no channel is configured
-    to ignore server ids. If it is, issue a deprecation warning.
+    to ignore server ids. If it is, return true.
   */
   if (newmode == Gtid_mode::ON) {
     for (mi_map::iterator it = channel_map.begin(); it != channel_map.end();
          it++) {
       Master_info *mi = it->second;
       if (mi != nullptr && mi->is_ignore_server_ids_configured()) {
-        push_warning_printf(
-            thd, Sql_condition::SL_WARNING, ER_WARN_DEPRECATED_SYNTAX,
-            ER_THD(thd, ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT),
-            "CHANGE MASTER TO ... IGNORE_SERVER_IDS='...' "
-            "(when @@GLOBAL.GTID_MODE = ON)");
-
-        break;  // Only push one warning
+        return true;
       }
     }
   }
+  return false;
 }
 
 /**
@@ -4456,7 +4269,7 @@ bool Sys_var_gtid_mode::global_update(THD *thd, set_var *var) {
     AUTO_POSITION.  If gtid_mode was changed between these calls,
     auto_position could be set incompatible with gtid_mode.
 
-    Hold global_sid_lock.wrlock so that:
+    Hold global_tsid_lock.wrlock so that:
     - other transactions cannot acquire ownership of any gtid.
 
     Hold Gtid_mode::lock so that all places that don't want to hold
@@ -4476,7 +4289,7 @@ bool Sys_var_gtid_mode::global_update(THD *thd, set_var *var) {
 
   channel_map.wrlock();
   mysql_mutex_lock(mysql_bin_log.get_log_lock());
-  global_sid_lock->wrlock();
+  global_tsid_lock->wrlock();
   int lock_count = 4;
 
   auto old_gtid_mode = global_gtid_mode.get();
@@ -4614,6 +4427,16 @@ bool Sys_var_gtid_mode::global_update(THD *thd, set_var *var) {
     }
   }
 
+  // Emit error when GTID_MODE = ON and IGNORED_SERVER_IDS is configured.
+  if (is_error_gtid_mode_with_ignore_server_ids(new_gtid_mode)) {
+    my_error(ER_CANT_SET_GTID_MODE, MYF(0), "ON",
+             "there is at least one replication channel with "
+             "IGNORE_SEVER_IDS configured (i.e. not empty)."
+             "Before you set @@GLOBAL.GTID_MODE = ON, ensure "
+             "no channel has a configured value for IGNORE_SERVER_IDS");
+    goto err;
+  }
+
   // Can't set GTID_MODE != ON when group replication is enabled.
   if (is_group_replication_running()) {
     assert(old_gtid_mode == Gtid_mode::ON);
@@ -4695,10 +4518,20 @@ bool Sys_var_gtid_mode::global_update(THD *thd, set_var *var) {
     goto err;
   }
 
+  // Can't set GTID_MODE=OFF_PERMISSIVE when there is any session executing
+  // transactions with automatic, tagged GTIDs
+  if (new_gtid_mode == Gtid_mode::OFF_PERMISSIVE &&
+      gtid_state->is_any_session_assigning_automatic_tagged_gtids()) {
+    my_error(ER_CANT_SET_GTID_MODE, MYF(0), "OFF/OFF_PERMISSIVE",
+             "there is an ongoing session with GTID_NEXT "
+             "set to AUTOMATIC:<TAG>");
+    goto err;
+  }
+
   // Update the mode
   global_var(ulong) = new_gtid_mode;
   global_gtid_mode.set(new_gtid_mode);
-  global_sid_lock->unlock();
+  global_tsid_lock->unlock();
   lock_count = 3;
 
   // Generate note in log
@@ -4713,14 +4546,11 @@ bool Sys_var_gtid_mode::global_update(THD *thd, set_var *var) {
   }
 
 end:
-  /* handle deprecations warning */
-  issue_deprecation_warnings_gtid_mode(thd, old_gtid_mode, new_gtid_mode);
-
   ret = false;
 err:
   assert(lock_count >= 0);
   assert(lock_count <= 4);
-  if (lock_count == 4) global_sid_lock->unlock();
+  if (lock_count == 4) global_tsid_lock->unlock();
   mysql_mutex_unlock(mysql_bin_log.get_log_lock());
   channel_map.unlock();
   Gtid_mode::lock.unlock();
@@ -4732,10 +4562,10 @@ bool Sys_var_enforce_gtid_consistency::global_update(THD *thd, set_var *var) {
   bool ret = true;
 
   /*
-    Hold global_sid_lock.wrlock so that other transactions cannot
+    Hold global_tsid_lock.wrlock so that other transactions cannot
     acquire ownership of any gtid.
   */
-  global_sid_lock->wrlock();
+  global_tsid_lock->wrlock();
 
   DBUG_PRINT("info", ("var->save_result.ulonglong_value=%llu",
                       var->save_result.ulonglong_value));
@@ -4798,7 +4628,7 @@ bool Sys_var_enforce_gtid_consistency::global_update(THD *thd, set_var *var) {
 end:
   ret = false;
 err:
-  global_sid_lock->unlock();
+  global_tsid_lock->unlock();
   return ret;
 }
 
@@ -6166,15 +5996,6 @@ static Sys_var_charptr Sys_log_bin_basename(
     READ_ONLY NON_PERSIST GLOBAL_VAR(log_bin_basename), NO_CMD_LINE,
     IN_FS_CHARSET, DEFAULT(nullptr));
 
-static Sys_var_charptr Sys_relay_log_info_file(
-    "relay_log_info_file",
-    "The location and name of the file that "
-    "remembers where the SQL replication thread is in the relay logs",
-    READ_ONLY NON_PERSIST GLOBAL_VAR(relay_log_info_file),
-    CMD_LINE(REQUIRED_ARG, OPT_RELAY_LOG_INFO_FILE), IN_FS_CHARSET,
-    DEFAULT(nullptr), NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(nullptr),
-    ON_UPDATE(nullptr), DEPRECATED_VAR(""));
-
 static Sys_var_bool Sys_relay_log_purge(
     "relay_log_purge",
     "if disabled - do not purge relay logs. "
@@ -6683,7 +6504,7 @@ bool Sys_var_gtid_purged::global_update(THD *thd, set_var *var) {
   bool error = false;
   bool gtid_threshold_breach = false;
 
-  global_sid_lock->wrlock();
+  global_tsid_lock->wrlock();
 
   /*
     ensures the commit of the transaction started when saving the
@@ -6701,7 +6522,7 @@ bool Sys_var_gtid_purged::global_update(THD *thd, set_var *var) {
        *current_gtid_executed = nullptr, *current_gtid_purged = nullptr;
   gtid_state->get_executed_gtids()->to_string(&previous_gtid_executed);
   gtid_state->get_lost_gtids()->to_string(&previous_gtid_purged);
-  Gtid_set gtid_set(global_sid_map, global_sid_lock);
+  Gtid_set gtid_set(global_tsid_map, global_tsid_lock);
   bool starts_with_plus = false;
   enum_return_status ret = gtid_set.add_gtid_text(
       var->save_result.string_value.str, nullptr, &starts_with_plus);
@@ -6729,7 +6550,7 @@ bool Sys_var_gtid_purged::global_update(THD *thd, set_var *var) {
          current_gtid_executed);
 
 end:
-  global_sid_lock->unlock();
+  global_tsid_lock->unlock();
   my_free(previous_gtid_executed);
   my_free(previous_gtid_purged);
   my_free(current_gtid_executed);
@@ -7078,21 +6899,15 @@ static bool check_binlog_row_value_options(sys_var *self, THD *thd,
         msg = "the binary log is disabled";
       else if (thd->variables.binlog_format == BINLOG_FORMAT_STMT)
         msg = "binlog_format=STATEMENT";
-      else if (log_bin_use_v1_row_events) {
-        msg = "binlog_row_value_options=PARTIAL_JSON";
-        code = ER_WARN_BINLOG_V1_ROW_EVENTS_DISABLED;
-      } else if (thd->variables.binlog_row_image == BINLOG_ROW_IMAGE_FULL) {
+      else if (thd->variables.binlog_row_image == BINLOG_ROW_IMAGE_FULL) {
         msg = "binlog_row_image=FULL";
         code = ER_WARN_BINLOG_PARTIAL_UPDATES_SUGGESTS_PARTIAL_IMAGES;
       }
     } else {
       if (global_system_variables.binlog_format == BINLOG_FORMAT_STMT)
         msg = "binlog_format=STATEMENT";
-      else if (log_bin_use_v1_row_events) {
-        msg = "binlog_row_value_options=PARTIAL_JSON";
-        code = ER_WARN_BINLOG_V1_ROW_EVENTS_DISABLED;
-      } else if (global_system_variables.binlog_row_image ==
-                 BINLOG_ROW_IMAGE_FULL) {
+      else if (global_system_variables.binlog_row_image ==
+               BINLOG_ROW_IMAGE_FULL) {
         msg = "binlog_row_image=FULL";
         code = ER_WARN_BINLOG_PARTIAL_UPDATES_SUGGESTS_PARTIAL_IMAGES;
       }
@@ -7111,11 +6926,6 @@ static bool check_binlog_row_value_options(sys_var *self, THD *thd,
               ER_THD(thd,
                      ER_WARN_BINLOG_PARTIAL_UPDATES_SUGGESTS_PARTIAL_IMAGES),
               msg, "PARTIAL_JSON");
-          break;
-        case ER_WARN_BINLOG_V1_ROW_EVENTS_DISABLED:
-          push_warning_printf(
-              thd, Sql_condition::SL_WARNING, code,
-              ER_THD(thd, ER_WARN_BINLOG_V1_ROW_EVENTS_DISABLED), msg);
           break;
         default:
           assert(0); /* purecov: deadcode */
@@ -7709,6 +7519,14 @@ static Sys_var_enum Sys_explain_format(
     SESSION_VAR(explain_format), CMD_LINE(OPT_ARG), explain_format_names,
     DEFAULT(static_cast<ulong>(Explain_format_type::TRADITIONAL)),
     NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(nullptr), ON_UPDATE(nullptr));
+
+static Sys_var_uint Sys_explain_json_format_version(
+    "explain_json_format_version",
+    "The JSON format version for EXPLAIN FORMAT=JSON queries with the old "
+    "(non-hypergraph) join optimizer. "
+    "Valid values are 1 and 2.",
+    SESSION_VAR(explain_json_format_version), CMD_LINE(REQUIRED_ARG),
+    VALID_RANGE(1, 2), DEFAULT(1), BLOCK_SIZE(1));
 
 static Sys_var_bool Sys_tls_certificates_enforced_validation(
     "tls_certificates_enforced_validation",

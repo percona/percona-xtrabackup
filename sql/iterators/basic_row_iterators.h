@@ -40,7 +40,9 @@
 
 class Filesort_info;
 class Item;
+class Item_values_column;
 class JOIN;
+class QUICK_RANGE;
 class Sort_result;
 class THD;
 struct IO_CACHE;
@@ -122,6 +124,36 @@ class IndexScanIterator final : public TableRowIterator {
   uchar *const m_record;
   const int m_idx;
   const bool m_use_order;
+  const double m_expected_rows;
+  ha_rows *const m_examined_rows;
+  bool m_first = true;
+};
+
+/**
+  Perform a distance index scan along an index.
+  For now it is just like the IndexScanIterator, waiting for innodb
+  implementation of distance index scan functions
+*/
+class IndexDistanceScanIterator final : public TableRowIterator {
+ public:
+  // “expected_rows” is used for scaling the record buffer.
+  // If zero or less, no record buffer will be set up.
+  //
+  // The pushed condition can be nullptr.
+  //
+  // "examined_rows", if not nullptr, is incremented for each successful Read().
+  IndexDistanceScanIterator(THD *thd, TABLE *table, int idx,
+                            QUICK_RANGE *query_mbr, double expected_rows,
+                            ha_rows *examined_rows);
+  ~IndexDistanceScanIterator() override;
+
+  bool Init() override;
+  int Read() override;
+
+ private:
+  uchar *const m_record;
+  const int m_idx;
+  QUICK_RANGE *m_query_mbr;
   const double m_expected_rows;
   ha_rows *const m_examined_rows;
   bool m_first = true;
@@ -500,7 +532,7 @@ class TableValueConstructorIterator final : public RowIterator {
   TableValueConstructorIterator(
       THD *thd, ha_rows *examined_rows,
       const mem_root_deque<mem_root_deque<Item *> *> &row_value_list,
-      mem_root_deque<Item *> *join_fields);
+      Mem_root_array<Item_values_column *> *output_refs);
 
   bool Init() override;
   int Read() override;
@@ -521,7 +553,8 @@ class TableValueConstructorIterator final : public RowIterator {
   /// References to the row we currently want to output. When multiple rows must
   /// be output, this contains Item_values_column objects. In this case, each
   /// call to Read() will replace its current reference with the next row.
-  mem_root_deque<Item *> *const m_output_refs;
+  /// It is nullptr if there is only one row.
+  Mem_root_array<Item_values_column *> *m_output_refs;
 };
 
 /**

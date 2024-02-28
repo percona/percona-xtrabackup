@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -37,7 +38,6 @@
 #include "mem_root_deque.h"  // mem_root_deque
 #include "my_alloc.h"
 #include "my_base.h"
-#include "my_bit.h"  // my_count_bits
 #include "my_bitmap.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -501,7 +501,7 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
   join_type type = JT_UNKNOWN;
 
   auto cleanup = create_scope_guard([&range_scan, table] {
-    destroy(range_scan);
+    if (range_scan != nullptr) ::destroy_at(range_scan);
     table->set_keyread(false);
     table->file->ha_index_or_rnd_end();
     free_io_cache(table);
@@ -685,8 +685,10 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
           Filesort has already found and selected the rows we want to update,
           so we don't need the where clause
         */
-        destroy(range_scan);
-        range_scan = nullptr;
+        if (range_scan != nullptr) {
+          ::destroy_at(range_scan);
+          range_scan = nullptr;
+        }
         conds = nullptr;
       } else {
         /*
@@ -814,8 +816,10 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
             /*examined_rows=*/nullptr);
         if (iterator->Init()) return true;
 
-        destroy(range_scan);
-        range_scan = nullptr;
+        if (range_scan != nullptr) {
+          ::destroy_at(range_scan);
+          range_scan = nullptr;
+        }
         conds = nullptr;
       }
     } else {
@@ -1200,7 +1204,7 @@ static TABLE *GetOutermostTable(const JOIN *join) {
   // The old optimizer can usually find it in the access path too, except if the
   // outermost table is a const table, since const tables may not be visible in
   // the access path tree.
-  if (!join->thd->lex->using_hypergraph_optimizer) {
+  if (!join->thd->lex->using_hypergraph_optimizer()) {
     assert(join->qep_tab != nullptr);
     return join->qep_tab[0].table();
   }
@@ -1546,7 +1550,7 @@ bool Sql_cmd_update::prepare_inner(THD *thd) {
   // enables it to perform optimizations like sort avoidance and semi-join
   // flattening even if features specific to single-table UPDATE (that is, ORDER
   // BY and LIMIT) are used.
-  if (lex->using_hypergraph_optimizer) {
+  if (lex->using_hypergraph_optimizer()) {
     multitable = true;
   }
 
@@ -1606,7 +1610,7 @@ bool Sql_cmd_update::prepare_inner(THD *thd) {
   */
   thd->table_map_for_update = tables_for_update = get_table_map(select->fields);
 
-  uint update_table_count_local = my_count_bits(tables_for_update);
+  const int update_table_count_local = std::popcount(tables_for_update);
 
   assert(update_table_count_local > 0);
 
@@ -2999,7 +3003,7 @@ table_map GetImmediateUpdateTable(const JOIN *join, bool single_target) {
 
   // The hypergraph optimizer determines the immediate update tables during
   // planning, not after planning.
-  assert(!join->thd->lex->using_hypergraph_optimizer);
+  assert(!join->thd->lex->using_hypergraph_optimizer());
 
   // In some cases, rows may be updated immediately as they are read from the
   // outermost table in the join.
@@ -3072,7 +3076,7 @@ unique_ptr_destroy_only<RowIterator> Query_result_update::create_iterator(
       update_tables, tmp_tables, copy_field, unupdated_check_opt_tables,
       update_operations, fields_for_table, values_for_table,
       // The old optimizer does not use hash join in UPDATE statements.
-      thd->lex->using_hypergraph_optimizer
+      thd->lex->using_hypergraph_optimizer()
           ? GetHashJoinTables(unit->root_access_path())
           : 0);
 }

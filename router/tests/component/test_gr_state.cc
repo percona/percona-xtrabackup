@@ -133,10 +133,9 @@ TEST_P(MetadataServerInvalidGRState, InvalidGRState) {
 
   for (const auto [i, http_port] :
        stdx::views::enumerate(md_servers_http_ports)) {
-    ::set_mock_metadata(
-        http_port, "uuid", classic_ports_to_gr_nodes(md_servers_classic_ports),
-        i, classic_ports_to_cluster_nodes(md_servers_classic_ports),
-        /*primary_id=*/0);
+    set_mock_metadata(http_port, "uuid",
+                      classic_ports_to_gr_nodes(md_servers_classic_ports), i,
+                      classic_ports_to_cluster_nodes(md_servers_classic_ports));
   }
 
   // launch the router with metadata-cache configuration
@@ -170,21 +169,19 @@ TEST_P(MetadataServerInvalidGRState, InvalidGRState) {
     if (i == 0) {
       // old PRIMARY sees itself as OFFLINE, does not see other nodes
       const auto gr_nodes = std::vector<GRNode>{
-          {md_servers_classic_ports[0], "uuid-1", "OFFLINE"}};
-      ::set_mock_metadata(
+          {md_servers_classic_ports[0], "uuid-1", "OFFLINE", "PRIMARY"}};
+      set_mock_metadata(
           http_port, "uuid", gr_nodes, 0,
-          classic_ports_to_cluster_nodes(md_servers_classic_ports),
-          /*primary_id=*/0);
+          classic_ports_to_cluster_nodes(md_servers_classic_ports));
     } else {
       // remaining nodes see the previous SECONDARY-1 as new primary
       // they do not see old PRIMARY (it was expelled from the group)
       const auto gr_nodes = std::vector<GRNode>{
-          {{md_servers_classic_ports[1], "uuid-2", "ONLINE"},
-           {md_servers_classic_ports[2], "uuid-3", "ONLINE"}}};
-      ::set_mock_metadata(
+          {{md_servers_classic_ports[1], "uuid-2", "ONLINE", "PRIMARY"},
+           {md_servers_classic_ports[2], "uuid-3", "ONLINE", "SECONDARY"}}};
+      set_mock_metadata(
           http_port, "uuid", gr_nodes, i - 1,
-          classic_ports_to_cluster_nodes(md_servers_classic_ports),
-          /*primary_id=*/0);
+          classic_ports_to_cluster_nodes(md_servers_classic_ports));
     }
   }
 
@@ -237,10 +234,9 @@ TEST_P(MetadataServerNoQuorum, NoQuorum) {
 
   for (const auto [i, http_port] :
        stdx::views::enumerate(md_servers_http_ports)) {
-    ::set_mock_metadata(
-        http_port, "uuid", classic_ports_to_gr_nodes(md_servers_classic_ports),
-        i, classic_ports_to_cluster_nodes(md_servers_classic_ports),
-        /*primary_id=*/0);
+    set_mock_metadata(http_port, "uuid",
+                      classic_ports_to_gr_nodes(md_servers_classic_ports), i,
+                      classic_ports_to_cluster_nodes(md_servers_classic_ports));
   }
 
   // launch the router with metadata-cache configuration
@@ -276,23 +272,21 @@ TEST_P(MetadataServerNoQuorum, NoQuorum) {
       // old PRIMARY still sees itself as ONLINE, but it lost quorum, do not
       // see other GR members
       const auto gr_nodes = std::vector<GRNode>{
-          {md_servers_classic_ports[0], "uuid-1", "ONLINE"},
-          {md_servers_classic_ports[1], "uuid-2", "OFFLINE"},
-          {md_servers_classic_ports[2], "uuid-3", "OFFLINE"}};
-      ::set_mock_metadata(
+          {md_servers_classic_ports[0], "uuid-1", "ONLINE", "PRIMARY"},
+          {md_servers_classic_ports[1], "uuid-2", "UNREACHABLE", "SECONDARY"},
+          {md_servers_classic_ports[2], "uuid-3", "UNREACHABLE", "SECONDARY"}};
+      set_mock_metadata(
           http_port, "uuid", gr_nodes, 0,
-          classic_ports_to_cluster_nodes(md_servers_classic_ports),
-          /*primary_id=*/0);
+          classic_ports_to_cluster_nodes(md_servers_classic_ports));
     } else {
       // remaining nodes see the previous SECONDARY-1 as new primary
       // they do not see old PRIMARY (it was expelled from the group)
       const auto gr_nodes = std::vector<GRNode>{
-          {{md_servers_classic_ports[1], "uuid-2", "ONLINE"},
-           {md_servers_classic_ports[2], "uuid-3", "ONLINE"}}};
-      ::set_mock_metadata(
+          {{md_servers_classic_ports[1], "uuid-2", "ONLINE", "PRIMARY"},
+           {md_servers_classic_ports[2], "uuid-3", "ONLINE", "SECONDARY"}}};
+      set_mock_metadata(
           http_port, "uuid", gr_nodes, i - 1,
-          classic_ports_to_cluster_nodes(md_servers_classic_ports),
-          /*primary_id=*/0);
+          classic_ports_to_cluster_nodes(md_servers_classic_ports));
     }
   }
 
@@ -338,10 +332,10 @@ TEST_P(MetadataServerGRErrorStates, GRErrorStates) {
   launch_mysql_server_mock(tracefile, md_servers_classic_port, EXIT_SUCCESS,
                            false, md_servers_http_port);
 
-  std::vector<GRNode> gr_nodes{{md_servers_classic_port, "uuid-1", GetParam()}};
-  ::set_mock_metadata(md_servers_http_port, "uuid", gr_nodes, 0,
-                      classic_ports_to_cluster_nodes({md_servers_classic_port}),
-                      /*primary_id=*/0);
+  std::vector<GRNode> gr_nodes{
+      {md_servers_classic_port, "uuid-1", GetParam(), "PRIMARY"}};
+  set_mock_metadata(md_servers_http_port, "uuid", gr_nodes, 0,
+                    classic_ports_to_cluster_nodes({md_servers_classic_port}));
 
   // launch the router with metadata-cache configuration
   const std::string metadata_cache_section =
@@ -381,6 +375,8 @@ struct QuorumTestParam {
 
   std::vector<uint16_t> expected_rw_endpoints;
   std::vector<uint16_t> expected_ro_endpoints;
+
+  std::string tracefile{"metadata_dynamic_nodes_v2_gr.js"};
 };
 
 class QuorumTest : public GRStateTest,
@@ -402,10 +398,8 @@ class QuorumTest : public GRStateTest,
  * @test Testing various quorum scenarios.
  */
 TEST_P(QuorumTest, Verify) {
-  const std::string json_metadata =
-      get_data_dir().join("metadata_dynamic_nodes_v2_gr.js").str();
-
   auto param = GetParam();
+  const std::string json_metadata = get_data_dir().join(param.tracefile).str();
   std::vector<uint16_t> cluster_classic_ports;
   // The ports set via INSTANTIATE_TEST_SUITE_P are only ids
   // (INSTANTIATE_TEST_SUITE_P does not have access to classic_ports vector). We
@@ -432,8 +426,8 @@ TEST_P(QuorumTest, Verify) {
   for (const auto [id, port] : stdx::views::enumerate(classic_ports)) {
     launch_mysql_server_mock(json_metadata, port, EXIT_SUCCESS, false,
                              http_ports[id]);
-    ::set_mock_metadata(http_ports[id], "uuid", param.gr_nodes, 0,
-                        param.cluster_nodes);
+    set_mock_metadata(http_ports[id], "uuid", param.gr_nodes, 0,
+                      param.cluster_nodes);
   }
 
   const auto router_ro_port = port_pool_.get_next_available();
@@ -445,13 +439,19 @@ TEST_P(QuorumTest, Verify) {
   const std::string routing_ro = get_metadata_cache_routing_section(
       router_ro_port, "SECONDARY", "round-robin-with-fallback", "", "ro");
 
-  const auto wait_ready = (expect_rw_ok || expect_ro_ok) ? 10s : -1s;
+  const auto sync_point = (expect_rw_ok || expect_ro_ok)
+                              ? ProcessManager::Spawner::SyncPoint::READY
+                              : ProcessManager::Spawner::SyncPoint::RUNNING;
 
-  /*auto &router = */ launch_router(
-      metadata_cache_section, routing_rw + routing_ro, cluster_classic_ports,
-      EXIT_SUCCESS, wait_ready);
+  const std::string conf_file = setup_router_config(
+      metadata_cache_section, routing_rw + routing_ro, cluster_classic_ports);
 
-  if (wait_ready == -1s) {
+  router_spawner()
+      .expected_exit_code(EXIT_SUCCESS)
+      .wait_for_sync_point(sync_point)
+      .spawn({"-c", conf_file});
+
+  if (sync_point == ProcessManager::Spawner::SyncPoint::RUNNING) {
     EXPECT_TRUE(wait_for_transaction_count_increase(primary_http_port, 2));
   }
 
@@ -477,7 +477,8 @@ INSTANTIATE_TEST_SUITE_P(
         QuorumTestParam{
             "1_online_1_offline",
             /*gr_nodes*/
-            {{0, "uuid-1", "ONLINE"}, {1, "uuid-2", "OFFLINE"}},
+            {{0, "uuid-1", "ONLINE", "PRIMARY"},
+             {1, "uuid-2", "OFFLINE", "SECONDARY"}},
             /*cluster_nodes*/
             {{0, "uuid-1"}, {1, "uuid-2"}},
             /*expected_rw_endpoints*/
@@ -489,7 +490,8 @@ INSTANTIATE_TEST_SUITE_P(
         QuorumTestParam{
             "1_online_1_recovering",
             /*gr_nodes*/
-            {{0, "uuid-1", "ONLINE"}, {1, "uuid-2", "RECOVERING"}},
+            {{0, "uuid-1", "ONLINE", "PRIMARY"},
+             {1, "uuid-2", "RECOVERING", "SECONDARY"}},
             /*cluster_nodes*/
             {{0, "uuid-1"}, {1, "uuid-2"}},
             /*expected_rw_endpoints*/
@@ -501,9 +503,9 @@ INSTANTIATE_TEST_SUITE_P(
         QuorumTestParam{
             "1_online_2_recovering",
             /*gr_nodes*/
-            {{0, "uuid-1", "ONLINE"},
-             {1, "uuid-2", "RECOVERING"},
-             {2, "uuid-3", "RECOVERING"}},
+            {{0, "uuid-1", "ONLINE", "PRIMARY"},
+             {1, "uuid-2", "RECOVERING", "SECONDARY"},
+             {2, "uuid-3", "RECOVERING", "SECONDARY"}},
             /*cluster_nodes*/
             {{0, "uuid-1"}, {1, "uuid-2"}, {2, "uuid-3"}},
             /*expected_rw_endpoints*/
@@ -517,7 +519,8 @@ INSTANTIATE_TEST_SUITE_P(
         QuorumTestParam{
             "2_online_1_missing_in_metadata",
             /*gr_nodes*/
-            {{0, "uuid-1", "ONLINE"}, {1, "uuid-2", "ONLINE"}},
+            {{0, "uuid-1", "ONLINE", "PRIMARY"},
+             {1, "uuid-2", "ONLINE", "SECONDARY"}},
             /*cluster_nodes*/
             {{0, "uuid-1"}},
             /*expected_rw_endpoints*/
@@ -531,14 +534,29 @@ INSTANTIATE_TEST_SUITE_P(
         QuorumTestParam{
             "2_online_both_missing_in_metadata",
             /*gr_nodes*/
-            {{0, "uuid-1", "ONLINE"}, {1, "uuid-2", "ONLINE"}},
+            {{0, "uuid-1", "ONLINE", "PRIMARY"},
+             {1, "uuid-2", "ONLINE", "SECONDARY"}},
             /*cluster_nodes*/
             {{2, "uuid-3"}},
             /*expected_rw_endpoints*/
             {},
             /*expected_ro_endpoints*/
             {},
-        }),
+        },
+        // Check the same thing but with server version 5.7 (expects different
+        // query checking the GR status)
+        QuorumTestParam{"2_online_both_missing_in_metadata_5_7",
+                        /*gr_nodes*/
+                        {{0, "uuid-1", "ONLINE", "PRIMARY"},
+                         {1, "uuid-2", "ONLINE", "SECONDARY"}},
+                        /*cluster_nodes*/
+                        {{2, "uuid-3"}},
+                        /*expected_rw_endpoints*/
+                        {},
+                        /*expected_ro_endpoints*/
+                        {},
+                        /*tracefile*/
+                        "metadata_dynamic_nodes_v2_gr_5_7.js"}),
     [](const ::testing::TestParamInfo<QuorumTestParam> &info) {
       return info.param.test_name;
     });
@@ -569,9 +587,9 @@ TEST_F(QuorumConnectionLostStandaloneClusterTest, CheckInvalidConDropped) {
     launch_mysql_server_mock(json_metadata, classic_ports[i], EXIT_SUCCESS,
                              false, http_ports[i]);
 
-    ::set_mock_metadata(http_ports[i], "uuid",
-                        classic_ports_to_gr_nodes(classic_ports), i,
-                        classic_ports_to_cluster_nodes(classic_ports));
+    set_mock_metadata(http_ports[i], "uuid",
+                      classic_ports_to_gr_nodes(classic_ports), i,
+                      classic_ports_to_cluster_nodes(classic_ports));
   }
 
   // start the Router
@@ -678,19 +696,19 @@ TEST_F(QuorumConnectionLostStandaloneClusterTest, CheckInvalidConDropped) {
 
   // removed node sees itself as OFFLINE
   std::vector<GRNode> gr_nodes_partition1{
-      {classic_ports[0], "uuid-1", "OFFLINE"}};
+      {classic_ports[0], "uuid-1", "OFFLINE", "PRIMARY"}};
 
-  ::set_mock_metadata(http_ports[0], "uuid", gr_nodes_partition1, 0,
-                      cluster_nodes);
+  set_mock_metadata(http_ports[0], "uuid", gr_nodes_partition1, 0,
+                    cluster_nodes);
 
   // the 2 remaining ones do not see the one that was removed in GR status
   std::vector<GRNode> gr_nodes_partition2{
-      {classic_ports[1], "uuid-2", "ONLINE"},
-      {classic_ports[2], "uuid-3", "ONLINE"}};
+      {classic_ports[1], "uuid-2", "ONLINE", "PRIMARY"},
+      {classic_ports[2], "uuid-3", "ONLINE", "SECONDARY"}};
 
   for (size_t i = 0; i < cluster_nodes.size(); ++i) {
-    ::set_mock_metadata(http_ports[i + 1], "uuid", gr_nodes_partition2, i,
-                        cluster_nodes);
+    set_mock_metadata(http_ports[i + 1], "uuid", gr_nodes_partition2, i,
+                      cluster_nodes);
   }
 
   // wait for the Router to notice the change in the Cluster
@@ -741,9 +759,10 @@ TEST_P(AccessToPartitionWithNoQuorum, Spec) {
   // We only create the second partition as the Router only has accsess only
   // to this one anyway
 
-  std::vector<GRNode> gr_nodes{{classic_ports[0], "uuid-1", "UNREACHABLE"},
-                               {classic_ports[1], "uuid-2", "UNREACHABLE"},
-                               {classic_ports[2], "uuid-3", "ONLINE"}};
+  std::vector<GRNode> gr_nodes{
+      {classic_ports[0], "uuid-1", "UNREACHABLE", "SECONDARY"},
+      {classic_ports[1], "uuid-2", "UNREACHABLE", "SECONDARY"},
+      {classic_ports[2], "uuid-3", "ONLINE", "PRIMARY"}};
   std::vector<::ClusterNode> cluster_nodes{{classic_ports[0], "uuid-1"},
                                            {classic_ports[1], "uuid-2"},
                                            {classic_ports[2], "uuid-3"}};
@@ -753,8 +772,8 @@ TEST_P(AccessToPartitionWithNoQuorum, Spec) {
   const std::string router_options = get_router_options_as_json_str(
       std::nullopt, GetParam().unreachable_quorum_allowed_traffic);
 
-  ::set_mock_metadata(http_ports[2], "uuid", gr_nodes, 2, cluster_nodes, 2, 0,
-                      false, "127.0.0.1", router_options);
+  set_mock_metadata(http_ports[2], "uuid", gr_nodes, 2, cluster_nodes, 2, false,
+                    "127.0.0.1", router_options);
 
   const auto router_ro_port = port_pool_.get_next_available();
   const auto router_rw_port = port_pool_.get_next_available();
@@ -771,17 +790,22 @@ TEST_P(AccessToPartitionWithNoQuorum, Spec) {
   std::vector<uint16_t> metadata_server_ports{
       classic_ports[0], classic_ports[1], classic_ports[2]};
 
-  const auto wait_ready = (GetParam().expect_rw_connection_ok ||
+  const auto sync_point = (GetParam().expect_rw_connection_ok ||
                            GetParam().expect_ro_connection_ok ||
                            GetParam().expect_rw_split_connection_ok)
-                              ? 10s
-                              : -1s;
+                              ? ProcessManager::Spawner::SyncPoint::READY
+                              : ProcessManager::Spawner::SyncPoint::RUNNING;
 
-  /*auto &router = */ launch_router(
+  const std::string conf_file = setup_router_config(
       metadata_cache_section, routing_rw + routing_ro + routing_rw_split,
-      metadata_server_ports, EXIT_SUCCESS, wait_ready);
+      metadata_server_ports);
 
-  if (wait_ready == -1s) {
+  router_spawner()
+      .expected_exit_code(EXIT_SUCCESS)
+      .wait_for_sync_point(sync_point)
+      .spawn({"-c", conf_file});
+
+  if (sync_point == ProcessManager::Spawner::SyncPoint::RUNNING) {
     EXPECT_TRUE(wait_for_transaction_count_increase(http_ports[2], 2));
   }
 
@@ -882,14 +906,14 @@ TEST_P(AccessToBothPartitions, Spec) {
   // [UNREACHABLE, ONLINE, ONLINE ]
 
   std::vector<GRNode> gr_nodes_partition1{
-      {classic_ports[0], "uuid-1", "ONLINE"},
-      {classic_ports[1], "uuid-2", "UNREACHABLE"},
-      {classic_ports[2], "uuid-3", "UNREACHABLE"}};
+      {classic_ports[0], "uuid-1", "ONLINE", "PRIMARY"},
+      {classic_ports[1], "uuid-2", "UNREACHABLE", "SECONDARY"},
+      {classic_ports[2], "uuid-3", "UNREACHABLE", "SECONDARY"}};
 
   std::vector<GRNode> gr_nodes_partition2{
-      {classic_ports[0], "uuid-1", "UNREACHABLE"},
-      {classic_ports[1], "uuid-2", "ONLINE"},
-      {classic_ports[2], "uuid-3", "ONLINE"}};
+      {classic_ports[0], "uuid-1", "UNREACHABLE", "SECONDARY"},
+      {classic_ports[1], "uuid-2", "ONLINE", "PRIMARY"},
+      {classic_ports[2], "uuid-3", "ONLINE", "SECONDARY"}};
 
   std::vector<::ClusterNode> cluster_nodes{{classic_ports[0], "uuid-1"},
                                            {classic_ports[1], "uuid-2"},
@@ -902,17 +926,16 @@ TEST_P(AccessToBothPartitions, Spec) {
   launch_mysql_server_mock(json_metadata, classic_ports[0], EXIT_SUCCESS, false,
                            http_ports[0]);
 
-  ::set_mock_metadata(http_ports[0], "uuid", gr_nodes_partition1, 0,
-                      cluster_nodes, 2, 0, false, "127.0.0.1", router_options);
+  set_mock_metadata(http_ports[0], "uuid", gr_nodes_partition1, 0,
+                    cluster_nodes, 2, false, "127.0.0.1", router_options);
 
   // launch second partition - 2 nodes
   for (size_t i = 1; i <= 2; ++i) {
     launch_mysql_server_mock(json_metadata, classic_ports[i], EXIT_SUCCESS,
                              false, http_ports[i]);
 
-    ::set_mock_metadata(http_ports[i], "uuid", gr_nodes_partition2, i,
-                        cluster_nodes, 1, 0, false, "127.0.0.1",
-                        router_options);
+    set_mock_metadata(http_ports[i], "uuid", gr_nodes_partition2, i,
+                      cluster_nodes, 1, false, "127.0.0.1", router_options);
   }
 
   const auto router_ro_port = port_pool_.get_next_available();
@@ -990,9 +1013,10 @@ TEST_P(BootstrapWithNoQuorum, Spec) {
   // partition is: [UNREACHABLE, UNREACHABLE, ONLINE ]. We only create the
   // second partition as the Router only has accsess only to this one anyway
 
-  std::vector<GRNode> gr_nodes{{classic_ports[0], "uuid-1", "ONLINE"},
-                               {classic_ports[1], "uuid-2", "UNREACHABLE"},
-                               {classic_ports[2], "uuid-3", "UNREACHABLE"}};
+  std::vector<GRNode> gr_nodes{
+      {classic_ports[0], "uuid-1", "ONLINE", "PRIMARY"},
+      {classic_ports[1], "uuid-2", "UNREACHABLE", "SECONDARY"},
+      {classic_ports[2], "uuid-3", "UNREACHABLE", "SECONDARY"}};
   std::vector<::ClusterNode> cluster_nodes{{classic_ports[0], "uuid-1"},
                                            {classic_ports[1], "uuid-2"},
                                            {classic_ports[2], "uuid-3"}};
@@ -1002,8 +1026,8 @@ TEST_P(BootstrapWithNoQuorum, Spec) {
   const std::string router_options = get_router_options_as_json_str(
       std::nullopt, GetParam().unreachable_quorum_allowed_traffic);
 
-  ::set_mock_metadata(http_ports[0], "uuid", gr_nodes, 2, cluster_nodes, 2, 0,
-                      false, "127.0.0.1", router_options);
+  set_mock_metadata(http_ports[0], "uuid", gr_nodes, 2, cluster_nodes, 2, false,
+                    "127.0.0.1", router_options);
 
   auto &router = launch_router_for_bootstrap(
       {
@@ -1090,10 +1114,11 @@ TEST_P(ClusterSetAccessToPartitionWithNoQuorum, Spec) {
 
   const auto http_port =
       clusterset_data_.clusters[target_cluster_id].nodes[0].http_port;
-  set_mock_metadata(/*view_id*/ 0, /* this_cluster_id*/ target_cluster_id,
-                    /*this_node_id*/ 0,
-                    /*target_cluster_id*/ target_cluster_id, http_port,
-                    clusterset_data_, router_options);
+  set_mock_clusterset_metadata(/*view_id*/ 0,
+                               /* this_cluster_id*/ target_cluster_id,
+                               /*this_node_id*/ 0,
+                               /*target_cluster_id*/ target_cluster_id,
+                               http_port, clusterset_data_, router_options);
 
   const auto router_ro_port = port_pool_.get_next_available();
   const auto router_rw_port = port_pool_.get_next_available();
@@ -1110,18 +1135,23 @@ TEST_P(ClusterSetAccessToPartitionWithNoQuorum, Spec) {
   const auto metadata_server_ports =
       clusterset_data_.get_md_servers_classic_ports();
 
-  const auto wait_ready = (GetParam().expect_rw_connection_ok ||
+  const auto sync_point = (GetParam().expect_rw_connection_ok ||
                            GetParam().expect_ro_connection_ok ||
                            GetParam().expect_rw_split_connection_ok)
-                              ? 10s
-                              : -1s;
+                              ? ProcessManager::Spawner::SyncPoint::READY
+                              : ProcessManager::Spawner::SyncPoint::RUNNING;
 
-  /*auto &router = */ launch_router(
+  const std::string conf_file = setup_router_config(
       metadata_cache_section, routing_rw + routing_ro + routing_rw_split,
-      metadata_server_ports, EXIT_SUCCESS, wait_ready);
+      metadata_server_ports);
 
-  if (wait_ready == -1s) {
-    EXPECT_TRUE(wait_for_transaction_count_increase(http_port, 1));
+  router_spawner()
+      .expected_exit_code(EXIT_SUCCESS)
+      .wait_for_sync_point(sync_point)
+      .spawn({"-c", conf_file});
+
+  if (sync_point == ProcessManager::Spawner::SyncPoint::RUNNING) {
+    EXPECT_TRUE(wait_for_transaction_count(http_port, 1));
   }
 
   if (GetParam().expect_rw_connection_ok) {

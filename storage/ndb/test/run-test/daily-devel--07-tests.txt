@@ -294,7 +294,7 @@ max-time: 600
 
 cmd: testNodeRestart
 args: -n CheckGcpStopTimerDistributed T1
-max-time: 520
+max-time: 2000
 
 cmd: testNdbApi
 args: -n TestSlowConnectEnable T1
@@ -315,4 +315,16 @@ max-time: 180
 cmd: test_event
 args: -n StallingSubscriber T1
 max-time : 180
+
+cmd: test_event
+args: -n SubscribeEventsNR T1
+max-time: 240
+
+cmd: test_event
+args: -n SubscribeEventsNRAF T1
+max-time: 240
+
+cmd: testNodeRestart
+args: -n TransientStatesNF T1
+max-time: 360
 

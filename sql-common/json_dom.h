@@ -25,7 +25,6 @@
 
 #include <assert.h>
 #include <stddef.h>
-#include <functional>
 #include <iterator>
 #include <map>
 #include <memory>  // unique_ptr
@@ -36,16 +35,15 @@
 #include <vector>
 
 #include "field_types.h"  // enum_field_types
-#include "my_compiler.h"
-
 #include "my_inttypes.h"
 #include "my_time.h"  // my_time_flags_t
 #include "mysql/mysql_lex_string.h"
 #include "mysql_time.h"              // MYSQL_TIME
 #include "prealloced_array.h"        // Prealloced_array
 #include "sql-common/json_binary.h"  // json_binary::Value
-#include "sql-common/my_decimal.h"   // my_decimal
-#include "sql/malloc_allocator.h"    // Malloc_allocator
+#include "sql-common/json_error_handler.h"
+#include "sql-common/my_decimal.h"  // my_decimal
+#include "sql/malloc_allocator.h"   // Malloc_allocator
 
 class Field_json;
 class Json_array;
@@ -56,7 +54,6 @@ class Json_path;
 class Json_seekable_path;
 class Json_wrapper;
 class String;
-class THD;
 
 struct CHARSET_INFO;
 
@@ -270,9 +267,6 @@ class Json_dom {
 
     @param[in]  text   the JSON text
     @param[in]  length the length of the text
-    @param[out] errmsg any syntax error message (will be ignored if it is NULL)
-    @param[out] offset the position in the parsed string a syntax error was
-                       found (will be ignored if it is NULL)
     @param[in] error_handler Pointer to a function that should handle
                              reporting of parsing error.
     @param[in] depth_handler   Pointer to a function that should handle error
@@ -289,7 +283,6 @@ class Json_dom {
     Construct a DOM object based on a binary JSON value. The ownership
     of the returned object is henceforth with the caller.
 
-    @param thd  current session
     @param v    the binary value to parse
     @return a DOM representation of the binary value, or NULL on error
   */
@@ -1323,23 +1316,14 @@ class Json_wrapper {
   /**
     Get the wrapped contents in binary value form.
 
+    @param error_handler a handler that is invoked if an error occurs
     @param[in,out] str  a string that will be filled with the binary value
-    @param json_depth_handler handler which will be called for JSON documents
-                              exceeding the maximum allowed depth
-    @param json_key_handler  handler which will be called for JSON documents
-                             having keys too large
-    @param json_value_handler handler which will be called for JSON documents
-                              having values too large
-    @param invalid_json_handler handler which will be called for invalid
-                                JSON documents
 
     @retval false on success
     @retval true  on error
   */
-  bool to_binary(String *str, const JsonErrorHandler &json_depth_handler,
-                 const JsonErrorHandler &json_key_handler,
-                 const JsonErrorHandler &json_value_handler,
-                 const JsonErrorHandler &invalid_json_handler) const;
+  bool to_binary(const JsonSerializationErrorHandler &error_handler,
+                 String *str) const;
 
   /**
     Check if the wrapped JSON document is a binary value (a

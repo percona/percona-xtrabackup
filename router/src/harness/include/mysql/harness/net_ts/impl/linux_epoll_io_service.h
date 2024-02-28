@@ -43,6 +43,7 @@
 #include <iostream>
 #include <sstream>
 
+#include "my_compiler.h"  // MY_COMPILER_*
 #include "mysql/harness/net_ts/impl/io_service_base.h"
 #include "mysql/harness/net_ts/impl/linux_epoll.h"
 #include "mysql/harness/net_ts/impl/socket_error.h"
@@ -531,14 +532,20 @@ class linux_epoll_io_service : public IoServiceBase {
 
   stdx::expected<fd_event, std::error_code> update_fd_events(
       std::chrono::milliseconds timeout) {
-    decltype(fd_events_) evs{};
+    MY_COMPILER_DIAGNOSTIC_PUSH();
+    MY_COMPILER_GCC_DIAGNOSTIC_IGNORE("-Wmaybe-uninitialized")
+
+    // not initialized as it is write-only to by epoll::wait().
+    decltype(fd_events_) evs;
 
     auto res = impl::epoll::wait(epfd_, evs.data(), evs.size(), timeout);
+    MY_COMPILER_DIAGNOSTIC_POP();
 
     if (!res) return stdx::make_unexpected(res.error());
 
     std::lock_guard lk(fd_events_mtx_);
-    fd_events_ = evs;
+    // copy the fd-events that were returned.
+    std::copy_n(evs.begin(), *res, fd_events_.begin());
 
     fd_events_processed_ = 0;
     fd_events_size_ = *res;

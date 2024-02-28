@@ -2,15 +2,15 @@
 # Bug#26475312 VALGRIND MEMORY LEAK ( CMP_FIELD_VALUE(FIELD*, LONG) (SQL_EXECUTOR.CC:3598)
 #
 CREATE TABLE H (
-col_varchar_10_utf8 varchar(10)  CHARACTER SET utf8,
+col_varchar_10_utf8 varchar(10)  CHARACTER SET utf8mb3,
 col_varchar_255_latin1_key varchar(255)  CHARACTER SET latin1,
 col_varchar_10_latin1_key varchar(10)  CHARACTER SET latin1,
 col_varchar_10_latin1 varchar(10)  CHARACTER SET latin1,
-col_varchar_10_utf8_key varchar(10)  CHARACTER SET utf8,
-col_varchar_255_utf8_key varchar(255)  CHARACTER SET utf8,
+col_varchar_10_utf8_key varchar(10)  CHARACTER SET utf8mb3,
+col_varchar_255_utf8_key varchar(255)  CHARACTER SET utf8mb3,
 col_int int,
 col_int_key int,
-col_varchar_255_utf8 varchar(255)  CHARACTER SET utf8,
+col_varchar_255_utf8 varchar(255)  CHARACTER SET utf8mb3,
 pk integer auto_increment,
 col_varchar_255_latin1 varchar(255)  CHARACTER SET latin1,
 /*Indices*/
@@ -21,10 +21,10 @@ key (col_varchar_255_utf8_key ),
 key (col_int_key ),
 primary key (pk)) ENGINE=innodb;
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 INSERT IGNORE INTO H VALUES
 ('about', 'z', 'they', 'm', 'x', 'could',
 3, 155189248,
@@ -33,16 +33,16 @@ Warnings:
 Warning	1265	Data truncated for column 'col_varchar_255_utf8' at row 1
 CREATE TABLE DD (
 col_varchar_255_latin1_key varchar(255)  CHARACTER SET latin1,
-col_varchar_255_utf8_key varchar(255)  CHARACTER SET utf8,
+col_varchar_255_utf8_key varchar(255)  CHARACTER SET utf8mb3,
 col_varchar_255_latin1 varchar(255)  CHARACTER SET latin1,
 col_varchar_10_latin1_key varchar(10)  CHARACTER SET latin1,
 col_int_key int,
-col_varchar_255_utf8 varchar(255)  CHARACTER SET utf8,
+col_varchar_255_utf8 varchar(255)  CHARACTER SET utf8mb3,
 pk integer auto_increment,
-col_varchar_10_utf8 varchar(10)  CHARACTER SET utf8,
+col_varchar_10_utf8 varchar(10)  CHARACTER SET utf8mb3,
 col_int int,
 col_varchar_10_latin1 varchar(10)  CHARACTER SET latin1,
-col_varchar_10_utf8_key varchar(10)  CHARACTER SET utf8,
+col_varchar_10_utf8_key varchar(10)  CHARACTER SET utf8mb3,
 /*Indices*/
 key (col_varchar_255_latin1_key ),
 key (col_varchar_255_utf8_key ),
@@ -51,10 +51,10 @@ key (col_int_key ),
 primary key (pk),
 key (col_varchar_10_utf8_key )) ENGINE=innodb;
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 INSERT IGNORE INTO DD VALUES  ('q',
 'brmucbzjaeueffwxeyonrgouqbsvekyzrfizdybnlisnzpgplythqeyugzvhzjmxhmzqnbmldcuskteeyxqeesumyuohkhmoxtlpsumxsuahxrnybqsdvkiiiiatzeihtiwqjgxrspppoytvmuufhhkcgbnpemioxkjebunithymftmsroaqsxdrxhcozhqdagsxfxndeimavrxfdocfgafdxzxqoehcikppndcieybkyxmumqsbcwcmmrweiprthlrnphvebnfgjfhrkrxxorzzbedateyoomxdzgkevuyyvmusoduugukillurhwggkspxpaoxldymllvikfrwhblzugcnlgmozwbhvpytvyogbythupkkfgjqpqjgprksqcndkbsrzgiuvqgkqtqvucjdnyfqhigpgfeclnxyrkcxviqrwelsktxpoecytteiloxyzksesbdqhrcrfdzuxboyppuzjvssddkrsgvagetbssudtdsxcmpqpemiqbztutrkxougxqcpwlacgbyktskefotymojkkjnbkvkmqjgzrvmfpzwkixtxioqbzfvomgkicobwpsjeyfcaxwqxegkkiunassfsitgtnbbqukaeoubigzikncxyodlihgflmcbkqxdcvjpiqmnoorrutfxankapsmbdiicuytbwekanfyklnbjliaaebckybutdqwptyalaxaeuihzhclgqsmahtzogdxwslioxailzxafyztqpcakqukruoggiuemclpylcufjtmzxbutyghfkezxvfwojgolicczdqpqtwnugrwwcxumxofffljfhpkpddctnalygeuaugnnwxylfjdpzwvybdgtfyagjeqniouizgdzbhwahrylqwmnqzcjrhoivxidqmuikodwulsugcmwtxsadjdztkpdwbdxtvckayxskunxtompmmcbgiyedwfbjafnpcbvmxnrzvubwpnxfuzndvkxkf', 'now',
 'you\'re', 1811152896, 'or', NULL, 'this', 6, 'then', 'e') ,  ('did', 'j',
@@ -1773,3 +1773,124 @@ a	a+1	a-1	b	b+1	b-1
 6	7	5	6	7	5
 DROP PROCEDURE test2;
 DROP TABLE table1;
+#
+# Bug#35390341 Assertion `m_count > 0 && m_count > m_frame_null_count' failed.
+#
+CREATE TABLE t1 (c1 INT);
+INSERT INTO t1 VALUES (NULL), (NULL), (-2128216064);
+SELECT AVG( @A := c1 ) OVER (ROWS 1 PRECEDING) FROM t1;
+AVG( @A := c1 ) OVER (ROWS 1 PRECEDING)
+NULL
+NULL
+-2128216064.0000
+Warnings:
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Consider alternatives: 'SET variable=expression, ...', or 'SELECT expression(s) INTO variables(s)'.
+SELECT @A;
+@A
+-2128216064
+DROP TABLE t1;
+CREATE TABLE t1(a INT);
+INSERT INTO t1 VALUES (0);
+SELECT DISTINCT
+POW( COUNT(*), @a:=(SELECT 1 FROM t1 LEFT JOIN
+t1 AS t2
+ON @a)
+) AS b
+FROM t1 GROUP BY a;
+b
+1
+Warnings:
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Consider alternatives: 'SET variable=expression, ...', or 'SELECT expression(s) INTO variables(s)'.
+SELECT DISTINCT
+pow( COUNT(*), @a:=(SELECT 1 FROM t1 LEFT JOIN
+t1 t2
+ON @a)
+) AS `pow`,
+AVG( @a:= a ) OVER (ROWS 1 PRECEDING) AS `avg`
+FROM t1 GROUP BY a;
+pow	avg
+1	0.0000
+Warnings:
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Consider alternatives: 'SET variable=expression, ...', or 'SELECT expression(s) INTO variables(s)'.
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Consider alternatives: 'SET variable=expression, ...', or 'SELECT expression(s) INTO variables(s)'.
+SELECT @a;
+@a
+1
+SELECT DISTINCT
+pow( COUNT(*), @a:=(SELECT MAX( @a := t1.a) OVER w
+FROM t1
+LEFT JOIN
+t1 t2
+ON @a
+WINDOW w AS (ROWS 1 PRECEDING)
+)
+) AS `pow`
+FROM t1 GROUP BY a;
+pow
+1
+Warnings:
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Consider alternatives: 'SET variable=expression, ...', or 'SELECT expression(s) INTO variables(s)'.
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Consider alternatives: 'SET variable=expression, ...', or 'SELECT expression(s) INTO variables(s)'.
+SELECT @a;
+@a
+0
+DROP TABLE t1;
+#
+# Bug#36008133 Assertion `false' failed in replace_embedded_rollup_references_with_tmp_fields
+#
+CREATE TABLE t1(f1 INTEGER);
+SELECT @A := (CUME_DIST() OVER () + f1 + RANK() OVER ()) FROM t1 GROUP BY f1 WITH ROLLUP;
+@A := (CUME_DIST() OVER () + f1 + RANK() OVER ())
+Warnings:
+Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Consider alternatives: 'SET variable=expression, ...', or 'SELECT expression(s) INTO variables(s)'.
+DROP TABLE t1;
+#
+# Bug#35537311 nth_value window function assertion error
+#
+CREATE TABLE t0(c1 TINYINT UNSIGNED, c5 BIT);
+INSERT INTO t0 VALUES
+(0,NULL),
+(0,NULL),
+(0,NULL),
+(0,NULL),
+(0,NULL),
+(12,_binary '\0'),
+(135,_binary '\0'),
+(193,_binary '\0'),
+(206,_binary '\0'),
+(244,_binary '\0'),
+(255,NULL),
+(255,NULL),
+(255,NULL);
+SELECT NTH_VALUE(t0.c1, 97) OVER (
+ORDER BY t0.c1
+RANGE BETWEEN 99 FOLLOWING AND 51 FOLLOWING)
+FROM t0;
+NTH_VALUE(t0.c1, 97) OVER (
+ORDER BY t0.c1
+RANGE BETWEEN 99 FOLLOWING AND 51 FOLLOWING)
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+TRUNCATE t0;
+INSERT INTO t0(c1) VALUES (135), (206), (193), (244), (255), (255), (255);
+SELECT NTH_VALUE(c1, 2) OVER (ORDER BY c1 RANGE BETWEEN 60 FOLLOWING AND 100 FOLLOWING) FROM t0;
+NTH_VALUE(c1, 2) OVER (ORDER BY c1 RANGE BETWEEN 60 FOLLOWING AND 100 FOLLOWING)
+NULL
+255
+NULL
+NULL
+NULL
+NULL
+NULL
+DROP TABLE t0;

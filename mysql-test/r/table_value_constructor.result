@@ -699,3 +699,85 @@ ROW(TIME '-719:0:0.2323049640');
 column_0
 NULL
 -719:00:00.232304
+#
+# Bug#35512099: hypergraph_optimizer SEGV
+#
+CREATE TABLE t(x INT);
+INSERT INTO t VALUES (0);
+EXPLAIN FORMAT=TREE INSERT INTO t VALUES ROW(1), ROW(2) UNION ALL VALUES ROW(2), ROW(3);
+EXPLAIN
+-> Insert into t
+    -> Table scan on <union temporary>  (rows=4)
+        -> Union all materialize  (rows=4)
+            -> Rows fetched before execution  (rows=2)
+            -> Rows fetched before execution  (rows=2)
+
+INSERT INTO t VALUES ROW(1), ROW(2) UNION ALL VALUES ROW(2), ROW(3);
+SELECT * FROM t;
+x
+0
+1
+2
+2
+3
+DROP TABLE t;
+#
+# Bug#35087820: VALUES Statement with dependent subquery is wrong
+#
+CREATE TABLE t(
+id INTEGER PRIMARY KEY,
+a VARCHAR(4),
+b VARCHAR(4),
+c VARCHAR(3));
+INSERT INTO t VALUES (1, 'a1', 'b1', 'c1'), (2, 'a2', 'b2', 'c2');
+SELECT
+id,
+(SELECT MAX(col1) FROM (VALUES ROW(a), ROW(b), ROW(c)) AS x(col1)) AS max
+FROM t;
+id	max
+1	c1
+2	c2
+DROP TABLE t;
+#
+# Bug#34852090: Incorrect result with VALUES in
+#               a correlated LATERAL subquery
+#
+WITH v1(x) AS (VALUES ROW (1), ROW (2), ROW (3))
+SELECT * FROM v1, LATERAL (VALUES ROW(v1.x)) AS v2;
+x	column_0
+1	1
+2	2
+3	3
+#
+# Bug#30775369: WRONG RESULT WITH "IN" COMPARATOR AND
+#               A TABLE VALUE CONSTRUCTOR
+#
+CREATE TABLE t(a INT, b INT);
+INSERT INTO t VALUES (1, 2), (3, 4), (5, 6), (7, 8), (9, 10), (NULL, NULL);
+ANALYZE TABLE t;
+Table	Op	Msg_type	Msg_text
+test.t	analyze	status	OK
+EXPLAIN FORMAT=TREE SELECT * FROM t WHERE a IN (VALUES ROW(5), ROW(55), ROW(NULL));
+EXPLAIN
+-> Filter: <in_optimizer>(t.a,<exists>(select #2))  (rows=6)
+    -> Table scan on t  (rows=6)
+    -> Select #2 (subquery in condition; dependent)
+        -> Filter: <if>(outer_field_is_not_null, <is_not_null_test>(column_0), true)  (rows=3)
+            -> Filter: <if>(outer_field_is_not_null, ((<cache>(t.a) = column_0) or (column_0 is null)), true)  (rows=3)
+                -> Rows fetched before execution  (rows=3)
+
+SELECT * FROM t WHERE a IN (VALUES ROW(5), ROW(55), ROW(NULL));
+a	b
+5	6
+DROP TABLE t;
+#
+# Bug#35785452: Table value constructor in subquery:
+#               Assertion `!sl->order_list.first' failed.
+#
+CREATE TABLE t(x INT);
+INSERT INTO t VALUES (1), (2), (3), (4);
+SELECT * FROM t WHERE x >= ALL (VALUES ROW(2), ROW(3) ORDER BY column_0);
+x
+3
+4
+DROP TABLE t;

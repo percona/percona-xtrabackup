@@ -20,20 +20,44 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <gtest/gtest.h>
+#include <atomic>
+#include <cassert>
 #include <cstring>
+#include <initializer_list>
+#include <map>
 #include <memory>
+#include <new>
+#include <string>
+#include <utility>
+
+#include "gtest/gtest.h"
 
 #include "base64.h"
+#include "decimal.h"
+#include "field_types.h"
 #include "my_byteorder.h"
 #include "my_inttypes.h"
+#include "my_sys.h"
+#include "my_time.h"
+#include "mysql/components/services/bits/psi_bits.h"
+#include "mysql/mysql_lex_string.h"
+#include "mysql/strings/m_ctype.h"
+#include "mysql_time.h"
+#include "mysqld_error.h"
 #include "sql-common/json_binary.h"
+#include "sql-common/json_diff.h"
 #include "sql-common/json_dom.h"
+#include "sql-common/json_error_handler.h"
 #include "sql-common/json_path.h"
 #include "sql-common/my_decimal.h"
-#include "sql/json_diff.h"
+#include "sql/current_thd.h"
+#include "sql/field.h"
+#include "sql/item_json_func.h"
+#include "sql/psi_memory_key.h"
 #include "sql/sql_class.h"
+#include "sql/sql_const.h"
 #include "sql/sql_time.h"
+#include "sql/table.h"
 #include "sql_string.h"
 #include "template_utils.h"  // down_cast
 #include "unittest/gunit/base_mock_field.h"
@@ -106,8 +130,7 @@ static Json_dom_ptr parse_json(const char *json_text) {
 static Json_path parse_path(const char *json_path) {
   Json_path path(key_memory_JSON);
   size_t bad_index;
-  EXPECT_FALSE(parse_path(std::strlen(json_path), json_path, &path, &bad_index,
-                          [] { ASSERT_TRUE(false); }))
+  EXPECT_FALSE(parse_path(std::strlen(json_path), json_path, &path, &bad_index))
       << "bad index: " << bad_index;
   return path;
 }
@@ -443,8 +466,8 @@ void vet_wrapper_length(const char *text, size_t expected_length) {
 
   String serialized_form;
   EXPECT_FALSE(json_binary::serialize(
-      dom_wrapper.to_dom(), &serialized_form, &JsonDepthErrorHandler,
-      &JsonKeyTooBigErrorHandler, &JsonValueTooBigErrorHandler));
+      dom_wrapper.to_dom(), JsonSerializationDefaultErrorHandler(current_thd),
+      &serialized_form));
   json_binary::Value binary = json_binary::parse_binary(
       serialized_form.ptr(), serialized_form.length());
   Json_wrapper binary_wrapper(binary);
@@ -702,8 +725,7 @@ TEST_F(JsonDomTest, AttemptBinaryUpdate) {
 
   String buffer;
   EXPECT_FALSE(json_binary::serialize(
-      dom.get(), &buffer, &JsonDepthErrorHandler, &JsonKeyTooBigErrorHandler,
-      &JsonValueTooBigErrorHandler));
+      dom.get(), JsonSerializationDefaultErrorHandler(thd()), &buffer));
 
   json_binary::Value binary =
       json_binary::parse_binary(buffer.ptr(), buffer.length());
@@ -962,9 +984,8 @@ TEST_F(JsonDomTest, AttemptBinaryUpdate_AllTypes) {
     EXPECT_FALSE(m_field.val_json(&doc));
 
     StringBuffer<STRING_BUFFER_USUAL_SIZE> original;
-    EXPECT_FALSE(doc.to_binary(
-        &original, &JsonDepthErrorHandler, &JsonKeyTooBigErrorHandler,
-        &JsonValueTooBigErrorHandler, &InvalidJsonErrorHandler));
+    EXPECT_FALSE(
+        doc.to_binary(JsonSerializationDefaultErrorHandler(thd()), &original));
 
     Json_wrapper new_value(dom->clone());
 
@@ -1090,14 +1111,12 @@ void test_apply_json_diffs(Field_json *field, const Json_diff_vector &diffs,
 
   TABLE *table = field->table;
   if (table->is_binary_diff_enabled(field)) {
+    JsonSerializationDefaultErrorHandler error_handler{current_thd};
     StringBuffer<STRING_BUFFER_USUAL_SIZE> original;
-    EXPECT_FALSE(json_binary::serialize(
-        parse_json(orig_json).get(), &original, &JsonDepthErrorHandler,
-        &JsonKeyTooBigErrorHandler, &JsonValueTooBigErrorHandler));
+    EXPECT_FALSE(json_binary::serialize(parse_json(orig_json).get(),
+                                        error_handler, &original));
     StringBuffer<STRING_BUFFER_USUAL_SIZE> updated;
-    EXPECT_FALSE(doc.to_binary(
-        &updated, &JsonDepthErrorHandler, &JsonKeyTooBigErrorHandler,
-        &JsonValueTooBigErrorHandler, &InvalidJsonErrorHandler));
+    EXPECT_FALSE(doc.to_binary(error_handler, &updated));
     verify_binary_diffs(field, table->get_binary_diffs(field), original,
                         updated);
   }
@@ -1327,8 +1346,8 @@ static void benchmark_dom_parse(size_t num_iterations, const char *json_text) {
 
   String buffer;
   EXPECT_FALSE(json_binary::serialize(
-      dom.get(), &buffer, &JsonDepthErrorHandler, &JsonKeyTooBigErrorHandler,
-      &JsonValueTooBigErrorHandler));
+      dom.get(), JsonSerializationDefaultErrorHandler(initializer.thd()),
+      &buffer));
 
   json_binary::Value binary =
       json_binary::parse_binary(buffer.ptr(), buffer.length());
@@ -1390,9 +1409,8 @@ static void benchmark_binary_seek(size_t num_iterations, const Json_path &path,
   initializer.SetUp();
 
   String buffer;
-  EXPECT_FALSE(json_binary::serialize(&o, &buffer, &JsonDepthErrorHandler,
-                                      &JsonKeyTooBigErrorHandler,
-                                      &JsonValueTooBigErrorHandler));
+  EXPECT_FALSE(json_binary::serialize(
+      &o, JsonSerializationDefaultErrorHandler(initializer.thd()), &buffer));
   json_binary::Value val =
       json_binary::parse_binary(buffer.ptr(), buffer.length());
 
@@ -1700,8 +1718,8 @@ static void BM_JsonWrapperObjectIteratorBinary(size_t num_iterations) {
 
   String serialized_object;
   EXPECT_FALSE(json_binary::serialize(
-      &dom_object, &serialized_object, &JsonDepthErrorHandler,
-      &JsonKeyTooBigErrorHandler, &JsonValueTooBigErrorHandler));
+      &dom_object, JsonSerializationDefaultErrorHandler(initializer.thd()),
+      &serialized_object));
   Json_wrapper wrapper(json_binary::parse_binary(serialized_object.ptr(),
                                                  serialized_object.length()));
   EXPECT_EQ(enum_json_type::J_OBJECT, wrapper.type());

@@ -123,14 +123,6 @@ int group_replication_trans_before_dml(Trans_param *param, int &out) {
     return 0;
   }
 
-  if ((out += (param->trans_ctx_info.transaction_write_set_extraction ==
-               HASH_ALGORITHM_OFF))) {
-    /* purecov: begin inspected */
-    LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_TRANS_WRITE_SET_EXTRACTION_NOT_SET);
-    return 0;
-    /* purecov: end */
-  }
-
   if (local_member_info->has_enforces_update_everywhere_checks() &&
       (out += (param->trans_ctx_info.tx_isolation == ISO_SERIALIZABLE))) {
     LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_UNSUPPORTED_TRANS_ISOLATION);
@@ -283,15 +275,20 @@ int group_replication_trans_before_commit(Trans_param *param) {
   const ulong transaction_size_limit = get_transaction_size_limit();
   my_off_t transaction_size = 0;
 
-  const bool is_gtid_specified = param->gtid_info.type == ASSIGNED_GTID;
+  bool is_gtid_specified = param->gtid_info.type == ASSIGNED_GTID;
+
+  mysql::gtid::Tag_plain automatic_tag;
+  automatic_tag.clear();
+
   Gtid gtid = {param->gtid_info.sidno, param->gtid_info.gno};
   if (!is_gtid_specified) {
-    // Dummy values that will be replaced after certification.
+    // sidno and gno are dummy values that will be replaced after certification
     gtid.sidno = 1;
     gtid.gno = 1;
+    automatic_tag = param->gtid_info.automatic_tag;
   }
 
-  const Gtid_specification gtid_specification = {ASSIGNED_GTID, gtid};
+  Gtid_specification gtid_specification = {ASSIGNED_GTID, gtid, automatic_tag};
   Gtid_log_event *gle = nullptr;
 
   Transaction_context_log_event *tcle = nullptr;

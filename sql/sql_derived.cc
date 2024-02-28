@@ -365,6 +365,17 @@ bool Table_ref::resolve_derived(THD *thd, bool apply_semijoin) {
         if (sl->parent()->term_type() != QT_UNION) {
           my_error(ER_CTE_RECURSIVE_NOT_UNION, MYF(0));
           return true;
+        } else if (sl->parent()->parent() != nullptr) {
+          /*
+            Right-nested UNIONs with recursive query blocks are not allowed. It
+            is expected that all possible flattening of UNION blocks is done
+            beforehand. Any nested UNION indicates a mixing of UNION DISTINCT
+            and UNION ALL, which cannot be flattened further.
+          */
+          my_error(ER_NOT_SUPPORTED_YET, MYF(0),
+                   "right nested recursive query blocks, in "
+                   "Common Table Expression");
+          return true;
         }
         if (sl->is_ordered() || sl->has_limit() || sl->is_distinct()) {
           /*
@@ -518,6 +529,8 @@ bool copy_field_info(THD *thd, Item *orig_expr, Item *cloned_expr) {
   // Collect information for fields from the original expression
   if (WalkItem(orig_expr, enum_walk::PREFIX,
                [&field_info, &depended_from, &context](Item *inner_item) {
+                 Query_block *saved_depended_from = depended_from;
+                 Name_resolution_context *saved_context = context;
                  if (inner_item->type() == Item::REF_ITEM ||
                      inner_item->type() == Item::FIELD_ITEM) {
                    Item_ident *ident = down_cast<Item_ident *>(inner_item);
@@ -537,11 +550,12 @@ bool copy_field_info(THD *thd, Item *orig_expr, Item *cloned_expr) {
                            Field_info(context, field->table_ref, depended_from,
                                       field->cached_table, field->field)))
                      return true;
-                   // Clear dependent_from and context so that they are ready
-                   // for another dive that passes over Item_ref objects down
-                   // to the leaf Item_field object.
-                   depended_from = nullptr;
-                   context = nullptr;
+                   // In case of Item_ref object with multiple fields
+                   // having different depended_from and context information,
+                   // we always need to take care to restore the depended_from
+                   // and context to that of the Item_ref object.
+                   depended_from = saved_depended_from;
+                   context = saved_context;
                  }
                  return false;
                }))
@@ -1322,7 +1336,7 @@ bool Condition_pushdown::push_past_group_by() {
     return false;
   }
   if (m_query_block->is_implicitly_grouped() ||
-      m_query_block->olap == ROLLUP_TYPE)
+      m_query_block->is_non_primitive_grouped())
     return false;
   m_checking_purpose = CHECK_FOR_WHERE;
   Opt_trace_object step_wrapper(trace, "pushing_past_group_by");
@@ -1615,7 +1629,7 @@ bool Table_ref::optimize_derived(THD *thd) {
   // doesn't care about const tables, though, so it prefers to do this
   // at execution time (in fact, it will get confused and crash if it has
   // already been materialized).
-  if (!thd->lex->using_hypergraph_optimizer) {
+  if (!thd->lex->using_hypergraph_optimizer()) {
     if (materializable_is_const() &&
         (create_materialized_table(thd) || materialize_derived(thd)))
       return true;

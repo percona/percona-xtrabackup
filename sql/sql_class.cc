@@ -701,7 +701,7 @@ THD::THD(bool enable_plugins)
       m_enable_plugins(enable_plugins),
       m_audited(true),
 #ifdef HAVE_GTID_NEXT_LIST
-      owned_gtid_set(global_sid_map),
+      owned_gtid_set(global_tsid_map),
 #endif
       rpl_thd_ctx(key_memory_rpl_thd_context),
       skip_gtid_rollback(false),
@@ -723,6 +723,7 @@ THD::THD(bool enable_plugins)
       external_store_(),
       events_cache_(nullptr),
       audit_plugins_present(false) {
+  has_incremented_gtid_automatic_count = false;
   main_lex->reset();
   set_psi(nullptr);
   mdl_context.init(this);
@@ -1125,7 +1126,7 @@ void THD::init(void) {
   session_tracker.enable(this);
 
   owned_gtid.clear();
-  owned_sid.clear();
+  owned_tsid.clear();
   m_se_gtid_flags.reset();
   owned_gtid.dbug_print(nullptr, "set owned_gtid (clear) in THD::init");
 
@@ -1432,6 +1433,10 @@ THD::~THD() {
   DBUG_TRACE;
   DBUG_PRINT("info", ("THD dtor, this %p", this));
 
+  if (has_incremented_gtid_automatic_count) {
+    gtid_state->decrease_gtid_automatic_tagged_count();
+  }
+
   if (!release_resources_done()) release_resources();
 
   clear_next_event_pos();
@@ -1729,7 +1734,7 @@ void THD::store_globals() {
 */
 void THD::restore_globals() {
   // Remove reference to specific OS thread.
-  real_id = 0;
+  real_id = null_thread_initializer;
   /*
     Assert that thread_stack is initialized: it's necessary to be able
     to track stack overrun.
@@ -3001,8 +3006,7 @@ bool THD::is_current_stmt_binlog_enabled_and_caches_empty() const {
 }
 
 bool THD::is_current_stmt_binlog_row_enabled_with_write_set_extraction() const {
-  return ((variables.transaction_write_set_extraction != HASH_ALGORITHM_OFF) &&
-          is_current_stmt_binlog_format_row() &&
+  return (is_current_stmt_binlog_format_row() &&
           !is_current_stmt_binlog_disabled());
 }
 
@@ -3620,6 +3624,11 @@ void Transactional_ddl_context::init(dd::String_type db,
                                      dd::String_type tablename,
                                      const handlerton *hton) {
   assert(m_hton == nullptr);
+  /*
+    Currently, Transactional_ddl_context is used only for CREATE TABLE ... START
+    TRANSACTION statement.
+  */
+  assert(m_thd->lex->sql_command == SQLCOM_CREATE_TABLE);
   m_db = db;
   m_tablename = tablename;
   m_hton = hton;
@@ -3631,7 +3640,15 @@ void Transactional_ddl_context::init(dd::String_type db,
 */
 void Transactional_ddl_context::rollback() {
   if (!inited()) return;
+  /*
+    Since the transaction is being rolledback, We need to unlock and close the
+    table belonging to this transaction.
+  */
+  if (m_thd->lock) mysql_unlock_tables(m_thd, m_thd->lock);
+  m_thd->lock = nullptr;
+  if (m_thd->open_tables) close_thread_table(m_thd, &m_thd->open_tables);
   table_cache_manager.lock_all_and_tdc();
+
   TABLE_SHARE *share =
       get_cached_table_share(m_db.c_str(), m_tablename.c_str());
   if (share) {
@@ -3684,7 +3701,7 @@ void THD::init_cost_model() {
 }
 
 const Cost_model_server *THD::cost_model() const {
-  if (lex->using_hypergraph_optimizer) {
+  if (lex->using_hypergraph_optimizer()) {
     return &m_cost_model_hypergraph;
   } else {
     return &m_cost_model;

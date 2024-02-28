@@ -413,7 +413,18 @@ Warnings:
 Note	1003	insert into `test`.`t1` values (10)
 EXPLAIN FORMAT=tree INSERT INTO t1 VALUES (10);
 EXPLAIN
-<not executable by iterator executor>
+-> Insert into t1
+    -> Rows fetched before execution
+
+EXPLAIN REPLACE INTO t1 VALUES (10);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	REPLACE	t1	NULL	ALL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
+Warnings:
+Note	1003	replace into `test`.`t1` values (10)
+EXPLAIN FORMAT=tree REPLACE INTO t1 VALUES (10);
+EXPLAIN
+-> Replace into t1
+    -> Rows fetched before execution
 
 DROP TABLE t1;
 CREATE TABLE t1 (a INTEGER, b INTEGER);
@@ -889,7 +900,7 @@ EXPLAIN FORMAT=tree
 UNION ALL
 SELECT 1 IN (SELECT 1 FROM t1) FROM t1 WHERE 1=2;
 EXPLAIN
--> Append  (cost=0.35 rows=1)
+-> Append  (cost=0.35..0.35 rows=1)
     -> Stream results  (cost=0.35 rows=1)
         -> Table scan on t1  (cost=0.35 rows=1)
     -> Stream results  (cost=0..0 rows=0)
@@ -928,8 +939,8 @@ test.t1	analyze	status	OK
 EXPLAIN FORMAT=tree
 SELECT /*+ SKIP_SCAN(t1) */ * FROM t1 WHERE a IN (2,4,6,8,10) AND b=5 AND e BETWEEN 100 AND 200;
 EXPLAIN
--> Filter: ((t1.b = 5) and (t1.a in (2,4,6,8,10)) and (t1.e between 100 and 200))  (cost=1.5 rows=5)
-    -> Covering index skip scan on t1 using idx1 over a IN (2, 4, (3 more)), b = 5, 100 <= e <= 200  (cost=1.5 rows=5)
+-> Filter: ((t1.b = 5) and (t1.a in (2,4,6,8,10)) and (t1.e between 100 and 200))  (cost=0.301..1.5 rows=5)
+    -> Covering index skip scan on t1 using idx1 over a IN (2, 4, (3 more)), b = 5, 100 <= e <= 200  (cost=0.301..1.5 rows=5)
 
 DROP TABLE t1;
 #
@@ -1295,6 +1306,25 @@ EXPLAIN
         -> Aggregate: min(x3.a)  (rows=1)
             -> Filter: (x1.a = x3.a)  (rows=1)
                 -> Table scan on x3  (rows=1)
+
+Warnings:
+Note	1276	Field or reference 'test.x1.a' of SELECT #2 was resolved in SELECT #1
+DROP TABLE t1;
+#
+# Bug#34569685 No explain output for subquery
+#
+CREATE TABLE t1 (a INT PRIMARY KEY, b INT);
+ANALYZE TABLE  t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+EXPLAIN FORMAT=TREE SELECT LAST_VALUE((SELECT x1.a FROM t1))
+OVER (PARTITION BY b) FROM t1 x1;
+EXPLAIN
+-> Window aggregate with buffering: last_value((select #2)) OVER (PARTITION BY x1.b )   (...)
+    -> Sort: x1.b  (...)
+        -> Table scan on x1  (...)
+    -> Select #2 (subquery in projection; dependent)
+        -> Covering index scan on t1 using PRIMARY  (...)
 
 Warnings:
 Note	1276	Field or reference 'test.x1.a' of SELECT #2 was resolved in SELECT #1

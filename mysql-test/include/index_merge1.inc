@@ -49,19 +49,25 @@ create table t0
   INDEX i8(key8)
 );
 
---disable_query_log
-insert into t0 values (1,1,1,1,1,1,1,1023),(2,2,2,2,2,2,2,1022);
+DELIMITER |;
 
-let $1=9;
-set @d=2;
-while ($1)
-{
-  eval insert into t0 select key1+@d, key2+@d, key3+@d, key4+@d, key5+@d,
-                             key6+@d, key7+@d, key8-@d from t0;
-  eval set @d=@d*2;
-  dec $1;
-}
---enable_query_log
+create procedure populate_t0()
+begin
+  declare d int default 2;
+  insert into t0 values (1,1,1,1,1,1,1,1023),(2,2,2,2,2,2,2,1022);
+
+  while d<=POW(2,9) do
+    insert into t0 select key1+d, key2+d, key3+d, key4+d, key5+d,
+      key6+d, key7+d, key8-d from t0;
+    set d = d*2;
+  end while;
+end|
+
+DELIMITER ;|
+
+call populate_t0();
+
+drop procedure populate_t0;
 
 analyze table t0;
 
@@ -440,13 +446,13 @@ analyze table t0;
 --replace_regex $elide_costs
 explain select max(a.key1 + b.key1 + a.key2 + b.key2 + a.key3 + b.key3 + a.key4 + b.key4 + a.key5 + b.key5)
  from t0 as a force index(i1,i2), t0 as b force index (i1,i2)
-  where (a.key1 = 1 or a.key2 = 1)
-  and   (b.key1 = 1 or b.key2 = 1);
+  where (a.key1 = 2 or a.key2 = 2)
+  and   (b.key1 = 2 or b.key2 = 2);
 
 select max(a.key1 + b.key1 + a.key2 + b.key2 + a.key3 + b.key3 + a.key4 + b.key4 + a.key5 + b.key5)
  from t0 as a force index(i1,i2), t0 as b force index (i1,i2)
-  where (a.key1 = 1 or a.key2 = 1)
-  and   (b.key1 = 1 or b.key2 = 1);
+  where (a.key1 = 2 or a.key2 = 2)
+  and   (b.key1 = 2 or b.key2 = 2);
 
 alter table t0 add filler1 char(200), add filler2 char(200), add filler3 char(200);
 update t0 set key2=1, key3=1, key4=1, key5=1,key6=1,key7=1 where key7 < 500;

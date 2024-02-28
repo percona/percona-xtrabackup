@@ -255,6 +255,7 @@ static void AssertSupportedPath(const AccessPath *path) {
     // Index access is disabled in ha_mock::table_flags(), so we should see none
     // of these access types.
     case AccessPath::INDEX_SCAN:
+    case AccessPath::INDEX_DISTANCE_SCAN: /* purecov: deadcode */
     case AccessPath::REF:
     case AccessPath::REF_OR_NULL:
     case AccessPath::EQ_REF:
@@ -287,7 +288,7 @@ static bool OptimizeSecondaryEngine(THD *thd [[maybe_unused]], LEX *lex) {
 
   DEBUG_SYNC(thd, "before_mock_optimize");
 
-  if (lex->using_hypergraph_optimizer) {
+  if (lex->using_hypergraph_optimizer()) {
     WalkAccessPaths(lex->unit->root_access_path(), nullptr,
                     WalkAccessPathPolicy::ENTIRE_TREE,
                     [](AccessPath *path, const JOIN *) {

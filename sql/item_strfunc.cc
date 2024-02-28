@@ -69,6 +69,7 @@
 #include "my_md5_size.h"
 #include "my_rnd.h"  // my_rand_buffer
 #include "my_sqlcommand.h"
+#include "my_stacktrace.h"
 #include "my_sys.h"
 #include "my_systime.h"
 #include "myisampack.h"
@@ -1106,6 +1107,9 @@ String *Item_func_concat::val_str(String *str) {
     }
     if (tmp_value.append(*res)) return error_str();
   }
+  DBUG_EXECUTE_IF(
+      "print_stacktrace", fprintf(stderr, "Calling my_print_stacktrace\n");
+      my_print_stacktrace(nullptr, my_thread_stack_size); fflush(stderr););
   tmp_value.set_charset(collation.collation);
   return &tmp_value;
 }
@@ -2390,10 +2394,41 @@ bool Item_func_make_set::do_itemize(Parse_context *pc, Item **res) {
   return item->itemize(pc, &item) || super::do_itemize(pc, res);
 }
 
-void Item_func_make_set::split_sum_func(THD *thd, Ref_item_array ref_item_array,
+bool Item_func_make_set::split_sum_func(THD *thd, Ref_item_array ref_item_array,
                                         mem_root_deque<Item *> *fields) {
-  item->split_sum_func2(thd, ref_item_array, fields, &item, true);
-  Item_str_func::split_sum_func(thd, ref_item_array, fields);
+  if (item->split_sum_func2(thd, ref_item_array, fields, &item, true)) {
+    return true;
+  }
+  return Item_str_func::split_sum_func(thd, ref_item_array, fields);
+}
+
+bool Item_func_make_set::fix_fields(THD *thd, Item **ref) {
+  assert(!fixed);
+  if (!item->fixed && item->fix_fields(thd, &item)) {
+    return true;
+  }
+  if (item->check_cols(1)) {
+    return true;
+  }
+  if (Item_func::fix_fields(thd, ref)) {
+    return true;
+  }
+  if (item->is_nullable()) {
+    set_nullable(true);
+  }
+  used_tables_cache |= item->used_tables();
+  if (null_on_null) not_null_tables_cache |= item->not_null_tables();
+  add_accum_properties(item);
+
+  return false;
+}
+
+void Item_func_make_set::fix_after_pullout(Query_block *parent_query_block,
+                                           Query_block *removed_query_block) {
+  Item_func::fix_after_pullout(parent_query_block, removed_query_block);
+  item->fix_after_pullout(parent_query_block, removed_query_block);
+  used_tables_cache |= item->used_tables();
+  if (null_on_null) not_null_tables_cache |= item->not_null_tables();
 }
 
 bool Item_func_make_set::resolve_type(THD *thd) {
@@ -2407,9 +2442,6 @@ bool Item_func_make_set::resolve_type(THD *thd) {
   for (uint i = 0; i < arg_count; i++)
     char_length += args[i]->max_char_length();
   set_data_type_string(char_length);
-  used_tables_cache |= item->used_tables();
-  not_null_tables_cache &= item->not_null_tables();
-  add_accum_properties(item);
 
   return false;
 }

@@ -26,6 +26,7 @@
 #include <assert.h>
 #include <sys/types.h>  // TODO: replace with cstdint
 
+#include <bit>
 #include <cctype>  // std::isspace
 #include <cstddef>
 #include <memory>
@@ -33,7 +34,6 @@
 #include "lex_string.h"
 #include "my_alloc.h"
 #include "my_base.h"
-#include "my_bit.h"  // is_single_bit
 
 #include "my_inttypes.h"  // TODO: replace with cstdint
 #include "my_sqlcommand.h"
@@ -588,11 +588,12 @@ class PT_joined_table : public PT_table_reference {
         m_join_pos(join_pos_arg),
         m_type(type),
         m_right_pt_table(tab2_node_arg) {
-    static_assert(is_single_bit(JTT_INNER), "not a single bit");
-    static_assert(is_single_bit(JTT_STRAIGHT), "not a single bit");
-    static_assert(is_single_bit(JTT_NATURAL), "not a single bit");
-    static_assert(is_single_bit(JTT_LEFT), "not a single bit");
-    static_assert(is_single_bit(JTT_RIGHT), "not a single bit");
+    using std::has_single_bit;
+    static_assert(has_single_bit(unsigned{JTT_INNER}), "not a single bit");
+    static_assert(has_single_bit(unsigned{JTT_STRAIGHT}), "not a single bit");
+    static_assert(has_single_bit(unsigned{JTT_NATURAL}), "not a single bit");
+    static_assert(has_single_bit(unsigned{JTT_LEFT}), "not a single bit");
+    static_assert(has_single_bit(unsigned{JTT_RIGHT}), "not a single bit");
 
     assert(type == JTT_INNER || type == JTT_STRAIGHT_INNER ||
            type == JTT_NATURAL_INNER || type == JTT_NATURAL_LEFT ||
@@ -1477,6 +1478,7 @@ class PT_query_specification : public PT_query_primary {
   PT_group *opt_group_clause;
   Item *opt_having_clause;
   PT_window_list *opt_window_clause;
+  Item *opt_qualify_clause;
 
  public:
   PT_query_specification(
@@ -1486,7 +1488,7 @@ class PT_query_specification : public PT_query_primary {
       const Mem_root_array_YY<PT_table_reference *> &from_clause_arg,
       Item *opt_where_clause_arg, PT_group *opt_group_clause_arg,
       Item *opt_having_clause_arg, PT_window_list *opt_window_clause_arg,
-      bool implicit_from_clause)
+      Item *opt_qualify_clause_arg, bool implicit_from_clause)
       : super(pos),
         opt_hints(opt_hints_arg),
         options(options_arg),
@@ -1497,7 +1499,8 @@ class PT_query_specification : public PT_query_primary {
         opt_where_clause(opt_where_clause_arg),
         opt_group_clause(opt_group_clause_arg),
         opt_having_clause(opt_having_clause_arg),
-        opt_window_clause(opt_window_clause_arg) {
+        opt_window_clause(opt_window_clause_arg),
+        opt_qualify_clause(opt_qualify_clause_arg) {
     assert(implicit_from_clause ? from_clause.empty() : true);
   }
 
@@ -1516,7 +1519,8 @@ class PT_query_specification : public PT_query_primary {
         opt_where_clause(opt_where_clause_arg),
         opt_group_clause(nullptr),
         opt_having_clause(nullptr),
-        opt_window_clause(nullptr) {}
+        opt_window_clause(nullptr),
+        opt_qualify_clause(nullptr) {}
 
   PT_query_specification(const POS &pos, const Query_options &options_arg,
                          PT_item_list *item_list_arg)
@@ -1530,7 +1534,8 @@ class PT_query_specification : public PT_query_primary {
         opt_where_clause(nullptr),
         opt_group_clause(nullptr),
         opt_having_clause(nullptr),
-        opt_window_clause(nullptr) {}
+        opt_window_clause(nullptr),
+        opt_qualify_clause(nullptr) {}
 
   bool do_contextualize(Parse_context *pc) override;
 
@@ -1538,7 +1543,8 @@ class PT_query_specification : public PT_query_primary {
   bool has_trailing_into_clause() const override {
     return (has_into_clause() && is_implicit_from_clause() &&
             opt_where_clause == nullptr && opt_group_clause == nullptr &&
-            opt_having_clause == nullptr && opt_window_clause == nullptr);
+            opt_having_clause == nullptr && opt_window_clause == nullptr &&
+            opt_qualify_clause == nullptr);
   }
 
   bool is_set_operation() const override { return false; }

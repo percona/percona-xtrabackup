@@ -35,6 +35,7 @@
 #include "sql/sql_error.h"
 #include "sql/sql_thd_internal_api.h"
 #include "storage/ndb/plugin/ndb_anyvalue.h"
+#include "storage/ndb/plugin/ndb_applier.h"
 #include "storage/ndb/plugin/ndb_dist_priv_util.h"
 #include "storage/ndb/plugin/ndb_name_util.h"
 #include "storage/ndb/plugin/ndb_require.h"
@@ -117,6 +118,13 @@ Ndb_schema_dist_client::Ndb_schema_dist_client(THD *thd)
 bool Ndb_schema_dist_client::prepare(const char *db, const char *tabname) {
   DBUG_TRACE;
 
+  // Check local schema distribution state
+  if (!check_local_schema_dist_available()) {
+    push_warning(m_thd, Sql_condition::SL_WARNING, ER_GET_ERRMSG,
+                 "Schema distribution is not ready");
+    return false;
+  }
+
   // Acquire reference on mysql.ndb_schema
   m_share = NDB_SHARE::acquire_reference(
       Ndb_schema_dist_table::DB_NAME.c_str(),
@@ -128,6 +136,19 @@ bool Ndb_schema_dist_client::prepare(const char *db, const char *tabname) {
     // yet -> schema distribution is not ready
     push_warning(m_thd, Sql_condition::SL_WARNING, ER_GET_ERRMSG,
                  "Schema distribution is not ready");
+    return false;
+  }
+
+  // Acquire reference also on mysql.ndb_schema_result
+  m_result_share = NDB_SHARE::acquire_reference(
+      Ndb_schema_result_table::DB_NAME.c_str(),
+      Ndb_schema_result_table::TABLE_NAME.c_str(), m_share_reference.c_str());
+  if (m_result_share == nullptr ||
+      m_result_share->have_event_operation() == false) {
+    // The mysql.ndb_schema_result hasn't been created or not setup yet ->
+    // schema distribution is not ready
+    push_warning(m_thd, Sql_condition::SL_WARNING, ER_GET_ERRMSG,
+                 "Schema distribution is not ready (ndb_schema_result)");
     return false;
   }
 
@@ -279,6 +300,10 @@ Ndb_schema_dist_client::~Ndb_schema_dist_client() {
     // Release the reference to mysql.ndb_schema table
     NDB_SHARE::release_reference(m_share, m_share_reference.c_str());
   }
+  if (m_result_share) {
+    // Release the reference to mysql.ndb_schema_result table
+    NDB_SHARE::release_reference(m_result_share, m_share_reference.c_str());
+  }
 
   if (m_thd_ndb) {
     // Inform Applier that one schema distribution has completed
@@ -366,9 +391,9 @@ bool Ndb_schema_dist_client::log_schema_op(const char *query,
     return false;
   }
 
-  // Require that m_share has been initialized to reference the
-  // schema distribution table
+  // Require that references to schema distribution tables has been initialized
   ndbcluster::ndbrequire(m_share);
+  ndbcluster::ndbrequire(m_result_share);
 
   // Check that prepared keys match
   if (!m_prepared_keys.check_key(db, table_name)) {

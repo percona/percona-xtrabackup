@@ -5,9 +5,16 @@
 # Separate the test case name and the comment with ':'.
 #   <suite>.<test> [@platform|@!platform] : <BUG|WL>#<XXXX> [<comment>]
 #
+# You can also include a disabled file into another using the @import keyword
+# as following:
+#
+# @import <disabled_file>
+#
 # Note:
 #   - Do not use any TAB characters for whitespace.
 #   - Length of a comment section must not be more than 80 characters.
+#   - <disabled_file> could be the file name or a valid path. It should
+#     not be followed by a comment on that line.
 #
 ##############################################################################
 
@@ -55,9 +62,9 @@ component_keyring_file.mysql_ts_alter_encrypt_1 : BUG#29531106 - ATTACHABLE_TRX(
 # main suite tests
 main.ds_mrr-big @solaris : BUG#14168107 Test leads to timeout on Solaris on slow sparc servers.
 main.gtid_next_xa_binlog_off : BUG#33650776 Failure of XA COMMIT of prepared txn, can result in txn rollback
+main.print_stacktrace : Bug#36027494 Add mtr test for my_print_stacktrace
 
 # Disabled due to InnoDB issues
-main.internal_tmp_disk_storage_engine : BUG#26917416 Disabled it since it's failing on pb2.
 
 # max_parts suite tests
 max_parts.innodb-import-partition-1                         : BUG#27413612 Fails consistently on hudson jobs. Disabled until bug is fixed.
@@ -75,7 +82,6 @@ max_parts.innodb_partition_open_files_limit                 : BUG#27423163 Test 
 
 # perfschema suite test
 perfschema.threads_history      : BUG#27712231
-perfschema.ssl                  : BUG#30910698
 perfschema.idx_compare_events_waits_current : BUG#27865960
 perfschema.idx_compare_ews_by_thread_by_event_name : BUG#31041671
 perfschema.idx_compare_ews_by_instance : BUG#31791537

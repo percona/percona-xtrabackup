@@ -205,6 +205,7 @@ class Item_func : public Item_result_field {
     ISNOTNULLTEST_FUNC,
     SP_EQUALS_FUNC,
     SP_DISJOINT_FUNC,
+    SP_DISTANCE_FUNC,
     SP_INTERSECTS_FUNC,
     SP_TOUCHES_FUNC,
     SP_CROSSES_FUNC,
@@ -310,7 +311,12 @@ class Item_func : public Item_result_field {
     PERIODDIFF_FUNC,
     SEC_TO_TIME_FUNC,
     GET_FORMAT_FUNC,
-    ANY_VALUE_FUNC
+    ANY_VALUE_FUNC,
+    JSON_LENGTH_FUNC,
+    JSON_DEPTH_FUNC,
+    JSON_EXTRACT_FUNC,
+    JSON_OBJECT_FUNC,
+    JSON_ARRAY_FUNC
   };
   enum optimize_type {
     OPTIMIZE_NONE,
@@ -497,7 +503,7 @@ class Item_func : public Item_result_field {
     @return true on OOM, false otherwise
   */
   bool set_arguments(mem_root_deque<Item *> *list, bool context_free);
-  void split_sum_func(THD *thd, Ref_item_array ref_item_array,
+  bool split_sum_func(THD *thd, Ref_item_array ref_item_array,
                       mem_root_deque<Item *> *fields) override;
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
@@ -553,6 +559,35 @@ class Item_func : public Item_result_field {
                 Item_transformer transformer, uchar *arg_t) override;
   void traverse_cond(Cond_traverser traverser, void *arg,
                      traverse_order order) override;
+
+  bool replace_equal_field_checker(uchar **arg) override {
+    Replace_equal *replace = pointer_cast<Replace_equal *>(*arg);
+    replace->stack.push_front(this);
+    return true;
+  }
+
+  Item *replace_equal_field(uchar *arg) override {
+    pointer_cast<Replace_equal *>(arg)->stack.pop();
+    return this;
+  }
+
+  /**
+    Check whether a function allows replacement of a field with another:
+    In particular, a replacement that changes the metadata of some Item
+    from non-nullable to nullable is not allowed.
+    Notice that e.g. changing the nullability of an operand of a comparison
+    operator in a WHERE clause that ignores UNKNOWN values is allowed,
+    according to this criterion.
+
+    @param original the field that could be replaced
+    @param subst    the field that could be the replacement
+
+    @returns true if replacement is allowed, false otherwise
+  */
+  virtual bool allow_replacement(Item_field *const original,
+                                 Item_field *const subst) {
+    return original->is_nullable() || !subst->is_nullable();
+  }
 
   /**
      Throw an error if the input double number is not finite, i.e. is either
@@ -1454,7 +1489,7 @@ class Item_func_rand final : public Item_real_func {
     This function is non-deterministic and hence depends on the
     'RAND' pseudo-table.
 
-    @retval RAND_TABLE_BIT
+    @returns RAND_TABLE_BIT
   */
   table_map get_initial_pseudo_tables() const override {
     return RAND_TABLE_BIT;
@@ -1644,7 +1679,7 @@ class Item_rollup_group_item final : public Item_func {
     // with all the other copying done here.)
     hidden = inner_item->hidden;
     set_nullable(true);
-    set_rollup_expr();
+    set_group_by_modifier();
   }
   double val_real() override;
   longlong val_int() override;
@@ -1665,7 +1700,7 @@ class Item_rollup_group_item final : public Item_func {
   }
   void update_used_tables() override {
     Item_func::update_used_tables();
-    set_rollup_expr();
+    set_group_by_modifier();
   }
   Item_result result_type() const override { return args[0]->result_type(); }
   bool resolve_type(THD *) override {
@@ -2112,7 +2147,7 @@ class Item_func_sleep final : public Item_int_func {
     This function is non-deterministic and hence depends on the
     'RAND' pseudo-table.
 
-    @retval RAND_TABLE_BIT
+    @returns RAND_TABLE_BIT
   */
   table_map get_initial_pseudo_tables() const override {
     return RAND_TABLE_BIT;

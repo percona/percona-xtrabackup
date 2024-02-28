@@ -2713,3 +2713,131 @@ EXPLAIN ANALYZE FORMAT=tree SELECT * FROM t1 x1 WHERE x1.a < 0 AND x1.a NOT IN
   (SELECT a FROM t1 x2 WHERE x2.b = x1.b);
 
 DROP TABLE t1;
+
+--echo #
+--echo # Bug#35703114 Assertion `m_psi_batch_mode == PSI_BATCH_MODE_NONE'
+--echo # failed.
+--echo #
+
+CREATE TABLE t1(i1 int primary key, i2 int, c varchar(10));
+
+INSERT INTO t1 VALUES (1,1,'a'), (2,2,'a'), (3,3,'a'), (4,4,'a'), (5,5,'a');
+
+ANALYZE TABLE t1;
+
+# To reproduce the bug we need a query with these properties:
+# - It should be planned as a hash join.
+# - We should start reading from the probe input (i.e. outer input).
+#   Therefore we use a left join.
+# - There should be a filter on the probe input.
+# - Evaluating this filter should give an error for the first row.
+#   Therefore we use an invalid Unicode code point.
+let $query =
+    SELECT * FROM t1 x1 LEFT JOIN t1 x2 ON x1.i2=x2.i2
+    WHERE x1.c <= CHAR(0xd83f);
+
+--replace_regex $elide_costs_and_rows
+--eval EXPLAIN FORMAT=TREE $query
+
+--error ER_CANNOT_CONVERT_STRING
+--eval $query
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#35789589 Assertion `m_index_cursor.is_positioned()' failed.
+--echo #
+
+SET optimizer_switch = 'materialization=off,derived_merge=off';
+
+CREATE TABLE bb (
+  pk INT auto_increment,
+  col_int INT,
+  col_int_key INT,
+  col_varchar VARCHAR(1),
+  col_varchar_key VARCHAR(1),
+  PRIMARY KEY(pk)
+);
+
+CREATE TABLE cc (
+  pk INT AUTO_INCREMENT,
+  col_int_key INT,
+  col_varchar_key VARCHAR(1),
+  PRIMARY KEY(pk)
+);
+
+INSERT INTO cc (pk,col_int_key,col_varchar_key) VALUES
+  (DEFAULT,867110528,'8'),
+  (DEFAULT,-1926290568,'9'),
+  (DEFAULT,428174454,'f'),
+  (DEFAULT,127754401,'a'),
+  (DEFAULT,-923329804,'p');
+
+INSERT INTO bb (pk,col_int,col_int_key,col_varchar,col_varchar_key) VALUES
+  (DEFAULT,-1777898150,-1744771058,'b','Z');
+
+ANALYZE TABLE bb, cc;
+
+# To reproduce this issue we need a query where the query plan has:
+# * A left hash-join H1. The first row it produces must have a
+#   NULL-row right half.
+# * Another hash join H2 with H1 as its probe input. H2 must start with
+#   reading from the probe input (i.e. H1).
+# * A third hash-join H3. H3 must have H2 as its build input.
+#
+# With such a plan, H3 calls H2.Init() which causes the first
+# (partial null) row to be read from H1. H3 then calls
+# H2.SetNullRow(false), which erroneously resets the null flag in the
+# H1 row. Producing such a plan was tricky, so the somewhat complex query
+# below is taken from the bug report.
+
+SELECT alias1.col_int_key AS field2 FROM
+  (bb AS alias1 RIGHT OUTER JOIN
+        (((SELECT SQL_SMALL_RESULT SQ2_alias1.* FROM
+          (bb AS SQ2_alias1 INNER JOIN bb AS SQ2_alias2 ON
+            (SQ2_alias2.col_int_key = SQ2_alias1.col_int_key))
+          WHERE SQ2_alias1.col_int < SQ2_alias2.col_int) AS alias2
+          RIGHT OUTER JOIN bb AS alias3 ON
+            (alias3.col_varchar_key = alias2.col_varchar_key))) ON
+          (alias3.col_varchar_key = alias2.col_varchar_key))
+        WHERE EXISTS ((SELECT SQ3_alias1.col_int_key AS SQ3_field1 FROM
+          (cc AS SQ3_alias1 STRAIGHT_JOIN
+            (cc AS SQ3_alias2 INNER JOIN bb AS SQ3_alias3 ON
+              (SQ3_alias3.col_varchar = SQ3_alias2.col_varchar_key))
+            ON (SQ3_alias3.pk = SQ3_alias2.pk))));
+
+DROP TABLE bb, cc;
+SET optimizer_switch=DEFAULT;
+
+--echo #
+--echo # Bug#31969607: THE RESULT IS INCONSISTENT BETWEEN JOIN AND GROUP BY
+--echo #
+
+CREATE TABLE t1 (id INT PRIMARY KEY AUTO_INCREMENT, j JSON);
+INSERT INTO t1(j) VALUES
+  (NULL), ('-1'), ('1'), ('1.0'), ('"1"'), ('[1, 2]'), ('[1.0, 2.0]'),
+  ('9223372036854775806'), ('9223372036854775807'), ('"abc"'), ('"Abc"');
+CREATE TABLE t2 (id INT PRIMARY KEY AUTO_INCREMENT, vc VARCHAR(100));
+INSERT INTO t2(vc) VALUES
+  (NULL), ('-1'), ('1'), ('1.0'), ('"1"'), ('[1, 2]'), ('[1.0, 2.0]'),
+  ('9223372036854775806'), ('9223372036854775807'), ('abc'), ('Abc');
+CREATE TABLE t3 (i BIGINT);
+INSERT INTO t3 VALUES (NULL), (-1), (0), (1), (2), (3),
+                      (9223372036854775806), (9223372036854775807);
+
+--sorted_result
+SELECT * FROM t1 AS a, t1 AS b WHERE a.j = b.j;
+--sorted_result
+SELECT * FROM t1 AS a, t1 AS b WHERE a.j <=> b.j;
+
+--sorted_result
+SELECT * FROM t1, t2 WHERE t1.j = t2.vc;
+--sorted_result
+SELECT * FROM t1, t2 WHERE t1.j <=> t2.vc;
+
+--sorted_result
+SELECT * FROM t1, t3 WHERE t1.j = t3.i;
+--sorted_result
+SELECT * FROM t1, t3 WHERE t1.j <=> t3.i;
+
+DROP TABLE t1, t2, t3;

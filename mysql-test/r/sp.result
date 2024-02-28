@@ -3295,7 +3295,7 @@ call bug11529()|
 call bug11529()|
 delete from t1|
 drop procedure bug11529|
-set character set utf8|
+set character set utf8mb3|
 drop procedure if exists bug6063|
 drop procedure if exists bug7088_1|
 drop procedure if exists bug7088_2|
@@ -4897,12 +4897,12 @@ mysqltest1.bug18444(i)
 2
 3
 drop database mysqltest1|
-create database mysqltest1 charset=utf8|
+create database mysqltest1 charset=utf8mb3|
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-create database mysqltest2 charset=utf8|
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+create database mysqltest2 charset=utf8mb3|
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 create procedure mysqltest1.p1()
 begin
 -- alters the default collation of database test 
@@ -4916,9 +4916,9 @@ mysqltest1	CREATE DATABASE `mysqltest1` /*!40100 DEFAULT CHARACTER SET koi8r */ 
 show create database mysqltest2|
 Database	Create Database
 mysqltest2	CREATE DATABASE `mysqltest2` /*!40100 DEFAULT CHARACTER SET utf8mb3 */ /*!80016 DEFAULT ENCRYPTION='N' */
-alter database mysqltest1 character set utf8|
+alter database mysqltest1 character set utf8mb3|
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 use mysqltest2|
 call mysqltest1.p1()|
 show create database mysqltest1|
@@ -4965,12 +4965,12 @@ CALL bug21013(10) |
 DROP PROCEDURE bug21013 |
 DROP DATABASE IF EXISTS mysqltest1|
 DROP DATABASE IF EXISTS mysqltest2|
-CREATE DATABASE mysqltest1 DEFAULT CHARACTER SET utf8|
+CREATE DATABASE mysqltest1 DEFAULT CHARACTER SET utf8mb3|
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-CREATE DATABASE mysqltest2 DEFAULT CHARACTER SET utf8|
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+CREATE DATABASE mysqltest2 DEFAULT CHARACTER SET utf8mb3|
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 use mysqltest1|
 CREATE FUNCTION bug16211_f1() RETURNS CHAR(10)
 RETURN ""|
@@ -5081,9 +5081,9 @@ koi8r
 use test|
 DROP DATABASE mysqltest1|
 DROP DATABASE mysqltest2|
-CREATE DATABASE mysqltest1 DEFAULT CHARACTER SET utf8|
+CREATE DATABASE mysqltest1 DEFAULT CHARACTER SET utf8mb3|
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 use mysqltest1|
 CREATE PROCEDURE bug16676_p1(
 IN p1 CHAR(10),
@@ -5583,7 +5583,7 @@ SET @@sql_mode=@save_sql_mode;
 drop function pi;
 drop function if exists test.database;
 drop function if exists test.current_user;
-drop function if exists test.md5;
+drop function if exists test.sha2;
 create database nowhere;
 use nowhere;
 drop database nowhere;
@@ -5595,9 +5595,9 @@ NULL	NULL
 select current_user(), current_user ();
 current_user()	current_user ()
 root@localhost	root@localhost
-select md5("aaa"), md5 ("aaa");
-md5("aaa")	md5 ("aaa")
-47bce5c74f589f4867dbd57e9ca9f808	47bce5c74f589f4867dbd57e9ca9f808
+select sha2("aaa", 0), sha2 ("aaa", 0);
+sha2("aaa", 0)	sha2 ("aaa", 0)
+9834876dcfb05cb167a5c24953eba58c4ac89b1adf57f28f2f9d09af107ee8f0	9834876dcfb05cb167a5c24953eba58c4ac89b1adf57f28f2f9d09af107ee8f0
 SET SQL_MODE='';
 select database(), database ();
 database()	database ()
@@ -5605,9 +5605,9 @@ NULL	NULL
 select current_user(), current_user ();
 current_user()	current_user ()
 root@localhost	root@localhost
-select md5("aaa"), md5 ("aaa");
-md5("aaa")	md5 ("aaa")
-47bce5c74f589f4867dbd57e9ca9f808	47bce5c74f589f4867dbd57e9ca9f808
+select sha2("aaa", 0), sha2 ("aaa", 0);
+sha2("aaa", 0)	sha2 ("aaa", 0)
+9834876dcfb05cb167a5c24953eba58c4ac89b1adf57f28f2f9d09af107ee8f0	9834876dcfb05cb167a5c24953eba58c4ac89b1adf57f28f2f9d09af107ee8f0
 use test;
 create function `database`() returns varchar(50)
 return "Stored function database";
@@ -5617,10 +5617,10 @@ create function `current_user`() returns varchar(50)
 return "Stored function current_user";
 Warnings:
 Note	1585	This function 'current_user' has the same name as a native function
-create function md5(x varchar(50)) returns varchar(50)
-return "Stored function md5";
+create function sha2(x varchar(50), y integer) returns varchar(50)
+return "Stored function sha2";
 Warnings:
-Note	1585	This function 'md5' has the same name as a native function
+Note	1585	This function 'sha2' has the same name as a native function
 SET SQL_MODE='IGNORE_SPACE';
 select database(), database ();
 database()	database ()
@@ -5628,18 +5628,18 @@ test	test
 select current_user(), current_user ();
 current_user()	current_user ()
 root@localhost	root@localhost
-select md5("aaa"), md5 ("aaa");
-md5("aaa")	md5 ("aaa")
-47bce5c74f589f4867dbd57e9ca9f808	47bce5c74f589f4867dbd57e9ca9f808
+select sha2("aaa", 0), sha2 ("aaa", 0);
+sha2("aaa", 0)	sha2 ("aaa", 0)
+9834876dcfb05cb167a5c24953eba58c4ac89b1adf57f28f2f9d09af107ee8f0	9834876dcfb05cb167a5c24953eba58c4ac89b1adf57f28f2f9d09af107ee8f0
 select test.database(), test.database ();
 test.database()	test.database ()
 Stored function database	Stored function database
 select test.current_user(), test.current_user ();
 test.current_user()	test.current_user ()
 Stored function current_user	Stored function current_user
-select test.md5("aaa"), test.md5 ("aaa");
-test.md5("aaa")	test.md5 ("aaa")
-Stored function md5	Stored function md5
+select test.sha2("aaa", 0), test.sha2 ("aaa", 0);
+test.sha2("aaa", 0)	test.sha2 ("aaa", 0)
+Stored function sha2	Stored function sha2
 SET SQL_MODE='';
 select database(), database ();
 database()	database ()
@@ -5647,22 +5647,22 @@ test	test
 select current_user(), current_user ();
 current_user()	current_user ()
 root@localhost	root@localhost
-select md5("aaa"), md5 ("aaa");
-md5("aaa")	md5 ("aaa")
-47bce5c74f589f4867dbd57e9ca9f808	47bce5c74f589f4867dbd57e9ca9f808
+select sha2("aaa", 0), sha2 ("aaa", 0);
+sha2("aaa", 0)	sha2 ("aaa", 0)
+9834876dcfb05cb167a5c24953eba58c4ac89b1adf57f28f2f9d09af107ee8f0	9834876dcfb05cb167a5c24953eba58c4ac89b1adf57f28f2f9d09af107ee8f0
 select test.database(), test.database ();
 test.database()	test.database ()
 Stored function database	Stored function database
 select test.current_user(), test.current_user ();
 test.current_user()	test.current_user ()
 Stored function current_user	Stored function current_user
-select test.md5("aaa"), test.md5 ("aaa");
-test.md5("aaa")	test.md5 ("aaa")
-Stored function md5	Stored function md5
+select test.sha2("aaa", 0), test.sha2 ("aaa", 0);
+test.sha2("aaa", 0)	test.sha2 ("aaa", 0)
+Stored function sha2	Stored function sha2
 SET @@sql_mode=@save_sql_mode;
 drop function test.database;
 drop function test.current_user;
-drop function md5;
+drop function sha2;
 use test;
 End of 5.1 tests
 DROP TABLE IF EXISTS bug23760|
@@ -6791,19 +6791,17 @@ drop function f1;
 drop view v1;
 drop table t1;
 drop procedure if exists `p2` $
-create procedure `p2`(in `a` text charset utf8)
+create procedure `p2`(in `a` text charset utf8mb3)
 begin
 declare `pos` int default 1;
-declare `str` text charset utf8;
+declare `str` text charset utf8mb3;
 set `str` := `a`;
 select substr(`str`, `pos`+ 1 ) into `str`;
 end $
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 call `p2`('s s s s s s');
-Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 drop procedure `p2`;
 drop table if exists t1;
 drop procedure if exists p1;
@@ -7514,9 +7512,9 @@ DROP PROCEDURE p1;
 # --- 
 DROP TABLE IF EXISTS t1;
 DROP PROCEDURE IF EXISTS p1;
-CREATE TABLE t1 (s1 CHAR(5) CHARACTER SET utf8);
+CREATE TABLE t1 (s1 CHAR(5) CHARACTER SET utf8mb3);
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 INSERT INTO t1 VALUES ('a');
 CREATE PROCEDURE p1(dt DATETIME, i INT)
 BEGIN
@@ -7527,11 +7525,11 @@ ELSE dt
 END AS x1;
 SELECT
 CASE _latin1'a'
-      WHEN _utf8'a' THEN 'A'
+      WHEN _utf8mb3'a' THEN 'A'
     END AS x2;
 SELECT
-CASE _utf8'a'
-      WHEN _latin1'a' THEN _utf8'A'
+CASE _utf8mb3'a'
+      WHEN _latin1'a' THEN _utf8mb3'A'
     END AS x3;
 SELECT
 CASE s1
@@ -7541,9 +7539,9 @@ WHEN _latin1'a' THEN _latin1'b'
 FROM t1;
 END|
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 
 CALL p1('2011-04-03 05:14:10', 1);
 x1
@@ -7554,10 +7552,6 @@ x3
 A
 x4
 b
-Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
 CALL p1('2011-04-03 05:14:11', 2);
 x1
 2011-04-03 05:14:11
@@ -7993,12 +7987,12 @@ end|
 call bug4902()|
 Grants for root@localhost
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, RELOAD, SHUTDOWN, PROCESS, FILE, REFERENCES, INDEX, ALTER, SHOW DATABASES, SUPER, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, REPLICATION SLAVE, REPLICATION CLIENT, CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, CREATE USER, EVENT, TRIGGER, CREATE TABLESPACE, CREATE ROLE, DROP ROLE ON *.* TO `root`@`localhost` WITH GRANT OPTION
-GRANT ALLOW_NONEXISTENT_DEFINER,APPLICATION_PASSWORD_ADMIN,AUDIT_ABORT_EXEMPT,AUDIT_ADMIN,AUTHENTICATION_POLICY_ADMIN,BACKUP_ADMIN,BINLOG_ADMIN,BINLOG_ENCRYPTION_ADMIN,CLONE_ADMIN,CONNECTION_ADMIN,ENCRYPTION_KEY_ADMIN,FIREWALL_EXEMPT,FLUSH_OPTIMIZER_COSTS,FLUSH_STATUS,FLUSH_TABLES,FLUSH_USER_RESOURCES,GROUP_REPLICATION_ADMIN,GROUP_REPLICATION_STREAM,INNODB_REDO_LOG_ARCHIVE,INNODB_REDO_LOG_ENABLE,PASSWORDLESS_USER_ADMIN,PERSIST_RO_VARIABLES_ADMIN,REPLICATION_APPLIER,REPLICATION_SLAVE_ADMIN,RESOURCE_GROUP_ADMIN,RESOURCE_GROUP_USER,ROLE_ADMIN,SENSITIVE_VARIABLES_OBSERVER,SERVICE_CONNECTION_ADMIN,SESSION_VARIABLES_ADMIN,SET_ANY_DEFINER,SHOW_ROUTINE,SYSTEM_USER,SYSTEM_VARIABLES_ADMIN,TABLE_ENCRYPTION_ADMIN,TELEMETRY_LOG_ADMIN,XA_RECOVER_ADMIN ON *.* TO `root`@`localhost` WITH GRANT OPTION
+GRANT ALLOW_NONEXISTENT_DEFINER,APPLICATION_PASSWORD_ADMIN,AUDIT_ABORT_EXEMPT,AUDIT_ADMIN,AUTHENTICATION_POLICY_ADMIN,BACKUP_ADMIN,BINLOG_ADMIN,BINLOG_ENCRYPTION_ADMIN,CLONE_ADMIN,CONNECTION_ADMIN,ENCRYPTION_KEY_ADMIN,FIREWALL_EXEMPT,FLUSH_OPTIMIZER_COSTS,FLUSH_STATUS,FLUSH_TABLES,FLUSH_USER_RESOURCES,GROUP_REPLICATION_ADMIN,GROUP_REPLICATION_STREAM,INNODB_REDO_LOG_ARCHIVE,INNODB_REDO_LOG_ENABLE,PASSWORDLESS_USER_ADMIN,PERSIST_RO_VARIABLES_ADMIN,REPLICATION_APPLIER,REPLICATION_SLAVE_ADMIN,RESOURCE_GROUP_ADMIN,RESOURCE_GROUP_USER,ROLE_ADMIN,SENSITIVE_VARIABLES_OBSERVER,SERVICE_CONNECTION_ADMIN,SESSION_VARIABLES_ADMIN,SET_ANY_DEFINER,SHOW_ROUTINE,SYSTEM_USER,SYSTEM_VARIABLES_ADMIN,TABLE_ENCRYPTION_ADMIN,TELEMETRY_LOG_ADMIN,TRANSACTION_GTID_TAG,XA_RECOVER_ADMIN ON *.* TO `root`@`localhost` WITH GRANT OPTION
 GRANT PROXY ON ``@`` TO `root`@`localhost` WITH GRANT OPTION
 call bug4902()|
 Grants for root@localhost
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, RELOAD, SHUTDOWN, PROCESS, FILE, REFERENCES, INDEX, ALTER, SHOW DATABASES, SUPER, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, REPLICATION SLAVE, REPLICATION CLIENT, CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, CREATE USER, EVENT, TRIGGER, CREATE TABLESPACE, CREATE ROLE, DROP ROLE ON *.* TO `root`@`localhost` WITH GRANT OPTION
-GRANT ALLOW_NONEXISTENT_DEFINER,APPLICATION_PASSWORD_ADMIN,AUDIT_ABORT_EXEMPT,AUDIT_ADMIN,AUTHENTICATION_POLICY_ADMIN,BACKUP_ADMIN,BINLOG_ADMIN,BINLOG_ENCRYPTION_ADMIN,CLONE_ADMIN,CONNECTION_ADMIN,ENCRYPTION_KEY_ADMIN,FIREWALL_EXEMPT,FLUSH_OPTIMIZER_COSTS,FLUSH_STATUS,FLUSH_TABLES,FLUSH_USER_RESOURCES,GROUP_REPLICATION_ADMIN,GROUP_REPLICATION_STREAM,INNODB_REDO_LOG_ARCHIVE,INNODB_REDO_LOG_ENABLE,PASSWORDLESS_USER_ADMIN,PERSIST_RO_VARIABLES_ADMIN,REPLICATION_APPLIER,REPLICATION_SLAVE_ADMIN,RESOURCE_GROUP_ADMIN,RESOURCE_GROUP_USER,ROLE_ADMIN,SENSITIVE_VARIABLES_OBSERVER,SERVICE_CONNECTION_ADMIN,SESSION_VARIABLES_ADMIN,SET_ANY_DEFINER,SHOW_ROUTINE,SYSTEM_USER,SYSTEM_VARIABLES_ADMIN,TABLE_ENCRYPTION_ADMIN,TELEMETRY_LOG_ADMIN,XA_RECOVER_ADMIN ON *.* TO `root`@`localhost` WITH GRANT OPTION
+GRANT ALLOW_NONEXISTENT_DEFINER,APPLICATION_PASSWORD_ADMIN,AUDIT_ABORT_EXEMPT,AUDIT_ADMIN,AUTHENTICATION_POLICY_ADMIN,BACKUP_ADMIN,BINLOG_ADMIN,BINLOG_ENCRYPTION_ADMIN,CLONE_ADMIN,CONNECTION_ADMIN,ENCRYPTION_KEY_ADMIN,FIREWALL_EXEMPT,FLUSH_OPTIMIZER_COSTS,FLUSH_STATUS,FLUSH_TABLES,FLUSH_USER_RESOURCES,GROUP_REPLICATION_ADMIN,GROUP_REPLICATION_STREAM,INNODB_REDO_LOG_ARCHIVE,INNODB_REDO_LOG_ENABLE,PASSWORDLESS_USER_ADMIN,PERSIST_RO_VARIABLES_ADMIN,REPLICATION_APPLIER,REPLICATION_SLAVE_ADMIN,RESOURCE_GROUP_ADMIN,RESOURCE_GROUP_USER,ROLE_ADMIN,SENSITIVE_VARIABLES_OBSERVER,SERVICE_CONNECTION_ADMIN,SESSION_VARIABLES_ADMIN,SET_ANY_DEFINER,SHOW_ROUTINE,SYSTEM_USER,SYSTEM_VARIABLES_ADMIN,TABLE_ENCRYPTION_ADMIN,TELEMETRY_LOG_ADMIN,TRANSACTION_GTID_TAG,XA_RECOVER_ADMIN ON *.* TO `root`@`localhost` WITH GRANT OPTION
 GRANT PROXY ON ``@`` TO `root`@`localhost` WITH GRANT OPTION
 drop procedure bug4902|
 drop procedure if exists bug4902_2|
@@ -8145,12 +8139,12 @@ create procedure 15298_2 () sql security definer show grants;
 call 15298_1();
 Grants for root@localhost
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, RELOAD, SHUTDOWN, PROCESS, FILE, REFERENCES, INDEX, ALTER, SHOW DATABASES, SUPER, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, REPLICATION SLAVE, REPLICATION CLIENT, CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, CREATE USER, EVENT, TRIGGER, CREATE TABLESPACE, CREATE ROLE, DROP ROLE ON *.* TO `root`@`localhost` WITH GRANT OPTION
-GRANT ALLOW_NONEXISTENT_DEFINER,APPLICATION_PASSWORD_ADMIN,AUDIT_ABORT_EXEMPT,AUDIT_ADMIN,AUTHENTICATION_POLICY_ADMIN,BACKUP_ADMIN,BINLOG_ADMIN,BINLOG_ENCRYPTION_ADMIN,CLONE_ADMIN,CONNECTION_ADMIN,ENCRYPTION_KEY_ADMIN,FIREWALL_EXEMPT,FLUSH_OPTIMIZER_COSTS,FLUSH_STATUS,FLUSH_TABLES,FLUSH_USER_RESOURCES,GROUP_REPLICATION_ADMIN,GROUP_REPLICATION_STREAM,INNODB_REDO_LOG_ARCHIVE,INNODB_REDO_LOG_ENABLE,PASSWORDLESS_USER_ADMIN,PERSIST_RO_VARIABLES_ADMIN,REPLICATION_APPLIER,REPLICATION_SLAVE_ADMIN,RESOURCE_GROUP_ADMIN,RESOURCE_GROUP_USER,ROLE_ADMIN,SENSITIVE_VARIABLES_OBSERVER,SERVICE_CONNECTION_ADMIN,SESSION_VARIABLES_ADMIN,SET_ANY_DEFINER,SHOW_ROUTINE,SYSTEM_USER,SYSTEM_VARIABLES_ADMIN,TABLE_ENCRYPTION_ADMIN,TELEMETRY_LOG_ADMIN,XA_RECOVER_ADMIN ON *.* TO `root`@`localhost` WITH GRANT OPTION
+GRANT ALLOW_NONEXISTENT_DEFINER,APPLICATION_PASSWORD_ADMIN,AUDIT_ABORT_EXEMPT,AUDIT_ADMIN,AUTHENTICATION_POLICY_ADMIN,BACKUP_ADMIN,BINLOG_ADMIN,BINLOG_ENCRYPTION_ADMIN,CLONE_ADMIN,CONNECTION_ADMIN,ENCRYPTION_KEY_ADMIN,FIREWALL_EXEMPT,FLUSH_OPTIMIZER_COSTS,FLUSH_STATUS,FLUSH_TABLES,FLUSH_USER_RESOURCES,GROUP_REPLICATION_ADMIN,GROUP_REPLICATION_STREAM,INNODB_REDO_LOG_ARCHIVE,INNODB_REDO_LOG_ENABLE,PASSWORDLESS_USER_ADMIN,PERSIST_RO_VARIABLES_ADMIN,REPLICATION_APPLIER,REPLICATION_SLAVE_ADMIN,RESOURCE_GROUP_ADMIN,RESOURCE_GROUP_USER,ROLE_ADMIN,SENSITIVE_VARIABLES_OBSERVER,SERVICE_CONNECTION_ADMIN,SESSION_VARIABLES_ADMIN,SET_ANY_DEFINER,SHOW_ROUTINE,SYSTEM_USER,SYSTEM_VARIABLES_ADMIN,TABLE_ENCRYPTION_ADMIN,TELEMETRY_LOG_ADMIN,TRANSACTION_GTID_TAG,XA_RECOVER_ADMIN ON *.* TO `root`@`localhost` WITH GRANT OPTION
 GRANT PROXY ON ``@`` TO `root`@`localhost` WITH GRANT OPTION
 call 15298_2();
 Grants for root@localhost
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, RELOAD, SHUTDOWN, PROCESS, FILE, REFERENCES, INDEX, ALTER, SHOW DATABASES, SUPER, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, REPLICATION SLAVE, REPLICATION CLIENT, CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, CREATE USER, EVENT, TRIGGER, CREATE TABLESPACE, CREATE ROLE, DROP ROLE ON *.* TO `root`@`localhost` WITH GRANT OPTION
-GRANT ALLOW_NONEXISTENT_DEFINER,APPLICATION_PASSWORD_ADMIN,AUDIT_ABORT_EXEMPT,AUDIT_ADMIN,AUTHENTICATION_POLICY_ADMIN,BACKUP_ADMIN,BINLOG_ADMIN,BINLOG_ENCRYPTION_ADMIN,CLONE_ADMIN,CONNECTION_ADMIN,ENCRYPTION_KEY_ADMIN,FIREWALL_EXEMPT,FLUSH_OPTIMIZER_COSTS,FLUSH_STATUS,FLUSH_TABLES,FLUSH_USER_RESOURCES,GROUP_REPLICATION_ADMIN,GROUP_REPLICATION_STREAM,INNODB_REDO_LOG_ARCHIVE,INNODB_REDO_LOG_ENABLE,PASSWORDLESS_USER_ADMIN,PERSIST_RO_VARIABLES_ADMIN,REPLICATION_APPLIER,REPLICATION_SLAVE_ADMIN,RESOURCE_GROUP_ADMIN,RESOURCE_GROUP_USER,ROLE_ADMIN,SENSITIVE_VARIABLES_OBSERVER,SERVICE_CONNECTION_ADMIN,SESSION_VARIABLES_ADMIN,SET_ANY_DEFINER,SHOW_ROUTINE,SYSTEM_USER,SYSTEM_VARIABLES_ADMIN,TABLE_ENCRYPTION_ADMIN,TELEMETRY_LOG_ADMIN,XA_RECOVER_ADMIN ON *.* TO `root`@`localhost` WITH GRANT OPTION
+GRANT ALLOW_NONEXISTENT_DEFINER,APPLICATION_PASSWORD_ADMIN,AUDIT_ABORT_EXEMPT,AUDIT_ADMIN,AUTHENTICATION_POLICY_ADMIN,BACKUP_ADMIN,BINLOG_ADMIN,BINLOG_ENCRYPTION_ADMIN,CLONE_ADMIN,CONNECTION_ADMIN,ENCRYPTION_KEY_ADMIN,FIREWALL_EXEMPT,FLUSH_OPTIMIZER_COSTS,FLUSH_STATUS,FLUSH_TABLES,FLUSH_USER_RESOURCES,GROUP_REPLICATION_ADMIN,GROUP_REPLICATION_STREAM,INNODB_REDO_LOG_ARCHIVE,INNODB_REDO_LOG_ENABLE,PASSWORDLESS_USER_ADMIN,PERSIST_RO_VARIABLES_ADMIN,REPLICATION_APPLIER,REPLICATION_SLAVE_ADMIN,RESOURCE_GROUP_ADMIN,RESOURCE_GROUP_USER,ROLE_ADMIN,SENSITIVE_VARIABLES_OBSERVER,SERVICE_CONNECTION_ADMIN,SESSION_VARIABLES_ADMIN,SET_ANY_DEFINER,SHOW_ROUTINE,SYSTEM_USER,SYSTEM_VARIABLES_ADMIN,TABLE_ENCRYPTION_ADMIN,TELEMETRY_LOG_ADMIN,TRANSACTION_GTID_TAG,XA_RECOVER_ADMIN ON *.* TO `root`@`localhost` WITH GRANT OPTION
 GRANT PROXY ON ``@`` TO `root`@`localhost` WITH GRANT OPTION
 drop user mysqltest_1@localhost;
 drop procedure 15298_1;

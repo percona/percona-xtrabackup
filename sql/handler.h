@@ -36,6 +36,7 @@
 #include <bitset>
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <random>  // std::mt19937
 #include <set>
@@ -669,7 +670,7 @@ enum legacy_db_type {
   DB_TYPE_SOLID,
   DB_TYPE_PBXT,
   DB_TYPE_TABLE_FUNCTION,
-  DB_TYPE_MEMCACHE,
+  DB_TYPE_MEMCACHE [[deprecated]],
   DB_TYPE_FALCON,
   DB_TYPE_MARIA,
   /** Performance schema engine. */
@@ -1312,7 +1313,7 @@ class Xa_state_list {
       the ability, for now, to set the transaction state to those values.
 
     @param xid The XID to be added (the key).
-    @param xid The state to be added (the value).
+    @param state The state to be added (the value).
 
     @return The current value of the transaction state if the XID has
             already been added, Ha_recover_states::NOT_FOUND otherwise.
@@ -1697,7 +1698,7 @@ typedef int (*table_exists_in_engine_t)(handlerton *hton, THD *thd,
     0     on success
     error otherwise
 */
-using push_to_engine_t = int (*)(THD *thd, AccessPath *query, JOIN *);
+using push_to_engine_t = int (*)(THD *thd, AccessPath *query, JOIN *join);
 
 /**
   Check if the given db.tablename is a system table for this SE.
@@ -2057,10 +2058,10 @@ typedef bool (*notify_alter_table_t)(THD *thd, const MDL_key *mdl_key,
                             or was RENAMEd.
   @param notification_type  Indicates whether this is pre-RENAME TABLE or
                             post-RENAME TABLE notification.
-  @param old_db_name
-  @param old_table_name
-  @param new_db_name
-  @param new_table_name
+  @param old_db_name        old db name
+  @param old_table_name     old table name
+  @param new_db_name        new db name
+  @param new_table_name     new table name
 */
 typedef bool (*notify_rename_table_t)(THD *thd, const MDL_key *mdl_key,
                                       ha_notification_type notification_type,
@@ -2442,18 +2443,40 @@ using secondary_engine_modify_access_path_cost_t = bool (*)(
     THD *thd, const JoinHypergraph &hypergraph, AccessPath *access_path);
 
 /**
+  Checks whether the tables used in an explain query are loaded in the secondary
+  engine.
+  @param thd thread context.
+
+  @retval true if there is a table not loaded to the secondary engine, false
+  otherwise
+*/
+using external_engine_explain_check_t = bool (*)(THD *thd);
+
+/**
   Looks up and returns a specific secondary engine query offload or exec
   failure reason as a string given a thread context (representing the query)
   when the offloaded query fails in the secondary storage engine.
 
   @param thd thread context.
 
-  @retval const char * as the offload failure reason.
+  @retval std::string_view as the offload failure reason.
           The memory pointed to is managed by the handlerton and may be freed
           when the statement completes.
 */
 using get_secondary_engine_offload_or_exec_fail_reason_t =
-    const char *(*)(THD *thd);
+    std::string_view (*)(const THD *thd);
+
+/**
+  Finds and returns a specific secondary engine query offload failure reason
+  as a string given a thread context (representing the query) whenever
+  get_secondary_engine_offload_or_exec_fail_reason_t returns an empty reason.
+
+  @param thd thread context.
+
+  @retval std::string_view as the offload failure reason.
+*/
+using find_secondary_engine_offload_fail_reason_t =
+    std::string_view (*)(THD *thd);
 
 /**
   Sets a specific secondary engine offload failure reason for a query
@@ -2462,10 +2485,13 @@ using get_secondary_engine_offload_or_exec_fail_reason_t =
 
   @param thd thread context.
 
-  @param const char * as the offload failure reason.
+  @param reason offload failure reason.
+
+  @retval bool to indicate if the setting succeeded or failed
 */
-using set_secondary_engine_offload_fail_reason_t = void (*)(THD *thd,
-                                                            const char *);
+using set_secondary_engine_offload_fail_reason_t =
+    bool (*)(const THD *thd, std::string_view reason);
+
 enum class SecondaryEngineGraphSimplificationRequest {
   /** Continue optimization phase with current hypergraph. */
   kContinue = 0,
@@ -2898,6 +2924,12 @@ struct handlerton {
   /// does not support the hypergraph join optimizer.
   SecondaryEngineFlags secondary_engine_flags;
 
+  /// Pointer to a function that checks if the table is loaded in the
+  /// secondary engine in the case of an explain statement.
+  ///
+  /// @see external_engine_explain_check_t for function signature.
+  external_engine_explain_check_t external_engine_explain_check;
+
   /// Pointer to a function that evaluates the cost of executing an access path
   /// in a secondary storage engine.
   ///
@@ -2913,6 +2945,15 @@ struct handlerton {
   /// signature.
   get_secondary_engine_offload_or_exec_fail_reason_t
       get_secondary_engine_offload_or_exec_fail_reason;
+
+  /// Pointer to a function that finds and returns the query offload failure
+  /// reason as a string given a thread context (representing the query) when
+  /// get_secondary_engine_offload_or_exec_fail_reason returns an empty reason.
+  ///
+  /// @see find_secondary_engine_offload_fail_reason_t for function
+  /// signature.
+  find_secondary_engine_offload_fail_reason_t
+      find_secondary_engine_offload_fail_reason;
 
   /// Pointer to a function that sets the offload failure reason as a string
   /// for a thread context (representing the query) when the offloaded query
@@ -3032,6 +3073,10 @@ constexpr const decltype(
 #define HTON_SUPPORTS_EXTERNAL_SOURCE (1 << 21)
 
 constexpr const decltype(handlerton::flags) HTON_SUPPORTS_BULK_LOAD{1 << 22};
+
+/** Engine supports index distance scan. */
+inline constexpr const decltype(handlerton::flags) HTON_SUPPORTS_DISTANCE_SCAN{
+    1 << 23};
 
 inline bool secondary_engine_supports_ddl(const handlerton *hton) {
   assert(hton->flags & HTON_IS_SECONDARY_ENGINE);
@@ -3661,7 +3706,9 @@ class Alter_inplace_info {
         handler_trivial_ctx(0),
         unsupported_reason(nullptr) {}
 
-  ~Alter_inplace_info() { destroy(handler_ctx); }
+  ~Alter_inplace_info() {
+    if (handler_ctx != nullptr) ::destroy_at(handler_ctx);
+  }
 
   /**
     Used after check_if_supported_inplace_alter() to report
@@ -4626,7 +4673,7 @@ class handler {
   */
   PSI_table *m_psi;
 
-  std::mt19937 m_random_number_engine;
+  std::mt19937 *m_random_number_engine{nullptr};
   double m_sampling_percentage;
 
  private:

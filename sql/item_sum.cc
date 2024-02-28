@@ -34,6 +34,7 @@
 #include <cmath>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>  // std::forward
@@ -101,6 +102,7 @@ bool Item_sum::do_itemize(Parse_context *pc, Item **res) {
   if (Item_result_field::do_itemize(pc, res)) return true;
 
   if (m_window) {
+    pc->select->in_window_expr++;
     if (m_window->contextualize(pc)) return true; /* purecov: inspected */
     if (!m_window->is_reference()) {
       pc->select->m_windows.push_back(m_window);
@@ -118,8 +120,8 @@ bool Item_sum::do_itemize(Parse_context *pc, Item **res) {
     if (args[i]->itemize(pc, &args[i])) return true;
   }
 
-  if (!m_window) pc->select->in_sum_expr--;
-
+  (m_window == nullptr) ? pc->select->in_sum_expr--
+                        : pc->select->in_window_expr--;
   return false;
 }
 
@@ -528,6 +530,12 @@ bool Item_sum::clean_up_after_removal(uchar *arg) {
 
   if (ctx->is_stopped(this)) return false;
 
+  if (reference_count() > 1) {
+    (void)decrement_ref_count();
+    ctx->stop_at(this);
+    return false;
+  }
+
   // Remove item on upward traversal, not downward:
   if (marker == MARKER_NONE) {
     marker = MARKER_TRAVERSAL;
@@ -775,7 +783,7 @@ void Item_sum::update_used_tables() {
   used_tables_cache = 0;
   // Re-accumulate all properties except three
   m_accum_properties &=
-      (PROP_AGGREGATION | PROP_WINDOW_FUNCTION | PROP_ROLLUP_EXPR);
+      (PROP_AGGREGATION | PROP_WINDOW_FUNCTION | PROP_HAS_GROUPING_SET_DEP);
 
   for (uint i = 0; i < arg_count; i++) {
     args[i]->update_used_tables();
@@ -854,7 +862,10 @@ int Item_sum::set_aggregator(Aggregator::Aggregator_type aggregator) {
     return false;
   }
 
-  destroy(aggr);
+  if (aggr != nullptr) {
+    ::destroy_at(aggr);
+    aggr = nullptr;
+  }
   switch (aggregator) {
     case Aggregator::DISTINCT_AGGREGATOR:
       aggr = new (*THR_MALLOC) Aggregator_distinct(this);
@@ -868,7 +879,7 @@ int Item_sum::set_aggregator(Aggregator::Aggregator_type aggregator) {
 
 void Item_sum::cleanup() {
   if (aggr != nullptr) {
-    destroy(aggr);
+    ::destroy_at(aggr);
     aggr = nullptr;
   }
   Item_result_field::cleanup();
@@ -890,12 +901,15 @@ bool Item_sum::fix_fields(THD *thd, Item **ref [[maybe_unused]]) {
   return false;
 }
 
-void Item_sum::split_sum_func(THD *thd, Ref_item_array ref_item_array,
+bool Item_sum::split_sum_func(THD *thd, Ref_item_array ref_item_array,
                               mem_root_deque<Item *> *fields) {
-  if (m_is_window_function) {
-    for (auto &it : Bounds_checked_array<Item *>(args, arg_count))
-      it->split_sum_func2(thd, ref_item_array, fields, &it, true);
+  if (!m_is_window_function) return false;
+  for (auto &it : Bounds_checked_array<Item *>(args, arg_count)) {
+    if (it->split_sum_func2(thd, ref_item_array, fields, &it, true)) {
+      return true;
+    }
   }
+  return false;
 }
 
 bool Item_sum::reset_wf_state(uchar *arg) {
@@ -2115,8 +2129,8 @@ bool Aggregator_distinct::unique_walk_function(void *element) {
 }
 
 Aggregator_distinct::~Aggregator_distinct() {
-  if (tree) {
-    destroy(tree);
+  if (tree != nullptr) {
+    ::destroy_at(tree);
     tree = nullptr;
   }
   if (table) {
@@ -2125,8 +2139,8 @@ Aggregator_distinct::~Aggregator_distinct() {
     free_tmp_table(table);
     table = nullptr;
   }
-  if (tmp_table_param) {
-    destroy(tmp_table_param);
+  if (tmp_table_param != nullptr) {
+    ::destroy_at(tmp_table_param);
     tmp_table_param = nullptr;
   }
 }
@@ -3062,15 +3076,19 @@ bool Item_sum_hybrid::val_json(Json_wrapper *wr) {
   return ok;
 }
 
-void Item_sum_hybrid::split_sum_func(THD *thd, Ref_item_array ref_item_array,
+bool Item_sum_hybrid::split_sum_func(THD *thd, Ref_item_array ref_item_array,
                                      mem_root_deque<Item *> *fields) {
-  super::split_sum_func(thd, ref_item_array, fields);
+  if (super::split_sum_func(thd, ref_item_array, fields)) {
+    return true;
+  }
   /*
     Grouped aggregate functions used as arguments to windowing functions get
     replaced with aggregate ref's in split_sum_func. So need to redo the cache
     setup.
   */
   update_after_wf_arguments_changed(thd);
+
+  return false;
 }
 
 void Item_sum_hybrid::cleanup() {
@@ -4297,10 +4315,12 @@ void Item_func_group_concat::cleanup() {
     to original item from which was made copy => it own its objects )
   */
   if (original == nullptr) {
-    destroy(tmp_table_param);
-    tmp_table_param = nullptr;
+    if (tmp_table_param != nullptr) {
+      ::destroy_at(tmp_table_param);
+      tmp_table_param = nullptr;
+    }
     if (table != nullptr) {
-      if (table->blob_storage) destroy(table->blob_storage);
+      if (table->blob_storage != nullptr) ::destroy_at(table->blob_storage);
       close_tmp_table(table);
       free_tmp_table(table);
       table = nullptr;
@@ -4308,8 +4328,8 @@ void Item_func_group_concat::cleanup() {
         delete_tree(tree);
         tree = nullptr;
       }
-      if (unique_filter) {
-        destroy(unique_filter);
+      if (unique_filter != nullptr) {
+        ::destroy_at(unique_filter);
         unique_filter = nullptr;
       }
     }
@@ -4789,7 +4809,7 @@ void Item_rank::update_after_wf_arguments_changed(THD *thd) {
     // on them. This is called only during resolving with ROLLUP in case
     // of old optimizer.
     Item **item_to_be_changed;
-    if (!thd->lex->using_hypergraph_optimizer) {
+    if (!thd->lex->using_hypergraph_optimizer()) {
       Item_ref *item_ref = down_cast<Item_ref *>(m_previous[i]->get_item());
       item_to_be_changed = item_ref->ref_pointer();
     } else {
@@ -4879,7 +4899,7 @@ void Item_rank::clear() {
 
 Item_rank::~Item_rank() {
   for (Cached_item *ci : m_previous) {
-    destroy(ci);
+    ::destroy_at(ci);
   }
   m_previous.clear();
 }
@@ -5151,12 +5171,16 @@ bool Item_first_last_value::fix_fields(THD *thd, Item **items) {
   return false;
 }
 
-void Item_first_last_value::split_sum_func(THD *thd,
+bool Item_first_last_value::split_sum_func(THD *thd,
                                            Ref_item_array ref_item_array,
                                            mem_root_deque<Item *> *fields) {
-  super::split_sum_func(thd, ref_item_array, fields);
+  if (super::split_sum_func(thd, ref_item_array, fields)) {
+    return true;
+  }
   // Need to redo this now:
   update_after_wf_arguments_changed(thd);
+
+  return false;
 }
 
 bool Item_first_last_value::setup_first_last() {
@@ -5326,11 +5350,15 @@ bool Item_nth_value::fix_fields(THD *thd, Item **items) {
   return false;
 }
 
-void Item_nth_value::split_sum_func(THD *thd, Ref_item_array ref_item_array,
+bool Item_nth_value::split_sum_func(THD *thd, Ref_item_array ref_item_array,
                                     mem_root_deque<Item *> *fields) {
-  super::split_sum_func(thd, ref_item_array, fields);
+  if (super::split_sum_func(thd, ref_item_array, fields)) {
+    return true;
+  }
   // If function was set up, need to redo this now:
   update_after_wf_arguments_changed(thd);
+
+  return false;
 }
 
 bool Item_nth_value::setup_nth() {
@@ -5567,11 +5595,15 @@ bool Item_lead_lag::check_wf_semantics2(Window_evaluation_requirements *r) {
   return false;
 }
 
-void Item_lead_lag::split_sum_func(THD *thd, Ref_item_array ref_item_array,
+bool Item_lead_lag::split_sum_func(THD *thd, Ref_item_array ref_item_array,
                                    mem_root_deque<Item *> *fields) {
-  super::split_sum_func(thd, ref_item_array, fields);
+  if (super::split_sum_func(thd, ref_item_array, fields)) {
+    return true;
+  }
   // If function was set up, need to redo these now:
   update_after_wf_arguments_changed(thd);
+
+  return false;
 }
 
 bool Item_lead_lag::setup_lead_lag() {
@@ -6214,7 +6246,7 @@ bool Item_func_grouping::fix_fields(THD *thd, Item **ref) {
   */
   Query_block *select = thd->lex->current_query_block();
 
-  if (select->olap == UNSPECIFIED_OLAP_TYPE ||
+  if (!select->is_non_primitive_grouped() ||
       select->resolve_place == Query_block::RESOLVE_JOIN_NEST ||
       select->resolve_place == Query_block::RESOLVE_CONDITION) {
     my_error(ER_INVALID_GROUP_FUNC_USE, MYF(0));
@@ -6302,7 +6334,7 @@ bool Item_func_grouping::aggregate_check_group(uchar *arg) {
 void Item_func_grouping::update_used_tables() {
   Item_int_func::update_used_tables();
   set_grouping_func();
-  set_rollup_expr();
+  set_group_by_modifier();
   /*
     GROUPING function can never be a constant item. It's
     result always depends on ROLLUP result.
@@ -6503,7 +6535,10 @@ bool Item_sum_collect::add() {
       return false;
     case ResultType::Value:
       currentGeometry = geometryExtractionResult.GetValue();
-      currentSrid = geometryExtractionResult.GetSrid();
+      auto srs = geometryExtractionResult.GetSrs();
+      if (srs != nullptr) {
+        currentSrid = srs->id();
+      }
       break;
   }
 
@@ -6547,7 +6582,7 @@ void Item_sum_collect::read_result_field() {
       return;
     case ResultType::Value:
       std::unique_ptr<gis::Geometry> geo = geometryExtractionResult.GetValue();
-      srid = geometryExtractionResult.GetSrid();
+      srid = geometryExtractionResult.GetSrs()->id();
       switch (geo->type()) {
         case gis::Geometry_type::kGeometrycollection:
           m_geometrycollection = std::unique_ptr<gis::Geometrycollection>(

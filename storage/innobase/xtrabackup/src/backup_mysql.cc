@@ -2057,7 +2057,7 @@ bool write_xtrabackup_info(MYSQL *connection) {
 
   ut_ad(idx == 19);
 
-  mysql_stmt_bind_param(stmt, bind);
+  mysql_stmt_bind_named_param(stmt, bind, sizeof(bind)/sizeof(bind[0]), nullptr);
 
   mysql_stmt_execute(stmt);
   mysql_stmt_close(stmt);

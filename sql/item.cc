@@ -72,6 +72,7 @@
 #include "sql/key.h"
 #include "sql/log_event.h"  // append_query_string
 #include "sql/mysqld.h"     // lower_case_table_names files_charset_info
+#include "sql/opt_explain_format.h"
 #include "sql/protocol.h"
 #include "sql/query_options.h"
 #include "sql/select_lex_visitor.h"
@@ -82,6 +83,7 @@
 #include "sql/sql_class.h"    // THD
 #include "sql/sql_derived.h"  // Condition_pushdown
 #include "sql/sql_error.h"
+#include "sql/sql_executor.h"
 #include "sql/sql_lex.h"
 #include "sql/sql_list.h"
 #include "sql/sql_show.h"  // append_identifier
@@ -104,7 +106,8 @@ const String my_null_string("NULL", 4, default_charset_info);
 
 /**
   Alias from select list can be referenced only from ORDER BY (SQL Standard) or
-  from HAVING, GROUP BY and a subquery in the select list (MySQL extension).
+  from HAVING, GROUP BY, QUALIFY and a subquery in the select list (MySQL
+  extension).
 
   We don't allow it be referenced from the SELECT list, with one exception:
   it's accepted if nested in a subquery, which is inconsistent but necessary
@@ -112,7 +115,7 @@ const String my_null_string("NULL", 4, default_charset_info);
 */
 static inline bool select_alias_referencable(enum_parsing_context place) {
   return (place == CTX_SELECT_LIST || place == CTX_GROUP_BY ||
-          place == CTX_HAVING || place == CTX_ORDER_BY);
+          place == CTX_HAVING || place == CTX_QUALIFY || place == CTX_ORDER_BY);
 }
 
 Type_properties::Type_properties(Item &item)
@@ -759,8 +762,10 @@ bool Item::do_itemize(Parse_context *pc, Item **res) {
   */
   if (pc->select) {
     const enum_parsing_context place = pc->select->parsing_place;
-    if (place == CTX_SELECT_LIST || place == CTX_HAVING)
+    if (place == CTX_SELECT_LIST || place == CTX_HAVING ||
+        place == CTX_QUALIFY || place == CTX_ORDER_BY) {
       pc->select->select_n_having_items++;
+    }
   }
   return false;
 }
@@ -2245,42 +2250,43 @@ class Item_aggregate_ref : public Item_ref {
 };
 
 /**
-  1. Move SUM items out from item tree and replace with reference.
+  1. Replace set function and window function items with a reference.
 
-  The general goal of this is to get a list of group aggregates, and window
-  functions, and their arguments, so that the code which manages internal tmp
-  tables (creation, row copying) has a list of all aggregates (which require
-  special management) and a list of their arguments (which must be carried
-  from tmp table to tmp table until the aggregate can be computed).
+  The general goal of this is to get a list of set functions (aggregate
+  functions and the GROUPING function), and window functions, and their
+  arguments, so that the code which manages internal tmp tables (creation,
+  row copying) has a list of all such functions (which require special handling)
+  and a list of their arguments (which must be carried from tmp table to
+  tmp table until the function can be computed).
 
-  2. Move scalar subqueries out of the item tree and replace with reference
-  when used in arguments to window functions for similar reasons (tmp tables).
+  2. Replace scalar subqueries with reference when used in arguments to
+  window functions for similar reasons (tmp tables).
 
   @param thd             Current session
   @param ref_item_array  Pointer to array of reference fields
-  @param fields          All fields in select
+  @param fields          All fields of the current query block
   @param ref             Pointer to item. If nullptr, get it from
                          Item_sum::referenced_by[].
-  @param skip_registered <=> function be must skipped for registered SUM items
+  @param skip_registered <=> if aggregate function, item can be skipped.
 
-    All found SUM items are added FIRST in the fields list and
-    we replace the item with a reference.
+  @returns false if success, true if error
 
-    thd->fatal_error() may be called if we are out of memory
+    A set function item is added at the start of the fields list and then the
+    original use is replaced with a reference.
 
     The logic of skip_registered is:
 
-      - split_sum_func() is called when an aggregate is part of a bigger
+      - split_sum_func() is called when a set function is part of a bigger
         expression, example: '1+max()'.
 
-      - an Item_sum has referenced_by[0]!=nullptr when it is a group aggregate
-        located in a subquery but aggregating in a more outer query.
+      - an aggregate function has referenced_by[0] != nullptr when it is
+        located in a subquery but is aggregated in a more outer query block.
 
       - this referenced_by is necessary because for such aggregates, there are
         two phases:
 
-         - fix_fields() is called by the subquery, which puts the item into the
-           outer Query_block::inner_sum_func_list.
+         - fix_fields() is called for the subquery, which puts the item into the
+           outer query block's inner_sum_func_list.
 
          - the outer query scans that list, calls split_sum_func2(), it
            replaces the aggregate with an Item_ref, so it needs to correct the
@@ -2288,12 +2294,12 @@ class Item_aggregate_ref : public Item_ref {
            pointer; this is possible because fix_fields() has stored the
            address of this pointer into referenced_by[0].
 
-      - So when we call split_sum_func for any aggregate, if we are in the
-        subquery, we do not want to modify the outer-aggregated aggregates, and
-        as those are detectable because they have referenced_by[0]!=0: we pass
-        'skip_registered=true'.
+      - So when we call split_sum_func for any aggregate function, if we are
+        in the subquery, we do not want to modify the outer-aggregated
+        aggregate functions, and as those are detectable because they have
+        referenced_by[0] != nullptr: we pass 'skip_registered=true'.
 
-      - On the other hand, if we are in the outer query and scan
+      - On the other hand, if we are in the outer query block and scan
         inner_sum_func_list, it's time to modify the aggregate which was
         skipped by the subquery, so we pass 'skip_registered=false'.
 
@@ -2311,9 +2317,9 @@ class Item_aggregate_ref : public Item_ref {
       (1) SELECT a+FIRST_VALUE(b*SUM(c/d)) OVER (...)
 
   Assume we have done fix_fields() on this SELECT list, which list is so far
-  only '+'. This '+' contains a WF (and a group aggregate function), so the
+  only '+'. This '+' contains a WF (and an aggregate function), so the
   resolver (generally, Query_block::prepare()) calls Item::split_sum_func2 on
-  the '+'; as this '+' is neither a WF nor a group aggregate, but contains
+  the '+'; as this '+' is neither a WF nor an aggregate function, but contains
   some, it calls Item_func::split_sum_func which calls Item::split_sum_func2 on
   every argument of the '+':
 
@@ -2347,76 +2353,81 @@ class Item_aggregate_ref : public Item_ref {
        FROM t1 AS upper;
 */
 
-void Item::split_sum_func2(THD *thd, Ref_item_array ref_item_array,
+bool Item::split_sum_func2(THD *thd, Ref_item_array ref_item_array,
                            mem_root_deque<Item *> *fields, Item **ref,
                            bool skip_registered) {
   DBUG_TRACE;
-  /* An item of type Item_sum  is registered <=> referenced_by[0] != 0 */
-  if (type() == SUM_FUNC_ITEM && skip_registered &&
-      (down_cast<Item_sum *>(this))->referenced_by[0])
-    return;
 
-  // 'sum_func' means a group aggregate function
-  const bool is_sum_func = type() == SUM_FUNC_ITEM && !m_is_window_function;
-  if ((!is_sum_func && has_aggregation() && !m_is_window_function) ||
-      (!m_is_window_function && has_wf()) ||
-      (type() == FUNC_ITEM && ((down_cast<Item_func *>(this))->functype() ==
+  const bool is_aggr_func = type() == SUM_FUNC_ITEM && !m_is_window_function;
+  const bool is_grouping = is_function_of_type(this, Item_func::GROUPING_FUNC);
+
+  // An aggregate function is registered <=> referenced_by[0] != nullptr
+  if (is_aggr_func && skip_registered &&
+      down_cast<Item_sum *>(this)->referenced_by[0] != nullptr) {
+    return false;
+  }
+  /*
+    For an expressions that is not itself an aggregate function, a
+    grouping function or a window function but contain underlying
+    aggregate functions, grouping functions or window functions,
+    possibly split the expression.
+    Do not attempt to split helper functions from transformations
+    (ISNOTNULLTEST_FUNC or TRIG_COND_FUNC), or row constructs.
+  */
+  if (((has_aggregation() || has_wf() || has_grouping_func()) &&
+       !is_aggr_func && !m_is_window_function && !is_grouping) ||
+      (type() == FUNC_ITEM && (down_cast<Item_func *>(this)->functype() ==
                                    Item_func::ISNOTNULLTEST_FUNC ||
-                               (down_cast<Item_func *>(this))->functype() ==
+                               down_cast<Item_func *>(this)->functype() ==
                                    Item_func::TRIG_COND_FUNC)) ||
       type() == ROW_ITEM) {
     // Do not add item to hidden list; possibly split it
-    split_sum_func(thd, ref_item_array, fields);
-  } else if ((type() == SUM_FUNC_ITEM || !const_for_execution()) &&  // (1)
-             (type() != SUBSELECT_ITEM ||                            // (2)
-              (down_cast<Item_subselect *>(this)->subquery_type() ==
+    if (split_sum_func(thd, ref_item_array, fields)) {
+      return true;
+    }
+  } else if (!const_for_execution() &&                                // (1)
+             (type() != REF_ITEM ||                                   // (2)
+              down_cast<Item_ref *>(this)->ref_type() ==              //
+                  Item_ref::VIEW_REF) &&                              //
+             (type() != SUBSELECT_ITEM ||                             // (3)
+              (down_cast<Item_subselect *>(this)->subquery_type() ==  //
                    Item_subselect::SCALAR_SUBQUERY &&
                down_cast<Item_subselect *>(this)
-                       ->query_expr()
-                       ->first_query_block()
-                       ->single_visible_field() != nullptr)) &&
-             (type() != REF_ITEM ||  // (3)
-              (down_cast<Item_ref *>(this))->ref_type() ==
-                  Item_ref::VIEW_REF)) {
+                   ->is_single_column_scalar_subquery()))) {
     /*
-      (1) Replace item with a reference so that we can easily calculate
-      it (in case of sum functions) or copy it (in case of fields)
+      (1) Replace non-constant item with a reference so that we can easily
+      calculate it (in case of aggregate functions, grouping functions or
+      window functions) or copy it (in case of fields).
 
-      The test above is to ensure we don't do a reference for things
-      that are constants (INNER_TABLE_BIT is in effect a constant)
-      or already referenced (for example an item in HAVING)
+      (2) Exception from (1) is Item_view_ref which we need to wrap in
+      Item_ref to allow fields from view being stored in tmp table.
 
-      (2) In order to handle queries like:
+      (3) In order to handle queries like:
         SELECT FIRST_VALUE((SELECT .. FROM .. LIMIT 1)) OVER (..) FROM ...;
-      we need to move subselects to hidden fields too. But since window
-      functions accept only single-row and single-column subqueries other
-      types are excluded.
+      we need to move scalar subqueries to hidden fields too. But since window
+      functions accept only scalar and row subqueries, other types are excluded.
       Indeed, a subquery of another type is wrapped in Item_in_optimizer at this
       stage, so when splitting Item_in_optimizer, if we added the underlying
       Item_subselect to "fields" below it would be later evaluated by
       copy_funcs() (in tmp table processing), which would be incorrect as the
       Item_subselect cannot be evaluated - as it must always be evaluated
       through its parent Item_in_optimizer.
-
-      (3) Exception from (1) is Item_view_ref which we need to wrap in
-      Item_ref to allow fields from view being stored in tmp table.
     */
     DBUG_PRINT("info", ("replacing %s with reference", item_name.ptr()));
 
     const bool old_hidden = hidden;  // May be overwritten below.
 
     // See if the item is already there. If it's not there
-    // (the common case), we put it at the end.
+    // (the common case), add it at the end.
     //
     // However, if a scalar-subquery-to-derived rewrite needed to process
-    // a HAVING item, we might already be there (as a visible item).
-    // If so, we must not add ourselves twice, or we'd overwrite the hidden
-    // flag.
+    // a HAVING item, it might already be there (as a visible item).
+    // If so, we must not add it twice, or we'd overwrite the hidden flag.
     uint el =
         std::find(&ref_item_array[0], &ref_item_array[fields->size()], this) -
         &ref_item_array[0];
     if (el == fields->size()) {
-      // Was not there from before, so add ourselves as a hidden item.
+      // Was not there from before, so add it as a hidden item.
       ref_item_array[el] = this;
       // Should also be absent from 'fields', for consistency.
       assert(std::find(fields->begin(), fields->end(), this) == fields->end());
@@ -2428,7 +2439,7 @@ void Item::split_sum_func2(THD *thd, Ref_item_array ref_item_array,
 
     Query_block *base_query_block;
     Query_block *depended_from = nullptr;
-    if (type() == SUM_FUNC_ITEM && !m_is_window_function) {
+    if (is_aggr_func) {
       Item_sum *const item = down_cast<Item_sum *>(this);
       assert(thd->lex->current_query_block() == item->aggr_query_block);
       base_query_block = item->base_query_block;
@@ -2441,15 +2452,15 @@ void Item::split_sum_func2(THD *thd, Ref_item_array ref_item_array,
     Item_aggregate_ref *const item_ref = new Item_aggregate_ref(
         &base_query_block->context, &ref_item_array[el], nullptr, nullptr,
         item_name.ptr(), depended_from);
-    if (!item_ref) return; /* purecov: inspected */
+    if (item_ref == nullptr) return true; /* purecov: inspected */
     item_ref->hidden = old_hidden;
     if (ref == nullptr) {
-      assert(is_sum_func);
+      assert(is_aggr_func);
       // Let 'ref' be the two elements of referenced_by[].
       ref = down_cast<Item_sum *>(this)->referenced_by[1];
       if (ref != nullptr) *ref = item_ref;
       ref = down_cast<Item_sum *>(this)->referenced_by[0];
-      assert(ref);
+      assert(ref != nullptr);
     }
     // WL#6570 remove-after-qa
     assert(thd->stmt_arena->is_regular() || !thd->lex->is_exec_started());
@@ -2459,8 +2470,11 @@ void Item::split_sum_func2(THD *thd, Ref_item_array ref_item_array,
       A WF must both be added to hidden list (done above), and be split so its
       arguments are added into the hidden list (done below):
     */
-    if (m_is_window_function) split_sum_func(thd, ref_item_array, fields);
+    if (m_is_window_function && split_sum_func(thd, ref_item_array, fields)) {
+      return true;
+    }
   }
+  return false;
 }
 
 static bool left_is_superset(DTCollation *left, DTCollation *right) {
@@ -2890,7 +2904,8 @@ Item_field::Item_field(Name_resolution_context *context_arg, const char *db_arg,
       any_privileges(false) {
   Query_block *select = current_thd->lex->current_query_block();
   collation.set(DERIVATION_IMPLICIT);
-  if (select && select->parsing_place != CTX_HAVING)
+  if (select != nullptr && (select->parsing_place != CTX_HAVING &&
+                            select->parsing_place != CTX_QUALIFY))
     select->select_n_where_fields++;
 }
 
@@ -2918,7 +2933,9 @@ bool Item_field::do_itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
   if (super::do_itemize(pc, res)) return true;
   Query_block *const select = pc->select;
-  if (select->parsing_place != CTX_HAVING) select->select_n_where_fields++;
+  if (select->parsing_place != CTX_HAVING &&
+      select->parsing_place != CTX_QUALIFY)
+    select->select_n_where_fields++;
   return false;
 }
 
@@ -3135,7 +3152,9 @@ void Item_ident::print(const THD *thd, String *str, enum_query_type query_type,
   }
 
   if (!(query_type & QT_NO_DB) && db_name_arg && db_name_arg[0] &&
-      !alias_name_used()) {
+      (!alias_name_used() ||
+       (thd->lex->is_explain() && thd->lex->explain_format->is_hierarchical() &&
+        thd->lex->explain_format->is_iterator_based()))) {
     const size_t d_name_len = strlen(d_name);
     if (!((query_type & QT_NO_DEFAULT_DB) &&
           db_is_default_db(d_name, d_name_len, thd))) {
@@ -3841,6 +3860,7 @@ bool Item_param::fix_fields(THD *, Item **) {
   }
   if (param_state() == NULL_VALUE) {
     // Parameter data type may be ignored, keep existing type
+    set_data_type_null();
     fixed = true;
     return false;
   }
@@ -4405,6 +4425,7 @@ String *Item_param::val_str(String *str) {
   assert(param_state() != NO_VALUE);
 
   if (param_state() == NULL_VALUE) {
+    null_value = true;
     return nullptr;
   }
   switch (data_type_actual()) {
@@ -4479,6 +4500,7 @@ void Item_param::copy_param_actual_type(Item_param *from) {
     default:
       break;
   }
+  sync_clones();
 }
 
 /**
@@ -5316,6 +5338,8 @@ static bool resolve_ref_in_select_and_group(THD *thd, Item_ident *ref,
   if (select->having_fix_field && !ref->has_aggregation() && group_list) {
     Item **group_by_ref = find_field_in_group_list(ref, group_list);
 
+    if (thd->is_error()) return true;
+
     /* Check if the fields found in SELECT and GROUP BY are the same field. */
     if (group_by_ref != nullptr && select_ref != nullptr &&
         !((*group_by_ref)->eq(*select_ref, false))) {
@@ -5332,7 +5356,8 @@ static bool resolve_ref_in_select_and_group(THD *thd, Item_ident *ref,
 
   if (select_ref == nullptr) return false;
 
-  if ((*select_ref)->has_wf()) {
+  if (select->resolve_place != Query_block::RESOLVE_QUALIFY &&
+      (*select_ref)->has_wf()) {
     /*
       We can't reference an alias to a window function expr from within
       a subquery or a HAVING clause
@@ -5569,7 +5594,8 @@ int Item_field::fix_outer_field(THD *thd, Field **from_field,
                      pointer_cast<uchar *>(&ut));
           cur_query_expression->accumulate_used_tables(ut.used_tables);
 
-          if (select->group_list.elements && place == CTX_HAVING) {
+          if (select->group_list.elements &&
+              (place == CTX_HAVING || place == CTX_QUALIFY)) {
             /*
               If an outer field is resolved in a grouping query block then it
               is replaced with an Item_outer_ref object. Otherwise an
@@ -5789,7 +5815,7 @@ bool is_null_on_empty_table(THD *thd, Item_field *i) {
            qsl->group_list.elements == 0;
   else
     return (sl->resolve_place == Query_block::RESOLVE_SELECT_LIST ||
-            (thd->lex->using_hypergraph_optimizer && sl->is_ordered())) &&
+            (thd->lex->using_hypergraph_optimizer() && sl->is_ordered())) &&
            sl->with_sum_func && sl->group_list.elements == 0 &&
            thd->lex->in_sum_func == nullptr;
 }
@@ -6377,7 +6403,7 @@ Item *Item_default_value::replace_item_field(uchar *argp) {
     - this - otherwise.
 */
 
-Item *Item_field::replace_equal_field(uchar *) {
+Item *Item_field::replace_equal_field(uchar *arg) {
   if (item_equal) {
     Item *const_item = item_equal->const_arg();
     if (const_item) {
@@ -6389,6 +6415,11 @@ Item *Item_field::replace_equal_field(uchar *) {
     assert(table_ref == subst->table_ref ||
            table_ref->table != subst->table_ref->table);
     if (table_ref != subst->table_ref && !field->eq(subst->field)) {
+      Replace_equal *replace = pointer_cast<Replace_equal *>(arg);
+      Item_func *func = replace->stack.head();
+      if (!func->allow_replacement(this, subst)) {
+        return this;
+      }
       // We may have to undo the substitution that is done here when setting up
       // hash join; the new field may be a field from a table that is not
       // reachable from hash join. Store which multi-equality we found the field
@@ -6701,7 +6732,6 @@ void Item_field::make_field(Send_field *tmp_field) {
  */
 static inline type_conversion_status field_conv_with_cache(
     Field *to, Field *from, Field **last_to, uint32_t *to_is_memcpyable) {
-  assert(to->field_ptr() != from->field_ptr());
   if (to != *last_to) {
     *last_to = to;
     if (fields_are_memcpyable(to, from)) {
@@ -6714,7 +6744,13 @@ static inline type_conversion_status field_conv_with_cache(
       *to_is_memcpyable == to->pack_length() && from->type() == to->type() &&
       (from->type() != MYSQL_TYPE_NEWDECIMAL ||
        from->decimals() == to->decimals())) {
-    memcpy(to->field_ptr(), from->field_ptr(), *to_is_memcpyable);
+    const size_t length = *to_is_memcpyable;
+    // Check that we're not memcpying from the source string into itself, since
+    // that invokes undefined behaviour. Two adjacent fields could have the same
+    // position in the record buffer if one of them has zero length (such as
+    // CHAR(0)). This is not a problem, since memcpy is a no-op in that case.
+    assert(to->field_ptr() != from->field_ptr() || length == 0);
+    memcpy(to->field_ptr(), from->field_ptr(), length);
     return TYPE_OK;
   } else {
     return field_conv_slow(to, from);
@@ -7562,6 +7598,7 @@ bool Item::send(Protocol *protocol, String *buffer) {
   }
 
   assert(null_value);
+  if (current_thd->is_error()) return true;
   return protocol->store_null();
 }
 
@@ -7572,7 +7609,7 @@ bool Item::update_null_value() {
 }
 
 /**
-  Evaluate item, possibly using the supplied buffer
+  Evaluate scalar item, possibly using the supplied buffer
 
   @param thd    Thread context
   @param buffer Buffer, in case item needs a large one
@@ -7581,6 +7618,8 @@ bool Item::update_null_value() {
 */
 
 bool Item::evaluate(THD *thd, String *buffer) {
+  assert(result_type() != ROW_RESULT);
+
   switch (data_type()) {
     case MYSQL_TYPE_INVALID:
     default:
@@ -7720,6 +7759,18 @@ bool Item::cache_const_expr_analyzer(uchar **arg) {
     An item above in the tree is to be cached, so need to cache the present
     item, and no need to go down the tree.
   */
+  return false;
+}
+
+bool Item::clean_up_after_removal(uchar *arg) {
+  Cleanup_after_removal_context *const ctx =
+      pointer_cast<Cleanup_after_removal_context *>(arg);
+
+  if (ctx->is_stopped(this)) return false;
+
+  if (reference_count() > 1) {
+    (void)decrement_ref_count();
+  }
   return false;
 }
 
@@ -8141,15 +8192,18 @@ bool Item_ref::clean_up_after_removal(uchar *arg) {
 
   if (ctx->is_stopped(this)) return false;
 
-  // Exit if second visit to this object:
-  if (m_unlinked) return false;
+  // Decrement reference count for referencing object before
+  // referenced object:
+  if (reference_count() > 1) {
+    (void)decrement_ref_count();
+    ctx->stop_at(this);
+    return false;
+  }
+  if (ref_item()->is_abandoned()) return false;
 
   if (ref_item()->decrement_ref_count() > 0) {
     ctx->stop_at(this);
   }
-
-  // Ensure the count is not decremented twice:
-  m_unlinked = true;
 
   return false;
 }
@@ -8232,7 +8286,25 @@ bool Item_ref::fix_fields(THD *thd, Item **reference) {
     {
       Name_resolution_context *last_checked_context = context;
       Name_resolution_context *outer_context = context->outer_context;
-      m_ref_item = nullptr;
+
+      if (context->query_block->resolve_place == Query_block::RESOLVE_QUALIFY) {
+        Field *from_field = find_field_in_tables(
+            thd, this, context->first_name_resolution_table,
+            context->last_name_resolution_table, reference,
+            thd->lex->use_only_table_context ? REPORT_ALL_ERRORS
+                                             : IGNORE_EXCEPT_NON_UNIQUE,
+            thd->want_privilege, true);
+        if (thd->is_error()) return true;
+        if (from_field != nullptr && from_field != not_found_field) {
+          if (from_field != view_ref_found) {
+            Item_field *fld = new Item_field(
+                thd, context, from_field->table->pos_in_table_list, from_field);
+            if (fld == nullptr) return true;
+            *reference = fld;
+          }
+          return false;
+        }
+      }
 
       if (outer_context == nullptr) {
         /* The current reference cannot be resolved in this query. */
@@ -8428,7 +8500,7 @@ bool Item_ref::fix_fields(THD *thd, Item **reference) {
   /*
     Reject invalid references to aggregates.
 
-    1) We only accept references to aggregates in a HAVING clause.
+    1) We only accept references to aggregates in a HAVING or QUALIFY clause.
     (This restriction is not strictly necessary, but we don't want to
     lift it without making sure that such queries are handled
     correctly. Lifting the restriction will make bugs such as
@@ -8439,9 +8511,12 @@ bool Item_ref::fix_fields(THD *thd, Item **reference) {
     the query block where the aggregation happens, since grouping
     happens before aggregation.
   */
-  if ((ref_item()->has_aggregation() &&
-       !thd->lex->current_query_block()->having_fix_field) ||  // 1
-      walk(&Item::has_aggregate_ref_in_group_by,               // 2
+  bool is_having_or_qualify =
+      (thd->lex->current_query_block()->having_fix_field ||
+       thd->lex->current_query_block()->resolve_place ==
+           Query_block::RESOLVE_QUALIFY);
+  if ((ref_item()->has_aggregation() && !is_having_or_qualify) ||  // 1
+      walk(&Item::has_aggregate_ref_in_group_by,                   // 2
            enum_walk::SUBQUERY_POSTFIX, nullptr)) {
     my_error(ER_ILLEGAL_REFERENCE, MYF(0), full_name(),
              "reference to group function");
@@ -8542,7 +8617,7 @@ void Item_ref::print(const THD *thd, String *str,
   if (m_ref_item == nullptr)  // Unresolved reference: print reference
     return Item_ident::print(thd, str, query_type);
 
-  if (!const_item() && m_alias_of_expr &&
+  if (!thd->lex->reparse_derived_table_condition && m_alias_of_expr &&
       ref_item()->type() != Item::CACHE_ITEM && ref_type() != VIEW_REF &&
       table_name == nullptr && item_name.ptr()) {
     const Simple_cstring str1 = ref_item()->real_item()->item_name;
@@ -9996,7 +10071,9 @@ Item_cache_json::Item_cache_json()
       m_value(new (*THR_MALLOC) Json_wrapper()),
       m_is_sorted(false) {}
 
-Item_cache_json::~Item_cache_json() { destroy(m_value); }
+Item_cache_json::~Item_cache_json() {
+  if (m_value != nullptr) ::destroy_at(m_value);
+}
 
 /**
   Read the JSON value and cache it.
@@ -10717,15 +10794,9 @@ Item_values_column::Item_values_column(THD *thd, Item *ref) : super(thd, ref) {
   fixed = true;
 }
 
-/* purecov: begin deadcode */
-
-bool Item_values_column::eq(const Item *item, bool binary_cmp) const {
-  assert(false);
-  const Item *it = item->real_item();
-  return m_value_ref && m_value_ref->eq(it, binary_cmp);
+bool Item_values_column::eq(const Item *item, bool) const {
+  return item->type() == VALUES_COLUMN_ITEM && item_name.eq(item->item_name);
 }
-
-/* purecov: end */
 
 double Item_values_column::val_real() {
   assert(fixed);
@@ -11057,29 +11128,31 @@ bool Item_asterisk::do_itemize(Parse_context *pc, Item **res) {
   return false;
 }
 
-bool ItemsAreEqual(const Item *a, const Item *b, bool binary_cmp) {
-  const Item *real_a = a->real_item();
-  const Item *real_b = b->real_item();
+/**
+  Unwrap an Item argument so that Item::eq() can see the "real" item, and not
+  just the wrapper. It unwraps Item_ref using real_item(), and also cache items
+  and rollup group wrappers, since these may not have been added consistently to
+  both sides compared by Item::eq().
+ */
+static const Item *UnwrapArgForEq(const Item *item) {
+  const Item *prev_item;
+  do {
+    prev_item = item;
+    item = item->real_item();
 
-  // Unwrap caches, as they may not be added consistently
-  // to both sides.
-  if (real_a->type() == Item::CACHE_ITEM) {
-    real_a = down_cast<const Item_cache *>(real_a)->get_example();
-  }
-  if (real_b->type() == Item::CACHE_ITEM) {
-    real_b = down_cast<const Item_cache *>(real_b)->get_example();
-  }
-  if (real_a->type() == Item::FUNC_ITEM &&
-      down_cast<const Item_func *>(real_a)->functype() ==
-          Item_func::ROLLUP_GROUP_ITEM_FUNC) {
-    real_a = down_cast<const Item_rollup_group_item *>(real_a)->inner_item();
-  }
-  if (real_b->type() == Item::FUNC_ITEM &&
-      down_cast<const Item_func *>(real_b)->functype() ==
-          Item_func::ROLLUP_GROUP_ITEM_FUNC) {
-    real_b = down_cast<const Item_rollup_group_item *>(real_b)->inner_item();
-  }
-  return real_a->eq(real_b, binary_cmp);
+    if (item->type() == Item::CACHE_ITEM) {
+      item = down_cast<const Item_cache *>(item)->get_example();
+    }
+
+    if (is_rollup_group_wrapper(item)) {
+      item = down_cast<const Item_rollup_group_item *>(item)->inner_item();
+    }
+  } while (item != prev_item);  // Keep trying till no wrapper is found.
+  return item;
+}
+
+bool ItemsAreEqual(const Item *a, const Item *b, bool binary_cmp) {
+  return UnwrapArgForEq(a)->eq(UnwrapArgForEq(b), binary_cmp);
 }
 
 bool AllItemsAreEqual(const Item *const *a, const Item *const *b, int num_items,

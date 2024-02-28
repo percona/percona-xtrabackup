@@ -52,7 +52,7 @@
 
 %global src_dir               %{src_base}-@VERSION_SRC@
 
-%global cmake3                cmake%{?el6:3}%{?el7:3}
+%global cmake3                cmake%{?el7:3}
 
 %global license_files_server  %{src_dir}/LICENSE %{src_dir}/README
 
@@ -72,7 +72,6 @@ URL:            http://www.mysql.com/
 Packager:       MySQL Release Engineering <mysql-build@oss.oracle.com>
 Vendor:         %{mysql_vendor}
 Source0:        https://cdn.mysql.com/Downloads/MySQL-@MYSQL_BASE_VERSION@/%{src_dir}.tar.gz
-Source1:        @BOOST_DOWNLOAD_URL@
 %if 0%{?rhel} >= 8
 BuildRequires:  cmake >= 3.6.1
 BuildRequires:  libtirpc-devel
@@ -80,8 +79,6 @@ BuildRequires:  rpcgen
 %else
 BuildRequires:  cmake3 >= 3.6.1
 %endif
-%{?el6:BuildRequires:  devtoolset-8-gcc}
-%{?el6:BuildRequires:  devtoolset-8-gcc-c++}
 %ifarch aarch64
 %{?el7:BuildRequires:  devtoolset-10-gcc}
 %{?el7:BuildRequires:  devtoolset-10-gcc-c++}
@@ -177,7 +174,7 @@ and the manual for more information.
 This package includes the MySQL server binary as well as related utilities
 to run and administer a MySQL server.
 %prep
-%setup -q -T -a 0 -a 1 -c -n %{src_dir}
+%setup -q -T -a 0 -c -n %{src_dir}
 
 %build
 # Fail quickly and obviously if user tries to build as root
@@ -199,11 +196,8 @@ mkdir release
            -DREPRODUCIBLE_BUILD=OFF \
            -DINSTALL_LAYOUT=RPM \
            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-	   -DWITH_BOOST=.. \
            -DCMAKE_C_FLAGS="%{optflags}" \
            -DCMAKE_CXX_FLAGS="%{optflags}" \
-           -DUSE_LD_LLD=0 \
-           -DWITH_INNODB_MEMCACHED=1 \
            -DINSTALL_MYSQLTESTDIR="" \
            -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
            -DMYSQLX_UNIX_ADDR="/var/run/mysqld/mysqlx.sock" \
@@ -469,10 +463,8 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_reference_cache.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/connection_control.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/ddl_rewriter.so
-%attr(755, root, root) %{_libdir}/mysql/plugin/innodb_engine.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_file.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_udf.so
-%attr(755, root, root) %{_libdir}/mysql/plugin/libmemcached.so
 %if 0%{?mecab}
 %{_libdir}/mysql/mecab
 %attr(755, root, root) %{_libdir}/mysql/plugin/libpluginmecab.so
@@ -519,7 +511,6 @@ rm -r $(readlink var) var
 %attr(644, root, root) %{_datadir}/mysql-*/messages_to_error_log.txt
 %attr(644, root, root) %{_datadir}/mysql-*/messages_to_clients.txt
 %attr(644, root, root) %{_datadir}/mysql-*/dictionary.txt
-%attr(644, root, root) %{_datadir}/mysql-*/innodb_memcached_config.sql
 %attr(644, root, root) %{_datadir}/mysql-*/install_rewriter.sql
 %attr(644, root, root) %{_datadir}/mysql-*/uninstall_rewriter.sql
 

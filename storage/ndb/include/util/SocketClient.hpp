@@ -31,12 +31,12 @@
 
 class SocketAuthenticator;
 
-class SocketClient
-{
+class SocketClient {
   unsigned int m_connect_timeout_millisec;
   unsigned short m_last_used_port;
   SocketAuthenticator *m_auth;
-public:
+
+ public:
   SocketClient(SocketAuthenticator *sa = nullptr);
   ~SocketClient();
   bool init(int af);
@@ -44,11 +44,10 @@ public:
     m_connect_timeout_millisec = timeout_millisec;
   }
   int bind(ndb_sockaddr local);
-  ndb_socket_t connect(ndb_sockaddr server_addr);
-  void connect(NdbSocket &, ndb_sockaddr server_addr);
-  int authenticate(NdbSocket &);
+  NdbSocket connect(ndb_sockaddr server_addr);
+  int authenticate(const NdbSocket &);
 
   ndb_socket_t m_sockfd;
 };
 
-#endif // SOCKET_ClIENT_HPP
+#endif  // SOCKET_ClIENT_HPP

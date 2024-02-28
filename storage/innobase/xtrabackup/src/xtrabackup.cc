@@ -3959,7 +3959,7 @@ static void cleanup_mysql_environment() {
   table_def_free();
   mdl_destroy();
   Srv_session::module_deinit();
-  component_infrastructure_deinit();
+  component_infrastructure_deinit(false);
 
   mysql_mutex_destroy(&LOCK_status);
   mysql_mutex_destroy(&LOCK_global_system_variables);

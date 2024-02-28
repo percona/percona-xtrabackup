@@ -11,11 +11,11 @@
 --echo # for the ndb_binlog thread
 select @@global.ndb_log_transaction_dependency;
 if (`select @@global.ndb_log_transaction_dependency != '0'`) {
-  --skip Test requires ndb_log_transaction_dependency enabled
+  --die Test requires ndb_log_transaction_dependency disabled
 }
 
---echo # Test assumes that COMMIT_ORDER is used for dependency tracking (this
---echo # is the default setting for MySQL Server)
+--echo # Test records that WRITESET is used for dependency tracking (this
+--echo # is the default setting for MySQL Server). But otherwise ignored.
 select @@binlog_transaction_dependency_tracking;
 
 CREATE TABLE t1 (

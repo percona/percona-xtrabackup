@@ -158,6 +158,7 @@ my $opt_testcase_timeout   = $ENV{MTR_TESTCASE_TIMEOUT} || 15;         # minutes
 my $opt_valgrind_clients   = 0;
 my $opt_valgrind_mysqld    = 0;
 my $opt_valgrind_mysqltest = 0;
+my $opt_accept_fail        = 0;
 
 # Options used when connecting to an already running server
 my %opts_extern;
@@ -476,6 +477,11 @@ sub main {
 
   if ($opt_lock_order) {
     lock_order_prepare($bindir);
+  }
+
+  if ($opt_accept_fail and not $opt_force) {
+    $opt_force = 1;
+    mtr_report("accept-test-fail turned on: enabling --force");
   }
 
   # Collect test cases from a file and put them into '@opt_cases'.
@@ -922,7 +928,7 @@ sub main {
 
   print_total_times($opt_parallel) if $opt_report_times;
 
-  mtr_report_stats("Completed", $completed);
+  mtr_report_stats("Completed", $completed, $opt_accept_fail);
 
   remove_vardir_subs() if $opt_clean_vardir;
 
@@ -1756,6 +1762,7 @@ sub command_line_setup {
     'vardir=s'        => \$opt_vardir,
 
     # Misc
+    'accept-test-fail'      => \$opt_accept_fail,
     'charset-for-testdb=s'  => \$opt_charset_for_testdb,
     'colored-diff'          => \$opt_colored_diff,
     'comment=s'             => \$opt_comment,
@@ -2334,7 +2341,56 @@ sub command_line_setup {
   check_fips_support();
 }
 
+# For OpenSSL 3 we need to parse this output:
+# openssl list -providers
+# Providers:
+#   base
+#     name: OpenSSL Base Provider
+#     version: 3.0.9
+#     status: active
+#   fips
+#     name: OpenSSL FIPS Provider
+#     version: 3.0.9
+#     status: active
 sub check_fips_support() {
+  # For OpenSSL 3, ask openssl about providers.
+  my $openssl_args;
+  mtr_init_args(\$openssl_args);
+  mtr_add_arg($openssl_args, "version");
+  my $openssl_cmd = join(" ", $exe_openssl, @$openssl_args);
+  my $openssl_result = `$openssl_cmd`;
+  if($openssl_result =~ /^OpenSSL 3./) {
+    mtr_init_args(\$openssl_args);
+    mtr_add_arg($openssl_args, "list");
+    mtr_add_arg($openssl_args, "-providers");
+    $openssl_cmd = join(" ", $exe_openssl, @$openssl_args);
+    $openssl_result = `$openssl_cmd`;
+    my $fips_active = 0;
+    my $fips_seen = 0;
+    foreach my $line (split('\n', $openssl_result)) {
+      # printf "line $line\n";
+      if ($line =~ "name:") {
+	if ($line =~ "FIPS") {
+	  $fips_seen = 1;
+	} else {
+	  $fips_seen = 0;
+	}
+      } elsif ($line =~ "status:") {
+	if ($fips_seen and $line =~ "active") {
+	  $fips_active = 1;
+	}
+      }
+    }
+    # printf "fips_active $fips_active\n";
+    if ($fips_active) {
+      $ENV{'OPENSSL3_FIPS_ACTIVE'} = 1;
+    } else {
+      $ENV{'OPENSSL3_FIPS_ACTIVE'} = 0;
+    }
+  } else {
+    $ENV{'OPENSSL3_FIPS_ACTIVE'} = 0;
+  }
+
   # Run $exe_mysqltest to see if FIPS mode is supported.
   my $args;
   mtr_init_args(\$args);
@@ -2773,6 +2829,20 @@ sub executable_setup () {
     $exe_ndb_waiter =
       my_find_bin($bindir, [ "runtime_output_directory", "bin" ], "ndb_waiter");
 
+    # There are additional NDB test binaries which are only built when
+    # using WITH_NDB_TEST. Detect if those are available by looking for
+    # the `testNDBT` executable and in such case setup variables to
+    # indicate that they are available. Detecting this early makes it possible
+    # to quickly skip these tests without each individual test having to look
+    # for its binary.
+    my $test_ndbt =
+      my_find_bin($bindir,
+                  [ "runtime_output_directory", "bin" ],
+                   "testNDBT", NOT_REQUIRED);
+    if ($test_ndbt) {
+      mtr_verbose("Found NDBT binaries");
+      $ENV{'NDBT_BINARIES_AVAILABLE'} = 1;
+    }
   }
 
   if (defined $ENV{'MYSQL_TEST'}) {
@@ -7271,8 +7341,13 @@ sub start_mysqltest ($) {
 
   mtr_add_arg($args, "--test-file=%s", $tinfo->{'path'});
 
-  # Number of lines of resut to include in failure report
-  mtr_add_arg($args, "--tail-lines=20");
+  my $tail_lines = 20;
+  if ($tinfo->{'full_result_diff'}) {
+    # Use 1G as an approximation for infinite output.
+    $tail_lines = 1000000000;
+  }
+  # Number of lines of result to include in failure report
+  mtr_add_arg($args, "--tail-lines=${tail_lines}");
 
   if (defined $tinfo->{'result_file'}) {
     mtr_add_arg($args, "--result-file=%s", $tinfo->{'result_file'});
@@ -8028,6 +8103,9 @@ Options for valgrind
 
 Misc options
 
+  accept-test-fail      Do not print an error and do not give exit 1 if
+                        some tests failed, but test run was completed.
+                        This option also turns on --force.
   charset-for-testdb    CREATE DATABASE test CHARACTER SET <option value>.
   colored-diff          Colorize the diff part of the output.
   comment=STR           Write STR to the output.

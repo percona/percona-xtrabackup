@@ -22,32 +22,22 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#include "router/src/routing/src/show_warnings_parser.h"
+#include "router/src/routing/src/sql_lexer.h"
 
-#include <iostream>
 #include <string_view>
 
-#include "hexify.h"
+#include "router/src/routing/src/sql_parser_state.h"
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
-  // last char must be a \0 and the parser will overwrite the buffer.
-  auto stmt = std::string(reinterpret_cast<const char *>(Data), Size);
+  SqlParserState sql_parser_state;
 
-  MEM_ROOT mem_root;
-  THD session;
-  session.mem_root = &mem_root;
+  sql_parser_state.statement(
+      std::string_view(reinterpret_cast<const char *>(Data), Size));
 
-  {
-    Parser_state parser_state;
-    parser_state.init(&session, stmt.data(), stmt.size());
-    session.m_parser_state = &parser_state;
-    SqlLexer lexer{&session};
-
-    for (auto tkn : lexer) {
-      switch (tkn.id) {
-        default:
-          break;
-      }
+  for (auto tkn : sql_parser_state.lexer()) {
+    switch (tkn.id) {
+      default:
+        break;
     }
   }
 

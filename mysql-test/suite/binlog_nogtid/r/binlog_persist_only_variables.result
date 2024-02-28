@@ -29,8 +29,8 @@ CREATE TABLE non_persisted (name VARCHAR(100) PRIMARY KEY);
 INSERT INTO non_persisted VALUES
 ('gtid_executed'), ('gtid_owned'), ('gtid_purged'), ('log_bin'),
 ('log_bin_basename'), ('log_bin_index'), ('relay_log'), ('relay_log_basename'),
-('relay_log_index'), ('relay_log_info_file'), ('replica_load_tmpdir'),
-('slave_load_tmpdir'), ('log_bin_use_v1_row_events');
+('relay_log_index'), ('replica_load_tmpdir'),
+('slave_load_tmpdir');
 CREATE TABLE aliases (
 name VARCHAR(100) PRIMARY KEY
 );
@@ -47,7 +47,7 @@ INSERT INTO aliases(name) VALUES
 ('slave_parallel_workers'), ('slave_pending_jobs_size_max'),
 ('pseudo_slave_mode'), ('skip_slave_start');
 
-include/assert.inc [Expect 114 variables in the table.]
+include/assert.inc [Expect 109 variables in the table.]
 
 # Test SET PERSIST_ONLY
 SET PERSIST_ONLY binlog_cache_size = @@GLOBAL.binlog_cache_size;
@@ -110,8 +110,6 @@ Warning	1287	'@@log_bin_trust_function_creators' is deprecated and will be remov
 Warning	1287	'@@log_bin_trust_function_creators' is deprecated and will be removed in a future release.
 Warnings:
 Warning	1287	'@@log_bin_trust_function_creators' is deprecated and will be removed in a future release.
-SET PERSIST_ONLY log_bin_use_v1_row_events = @@GLOBAL.log_bin_use_v1_row_events;
-ERROR HY000: Variable 'log_bin_use_v1_row_events' is a non persistent variable
 SET PERSIST_ONLY log_replica_updates = @@GLOBAL.log_replica_updates;
 SET PERSIST_ONLY log_slave_updates = @@GLOBAL.log_slave_updates;
 Warnings:
@@ -128,10 +126,6 @@ Warning	1287	'@@log_statements_unsafe_for_binlog' is deprecated and will be remo
 Warning	1287	'@@log_statements_unsafe_for_binlog' is deprecated and will be removed in a future release.
 Warnings:
 Warning	1287	'@@log_statements_unsafe_for_binlog' is deprecated and will be removed in a future release.
-SET PERSIST_ONLY master_info_repository = @@GLOBAL.master_info_repository;
-Warnings:
-Warning	1287	'@@master_info_repository' is deprecated and will be removed in a future release.
-Warning	1287	'@@master_info_repository' is deprecated and will be removed in a future release.
 SET PERSIST_ONLY master_verify_checksum = @@GLOBAL.master_verify_checksum;
 Warnings:
 Warning	1287	'@@master_verify_checksum' is deprecated and will be removed in a future release. Please use source_verify_checksum instead.
@@ -146,12 +140,6 @@ SET PERSIST_ONLY relay_log_basename = @@GLOBAL.relay_log_basename;
 ERROR HY000: Variable 'relay_log_basename' is a non persistent read only variable
 SET PERSIST_ONLY relay_log_index = @@GLOBAL.relay_log_index;
 ERROR HY000: Variable 'relay_log_index' is a non persistent read only variable
-SET PERSIST_ONLY relay_log_info_file = @@GLOBAL.relay_log_info_file;
-ERROR HY000: Variable 'relay_log_info_file' is a non persistent read only variable
-SET PERSIST_ONLY relay_log_info_repository = @@GLOBAL.relay_log_info_repository;
-Warnings:
-Warning	1287	'@@relay_log_info_repository' is deprecated and will be removed in a future release.
-Warning	1287	'@@relay_log_info_repository' is deprecated and will be removed in a future release.
 SET PERSIST_ONLY relay_log_purge = @@GLOBAL.relay_log_purge;
 SET PERSIST_ONLY relay_log_recovery = @@GLOBAL.relay_log_recovery;
 SET PERSIST_ONLY relay_log_space_limit = @@GLOBAL.relay_log_space_limit;
@@ -243,10 +231,6 @@ SET PERSIST_ONLY slave_preserve_commit_order = @@GLOBAL.slave_preserve_commit_or
 Warnings:
 Warning	1287	'@@slave_preserve_commit_order' is deprecated and will be removed in a future release. Please use replica_preserve_commit_order instead.
 Warning	1287	'@@slave_preserve_commit_order' is deprecated and will be removed in a future release. Please use replica_preserve_commit_order instead.
-SET PERSIST_ONLY slave_rows_search_algorithms = @@GLOBAL.slave_rows_search_algorithms;
-Warnings:
-Warning	1287	'@@slave_rows_search_algorithms' is deprecated and will be removed in a future release.
-Warning	1287	'@@slave_rows_search_algorithms' is deprecated and will be removed in a future release.
 SET PERSIST_ONLY slave_skip_errors = @@GLOBAL.slave_skip_errors;
 Warnings:
 Warning	1287	'@@slave_skip_errors' is deprecated and will be removed in a future release. Please use replica_skip_errors instead.
@@ -281,16 +265,16 @@ Warning	1287	'@@sync_relay_log_info' is deprecated and will be removed in a futu
 Warning	1287	'@@sync_relay_log_info' is deprecated and will be removed in a future release.
 SET PERSIST_ONLY sync_source_info = @@GLOBAL.sync_source_info;
 
-include/assert.inc [Expect 101 persisted variables in persisted_variables table.]
+include/assert.inc [Expect 98 persisted variables in persisted_variables table.]
 
 ############################################################
 # 2. Restart server, it must preserve the persisted variable
 #    settings. Verify persisted configuration.
 # restart
 
-include/assert.inc [Expect 101 persisted variables in persisted_variables table.]
-include/assert.inc [Expect 101 persisted variables shown as PERSISTED in variables_info table.]
-include/assert.inc [Expect 101 persisted variables with matching persisted and global values.]
+include/assert.inc [Expect 98 persisted variables in persisted_variables table.]
+include/assert.inc [Expect 98 persisted variables shown as PERSISTED in variables_info table.]
+include/assert.inc [Expect 98 persisted variables with matching persisted and global values.]
 
 ############################################################
 # 3. Test RESET PERSIST. Verify persisted variable settings
@@ -337,12 +321,9 @@ ERROR HY000: Variable log_bin_basename does not exist in persisted config file
 RESET PERSIST log_bin_index;
 ERROR HY000: Variable log_bin_index does not exist in persisted config file
 RESET PERSIST log_bin_trust_function_creators;
-RESET PERSIST log_bin_use_v1_row_events;
-ERROR HY000: Variable log_bin_use_v1_row_events does not exist in persisted config file
 RESET PERSIST log_replica_updates;
 RESET PERSIST log_slow_replica_statements;
 RESET PERSIST log_statements_unsafe_for_binlog;
-RESET PERSIST master_info_repository;
 RESET PERSIST max_binlog_cache_size;
 RESET PERSIST max_binlog_size;
 RESET PERSIST max_binlog_stmt_cache_size;
@@ -353,9 +334,6 @@ RESET PERSIST relay_log_basename;
 ERROR HY000: Variable relay_log_basename does not exist in persisted config file
 RESET PERSIST relay_log_index;
 ERROR HY000: Variable relay_log_index does not exist in persisted config file
-RESET PERSIST relay_log_info_file;
-ERROR HY000: Variable relay_log_info_file does not exist in persisted config file
-RESET PERSIST relay_log_info_repository;
 RESET PERSIST relay_log_purge;
 RESET PERSIST relay_log_recovery;
 RESET PERSIST relay_log_space_limit;
@@ -390,7 +368,6 @@ RESET PERSIST rpl_semi_sync_source_wait_point;
 RESET PERSIST rpl_stop_replica_timeout;
 RESET PERSIST session_track_gtids;
 RESET PERSIST skip_replica_start;
-RESET PERSIST slave_rows_search_algorithms;
 RESET PERSIST source_verify_checksum;
 RESET PERSIST sql_replica_skip_counter;
 RESET PERSIST sync_binlog;

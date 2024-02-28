@@ -8203,9 +8203,9 @@ void fix_win_paths(const char *val, size_t len [[maybe_unused]]) {
       DBUG_PRINT("info", ("Converted \\ to / in %s", val));
     }
   }
-  DBUG_PRINT("exit", (" val: %s, len: %d", val, len));
+  DBUG_PRINT("exit", (" val: %s, len: %zu", val, len));
 }
-#endif
+#endif  // _WIN32
 
 /*
   Append the result for one field to the dynamic string ds
@@ -8745,7 +8745,7 @@ static void run_query_stmt(MYSQL *mysql, struct st_command *command,
       enabled_warnings->count())
     append_warnings(&ds_prepare_warnings, mysql);
 
-  // No need to call mysql_stmt_bind_param() because we have no
+  // No need to call mysql_stmt_bind_named_param() because we have no
   // parameter markers.
   if (cursor_protocol_enabled) {
     // Use cursor when retrieving result.

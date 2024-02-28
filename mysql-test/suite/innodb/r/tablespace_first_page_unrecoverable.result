@@ -1,0 +1,69 @@
+call mtr.add_suppression("Checksum mismatch in datafile");
+call mtr.add_suppression("Corrupted page .* of datafile .*  could not be found in the doublewrite buffer");
+SET GLOBAL innodb_redo_log_capacity=52428800;
+CREATE TABLE t1 (c1 INT PRIMARY KEY, c2 TEXT)
+CHARACTER SET latin1 ENGINE=INNODB;
+
+# Prepare the table t1 and flush dirty pages
+
+SELECT COUNT(*) FROM t1;
+COUNT(*)
+128
+FLUSH TABLES t1 FOR EXPORT;
+UNLOCK TABLES;
+
+# Take the backup of the double-write buffer. It may have pages
+# from tablespace t1
+# Done
+
+CREATE TABLE t2 (c1 INT PRIMARY KEY, c2 CHAR(255), c3 CHAR(255),
+c4 CHAR(255), c5 CHAR(255)) CHARACTER SET latin1 ENGINE=INNODB;
+
+# Prepare the table t2 and flush dirty pages to ensure it doesn't
+# produce MLOG_FILE_EXTEND log records later
+
+#
+# Stop the page cleaner and other background threads
+#
+SET GLOBAL innodb_dict_stats_disabled_debug = ON;
+SET GLOBAL innodb_master_thread_disabled_debug = ON;
+SET GLOBAL debug = "+d,disable_se_persists_gtid";
+FLUSH ENGINE LOGS;
+SET GLOBAL debug = "+d,gtid_persist_flush_disable";
+SET GLOBAL innodb_log_checkpoint_now = ON;
+SET GLOBAL innodb_page_cleaner_disabled_debug = ON;
+SET GLOBAL innodb_checkpoint_disabled = ON;
+SET GLOBAL innodb_purge_stop_now = ON;
+
+# Produce the log records such that size of hash table of log records
+# could exceed max size of the hash table.
+
+
+# Kill the server
+
+
+# Copy the tablespace file t2.ibd before corrupting the page
+
+# Corrupt page: '0' in t2.ibd
+
+
+# To simulate the situation reliably that double-write buffer does not
+# have corrupt page from tablespace t2, restore the backup of
+# double-write buffer files that was taken before creating tablespace t2
+
+
+# Start the server with reduced buffer pool size to have smaller batch.
+# Crash recovery must detect the tablespace page is corrupt and abort
+
+Pattern "MY-012224" found
+Pattern "MY-012237" found
+Pattern "MY-015090" found
+
+# Restore the tablespace file t2.ibd and start the server as usual
+
+# restart:
+
+# cleanup
+
+DROP TABLE t1;
+DROP TABLE t2;

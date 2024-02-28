@@ -26,13 +26,8 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
+#include <bit>
 #include "my_compiler.h"
-#ifdef _MSC_VER
-#include <intrin.h>
-#pragma intrinsic(_BitScanForward64)
-#pragma intrinsic(_BitScanReverse64)
-#endif
 
 // Wraps iteration over interesting states (based on the given policy) over a
 // single uint64_t into an STL-style adapter.
@@ -69,22 +64,25 @@ class BitIteratorAdaptor {
 
 inline size_t FindLowestBitSet(uint64_t x) {
   assert(x != 0);
-#ifdef _MSC_VER
-  unsigned long idx;
-  _BitScanForward64(&idx, x);
-  return idx;
-#elif defined(__GNUC__) && defined(__x86_64__)
-  // Using this instead of ffsll() (which maps to the same instruction,
-  // but has an extra zero test and returns an int value) helps
+#if defined(__GNUC__) && defined(__x86_64__)
+  // Using this instead of ffsll() or std::countr_zero() (which map to the same
+  // instruction, but has an extra zero test and return an int value) helps
   // a whopping 10% on some of the microbenchmarks! (GCC 9.2, Skylake.)
   // Evidently, the test for zero is rewritten into a conditional move,
   // which turns out to be add a lot of latency into these hot loops.
+  // GCC also adds an unnecessary sign extension of the result on some
+  // architectures; see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=29776.
+  //
+  // Revisit if this is necessary once we move to C++23, as the C++23 construct
+  // [[assume(x != 0)]] seems to get rid of the conditional move. Also, if the
+  // target architecture supports a similar instruction which is well-defined
+  // for zero, like TZCNT in x86-64-v3, GCC eliminates both the conditional move
+  // and the sign extension, and there's no need for any inline assembly.
   size_t idx;
   asm("bsfq %1,%q0" : "=r"(idx) : "rm"(x));
   return idx;
 #else
-  // The cast to unsigned at least gets rid of the sign extension.
-  return static_cast<unsigned>(ffsll(x)) - 1u;
+  return std::countr_zero(x);
 #endif
 }
 
@@ -108,15 +106,9 @@ class CountBitsAscending {
 class CountBitsDescending {
  public:
   static size_t NextValue(uint64_t state) {
-    // Find the lowest set bit.
+    // Find the highest set bit.
     assert(state != 0);
-#ifdef _MSC_VER
-    unsigned long idx;
-    _BitScanReverse64(&idx, state);
-    return idx;
-#else
-    return __builtin_clzll(state) ^ 63u;
-#endif
+    return std::countl_zero(state) ^ 63u;
   }
 
   static uint64_t AdvanceState(uint64_t state) {
@@ -235,27 +227,9 @@ inline bool IsProperSubset(uint64_t x, uint64_t y) {
 // Returns whether X and Y overlap. Symmetric.
 inline bool Overlaps(uint64_t x, uint64_t y) { return (x & y) != 0; }
 
-// Returns whether X has more than one bit set.
-inline bool AreMultipleBitsSet(uint64_t x) { return (x & (x - 1)) != 0; }
-
-// Returns whether X has exactly one bit set.
-inline bool IsSingleBitSet(uint64_t x) {
-  return x != 0 && !AreMultipleBitsSet(x);
-}
-
 // Returns whether the given bit is set in X.
 inline bool IsBitSet(int bit_num, uint64_t x) {
   return Overlaps(x, uint64_t{1} << bit_num);
-}
-
-// Fairly slow implementation of population count (number of bits set).
-inline int PopulationCount(uint64_t x) {
-  int count = 0;
-  while (x != 0) {
-    x &= x - 1;
-    ++count;
-  }
-  return count;
 }
 
 #endif  // SQL_JOIN_OPTIMIZER_BIT_UTILS_H

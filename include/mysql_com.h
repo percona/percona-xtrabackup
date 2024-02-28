@@ -214,12 +214,14 @@
   @{
 */
 
-#define REFRESH_GRANT 1    /**< Refresh grant tables, FLUSH PRIVILEGES */
-#define REFRESH_LOG 2      /**< Start on new log file, FLUSH LOGS */
-#define REFRESH_TABLES 4   /**< close all tables, FLUSH TABLES */
-#define REFRESH_HOSTS 8    /**< Flush host cache, FLUSH HOSTS */
-#define REFRESH_STATUS 16  /**< Flush status variables, FLUSH STATUS */
-#define REFRESH_THREADS 32 /**< Flush thread cache */
+#define REFRESH_GRANT 1  /**< Refresh grant tables, FLUSH PRIVILEGES */
+#define REFRESH_LOG 2    /**< Start on new log file, FLUSH LOGS */
+#define REFRESH_TABLES 4 /**< close all tables, FLUSH TABLES */
+#define UNUSED_8                                                           \
+  8 /**< Previously REFRESH_HOSTS but not used anymore. Use TRUNCATE TABLE \
+       performance_schema.host_cache instead */
+#define REFRESH_STATUS 16 /**< Flush status variables, FLUSH STATUS */
+#define UNUSED_32 32      /**< Removed. Used to be flush thread cache */
 #define REFRESH_REPLICA                         \
   64 /**< Reset source info and restart replica \
         thread, RESET REPLICA */
@@ -1151,15 +1153,8 @@ const char *mysql_errno_to_sqlstate(unsigned int mysql_errno);
 
 /* Some other useful functions */
 
-// Need to be extern "C" for the time being, due to memcached.
-#ifdef __cplusplus
-extern "C" {
-#endif
 bool my_thread_init(void);
 void my_thread_end(void);
-#ifdef __cplusplus
-}
-#endif
 
 #ifdef STDCALL
 unsigned long STDCALL net_field_length(unsigned char **packet);
@@ -1170,6 +1165,7 @@ uint64_t net_field_length_ll(unsigned char **packet);
 unsigned char *net_store_length(unsigned char *pkg, unsigned long long length);
 unsigned int net_length_size(unsigned long long num);
 unsigned int net_field_length_size(const unsigned char *pos);
+uint64_t net_length_size_including_self(uint64_t length_without_self);
 
 #define NULL_LENGTH ((unsigned long)~0) /**< For ::net_store_length() */
 #define MYSQL_STMT_HEADER 4

@@ -1697,10 +1697,27 @@ PFS_statement_key register_statement_class(const char *name, uint name_length,
                      0, /* statements have no volatility */
                      info->m_documentation, PFS_CLASS_STATEMENT);
     entry->m_event_name_index = index;
-    entry->m_enabled = true; /* enabled by default */
-    entry->m_timed = true;
 
-    entry->enforce_valid_flags(PSI_FLAG_MUTABLE);
+    entry->enforce_valid_flags(PSI_FLAG_MUTABLE | PSI_FLAG_DISABLED |
+                               PSI_FLAG_UNTIMED);
+
+    if (entry->is_disabled()) {
+      /*
+        The instrumentation is PSI_FLAG_DISABLED.
+      */
+      entry->m_enabled = false;
+    } else {
+      entry->m_enabled = true;
+    }
+
+    if (entry->is_untimed()) {
+      /*
+        The instrumentation is PSI_FLAG_UNTIMED.
+      */
+      entry->m_timed = false;
+    } else {
+      entry->m_timed = true;
+    }
 
     /* Set user-defined configuration options for this instrument */
     configure_instr_class(entry);
@@ -2277,7 +2294,6 @@ search:
     pfs->m_key_count = share->keys;
 
     int res;
-    pfs->m_lock.dirty_to_allocated(&dirty_state);
     res = lf_hash_insert(&table_share_hash, pins, &pfs);
 
     if (likely(res == 0)) {
@@ -2285,10 +2301,11 @@ search:
       for (uint index = 0; index < pfs->m_key_count; index++) {
         (void)pfs->find_or_create_index_stat(share, index);
       }
+      pfs->m_lock.dirty_to_allocated(&dirty_state);
       return pfs;
     }
 
-    global_table_share_container.deallocate(pfs);
+    global_table_share_container.dirty_to_free(&dirty_state, pfs);
 
     if (res > 0) {
       /* Duplicate insert by another thread */

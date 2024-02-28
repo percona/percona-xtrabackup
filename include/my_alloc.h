@@ -136,7 +136,7 @@ struct MEM_ROOT {
    * nullptr or a pointer that has been given out before. The current
    * implementation takes some pains to make sure we never return nullptr
    * (although it might return a bogus pointer), since there is code that
-   * assumes nullptr always means “out of memory”, but you should not rely on
+   * assumes nullptr always means 'out of memory', but you should not rely on
    * it, as it may change in the future.
    *
    * The returned pointer will always be 8-aligned.
@@ -165,7 +165,7 @@ struct MEM_ROOT {
   }
 
   /**
-    Allocate “num” objects of type T, and initialize them to a default value
+    Allocate 'num' objects of type T, and initialize them to a default value
     that is created by passing the supplied args to T's constructor. If args
     is empty, value-initialization is used. For primitive types, like int and
     pointers, this means the elements will be set to the equivalent of 0
@@ -319,10 +319,10 @@ struct MEM_ROOT {
   }
 
   /**
-   * Allocate a new block of at least “minimum_length” bytes; usually more.
+   * Allocate a new block of at least 'minimum_length' bytes; usually more.
    * This holds no matter how many bytes are free in the current block.
-   * The new black will always become the current block, ie., the next call
-   * to Peek() will return the newlyy allocated block. (This is different
+   * The new block will always become the current block, ie., the next call
+   * to Peek() will return the newly allocated block. (This is different
    * from Alloc(), where it is possible to allocate a new block that is
    * not made into the current block.)
    *
@@ -455,22 +455,10 @@ inline void operator delete[](void *, MEM_ROOT *,
 }
 
 template <class T>
-inline void destroy(T *ptr) {
-  if (ptr != nullptr) {
-    ptr->~T();
-    TRASH(const_cast<std::remove_const_t<T> *>(ptr), sizeof(T));
-  }
-}
-
-template <class T>
-inline void destroy_array(T *ptr, size_t count) {
-  static_assert(!std::is_pointer<T>::value,
-                "You're trying to destroy an array of pointers, "
-                "not an array of objects. This is probably not "
-                "what you intended.");
-  if (ptr != nullptr) {
-    for (size_t i = 0; i < count; ++i) destroy(&ptr[i]);
-  }
+inline void destroy_at(T *ptr) {
+  assert(ptr != nullptr);
+  std::destroy_at(ptr);
+  TRASH(const_cast<std::remove_const_t<T> *>(ptr), sizeof(T));
 }
 
 /*
@@ -480,7 +468,7 @@ inline void destroy_array(T *ptr, size_t count) {
 template <class T>
 class Destroy_only {
  public:
-  void operator()(T *ptr) const { destroy(ptr); }
+  void operator()(T *ptr) const { ::destroy_at(ptr); }
 };
 
 /** std::unique_ptr, but only destroying. */

@@ -148,7 +148,7 @@ class ClassicProtocolState : public ProtocolStateBase {
   void username(std::string user) { username_ = std::move(user); }
 
   void password(std::optional<std::string> pw) { password_ = std::move(pw); }
-  std::optional<std::string> password() const { return password_; }
+  const std::optional<std::string> &password() const { return password_; }
 
   std::string schema() { return schema_; }
   void schema(std::string s) { schema_ = std::move(s); }
@@ -421,6 +421,8 @@ class MysqlRoutingClassicConnectionBase
 
   void async_recv_server(Function next);
 
+  void async_recv_both(Function next);
+
   void async_send_client_and_finish();
 
   void async_wait_client_closed();
@@ -567,9 +569,17 @@ class MysqlRoutingClassicConnectionBase
               dest_ssl_mode() == SslMode::kAsClient));
   }
 
+  /// set if the server-connection requires TLS
   void requires_tls(bool v) { requires_tls_ = v; }
 
+  /// get if the server-connection requires TLS
   bool requires_tls() const { return requires_tls_; }
+
+  /// set if the server-connection requires a client cert
+  void requires_client_cert(bool v) { requires_client_cert_ = v; }
+
+  /// get if the server-connection requires a client cert
+  bool requires_client_cert() const { return requires_client_cert_; }
 
   void some_state_changed(bool v) { some_state_changed_ = v; }
 
@@ -638,6 +648,8 @@ class MysqlRoutingClassicConnectionBase
   bool collation_connection_maybe_dirty_{false};
 
   bool requires_tls_{true};
+
+  bool requires_client_cert_{false};
 
  public:
   ExecutionContext &execution_context() { return exec_ctx_; }

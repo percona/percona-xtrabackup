@@ -66,6 +66,7 @@
 #include "storage/ndb/plugin/ha_ndbcluster_connection.h"
 #include "storage/ndb/plugin/ha_ndbcluster_push.h"
 #include "storage/ndb/plugin/ndb_anyvalue.h"
+#include "storage/ndb/plugin/ndb_applier.h"
 #include "storage/ndb/plugin/ndb_binlog_client.h"
 #include "storage/ndb/plugin/ndb_binlog_extra_row_info.h"
 #include "storage/ndb/plugin/ndb_binlog_thread.h"
@@ -1974,7 +1975,7 @@ NDB_INDEX_DATA::Attrid_map::Attrid_map(const KEY *key_info,
 /**
    @brief Create Attrid_map for mapping the columns of KEY to a NDB table.
    @param key_info key to create mapping for
-   @param index NDB table definition
+   @param table NDB table definition
  */
 NDB_INDEX_DATA::Attrid_map::Attrid_map(const KEY *key_info,
                                        const NdbDictionary::Table *table) {
@@ -6054,12 +6055,13 @@ int ha_ndbcluster::ndb_delete_row(const uchar *record,
   operations can read directly into the destination row.
 */
 int ha_ndbcluster::unpack_record(uchar *dst_row, const uchar *src_row) {
+  DBUG_TRACE;
   assert(src_row != nullptr);
 
   ptrdiff_t dst_offset = dst_row - table->record[0];
   ptrdiff_t src_offset = src_row - table->record[0];
 
-  /* Initialize the NULL bitmap. */
+  // Set the NULL flags for all fields
   memset(dst_row, 0xff, table->s->null_bytes);
 
   uchar *blob_ptr = m_blobs_buffer.get_ptr(0);
@@ -6070,34 +6072,8 @@ int ha_ndbcluster::unpack_record(uchar *dst_row, const uchar *src_row) {
     Field *field = table->field[i];
     if (!field->stored_in_db) continue;
 
-    if (likely(!field->is_flag_set(BLOB_FLAG))) {
-      if (field->is_real_null(src_offset)) {
-        /* NULL bits already set -> no further action needed. */
-      } else if (likely(field->type() != MYSQL_TYPE_BIT)) {
-        /*
-          A normal, non-NULL field (not blob or bit type).
-          Only copy actually used bytes if varstrings.
-        */
-        const uint32 actual_length = field_used_length(field, src_offset);
-        field->set_notnull(dst_offset);
-        memcpy(field->field_ptr() + dst_offset, field->field_ptr() + src_offset,
-               actual_length);
-      } else  // MYSQL_TYPE_BIT
-      {
-        Field_bit *field_bit = down_cast<Field_bit *>(field);
-        field->move_field_offset(src_offset);
-        longlong value = field_bit->val_int();
-        field->move_field_offset(dst_offset - src_offset);
-        field_bit->set_notnull();
-        /* Field_bit in DBUG requires the bit set in write_set for store(). */
-        my_bitmap_map *old_map =
-            dbug_tmp_use_all_columns(table, table->write_set);
-        ndbcluster::ndbrequire(field_bit->store(value, true) == 0);
-        dbug_tmp_restore_column_map(table->write_set, old_map);
-        field->move_field_offset(-dst_offset);
-      }
-    } else  // BLOB_FLAG
-    {
+    // Handle Field_blob (BLOB, JSON, GEOMETRY)
+    if (field->is_flag_set(BLOB_FLAG)) {
       Field_blob *field_blob = (Field_blob *)field;
       NdbBlob *ndb_blob = m_value[i].blob;
       /* unpack_record *only* called for scan result processing
@@ -6130,8 +6106,44 @@ int ha_ndbcluster::unpack_record(uchar *dst_row, const uchar *src_row) {
       field_blob->set_ptr((uint32)len64, blob_ptr);
       field_blob->move_field_offset(-dst_offset);
       blob_ptr += (len64 + 7) & ~((Uint64)7);
+      continue;
     }
-  }  // for(...
+
+    // Handle Field_bit
+    // Store value in destination even if NULL (i.e. 0)
+    if (field->type() == MYSQL_TYPE_BIT) {
+      Field_bit *field_bit = down_cast<Field_bit *>(field);
+      field->move_field_offset(src_offset);
+      longlong value = field_bit->val_int();
+      field->move_field_offset(dst_offset - src_offset);
+      if (field->is_real_null(src_offset)) {
+        // This sets the uneven highbits, located after the null bit
+        // in the Field_bit ptr, to 0
+        value = 0;
+        // Make sure destination null flag is correct
+        field->set_null(dst_offset);
+      } else {
+        field->set_notnull(dst_offset);
+      }
+      // Field_bit in DBUG requires the bit set in write_set for store().
+      my_bitmap_map *old_map =
+          dbug_tmp_use_all_columns(table, table->write_set);
+      ndbcluster::ndbrequire(field_bit->store(value, true) == 0);
+      dbug_tmp_restore_column_map(table->write_set, old_map);
+      field->move_field_offset(-dst_offset);
+      continue;
+    }
+
+    // A normal field (not blob or bit type).
+    if (field->is_real_null(src_offset)) {
+      // Field is NULL and the null flags are already set
+      continue;
+    }
+    const uint32 actual_length = field_used_length(field, src_offset);
+    field->set_notnull(dst_offset);
+    memcpy(field->field_ptr() + dst_offset, field->field_ptr() + src_offset,
+           actual_length);
+  }
 
   if (unlikely(!m_cond.check_condition())) {
     return HA_ERR_KEY_NOT_FOUND;  // False condition
@@ -13846,16 +13858,13 @@ int ha_ndbcluster::multi_range_start_retrievals(uint starting_range) {
         type_loc = enum_empty_unique_range;
       else {
         /*
-          This shouldn't really happen.
-
-          There aren't really any other errors that could happen on the read
-          without also aborting the transaction and causing execute() to
-          return failure.
-
-          (But we can still safely return an error code in non-debug builds).
+          Some operation error that did not cause transaction
+          rollback, but was unexpected when performing these
+          lookups.
+          Return error to caller, expecting caller to rollback
+          transaction.
         */
-        assert(false);
-        ERR_RETURN(error); /* purecov: deadcode */
+        ERR_RETURN(error);
       }
     }
   }
@@ -14234,7 +14243,7 @@ static void fixup_pushed_access_paths(THD *thd, AccessPath *path,
           // Remove the FILTER operation, keep the estimated rows/cost.
           // (Used for explain only, query plan is already decided)
           param.child->set_num_output_rows(subpath->num_output_rows());
-          param.child->cost = subpath->cost;
+          param.child->set_cost(subpath->cost());
           *subpath = std::move(*param.child);
         }
         return true;
@@ -14861,7 +14870,6 @@ enum row_type ha_ndbcluster::get_partition_row_type(const dd::Table *, uint) {
   those into. Create mappings.
 
 */
-
 static int create_table_set_up_partition_info(partition_info *part_info,
                                               NdbDictionary::Table &ndbtab,
                                               Ndb_table_map &colIdMap) {
@@ -14881,14 +14889,28 @@ static int create_table_set_up_partition_info(partition_info *part_info,
       col->setPartitionKey(true);
     }
   } else {
+    auto partition_type_description = [](partition_type pt) {
+      switch (pt) {
+        case partition_type::RANGE:
+          return "PARTITION BY RANGE";
+        case partition_type::HASH:
+          return "PARTITION BY HASH";
+        case partition_type::LIST:
+          return "PARTITION BY LIST";
+        default:
+          assert(false);
+          return "PARTITION BY <type>";
+      }
+    };
+
     if (!current_thd->variables.new_mode) {
-      push_warning_printf(current_thd, Sql_condition::SL_WARNING,
-                          ER_ILLEGAL_HA_CREATE_OPTION,
-                          ER_THD(current_thd, ER_ILLEGAL_HA_CREATE_OPTION),
-                          ndbcluster_hton_name,
-                          "LIST, RANGE and HASH partition disabled by default,"
-                          " use --new option to enable");
-      return HA_ERR_UNSUPPORTED;
+      // When new_mode is removed, keep below warning.
+      push_warning_printf(
+          current_thd, Sql_condition::SL_WARNING,
+          ER_WARN_DEPRECATED_ENGINE_SYNTAX_NO_REPLACEMENT,
+          ER_THD(current_thd, ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT),
+          partition_type_description(part_info->part_type),
+          ndbcluster_hton_name);
     }
     /*
        Create a shadow field for those tables that have user defined
@@ -16105,7 +16127,7 @@ bool ha_ndbcluster::prepare_inplace_alter_table(
 
   if (alter_data->dbname_guard.change_database_failed()) {
     thd_ndb->set_ndb_error(ndb->getNdbError(), "Failed to change database");
-    destroy(alter_data);
+    ::destroy_at(alter_data);
     return true;
   }
 
@@ -16116,7 +16138,7 @@ bool ha_ndbcluster::prepare_inplace_alter_table(
 
   if (!alter_data->schema_dist_client.prepare(dbname, tabname)) {
     // Release alter_data early as there is nothing to abort
-    destroy(alter_data);
+    ::destroy_at(alter_data);
     ha_alter_info->handler_ctx = nullptr;
     print_error(HA_ERR_NO_CONNECTION, MYF(0));
     return true;
@@ -16545,7 +16567,7 @@ bool ha_ndbcluster::abort_inplace_alter_table(
   // NOTE! There is nothing informing participants that the prepared
   // schema distribution has been aborted
 
-  destroy(alter_data);
+  ::destroy_at(alter_data);
   ha_alter_info->handler_ctx = nullptr;
 
   // Unpin the NDB_SHARE of the altered table
@@ -16572,7 +16594,7 @@ void ha_ndbcluster::notify_table_changed(Alter_inplace_info *alter_info) {
                   name);
   }
 
-  destroy(alter_data);
+  ::destroy_at(alter_data);
   alter_info->handler_ctx = nullptr;
 }
 

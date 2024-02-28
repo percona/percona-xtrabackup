@@ -154,6 +154,11 @@ void Plugin_gcs_events_handler::on_message_received(
       pre_process_message(processed_message, message_origin);
       delete processed_message;
       break;
+
+    case Plugin_gcs_message::CT_RECOVERY_METADATA_MESSAGE:
+      handle_recovery_metadata(message);
+      break;
+
     default:
       break; /* purecov: inspected */
   }
@@ -252,9 +257,22 @@ void Plugin_gcs_events_handler::handle_transaction_prepared_message(
       message.get_message_data().get_payload(),
       message.get_message_data().get_payload_length());
 
+  if (transaction_prepared_message.is_valid() == false) {
+    LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_MSG_DECODING_FAILED,
+                 "Transaction_prepared_message",
+                 transaction_prepared_message.get_error()->get_message());
+    auto error_msg =
+        "Failure when processing a received transaction prepared message from "
+        "the communication layer.";
+    Error_action_packet *error_action = new Error_action_packet(error_msg);
+    this->applier_module->add_packet(error_action);
+    return;
+  }
+
   Transaction_prepared_action_packet *transaction_prepared_action =
       new Transaction_prepared_action_packet(
-          transaction_prepared_message.get_sid(),
+          transaction_prepared_message.get_tsid(),
+          transaction_prepared_message.is_tsid_specified(),
           transaction_prepared_message.get_gno(), message.get_origin());
   this->applier_module->add_transaction_prepared_action_packet(
       transaction_prepared_action);
@@ -359,13 +377,10 @@ void Plugin_gcs_events_handler::handle_recovery_message(
     */
     disable_read_mode_for_compatible_members(true);
   } else {
-    Group_member_info *member_info =
-        group_member_mgr->get_group_member_info(member_uuid);
-    if (member_info != nullptr) {
+    Group_member_info member_info;
+    if (!group_member_mgr->get_group_member_info(member_uuid, member_info)) {
       LogPluginErr(SYSTEM_LEVEL, ER_GRP_RPL_MEM_ONLINE,
-                   member_info->get_hostname().c_str(),
-                   member_info->get_port());
-      delete member_info;
+                   member_info.get_hostname().c_str(), member_info.get_port());
 
       /*
        The member is declared as online upon receiving this message
@@ -474,6 +489,161 @@ void Plugin_gcs_events_handler::handle_group_action_message(
   delete group_action_message;
 }
 
+void Plugin_gcs_events_handler::handle_recovery_metadata(
+    const Gcs_message &message) const {
+  bool error{false};
+  if (this->applier_module == nullptr) {
+    LogPluginErr(ERROR_LEVEL,
+                 ER_GRP_RPL_MISSING_GRP_RPL_APPLIER); /* purecov: inspected */
+    return;
+  }
+
+  /*
+    Initialize Recovery_metadata_message which will save position of received
+    recovery metadata message and further each get_decoded_*() can be used to
+    decode their payload type.
+  */
+  Recovery_metadata_message *recovery_metadata_message =
+      new Recovery_metadata_message(
+          message.get_message_data().get_payload(),
+          message.get_message_data().get_payload_length());
+
+  // Get View ID from received metadata.
+  std::pair<Recovery_metadata_message::enum_recovery_metadata_message_error,
+            std::reference_wrapper<std::string>>
+      payload_view_id_error = recovery_metadata_message->get_decoded_view_id();
+
+  if (payload_view_id_error.first !=
+      Recovery_metadata_message::enum_recovery_metadata_message_error::
+          RECOVERY_METADATA_MESSAGE_OK) {
+    delete recovery_metadata_message;
+    return;
+  }
+
+  /**
+    Check if the View_ID in the received recovery metadata matches with the
+    locally stored View_ID on the joiner. This locally stored View_ID is on
+    which joining member joined the group.
+
+    - View_ID matches it's JOINER:
+      a. It means the joiner has received the metadata and it can use it to
+         recover and come ONLINE.
+      b. Also local copy of View_ID stored in
+         Recovery_metadata_joiner_information can be removed.
+      c. It also creates a copy of recovery metadata which is processed later by
+         recovery thread. GCS thread which holds current copy of recovery
+         metadata may delete it before recovery process it, so another copy
+         needs to be created.
+      d. Awake Recovery module waiting for Metadata to be received.
+
+    - View_ID does not match it's SENDER:
+      e. The recovery metadata broadcast was successful now local copy of
+         recovery metadata is deleted.
+
+    - If there is error, cleanup and member leaves the group.
+  */
+  std::string metadata_view_id{payload_view_id_error.second.get()};
+  // JOINER CODE
+  if (recovery_metadata_module->is_joiner_recovery_metadata(metadata_view_id)) {
+    std::string exit_state_action_abort_log_message{
+        "Error in joiner processing received Recovery Metadata Message."};
+    /*
+      View-id and valid sender list of the joiner was temporary stored to
+      uniquely identify the recovery metadata. Since joiner has received it's
+      metadata now  this information can now be deleted.
+    */
+    recovery_metadata_module->delete_joiner_view_id();
+
+    // Get payload send message error from received recovery metadata.
+    std::pair<
+        Recovery_metadata_message::enum_recovery_metadata_message_error,
+        Recovery_metadata_message::Recovery_metadata_message_payload_error>
+        payload_message_send_error =
+            recovery_metadata_message->get_decoded_message_error();
+
+    if (payload_message_send_error.first !=
+        Recovery_metadata_message::enum_recovery_metadata_message_error::
+            RECOVERY_METADATA_MESSAGE_OK) {
+      error = true;
+    }
+
+    if (!error) {
+      Recovery_metadata_message::Recovery_metadata_message_payload_error
+          payload_send_error{payload_message_send_error.second};
+      if (payload_send_error ==
+          Recovery_metadata_message::RECOVERY_METADATA_ERROR) {
+        error = true;
+        LogPluginErr(ERROR_LEVEL, ER_GROUP_REPLICATION_METADATA_SEND_ERROR);
+        exit_state_action_abort_log_message.assign(
+            "The group was unable to send the Recovery Metadata to a joining "
+            "member.");
+      } else {
+        /*
+          Save a copy of recovery metadata message, so that it can be
+          processed later by recovery thread, and before it gets deleted
+          by GCS thread.
+        */
+        if (recovery_metadata_message
+                ->save_copy_of_recovery_metadata_payload()) {
+          error = true;
+          LogPluginErr(ERROR_LEVEL,
+                       ER_GROUP_REPLICATION_METADATA_SAVE_RECOVERY_COPY);
+        }
+
+        /*
+          Set recovery_metadata_message pointer for recovery thread to read and
+          process Recovery Metadata.
+        */
+        if (recovery_module->set_recovery_metadata_message(
+                recovery_metadata_message)) {
+          error = true;
+          LogPluginErr(ERROR_LEVEL,
+                       ER_GROUP_REPLICATION_METADATA_SET_IN_RECOVERY_FAILED);
+        }
+      }
+    }
+
+    // awake blocked recovery on joiner even if there is error
+    recovery_module->awake_recovery_metadata_suspension(error);
+    if (error) {
+      leave_group_on_recovery_metadata_error(
+          exit_state_action_abort_log_message);
+    }
+
+  } else {
+    // SENDER
+    // If member is part of the valid sender group then this message indicates
+    // that the message has been successfully delivered to the joiner. Which
+    // means now the sender can delete the saved recovery metadata. To delete
+    // the recovery metadata we need to add a
+    // "Recovery_metadata_processing_packets" packet in the applier-pipeline
+    // with the VIEW_ID. Since add of the Recovery metadata is handled by the
+    // applier-pipeline and delete of Recovery metadata is also being done from
+    // the applier pipeline we need not synchronize the add and delete
+    // operations.
+    Recovery_metadata_processing_packets *metadata_packet =
+        new Recovery_metadata_processing_packets();
+    metadata_packet->m_view_id_to_be_deleted.push_back(metadata_view_id);
+    applier_module->add_metadata_processing_packet(metadata_packet);
+    delete recovery_metadata_message;
+  }
+
+  if (error) {
+    recovery_metadata_module->delete_joiner_view_id();
+    delete recovery_metadata_message;
+  }
+}
+
+void Plugin_gcs_events_handler::leave_group_on_recovery_metadata_error(
+    std::string error_message) const {
+  leave_group_on_failure::mask leave_actions;
+  leave_actions.set(leave_group_on_failure::STOP_APPLIER, true);
+  leave_actions.set(leave_group_on_failure::CLEAN_GROUP_MEMBERSHIP, true);
+  leave_actions.set(leave_group_on_failure::HANDLE_EXIT_STATE_ACTION, true);
+  leave_group_on_failure::leave(leave_actions, 0, nullptr,
+                                error_message.c_str());
+}
+
 void Plugin_gcs_events_handler::on_suspicions(
     const std::vector<Gcs_member_identifier> &members,
     const std::vector<Gcs_member_identifier> &unreachable) const {
@@ -489,38 +659,42 @@ void Plugin_gcs_events_handler::on_suspicions(
   if (!members.empty()) {
     for (mit = members.begin(); mit != members.end(); mit++) {
       Gcs_member_identifier member = *mit;
-      Group_member_info *member_info =
-          group_member_mgr->get_group_member_info_by_member_id(member);
+      Group_member_info member_info;
 
-      if (member_info == nullptr)  // Trying to update a non-existing member
-        continue;                  /* purecov: inspected */
+      if (group_member_mgr->get_group_member_info_by_member_id(member,
+                                                               member_info)) {
+        LogPluginErr(WARNING_LEVEL, ER_GRP_RPL_MEMBER_INFO_DOES_NOT_EXIST,
+                     "by the Gcs_member_identifier",
+                     member.get_member_id().c_str(),
+                     "REACHABLE/UNREACHABLE notification from group "
+                     "communication engine");
+        continue; /* purecov: inspected */
+      }
 
       uit = std::find(tmp_unreachable.begin(), tmp_unreachable.end(), member);
       if (uit != tmp_unreachable.end()) {
-        if (!member_info->is_unreachable()) {
+        if (!member_info.is_unreachable()) {
           LogPluginErr(WARNING_LEVEL, ER_GRP_RPL_MEM_UNREACHABLE,
-                       member_info->get_hostname().c_str(),
-                       member_info->get_port());
+                       member_info.get_hostname().c_str(),
+                       member_info.get_port());
           // flag as a member having changed state
           m_notification_ctx.set_member_state_changed();
-          group_member_mgr->set_member_unreachable(member_info->get_uuid());
+          group_member_mgr->set_member_unreachable(member_info.get_uuid());
         }
         // remove to not check again against this one
         tmp_unreachable.erase(uit);
       } else {
-        if (member_info->is_unreachable()) {
+        if (member_info.is_unreachable()) {
           LogPluginErr(WARNING_LEVEL, ER_GRP_RPL_MEM_REACHABLE,
-                       member_info->get_hostname().c_str(),
-                       member_info->get_port());
+                       member_info.get_hostname().c_str(),
+                       member_info.get_port());
           /* purecov: begin inspected */
           // flag as a member having changed state
           m_notification_ctx.set_member_state_changed();
-          group_member_mgr->set_member_reachable(member_info->get_uuid());
+          group_member_mgr->set_member_reachable(member_info.get_uuid());
           /* purecov: end */
         }
       }
-
-      delete member_info;
     }
   }
 
@@ -554,20 +728,46 @@ void Plugin_gcs_events_handler::on_suspicions(
   notify_and_reset_ctx(m_notification_ctx);
 }
 
-void Plugin_gcs_events_handler::log_members_leaving_message(
+void Plugin_gcs_events_handler::log_messages_during_member_leave(
     const Gcs_view &new_view) const {
-  std::string members_leaving;
+  std::string leaving_members_string;
   std::string primary_member_host;
+  const std::vector<Gcs_member_identifier> &leaving_members =
+      new_view.get_leaving_members();
 
-  get_hosts_from_view(new_view.get_leaving_members(), members_leaving,
+  get_hosts_from_view(leaving_members, leaving_members_string,
                       primary_member_host);
 
   LogPluginErr(WARNING_LEVEL, ER_GRP_RPL_MEMBER_REMOVED,
-               members_leaving.c_str());
+               leaving_members_string.c_str());
 
   if (!primary_member_host.empty())
     LogPluginErr(SYSTEM_LEVEL, ER_GRP_RPL_PRIMARY_MEMBER_LEFT_GRP,
                  primary_member_host.c_str());
+
+  {
+    /* Atleast one member is present in the group that supports only VCLE */
+    bool vcle_only_member_present = false;
+    /* Atleast one member left the group that supported only VCLE */
+    bool vcle_only_member_left = false;
+    Member_version version_removing_vcle(MEMBER_VERSION_REMOVING_VCLE);
+    Group_member_info_list *all_members_info =
+        group_member_mgr->get_all_members();
+    for (Group_member_info *member : *all_members_info) {
+      if (member->get_member_version() < version_removing_vcle) {
+        vcle_only_member_left = true;
+        vcle_only_member_present =
+            (vcle_only_member_present ||
+             std::find(leaving_members.begin(), leaving_members.end(),
+                       member->get_gcs_member_id()) == leaving_members.end());
+      }
+      delete member;
+    }
+    if (vcle_only_member_left && !vcle_only_member_present) {
+      LogPluginErr(SYSTEM_LEVEL, ER_GRP_RPL_VCLE_NOT_BEING_LOGGED);
+    }
+    delete all_members_info;
+  }
 }
 
 void Plugin_gcs_events_handler::log_members_joining_message(
@@ -591,31 +791,30 @@ void Plugin_gcs_events_handler::get_hosts_from_view(
       members.begin();
 
   while (all_members_it != members.end()) {
-    Group_member_info *member_info =
-        group_member_mgr->get_group_member_info_by_member_id((*all_members_it));
+    Group_member_info member_info;
+    const bool member_not_found =
+        group_member_mgr->get_group_member_info_by_member_id((*all_members_it),
+                                                             member_info);
     all_members_it++;
 
-    if (member_info == nullptr) continue;
+    if (member_not_found) continue;
 
-    hosts_string << member_info->get_hostname() << ":"
-                 << member_info->get_port();
+    hosts_string << member_info.get_hostname() << ":" << member_info.get_port();
 
     /**
      Check in_primary_mode has been added for safety.
      Since primary role is in single-primary mode.
     */
-    if (member_info->in_primary_mode() &&
-        member_info->get_role() == Group_member_info::MEMBER_ROLE_PRIMARY) {
+    if (member_info.in_primary_mode() &&
+        member_info.get_role() == Group_member_info::MEMBER_ROLE_PRIMARY) {
       if (primary_string.rdbuf()->in_avail() != 0) primary_string << ", ";
-      primary_string << member_info->get_hostname() << ":"
-                     << member_info->get_port();
+      primary_string << member_info.get_hostname() << ":"
+                     << member_info.get_port();
     }
 
     if (all_members_it != members.end()) {
       hosts_string << ", ";
     }
-
-    delete member_info;
   }
   all_hosts.assign(hosts_string.str());
   primary_host.assign(primary_string.str());
@@ -679,7 +878,7 @@ void Plugin_gcs_events_handler::on_view_changed(
       goto end;
 
     if (!is_leaving && new_view.get_leaving_members().size() > 0)
-      log_members_leaving_message(new_view);
+      log_messages_during_member_leave(new_view);
 
     // update the Group Manager with all the received states
     if (update_group_info_manager(new_view, exchanged_data, is_joining,
@@ -858,6 +1057,38 @@ err:
   return error;
 }
 
+View_change_packet *prepare_view_change_packet(const Gcs_view &new_view) {
+  std::string view_id = new_view.get_view_id().get_representation();
+
+  bool need_vcle{false};  // Check if all members of the group support member
+                          // join without VCLE or not
+  std::vector<Gcs_member_identifier>
+      online_members;  // Online members are also valid senders
+
+  Member_version version_removing_vcle(MEMBER_VERSION_REMOVING_VCLE);
+  Group_member_info_list *all_members_info =
+      group_member_mgr->get_all_members();
+  for (Group_member_info *member : *all_members_info) {
+    if (member->get_member_version() < version_removing_vcle) {
+      need_vcle = true;
+    }
+    if (member->get_recovery_status() == Group_member_info::MEMBER_ONLINE) {
+      online_members.push_back(member->get_gcs_member_id());
+    }
+    delete member;
+  }
+  delete all_members_info;
+  View_change_packet *view_change_packet =
+      new View_change_packet(view_id, need_vcle);
+  std::copy(new_view.get_joined_members().begin(),
+            new_view.get_joined_members().end(),
+            std::back_inserter(view_change_packet->m_members_joining_in_view));
+  std::copy(online_members.begin(), online_members.end(),
+            std::back_inserter(view_change_packet->m_valid_sender_list));
+
+  return view_change_packet;
+}
+
 void Plugin_gcs_events_handler::handle_joining_members(const Gcs_view &new_view,
                                                        bool is_joining,
                                                        bool is_leaving) const {
@@ -964,10 +1195,32 @@ void Plugin_gcs_events_handler::handle_joining_members(const Gcs_view &new_view,
     /*
      Marking the view in the joiner since the incoming event from the donor
      is discarded in the Recovery process.
-     */
-
+    */
     std::string view_id = new_view.get_view_id().get_representation();
-    View_change_packet *view_change_packet = new View_change_packet(view_id);
+    View_change_packet *view_change_packet =
+        prepare_view_change_packet(new_view);
+
+    recovery_module->set_vcle_enabled(view_change_packet->m_need_vcle);
+
+    if (number_of_members > 1) {
+      if (!view_change_packet->m_need_vcle &&
+          view_change_packet->m_valid_sender_list.size() == 0) {
+        delete view_change_packet;
+        LogPluginErr(ERROR_LEVEL, ER_GROUP_REPLICATION_METADATA_NO_VALID_DONOR);
+        leave_group_on_recovery_metadata_error(
+            "There are no valid recovery metadata donors.");
+        return;
+      }
+      // set joiner parameters
+      if (!view_change_packet->m_need_vcle) {
+        recovery_module->suspend_recovery_metadata();
+        // We need to save view-id and valid sender list to identify the
+        // recovery metadata once received.
+        recovery_metadata_module->store_joiner_view_id_and_valid_senders(
+            view_id, view_change_packet->m_valid_sender_list);
+      }
+    }
+    // Add a view-change packet to the applier-pipeline.
     applier_module->add_view_change_packet(view_change_packet);
 
     /*
@@ -1095,9 +1348,8 @@ void Plugin_gcs_events_handler::handle_joining_members(const Gcs_view &new_view,
      of all ONLINE members so we can cut the certification info to gather and
      transmit to the minimum.
     */
-
-    std::string view_id = new_view.get_view_id().get_representation();
-    View_change_packet *view_change_packet = new View_change_packet(view_id);
+    View_change_packet *view_change_packet =
+        prepare_view_change_packet(new_view);
     collect_members_executed_sets(view_change_packet);
     applier_module->add_view_change_packet(view_change_packet);
 
@@ -1183,13 +1435,12 @@ int Plugin_gcs_events_handler::process_local_exchanged_data(
     Gcs_member_identifier *member_id = exchanged_data_it->first;
     if (data == nullptr) {
       /* purecov: begin inspected */
-      Group_member_info *member_info =
-          group_member_mgr->get_group_member_info_by_member_id(*member_id);
-      if (member_info != nullptr) {
+      Group_member_info member_info;
+      if (!group_member_mgr->get_group_member_info_by_member_id(*member_id,
+                                                                member_info)) {
         LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_DATA_NOT_PROVIDED_BY_MEM,
-                     member_info->get_hostname().c_str(),
-                     member_info->get_port());
-        delete member_info;
+                     member_info.get_hostname().c_str(),
+                     member_info.get_port());
       }
       continue;
       /* purecov: end */
@@ -1304,12 +1555,10 @@ int Plugin_gcs_events_handler::process_local_exchanged_data(
       terminate_wait_on_start_process(
           WAIT_ON_START_PROCESS_ABORT_SECONDARY_MEMBER);
 
-      my_thread_init();
       error = member_actions_handler->replace_all_actions(
           exchanged_members_actions_serialized_configuration);
       error |= static_cast<int>(set_replication_failover_channels_configuration(
           exchanged_replication_failover_channels_serialized_configuration));
-      my_thread_end();
     }
   }
 
@@ -1388,11 +1637,9 @@ sending:
     exchangeable data.
   */
   if (!joining && local_member_info->in_primary_mode()) {
-    my_thread_init();
     DBUG_EXECUTE_IF(
         "group_replication_skip_add_member_actions_to_exchangeable_data",
         joining = true;);
-    my_thread_end();
   }
 #endif
 
@@ -1400,13 +1647,11 @@ sending:
     std::string member_actions_serialized_configuration;
     std::string replication_failover_channels_serialized_configuration;
 
-    my_thread_init();
     bool error_reading_member_actions = member_actions_handler->get_all_actions(
         member_actions_serialized_configuration);
     bool error_reading_failover_channels_configuration =
         get_replication_failover_channels_configuration(
             replication_failover_channels_serialized_configuration);
-    my_thread_end();
 
     if (error_reading_member_actions) {
       LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_MEMBER_ACTION_GET_EXCHANGEABLE_DATA);
@@ -1444,10 +1689,9 @@ void Plugin_gcs_events_handler::update_member_status(
   for (vector<Gcs_member_identifier>::const_iterator it = members.begin();
        it != members.end(); ++it) {
     Gcs_member_identifier member = *it;
-    Group_member_info *member_info =
-        group_member_mgr->get_group_member_info_by_member_id(member);
-
-    if (member_info == nullptr) {
+    Group_member_info member_info;
+    if (group_member_mgr->get_group_member_info_by_member_id(member,
+                                                             member_info)) {
       // Trying to update a non-existing member
       continue;
     }
@@ -1458,18 +1702,16 @@ void Plugin_gcs_events_handler::update_member_status(
     //     (the old_status_different_from is not defined or
     //      the previous status is different from old_status_different_from)
     if ((old_status_equal_to == Group_member_info::MEMBER_END ||
-         member_info->get_recovery_status() == old_status_equal_to) &&
+         member_info.get_recovery_status() == old_status_equal_to) &&
         (old_status_different_from == Group_member_info::MEMBER_END ||
-         member_info->get_recovery_status() != old_status_different_from)) {
+         member_info.get_recovery_status() != old_status_different_from)) {
       /*
         The notification will be handled on the top level handle
         function that calls this one down the stack.
       */
-      group_member_mgr->update_member_status(member_info->get_uuid(), status,
+      group_member_mgr->update_member_status(member_info.get_uuid(), status,
                                              m_notification_ctx);
     }
-
-    delete member_info;
   }
 }
 
@@ -1625,10 +1867,10 @@ Plugin_gcs_events_handler::check_version_compatibility_with_group() const {
 int Plugin_gcs_events_handler::compare_member_transaction_sets() const {
   int result = 0;
 
-  Sid_map local_sid_map(nullptr);
-  Sid_map group_sid_map(nullptr);
-  Gtid_set local_member_set(&local_sid_map, nullptr);
-  Gtid_set group_set(&group_sid_map, nullptr);
+  Tsid_map local_tsid_map(nullptr);
+  Tsid_map group_tsid_map(nullptr);
+  Gtid_set local_member_set(&local_tsid_map, nullptr);
+  Gtid_set group_set(&group_tsid_map, nullptr);
 
   Group_member_info_list *all_members = group_member_mgr->get_all_members();
   Group_member_info_list_iterator all_members_it;
@@ -1741,10 +1983,8 @@ int Plugin_gcs_events_handler::compare_member_option_compatibility() const {
       result = 1;
       LogPluginErr(
           ERROR_LEVEL, ER_GRP_RPL_TRANS_WRITE_SET_EXTRACT_DIFF_FROM_GRP,
-          get_write_set_algorithm_string(
-              local_member_info->get_write_set_extraction_algorithm()),
-          get_write_set_algorithm_string(
-              (*all_members_it)->get_write_set_extraction_algorithm()));
+          local_member_info->get_write_set_extraction_algorithm_name(),
+          (*all_members_it)->get_write_set_extraction_algorithm_name());
       goto cleaning;
     }
 
@@ -1787,8 +2027,9 @@ int Plugin_gcs_events_handler::compare_member_option_compatibility() const {
       goto cleaning;
     }
 
-    if (local_member_info->get_view_change_uuid() !=
-        (*all_members_it)->get_view_change_uuid()) {
+    if (is_view_change_log_event_required() &&
+        local_member_info->get_view_change_uuid() !=
+            (*all_members_it)->get_view_change_uuid()) {
       result = 1;
       LogPluginErr(ERROR_LEVEL, ER_GRP_RPL_VIEW_CHANGE_UUID_DIFF_FROM_GRP,
                    local_member_info->get_view_change_uuid().c_str(),

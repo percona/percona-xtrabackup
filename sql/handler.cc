@@ -36,6 +36,7 @@
 #include <stdlib.h>
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <cmath>
 #include <list>
 #include <random>  // std::uniform_real_distribution
@@ -45,7 +46,6 @@
 
 #include "keycache.h"
 #include "m_string.h"
-#include "my_bit.h"     // my_count_bits
 #include "my_bitmap.h"  // MY_BITMAP
 #include "my_check_opt.h"
 #include "my_dbug.h"
@@ -72,6 +72,7 @@
 #include "mysql_version.h"  // MYSQL_VERSION_ID
 #include "mysqld_error.h"
 #include "prealloced_array.h"
+#include "sd_notify.h"             // for sysd::notify() calls
 #include "sql/auth/auth_common.h"  // check_readonly() and SUPER_ACL
 #include "sql/binlog.h"            // mysql_bin_log
 #include "sql/check_stack.h"
@@ -982,8 +983,21 @@ void ha_kill_connection(THD *thd) {
 @retval false (always) */
 static bool pre_dd_shutdown_handlerton(THD *, plugin_ref plugin, void *) {
   handlerton *hton = plugin_data<handlerton *>(plugin);
-  if (hton->state == SHOW_OPTION_YES && hton->pre_dd_shutdown)
+  if (hton->state == SHOW_OPTION_YES && hton->pre_dd_shutdown) {
+    /*
+      systemd notifications are added here to make the case of "InnoDB purge
+      thread taking a long time to shut down" externally visible. The message is
+      kept general to accommodate pre_dd_shutdown handlertons of other SEs (if
+      any).
+    */
+    sysd::notify("STATUS=Pre DD shutdown of MySQL SE plugin ",
+                 ha_resolve_storage_engine_name(hton), " in progress\n");
+
     hton->pre_dd_shutdown(hton);
+
+    sysd::notify("STATUS=Pre DD shutdown of MySQL SE plugin ",
+                 ha_resolve_storage_engine_name(hton), " completed\n");
+  }
   return false;
 }
 
@@ -2595,7 +2609,7 @@ int ha_delete_table(THD *thd, handlerton *table_type, const char *path,
     thd->pop_internal_handler();
   }
 
-  destroy(file);
+  ::destroy_at(file);
 
 #ifdef HAVE_PSI_TABLE_INTERFACE
   if (likely(error == 0)) {
@@ -2710,7 +2724,7 @@ handler *handler::clone(const char *name, MEM_ROOT *mem_root) {
   return new_handler;
 
 err:
-  destroy(new_handler);
+  ::destroy_at(new_handler);
   return nullptr;
 }
 
@@ -3070,19 +3084,30 @@ int handler::ha_sample_init(void *&scan_ctx, double sampling_percentage,
   assert(sampling_percentage >= 0.0);
   assert(sampling_percentage <= 100.0);
   assert(inited == NONE);
+  assert(m_random_number_engine == nullptr);
 
-  // Initialise the random number generator.
-  m_random_number_engine.seed(sampling_seed);
+  // Initialize the random number generator.
+  // The common use case is: the random number generator is used only once.
+  // If we call ha_sample_init/ha_sample_end multiple times for a handler
+  // object, we may have changed MEM_ROOT, so we need to create a new one.
+  m_random_number_engine = new (*THR_MALLOC) std::mt19937;
+  if (m_random_number_engine == nullptr) return HA_ERR_OUT_OF_MEM;
+  m_random_number_engine->seed(sampling_seed);
   m_sampling_percentage = sampling_percentage;
 
   const int result = sample_init(scan_ctx, sampling_percentage, sampling_seed,
                                  sampling_method, tablesample);
   inited = (result != 0) ? NONE : SAMPLING;
+  // Reset pointer here, since ha_sample_end() will not be called.
+  if (result != 0) m_random_number_engine = nullptr;
   return result;
 }
 
 int handler::ha_sample_end(void *scan_ctx) {
   DBUG_TRACE;
+  // There is no need to ::destroy_at(m_random_number_engine).
+  // std::mersenne_twister_engine is documented to have no DTOR.
+  m_random_number_engine = nullptr;
   assert(inited == SAMPLING);
   inited = NONE;
   const int result = sample_end(scan_ctx);
@@ -3122,7 +3147,7 @@ int handler::sample_next(void *scan_ctx [[maybe_unused]], uchar *buf) {
   int res = rnd_next(buf);
 
   std::uniform_real_distribution<double> rnd(0.0, 1.0);
-  while (!res && rnd(m_random_number_engine) > (m_sampling_percentage / 100.0))
+  while (!res && rnd(*m_random_number_engine) > (m_sampling_percentage / 100.0))
     res = rnd_next(buf);
 
   return res;
@@ -4708,7 +4733,7 @@ void handler::drop_table(const char *name) {
   @retval
     HA_ADMIN_NEEDS_ALTER      Table has structures requiring ALTER TABLE
   @retval
-    HA_ADMIN_NOT_IMPLEMENTED
+    HA_ADMIN_NOT_IMPLEMENTED  Not implemented
 */
 int handler::ha_check(THD *thd, HA_CHECK_OPT *check_opt) {
   int error;
@@ -5265,7 +5290,7 @@ int ha_create_table(THD *thd, const char *path, const char *db,
 #endif
 
   // When db_stat is 0, we can pass nullptr as dd::Table since it won't be used.
-  destroy(&table);
+  ::destroy_at(&table);
   if (open_table_from_share(thd, &share, "", 0, (uint)READ_ALL, 0, &table, true,
                             nullptr)) {
 #ifdef HAVE_PSI_TABLE_INTERFACE
@@ -6299,7 +6324,7 @@ ha_rows handler::multi_range_read_info_const(uint keyno, RANGE_SEQ_IF *seq,
     else if (range.range_flag & SKIP_RECORDS_IN_RANGE &&  // 2)
              !(range.range_flag & NULL_RANGE)) {
       if ((range.range_flag & EQ_RANGE) &&
-          (keyparts_used = my_count_bits(range.start_key.keypart_map)) &&
+          (keyparts_used = std::popcount(range.start_key.keypart_map)) &&
           table->key_info[keyno].has_records_per_key(keyparts_used - 1)) {
         rows = static_cast<ha_rows>(
             table->key_info[keyno].records_per_key(keyparts_used - 1));
@@ -6751,7 +6776,7 @@ error:
   h2->ha_index_or_rnd_end();
   h2->ha_external_lock(thd, F_UNLCK);
   h2->ha_close();
-  destroy(h2);
+  ::destroy_at(h2);
   h2 = nullptr;
   assert(retval != 0);
   return retval;
@@ -6777,7 +6802,7 @@ void DsMrr_impl::reset() {
 
     // Close and delete the h2 handler
     h2->ha_close();
-    destroy(h2);
+    ::destroy_at(h2);
     h2 = nullptr;
   }
 }
@@ -7889,43 +7914,43 @@ int binlog_log_row(TABLE *table, const uchar *before_record,
   THD *const thd = table->in_use;
 
   if (check_table_binlog_row_based(thd, table)) {
-    if (thd->variables.transaction_write_set_extraction != HASH_ALGORITHM_OFF) {
-      try {
-        MY_BITMAP save_read_set;
-        MY_BITMAP save_write_set;
-        if (bitmap_init(&save_read_set, nullptr, table->s->fields) ||
-            bitmap_init(&save_write_set, nullptr, table->s->fields)) {
-          my_error(ER_OUT_OF_RESOURCES, MYF(0));
-          return HA_ERR_RBR_LOGGING_FAILED;
-        }
-
-        const Binlog_log_row_cleanup cleanup_sentry(*table, save_read_set,
-                                                    save_write_set);
-
-        if (thd->variables.binlog_row_image == 0) {
-          for (uint key_number = 0; key_number < table->s->keys; ++key_number) {
-            if (((table->key_info[key_number].flags & (HA_NOSAME)) ==
-                 HA_NOSAME)) {
-              table->mark_columns_used_by_index_no_reset(key_number,
-                                                         table->read_set);
-              table->mark_columns_used_by_index_no_reset(key_number,
-                                                         table->write_set);
-            }
-          }
-        }
-        std::array<const uchar *, 2> records{after_record, before_record};
-        for (auto rec : records) {
-          if (rec != nullptr) {
-            assert(rec == table->record[0] || rec == table->record[1]);
-            bool res = add_pke(table, thd, rec);
-            if (res) return HA_ERR_RBR_LOGGING_FAILED;
-          }
-        }
-      } catch (const std::bad_alloc &) {
+    // Transacction write-set extraction.
+    try {
+      MY_BITMAP save_read_set;
+      MY_BITMAP save_write_set;
+      if (bitmap_init(&save_read_set, nullptr, table->s->fields) ||
+          bitmap_init(&save_write_set, nullptr, table->s->fields)) {
         my_error(ER_OUT_OF_RESOURCES, MYF(0));
         return HA_ERR_RBR_LOGGING_FAILED;
       }
+
+      const Binlog_log_row_cleanup cleanup_sentry(*table, save_read_set,
+                                                  save_write_set);
+
+      if (thd->variables.binlog_row_image == 0) {
+        for (uint key_number = 0; key_number < table->s->keys; ++key_number) {
+          if (((table->key_info[key_number].flags & (HA_NOSAME)) ==
+               HA_NOSAME)) {
+            table->mark_columns_used_by_index_no_reset(key_number,
+                                                       table->read_set);
+            table->mark_columns_used_by_index_no_reset(key_number,
+                                                       table->write_set);
+          }
+        }
+      }
+      std::array<const uchar *, 2> records{after_record, before_record};
+      for (auto rec : records) {
+        if (rec != nullptr) {
+          assert(rec == table->record[0] || rec == table->record[1]);
+          bool res = add_pke(table, thd, rec);
+          if (res) return HA_ERR_RBR_LOGGING_FAILED;
+        }
+      }
+    } catch (const std::bad_alloc &) {
+      my_error(ER_OUT_OF_RESOURCES, MYF(0));
+      return HA_ERR_RBR_LOGGING_FAILED;
     }
+
     if (table->in_use->is_error()) return error ? HA_ERR_RBR_LOGGING_FAILED : 0;
 
     DBUG_DUMP("read_set 10", (uchar *)table->read_set->bitmap,
@@ -8518,7 +8543,7 @@ int handler::ha_extra(enum ha_extra_function operation) {
         (!(m_unique = new (*THR_MALLOC) Unique_on_insert(ref_length)) ||
          m_unique->init())) {
       /* purecov: begin inspected */
-      destroy(m_unique);
+      if (m_unique != nullptr) ::destroy_at(m_unique);
       return HA_ERR_OUT_OF_MEM;
       /* purecov: end */
     }
@@ -8527,7 +8552,7 @@ int handler::ha_extra(enum ha_extra_function operation) {
   } else if (operation == HA_EXTRA_DISABLE_UNIQUE_RECORD_FILTER) {
     if (m_unique) {
       m_unique->cleanup();
-      destroy(m_unique);
+      ::destroy_at(m_unique);
       m_unique = nullptr;
     }
   }

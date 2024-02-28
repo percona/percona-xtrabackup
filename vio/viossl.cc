@@ -397,7 +397,7 @@ void vio_ssl_delete(Vio *vio) {
   }
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
-  ERR_remove_thread_state(0);
+  ERR_remove_thread_state(nullptr);
 #endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
 
   vio_delete(vio);
@@ -643,7 +643,8 @@ static int ssl_do(struct st_VioSSLFd *ptr, Vio *vio, long timeout,
 #endif
 
   DBUG_TRACE;
-  DBUG_PRINT("enter", ("ptr: %p, sd: %d  ctx: %p", ptr, sd, ptr->ssl_context));
+  DBUG_PRINT("enter", ("ptr: %p, sd: " MY_SOCKET_FMT "  ctx: %p", ptr, sd,
+                       ptr->ssl_context));
 
   if (!sslptr) {
     sslptr = &ssl;

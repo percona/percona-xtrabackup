@@ -62,6 +62,8 @@
 #include "mysql/components/services/log_shared.h"
 #include "mysql/my_loglevel.h"
 #include "mysql/psi/mysql_mutex.h"
+#include "mysql/serialization/serializer_default.h"
+#include "mysql/serialization/write_archive_binary.h"
 #include "mysql/strings/dtoa.h"
 #include "mysql/strings/int2str.h"
 #include "mysql/strings/m_ctype.h"
@@ -92,8 +94,8 @@
 #ifndef MYSQL_SERVER
 #include "client/mysqlbinlog.h"
 #include "sql-common/json_binary.h"
-#include "sql-common/json_dom.h"  // Json_wrapper
-#include "sql/json_diff.h"        // enum_json_diff_operation
+#include "sql-common/json_diff.h"  // enum_json_diff_operation
+#include "sql-common/json_dom.h"   // Json_wrapper
 #endif
 
 #ifdef MYSQL_SERVER
@@ -2598,7 +2600,7 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
   /* checking partitioning properties and perform corresponding actions */
 
   // Beginning of a group designated explicitly with BEGIN or GTID
-  if ((is_s_event = starts_group()) || is_gtid_event(this) ||
+  if ((is_s_event = starts_group()) || is_any_gtid_event(this) ||
       // or DDL:s or autocommit queries possibly associated with own p-events
       (!rli->curr_group_seen_begin && !rli->curr_group_seen_gtid &&
        /*
@@ -2627,7 +2629,7 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
       assert(rli->last_assigned_worker == nullptr ||
              !is_mts_db_partitioned(rli));
 
-      if (is_s_event || is_gtid_event(this)) {
+      if (is_s_event || is_any_gtid_event(this)) {
         Slave_job_item job_item = {this, rli->get_event_relay_log_number(),
                                    rli->get_event_start_pos()};
         // B-event is appended to the Deferred Array associated with GCAP
@@ -2641,7 +2643,7 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
           rli->curr_group_seen_begin = true;
         }
 
-        if (is_gtid_event(this)) {
+        if (is_any_gtid_event(this)) {
           // mark the current group as started with explicit Gtid-event
           rli->curr_group_seen_gtid = true;
 
@@ -2651,7 +2653,7 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
 
         if (schedule_next_event(this, rli)) {
           rli->abort_slave = true;
-          if (is_gtid_event(this)) {
+          if (is_any_gtid_event(this)) {
             rli->clear_processing_trx();
           }
           return nullptr;
@@ -2998,8 +3000,8 @@ int Log_event::apply_gtid_event(Relay_log_info *rli) {
   if (rli->curr_group_da.size() < 1) return 1;
 
   Log_event *ev = rli->curr_group_da[0].data;
-  assert(ev->get_type_code() == mysql::binlog::event::GTID_LOG_EVENT ||
-         ev->get_type_code() == mysql::binlog::event::ANONYMOUS_GTID_LOG_EVENT);
+  assert(mysql::binlog::event::Log_event_type_helper::is_any_gtid_event(
+      ev->get_type_code()));
 
   error = ev->do_apply_event(rli);
   /* Clean up */
@@ -3119,9 +3121,8 @@ int Log_event::apply_event(Relay_log_info *rli) {
 #ifndef NDEBUG
           assert(rli->curr_group_da.size() == 1);
           Log_event *ev = rli->curr_group_da[0].data;
-          assert(ev->get_type_code() == mysql::binlog::event::GTID_LOG_EVENT ||
-                 ev->get_type_code() ==
-                     mysql::binlog::event::ANONYMOUS_GTID_LOG_EVENT);
+          assert(mysql::binlog::event::Log_event_type_helper::is_any_gtid_event(
+              ev->get_type_code()));
 #endif
           /*
             With MTS logical clock mode, when coordinator is applying an
@@ -5192,6 +5193,12 @@ err:
   return 0;
 }
 
+void Query_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(data_buf, claim);
+  my_claim(this, claim);
+}
+
 /***************************************************************************
        Format_description_log_event methods
 ****************************************************************************/
@@ -5310,6 +5317,11 @@ void Format_description_log_event::print(
   }
 }
 #endif /* !MYSQL_SERVER */
+
+void Format_description_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
+}
 
 #ifdef MYSQL_SERVER
 int Format_description_log_event::pack_info(Protocol *protocol) {
@@ -5564,6 +5576,11 @@ Rotate_log_event::Rotate_log_event(
   DBUG_PRINT("debug", ("new_log_ident: '%s'", new_log_ident));
 }
 
+void Rotate_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
+}
+
 /*
   Rotate_log_event::write()
 */
@@ -5800,6 +5817,11 @@ bool Intvar_log_event::write(Basic_ostream *ostream) {
 }
 #endif
 
+void Intvar_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
+}
+
 /*
   Intvar_log_event::print()
 */
@@ -5897,6 +5919,11 @@ Rand_log_event::Rand_log_event(
     : mysql::binlog::event::Rand_event(buf, description_event),
       Log_event(header(), footer()) {
   DBUG_TRACE;
+}
+
+void Rand_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
 }
 
 #ifdef MYSQL_SERVER
@@ -5998,6 +6025,11 @@ Xid_log_event::Xid_log_event(const char *buf,
     : mysql::binlog::event::Xid_event(buf, description_event),
       Xid_apply_log_event(header(), footer()) {
   DBUG_TRACE;
+}
+
+void Xid_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
 }
 
 #ifdef MYSQL_SERVER
@@ -6375,6 +6407,11 @@ bool XA_prepare_log_event::write(Basic_ostream *ostream) {
          write_footer(ostream);
 }
 #endif  // MYSQL_SERVER
+
+void XA_prepare_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
+}
 
 #ifndef MYSQL_SERVER
 void XA_prepare_log_event::print(FILE *,
@@ -6847,6 +6884,11 @@ Log_event::enum_skip_reason User_var_log_event::do_shall_skip(
 }
 #endif /* MYSQL_SERVER */
 
+void User_var_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
+}
+
 /**************************************************************************
   Unknown_log_event methods
 **************************************************************************/
@@ -6874,6 +6916,11 @@ void Stop_log_event::print(FILE *, PRINT_EVENT_INFO *print_event_info) const {
   my_b_printf(&print_event_info->head_cache, "\tStop\n");
 }
 #endif /* !MYSQL_SERVER */
+
+void Stop_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
+}
 
 #ifdef MYSQL_SERVER
 /*
@@ -6975,6 +7022,11 @@ void Append_block_log_event::print(FILE *,
               block_len);
 }
 #endif /* !MYSQL_SERVER */
+
+void Append_block_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
+}
 
 /*
   Append_block_log_event::pack_info()
@@ -7163,6 +7215,11 @@ void Delete_file_log_event::print(FILE *,
 }
 #endif /* !MYSQL_SERVER */
 
+void Delete_file_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
+}
+
 /*
   Delete_file_log_event::pack_info()
 */
@@ -7230,6 +7287,11 @@ Begin_load_query_log_event::Begin_load_query_log_event(
   DBUG_TRACE;
 }
 
+void Begin_load_query_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
+}
+
 #if defined(MYSQL_SERVER)
 int Begin_load_query_log_event::get_create_or_append() const {
   return 1; /* create the file */
@@ -7291,6 +7353,11 @@ Execute_load_query_log_event::Execute_load_query_log_event(
 
 ulong Execute_load_query_log_event::get_post_header_size_for_derived() {
   return Binary_log_event::EXECUTE_LOAD_QUERY_EXTRA_HEADER_LEN;
+}
+
+void Execute_load_query_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
 }
 
 #ifdef MYSQL_SERVER
@@ -8260,14 +8327,12 @@ static uint search_key_in_table(TABLE *table, MY_BITMAP *bi_cols,
         - Unique keys cannot be disabled, thence we skip the check.
         - Skip unique keys with nullable parts
         - Skip primary keys
-        - Skip functional indexes if the slave_rows_search_algorithms=INDEX_SCAN
+        - Skip functional indexes
         - Skip multi-valued keys as they have only part of value and can't
           fully identify a record
       */
       if (!((keyinfo->flags & (HA_NOSAME | HA_NULL_PART_KEY)) == HA_NOSAME) ||
-          (key == table->s->primary_key) ||
-          ((slave_rows_search_algorithms_options & SLAVE_ROWS_INDEX_SCAN) &&
-           keyinfo->is_functional_index()) ||
+          (key == table->s->primary_key) || (keyinfo->is_functional_index()) ||
           keyinfo->flags & HA_MULTI_VALUED_KEY || !keyinfo->is_visible) {
         continue;
       }
@@ -8288,16 +8353,14 @@ static uint search_key_in_table(TABLE *table, MY_BITMAP *bi_cols,
         - UNIQUE NOT NULL indexes.
         - Indexes that do not support ha_index_next() e.g. full-text.
         - Primary key indexes.
-        - Functional indexes if the slave_rows_search_algorithms=INDEX_SCAN
+        - Functional indexes
         - Skip multi-valued keys as they have only part of value and can't
           fully identify a record
       */
       if (!(table->s->usable_indexes(current_thd).is_set(key)) ||
           ((keyinfo->flags & (HA_NOSAME | HA_NULL_PART_KEY)) == HA_NOSAME) ||
           !(table->file->index_flags(key, 0, true) & HA_READ_NEXT) ||
-          (key == table->s->primary_key) ||
-          ((slave_rows_search_algorithms_options & SLAVE_ROWS_INDEX_SCAN) &&
-           keyinfo->is_functional_index()) ||
+          (key == table->s->primary_key) || (keyinfo->is_functional_index()) ||
           keyinfo->flags & HA_MULTI_VALUED_KEY) {
         continue;
       }
@@ -8316,20 +8379,10 @@ void Rows_log_event::decide_row_lookup_algorithm_and_key() {
   DBUG_TRACE;
 
   /*
-    Decision table:
-    - I  --> Index scan / search
-    - T  --> Table scan
-    - Hi --> Hash over index
-    - Ht --> Hash over the entire table
-
-    |--------------+-----------+------+------+------|
-    | Index\Option | I , T , H | I, T | I, H | T, H |
-    |--------------+-----------+------+------+------|
-    | PK / UK      | I         | I    | I    | Hi   |
-    | K            | Hi        | I    | Hi   | Hi   |
-    | No Index     | Ht        | T    | Ht   | Ht   |
-    |--------------+-----------+------+------+------|
-
+    1. If there is a PK or NOT NULL UNIQUE index, use index scan
+    2. Otherwise, if there is any other index, use index hash scan
+    3. Otherwise, use table hash scan.
+    4. If the engine does not support hash scans, use table scan.
   */
   TABLE *table = this->m_table;
   uint event_type = this->get_general_type_code();
@@ -8342,9 +8395,6 @@ void Rows_log_event::decide_row_lookup_algorithm_and_key() {
       mysql::binlog::event::WRITE_ROWS_EVENT)  // row lookup not needed
     return;
 
-  if (!(slave_rows_search_algorithms_options & SLAVE_ROWS_INDEX_SCAN))
-    goto TABLE_OR_INDEX_HASH_SCAN;
-
   /* PK or UK => use LOOKUP_INDEX_SCAN */
   this->m_key_index =
       search_key_in_table(table, cols, (PRI_KEY_FLAG | UNIQUE_KEY_FLAG));
@@ -8355,17 +8405,15 @@ void Rows_log_event::decide_row_lookup_algorithm_and_key() {
     goto end;
   }
 
-TABLE_OR_INDEX_HASH_SCAN:
-
   /*
      NOTE: Engines like Blackhole cannot use HASH_SCAN, because
            they do not synchronize reads.
    */
-  if (!(slave_rows_search_algorithms_options & SLAVE_ROWS_HASH_SCAN) ||
-      (table->file->ha_table_flags() & HA_READ_OUT_OF_SYNC))
-    goto TABLE_OR_INDEX_FULL_SCAN;
+  if (table->file->ha_table_flags() & HA_READ_OUT_OF_SYNC)
+    goto TABLE_OR_INDEX_SCAN;
 
-  /* search for a key to see if we can narrow the lookup domain further. */
+  // search for a key to see if we can narrow the lookup domain further.
+  // Even if no key is found, HASH SCAN is still the chosen algorithm
   this->m_key_index = search_key_in_table(
       table, cols, (PRI_KEY_FLAG | UNIQUE_KEY_FLAG | MULTIPLE_KEY_FLAG));
   this->m_rows_lookup_algorithm = ROW_LOOKUP_HASH_SCAN;
@@ -8376,14 +8424,13 @@ TABLE_OR_INDEX_HASH_SCAN:
              ("decide_row_lookup_algorithm_and_key: decided - HASH_SCAN"));
   goto end;
 
-TABLE_OR_INDEX_FULL_SCAN:
+TABLE_OR_INDEX_SCAN:
 
   this->m_key_index = MAX_KEY;
 
   /* If we can use an index, try to narrow the scan a bit further. */
-  if (slave_rows_search_algorithms_options & SLAVE_ROWS_INDEX_SCAN)
-    this->m_key_index = search_key_in_table(
-        table, cols, (PRI_KEY_FLAG | UNIQUE_KEY_FLAG | MULTIPLE_KEY_FLAG));
+  this->m_key_index =
+      search_key_in_table(table, cols, (PRI_KEY_FLAG | UNIQUE_KEY_FLAG));
 
   if (this->m_key_index != MAX_KEY) {
     DBUG_PRINT("info",
@@ -8928,7 +8975,7 @@ err:
 int Rows_log_event::do_index_scan_and_update(Relay_log_info const *rli) {
   DBUG_TRACE;
   assert(m_table && m_table->in_use != nullptr);
-
+  assert(m_key_index < MAX_KEY);
   int error = 0;
   const uchar *saved_m_curr_row = m_curr_row;
 
@@ -8941,19 +8988,6 @@ int Rows_log_event::do_index_scan_and_update(Relay_log_info const *rli) {
 
   prepare_record(m_table, &this->m_local_cols, false);
   if ((error = unpack_current_row(rli, &m_cols, false /*is not AI*/))) goto end;
-
-  /*
-    Trying to do an index scan without a usable key
-    This is a valid state because we allow the user
-    to set Slave_rows_search_algorithm= 'INDEX_SCAN'.
-
-    Therefore on tables with no indexes we will end
-    up here.
-   */
-  if (m_key_index >= MAX_KEY) {
-    error = HA_ERR_END_OF_FILE;
-    goto end;
-  }
 
 #ifndef NDEBUG
   DBUG_PRINT("info", ("looking for the following record"));
@@ -9732,7 +9766,7 @@ int Rows_log_event::do_apply_event(Relay_log_info const *rli) {
         strcpy(buf, "applier_log_event");
       } else {
         if (!thd->owned_gtid_is_empty() && thd->owned_gtid.sidno > 0) {
-          thd->owned_gtid.to_string(thd->owned_sid, buf);
+          thd->owned_gtid.to_string(thd->owned_tsid, buf);
         } else {
           strcpy(buf, "ANONYMOUS");
         }
@@ -10326,73 +10360,65 @@ bool Rows_log_event::write_data_header(Basic_ostream *ostream) {
   });
   int6store(buf + ROWS_MAPID_OFFSET, m_table_id.id());
   int2store(buf + ROWS_FLAGS_OFFSET, m_flags);
-  if (likely(!log_bin_use_v1_row_events)) {
-    /*
-       v2 event, with variable header portion.
-       Determine length of variable header payload(extra_row_info part)
-    */
-    uint extra_row_info_payloadlen = EXTRA_ROW_INFO_HEADER_LENGTH;
-    if (m_extra_row_info.have_ndb_info()) {
-      extra_row_info_payloadlen +=
-          (EXTRA_ROW_INFO_TYPECODE_LENGTH + m_extra_row_info.get_ndb_length());
-      ;
-    }
+  /*
+     v2 event, with variable header portion.
+     Determine length of variable header payload(extra_row_info part)
+  */
+  uint extra_row_info_payloadlen = EXTRA_ROW_INFO_HEADER_LENGTH;
+  if (m_extra_row_info.have_ndb_info()) {
+    extra_row_info_payloadlen +=
+        (EXTRA_ROW_INFO_TYPECODE_LENGTH + m_extra_row_info.get_ndb_length());
+  }
 
-    if (m_extra_row_info.have_part()) {
-      extra_row_info_payloadlen +=
-          (EXTRA_ROW_INFO_TYPECODE_LENGTH + m_extra_row_info.get_part_length());
-    }
-    /* Var-size header len includes len itself */
-    int2store(buf + ROWS_VHLEN_OFFSET, extra_row_info_payloadlen);
-    if (wrapper_my_b_safe_write(ostream, buf,
-                                Binary_log_event::ROWS_HEADER_LEN_V2))
+  if (m_extra_row_info.have_part()) {
+    extra_row_info_payloadlen +=
+        (EXTRA_ROW_INFO_TYPECODE_LENGTH + m_extra_row_info.get_part_length());
+  }
+  /* Var-size header len includes len itself */
+  int2store(buf + ROWS_VHLEN_OFFSET, extra_row_info_payloadlen);
+  if (wrapper_my_b_safe_write(ostream, buf,
+                              Binary_log_event::ROWS_HEADER_LEN_V2))
+    return true;
+
+  /* Write var-sized payload, if any */
+  if (m_extra_row_info.have_ndb_info()) {
+    /* Add tag and extra row info */
+    uint8 type_code = static_cast<uint8>(enum_extra_row_info_typecode::NDB);
+    if (wrapper_my_b_safe_write(ostream, &(type_code),
+                                EXTRA_ROW_INFO_TYPECODE_LENGTH))
       return true;
+    if (wrapper_my_b_safe_write(ostream, m_extra_row_info.get_ndb_info(),
+                                m_extra_row_info.get_ndb_length()))
+      return true;
+  }
+  if (m_extra_row_info.have_part()) {
+    uint8 type_code;
+    type_code = static_cast<uint8>(enum_extra_row_info_typecode::PART);
+    uchar partition_buf[5];
+    uint8 extra_part_info_data_len = 0;
+    partition_buf[extra_part_info_data_len++] = type_code;
 
-    /* Write var-sized payload, if any */
-    if (m_extra_row_info.have_ndb_info()) {
-      /* Add tag and extra row info */
-      uint8 type_code = static_cast<uint8>(enum_extra_row_info_typecode::NDB);
-      if (wrapper_my_b_safe_write(ostream, &(type_code),
-                                  EXTRA_ROW_INFO_TYPECODE_LENGTH))
-        return true;
-      if (wrapper_my_b_safe_write(ostream, m_extra_row_info.get_ndb_info(),
-                                  m_extra_row_info.get_ndb_length()))
-        return true;
-    }
-    if (m_extra_row_info.have_part()) {
-      uint8 type_code;
-      type_code = static_cast<uint8>(enum_extra_row_info_typecode::PART);
-      uchar partition_buf[5];
-      uint8 extra_part_info_data_len = 0;
-      partition_buf[extra_part_info_data_len++] = type_code;
+    // partition_id occupies less than 2 bytes
+    // in all the cases because of the current range of allowed number
+    // of partitions 8192 for non-ndb and 12288 for ndb.
+    // So while writing the partition_id it is okay to use 2 bytes for it.
 
-      // partition_id occupies less than 2 bytes
-      // in all the cases because of the current range of allowed number
-      // of partitions 8192 for non-ndb and 12288 for ndb.
-      // So while writing the partition_id it is okay to use 2 bytes for it.
+    int write_partition_id = m_extra_row_info.get_partition_id();
+    int2store(partition_buf + extra_part_info_data_len,
+              static_cast<uint16>(write_partition_id));
+    extra_part_info_data_len += EXTRA_ROW_PART_INFO_VALUE_LENGTH;
 
-      int write_partition_id = m_extra_row_info.get_partition_id();
+    if (get_general_type_code() == mysql::binlog::event::UPDATE_ROWS_EVENT) {
+      write_partition_id = m_extra_row_info.get_source_partition_id();
       int2store(partition_buf + extra_part_info_data_len,
                 static_cast<uint16>(write_partition_id));
       extra_part_info_data_len += EXTRA_ROW_PART_INFO_VALUE_LENGTH;
-
-      if (get_general_type_code() == mysql::binlog::event::UPDATE_ROWS_EVENT) {
-        write_partition_id = m_extra_row_info.get_source_partition_id();
-        int2store(partition_buf + extra_part_info_data_len,
-                  static_cast<uint16>(write_partition_id));
-        extra_part_info_data_len += EXTRA_ROW_PART_INFO_VALUE_LENGTH;
-      }
-
-      if (wrapper_my_b_safe_write(ostream, partition_buf,
-                                  extra_part_info_data_len))
-        return true;
     }
-  } else {
-    if (wrapper_my_b_safe_write(ostream, buf,
-                                Binary_log_event::ROWS_HEADER_LEN_V1))
+
+    if (wrapper_my_b_safe_write(ostream, partition_buf,
+                                extra_part_info_data_len))
       return true;
   }
-
   return false;
 }
 
@@ -10699,6 +10725,15 @@ Table_map_log_event::~Table_map_log_event() = default;
 
 bool Table_map_log_event::has_generated_invisible_primary_key() const {
   return (m_flags & TM_GENERATED_INVISIBLE_PK_F) != 0;
+}
+
+void Table_map_log_event::claim_memory_ownership(bool claim) {
+  my_claim(m_null_bits, claim);
+  my_claim(m_field_metadata, claim);
+  my_claim(m_coltype, claim);
+  my_claim(m_optional_metadata, claim);
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
 }
 
 /*
@@ -11845,14 +11880,10 @@ void Table_map_log_event::print_primary_key(
 Write_rows_log_event::Write_rows_log_event(
     THD *thd_arg, TABLE *tbl_arg, const mysql::binlog::event::Table_id &tid_arg,
     bool is_transactional, const unsigned char *extra_row_ndb_info)
-    : mysql::binlog::event::Rows_event(
-          log_bin_use_v1_row_events ? mysql::binlog::event::WRITE_ROWS_EVENT_V1
-                                    : mysql::binlog::event::WRITE_ROWS_EVENT),
-      Rows_log_event(
-          thd_arg, tbl_arg, tid_arg, tbl_arg->write_set, is_transactional,
-          log_bin_use_v1_row_events ? mysql::binlog::event::WRITE_ROWS_EVENT_V1
-                                    : mysql::binlog::event::WRITE_ROWS_EVENT,
-          extra_row_ndb_info) {
+    : mysql::binlog::event::Rows_event(mysql::binlog::event::WRITE_ROWS_EVENT),
+      Rows_log_event(thd_arg, tbl_arg, tid_arg, tbl_arg->write_set,
+                     is_transactional, mysql::binlog::event::WRITE_ROWS_EVENT,
+                     extra_row_ndb_info) {
   common_header->type_code = m_type;
 }
 
@@ -12323,6 +12354,11 @@ void Write_rows_log_event::print(FILE *file,
 }
 #endif
 
+void Write_rows_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
+}
+
 /**************************************************************************
         Delete_rows_log_event member functions
 **************************************************************************/
@@ -12335,13 +12371,9 @@ void Write_rows_log_event::print(FILE *file,
 Delete_rows_log_event::Delete_rows_log_event(
     THD *thd_arg, TABLE *tbl_arg, const mysql::binlog::event::Table_id &tid,
     bool is_transactional, const uchar *extra_row_ndb_info)
-    : mysql::binlog::event::Rows_event(
-          log_bin_use_v1_row_events ? mysql::binlog::event::DELETE_ROWS_EVENT_V1
-                                    : mysql::binlog::event::DELETE_ROWS_EVENT),
+    : mysql::binlog::event::Rows_event(mysql::binlog::event::DELETE_ROWS_EVENT),
       Rows_log_event(thd_arg, tbl_arg, tid, tbl_arg->read_set, is_transactional,
-                     log_bin_use_v1_row_events
-                         ? mysql::binlog::event::DELETE_ROWS_EVENT_V1
-                         : mysql::binlog::event::DELETE_ROWS_EVENT,
+                     mysql::binlog::event::DELETE_ROWS_EVENT,
                      extra_row_ndb_info),
       mysql::binlog::event::Delete_rows_event() {
   common_header->type_code = m_type;
@@ -12365,6 +12397,11 @@ Delete_rows_log_event::Delete_rows_log_event(
       Rows_log_event(buf, description_event),
       mysql::binlog::event::Delete_rows_event(buf, description_event) {
   assert(header()->type_code == m_type);
+}
+
+void Delete_rows_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
 }
 
 #if defined(MYSQL_SERVER)
@@ -12432,9 +12469,7 @@ Update_rows_log_event::get_update_rows_event_type(const THD *thd_arg) {
   mysql::binlog::event::Log_event_type type =
       (thd_arg->variables.binlog_row_value_options != 0
            ? mysql::binlog::event::PARTIAL_UPDATE_ROWS_EVENT
-           : (log_bin_use_v1_row_events
-                  ? mysql::binlog::event::UPDATE_ROWS_EVENT_V1
-                  : mysql::binlog::event::UPDATE_ROWS_EVENT));
+           : mysql::binlog::event::UPDATE_ROWS_EVENT);
   DBUG_PRINT("info", ("update_rows event_type: %s", get_type_str(type)));
   return type;
 }
@@ -12500,6 +12535,11 @@ Update_rows_log_event::Update_rows_log_event(
   if (!is_valid()) return;
   assert(header()->type_code == m_type);
   common_header->set_is_valid(m_cols_ai.bitmap);
+}
+
+void Update_rows_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
 }
 
 #if defined(MYSQL_SERVER)
@@ -12606,6 +12646,11 @@ const char *Incident_log_event::description() const {
   DBUG_PRINT("info", ("incident: %d", incident));
 
   return description[incident];
+}
+
+void Incident_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
 }
 
 #ifdef MYSQL_SERVER
@@ -12724,6 +12769,11 @@ Ignorable_log_event::Ignorable_log_event(
 
 Ignorable_log_event::~Ignorable_log_event() = default;
 
+void Ignorable_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
+}
+
 #ifdef MYSQL_SERVER
 /* Pack info for its unrecognized ignorable event */
 int Ignorable_log_event::pack_info(Protocol *protocol) {
@@ -12754,6 +12804,12 @@ Rows_query_log_event::Rows_query_log_event(
       Ignorable_log_event(buf, descr_event),
       mysql::binlog::event::Rows_query_event(buf, descr_event) {
   DBUG_TRACE;
+}
+
+void Rows_query_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
+  my_claim(m_rows_query, claim);
 }
 
 #ifdef MYSQL_SERVER
@@ -12835,19 +12891,14 @@ Gtid_log_event::Gtid_log_event(
       Log_event(header(), footer()) {
   DBUG_TRACE;
   if (!is_valid()) {
-    sid.clear();
+    tsid.clear();
     return;
   }
 
 #ifndef NDEBUG
   uint8_t const common_header_len = description_event->common_header_len;
-  uint8 const post_header_len =
-      buffer[EVENT_TYPE_OFFSET] ==
-              mysql::binlog::event::ANONYMOUS_GTID_LOG_EVENT
-          ? description_event->post_header_len
-                [mysql::binlog::event::ANONYMOUS_GTID_LOG_EVENT - 1]
-          : description_event
-                ->post_header_len[mysql::binlog::event::GTID_LOG_EVENT - 1];
+  auto ev_type = buffer[EVENT_TYPE_OFFSET];
+  uint8 const post_header_len = description_event->post_header_len[ev_type - 1];
   DBUG_PRINT("info",
              ("event_len: %zu; common_header_len: %d; post_header_len: %d",
               header()->data_written, common_header_len, post_header_len));
@@ -12856,7 +12907,7 @@ Gtid_log_event::Gtid_log_event(
   spec.type = get_type_code() == mysql::binlog::event::ANONYMOUS_GTID_LOG_EVENT
                   ? ANONYMOUS_GTID
                   : ASSIGNED_GTID;
-  sid.copy_from((uchar *)Uuid_parent_struct.bytes);
+  tsid = tsid_parent_struct;
   spec.gtid.sidno = gtid_info_struct.rpl_gtid_sidno;
   spec.gtid.gno = gtid_info_struct.rpl_gtid_gno;
 }
@@ -12884,18 +12935,22 @@ Gtid_log_event::Gtid_log_event(THD *thd_arg, bool using_trans,
   DBUG_TRACE;
   if (thd->owned_gtid.sidno > 0) {
     spec.set(thd->owned_gtid);
-    sid = thd->owned_sid;
+    tsid = thd->owned_tsid;
+    update_parent_gtid_info();
   } else {
     assert(thd->owned_gtid.sidno == THD::OWNED_SIDNO_ANONYMOUS);
     spec.set_anonymous();
-    spec.gtid.clear();
-    sid.clear();
+    clear_gtid_and_spec();
   }
 
-  Log_event_type event_type =
-      (spec.type == ANONYMOUS_GTID
-           ? mysql::binlog::event::ANONYMOUS_GTID_LOG_EVENT
-           : mysql::binlog::event::GTID_LOG_EVENT);
+  Log_event_type event_type = mysql::binlog::event::GTID_LOG_EVENT;
+  if (spec.type == ANONYMOUS_GTID) {
+    event_type = mysql::binlog::event::ANONYMOUS_GTID_LOG_EVENT;
+  }
+  if (thd->owned_tsid.is_tagged()) {
+    event_type = mysql::binlog::event::GTID_TAGGED_LOG_EVENT;
+  }
+
   common_header->type_code = event_type;
 
 #ifndef NDEBUG
@@ -12904,6 +12959,18 @@ Gtid_log_event::Gtid_log_event(THD *thd_arg, bool using_trans,
   DBUG_PRINT("info", ("%s", buf));
 #endif
   common_header->set_is_valid(true);
+}
+
+void Gtid_log_event::update_parent_gtid_info() {
+  tsid_parent_struct = tsid;
+  gtid_info_struct.rpl_gtid_sidno = spec.gtid.sidno;
+  gtid_info_struct.rpl_gtid_gno = spec.gtid.gno;
+}
+
+void Gtid_log_event::clear_gtid_and_spec() {
+  spec.gtid.clear();
+  tsid.clear();
+  update_parent_gtid_info();
 }
 
 Gtid_log_event::Gtid_log_event(
@@ -12925,6 +12992,7 @@ Gtid_log_event::Gtid_log_event(
   common_header->unmasked_server_id = server_id_arg;
   common_header->set_is_valid(true);
 
+  Log_event_type event_type = mysql::binlog::event::GTID_LOG_EVENT;
   if (spec_arg.type == ASSIGNED_GTID) {
     assert(spec_arg.gtid.sidno > 0);
     assert(spec_arg.gtid.gno > 0);
@@ -12932,21 +13000,29 @@ Gtid_log_event::Gtid_log_event(
     if (spec_arg.gtid.gno <= 0 || spec_arg.gtid.gno >= GNO_END)
       common_header->set_is_valid(false);
     spec.set(spec_arg.gtid);
-    global_sid_lock->rdlock();
-    sid = global_sid_map->sidno_to_sid(spec_arg.gtid.sidno);
-    global_sid_lock->unlock();
+    global_tsid_lock->rdlock();
+    tsid = global_tsid_map->sidno_to_tsid(spec_arg.gtid.sidno);
+    global_tsid_lock->unlock();
+    if (tsid.is_tagged()) {
+      event_type = mysql::binlog::event::GTID_TAGGED_LOG_EVENT;
+    } else {
+      auto specified_tag = spec_arg.generate_tag();
+      if (specified_tag.is_defined()) {
+        // AUTOMATIC GTID is being sent as specified GTID (1,1)
+        // update tsid tag to tag specified in GTID specification object
+        event_type = mysql::binlog::event::GTID_TAGGED_LOG_EVENT;
+        tsid.set_tag(specified_tag);
+      }
+    }
+    update_parent_gtid_info();
   } else {
     assert(spec_arg.type == ANONYMOUS_GTID);
     spec.set_anonymous();
-    spec.gtid.clear();
-    sid.clear();
+    event_type = mysql::binlog::event::ANONYMOUS_GTID_LOG_EVENT;
     common_header->flags |= LOG_EVENT_IGNORABLE_F;
+    clear_gtid_and_spec();
   }
 
-  Log_event_type event_type =
-      (spec.type == ANONYMOUS_GTID
-           ? mysql::binlog::event::ANONYMOUS_GTID_LOG_EVENT
-           : mysql::binlog::event::GTID_LOG_EVENT);
   common_header->type_code = event_type;
 
 #ifndef NDEBUG
@@ -12969,10 +13045,15 @@ size_t Gtid_log_event::to_string(char *buf) const {
   assert(strlen(SET_STRING_PREFIX) == SET_STRING_PREFIX_LENGTH);
   strcpy(p, SET_STRING_PREFIX);
   p += SET_STRING_PREFIX_LENGTH;
-  p += spec.to_string(&sid, p);
+  p += spec.to_string(tsid, p);
   *p++ = '\'';
   *p = '\0';
   return p - buf;
+}
+
+void Gtid_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
 }
 
 #ifndef MYSQL_SERVER
@@ -12981,18 +13062,23 @@ void Gtid_log_event::print(FILE *, PRINT_EVENT_INFO *print_event_info) const {
   IO_CACHE *const head = &print_event_info->head_cache;
   if (!print_event_info->short_form) {
     print_header(head, print_event_info, false);
-    my_b_printf(head,
-                "\t%s\tlast_committed=%llu\tsequence_number=%llu\t"
-                "rbr_only=%s\t"
-                "original_committed_timestamp=%llu\t"
-                "immediate_commit_timestamp=%llu\t"
-                "transaction_length=%llu\n",
-                get_type_code() == mysql::binlog::event::GTID_LOG_EVENT
-                    ? "GTID"
-                    : "Anonymous_GTID",
-                last_committed, sequence_number,
-                may_have_sbr_stmts ? "no" : "yes", original_commit_timestamp,
-                immediate_commit_timestamp, transaction_length);
+    my_b_printf(
+        head,
+        "\t%s\tlast_committed=%llu\tsequence_number=%llu\t"
+        "rbr_only=%s\t"
+        "original_committed_timestamp=%llu\t"
+        "immediate_commit_timestamp=%llu\t"
+        "transaction_length=%llu\n",
+        mysql::binlog::event::Log_event_type_helper::is_assigned_gtid_event(
+            get_type_code())
+            ? "GTID"
+            : "Anonymous_GTID",
+        static_cast<unsigned long long>(last_committed),
+        static_cast<unsigned long long>(sequence_number),
+        may_have_sbr_stmts ? "no" : "yes",
+        static_cast<unsigned long long>(original_commit_timestamp),
+        static_cast<unsigned long long>(immediate_commit_timestamp),
+        get_trx_length());
   }
 
   /*
@@ -13052,25 +13138,26 @@ void Gtid_log_event::print(FILE *, PRINT_EVENT_INFO *print_event_info) const {
 #ifdef MYSQL_SERVER
 uint32 Gtid_log_event::write_post_header_to_memory(uchar *buffer) {
   DBUG_TRACE;
+
+  if (is_tagged()) {
+    return 0;
+  }
+
   uchar *ptr_buffer = buffer;
 
   /* Encode the GTID flags */
-  uchar gtid_flags = 0;
-  gtid_flags |= may_have_sbr_stmts
-                    ? mysql::binlog::event::Gtid_event::FLAG_MAY_HAVE_SBR
-                    : 0;
   *ptr_buffer = gtid_flags;
   ptr_buffer += ENCODED_FLAG_LENGTH;
 
 #ifndef NDEBUG
-  char buf[mysql::gtid::Uuid::TEXT_LENGTH + 1];
-  sid.to_string(buf);
-  DBUG_PRINT("info", ("sid=%s sidno=%d gno=%" PRId64, buf, spec.gtid.sidno,
-                      spec.gtid.gno));
+  std::string tsid_str = tsid.to_string();  // 2 step, cause we need const str
+  DBUG_PRINT("info", ("sid=%s sidno=%d gno=%" PRId64, tsid_str.c_str(),
+                      spec.gtid.sidno, spec.gtid.gno));
 #endif
 
-  sid.copy_to(ptr_buffer);
-  ptr_buffer += ENCODED_SID_LENGTH;
+  // this is an old format
+  ptr_buffer +=
+      tsid.encode_tsid(ptr_buffer, mysql::gtid::Gtid_format::untagged);
 
 #ifndef NDEBUG
   if (DBUG_EVALUATE_IF("send_invalid_gno_to_replica", true, false))
@@ -13106,14 +13193,47 @@ uint32 Gtid_log_event::write_post_header_to_memory(uchar *buffer) {
 #ifdef MYSQL_SERVER
 bool Gtid_log_event::write_data_header(Basic_ostream *ostream) {
   DBUG_TRACE;
+  if (is_tagged()) {
+    return 0;
+  }
   uchar buffer[POST_HEADER_LENGTH];
   write_post_header_to_memory(buffer);
   return wrapper_my_b_safe_write(ostream, (uchar *)buffer, POST_HEADER_LENGTH);
 }
 
+uint32 Gtid_log_event::write_tagged_event_body_to_memory(uchar *buffer) {
+  Encoder_type serializer;
+  // allocated buffer has get_max_payload_size() bytes
+  serializer.get_archive().set_stream(buffer, get_max_payload_size());
+  serializer << *this;
+  auto size_written = serializer.get_archive().get_size_written();
+  DBUG_EXECUTE_IF("add_unknown_ignorable_fields_to_gtid_log_event", {
+    uint64_t ser_size = 0;
+    mysql::serialization::Primitive_type_codec<uint64_t>::read_bytes<0>(
+        buffer + 1, size_written - 1, ser_size);
+    ser_size += 2;
+    mysql::serialization::Primitive_type_codec<uint64_t>::write_bytes<0>(
+        buffer + 1, ser_size);
+    uint64_t new_id = 100;
+    mysql::serialization::Primitive_type_codec<uint64_t>::write_bytes<0>(
+        buffer + size_written, new_id);
+    buffer[size_written + 1] = 3;  // some data
+    size_written += 2;             // safe to be called in this debug point
+  });
+  DBUG_EXECUTE_IF("change_unknown_fields_to_non_ignorable", {
+    uint64_t new_id = 100;
+    mysql::serialization::Primitive_type_codec<uint64_t>::write_bytes<0>(
+        buffer + 2, new_id);
+  });
+  return size_written;
+}
+
 uint32 Gtid_log_event::write_body_to_memory(uchar *buffer) {
   DBUG_TRACE;
   DBUG_EXECUTE_IF("do_not_write_rpl_timestamps", return 0;);
+  if (is_tagged()) {
+    return write_tagged_event_body_to_memory(buffer);
+  }
   uchar *ptr_buffer = buffer;
 
   /*
@@ -13140,7 +13260,7 @@ uint32 Gtid_log_event::write_body_to_memory(uchar *buffer) {
   }
 
   // Write the transaction length information
-  uchar *ptr_after_length = net_store_length(ptr_buffer, transaction_length);
+  uchar *ptr_after_length = net_store_length(ptr_buffer, get_trx_length());
   ptr_buffer = ptr_after_length;
 
   /*
@@ -13175,7 +13295,7 @@ uint32 Gtid_log_event::write_body_to_memory(uchar *buffer) {
 
 bool Gtid_log_event::write_data_body(Basic_ostream *ostream) {
   DBUG_TRACE;
-  uchar buffer[MAX_DATA_LENGTH];
+  uchar buffer[get_max_event_length()];
   uint32 len = write_body_to_memory(buffer);
   return wrapper_my_b_safe_write(ostream, (uchar *)buffer, len);
 }
@@ -13216,7 +13336,7 @@ int Gtid_log_event::do_apply_event(Relay_log_info const *rli) {
     */
     if (thd->server_status & SERVER_STATUS_IN_TRANS) {
       /* This is not an error (XA is safe), just an information */
-      rli->report(INFORMATION_LEVEL, 0,
+      rli->report(INFORMATION_LEVEL, 0, &spec,
                   "Rolling back unfinished transaction (no COMMIT "
                   "or ROLLBACK in relay log). A probable cause is partial "
                   "transaction left on relay log because of restarting IO "
@@ -13226,12 +13346,25 @@ int Gtid_log_event::do_apply_event(Relay_log_info const *rli) {
     gtid_state->update_on_rollback(thd);
   }
 
-  global_sid_lock->rdlock();
+  if (this->is_tagged()) {
+    Applier_security_context_guard security_context{rli, thd};
+    if (!security_context.has_access({"TRANSACTION_GTID_TAG"})) {
+      rli->report(ERROR_LEVEL, ER_SPECIFIC_ACCESS_DENIED, &spec,
+                  ER_THD(thd, ER_SPECIFIC_ACCESS_DENIED),
+                  "the TRANSACTION_GTID_TAG and at least one of the: "
+                  "SYSTEM_VARIABLES_ADMIN, SESSION_VARIABLES_ADMIN or "
+                  "REPLICATION_APPLIER");
+      thd->is_slave_error = true;
+      return 1;
+    }
+  }
+
+  global_tsid_lock->rdlock();
 
   // make sure that sid has been converted to sidno
   if (spec.type == ASSIGNED_GTID) {
     if (get_sidno(false) < 0) {
-      global_sid_lock->unlock();
+      global_tsid_lock->unlock();
       return 1;  // out of memory
     }
   } else if ((spec.type == ANONYMOUS_GTID) &&
@@ -13244,7 +13377,7 @@ int Gtid_log_event::do_apply_event(Relay_log_info const *rli) {
         rli->m_assign_gtids_to_anonymous_transactions_info.get_sidno();
   }
 
-  // set_gtid_next releases global_sid_lock
+  // set_gtid_next releases global_tsid_lock
   if (set_gtid_next(thd, spec))
     // This can happen e.g. if gtid_mode is incompatible with spec.
     return 1;
@@ -13344,9 +13477,23 @@ Log_event::enum_skip_reason Gtid_log_event::do_shall_skip(Relay_log_info *rli) {
 }
 #endif  // MYSQL_SERVER
 
+void Gtid_log_event::set_trx_length_by_cache_size_tagged(
+    ulonglong cache_size, bool is_checksum_enabled, int event_counter) {
+  auto transaction_length_overhead = cache_size;
+  if (is_checksum_enabled) {
+    transaction_length_overhead += (event_counter + 1) * BINLOG_CHECKSUM_LEN;
+  }
+  transaction_length_overhead += LOG_EVENT_HEADER_LEN;
+  update_tagged_transaction_length(transaction_length_overhead);
+}
+
 void Gtid_log_event::set_trx_length_by_cache_size(ulonglong cache_size,
                                                   bool is_checksum_enabled,
                                                   int event_counter) {
+  if (is_tagged()) {
+    return set_trx_length_by_cache_size_tagged(cache_size, is_checksum_enabled,
+                                               event_counter);
+  }
   // Transaction content length
   transaction_length = cache_size;
   if (is_checksum_enabled)
@@ -13355,52 +13502,21 @@ void Gtid_log_event::set_trx_length_by_cache_size(ulonglong cache_size,
   // GTID length
   transaction_length += LOG_EVENT_HEADER_LEN;
   transaction_length += POST_HEADER_LENGTH;
+  transaction_length += is_checksum_enabled ? BINLOG_CHECKSUM_LEN : 0;
   transaction_length += get_commit_timestamp_length();
   transaction_length += get_server_version_length();
-  transaction_length += is_checksum_enabled ? BINLOG_CHECKSUM_LEN : 0;
-
-  /*
-    Notice that it is not possible to determine the transaction_length field
-    size using pack.cc:net_length_size() since the length of the field itself
-    must be added to the value.
-
-    Example: Suppose transaction_length is 250 without considering the
-    transaction_length field. Using net_length_size(250) would return 1, but
-    when adding the transaction_length field size to it (+1), the
-    transaction_length becomes 251, and the field must be represented using two
-    more bytes, so the correct transaction length must be in fact 253.
-  */
-#ifndef NDEBUG
-  const ulonglong size_without_transaction_length = transaction_length;
-#endif
-  // transaction_length will use at least TRANSACTION_LENGTH_MIN_LENGTH
-  transaction_length += TRANSACTION_LENGTH_MIN_LENGTH;
-  assert(transaction_length - size_without_transaction_length == 1);
-  if (transaction_length >= 251ULL) {
-    // transaction_length will use at least 3 bytes
-    transaction_length += 2;
-    assert(transaction_length - size_without_transaction_length == 3);
-    if (transaction_length >= 65536ULL) {
-      // transaction_length will use at least 4 bytes
-      transaction_length += 1;
-      assert(transaction_length - size_without_transaction_length == 4);
-      if (transaction_length >= 16777216ULL) {
-        // transaction_length will use 9 bytes
-        transaction_length += 5;
-        assert(transaction_length - size_without_transaction_length == 9);
-      }
-    }
-  }
+  return update_untagged_transaction_length();
 }
 
 rpl_sidno Gtid_log_event::get_sidno(bool need_lock) {
   if (spec.gtid.sidno < 0) {
     if (need_lock)
-      global_sid_lock->rdlock();
+      global_tsid_lock->rdlock();
     else
-      global_sid_lock->assert_some_lock();
-    spec.gtid.sidno = global_sid_map->add_sid(sid);
-    if (need_lock) global_sid_lock->unlock();
+      global_tsid_lock->assert_some_lock();
+    spec.gtid.sidno = global_tsid_map->add_tsid(tsid);
+    gtid_info_struct.rpl_gtid_sidno = spec.gtid.sidno;
+    if (need_lock) global_tsid_lock->unlock();
   }
   return spec.gtid.sidno;
 }
@@ -13412,6 +13528,11 @@ Previous_gtids_log_event::Previous_gtids_log_event(
   DBUG_TRACE;
 }
 
+void Previous_gtids_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
+}
+
 #ifdef MYSQL_SERVER
 Previous_gtids_log_event::Previous_gtids_log_event(const Gtid_set *set)
     : mysql::binlog::event::Previous_gtids_event(),
@@ -13420,7 +13541,7 @@ Previous_gtids_log_event::Previous_gtids_log_event(const Gtid_set *set)
   DBUG_TRACE;
   common_header->type_code = mysql::binlog::event::PREVIOUS_GTIDS_LOG_EVENT;
   common_header->flags |= LOG_EVENT_IGNORABLE_F;
-  set->get_sid_map()->get_sid_lock()->assert_some_lock();
+  set->get_tsid_map()->get_tsid_lock()->assert_some_lock();
   buf_size = set->get_encoded_length();
   uchar *buffer =
       (uchar *)my_malloc(key_memory_log_event, buf_size, MYF(MY_WME));
@@ -13473,8 +13594,8 @@ int Previous_gtids_log_event::add_to_set(Gtid_set *target) const {
 char *Previous_gtids_log_event::get_str(
     size_t *length_p, const Gtid_set::String_format *string_format) const {
   DBUG_TRACE;
-  Sid_map sid_map(nullptr);
-  Gtid_set set(&sid_map, nullptr);
+  Tsid_map tsid_map(nullptr);
+  Gtid_set set(&tsid_map, nullptr);
   DBUG_PRINT("info", ("temp_buf=%p buf=%p", temp_buf, buf));
   if (set.add_gtid_encoding(buf, buf_size) != RETURN_STATUS_OK) return nullptr;
   set.dbug_print("set");
@@ -13517,18 +13638,18 @@ Transaction_context_log_event::Transaction_context_log_event(
   DBUG_TRACE;
   common_header->flags |= LOG_EVENT_IGNORABLE_F;
   server_uuid = nullptr;
-  sid_map = new Sid_map(nullptr);
-  snapshot_version = new Gtid_set(sid_map);
+  tsid_map = new Tsid_map(nullptr);
+  snapshot_version = new Gtid_set(tsid_map);
 
   /*
-    Copy global_sid_map to a local copy to avoid the acquisition
-    of the global_sid_lock for operations on top of this snapshot
+    Copy global_tsid_map to a local copy to avoid the acquisition
+    of the global_tsid_lock for operations on top of this snapshot
     version.
-    The Sid_map and Gtid_executed must be read under the protection
+    The Tsid_map and Gtid_executed must be read under the protection
     of MYSQL_BIN_LOG.LOCK_commit to avoid race conditions between
     ordered commits in the storage engine and gtid_state update.
   */
-  if (mysql_bin_log.get_gtid_executed(sid_map, snapshot_version)) goto err;
+  if (mysql_bin_log.get_gtid_executed(tsid_map, snapshot_version)) goto err;
 
   server_uuid = my_strdup(key_memory_log_event, server_uuid_arg, MYF(MY_WME));
   if (server_uuid == nullptr) goto err;
@@ -13562,15 +13683,15 @@ Transaction_context_log_event::Transaction_context_log_event(
     const char *buffer, const Format_description_event *descr_event)
     : mysql::binlog::event::Transaction_context_event(buffer, descr_event),
       Log_event(header(), footer()),
-      sid_map(nullptr),
+      tsid_map(nullptr),
       snapshot_version(nullptr) {
   DBUG_TRACE;
   if (!is_valid()) return;
 
   common_header->flags |= LOG_EVENT_IGNORABLE_F;
 
-  sid_map = new Sid_map(nullptr);
-  snapshot_version = new Gtid_set(sid_map);
+  tsid_map = new Tsid_map(nullptr);
+  snapshot_version = new Gtid_set(tsid_map);
 }
 
 Transaction_context_log_event::~Transaction_context_log_event() {
@@ -13581,13 +13702,20 @@ Transaction_context_log_event::~Transaction_context_log_event() {
     my_free(const_cast<uchar *>(encoded_snapshot_version));
   encoded_snapshot_version = nullptr;
   delete snapshot_version;
-  delete sid_map;
+  delete tsid_map;
 }
 
 size_t Transaction_context_log_event::to_string(char *buf, ulong len) const {
   DBUG_TRACE;
   return snprintf(buf, len, "server_uuid=%s\tthread_id=%u", server_uuid,
                   thread_id);
+}
+
+void Transaction_context_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
+  if (tsid_map) my_claim(tsid_map, claim);
+  if (snapshot_version) my_claim(snapshot_version, claim);
 }
 
 #ifdef MYSQL_SERVER
@@ -13708,9 +13836,9 @@ bool Transaction_context_log_event::read_snapshot_version() {
   DBUG_TRACE;
   assert(snapshot_version->is_empty());
 
-  global_sid_lock->wrlock();
-  const enum_return_status return_status = global_sid_map->copy(sid_map);
-  global_sid_lock->unlock();
+  global_tsid_lock->wrlock();
+  const enum_return_status return_status = global_tsid_map->copy(tsid_map);
+  global_tsid_lock->unlock();
   if (return_status != RETURN_STATUS_OK) return true;
 
   return snapshot_version->add_gtid_encoding(encoded_snapshot_version,
@@ -13806,6 +13934,11 @@ size_t View_change_log_event::get_size_data_map(
 size_t View_change_log_event::to_string(char *buf, ulong len) const {
   DBUG_TRACE;
   return snprintf(buf, len, "view_id=%s", view_id);
+}
+
+void View_change_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
 }
 
 #ifdef MYSQL_SERVER
@@ -13961,6 +14094,11 @@ size_t Transaction_payload_log_event::get_data_size() {
   assert(false);
   return 0;
   /* purecov: end */
+}
+
+void Transaction_payload_log_event::claim_memory_ownership(bool claim) {
+  my_claim(temp_buf, claim);
+  my_claim(this, claim);
 }
 
 #ifdef MYSQL_SERVER

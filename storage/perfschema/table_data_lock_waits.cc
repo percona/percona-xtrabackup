@@ -165,29 +165,21 @@ int table_data_lock_waits::rnd_next() {
       m_container.shrink();
 
       /*
-        PSI_engine_data_lock_iterator::scan() can return an unbounded number
-        of rows during a scan, depending on the application payload, as some
-        user sessions may have an unbounded number or records locked.
-        This can cause severe memory spike, which in turn can take the server
-        down if not handled properly. Here a select on the table
-        performance_schema.data_lock_waits will fail with an error, instead of
-        taking the server down, if out of memory conditions occur.
+        The implementation of PSI_engine_data_lock_wait_iterator::scan(),
+        inside a storage engine, is expected to:
+        - (1) not report all the data at once,
+        - (2) implement re-startable scans internally,
+        - (3) report a bounded number of rows per scan.
 
-        This is a fail safe only, the implementation of
-        PSI_engine_data_lock_iterator::scan() in each storage engine
-        should be constrained to return fewer rows at a time if necessary,
-        by making more calls to scan(), to handle the load gracefully.
+        This is to allow allocating only a bounded amount of memory
+        in the data container, to cap the peak memory consumption
+        of the container.
+
+        TODO: Innodb_data_lock_wait_iterator::scan()
+        does not satisfy (3) currently.
       */
 
-      try {
-        DBUG_EXECUTE_IF("simulate_bad_alloc_exception_2",
-                        throw std::bad_alloc(););
-        iterator_done = it->scan(&m_container);
-      } catch (const std::bad_alloc &) {
-        my_error(ER_STD_BAD_ALLOC_ERROR, MYF(0),
-                 "while scanning data_lock_waits table", "rnd_next");
-        return ER_STD_BAD_ALLOC_ERROR;
-      }
+      iterator_done = it->scan(&m_container);
     }
   }
 
@@ -223,10 +215,10 @@ int table_data_lock_waits::rnd_pos(const void *pos) {
   PSI_engine_data_lock_wait_iterator *it = m_iterator[index];
 
   m_container.clear();
-  it->fetch(&m_container, m_pk_pos.m_requesting_engine_lock_id,
-            m_pk_pos.m_requesting_engine_lock_id_length,
-            m_pk_pos.m_blocking_engine_lock_id,
-            m_pk_pos.m_blocking_engine_lock_id_length);
+  it->fetch(&m_container, m_pk_pos.get_requesting_lock_id(),
+            m_pk_pos.get_requesting_lock_id_length(),
+            m_pk_pos.get_blocking_lock_id(),
+            m_pk_pos.get_blocking_lock_id_length());
   data = m_container.get_row(0);
   if (data != nullptr) {
     m_row = data;
@@ -292,8 +284,8 @@ int table_data_lock_waits::read_row_values(TABLE *table, unsigned char *buf,
           break;
         case 1: /* REQUESTING_ENGINE_LOCK_ID */
           set_field_varchar_utf8mb4(
-              f, m_row->m_hidden_pk.m_requesting_engine_lock_id,
-              m_row->m_hidden_pk.m_requesting_engine_lock_id_length);
+              f, m_row->m_hidden_pk.get_requesting_lock_id(),
+              m_row->m_hidden_pk.get_requesting_lock_id_length());
           break;
         case 2: /* REQUESTING_ENGINE_TRANSACTION_ID */
           set_field_ulonglong(f, m_row->m_requesting_transaction_id);
@@ -309,8 +301,8 @@ int table_data_lock_waits::read_row_values(TABLE *table, unsigned char *buf,
           break;
         case 6: /* BLOCKING_ENGINE_LOCK_ID */
           set_field_varchar_utf8mb4(
-              f, m_row->m_hidden_pk.m_blocking_engine_lock_id,
-              m_row->m_hidden_pk.m_blocking_engine_lock_id_length);
+              f, m_row->m_hidden_pk.get_blocking_lock_id(),
+              m_row->m_hidden_pk.get_blocking_lock_id_length());
           break;
         case 7: /* BLOCKING_ENGINE_TRANSACTION_ID */
           set_field_ulonglong(f, m_row->m_blocking_transaction_id);

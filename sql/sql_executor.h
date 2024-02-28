@@ -29,43 +29,34 @@
 */
 
 #include <sys/types.h>
-#include <cstring>
-#include <memory>
 #include <string>
 #include <vector>
 
 #include "my_alloc.h"
 #include "my_inttypes.h"
 #include "my_table_map.h"
-#include "sql/iterators/row_iterator.h"
 #include "sql/sql_lex.h"
 #include "sql/sql_opt_exec_shared.h"  // QEP_shared_owner
 #include "sql/table.h"
 #include "sql/temp_table_param.h"  // Temp_table_param
 
-class CacheInvalidatorIterator;
 class Cached_item;
 class Field;
 class Field_longlong;
 class Filesort;
-class FollowTailIterator;
 class Item;
 class Item_sum;
 class JOIN;
 class JOIN_TAB;
 class KEY;
-class MultiRangeRowIterator;
 class Opt_trace_object;
 class QEP_TAB;
 class RowIterator;
 class THD;
-class Window;
 template <class T>
 class mem_root_deque;
 
-enum class Window_retrieve_cached_row_reason;
 struct AccessPath;
-struct CACHE_FIELD;
 struct POSITION;
 template <class T>
 class List;
@@ -242,7 +233,8 @@ int update_item_cache_if_changed(List<Cached_item> &list);
 bool change_to_use_tmp_fields(mem_root_deque<Item *> *fields, THD *thd,
                               Ref_item_array ref_item_array,
                               mem_root_deque<Item *> *res_fields,
-                              size_t added_non_hidden_fields);
+                              size_t added_non_hidden_fields,
+                              bool windowing = false);
 // Create list for using with temporary table
 bool change_to_use_tmp_fields_except_sums(mem_root_deque<Item *> *fields,
                                           THD *thd, Query_block *select,
@@ -478,7 +470,7 @@ bool set_record_buffer(TABLE *table, double expected_rows_to_fetch);
 void init_tmptable_sum_functions(Item_sum **func_ptr);
 void update_tmptable_sum_func(Item_sum **func_ptr, TABLE *tmp_table);
 bool has_rollup_result(Item *item);
-bool is_rollup_group_wrapper(Item *item);
+bool is_rollup_group_wrapper(const Item *item);
 Item *unwrap_rollup_group(Item *item);
 
 /*
@@ -550,8 +542,6 @@ void SplitConditions(Item *condition, QEP_TAB *current_table,
 AccessPath *MoveCompositeIteratorsFromTablePath(AccessPath *path,
                                                 const Query_block &query_block);
 
-AccessPath *GetAccessPathForDerivedTable(THD *thd, QEP_TAB *qep_tab,
-                                         AccessPath *table_path);
 AccessPath *GetAccessPathForDerivedTable(
     THD *thd, Table_ref *table_ref, TABLE *table, bool rematerialize,
     Mem_root_array<const AccessPath *> *invalidators, bool need_rowid,

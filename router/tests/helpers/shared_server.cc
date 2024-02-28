@@ -62,7 +62,11 @@ stdx::expected<void, MysqlError> SharedServer::shutdown() {
   auto cli_res = admin_cli();
   if (!cli_res) return stdx::make_unexpected(cli_res.error());
 
-  auto shutdown_res = cli_res->shutdown();
+  return shutdown(*cli_res);
+}
+
+stdx::expected<void, MysqlError> SharedServer::shutdown(MysqlClient &cli) {
+  auto shutdown_res = cli.shutdown();
   if (!shutdown_res) return stdx::make_unexpected(shutdown_res.error());
 
   return {};
@@ -438,7 +442,7 @@ stdx::expected<void, MysqlError> SharedServer::close_all_connections(
     if (!ids_res) return stdx::make_unexpected(ids_res.error());
 
     for (auto id : *ids_res) {
-      auto kill_res = cli.kill(id);
+      auto kill_res = cli.query("KILL " + std::to_string(id));
 
       // either it succeeds or "Unknown thread id" because it closed itself
       // between the SELECT and this kill

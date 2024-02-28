@@ -42,6 +42,7 @@
 
 #include "my_inttypes.h"
 #include "my_sys.h"
+#include "mysql/binlog/event/nodiscard.h"
 #include "plugin/group_replication/include/gcs_plugin_messages.h"
 #include "plugin/group_replication/include/member_version.h"
 #include "plugin/group_replication/include/plugin_psi.h"
@@ -185,6 +186,17 @@ class Group_member_info : public Plugin_gcs_message {
   } Group_member_role;
 
   /*
+    Values of the old transaction_write_set_extraction sysvar.
+    This enum is only used on Group Replication plugin for
+    compatibility purposes.
+  */
+  enum enum_transaction_write_set_hashing_algorithm_compatibility {
+    HASH_ALGORITHM_OFF = 0,
+    HASH_ALGORITHM_MURMUR32 = 1,
+    HASH_ALGORITHM_XXHASH64 = 2
+  };
+
+  /*
     Allocate memory on the heap with instrumented memory allocation, so
     that memory consumption can be tracked.
 
@@ -243,6 +255,14 @@ class Group_member_info : public Plugin_gcs_message {
   void operator delete(void *ptr) noexcept { my_free(ptr); }
 
   /**
+    Group_member_info empty constructor
+
+    @param[in] psi_mutex_key_arg                      mutex key
+   */
+  Group_member_info(PSI_mutex_key psi_mutex_key_arg =
+                        key_GR_LOCK_group_member_info_update_lock);
+
+  /**
     Group_member_info constructor
 
     @param[in] hostname_arg                           member hostname
@@ -263,13 +283,13 @@ class Group_member_info : public Plugin_gcs_message {
     check
     @param[in] member_weight_arg                      member_weight
     @param[in] lower_case_table_names_arg             lower case table names
-    @param[in] psi_mutex_key_arg                      mutex key
     @param[in] default_table_encryption_arg           default_table_encryption
     @param[in] recovery_endpoints_arg                 recovery endpoints
     @param[in] view_change_uuid_arg                   view change uuid
     advertised
     @param[in] allow_single_leader                    flag indicating whether or
     not to use single-leader behavior
+    @param[in] psi_mutex_key_arg                      mutex key
    */
   Group_member_info(const char *hostname_arg, uint port_arg,
                     const char *uuid_arg, int write_set_extraction_algorithm,
@@ -418,6 +438,11 @@ class Group_member_info : public Plugin_gcs_message {
     @return the member algorithm for extracting write sets
   */
   uint get_write_set_extraction_algorithm();
+
+  /**
+    @return the member algorithm name for extracting write sets
+  */
+  const char *get_write_set_extraction_algorithm_name();
 
   /**
     @return the member gtid assignment block size
@@ -691,8 +716,8 @@ class Group_member_info : public Plugin_gcs_message {
   uint port;
   std::string uuid;
   Group_member_status status;
-  Gcs_member_identifier *gcs_member_id;
-  Member_version *member_version;
+  Gcs_member_identifier *gcs_member_id{nullptr};
+  Member_version *member_version{nullptr};
   std::string executed_gtid_set;
   std::string purged_gtid_set;
   std::string retrieved_gtid_set;
@@ -768,21 +793,32 @@ class Group_member_info_manager_interface {
   /**
     Retrieves a registered Group member by its uuid
 
-    @param[in] uuid uuid to retrieve
-    @return reference to a copy of Group_member_info. NULL if not managed.
-            The return value must deallocated by the caller.
+    @param[in]  uuid             uuid to retrieve
+    @param[out] member_info_arg  a member info reference local to the
+                                 method caller that is updated when the
+                                 member is found.
+
+    @return true  if the member is not found.
+            false if the member is found.
    */
-  virtual Group_member_info *get_group_member_info(const std::string &uuid) = 0;
+  [[NODISCARD]] virtual bool get_group_member_info(
+      const std::string &uuid, Group_member_info &member_info_arg) = 0;
 
   /**
     Retrieves a registered Group member by an index function.
     One is free to determine the index function. Nevertheless, it should have
     the same result regardless of the member of the group where it is called
 
-    @param[in] idx the index
-    @return reference to a Group_member_info. NULL if not managed
+    @param[in]  idx              the index
+    @param[out] member_info_arg  a member info reference local to the
+                                 method caller that is updated when the
+                                 member is found.
+
+    @return true  if the member is not found.
+            false if the member is found.
    */
-  virtual Group_member_info *get_group_member_info_by_index(int idx) = 0;
+  [[NODISCARD]] virtual bool get_group_member_info_by_index(
+      int idx, Group_member_info &member_info_arg) = 0;
 
   /**
     Return lowest member version.
@@ -795,11 +831,25 @@ class Group_member_info_manager_interface {
   /**
     Retrieves a registered Group member by its backbone GCS identifier.
 
-    @param[in] id the GCS identifier
-    @return reference to a copy of Group_member_info. NULL if not managed.
-            The return value must be deallocated by the caller.
+    @param[in]  id               the GCS identifier
+    @param[out] member_info_arg  a member info reference local to the
+                                 method caller that is updated when the
+                                 member is found.
+
+    @return true  if the member is not found.
+            false if the member is found.
    */
-  virtual Group_member_info *get_group_member_info_by_member_id(
+  [[NODISCARD]] virtual bool get_group_member_info_by_member_id(
+      const Gcs_member_identifier &id, Group_member_info &member_info_arg) = 0;
+
+  /**
+    Returns the member-uuid of the given GCS identifier.
+
+    @param[in] id the GCS identifier
+    @return false if success and the member-uuid
+            true if fails and the member-uuid is empty.
+   */
+  virtual std::pair<bool, std::string> get_group_member_uuid_from_member_id(
       const Gcs_member_identifier &id) = 0;
 
   /**
@@ -977,11 +1027,15 @@ class Group_member_info_manager_interface {
   /**
     Return the group member info for the current group primary
 
-    @note the returned reference must be deallocated by the caller.
+    @param[out] member_info_arg  a member info reference local to the
+                                 method caller that is updated when the
+                                 member is found.
 
-    @return reference to a Group_member_info. NULL if not managed
+    @return true  if the member is not found.
+            false if the member is found.
   */
-  virtual Group_member_info *get_primary_member_info() = 0;
+  [[NODISCARD]] virtual bool get_primary_member_info(
+      Group_member_info &member_info_arg) = 0;
 
   /**
     Check if majority of the group is unreachable
@@ -1106,13 +1160,19 @@ class Group_member_info_manager : public Group_member_info_manager_interface {
 
   bool is_member_info_present(const std::string &uuid) override;
 
-  Group_member_info *get_group_member_info(const std::string &uuid) override;
+  [[NODISCARD]] bool get_group_member_info(
+      const std::string &uuid, Group_member_info &member_info_arg) override;
 
-  Group_member_info *get_group_member_info_by_index(int idx) override;
+  [[NODISCARD]] bool get_group_member_info_by_index(
+      int idx, Group_member_info &member_info_arg) override;
 
   Member_version get_group_lowest_online_version() override;
 
-  Group_member_info *get_group_member_info_by_member_id(
+  [[NODISCARD]] bool get_group_member_info_by_member_id(
+      const Gcs_member_identifier &id,
+      Group_member_info &member_info_arg) override;
+
+  std::pair<bool, std::string> get_group_member_uuid_from_member_id(
       const Gcs_member_identifier &id) override;
 
   Group_member_info::Group_member_status get_group_member_status_by_member_id(
@@ -1164,7 +1224,8 @@ class Group_member_info_manager : public Group_member_info_manager_interface {
 
   bool get_primary_member_uuid(std::string &primary_member_uuid) override;
 
-  Group_member_info *get_primary_member_info() override;
+  [[NODISCARD]] bool get_primary_member_info(
+      Group_member_info &member_info_arg) override;
 
   bool is_majority_unreachable() override;
 

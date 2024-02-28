@@ -24,6 +24,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <stdio.h>
+#include <cassert>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -336,6 +337,10 @@ class HashJoinIterator final : public RowIterator {
   int Read() override;
 
   void SetNullRowFlag(bool is_null_row) override {
+    // Don't call this after Init() but before calling Read() for the first
+    // time. Init() may have loaded a row that is (partially or fully) a null
+    // row, so resetting the null row flags is incorrect.
+    assert(!m_probe_row_read || m_state == State::END_OF_ROWS);
     m_build_input->SetNullRowFlag(is_null_row);
     m_probe_input->SetNullRowFlag(is_null_row);
   }
@@ -677,6 +682,16 @@ class HashJoinIterator final : public RowIterator {
   /// that input was empty. If so, we should process that row before reading
   /// another.
   bool m_probe_row_read{false};
+
+  /// Helper function for Init(). Read the first row from m_probe_input.
+  /// @returns 'true' if there was an error.
+  bool ReadFirstProbeRow();
+
+  /// Helper function for Init(). Build the hash table and check for empty query
+  /// results (empty build input or non-empty build input in case of degenerate
+  /// antijoin.)
+  /// @returns 'true' in case of error.
+  bool InitHashTable();
 };
 
 #endif  // SQL_ITERATORS_HASH_JOIN_ITERATOR_H_
