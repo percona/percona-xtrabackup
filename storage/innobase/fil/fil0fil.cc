@@ -11519,10 +11519,6 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
     ddl_tracker->add_renamed_table(space_id, path);
   }
 
-  if (ddl_tracker && (err == DB_PAGE_IS_BLANK || err == DB_SUCCESS)) {
-    ddl_tracker->add_table(space_id, path);
-  }
-
   if (err == DB_PAGE_IS_BLANK) {
     /* allow corrupted first page for xtrabackup, it could be just
     zero-filled page, which we'll restore from redo log later */
@@ -11582,6 +11578,9 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
     }
 
     xb::error() << "Failed to open tablespace " << space->name;
+  } else if (ddl_tracker) {
+    /* Note that we have opened and loaded the table to cache for copying */
+    ddl_tracker->add_table(space_id, path);
   }
 
   if (!srv_backup_mode || srv_close_files) {
