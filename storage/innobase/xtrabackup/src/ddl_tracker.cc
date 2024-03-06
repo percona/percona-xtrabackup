@@ -121,6 +121,30 @@ void ddl_tracker_t::add_table(const space_id_t &space_id, std::string name) {
   tables_in_backup[space_id] = name;
 }
 
+void ddl_tracker_t::add_missing_table(std::string path) {
+  Fil_path::normalize(path);
+  if (Fil_path::has_prefix(path, Fil_path::DOT_SLASH)) {
+    path.erase(0, 2);
+  }
+  missing_tables.insert(path);
+}
+
+bool ddl_tracker_t::is_missing_table(const std::string &name) {
+  if (missing_tables.count(name)) {
+    return true;
+  }
+  return false;
+}
+
+void ddl_tracker_t::add_renamed_table(const space_id_t &space_id,
+                                      std::string new_name) {
+  Fil_path::normalize(new_name);
+  if (Fil_path::has_prefix(new_name, Fil_path::DOT_SLASH)) {
+    new_name.erase(0, 2);
+  }
+  renamed_during_scan[space_id] = new_name;
+}
+
 /* ======== Data copying thread context ======== */
 
 typedef struct {
@@ -167,6 +191,16 @@ static void data_copy_thread_func(copy_thread_ctxt_t *ctxt) {
   my_thread_end();
 }
 
+/* returns .del or .ren file name starting with space_id
+  like schema/spaceid.ibd.del
+*/
+std::string ddl_tracker_t::convert_file_name(space_id_t space_id,
+                                             std::string file_name,
+                                             std::string ext) {
+  auto sep_pos = file_name.find_last_of(Fil_path::SEPARATOR);
+  return file_name.substr(0, sep_pos + 1) + std::to_string(space_id) + ext;
+}
+
 void ddl_tracker_t::handle_ddl_operations() {
   xb::info() << "DDL tracking : handling DDL operations";
 
@@ -197,7 +231,9 @@ void ddl_tracker_t::handle_ddl_operations() {
   for (auto &table : recopy_tables) {
     if (tables_in_backup.find(table) != tables_in_backup.end()) {
       if (renames.find(table) != renames.end()) {
-        backup_file_printf((renames[table].first + ".del").c_str(), "%s", "");
+        backup_file_printf(
+            convert_file_name(table, renames[table].first, ".ibd.del").c_str(),
+            "%s", "");
       }
       string name = tables_in_backup[table];
       new_tables[table] = name;
@@ -216,7 +252,15 @@ void ddl_tracker_t::handle_ddl_operations() {
       new_tables.erase(table.first);
       continue;
     }
-    backup_file_printf((table.second + ".del").c_str(), "%s", "");
+
+    /* Table not in the backup, nothing to drop, skip drop*/
+    if (tables_in_backup.find(table.first) == tables_in_backup.end()) {
+      continue;
+    }
+
+    backup_file_printf(
+        convert_file_name(table.first, table.second, ".ibd.del").c_str(), "%s",
+        "");
   }
 
   for (auto &table : renames) {
@@ -226,13 +270,28 @@ void ddl_tracker_t::handle_ddl_operations() {
     if (check_if_skip_table(table.second.first.c_str())) {
       continue;
     }
-    /* renamed new table. update new table entry to renamed table name */
-    if (new_tables.find(table.first) != new_tables.end()) {
+    /* renamed new table. update new table entry to renamed table name
+      or if table is missing and renamed, add the renamed table to the new_table
+      list. for example: 1. t1.ibd is discovered
+                   2. t1.ibd renamed to t2.ibd
+                   3. t2.ibd is opened and loaded to cache to copy
+                   4. t1.ibd is missing now
+      so we should add t2.ibd to new_tables and skip .ren file so that we don't
+      try to rename t1.ibd to t2.idb where t1.ibd is missing   */
+    if (new_tables.find(table.first) != new_tables.end() ||
+        is_missing_table(table.second.first)) {
       new_tables[table.first] = table.second.second;
       continue;
     }
-    backup_file_printf((table.second.first + ".ren").c_str(), "%s",
-                       table.second.second.c_str());
+
+    /* Table not in the backup, nothing to rename, skip rename*/
+    if (tables_in_backup.find(table.first) == tables_in_backup.end()) {
+      continue;
+    }
+
+    backup_file_printf(
+        convert_file_name(table.first, table.second.first, ".ibd.ren").c_str(),
+        "%s", table.second.second.c_str());
   }
 
   fil_close_all_files();

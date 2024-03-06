@@ -35,6 +35,11 @@ class ddl_tracker_t {
   space_id_to_name_t drops;
   /* For DDL operation found in redo log,  */
   std::unordered_map<space_id_t, std::pair<std::string, std::string>> renames;
+  /** Tables that have been deleted between discovery and file open */
+  std::unordered_set<std::string> missing_tables;
+  /** Tables that have been renamed during scan. Tablespace_id and new table
+   *  name */
+  space_id_to_name_t renamed_during_scan;
 
  public:
   /** Add a new table in the DDL tracker table list.
@@ -52,5 +57,17 @@ class ddl_tracker_t {
                       ulint len, lsn_t start_lsn);
   /** Function responsible to generate files based on DDL operations */
   void handle_ddl_operations();
+  /** Note that a table has been deleted between disovery and file open
+  @param[in]  path  missing table name with path. */
+  void add_missing_table(std::string path);
+  /** Check if table is in missing list
+  @param[in]  name  tablespace name */
+  bool is_missing_table(const std::string &name);
+  std::string convert_file_name(space_id_t space_id, std::string file_name,
+                                std::string ext);
+  /** Note that a table was renamed during scan.
+   @param[in]	space_id	tablespace identifier
+   @param[in]	new_name  tablespace new name */
+  void add_renamed_table(const space_id_t &space_id, std::string new_name);
 };
 #endif  // DDL_TRACKER_H
