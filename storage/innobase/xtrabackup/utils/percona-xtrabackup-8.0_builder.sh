@@ -241,7 +241,7 @@ install_deps() {
             yum-config-manager --enable ol9_codeready_builder
             yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
         else
-            add_percona_yum_repo
+            # add_percona_yum_repo
         fi
         percona-release enable tools testing
         if [ ${RHEL} = 8 -o ${RHEL} = 9 ]; then
@@ -253,7 +253,8 @@ install_deps() {
                 PKGLIST+=" rsync procps-ng-devel python3-sphinx"
             else
                 yum-config-manager --enable powertools
-                wget https://jenkins.percona.com/downloads/rpm/procps-ng-devel-3.3.15-6.el8.x86_64.rpm
+                #wget https://jenkins.percona.com/downloads/rpm/procps-ng-devel-3.3.15-6.el8.x86_64.rpm
+                wget --no-check-certificate https://downloads.percona.com/downloads/TESTING/issue-CUSTO83/procps-ng-devel-3.3.15-6.el8.x86_64.rpm
                 yum -y install ./procps-ng-devel-3.3.15-6.el8.x86_64.rpm
                 rm procps-ng-devel-3.3.15-6.el8.x86_64.rpm
                 PKGLIST+=" libarchive"
@@ -272,6 +273,8 @@ install_deps() {
                     sleep 1
                 done
                 yum -y remove centos-release-stream
+                scl enable devtoolset-10 bash
+                gcc --version
             fi
         else
             until yum -y install epel-release centos-release-scl; do
