@@ -240,7 +240,7 @@ install_deps() {
             yum-config-manager --enable ol9_distro_builder
             yum-config-manager --enable ol9_codeready_builder
             yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
-        else
+        #else
             # add_percona_yum_repo
         fi
         percona-release enable tools testing
