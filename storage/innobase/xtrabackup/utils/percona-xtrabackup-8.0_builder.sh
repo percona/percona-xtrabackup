@@ -328,6 +328,9 @@ install_deps() {
         if [ "${OS_NAME}" == "bionic" ]; then
             PKGLIST+=" gcc-8 g++-8"
 	fi
+        if [ "${OS_NAME}" == "focal" ]; then
+            PKGLIST+=" gcc-10 g++-10"
+        fi
         if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" -o "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "jammy" ]; then
             PKGLIST+=" python3-sphinx python3-docutils"
         else
@@ -339,6 +342,9 @@ install_deps() {
             echo "waiting"
         done
 
+        if [ "${OS_NAME}" == "focal" ]; then
+            update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100 --slave /usr/bin/g++ g++ /usr/bin/g++-10
+        fi
     fi
     return;
 }
