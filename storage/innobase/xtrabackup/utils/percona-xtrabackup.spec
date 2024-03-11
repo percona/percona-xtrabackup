@@ -32,7 +32,7 @@ Source:         percona-xtrabackup-%{version}%{xb_version_extra}.tar.gz
 
 BuildRequires:  %{cmake_bin}, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel, libev-devel openssl-devel
 BuildRequires:  libcurl-devel
-Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup, percona-xtrabackup-24, percona-xtrabackup-80
+Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup, percona-xtrabackup-24, percona-xtrabackup-80, percona-xtrabackup-81, percona-xtrabackup-82
 Requires:       perl(DBD::mysql), rsync, zstd
 Requires:	perl(Digest::MD5)
 BuildRoot:      %{_tmppath}/%{name}-%{version}%{xb_version_extra}-root

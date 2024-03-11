@@ -246,11 +246,11 @@ install_deps() {
         percona-release enable tools testing
         if [ ${RHEL} = 8 -o ${RHEL} = 9 ]; then
             PKGLIST+=" binutils-devel python3-pip python3-setuptools"
-            PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make gcc"
-            PKGLIST+=" rpm-build libgcrypt-devel ncurses-devel readline-devel openssl-devel gcc-c++"
+            PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make"
+            PKGLIST+=" rpm-build libgcrypt-devel ncurses-devel readline-devel openssl-devel"
             PKGLIST+=" vim-common rpmlint patchelf python3-wheel libudev-devel"
             if [ $RHEL = 9 ]; then
-                PKGLIST+=" rsync procps-ng-devel python3-sphinx"
+                PKGLIST+=" rsync procps-ng-devel python3-sphinx gcc gcc-c++"
             else
                 yum-config-manager --enable powertools
                 #wget https://jenkins.percona.com/downloads/rpm/procps-ng-devel-3.3.15-6.el8.x86_64.rpm
@@ -267,13 +267,12 @@ install_deps() {
                 DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-gcc-c++ gcc-toolset-10-binutils"
                 DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-valgrind gcc-toolset-10-valgrind-devel gcc-toolset-10-libatomic-devel"
                 DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-libasan-devel gcc-toolset-10-libubsan-devel gcc-toolset-10-annobin"
-                yum -y install centos-release-stream
                 until yum -y install ${DEVTOOLSET10_PKGLIST}; do
                     echo "waiting"
                     sleep 1
                 done
-                yum -y remove centos-release-stream
-                scl enable devtoolset-10 bash
+                update-alternatives --install /usr/bin/gcc gcc /opt/rh/gcc-toolset-10/root/usr/bin/gcc 10
+                update-alternatives --install /usr/bin/g++ g++ /opt/rh/gcc-toolset-10/root/usr/bin/g++ 10
                 gcc --version
             fi
         else
@@ -346,7 +345,9 @@ install_deps() {
         done
 
         if [ "${OS_NAME}" == "focal" ]; then
-            update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100 --slave /usr/bin/g++ g++ /usr/bin/g++-10
+            update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 10
+            update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 10
+            gcc --version
         fi
     fi
     return;
@@ -511,7 +512,7 @@ build_source_deb(){
 
     echo "DEB_RELEASE=${DEB_RELEASE}" >> ${CURDIR}/percona-xtrabackup-8.0.properties
 
-    NEWTAR=${NAME}-81_${VERSION}.orig.tar.gz
+    NEWTAR=${NAME}-83_${VERSION}.orig.tar.gz
     mv ${TARFILE} ${NEWTAR}
 
     tar xzf ${NEWTAR}
