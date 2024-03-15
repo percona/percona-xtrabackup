@@ -236,14 +236,20 @@ install_deps() {
     then
         yum -y install git wget yum-utils curl
         yum install -y https://repo.percona.com/yum/percona-release-latest.noarch.rpm
-        if [ $RHEL = 9 ]; then
-            yum-config-manager --enable ol9_distro_builder
-            yum-config-manager --enable ol9_codeready_builder
-            yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
+        if [ x"$ARCH" = "xx86_64" ]; then
+            if [ $RHEL = 9 ]; then
+                yum-config-manager --enable ol9_distro_builder
+                yum-config-manager --enable ol9_codeready_builder
+                yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
+            else
+                add_percona_yum_repo
+                percona-release enable tools testing
+            fi
         else
-            add_percona_yum_repo
+            yum-config-manager --enable ol"${RHEL}"_codeready_builder
+            yum -y install epel-release
         fi
-        percona-release enable tools testing
+
         if [ ${RHEL} = 8 -o ${RHEL} = 9 ]; then
             PKGLIST+=" binutils-devel python3-pip python3-setuptools"
             PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make gcc"
@@ -252,12 +258,14 @@ install_deps() {
             if [ $RHEL = 9 ]; then
                 PKGLIST+=" rsync procps-ng-devel python3-sphinx"
             else
-                yum-config-manager --enable powertools
-                wget https://jenkins.percona.com/downloads/rpm/procps-ng-devel-3.3.15-6.el8.x86_64.rpm
-                yum -y install ./procps-ng-devel-3.3.15-6.el8.x86_64.rpm
-                rm procps-ng-devel-3.3.15-6.el8.x86_64.rpm
-                PKGLIST+=" libarchive"
-            fi
+                if [ x"$ARCH" = "xx86_64" ]; then
+                    yum-config-manager --enable powertools
+                    yum-config-manager --enable ol8_codeready_builder
+                    PKGLIST+=" libarchive procps-ng-devel"
+                else
+                    PKGLIST+=" rsync python3-sphinx libarchive procps-ng-devel"
+                fi
+	    fi
             until yum -y install ${PKGLIST}; do
                 echo "waiting"
                 sleep 1
@@ -266,12 +274,22 @@ install_deps() {
                 DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-gcc-c++ gcc-toolset-10-binutils"
                 DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-valgrind gcc-toolset-10-valgrind-devel gcc-toolset-10-libatomic-devel"
                 DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-libasan-devel gcc-toolset-10-libubsan-devel gcc-toolset-10-annobin"
-                yum -y install centos-release-stream
-                until yum -y install ${DEVTOOLSET10_PKGLIST}; do
-                    echo "waiting"
-                    sleep 1
-                done
-                yum -y remove centos-release-stream
+                DEVTOOLSET12_PKGLIST+=" gcc-toolset-12-gcc-c++ gcc-toolset-12-binutils"
+                DEVTOOLSET12_PKGLIST+=" gcc-toolset-12-libasan-devel gcc-toolset-12-libubsan-devel gcc-toolset-12-annobin-annocheck gcc-toolset-12-annobin-plugin-gcc"
+                if [ x"$ARCH" = "xx86_64" ]; then
+                    yum -y install centos-release-stream
+                    until yum -y install ${DEVTOOLSET10_PKGLIST}; do
+                        echo "waiting"
+                        sleep 1
+                    done
+                    yum -y remove centos-release-stream
+                else
+                    until yum -y install ${DEVTOOLSET12_PKGLIST}; do
+                        echo "waiting"
+                        sleep 1
+                    done
+                    source /opt/rh/gcc-toolset-12/enable
+                fi
             fi
         else
             until yum -y install epel-release centos-release-scl; do
