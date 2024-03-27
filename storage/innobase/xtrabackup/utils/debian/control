@@ -1,4 +1,4 @@
-Source: percona-xtrabackup-81
+Source: percona-xtrabackup-83
 Section: database
 Priority: extra
 Maintainer: Percona Development Team <opensource-dev@percona.com>
@@ -25,11 +25,11 @@ Build-Depends: automake,
 Standards-Version: 3.9.5
 Homepage: http://www.percona.com/software/percona-xtrabackup
 
-Package: percona-xtrabackup-81
+Package: percona-xtrabackup-83
 Architecture: any
 Depends: libdbd-mysql-perl, libcurl4-openssl-dev, rsync, zstd, ${misc:Depends}, ${shlibs:Depends}
 Provides: xtrabackup
-Conflicts: percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup, percona-xtrabackup-24, percona-xtrabackup-80
+Conflicts: percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup, percona-xtrabackup-24, percona-xtrabackup-80, percona-xtrabackup-81, percona-xtrabackup-82
 Breaks: xtrabackup (<< 2.0.0~)
 Replaces: xtrabackup (<< 2.0.0~)
 Enhances: mysql-server
@@ -39,17 +39,17 @@ Description: Open source backup tool for InnoDB and XtraDB
  InnoDB, XtraDB and MyISAM tables on MySQL/Percona Server/MariaDB
  servers, and has many advanced features.
 
-Package: percona-xtrabackup-dbg-81
+Package: percona-xtrabackup-dbg-83
 Section: debug
 Architecture: any
-Depends: percona-xtrabackup-81 (= ${binary:Version}), ${misc:Depends}
+Depends: percona-xtrabackup-83 (= ${binary:Version}), ${misc:Depends}
 Description: Debug symbols for Percona XtraBackup
  Debug symbols for the binaries in percona-xtrabackup. Install this
  package if you need to run any of those with gdb.
 
-Package: percona-xtrabackup-test-81
+Package: percona-xtrabackup-test-83
 Architecture: any
-Depends: mysql-client, percona-xtrabackup-81, ${misc:Depends}
+Depends: mysql-client, percona-xtrabackup-83, ${misc:Depends}
 Description: Test suite for Percona XtraBackup
  Test suite for Percona XtraBackup. Install this package if you intend
  to run XtraBackup's test suite.
