@@ -1213,6 +1213,7 @@ void Redo_Log_Data_Manager::copy_func() {
       xb::info() << ">> log scanned up to (" << reader.get_scanned_lsn() << ")";
 
       debug_sync_point("xtrabackup_copy_logfile_pause");
+      debug_sync_thread("xtrabackup_copy_logfile_pause");
 
       os_event_reset(event);
       os_event_wait_time_low(event, std::chrono::milliseconds{copy_interval},
