@@ -28,6 +28,30 @@ function xtrabackup()
   fi
 }
 
+function xtrabackup_background() {
+  # Check if XB_ERROR_LOG is set
+  if [ -z "${XB_ERROR_LOG+x}" ]; then
+    echo "Error: XB_ERROR_LOG variable is not set. Please set XB_ERROR_LOG to the desired error log file path." >&2
+    return 1
+  fi
+
+  # Check if the number of arguments passed is correct
+  if [ $# -lt 1 ]; then
+    echo "Usage: xtrabackup_background [args...]" >&2
+    return 1
+  fi
+
+  local args="$@"  # Combine all arguments to form the xtrabackup command
+
+  # Execute xtrabackup in the background using the run_cmd_background function and store the PID in XB_PID
+  run_cmd_background $XB_BIN $XB_ARGS $args
+  XB_PID=$!
+
+  # Optionally, return the PID of the background process
+  echo $XB_PID
+}
+
+
 function rr_xtrabackup()
 {
   run_cmd rr $XB_BIN $XB_ARGS "$@"
@@ -133,6 +157,32 @@ function run_cmd_expect_failure()
   then
       die "===> `basename $1` succeeded when it was expected to fail"
   fi
+}
+
+function run_cmd_background() {
+  # Check if XB_ERROR_LOG is set
+  if [ -z "${XB_ERROR_LOG+x}" ]; then
+    echo "Error: XB_ERROR_LOG variable is not set. Please set XB_ERROR_LOG to the desired error log file path." >&2
+    return 1
+  fi
+
+  # Check if the number of arguments passed is correct
+  if [ $# -lt 1 ]; then
+    echo "Usage: run_cmd_background <command> [args...]" >&2
+    return 1
+  fi
+
+  local cmd="$@"  # Combine all arguments to form the command
+
+  # Execute the command in the background, piping stdout to tee to duplicate the output to both the error log file and stdout
+  # Dont use PIPE here as the PID will be pid of pipe
+  $cmd > >(tee -a "$XB_ERROR_LOG") 2>&1 &
+
+  # Capture the PID of the background process and store it in JOB_ID
+  CMD_PID=$!
+
+  # Optionally, return the PID of the command
+  echo $CMD_PID
 }
 
 function load_sakila()
@@ -1190,6 +1240,13 @@ function require_debug_sync()
     fi
 }
 
+function require_debug_sync_thread()
+{
+    if ! $XB_BIN --help 2>&1 | grep -q debug-sync-thread; then
+        skip_test "Requires --debug-sync-thread support"
+    fi
+}
+
 ##############################################################################
 # Execute a multi-row INSERT into a specified table.
 #
@@ -1460,6 +1517,54 @@ function wait_for_file_to_generated() {
     i=$((i+1))
     echo "Waited $i seconds for $file to be created"
   done
+}
+
+function wait_for_debug_sync_thread()
+{
+   # Check if the number of arguments passed is correct
+  if [ $# -lt 1 ]; then
+    echo "Usage: wait_for_debug_sync_thread <debug_sync_point_name>"
+    return 1
+  fi
+
+  local sync_point=$1
+  if [ -z "${XB_ERROR_LOG+x}" ]; then
+    echo "Error: XB_ERROR_LOG variable is not set. Please set XB_ERROR_LOG to the desired error log file path." >&2
+    return 1
+  fi
+
+  while ! egrep -q "DEBUG_SYNC_THREAD: sleeping 1sec.  Resume this thread by deleting file.*$sync_point.*" ${XB_ERROR_LOG} ; do
+    sleep 1
+    vlog "waiting for debug_sync_thread $sync_point in $XB_ERROR_LOG"
+  done
+}
+
+function resume_debug_sync_thread()
+{
+   # Check if the number of arguments passed is correct
+  if [ $# -lt 2 ]; then
+    echo "Usage: resume_debug_sync_thread <debug_sync_point_name> <backup_dir>"
+    return 1
+  fi
+
+  local sync_point=$1
+  local backup_dir=$2
+
+  if [ -z "${XB_ERROR_LOG+x}" ]; then
+    echo "Error: XB_ERROR_LOG variable is not set. Please set XB_ERROR_LOG to the desired error log file path." >&2
+    return 1
+  fi
+
+  echo "Resume from sync point: $sync_point"
+  rm  $backup_dir/"$sync_point"_*
+
+  echo "wait for resumed signal of $sync_point"
+
+  while ! egrep -q "DEBUG_SYNC_THREAD: thread .* resumed from sync point: $sync_point" ${XB_ERROR_LOG} ; do
+   sleep 1
+   vlog "waiting for debug_sync_thread point resume $sync_point in pxb $XB_ERROR_LOG"
+  done
+
 }
 
 # To avoid unbound variable error when no server have been started

@@ -103,6 +103,11 @@ const std::string KEYRING_NOT_LOADED =
 @param[in]	name	sync point name */
 void debug_sync_point(const char *name);
 
+/** Pause xtrabackup thread and wait for resume.
+Thread can be resumed by deleting the sync_point filename
+@param[in]	name	sync point name */
+void debug_sync_thread(const char *name);
+
 extern char *xtrabackup_debug_sync;
 
 #endif

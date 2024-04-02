@@ -364,6 +364,10 @@ it every INNOBASE_WAKE_INTERVAL'th step. */
 ulong innobase_active_counter = 0;
 
 char *xtrabackup_debug_sync = NULL;
+#ifdef UNIV_DEBUG
+char *xtrabackup_debug_sync_thread = NULL;
+static std::string debug_sync_file_content;
+#endif /* UNIV_DEBUG */
 static const char *dbug_setting = nullptr;
 
 bool xtrabackup_incremental_force_scan = false;
@@ -685,6 +689,9 @@ enum options_xtrabackup {
   OPT_INNODB_REDO_LOG_ENCRYPT,
   OPT_INNODB_UNDO_LOG_ENCRYPT,
   OPT_XTRA_DEBUG_SYNC,
+#ifdef UNIV_DEBUG
+  OPT_XTRA_DEBUG_SYNC_THREAD,
+#endif /* UNIV_DEBUG */
   OPT_XTRA_COMPACT,
   OPT_XTRA_REBUILD_INDEXES,
   OPT_XTRA_REBUILD_THREADS,
@@ -1559,6 +1566,18 @@ Disable with --skip-innodb-checksums.",
      "Debug sync point. This is only used by the xtrabackup test suite",
      (G_PTR *)&xtrabackup_debug_sync, (G_PTR *)&xtrabackup_debug_sync, 0,
      GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+#ifdef UNIV_DEBUG
+    {"debug-sync-thread", OPT_XTRA_DEBUG_SYNC_THREAD,
+     "Thread sleeps at sync point and creates a filename with the "
+     "sync_point_name_<thread_number>. There can be multiple threads"
+     "Delete the file to resume the thread. This is only used by the "
+     "xtrabackup test suite",
+     (G_PTR *)&xtrabackup_debug_sync_thread,
+     (G_PTR *)&xtrabackup_debug_sync_thread, 0, GET_STR, REQUIRED_ARG, 0, 0, 0,
+     0, 0, 0},
+#endif /* UNIV_DEBUG */
+
 #endif
 
 #ifndef NDEBUG
@@ -1658,6 +1677,37 @@ static void sigcont_handler(int sig);
 static void sigcont_handler(int sig __attribute__((unused))) {
   debug_sync_resumed = 1;
 }
+
+#ifdef UNIV_DEBUG
+static void sigusr1_handler(int sig __attribute__((unused))) {
+  xb::info() << "SIGUSR1 received. Reading debug_sync point from "
+                "xb_debug_sync_thread file in backup directory";
+
+  std::string debug_sync_file =
+      std::string(xtrabackup_target_dir) + "/xb_debug_sync_thread";
+  std::ifstream ifs(debug_sync_file);
+
+  if (ifs.fail()) {
+    xb::warn() << "SIGUSR1 signal sent but the xb_debug_sync_thread file with"
+                  "a debug sync point name in it is not present at "
+               << xtrabackup_target_dir;
+    return;
+  }
+
+  debug_sync_file_content.assign((std::istreambuf_iterator<char>(ifs)),
+                                 (std::istreambuf_iterator<char>()));
+  debug_sync_file_content.erase(
+      std::remove(debug_sync_file_content.begin(),
+                  debug_sync_file_content.end(), '\n'),
+      debug_sync_file_content.cend());
+  *const_cast<const char **>(&xtrabackup_debug_sync_thread) =
+      debug_sync_file_content.c_str();
+
+  xb::info() << "DEBUG_SYNC_THREAD: Deleting  file" << debug_sync_file;
+  os_file_delete(0, debug_sync_file.c_str());
+}
+#endif /* UNIV_DEBUG */
+
 #endif
 
 void debug_sync_point(const char *name) {
@@ -1700,6 +1750,52 @@ void debug_sync_point(const char *name) {
   my_delete(pid_path, MYF(MY_WME));
 #endif
 }
+
+#ifdef UNIV_DEBUG
+void debug_sync_thread(const char *name) {
+#ifndef __WIN__
+  FILE *fp;
+  char pid_path[FN_REFLEN];
+
+  if (xtrabackup_debug_sync_thread == nullptr) {
+    return;
+  }
+
+  if (strcmp(xtrabackup_debug_sync_thread, name)) {
+    return;
+  }
+
+  auto thread_id = std::hash<std::thread::id>{}(std::this_thread::get_id());
+
+  snprintf(pid_path, sizeof(pid_path), "%s/%s_%lu", xtrabackup_target_dir, name,
+           thread_id);
+
+  fp = fopen(pid_path, "w");
+  if (fp == NULL) {
+    xb::error() << "cannot open " << pid_path;
+    exit(EXIT_FAILURE);
+  }
+
+  fclose(fp);
+
+  while (1) {
+    xb::info() << "DEBUG_SYNC_THREAD: sleeping 1sec.  Resume this thread by "
+                  "deleting file "
+               << pid_path;
+    sleep(1);
+    bool exists = os_file_exists(pid_path);
+    if (!exists) break;
+  }
+
+  xb::info() << "DEBUG_SYNC_THREAD: thread " << thread_id
+             << " resumed from sync point: " << name;
+
+  *const_cast<const char **>(&xtrabackup_debug_sync_thread) = nullptr;
+
+#endif
+}
+
+#endif /* UNIV_DEBUG */
 
 static const char *xb_client_default_groups[] = {"xtrabackup", "client", 0, 0,
                                                  0};
@@ -4220,6 +4316,8 @@ void xtrabackup_backup_func(void) {
     xb::error() << "datafiles_iter_new() failed.";
     exit(EXIT_FAILURE);
   }
+
+  debug_sync_thread("before_file_copy");
 
   /* Create data copying threads */
   data_threads = (data_thread_ctxt_t *)ut::malloc_withkey(
@@ -7605,6 +7703,9 @@ int main(int argc, char **argv) {
 
 #ifndef __WIN__
   signal(SIGCONT, sigcont_handler);
+#ifdef UNIV_DEBUG
+  signal(SIGUSR1, sigusr1_handler);
+#endif /* UNIV_DEBUG */
 #endif
 
   /* --backup */
