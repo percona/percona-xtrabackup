@@ -10912,6 +10912,12 @@ const byte *fil_tablespace_redo_delete(const byte *ptr, const byte *end,
     return nullptr;
   }
 
+  const auto result =
+      fil_system->get_scanned_filename_by_space_id(page_id.space());
+
+  recv_sys->deleted.insert(page_id.space());
+  recv_sys->missing_ids.erase(page_id.space());
+
   if (parse_only) {
     return ptr;
   }
@@ -10942,12 +10948,6 @@ const byte *fil_tablespace_redo_delete(const byte *ptr, const byte *end,
       ut_a(err == DB_SUCCESS);
     }
   }
-
-  const auto result =
-      fil_system->get_scanned_filename_by_space_id(page_id.space());
-
-  recv_sys->deleted.insert(page_id.space());
-  recv_sys->missing_ids.erase(page_id.space());
 
   if (result.second == nullptr) {
     /* No files map to this tablespace ID. The drop must
