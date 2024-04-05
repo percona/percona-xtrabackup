@@ -367,3 +367,29 @@ void ddl_tracker_t::handle_ddl_operations() {
   datafiles_iter_free(it);
   xb::info() << "DDL tracking :  Finished handling DDL operations";
 }
+
+/** This map is required during incremental backup prepare becuase the
+tablename can change between full and incremental backups. For reduced
+lock, during prepare, we process the .del files based on space_id. So we
+delete the right tablespace but the delta files are not. For example, consider
+this scenario. backup has t1.ibd with space_id 10 <rename t1 to t2>
+incremental backup will have t2.ibd.delta and t2.ibd.meta
+and if there is drop table t2, with reduced lock we will have 10.ibd.del
+
+Later when processing incremental backup, we process the 10.ibd.del. this
+gives us the tablespace t1.ibd. We delete it. Additionally we look for
+t1.ibd.delta and t1.ibd.meta and delete them. But in the incremental backup,
+we have t2.ibd.delta and t2.ibd.meta.
+
+This map helps us to get the right meta and delta files for a given space id */
+meta_map_t meta_map;
+
+void insert_into_meta_map(space_id_t space_id, const std::string &meta_path) {
+  meta_map.insert({space_id, meta_path});
+}
+
+std::tuple<bool, std::string> is_in_meta_map(space_id_t space_id) {
+  auto it = meta_map.find(space_id);
+  bool exists = it != meta_map.end();
+  return {exists, exists ? it->second : ""};
+}

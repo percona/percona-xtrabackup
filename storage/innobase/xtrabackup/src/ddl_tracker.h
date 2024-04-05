@@ -23,6 +23,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "log0types.h"
 #include "mtr0types.h"
 typedef std::unordered_map<space_id_t, std::string> space_id_to_name_t;
+typedef std::unordered_map<space_id_t, std::string> meta_map_t;
+
+extern meta_map_t meta_map;
 
 class ddl_tracker_t {
   /** List of all tables in the backup */
@@ -92,4 +95,17 @@ class ddl_tracker_t {
    @param[in]	new_name  tablespace new name */
   void add_renamed_table(const space_id_t &space_id, std::string new_name);
 };
+
+/** Insert into meta files map. This map is later used to delete the right
+.meta and .delta files for a given space_id.del file
+@param[in] space_id Tablespace id
+@param[in] meta_path Meta file path in the incremental backup directory */
+void insert_into_meta_map(space_id_t space_id, const std::string &meta_path);
+
+/** Check if there is a meta (.meta file) for given tablespace id
+@param[in] space_id Tablespace id
+@return <true, path> if a meta file exists for a given space_id,
+else return <false, ""> if it doesnt exist */
+std::tuple<bool, std::string> is_in_meta_map(space_id_t space_id);
+
 #endif  // DDL_TRACKER_H

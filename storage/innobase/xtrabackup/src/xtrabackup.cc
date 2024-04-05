@@ -5530,6 +5530,40 @@ error:
   return false;
 }
 
+/************************************************************************
+Scan .meta files and build std::unordered_map<space_id, meta_path>.
+This map is later used to delete the .delta and .meta file for a dropped
+tablespace (ie. when processing the .del entries in reduced lock)
+@return true on success */
+static bool xtrabackup_scan_meta(
+    const datadir_entry_t &entry, /*!<in: datadir entry */
+    void * /*data*/) {
+  const std::string &meta_path = entry.path;
+  xb_delta_info_t info;
+
+  if (entry.is_empty_dir) {
+    return true;
+  }
+
+  IORequest read_request(IORequest::READ);
+  IORequest write_request(IORequest::WRITE | IORequest::PUNCH_HOLE);
+
+  ut_a(xtrabackup_incremental);
+
+  if (!xb_read_delta_metadata(meta_path.c_str(), &info)) {
+    goto error;
+  }
+
+  insert_into_meta_map(info.space_id, meta_path);
+
+  return true;
+
+error:
+  xb::error() << "xtrabackup_scan_meta(): failed to read .meta file "
+              << entry.path;
+  return false;
+}
+
 static void delete_force(const std::string &path) {
   if (access(path.c_str(), R_OK) == 0) {
     if (my_delete(path.c_str(), MYF(MY_WME))) {
@@ -5750,10 +5784,17 @@ static bool prepare_handle_del_files(
 
     os_file_delete(0, del_file.c_str());
     if (xtrabackup_incremental) {
-      std::string del_path =
-          entry.datadir + OS_PATH_SEPARATOR + std::string{space_name};
-      delete_force(del_path + ".ibd.delta");
-      delete_force(del_path + ".ibd.meta");
+      auto [exists, meta_file] = is_in_meta_map(fil_space->id);
+      if (exists) {
+        // create .delta path from .meta
+        std::string delta_file =
+            meta_file.substr(0, strlen(meta_file.c_str()) - strlen(".meta")) +
+            ".delta";
+        xb::info() << "Deleting incremental meta file: " << meta_file;
+        delete_force(meta_file);
+        xb::info() << "Deleting incremental delta file: " << delta_file;
+        delete_force(delta_file);
+      }
     }
     return true;
   } else {
@@ -6937,6 +6978,17 @@ skip_check:
     xb_data_files_close();
     goto error_cleanup;
   }
+
+  if (xtrabackup_incremental_dir) {
+    // Build meta map
+    if (!xb_process_datadir(
+            xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".",
+            ".meta", xtrabackup_scan_meta, NULL)) {
+      xb_data_files_close();
+      goto error_cleanup;
+    }
+  }
+
   if (!xb_process_datadir(
           xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".", ".del",
           prepare_handle_del_files, NULL)) {
