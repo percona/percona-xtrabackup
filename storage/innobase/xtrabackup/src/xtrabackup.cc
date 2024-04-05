@@ -3254,7 +3254,9 @@ bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n,
     }
   }
 
-  if (res == XB_FIL_CUR_ERROR) {
+  if (res == XB_FIL_CUR_ERROR ||
+      (res == XB_FIL_CUR_CORRUPTED &&
+       (ddl_tracker == nullptr || opt_lock_ddl != LOCK_DDL_REDUCED))) {
     goto error;
   }
 
@@ -3278,6 +3280,13 @@ bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n,
   if (write_filter && write_filter->deinit) {
     write_filter->deinit(&write_filt_ctxt);
   }
+
+  if (res == XB_FIL_CUR_CORRUPTED) {
+    if (ddl_tracker != nullptr) {
+      ddl_tracker->add_corrupted_tablespace(cursor.space_id, cursor.node->name);
+    }
+  }
+
   return (rc);
 
 error:
@@ -5665,6 +5674,39 @@ static bool prepare_handle_ren_files(
   return false;
 }
 
+/** Handle .corrupt files. These files should be removed before we do *.ibd scan
+@return true on success */
+static bool prepare_handle_corrupt_files(
+    const datadir_entry_t &entry, /*!<in: datadir entry */
+    void * /*data*/) {
+  if (entry.is_empty_dir) return true;
+
+  std::string corrupt_path = entry.path;
+  Fil_path::normalize(corrupt_path);
+  // trim .corrupt
+  std::string ext = ".corrupt";
+  std::string source_path =
+      corrupt_path.substr(0, corrupt_path.length() - ext.length());
+
+  if (xtrabackup_incremental) {
+    std::string delta_file = source_path + ".delta";
+    xb::info() << "prepare_handle_corrupt_files: deleting  " << delta_file;
+    os_file_delete_if_exists_func(delta_file.c_str(), nullptr);
+
+    std::string meta_file = source_path + ".meta";
+    xb::info() << "prepare_handle_corrupt_files: deleting  " << meta_file;
+    os_file_delete_if_exists_func(meta_file.c_str(), nullptr);
+  } else {
+    xb::info() << "prepare_handle_corrupt_files: deleting  " << source_path;
+    os_file_delete_if_exists_func(source_path.c_str(), nullptr);
+  }
+
+  // delete the .corrupt file, we don't need it anymore
+  os_file_delete_if_exists_func(corrupt_path.c_str(), nullptr);
+
+  return true;
+}
+
 /**
 Handle DDL for deleted files
 example input: test/10.ibd.del file
@@ -6871,6 +6913,13 @@ skip_check:
   }
 
   xb_normalize_init_values();
+
+  if (!xb_process_datadir(
+          xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".",
+          ".corrupt", prepare_handle_corrupt_files, NULL)) {
+    xb_data_files_close();
+    goto error_cleanup;
+  }
 
   Tablespace_map::instance().deserialize("./");
 

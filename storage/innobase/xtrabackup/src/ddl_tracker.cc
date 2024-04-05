@@ -96,12 +96,12 @@ void ddl_tracker_t::backup_file_op(uint32_t space_id, mlog_id_t type,
                  << " Name: " << new_space_name;
       break;
     case MLOG_INDEX_LOAD:
-      recopy_tables.insert(space_id);
+      add_to_recopy_tables(space_id);
       xb::info() << "DDL tracking : LSN: " << start_lsn
                  << " direct write on table ID: " << space_id;
       break;
     case MLOG_WRITE_STRING:
-      recopy_tables.insert(space_id);
+      add_to_recopy_tables(space_id);
       xb::info() << "DDL tracking :  LSN: " << start_lsn
                  << " encryption operation on table ID: " << space_id;
       break;
@@ -119,6 +119,18 @@ void ddl_tracker_t::add_table(const space_id_t &space_id, std::string name) {
     name.erase(0, 2);
   }
   tables_in_backup[space_id] = name;
+}
+
+void ddl_tracker_t::add_corrupted_tablespace(const space_id_t space_id,
+                                             const std::string &path) {
+  std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
+
+  corrupted_tablespaces[space_id] = path;
+}
+
+void ddl_tracker_t::add_to_recopy_tables(space_id_t space_id) {
+  std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
+  recopy_tables.insert(space_id);
 }
 
 void ddl_tracker_t::add_missing_table(std::string path) {
@@ -205,12 +217,19 @@ void ddl_tracker_t::handle_ddl_operations() {
   xb::info() << "DDL tracking : handling DDL operations";
 
   if (new_tables.empty() && renames.empty() && drops.empty() &&
-      recopy_tables.empty()) {
+      recopy_tables.empty() && corrupted_tablespaces.empty()) {
     xb::info()
         << "DDL tracking : Finished handling DDL operations - No changes";
     return;
   }
   dberr_t err;
+
+  for (auto &tablespace : corrupted_tablespaces) {
+    /* Create .corrupt file extension with the filename. Prepare should delete
+    the corresponding .ibd, before doing *.ibd scan */
+    std::string &path = tablespace.second.append(".corrupt");
+    backup_file_printf(path.c_str(), "%s", "");
+  }
 
   /* Some tables might get to the new list if the DDL happen in between
    * redo_mgr.start and xb_load_tablespaces. This causes we ending up with two

@@ -41,11 +41,33 @@ class ddl_tracker_t {
    *  name */
   space_id_to_name_t renamed_during_scan;
 
+ private:
+  /** Tables that cannot be decrypted during backup because of encryption
+  changes. Copy threads that cannot decrypt page, considers them as corrupted
+  page. Can happen only on general tablespaces and mysql.ibd */
+  std::unordered_map<space_id_t, std::string> corrupted_tablespaces;
+  /** Multiple copy threads can add entries to corrupted_tablespaces and
+  recopy_tables concurrently */
+  std::mutex m_ddl_tracker_mutex;
+
  public:
   /** Add a new table in the DDL tracker table list.
    @param[in]	space_id	tablespace identifier
    @param[in]	name      tablespace name */
   void add_table(const space_id_t &space_id, std::string name);
+
+  /** Add a table to the corrupted tablespace list. The list is later
+  converted to  tablespacename.ibd.corrupt files on disk
+  @param[in] space_id  Tablespace id
+  @param[in] path      Tablespace path */
+  void add_corrupted_tablespace(const space_id_t space_id,
+                                const std::string &path);
+
+  /** Add a table to the recopy list. These tables are
+  1. had ADD INDEX while the backup is in progress
+  2. tablespace encryption change from 'y' to 'n' or viceversa
+  @param[in] space_id Tablespace id  */
+  void add_to_recopy_tables(space_id_t space_id);
 
   /** Report an operation to create, delete, or rename a file during backup.
   @param[in]	space_id	tablespace identifier
