@@ -2389,3 +2389,5 @@ void check_dump_innodb_buffer_pool(MYSQL *connection) {
     xb_mysql_query(mysql_connection, change_bp_dump_pct_query, false);
   }
 }
+
+bool is_server_locked() { return (tables_locked || instance_locked); }

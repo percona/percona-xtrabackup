@@ -113,4 +113,7 @@ void debug_sync_thread(const char *name);
 
 extern char *xtrabackup_debug_sync;
 
+/** @return true if xtrabackup has locked Server with LOCK INSTANCE FOR BACKP or
+LOCK TABLES FOR BACKUP */
+bool is_server_locked();
 #endif

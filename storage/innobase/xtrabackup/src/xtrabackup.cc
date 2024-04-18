@@ -1686,6 +1686,7 @@ static int debug_sync_resumed;
 static void sigcont_handler(int sig);
 
 static void sigcont_handler(int sig __attribute__((unused))) {
+  *const_cast<const char **>(&xtrabackup_debug_sync) = "";
   debug_sync_resumed = 1;
 }
 
