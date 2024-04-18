@@ -91,6 +91,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #include "mysqld.h"
 
 #include <sys/types.h>
+#include <xb0xb.h>
 #include <zlib.h>
 #include <ctime>
 #include <functional>
@@ -3154,9 +3155,13 @@ pfs_os_file_t os_file_create_func(const char *name, ulint create_mode,
   int create_flag;
   const char *mode_str = nullptr;
 
-  on_error_no_exit = create_mode & OS_FILE_ON_ERROR_NO_EXIT ? true : false;
-  on_error_silent = create_mode & OS_FILE_ON_ERROR_SILENT ? true : false;
-
+  if (opt_lock_ddl == LOCK_DDL_REDUCED && !is_server_locked()) {
+    on_error_no_exit = true;
+    on_error_silent = true;
+  } else {
+    on_error_no_exit = create_mode & OS_FILE_ON_ERROR_NO_EXIT ? true : false;
+    on_error_silent = create_mode & OS_FILE_ON_ERROR_SILENT ? true : false;
+  }
   create_mode &= ~OS_FILE_ON_ERROR_NO_EXIT;
   create_mode &= ~OS_FILE_ON_ERROR_SILENT;
 

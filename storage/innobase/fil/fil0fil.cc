@@ -2612,10 +2612,9 @@ dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
   do {
     ut_a(!file->is_open);
 
-    file->handle = os_file_create_simple_no_error_handling(
-        innodb_data_file_key, file->name, OS_FILE_OPEN, OS_FILE_READ_ONLY,
-        read_only_mode, &success);
-
+    file->handle =
+        os_file_create(innodb_data_file_key, file->name, OS_FILE_OPEN,
+                       OS_FILE_NORMAL, OS_DATA_FILE, read_only_mode, &success);
     if (!success) {
       /* The following call prints an error message */
       os_file_get_last_error(true);
@@ -3126,6 +3125,13 @@ bool Fil_shard::open_file(fil_node_t *file) {
       return false;
     }
   }
+
+  DBUG_EXECUTE_IF(
+      "before_file_open_dbug",
+      if (strcmp(file->name, "./test/drop_table.ibd") == 0) {
+        *const_cast<const char **>(&xtrabackup_debug_sync) = "before_file_open";
+        debug_sync_point("before_file_open");
+      });
 
   /* Open the file for reading and writing, in Windows normally in the
   unbuffered async I/O mode, though global variables may make os_file_create()
@@ -11454,7 +11460,7 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
   file.set_name(name.c_str());
   file.set_filepath(path.c_str());
 
-  dberr_t err = file.open_read_only(true);
+  dberr_t err = file.open_read_only(opt_lock_ddl != LOCK_DDL_REDUCED);
   if (err != DB_SUCCESS) {
     return {err, SPACE_UNKNOWN};
   }
@@ -11528,7 +11534,7 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
     if (srv_backup_mode && opt_lock_ddl == LOCK_DDL_REDUCED) {
       if (fil_close_tablespace(space->id) != DB_SUCCESS)
         xb::warn() << "Failed to close space_id: " << space->id;
-      return {DB_ERROR, space_id};
+      return {DB_CANNOT_OPEN_FILE, space_id};
     }
 
     xb::error() << "Failed to open tablespace " << space->name;
