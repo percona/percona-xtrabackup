@@ -7966,6 +7966,12 @@ int main(int argc, char **argv) {
     exit(EXIT_FAILURE);
   }
 
+  if (opt_page_tracking && opt_lock_ddl == LOCK_DDL_REDUCED) {
+    xb::error() << "--page-tracking and --lock-ddl=REDUCED cannot be enabled "
+                   "together.";
+    exit(EXIT_FAILURE);
+  }
+
   /* Expand target-dir, incremental-basedir, etc. */
 
   my_getwd(cwd, sizeof(cwd), MYF(0));
