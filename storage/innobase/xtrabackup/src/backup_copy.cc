@@ -1749,7 +1749,9 @@ bool binlog_file_location::find_binlog(const std::string &dir,
   error = false;
 
   Dir_Walker::walk(dir, false, [&](const std::string &path) mutable {
-    if (ends_with(path.c_str(), ".index") && !Dir_Walker::is_directory(path)) {
+    auto [exists, file_type] = Dir_Walker::is_directory(path);
+    if (ends_with(path.c_str(), ".index") && exists &&
+        file_type == OS_FILE_TYPE_FILE) {
       std::ifstream f_index(path);
       if (f_index.fail()) {
         xb::error() << "cannot read " << SQUOTE(path.c_str());
