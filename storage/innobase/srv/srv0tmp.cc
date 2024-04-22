@@ -316,7 +316,8 @@ void Tablespace_pool::delete_old_pool(bool create_new_db) {
   Dir_Walker::walk(temp_tbsp_dir.c_str(), false, [&](const std::string &path) {
     /* If it is a file and the suffix matches ".ibt", then delete it */
 
-    if (!Dir_Walker::is_directory(path) && path.size() >= 4 &&
+    auto [exists, file_type] = Dir_Walker::is_directory(path);
+    if (exists && file_type == OS_FILE_TYPE_FILE && path.size() >= 4 &&
         (path.compare(path.length() - 4, 4, DOT_IBT) == 0)) {
       os_file_delete_if_exists(innodb_temp_file_key, path.c_str(), nullptr);
     }
