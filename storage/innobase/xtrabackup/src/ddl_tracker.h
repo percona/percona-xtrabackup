@@ -57,7 +57,29 @@ class ddl_tracker_t {
   /** Add a new table in the DDL tracker table list.
    @param[in]	space_id	tablespace identifier
    @param[in]	name      tablespace name */
-  void add_table(const space_id_t &space_id, std::string name);
+  void add_table_from_ibd_scan(const space_id_t space_id, std::string name);
+
+  /** Track a new table from the MLOG_FILE_CREATE redo log record
+   @param[in]	space_id	tablespace identifier
+   @param[in]	start_lsn LSN of redo record
+   @param[in]	name      tablespace name */
+  void add_create_table_from_redo(const space_id_t space_id, lsn_t start_lsn,
+                                  const char *name);
+
+  /** Track tables from the MLOG_FILE_RENAME redo log record
+   @param[in]	space_id	tablespace identifier
+   @param[in]	start_lsn LSN of redo record
+   @param[in]	old_name  RENAME from name
+   @param[in]	new_name  RENAME to name */
+  void add_rename_table_from_redo(const space_id_t space_id, lsn_t start_lsn,
+                                  const char *old_name, const char *new_name);
+
+  /** Track tables from the MLOG_FILE_DELTE redo log record
+   @param[in]	space_id	tablespace identifier
+   @param[in]	start_lsn LSN of redo record
+   @param[in]	name      RENAME to name */
+  void add_drop_table_from_redo(const space_id_t space_id, lsn_t start_lsn,
+                                const char *name);
 
   /** Add a table to the corrupted tablespace list. The list is later
   converted to  tablespacename.ibd.corrupt files on disk
@@ -70,7 +92,8 @@ class ddl_tracker_t {
   1. had ADD INDEX while the backup is in progress
   2. tablespace encryption change from 'y' to 'n' or viceversa
   @param[in] space_id Tablespace id  */
-  void add_to_recopy_tables(space_id_t space_id);
+  void add_to_recopy_tables(space_id_t space_id, lsn_t start_lsn,
+                            const std::string operation);
 
   /** Report an operation to create, delete, or rename a file during backup.
   @param[in]	space_id	tablespace identifier

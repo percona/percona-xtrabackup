@@ -40,15 +40,15 @@ vlog "Resuming xtrabackup"
 kill -SIGCONT $xb_pid
 run_cmd wait $job_pid
 
-if ! egrep -q "DDL tracking : LSN: [0-9]* delete table ID: [0-9]* Name: test/drop_table.ibd" $topdir/backup.log ; then
+if ! egrep -q "DDL tracking : LSN: [0-9]* delete space ID: [0-9]* Name: test/drop_table.ibd" $topdir/backup.log ; then
     die "xtrabackup did not handle delete table DDL"
 fi
 
-if ! egrep -q "DDL tracking : LSN: [0-9]* rename table ID: [0-9]* From: test/rename_table.ibd To: test/new_rename_table.ibd" $topdir/backup.log ; then
+if ! egrep -q "DDL tracking : LSN: [0-9]* rename space ID: [0-9]* From: test/rename_table.ibd To: test/new_rename_table.ibd" $topdir/backup.log ; then
     die "xtrabackup did not handle rename table DDL"
 fi
 
-if ! egrep -q "DDL tracking : LSN: [0-9]* rename table ID: [0-9]* From: test/alter_rename_table.ibd To: test/new_alter_rename_table.ibd" $topdir/backup.log ; then
+if ! egrep -q "DDL tracking : LSN: [0-9]* rename space ID: [0-9]* From: test/alter_rename_table.ibd To: test/new_alter_rename_table.ibd" $topdir/backup.log ; then
     die "xtrabackup did not handle alter table rename DDL"
 fi
 
@@ -85,7 +85,7 @@ vlog "Resuming xtrabackup"
 kill -SIGCONT $XB_PID
 run_cmd wait $XB_PID
 
-if ! egrep -q "DDL tracking : LSN: [0-9]* delete table ID: [0-9]* Name: test/drop_table.ibd" $XB_ERROR_LOG ; then
+if ! egrep -q "DDL tracking : LSN: [0-9]* delete space ID: [0-9]* Name: test/drop_table.ibd" $XB_ERROR_LOG ; then
     die "xtrabackup did not handle delete table DDL"
 fi
 
@@ -123,7 +123,7 @@ vlog "Resuming xtrabackup"
 kill -SIGCONT $XB_PID
 run_cmd wait $XB_PID
 
-if ! egrep -q "DDL tracking : LSN: [0-9]* delete table ID: [0-9]* Name: test/drop_table.ibd" $XB_ERROR_LOG ; then
+if ! egrep -q "DDL tracking : LSN: [0-9]* delete space ID: [0-9]* Name: test/drop_table.ibd" $XB_ERROR_LOG ; then
     die "xtrabackup did not handle delete table DDL"
 fi
 
