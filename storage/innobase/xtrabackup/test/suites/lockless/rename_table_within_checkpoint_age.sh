@@ -30,7 +30,7 @@ kill -SIGCONT $xb_pid
 run_cmd wait $job_pid
 
 # Ensure we have DDL tracking in the log renaming the table
-if ! egrep -q 'DDL tracking : LSN: [0-9]* rename table ID: [0-9]* From: test/original_table.ibd To: test/renamed_table.ibd' $topdir/backup.log ; then
+if ! egrep -q 'DDL tracking : LSN: [0-9]* rename space ID: [0-9]* From: test/original_table.ibd To: test/renamed_table.ibd' $topdir/backup.log ; then
     die "xtrabackup did not handle rename table DDL"
 fi
 
