@@ -67,19 +67,19 @@ function run_test() {
   kill -SIGCONT $xb_pid
   run_cmd wait $job_pid
 
-  if ! egrep -q "DDL tracking : LSN: [0-9]* delete table ID: [0-9]* Name: test/${DELETE_TABLE_IN_DISK}.ibd" $topdir/backup_with_new_table.log ; then
+  if ! egrep -q "DDL tracking : LSN: [0-9]* delete space ID: [0-9]* Name: test/${DELETE_TABLE_IN_DISK}.ibd" $topdir/backup_with_new_table.log ; then
      die "xtrabackup did not handle delete table DDL"
   fi
 
-  if ! egrep -q "DDL tracking : LSN: [0-9]* create table ID: [0-9]* Name: test/${NEW_TABLE_IN_DISK}.ibd" $topdir/backup_with_new_table.log ; then
+  if ! egrep -q "DDL tracking : LSN: [0-9]* create space ID: [0-9]* Name: test/${NEW_TABLE_IN_DISK}.ibd" $topdir/backup_with_new_table.log ; then
      die "xtrabackup did not handle new table DDL"
   fi
 
-  if ! egrep -q "DDL tracking : LSN: [0-9]* rename table ID: [0-9]* From: test/${ORIGINAL_TABLE_IN_DISK}.ibd To: test/${RENAMED_TABLE_IN_DISK}.ibd" $topdir/backup_with_new_table.log ; then
+  if ! egrep -q "DDL tracking : LSN: [0-9]* rename space ID: [0-9]* From: test/${ORIGINAL_TABLE_IN_DISK}.ibd To: test/${RENAMED_TABLE_IN_DISK}.ibd" $topdir/backup_with_new_table.log ; then
      die "xtrabackup did not handle rename table DDL"
   fi
 
-  if ! egrep -q "DDL tracking : LSN: [0-9]* direct write on table ID: [0-9]*" $topdir/backup_with_new_table.log ; then
+  if ! egrep -q "DDL tracking : LSN: [0-9]* add index on space ID: [0-9]*" $topdir/backup_with_new_table.log ; then
      die "xtrabackup did not handle Bulk Index Load DDL"
   fi
 
