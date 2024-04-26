@@ -136,6 +136,44 @@ xtrabackup --copy-back --target-dir=$BACKUP_DIR
 start_server
 verify_db_state test
 
+echo
+echo PXB-3245: Assertion failure: fil0fil.cc:2545:err == DB_SUCCESS found during incremental backup with lock-ddl=REDUCED
+echo
+
+$MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE test.drop_table (id INT PRIMARY KEY AUTO_INCREMENT); INSERT INTO test.drop_table VALUES(1);" test
+
+innodb_wait_for_flush_all
+
+XB_ERROR_LOG=$topdir/backup.log
+BACKUP_DIR=$topdir/backup
+rm -rf $BACKUP_DIR
+xtrabackup_background --backup --target-dir=$BACKUP_DIR --debug="d,shard_create_node" --lock-ddl=REDUCED
+
+XB_PID=$!
+pid_file=$BACKUP_DIR/xtrabackup_debug_sync
+wait_for_xb_to_suspend $pid_file
+
+# Delete table
+$MYSQL $MYSQL_ARGS -Ns -e "DROP TABLE test.drop_table;" test
+
+# Resume the xtrabackup process
+vlog "Resuming xtrabackup"
+kill -SIGCONT $XB_PID
+run_cmd wait $XB_PID
+
+if ! egrep -q "DDL tracking : LSN: [0-9]* delete space ID: [0-9]* Name: test/drop_table.ibd" $XB_ERROR_LOG ; then
+    die "xtrabackup did not handle delete table DDL"
+fi
+
+xtrabackup --prepare --target-dir=$BACKUP_DIR
+record_db_state test
+
+stop_server
+rm -rf $mysql_datadir/*
+xtrabackup --copy-back --target-dir=$BACKUP_DIR
+start_server
+verify_db_state test
+
 stop_server
 rm -rf $mysql_datadir $BACKUP_DIR
 rm $XB_ERROR_LOG

@@ -2534,15 +2534,18 @@ fil_node_t *Fil_shard::create_node(const char *name, page_no_t size,
 
   os_file_stat_t stat_info = os_file_stat_t();
 
-#ifdef UNIV_DEBUG
-  dberr_t err =
-#endif /* UNIV_DEBUG */
+  DBUG_EXECUTE_IF(
+      "shard_create_node", if (strncmp(name, "./test/drop_table.ibd",
+                                       strlen("./test/drop_table.ibd")) == 0) {
+        *const_cast<const char **>(&xtrabackup_debug_sync) =
+            "shard_create_node";
 
-      os_file_get_status(
-          file.name, &stat_info, false,
-          fsp_is_system_temporary(space->id) ? true : srv_read_only_mode);
+        debug_sync_point("shard_create_node");
+      });
 
-  ut_ad(err == DB_SUCCESS);
+  dberr_t err = os_file_get_status(
+      file.name, &stat_info, false,
+      fsp_is_system_temporary(space->id) ? true : srv_read_only_mode);
 
   file.block_size = stat_info.block_size;
 
@@ -2577,7 +2580,7 @@ fil_node_t *Fil_shard::create_node(const char *name, page_no_t size,
   ut_a(space->id == TRX_SYS_SPACE || space->purpose == FIL_TYPE_TEMPORARY ||
        space->files.size() == 1);
 
-  return &space->files.front();
+  return err == DB_SUCCESS ? &space->files.front() : nullptr;
 }
 
 /** Attach a file to a tablespace. File must be closed.
@@ -11585,7 +11588,8 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
 
   char *fn = fil_node_create(file.filepath(), n_pages, space, false, false);
   if (fn == nullptr) {
-    return {DB_ERROR, space_id};
+    fil_space_free(space->id, false);
+    return {DB_CANNOT_OPEN_FILE, space_id};
   }
 
   /* For encrypted tablespace, initialize encryption
