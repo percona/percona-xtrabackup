@@ -6973,13 +6973,8 @@ skip_check:
     goto error_cleanup;
   }
 
-  if (!xb_process_datadir(
-          xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".", ".ren",
-          prepare_handle_ren_files, NULL)) {
-    xb_data_files_close();
-    goto error_cleanup;
-  }
-
+  // This should be done before handling .del files. Because we have to delete
+  // the correct delta files for the corresponding .del files.
   if (xtrabackup_incremental_dir) {
     // Build meta map
     if (!xb_process_datadir(
@@ -6990,9 +6985,20 @@ skip_check:
     }
   }
 
+  // This should be done before rename because .del files are created after
+  // consolidating or skipping intermediate operations (renames etc). So they
+  // should be processed before renames.
   if (!xb_process_datadir(
           xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".", ".del",
           prepare_handle_del_files, NULL)) {
+    xb_data_files_close();
+    goto error_cleanup;
+  }
+
+  // This should be done after processing .meta and .del
+  if (!xb_process_datadir(
+          xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".", ".ren",
+          prepare_handle_ren_files, NULL)) {
     xb_data_files_close();
     goto error_cleanup;
   }
