@@ -1171,12 +1171,11 @@ class Fil_shard {
   @param[in]    punch_hole      true if supported for this file
   @param[in]    atomic_write    true if the file has atomic write enabled
   @param[in]    max_pages       maximum number of pages in file
-  @return pointer to the file name
-  @retval nullptr if error */
-  [[nodiscard]] fil_node_t *create_node(const char *name, page_no_t size,
-                                        fil_space_t *space, bool is_raw,
-                                        bool punch_hole, bool atomic_write,
-                                        page_no_t max_pages = PAGE_NO_MAX);
+  @return DB_SUCCESS if success, else other DB_* for errors */
+  [[nodiscard]] dberr_t create_node(const char *name, page_no_t size,
+                                    fil_space_t *space, bool is_raw,
+                                    bool punch_hole, bool atomic_write,
+                                    page_no_t max_pages = PAGE_NO_MAX);
 
 #ifdef UNIV_DEBUG
   /** Validate a shard. */
@@ -2497,17 +2496,15 @@ bool fil_fusionio_enable_atomic_write(pfs_os_file_t file) {
 @param[in]      punch_hole      true if supported for this file
 @param[in]      atomic_write    true if the file has atomic write enabled
 @param[in]      max_pages       maximum number of pages in file
-@return pointer to the file name
-@retval nullptr if error */
-fil_node_t *Fil_shard::create_node(const char *name, page_no_t size,
-                                   fil_space_t *space, bool is_raw,
-                                   bool punch_hole, bool atomic_write,
-                                   page_no_t max_pages) {
+@return DB_SUCCESS if success, else other DB_* for errors */
+dberr_t Fil_shard::create_node(const char *name, page_no_t size,
+                               fil_space_t *space, bool is_raw, bool punch_hole,
+                               bool atomic_write, page_no_t max_pages) {
   ut_ad(name != nullptr);
   ut_ad(fil_system != nullptr);
 
   if (space == nullptr) {
-    return nullptr;
+    return DB_CANNOT_OPEN_FILE;
   }
 
   fil_node_t file{};
@@ -2580,7 +2577,7 @@ fil_node_t *Fil_shard::create_node(const char *name, page_no_t size,
   ut_a(space->id == TRX_SYS_SPACE || space->purpose == FIL_TYPE_TEMPORARY ||
        space->files.size() == 1);
 
-  return err == DB_SUCCESS ? &space->files.front() : nullptr;
+  return err;
 }
 
 /** Attach a file to a tablespace. File must be closed.
@@ -2591,19 +2588,16 @@ fil_node_t *Fil_shard::create_node(const char *name, page_no_t size,
 @param[in]      is_raw          true if a raw device or a raw disk partition
 @param[in]      atomic_write    true if the file has atomic write enabled
 @param[in]      max_pages       maximum number of pages in file
-@return pointer to the file name
-@retval nullptr if error */
-char *fil_node_create(const char *name, page_no_t size, fil_space_t *space,
-                      bool is_raw, bool atomic_write, page_no_t max_pages) {
+@return DB_SUCCESS if success, else other DB_* for errors */
+dberr_t fil_node_create(const char *name, page_no_t size, fil_space_t *space,
+                        bool is_raw, bool atomic_write, page_no_t max_pages) {
   auto shard = fil_system->shard_by_id(space->id);
 
-  fil_node_t *file;
+  dberr_t err = shard->create_node(name, size, space, is_raw,
+                                   IORequest::is_punch_hole_supported(),
+                                   atomic_write, max_pages);
 
-  file = shard->create_node(name, size, space, is_raw,
-                            IORequest::is_punch_hole_supported(), atomic_write,
-                            max_pages);
-
-  return file == nullptr ? nullptr : file->name;
+  return (err);
 }
 
 dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
@@ -2618,15 +2612,17 @@ dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
         os_file_create(innodb_data_file_key, file->name, OS_FILE_OPEN,
                        OS_FILE_NORMAL, OS_DATA_FILE, read_only_mode, &success);
     if (!success) {
-      /* The following call prints an error message */
-      os_file_get_last_error(true);
+      if (opt_lock_ddl != LOCK_DDL_REDUCED) {
+        /* The following call prints an error message */
+        os_file_get_last_error(true);
 
-      ib::warn(ER_IB_MSG_268) << "Cannot open '" << file->name
-                              << "'."
-                                 " Have you deleted .ibd files under a"
-                                 " running mysqld server?";
+        ib::warn(ER_IB_MSG_268) << "Cannot open '" << file->name
+                                << "'."
+                                   " Have you deleted .ibd files under a"
+                                   " running mysqld server?";
+      }
 
-      return DB_ERROR;
+      return DB_CANNOT_OPEN_FILE;
     }
 
   } while (!success);
@@ -2705,8 +2701,11 @@ dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
     }
   }
 
+  /* space_id mismatch can happen for truncation of tablespaces. Regular and
+   * Undo */
   if (space_id != space->id) {
-    if (srv_backup_mode && opt_lock_ddl == LOCK_DDL_REDUCED) return DB_ERROR;
+    if (srv_backup_mode && opt_lock_ddl == LOCK_DDL_REDUCED)
+      return DB_CANNOT_OPEN_FILE;
 
     ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_270)
         << "Tablespace id is " << space->id
@@ -3361,7 +3360,7 @@ There must not be any pending i/o's or flushes on the files.
 @param[in]      space_id        Tablespace ID
 @param[in]      x_latched       Whether the caller holds X-mode space->latch
 @return true if success */
-static bool fil_space_free(space_id_t space_id, bool x_latched) {
+bool fil_space_free(space_id_t space_id, bool x_latched) {
   ut_ad(space_id != TRX_SYS_SPACE);
 
   auto shard = fil_system->shard_by_id(space_id);
@@ -6014,10 +6013,7 @@ static dberr_t fil_create_tablespace(space_id_t space_id, const char *name,
 
   auto shard = fil_system->shard_by_id(space_id);
 
-  fil_node_t *file_node =
-      shard->create_node(path, size, space, false, punch_hole, atomic_write);
-
-  err = (file_node == nullptr) ? DB_ERROR : DB_SUCCESS;
+  err = shard->create_node(path, size, space, false, punch_hole, atomic_write);
 
 #if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP)
   /* Temporary tablespace creation need not be redo logged */
@@ -6178,12 +6174,11 @@ dberr_t fil_ibd_open(bool validate, fil_type_t purpose, space_id_t space_id,
   /* We do not measure the size of the file, that is why
   we pass the 0 below */
 
-  const fil_node_t *file =
-      shard->create_node(df.filepath(), 0, space, false,
-                         IORequest::is_punch_hole_supported(), atomic_write);
+  err = shard->create_node(df.filepath(), 0, space, false,
+                           IORequest::is_punch_hole_supported(), atomic_write);
 
-  if (file == nullptr) {
-    return DB_ERROR;
+  if (err != DB_SUCCESS) {
+    return err;
   }
 
   /* Set encryption operation in progress */
@@ -6533,11 +6528,9 @@ fil_load_status Fil_shard::ibd_open_for_recovery(space_id_t space_id,
   the rounding formula for extents and pages is somewhat complex; we
   let create_node() do that task. */
 
-  const fil_node_t *file;
+  err = create_node(df.filepath(), 0, space, false, true, false);
 
-  file = create_node(df.filepath(), 0, space, false, true, false);
-
-  ut_a(file != nullptr);
+  ut_a(err == DB_SUCCESS);
 
   /* For encryption tablespace, initial encryption information. */
   if (FSP_FLAGS_GET_ENCRYPTION(space->flags) &&
@@ -11586,8 +11579,8 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
 
   ut_a(space != NULL);
 
-  char *fn = fil_node_create(file.filepath(), n_pages, space, false, false);
-  if (fn == nullptr) {
+  err = fil_node_create(file.filepath(), n_pages, space, false, false);
+  if (err != DB_SUCCESS) {
     fil_space_free(space->id, false);
     return {DB_CANNOT_OPEN_FILE, space_id};
   }

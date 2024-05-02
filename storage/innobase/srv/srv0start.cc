@@ -616,13 +616,23 @@ dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space) {
     ut_a(size != (os_offset_t)-1);
     page_no_t n_pages = static_cast<page_no_t>(size / UNIV_PAGE_SIZE);
 
-    if (fil_node_create(file_name, n_pages, space, false, atomic_write) ==
-        nullptr) {
+    DBUG_EXECUTE_IF(
+        "undo_create_node",
+        if (strncmp(file_name, "./undo_1.ibu", strlen("./undo_1.ibu")) == 0) {
+          *const_cast<const char **>(&xtrabackup_debug_sync) =
+              "undo_create_node";
+          debug_sync_point("undo_create_node");
+        });
+
+    err = fil_node_create(file_name, n_pages, space, false, atomic_write);
+    if (err != DB_SUCCESS) {
       os_file_close(fh);
 
-      ib::error(ER_IB_MSG_1082, undo_name);
+      fil_space_free(space_id, false);
+      if (opt_lock_ddl != LOCK_DDL_REDUCED)
+        ib::error(ER_IB_MSG_1082, undo_name);
 
-      return (DB_ERROR);
+      return (err);
     }
 
   } else {
@@ -641,9 +651,17 @@ dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space) {
   ut_ad(success);
 
   if (err != DB_SUCCESS) {
-    ib::error(ER_IB_MSG_1083, undo_name);
+    fil_space_free(space_id, false);
+    if (opt_lock_ddl != LOCK_DDL_REDUCED) ib::error(ER_IB_MSG_1083, undo_name);
     return (err);
   }
+
+  DBUG_EXECUTE_IF(
+      "undo_space_open",
+      if (strncmp(file_name, "./undo_1.ibu", strlen("./undo_1.ibu")) == 0) {
+        *const_cast<const char **>(&xtrabackup_debug_sync) = "undo_space_open";
+        debug_sync_point("undo_space_open");
+      });
 
   /* Now that space and node exist, make sure this undo tablespace
   is open so that it stays open until shutdown.
@@ -651,7 +669,10 @@ dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space) {
   header page has been written. */
   if (!undo::is_under_construction(space_id)) {
     bool success = fil_space_open(space_id);
-    ut_a(success);
+    if (!success) {
+      fil_space_free(space_id, false);
+      return DB_CANNOT_OPEN_FILE;
+    }
   }
 
   if (undo::is_reserved(space_id)) {
@@ -818,6 +839,7 @@ static dberr_t srv_undo_tablespaces_open(bool backup_mode) {
 
       case DB_SUCCESS:
 
+      case DB_NOT_FOUND:
       case DB_CANNOT_OPEN_FILE:
         /* Doesn't exist, keep looking */
         break;
