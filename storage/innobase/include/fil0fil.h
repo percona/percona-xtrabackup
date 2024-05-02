@@ -1384,12 +1384,11 @@ void fil_space_set_imported(space_id_t space_id);
 @param[in]      is_raw          true if a raw device or a raw disk partition
 @param[in]      atomic_write    true if the file has atomic write enabled
 @param[in]      max_pages       maximum number of pages in file
-@return pointer to the file name
-@retval nullptr if error */
-[[nodiscard]] char *fil_node_create(const char *name, page_no_t size,
-                                    fil_space_t *space, bool is_raw,
-                                    bool atomic_write,
-                                    page_no_t max_pages = PAGE_NO_MAX);
+@return DB_SUCCESS if success, else other DB_* for errors */
+[[nodiscard]] dberr_t fil_node_create(const char *name, page_no_t size,
+                                      fil_space_t *space, bool is_raw,
+                                      bool atomic_write,
+                                      page_no_t max_pages = PAGE_NO_MAX);
 
 /** Create a space memory object and put it to the fil_system hash table.
 The tablespace name is independent from the tablespace file-name.
@@ -2369,4 +2368,11 @@ inline bool fil_node_t::is_offset_valid(os_offset_t byte_offset) const {
   return byte_offset < max_offset;
 }
 
+/** Frees a space object from the tablespace memory cache.
+Closes a tablespaces' files but does not delete them.
+There must not be any pending i/o's or flushes on the files.
+@param[in]      space_id        Tablespace ID
+@param[in]      x_latched       Whether the caller holds X-mode space->latch
+@return true if success */
+bool fil_space_free(space_id_t space_id, bool x_latched);
 #endif /* fil0fil_h */
