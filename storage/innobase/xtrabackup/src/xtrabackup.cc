@@ -5037,7 +5037,7 @@ static bool xb_space_create_file(
     return (false);
   }
 
-  if (fil_node_create(path, size, space, false, false) == nullptr) {
+  if (fil_node_create(path, size, space, false, false) != DB_SUCCESS) {
     ib::fatal(UT_LOCATION_HERE) << "Unable to add tablespace node '" << path
                                 << "' to the tablespace cache.";
   }

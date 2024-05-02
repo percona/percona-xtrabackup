@@ -33,9 +33,6 @@ for i in {1..100} ; do
 done &
 undo_pid=$!
 
-
-
-
 sleep 1s
 
 start_uncomitted_transaction &
@@ -78,3 +75,88 @@ ROWS=`${MYSQL} ${MYSQL_ARGS}  -Ns -e "SELECT COUNT(*) FROM t1" test`
 if [ "$ROWS" != "2" ]; then
     die "Unexpected number of rows in table t1: $ROWS"
 fi
+
+
+stop_server
+rm -rf $MYSQLD_DATADIR
+start_server
+
+echo
+echo PXB-3280 : undo log truncation causes assertion failure with reduced lock
+echo
+mysql -e "CREATE UNDO TABLESPACE UNDO_1 ADD DATAFILE 'undo_1.ibu'"
+mysql -e "CREATE UNDO TABLESPACE UNDO_2 ADD DATAFILE 'undo_2.ibu'"
+
+XB_ERROR_LOG=$topdir/backup.log
+BACKUP_DIR=$topdir/backup
+rm -rf $BACKUP_DIR
+xtrabackup_background --backup --target-dir=$BACKUP_DIR --debug="d,undo_create_node" --lock-ddl=REDUCED
+
+XB_PID=$!
+pid_file=$BACKUP_DIR/xtrabackup_debug_sync
+wait_for_xb_to_suspend $pid_file
+
+mysql -e "ALTER UNDO TABLESPACE UNDO_1 SET INACTIVE"
+mysql -e "ALTER UNDO TABLESPACE UNDO_2 SET INACTIVE"
+mysql -e "SET GLOBAL innodb_purge_rseg_truncate_frequency=1"
+sleep 1
+
+mysql -e "DROP UNDO TABLESPACE UNDO_1"
+mysql -e "DROP UNDO TABLESPACE UNDO_2"
+
+mysql -e "SET GLOBAL innodb_purge_rseg_truncate_frequency=default"
+
+# Resume the xtrabackup process
+vlog "Resuming xtrabackup"
+kill -SIGCONT $XB_PID
+run_cmd wait $XB_PID
+
+xtrabackup --prepare --target-dir=$BACKUP_DIR
+record_db_state test
+
+stop_server
+rm -rf $mysql_datadir/*
+xtrabackup --copy-back --target-dir=$BACKUP_DIR
+start_server
+verify_db_state test
+
+echo
+echo PXB-3280 : CASE2: undo log truncation causes assertion failure with reduced lock
+echo
+
+mysql -e "CREATE UNDO TABLESPACE UNDO_1 ADD DATAFILE 'undo_1.ibu'"
+mysql -e "CREATE UNDO TABLESPACE UNDO_2 ADD DATAFILE 'undo_2.ibu'"
+
+XB_ERROR_LOG=$topdir/backup.log
+BACKUP_DIR=$topdir/backup
+rm -rf $BACKUP_DIR
+xtrabackup_background --backup --target-dir=$BACKUP_DIR --debug="d,undo_space_open" --lock-ddl=REDUCED
+
+XB_PID=$!
+pid_file=$BACKUP_DIR/xtrabackup_debug_sync
+wait_for_xb_to_suspend $pid_file
+
+mysql -e "ALTER UNDO TABLESPACE UNDO_1 SET INACTIVE"
+mysql -e "ALTER UNDO TABLESPACE UNDO_2 SET INACTIVE"
+mysql -e "SET GLOBAL innodb_purge_rseg_truncate_frequency=1"
+sleep 1
+
+mysql -e "SET GLOBAL innodb_purge_rseg_truncate_frequency=default"
+
+# Resume the xtrabackup process
+vlog "Resuming xtrabackup"
+kill -SIGCONT $XB_PID
+run_cmd wait $XB_PID
+
+xtrabackup --prepare --target-dir=$BACKUP_DIR
+record_db_state test
+
+stop_server
+rm -rf $mysql_datadir/*
+xtrabackup --copy-back --target-dir=$BACKUP_DIR
+start_server
+verify_db_state test
+
+stop_server
+rm -rf $mysql_datadir $BACKUP_DIR
+rm $XB_ERROR_LOG
