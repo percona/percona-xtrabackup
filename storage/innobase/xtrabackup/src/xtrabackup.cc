@@ -3577,7 +3577,7 @@ static bool xb_fil_io_init(void)
 /****************************************************************************
 Populates the tablespace memory cache by scanning for and opening data files.
 @returns DB_SUCCESS or error code.*/
-static dberr_t xb_load_tablespaces(void)
+static dberr_t xb_load_tablespaces(bool is_prep_handle_ddls)
 /*=====================*/
 {
   dberr_t err;
@@ -3627,7 +3627,14 @@ static dberr_t xb_load_tablespaces(void)
 
   for (auto tablespace : Tablespace_map::instance().external_files()) {
     if (tablespace.type != Tablespace_map::TABLESPACE) continue;
-    fil_open_for_xtrabackup(tablespace.file_name, tablespace.name);
+    /* when processing ddl files on prepare phase we should load data files
+    without first page validation */
+    if (is_prep_handle_ddls) {
+      space_id_t space_id = Fil_system::get_tablespace_id(tablespace.file_name);
+      fil_tablespace_open_for_recovery(space_id);
+    } else {
+      fil_open_for_xtrabackup(tablespace.file_name, tablespace.name);
+    }
   }
 
   debug_sync_point("xtrabackup_load_tablespaces_pause");
@@ -3639,7 +3646,7 @@ static dberr_t xb_load_tablespaces(void)
 Initialize the tablespace memory cache and populate it by scanning for and
 opening data files.
 @returns DB_SUCCESS or error code.*/
-ulint xb_data_files_init(void)
+ulint xb_data_files_init(bool is_prep_handle_ddls)
 /*====================*/
 {
   os_create_block_cache();
@@ -3650,7 +3657,7 @@ ulint xb_data_files_init(void)
 
   undo_spaces_init();
 
-  return (xb_load_tablespaces());
+  return (xb_load_tablespaces(is_prep_handle_ddls));
 }
 
 /************************************************************************
@@ -4361,7 +4368,7 @@ void xtrabackup_backup_func(void) {
   Tablespace_map::instance().scan(mysql_connection);
 
   /* Populate fil_system with tablespaces to copy */
-  dberr_t err = xb_load_tablespaces();
+  dberr_t err = xb_load_tablespaces(false);
   if (err != DB_SUCCESS) {
     xb::error() << "xb_load_tablespaces() failed with error code " << err;
     exit(EXIT_FAILURE);
@@ -6966,7 +6973,7 @@ skip_check:
   Tablespace_map::instance().deserialize("./");
 
   /* Handle `RENAME/DELETE` DDL files produced by DDL tracking during backup */
-  err = xb_data_files_init();
+  err = xb_data_files_init(true);
   if (err != DB_SUCCESS) {
     xb::error() << "xb_data_files_init() failed "
                 << "with error code " << err;
@@ -7028,7 +7035,7 @@ skip_check:
 
   if (xtrabackup_incremental) {
     Tablespace_map::instance().deserialize(xtrabackup_incremental_dir);
-    err = xb_data_files_init();
+    err = xb_data_files_init(false);
     if (err != DB_SUCCESS) {
       xb::error() << "xb_data_files_init() failed "
                   << "with error code " << err;
