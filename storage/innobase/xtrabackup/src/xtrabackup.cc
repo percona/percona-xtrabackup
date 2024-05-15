@@ -365,10 +365,8 @@ it every INNOBASE_WAKE_INTERVAL'th step. */
 ulong innobase_active_counter = 0;
 
 char *xtrabackup_debug_sync = NULL;
-#ifdef UNIV_DEBUG
 char *xtrabackup_debug_sync_thread = NULL;
 static std::string debug_sync_file_content;
-#endif /* UNIV_DEBUG */
 static const char *dbug_setting = nullptr;
 
 bool xtrabackup_incremental_force_scan = false;
@@ -1764,7 +1762,6 @@ void debug_sync_point(const char *name) {
 #endif
 }
 
-#ifdef UNIV_DEBUG
 void debug_sync_thread(const char *name) {
 #ifndef __WIN__
   FILE *fp;
@@ -1806,8 +1803,6 @@ void debug_sync_thread(const char *name) {
 
 #endif
 }
-
-#endif /* UNIV_DEBUG */
 
 static const char *xb_client_default_groups[] = {"xtrabackup", "client", 0, 0,
                                                  0};
@@ -3630,8 +3625,11 @@ static dberr_t xb_load_tablespaces(bool is_prep_handle_ddls)
     /* when processing ddl files on prepare phase we should load data files
     without first page validation */
     if (is_prep_handle_ddls) {
-      space_id_t space_id = Fil_system::get_tablespace_id(tablespace.file_name);
-      fil_tablespace_open_for_recovery(space_id);
+      space_id_t space_id = fil_get_tablespace_id(tablespace.file_name);
+      dberr_t err = fil_tablespace_open_for_recovery(space_id);
+      if (err != DB_SUCCESS) {
+        return (err);
+      }
     } else {
       fil_open_for_xtrabackup(tablespace.file_name, tablespace.name);
     }

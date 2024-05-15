@@ -2355,6 +2355,12 @@ stage. This is used at rollback phase
 @param[in]	space_id	tablespace id
 @return DB_ERROR_UNSET if no error occured, else DB_* error */
 dberr_t fil_xb_get_tablespace_error(space_id_t space_id);
+
+/** Get the tablespace ID from an .ibd and/or an undo tablespace. If the ID is 0
+on the first page then try finding the ID with Datafile::find_space_id().
+@param[in]      filename        File name to check
+@return s_invalid_space_id if not found, otherwise the space ID */
+space_id_t fil_get_tablespace_id(const std::string &filename);
 #endif /* XTRABACKUP */
 
 dberr_t fil_prepare_file_for_io(space_id_t space_id, page_no_t &page_no,

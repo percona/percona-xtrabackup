@@ -3380,6 +3380,10 @@ bool fil_space_free(space_id_t space_id, bool x_latched) {
   return true;
 }
 
+space_id_t fil_get_tablespace_id(const std::string &filename) {
+  return Fil_system::get_tablespace_id(filename);
+}
+
 #ifdef UNIV_HOTBACKUP
 /** Frees a space object from the tablespace memory cache.
 Closes a tablespaces' files but does not delete them.
