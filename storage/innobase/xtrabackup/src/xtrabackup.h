@@ -255,7 +255,7 @@ bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n,
 /************************************************************************
 Initialize the tablespace memory cache and populate it by scanning for and
 opening data files */
-ulint xb_data_files_init(void);
+ulint xb_data_files_init(bool is_prep_handle_ddls);
 
 /************************************************************************
 Destroy the tablespace memory cache. */
