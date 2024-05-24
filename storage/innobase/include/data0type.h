@@ -35,6 +35,11 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "univ.i"
 
+#ifdef XTRABACKUP
+#include "sql/dd/types/column.h"  // dd::enum_column_types
+
+#endif /* XTRABACKUP */
+
 extern ulint data_mysql_default_charset_coll;
 constexpr uint32_t DATA_MYSQL_BINARY_CHARSET_COLL = 63;
 
@@ -315,6 +320,29 @@ ulint dtype_get_at_most_n_mbchars(
  @return true if string type */
 bool dtype_is_string_type(
     ulint mtype); /*!< in: InnoDB main data type code: DATA_CHAR, ... */
+
+#ifdef XTRABACKUP
+/** Checks if the main data type is a real temporal type with fractional
+    seconds
+
+ "real type" in MySQL has different meanings in different contexts. It can mean
+
+ - a data type allowing fractional numbers for precision
+ - an underlying datatype used internally.
+
+   For example binlog stores CHAR, VARCHAR, SET and ENUM as MYSQL_TYPE_STRING.
+   For such types, field->type() will be MYSQL_TYPE_STRING and
+   field->real_type() will return the actual underlying data type.
+
+   However in the context of collation of temporal types, it is safe to assume
+   that real temporal type are the types which allow with fractional seconds
+   since ther are stored and displayed as DATA_FIXBINARY.
+
+@param[in]      type   InnoDB main column type TINY, SHORT,
+@return true if real temporal type */
+bool dtype_is_real_temporal_type(dd::enum_column_types type);
+#endif /* XTRABACKUP */
+
 /** Checks if a type is a binary string type. Note that for tables created
  with < 4.0.14, we do not know if a DATA_BLOB column is a BLOB or a TEXT
  column. For those DATA_BLOB columns this function currently returns false.
