@@ -809,7 +809,21 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
       charset_no = my_charset_bin.number;
     else if (dd_col->type() == dd::enum_column_types::JSON)
       charset_no = my_charset_utf8mb4_bin.number;
-    else if (dtype_is_string_type(mtype)) {
+    else if (dtype_is_real_temporal_type(dd_col->type())) {
+      /*
+        MySQL always stores real temporal fields in my_charset_numeric charset.
+        Refer to make_field() in sql/field.cc
+
+        It is for the same reason, the .cfg file exported during FLUSH TABLE
+        FOR EXPORT always sets prtype using my_charset_numeric as the
+        collation.
+
+        In order to remain consistent with server's behavior, we force temporal
+        datatypes to use my_charset_numeric until MySQL server provides support
+        for a separate charset/collation for temporal fields.
+      */
+      charset_no = my_charset_numeric.number;
+    } else if (dtype_is_string_type(mtype)) {
       charset_no = static_cast<ulint>(dd_col->collation_id());
     }
 

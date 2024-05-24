@@ -91,6 +91,23 @@ bool dtype_is_string_type(
   return false;
 }
 
+#ifdef XTRABACKUP
+/** Checks if the main data type is a real temporal type with fractional
+ * seconds
+@param[in]      type   InnoDB main column type TINY, SHORT,
+@return true if real temporal type */
+bool dtype_is_real_temporal_type(dd::enum_column_types type) {
+  switch (type) {
+    case dd::enum_column_types::TIME2:
+    case dd::enum_column_types::TIMESTAMP2:
+    case dd::enum_column_types::DATETIME2:
+      return true;
+    default:
+      return false;
+  }
+}
+#endif /* XTRABACKUP */
+
 /** Checks if a type is a binary string type. Note that for tables created with
  < 4.0.14, we do not know if a DATA_BLOB column is a BLOB or a TEXT column. For
  those DATA_BLOB columns this function currently returns false.
