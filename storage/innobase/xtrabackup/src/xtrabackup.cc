@@ -2465,7 +2465,7 @@ error:
   return (true);
 }
 
-static void xb_scan_for_tablespaces() {
+static void xb_scan_for_tablespaces(bool is_prep_handle_ddls) {
   /* This is the default directory for IBD and IBU files. Put it first
   in the list of known directories. */
   fil_set_scan_dir(MySQL_datadir_path.path());
@@ -2484,7 +2484,7 @@ static void xb_scan_for_tablespaces() {
   --innodb-undo-directory also. */
   fil_set_scan_dir(Fil_path::remove_quotes(MySQL_undo_path), true);
 
-  if (fil_scan_for_tablespaces(true) != DB_SUCCESS) {
+  if (fil_scan_for_tablespaces(true, is_prep_handle_ddls) != DB_SUCCESS) {
     exit(EXIT_FAILURE);
   }
 }
@@ -3611,7 +3611,7 @@ static dberr_t xb_load_tablespaces(bool is_prep_handle_ddls)
   }
 
   xb::info() << "Generating a list of tablespaces";
-  xb_scan_for_tablespaces();
+  xb_scan_for_tablespaces(is_prep_handle_ddls);
 
   /* Add separate undo tablespaces to fil_system */
 
@@ -3625,8 +3625,7 @@ static dberr_t xb_load_tablespaces(bool is_prep_handle_ddls)
     /* when processing ddl files on prepare phase we should load data files
     without first page validation */
     if (is_prep_handle_ddls) {
-      space_id_t space_id = fil_get_tablespace_id(tablespace.file_name);
-      dberr_t err = fil_tablespace_open_for_recovery(space_id);
+      dberr_t err = fil_open_for_prepare(tablespace.file_name);
       if (err != DB_SUCCESS) {
         return (err);
       }
