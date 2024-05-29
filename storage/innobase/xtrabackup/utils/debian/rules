@@ -26,14 +26,14 @@ ifeq "$(DEB_DUMMY)" ""
 	cmake .. -DBUILD_CONFIG=xtrabackup_release -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=/usr \
 	  -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test-83 \
 	  -DINSTALL_MANDIR=/usr/share/man -DWITH_MAN_PAGES=1 -DMINIMAL_RELWITHDEBINFO=OFF \
-	  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock -DOPENSSL_ROOT_DIR=/usr/lib/x86_64-linux-gnu \
+	  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock \
 	  -DINSTALL_PLUGINDIR=lib/xtrabackup/plugin -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled && \
 	cd ..
 	( test -d $(builddir) || mkdir $(builddir) ) && cd $(builddir) && \
 	cmake .. -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=/usr \
 	  -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test-83 \
 	  -DINSTALL_MANDIR=/usr/share/man -DWITH_MAN_PAGES=1 -DMINIMAL_RELWITHDEBINFO=OFF \
-	  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock -DOPENSSL_ROOT_DIR=/usr/lib/x86_64-linux-gnu \
+	  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock \
 	  -DINSTALL_PLUGINDIR=lib/xtrabackup/plugin -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled
 else
 	# Dummy binaries that avoid compilation
