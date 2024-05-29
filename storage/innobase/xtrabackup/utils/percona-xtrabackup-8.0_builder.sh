@@ -340,15 +340,15 @@ install_deps() {
         PKGLIST+=" cmake debhelper libaio-dev libncurses-dev libtool libz-dev libsasl2-dev vim-common"
         PKGLIST+=" libgcrypt-dev libev-dev lsb-release libudev-dev"
         PKGLIST+=" build-essential rsync libdbd-mysql-perl libnuma1 socat libssl-dev patchelf libicu-dev"
-        if [ "${OS_NAME}" != "bookworm" ]; then
-            PKGLIST+=" libprocps-dev"
-        else
+        if [ "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "noble" ]; then
             PKGLIST+=" libproc2-dev"
+        else
+            PKGLIST+=" libprocps-dev"
         fi
         if [ "${OS_NAME}" == "bionic" ]; then
             PKGLIST+=" gcc-8 g++-8"
 	fi
-        if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" -o "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "jammy" ]; then
+        if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" -o "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "jammy" -o "${OS_NAME}" == "noble" ]; then
             PKGLIST+=" python3-sphinx python3-docutils"
         else
             PKGLIST+=" python-sphinx python-docutils"
