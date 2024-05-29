@@ -2241,14 +2241,19 @@ void fil_set_scan_dirs(const std::string &directories);
 
 /** Discover tablespaces by reading the header from .ibd files.
 @param[in]  populate_fil_cache Whether to load tablespaces into fil cache
+@param[in]  is_prep_handle_ddls Whether loading tablespaces on prepare phase
+                                to handle the ddls
 @return DB_SUCCESS if all goes well */
-dberr_t fil_scan_for_tablespaces(bool populate_fil_cache);
+dberr_t fil_scan_for_tablespaces(bool populate_fil_cache,
+                                 bool is_prep_handle_ddls);
 
 /** Open the tablespace and also get the tablespace filenames, space_id must
 already be known.
 @param[in]  space_id  Tablespace ID to lookup
 @return DB_SUCCESS if open was successful */
 [[nodiscard]] dberr_t fil_tablespace_open_for_recovery(space_id_t space_id);
+
+dberr_t fil_open_for_prepare(const std::string &path);
 
 /** Replay a file rename operation for ddl replay.
 @param[in]      page_id         Space ID and first page number in the file
