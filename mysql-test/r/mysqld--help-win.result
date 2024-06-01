@@ -27,17 +27,23 @@ The following options may be given as the first argument:
  socket creation.
  --admin-port=#      Port number to use for service connection, built-in
  default (33062)
- --admin-ssl         Enable SSL for admin interface (automatically enabled
- with other flags).
- (Defaults to on; use --skip-admin-ssl to disable.)
+ --admin-ssl-ca=name CA file in PEM format (check OpenSSL docs) for
+ --admin-port
  --admin-ssl-capath=name 
+ CA directory (check OpenSSL docs) for --admin-port
  --admin-ssl-cert=name 
+ X509 cert in PEM format for --admin-port
  --admin-ssl-cipher=name 
+ SSL cipher to use for --admin-port
  --admin-ssl-crl=name 
- CRL file in PEM format (check OpenSSL docs, implies
+ CRL file in PEM format (check OpenSSL docs) for
+ --admin-port
  --admin-ssl-crlpath=name 
+ CRL directory (check OpenSSL docs) for --admin-port
  --admin-ssl-key=name 
+ X509 key in PEM format for --admin-port
  --admin-tls-ciphersuites=name 
+ TLS v1.3 ciphersuite to use for --admin-port
  --allow-suspicious-udfs 
  Allows use of UDFs consisting of only one symbol xxx()
  without corresponding xxx_init() or xxx_deinit(). That
@@ -49,12 +55,15 @@ The following options may be given as the first argument:
  Defines policies around how user account can be
  configured with Multi Factor authentication methods
  during CREATE/ALTER USER statement. This variable accepts
- at-most 3 comma separated list of authentication plugin
- names where each value refers to what authentication
- plugin should be used in place of 1st Factor
- Authentication (FA), 2FA and 3FA method. Value *
- indicates any plugin is allowed for 1FA, 2FA and 3FA
- method. An empty value means nth FA method is optional.
+ at-most 3 comma separated list of authentication factor
+ descriptions. Allowed factor descriptions are: (empty) -
+ factor is optional, any authentication method is allowed.
+ * - factor is mandatory, any authentication method is
+ allowed. <plugin> - <plugin> is mandatory authentication
+ method. *:<plugin> - factor is mandatory, <plugin> is
+ default authentication method. The first factor cannot be
+ optional and if neither mandatory nor default method is
+ specified, caching_sha2_password is assumed as default.
  --auto-increment-increment[=#] 
  Auto-increment columns are incremented by this
  --auto-increment-offset[=#] 
@@ -65,12 +74,6 @@ The following options may be given as the first argument:
  --automatic-sp-privileges 
  Creating and dropping stored procedures alters ACLs
  (Defaults to on; use --skip-automatic-sp-privileges to disable.)
- --avoid-temporal-upgrade 
- When this option is enabled, the pre-5.6.4 temporal types
- are not upgraded to the new format for ALTER TABLE
- requests ADD/CHANGE/MODIFY COLUMN, ADD INDEX or FORCE
- operation. This variable is deprecated and will be
- removed in a future release.
  --back-log=#        The number of outstanding connection requests MySQL can
  have. This comes into play when the main MySQL thread
  gets very many connection requests in a very short time
@@ -228,12 +231,6 @@ The following options may be given as the first argument:
  transaction compression in the binary log.
  --binlog-transaction-dependency-history-size=# 
  Maximum number of rows to keep in the writeset history.
- --binlog-transaction-dependency-tracking=name 
- Selects the source of dependency information from which
- to compute logical timestamps, which replicas can use to
- decide which transactions can be executed in parallel
- when using replica_parallel_type=LOGICAL_CLOCK. Possible
- values are COMMIT_ORDER, WRITESET and WRITESET_SESSION.
  --block-encryption-mode=name 
  mode for AES_ENCRYPT/AES_DECRYPT
  --bulk-insert-buffer-size=# 
@@ -286,9 +283,6 @@ The following options may be given as the first argument:
  Abort a recursive common table expression if it does more
  than this number of iterations.
  -h, --datadir=name  Path to the database root directory
- --default-authentication-plugin=name 
- The default authentication plugin used by the server to
- hash the password.
  --default-password-lifetime=# 
  The number of days after which the password will expire.
  --default-storage-engine=name 
@@ -497,6 +491,8 @@ The following options may be given as the first argument:
  --keyring-migration-destination=name 
  Keyring plugin or component to which the keys are
  migrated to.
+ --keyring-migration-from-component 
+ Migrate from keyring component to keyring plugin.
  --keyring-migration-host=name 
  Connect to host.
  -p, --keyring-migration-password[=name] 
@@ -513,8 +509,6 @@ The following options may be given as the first argument:
  Migrate from keyring plugin to keyring component.
  --keyring-migration-user=name 
  User to login to server.
- -L, --language=name Client error messages in given language. May be given as
- a full path. Deprecated. Use --lc-messages-dir instead.
  --lc-messages=name  Set the language used for the error messages.
  --lc-messages-dir=name 
  Directory where error messages are
@@ -746,13 +740,8 @@ The following options may be given as the first argument:
  --net-write-timeout=# 
  Number of seconds to wait for a block to be written to a
  connection before aborting the write
- -n, --new           Use very new possible "unsafe" functions
- --no-dd-upgrade     Abort restart if automatic upgrade or downgrade of the
- data dictionary is needed. Deprecated option. Use
- --upgrade=NONE instead.
  --no-monitor        Disable monitor process.
  --offline-mode      Make the server into offline mode
- --old               Use compatible behavior
  --old-alter-table   Use old, non-optimized alter table
  --open-files-limit=# 
  If this is not 0, then mysqld will use this value to
@@ -1150,8 +1139,7 @@ The following options may be given as the first argument:
  databases. LOGICAL_CLOCK, which is the default, indicates
  that it decides whether two transactions can be applied
  in parallel using the logical timestamps computed by the
- source, according to
- binlog_transaction_dependency_tracking.
+ source.
  --replica-parallel-workers=# 
  Number of worker threads for executing events in parallel
  --replica-pending-jobs-size-max=# 
@@ -1288,6 +1276,10 @@ The following options may be given as the first argument:
  When this option is enabled, connections attempted using
  insecure transport will be rejected.  Secure transports
  are SSL/TLS, Unix socket or Shared Memory (on Windows).
+ --restrict-fk-on-non-standard-key 
+ Disallow the creation of foreign keys referencing
+ non-unique key or partial key
+ (Defaults to on; use --skip-restrict-fk-on-non-standard-key to disable.)
  --rpl-read-size=#   The size for reads done from the binlog and relay log. It
  must be a multiple of 4kb. Making it larger might help
  with IO stalls while reading these files when they are
@@ -1363,12 +1355,6 @@ The following options may be given as the first argument:
  SHOW commands and INFORMATION_SCHEMA tables shows
  generated invisible primary key definition.
  (Defaults to on; use --skip-show-gipk-in-create-table-and-information-schema to disable.)
- --show-old-temporals 
- When this option is enabled, the pre-5.6.4 temporal types
- will be marked in the 'SHOW CREATE TABLE' and
- 'INFORMATION_SCHEMA.COLUMNS' table as a comment in
- COLUMN_TYPE field. This variable is deprecated and will
- be removed in a future release.
  --show-replica-auth-info 
  Include user and password in SHOW REPLICAS statements.
  --show-slave-auth-info 
@@ -1536,7 +1522,6 @@ The following options may be given as the first argument:
  --temptable-use-mmap 
  Use mmap files for temptables. This variable is
  deprecated and will be removed in a future release.
- (Defaults to on; use --skip-temptable-use-mmap to disable.)
  --terminology-use-previous=name 
  Make monitoring tables and statements use the identifiers
  that were in use before they were changed in a given
@@ -1569,6 +1554,7 @@ The following options may be given as the first argument:
  TLS executed, new certficates will not be used if
  validation fails. 
  --tls-ciphersuites=name 
+ TLS v1.3 ciphersuite to use
  --tmp-table-size=#  If an internal in-memory temporary table in the MEMORY or
  TempTable storage engine exceeds this size, MySQL will
  automatically convert it to an on-disk table 
@@ -1630,7 +1616,6 @@ Variables (--variable-name=value)
 activate-all-roles-on-login FALSE
 admin-address (No default value)
 admin-port 33062
-admin-ssl TRUE
 admin-ssl-ca (No default value)
 admin-ssl-capath (No default value)
 admin-ssl-cert (No default value)
@@ -1645,7 +1630,6 @@ auto-increment-increment 1
 auto-increment-offset 1
 autocommit TRUE
 automatic-sp-privileges TRUE
-avoid-temporal-upgrade FALSE
 back-log 151
 big-tables FALSE
 bind-address *
@@ -1672,7 +1656,6 @@ binlog-stmt-cache-size 32768
 binlog-transaction-compression FALSE
 binlog-transaction-compression-level-zstd 3
 binlog-transaction-dependency-history-size 25000
-binlog-transaction-dependency-tracking WRITESET
 block-encryption-mode aes-128-ecb
 bulk-insert-buffer-size 8388608
 caching-sha2-password-digest-rounds 5000
@@ -1692,7 +1675,6 @@ connection-memory-limit 18446744073709551615
 console FALSE
 create-admin-listener-thread FALSE
 cte-max-recursion-depth 1000
-default-authentication-plugin caching_sha2_password
 default-password-lifetime 0
 default-storage-engine InnoDB
 default-table-encryption FALSE
@@ -1727,7 +1709,7 @@ generated-random-password-length 20
 global-connection-memory-limit 18446744073709551615
 global-connection-memory-tracking FALSE
 group-concat-max-len 1024
-group-replication-consistency EVENTUAL
+group-replication-consistency BEFORE_ON_PRIMARY_FAILOVER
 gtid-executed-compression-period 0
 gtid-mode OFF
 help TRUE
@@ -1749,6 +1731,7 @@ key-cache-age-threshold 300
 key-cache-block-size 1024
 key-cache-division-limit 100
 keyring-migration-destination (No default value)
+keyring-migration-from-component FALSE
 keyring-migration-host (No default value)
 keyring-migration-port 0
 keyring-migration-source (No default value)
@@ -1819,7 +1802,7 @@ myisam-recover-options OFF
 myisam-sort-buffer-size 8388608
 myisam-stats-method nulls_unequal
 myisam-use-mmap FALSE
-mysql-native-password ON
+mysql-native-password OFF
 mysql-native-password-proxy-users FALSE
 named-pipe FALSE
 named-pipe-full-access-group 
@@ -1827,11 +1810,8 @@ net-buffer-length 16384
 net-read-timeout 30
 net-retry-count 10
 net-write-timeout 60
-new FALSE
-no-dd-upgrade FALSE
 no-monitor FALSE
 offline-mode FALSE
-old FALSE
 old-alter-table FALSE
 optimizer-max-subgraph-pairs 100000
 optimizer-prune-level 1
@@ -1957,6 +1937,7 @@ report-password (No default value)
 report-port 0
 report-user (No default value)
 require-secure-transport FALSE
+restrict-fk-on-non-standard-key TRUE
 rpl-read-size 8192
 rpl-stop-replica-timeout 31536000
 rpl-stop-slave-timeout 31536000
@@ -1979,7 +1960,6 @@ shared-memory FALSE
 shared-memory-base-name MYSQL
 show-create-table-verbosity FALSE
 show-gipk-in-create-table-and-information-schema TRUE
-show-old-temporals FALSE
 show-replica-auth-info FALSE
 show-slave-auth-info FALSE
 skip-grant-tables TRUE
@@ -2026,9 +2006,8 @@ table-encryption-privilege-check FALSE
 table-open-cache-instances 16
 tablespace-definition-cache 256
 tc-heuristic-recover OFF
-temptable-max-mmap 1073741824
-temptable-max-ram 1073741824
-temptable-use-mmap TRUE
+temptable-max-mmap 0
+temptable-use-mmap FALSE
 terminology-use-previous NONE
 thread-cache-size 9
 thread-handling one-thread-per-connection

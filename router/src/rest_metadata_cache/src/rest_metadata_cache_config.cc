@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -40,7 +41,7 @@ static rapidjson::Value json_value_from_string(const std::string &s,
   return {s.data(), s.size(), allocator};
 }
 
-bool handle_params(HttpRequest &req) {
+bool handle_params(http::base::Request &req) {
   auto md_api = metadata_cache::MetadataCacheAPI::instance();
 
   if (!req.get_uri().get_query().empty()) {
@@ -63,7 +64,7 @@ bool handle_params(HttpRequest &req) {
 }
 
 bool RestMetadataCacheConfig::on_handle_request(
-    HttpRequest &req, const std::string & /* base_path */,
+    http::base::Request &req, const std::string & /* base_path */,
     const std::vector<std::string> &path_matches) {
   if (!handle_params(req)) return true;
 
@@ -73,7 +74,7 @@ bool RestMetadataCacheConfig::on_handle_request(
     return true;
   }
 
-  auto out_hdrs = req.get_output_headers();
+  auto &out_hdrs = req.get_output_headers();
   out_hdrs.add("Content-Type", "application/json");
 
   rapidjson::Document json_doc;

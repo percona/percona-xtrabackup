@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -32,7 +33,7 @@
 #include <sys/types.h>
 #include <time.h>
 
-#include "client/client_priv.h"
+#include "client/include/client_priv.h"
 #include "compression.h"
 #include "m_string.h"
 #include "my_alloc.h"
@@ -85,9 +86,9 @@ static longlong opt_ignore_lines = -1;
 static uint opt_zstd_compress_level = default_zstd_compression_level;
 static char *opt_compress_algorithm = nullptr;
 
-#include "caching_sha2_passwordopt-vars.h"
-#include "multi_factor_passwordopt-vars.h"
-#include "sslopt-vars.h"
+#include "client/include/caching_sha2_passwordopt-vars.h"
+#include "client/include/multi_factor_passwordopt-vars.h"
+#include "client/include/sslopt-vars.h"
 #if defined(_WIN32)
 static char *shared_memory_base_name = nullptr;
 #endif
@@ -180,7 +181,7 @@ static struct my_option my_long_options[] = {
      "Use LOW_PRIORITY when updating the table.", &opt_low_priority,
      &opt_low_priority, nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0,
      nullptr},
-#include "multi_factor_passwordopt-longopts.h"
+#include "client/include/multi_factor_passwordopt-longopts.h"
 #ifdef _WIN32
     {"pipe", 'W', "Use named pipes to connect to server.", nullptr, nullptr,
      nullptr, GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
@@ -214,8 +215,8 @@ static struct my_option my_long_options[] = {
     {"socket", 'S', "The socket file to use for connection.",
      &opt_mysql_unix_port, &opt_mysql_unix_port, nullptr, GET_STR, REQUIRED_ARG,
      0, 0, 0, nullptr, 0, nullptr},
-#include "caching_sha2_passwordopt-longopts.h"
-#include "sslopt-longopts.h"
+#include "client/include/caching_sha2_passwordopt-longopts.h"
+#include "client/include/sslopt-longopts.h"
 
     {"use-threads", OPT_USE_THREADS,
      "Load files in parallel. The argument is the number "
@@ -284,7 +285,7 @@ static bool get_one_option(int optid, const struct my_option *opt,
       DBUG_PUSH(argument ? argument : "d:t:o");
       debug_check_flag = true;
       break;
-#include "sslopt-case.h"
+#include "client/include/sslopt-case.h"
 
     case 'V':
       print_version();
@@ -484,7 +485,6 @@ static MYSQL *db_connect(char *host, char *database, char *user, char *) {
     if (mysql) mysql_close(mysql);
     return nullptr;
   }
-  mysql->reconnect = false;
   if (verbose) fprintf(stdout, "Selecting database %s\n", database);
   if (mysql_select_db(mysql, database)) {
     ignore_errors = false;

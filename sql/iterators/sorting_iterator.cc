@@ -1,15 +1,16 @@
-/* Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -60,7 +61,6 @@
 #include "sql/system_variables.h"
 #include "sql/table.h"
 #include "thr_lock.h"
-#include "varlen_sort.h"
 
 using std::string;
 using std::vector;
@@ -556,25 +556,22 @@ inline void Filesort_info::unpack_addon_fields(
   }
 
   // Unpack the actual addon fields (if any).
-  const uchar *start_of_record = buff + addon_fields->first_addon_offset();
+  const uchar *next_record = buff + addon_fields->first_addon_offset();
   for (const Sort_addon_field &addonf : *addon_fields) {
     Field *field = addonf.field;
+    const uchar *end_of_record = next_record;
     const bool is_null =
         addonf.null_bit && (addonf.null_bit & nulls[addonf.null_offset]);
     if (is_null) {
       field->set_null();
+    } else if (!field->table->has_null_row()) {
+      field->set_notnull();
+      end_of_record = field->unpack(next_record);
     }
-    if (Packed_addon_fields) {
-      if (!is_null && !field->table->has_null_row()) {
-        field->set_notnull();
-        start_of_record = field->unpack(start_of_record);
-      }
+    if constexpr (Packed_addon_fields) {
+      next_record = end_of_record;
     } else {
-      if (!is_null) {
-        field->set_notnull();
-        field->unpack(start_of_record);
-      }
-      start_of_record += addonf.max_length;
+      next_record += addonf.max_length;
     }
   }
 }

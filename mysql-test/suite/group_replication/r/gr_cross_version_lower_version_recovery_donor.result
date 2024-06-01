@@ -14,8 +14,7 @@ INSERT INTO t1 values (1);
 # 2. Start GR on M3 with higher patch version.
 
 [connection server3]
-SET @debug3_save= @@GLOBAL.DEBUG;
-SET @@GLOBAL.DEBUG= 'd,group_replication_compatibility_higher_patch_version';
+SET @@GLOBAL.DEBUG= '+d,group_replication_compatibility_higher_minor_version';
 SET SESSION sql_log_bin=0;
 call mtr.add_suppression("Member version is read compatible with the group.");
 SET SESSION sql_log_bin=1;
@@ -51,7 +50,11 @@ include/stop_group_replication.inc
 [connection server2]
 SET @allow_local_lower_version_join_save= @@GLOBAL.group_replication_allow_local_lower_version_join;
 SET GLOBAL group_replication_allow_local_lower_version_join= 1;
+Warnings:
+Warning	1681	'group_replication_allow_local_lower_version_join' is deprecated and will be removed in a future release.
 include/start_group_replication.inc
+Warnings:
+Warning	1681	'group_replication_allow_local_lower_version_join' is deprecated and will be removed in a future release.
 include/assert.inc [The super_read_only mode should be 0 on server2.]
 [connection server3]
 include/assert.inc [The super_read_only mode should be 0 on server3.]
@@ -60,9 +63,9 @@ include/assert.inc [The super_read_only mode should be 0 on server3.]
 
 [connection server2]
 DROP TABLE t1;
-include/rpl_sync.inc
+include/rpl/sync.inc
 [connection server3]
-SET @@GLOBAL.DEBUG= @debug3_save;
+SET @@GLOBAL.DEBUG= '-d,group_replication_compatibility_higher_minor_version';
 include/stop_group_replication.inc
 [connection server1]
 SET @@GLOBAL.DEBUG= @debug1_save;
@@ -76,4 +79,6 @@ call mtr.add_suppression("Skipping leave operation: concurrent attempt to leave 
 SET SESSION sql_log_bin= 1;
 [connection server2]
 SET @@GLOBAL.group_replication_allow_local_lower_version_join= @allow_local_lower_version_join_save;
+Warnings:
+Warning	1681	'group_replication_allow_local_lower_version_join' is deprecated and will be removed in a future release.
 include/group_replication_end.inc

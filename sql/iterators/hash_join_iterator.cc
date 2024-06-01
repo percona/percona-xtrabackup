@@ -1,15 +1,16 @@
-/* Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -22,20 +23,22 @@
 
 #include "sql/iterators/hash_join_iterator.h"
 
-#include <assert.h>
 #include <algorithm>
 #include <atomic>
 #include <bit>
+#include <cassert>
+#include <cmath>
+#include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
-#include "extra/robin-hood-hashing/robin_hood.h"
 #include "field_types.h"
 #include "my_alloc.h"
-#include "my_xxhash.h"
-
+#include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
+#include "my_xxhash.h"
 #include "mysql/components/services/bits/psi_bits.h"
 #include "mysqld_error.h"
 #include "sql/item.h"
@@ -47,11 +50,7 @@
 #include "sql/sql_list.h"
 #include "sql/system_variables.h"
 #include "sql/table.h"
-#include "template_utils.h"
 
-class JOIN;
-
-using hash_join_buffer::LoadBufferRowIntoTableBuffers;
 using hash_join_buffer::LoadImmutableStringIntoTableBuffers;
 
 // An arbitrary hash value for the empty string, to avoid the hash function
@@ -222,7 +221,7 @@ bool HashJoinIterator::Init() {
   //
   // Note that this only ever happens in the hypergraph optimizer; see comments
   // in CreateIteratorFromAccessPath().
-  if (m_row_buffer.inited() &&
+  if (m_row_buffer.Initialized() &&
       (m_hash_join_type == HashJoinType::IN_MEMORY ||
        (m_hash_join_type == HashJoinType::SPILL_TO_DISK &&
         m_chunk_files_on_disk.empty())) &&
@@ -913,11 +912,8 @@ void HashJoinIterator::LookupProbeRowInHashTable() {
   if (m_join_conditions.empty()) {
     // Skip the call to find() in case we don't have any join conditions.
     // TODO(sgunders): Is this relevant for performance anymore?
-    if (m_row_buffer.empty()) {
-      m_current_row = LinkedImmutableString{nullptr};
-    } else {
-      m_current_row = m_row_buffer.begin()->second;
-    }
+    m_current_row =
+        m_row_buffer.first_row().value_or(LinkedImmutableString{nullptr});
     m_state = State::READING_FIRST_ROW_FROM_HASH_TABLE;
     return;
   }
@@ -944,17 +940,15 @@ void HashJoinIterator::LookupProbeRowInHashTable() {
   hash_join_buffer::Key key{m_temporary_row_and_join_key_buffer.ptr(),
                             m_temporary_row_and_join_key_buffer.length()};
 
-  auto it = m_row_buffer.find(key);
-  if (it == m_row_buffer.end()) {
-    m_current_row = LinkedImmutableString{nullptr};
-  } else {
-    m_current_row = it->second;
-  }
+  m_current_row =
+      m_row_buffer.find(key).value_or(LinkedImmutableString{nullptr});
 
   m_state = State::READING_FIRST_ROW_FROM_HASH_TABLE;
 }
 
 int HashJoinIterator::ReadJoinedRow() {
+  DBUG_EXECUTE_IF("kill_query_in_hash_join_iterator",
+                  thd()->killed = THD::KILL_QUERY;);
   if (m_current_row == nullptr) {
     // Signal that we have reached the end of hash table entries. Let the caller
     // determine which state we end up in.
@@ -1025,8 +1019,12 @@ int HashJoinIterator::ReadNextJoinedRowFromHashTable() {
     // we return a row.
     if (res == 0) {
       passes_extra_conditions = JoinedRowPassesExtraConditions();
-      if (thd()->is_error() || thd()->killed) {
+      if (thd()->is_error()) {
         // Evaluation of extra conditions raised an error, so abort the join.
+        return 1;
+      }
+      if (thd()->killed) {
+        thd()->send_kill_message();
         return 1;
       }
 

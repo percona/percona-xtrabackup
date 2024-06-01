@@ -1,15 +1,16 @@
-/* Copyright (c) 2017, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
 as published by the Free Software Foundation.
 
-This program is also distributed with certain software (including
+This program is designed to work with certain software (including
 but not limited to OpenSSL) that is licensed under separate terms,
 as designated in a particular file or component or in included license
 documentation.  The authors of MySQL hereby grant you an additional
 permission to link the program and your derivative works with the
-separately licensed software that they have included with MySQL.
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -352,10 +353,9 @@ DEFINE_BOOL_METHOD(mysql_component_sys_variable_imp::register_variable,
       if (mysqld_server_started) {
         Persisted_variables_cache *pv =
             Persisted_variables_cache::get_instance();
-        argc_copy = orig_argc;
+        argc_copy = argc_cached;
         argv_copy = new (&local_root) char *[argc_copy + 1];
-        memcpy(argv_copy, orig_argv, argc_copy * sizeof(char *));
-        argv_copy[argc_copy] = nullptr;
+        memcpy(argv_copy, argv_cached, (argc_copy + 1) * sizeof(char *));
         argc = &argc_copy;
         argv = &argv_copy;
         if (pv && pv->append_read_only_variables(argc, argv, true, true,

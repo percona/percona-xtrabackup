@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,6 +28,7 @@
 
 #include "mysqlrouter/router_export.h"
 
+#include <chrono>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -78,12 +80,11 @@ struct MetadataSchemaVersion {
 std::string ROUTER_LIB_EXPORT to_string(const MetadataSchemaVersion &version);
 
 // Semantic version numbers that this Router version supports for bootstrap mode
-constexpr MetadataSchemaVersion kRequiredBootstrapSchemaVersion[]{{1, 0, 0},
-                                                                  {2, 0, 0}};
+constexpr MetadataSchemaVersion kRequiredBootstrapSchemaVersion[]{{2, 0, 0}};
 
 // Semantic version number that this Router version supports for routing mode
 constexpr MetadataSchemaVersion kRequiredRoutingMetadataSchemaVersion[]{
-    {1, 0, 0}, {2, 0, 0}};
+    {2, 0, 0}};
 
 // Version that introduced views and support for ReplicaSet cluster type
 constexpr MetadataSchemaVersion kNewMetadataVersion{2, 0, 0};
@@ -101,10 +102,7 @@ bool ROUTER_LIB_EXPORT metadata_schema_version_is_compatible(
     const mysqlrouter::MetadataSchemaVersion &required,
     const mysqlrouter::MetadataSchemaVersion &available);
 
-bool ROUTER_LIB_EXPORT metadata_schema_version_is_deprecated(
-    const mysqlrouter::MetadataSchemaVersion &version);
-
-std::string ROUTER_LIB_EXPORT get_metadata_schema_deprecated_msg(
+std::string ROUTER_LIB_EXPORT get_metadata_schema_uncompatible_msg(
     const mysqlrouter::MetadataSchemaVersion &version);
 
 // throws std::logic_error, MySQLSession::Error
@@ -139,7 +137,6 @@ std::string to_string(const mysqlrouter::MetadataSchemaVersion (&version)[N]) {
 }
 
 enum class ClusterType {
-  GR_V1, /* based on Group Replication (metadata 1.x) */
   GR_V2, /* based on Group Replication (metadata 2.x) */
   GR_CS, /* based on Group Replication, part of ClusterSet (metadata 2.1+) */
   RS_V2  /* ReplicaSet (metadata 2.x) */
@@ -204,6 +201,18 @@ std::optional<InstanceType> ROUTER_LIB_EXPORT
 str_to_instance_type(const std::string &);
 
 std::string ROUTER_LIB_EXPORT to_string(const InstanceType);
+std::string ROUTER_LIB_EXPORT
+to_string(const TargetCluster::InvalidatedClusterRoutingPolicy);
+
+constexpr const std::chrono::milliseconds kDefaultMetadataTTLCluster{500};
+constexpr const std::chrono::milliseconds
+    kDefaultMetadataTTLClusterGRNotificationsON =
+        std::chrono::milliseconds(60 * 1000);
+constexpr const std::chrono::milliseconds kDefaultMetadataTTLClusterSet{
+    5000};  // default TTL for ClusterSet is 5 seconds regardless if GR
+            // Notifications are used or not
+const bool kDefaultUseGRNotificationsCluster = false;
+const bool kDefaultUseGRNotificationsClusterSet = true;
 
 }  // namespace mysqlrouter
 #endif

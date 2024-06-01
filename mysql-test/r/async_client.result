@@ -25,7 +25,7 @@ SPACE(@@global.max_allowed_packet)
 lot_of_spaces
 SET GLOBAL max_allowed_packet=default;
 # connect with wrong password
-connect(localhost,caching_sha2,caching1,wl11381,MASTER_PORT,MASTER_SOCKET);
+connect(localhost,caching_sha2,caching1,wl11381,SOURCE_PORT,SOURCE_SOCKET);
 ERROR 28000: Access denied for user 'caching_sha2'@'localhost' (using password: YES)
 # check for timeout
 SELECT USER();
@@ -42,7 +42,7 @@ SELECT 1;
 # lock the account
 ALTER USER caching_sha2@localhost ACCOUNT LOCK;
 # account is locked so connect should fail
-connect(localhost,caching_sha2,caching,wl11381,MASTER_PORT,MASTER_SOCKET);
+connect(localhost,caching_sha2,caching,wl11381,SOURCE_PORT,SOURCE_SOCKET);
 ERROR HY000: Access denied for user 'caching_sha2'@'localhost'. Account is locked.
 # lock the account
 ALTER USER caching_sha2@localhost ACCOUNT UNLOCK;
@@ -50,7 +50,7 @@ ALTER USER caching_sha2@localhost ACCOUNT UNLOCK;
 SELECT "connect succeeded after account is unlocked";
 connect succeeded after account is unlocked
 connect succeeded after account is unlocked
-# restart: --ssl=off --loose-caching_sha2_password_private_key_path=MYSQL_TEST_DIR/std_data/rsa_private_key.pem --loose-caching_sha2_password_public_key_path=MYSQL_TEST_DIR/std_data/rsa_public_key.pem
+# restart: --tls-version= --loose-caching_sha2_password_private_key_path=MYSQL_TEST_DIR/std_data/rsa_private_key.pem --loose-caching_sha2_password_public_key_path=MYSQL_TEST_DIR/std_data/rsa_public_key.pem
 # connect as caching_sha2 with SSL disabled
 SELECT USER();
 USER()
@@ -63,7 +63,7 @@ USER()
 caching_sha2@localhost
 # case3: authenticate user with sha256_password
 CREATE USER sha256@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string';
-# restart: --default-authentication-plugin=sha256_password
+# restart: --authentication-policy=*:sha256_password
 # connect as sha256
 SELECT USER();
 USER()
@@ -74,13 +74,13 @@ ALTER USER sha256@localhost IDENTIFIED BY '';
 SELECT USER();
 USER()
 sha256@localhost
-# restart: --default-authentication-plugin=sha256_password --ssl=off --loose-sha256_password_private_key_path=MYSQL_TEST_DIR/std_data/rsa_private_key.pem --loose-sha256_password_public_key_path=MYSQL_TEST_DIR/std_data/rsa_public_key.pem
+# restart: --authentication-policy=*:sha256_password --tls-version= --loose-sha256_password_private_key_path=MYSQL_TEST_DIR/std_data/rsa_private_key.pem --loose-sha256_password_public_key_path=MYSQL_TEST_DIR/std_data/rsa_public_key.pem
 # connect with wrong password and SSL disabled
-connect(localhost,sha256,auth_string,test,MASTER_PORT,MASTER_SOCKET);
+connect(localhost,sha256,auth_string,test,SOURCE_PORT,SOURCE_SOCKET);
 Got one of the listed errors
 # case4: authenticate user with mysql_native_password
 CREATE USER native_user@localhost IDENTIFIED WITH 'mysql_native_password' BY 'native';
-# restart: --default-authentication-plugin=mysql_native_password
+# restart: --authentication-policy=*:mysql_native_password
 # connect as native_user
 SELECT USER();
 USER()

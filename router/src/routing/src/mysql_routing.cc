@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -67,22 +68,22 @@
 #include "mysql/harness/string_utils.h"  // trim
 #include "mysql/harness/tls_server_context.h"
 #include "mysql/harness/utility/string.h"  // string_format
+#include "mysqlrouter/base_protocol.h"
+#include "mysqlrouter/connection_pool_component.h"
 #include "mysqlrouter/io_component.h"
 #include "mysqlrouter/io_thread.h"
 #include "mysqlrouter/metadata_cache.h"
 #include "mysqlrouter/routing.h"
+#include "mysqlrouter/ssl_mode.h"
 #include "mysqlrouter/uri.h"
 #include "mysqlrouter/utils.h"  // to_string
 #include "plugin_config.h"
-#include "protocol/base_protocol.h"
 #include "protocol/protocol.h"
 #include "scope_guard.h"
-#include "ssl_mode.h"
 #include "tcp_address.h"
 #include "x_connection.h"
 
 using mysql_harness::utility::string_format;
-using routing::Mode;
 using routing::RoutingStrategy;
 IMPORT_LOG_FUNCTIONS()
 
@@ -456,13 +457,13 @@ stdx::expected<void, std::error_code> AcceptingEndpointTcpSocket::setup() {
   auto resolve_res = resolver.resolve(address_, std::to_string(port_));
 
   if (!resolve_res) {
-    return stdx::make_unexpected(resolve_res.error());
+    return stdx::unexpected(resolve_res.error());
   }
 
   net::ip::tcp::acceptor sock(io_ctx_);
 
   stdx::expected<void, std::error_code> last_res =
-      stdx::make_unexpected(make_error_code(net::socket_errc::not_found));
+      stdx::unexpected(make_error_code(net::socket_errc::not_found));
 
   // Try to setup socket and bind
   for (auto const &addr : resolve_res.value()) {
@@ -497,7 +498,7 @@ stdx::expected<void, std::error_code> AcceptingEndpointTcpSocket::setup() {
     last_res = sock.listen(kListenQueueSize);
     if (!last_res) {
       // bind() succeeded, but listen() failed: don't retry.
-      return stdx::make_unexpected(last_res.error());
+      return stdx::unexpected(last_res.error());
     }
 
     service_endpoint_ = addr.endpoint();
@@ -506,7 +507,7 @@ stdx::expected<void, std::error_code> AcceptingEndpointTcpSocket::setup() {
     return {};
   }
 
-  return stdx::make_unexpected(last_res.error());
+  return stdx::unexpected(last_res.error());
 }
 
 stdx::expected<void, std::error_code> AcceptingEndpointTcpSocket::cancel() {
@@ -542,7 +543,7 @@ stdx::expected<void, std::error_code> AcceptingEndpointUnixSocket::setup() {
   local::stream_protocol::acceptor sock(io_ctx_);
   auto last_res = sock.open();
   if (!last_res) {
-    return stdx::make_unexpected(last_res.error());
+    return stdx::unexpected(last_res.error());
   }
 
   local::stream_protocol::endpoint ep(socket_name_);
@@ -550,7 +551,7 @@ stdx::expected<void, std::error_code> AcceptingEndpointUnixSocket::setup() {
   last_res = sock.bind(ep);
   if (!last_res) {
     if (last_res.error() != make_error_code(std::errc::address_in_use)) {
-      return stdx::make_unexpected(last_res.error());
+      return stdx::unexpected(last_res.error());
     }
     // file exists, try to connect to it to see if the socket is already in
     // use
@@ -561,8 +562,7 @@ stdx::expected<void, std::error_code> AcceptingEndpointUnixSocket::setup() {
       log_error("Socket file %s already in use by another process",
                 socket_name_.c_str());
 
-      return stdx::make_unexpected(
-          make_error_code(std::errc::already_connected));
+      return stdx::unexpected(make_error_code(std::errc::already_connected));
     } else if (connect_res.error() ==
                make_error_code(std::errc::connection_refused)) {
       log_warning(
@@ -578,13 +578,13 @@ stdx::expected<void, std::error_code> AcceptingEndpointUnixSocket::setup() {
                                mysqlrouter::to_string(ec) + "))";
 
           log_warning("%s", errmsg.c_str());
-          return stdx::make_unexpected(ec);
+          return stdx::unexpected(ec);
         }
       }
 
       last_res = sock.bind(ep);
       if (!last_res) {
-        return stdx::make_unexpected(last_res.error());
+        return stdx::unexpected(last_res.error());
       }
     } else {
       log_warning(
@@ -592,21 +592,21 @@ stdx::expected<void, std::error_code> AcceptingEndpointUnixSocket::setup() {
           "failed: %s",
           socket_name_.c_str(), connect_res.error().message().c_str());
 
-      return stdx::make_unexpected(connect_res.error());
+      return stdx::unexpected(connect_res.error());
     }
   }
 
   try {
     mysql_harness::make_file_public(socket_name_);
   } catch (const std::system_error &ec) {
-    return stdx::make_unexpected(ec.code());
+    return stdx::unexpected(ec.code());
   } catch (const std::exception &e) {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 
   last_res = sock.listen(kListenQueueSize);
   if (!last_res) {
-    return stdx::make_unexpected(last_res.error());
+    return stdx::unexpected(last_res.error());
   }
 
   service_ = std::move(sock);
@@ -659,7 +659,6 @@ MySQLRouting::MySQLRouting(const RoutingConfig &routing_config,
     : context_(routing_config, route_name, client_ssl_ctx, dest_ssl_ctx),
       io_ctx_{io_ctx},
       routing_strategy_(routing_config.routing_strategy),
-      mode_(routing_config.mode),
       access_mode_(routing_config.access_mode),
       max_connections_(set_max_connections(routing_config.max_connections)) {
   validate_destination_connect_timeout(
@@ -703,14 +702,8 @@ void MySQLRouting::run(mysql_harness::PluginFuncEnv *env) {
   }
 #endif
   if (!accepting_endpoints_.empty()) {
-    // routing strategy and mode are mutually-exclusive (mode is legacy)
-    if (routing_strategy_ != RoutingStrategy::kUndefined)
-      log_info("[%s] started: routing strategy = %s",
-               context_.get_name().c_str(),
-               get_routing_strategy_name(routing_strategy_).c_str());
-    else
-      log_info("[%s] started: routing mode = %s", context_.get_name().c_str(),
-               get_mode_name(mode_).c_str());
+    log_info("[%s] started: routing strategy = %s", context_.get_name().c_str(),
+             get_routing_strategy_name(routing_strategy_).c_str());
 
     auto res = run_acceptor(env);
     if (!res) {
@@ -745,6 +738,16 @@ std::string get_accepting_endpoints_list(
 stdx::expected<void, std::string> MySQLRouting::run_acceptor(
     mysql_harness::PluginFuncEnv *env) {
   destination_->start(env);
+
+  if (!mysql_harness::is_running(env)) {
+    // if a shutdown-request is received while waiting for the destination to
+    // start, just leave.
+
+    log_info("[%s] stopped", context_.get_name().c_str());
+
+    return {};
+  }
+
   destination_->register_start_router_socket_acceptor(
       [this]() { return start_accepting_connections(); });
   destination_->register_stop_router_socket_acceptor(
@@ -778,7 +781,7 @@ stdx::expected<void, std::string> MySQLRouting::run_acceptor(
     if (!is_destination_standalone_) destination_->handle_sockets_acceptors();
     // If we failed to start accepting connections on startup then router
     // should fail.
-    if (!res) return res.get_unexpected();
+    if (!res) return stdx::unexpected(res.error());
   }
   mysql_harness::on_service_ready(env);
 
@@ -884,7 +887,7 @@ MySQLRouting::restart_accepting_connections() {
 
 stdx::expected<void, std::string> MySQLRouting::start_accepting_connections() {
   if (!is_running()) {
-    return stdx::make_unexpected(std::string("Terminated"));
+    return stdx::unexpected(std::string("Terminated"));
   }
 
   std::string error_msg;
@@ -922,7 +925,7 @@ stdx::expected<void, std::string> MySQLRouting::start_accepting_connections() {
   }
 
   if (!error_msg.empty()) {
-    return stdx::make_unexpected(error_msg);
+    return stdx::unexpected(error_msg);
   }
 
   return {};
@@ -962,6 +965,15 @@ void MySQLRouting::create_connection(
     const typename ClientProtocol::endpoint &client_endpoint) {
   auto remove_callback = [this](MySQLRoutingConnectionBase *connection) {
     connection->context().decrease_info_active_routes();
+
+    auto &pool_comp = ConnectionPoolComponent::get_instance();
+    auto pool = pool_comp.get(ConnectionPoolComponent::default_pool_name());
+
+    if (pool) {
+      // if the connection is in the pool, remove it from the pool.
+
+      pool->discard_all_stashed(connection);
+    }
 
     connection_container_.remove_connection(connection);
   };
@@ -1037,7 +1049,7 @@ void MySQLRouting::set_destinations_from_uri(const mysqlrouter::URI &uri) {
 
     destination_ = std::make_unique<DestMetadataCacheGroup>(
         io_ctx_, uri.host, routing_strategy_, uri.query,
-        context_.get_protocol(), mode_);
+        context_.get_protocol());
   } else {
     throw std::runtime_error(string_format(
         "Invalid URI scheme; expecting: 'metadata-cache' is: '%s'",
@@ -1046,20 +1058,6 @@ void MySQLRouting::set_destinations_from_uri(const mysqlrouter::URI &uri) {
 }
 
 namespace {
-
-routing::RoutingStrategy get_default_routing_strategy(
-    const routing::Mode mode) {
-  switch (mode) {
-    case routing::Mode::kReadOnly:
-      return routing::RoutingStrategy::kRoundRobin;
-    case routing::Mode::kReadWrite:
-      return routing::RoutingStrategy::kFirstAvailable;
-    default:;  // fall-through
-  }
-
-  // safe default if access_mode is also not specified
-  return routing::RoutingStrategy::kFirstAvailable;
-}
 
 std::unique_ptr<RouteDestination> create_standalone_destination(
     net::io_context &io_ctx, const routing::RoutingStrategy strategy,
@@ -1084,12 +1082,6 @@ std::unique_ptr<RouteDestination> create_standalone_destination(
 void MySQLRouting::set_destinations_from_csv(const std::string &csv) {
   std::stringstream ss(csv);
   std::string part;
-
-  // if no routing_strategy is defined for standalone routing
-  // we set the default based on the mode
-  if (routing_strategy_ == RoutingStrategy::kUndefined) {
-    routing_strategy_ = get_default_routing_strategy(mode_);
-  }
 
   is_destination_standalone_ = true;
   destination_ = create_standalone_destination(io_ctx_, routing_strategy_,
@@ -1160,8 +1152,6 @@ int MySQLRouting::set_max_connections(int maximum) {
   max_connections_ = maximum;
   return max_connections_;
 }
-
-routing::Mode MySQLRouting::get_mode() const { return mode_; }
 
 routing::RoutingStrategy MySQLRouting::get_routing_strategy() const {
   return routing_strategy_;

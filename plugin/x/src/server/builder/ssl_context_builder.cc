@@ -1,16 +1,17 @@
 /*
- * Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
  * as published by the Free Software Foundation.
  *
- * This program is also distributed with certain software (including
+ * This program is designed to work with certain software (including
  * but not limited to OpenSSL) that is licensed under separate terms,
  * as designated in a particular file or component or in included license
  * documentation.  The authors of MySQL hereby grant you an additional
  * permission to link the program and your derivative works with the
- * separately licensed software that they have included with MySQL.
+ * separately licensed software that they have either included with
+ * the program or referenced in the documentation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -30,6 +31,7 @@
 
 #include "plugin/x/src/config/config.h"
 #include "plugin/x/src/module_mysqlx.h"
+#include "plugin/x/src/sql_data_result.h"
 #include "plugin/x/src/ssl_context.h"
 #include "plugin/x/src/variables/system_variables.h"
 #include "plugin/x/src/xpl_log.h"
@@ -52,8 +54,23 @@ Ssl_context_builder::get_mysqld_ssl_config() const {
   result.m_ssl_crl = Plugin_system_variables::get_system_variable("ssl_crl");
   result.m_ssl_crlpath =
       Plugin_system_variables::get_system_variable("ssl_crlpath");
-  result.m_have_ssl =
-      Plugin_system_variables::get_system_variable("have_ssl") == "YES";
+  result.m_have_ssl = false;
+
+  try {
+    Sql_data_result fetch(m_sql_session);
+    fetch.query(
+        "SELECT VALUE=\"Yes\" FROM performance_schema.tls_channel_status "
+        " WHERE CHANNEL=\"mysql_main\" AND PROPERTY=\"Enabled\"");
+    if (fetch.size() == 1) {
+      int value;
+      fetch.get(&value);
+      result.m_have_ssl = (value == 1);
+    }
+  } catch (const ngs::Error_code &DEBUG_VAR(e)) {
+    log_debug(
+        "Can't get 'mysql_main' tls channels state - error: %i, message: %s",
+        e.error, e.message.c_str());
+  }
 
   return result;
 }

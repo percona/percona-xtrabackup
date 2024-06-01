@@ -1,15 +1,16 @@
-/* Copyright (c) 2016, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -71,15 +72,9 @@
 #define TRANSACTION_WITH_GUARANTEES_VERSION 0x080014
 
 /*
-  Version from which patch version number is also considered during member
-  join, view changes or primary member selection.
-*/
-#define PRIMARY_ELECTION_PATCH_CONSIDERATION 0x080017
-
-/*
   Version from which group replication and the server support cloning
 */
-#define CLONE_GR_SUPPORT_VERSION 0x080017
+#define CLONE_GR_SUPPORT_VERSION 0x080400
 
 /*
   Version from which group replication support timeout argument in UDF
@@ -91,5 +86,22 @@
   Version from which VCLE was removed.
 */
 #define MEMBER_VERSION_REMOVING_VCLE 0x080300
+
+/*
+  Starting on 8.4.0, inclusive, all 8.4 patch versions are compatible.
+*/
+#define MEMBER_8_4_LTS_VERSION 0x080400
+
+/*
+  Preemptive garbage collection configuration default values.
+*/
+static constexpr bool PREEMPTIVE_GARBAGE_COLLECTION_DEFAULT{false};
+
+static constexpr unsigned int
+    PREEMPTIVE_GARBAGE_COLLECTION_ROWS_THRESHOLD_DEFAULT{100000};
+static constexpr unsigned int PREEMPTIVE_GARBAGE_COLLECTION_ROWS_THRESHOLD_MIN{
+    10000};
+static constexpr unsigned int PREEMPTIVE_GARBAGE_COLLECTION_ROWS_THRESHOLD_MAX{
+    100000000};
 
 #endif /* PLUGIN_CONSTANTS_INCLUDE */

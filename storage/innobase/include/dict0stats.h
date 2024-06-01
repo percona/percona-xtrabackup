@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 2009, 2023, Oracle and/or its affiliates.
+Copyright (c) 2009, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -151,12 +152,6 @@ dberr_t dict_stats_rename_table(const char *old_name, /*!< in: old table name */
                                  is renamed */
     const char *old_index_name,  /*!< in: old index name */
     const char *new_index_name); /*!< in: new index name */
-
-/** Evict the stats tables if they loaded in tablespace cache and also
-close the stats .ibd files. We have to close stats tables because
-8.0 stats tables will use the same name. We load the stats from 5.7
-with a suffix "_backup57" and migrate the statistics. */
-void dict_stats_evict_tablespaces();
 
 /** Represent the record of innodb_table_stats table. */
 class TableStatsRecord {

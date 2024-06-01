@@ -6,6 +6,7 @@ var common_stmts = require("common_statements");
       cluster_type: "gr",
       gr_id: mysqld.global.gr_id,
       innodb_cluster_name: "test",
+      router_version: mysqld.global.router_version,
     };
 
     var common_responses = common_stmts.prepare_statement_responses(
@@ -15,7 +16,6 @@ var common_stmts = require("common_statements");
           "router_select_schema_version",
           "router_select_cluster_type_v2",
           "router_select_current_instance_attributes",
-          "router_select_metadata_v2",
           "router_count_clusters_v2",
           "router_check_member_state",
           "router_select_members_count",
@@ -43,6 +43,7 @@ var common_stmts = require("common_statements");
           "router_grant_on_routers",
           "router_update_routers_in_metadata",
           "router_update_router_options_in_metadata",
+          "router_select_config_defaults_stored_gr_cluster",
         ],
         options);
 
@@ -54,9 +55,9 @@ var common_stmts = require("common_statements");
             options);
 
     var cu_regex = "CREATE USER IF NOT EXISTS " +
-        "'mysql_router1_.*'@'.*' IDENTIFIED BY '.*'," +
-        "'mysql_router1_.*'@'.*' IDENTIFIED BY '.*'," +
-        "'mysql_router1_.*'@'.*' IDENTIFIED BY '.*'";
+        "'mysql_router1_.*'@'.*' IDENTIFIED WITH `caching_sha2_password` BY '.*'," +
+        "'mysql_router1_.*'@'.*' IDENTIFIED WITH `caching_sha2_password` BY '.*'," +
+        "'mysql_router1_.*'@'.*' IDENTIFIED WITH `caching_sha2_password` BY '.*'";
 
     if (stmt.match(cu_regex)) {
       return {"ok": {}};

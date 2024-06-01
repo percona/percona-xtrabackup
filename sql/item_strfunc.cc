@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1194,23 +1195,29 @@ bool Item_func_concat_ws::resolve_type(THD *thd) {
 
 String *Item_func_reverse::val_str(String *str) {
   assert(fixed);
-  String *res = args[0]->val_str(str);
-  const char *ptr, *end;
-  char *tmp;
 
-  if ((null_value = args[0]->null_value)) return nullptr;
-  /* An empty string is a special case as the string pointer may be null */
-  if (!res->length()) return make_empty_result();
+  // Ensure that the input to REVERSE() is converted to the collation used by
+  // the reverse item itself. This is important e.g. for "REVERSE(1)" where the
+  // input collation is latin1 while the default collation for the reverse item
+  // is utf8mb4.
+  String *res = eval_string_arg(collation.collation, args[0], str);
+  if (res == nullptr) return error_str();
+  null_value = false;
+
+  if (res->length() == 0) return make_empty_result();
+
+  // Prepare tmp_value to hold the reversed input string.
   if (tmp_value.alloced_length() < res->length() &&
       tmp_value.mem_realloc(res->length())) {
-    null_value = true;
-    return nullptr;
+    return error_str();
   }
   tmp_value.length(res->length());
   tmp_value.set_charset(res->charset());
-  ptr = res->ptr();
-  end = ptr + res->length();
-  tmp = tmp_value.ptr() + tmp_value.length();
+
+  // Reverse the string.
+  const char *ptr = res->ptr();
+  const char *end = ptr + res->length();
+  char *tmp = tmp_value.ptr() + tmp_value.length();
   if (use_mb(res->charset())) {
     uint32 l;
     while (ptr < end) {
@@ -1975,13 +1982,41 @@ type_conversion_status Item_func_current_user::save_in_field_inner(Field *field,
   return save_str_value_in_field(field, &str_value);
 }
 
+bool Item_func_current_user::resolve_type(THD *thd) {
+  if (super::resolve_type(thd)) {
+    return true;
+  }
+  if (context->security_ctx == nullptr) {
+    return false;
+  }
+
+  // If Name_resolution_context has a definer Security_context priv_user and
+  // priv_host from it are copied into the item since the
+  // Name_resolution_context may have been deallocated when val_str() gets
+  // called.
+  LEX_CSTRING pu = context->security_ctx->priv_user();
+  if (pu.str != nullptr) {
+    definer_priv_user = LexStringDupRoot(thd->mem_root, pu);
+    if (definer_priv_user.str == nullptr) return true;
+  }
+  LEX_CSTRING ph = context->security_ctx->priv_host();
+  if (ph.str != nullptr) {
+    definer_priv_host = LexStringDupRoot(thd->mem_root, ph);
+    if (definer_priv_host.str == nullptr) return true;
+  }
+  return false;
+}
+
 String *Item_func_current_user::val_str(String *) {
   assert(fixed);
   if (!m_evaluated) {
-    Security_context *const ctx = context->security_ctx
-                                      ? context->security_ctx
-                                      : current_thd->security_context();
-    if (evaluate(ctx->priv_user().str, ctx->priv_host().str)) return nullptr;
+    if (definer_priv_user.str != nullptr) {
+      if (evaluate(definer_priv_user.str, definer_priv_host.str))
+        return nullptr;
+    } else {
+      Security_context *const ctx = current_thd->security_context();
+      if (evaluate(ctx->priv_user().str, ctx->priv_host().str)) return nullptr;
+    }
   }
   return null_value ? nullptr : &str_value;
 }
@@ -2384,86 +2419,35 @@ String *Item_func_elt::val_str(String *str) {
   return result;
 }
 
-bool Item_func_make_set::do_itemize(Parse_context *pc, Item **res) {
-  if (skip_itemize(res)) return false;
-  /*
-    We have to itemize() the "item" before the super::itemize() call there since
-    this reflects the "natural" order of former semantic action code execution
-    in the original parser:
-  */
-  return item->itemize(pc, &item) || super::do_itemize(pc, res);
-}
-
-bool Item_func_make_set::split_sum_func(THD *thd, Ref_item_array ref_item_array,
-                                        mem_root_deque<Item *> *fields) {
-  if (item->split_sum_func2(thd, ref_item_array, fields, &item, true)) {
-    return true;
-  }
-  return Item_str_func::split_sum_func(thd, ref_item_array, fields);
-}
-
 bool Item_func_make_set::fix_fields(THD *thd, Item **ref) {
-  assert(!fixed);
-  if (!item->fixed && item->fix_fields(thd, &item)) {
-    return true;
-  }
-  if (item->check_cols(1)) {
-    return true;
-  }
-  if (Item_func::fix_fields(thd, ref)) {
-    return true;
-  }
-  if (item->is_nullable()) {
-    set_nullable(true);
-  }
-  used_tables_cache |= item->used_tables();
-  if (null_on_null) not_null_tables_cache |= item->not_null_tables();
-  add_accum_properties(item);
-
-  return false;
-}
-
-void Item_func_make_set::fix_after_pullout(Query_block *parent_query_block,
-                                           Query_block *removed_query_block) {
-  Item_func::fix_after_pullout(parent_query_block, removed_query_block);
-  item->fix_after_pullout(parent_query_block, removed_query_block);
-  used_tables_cache |= item->used_tables();
-  if (null_on_null) not_null_tables_cache |= item->not_null_tables();
+  return Item_func::fix_fields(thd, ref);
 }
 
 bool Item_func_make_set::resolve_type(THD *thd) {
-  if (item->propagate_type(thd, MYSQL_TYPE_LONGLONG)) return true;
-  if (param_type_is_default(thd, 0, -1)) return true;
-  uint32 char_length = arg_count - 1; /* Separators */
+  if (args[0]->propagate_type(thd, MYSQL_TYPE_LONGLONG)) return true;
+  if (param_type_is_default(thd, 1, -1)) return true;
+  uint32 char_length = arg_count - 2; /* Separators */
 
-  if (agg_arg_charsets_for_string_result(collation, args, arg_count))
+  if (agg_arg_charsets_for_string_result(collation, args + 1, arg_count - 1))
     return true;
 
-  for (uint i = 0; i < arg_count; i++)
+  for (uint i = 1; i < arg_count; i++)
     char_length += args[i]->max_char_length();
   set_data_type_string(char_length);
 
   return false;
 }
 
-void Item_func_make_set::update_used_tables() {
-  Item_func::update_used_tables();
-  item->update_used_tables();
-  used_tables_cache |= item->used_tables();
-  not_null_tables_cache |= item->not_null_tables();
-  add_accum_properties(item);
-}
-
 String *Item_func_make_set::val_str(String *str) {
   assert(fixed);
   bool first_found = false;
-  Item **ptr = args;
+  Item **ptr = args + 1;
   THD *thd = current_thd;
 
-  ulonglong bits = item->val_int();
-  if ((null_value = item->null_value)) return nullptr;
+  ulonglong bits = args[0]->val_int();
+  if ((null_value = args[0]->null_value)) return nullptr;
 
-  if (arg_count < 64) bits &= (1ULL << arg_count) - 1;
+  if (arg_count < 64 + 1) bits &= (1ULL << (arg_count - 1)) - 1;
 
   tmp_str.set("", 0, collation.collation);
   for (; bits; bits >>= 1, ptr++) {
@@ -2491,20 +2475,13 @@ String *Item_func_make_set::val_str(String *str) {
   return &tmp_str;
 }
 
-Item *Item_func_make_set::transform(Item_transformer transformer, uchar *arg) {
-  item = item->transform(transformer, arg);
-  if (item == nullptr) return nullptr;
-
-  return Item_str_func::transform(transformer, arg);
-}
-
 void Item_func_make_set::print(const THD *thd, String *str,
                                enum_query_type query_type) const {
   str->append(STRING_WITH_LEN("make_set("));
-  item->print(thd, str, query_type);
-  if (arg_count) {
+  args[0]->print(thd, str, query_type);
+  if (arg_count > 1) {
     str->append(',');
-    print_args(thd, str, 0, query_type);
+    print_args(thd, str, 1, query_type);
   }
   str->append(')');
 }
@@ -3026,7 +3003,7 @@ String *Item_func_conv::val_str(String *str) {
 
   longlong dec;
   if (args[0]->data_type() == MYSQL_TYPE_BIT ||
-      args[0]->type() == VARBIN_ITEM) {
+      args[0]->type() == HEX_BIN_ITEM) {
     /*
      Special case: The string representation of BIT doesn't resemble the
      decimal representation, so we shouldn't change it to string and then to
@@ -4239,7 +4216,7 @@ bool Item_func_uuid::do_itemize(Parse_context *pc, Item **res) {
   if (skip_itemize(res)) return false;
   if (super::do_itemize(pc, res)) return true;
   pc->thd->lex->set_stmt_unsafe(LEX::BINLOG_STMT_UNSAFE_SYSTEM_FUNCTION);
-  pc->thd->lex->safe_to_cache_query = false;
+  pc->thd->lex->set_uncacheable(pc->select, UNCACHEABLE_RAND);
   return false;
 }
 

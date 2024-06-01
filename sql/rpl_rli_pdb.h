@@ -1,15 +1,16 @@
-/* Copyright (c) 2011, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -195,7 +196,7 @@ struct Slave_job_group {
   char *checkpoint_relay_log_name;
   std::atomic<int32> done;  // Flag raised by W,  read and reset by Coordinator
   ulong shifted;            // shift the last CP bitmap at receiving a new CP
-  time_t ts;                // Group's timestamp to update Seconds_behind_master
+  time_t ts;                // Group's timestamp to update Seconds_behind_source
 #ifndef NDEBUG
   bool notified{false};  // to debug group_master_log_name change notification
 #endif
@@ -595,14 +596,14 @@ class Slave_worker : public Relay_log_info {
     ERROR_LEAVING = 2,  // is set by Worker
     STOP = 3,           // is set by Coordinator upon receiving STOP
     STOP_ACCEPTED =
-        4  // is set by worker upon completing job when STOP SLAVE is issued
+        4  // is set by worker upon completing job when STOP REPLICA is issued
   };
 
   /*
     This function is used to make a copy of the worker object before we
-    destroy it on STOP SLAVE. This new object is then used to report the
-    worker status until next START SLAVE following which the new worker objects
-    will be used.
+    destroy it on STOP REPLICA. This new object is then used to report the
+    worker status until next START REPLICA following which the new worker
+    objects will be used.
   */
   void copy_values_for_PFS(ulong worker_id, en_running_state running_status,
                            THD *worker_thd, const Error &last_error,
@@ -936,9 +937,12 @@ class Slave_worker : public Relay_log_info {
                              uint end_relay_number, my_off_t end_relay_pos);
   void assign_partition_db(Log_event *ev);
 
+ public:
+  /**
+    Set the flag the signals a deadlock to false
+  */
   void reset_commit_order_deadlock();
 
- public:
   /**
      Returns an array with the expected column numbers of the primary key
      fields of the table repository.

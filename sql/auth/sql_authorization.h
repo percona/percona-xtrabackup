@@ -1,15 +1,16 @@
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -57,14 +58,14 @@ extern mysql_mutex_t LOCK_mandatory_roles;
 
   if the definer is different to the current session account, make sure
   it's OK to use it:
-   - check for the right privs: SUPER, SET_USER_ID or SET_ANY_DEFINER
+   - check for the right privs: SUPER or SET_ANY_DEFINER
    - whether it doesn't violate system user
 
   if it's not OK, generate an error.
 
   Also checks if the user\@host is a non-existent user account
   and if it is throws an error and returns true, given that
-  SUPER, SET_USER_ID or ALLOW_NONEXISTENT_DEFINER are not granted.
+  SUPER or ALLOW_NONEXISTENT_DEFINER are not granted.
   If the privs arent granted a warning is produced instead of an error.
 
 

@@ -16,9 +16,9 @@
 # ================================
 # 2015-06-24 13:49:03 3895 [ERROR] --relay-log-recovery cannot
 # be executed when the slave was stopped with an error or
-# killed in MTS mode; consider using RESET SLAVE or restart
+# killed in MTS mode; consider using RESET REPLICA or restart
 # the server with --relay-log-recovery = 0 followed by
-# START SLAVE UNTIL SQL_AFTER_MTS_GAPS.
+# START REPLICA UNTIL SQL_AFTER_MTS_GAPS.
 #
 # i.e relay-log-recovery will not work in MTS mode.
 ###############################################################################
@@ -27,15 +27,16 @@
 # --relay-log-recovery=1 option.
 
 --source include/force_restart.inc
---source include/have_binlog_format_statement.inc
---source include/only_mts_replica_parallel_workers.inc
---source include/only_mts_replica_parallel_type_database.inc
---source include/master-slave.inc
+--source include/have_binlog_format_row.inc
+
+--source include/have_replica_parallel_workers.inc
+--source include/have_replica_parallel_type_database.inc
+--source include/rpl/init_source_replica.inc
 
 --let $skip_replica_start_var= FALSE
---source extra/rpl_tests/rpl_mts_relay_log_recovery.test
+--source common/rpl/rpl_mta_relay_log_recovery.test
 
 --let $skip_replica_start_var= TRUE
---source extra/rpl_tests/rpl_mts_relay_log_recovery.test
+--source common/rpl/rpl_mta_relay_log_recovery.test
 
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

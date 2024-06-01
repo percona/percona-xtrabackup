@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2023, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -238,7 +239,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::Double>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -247,7 +248,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::Float>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -256,7 +257,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::Tiny>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -265,7 +266,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::Short>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -274,7 +275,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::Int24>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -283,7 +284,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::Long>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -292,7 +293,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::LongLong>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -301,7 +302,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::String>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -310,7 +311,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::VarString>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -319,7 +320,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::Varchar>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -328,7 +329,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::Json>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -337,7 +338,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::TinyBlob>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -346,7 +347,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::MediumBlob>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -355,7 +356,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::Blob>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -364,7 +365,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::LongBlob>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -373,7 +374,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::Date>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -382,7 +383,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::DateTime>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -391,7 +392,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::Timestamp>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -400,7 +401,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::Time>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -409,7 +410,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::Decimal>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -418,7 +419,7 @@ stdx::expected<std::string, std::error_code> param_to_string(
       auto decode_res =
           classic_protocol::decode<classic_protocol::binary::NewDecimal>(
               net::buffer(*param.value), {});
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       oss << decode_res->second;
       break;
@@ -445,14 +446,14 @@ stdx::expected<uint64_t, std::error_code> param_to_number(
       auto conv_res = std::from_chars(str.data(), str.data() + str.size(), val);
       if (conv_res.ec == std::errc{}) return val;
 
-      return stdx::make_unexpected(make_error_code(conv_res.ec));
+      return stdx::unexpected(make_error_code(conv_res.ec));
     }
     case binary_type<classic_protocol::binary::Tiny>(): {
       auto decode_res =
           classic_protocol::Codec<classic_protocol::binary::Tiny>::decode(
               net::buffer(*param.value), {});
 
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       return decode_res->second.value();
     }
@@ -461,7 +462,7 @@ stdx::expected<uint64_t, std::error_code> param_to_number(
           classic_protocol::Codec<classic_protocol::binary::Short>::decode(
               net::buffer(*param.value), {});
 
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       return decode_res->second.value();
     }
@@ -470,7 +471,7 @@ stdx::expected<uint64_t, std::error_code> param_to_number(
           classic_protocol::Codec<classic_protocol::binary::Int24>::decode(
               net::buffer(*param.value), {});
 
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       return decode_res->second.value();
     }
@@ -479,7 +480,7 @@ stdx::expected<uint64_t, std::error_code> param_to_number(
           classic_protocol::Codec<classic_protocol::binary::Long>::decode(
               net::buffer(*param.value), {});
 
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       return decode_res->second.value();
     }
@@ -488,14 +489,14 @@ stdx::expected<uint64_t, std::error_code> param_to_number(
           classic_protocol::Codec<classic_protocol::binary::LongLong>::decode(
               net::buffer(*param.value), {});
 
-      if (!decode_res) return stdx::make_unexpected(decode_res.error());
+      if (!decode_res) return stdx::unexpected(decode_res.error());
 
       return decode_res->second.value();
     }
   }
 
   // all other types: fail.
-  return stdx::make_unexpected(make_error_code(std::errc::bad_message));
+  return stdx::unexpected(make_error_code(std::errc::bad_message));
 }
 
 stdx::expected<std::string, std::error_code> param_as_string(
@@ -504,7 +505,7 @@ stdx::expected<std::string, std::error_code> param_as_string(
     case binary_type<classic_protocol::binary::Blob>(): {
       auto dec_res = classic_protocol::decode<classic_protocol::binary::Blob>(
           net::buffer(*param.value), {});
-      if (!dec_res) return stdx::make_unexpected(dec_res.error());
+      if (!dec_res) return stdx::unexpected(dec_res.error());
 
       return dec_res->second.value();
     }
@@ -512,7 +513,7 @@ stdx::expected<std::string, std::error_code> param_as_string(
       auto dec_res =
           classic_protocol::decode<classic_protocol::binary::TinyBlob>(
               net::buffer(*param.value), {});
-      if (!dec_res) return stdx::make_unexpected(dec_res.error());
+      if (!dec_res) return stdx::unexpected(dec_res.error());
 
       return dec_res->second.value();
     }
@@ -520,7 +521,7 @@ stdx::expected<std::string, std::error_code> param_as_string(
       auto dec_res =
           classic_protocol::decode<classic_protocol::binary::MediumBlob>(
               net::buffer(*param.value), {});
-      if (!dec_res) return stdx::make_unexpected(dec_res.error());
+      if (!dec_res) return stdx::unexpected(dec_res.error());
 
       return dec_res->second.value();
     }
@@ -528,7 +529,7 @@ stdx::expected<std::string, std::error_code> param_as_string(
       auto dec_res =
           classic_protocol::decode<classic_protocol::binary::LongBlob>(
               net::buffer(*param.value), {});
-      if (!dec_res) return stdx::make_unexpected(dec_res.error());
+      if (!dec_res) return stdx::unexpected(dec_res.error());
 
       return dec_res->second.value();
     }
@@ -536,7 +537,7 @@ stdx::expected<std::string, std::error_code> param_as_string(
       auto dec_res =
           classic_protocol::decode<classic_protocol::binary::Varchar>(
               net::buffer(*param.value), {});
-      if (!dec_res) return stdx::make_unexpected(dec_res.error());
+      if (!dec_res) return stdx::unexpected(dec_res.error());
 
       return dec_res->second.value();
     }
@@ -544,19 +545,19 @@ stdx::expected<std::string, std::error_code> param_as_string(
       auto dec_res =
           classic_protocol::decode<classic_protocol::binary::VarString>(
               net::buffer(*param.value), {});
-      if (!dec_res) return stdx::make_unexpected(dec_res.error());
+      if (!dec_res) return stdx::unexpected(dec_res.error());
 
       return dec_res->second.value();
     }
     case binary_type<classic_protocol::binary::String>(): {
       auto dec_res = classic_protocol::decode<classic_protocol::binary::String>(
           net::buffer(*param.value), {});
-      if (!dec_res) return stdx::make_unexpected(dec_res.error());
+      if (!dec_res) return stdx::unexpected(dec_res.error());
 
       return dec_res->second.value();
     }
   }
 
   // all other types: fail.
-  return stdx::make_unexpected(make_error_code(std::errc::bad_message));
+  return stdx::unexpected(make_error_code(std::errc::bad_message));
 }

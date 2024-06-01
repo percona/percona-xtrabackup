@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -47,6 +48,9 @@
 
 static const size_t kHelpScreenWidth = 72;
 static const size_t kHelpScreenIndent = 8;
+
+static const std::string kSystemRouterName = "system";
+static const std::string kDefaultSystemUserName = "";
 
 class ConfigFiles;
 
@@ -450,7 +454,8 @@ class MySQLRouter {
   void set_default_config_files(const char *locations) noexcept;
 
   void bootstrap(const std::string &program_name,
-                 const std::string &metadata_server_uri);
+                 const std::string &metadata_server_uri,
+                 const std::string &plugin_folder = "");
 
   /*
    * @brief returns id of the router.
@@ -582,5 +587,11 @@ class silent_exception : public std::exception {
  public:
   silent_exception() : std::exception() {}
 };
+
+/** @brief Expose the configured application-level options (the ones
+ * from [DEFAULT] section that are not specific to any particular plugin and are
+ * relevant from the Cluster metadata perspective) **/
+void expose_router_configuration(const bool initial,
+                                 const mysql_harness::ConfigSection &section);
 
 #endif  // ROUTER_MYSQL_ROUTER_INCLUDED

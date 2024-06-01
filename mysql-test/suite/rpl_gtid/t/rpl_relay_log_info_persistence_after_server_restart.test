@@ -1,12 +1,12 @@
 # ==== Purpose ====
 #
 # This test script checks if the required data for Relay_log_info gets persisted
-# after a `RESET SLAVE` and a server restart.
+# after a `RESET REPLICA` and a server restart.
 #
 # ==== Requirements ====
 #
 # R1. If instantiated, `PRIVILEGE_CHECKS_USER` and `REQUIRE_ROW_FORMAT` must be
-#     persisted in the relay-log info repository, event after a `RESET SLAVE`.
+#     persisted in the relay-log info repository, event after a `RESET REPLICA`.
 #
 # R2. After a server restart, the values for a given channel
 #     `PRIVILEGE_CHECKS_USER` and `REQUIRE_ROW_FORMAT` options should be
@@ -51,12 +51,12 @@ PROCEDURE
 --let $rpl_require_row_format = *:1
 --let $rpl_require_table_primary_key_check= *:OFF
 --let $rpl_privilege_checks_user_additional_grants = CREATE,INSERT,DROP
---source include/master-slave.inc
+--source include/rpl/init_source_replica.inc
 
 CREATE TABLE t (a INT PRIMARY KEY);
 INSERT INTO t VALUES (1);
 
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 
 --echo #
 --echo # 2. Check that the options values are instantiated.
@@ -66,8 +66,8 @@ INSERT INTO t VALUES (1);
 --echo #
 --echo # 3. Stop and reset the slave.
 --echo #
-STOP SLAVE;
-RESET SLAVE;
+STOP REPLICA;
+RESET REPLICA;
 
 --echo #
 --echo # 4. Check that the options values are instantiated.
@@ -78,7 +78,7 @@ RESET SLAVE;
 --echo # 5. Restart the server.
 --echo #
 --let $rpl_server_number= 2
---source include/rpl_restart_server.inc
+--source include/rpl/restart_server.inc
 
 --echo #
 --echo # 6. Check that the options values are instantiated.
@@ -88,8 +88,8 @@ RESET SLAVE;
 --echo #
 --echo # 7. Start the slave.
 --echo #
---source include/rpl_connection_slave.inc
-START SLAVE;
+--source include/rpl/connection_replica.inc
+START REPLICA;
 
 --echo #
 --echo # 8. Check that the options values are instantiated.
@@ -98,6 +98,6 @@ START SLAVE;
 
 # Clean up
 --remove_file $MYSQLTEST_VARDIR/tmp/check_pfs.inc
---source include/rpl_connection_master.inc
+--source include/rpl/connection_source.inc
 DROP TABLE t;
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

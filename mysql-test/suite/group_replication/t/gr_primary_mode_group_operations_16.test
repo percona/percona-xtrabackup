@@ -38,7 +38,7 @@ set session sql_log_bin=1;
 --source include/start_and_bootstrap_group_replication.inc
 
 --let $rpl_connection_name= server2
---source include/rpl_connection.inc
+--source include/connection.inc
 --source include/start_group_replication.inc
 
 --echo
@@ -59,7 +59,7 @@ SET @@GLOBAL.DEBUG= '+d,group_replication_block_group_action';
 --echo #    is ongoing
 
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
+--source include/connection.inc
 
 --let $wait_condition=SELECT COUNT(*)=1 FROM performance_schema.events_stages_current WHERE event_name LIKE "%Single-primary Switch: checking group pre-conditions%"
 --source include/wait_condition.inc
@@ -77,9 +77,9 @@ SET @@GLOBAL.DEBUG= '+d,group_replication_block_group_action';
 --let $show_slave_sql_error= 0
 --let $slave_sql_error_replace= / at [0-9]*/ at XXX/
 
-START SLAVE FOR CHANNEL 'ch3_1';
---source include/wait_for_slave_io_error.inc
---source include/wait_for_slave_sql_error.inc
+START REPLICA FOR CHANNEL 'ch3_1';
+--source include/rpl/wait_for_receiver_error.inc
+--source include/rpl/wait_for_applier_error.inc
 
 --let $rpl_channel_name=
 
@@ -89,25 +89,25 @@ START SLAVE FOR CHANNEL 'ch3_1';
 --let $assert_file= $MYSQLTEST_VARDIR/log/mysqld.1.err
 --let $assert_count = 1
 --let $assert_select = Can't start IO THREAD for channel 'ch3_1' when group replication is running a group configuration operation
---let $assert_text = Found the expected error about failure to start slave IO THREAD.
+--let $assert_text = Found the expected error about failure to start replica IO THREAD.
 --source include/assert_grep.inc
 
 --let $assert_file= $MYSQLTEST_VARDIR/log/mysqld.1.err
 --let $assert_count = 1
 --let $assert_select = Can't start SQL THREAD for channel 'ch3_1' when group replication is running a group configuration operation
---let $assert_text = Found the expected error about failure to start slave SQL THREAD.
+--let $assert_text = Found the expected error about failure to start replica SQL THREAD.
 --source include/assert_grep.inc
 
 --echo
 --echo # 6. Unlock the action
 
 --let $rpl_connection_name= server_2
---source include/rpl_connection.inc
+--source include/connection.inc
 
 SET DEBUG_SYNC= "now SIGNAL signal.action_continue";
 
 --let $rpl_connection_name= server2
---source include/rpl_connection.inc
+--source include/connection.inc
 
 --replace_result $server2_uuid MEMBER1_UUID
 --reap
@@ -116,12 +116,12 @@ SET DEBUG_SYNC= "now SIGNAL signal.action_continue";
 --echo # 7. Clean up
 
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
+--source include/connection.inc
 
-RESET SLAVE ALL FOR CHANNEL 'ch3_1';
+RESET REPLICA ALL FOR CHANNEL 'ch3_1';
 
 --let $rpl_connection_name= server2
---source include/rpl_connection.inc
+--source include/connection.inc
 
 SET @@GLOBAL.DEBUG= '-d,group_replication_block_group_action';
 

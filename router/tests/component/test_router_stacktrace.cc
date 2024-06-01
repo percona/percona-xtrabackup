@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2022, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -261,7 +262,8 @@ TEST_F(RouterStacktraceTest, crash_me_via_rest_signal_abort) {
   auto writer =
       config_writer(tmp_dir.name())
           .section("rest_signal", {})
-          .section("http_server", {{"port", std::to_string(http_port)}});
+          .section("http_server", {{"bind_address", "127.0.0.1"},
+                                   {"port", std::to_string(http_port)}});
 
   // --core-file is added automatically by router_spawner()
   auto &r = router_spawner()
@@ -390,7 +392,8 @@ TEST_F(RouterStacktraceTest, crash_me_core_file_1) {
   auto writer =
       config_writer(tmp_dir.name())
           .section("rest_signal", {})
-          .section("http_server", {{"port", std::to_string(http_port)}});
+          .section("http_server", {{"bind_address", "127.0.0.1"},
+                                   {"port", std::to_string(http_port)}});
 
   auto &r = router_spawner()
                 .with_core_dump(false)  // avoid the automatic --core-file
@@ -452,7 +455,8 @@ TEST_F(RouterStacktraceTest, no_core_file) {
   auto writer =
       config_writer(tmp_dir.name())
           .section("rest_signal", {})
-          .section("http_server", {{"port", std::to_string(http_port)}});
+          .section("http_server", {{"bind_address", "127.0.0.1"},
+                                   {"port", std::to_string(http_port)}});
 
   auto &r = router_spawner()
                 .with_core_dump(false)
@@ -498,7 +502,11 @@ TEST_F(RouterStacktraceTest, no_core_file) {
   }
 
   SCOPED_TRACE("// console output has stacktrace");
+#ifdef HAVE_EXT_BACKTRACE
+  EXPECT_THAT(r.get_full_output(), ::testing::HasSubstr("signal_handler.cc"));
+#else
   EXPECT_THAT(r.get_full_output(), ::testing::HasSubstr("my_print_stacktrace"));
+#endif
 }
 
 // TS_2_2
@@ -509,7 +517,8 @@ TEST_F(RouterStacktraceTest, core_file_0) {
   auto writer =
       config_writer(tmp_dir.name())
           .section("rest_signal", {})
-          .section("http_server", {{"port", std::to_string(http_port)}});
+          .section("http_server", {{"bind_address", "127.0.0.1"},
+                                   {"port", std::to_string(http_port)}});
 
   auto &r = router_spawner()
                 .with_core_dump(false)
@@ -555,7 +564,11 @@ TEST_F(RouterStacktraceTest, core_file_0) {
   }
 
   SCOPED_TRACE("// console output has stacktrace");
+#ifdef HAVE_EXT_BACKTRACE
+  EXPECT_THAT(r.get_full_output(), ::testing::HasSubstr("signal_handler.cc"));
+#else
   EXPECT_THAT(r.get_full_output(), ::testing::HasSubstr("my_print_stacktrace"));
+#endif
 }
 
 #endif  // !defined(HAVE_ASAN) && !defined(HAVE_UBSAN)

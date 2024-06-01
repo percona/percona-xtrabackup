@@ -49,11 +49,12 @@
 --echo ####
 --echo
 --let $rpl_connection_name = server1
---source include/rpl_connection.inc
+--source include/connection.inc
 
 SET sql_log_bin = 0;
 call mtr.add_suppression("Member was expelled from the group due to network failures, changing member status to ERROR.");
 call mtr.add_suppression("The server was automatically set into read only mode after an error was detected.");
+call mtr.add_suppression("The server was automatically set into offline mode after an error was detected.");
 call mtr.add_suppression("\\[GCS\\] read failed");
 call mtr.add_suppression("Started auto-rejoin procedure attempt*");
 call mtr.add_suppression("Auto-rejoin procedure attempt*");
@@ -71,12 +72,12 @@ SET @@GLOBAL.DEBUG='+d,group_replication_stop_before_rejoin';
 --source include/start_and_bootstrap_group_replication.inc
 
 --let $rpl_connection_name = server2
---source include/rpl_connection.inc
+--source include/connection.inc
 
 --source include/start_group_replication.inc
 
 --let $rpl_connection_name = server3
---source include/rpl_connection.inc
+--source include/connection.inc
 
 --source include/start_group_replication.inc
 
@@ -86,7 +87,7 @@ SET @@GLOBAL.DEBUG='+d,group_replication_stop_before_rejoin';
 --echo ####
 --echo
 --let $rpl_connection_name = server1
---source include/rpl_connection.inc
+--source include/connection.inc
 
 # First, enable auto-rejoin
 SET GLOBAL group_replication_autorejoin_tries = 3;

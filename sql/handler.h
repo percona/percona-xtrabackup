@@ -2,18 +2,19 @@
 #define HANDLER_INCLUDED
 
 /*
-   Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -927,7 +928,6 @@ enum enum_schema_tables : int {
   SCH_PROCESSLIST,
   SCH_PROFILES,
   SCH_SCHEMA_PRIVILEGES,
-  SCH_TABLESPACES,
   SCH_TABLE_PRIVILEGES,
   SCH_USER_PRIVILEGES,
   SCH_TMP_TABLE_COLUMNS,
@@ -1871,10 +1871,8 @@ typedef void (*replace_native_transaction_in_thd_t)(THD *thd, void *new_trx_arg,
 
 /** Mode for initializing the data dictionary. */
 enum dict_init_mode_t {
-  DICT_INIT_CREATE_FILES,      ///< Create all required SE files
-  DICT_INIT_CHECK_FILES,       ///< Verify existence of expected files
-  DICT_INIT_UPGRADE_57_FILES,  ///< Used for upgrade from mysql-5.7
-  DICT_INIT_IGNORE_FILES       ///< Don't care about files at all
+  DICT_INIT_CREATE_FILES,  ///< Create all required SE files
+  DICT_INIT_CHECK_FILES    ///< Verify existence of expected files
 };
 
 /**
@@ -2582,9 +2580,13 @@ using se_after_commit_t = void (*)(void *arg);
 using se_before_rollback_t = void (*)(void *arg);
 
 /**
- * Notify plugins when a SELECT query was executed. The plugins will be notified
- * only if the query is not considered "fast-running", i.e., its estimated cost
- * is less than the currently configured 'secondary_engine_cost_threshold'.
+  Notify plugins when a SELECT query was executed. The plugins will be notified
+  only if the query is not considered secondary engine relevant, i.e.:
+  1. for a query with missing secondary_engine_statement_ctx, its estimated cost
+   is greater than the currently configured 'secondary_engine_cost_threshold'
+  2. for queries with secondary_engine_statement_ctx, wherever
+   secondary_engine_statement_ctx::is_primary_engine_optimal() returns False
+   indicating secondary engine relevance.
  */
 using notify_after_select_t = void (*)(THD *thd, SelectExecutedIn executed_in);
 
@@ -2593,6 +2595,19 @@ using notify_after_select_t = void (*)(THD *thd, SelectExecutedIn executed_in);
  */
 using notify_create_table_t = void (*)(struct HA_CREATE_INFO *create_info,
                                        const char *db, const char *table_name);
+
+/**
+  Secondary engine hook called after PRIMARY_TENTATIVELY optimization is
+  complete, and decides if secondary engine optimization will be performed, and
+  comparison of primary engine cost and secondary engine cost will determine
+  which engine to use for execution.
+ @param[in]     thd     current thd.
+ @return :
+  @retval true When secondary_engine's prepare hook is to be further called
+  @retval false When secondary_engine's prepare hook is NOT to be further called
+
+ */
+using secondary_engine_pre_prepare_hook_t = bool (*)(THD *thd);
 
 /**
  * Notify plugins when a table is dropped.
@@ -2970,6 +2985,11 @@ struct handlerton {
   secondary_engine_check_optimizer_request_t
       secondary_engine_check_optimizer_request;
 
+  /* Pointer to a function that is called at the end of the PRIMARY_TENTATIVELY
+   * optimization stage, which also decides that the statement should be
+   * attempted offloaded to a secondary storage engine. */
+  secondary_engine_pre_prepare_hook_t secondary_engine_pre_prepare_hook;
+
   se_before_commit_t se_before_commit;
   se_after_commit_t se_after_commit;
   se_before_rollback_t se_before_rollback;
@@ -3077,6 +3097,10 @@ constexpr const decltype(handlerton::flags) HTON_SUPPORTS_BULK_LOAD{1 << 22};
 /** Engine supports index distance scan. */
 inline constexpr const decltype(handlerton::flags) HTON_SUPPORTS_DISTANCE_SCAN{
     1 << 23};
+
+/* Whether the engine supports being specified as a default storage engine */
+inline constexpr const decltype(
+    handlerton::flags) HTON_NO_DEFAULT_ENGINE_SUPPORT{1 << 24};
 
 inline bool secondary_engine_supports_ddl(const handlerton *hton) {
   assert(hton->flags & HTON_IS_SECONDARY_ENGINE);
@@ -5148,6 +5172,7 @@ class handler {
     table_share = share;
   }
   const TABLE_SHARE *get_table_share() const { return table_share; }
+  const TABLE *get_table() const { return table; }
 
   /* Estimates calculation */
 
@@ -7225,13 +7250,12 @@ class Temp_table_handle {
   auxiliary standalone function.
 
   @param[in]  table    TABLE object
-  @param[in]  check_temporal_upgrade  Check if temporal upgrade is needed
 
   @retval 0            ON SUCCESS
   @retval error code   ON FAILURE
 */
 
-int check_table_for_old_types(const TABLE *table, bool check_temporal_upgrade);
+int check_table_for_old_types(const TABLE *table);
 
 /*
   A Disk-Sweep MRR interface implementation

@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2016, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -75,12 +76,12 @@ class MetadataCachePluginTest : public ::testing::Test {
         &mock_metadata_factory_get_instance);
 
     metadata_cache::MetadataCacheAPI::instance()->cache_init(
-        mysqlrouter::ClusterType::GR_V1, kRouterId, "", metadata_server_vector,
+        mysqlrouter::ClusterType::GR_V2, kRouterId, "", metadata_server_vector,
         {kDefaultMetadataTTL, kDefaultAuthCacheTTL,
          kDefaultAuthCacheRefreshInterval},
         mysqlrouter::SSLOptions(),
         {mysqlrouter::TargetCluster::TargetType::ByName, kDefaultClusterName},
-        {{kDefaultMetadataUser, kDefaultMetadataPassword}, 1, 1, 1},
+        {{kDefaultMetadataUser, kDefaultMetadataPassword}, 2, 1, 0},
         metadata_cache::RouterAttributes{});
     metadata_cache::MetadataCacheAPI::instance()->cache_start();
     int count = 1;

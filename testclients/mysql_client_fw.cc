@@ -1,15 +1,16 @@
-/* Copyright (c) 2002, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -323,11 +324,10 @@ opt_port and opt_unix_socket.
 
 @param flag           client_flag passed on to mysql_real_connect
 @param protocol       MYSQL_PROTOCOL_* to use for this connection
-@param auto_reconnect set to 1 for auto reconnect
 
 @return pointer to initialized and connected MYSQL object
 */
-static MYSQL *client_connect(ulong flag, uint protocol, bool auto_reconnect) {
+static MYSQL *client_connect(ulong flag, uint protocol) {
   MYSQL *mysql;
   int rc;
   static char query[MAX_TEST_QUERY_LENGTH];
@@ -360,8 +360,6 @@ static MYSQL *client_connect(ulong flag, uint protocol, bool auto_reconnect) {
     fprintf(stdout, "\n Check the connection options using --help or -?\n");
     exit(1);
   }
-  mysql->reconnect = auto_reconnect;
-
   if (!opt_silent) fprintf(stdout, "OK");
 
   /* set AUTOCOMMIT to ON*/
@@ -1039,7 +1037,6 @@ static bool thread_query(const char *query) {
     error = true;
     goto end;
   }
-  l_mysql->reconnect = true;
   if (mysql_query(l_mysql, query)) {
     fprintf(stderr, "Query failed (%s)\n", mysql_error(l_mysql));
     error = true;
@@ -1244,8 +1241,8 @@ int main(int argc, char **argv) {
   if (mysql_server_init(0, nullptr, nullptr))
     DIE("Can't initialize MySQL server");
 
-  /* connect to server with no flags, default protocol, auto reconnect true */
-  mysql = client_connect(0, MYSQL_PROTOCOL_DEFAULT, true);
+  /* connect to server with no flags, default protocol */
+  mysql = client_connect(0, MYSQL_PROTOCOL_DEFAULT);
 
   total_time = 0;
   for (iter_count = 1; iter_count <= opt_count; iter_count++) {

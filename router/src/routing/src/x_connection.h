@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2021, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -32,9 +33,10 @@
 #include <mysqlx.pb.h>
 #include <mysqlx_connection.pb.h>
 
+#include "basic_protocol_splicer.h"
 #include "connection.h"  // MySQLRoutingConnectionBase
 
-class XProtocolState : public ProtocolStateBase {
+class XProtocolState {
  public:
   struct FrameInfo {
     size_t frame_size_;            //!< size of the whole frame
@@ -60,6 +62,9 @@ class MysqlRoutingXConnection
     : public MySQLRoutingConnectionBase,
       public std::enable_shared_from_this<MysqlRoutingXConnection> {
  private:
+  using ClientSideConnection = TlsSwitchableClientConnection<XProtocolState>;
+  using ServerSideConnection = TlsSwitchableConnection<XProtocolState>;
+
   // constructor
   //
   // use ::create() instead.
@@ -73,13 +78,12 @@ class MysqlRoutingXConnection
         destinations_{route_destination_->destinations()},
         connector_{client_connection->io_ctx(), route_destination,
                    destinations_},
-        socket_splicer_{std::make_unique<ProtocolSplicerBase>(
-            TlsSwitchableConnection{std::move(client_connection),
-                                    std::move(client_routing_connection),
-                                    context.source_ssl_mode(),
-                                    std::make_unique<XProtocolState>()},
-            TlsSwitchableConnection{nullptr, nullptr, context.dest_ssl_mode(),
-                                    std::make_unique<XProtocolState>()})} {}
+        client_conn_{std::move(client_connection),
+                     std::move(client_routing_connection),
+                     context.source_ssl_mode(),
+                     ClientSideConnection::protocol_state_type{}},
+        server_conn_{nullptr, context.dest_ssl_mode(),
+                     ServerSideConnection::protocol_state_type{}} {}
 
  public:
   using connector_type = Connector<std::unique_ptr<ConnectionBase>>;
@@ -106,24 +110,20 @@ class MysqlRoutingXConnection
       const std::string &msg, const std::string &sql_state = "HY000",
       Mysqlx::Error::Severity severity = Mysqlx::Error::ERROR);
 
-  SslMode source_ssl_mode() const {
-    return this->socket_splicer()->source_ssl_mode();
-  }
+  SslMode source_ssl_mode() const { return client_conn().ssl_mode(); }
 
-  SslMode dest_ssl_mode() const {
-    return this->socket_splicer()->dest_ssl_mode();
-  }
+  SslMode dest_ssl_mode() const { return server_conn().ssl_mode(); }
 
   net::impl::socket::native_handle_type get_client_fd() const override {
-    return socket_splicer()->client_conn().native_handle();
+    return client_conn().native_handle();
   }
 
   std::string get_client_address() const override {
-    return socket_splicer()->client_conn().endpoint();
+    return client_conn().endpoint();
   }
 
   std::string get_server_address() const override {
-    return socket_splicer()->server_conn().endpoint();
+    return server_conn().endpoint();
   }
 
   void disconnect() override;
@@ -560,8 +560,8 @@ class MysqlRoutingXConnection
 
   void done();
 
-  stdx::expected<void, std::error_code> forward_tls(Channel *src_channel,
-                                                    Channel *dst_channel);
+  stdx::expected<void, std::error_code> forward_tls(Channel &src_channel,
+                                                    Channel &dst_channel);
 
   void forward_tls_client_to_server();
 
@@ -724,24 +724,32 @@ class MysqlRoutingXConnection
   void server_recv_session_reset_response_forward();
   void server_recv_session_reset_response_forward_last();
 
-  XProtocolState *client_protocol() {
-    return dynamic_cast<XProtocolState *>(
-        socket_splicer()->client_conn().protocol());
+  ClientSideConnection::protocol_state_type &client_protocol() {
+    return client_conn().protocol();
+  }
+  const ClientSideConnection::protocol_state_type &client_protocol() const {
+    return client_conn().protocol();
   }
 
-  XProtocolState *server_protocol() {
-    return dynamic_cast<XProtocolState *>(
-        socket_splicer()->server_conn().protocol());
+  ServerSideConnection::protocol_state_type &server_protocol() {
+    return server_conn().protocol();
+  }
+  const ServerSideConnection::protocol_state_type &server_protocol() const {
+    return server_conn().protocol();
   }
 
-  const ProtocolSplicerBase *socket_splicer() const {
-    return socket_splicer_.get();
-  }
+  ClientSideConnection &client_conn() { return client_conn_; }
+  const ClientSideConnection &client_conn() const { return client_conn_; }
 
-  ProtocolSplicerBase *socket_splicer() { return socket_splicer_.get(); }
+  ServerSideConnection &server_conn() { return server_conn_; }
+  const ServerSideConnection &server_conn() const { return server_conn_; }
 
   std::string get_destination_id() const override {
     return connector().destination_id();
+  }
+
+  std::optional<net::ip::tcp::endpoint> destination_endpoint() const override {
+    return std::nullopt;
   }
 
  private:
@@ -761,7 +769,8 @@ class MysqlRoutingXConnection
   Destinations destinations_;
   connector_type connector_;
 
-  std::unique_ptr<ProtocolSplicerBase> socket_splicer_;
+  ClientSideConnection client_conn_;
+  ServerSideConnection server_conn_;
 };
 
 #endif

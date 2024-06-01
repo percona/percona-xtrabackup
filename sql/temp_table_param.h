@@ -1,15 +1,16 @@
-/* Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -255,6 +256,40 @@ class Temp_table_param {
         force_hash_field_for_unique(other.force_hash_field_for_unique),
         m_window_frame_buffer(other.m_window_frame_buffer),
         m_window(other.m_window) {}
+
+  // Used by CTE derived table clones to set correct info, see
+  // Common_table_expr::clone_tmp_table. The info may be consulted e.g.
+  // by get_hidden_field_count_for_derived(), e.g. by HW.
+  Temp_table_param &operator=(const Temp_table_param &other) {
+    if (this == &other) {
+      return *this;
+    }
+    for (const auto &cf : other.copy_fields) copy_fields.push_back(cf);
+    group_buff = other.group_buff;
+    items_to_copy = other.items_to_copy;
+    keyinfo = other.keyinfo;
+    end_write_records = other.end_write_records;
+    func_count = other.func_count;
+    sum_func_count = other.sum_func_count;
+    hidden_field_count = other.hidden_field_count;
+    group_parts = other.group_parts;
+    group_length = other.group_length;
+    group_null_parts = other.group_null_parts;
+    allow_group_via_temp_table = other.allow_group_via_temp_table;
+    outer_sum_func_count = other.outer_sum_func_count;
+    using_outer_summary_function = other.using_outer_summary_function;
+    table_charset = other.table_charset;
+    schema_table = other.schema_table;
+    precomputed_group_by = other.precomputed_group_by;
+    force_copy_fields = other.force_copy_fields;
+    skip_create_table = other.skip_create_table;
+    bit_fields_as_long = other.bit_fields_as_long;
+    can_use_pk_for_unique = other.can_use_pk_for_unique;
+    force_hash_field_for_unique = other.force_hash_field_for_unique;
+    m_window_frame_buffer = other.m_window_frame_buffer;
+    m_window = other.m_window;
+    return *this;
+  }
 
   void cleanup() { copy_fields.clear(); }
 };

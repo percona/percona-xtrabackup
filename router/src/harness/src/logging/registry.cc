@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2016, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -43,16 +44,13 @@
 
 #include "common.h"  // serial_comma
 #include "dim.h"
+#include "harness_assert.h"
 
 using mysql_harness::Path;
 using mysql_harness::serial_comma;
 using mysql_harness::logging::Logger;
 using mysql_harness::logging::LogLevel;
 using mysql_harness::logging::Record;
-
-// TODO one day we'll improve this and move it to a common spot
-#define harness_assert(COND) \
-  if (!(COND)) abort();
 
 namespace {
 
@@ -347,7 +345,6 @@ void create_module_loggers(Registry &registry, const LogLevel level,
   harness_assert(registry.get_logger_names().size() > 0);
 }
 
-HARNESS_EXPORT
 LogLevel log_level_from_string(std::string name) {
   std::transform(name.begin(), name.end(), name.begin(), ::tolower);
 
@@ -370,6 +367,16 @@ LogLevel log_level_from_string(std::string name) {
 
   serial_comma(buffer, alternatives.begin(), alternatives.end());
   throw std::invalid_argument(buffer.str());
+}
+
+std::string log_level_to_string(LogLevel log_level) {
+  for (const auto &lvl : kLogLevels) {
+    if (lvl.second == log_level) {
+      return std::string(lvl.first);
+    }
+  }
+
+  return "unknown";
 }
 
 LogLevel get_default_log_level(const Config &config, bool raw_mode) {
@@ -413,7 +420,6 @@ std::string get_default_log_filename(const Config &config) {
   return log_filename;
 }
 
-HARNESS_EXPORT
 LogTimestampPrecision log_timestamp_precision_from_string(std::string name) {
   std::transform(name.begin(), name.end(), name.begin(), ::tolower);
 
@@ -434,6 +440,15 @@ LogTimestampPrecision log_timestamp_precision_from_string(std::string name) {
   }
   serial_comma(buffer, alternatives.begin(), alternatives.end());
   throw std::invalid_argument(buffer.str());
+}
+
+std::string log_timestamp_precision_to_string(LogTimestampPrecision tsp) {
+  // Return its enum representation
+  for (const auto &prec : kLogTimestampPrecisions) {
+    if (prec.second == tsp) return std::string(prec.first);
+  }
+
+  return "unknown";
 }
 
 LogTimestampPrecision get_default_timestamp_precision(const Config &config) {

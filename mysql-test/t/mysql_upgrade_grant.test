@@ -144,13 +144,13 @@ let SEARCH_FILE= $test_error_log;
 connect (con0,localhost,root,,);
 
 --echo #Connecting user with pre 4.1 hash and empty plugin- should fail
---replace_result $MASTER_MYSOCK MASTER_SOCKET $MASTER_MYPORT MASTER_PORT
+--replace_result $MASTER_MYSOCK SOURCE_SOCKET $MASTER_MYPORT SOURCE_PORT
 --error ER_ACCESS_DENIED_ERROR
 connect (con1,localhost,user_old_pass_pn,lala,,,,SSL);
 
 --echo #Connecting user with pre 4.1 hash and mysql_old_password plugin set -
 --echo #should fail - the mysql_old_password was removed in 5.7
---replace_result $MASTER_MYSOCK MASTER_SOCKET $MASTER_MYPORT MASTER_PORT
+--replace_result $MASTER_MYSOCK SOURCE_SOCKET $MASTER_MYPORT SOURCE_PORT
 --error ER_PLUGIN_IS_NOT_LOADED
 connect (con2,localhost,user_old_pass_wp,lala,);
 
@@ -262,7 +262,7 @@ SELECT account_locked FROM mysql.user WHERE user='user_nat_pass_wp';
 
 --echo #Connecting with user using mysql_old_password plugin should not be
 --echo #possible
---replace_result $MASTER_MYSOCK MASTER_SOCKET $MASTER_MYPORT MASTER_PORT
+--replace_result $MASTER_MYSOCK SOURCE_SOCKET $MASTER_MYPORT SOURCE_PORT
 --error ER_PLUGIN_IS_NOT_LOADED
 connect (con5,localhost,user_old_pass_wp,lala,);
 
@@ -353,7 +353,8 @@ DROP USER B20614545@localhost;
 --echo #
 
 --echo # Show privilege for root@localhost before the privilege XA_RECOVER_ADMIN will be revoked
-SHOW GRANTS FOR root@localhost;
+--let $user = root@localhost
+--source include/show_grants.inc
 
 CREATE USER u1;
 GRANT SUPER ON *.* TO u1;
@@ -366,7 +367,8 @@ REVOKE XA_RECOVER_ADMIN ON *.* FROM `mysql.session`@localhost;
 
 --echo # We show here that the users root@localhost and u1 have the privilege
 --echo # SUPER and don't have the privilege XA_RECOVER_ADMIN
-SHOW GRANTS FOR root@localhost;
+--let $user = root@localhost
+--source include/show_grants.inc
 SHOW GRANTS FOR u1;
 
 --echo # Start upgrade
@@ -382,7 +384,8 @@ SHOW GRANTS FOR u1;
 --echo # privilege XA_RECOVER_ADMIN granted since they had the privilge SUPER
 --echo # before upgrade and there wasn't any user with explicitly granted
 --echo # privilege XA_RECOVER_ADMIN.
-SHOW GRANTS FOR root@localhost;
+--let $user = root@localhost
+--source include/show_grants.inc
 SHOW GRANTS FOR u1;
 
 --echo # Now run upgrade against database where there is a user with granted
@@ -406,7 +409,8 @@ REVOKE XA_RECOVER_ADMIN ON *.* FROM `mysql.session`@localhost;
 --echo # XA_RECOVER_ADMIN won't be granted to the user u1 since
 --echo # there was another user (root@localhost) who had the privilege
 --echo # XA_RECOVER_ADMIN at the time when upgrade was started
-SHOW GRANTS FOR root@localhost;
+--let $user = root@localhost
+--source include/show_grants.inc
 SHOW GRANTS FOR u1;
 
 --echo # Cleaning up
@@ -468,7 +472,8 @@ REVOKE RESOURCE_GROUP_ADMIN ON *.* FROM `mysql.session`@localhost;
 CREATE USER user1;
 GRANT SUPER ON *.* TO user1;
 --echo # Users root@localhost and user1 have privilege SUPER but not RESOURCE_GROUP_ADMIN 
-SHOW GRANTS FOR root@localhost;
+--let $user = root@localhost
+--source include/show_grants.inc
 SHOW GRANTS FOR user1;
 
 --echo # Start upgrade
@@ -479,8 +484,10 @@ SHOW GRANTS FOR user1;
 --source include/restart_mysqld.inc
 
 --echo # After upgrade users root@localhost and user1 has privilege RESOURCE_GROUP_ADMIN.
-SHOW GRANTS FOR root@localhost;
-SHOW GRANTS FOR user1;
+--let $user = root@localhost
+--source include/show_grants.inc
+--let $user = user1
+--source include/show_grants.inc
 DROP USER user1;
 
 # Revoke privilege RESOURCE_GROUP_ADMIN from the user mysql.session@localhost in order to
@@ -495,7 +502,8 @@ REVOKE RESOURCE_GROUP_ADMIN ON *.* FROM `mysql.session`@localhost;
 --echo #
 
 --echo # Show privilege for root@localhost before the privilege SERVICE_CONNECTION_ADMIN be revoked
-SHOW GRANTS FOR root@localhost;
+--let $user = root@localhost
+--source include/show_grants.inc
 
 CREATE USER u1;
 GRANT SUPER ON *.* TO u1;
@@ -508,7 +516,8 @@ REVOKE SERVICE_CONNECTION_ADMIN ON *.* FROM `mysql.session`@localhost;
 
 --echo # We show here that the users root@localhost and u1 have the privilege
 --echo # SUPER and don't have the privilege SERVICE_CONNECTION_ADMIN
-SHOW GRANTS FOR root@localhost;
+--let $user = root@localhost
+--source include/show_grants.inc
 SHOW GRANTS FOR u1;
 
 --let $restart_parameters = restart:--upgrade=FORCE --log-error=$test_error_log
@@ -522,7 +531,8 @@ SHOW GRANTS FOR u1;
 --echo # privilege SERVICE_CONNECTION_ADMIN granted since they had the privilege SUPER
 --echo # before upgrade and there wasn't any user with explicitly granted
 --echo # privilege SERVICE_CONNECTION_ADMIN.
-SHOW GRANTS FOR root@localhost;
+--let $user = root@localhost
+--source include/show_grants.inc
 SHOW GRANTS FOR u1;
 
 --echo # Now run upgrade against database where there is a user with granted
@@ -546,7 +556,8 @@ REVOKE SERVICE_CONNECTION_ADMIN ON *.* FROM `mysql.session`@localhost;
 --echo # SERVICE_CONNECTION_ADMIN won't be granted to the user u1 since
 --echo # there was another user (root@localhost) who had the privilege
 --echo # SERVICE_CONNECTION_ADMIN at the time when upgrade was started
-SHOW GRANTS FOR root@localhost;
+--let $user = root@localhost
+--source include/show_grants.inc
 SHOW GRANTS FOR u1;
 
 --echo # Cleaning up
@@ -560,11 +571,12 @@ DROP USER u1;
 --echo # Bug #30783149: ROOT USER DOES NOT HAVE REPLICATION_APPLIER PRIVLIEGE AFTER UPGRADE TO 8.0.19
 --echo #
 
---let $privileges = AUDIT_ADMIN, BINLOG_ADMIN, BINLOG_ENCRYPTION_ADMIN, CONNECTION_ADMIN, ENCRYPTION_KEY_ADMIN, GROUP_REPLICATION_ADMIN, PERSIST_RO_VARIABLES_ADMIN, REPLICATION_SLAVE_ADMIN, RESOURCE_GROUP_USER, ROLE_ADMIN, SESSION_VARIABLES_ADMIN, SET_USER_ID, SYSTEM_VARIABLES_ADMIN, REPLICATION_APPLIER
+--let $privileges = AUDIT_ADMIN, BINLOG_ADMIN, BINLOG_ENCRYPTION_ADMIN, CONNECTION_ADMIN, ENCRYPTION_KEY_ADMIN, GROUP_REPLICATION_ADMIN, PERSIST_RO_VARIABLES_ADMIN, REPLICATION_SLAVE_ADMIN, RESOURCE_GROUP_USER, ROLE_ADMIN, SESSION_VARIABLES_ADMIN, SYSTEM_VARIABLES_ADMIN, REPLICATION_APPLIER
 --echo set @privileges = $privileges
 
 --echo # Show privileges for root@localhost before the @privileges be revoked
-SHOW GRANTS FOR root@localhost;
+--let $user = root@localhost
+--source include/show_grants.inc
 
 CREATE USER u1;
 GRANT SUPER ON *.* TO u1;
@@ -577,7 +589,8 @@ GRANT SUPER ON *.* TO u1;
 
 --echo # Show here that the users root@localhost and u1 have the privilege
 --echo # SUPER and don't have the @privileges
-SHOW GRANTS FOR root@localhost;
+--let $user = root@localhost
+--source include/show_grants.inc
 SHOW GRANTS FOR u1;
 
 --let $restart_parameters = restart:--upgrade=FORCE --log-error=$test_error_log
@@ -590,7 +603,8 @@ SHOW GRANTS FOR u1;
 --echo # root@localhost and u1 have the @privileges granted
 --echo # since they had the privilege SUPER before upgrade
 --echo # and there wasn't any user with explicitly granted @privileges
-SHOW GRANTS FOR root@localhost;
+--let $user = root@localhost
+--source include/show_grants.inc
 SHOW GRANTS FOR u1;
 
 --echo # Upgrade against database where there is a user with granted @privileges
@@ -609,7 +623,8 @@ SHOW GRANTS FOR u1;
 --echo # It is expected that after upgrade be finished the @privileges won't be
 --echo # granted to the user u1 since there was another user (root@localhost)
 --echo # who had the @privileges at the time when upgrade was started
-SHOW GRANTS FOR root@localhost;
+--let $user = root@localhost
+--source include/show_grants.inc
 SHOW GRANTS FOR u1;
 
 --echo # Cleaning up
@@ -634,7 +649,8 @@ CREATE USER sheldon;
 GRANT SELECT ON *.* TO sheldon;
 
 --echo # Show grants before upgrade
-SHOW GRANTS FOR root@localhost;
+--let $user = root@localhost
+--source include/show_grants.inc
 SHOW GRANTS FOR sheldon;
 
 --echo # Start upgrade
@@ -646,11 +662,72 @@ SHOW GRANTS FOR sheldon;
 
 --echo # Show grants after upgrade
 --echo # Should contain SHOW_ROUTINE privilege in both cases
-SHOW GRANTS FOR root@localhost;
+--let $user = root@localhost
+--source include/show_grants.inc
 SHOW GRANTS FOR sheldon;
 
 --echo # Cleanup
 DROP USER sheldon;
+
+--echo #
+--echo # WL#15819: New privilege to control OPTIMIZE LOCAL TABLE Operation
+--echo #
+
+--echo # User having SYSTEN_USER privilege, is to be granted
+--echo # OPTIMIZE_LOCAL_TABLE privilege upon upgrade (provided that there
+--echo # isn't a user who already has the OPTIMIZE_LOCAL_TABLE privilege).
+--echo #
+
+--echo # Revoke OPTIMIZE_LOCAL_TABLE from root user (since the upgrade scenario
+--echo # takes place only if no user had this privilege before)
+REVOKE OPTIMIZE_LOCAL_TABLE ON *.* FROM root@localhost;
+
+--echo # Create new user
+CREATE USER user1;
+
+--echo # Grant global select privilege to new user
+GRANT SYSTEM_USER ON *.* TO user1;
+
+--echo # Show grants before upgrade
+SHOW GRANTS FOR root@localhost;
+SHOW GRANTS FOR user1;
+
+--echo # Start upgrade
+
+--let $restart_parameters = restart:--upgrade=FORCE --log-error=$test_error_log
+--let $wait_counter= 10000
+--replace_result $test_error_log test_error_log
+--source include/restart_mysqld.inc
+
+--echo # Show grants after upgrade
+--echo # Should contain OPTIMIZE_LOCAL_TABLE privilege in both cases
+SHOW GRANTS FOR root@localhost;
+SHOW GRANTS FOR user1;
+
+--echo # Now run upgrade against database where there is a user with granted
+--echo # privilege OPTIMIZE_LOCAL_TABLE and check that for those users who have
+--echo # the privilege SYSTEM_USER won't be granted OPTIMIZE_LOCAL_TABLE
+--echo # privilege during upgrade.
+
+--echo # Revoke the OPTIMIZE_LOCAL_TABLE privilege from user1
+REVOKE OPTIMIZE_LOCAL_TABLE ON *.* FROM user1;
+
+--echo # Start upgrade
+
+--let $restart_parameters = restart:--upgrade=FORCE --log-error=$test_error_log
+--let $wait_counter= 10000
+--replace_result $test_error_log test_error_log
+--source include/restart_mysqld.inc
+
+--echo # It is expected that after upgrade is finished the privilege
+--echo # OPTIMIZE_LOCAL_TABLE won't be granted to user1 since
+--echo # there was another user (root@localhost) who had the privilege
+--echo # OPTIMIZE_LOCAL_TABLE at the time when upgrade was started
+SHOW GRANTS FOR root@localhost;
+SHOW GRANTS FOR user1;
+
+--echo # Cleanup
+DROP USER user1;
 
 --source include/mysql_upgrade_cleanup.inc
 

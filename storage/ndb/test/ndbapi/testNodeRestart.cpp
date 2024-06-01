@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -54,6 +55,7 @@ static int changeStartPartitionedTimeout(NDBT_Context *ctx, NDBT_Step *step) {
 
   do {
     NdbMgmd mgmd;
+    mgmd.use_tls(opt_tls_search_path, opt_mgm_tls);
     if (!mgmd.connect()) {
       g_err << "Failed to connect to ndb_mgmd." << endl;
       break;
@@ -766,6 +768,7 @@ int runDirtyRead(NDBT_Context *ctx, NDBT_Step *step) {
     restarter.waitClusterStarted(60);
     CHK_NDB_READY(pNdb);
   }
+  CHECK(restarter.insertErrorInAllNodes(0) == 0, "Failed to clear insertError");
   return result;
 err:
   hugoOps.closeTransaction(pNdb);
@@ -2336,6 +2339,9 @@ int runBug27466(NDBT_Context *ctx, NDBT_Step *step) {
 
     res.startNodes(&node1, 1);
     if (res.waitClusterStarted()) return NDBT_FAILED;
+    // Error is consumed only in one DBTC block.
+    // Force error to be cleared in all DBTC instances.
+    CHECK(res.insertErrorInNode(node2, 0) == 0, "Failed to clear insertError");
   }
 
   return NDBT_OK;
@@ -5190,7 +5196,7 @@ int runIsolateMaster(NDBT_Context *ctx, NDBT_Step *step) {
   g_info << "Subscribing to MGMD events..." << endl;
 
   NdbMgmd mgmd;
-
+  mgmd.use_tls(opt_tls_search_path, opt_mgm_tls);
   if (!mgmd.connect()) {
     g_err << "Failed to connect to MGMD" << endl;
     return NDBT_FAILED;
@@ -5730,7 +5736,7 @@ int runTestScanFragWatchdog(NDBT_Context *ctx, NDBT_Step *step) {
     g_err << "Subscribing to MGMD events..." << endl;
 
     NdbMgmd mgmd;
-
+    mgmd.use_tls(opt_tls_search_path, opt_mgm_tls);
     if (!mgmd.connect()) {
       g_err << "Failed to connect to MGMD" << endl;
       break;
@@ -5890,6 +5896,7 @@ int runChangeNumLogPartsINR(NDBT_Context *ctx, NDBT_Step *step) {
   Uint32 value;
   key = CFG_DB_NO_REDOLOG_PARTS;
 
+  mgmd.use_tls(opt_tls_search_path, opt_mgm_tls);
   if (!mgmd.connect()) {
     g_err << "Failed to connect to ndb_mgmd." << endl;
     ctx->stopTest();
@@ -5942,6 +5949,7 @@ int runChangeNumLDMsNR(NDBT_Context *ctx, NDBT_Step *step) {
   keys[0] = CFG_DB_AUTO_THREAD_CONFIG;
   keys[1] = CFG_DB_NUM_CPUS;
 
+  mgmd.use_tls(opt_tls_search_path, opt_mgm_tls);
   if (!mgmd.connect()) {
     g_err << "Failed to connect to ndb_mgmd." << endl;
     ctx->stopTest();
@@ -6052,6 +6060,7 @@ int runTestScanFragWatchdogDisable(NDBT_Context *ctx, NDBT_Step *step) {
   int victim = restarter.getNode(NdbRestarter::NS_RANDOM);
   do {
     NdbMgmd mgmd;
+    mgmd.use_tls(opt_tls_search_path, opt_mgm_tls);
     if (!mgmd.connect()) {
       g_err << "Failed to connect to ndb_mgmd." << endl;
       break;
@@ -7862,6 +7871,7 @@ int run_PLCP_many_parts(NDBT_Context *ctx, NDBT_Step *step) {
     return NDBT_FAILED;
   }
 
+  mgmd.use_tls(opt_tls_search_path, opt_mgm_tls);
   if (!mgmd.connect()) {
     g_err << "Failed to connect to ndb_mgmd." << endl;
     return NDBT_FAILED;
@@ -7980,6 +7990,8 @@ int run_PLCP_many_parts(NDBT_Context *ctx, NDBT_Step *step) {
     HugoTransactions trans(*pDict->getTable(tab.getName()));
     trans.loadTable(pNdb, ctx->getNumRecords());
     trans.scanUpdateRecords(pNdb, ctx->getNumRecords());
+    CHECK(restarter.insertErrorInNode(node_1, 0) == 0,
+          "Failed to clear insertError");
     return NDBT_OK;
   }
   /**
@@ -8278,6 +8290,7 @@ int runChangeDataNodeConfig(NDBT_Context *ctx, NDBT_Step *step) {
 
     // Override the config
     NdbMgmd mgmd;
+    mgmd.use_tls(opt_tls_search_path, opt_mgm_tls);
     Uint32 old_config_value = 0;
     CHECK(mgmd.change_config32(new_config_value, &old_config_value,
                                CFG_SECTION_NODE, config_var_id),

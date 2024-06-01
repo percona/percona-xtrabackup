@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -3784,10 +3785,6 @@ void Dblqh::dropTab_wait_usage(Signal *signal) {
                instance(), loc_fragptr.p->tabRef, loc_fragptr.p->fragId));
         }
       }
-    }
-    if (ERROR_INSERTED(5088) || ERROR_INSERTED(5089)) {
-      jam();
-      CLEAR_ERROR_INSERT_VALUE;
     }
   }
 
@@ -11054,7 +11051,8 @@ void Dblqh::execCOMMIT(Signal *signal) {
     if (tcConnectptr.p->tableref > 2) {
       jam();
       g_eventLogger->info("LQH %u delaying commit", instance());
-      sendSignalWithDelay(cownref, GSN_COMMIT, signal, 200, signal->getLength());
+      sendSignalWithDelay(cownref, GSN_COMMIT, signal, 200,
+                          signal->getLength());
       return;
     }
   }
@@ -24953,7 +24951,15 @@ void Dblqh::write_local_sysfile(Signal *signal, Uint32 type, Uint32 gci) {
     case WLS_GCP_COMPLETE:
     case WLS_GCP_COMPLETE_LATE: {
       jam();
-      nodeRestorableFlag = ReadLocalSysfileReq::NODE_NOT_RESTORABLE_ON_ITS_OWN;
+      if (cstartType == NodeState::ST_SYSTEM_RESTART) {
+        // It should not be necessary for on-disk state to be damaged
+        // as there is no CopyFrag state where Undo log capacity can
+        // be exceeded, or local partial LCPs are required.
+        nodeRestorableFlag = ReadLocalSysfileReq::NODE_RESTORABLE_ON_ITS_OWN;
+      } else {
+        nodeRestorableFlag =
+            ReadLocalSysfileReq::NODE_NOT_RESTORABLE_ON_ITS_OWN;
+      }
       req->lastWrite = 0;
       break;
     }

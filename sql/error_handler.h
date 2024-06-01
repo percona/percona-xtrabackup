@@ -1,15 +1,16 @@
-/* Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -404,12 +405,9 @@ class Info_schema_error_handler : public Internal_error_handler {
 };
 
 /**
-   An Internal_error_handler that converts errors related to foreign key
-   constraint checks 'ER_NO_REFERENCED_ROW_2' and 'ER_ROW_IS_REFERENCED_2'
-   to ER_NO_REFERENCED_ROW and ER_ROW_IS_REFERENCED based on privilege checks.
-   This prevents from revealing parent and child tables information respectively
-   when the foreign key constraint check fails and user does not have privileges
-   to access those tables.
+   An Internal_error_handler that prevents revealing parent and child tables
+   information when the foreign key constraint check fails and user does not
+   have privileges to access those tables.
 */
 class Foreign_key_error_handler : public Internal_error_handler {
   handler *m_table_handler;

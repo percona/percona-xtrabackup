@@ -15,7 +15,7 @@ CHANGE REPLICATION SOURCE TO SOURCE_HOST='localhost', SOURCE_USER='root', SOURCE
 Warnings:
 Note	1759	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	1760	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
-include/start_slave.inc [FOR CHANNEL 'ch3_1']
+include/rpl/start_replica.inc [FOR CHANNEL 'ch3_1']
 
 # 3. Execute action to single primary mode with server2 as the primary.
 #    It shall fail as server1 has slave connections
@@ -35,12 +35,8 @@ ERROR HY000: The function 'group_replication_set_as_primary' failed. There is a 
 
 # 6. Cleanup
 [connection server1]
-STOP SLAVE FOR CHANNEL 'ch3_1';
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-RESET SLAVE ALL FOR CHANNEL 'ch3_1';
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
+STOP REPLICA FOR CHANNEL 'ch3_1';
+RESET REPLICA ALL FOR CHANNEL 'ch3_1';
 set session sql_log_bin=0;
 call mtr.add_suppression("Error while executing a group configuration operation: The requested primary is not valid as a replica channel is running on member*");
 call mtr.add_suppression("Error while executing a group configuration operation: There is a replica channel running in the group's current primary member.");

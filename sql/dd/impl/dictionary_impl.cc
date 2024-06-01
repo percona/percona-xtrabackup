@@ -1,15 +1,16 @@
-/* Copyright (c) 2014, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -60,9 +61,8 @@
 #include "sql/dd/types/object_table_definition.h"
 #include "sql/dd/types/partition.h"  // dd::Partition::DD_table
 #include "sql/dd/types/system_view.h"
-#include "sql/dd/types/table.h"         // dd::Table::DD_table
-#include "sql/dd/types/tablespace.h"    // dd::Tablespace::DD_table
-#include "sql/dd/upgrade_57/upgrade.h"  // dd::upgrade
+#include "sql/dd/types/table.h"       // dd::Table::DD_table
+#include "sql/dd/types/tablespace.h"  // dd::Tablespace::DD_table
 #include "sql/derror.h"
 #include "sql/handler.h"
 #include "sql/mdl.h"
@@ -153,20 +153,9 @@ bool Dictionary_impl::init(enum_dd_init_type dd_init) {
     This function also takes care of normal server restart.
   */
   else if (dd_init == enum_dd_init_type::DD_RESTART_OR_UPGRADE)
-    result = ::bootstrap::run_bootstrap_thread(
-        nullptr, nullptr, &upgrade_57::do_pre_checks_and_initialize_dd,
-        SYSTEM_THREAD_DD_INITIALIZE);
-
-  // Populate metadata in DD tables from old data directory and do cleanup.
-  else if (dd_init == enum_dd_init_type::DD_POPULATE_UPGRADE)
-    result = ::bootstrap::run_bootstrap_thread(
-        nullptr, nullptr, &upgrade_57::fill_dd_and_finalize,
-        SYSTEM_THREAD_DD_INITIALIZE);
-
-  // Delete DD tables and do cleanup in case of error in upgrade
-  else if (dd_init == enum_dd_init_type::DD_DELETE)
-    result = ::bootstrap::run_bootstrap_thread(
-        nullptr, nullptr, &upgrade_57::terminate, SYSTEM_THREAD_DD_INITIALIZE);
+    result = ::bootstrap::run_bootstrap_thread(nullptr, nullptr,
+                                               &bootstrap::restart_dictionary,
+                                               SYSTEM_THREAD_DD_INITIALIZE);
 
   // Update server and plugin I_S table metadata into DD tables.
   else if (dd_init == enum_dd_init_type::DD_UPDATE_I_S_METADATA)

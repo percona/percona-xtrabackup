@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -48,7 +49,9 @@
 #include "hostname_validator.h"
 #include "keyring/keyring_manager.h"
 #include "mysql/harness/arg_handler.h"
+#include "mysql/harness/config_option.h"
 #include "mysql/harness/config_parser.h"
+#include "mysql/harness/dynamic_config.h"
 #include "mysql/harness/dynamic_state.h"
 #include "mysql/harness/filesystem.h"
 #include "mysql/harness/log_reopen_component.h"
@@ -56,12 +59,16 @@
 #include "mysql/harness/logging/logging.h"
 #include "mysql/harness/logging/registry.h"
 #include "mysql/harness/process_state_component.h"
+#include "mysql/harness/section_config_exposer.h"
 #include "mysql/harness/signal_handler.h"
 #include "mysql/harness/utility/string.h"  // string_format
 #include "mysql/harness/vt100.h"
+#include "mysql_router_thread.h"  // kDefaultStackSizeInKiloByte
 #include "mysqlrouter/config_files.h"
+#include "mysqlrouter/connection_pool.h"
 #include "mysqlrouter/default_paths.h"
 #include "mysqlrouter/mysql_session.h"
+#include "mysqlrouter/routing.h"
 #include "mysqlrouter/supported_router_options.h"
 #include "mysqlrouter/utils.h"  // substitute_envvar
 #include "print_version.h"
@@ -140,7 +147,7 @@ void check_config_overwrites(const CmdArgHandler::ConfigOverwrites &overwrites,
     // only --logger.level config overwrite is allowed currently for bootstrap
     for (const auto &option : overwrite.second) {
       const std::string name = section + "." + option.first;
-      if (name != "logger.level") {
+      if (name != "logger.level" && name != "DEFAULT.plugin_folder") {
         throw std::runtime_error(
             "Invalid argument '--" + name +
             "'. Only '--logger.level' configuration option can be "
@@ -148,6 +155,19 @@ void check_config_overwrites(const CmdArgHandler::ConfigOverwrites &overwrites,
       }
     }
   }
+}
+
+std::string get_plugin_folder_overwrite(
+    const CmdArgHandler::ConfigOverwrites &overwrites) {
+  const auto default_key = std::make_pair("DEFAULT"s, ""s);
+  if (overwrites.count(default_key) != 0) {
+    const auto &default_overwrites = overwrites.at(default_key);
+    if (default_overwrites.count("plugin_folder") != 0) {
+      return default_overwrites.at("plugin_folder");
+    }
+  }
+
+  return "";
 }
 
 }  // namespace
@@ -244,7 +264,8 @@ void MySQLRouter::init(const std::string &program_name,
 #endif
 
   const bool is_bootstrap = !bootstrap_uri_.empty();
-  check_config_overwrites(arg_handler_.get_config_overwrites(),
+  const auto config_overwrites = arg_handler_.get_config_overwrites();
+  check_config_overwrites(config_overwrites,
                           is_bootstrap);  // throws std::runtime_error
 
   if (is_bootstrap) {
@@ -291,10 +312,12 @@ void MySQLRouter::init(const std::string &program_name,
     // here we re-configure it with settings from config file)
     init_main_logger(config, true);  // true = raw logging mode
 
-    bootstrap(
-        program_name,
-        bootstrap_uri_);  // throws MySQLSession::Error, std::runtime_error,
-                          // std::out_of_range, std::logic_error, ...?
+    bootstrap(program_name, bootstrap_uri_,
+              get_plugin_folder_overwrite(
+                  config_overwrites));  // throws MySQLSession::Error,
+                                        // std::runtime_error,
+                                        // std::out_of_range,
+                                        // std::logic_error, ...?
     return;
   }
 
@@ -511,6 +534,7 @@ void MySQLRouter::init_loader(mysql_harness::LoaderConfig &config) {
   }
 
   loader_->register_supported_app_options(router_supported_options);
+  loader_->register_expose_app_config_callback(expose_router_configuration);
 }
 
 void MySQLRouter::start() {
@@ -1844,7 +1868,8 @@ void MySQLRouter::prepare_command_options() noexcept {
 // throws MySQLSession::Error, std::runtime_error, std::out_of_range,
 // std::logic_error, ... ?
 void MySQLRouter::bootstrap(const std::string &program_name,
-                            const std::string &server_url) {
+                            const std::string &server_url,
+                            const std::string &plugin_folder) {
   mysqlrouter::ConfigGenerator config_gen(out_stream_, err_stream_
 #ifndef _WIN32
                                           ,
@@ -1856,6 +1881,7 @@ void MySQLRouter::bootstrap(const std::string &program_name,
       bootstrap_options_);  // throws MySQLSession::Error, std::runtime_error,
                             // std::out_of_range, std::logic_error
   config_gen.warn_on_no_ssl(bootstrap_options_);  // throws std::runtime_error
+  config_gen.set_plugin_folder(plugin_folder);
 
 #ifdef _WIN32
   // Cannot run bootstrap mode as windows service since it requires console
@@ -2114,3 +2140,65 @@ void MySQLRouter::show_usage(bool include_options) noexcept {
 }
 
 void MySQLRouter::show_usage() noexcept { show_usage(true); }
+
+namespace {
+
+class RouterAppConfigExposer : public mysql_harness::SectionConfigExposer {
+ public:
+  using DC = mysql_harness::DynamicConfig;
+  RouterAppConfigExposer(const bool initial,
+                         const mysql_harness::ConfigSection &default_section)
+      : mysql_harness::SectionConfigExposer(initial, default_section,
+                                            DC::SectionId{"common", ""}) {}
+
+  void expose() override {
+    // set "global" router options from DEFAULT section
+    auto expose_int_option = [&](const std::string &option,
+                                 const int64_t default_val) {
+      auto value = default_val;
+      if (default_section_.has(option)) {
+        try {
+          value = mysql_harness::option_as_int<int64_t>(
+              default_section_.get(option), "");
+        } catch (...) {
+          // if it failed fallback to setting default
+        }
+      }
+
+      expose_option(option, value, default_val);
+    };
+
+    auto expose_str_option = [&](const std::string &option,
+                                 const std::string &default_val,
+                                 bool skip_if_empty = false) {
+      auto value = default_val;
+      if (default_section_.has(option)) {
+        value = default_section_.get(option);
+      }
+
+      const OptionValue op_val = (skip_if_empty && value.empty())
+                                     ? OptionValue(std::monostate{})
+                                     : value;
+      const OptionValue op_default_val = (skip_if_empty && default_val.empty())
+                                             ? OptionValue(std::monostate{})
+                                             : default_val;
+
+      expose_option(option, op_val, op_default_val);
+    };
+
+    expose_int_option(
+        "max_total_connections",
+        static_cast<int64_t>(routing::kDefaultMaxTotalConnections));
+    expose_str_option("name", kSystemRouterName);
+    // only share a user if it is not empty
+    expose_str_option("user", kDefaultSystemUserName, true);
+    expose_str_option("unknown_config_option", "error");
+  }
+};
+
+}  // namespace
+
+void expose_router_configuration(const bool initial,
+                                 const mysql_harness::ConfigSection &section) {
+  RouterAppConfigExposer(initial, section).expose();
+}

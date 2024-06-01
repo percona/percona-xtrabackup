@@ -1,15 +1,16 @@
-/* Copyright (c) 2014, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -274,7 +275,7 @@ static bool prepare_share(THD *thd, TABLE_SHARE *share,
 
   // Setup other fields =====================================================
 
-  if (share->tmp_table == NO_TMP_TABLE) {
+  if (share->tmp_table == NO_TMP_TABLE && share->is_primary_engine()) {
     share->m_histograms = new (&share->mem_root) Table_histograms_collection();
     if (share->m_histograms == nullptr) return true;  // OOM.
   }
@@ -1908,11 +1909,6 @@ static bool set_field_list(MEM_ROOT *mem_root, dd::String_type &str,
 static bool fill_partitioning_from_dd(THD *thd, TABLE_SHARE *share,
                                       const dd::Table *tab_obj) {
   if (tab_obj->partition_type() == dd::Table::PT_NONE) return false;
-
-  // The DD only has information about how the table is partitioned in
-  // the primary storage engine, so don't use this information for
-  // tables in a secondary storage engine.
-  if (share->is_secondary_engine()) return false;
 
   partition_info *part_info;
   part_info = new (&share->mem_root) partition_info;

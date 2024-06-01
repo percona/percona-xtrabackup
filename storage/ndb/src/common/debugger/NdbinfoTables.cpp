@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2009, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2009, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -103,6 +104,42 @@ DECLARE_NDBINFO_TABLE(POOLS, 14) = {
      {"config_param4", Ndbinfo::Number, "config param 4 affecting pool"},
      {"resource_id", Ndbinfo::Number, ""},
      {"type_id", Ndbinfo::Number, "Record type id within resource"}}};
+
+DECLARE_NDBINFO_TABLE(TRANSPORTER_DETAILS, 18) = {
+    {"transporter_details", 18, 0,
+     [](const Ndbinfo::Counts &counts) {
+       return (counts.data_nodes) * (counts.all_nodes - 1);
+     },
+     "detailed transporter status"},
+    {{"node_id", Ndbinfo::Number, "Node id reporting"},
+     {"block_instance", Ndbinfo::Number, "Block instance reporting"},
+     {"trp_id", Ndbinfo::Number, "Transporter id"},
+     {"remote_node_id", Ndbinfo::Number, "Node id at other end of link"},
+
+     {"connection_status", Ndbinfo::Number, "State of inter-node link"},
+
+     {"remote_address", Ndbinfo::String, "Address of remote node"},
+     {"bytes_sent", Ndbinfo::Number64, "Bytes sent to remote node"},
+     {"bytes_received", Ndbinfo::Number64, "Bytes received from remote node"},
+
+     {"connect_count", Ndbinfo::Number, "Number of times connected"},
+
+     {"overloaded", Ndbinfo::Number, "Is link reporting overload"},
+     {"overload_count", Ndbinfo::Number,
+      "Number of overload onsets since connect"},
+
+     {"slowdown", Ndbinfo::Number, "Is link requesting slowdown"},
+     {"slowdown_count", Ndbinfo::Number,
+      "Number of slowdown onsets since connect"},
+     {"encrypted", Ndbinfo::Number, "Is link using TLS encryption"},
+
+     {"sendbuffer_used_bytes", Ndbinfo::Number64, "SendBuffer bytes in use"},
+     {"sendbuffer_max_used_bytes", Ndbinfo::Number64,
+      "SendBuffer historical max bytes in use"},
+     {"sendbuffer_alloc_bytes", Ndbinfo::Number64,
+      "SendBuffer bytes allocated"},
+     {"sendbuffer_max_alloc_bytes", Ndbinfo::Number64,
+      "SendBuffer historical max bytes allocated"}}};
 
 DECLARE_NDBINFO_TABLE(TRANSPORTERS, 12) = {
     {"transporters", 12, 0,
@@ -1237,7 +1274,7 @@ static struct ndbinfo_table_list_entry {
     DBINFOTBL(CPUDATA_20SEC),
     DBINFOTBL(CERTIFICATES),
     DBINFOTBL(THREADBLOCK_DETAILS),
-};
+    DBINFOTBL(TRANSPORTER_DETAILS)};
 
 static int no_ndbinfo_tables =
     sizeof(ndbinfo_tables) / sizeof(ndbinfo_tables[0]);

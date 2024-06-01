@@ -1,15 +1,16 @@
-# Copyright (c) 2009, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2009, 2024, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -265,13 +266,14 @@ FUNCTION(INSTALL_DEBUG_TARGET target)
   # We have a template .cmake.in file for any plugin that needs cleanup.
 
   # NOTE: scripts should work for 'make install' and 'make package'.
-  IF(LINUX AND UNIX_INSTALL_RPATH_ORIGIN_PRIV_LIBDIR)
+  IF(LINUX AND (UNIX_INSTALL_RPATH_ORIGIN_PRIV_LIBDIR OR WITH_MLE))
     IF(${target} STREQUAL "mysqld")
       INSTALL(SCRIPT ${CMAKE_SOURCE_DIR}/cmake/rpath_remove.cmake)
     ENDIF()
     # These plugins depend, directly or indirectly, on protobuf.
     IF(${target} STREQUAL "group_replication" OR
         ${target} STREQUAL "telemetry_client" OR
+        ${target} STREQUAL "component_mle" OR
         ${target} STREQUAL "component_telemetry"
         )
       GET_TARGET_PROPERTY(output_name ${target} OUTPUT_NAME)

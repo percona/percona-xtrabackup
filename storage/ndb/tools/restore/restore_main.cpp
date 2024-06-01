@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -132,7 +133,7 @@ static bool ga_exclude_missing_columns = false;
 static bool ga_exclude_missing_tables = false;
 static bool opt_exclude_intermediate_sql_tables = true;
 static bool ga_with_apply_status = false;
-bool opt_include_stored_grants = false;
+static bool opt_include_stored_grants = false;
 #ifdef ERROR_INSERT
 static unsigned int _error_insert = 0;
 #endif
@@ -951,6 +952,10 @@ bool create_consumers(RestoreThreadData *data) {
     if (data->m_part_id == 1) restore->m_delete_epoch_tuple = true;
   }
 
+  if (opt_include_stored_grants) {
+    restore->m_with_sql_metadata = true;
+  }
+
   {
     BackupConsumer *c = printer;
     data->m_consumers.push_back(c);
@@ -984,10 +989,6 @@ static inline bool isBlobTable(const TableS *table) {
 static inline bool isIndex(const TableS *table) {
   const NdbTableImpl &tmptab = NdbTableImpl::getImpl(*table->m_dictTable);
   return (int)tmptab.m_indexType != (int)NdbDictionary::Index::Undefined;
-}
-
-static inline bool isSYSTAB_0(const TableS *table) {
-  return table->isSYSTAB_0();
 }
 
 const char *getTableName(const TableS *table) {
@@ -1756,6 +1757,18 @@ static bool check_slice_skip_fragment(const TableS *table, Uint32 fragmentId) {
   return table->getSliceSkipFlag(fragmentId);
 }
 
+static bool is_included_sys_table(const TableS *table) {
+  if (table->isSYSTAB_0()) return true;
+  if (ga_with_apply_status &&
+      strcmp(table->getTableName(), NDB_REP_DB "/def/" NDB_APPLY_TABLE) == 0)
+    return true;
+  if (opt_include_stored_grants &&
+      strcmp(table->getTableName(), "mysql/def/ndb_sql_metadata") == 0)
+    return true;
+
+  return false;
+}
+
 int do_restore(RestoreThreadData *thrdata) {
   init_progress();
 
@@ -1987,9 +2000,7 @@ int do_restore(RestoreThreadData *thrdata) {
     const TableS *table = metaData[i];
     table_output.push_back(NULL);
     if (!checkDbAndTableName(table)) continue;
-    if (isSYSTAB_0(table) || (strcmp(table->getTableName(),
-                                     NDB_REP_DB "/def/" NDB_APPLY_TABLE) == 0 &&
-                              ga_with_apply_status)) {
+    if (is_included_sys_table(table)) {
       table_output[i] = ndbout.m_out;
     }
     if (checkSysTable(table)) {
@@ -2384,11 +2395,7 @@ int do_restore(RestoreThreadData *thrdata) {
 
   unsigned j;
   for (j = 0; j < g_consumers.size(); j++) {
-    if (g_consumers[j]->has_temp_error()) {
-      ndbout_c(
-          "\nRestore successful, but encountered temporary error, "
-          "please look at configuration.");
-    }
+    g_consumers[j]->log_temp_errors();
   }
 
   if (ga_rebuild_indexes) {

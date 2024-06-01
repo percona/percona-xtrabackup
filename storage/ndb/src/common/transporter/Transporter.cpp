@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -82,6 +83,10 @@ Transporter::Transporter(TransporterRegistry &t_reg, TrpId transporter_index,
       m_connect_count(0),
       m_overload_count(0),
       m_slowdown_count(0),
+      m_send_buffer_alloc_bytes(0),
+      m_send_buffer_max_alloc_bytes(0),
+      m_send_buffer_used_bytes(0),
+      m_send_buffer_max_used_bytes(0),
       isMgmConnection(_isMgmConnection),
       m_connected(false),
       m_type(_type),
@@ -168,8 +173,8 @@ Transporter::~Transporter() { delete m_socket_client; }
 bool Transporter::start_disconnecting(int err, bool send_source) {
   DEB_MULTI_TRP(("Disconnecting trp_id %u for node %u", getTransporterIndex(),
                  remoteNodeId));
-  return m_transporter_registry.start_disconnecting_trp(getTransporterIndex(),
-                                                        err, send_source);
+  return m_transporter_registry.start_disconnecting(getTransporterIndex(), err,
+                                                    send_source);
 }
 
 bool Transporter::configure(const TransporterConfiguration *conf) {
@@ -470,9 +475,7 @@ bool Transporter::connect_client(NdbSocket &&socket) {
         (stderr, "connect_client multi trp node: %u\n", getRemoteNodeId()));
   }
 #endif
-  m_transporter_registry.lockMultiTransporters();
   update_connect_state(true);
-  m_transporter_registry.unlockMultiTransporters();
   DBUG_RETURN(true);
 }
 
@@ -512,6 +515,10 @@ void Transporter::resetCounters() {
   m_bytes_received = 0;
   m_overload_count = 0;
   m_slowdown_count = 0;
+  m_send_buffer_alloc_bytes = 0;
+  m_send_buffer_max_alloc_bytes = 0;
+  m_send_buffer_used_bytes = 0;
+  m_send_buffer_max_used_bytes = 0;
 }
 
 void Transporter::checksum_state::dumpBadChecksumInfo(
@@ -569,7 +576,7 @@ void Transporter::checksum_state::dumpBadChecksumInfo(
 }
 
 void Transporter::set_get(ndb_socket_t fd, int level, int optval,
-                          const char * /*optname*/, int val) {
+                          const char *optname [[maybe_unused]], int val) {
   int actual = 0, defval = 0;
 
   ndb_getsockopt(fd, level, optval, &defval);

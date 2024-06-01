@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2023, Oracle and/or its affiliates.
+Copyright (c) 1997, 2024, Oracle and/or its affiliates.
 Copyright (c) 2008, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -13,12 +13,13 @@ This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -3482,6 +3483,8 @@ static void row_sel_copy_cached_field_for_mysql(
     const byte *cache,              /*!< in: cached row */
     const mysql_row_templ_t *templ) /*!< in: column template */
 {
+  ut_a(!templ->is_multi_val);
+
   ulint len;
 
   buf += templ->mysql_col_offset;
@@ -3501,6 +3504,9 @@ static void row_sel_copy_cached_field_for_mysql(
     len = templ->mysql_col_len;
   }
 
+  /* The buf and cache have each reserved exactly templ->mysql_col_len
+  bytes for this column. In case of varchar we might copy fewer. */
+  ut_a(len <= templ->mysql_col_len);
   ut_memcpy(buf, cache, len);
 }
 
@@ -3582,10 +3588,18 @@ static inline void row_sel_dequeue_cached_row_for_mysql(
       templ = prebuilt->mysql_template + i;
 
       /* Skip virtual columns */
-      if (templ->is_virtual && !(dict_index_has_virtual(prebuilt->index) &&
-                                 prebuilt->read_just_key)) {
-        continue;
+      if (templ->is_virtual) {
+        if (!(dict_index_has_virtual(prebuilt->index) &&
+              prebuilt->read_just_key)) {
+          continue;
+        }
+
+        if (templ->is_multi_val) {
+          continue;
+        }
       }
+      // Multi-value columns are always virtual
+      ut_a(!templ->is_multi_val);
 
       row_sel_copy_cached_field_for_mysql(buf, cached_rec, templ);
     }

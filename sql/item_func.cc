@@ -1,15 +1,16 @@
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -581,7 +582,7 @@ inline bool param_type_uses_non_param_inner(THD *thd, uint arg_count,
           return false;
         if (args[j]->type() == Item::ROW_ITEM)
           arguments[j] = down_cast<Item_row *>(args[j])->element_index(i);
-        else if (args[j]->type() == Item::SUBSELECT_ITEM)
+        else if (args[j]->type() == Item::SUBQUERY_ITEM)
           arguments[j] = (*down_cast<Item_subselect *>(args[j])
                                ->query_expr()
                                ->get_unit_column_types())[i];
@@ -615,6 +616,15 @@ inline bool param_type_uses_non_param_inner(THD *thd, uint arg_count,
 bool Item_func::param_type_uses_non_param(THD *thd, enum_field_types def) {
   if (arg_count == 0) return false;
   return param_type_uses_non_param_inner(thd, arg_count, args, def);
+}
+
+Item *Item_func::replace_func_call(uchar *arg) {
+  auto *info = pointer_cast<Item::Item_func_call_replacement *>(arg);
+  if (eq(info->m_target, /*binary_cmp*/ false)) {
+    assert(info->m_curr_block == info->m_trans_block);
+    return info->m_item;
+  }
+  return this;
 }
 
 bool Item_func::walk(Item_processor processor, enum_walk walk,
@@ -943,7 +953,7 @@ const Item_field *Item_func::contributes_to_filter(
   for (uint i = 0; i < arg_count; i++) {
     const Item::Type arg_type = args[i]->real_item()->type();
 
-    if (arg_type == Item::SUBSELECT_ITEM) {
+    if (arg_type == Item::SUBQUERY_ITEM) {
       if (args[i]->const_for_execution()) {
         // Constant subquery, i.e., not a dependent subquery.
         found_comparable = true;
@@ -3270,8 +3280,8 @@ bool Item::bit_func_returns_binary(const Item *a, const Item *b) {
                            b->collation.collation == &my_charset_bin;
 
   return a_is_binary && (!b || b_is_binary) &&
-         ((a->type() != Item::VARBIN_ITEM && a->type() != Item::NULL_ITEM) ||
-          (b && b->type() != Item::VARBIN_ITEM &&
+         ((a->type() != Item::HEX_BIN_ITEM && a->type() != Item::NULL_ITEM) ||
+          (b && b->type() != Item::HEX_BIN_ITEM &&
            b->type() != Item::NULL_ITEM));
 }
 
@@ -3747,6 +3757,17 @@ bool Item_func_min_max::resolve_type(THD *thd) {
   return reject_geometry_args(arg_count, args, this);
 }
 
+TYPELIB *Item_func_min_max::get_typelib() const {
+  if (data_type() == MYSQL_TYPE_ENUM || data_type() == MYSQL_TYPE_SET) {
+    for (const Item *arg : make_array(args, arg_count)) {
+      TYPELIB *typelib = arg->get_typelib();
+      if (typelib != nullptr) return typelib;
+    }
+    assert(false);
+  }
+  return nullptr;
+}
+
 /*
   "rank" the temporal types, to get consistent results for cases like
   greatest(year, date) vs. greatest(date, year)
@@ -4142,6 +4163,10 @@ bool Item_rollup_group_item::eq(const Item *item, bool binary_cmp) const {
   return Item_func::eq(item, binary_cmp) &&
          min_rollup_level() == down_cast<const Item_rollup_group_item *>(item)
                                    ->min_rollup_level();
+}
+
+TYPELIB *Item_rollup_group_item::get_typelib() const {
+  return inner_item()->get_typelib();
 }
 
 longlong Item_func_length::val_int() {
@@ -4955,9 +4980,10 @@ void udf_handler::get_string(uint index) {
 bool udf_handler::get_and_convert_string(uint index) {
   String *res = args[index]->val_str(&buffers[index]);
 
-  /* m_args_extension.charset_info[index] is a legitimate charset */
-  if (res != nullptr && m_args_extension.charset_info[index] != nullptr) {
-    if (res->charset() != m_args_extension.charset_info[index]) {
+  if (!args[index]->null_value) {
+    auto check_charset = m_args_extension.charset_info[index];
+    if (check_charset != nullptr && res->charset() != check_charset) {
+      /* m_args_extension.charset_info[index] is a legitimate charset */
       String temp;
       uint dummy;
       if (temp.copy(res->ptr(), res->length(), res->charset(),
@@ -4965,9 +4991,17 @@ bool udf_handler::get_and_convert_string(uint index) {
         return true;
       }
       *res = std::move(temp);
+    } else if (res != &buffers[index]) {
+      /* The res returned above is &Item::str_value
+       * We may call c_ptr_safe() below, reallocating the buffer of
+       * Item::str_value If we set the str_value m_ptr directly somewhere, the
+       * allocated buffer at c_ptr_safe() will be freed, before the UDF is able
+       * to use it. So, instead of changing Item::str_value, copy its contents
+       * to udf_handler::buffers and use that instead.
+       */
+      buffers[index] = *res;
+      res = &buffers[index];
     }
-  }
-  if (!args[index]->null_value) {
     f_args.args[index] = res->c_ptr_safe();
     f_args.lengths[index] = res->length();
   } else {
@@ -5002,8 +5036,27 @@ void Item_udf_func::print(const THD *thd, String *str,
   str->append(')');
 }
 
+// RAII class to handle THD::in_loadable_function state.
+class THD_in_loadable_function_handler {
+ public:
+  THD_in_loadable_function_handler() {
+    m_thd = current_thd;
+    m_saved_thd_in_loadable_function = m_thd->in_loadable_function;
+    m_thd->in_loadable_function = true;
+  }
+
+  ~THD_in_loadable_function_handler() {
+    m_thd->in_loadable_function = m_saved_thd_in_loadable_function;
+  }
+
+ private:
+  THD *m_thd;
+  bool m_saved_thd_in_loadable_function;
+};
+
 double Item_func_udf_float::val_real() {
   assert(fixed);
+  THD_in_loadable_function_handler thd_in_loadable_function_handler;
   DBUG_PRINT("info", ("result_type: %d  arg_count: %d", args[0]->result_type(),
                       arg_count));
   return udf.val_real(&null_value);
@@ -5019,6 +5072,7 @@ String *Item_func_udf_float::val_str(String *str) {
 
 longlong Item_func_udf_int::val_int() {
   assert(fixed);
+  THD_in_loadable_function_handler thd_in_loadable_function_handler;
   return udf.val_int(&null_value);
 }
 
@@ -5031,7 +5085,7 @@ String *Item_func_udf_int::val_str(String *str) {
 }
 
 longlong Item_func_udf_decimal::val_int() {
-  my_decimal dec_buf, *dec = udf.val_decimal(&null_value, &dec_buf);
+  my_decimal dec_buf, *dec = val_decimal(&dec_buf);
   longlong result;
   if (null_value) return 0;
   my_decimal2int(E_DEC_FATAL_ERROR, dec, unsigned_flag, &result);
@@ -5039,7 +5093,7 @@ longlong Item_func_udf_decimal::val_int() {
 }
 
 double Item_func_udf_decimal::val_real() {
-  my_decimal dec_buf, *dec = udf.val_decimal(&null_value, &dec_buf);
+  my_decimal dec_buf, *dec = val_decimal(&dec_buf);
   double result;
   if (null_value) return 0.0;
   my_decimal2double(E_DEC_FATAL_ERROR, dec, &result);
@@ -5047,11 +5101,12 @@ double Item_func_udf_decimal::val_real() {
 }
 
 my_decimal *Item_func_udf_decimal::val_decimal(my_decimal *dec_buf) {
+  THD_in_loadable_function_handler thd_in_loadable_function_handler;
   return udf.val_decimal(&null_value, dec_buf);
 }
 
 String *Item_func_udf_decimal::val_str(String *str) {
-  my_decimal dec_buf, *dec = udf.val_decimal(&null_value, &dec_buf);
+  my_decimal dec_buf, *dec = val_decimal(&dec_buf);
   if (null_value) return nullptr;
   if (str->length() < DECIMAL_MAX_STR_LENGTH)
     str->length(DECIMAL_MAX_STR_LENGTH);
@@ -5079,6 +5134,7 @@ bool Item_func_udf_str::resolve_type(THD *) {
 
 String *Item_func_udf_str::val_str(String *str) {
   assert(fixed);
+  THD_in_loadable_function_handler thd_in_loadable_function_handler;
   String *res = udf.val_str(str, &str_value);
   null_value = !res;
   return res;

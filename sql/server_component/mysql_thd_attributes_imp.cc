@@ -1,15 +1,16 @@
-/* Copyright (c) 2021, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
 as published by the Free Software Foundation.
 
-This program is also distributed with certain software (including
+This program is designed to work with certain software (including
 but not limited to OpenSSL) that is licensed under separate terms,
 as designated in a particular file or component or in included license
 documentation.  The authors of MySQL hereby grant you an additional
 permission to link the program and your derivative works with the
-separately licensed software that they have included with MySQL.
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -134,6 +135,26 @@ DEFINE_BOOL_METHOD(mysql_thd_attributes_imp::get,
       } else if (!strcmp(name, "time_zone_name")) {
         *reinterpret_cast<MYSQL_LEX_CSTRING *>(inout_pvalue) =
             t->time_zone()->get_name()->lex_cstring();
+      } else if (!strcmp(name, "da_status")) {
+        *((uint16_t *)inout_pvalue) = [&t](auto status) {
+          switch (status) {
+            case Diagnostics_area::DA_EMPTY:
+              return STATUS_DA_EMPTY;
+            case Diagnostics_area::DA_OK:
+              return STATUS_DA_OK;
+            case Diagnostics_area::DA_EOF:
+              return STATUS_DA_EOF;
+            case Diagnostics_area::DA_ERROR:
+              if (t->is_fatal_error()) {
+                return STATUS_DA_FATAL_ERROR;
+              }
+              return STATUS_DA_ERROR;
+            case Diagnostics_area::DA_DISABLED:
+              return STATUS_DA_DISABLED;
+            default:
+              return STATUS_DA_OK;
+          }
+        }(t->get_stmt_da()->status());
       } else
         return true; /* invalid option */
     }

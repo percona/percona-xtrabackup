@@ -1,15 +1,16 @@
-/* Copyright (c) 2005, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2005, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -71,7 +72,7 @@ class Rpl_info_handler;
 class Slave_committed_queue;
 class Slave_worker;
 class String;
-struct LEX_MASTER_INFO;
+struct LEX_SOURCE_INFO;
 struct db_worker_hash_entry;
 
 extern uint sql_replica_skip_counter;
@@ -86,8 +87,8 @@ typedef struct slave_job_item {
 
 /**
   This class is used to store the type and value for
-  Assign_gtids_to_anonymous_transactions parameter of Change master command on
-  slave.
+  Assign_gtids_to_anonymous_transactions parameter of Change replication source
+  command on slave.
 */
 class Assign_gtids_to_anonymous_transactions_info {
  public:
@@ -99,7 +100,7 @@ class Assign_gtids_to_anonymous_transactions_info {
     of replica which is the server where this transformation of anonymous to
     gtid event happens. UUID: Anonymous gtid events will be converted to Gtid
     event & the UUID used while create GTIDs will be the one specified via
-    Change master command to the parameter
+    Change replication source command to the parameter
     ASSIGN_GTIDS_TO_ANONYMOUS_TRANSACTIONS
   */
   enum class enum_type { AGAT_OFF = 1, AGAT_LOCAL, AGAT_UUID };
@@ -284,7 +285,7 @@ class Relay_log_info : public Rpl_info {
 
   /**
     Stores the information related to the ASSIGN_GTIDS_TO_ANONYMOUS_TRANSACTIONS
-    parameter of CHANGE MASTER
+    parameter of CHANGE REPLICATION SOURCE
   */
   Assign_gtids_to_anonymous_transactions_info
       m_assign_gtids_to_anonymous_transactions_info;
@@ -339,7 +340,7 @@ class Relay_log_info : public Rpl_info {
   /* The following variables are safe to read any time */
 
   /*
-    When we restart slave thread we need to have access to the previously
+    When we restart replica thread we need to have access to the previously
     created temporary tables. Modified only on init/end and by the SQL
     thread, read only by SQL thread.
   */
@@ -763,6 +764,9 @@ class Relay_log_info : public Rpl_info {
   /* Flag that ensures the retrieved GTID set is initialized only once. */
   bool gtid_retrieved_initialized;
 
+  /// Flag that ensures the relay log is sanitized only once.
+  bool relay_log_sanitized = false;
+
   /**
     Stores information on the last processed transaction or the transaction
     that is currently being processed.
@@ -889,7 +893,7 @@ class Relay_log_info : public Rpl_info {
 
   /**
     Flag that the group_master_log_pos is invalid. This may occur
-    (for example) after CHANGE MASTER TO RELAY_LOG_POS.  This will
+    (for example) after CHANGE REPLICATION SOURCE TO RELAY_LOG_POS.  This will
     be unset after the first event has been executed and the
     group_master_log_pos is valid again.
 
@@ -917,7 +921,7 @@ class Relay_log_info : public Rpl_info {
 
   /**
     Reset the delay.
-    This is used by RESET SLAVE to clear the delay.
+    This is used by RESET REPLICA to clear the delay.
   */
   void clear_sql_delay() { sql_delay = 0; }
 
@@ -927,12 +931,13 @@ class Relay_log_info : public Rpl_info {
     errors, and have been manually applied by DBA already.
   */
   std::atomic<uint32> slave_skip_counter;
-  std::atomic<ulong> abort_pos_wait; /* Incremented on change master */
+  std::atomic<ulong>
+      abort_pos_wait; /* Incremented on change replication source */
   mysql_mutex_t log_space_lock;
   mysql_cond_t log_space_cond;
 
   /*
-     Condition and its parameters from START SLAVE UNTIL clause.
+     Condition and its parameters from START REPLICA UNTIL clause.
 
      UNTIL condition is tested with is_until_satisfied() method that is
      called by exec_relay_log_event(). is_until_satisfied() caches the result
@@ -1544,8 +1549,8 @@ class Relay_log_info : public Rpl_info {
     (if necessary), calculating the received GTID set for the channel and
     storing the updated rli object configuration into the repository.
 
-    When this function is called in a change master process and the change
-    master procedure will purge all the relay log files later, there is no
+    When this function is called in a change replication source process and the
+    change procedure will purge all the relay log files later, there is no
     reason to try to calculate the received GTID set of the channel based on
     existing relay log files (they will be purged). Allowing reads to existing
     relay log files at this point may lead to put the server in a state where
@@ -1553,13 +1558,13 @@ class Relay_log_info : public Rpl_info {
     replication log files was ON and the keyring plugin is not available
     anymore.
 
-    @param skip_received_gtid_set_recovery When true, skips the received GTID
-                                           set recovery.
+    @param skip_received_gtid_set_and_relaylog_recovery When true, skips the
+    received GTID set and relay log recovery.
 
     @retval 0 Success.
     @retval 1 Error.
   */
-  int rli_init_info(bool skip_received_gtid_set_recovery = false);
+  int rli_init_info(bool skip_received_gtid_set_and_relaylog_recovery = false);
   void end_info();
 
   /** No flush options given to relay log flush */
@@ -1688,7 +1693,7 @@ class Relay_log_info : public Rpl_info {
 
     This does not actually sleep; it only sets the state of this
     Relay_log_info object to delaying so that the correct state can be
-    reported by SHOW SLAVE STATUS and SHOW PROCESSLIST.
+    reported by SHOW REPLICA STATUS and SHOW PROCESSLIST.
 
     Requires rli->data_lock.
 
@@ -1849,12 +1854,12 @@ class Relay_log_info : public Rpl_info {
     commit time. Exceptionally, if a server in the replication chain does not
     support the commit timestamps in Gtid_log_event, the delay is applied per
     event and is based on the event timestamp.
-    This is set with CHANGE MASTER TO MASTER_DELAY=X.
+    This is set with CHANGE REPLICATION SOURCE TO SOURCE_DELAY=X.
 
     Guarded by data_lock.  Initialized by the client thread executing
-    START SLAVE.  Written by client threads executing CHANGE MASTER TO
-    MASTER_DELAY=X.  Read by SQL thread and by client threads
-    executing SHOW SLAVE STATUS.  Note: must not be written while the
+    START REPLICA.  Written by client threads executing CHANGE REPLICATION
+    SOURCE TO SOURCE_DELAY=X.  Read by SQL thread and by client threads
+    executing SHOW REPLICA STATUS.  Note: must not be written while the
     slave SQL thread is running, since the SQL thread reads it without
     a lock when executing flush_info().
   */
@@ -1863,10 +1868,10 @@ class Relay_log_info : public Rpl_info {
   /**
     During a delay, specifies the point in time when the delay ends.
 
-    This is used for the SQL_Remaining_Delay column in SHOW SLAVE STATUS.
+    This is used for the SQL_Remaining_Delay column in SHOW REPLICA STATUS.
 
     Guarded by data_lock. Written by the sql thread.  Read by client
-    threads executing SHOW SLAVE STATUS.
+    threads executing SHOW REPLICA STATUS.
   */
   time_t sql_delay_end;
 
@@ -1877,7 +1882,7 @@ class Relay_log_info : public Rpl_info {
     of lines in applier metadata file. Since WL#13959, applier metadata can
     be stored only in table, but the notion of number of line is still
     preserved.
-    Before the MASTER_DELAY parameter was added (WL#344), applier metadata
+    Before the SOURCE_DELAY parameter was added (WL#344), applier metadata
     had 4 lines. Now it has 5 lines.
   */
   static const int APPLIER_METADATA_LINES_WITH_DELAY = 5;
@@ -2015,7 +2020,7 @@ class Relay_log_info : public Rpl_info {
   */
   bool m_allow_drop_write_set;
 
-  /* The object stores and handles START SLAVE UNTIL option */
+  /* The object stores and handles START REPLICA UNTIL option */
   Until_option *until_option;
 
  public:
@@ -2087,13 +2092,13 @@ class Relay_log_info : public Rpl_info {
    Initialize until option object when starting slave.
 
    @param[in] thd The thread object of current session.
-   @param[in] master_param the parameters of START SLAVE.
+   @param[in] master_param the parameters of START REPLICA.
 
    @return int
      @retval 0      Succeeds to initialize until option object.
      @retval <> 0   A defined error number is return if any error happens.
    */
-  int init_until_option(THD *thd, const LEX_MASTER_INFO *master_param);
+  int init_until_option(THD *thd, const LEX_SOURCE_INFO *master_param);
 
   /**
     Detaches the engine ha_data from THD. The fact

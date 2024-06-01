@@ -4,9 +4,8 @@
 
 # ==== Requirements ====
 #
-# R1. When using binlog_transaction_dependency_tracking = 'WRITESET', two
-#   transactions that conflict on a unique multi-valued index must be marked as
-#   dependent in the binary log.
+# R1. Two transactions that conflict on a unique multi-valued index must be
+#   marked as dependent in the binary log.
 # R2. When using binlog_row_image=MINIMAL, the before-image shall not be
 #   generated from a multi-valued index.
 #
@@ -30,7 +29,7 @@
 # WL#8955: Add support for multi-valued indexes
 
 --let $mysqlbinlog_only_decoded_rows = 1
---source include/save_binlog_position.inc
+--source include/rpl/save_binlog_file_position.inc
 
 CREATE TABLE t1 (id INT, c INT, j JSON NOT NULL,
   UNIQUE INDEX i1((CAST(CAST(j AS JSON) AS UNSIGNED ARRAY))));
@@ -47,8 +46,8 @@ UPDATE t1 SET j = '[101,201,301,401]' WHERE JSON_CONTAINS(CAST(j AS JSON),'200')
 DROP TABLE t1;
 
 FLUSH LOGS;
---source include/mysqlbinlog.inc
---source include/save_binlog_position.inc
+--source include/rpl/mysqlbinlog.inc
+--source include/rpl/save_binlog_file_position.inc
 
 --echo # Check that when the only unique NOT NULL index is a functional index,
 --echo # the binary log contains a full before-image regardless of
@@ -69,4 +68,4 @@ UPDATE t1 SET j = '[2,13,14]' WHERE JSON_CONTAINS(CAST(j AS JSON),'2');
 DROP TABLE t1;
 
 FLUSH LOGS;
---source include/mysqlbinlog.inc
+--source include/rpl/mysqlbinlog.inc

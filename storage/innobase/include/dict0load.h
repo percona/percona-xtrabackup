@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2023, Oracle and/or its affiliates.
+Copyright (c) 1996, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -183,9 +184,6 @@ then table->data_dir_path will remain nullptr.
 @param[in]      filepath        filepath of tablespace */
 void dict_save_data_dir_path(dict_table_t *table, char *filepath);
 
-/** Load all tablespaces during upgrade */
-void dict_load_tablespaces_for_upgrade();
-
 /* Comparator for missing_spaces. */
 struct space_compare {
   bool operator()(const fil_space_t *lhs, const fil_space_t *rhs) const {
@@ -202,8 +200,7 @@ extern missing_sys_tblsp_t missing_spaces;
 
 /** This bool denotes if we found a Table or Partition with discarded Tablespace
 during load of SYS_TABLES (in dict_check_sys_tables).
-
-We use it to stop upgrade from 5.7 to 8.0 if there are discarded Tablespaces. */
+*/
 extern bool has_discarded_tablespaces;
 
 #endif

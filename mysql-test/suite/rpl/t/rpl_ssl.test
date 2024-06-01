@@ -1,19 +1,19 @@
 --source include/not_group_replication_plugin.inc
 let $rpl_privilege_checks_user_grant_option = 1;
-source include/master-slave.inc;
+source include/rpl/init_source_replica.inc;
 
-# Default replication setup at master-slave.inc does not set MASTER_SSL
+# Default replication setup at rpl/init_source_replica.inc does not set SOURCE_SSL
 --connection slave
---let $current_master_ssl= query_get_value(SHOW SLAVE STATUS, Master_SSL_Allowed, 1)
---let $assert_text= Master_SSL_Allowed should be NO by default
---let $assert_cond= "$current_master_ssl" = "NO"
+--let $current_source_ssl= query_get_value(SHOW REPLICA STATUS, Source_SSL_Allowed, 1)
+--let $assert_text= Source_SSL_Allowed should be NO by default
+--let $assert_cond= "$current_source_ssl" = "NO"
 --source include/assert.inc
 
 
 # The slave should be initially connected to the master without SSL/TLS
 --connection master
 --let $connection_type= `SELECT CONNECTION_TYPE FROM performance_schema.threads WHERE PROCESSLIST_COMMAND LIKE "Binlog Dump%"`
---let $assert_text= Without MASTER_SSL, the slave should be connected to the master without SSL/TLS
+--let $assert_text= Without SOURCE_SSL, the slave should be connected to the master without SSL/TLS
 --let $assert_cond= "$connection_type" <> "SSL/TLS" AND "$connection_type" <> ""
 --source include/assert.inc
 
@@ -23,10 +23,10 @@ create user replssl@localhost require ssl;
 grant replication slave on *.* to replssl@localhost;
 create table t1 (t int auto_increment, KEY(t));
 
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 
 # Set slave to use SSL for connection to master
-stop slave;
+STOP REPLICA;
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
 --replace_column 2 ####
 eval CHANGE REPLICATION SOURCE to
@@ -36,24 +36,24 @@ eval CHANGE REPLICATION SOURCE to
   SOURCE_SSL_CA ='$MYSQL_TEST_DIR/std_data/cacert.pem',
   SOURCE_SSL_CERT='$MYSQL_TEST_DIR/std_data/client-cert.pem',
   SOURCE_SSL_KEY='$MYSQL_TEST_DIR/std_data/client-key.pem';
-start slave;
+START REPLICA;
 
 # Switch to master and insert one record, then sync it to slave
 connection master;
 insert into t1 values(1);
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 
 # The record should now be on slave
 select * from t1;
 
 # The slave is synced and waiting/reading from master
-# SHOW SLAVE STATUS will show "Waiting for source to send event"
-let $status_items= Master_SSL_Allowed, Master_SSL_CA_Path, Master_SSL_CA_File, Master_SSL_Cert, Master_SSL_Key;
-source include/show_slave_status.inc;
-source include/check_slave_is_running.inc;
+# SHOW REPLICA STATUS will show "Waiting for source to send event"
+let $status_items= Source_SSL_Allowed, Source_SSL_CA_Path, Source_SSL_CA_File, Source_SSL_Cert, Source_SSL_Key;
+source include/rpl/deprecated/show_replica_status.inc;
+source include/rpl/assert_replica_running.inc;
 
 # Stop the slave, as reported in bug#21871 it would hang
-STOP SLAVE;
+STOP REPLICA;
 
 select * from t1;
 
@@ -67,17 +67,17 @@ disable_testcase BUG#32756;
 let $i= 100;
 while ($i)
 {
-  start slave;
+  START REPLICA;
   connection master;
   insert into t1 values (NULL);
   select * from t1; # Some variance
   connection slave;
   select * from t1; # Some variance
-  stop slave;
+  STOP REPLICA;
   dec $i;
 }
 enable_testcase;
-START SLAVE;
+START REPLICA;
 enable_query_log;
 enable_result_log;
 connection master;
@@ -86,10 +86,10 @@ connection master;
 insert into t1 values (NULL);
 let $master_count= `select count(*) from t1`;
 
---source include/sync_slave_sql_with_master.inc
---source include/wait_for_slave_to_start.inc
-source include/show_slave_status.inc;
-source include/check_slave_is_running.inc;
+--source include/rpl/sync_to_replica.inc
+--source include/rpl/wait_for_replica_to_start.inc
+source include/rpl/deprecated/show_replica_status.inc;
+source include/rpl/assert_replica_running.inc;
 
 let $slave_count= `select count(*) from t1`;
 
@@ -107,17 +107,17 @@ if ($slave_count != $master_count)
   echo === slave ===;
   select count(*) t1;
   select * from t1;
-  query_vertical show slave status;
+  query_vertical SHOW REPLICA STATUS;
 }
 
 connection master;
 drop user replssl@localhost;
 drop table t1;
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 
 # ==== BUG#18165937: HITTING CRASH WHEN SETTING SSL OPTIONS THROUGH CHANGE MASTER COMMAND ====
 
---source include/stop_slave.inc
+--source include/rpl/stop_replica.inc
 --replace_column 2 ####
 CHANGE REPLICATION SOURCE TO
  SOURCE_USER = 'root',
@@ -130,10 +130,10 @@ CHANGE REPLICATION SOURCE TO
 
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
 eval CHANGE REPLICATION SOURCE TO SOURCE_SSL= 1, SOURCE_SSL_CRL='$MYSQL_TEST_DIR/std_data/crl-client-revoked.crl', SOURCE_SSL_CRLPATH='$MYSQL_TEST_DIR/std_data/crldir';
---source include/start_slave.inc
+--source include/rpl/start_replica.inc
 
 
---source include/stop_slave.inc
+--source include/rpl/stop_replica.inc
 --replace_column 2 ####
 CHANGE REPLICATION SOURCE TO
  SOURCE_USER = 'root',
@@ -146,4 +146,4 @@ CHANGE REPLICATION SOURCE TO
 
 --echo End of 5.0 tests
 --let $rpl_only_running_threads= 1
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

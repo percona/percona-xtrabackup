@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -33,7 +34,6 @@
 #include "mysql/harness/loader_config.h"
 #include "mysql/harness/logging/registry.h"
 #include "mysql/harness/tls_client_context.h"
-#include "mysqlrouter/http_request.h"
 #include "mysqlrouter/rest_client.h"
 #include "router_config.h"  // MYSQL_ROUTER_VERSION
 
@@ -51,7 +51,7 @@ struct RestClientConfig {
   std::string content_type{"application/json"};
   bool verbose{false};
   bool request_data_stdin{false};
-  HttpMethod::type method{HttpMethod::Get};
+  HttpMethod::key_type method{HttpMethod::Get};
   std::string request_data;
   std::string ssl_ca_file;
   std::string ssl_ca_dir;
@@ -151,7 +151,7 @@ class RestClientFrontend {
         CmdOption::OptionNames({"--method"}), "HTTP method",
         CmdOptionValueReq::required, "{GET|POST|PUT|DELETE|...}",
         [this](const std::string &method) {
-          std::map<std::string, HttpMethod::type> methods{
+          std::map<std::string, HttpMethod::key_type> methods{
               {"GET", HttpMethod::Get},         {"PUT", HttpMethod::Put},
               {"POST", HttpMethod::Post},       {"DELETE", HttpMethod::Delete},
               {"CONNECT", HttpMethod::Connect}, {"TRACE", HttpMethod::Trace},
@@ -167,9 +167,33 @@ class RestClientFrontend {
         });
   }
 
+  RestClient make_rest_client(IOContext &io_ctx, const http::base::Uri &u);
+
   CmdArgHandler arg_handler_{true};
   bool do_print_and_exit_{false};
 };
+
+RestClient RestClientFrontend::make_rest_client(IOContext &io_ctx,
+                                                const http::base::Uri &u) {
+  if (u.get_scheme() == "https") {
+    TlsClientContext tls_ctx;
+
+    if (!config_.ssl_ca_file.empty() || !config_.ssl_ca_dir.empty()) {
+      if (!tls_ctx.ssl_ca(config_.ssl_ca_file, config_.ssl_ca_dir)) {
+        throw FrontendError("setting CA's failed");
+      }
+    }
+    if (!config_.ssl_cipher.empty()) {
+      const auto res = tls_ctx.cipher_list(config_.ssl_cipher);
+      if (!res) {
+        throw FrontendError(res.error().message());
+      }
+    }
+    return RestClient(io_ctx, std::move(tls_ctx), u);
+  }
+
+  return RestClient(io_ctx, u);
+}
 
 int RestClientFrontend::run() {
   if (is_print_and_exit()) {
@@ -187,7 +211,7 @@ int RestClientFrontend::run() {
     throw FrontendError("URI is required");
   }
 
-  HttpUri u{HttpUri::parse(rest_args.at(0))};
+  http::base::Uri u{rest_args.at(0)};
 
   if (u.get_scheme().empty()) {
     throw FrontendError("scheme required in URI");
@@ -228,33 +252,8 @@ int RestClientFrontend::run() {
   }
 
   IOContext io_ctx;
-  TlsClientContext tls_ctx;
-  std::unique_ptr<HttpClient> http_client;
-  if (u.get_scheme() == "https") {
-#ifdef EVENT__HAVE_OPENSSL
-    if (!config_.ssl_ca_file.empty() || !config_.ssl_ca_dir.empty()) {
-      if (!tls_ctx.ssl_ca(config_.ssl_ca_file, config_.ssl_ca_dir)) {
-        throw FrontendError("setting CA's failed");
-      }
-    }
-    if (!config_.ssl_cipher.empty()) {
-      const auto res = tls_ctx.cipher_list(config_.ssl_cipher);
-      if (!res) {
-        throw FrontendError(res.error().message());
-      }
-    }
-    http_client = std::make_unique<HttpsClient>(io_ctx, std::move(tls_ctx),
-                                                u.get_host(), u.get_port());
-#else
-    throw FrontendError("HTTPS support disabled at buildtime");
-#endif
-  } else {
-    http_client =
-        std::make_unique<HttpClient>(io_ctx, u.get_host(), u.get_port());
-  }
 
-  RestClient client(std::move(http_client));
-
+  RestClient client = make_rest_client(io_ctx, u);
   auto req = client.request_sync(config_.method, u.get_path(), request_data,
                                  config_.content_type);
   if (req) {
@@ -266,7 +265,7 @@ int RestClientFrontend::run() {
           std::cerr << "> " << hdr.first << ": " << hdr.second << std::endl;
         }
       }
-      auto resp_body = req.get_input_buffer();
+      auto &resp_body = req.get_input_buffer();
       auto resp_body_content = resp_body.pop_front(resp_body.length());
 
       std::cout << std::string(resp_body_content.begin(),
@@ -286,9 +285,6 @@ int RestClientFrontend::run() {
     std::cerr << u.get_scheme() << " request to " << u.get_host() << ":"
               << std::to_string(u.get_port())
               << " failed (early): " << req.error_msg()
-              << (req.socket_error_code()
-                      ? (", system-error: " + req.socket_error_code().message())
-                      : "")
               << ", client-error: " << client.error_msg() << std::endl;
     return -1;
   }

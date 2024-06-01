@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2016, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -59,15 +60,22 @@
 #include "keyring/keyring_manager.h"
 #include "mysql/harness/config_option.h"
 #include "mysql/harness/config_parser.h"
+#include "mysql/harness/dynamic_config.h"
 #include "mysql/harness/dynamic_state.h"
+#include "mysql/harness/loader.h"
 #include "mysql/harness/logging/logging.h"
+#include "mysql/harness/logging/registry.h"
 #include "mysql/harness/logging/supported_logger_options.h"
 #include "mysql/harness/stdx/expected.h"
 #include "mysql/harness/supported_config_options.h"
 #include "mysql/harness/utility/string.h"
 #include "mysql/harness/vt100.h"
 #include "mysqld_error.h"
+#include "mysqlrouter/cluster_metadata.h"
+#include "mysqlrouter/connection_pool.h"
 #include "mysqlrouter/default_paths.h"
+#include "mysqlrouter/http_constants.h"
+#include "mysqlrouter/routing.h"
 #include "mysqlrouter/supported_connection_pool_options.h"
 #include "mysqlrouter/supported_http_options.h"
 #include "mysqlrouter/supported_metadata_cache_options.h"
@@ -106,22 +114,12 @@ static const char *kROXSocketName = "mysqlxro.sock";
 static const int kMaxTCPPortNumber = 65535;
 static const int kAllocatedTCPPortCount = 4;  // 2 for classic, 2 for X
 
-static const std::string kSystemRouterName = "system";
-
 static const int kMetadataServerPasswordLength = 16;
 static const int kMaxRouterNameLength =
     255;  // must match metadata router.name column
 
 static const char *kKeyringAttributePassword = "password";
 
-static const std::chrono::milliseconds kDefaultMetadataTTL =
-    std::chrono::milliseconds(500);
-static const std::chrono::milliseconds kDefaultMetadataTTLGRNotificationsON =
-    std::chrono::milliseconds(60 * 1000);
-static const std::chrono::milliseconds kDefaultMetadataTTLClusterSet =
-    std::chrono::milliseconds(
-        5 * 1000);  // default TTL for ClusterSet is 5 seconds regardless if GR
-                    // Notifications are used or not
 static const std::chrono::milliseconds kDefaultAuthCacheTTL =
     std::chrono::seconds(-1);
 static const std::chrono::milliseconds kDefaultAuthCacheRefreshInterval =
@@ -441,19 +439,8 @@ void ConfigGenerator::init(
 
   if (!metadata_schema_version_is_compatible(kRequiredBootstrapSchemaVersion,
                                              schema_version_)) {
-    throw std::runtime_error(mysql_harness::utility::string_format(
-        "This version of MySQL Router is not compatible with the provided "
-        "MySQL InnoDB cluster metadata. Expected metadata version %s, "
-        "got %s",
-        to_string(kRequiredBootstrapSchemaVersion).c_str(),
-        to_string(schema_version_).c_str()));
-  }
-
-  if (metadata_schema_version_is_deprecated(schema_version_)) {
-    std::cout << "\n"
-              << Vt100::foreground(Vt100::Color::BrightRed) << "WARNING: "
-              << get_metadata_schema_deprecated_msg(schema_version_)
-              << Vt100::render(Vt100::Render::ForegroundDefault) << "\n\n";
+    throw std::runtime_error(
+        mysqlrouter::get_metadata_schema_uncompatible_msg(schema_version_));
   }
 
   metadata_ = mysqlrouter::create_metadata(schema_version_, mysql_.get(),
@@ -511,8 +498,7 @@ static stdx::expected<std::ofstream, std::error_code> open_ofstream(
   of.open(file_name);
 
   if (of.fail()) {
-    return stdx::make_unexpected(
-        std::error_code{errno, std::generic_category()});
+    return stdx::unexpected(std::error_code{errno, std::generic_category()});
   }
 
   return of;
@@ -911,19 +897,16 @@ ConfigGenerator::Options ConfigGenerator::fill_options(
         base_port == kBasePortLegacyDefault ? kDefaultRWPort : base_port;
     options.ro_endpoint.port =
         base_port == kBasePortLegacyDefault ? kDefaultROPort : base_port + 1;
-    if (!options.disable_rw_split_endpoint)
-      options.rw_split_endpoint.port = base_port == kBasePortLegacyDefault
-                                           ? kDefaultRWSplitPort
-                                           : base_port + 4;
+    options.rw_split_endpoint.port = base_port == kBasePortLegacyDefault
+                                         ? kDefaultRWSplitPort
+                                         : base_port + 4;
   }
 
   // x protocol endpoints
   if (use_sockets) {
     options.rw_x_endpoint.socket = kRWXSocketName;
     options.ro_x_endpoint.socket = kROXSocketName;
-    if (!options.disable_rw_split_endpoint) {
-      options.rw_split_endpoint.socket = kRWSplitSocketName;
-    }
+    options.rw_split_endpoint.socket = kRWSplitSocketName;
   }
   if (!skip_tcp) {
     // if "base-port" param was not provided AND we are overwriting an
@@ -977,27 +960,34 @@ ConfigGenerator::Options ConfigGenerator::fill_options(
     // default for ClusterSet is use to GR Notifications, for single cluster it
     // is not use them
     options.use_gr_notifications =
-        mysqlrouter::ClusterType::GR_CS == metadata_->get_type();
+        mysqlrouter::ClusterType::GR_CS == metadata_->get_type()
+            ? mysqlrouter::kDefaultUseGRNotificationsClusterSet
+            : mysqlrouter::kDefaultUseGRNotificationsCluster;
   }
 
   if (mysqlrouter::ClusterType::GR_CS == metadata_->get_type()) {
     options.ttl = kDefaultMetadataTTLClusterSet;
   } else {
     options.ttl = options.use_gr_notifications
-                      ? kDefaultMetadataTTLGRNotificationsON
-                      : kDefaultMetadataTTL;
+                      ? mysqlrouter::kDefaultMetadataTTLClusterGRNotificationsON
+                      : mysqlrouter::kDefaultMetadataTTLCluster;
   }
 
   if (user_options.find("disable-rest") != user_options.end())
     options.disable_rest = true;
 
-  options.https_port_str = get_opt(user_options, "https-port", "8443");
+  options.https_port_str =
+      get_opt(user_options, "https-port",
+              std::to_string(kHttpPluginDefaultPortBootstrap));
 
   options.client_ssl_mode =
-      get_opt(user_options, "client_ssl_mode", "PREFERRED");
-  options.server_ssl_mode = get_opt(
-      user_options, "server_ssl_mode",
-      options.client_ssl_mode == "PASSTHROUGH" ? "AS_CLIENT" : "PREFERRED");
+      get_opt(user_options, "client_ssl_mode",
+              std::string(routing::kDefaultClientSslModeBootstrap));
+  options.server_ssl_mode =
+      get_opt(user_options, "server_ssl_mode",
+              options.client_ssl_mode == "PASSTHROUGH"
+                  ? "AS_CLIENT"
+                  : std::string(routing::kDefaultServerSslModeBootstrap));
 
   // default depends on client-ssl-mode and server-ssl-mode
   std::string default_client_ssl_cert;
@@ -1020,19 +1010,37 @@ ConfigGenerator::Options ConfigGenerator::fill_options(
       get_opt(user_options, "client_ssl_cert", default_client_ssl_cert);
   options.client_ssl_key =
       get_opt(user_options, "client_ssl_key", default_client_ssl_key);
-  options.client_ssl_cipher = get_opt(user_options, "client_ssl_cipher", "");
-  options.client_ssl_curves = get_opt(user_options, "client_ssl_curves", "");
+  options.client_ssl_cipher =
+      get_opt(user_options, "client_ssl_cipher",
+              std::string(routing::kDefaultClientSslCipherBootstrap));
+  options.client_ssl_curves =
+      get_opt(user_options, "client_ssl_curves",
+              std::string(routing::kDefaultClientSslCurvesBootstrap));
   options.client_ssl_dh_params =
-      get_opt(user_options, "client_ssl_dh_params", "");
+      get_opt(user_options, "client_ssl_dh_params",
+              std::string(routing::kDefaultClientSslDhParamsBootstrap));
 
-  options.server_ssl_ca = get_opt(user_options, "server_ssl_ca", "");
-  options.server_ssl_capath = get_opt(user_options, "server_ssl_capath", "");
-  options.server_ssl_crl = get_opt(user_options, "server_ssl_crl", "");
-  options.server_ssl_crlpath = get_opt(user_options, "server_ssl_crlpath", "");
-  options.server_ssl_cipher = get_opt(user_options, "server_ssl_cipher", "");
-  options.server_ssl_curves = get_opt(user_options, "server_ssl_curves", "");
+  options.server_ssl_ca =
+      get_opt(user_options, "server_ssl_ca",
+              std::string(routing::kDefaultServerSslCaBootstrap));
+  options.server_ssl_capath =
+      get_opt(user_options, "server_ssl_capath",
+              std::string(routing::kDefaultServerSslCaPathBootstrap));
+  options.server_ssl_crl =
+      get_opt(user_options, "server_ssl_crl",
+              std::string(routing::kDefaultServerSslCrlFileBootstrap));
+  options.server_ssl_crlpath =
+      get_opt(user_options, "server_ssl_crlpath",
+              std::string(routing::kDefaultServerSslCrlPathBootstrap));
+  options.server_ssl_cipher =
+      get_opt(user_options, "server_ssl_cipher",
+              std::string(routing::kDefaultServerSslCipherBootstrap));
+  options.server_ssl_curves =
+      get_opt(user_options, "server_ssl_curves",
+              std::string(routing::kDefaultServerSslCurvesBootstrap));
   options.server_ssl_verify =
-      get_opt(user_options, "server_ssl_verify", "DISABLED");
+      get_opt(user_options, "server_ssl_verify",
+              std::string(routing::kDefaultServerSslVerify));
 
   options.target_cluster = get_opt(user_options, "target-cluster", "default");
 
@@ -1441,8 +1449,8 @@ std::map<std::string, std::string> get_config_cmdln_options(
 }  // namespace
 
 std::string ConfigGenerator::bootstrap_deployment(
-    const std::string &program_name, std::ostream &config_file,
-    std::ostream &state_file, const mysql_harness::Path &config_file_path,
+    const std::string &program_name, std::ofstream &config_file,
+    std::ofstream &state_file, const mysql_harness::Path &config_file_path,
     const mysql_harness::Path &state_file_path, const std::string &router_name,
     const std::map<std::string, std::string> &user_options,
     const std::map<std::string, std::vector<std::string>> &multivalue_options,
@@ -1483,6 +1491,47 @@ std::string ConfigGenerator::bootstrap_deployment(
   else if (!conf_options.username.empty())
     password = fetch_password_from_keyring(conf_options.username,
                                            conf_options.router_id);
+
+  // At this point we know the configuration defails that we need to share in
+  // metadata via DynamiConfiguration object. We load the plugins twice and let
+  // them share their configuration and defaults.
+  // - For the current configuration we need only configured plugins (honoring
+  //      --disable-rest, --disable-rw-split, etc.)
+  // - For the defaults we need all the plugins that the bootstrap configures by
+  //       default (we ignore --disable-rest, --disable-rw-split, etc.)
+  auto load_plugins_and_share_config = [&](const bool full) {
+    auto system_username =
+        get_from_map(user_options, "user"s, kDefaultSystemUserName);
+    std::stringstream conf_stream, state_stream;
+    std::string username = conf_options.username;
+    if (username.empty()) {
+      username = "<empty>";
+    }
+    create_config(conf_stream, state_stream, conf_options.router_id,
+                  router_name, system_username, cluster_info, username, options,
+                  default_paths, get_config_cmdln_options(multivalue_options),
+                  state_file_path.str(), full);
+
+    mysql_harness::LoaderConfig config{mysql_harness::Config::allow_keys};
+    config.read(conf_stream);
+    if (!config.has_default("plugin_folder") && !plugin_folder_.empty()) {
+      config.set_default("plugin_folder", plugin_folder_);
+    }
+    for (const auto &path : default_paths) {
+      if (!config.has_default(path.first)) {
+        config.set_default(path.first, path.second);
+      }
+    }
+
+    mysql_harness::Loader loader{"bootstrap", config};
+    loader.register_expose_app_config_callback(expose_router_configuration);
+    loader.load_all();
+    loader.expose_config_all(!full);
+  };
+
+  // See the comment above the lambda for explanation why this is called twice.
+  load_plugins_and_share_config(false);
+  load_plugins_and_share_config(true);
 
   // bootstrap
   // All SQL writes happen inside here
@@ -1536,7 +1585,7 @@ std::string ConfigGenerator::bootstrap_deployment(
     create_config(config_file, state_file, conf_options.router_id, router_name,
                   system_username, cluster_info, conf_options.username, options,
                   default_paths, get_config_cmdln_options(multivalue_options),
-                  state_file_path.str());
+                  state_file_path.str(), false);
   }
 
   // return bootstrap report (several lines of human-readable text)
@@ -1778,10 +1827,10 @@ class ChangeRouterAccountPlugin {
 
     try {
       mysql_.query(query, result_processor);
-    } catch (const std::exception &e) {
-      log_error_msg(
-          "Failed checking the Router account authentication plugin: "s +
-          e.what());
+    } catch (const std::exception &) {
+      // Checking for the current user authentication plugin has failed. The
+      // reason could be the lack of priviledges of the bootstrapping user. We
+      // just leave the upgrade procedure with no noisy error messeages.
       return;
     }
 
@@ -1811,33 +1860,16 @@ class ChangeRouterAccountPlugin {
       return;
     }
 
-    const auto result = get_default_auth_plugin();
-    if (!result) {
-      log_error_msg(
-          "Failed getting default authentication plugin while changing "
-          "the authentication plugin for account '" +
-          username + "'@'" + hostname +
-          "': " + result.get_unexpected().value());
-      return;
-    }
-
-    const std::string default_auth_plugin = result.value();
-    if (default_auth_plugin == "mysql_native_password") {
-      log_error_msg("Failed changing the authentication plugin for account '" +
-                    username + "'@'" + hostname + "': " +
-                    " mysql_native_password which is deprecated is the default "
-                    "authentication plugin on this server.");
-      return;
-    }
+    const std::string kValidAuthenticationPlugin = "caching_sha2_password";
 
     log_info_msg("Existing account '" + username + "'@" + hostname +
                  " is using authentication plugin 'mysql_native_password'. "
                  "Changing the authentication plugin to '" +
-                 default_auth_plugin + "'");
+                 kValidAuthenticationPlugin + "'");
 
     sqlstring alter_user_sql = "alter user ?@? identified with ! by ?";
-    alter_user_sql << username << hostname << default_auth_plugin << password
-                   << sqlstring::end;
+    alter_user_sql << username << hostname << kValidAuthenticationPlugin
+                   << password << sqlstring::end;
 
     try {
       mysql_.execute(alter_user_sql);
@@ -1849,25 +1881,11 @@ class ChangeRouterAccountPlugin {
 
     log_info_msg("Successfully changed the authentication plugin for '" +
                  username + "'@" + hostname +
-                 " from mysql_native_password to " + default_auth_plugin);
+                 " from mysql_native_password to " +
+                 kValidAuthenticationPlugin);
   }
 
  private:
-  stdx::expected<std::string, std::string> get_default_auth_plugin() {
-    const std::string query = "select @@default_authentication_plugin";
-    try {
-      std::unique_ptr<MySQLSession::ResultRow> result(mysql_.query_one(query));
-
-      if (result && result->size() == 1) {
-        return (*result)[0];
-      }
-    } catch (const std::exception &e) {
-      return stdx::make_unexpected(e.what());
-    }
-
-    return stdx::make_unexpected("unexpected resultset");
-  }
-
   std::string as_string(const char *input_str) {
     return {input_str == nullptr ? "" : input_str};
   }
@@ -1926,6 +1944,9 @@ std::tuple<std::string> ConfigGenerator::try_bootstrap_deployment(
     using RandomGen = mysql_harness::RandomGeneratorInterface;
     RandomGen &rg = mysql_harness::DIM::instance().get_RandomGenerator();
     username = generate_username(router_id, rg);
+
+    mysql_harness::DynamicConfig::instance().set_option_configured(
+        {"metadata_cache", ""}, "user", username);
   }
 
   const std::set<std::string> hostnames_cmd =
@@ -2300,49 +2321,28 @@ void add_endpoint_option(ConfigSectionPrinter &routing_section,
   }
 }
 
-enum class EndpointMode {
-  kEndpointModeRW,
-  kEndpointModeRO,
-  kEndpointModeRWSplit
-};
-
 void add_metadata_cache_routing_section(
-    std::ostream &config_file, bool is_classic,
-    const EndpointMode endpoint_mode,
+    std::ostream &config_file,
+    const routing::RoutingBootstrapSectionType section_type,
     const ConfigGenerator::Options::Endpoint endpoint,
-    const ConfigGenerator::Options &options, const std::string &metadata_key,
-    const std::string &cluster_name,
+    const ConfigGenerator::Options &options, const std::string &cluster_name,
     const std::map<std::string, std::string> &config_cmdln_options) {
   if (!endpoint) return;
 
-  std::string role, strategy;
-  std::string key_suffix = std::string(is_classic ? "" : "_x");
-
-  switch (endpoint_mode) {
-    case EndpointMode::kEndpointModeRW:
-      role = "PRIMARY";
-      strategy = "first-available";
-      key_suffix += "_rw";
-      break;
-    case EndpointMode::kEndpointModeRO:
-      role = "SECONDARY";
-      strategy = "round-robin-with-fallback";
-      key_suffix += "_ro";
-      break;
-    case EndpointMode::kEndpointModeRWSplit:
-      role = "PRIMARY_AND_SECONDARY";
-      strategy = "round-robin";
-      key_suffix += "_rw_split";
-      break;
-  }
-
-  const std::string protocol = is_classic ? "classic" : "x";
+  const std::string role = routing::get_destinations_role(section_type);
+  const auto strategy = routing::get_routing_strategy_name(
+      routing::get_default_routing_strategy(section_type));
+  const std::string protocol =
+      get_default_protocol(section_type) == BaseProtocol::Type::kClassicProtocol
+          ? "classic"
+          : "x";
 
   // kept for backward compatibility, always empty
   const std::string metadata_replicaset{""};
 
-  ConfigSectionPrinter routing_section(config_file, config_cmdln_options,
-                                       "routing:" + metadata_key + key_suffix);
+  ConfigSectionPrinter routing_section(
+      config_file, config_cmdln_options,
+      "routing:" + routing::get_default_routing_name(section_type));
   add_endpoint_option(routing_section, options, endpoint);
   const auto destinations = "metadata-cache://" + cluster_name + "/" +
                             metadata_replicaset + "?role=" + role;
@@ -2353,7 +2353,9 @@ void add_metadata_cache_routing_section(
   ADD_CONFIG_LINE_CHECKED(routing_section, "protocol", protocol,
                           routing_supported_options);
 
-  if (options.client_ssl_mode == "PASSTHROUGH" || !is_classic) {
+  if (options.client_ssl_mode == "PASSTHROUGH" ||
+      !(get_default_protocol(section_type) ==
+        BaseProtocol::Type::kClassicProtocol)) {
     ADD_CONFIG_LINE_CHECKED(routing_section, "router_require_enforce", "0",
                             routing_supported_options);
     // write empty ssl-options to force them to empty.
@@ -2365,14 +2367,19 @@ void add_metadata_cache_routing_section(
                                        routing_supported_options);
   }
 
-  if (endpoint_mode == EndpointMode::kEndpointModeRWSplit) {
-    ADD_CONFIG_LINE_CHECKED(routing_section, "connection_sharing", "1",
-                            routing_supported_options);
+  if (!options.disable_rw_split_endpoint &&
+      section_type == routing::RoutingBootstrapSectionType::kRwSplit) {
+    ADD_CONFIG_LINE_CHECKED(
+        routing_section, "connection_sharing",
+        routing::get_default_connection_sharing(section_type) ? "1" : "0",
+        routing_supported_options);
     ADD_CONFIG_LINE_CHECKED(routing_section, "client_ssl_mode", "PREFERRED",
                             routing_supported_options);
     ADD_CONFIG_LINE_CHECKED(routing_section, "server_ssl_mode", "PREFERRED",
                             routing_supported_options);
-    ADD_CONFIG_LINE_CHECKED(routing_section, "access_mode", "auto",
+    ADD_CONFIG_LINE_CHECKED(routing_section, "access_mode",
+                            routing::get_access_mode_name(
+                                routing::get_default_access_mode(section_type)),
                             routing_supported_options);
   }
 }
@@ -2400,7 +2407,8 @@ static void add_http_auth_backend_section(
       "http_auth_backend:" + std::string(auth_backend_name)};
   if (metadata_schema_version_is_compatible(kNewMetadataVersion,
                                             schema_version)) {
-    ADD_CONFIG_LINE_CHECKED(http_backend_section, "backend", "metadata_cache",
+    ADD_CONFIG_LINE_CHECKED(http_backend_section, "backend",
+                            std::string(kHttpAuthPluginDefaultBackend),
                             http_backend_supported_options);
   } else {
     const auto auth_backend_passwd_file =
@@ -2426,8 +2434,6 @@ void add_rest_section(
     const std::string &ssl_cert, const std::string &ssl_key,
     const mysqlrouter::MetadataSchemaVersion &schema_version) {
   std::stringstream config;
-  const std::string auth_realm_name{"default_auth_realm"};
-  const std::string auth_backend_name{"default_auth_backend"};
 
   mysql_harness::Path datadir_path;
   if (!options.override_datadir.empty())
@@ -2440,7 +2446,8 @@ void add_rest_section(
                                              "http_server");
     ADD_CONFIG_LINE_CHECKED(http_server_section, "port", options.https_port_str,
                             http_server_supported_options);
-    ADD_CONFIG_LINE_CHECKED(http_server_section, "ssl", "1",
+    ADD_CONFIG_LINE_CHECKED(http_server_section, "ssl",
+                            std::to_string(kHttpPluginDefaultSslBootstrap),
                             http_server_supported_options);
     ADD_CONFIG_LINE_CHECKED(http_server_section, "ssl_cert",
                             datadir_path.real_path().join(ssl_cert).str(),
@@ -2453,11 +2460,12 @@ void add_rest_section(
   {
     ConfigSectionPrinter http_auth_realm_section(
         config_file, config_cmdln_options,
-        "http_auth_realm:" + auth_realm_name);
+        "http_auth_realm:" + std::string(kHttpDefaultAuthRealmName));
     ADD_CONFIG_LINE_CHECKED(http_auth_realm_section, "backend",
-                            auth_backend_name,
+                            std::string(kHttpDefaultAuthBackendName),
                             http_auth_realm_suported_options);
-    ADD_CONFIG_LINE_CHECKED(http_auth_realm_section, "method", "basic",
+    ADD_CONFIG_LINE_CHECKED(http_auth_realm_section, "method",
+                            std::string(kHttpDefaultAuthMethod),
                             http_auth_realm_suported_options);
     ADD_CONFIG_LINE_CHECKED(http_auth_realm_section, "name", "default_realm",
                             http_auth_realm_suported_options);
@@ -2467,7 +2475,8 @@ void add_rest_section(
     ConfigSectionPrinter rest_router_section(config_file, config_cmdln_options,
                                              "rest_router");
     ADD_CONFIG_LINE_CHECKED(rest_router_section, "require_realm",
-                            auth_realm_name, rest_plugin_supported_options);
+                            std::string(kHttpDefaultAuthRealmName),
+                            rest_plugin_supported_options);
   }
 
   {
@@ -2475,21 +2484,24 @@ void add_rest_section(
                                           "rest_api");
   }
 
-  add_http_auth_backend_section(config_file, datadir_path, auth_backend_name,
-                                schema_version, config_cmdln_options);
+  add_http_auth_backend_section(config_file, datadir_path,
+                                kHttpDefaultAuthBackendName, schema_version,
+                                config_cmdln_options);
 
   {
     ConfigSectionPrinter rest_routing_section(config_file, config_cmdln_options,
                                               "rest_routing");
     ADD_CONFIG_LINE_CHECKED(rest_routing_section, "require_realm",
-                            auth_realm_name, rest_plugin_supported_options);
+                            std::string(kHttpDefaultAuthRealmName),
+                            rest_plugin_supported_options);
   }
 
   {
     ConfigSectionPrinter rest_metadata_cache_section(
         config_file, config_cmdln_options, "rest_metadata_cache");
     ADD_CONFIG_LINE_CHECKED(rest_metadata_cache_section, "require_realm",
-                            auth_realm_name, rest_plugin_supported_options);
+                            std::string(kHttpDefaultAuthRealmName),
+                            rest_plugin_supported_options);
   }
 }
 
@@ -2525,7 +2537,7 @@ void ConfigGenerator::create_config(
     const Options &options,
     const std::map<std::string, std::string> &default_paths,
     const std::map<std::string, std::string> &config_cmdln_options,
-    const std::string &state_file_name) {
+    const std::string &state_file_name, const bool full) {
   config_file << "# File automatically generated during MySQL Router bootstrap"
               << "\n";
 
@@ -2602,9 +2614,12 @@ void ConfigGenerator::create_config(
                             routing_supported_options);
     ADD_CONFIG_LINE_CHECKED(default_section, "unknown_config_option", "error",
                             loader_supported_options);
-    ADD_CONFIG_LINE_CHECKED(default_section, "max_idle_server_connections",
-                            "64", connection_pool_supported_options);
-    ADD_CONFIG_LINE_CHECKED(default_section, "router_require_enforce", "1",
+    ADD_CONFIG_LINE_CHECKED(
+        default_section, "max_idle_server_connections",
+        std::to_string(kDefaultMaxIdleServerConnectionsBootstrap),
+        connection_pool_supported_options);
+    ADD_CONFIG_LINE_CHECKED(default_section, "router_require_enforce",
+                            routing::kDefaultRequireEnforce ? "1" : "0",
                             routing_supported_options);
   }
 
@@ -2615,8 +2630,11 @@ void ConfigGenerator::create_config(
     ConfigSectionPrinter logger_section(
         config_file, config_cmdln_options,
         mysql_harness::logging::kConfigSectionLogger);
-    ADD_CONFIG_LINE_CHECKED(logger_section, "level", "INFO",
-                            logger_supported_options);
+    ADD_CONFIG_LINE_CHECKED(
+        logger_section, "level",
+        mysql_harness::logging::log_level_to_string(
+            mysql_harness::logging::kDefaultLogLevelBootstrap),
+        logger_supported_options);
     ADD_CONFIG_LINE_CHECKED(logger_section, "filename",
                             options.override_logfilename,
                             logger_supported_options);
@@ -2694,23 +2712,31 @@ void ConfigGenerator::create_config(
   // The cert and key options passed to bootstrap if for the bootstrap
   // connection itself.
 
-  auto add_mdc_rt_sect = [&](bool is_classic, EndpointMode endpoint_mode,
+  auto add_mdc_rt_sect = [&](routing::RoutingBootstrapSectionType section_type,
                              Options::Endpoint endpoint) {
-    add_metadata_cache_routing_section(config_file, is_classic, endpoint_mode,
-                                       endpoint, options,
-                                       kDefaultMetadataCacheSectionKey,
-                                       cluster_info.name, config_cmdln_options);
+    add_metadata_cache_routing_section(config_file, section_type, endpoint,
+                                       options, cluster_info.name,
+                                       config_cmdln_options);
   };
-  add_mdc_rt_sect(true, EndpointMode::kEndpointModeRW, options.rw_endpoint);
-  add_mdc_rt_sect(true, EndpointMode::kEndpointModeRO, options.ro_endpoint);
-  if (!options.disable_rw_split_endpoint) {
-    add_mdc_rt_sect(true, EndpointMode::kEndpointModeRWSplit,
-                    options.rw_split_endpoint);
+  add_mdc_rt_sect(routing::RoutingBootstrapSectionType::kClassicRw,
+                  options.rw_endpoint);
+  add_mdc_rt_sect(routing::RoutingBootstrapSectionType::kClassicRo,
+                  options.ro_endpoint);
+  if (!options.disable_rw_split_endpoint || full) {
+    auto endpoint = options.rw_split_endpoint;
+    if (options.disable_rw_split_endpoint) {
+      // the RWSplit endpoint is disabled but we were here only called to share
+      // the full defaults, so we set the endpoint for that
+      endpoint.port = kDefaultRWSplitPort;
+    }
+    add_mdc_rt_sect(routing::RoutingBootstrapSectionType::kRwSplit, endpoint);
   }
-  add_mdc_rt_sect(false, EndpointMode::kEndpointModeRW, options.rw_x_endpoint);
-  add_mdc_rt_sect(false, EndpointMode::kEndpointModeRO, options.ro_x_endpoint);
+  add_mdc_rt_sect(routing::RoutingBootstrapSectionType::kXRw,
+                  options.rw_x_endpoint);
+  add_mdc_rt_sect(routing::RoutingBootstrapSectionType::kXRo,
+                  options.ro_x_endpoint);
 
-  if (!options.disable_rest) {
+  if (!options.disable_rest || full) {
     add_rest_section(config_file, options, default_paths, config_cmdln_options,
                      tls_filenames_.router_cert, tls_filenames_.router_key,
                      schema_version_);
@@ -3030,7 +3056,9 @@ void ConfigGenerator::create_users(const std::string &username,
   // build string containing account/auth list
   std::string accounts_with_auth;
   {
-    const std::string auth_part = " IDENTIFIED BY "s + mysql_->quote(password);
+    const std::string auth_part =
+        " IDENTIFIED WITH `caching_sha2_password` BY "s +
+        mysql_->quote(password);
 
     const std::string quoted_username = mysql_->quote(username);
     bool is_first{true};

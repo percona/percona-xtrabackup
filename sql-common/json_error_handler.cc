@@ -1,15 +1,16 @@
-/* Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -26,7 +27,10 @@
 #include "my_sys.h"
 #include "mysqld_error.h"
 #include "sql/check_stack.h"
+#include "sql/derror.h"
+#include "sql/sql_class.h"
 #include "sql/sql_const.h"
+#include "sql/sql_error.h"
 
 void JsonParseDefaultErrorHandler::operator()(const char *parse_err,
                                               size_t err_offset) const {
@@ -59,4 +63,28 @@ void JsonSerializationDefaultErrorHandler::InternalError(
 
 bool JsonSerializationDefaultErrorHandler::CheckStack() const {
   return check_stack_overrun(m_thd, STACK_MIN_SIZE, nullptr);
+}
+
+void JsonCoercionErrorHandler::operator()(const char *target_type,
+                                          int error_code) const {
+  my_error(error_code, MYF(0), target_type, "", m_msgnam,
+           current_thd->get_stmt_da()->current_row_for_condition());
+}
+
+void JsonCoercionWarnHandler::operator()(const char *target_type,
+                                         int error_code) const {
+  /*
+   One argument is no longer used (the empty string), but kept to avoid
+   changing error message format.
+  */
+  push_warning_printf(current_thd, Sql_condition::SL_WARNING, error_code,
+                      ER_THD_NONCONST(current_thd, error_code), target_type, "",
+                      m_msgnam,
+                      current_thd->get_stmt_da()->current_row_for_condition());
+}
+
+void JsonCoercionDeprecatedDefaultHandler::operator()(
+    MYSQL_TIME_STATUS &status) const {
+  check_deprecated_datetime_format(current_thd, &my_charset_utf8mb4_bin,
+                                   status);
 }

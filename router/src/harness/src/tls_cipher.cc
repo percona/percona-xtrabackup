@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -79,7 +80,7 @@ stdx::expected<size_t, std::error_code> TlsCipher::encrypt(
     const uint8_t *src, size_t src_size, uint8_t *dst, const uint8_t *key,
     size_t key_size, const uint8_t *iv, bool padding) const {
   if (cipher_ == nullptr) {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 
   TlsCipherCtx cipher_ctx(EVP_CIPHER_CTX_new());
@@ -90,7 +91,7 @@ stdx::expected<size_t, std::error_code> TlsCipher::encrypt(
 
   if (!ctx || cipher_key_size > EVP_MAX_KEY_LENGTH ||
       (EVP_CIPHER_iv_length(cipher_) > 0 && iv == nullptr)) {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 
   std::array<uint8_t, EVP_MAX_KEY_LENGTH> rkey;
@@ -105,7 +106,7 @@ stdx::expected<size_t, std::error_code> TlsCipher::encrypt(
       1 != EVP_CIPHER_CTX_set_padding(ctx, padding) ||
       1 != EVP_EncryptUpdate(ctx, dst, &updated_len, src, src_size) ||
       1 != EVP_EncryptFinal(ctx, dst + updated_len, &final_len)) {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 
   return updated_len + final_len;
@@ -115,7 +116,7 @@ stdx::expected<size_t, std::error_code> TlsCipher::decrypt(
     const uint8_t *src, size_t src_size, uint8_t *dst, const uint8_t *key,
     size_t key_size, const uint8_t *iv, bool padding) const {
   if (cipher_ == nullptr) {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 
   TlsCipherCtx cipher_ctx(EVP_CIPHER_CTX_new());
@@ -126,7 +127,7 @@ stdx::expected<size_t, std::error_code> TlsCipher::decrypt(
 
   if (!ctx || cipher_key_size > EVP_MAX_KEY_LENGTH ||
       (EVP_CIPHER_iv_length(cipher_) > 0 && iv == nullptr)) {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 
   std::array<uint8_t, EVP_MAX_KEY_LENGTH> rkey;
@@ -140,7 +141,7 @@ stdx::expected<size_t, std::error_code> TlsCipher::decrypt(
       1 != EVP_CIPHER_CTX_set_padding(ctx, padding) ||
       1 != EVP_DecryptUpdate(ctx, dst, &updated_len, src, src_size) ||
       1 != EVP_DecryptFinal(ctx, dst + updated_len, &final_len)) {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 
   return updated_len + final_len;

@@ -1,15 +1,16 @@
-# Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -44,12 +45,21 @@ IF(INSTALL_LAYOUT STREQUAL "STANDALONE"
 ELSE()
   SET(_dest_dir "${CMAKE_INSTALL_PREFIX}")
   # rpath for lib/mysqlrouter/ plugins that want to find lib/
-  SET(RPATH_PLUGIN_TO_LIB "${_dest_dir}/${ROUTER_INSTALL_LIBDIR}")
-  SET(RPATH_PLUGIN_TO_PLUGIN "${_dest_dir}/${ROUTER_INSTALL_PLUGINDIR}")
+  IF(LINUX)
+    SET(PLUGIN_TO_LIB_ORIG "${RPATH_ORIGIN}/private")
+  ELSE()
+    SET(PLUGIN_TO_LIB_ORIG "${RPATH_ORIGIN}/../")
+  ENDIF()
+  SET(RPATH_PLUGIN_TO_LIB "${_dest_dir}/${ROUTER_INSTALL_LIBDIR}/;"
+                          "${PLUGIN_TO_LIB_ORIG}")
+  SET(RPATH_PLUGIN_TO_PLUGIN "${_dest_dir}/${ROUTER_INSTALL_PLUGINDIR}/;"
+                             "${RPATH_ORIGIN}/")
   # rpath for lib/ libraries that want to find other libs in lib/
-  SET(RPATH_LIBRARY_TO_LIB "${_dest_dir}/${ROUTER_INSTALL_LIBDIR}")
+  SET(RPATH_LIBRARY_TO_LIB "${_dest_dir}/${ROUTER_INSTALL_LIBDIR};"
+                           "${RPATH_ORIGIN}/")
   # rpath for bin/ binaries that want to find other libs in lib/
-  SET(RPATH_BINARY_TO_LIB "${_dest_dir}/${ROUTER_INSTALL_LIBDIR}")
+  SET(RPATH_BINARY_TO_LIB "${_dest_dir}/${ROUTER_INSTALL_LIBDIR};"
+                          "${RPATH_ORIGIN}/../${ROUTER_INSTALL_LIBDIR}/")
 
 ENDIF()
 

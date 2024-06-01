@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2023, Oracle and/or its affiliates.
+Copyright (c) 1995, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -2024,7 +2025,7 @@ class Reduced_batch_deserializer {
   dberr_t deserialize(F &f) {
     auto page = m_buf->begin();
     for (uint32_t i = 0; i < m_n_pages; ++i) {
-      if (is_zeroes(page)) {
+      if (ut::is_zeros(page, REDUCED_BATCH_PAGE_SIZE)) {
         page += REDUCED_BATCH_PAGE_SIZE;
         continue;
       }
@@ -2105,17 +2106,6 @@ class Reduced_batch_deserializer {
 
     ut_ad(static_cast<uint32_t>(page_data - page_start) ==
           (expected_entries * REDUCED_ENTRY_SIZE));
-  }
-
-  /** @return true if dblwr page is an all-zero page
-  @param[in]   page    dblwr page in batch file (.bdblwr) */
-  bool is_zeroes(const byte *page) {
-    for (ulint i = 0; i < REDUCED_BATCH_PAGE_SIZE; i++) {
-      if (page[i] != 0) {
-        return (false);
-      }
-    }
-    return (true);
   }
 
  private:
@@ -2771,16 +2761,12 @@ dberr_t dblwr::open() noexcept {
   /* Batch segments per dblwr file. */
   uint32_t segments_per_file{};
 
-  if (dblwr::n_files == 0) {
-    dblwr::n_files = 2;
-  }
+  ut_a(dblwr::n_files != 0);
 
   ib::info(ER_IB_MSG_DBLWR_1324)
       << "Double write buffer files: " << dblwr::n_files;
 
-  if (dblwr::n_pages == 0) {
-    dblwr::n_pages = srv_n_write_io_threads;
-  }
+  ut_a(dblwr::n_pages != 0);
 
   ib::info(ER_IB_MSG_DBLWR_1323)
       << "Double write buffer pages per instance: " << dblwr::n_pages;

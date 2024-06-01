@@ -16,7 +16,7 @@
 --source include/group_replication.inc
 
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
+--source include/connection.inc
 SET @@GLOBAL.group_replication_ip_allowlist= "AUTOMATIC";
 --source include/start_and_bootstrap_group_replication.inc
 
@@ -36,6 +36,8 @@ SET @@GLOBAL.group_replication_gtid_assignment_block_size= default;
 --error ER_WRONG_VALUE_FOR_VAR
 SET @@GLOBAL.group_replication_ip_allowlist= default;
 SET @@GLOBAL.group_replication_communication_max_message_size= default;
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@GLOBAL.group_replication_preemptive_garbage_collection = default;
 
 --source include/stop_group_replication.inc
 
@@ -53,7 +55,6 @@ SET @@GLOBAL.group_replication_communication_max_message_size= default;
 --let $saved_gr_local_address = `SELECT @@GLOBAL.group_replication_local_address;`
 --let $saved_gr_group_seeds = `SELECT @@GLOBAL.group_replication_group_seeds;`
 --let $saved_gr_poll_spin_loops = `SELECT @@GLOBAL.group_replication_poll_spin_loops;`
---let $saved_gr_recovery_complete_at = `SELECT @@GLOBAL.group_replication_recovery_complete_at;`
 --let $saved_gr_recovery_reconnect_interval = `SELECT @@GLOBAL.group_replication_recovery_reconnect_interval;`
 --let $saved_gr_recovery_retry_count = `SELECT @@GLOBAL.group_replication_recovery_retry_count;`
 --let $saved_gr_recovery_ssl_ca = `SELECT @@GLOBAL.group_replication_recovery_ssl_ca;`
@@ -89,9 +90,11 @@ SET @@GLOBAL.group_replication_communication_max_message_size= default;
 --let $saved_gr_view_change_uuid = `SELECT @@GLOBAL.group_replication_view_change_uuid;`
 --let $saved_gr_communication_stack = `SELECT @@GLOBAL.group_replication_communication_stack;`
 --let $saved_gr_paxos_single_leader = `SELECT @@GLOBAL.group_replication_paxos_single_leader;`
+--let $saved_group_replication_preemptive_garbage_collection = `SELECT @@GLOBAL.group_replication_preemptive_garbage_collection;`
+--let $saved_group_replication_preemptive_garbage_collection_rows_threshold = `SELECT @@GLOBAL.group_replication_preemptive_garbage_collection_rows_threshold;`
 
 # Total number of GR variables.
---let $total_gr_vars= 60
+--let $total_gr_vars= 61
 
 --echo #
 --echo # Test Unit#1
@@ -128,7 +131,6 @@ SET @@GLOBAL.group_replication_force_members= default;
 SET @@GLOBAL.group_replication_local_address= default;
 SET @@GLOBAL.group_replication_group_seeds= default;
 SET @@GLOBAL.group_replication_poll_spin_loops= default;
-SET @@GLOBAL.group_replication_recovery_complete_at= default;
 SET @@GLOBAL.group_replication_recovery_reconnect_interval= default;
 SET @@GLOBAL.group_replication_recovery_retry_count= default;
 SET @@GLOBAL.group_replication_recovery_ssl_ca= default;
@@ -162,6 +164,7 @@ SET @@GLOBAL.group_replication_advertise_recovery_endpoints = default;
 SET @@GLOBAL.group_replication_view_change_uuid= default;
 SET @@GLOBAL.group_replication_communication_stack = default;
 SET @@GLOBAL.group_replication_paxos_single_leader = default;
+SET @@GLOBAL.group_replication_preemptive_garbage_collection_rows_threshold = default;
 
 # Session variables
 SET @@SESSION.group_replication_consistency= default;
@@ -219,11 +222,6 @@ SET @@SESSION.group_replication_consistency= default;
 # group_replication_poll_spin_loops
 --let $assert_text= Default group_replication_poll_spin_loops is 0
 --let $assert_cond= "[SELECT @@GLOBAL.group_replication_poll_spin_loops]" = 0
---source include/assert.inc
-
-# group_replication_recovery_complete_at
---let $assert_text= Default group_replication_recovery_complete_at is TRANSACTIONS_APPLIED
---let $assert_cond= "[SELECT @@GLOBAL.group_replication_recovery_complete_at]" = "TRANSACTIONS_APPLIED"
 --source include/assert.inc
 
 # group_replication_recovery_reconnect_interval
@@ -322,8 +320,8 @@ SET @@SESSION.group_replication_consistency= default;
 --source include/assert.inc
 
 #group_replication_exit_state_action
---let $assert_text= Default group_replication_exit_state_action is READ_ONLY
---let $assert_cond= "[SELECT @@GLOBAL.group_replication_exit_state_action]" = "READ_ONLY"
+--let $assert_text= Default group_replication_exit_state_action is OFFLINE_MODE
+--let $assert_cond= "[SELECT @@GLOBAL.group_replication_exit_state_action]" = "OFFLINE_MODE"
 --source include/assert.inc
 
 # group_replication_member_expel_timeout
@@ -332,12 +330,12 @@ SET @@SESSION.group_replication_consistency= default;
 --source include/assert.inc
 
 # group_replication_consistency
---let $assert_text= Default group_replication_consistency is EVENTUAL
---let $assert_cond= "[SELECT @@GLOBAL.group_replication_consistency]" = "EVENTUAL"
+--let $assert_text= Default group_replication_consistency is BEFORE_ON_PRIMARY_FAILOVER
+--let $assert_cond= "[SELECT @@GLOBAL.group_replication_consistency]" = "BEFORE_ON_PRIMARY_FAILOVER"
 --source include/assert.inc
 
---let $assert_text= Default group_replication_consistency is EVENTUAL
---let $assert_cond= "[SELECT @@SESSION.group_replication_consistency]" = "EVENTUAL"
+--let $assert_text= Default group_replication_consistency is BEFORE_ON_PRIMARY_FAILOVER
+--let $assert_cond= "[SELECT @@SESSION.group_replication_consistency]" = "BEFORE_ON_PRIMARY_FAILOVER"
 --source include/assert.inc
 
 # group_replication_communication_max_message_size
@@ -396,6 +394,16 @@ SET @@SESSION.group_replication_consistency= default;
 --let $assert_cond= "[SELECT @@GLOBAL.group_replication_paxos_single_leader]" = 0
 --source include/assert.inc
 
+# group_replication_preemptive_garbage_collection
+--let $assert_text= Default group_replication_preemptive_garbage_collection is 0
+--let $assert_cond= [SELECT @@GLOBAL.group_replication_preemptive_garbage_collection] = 0
+--source include/assert.inc
+
+# group_replication_preemptive_garbage_collection_rows_threshold
+--let $assert_text= Default group_replication_preemptive_garbage_collection_rows_threshold is 100000
+--let $assert_cond= [SELECT @@GLOBAL.group_replication_preemptive_garbage_collection_rows_threshold] = 100000
+--source include/assert.inc
+
 
 --echo #
 --echo # Clean up
@@ -418,7 +426,6 @@ SET @@SESSION.group_replication_consistency= default;
 --eval SET @@GLOBAL.group_replication_local_address= "$saved_gr_local_address"
 --eval SET @@GLOBAL.group_replication_group_seeds= "$saved_gr_group_seeds"
 --eval SET @@GLOBAL.group_replication_poll_spin_loops= $saved_gr_poll_spin_loops
---eval SET @@GLOBAL.group_replication_recovery_complete_at= "$saved_gr_recovery_complete_at"
 --eval SET @@GLOBAL.group_replication_recovery_reconnect_interval= $saved_gr_recovery_reconnect_interval
 --eval SET @@GLOBAL.group_replication_recovery_retry_count= $saved_gr_recovery_retry_count
 --eval SET @@GLOBAL.group_replication_recovery_ssl_ca= "$saved_gr_recovery_ssl_ca"
@@ -453,6 +460,8 @@ SET @@SESSION.group_replication_consistency= default;
 --eval SET @@GLOBAL.group_replication_view_change_uuid= "$saved_gr_view_change_uuid"
 --eval SET @@GLOBAL.group_replication_communication_stack= "$saved_gr_communication_stack"
 --eval SET @@GLOBAL.group_replication_paxos_single_leader= $saved_gr_paxos_single_leader
+--eval SET @@GLOBAL.group_replication_preemptive_garbage_collection= $saved_group_replication_preemptive_garbage_collection
+--eval SET @@GLOBAL.group_replication_preemptive_garbage_collection_rows_threshold= $saved_group_replication_preemptive_garbage_collection_rows_threshold
 --enable_query_log
 
 --let $total_gr_vars=

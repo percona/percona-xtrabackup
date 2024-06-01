@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,7 +26,7 @@
 #ifndef MYSQL_HARNESS_NET_TS_IMPL_KQUEUE_IO_SERVICE_H_
 #define MYSQL_HARNESS_NET_TS_IMPL_KQUEUE_IO_SERVICE_H_
 
-#include "router_config.h"  // HAVE_QUEUE
+#include "my_config.h"  // HAVE_KQUEUE
 
 #ifdef HAVE_KQUEUE
 #include <array>
@@ -48,17 +49,16 @@ class kqueue_io_service : public IoServiceBase {
 
   stdx::expected<void, std::error_code> open() override {
     if (is_open()) {
-      return stdx::make_unexpected(
-          make_error_code(net::socket_errc::already_open));
+      return stdx::unexpected(make_error_code(net::socket_errc::already_open));
     }
 
     auto res = impl::kqueue::create();
-    if (!res) return stdx::make_unexpected(res.error());
+    if (!res) return stdx::unexpected(res.error());
 
     epfd_ = *res;
 
     auto pipe_res = impl::file::pipe(O_NONBLOCK);
-    if (!pipe_res) return stdx::make_unexpected(pipe_res.error());
+    if (!pipe_res) return stdx::unexpected(pipe_res.error());
 
     wakeup_fds_ = *pipe_res;
 
@@ -179,8 +179,7 @@ class kqueue_io_service : public IoServiceBase {
   stdx::expected<fd_event, std::error_code> poll_one(
       std::chrono::milliseconds timeout) override {
     if (!is_open()) {
-      return stdx::make_unexpected(
-          make_error_code(std::errc::invalid_argument));
+      return stdx::unexpected(make_error_code(std::errc::invalid_argument));
     }
 
     if (fd_events_processed_ == fd_events_size_) {
@@ -200,7 +199,7 @@ class kqueue_io_service : public IoServiceBase {
       auto res =
           impl::kqueue::kevent(epfd_, changelist_.data(), changelist_.size(),
                                fd_events_.data(), fd_events_.size(), p_ts);
-      if (!res) return stdx::make_unexpected(res.error());
+      if (!res) return stdx::unexpected(res.error());
 
       changelist_.clear();
 
@@ -208,7 +207,7 @@ class kqueue_io_service : public IoServiceBase {
       fd_events_size_ = *res;
 
       if (fd_events_size_ == 0) {
-        return stdx::make_unexpected(make_error_code(std::errc::timed_out));
+        return stdx::unexpected(make_error_code(std::errc::timed_out));
       }
     }
 
@@ -218,7 +217,7 @@ class kqueue_io_service : public IoServiceBase {
 
     if (ev.flags & EV_ERROR) {
       if (ev.data == 0) {
-        return stdx::make_unexpected(make_error_code(std::errc::interrupted));
+        return stdx::unexpected(make_error_code(std::errc::interrupted));
       } else {
         // .data is errno
         //
@@ -239,7 +238,7 @@ class kqueue_io_service : public IoServiceBase {
       // interrupted
       on_notify();
 
-      return stdx::make_unexpected(make_error_code(std::errc::interrupted));
+      return stdx::unexpected(make_error_code(std::errc::interrupted));
     }
 
     after_event_fired(ev);

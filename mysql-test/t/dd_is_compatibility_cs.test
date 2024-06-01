@@ -180,10 +180,10 @@ SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
 --echo # 4. Names collate differently. On trunk, the queries below returns
 --echo #    the same result set.
 
-SELECT count(*) = IF(@@lower_case_table_names = 0, 7, 12)
+SELECT count(*) = IF(@@lower_case_table_names = 0, 6, 11)
   FROM information_schema.tables
   WHERE table_name LIKE 'TAB%';
-SELECT count(*) = IF(@@lower_case_table_names = 0, 5, 12)
+SELECT count(*) = IF(@@lower_case_table_names = 0, 5, 11)
   FROM information_schema.tables
   WHERE table_name LIKE 'tab%';
 
@@ -254,11 +254,10 @@ DROP TABLE t1;
 --echo # WL#6599. Current method of dumping INFORMATION_SCHEMA does not work
 --echo # for views.
 --echo # OTOH, INFORMATION_SCHEMA DB content dump is only used to reload the
---echo # data into another tables for analysis purpose. This feature is not the 
---echo # core responsibility of mysqlpump tool. INFORMATION_SCHEMA DB
+--echo # data into another tables for analysis purpose. INFORMATION_SCHEMA DB
 --echo # content can be dumped using other methods like SELECT INTO OUTFILE ...
 --echo # for such purpose. Hence ignoring INFORMATION_SCHEMA DB dump from
---echo # mysqldump and mysqlpump tool.
+--echo # mysqldump tool.
 --echo #########################################################
 
 CREATE DATABASE test1;

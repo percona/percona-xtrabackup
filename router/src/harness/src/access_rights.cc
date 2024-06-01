@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -52,7 +53,7 @@ stdx::expected<Allocated<SID>, std::error_code> create_well_known_sid(
 
   if (CreateWellKnownSid(well_known_sid, nullptr, sid.get(), &sid_size) ==
       FALSE) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 
   return {std::move(sid)};
@@ -109,7 +110,7 @@ stdx::expected<Handle, std::error_code> open_process_token(
 
   // Gets security token of the current process
   if (!OpenProcessToken(process_handle, TOKEN_READ | TOKEN_QUERY, &h_token)) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 
   return {h_token};
@@ -128,7 +129,7 @@ stdx::expected<Allocated<TOKEN_USER>, std::error_code> token_user(
 
     if (ec !=
         std::error_code{ERROR_INSUFFICIENT_BUFFER, std::system_category()}) {
-      return stdx::make_unexpected(ec);
+      return stdx::unexpected(ec);
     }
   }
 
@@ -138,7 +139,7 @@ stdx::expected<Allocated<TOKEN_USER>, std::error_code> token_user(
   // user token)
   if (!GetTokenInformation(h_token, token_class, user.get(), user.size(),
                            &token_size)) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 
   return {std::move(user)};
@@ -148,13 +149,13 @@ stdx::expected<Allocated<SID>, std::error_code> current_user_sid() {
   auto process_token_res = open_process_token(GetCurrentProcess());
   if (!process_token_res) {
     auto ec = process_token_res.error();
-    return stdx::make_unexpected(ec);
+    return stdx::unexpected(ec);
   }
 
   auto token_user_res = token_user(process_token_res.value());
   if (!token_user_res) {
     auto ec = token_user_res.error();
-    return stdx::make_unexpected(ec);
+    return stdx::unexpected(ec);
   }
 
   auto token_user = std::move(token_user_res.value());
@@ -240,7 +241,7 @@ std::string Acl::to_string() const {
 stdx::expected<void, std::error_code> SecurityDescriptor::initialize(
     DWORD revision) {
   if (!InitializeSecurityDescriptor(desc_, revision)) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 
   return {};
@@ -253,14 +254,14 @@ stdx::expected<OptionalDacl, std::error_code> SecurityDescriptor::dacl() const {
 
   if (0 ==
       GetSecurityDescriptorDacl(desc_, &dacl_present, &dacl, &dacl_defaulted)) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 
   if (!dacl_present) {
     return {};
   }
 
-  return {std::in_place, dacl};
+  return stdx::expected<OptionalDacl, std::error_code>{std::in_place, dacl};
 }
 
 stdx::expected<void, std::error_code> SecurityDescriptor::dacl(
@@ -274,7 +275,7 @@ stdx::expected<void, std::error_code> SecurityDescriptor::dacl(
 
   if (0 ==
       SetSecurityDescriptorDacl(desc_, dacl_present, dacl, dacl_defaulted)) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 
   return {};
@@ -300,7 +301,7 @@ SecurityDescriptor::control() const {
   DWORD revision;
 
   if (0 == GetSecurityDescriptorControl(desc_, &control, &revision)) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 
   return control;
@@ -315,7 +316,7 @@ SecurityDescriptor::make_self_relative() {
     const auto ec = last_error_code();
 
     if (ec.value() != ERROR_INSUFFICIENT_BUFFER) {
-      return stdx::make_unexpected(ec);
+      return stdx::unexpected(ec);
     }
     // fall through
   }
@@ -324,7 +325,7 @@ SecurityDescriptor::make_self_relative() {
 
   if (0 == MakeSelfRelativeSD(desc_, self_rel.get(), &self_rel_size)) {
     const auto ec = last_error_code();
-    return stdx::make_unexpected(ec);
+    return stdx::unexpected(ec);
   }
 
   return self_rel;
@@ -470,7 +471,7 @@ stdx::expected<security_descriptor_type, std::error_code> AclBuilder::build() {
   using namespace mysql_harness::win32::access_rights;
 
   // if add/set/revoke failed, return the error.
-  if (ec_) return stdx::make_unexpected(ec_);
+  if (ec_) return stdx::unexpected(ec_);
 
   if (auto desc = old_desc_.get()) {
     // BuildSecurityDescriptorW needs the old security descriptor in
@@ -479,7 +480,7 @@ stdx::expected<security_descriptor_type, std::error_code> AclBuilder::build() {
 
     if (!s.is_self_relative()) {
       auto self_rel_res = s.make_self_relative();
-      if (!self_rel_res) return self_rel_res.get_unexpected();
+      if (!self_rel_res) return stdx::unexpected(self_rel_res.error());
 
       old_desc_ = std::move(self_rel_res.value());
     }
@@ -499,10 +500,11 @@ stdx::expected<security_descriptor_type, std::error_code> AclBuilder::build() {
   if (err != ERROR_SUCCESS) {
     std::error_code ec{static_cast<int>(err), std::system_category()};
 
-    return stdx::make_unexpected(ec);
+    return stdx::unexpected(ec);
   }
 
-  return {std::in_place, reinterpret_cast<SECURITY_DESCRIPTOR *>(new_sd)};
+  return stdx::expected<security_descriptor_type, std::error_code>{
+      std::in_place, reinterpret_cast<SECURITY_DESCRIPTOR *>(new_sd)};
 }
 
 /*
@@ -569,13 +571,13 @@ stdx::expected<void, std::error_code> AllowUserReadWritableVerifier::operator()(
   SecurityDescriptor sec_desc{desc.get()};
 
   auto dacl_res = sec_desc.dacl();
-  if (!dacl_res) return dacl_res.get_unexpected();
+  if (!dacl_res) return stdx::unexpected(dacl_res.error());
 
   auto optional_dacl = std::move(dacl_res.value());
 
   if (!optional_dacl) {
     // No DACL means: all access allow.
-    return stdx::make_unexpected(make_error_code(std::errc::permission_denied));
+    return stdx::unexpected(make_error_code(std::errc::permission_denied));
   }
 
   if (optional_dacl.value() == nullptr) {
@@ -585,7 +587,9 @@ stdx::expected<void, std::error_code> AllowUserReadWritableVerifier::operator()(
 
   // get the current user sid
   auto current_user_sid_res = current_user_sid();
-  if (!current_user_sid_res) return current_user_sid_res.get_unexpected();
+  if (!current_user_sid_res) {
+    return stdx::unexpected(current_user_sid_res.error());
+  }
 
   auto allocated_current_user_sid = std::move(current_user_sid_res.value());
 
@@ -593,7 +597,9 @@ stdx::expected<void, std::error_code> AllowUserReadWritableVerifier::operator()(
 
   // local system
   auto local_system_sid_res = create_well_known_sid(WinLocalSystemSid);
-  if (!local_system_sid_res) return local_system_sid_res.get_unexpected();
+  if (!local_system_sid_res) {
+    return stdx::unexpected(local_system_sid_res.error());
+  }
 
   auto allocated_local_system_sid = std::move(local_system_sid_res.value());
 
@@ -601,7 +607,9 @@ stdx::expected<void, std::error_code> AllowUserReadWritableVerifier::operator()(
 
   // local service
   auto local_service_sid_res = create_well_known_sid(WinLocalServiceSid);
-  if (!local_service_sid_res) return local_service_sid_res.get_unexpected();
+  if (!local_service_sid_res) {
+    return stdx::unexpected(local_service_sid_res.error());
+  }
 
   auto allocated_local_service_sid = std::move(local_service_sid_res.value());
 
@@ -628,8 +636,7 @@ stdx::expected<void, std::error_code> AllowUserReadWritableVerifier::operator()(
 
       // the current user
       if ((allowed_access.mask() & file_access_mask) != expected) {
-        return stdx::make_unexpected(
-            make_error_code(std::errc::permission_denied));
+        return stdx::unexpected(make_error_code(std::errc::permission_denied));
       }
     } else if (running_under_wine() &&
                allowed_access.sid() == local_system_sid) {
@@ -638,8 +645,7 @@ stdx::expected<void, std::error_code> AllowUserReadWritableVerifier::operator()(
       // make_file_public() also allows LocalService to
     } else {
       // everyone else.
-      return stdx::make_unexpected(
-          make_error_code(std::errc::permission_denied));
+      return stdx::unexpected(make_error_code(std::errc::permission_denied));
     }
   }
 
@@ -649,13 +655,13 @@ stdx::expected<void, std::error_code> AllowUserReadWritableVerifier::operator()(
 stdx::expected<void, std::error_code> DenyOtherReadWritableVerifier::operator()(
     const security_descriptor_type &desc) {
   auto dacl_res = SecurityDescriptor(desc.get()).dacl();
-  if (!dacl_res) return dacl_res.get_unexpected();
+  if (!dacl_res) return stdx::unexpected(dacl_res.error());
 
   auto optional_dacl = std::move(dacl_res.value());
 
   if (!optional_dacl) {
     // No DACL means: all access allow.
-    return stdx::make_unexpected(make_error_code(std::errc::permission_denied));
+    return stdx::unexpected(make_error_code(std::errc::permission_denied));
   }
 
   if (optional_dacl.value() == nullptr) {
@@ -665,7 +671,7 @@ stdx::expected<void, std::error_code> DenyOtherReadWritableVerifier::operator()(
 
   // everyone
   auto sid_res = create_well_known_sid(WinWorldSid);
-  if (!sid_res) return sid_res.get_unexpected();
+  if (!sid_res) return stdx::unexpected(sid_res.error());
 
   auto allocated_everyone_sid = std::move(sid_res.value());
 
@@ -684,8 +690,7 @@ stdx::expected<void, std::error_code> DenyOtherReadWritableVerifier::operator()(
           (FILE_EXECUTE |
            (FILE_WRITE_DATA | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES) |
            (FILE_READ_DATA | FILE_READ_EA | FILE_READ_ATTRIBUTES))) {
-        return stdx::make_unexpected(
-            make_error_code(std::errc::permission_denied));
+        return stdx::unexpected(make_error_code(std::errc::permission_denied));
       }
     }
   }
@@ -707,7 +712,7 @@ stdx::expected<security_descriptor_type, std::error_code> access_rights_get(
     // We expect to receive `ERROR_INSUFFICIENT_BUFFER`.
     if (ec !=
         std::error_code{ERROR_INSUFFICIENT_BUFFER, std::system_category()}) {
-      return stdx::make_unexpected(ec);
+      return stdx::unexpected(ec);
     }
   }
 
@@ -717,7 +722,7 @@ stdx::expected<security_descriptor_type, std::error_code> access_rights_get(
                        &sec_desc_size) == FALSE) {
     const auto ec = last_error_code();
 
-    return stdx::make_unexpected(ec);
+    return stdx::unexpected(ec);
   }
 
   return {std::move(desc)};
@@ -728,7 +733,7 @@ stdx::expected<void, std::error_code> access_rights_set(
   if (0 == SetFileSecurityA(file_name.c_str(), DACL_SECURITY_INFORMATION,
                             desc.get())) {
     std::error_code ec{last_error_code()};
-    return stdx::make_unexpected(ec);
+    return stdx::unexpected(ec);
   }
 
   return {};
@@ -747,8 +752,7 @@ stdx::expected<security_descriptor_type, std::error_code> access_rights_get(
   struct stat st;
 
   if (-1 == ::stat(filename.c_str(), &st)) {
-    return stdx::make_unexpected(
-        std::error_code{errno, std::generic_category()});
+    return stdx::unexpected(std::error_code{errno, std::generic_category()});
   }
 
   return {st.st_mode};
@@ -761,8 +765,7 @@ stdx::expected<void, std::error_code> access_rights_set(
   return win32::access_rights::access_rights_set(filename, rights);
 #else
   if (-1 == ::chmod(filename.c_str(), rights)) {
-    return stdx::make_unexpected(
-        std::error_code{errno, std::generic_category()});
+    return stdx::unexpected(std::error_code{errno, std::generic_category()});
   }
 
   return {};

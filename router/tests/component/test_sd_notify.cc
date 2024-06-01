@@ -1,16 +1,17 @@
 /*
-Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
 as published by the Free Software Foundation.
 
-This program is also distributed with certain software (including
+This program is designed to work with certain software (including
 but not limited to OpenSSL) that is licensed under separate terms,
 as designated in a particular file or component or in included license
 documentation.  The authors of MySQL hereby grant you an additional
 permission to link the program and your derivative works with the
-separately licensed software that they have included with MySQL.
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -52,15 +53,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "router_component_test.h"
 #include "router_component_testutils.h"
 #include "router_test_helpers.h"
-
-#define EXPECT_NO_ERROR(x) \
-  EXPECT_THAT((x), ::testing::Truly([](auto const &v) { return bool(v); }))
-
-#define EXPECT_ERROR(x) \
-  EXPECT_THAT((x), ::testing::Truly([](auto const &v) { return !bool(v); }))
-
-#define ASSERT_NO_ERROR(x) \
-  ASSERT_THAT((x), ::testing::Truly([](auto const &v) { return bool(v); }))
+#include "stdx_expected_no_error.h"
 
 using mysql_harness::ConfigBuilder;
 using mysqlrouter::ClusterType;
@@ -333,6 +326,7 @@ TEST_F(NotifyTest, NotifyReadyHttpPlugins) {
       ConfigBuilder::build_section(
           "http_server",
           {
+              {"bind_address", "127.0.0.1"},
               {"port", std::to_string(port_pool_.get_next_available())},
           }),
       ConfigBuilder::build_section("http_auth_realm:somerealm",
@@ -396,6 +390,7 @@ TEST_F(NotifyTest, NotifyReadyManyPlugins) {
       ConfigBuilder::build_section(
           "http_server",
           {
+              {"bind_address", "127.0.0.1"},
               {"port", std::to_string(port_pool_.get_next_available())},
           }),
       ConfigBuilder::build_section("http_auth_realm:somerealm",
@@ -437,8 +432,7 @@ TEST_F(NotifyTest, NotifyReadyMetadataCacheNoServer) {
       "we pick a socket where on which there is noone accepting to mimic "
       "unavailable cluster");
 
-  const auto nodes =
-      "mysql://localhost:" + std::to_string(port_pool_.get_next_available());
+  const auto metadata_server_port = port_pool_.get_next_available();
 
   auto writer =
       config_writer(get_test_temp_dir_name())
@@ -451,14 +445,18 @@ TEST_F(NotifyTest, NotifyReadyMetadataCacheNoServer) {
           .section("metadata_cache", {
                                          {"cluster_type", "gr"},
                                          {"router_id", "1"},
-                                         {"bootstrap_server_addresses", nodes},
                                          {"user", "mysql_router1_user"},
                                          {"connect_timeout", "1"},
                                          {"metadata_cluster", "test"},
                                      });
 
-  // prepare keyring
-  init_keyring(writer.sections()["DEFAULT"], get_test_temp_dir_name());
+  // prepare keyring and state file
+  auto &default_section = writer.sections()["DEFAULT"];
+  init_keyring(default_section, get_test_temp_dir_name());
+  const auto state_file = create_state_file(
+      get_test_temp_dir_name(),
+      create_state_file_content("uuid", "", {metadata_server_port}, 0));
+  default_section["dynamic_state"] = state_file;
 
   // check that router never becomes READY (within a reasonable time) as
   // metadata-cache fails to connect
@@ -880,7 +878,7 @@ TEST_F(NotifyTest, NotifyStoppingBasic) {
   EXPECT_TRUE(wait_for_notified_ready(notify_socket, 5s));
 
   stdx::expected<void, std::error_code> stopped_notification_read{
-      stdx::make_unexpected(std::error_code{})};
+      stdx::unexpected(std::error_code{})};
   auto wait_for_stopped = std::thread([&] {
     stopped_notification_read = wait_for_notified_stopping(notify_socket, 5s);
   });
@@ -905,11 +903,15 @@ class NotifyBootstrapNotAffectedTest
 TEST_P(NotifyBootstrapNotAffectedTest, NotifyBootstrapNotAffected) {
   TempDirectory temp_test_dir;
 
-  SCOPED_TRACE("// Launch our metadata server we bootsrtap against");
+  SCOPED_TRACE("// Launch our metadata server we bootstrap against");
   const auto trace_file = get_data_dir().join("bootstrap_gr.js").str();
   const auto metadata_server_port = port_pool_.get_next_available();
+  const auto http_port = port_pool_.get_next_available();
   /*auto &md_server =*/ProcessManager::launch_mysql_server_mock(
-      trace_file, metadata_server_port, EXIT_SUCCESS, true);
+      trace_file, metadata_server_port, EXIT_SUCCESS, true, http_port);
+  set_mock_metadata(http_port, "00000000-0000-0000-0000-0000000000g1",
+                    classic_ports_to_gr_nodes({metadata_server_port}), 0,
+                    {metadata_server_port});
 
   SCOPED_TRACE(
       "// Create notification socket and pass it to the Router as env "
@@ -925,7 +927,7 @@ TEST_P(NotifyBootstrapNotAffectedTest, NotifyBootstrapNotAffected) {
 
   SCOPED_TRACE("// Listen for notification while we are bootstrapping");
   stdx::expected<void, std::error_code> ready_notification_read{
-      stdx::make_unexpected(std::error_code{})};
+      stdx::unexpected(std::error_code{})};
   auto wait_for_stopped = std::thread([&] {
     ready_notification_read =
         wait_for_notified(notify_socket, GetParam(), 300ms);
@@ -937,7 +939,10 @@ TEST_P(NotifyBootstrapNotAffectedTest, NotifyBootstrapNotAffected) {
 
   auto &router = launch_router(
       {"--bootstrap=localhost:" + std::to_string(metadata_server_port),
-       "-d=" + temp_test_dir.name(), "--report-host=dont.query.dns"},
+       "-d=" + temp_test_dir.name(),
+       "--conf-set-option=DEFAULT.plugin_folder=" +
+           ProcessManager::get_plugin_dir().str(),
+       "--report-host=dont.query.dns"},
       env_vars, EXIT_SUCCESS,
       RouterComponentBootstrapTest::kBootstrapOutputResponder);
 
@@ -947,7 +952,7 @@ TEST_P(NotifyBootstrapNotAffectedTest, NotifyBootstrapNotAffected) {
   SCOPED_TRACE("// No notification should be sent by the Router");
   wait_for_stopped.join();
   ASSERT_EQ(ready_notification_read,
-            stdx::make_unexpected(make_error_code(std::errc::timed_out)));
+            stdx::unexpected(make_error_code(std::errc::timed_out)));
 }
 
 INSTANTIATE_TEST_SUITE_P(

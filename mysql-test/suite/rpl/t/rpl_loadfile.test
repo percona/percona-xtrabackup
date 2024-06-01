@@ -12,10 +12,10 @@
 # Includes
 --source include/not_group_replication_plugin.inc
 -- source include/have_binlog_format_mixed_or_row.inc
--- source include/set_privilege_checks_user_as_system_user.inc
--- source include/master-slave.inc
+-- source include/rpl/set_privilege_checks_user_as_system_user.inc
+-- source include/rpl/init_source_replica.inc
 
--- source extra/rpl_tests/rpl_loadfile.test
+-- source common/rpl/rpl_loadfile.test
 
 #  BUG#39701: Mixed binlog format does not switch to row mode on LOAD_FILE
 #
@@ -41,12 +41,12 @@
 #      On Master,
 #       i) write to file the desired content.
 #      ii) create table and stored procedure with load_file
-#     iii) stop slave
+#     iii) stop replica
 #     iii) execute load_file 
 #      iv) remove file
 #
 #      On Slave,
-#       v) start slave
+#       v) start replica
 #      vi) sync it with master so that it gets the updates from binlog (which 
 #          should have bin logged in row format). 
 #
@@ -60,7 +60,7 @@
 #     vii) assert that the contents of master and slave 
 #          table are the same
 
---source include/rpl_reset.inc
+--source include/rpl/reset.inc
 
 connection master;
 let $file= $MYSQLTEST_VARDIR/tmp/bug_39701.data;
@@ -80,9 +80,9 @@ CREATE PROCEDURE p(file varchar(4096))
   END|
 DELIMITER ;|
 
-# stop slave before issuing the load_file on master
+# stop replica before issuing the load_file on master
 connection slave;
-source include/stop_slave.inc;
+source include/rpl/stop_replica.inc;
 
 connection master;
 
@@ -95,12 +95,12 @@ connection master;
 remove_file $file;
 
 # now that the file is removed it is safe (regarding what we want to test) 
-# to start slave
+# to start replica
 connection slave;
-source include/start_slave.inc;
+source include/rpl/start_replica.inc;
 
 connection master;
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 
 # assertion: assert that the slave got the updates even
 #            if the file was removed before the slave started,
@@ -114,4 +114,4 @@ source include/diff_tables.inc;
 DROP TABLE t1;
 DROP PROCEDURE p;
 
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

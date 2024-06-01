@@ -1,15 +1,16 @@
-/* Copyright (c) 2008, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1361,13 +1362,13 @@ static bool is_show_status(enum_sql_command sql_command) {
     case SQLCOM_SHOW_ENGINE_STATUS:
     case SQLCOM_SHOW_ENGINE_MUTEX:
     case SQLCOM_SHOW_PROCESSLIST:
-    case SQLCOM_SHOW_MASTER_STAT:
-    case SQLCOM_SHOW_SLAVE_STAT:
+    case SQLCOM_SHOW_BINLOG_STATUS:
+    case SQLCOM_SHOW_REPLICA_STATUS:
     case SQLCOM_SHOW_CHARSETS:
     case SQLCOM_SHOW_COLLATIONS:
     case SQLCOM_SHOW_BINLOGS:
     case SQLCOM_SHOW_OPEN_TABLES:
-    case SQLCOM_SHOW_SLAVE_HOSTS:
+    case SQLCOM_SHOW_REPLICAS:
     case SQLCOM_SHOW_BINLOG_EVENTS:
     case SQLCOM_SHOW_WARNS:
     case SQLCOM_SHOW_ERRORS:
@@ -1410,9 +1411,10 @@ int launch_hook_trans_begin(THD *thd, Table_ref *all_tables) {
   bool is_shutdown = (sql_command == SQLCOM_SHUTDOWN);
   bool is_reset_persist =
       (sql_command == SQLCOM_RESET && lex->option_type == OPT_PERSIST);
+  bool is_kill = (sql_command == SQLCOM_KILL);
 
   if ((is_set || is_show || is_empty || is_use || is_stop_gr || is_shutdown ||
-       is_reset_persist) &&
+       is_reset_persist || is_kill) &&
       !lex->uses_stored_routines()) {
     return 0;
   }

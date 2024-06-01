@@ -1,15 +1,16 @@
-/* Copyright (c) 2022, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -33,6 +34,7 @@
 
 #include "map_helpers.h"  // mem_root_unordered_map
 #include "my_alloc.h"     // MEM_ROOT
+#include "my_compiler.h"
 
 #include "sql/histograms/histogram.h"
 #include "sql/psi_memory_key.h"
@@ -128,6 +130,8 @@ void Table_histograms_collection::release(const Table_histograms *histograms) {
   }
 }
 
+MY_COMPILER_DIAGNOSTIC_PUSH()
+MY_COMPILER_MSVC_DIAGNOSTIC_IGNORE(28020)
 bool Table_histograms_collection::insert(Table_histograms *histograms) {
   size_t i = 0;
   while (m_table_histograms[i] != nullptr) {
@@ -145,6 +149,7 @@ bool Table_histograms_collection::insert(Table_histograms *histograms) {
   m_current_index = i;
   return false;
 }
+MY_COMPILER_DIAGNOSTIC_POP()
 
 size_t Table_histograms_collection::size() const {
   size_t size = 0;

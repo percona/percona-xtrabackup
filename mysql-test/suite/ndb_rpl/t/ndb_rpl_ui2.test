@@ -1,6 +1,6 @@
 --source include/have_ndb.inc
 --source include/have_binlog_format_mixed_or_row.inc
---source suite/ndb_rpl/ndb_master-slave.inc
+--source suite/ndb_rpl/ndb_rpl_init_source_replica.inc
 
 --connection master
 
@@ -8,7 +8,7 @@ CREATE TABLE t1 (pk int primary key, uk int not null, unique(uk)) engine=ndb;
 
 --sync_slave_with_master
 --connection slave
-STOP SLAVE;
+STOP REPLICA;
 insert into t1 values (1,1);
 insert into t1 values (2,2);
 --connection master
@@ -23,7 +23,7 @@ insert into t1 values (2,2);
 commit;
 
 --connection slave
-start slave;
+START REPLICA;
 
 --connection master
 --sync_slave_with_master
@@ -35,4 +35,4 @@ select * from t1;
 drop table t1;
 --sync_slave_with_master
 
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

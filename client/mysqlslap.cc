@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2005, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2005, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -95,9 +96,9 @@ TODO:
 #include <stdlib.h>
 #include <sys/types.h>
 
-#include "caching_sha2_passwordopt-vars.h"
+#include "client/include/caching_sha2_passwordopt-vars.h"
+#include "client/include/sslopt-vars.h"
 #include "my_dir.h"
-#include "sslopt-vars.h"
 #ifdef HAVE_SYS_WAIT_H
 #include <sys/wait.h>
 #endif
@@ -107,7 +108,7 @@ TODO:
 #include <stdio.h>
 #include <time.h>
 
-#include "client/client_priv.h"
+#include "client/include/client_priv.h"
 #include "compression.h"
 #include "m_string.h"
 #include "my_alloc.h"
@@ -206,7 +207,7 @@ File csv_file;
 
 static uint opt_protocol = 0;
 
-#include "multi_factor_passwordopt-vars.h"
+#include "client/include/multi_factor_passwordopt-vars.h"
 
 static int get_options(int *argc, char ***argv);
 static uint opt_mysql_port = 0;
@@ -668,7 +669,7 @@ static struct my_option my_long_options[] = {
      "been done.",
      &opt_only_print, &opt_only_print, nullptr, GET_BOOL, NO_ARG, 0, 0, 0,
      nullptr, 0, nullptr},
-#include "multi_factor_passwordopt-longopts.h"
+#include "client/include/multi_factor_passwordopt-longopts.h"
 #ifdef _WIN32
     {"pipe", 'W', "Use named pipes to connect to server.", nullptr, nullptr,
      nullptr, GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
@@ -714,8 +715,8 @@ static struct my_option my_long_options[] = {
      0, 0, 0, nullptr, 0, nullptr},
     {"sql_mode", 0, "Specify sql-mode to run mysqlslap tool.", &sql_mode,
      &sql_mode, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
-#include "caching_sha2_passwordopt-longopts.h"
-#include "sslopt-longopts.h"
+#include "client/include/caching_sha2_passwordopt-longopts.h"
+#include "client/include/sslopt-longopts.h"
 
     {"user", 'u', "User for login if not current user.", &user, &user, nullptr,
      GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
@@ -775,7 +776,7 @@ static bool get_one_option(int optid, const struct my_option *opt,
       if (!argument) argument = const_cast<char *>("-"); /* use stdout */
       opt_csv_str = argument;
       break;
-#include "sslopt-case.h"
+#include "client/include/sslopt-case.h"
 
     case 'V':
       print_version();

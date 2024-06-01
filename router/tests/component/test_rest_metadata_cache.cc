@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -88,11 +89,8 @@ class RestMetadataCacheApiWithoutClusterTest
       public ::testing::WithParamInterface<RestApiTestParams> {};
 
 // precondition to these tests is that we can start a router against a
-// metadata-cluster which has no nodes. But with Bug#28352482 (no empty
-// bootstrap_server_addresses) fixed we can't bring the metadata into that state
-// anymore. We just won't start.
-//
-// An empty dynamic_config file will also not allow to start.
+// metadata-cluster which has no nodes but an empty dynamic_config file will
+// also not allow to start.
 //
 // In case that functionally ever comes back, we'll leave this code around, but
 // disabled.
@@ -361,7 +359,7 @@ TEST_P(RestMetadataCacheApiTest, ensure_openapi) {
   const std::string http_uri = GetParam().uri;
 
   /*auto &md_server =*/ProcessManager::launch_mysql_server_mock(
-      get_data_dir().join("metadata_1_node_repeat.js").str(),
+      get_data_dir().join("metadata_1_node_repeat_v2_gr.js").str(),
       metadata_server_port_, EXIT_SUCCESS, false, metadata_server_http_port_);
 
   const std::string userfile = create_password_file();

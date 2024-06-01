@@ -1,15 +1,15 @@
 ################################################################################
 # This test intends to prove that group replication channels are not affected
-# by START SLAVE and STOP SLAVE commands.
+# by START REPLICA and STOP REPLICA commands.
 #
 # Test:
 # 0) The test requires three servers: M1 and M2.
 # 1) Bootstrap start a group on M1. Start GR on M2.
 # 2) Create a slave channel 'channel_1' on M1 (M3 -> M1). Verify that both slave
 #    channel and group_replication_applier channel are present on M1.
-# 3) With a running slave channel and group replication active do a STOP SLAVE.
+# 3) With a running slave channel and group replication active do a STOP REPLICA.
 #    The slave channel should stop but the group replication channel shouldn't.
-# 4) With a stopped slave channel and group replication off do a START SLAVE.
+# 4) With a stopped slave channel and group replication off do a START REPLICA.
 #    The slave channel should start but the group replication channel shouldn't.
 # 5) Restart the server with no automatic plugin start.
 #    The slave channel should start but the group replication channel shouldn't.
@@ -43,7 +43,7 @@
 
 --replace_result $SERVER_MYPORT_3 SERVER_3_PORT
 --eval CHANGE REPLICATION SOURCE TO SOURCE_HOST="127.0.0.1", SOURCE_USER="root", SOURCE_PASSWORD="", SOURCE_PORT=$SERVER_MYPORT_3, SOURCE_AUTO_POSITION=1 FOR CHANNEL "channel_1"
---source include/start_slave.inc
+--source include/rpl/start_replica.inc
 
 --let $assert_text= 'The group replication applier channel is present'
 --let $assert_cond= [SELECT COUNT(*) AS count FROM mysql.slave_relay_log_info WHERE channel_name="group_replication_applier", count, 1] = 1
@@ -54,14 +54,14 @@
 --source include/assert.inc
 
 #
-# Phase 3: Check that after doing a stop slave, the applier channel is still ON
+# Phase 3: Check that after doing a stop replica, the applier channel is still ON
 #
 
 --let $assert_text= 'The group replication applier channel is ON'
 --let $assert_cond= [SELECT COUNT(*) AS count FROM performance_schema.replication_connection_status where CHANNEL_NAME="group_replication_applier" and SERVICE_STATE="ON", count, 1] = 1
 --source include/assert.inc
 
---source include/stop_slave.inc
+--source include/rpl/stop_replica.inc
 
 --let $assert_text= 'The group replication applier channel is still ON'
 --let $assert_cond= [SELECT COUNT(*) AS count FROM performance_schema.replication_connection_status where CHANNEL_NAME="group_replication_applier" and SERVICE_STATE="ON", count, 1] = 1
@@ -72,7 +72,7 @@
 --source include/assert.inc
 
 #
-# Phase 4: After being stopped, check that after a START SLAVE the plugin channel is still OFF
+# Phase 4: After being stopped, check that after a START REPLICA the plugin channel is still OFF
 #
 
 --source include/stop_group_replication.inc
@@ -81,7 +81,7 @@
 --let $assert_cond= [SELECT COUNT(*) AS count FROM performance_schema.replication_connection_status where CHANNEL_NAME="group_replication_applier" and SERVICE_STATE="OFF", count, 1] = 1
 --source include/assert.inc
 
---source include/start_slave.inc
+--source include/rpl/start_replica.inc
 
 --let $assert_text= 'The group replication applier channel is still OFF'
 --let $assert_cond= [SELECT COUNT(*) AS count FROM performance_schema.replication_connection_status where CHANNEL_NAME="group_replication_applier" and SERVICE_STATE="OFF", count, 1] = 1
@@ -99,13 +99,13 @@
 --let $allow_rpl_inited=1
 --source include/restart_mysqld.inc
 
-#Needed as we are not using rpl_restart_server.inc
+#Needed as we are not using rpl/restart_server.inc
 --let $rpl_server_number= 1
---source include/rpl_reconnect.inc
+--source include/rpl/reconnect.inc
 
 # Wait for the slave channel start
 --let $rpl_channel_name= 'channel_1'
---source include/wait_for_slave_to_start.inc
+--source include/rpl/wait_for_replica_to_start.inc
 --let $rpl_channel_name=
 
 --let $assert_text= 'The group replication applier channel is still OFF'
@@ -120,7 +120,7 @@
 # Phase 6: Clean the created channels
 #
 
---source include/stop_slave.inc
+--source include/rpl/stop_replica.inc
 CHANGE REPLICATION SOURCE TO SOURCE_AUTO_POSITION=0 FOR CHANNEL "channel_1";
 
 --connection server1

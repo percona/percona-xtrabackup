@@ -14,7 +14,7 @@
 #  5) Start `server1`.
 #  6) Execute an `INSERT` statement on `server2`.
 #  7) Expect an error as the user doesn't have INSERT privilege.
-#  8) Stop slave and grant INSERT privilege.
+#  8) Stop replica and grant INSERT privilege.
 #  9) Start server1
 # 10) Ensure that table was properly replicated
 #
@@ -39,11 +39,12 @@ CALL mtr.add_suppression(".*Worker .* failed executing transaction .* INSERT com
 CALL mtr.add_suppression(".*Plugin group_replication reported: 'The applier thread execution was aborted. Unable to process more transactions, this member will now leave the group.'.*");
 CALL mtr.add_suppression(".*Plugin group_replication reported: 'Fatal error during execution on the Applier process of Group Replication. The server will now leave the group.'.*");
 CALL mtr.add_suppression(".*Plugin group_replication reported: 'The server was automatically set into read only mode after an error was detected.'.*");
+CALL mtr.add_suppression("The server was automatically set into offline mode after an error was detected.");
 CALL mtr.add_suppression(".*Plugin group_replication reported: 'Skipping leave operation: concurrent attempt to leave the group is on-going.'.*");
 CALL mtr.add_suppression(".*The replica coordinator and worker threads are stopped.*");
 SET @@sql_log_bin = 1;
 
---source include/rpl_sync.inc
+--source include/rpl/sync.inc
 
 --echo
 --echo # 2) Stop GR on `server1`.
@@ -79,7 +80,7 @@ SET @@sql_log_bin = 1;
 --echo
 --echo # 5) Start `server1`.
 --let $rpl_connection_name = server1
---source include/rpl_connection.inc
+--source include/connection.inc
 --source include/start_group_replication.inc
 
 --let $count = `SELECT COUNT(*) FROM performance_schema.replication_applier_configuration WHERE Privilege_Checks_User = "$applier_user"`
@@ -90,19 +91,19 @@ SET @@sql_log_bin = 1;
 --echo
 --echo # 6) Execute an `INSERT` statement on `server2`.
 --let $rpl_connection_name = server2
---source include/rpl_connection.inc
+--source include/connection.inc
 INSERT INTO db1.t1 VALUES (1), (2);
 
 --echo
 --echo # 7) Expect an error as the user doesn't have INSERT privilege.
 --let $rpl_connection_name = server1
---source include/rpl_connection.inc
+--source include/connection.inc
 --let $explicit_default_wait_timeout = 12000
 --let $group_replication_member_state = ERROR
 --source include/gr_wait_for_member_state.inc
 
 --echo
---echo # 8) Stop slave and grant INSERT privilege.
+--echo # 8) Stop replica and grant INSERT privilege.
 --source include/stop_group_replication.inc
 SET @@sql_log_bin = 0;
 --eval GRANT INSERT ON *.* TO $applier_user
@@ -114,7 +115,7 @@ SET @@sql_log_bin = 1;
 
 --echo
 --echo # 10) Ensure that table was properly replicated
---source include/rpl_sync.inc
+--source include/rpl/sync.inc
 --let $count = `SELECT COUNT(*) FROM db1.t1`
 --let $assert_text = Table properly replicated in server1
 --let $assert_cond = 2 = $count
@@ -123,10 +124,10 @@ SET @@sql_log_bin = 1;
 --echo
 --echo # Cleanup
 DROP DATABASE db1;
---source include/rpl_sync.inc
+--source include/rpl/sync.inc
 
 --let $rpl_connection_name = server1
---source include/rpl_connection.inc
+--source include/connection.inc
 SET @@sql_log_bin = 0;
 --eval DROP USER $applier_user
 SET @@sql_log_bin = 1;

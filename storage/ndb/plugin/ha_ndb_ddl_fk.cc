@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2011, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1406,8 +1407,14 @@ int ha_ndbcluster::create_fks(THD *thd, Ndb *ndb, const char *dbname,
     }
 
     if (!parent_primary_key && parent_index == nullptr) {
-      my_error(ER_FK_NO_INDEX_PARENT, MYF(0), fk->name.str ? fk->name.str : "",
-               parent_tab.get_table()->getName());
+      if (thd->variables.restrict_fk_on_non_standard_key)
+        my_error(ER_FK_NO_UNIQUE_INDEX_PARENT, MYF(0),
+                 fk->name.str ? fk->name.str : "",
+                 parent_tab.get_table()->getName());
+      else
+        my_error(ER_FK_NO_INDEX_PARENT, MYF(0),
+                 fk->name.str ? fk->name.str : "",
+                 parent_tab.get_table()->getName());
       return err_default;
     }
 
@@ -1607,8 +1614,12 @@ int ha_ndbcluster::copy_fk_for_offline_alter(THD *thd, Ndb *ndb,
         const NDBINDEX *idx =
             find_matching_index(dict, dsttab.get_table(), cols, parent_primary);
         if (!parent_primary && idx == nullptr) {
-          my_error(ER_FK_NO_INDEX_PARENT, MYF(0), fk.getName(),
-                   dsttab.get_table()->getName());
+          if (thd->variables.restrict_fk_on_non_standard_key)
+            my_error(ER_FK_NO_UNIQUE_INDEX_PARENT, MYF(0), fk.getName(),
+                     dsttab.get_table()->getName());
+          else
+            my_error(ER_FK_NO_INDEX_PARENT, MYF(0), fk.getName(),
+                     dsttab.get_table()->getName());
           return HA_ERR_CANNOT_ADD_FOREIGN;
         }
         fk.setParent(*dsttab.get_table(), idx, cols);
@@ -1859,7 +1870,12 @@ int ha_ndbcluster::recreate_fk_for_truncate(THD *thd, Ndb *ndb,
 
       if (!parent_primary_key && parent_index == nullptr) {
         assert(false);
-        my_error(ER_FK_NO_INDEX_PARENT, MYF(0), fk.getName(), table->getName());
+        if (thd->variables.restrict_fk_on_non_standard_key)
+          my_error(ER_FK_NO_UNIQUE_INDEX_PARENT, MYF(0), fk.getName(),
+                   table->getName());
+        else
+          my_error(ER_FK_NO_INDEX_PARENT, MYF(0), fk.getName(),
+                   table->getName());
         return err_default;
       }
 

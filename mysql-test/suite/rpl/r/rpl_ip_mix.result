@@ -8,12 +8,10 @@ show binary log status;
 File	Position	Binlog_Do_DB	Binlog_Ignore_DB	Executed_Gtid_Set
 master-bin.000001	#	<Binlog_Do_DB>	<Binlog_Ignore_DB>	<Executed_Gtid_Set>
 connection slave;
-reset slave;
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
-Master-Host: No such row
+RESET REPLICA;
+Source-Host: No such row
 CHANGE REPLICATION SOURCE to SOURCE_HOST='::1';
-Master-Host: ::1
+Source-Host: ::1
 disconnect slave;
 disconnect master;
 connection default;
@@ -26,12 +24,10 @@ show binary log status;
 File	Position	Binlog_Do_DB	Binlog_Ignore_DB	Executed_Gtid_Set
 master-bin.000001	#	<Binlog_Do_DB>	<Binlog_Ignore_DB>	<Executed_Gtid_Set>
 connection slave;
-reset slave;
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
-Master-Host: ::1
+RESET REPLICA;
+Source-Host: ::1
 CHANGE REPLICATION SOURCE to SOURCE_HOST='0000:0000:0000:0000:0000:0000:0000:0001';
-Master-Host: 0000:0000:0000:0000:0000:0000:0000:0001
+Source-Host: 0000:0000:0000:0000:0000:0000:0000:0001
 disconnect slave;
 disconnect master;
 connection default;
@@ -44,12 +40,10 @@ show binary log status;
 File	Position	Binlog_Do_DB	Binlog_Ignore_DB	Executed_Gtid_Set
 master-bin.000001	#	<Binlog_Do_DB>	<Binlog_Ignore_DB>	<Executed_Gtid_Set>
 connection slave;
-reset slave;
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
-Master-Host: 0000:0000:0000:0000:0000:0000:0000:0001
+RESET REPLICA;
+Source-Host: 0000:0000:0000:0000:0000:0000:0000:0001
 CHANGE REPLICATION SOURCE to SOURCE_HOST='0:0:0:0:0:0:0:1';
-Master-Host: 0:0:0:0:0:0:0:1
+Source-Host: 0:0:0:0:0:0:0:1
 disconnect slave;
 disconnect master;
 connection default;
@@ -62,16 +56,14 @@ show binary log status;
 File	Position	Binlog_Do_DB	Binlog_Ignore_DB	Executed_Gtid_Set
 master-bin.000001	#	<Binlog_Do_DB>	<Binlog_Ignore_DB>	<Executed_Gtid_Set>
 connection slave;
-reset slave;
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
-Master-Host: 0:0:0:0:0:0:0:1
+RESET REPLICA;
+Source-Host: 0:0:0:0:0:0:0:1
 CHANGE REPLICATION SOURCE to SOURCE_HOST='::1';
-Master-Host: ::1
+Source-Host: ::1
 CHANGE REPLICATION SOURCE to SOURCE_HOST='127.0.0.1';
-Master-Host: 127.0.0.1
+Source-Host: 127.0.0.1
 CHANGE REPLICATION SOURCE to SOURCE_HOST='0:0:0:0:0:0:0:1';
-Master-Host: 0:0:0:0:0:0:0:1
+Source-Host: 0:0:0:0:0:0:0:1
 CHANGE REPLICATION SOURCE TO SOURCE_HOST='127.0.0.1', SOURCE_USER='root';
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.

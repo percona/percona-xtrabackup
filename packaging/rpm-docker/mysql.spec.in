@@ -1,15 +1,16 @@
-# Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -32,6 +33,9 @@
 %global with_meb    1
 %endif
 
+# PGO option
+%{?with_pgo:   %global pgo 1}
+
 # Pass path to mecab lib
 %{?with_mecab: %global mecab_option -DWITH_MECAB=%{with_mecab}}
 %{?with_mecab: %global mecab 1}
@@ -42,6 +46,15 @@
 
 # Regression tests may take a long time, override the default to skip them
 %{!?runselftest:%global runselftest 0}
+
+%ifarch aarch64
+%{?el7:%global __strip /opt/rh/devtoolset-10/root/usr/bin/strip}
+%else
+%{?el7:%global __strip /opt/rh/devtoolset-11/root/usr/bin/strip}
+%endif
+%{?el8:%global __strip /opt/rh/gcc-toolset-12/root/usr/bin/strip}
+%{?el9:%global __strip /opt/rh/gcc-toolset-12/root/usr/bin/strip}
+%global __brp_strip_static_archive %{nil}
 
 %{!?product_suffix:              %global product_suffix community}
 %{!?compilation_comment_release: %global compilation_comment_release MySQL Community - GPL}
@@ -73,32 +86,36 @@ Packager:       MySQL Release Engineering <mysql-build@oss.oracle.com>
 Vendor:         %{mysql_vendor}
 Source0:        https://cdn.mysql.com/Downloads/MySQL-@MYSQL_BASE_VERSION@/%{src_dir}.tar.gz
 %if 0%{?rhel} >= 8
-BuildRequires:  cmake >= 3.6.1
+BuildRequires:  cmake >= 3.14.6
 BuildRequires:  libtirpc-devel
 BuildRequires:  rpcgen
 %else
-BuildRequires:  cmake3 >= 3.6.1
+BuildRequires:  cmake3 >= 3.14.6
 %endif
 %ifarch aarch64
 %{?el7:BuildRequires:  devtoolset-10-gcc}
 %{?el7:BuildRequires:  devtoolset-10-gcc-c++}
 %{?el7:BuildRequires:  devtoolset-10-binutils}
+%{?el7:BuildRequires:  devtoolset-10-dwz}
 %else
 %{?el7:BuildRequires:  devtoolset-11-gcc}
 %{?el7:BuildRequires:  devtoolset-11-gcc-c++}
 %{?el7:BuildRequires:  devtoolset-11-binutils}
+%{?el7:BuildRequires:  devtoolset-11-dwz}
 %endif
 %{?el8:BuildRequires:  gcc-toolset-12-annobin-annocheck}
 %{?el8:BuildRequires:  gcc-toolset-12-annobin-plugin-gcc}
 %{?el8:BuildRequires:  gcc-toolset-12-binutils}
+%{?el8:BuildRequires:  gcc-toolset-12-dwz}
 %{?el8:BuildRequires:  gcc-toolset-12-gcc-c++}
 %{?el8:BuildRequires:  gcc-toolset-12-gcc}
 %{?el9:BuildRequires:  gcc-toolset-12-annobin-annocheck}
 %{?el9:BuildRequires:  gcc-toolset-12-annobin-plugin-gcc}
 %{?el9:BuildRequires:  gcc-toolset-12-binutils}
+%{?el9:BuildRequires:  gcc-toolset-12-dwz}
 %{?el9:BuildRequires:  gcc-toolset-12-gcc-c++}
 %{?el9:BuildRequires:  gcc-toolset-12-gcc}
-BuildRequires:  bison >= 2.1
+BuildRequires:  bison >= 3.0.4
 BuildRequires:  elfutils
 BuildRequires:  time
 BuildRequires:  cyrus-sasl-devel
@@ -115,7 +132,7 @@ BuildRequires:  zlib-devel
 BuildRoot:      %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 
 # For rpm => 4.9 only: https://fedoraproject.org/wiki/Packaging:AutoProvidesAndRequiresFiltering
-%global _privatelibs libprotobuf.*|libfido2.*
+%global _privatelibs libabsl_.*|libprotobuf.*|libfido2.*
 %global _privateperl perl\\((GD|hostnames|lib::mtr|lib::v1|mtr_|My::)
 %global __requires_exclude ^((%{_privatelibs})|(%{_privateperl}))
 %global __provides_exclude_from ^(/usr/share/(mysql|mysql-test)/.*|%{_libdir}/mysql/plugin/.*\\.so|%{_libdir}/mysql/private/.*|%{_libdir}/mysqlrouter/.*)$
@@ -192,6 +209,7 @@ mkdir release
 (
   cd release
   %{cmake3} ../%{src_dir} \
+           %{?pgo:-DFPROFILE_GENERATE=1} \
            -DBUILD_CONFIG=mysql_release \
            -DREPRODUCIBLE_BUILD=OFF \
            -DINSTALL_LAYOUT=RPM \
@@ -219,6 +237,52 @@ mkdir release
   echo BEGIN_NORMAL_CONFIG ; egrep '^#define' include/config.h ; echo END_NORMAL_CONFIG
   make %{?_smp_mflags} VERBOSE=1
 )
+
+%if 0%{?pgo}
+(
+  # Run some MTR load to generate profile data
+  [ -d profile-data ] && rm -rf profile-data
+  pushd release/mysql-test
+  ./mtr \
+    --mem --parallel=auto --force --retry=0 \
+    --mysqld=--binlog-format=row \
+    --clean-vardir --suite=main || true
+  rm -r $(readlink var)
+  popd
+
+  # Build again with profile data present
+  rm -rf release
+  mkdir release && pushd release
+  %{cmake3} ../%{src_dir} \
+           -DFPROFILE_USE=1 \
+           -DBUILD_CONFIG=mysql_release \
+           -DREPRODUCIBLE_BUILD=OFF \
+           -DINSTALL_LAYOUT=RPM \
+           -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+           -DCMAKE_C_FLAGS="%{optflags}" \
+           -DCMAKE_CXX_FLAGS="%{optflags}" \
+           -DINSTALL_MYSQLTESTDIR="" \
+           -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
+           -DMYSQLX_UNIX_ADDR="/var/run/mysqld/mysqlx.sock" \
+           -DWITH_ROUTER=OFF \
+           -DWITH_NUMA=OFF \
+           %{?mecab_option} \
+%if 0%{?cluster}
+           -DWITH_NDB=1 \
+           -DNDB_UTILS_LINK_DYNAMIC=1 \
+%endif
+%if 0%{?commercial}
+           -DWITH_MEB=%{with_meb} \
+           -DWITH_CURL=system \
+           %{?aws_sdk_option} \
+%endif
+           -DCOMPILATION_COMMENT="%{compilation_comment_release}" \
+           -DCOMPILATION_COMMENT_SERVER="%{compilation_comment_server_release}" \
+           -DMYSQL_SERVER_SUFFIX="%{?server_suffix}"
+  echo BEGIN_NORMAL_CONFIG ; egrep '^#define' include/config.h ; echo END_NORMAL_CONFIG
+  make %{?_smp_mflags} VERBOSE=1
+)
+%endif # pgo
 
 %install
 MBD=$RPM_BUILD_DIR/%{src_dir}
@@ -248,7 +312,7 @@ for f in innochecksum ibd2sdi myisamchk myisam_ftdump myisamlog myisampack \
          my_safe_process %{!?cluster:mysqlbinlog} mysqlcheck mysql_client_test \
          mysql_config_editor mysqld_multi mysqld_safe mysqldumpslow mysqlimport \
          mysql_secure_installation mysqlshow mysqlslap mysqltest mysqltest_safe_process mysqlxtest \
-         comp_err perror lz4_decompress zlib_decompress mysql_keyring_encryption_test \
+         comp_err perror mysql_keyring_encryption_test \
          mysql_test_event_tracking; do
     rm -f %{buildroot}%{_bindir}/$f
 done
@@ -276,6 +340,9 @@ for p in \
          component_test_audit_api_message.so \
          component_test_backup_lock_service.so \
          component_test_component_sys_var_service.so \
+         component_test_execute_prepared_statement.so \
+         component_test_execute_regular_statement.so \
+         component_test_mysql_signal_handler.so \
          component_test_host_application_signal.so \
          component_test_mysql_current_thread_reader.so \
          component_test_mysql_runtime_error.so \
@@ -357,10 +424,6 @@ rm -rf %{buildroot}%{_libdir}/mysql/libndbclient_static.a
 rm -rf %{buildroot}%{_libdir}/mysql/libndbclient.so
 %endif
 
-# Remove files pages we explicitly do not want to package
-rm -f %{buildroot}%{_datadir}/mysql-*/win_install_firewall.sql
-rm -f %{buildroot}%{_datadir}/mysql-*/audit_log_filter_win_install.sql
-
 %check
 %if 0%{?runselftest} || 0%{?with_unittests}
 pushd release
@@ -426,28 +489,107 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_bindir}/mysql
 %attr(755, root, root) %{_bindir}/mysqladmin
 %attr(755, root, root) %{_bindir}/mysqldump
-%attr(755, root, root) %{_bindir}/mysqlpump
 %attr(755, root, root) %{_bindir}/mysql_config
-%attr(755, root, root) %{_bindir}/mysql_ssl_rsa_setup
 %attr(755, root, root) %{_bindir}/mysql_tzinfo_to_sql
-%attr(755, root, root) %{_bindir}/mysql_upgrade
 %attr(755, root, root) %{_bindir}/my_print_defaults
 %attr(755, root, root) %{_bindir}/mysql_migrate_keyring
 
 %dir %{_libdir}/mysql/private
-%attr(755, root, root) %{_libdir}/mysql/private/libprotobuf-lite.so.3.19.4
-%attr(755, root, root) %{_libdir}/mysql/private/libprotobuf.so.3.19.4
+%attr(755, root, root) %{_libdir}/mysql/private/libprotobuf-lite.so.24.4.0
+%attr(755, root, root) %{_libdir}/mysql/private/libprotobuf.so.24.4.0
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_bad_any_cast_impl.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_bad_optional_access.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_bad_variant_access.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_base.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_city.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_civil_time.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_cord_internal.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_cord.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_cordz_functions.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_cordz_handle.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_cordz_info.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_cordz_sample_token.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_crc32c.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_crc_cord_state.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_crc_cpu_detect.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_crc_internal.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_debugging_internal.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_demangle_internal.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_die_if_null.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_examine_stack.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_exponential_biased.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_failure_signal_handler.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_flags_commandlineflag_internal.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_flags_commandlineflag.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_flags_config.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_flags_internal.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_flags_marshalling.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_flags_parse.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_flags_private_handle_accessor.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_flags_program_name.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_flags_reflection.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_flags.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_flags_usage_internal.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_flags_usage.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_graphcycles_internal.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_hash.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_hashtablez_sampler.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_int128.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_kernel_timeout_internal.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_leak_check.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_log_entry.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_log_flags.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_log_globals.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_log_initialize.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_log_internal_check_op.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_log_internal_conditions.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_log_internal_format.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_log_internal_globals.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_log_internal_log_sink_set.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_log_internal_message.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_log_internal_nullguard.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_log_internal_proto.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_log_severity.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_log_sink.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_low_level_hash.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_malloc_internal.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_periodic_sampler.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_random_distributions.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_random_internal_distribution_test_util.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_random_internal_platform.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_random_internal_pool_urbg.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_random_internal_randen_hwaes_impl.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_random_internal_randen_hwaes.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_random_internal_randen_slow.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_random_internal_randen.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_random_internal_seed_material.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_random_seed_gen_exception.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_random_seed_sequences.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_raw_hash_set.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_raw_logging_internal.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_scoped_set_env.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_spinlock_wait.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_stacktrace.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_statusor.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_status.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_strerror.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_str_format_internal.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_strings_internal.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_strings.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_string_view.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_symbolize.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_synchronization.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_throw_delegate.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_time.so
+%attr(755, root, root) %{_libdir}/mysql/private/libabsl_time_zone.so
 %if 0%{?add_fido_plugins}
 %attr(755, root, root) %{_libdir}/mysql/private/libfido2.*
 %endif # add_fido_plugins
-
-
 %dir %{_libdir}/mysql/plugin
 %attr(755, root, root) %{_libdir}/mysql/plugin/adt_null.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/auth_socket.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_ldap_sasl_client.so
 %if 0%{?add_fido_plugins}
-%attr(755, root, root) %{_libdir}/mysql/plugin/authentication_fido_client.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_webauthn_client.so
 %endif # add_fido_plugins
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_kerberos_client.so
@@ -463,7 +605,6 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_reference_cache.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/connection_control.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/ddl_rewriter.so
-%attr(755, root, root) %{_libdir}/mysql/plugin/keyring_file.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_udf.so
 %if 0%{?mecab}
 %{_libdir}/mysql/mecab
@@ -535,14 +676,10 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/telemetry_client.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/data_masking.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_okv.so
-%attr(755, root, root) %{_libdir}/mysql/plugin/keyring_encrypted_file.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_hashicorp.so
-%attr(755, root, root) %{_libdir}/mysql/plugin/keyring_oci.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/thread_pool.so
-%attr(755, root, root) %{_libdir}/mysql/plugin/openssl_udf.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/firewall.so
 %if 0%{?add_fido_plugins}
-%attr(755, root, root) %{_libdir}/mysql/plugin/authentication_fido.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_webauthn.so
 %endif # add_fido_plugins
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_keyring_encrypted_file.so
@@ -568,6 +705,27 @@ rm -r $(readlink var) var
 %dir %attr(750, mysql, mysql) /var/lib/mysql-keyring
 
 %changelog
+* Mon Feb 12 2024 Samar Pratap Singh <samar.pratap.singh@oracle.com> - 8.4.0-1
+- Removed keyring_file plugin
+
+* Tue Jan 30 2024 Samar Pratap Singh <samar.pratap.singh@oracle.com> - 8.4.0-1
+- Removed keyring_encrypted_file plugin
+
+* Thu Jan 25 2024 Georgi "Joro" Kodinov <Georgi.Kodinov@oracle.com> - 8.4.0-1
+- Removed mysql_ssl_rsa_setup
+
+* Tue Jan 09 2024 Harin Vadodaria <harin.vadodaria@oracle.com> - 8.4.0-1
+- Removed openssl_udf plugin
+
+* Tue Jan 02 2024 Harin Vadodaria <harin.vadodaria@oracle.com> - 8.4.0-1
+- Removed authentication_fido and authentication_fido_client plugins
+
+* Mon Nov 27 2023 Miroslav Rajcic <miroslav.rajcic@oracle.com> - 8.4.0-1
+- Removed mysqlpump, mysql_upgrade, zlib_decompress and lz4_decompress binaries
+
+* Mon Nov 20 2023 Samar Pratap Singh <samar.pratap.singh@oracle.com> - 8.4.0-1
+- Removed keyring_oci plugin
+
 * Mon Jul 24 2023 Miroslav Rajcic <miroslav.rajcic@oracle.com> - 8.2.0-1
 - Added component_test_server_telemetry_metrics test component
 

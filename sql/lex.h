@@ -1,18 +1,19 @@
 #ifndef LEX_INCLUDED
 #define LEX_INCLUDED
 
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -96,6 +97,7 @@ static const SYMBOL symbols[] = {
     {SYM("AT", AT_SYM)},
     {SYM("ATTRIBUTE", ATTRIBUTE_SYM)},
     {SYM("AUTHENTICATION", AUTHENTICATION_SYM)},
+    {SYM("AUTO", AUTO_SYM)},
     {SYM("AUTO_INCREMENT", AUTO_INC)},
     {SYM("AUTOEXTEND_SIZE", AUTOEXTEND_SIZE_SYM)},
     {SYM("AVG", AVG_SYM)},
@@ -103,6 +105,7 @@ static const SYMBOL symbols[] = {
     {SYM("BACKUP", BACKUP_SYM)},
     {SYM("BEFORE", BEFORE_SYM)},
     {SYM("BEGIN", BEGIN_SYM)},
+    {SYM("BERNOULLI", BERNOULLI_SYM)},
     {SYM("BETWEEN", BETWEEN_SYM)},
     {SYM("BIGINT", BIGINT_SYM)},
     {SYM("BINARY", BINARY_SYM)},
@@ -288,7 +291,6 @@ static const SYMBOL symbols[] = {
     {SYM("GEOMETRY", GEOMETRY_SYM)},
     {SYM("GEOMETRYCOLLECTION", GEOMETRYCOLLECTION_SYM)},
     {SYM("GET_FORMAT", GET_FORMAT)},
-    {SYM("GET_MASTER_PUBLIC_KEY", GET_MASTER_PUBLIC_KEY_SYM)},
     {SYM("GET_SOURCE_PUBLIC_KEY", GET_SOURCE_PUBLIC_KEY_SYM)},
     {SYM("GET", GET_SYM)},
     {SYM("GENERATE", GENERATE_SYM)},
@@ -396,33 +398,8 @@ static const SYMBOL symbols[] = {
     {SYM("LONGTEXT", LONGTEXT_SYM)},
     {SYM("LOOP", LOOP_SYM)},
     {SYM("LOW_PRIORITY", LOW_PRIORITY)},
+    {SYM("MANUAL", MANUAL_SYM)},
     {SYM("MASTER", MASTER_SYM)},
-    {SYM("MASTER_AUTO_POSITION", MASTER_AUTO_POSITION_SYM)},
-    {SYM("MASTER_BIND", MASTER_BIND_SYM)},
-    {SYM("MASTER_CONNECT_RETRY", MASTER_CONNECT_RETRY_SYM)},
-    {SYM("MASTER_COMPRESSION_ALGORITHMS", MASTER_COMPRESSION_ALGORITHM_SYM)},
-    {SYM("MASTER_DELAY", MASTER_DELAY_SYM)},
-    {SYM("MASTER_HEARTBEAT_PERIOD", MASTER_HEARTBEAT_PERIOD_SYM)},
-    {SYM("MASTER_HOST", MASTER_HOST_SYM)},
-    {SYM("MASTER_LOG_FILE", MASTER_LOG_FILE_SYM)},
-    {SYM("MASTER_LOG_POS", MASTER_LOG_POS_SYM)},
-    {SYM("MASTER_PASSWORD", MASTER_PASSWORD_SYM)},
-    {SYM("MASTER_PORT", MASTER_PORT_SYM)},
-    {SYM("MASTER_PUBLIC_KEY_PATH", MASTER_PUBLIC_KEY_PATH_SYM)},
-    {SYM("MASTER_RETRY_COUNT", MASTER_RETRY_COUNT_SYM)},
-    {SYM("MASTER_SSL", MASTER_SSL_SYM)},
-    {SYM("MASTER_SSL_CA", MASTER_SSL_CA_SYM)},
-    {SYM("MASTER_SSL_CAPATH", MASTER_SSL_CAPATH_SYM)},
-    {SYM("MASTER_SSL_CERT", MASTER_SSL_CERT_SYM)},
-    {SYM("MASTER_SSL_CIPHER", MASTER_SSL_CIPHER_SYM)},
-    {SYM("MASTER_SSL_CRL", MASTER_SSL_CRL_SYM)},
-    {SYM("MASTER_SSL_CRLPATH", MASTER_SSL_CRLPATH_SYM)},
-    {SYM("MASTER_SSL_KEY", MASTER_SSL_KEY_SYM)},
-    {SYM("MASTER_SSL_VERIFY_SERVER_CERT", MASTER_SSL_VERIFY_SERVER_CERT_SYM)},
-    {SYM("MASTER_TLS_CIPHERSUITES", MASTER_TLS_CIPHERSUITES_SYM)},
-    {SYM("MASTER_TLS_VERSION", MASTER_TLS_VERSION_SYM)},
-    {SYM("MASTER_USER", MASTER_USER_SYM)},
-    {SYM("MASTER_ZSTD_COMPRESSION_LEVEL", MASTER_ZSTD_COMPRESSION_LEVEL_SYM)},
     {SYM("MATCH", MATCH)},
     {SYM("MAX_CONNECTIONS_PER_HOUR", MAX_CONNECTIONS_PER_HOUR)},
     {SYM("MAX_QUERIES_PER_HOUR", MAX_QUERIES_PER_HOUR)},
@@ -740,6 +717,7 @@ static const SYMBOL symbols[] = {
     {SYM("TABLE", TABLE_SYM)},
     {SYM("TABLE_NAME", TABLE_NAME_SYM)},
     {SYM("TABLES", TABLES)},
+    {SYM("TABLESAMPLE", TABLESAMPLE_SYM)},
     {SYM("TABLESPACE", TABLESPACE_SYM)},
     {SYM("TABLE_CHECKSUM", TABLE_CHECKSUM_SYM)},
     {SYM("TEMPORARY", TEMPORARY)},

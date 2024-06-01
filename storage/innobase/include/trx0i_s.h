@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 2007, 2023, Oracle and/or its affiliates.
+Copyright (c) 2007, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -132,59 +133,84 @@ struct i_s_locks_row_t {
 
 /** This structure represents INFORMATION_SCHEMA.innodb_trx row */
 struct i_s_trx_row_t {
-  trx_id_t trx_id;       /*!< transaction identifier */
-  const char *trx_state; /*!< transaction state from
-                         trx_get_que_state_str() */
-  std::chrono::system_clock::time_point trx_started; /*!< trx_t::start_time */
+  /** transaction identifier */
+  trx_id_t trx_id;
+
+  /** transaction state from trx_get_que_state_str()*/
+  const char *trx_state;
+
+  /** trx_t::start_time */
+  std::chrono::system_clock::time_point trx_started;
+
+  /** a description of lock request if trx is waiting, or nullptr otherwise */
   const i_s_locks_row_t *requested_lock_row;
-  /*!< pointer to a row
-  in innodb_locks if trx
-  is waiting, or NULL */
 
   /** The value of trx->lock.wait_started */
   std::chrono::system_clock::time_point trx_wait_started;
+
   /** The value of TRX_WEIGHT(trx) */
   uintmax_t trx_weight;
+
   /** If `first` is `true` then `second` is the value of the
   trx->lock.schedule_weight, otherwise the `second` should be ignored and
   displayed as NULL to the end user.
   (This could be std::optional once we move to C++17) */
   std::pair<bool, trx_schedule_weight_t> trx_schedule_weight;
-  ulint trx_mysql_thread_id;        /*!< thd_get_thread_id() */
-  const char *trx_query;            /*!< MySQL statement being
-                                    executed in the transaction */
-  const CHARSET_INFO *trx_query_cs; /*!< the charset of trx_query */
-  const char *trx_operation_state;  /*!< trx_t::op_info */
-  ulint trx_tables_in_use;          /*!< n_mysql_tables_in_use in
-                                   trx_t */
+
+  /** thd_get_thread_id() */
+  ulint trx_mysql_thread_id;
+
+  /** TRX_I_S_TRX_QUERY_MAX_LEN byte prefix of MySQL statement being executed
+  in the transaction */
+  const char *trx_query;
+
+  /** the charset of trx_query */
+  const CHARSET_INFO *trx_query_cs;
+
+  /** trx_t::op_info */
+  const char *trx_operation_state;
+
+  /** n_mysql_tables_in_use in trx_t*/
+  ulint trx_tables_in_use;
+
+  /** mysql_n_tables_locked in trx_t */
   ulint trx_tables_locked;
-  /*!< mysql_n_tables_locked in
-  trx_t */
-  ulint trx_lock_structs; /*!< list len of trx_locks in
-                         trx_t */
+
+  /** list len of trx_locks in trx_t */
+  ulint trx_lock_structs;
+
+  /** mem_heap_get_size(trx->lock_heap) */
   ulint trx_lock_memory_bytes;
-  /*!< mem_heap_get_size(
-  trx->lock_heap) */
-  ulint trx_rows_locked;       /*!< lock_number_of_rows_locked() */
-  uintmax_t trx_rows_modified; /*!< trx_t::undo_no */
+
+  /** lock_number_of_rows_locked() */
+  ulint trx_rows_locked;
+
+  /** trx_t::undo_no */
+  uintmax_t trx_rows_modified;
+
+  /** n_tickets_to_enter_innodb in trx_t */
   ulint trx_concurrency_tickets;
-  /*!< n_tickets_to_enter_innodb in
-  trx_t */
+
+  /** isolation_level in trx_t */
   const char *trx_isolation_level;
-  /*!< isolation_level in trx_t */
+
+  /** check_unique_secondary in trx_t */
   bool trx_unique_checks;
-  /*!< check_unique_secondary in trx_t*/
+
+  /** check_foreigns in trx_t */
   bool trx_foreign_key_checks;
-  /*!< check_foreigns in trx_t */
+
+  /** detailed_error in trx_t */
   const char *trx_foreign_key_error;
-  /*!< detailed_error in trx_t */
+
+  /** has_search_latch in trx_t */
   bool trx_has_search_latch;
-  /*!< has_search_latch in trx_t */
+
+  /** trx_t::read_only */
   ulint trx_is_read_only;
-  /*!< trx_t::read_only */
+
+  /** trx_is_autocommit_non_locking(trx) */
   ulint trx_is_autocommit_non_locking;
-  /*!< trx_is_autocommit_non_locking(trx)
-   */
 };
 
 /** Cache of INFORMATION_SCHEMA table data */
@@ -251,12 +277,15 @@ constexpr uint32_t TRX_I_S_LOCK_ID_MAX_LEN = 20 * 5 + 4;
  second argument. This function aborts if there is not enough space in
  lock_id. Be sure to provide at least TRX_I_S_LOCK_ID_MAX_LEN + 1 if you
  want to be 100% sure that it will not abort.
+ @param[in]     row
+                    The description of the lock sufficient to populate a row
+ @param[out]    lock_id
+                    The buffer to store the resulting lock_id
+ @param[in]     lock_id_size
+                    The size of the lock_id buffer
  @return resulting lock id */
-char *trx_i_s_create_lock_id(
-    const i_s_locks_row_t *row, /*!< in: innodb_locks row */
-    char *lock_id,              /*!< out: resulting lock_id */
-    ulint lock_id_size);        /*!< in: size of the lock id
-                          buffer */
+char *trx_i_s_create_lock_id(const i_s_locks_row_t &row, char *lock_id,
+                             size_t lock_id_size);
 
 /** Fill performance schema lock data.
 Create a string that represents the LOCK_DATA

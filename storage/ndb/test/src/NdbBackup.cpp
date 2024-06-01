@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -514,9 +515,6 @@ int NdbBackup::NF(NdbRestarter &_restarter, int *NFDuringBackup_codes,
     CHECK(_restarter.dumpStateAllNodes(val2, 2) == 0,
           "failed to check backup resources RestartOnErrorInsert");
 
-    CHECK(_restarter.insertErrorInNode(nodeId, 10099) == 0,
-          "failed to set error insert");
-
     NdbSleep_SecSleep(1);
   }
 
@@ -551,13 +549,13 @@ int NdbBackup::Fail(NdbRestarter &_restarter, int *Fail_codes, const int sz,
 
   myRandom48Init((long)NdbTick_CurrentMillisecond());
 
+  int nodeId;
   for (int i = 0; i < sz; i++) {
     int error = Fail_codes[i];
     unsigned int backupId;
 
     const int masterNodeId = _restarter.getMasterNodeId();
     CHECK(masterNodeId > 0, "getMasterNodeId failed");
-    int nodeId;
 
     nodeId = masterNodeId;
     if (!onMaster) {
@@ -589,7 +587,8 @@ int NdbBackup::Fail(NdbRestarter &_restarter, int *Fail_codes, const int sz,
 
     CHECK(_restarter.waitClusterStarted() == 0, "waitClusterStarted failed");
 
-    CHECK(_restarter.insertErrorInNode(nodeId, 10099) == 0,
+    // Clear current error inserted (Fail_codes[i])
+    CHECK(_restarter.insertErrorInNode(nodeId, 0) == 0,
           "failed to set error insert");
 
     NdbSleep_SecSleep(5);

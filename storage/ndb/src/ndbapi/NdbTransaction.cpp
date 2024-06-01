@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1026,9 +1027,9 @@ int NdbTransaction::executeNoBlobs(NdbTransaction::ExecType aTypeOfExec,
             "file a bug.");
         DBUG_PRINT("error", ("This timeout should never occure, execute()"));
         g_eventLogger->error(
-            "Forcibly trying to rollback txn (%p"
+            "Forcibly trying to rollback txn (0x%x 0x%x"
             ") to try to clean up data node resources.",
-            this);
+            (Uint32)theTransactionId, (Uint32)(theTransactionId >> 32));
         executeNoBlobs(NdbTransaction::Rollback);
         theError.code = 4012;
         theError.status = NdbError::PermanentError;
@@ -1580,7 +1581,8 @@ int NdbTransaction::sendROLLBACK()  // Send a TCROLLBACKREQ signal;
     tSignal.setData(tTransId1, 2);
     tSignal.setData(tTransId2, 3);
     if (theError.code == 4012) {
-      g_eventLogger->error("Sending TCROLLBACKREQ with Bad flag");
+      g_eventLogger->error("Sending TCROLLBACKREQ with Bad flag to %u",
+                           theDBnode);
       tSignal.setLength(tSignal.getLength() + 1);  // + flags
       tSignal.setData(0x1, 4);                     // potentially bad data
     }
@@ -2600,7 +2602,7 @@ from other transactions.
     if (tNoComp >= tNoSent) {
       return 0;  // No more operations to wait for
     }            // if
-       // Not completed the reception yet.
+                 // Not completed the reception yet.
   } else {
 #ifdef NDB_NO_DROPPED_SIGNAL
     abort();
@@ -2668,7 +2670,7 @@ int NdbTransaction::receiveTCKEY_FAILCONF(const TcKeyFailConf *failConf) {
     return 0;
   } else {
 #ifdef VM_TRACE
-    g_eventLogger->info("Recevied TCKEY_FAILCONF wo/ operation");
+    g_eventLogger->info("Received TCKEY_FAILCONF wo/ operation");
 #endif
   }
   return -1;
@@ -2711,7 +2713,7 @@ int NdbTransaction::receiveTCKEY_FAILREF(const NdbApiSignal *aSignal) {
     return 0;
   } else {
 #ifdef VM_TRACE
-    g_eventLogger->info("Recevied TCKEY_FAILREF wo/ operation");
+    g_eventLogger->info("Received TCKEY_FAILREF wo/ operation");
 #endif
   }
   return -1;

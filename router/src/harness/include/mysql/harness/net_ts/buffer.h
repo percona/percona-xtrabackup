@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,7 +28,8 @@
 
 #include <algorithm>  // copy
 #include <array>
-#include <limits>     // std::numeric_limits
+#include <limits>  // std::numeric_limits
+#include <span>
 #include <stdexcept>  // length_error
 #include <string>
 #include <string_view>
@@ -39,7 +41,6 @@
 #include "mysql/harness/net_ts/executor.h"               // async_completion
 #include "mysql/harness/net_ts/impl/socket_constants.h"  // wait_write
 #include "mysql/harness/stdx/expected.h"
-#include "mysql/harness/stdx/span.h"
 
 namespace net {
 
@@ -496,7 +497,7 @@ inline const_buffer buffer(
 }
 
 template <class T, std::size_t E>
-inline const_buffer buffer(const stdx::span<T, E> &data) noexcept {
+inline const_buffer buffer(const std::span<T, E> &data) noexcept {
   return data.empty() ? const_buffer{}
                       : impl::to_const_buffer(data.data(), data.size());
 }
@@ -552,7 +553,7 @@ inline const_buffer buffer(
 }
 
 template <class T, std::size_t E>
-inline const_buffer buffer(const stdx::span<T, E> &data, size_t n) noexcept {
+inline const_buffer buffer(const std::span<T, E> &data, size_t n) noexcept {
   return buffer(buffer(data), n);
 }
 
@@ -901,11 +902,12 @@ read(SyncReadStream &stream, DynamicBuffer &&b, CompletionCondition cond) {
 
       // if socket was non-blocking and some bytes where already read, return
       // the success
-      const auto ec = res.error();
-      if ((ec == make_error_condition(
-                     std::errc::resource_unavailable_try_again) ||
-           ec == make_error_condition(std::errc::operation_would_block) ||
-           ec == net::stream_errc::eof) &&
+      const auto error_code = res.error();
+      if ((error_code == make_error_condition(
+                             std::errc::resource_unavailable_try_again) ||
+           error_code ==
+               make_error_condition(std::errc::operation_would_block) ||
+           error_code == net::stream_errc::eof) &&
           transferred != 0) {
         return transferred;
       }
@@ -1020,7 +1022,7 @@ write(SyncWriteStream &stream, const ConstBufferSequence &buffers,
       ((ec != make_error_condition(std::errc::resource_unavailable_try_again) &&
         ec != make_error_condition(std::errc::operation_would_block)) ||
        consumable.total_consumed() == 0)) {
-    return stdx::make_unexpected(ec);
+    return stdx::unexpected(ec);
   } else {
     return {consumable.total_consumed()};
   }
@@ -1059,7 +1061,7 @@ write(SyncWriteStream &stream, DynamicBuffer &&b, CompletionCondition cond) {
       ((ec != make_error_condition(std::errc::resource_unavailable_try_again) &&
         ec != make_error_condition(std::errc::operation_would_block)) ||
        transferred == 0)) {
-    return stdx::make_unexpected(ec);
+    return stdx::unexpected(ec);
   } else {
     return transferred;
   }

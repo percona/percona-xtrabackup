@@ -1,15 +1,16 @@
-/* Copyright (c) 2014, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1163,6 +1164,8 @@ void Plugin_gcs_events_handler::handle_joining_members(const Gcs_view &new_view,
       leave_group_on_failure::mask leave_actions;
       leave_actions.set(leave_group_on_failure::SKIP_SET_READ_ONLY, true);
       leave_actions.set(leave_group_on_failure::SKIP_LEAVE_VIEW_WAIT, true);
+      leave_actions.set(leave_group_on_failure::CLEAN_GROUP_MEMBERSHIP, true);
+      leave_actions.set(leave_group_on_failure::HANDLE_EXIT_STATE_ACTION, true);
       leave_group_on_failure::leave(leave_actions,
                                     ER_GRP_RPL_SUPER_READ_ONLY_ACTIVATE_ERROR,
                                     &m_notification_ctx, "");
@@ -1294,6 +1297,8 @@ void Plugin_gcs_events_handler::handle_joining_members(const Gcs_view &new_view,
       */
       leave_group_on_failure::mask leave_actions;
       leave_actions.set(leave_group_on_failure::SKIP_LEAVE_VIEW_WAIT, true);
+      leave_actions.set(leave_group_on_failure::CLEAN_GROUP_MEMBERSHIP, true);
+      leave_actions.set(leave_group_on_failure::HANDLE_EXIT_STATE_ACTION, true);
       leave_group_on_failure::leave(leave_actions, 0, &m_notification_ctx, "");
       return;
     }
@@ -1807,6 +1812,7 @@ Plugin_gcs_events_handler::check_version_compatibility_with_group() const {
   Group_member_info_list_iterator all_members_it;
 
   Member_version lowest_version(0xFFFFFF);
+  /* Does not include local member version. */
   std::set<Member_version> unique_version_set;
   /* Find lowest member version and unique versions of the group for
    * comparison. */
@@ -1819,12 +1825,20 @@ Plugin_gcs_events_handler::check_version_compatibility_with_group() const {
       unique_version_set.insert((*all_members_it)->get_member_version());
     }
   }
+
+  /* Fetch all unique server versions in the group. */
+  std::set<Member_version> all_members_versions;
+  for (all_members_it = all_members->begin();
+       all_members_it != all_members->end(); all_members_it++) {
+    all_members_versions.insert((*all_members_it)->get_member_version());
+  }
+
   for (auto it = unique_version_set.begin();
        it != unique_version_set.end() && compatibility_type != INCOMPATIBLE;
        ++it) {
     Member_version ver(*it);
     compatibility_type = compatibility_manager->check_local_incompatibility(
-        ver, (ver == lowest_version));
+        ver, (ver == lowest_version), all_members_versions);
 
     if (compatibility_type == READ_COMPATIBLE) {
       read_compatible = true;
@@ -2059,6 +2073,16 @@ int Plugin_gcs_events_handler::compare_member_option_compatibility() const {
                      local_member_info->get_allow_single_leader(),
                      (*all_members_it)->get_allow_single_leader());
       }
+      goto cleaning;
+    }
+
+    if (local_member_info->get_preemptive_garbage_collection() !=
+        (*all_members_it)->get_preemptive_garbage_collection()) {
+      result = 1;
+      LogPluginErr(ERROR_LEVEL,
+                   ER_GRP_RPL_PREEMPTIVE_GARBAGE_COLLECTION_DIFF_FROM_GRP,
+                   local_member_info->get_preemptive_garbage_collection(),
+                   (*all_members_it)->get_preemptive_garbage_collection());
       goto cleaning;
     }
   }

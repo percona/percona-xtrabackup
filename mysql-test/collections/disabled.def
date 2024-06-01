@@ -29,7 +29,6 @@ audit_null.audit_plugin_bugs : BUG#28080637 Test fails consistently
 # binlog suite tests
 binlog.binlog_mysqlbinlog_rewrite_db @windows     : BUG#26717205 Requires a debug client binary and fails consistently.
 binlog_gtid.binlog_xa_select_gtid_executed_explicitly_crash : Bug#28588717 Fails both on FreeBSD and other platforms
-binlog_nogtid.binlog_gtid_next_xa                 : BUG#33650776 Failure of XA COMMIT of prepared txn, can result in txn rollback
 # func1 suite tests
 funcs_1.is_basics_mixed @darwin  : BUG#25882809 INCORRECT RESULT WHEN USING SUBQUERY ON TOP OF VIEW.
 funcs_1.is_basics_mixed @windows : BUG#25882809 INCORRECT RESULT WHEN USING SUBQUERY ON TOP OF VIEW.
@@ -46,13 +45,9 @@ innodb.ddl_crash_alter_table_partition_tablespace : WL#12034 Enable again once s
 innodb.innodb_bug14676111                         : BUG#18200831 The test has never worked correctly
 innodb.fts_exec_interrupt                         : Bug#28534199 The test is unstable and should be rewritten
 innodb.slow_shutdown                              : Bug#31763837 mtr hits this debug assert post test run cleanup
-innodb.upgrade_fts_aux                            : Bug#33034679 Test needs an upgrade of its 5.7 data files
 innodb.instant_ddl_recovery_old                   : WL#12527 Redo format has changed - crashed_datadir.zip needs to be recreated.
 innodb.log_logical_size                           : Bug#35543413 Test is shaky - needs to be fixed.
 innodb.set_concurrency_in_readonly                : Bug#35573783 innodb.set_concurrency_in_readonly is failing in trunk
-
-# keyring tests
-keyring_encrypted_file.keyring_migration_bugs @darwin : Bug#31041633
 
 # Tests that run ALTER on the "mysql" database
 innodb.mysql_ts_alter_encrypt_1                 : BUG#29531106 - ATTACHABLE_TRX(): ASSERTION `!M_THD->TRANSACTION_ROLLBACK_REQUEST' FAILED
@@ -61,7 +56,6 @@ component_keyring_file.mysql_ts_alter_encrypt_1 : BUG#29531106 - ATTACHABLE_TRX(
 
 # main suite tests
 main.ds_mrr-big @solaris : BUG#14168107 Test leads to timeout on Solaris on slow sparc servers.
-main.gtid_next_xa_binlog_off : BUG#33650776 Failure of XA COMMIT of prepared txn, can result in txn rollback
 main.print_stacktrace : Bug#36027494 Add mtr test for my_print_stacktrace
 
 # Disabled due to InnoDB issues
@@ -97,10 +91,15 @@ rpl_gtid.rpl_start_replica_until_pos_with_gtid_only      : Bug#33119241 START RE
 # rpl_nogtid suite tests
 rpl_nogtid.rpl_perfschema_applier_xa_status_check : BUG#27914287 Disabled until the WL#9075 (Performance Schema, XA Transactions) be implemented
 rpl_nogtid.rpl_binlog_format_errors               : BUG#29776083 EXPLICIT BINLOG INJECTION WITH SELF LOGGING ENGINES IS BROKEN
+rpl_nogtid.rpl_nogtid_encryption_read             : Bug#36172046 Update rpl_nogtid.rpl_nogtid_encryption_read test to not use keyring_file
 
 # rpl suite tests
 rpl.rpl_io_thd_wait_for_disk_space_stress : BUG#23581287 Disabled until bug is fixed.
 rpl.rpl_writeset_add_unique_key : Bug#33134835 RPL_WRITESET_ADD_UNIQUE_KEY FAILS SPORADICALLY
+rpl.rpl_replication_observers_example_plugin_ongoing_transaction : Bug#35982448	rpl_replication_observers_example_plugin_ongoing_transaction fails 
+
+# secondary_engine tests
+secondary_engine.query_preparation : BUG#36306426 Disabled until bug is fixed
 
 # sys_vars tests
 sys_vars.max_execution_time_basic @freebsd : BUG#31041720
@@ -117,6 +116,7 @@ sysschema.v_wait_classes_global_by_avg_latency : BUG#21550054 Test fails too oft
 group_replication.gr_join_with_suspect_member : BUG#31704262 XCOM CREATES NODES WITH PAST GHOST VIEWS
 group_replication.gr_leave_with_suspect_member : BUG#31704262 XCOM CREATES NODES WITH PAST GHOST VIEWS
 group_replication.gr_majority_loss_restored_after_timeout : BUG#31704262 XCOM CREATES NODES WITH PAST GHOST VIEWS
+group_replication.gr_primary_manual_failover_vs_dcl_rename_user : BUG#36020917 Disabled until bug is fixed
 group_replication.gr_primary_mode_group_operations_41_1 : BUG#35527247 Disabled until bug is fixed
 group_replication.gr_primary_mode_group_operations_joining_during_election @windows : BUG#33679225 Disabled until bug is fixed
 group_replication.gr_primary_mode_group_operations_net_partition_4 @windows : BUG#34673762 Disabled until bug is fixed

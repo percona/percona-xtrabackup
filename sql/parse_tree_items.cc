@@ -1,15 +1,16 @@
-/* Copyright (c) 2013, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -131,7 +132,7 @@ static Item *handle_sql2003_note184_exception(Parse_context *pc, Item *left,
 
   DBUG_TRACE;
 
-  if (expr->type() == Item::SUBSELECT_ITEM) {
+  if (expr->type() == Item::SUBQUERY_ITEM) {
     Item_subselect *expr2 = (Item_subselect *)expr;
 
     if (expr2->subquery_type() == Item_subselect::SCALAR_SUBQUERY) {
@@ -693,7 +694,9 @@ bool PTI_int_splocal::do_itemize(Parse_context *pc, Item **res) {
   if (v == nullptr) {
     return true;  // undefined variable or OOM
   }
-  if (v->type() != Item::INT_ITEM) {
+  // Data type for a routine field is resolved during parsing, so this is OK:
+  if (v->type() == Item::ROUTINE_FIELD_ITEM &&
+      !is_integer_type(v->data_type())) {
     pc->thd->syntax_error_at(m_location, ER_SPVAR_NONINTEGER_TYPE, m_name.str);
     return true;
   }

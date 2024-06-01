@@ -1,16 +1,17 @@
 /*
- * Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
  * as published by the Free Software Foundation.
  *
- * This program is also distributed with certain software (including
+ * This program is designed to work with certain software (including
  * but not limited to OpenSSL) that is licensed under separate terms,
  * as designated in a particular file or component or in included license
  * documentation.  The authors of MySQL hereby grant you an additional
  * permission to link the program and your derivative works with the
- * separately licensed software that they have included with MySQL.
+ * separately licensed software that they have either included with
+ * the program or referenced in the documentation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,6 +29,7 @@
 #include <memory>
 #include <string>
 
+#include "plugin/x/src/interface/sql_session.h"
 #include "plugin/x/src/interface/ssl_context.h"
 #include "plugin/x/src/variables/ssl_config.h"
 
@@ -35,7 +37,8 @@ namespace xpl {
 
 class Ssl_context_builder {
  public:
-  Ssl_context_builder() = default;
+  Ssl_context_builder(xpl::iface::Sql_session *sql_session)
+      : m_sql_session(sql_session) {}
 
   std::unique_ptr<iface::Ssl_context> get_result_context() const;
 
@@ -51,6 +54,8 @@ class Ssl_context_builder {
     std::string m_ssl_tls_version;
     bool m_have_ssl = false;
   };
+
+  xpl::iface::Sql_session *m_sql_session;
 
   xpl::Ssl_config choose_ssl_config(const bool mysqld_have_ssl,
                                     const xpl::Ssl_config &mysqld_ssl,

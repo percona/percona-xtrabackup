@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -66,6 +67,7 @@
 #include "process_launcher.h"
 #include "process_wrapper.h"
 #include "random_generator.h"
+#include "stdx_expected_no_error.h"
 
 #ifdef USE_STD_REGEX
 #include <regex>
@@ -74,12 +76,6 @@
 #endif
 
 #include <gtest/gtest.h>  // FAIL
-
-#define EXPECT_NO_ERROR(x) \
-  EXPECT_THAT((x), ::testing::Truly([](auto const &v) { return bool(v); }))
-
-#define ASSERT_NO_ERROR(x) \
-  ASSERT_THAT((x), ::testing::Truly([](auto const &v) { return bool(v); }))
 
 using mysql_harness::Path;
 using mysql_harness::ProcessLauncher;
@@ -106,7 +102,7 @@ stdx::expected<ProcessManager::notify_socket_t, std::error_code> accept_until(
                                               std::system_category()};
 
       if (ec != ec_pipe_listening) {
-        return accept_res.get_unexpected();
+        return stdx::unexpected(accept_res.error());
       }
 
       // nothing is connected yet, sleep a bit an retry.
@@ -117,7 +113,7 @@ stdx::expected<ProcessManager::notify_socket_t, std::error_code> accept_until(
     }
   } while (clock_type::now() < end_time);
 
-  return stdx::make_unexpected(make_error_code(std::errc::timed_out));
+  return stdx::unexpected(make_error_code(std::errc::timed_out));
 }
 
 stdx::expected<void, std::error_code>
@@ -132,7 +128,7 @@ ProcessManager::Spawner::wait_for_notified(
   do {
     auto accept_res = accept_until<clock_type>(sock, end_time);
     if (!accept_res) {
-      return accept_res.get_unexpected();
+      return stdx::unexpected(accept_res.error());
     }
 
     auto accepted = std::move(accept_res.value());
@@ -140,7 +136,7 @@ ProcessManager::Spawner::wait_for_notified(
     // make the read non-blocking.
     const auto non_block_res = accepted.native_non_blocking(true);
     if (!non_block_res) {
-      return non_block_res.get_unexpected();
+      return stdx::unexpected(non_block_res.error());
     }
 
     const size_t BUFF_SIZE = 512;
@@ -151,7 +147,7 @@ ProcessManager::Spawner::wait_for_notified(
     if (!read_res) {
       if (read_res.error() !=
           std::error_code{ERROR_NO_DATA, std::system_category()}) {
-        return read_res.get_unexpected();
+        return stdx::unexpected(read_res.error());
       }
 
       // there was no data. Wait a bit and try again.
@@ -173,7 +169,7 @@ ProcessManager::Spawner::wait_for_notified(
     // either not matched, or no data yet.
   } while (clock_type::now() < end_time);
 
-  return stdx::make_unexpected(make_error_code(std::errc::timed_out));
+  return stdx::unexpected(make_error_code(std::errc::timed_out));
 }
 
 #else
@@ -193,13 +189,13 @@ ProcessManager::Spawner::wait_for_notified(
     const auto poll_res =
         net::impl::poll::poll(fds.data(), fds.size(), timeout);
     if (!poll_res) {
-      return poll_res.get_unexpected();
+      return stdx::unexpected(poll_res.error());
     }
 
     const auto read_res =
         net::read(sock, net::buffer(buff), net::transfer_at_least(1));
     if (!read_res) {
-      return read_res.get_unexpected();
+      return stdx::unexpected(read_res.error());
     } else {
       const auto bytes_read = read_res.value();
 
@@ -438,7 +434,7 @@ ProcessWrapper &ProcessManager::launch_router(
 std::vector<std::string> ProcessManager::mysql_server_mock_cmdline_args(
     const std::string &json_file, uint16_t port, uint16_t http_port,
     uint16_t x_port, const std::string &module_prefix /* = "" */,
-    const std::string &bind_address /*= "0.0.0.0"*/,
+    const std::string &bind_address /*= "127.0.0.1"*/,
     bool enable_ssl /* = false */) {
   std::vector<std::string> server_params{
       "--filename",       json_file,             //
@@ -605,8 +601,8 @@ std::string ProcessManager::create_config_file(
   return file_path.str();
 }
 
-std::string ProcessManager::create_state_file(const std::string &dir_name,
-                                              const std::string &content) {
+/* static */ std::string ProcessManager::create_state_file(
+    const std::string &dir_name, const std::string &content) {
   Path file_path = Path(dir_name).join("state.json");
   std::ofstream ofs_config(file_path.str());
 
@@ -716,7 +712,7 @@ stdx::expected<void, std::error_code> ProcessManager::wait_for_exit(
     try {
       proc->native_wait_for_exit(timeout);
     } catch (const std::system_error &e) {
-      res = stdx::make_unexpected(e.code());
+      res = stdx::unexpected(e.code());
     }
   }
 

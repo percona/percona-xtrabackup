@@ -1,7 +1,7 @@
-include/rpl_init.inc [topology=none]
-include/rpl_default_connections.inc
+include/rpl/init.inc [topology=none]
+include/rpl/default_connections.inc
 call mtr.add_suppression("Found 1 prepared XA transactions");
-include/rpl_set_gtid_mode.inc [ON_PERMISSIVE on servers 1]
+include/rpl/set_gtid_mode.inc [ON_PERMISSIVE on servers 1]
 CREATE TABLE t1 (a INT);
 ---- XID 1, COMMIT: AUTOMATIC + AUTOMATIC ----
 [connection master]
@@ -267,7 +267,7 @@ XA START '14';
 INSERT INTO t1 VALUES(14);
 XA END '14';
 BEGIN;
-INSERT INTO mysql.gtid_executed VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',14,14);
+INSERT INTO mysql.gtid_executed VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',14,14,'');
 Warnings:
 Warning	3129	Please do not modify the gtid_executed table. This is a mysql internal system table to store GTIDs for committed transactions. Modifying it can lead to an inconsistent GTID state.
 [connection master]
@@ -294,7 +294,7 @@ SET @@SESSION.innodb_lock_wait_timeout = 1;
 [connection master]
 SET GTID_NEXT= 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:15';
 BEGIN;
-INSERT INTO mysql.gtid_executed VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',15,15);
+INSERT INTO mysql.gtid_executed VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',15,15,'');
 Warnings:
 Warning	3129	Please do not modify the gtid_executed table. This is a mysql internal system table to store GTIDs for committed transactions. Modifying it can lead to an inconsistent GTID state.
 [connection master]
@@ -344,7 +344,7 @@ include/assert.inc [No thread should hold anonymous ownership.]
 error=
 SET GTID_NEXT= 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:16';
 BEGIN;
-INSERT INTO mysql.gtid_executed VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',16,16);
+INSERT INTO mysql.gtid_executed VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',16,16,'');
 Warnings:
 Warning	3129	Please do not modify the gtid_executed table. This is a mysql internal system table to store GTIDs for committed transactions. Modifying it can lead to an inconsistent GTID state.
 [connection master]
@@ -359,7 +359,7 @@ formatID	gtrid_length	bqual_length	data
 SHOW WARNINGS;
 Level	Code	Message
 Error	1205	Lock wait timeout exceeded; try restarting transaction
-Error	1401	XAER_RMERR: Fatal error occurred in the transaction branch - check your data for consistency
+Error	1402	XA_RBROLLBACK: Transaction branch was rolled back
 include/assert.inc [Thread should not own any GTID.]
 include/assert.inc [No thread should own any GTID.]
 include/assert.inc [No thread should hold anonymous ownership.]
@@ -378,8 +378,8 @@ include/assert.inc [Thread should not own any GTID.]
 [connection master1]
 include/assert.inc [No thread should own any GTID.]
 include/assert.inc [No thread should hold anonymous ownership.]
-include/rpl_restart_server.inc [server_number=1]
-include/rpl_set_gtid_mode.inc [ON_PERMISSIVE on servers 1]
+include/rpl/restart_server.inc [server_number=1]
+include/rpl/set_gtid_mode.inc [ON_PERMISSIVE on servers 1]
 [connection master]
 SET @@SESSION.innodb_lock_wait_timeout = 1;
 SELECT count(*) as one FROM mysql.gtid_executed WHERE source_uuid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND interval_end = 17;
@@ -394,7 +394,7 @@ Warning	3129	Please do not modify the gtid_executed table. This is a mysql inter
 error=
 SET GTID_NEXT= 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:17';
 BEGIN;
-INSERT INTO mysql.gtid_executed VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',17,17);
+INSERT INTO mysql.gtid_executed VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',17,17,'');
 Warnings:
 Warning	3129	Please do not modify the gtid_executed table. This is a mysql internal system table to store GTIDs for committed transactions. Modifying it can lead to an inconsistent GTID state.
 [connection master]
@@ -680,7 +680,7 @@ XA START '31';
 INSERT INTO t1 VALUES(31);
 XA END '31';
 BEGIN;
-INSERT INTO mysql.gtid_executed VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',31,31);
+INSERT INTO mysql.gtid_executed VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',31,31,'');
 Warnings:
 Warning	3129	Please do not modify the gtid_executed table. This is a mysql internal system table to store GTIDs for committed transactions. Modifying it can lead to an inconsistent GTID state.
 [connection master]
@@ -706,7 +706,7 @@ SET @@SESSION.innodb_lock_wait_timeout = 1;
 [connection master]
 SET GTID_NEXT= 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:32';
 BEGIN;
-INSERT INTO mysql.gtid_executed VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',32,32);
+INSERT INTO mysql.gtid_executed VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',32,32,'');
 Warnings:
 Warning	3129	Please do not modify the gtid_executed table. This is a mysql internal system table to store GTIDs for committed transactions. Modifying it can lead to an inconsistent GTID state.
 [connection master]
@@ -756,7 +756,7 @@ include/assert.inc [No thread should hold anonymous ownership.]
 error=
 SET GTID_NEXT= 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:33';
 BEGIN;
-INSERT INTO mysql.gtid_executed VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',33,33);
+INSERT INTO mysql.gtid_executed VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',33,33,'');
 Warnings:
 Warning	3129	Please do not modify the gtid_executed table. This is a mysql internal system table to store GTIDs for committed transactions. Modifying it can lead to an inconsistent GTID state.
 [connection master]
@@ -771,6 +771,7 @@ formatID	gtrid_length	bqual_length	data
 SHOW WARNINGS;
 Level	Code	Message
 Error	1205	Lock wait timeout exceeded; try restarting transaction
+Error	1402	XA_RBROLLBACK: Transaction branch was rolled back
 include/assert.inc [Thread should not own any GTID.]
 include/assert.inc [No thread should own any GTID.]
 include/assert.inc [No thread should hold anonymous ownership.]
@@ -789,8 +790,8 @@ include/assert.inc [Thread should not own any GTID.]
 [connection master1]
 include/assert.inc [No thread should own any GTID.]
 include/assert.inc [No thread should hold anonymous ownership.]
-include/rpl_restart_server.inc [server_number=1]
-include/rpl_set_gtid_mode.inc [ON_PERMISSIVE on servers 1]
+include/rpl/restart_server.inc [server_number=1]
+include/rpl/set_gtid_mode.inc [ON_PERMISSIVE on servers 1]
 [connection master]
 SET @@SESSION.innodb_lock_wait_timeout = 1;
 SELECT count(*) as one FROM mysql.gtid_executed WHERE source_uuid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND interval_end = 34;
@@ -805,7 +806,7 @@ Warning	3129	Please do not modify the gtid_executed table. This is a mysql inter
 error=
 SET GTID_NEXT= 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:34';
 BEGIN;
-INSERT INTO mysql.gtid_executed VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',34,34);
+INSERT INTO mysql.gtid_executed VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',34,34,'');
 Warnings:
 Warning	3129	Please do not modify the gtid_executed table. This is a mysql internal system table to store GTIDs for committed transactions. Modifying it can lead to an inconsistent GTID state.
 [connection master]
@@ -828,5 +829,5 @@ ROLLBACK;
 SET @@SESSION.innodb_lock_wait_timeout = @@SESSION.innodb_lock_wait_timeout;
 SET GTID_NEXT = 'AUTOMATIC';
 DROP TABLE t1;
-include/rpl_set_gtid_mode.inc [OFF on servers 1]
-include/rpl_end.inc
+include/rpl/set_gtid_mode.inc [OFF on servers 1]
+include/rpl/deinit.inc

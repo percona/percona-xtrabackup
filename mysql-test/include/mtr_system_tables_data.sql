@@ -1,15 +1,16 @@
--- Copyright (c) 2014, 2023, Oracle and/or its affiliates.
+-- Copyright (c) 2014, 2024, Oracle and/or its affiliates.
 -- 
 -- This program is free software; you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License, version 2.0,
 -- as published by the Free Software Foundation.
 --
--- This program is also distributed with certain software (including
+-- This program is designed to work with certain software (including
 -- but not limited to OpenSSL) that is licensed under separate terms,
 -- as designated in a particular file or component or in included license
 -- documentation.  The authors of MySQL hereby grant you an additional
 -- permission to link the program and your derivative works with the
--- separately licensed software that they have included with MySQL.
+-- separately licensed software that they have either included with
+-- the program or referenced in the documentation.
 --
 -- This program is distributed in the hope that it will be useful,
 -- but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -42,8 +43,8 @@ DROP TABLE tmp_db;
 -- Fill "user" table with default users allowing root access
 -- from local machine if "user" table didn't exist before
 CREATE TEMPORARY TABLE tmp_user LIKE user;
-INSERT INTO tmp_user VALUES ('localhost','root','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','','','','',0,0,0,0,@@default_authentication_plugin,'','N',CURRENT_TIMESTAMP,NULL,'N','Y','Y');
-REPLACE INTO tmp_user SELECT @current_hostname,'root','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','','','','',0,0,0,0,@@default_authentication_plugin,'','N',CURRENT_TIMESTAMP,NULL,'N','Y','Y' FROM dual WHERE @current_hostname != 'localhost';
+INSERT INTO tmp_user VALUES ('localhost','root','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','','','','',0,0,0,0,'caching_sha2_password','','N',CURRENT_TIMESTAMP,NULL,'N','Y','Y');
+REPLACE INTO tmp_user SELECT @current_hostname,'root','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','','','','',0,0,0,0,'caching_sha2_password','','N',CURRENT_TIMESTAMP,NULL,'N','Y','Y' FROM dual WHERE @current_hostname != 'localhost';
 INSERT INTO tmp_user (host,user) SELECT @current_hostname,'' FROM dual WHERE @current_hostname != 'localhost';
 INSERT INTO user SELECT * FROM tmp_user WHERE @had_user_table=0;
 DROP TABLE tmp_user;

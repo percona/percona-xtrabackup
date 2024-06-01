@@ -11,11 +11,11 @@
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
 --source include/not_group_replication_plugin.inc
---source include/only_mts_replica_parallel_workers.inc
+--source include/have_replica_parallel_workers.inc
 --source include/have_debug.inc
 --source include/have_debug_sync.inc
 --let $rpl_gtid_utils= 1
---source include/master-slave.inc
+--source include/rpl/init_source_replica.inc
 
 --connection slave
 
@@ -34,22 +34,22 @@ INSERT INTO t2 VALUES(1);
 --echo # Verify that transactions' gtids can be reported
 --echo # from global.gtid_executed correctly.
 --echo #
---let $assert_text= committed gtids MASTER_UUID:1-4
+--let $assert_text= committed gtids Source_UUID:1-4
 --let $assert_cond= "[SELECT @@GLOBAL.GTID_EXECUTED]" = "$master_uuid:1-4"
 --source include/assert.inc
 --echo #
---echo # Store gtids MASTER_UUID:1-4 in gtid_executed table on binlog rotation
+--echo # Store gtids Source_UUID:1-4 in gtid_executed table on binlog rotation
 --echo #
 FLUSH LOGS;
 --replace_result $master_uuid MASTER_UUID
 SELECT * FROM mysql.gtid_executed;
 
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 --echo #
 --echo # connection slave
 --echo #
 --let $replica_uuid= `SELECT @@GLOBAL.SERVER_UUID`
---let $assert_text= committed gtids MASTER_UUID:1-4
+--let $assert_text= committed gtids Source_UUID:1-4
 --let $assert_cond= "[SELECT @@GLOBAL.GTID_EXECUTED]" = "$master_uuid:1-4"
 --source include/assert.inc
 --echo #
@@ -87,7 +87,7 @@ SET @@GLOBAL.GTID_EXECUTED_COMPRESSION_PERIOD= @old_compression_period;
 --echo # logs if binlog is enabled and log_replica_updates is disabled.
 --echo #
 --eval PURGE BINARY LOGS TO '$binlog_file'
---let $assert_text= purged gtids SLAVE_UUID:1-2,MASTER_UUID:1-4
+--let $assert_text= purged gtids SLAVE_UUID:1-2,Source_UUID:1-4
 --let $assert_cond= GTID_IS_EQUAL("[SELECT @@GLOBAL.GTID_PURGED]", "$replica_uuid:1-2,$master_uuid:1-4")
 --source include/assert.inc
 
@@ -127,4 +127,4 @@ SET GLOBAL MAX_BINLOG_SIZE=@SIZE_DEFAULT;
 --connection master
 DROP TABLE t1,t2;
 
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

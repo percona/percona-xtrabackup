@@ -16,33 +16,33 @@
 # The process like:
 #
 # SET GLOBAL sql_replica_skip_counter = 5;
-# START SLAVE FOR CHANNEL 'ch1';
+# START REPLICA FOR CHANNEL 'ch1';
 #
-# SHOW SLAVE STATUS FOR CHANNEL 'channel_1';
+# SHOW REPLICA STATUS FOR CHANNEL 'channel_1';
 # Skip_count item will be 5.
 #
 # SELECT @@GLOBAL.sql_replica_skip_counter;
 # It will be 0.
 #
 #
-# START SLAVE will report the error ER_REPLICA_CHANNEL_SQL_SKIP_COUNTER if it is
+# START REPLICA will report the error ER_REPLICA_CHANNEL_SQL_SKIP_COUNTER if it is
 # starting more than one channels.
 #
 #
 #Skip on group replication runs
 --source include/not_group_replication_plugin.inc
---source include/have_binlog_format_mixed.inc
+--source include/have_binlog_format_row.inc
 
 --echo #
 --echo # set up masters server_1 and server_3 with server_2 being a slave.
 --echo #.
 --let $rpl_multi_source= 1
 --let $rpl_topology= 1->2,3->2
---source include/rpl_init.inc
+--source include/rpl/init.inc
 
 # On slave
 --let $rpl_connection_name= server_2
---source include/rpl_connection.inc
+--source include/connection.inc
 call mtr.add_suppression("Replica: Could not start replica for channel");
 
 --echo #
@@ -51,31 +51,31 @@ call mtr.add_suppression("Replica: Could not start replica for channel");
 --echo #
 SET GLOBAL sql_replica_skip_counter= 1;
 
---let $skip_counter= query_get_value(SHOW SLAVE STATUS FOR CHANNEL 'channel_1', Skip_Counter, 1)
+--let $skip_counter= query_get_value(SHOW REPLICA STATUS FOR CHANNEL 'channel_1', Skip_Counter, 1)
 --let $assert_text= check that channel_1's Skip_Counter is 0.
 --echo $skip_counter
 --let $assert_cond= $skip_counter=0
 --source include/assert.inc
 
 # stop SQL THREAD for all channels
-STOP SLAVE SQL_THREAD;
---let $rpl_source_file= include/wait_for_slave_sql_to_stop.inc
---source include/rpl_for_each_connection.inc
+STOP REPLICA SQL_THREAD;
+--let $rpl_source_file= include/rpl/wait_for_applier_to_stop.inc
+--source include/rpl/for_each_connection.inc
 
 --echo #
---echo # Verify that START SLAVE FOR CHANNEL will copy sql_replica_skip_counter's
+--echo # Verify that START REPLICA FOR CHANNEL will copy sql_replica_skip_counter's
 --echo # value to the channel and reset sql_replica_skip_counter to 0
 --echo #
 
 # first stop the channels
 --let $rpl_connection_name= server_2
---source include/rpl_connection.inc
---source include/stop_slave.inc
+--source include/connection.inc
+--source include/rpl/stop_replica.inc
 
 --let $rpl_channel_name= 'channel_1'
---source include/start_slave.inc
+--source include/rpl/start_replica.inc
 
---let $skip_counter= query_get_value(SHOW SLAVE STATUS FOR CHANNEL 'channel_1', Skip_Counter, 1)
+--let $skip_counter= query_get_value(SHOW REPLICA STATUS FOR CHANNEL 'channel_1', Skip_Counter, 1)
 --let $assert_text= check that channel_1's Skip_Counter is 0.
 --echo $skip_counter
 --let $assert_cond= $skip_counter= 1
@@ -86,28 +86,28 @@ STOP SLAVE SQL_THREAD;
 --source include/assert.inc
 
 --echo #
---echo # START SLAVE [SQL_THREAD] will fail when sql_replica_skip_counter is 1
+--echo # START REPLICA [SQL_THREAD] will fail when sql_replica_skip_counter is 1
 --echo # and there are more than one channels
 --echo #
 SET GLOBAL sql_replica_skip_counter = 1;
 
 --error ER_REPLICA_CHANNEL_SQL_SKIP_COUNTER
-START SLAVE;
+START REPLICA;
 
 --error ER_REPLICA_CHANNEL_SQL_SKIP_COUNTER
-START SLAVE SQL_THREAD;
+START REPLICA SQL_THREAD;
 
 --echo #
---echo # START SLAVE IO_THREAD should not fail.
+--echo # START REPLICA IO_THREAD should not fail.
 --echo #
 
 --disable_warnings
-START SLAVE IO_THREAD;
+START REPLICA IO_THREAD;
 --enable_warnings
---let $rpl_source_file= include/wait_for_slave_io_to_start.inc
---source include/rpl_for_each_connection.inc
+--let $rpl_source_file= include/rpl/wait_for_receiver_to_start.inc
+--source include/rpl/for_each_connection.inc
 
---let $assert_text= All two IO threads are running after START SLAVE IO_THREAD
+--let $assert_text= All two IO threads are running after START REPLICA IO_THREAD
 --let $assert_cond= [SELECT COUNT(*) FROM performance_schema.replication_connection_status WHERE Service_State="ON"] = 2;
 --source include/assert.inc
 
@@ -116,4 +116,4 @@ SET GLOBAL sql_replica_skip_counter= 0;
 # End MSR setup.
 --let $rpl_skip_sync= 1
 --let $rpl_only_running_threads= 1
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

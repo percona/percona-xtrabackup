@@ -1,6 +1,7 @@
 --source include/not_valgrind.inc
 --source include/have_plugin_auth.inc
 --source include/mysql_upgrade_preparation.inc
+--source include/suppress_tls_off.inc
 
 CALL mtr.add_suppression("Plugin test_plugin_server reported: 'Wrong password supplied for plug_dest'");
 
@@ -209,9 +210,10 @@ connection default;
 --echo in default connection
 disconnect proxy_admin_con;
 
-SHOW GRANTS FOR grant_plug;
+--let $user = grant_plug
+--source include/show_grants.inc
 REVOKE PROXY ON future_user FROM grant_plug;
-SHOW GRANTS FOR grant_plug;
+--source include/show_grants.inc
 
 --echo ## testing drop user
 CREATE USER test_drop@localhost;

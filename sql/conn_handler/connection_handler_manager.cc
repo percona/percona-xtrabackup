@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2013, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2013, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -36,6 +37,7 @@
 #include "mysql/components/services/bits/psi_bits.h"
 #include "mysql/components/services/bits/psi_cond_bits.h"
 #include "mysql/components/services/bits/psi_mutex_bits.h"
+#include "mysql/components/services/log_builtins.h"
 #include "mysql/service_thd_wait.h"
 #include "mysqld_error.h"                              // ER_*
 #include "sql/conn_handler/channel_info.h"             // Channel_info
@@ -202,6 +204,7 @@ bool Connection_handler_manager::init() {
 void Connection_handler_manager::wait_till_no_connection() {
   mysql_mutex_lock(&LOCK_connection_count);
   while (connection_count > 0) {
+    LogErr(INFORMATION_LEVEL, ER_WAITING_FOR_NO_CONNECTIONS, connection_count);
     mysql_cond_wait(&COND_connection_count, &LOCK_connection_count);
   }
   mysql_mutex_unlock(&LOCK_connection_count);

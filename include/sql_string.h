@@ -1,18 +1,19 @@
 #ifndef SQL_STRING_INCLUDED
 #define SQL_STRING_INCLUDED
 
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -262,6 +263,28 @@ class String {
     if (m_ptr && m_length < m_alloced_length) m_ptr[m_length] = 0;
     return m_ptr;
   }
+
+  /**
+    Returns a pointer to a C-style null-terminated string. The function is
+    "safe" in the sense that the returned string is guaranteed to be
+    null-terminated (as opposed to c_ptr_quick()). However, in terms of memory
+    safety, this function might perform a heap allocation, so using it
+    necessitates manual cleanup.
+
+    @note One potential pitfall when using this function happens when calling
+    c_ptr_safe() on a String object from the parser. In this case the internal
+    m_ptr string is already allocated on a MEM_ROOT and is cleaned up as part of
+    the query lifecycle. This cleanup is performed by simply clearing the
+    MEM_ROOT (freeing its allocated memory) and does not involve destructing the
+    String object. So in the case when the parser works with (ptr, length)-style
+    strings that are placed in String objects and m_length = m_allocated_length
+    we get a heap allocation when calling c_ptr_safe(), even if just to read the
+    contents of the string, and this newly allocated memory is not on the same
+    MEM_ROOT as the original string, and thus we get a memory leak if we do not
+    make sure to free it.
+
+    @return Pointer to null-terminated string.
+  */
   char *c_ptr_safe() {
     if (m_ptr && m_length < m_alloced_length)
       m_ptr[m_length] = 0;

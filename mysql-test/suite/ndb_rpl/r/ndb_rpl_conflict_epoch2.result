@@ -18,7 +18,7 @@ Setup connections for use in this file
 First we have Cluster A as Primary, Cluster B as Secondary
 SET GLOBAL ndb_applier_conflict_role="PRIMARY";
 SET GLOBAL ndb_applier_conflict_role="SECONDARY";
-include/master-slave.inc
+include/rpl/init_source_replica.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
@@ -104,9 +104,7 @@ server_id	master_server_id	master_epoch	count	a	d
 -------------------------------
 Test 3 : Insert-Insert conflict
 -------------------------------
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Insert a row on the Primary Master
 insert into test.t1 values (2, "Loopy Lornas");
 -- Insert a row on the secondary Master
@@ -133,9 +131,7 @@ a	b
 1	Beach house
 2	Cloisters
 -- Restart secondary Masters slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Reexamine secondary Master's data (should be same as Primary Masters)
 select * from test.t1 order by a;
 a	b
@@ -145,9 +141,7 @@ a	b
 Test 4 : Update-Update conflict
 -------------------------------
 -- Stop replication to secondary master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update row on Primary Master
 update test.t1 set b="Peters Yard" where a=2;
 -- Show data on Primary Master
@@ -189,10 +183,8 @@ select * from test.t1 order by a;
 a	b
 1	Beach house
 2	Toast
--- Now restart slave, will re-align row
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+-- Now restart replica, will re-align row
+START REPLICA;
 -- Check that Secondary is re-aligned
 select * from test.t1 order by a;
 a	b
@@ -202,9 +194,7 @@ a	b
 Test 5 : Update-Delete conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update on Primary Master
 update test.t1 set b="Pear tree" where a = 2;
 -- Delete on Secondary Master
@@ -233,9 +223,7 @@ select * from test.t1 order by a;
 a	b
 1	Beach house
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, aligned with Master
 select * from test.t1 order by a;
 a	b
@@ -245,9 +233,7 @@ a	b
 Test 6 : Delete-Update conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Delete on Primary Master
 delete from test.t1 where a=2;
 -- Update on Secondary Master
@@ -278,9 +264,7 @@ a	b
 1	Beach house
 2	Black pig
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, aligned with Master (deleted)
 select * from test.t1 order by a;
 a	b
@@ -289,9 +273,7 @@ a	b
 Test 7 : Delete-Delete conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Delete on Primary Master
 delete from test.t1 where a=1;
 -- Delete on Secondary Master
@@ -323,9 +305,7 @@ server_id	master_server_id	master_epoch	count	a	d
 select * from test.t1 order by a;
 a	b
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, no row
 select * from test.t1 order by a;
 a	b
@@ -339,24 +319,16 @@ select * from test.t1 order by a;
 a	b
 3	Espy
 -- Stop replication in both directions
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
+STOP REPLICA;
 -- Delete row from both clusters
 delete from test.t1 where a=3;
 delete from test.t1 where a=3;
 -- Follow up with Insert from Secondary master
 insert into test.t1 values (3, "Dalriada");
 -- Restart replication in both directions
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
+START REPLICA;
 -- Check data on both sites
 --   diverged with NDB$EPOCH
 --   consistent with NDB$EPOCH2 
@@ -397,9 +369,7 @@ server_id	master_server_id	master_epoch	count	a	d
 Test 9 : Insert, Insert-Update-Delete conflict
 ------------------------------------------------
 -- Stop replication on Secondary Master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Insert row on Primary Master
 insert into test.t1 values (4, "Haymarket");
 -- Insert row on Secondary Master
@@ -447,9 +417,7 @@ server_id	master_server_id	master_epoch	count	a	d
 select * from test.t1 order by a;
 a	b
 -- Restart Secondary Master's slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Check data on Secondary Master, should be same as Primary Master
 select * from test.t1;
 a	b
@@ -458,9 +426,7 @@ a	b
 Test 10 : Update, Delete-Insert-Update conflict
 ------------------------------------------------
 -- Stop replication on Secondary Master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update row on Primary Master
 update test.t1 set b="Blind poet" where a=4;
 -- Delete row on Secondary Master
@@ -512,9 +478,7 @@ select * from test.t1 order by a;
 a	b
 4	The Tankard
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Check data on Secondary Master - should be as Primary
 select * from test.t1 order by a;
 a	b
@@ -681,9 +645,7 @@ server_id	master_server_id	master_epoch	count	a	d
 -------------------------------
 Test 3 : Insert-Insert conflict
 -------------------------------
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Insert a row on the Primary Master
 insert into test.t1 values (2, "Loopy Lornas");
 -- Insert a row on the secondary Master
@@ -710,9 +672,7 @@ a	b
 1	Beach house
 2	Cloisters
 -- Restart secondary Masters slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Reexamine secondary Master's data (should be same as Primary Masters)
 select * from test.t1 order by a;
 a	b
@@ -722,9 +682,7 @@ a	b
 Test 4 : Update-Update conflict
 -------------------------------
 -- Stop replication to secondary master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update row on Primary Master
 update test.t1 set b="Peters Yard" where a=2;
 -- Show data on Primary Master
@@ -766,10 +724,8 @@ select * from test.t1 order by a;
 a	b
 1	Beach house
 2	Toast
--- Now restart slave, will re-align row
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+-- Now restart replica, will re-align row
+START REPLICA;
 -- Check that Secondary is re-aligned
 select * from test.t1 order by a;
 a	b
@@ -779,9 +735,7 @@ a	b
 Test 5 : Update-Delete conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update on Primary Master
 update test.t1 set b="Pear tree" where a = 2;
 -- Delete on Secondary Master
@@ -810,9 +764,7 @@ select * from test.t1 order by a;
 a	b
 1	Beach house
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, aligned with Master
 select * from test.t1 order by a;
 a	b
@@ -822,9 +774,7 @@ a	b
 Test 6 : Delete-Update conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Delete on Primary Master
 delete from test.t1 where a=2;
 -- Update on Secondary Master
@@ -855,9 +805,7 @@ a	b
 1	Beach house
 2	Black pig
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, aligned with Master (deleted)
 select * from test.t1 order by a;
 a	b
@@ -866,9 +814,7 @@ a	b
 Test 7 : Delete-Delete conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Delete on Primary Master
 delete from test.t1 where a=1;
 -- Delete on Secondary Master
@@ -900,9 +846,7 @@ server_id	master_server_id	master_epoch	count	a	d
 select * from test.t1 order by a;
 a	b
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, no row
 select * from test.t1 order by a;
 a	b
@@ -916,24 +860,16 @@ select * from test.t1 order by a;
 a	b
 3	Espy
 -- Stop replication in both directions
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
+STOP REPLICA;
 -- Delete row from both clusters
 delete from test.t1 where a=3;
 delete from test.t1 where a=3;
 -- Follow up with Insert from Secondary master
 insert into test.t1 values (3, "Dalriada");
 -- Restart replication in both directions
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
+START REPLICA;
 -- Check data on both sites
 --   diverged with NDB$EPOCH
 --   consistent with NDB$EPOCH2 
@@ -974,9 +910,7 @@ server_id	master_server_id	master_epoch	count	a	d
 Test 9 : Insert, Insert-Update-Delete conflict
 ------------------------------------------------
 -- Stop replication on Secondary Master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Insert row on Primary Master
 insert into test.t1 values (4, "Haymarket");
 -- Insert row on Secondary Master
@@ -1024,9 +958,7 @@ server_id	master_server_id	master_epoch	count	a	d
 select * from test.t1 order by a;
 a	b
 -- Restart Secondary Master's slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Check data on Secondary Master, should be same as Primary Master
 select * from test.t1;
 a	b
@@ -1035,9 +967,7 @@ a	b
 Test 10 : Update, Delete-Insert-Update conflict
 ------------------------------------------------
 -- Stop replication on Secondary Master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update row on Primary Master
 update test.t1 set b="Blind poet" where a=4;
 -- Delete row on Secondary Master
@@ -1089,9 +1019,7 @@ select * from test.t1 order by a;
 a	b
 4	The Tankard
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Check data on Secondary Master - should be as Primary
 select * from test.t1 order by a;
 a	b
@@ -1258,9 +1186,7 @@ server_id	master_server_id	master_epoch	count	a	d
 -------------------------------
 Test 3 : Insert-Insert conflict
 -------------------------------
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Insert a row on the Primary Master
 insert into test.t1 values (2, "Loopy Lornas");
 -- Insert a row on the secondary Master
@@ -1287,9 +1213,7 @@ a	b
 1	Beach house
 2	Cloisters
 -- Restart secondary Masters slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Reexamine secondary Master's data (should be same as Primary Masters)
 select * from test.t1 order by a;
 a	b
@@ -1299,9 +1223,7 @@ a	b
 Test 4 : Update-Update conflict
 -------------------------------
 -- Stop replication to secondary master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update row on Primary Master
 update test.t1 set b="Peters Yard" where a=2;
 -- Show data on Primary Master
@@ -1343,10 +1265,8 @@ select * from test.t1 order by a;
 a	b
 1	Beach house
 2	Toast
--- Now restart slave, will re-align row
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+-- Now restart replica, will re-align row
+START REPLICA;
 -- Check that Secondary is re-aligned
 select * from test.t1 order by a;
 a	b
@@ -1356,9 +1276,7 @@ a	b
 Test 5 : Update-Delete conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update on Primary Master
 update test.t1 set b="Pear tree" where a = 2;
 -- Delete on Secondary Master
@@ -1387,9 +1305,7 @@ select * from test.t1 order by a;
 a	b
 1	Beach house
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, aligned with Master
 select * from test.t1 order by a;
 a	b
@@ -1399,9 +1315,7 @@ a	b
 Test 6 : Delete-Update conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Delete on Primary Master
 delete from test.t1 where a=2;
 -- Update on Secondary Master
@@ -1432,9 +1346,7 @@ a	b
 1	Beach house
 2	Black pig
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, aligned with Master (deleted)
 select * from test.t1 order by a;
 a	b
@@ -1443,9 +1355,7 @@ a	b
 Test 7 : Delete-Delete conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Delete on Primary Master
 delete from test.t1 where a=1;
 -- Delete on Secondary Master
@@ -1477,9 +1387,7 @@ server_id	master_server_id	master_epoch	count	a	d
 select * from test.t1 order by a;
 a	b
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, no row
 select * from test.t1 order by a;
 a	b
@@ -1493,24 +1401,16 @@ select * from test.t1 order by a;
 a	b
 3	Espy
 -- Stop replication in both directions
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
+STOP REPLICA;
 -- Delete row from both clusters
 delete from test.t1 where a=3;
 delete from test.t1 where a=3;
 -- Follow up with Insert from Secondary master
 insert into test.t1 values (3, "Dalriada");
 -- Restart replication in both directions
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
+START REPLICA;
 -- Check data on both sites
 --   diverged with NDB$EPOCH
 --   consistent with NDB$EPOCH2 
@@ -1551,9 +1451,7 @@ server_id	master_server_id	master_epoch	count	a	d
 Test 9 : Insert, Insert-Update-Delete conflict
 ------------------------------------------------
 -- Stop replication on Secondary Master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Insert row on Primary Master
 insert into test.t1 values (4, "Haymarket");
 -- Insert row on Secondary Master
@@ -1601,9 +1499,7 @@ server_id	master_server_id	master_epoch	count	a	d
 select * from test.t1 order by a;
 a	b
 -- Restart Secondary Master's slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Check data on Secondary Master, should be same as Primary Master
 select * from test.t1;
 a	b
@@ -1612,9 +1508,7 @@ a	b
 Test 10 : Update, Delete-Insert-Update conflict
 ------------------------------------------------
 -- Stop replication on Secondary Master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update row on Primary Master
 update test.t1 set b="Blind poet" where a=4;
 -- Delete row on Secondary Master
@@ -1666,9 +1560,7 @@ select * from test.t1 order by a;
 a	b
 4	The Tankard
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Check data on Secondary Master - should be as Primary
 select * from test.t1 order by a;
 a	b
@@ -1835,9 +1727,7 @@ server_id	master_server_id	master_epoch	count	a	d
 -------------------------------
 Test 3 : Insert-Insert conflict
 -------------------------------
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Insert a row on the Primary Master
 insert into test.t1 values (2, "Loopy Lornas");
 -- Insert a row on the secondary Master
@@ -1864,9 +1754,7 @@ a	b
 1	Beach house
 2	Cloisters
 -- Restart secondary Masters slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Reexamine secondary Master's data (should be same as Primary Masters)
 select * from test.t1 order by a;
 a	b
@@ -1876,9 +1764,7 @@ a	b
 Test 4 : Update-Update conflict
 -------------------------------
 -- Stop replication to secondary master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update row on Primary Master
 update test.t1 set b="Peters Yard" where a=2;
 -- Show data on Primary Master
@@ -1920,10 +1806,8 @@ select * from test.t1 order by a;
 a	b
 1	Beach house
 2	Toast
--- Now restart slave, will re-align row
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+-- Now restart replica, will re-align row
+START REPLICA;
 -- Check that Secondary is re-aligned
 select * from test.t1 order by a;
 a	b
@@ -1933,9 +1817,7 @@ a	b
 Test 5 : Update-Delete conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update on Primary Master
 update test.t1 set b="Pear tree" where a = 2;
 -- Delete on Secondary Master
@@ -1964,9 +1846,7 @@ select * from test.t1 order by a;
 a	b
 1	Beach house
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, aligned with Master
 select * from test.t1 order by a;
 a	b
@@ -1976,9 +1856,7 @@ a	b
 Test 6 : Delete-Update conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Delete on Primary Master
 delete from test.t1 where a=2;
 -- Update on Secondary Master
@@ -2009,9 +1887,7 @@ a	b
 1	Beach house
 2	Black pig
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, aligned with Master (deleted)
 select * from test.t1 order by a;
 a	b
@@ -2020,9 +1896,7 @@ a	b
 Test 7 : Delete-Delete conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Delete on Primary Master
 delete from test.t1 where a=1;
 -- Delete on Secondary Master
@@ -2054,9 +1928,7 @@ server_id	master_server_id	master_epoch	count	a	d
 select * from test.t1 order by a;
 a	b
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, no row
 select * from test.t1 order by a;
 a	b
@@ -2070,24 +1942,16 @@ select * from test.t1 order by a;
 a	b
 3	Espy
 -- Stop replication in both directions
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
+STOP REPLICA;
 -- Delete row from both clusters
 delete from test.t1 where a=3;
 delete from test.t1 where a=3;
 -- Follow up with Insert from Secondary master
 insert into test.t1 values (3, "Dalriada");
 -- Restart replication in both directions
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
+START REPLICA;
 -- Check data on both sites
 --   diverged with NDB$EPOCH
 --   consistent with NDB$EPOCH2 
@@ -2128,9 +1992,7 @@ server_id	master_server_id	master_epoch	count	a	d
 Test 9 : Insert, Insert-Update-Delete conflict
 ------------------------------------------------
 -- Stop replication on Secondary Master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Insert row on Primary Master
 insert into test.t1 values (4, "Haymarket");
 -- Insert row on Secondary Master
@@ -2178,9 +2040,7 @@ server_id	master_server_id	master_epoch	count	a	d
 select * from test.t1 order by a;
 a	b
 -- Restart Secondary Master's slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Check data on Secondary Master, should be same as Primary Master
 select * from test.t1;
 a	b
@@ -2189,9 +2049,7 @@ a	b
 Test 10 : Update, Delete-Insert-Update conflict
 ------------------------------------------------
 -- Stop replication on Secondary Master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update row on Primary Master
 update test.t1 set b="Blind poet" where a=4;
 -- Delete row on Secondary Master
@@ -2243,9 +2101,7 @@ select * from test.t1 order by a;
 a	b
 4	The Tankard
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Check data on Secondary Master - should be as Primary
 select * from test.t1 order by a;
 a	b
@@ -2340,9 +2196,7 @@ a int primary key,
 b int,
 c varchar(2000)) engine=ndb;
 -- Stop replication from Primary -> Secondary
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Insert a row on Primary
 insert into test.t1 values (1,1,repeat('B', 2000));
 -- Generate a large batch of inserts with early + late conflicts
@@ -2375,9 +2229,7 @@ ndb_conflict_fn_epoch2
 Exception table contents
 SELECT server_id, master_server_id, master_epoch, count, a, d FROM `t1$EX` ORDER BY server_id, master_server_id, master_epoch, count;
 SELECT * FROM `t1$EX` ORDER BY a, d;
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Look at Seconday row
 select a,b,sha1(c) from test.t1 where a=1;
 a	b	sha1(c)
@@ -2389,13 +2241,9 @@ a	b	sha1(c)
 Test batching of DELETE vs DELETE with following INSERT
 delete from test.t1;
 insert into test.t1 values (1, 1, "Ma Brows");
--- Stop Slave in both directions
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+-- Stop Replica in both directions
+STOP REPLICA;
+STOP REPLICA;
 -- Delete row on Primary Cluster
 delete from test.t1 where a=1;
 -- Delete row on Secondary Cluster, followed by Insert in later 'batch'
@@ -2415,7 +2263,7 @@ insert into test.t1 values (1, 1, 'Malleny arms');
 COMMIT;
 end%
 call test.doit(200);
--- Restart slave on Primary Cluster
+-- Restart replica on Primary Cluster
 start replica;
 -- Show data on Primary Cluster (should have row inserted on Secondary)
 select * from test.t1 where a=1;
@@ -2425,10 +2273,8 @@ a	b	c
 select * from test.t1 where a=1;
 a	b	c
 1	1	Malleny arms
---Restart slave on Secondary Cluster
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+--Restart replica on Secondary Cluster
+START REPLICA;
 -- Show data on Clusters after slaves restarted+synced
 For NDB$EPOCH, the data will be missing
 as expected with delete vs delete conflict
@@ -2471,7 +2317,7 @@ drop table mysql.ndb_replication;
 -- Attempt to get system back in pre-test state
 stop replica;
 reset replica;
-include/rpl_end.inc
+include/rpl/deinit.inc
 Next we have Cluster A as Secondary, Cluster B as Primary
 SET GLOBAL ndb_applier_conflict_role="NONE";
 SET GLOBAL ndb_applier_conflict_role="SECONDARY";
@@ -2480,7 +2326,7 @@ SET GLOBAL ndb_applier_conflict_role="PRIMARY";
 We set a special control var to allow the generic scripts
 to handle this topology
 Remove some connections which can't be setup twice (ugly)
-include/master-slave.inc [rpl_server_count=2]
+include/rpl/init_source_replica.inc [rpl_server_count=2]
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
@@ -2566,9 +2412,7 @@ server_id	master_server_id	master_epoch	count	a	d
 -------------------------------
 Test 3 : Insert-Insert conflict
 -------------------------------
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Insert a row on the Primary Master
 insert into test.t1 values (2, "Loopy Lornas");
 -- Insert a row on the secondary Master
@@ -2595,9 +2439,7 @@ a	b
 1	Beach house
 2	Cloisters
 -- Restart secondary Masters slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Reexamine secondary Master's data (should be same as Primary Masters)
 select * from test.t1 order by a;
 a	b
@@ -2607,9 +2449,7 @@ a	b
 Test 4 : Update-Update conflict
 -------------------------------
 -- Stop replication to secondary master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update row on Primary Master
 update test.t1 set b="Peters Yard" where a=2;
 -- Show data on Primary Master
@@ -2651,10 +2491,8 @@ select * from test.t1 order by a;
 a	b
 1	Beach house
 2	Toast
--- Now restart slave, will re-align row
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+-- Now restart replica, will re-align row
+START REPLICA;
 -- Check that Secondary is re-aligned
 select * from test.t1 order by a;
 a	b
@@ -2664,9 +2502,7 @@ a	b
 Test 5 : Update-Delete conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update on Primary Master
 update test.t1 set b="Pear tree" where a = 2;
 -- Delete on Secondary Master
@@ -2695,9 +2531,7 @@ select * from test.t1 order by a;
 a	b
 1	Beach house
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, aligned with Master
 select * from test.t1 order by a;
 a	b
@@ -2707,9 +2541,7 @@ a	b
 Test 6 : Delete-Update conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Delete on Primary Master
 delete from test.t1 where a=2;
 -- Update on Secondary Master
@@ -2740,9 +2572,7 @@ a	b
 1	Beach house
 2	Black pig
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, aligned with Master (deleted)
 select * from test.t1 order by a;
 a	b
@@ -2751,9 +2581,7 @@ a	b
 Test 7 : Delete-Delete conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Delete on Primary Master
 delete from test.t1 where a=1;
 -- Delete on Secondary Master
@@ -2785,9 +2613,7 @@ server_id	master_server_id	master_epoch	count	a	d
 select * from test.t1 order by a;
 a	b
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, no row
 select * from test.t1 order by a;
 a	b
@@ -2801,24 +2627,16 @@ select * from test.t1 order by a;
 a	b
 3	Espy
 -- Stop replication in both directions
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
+STOP REPLICA;
 -- Delete row from both clusters
 delete from test.t1 where a=3;
 delete from test.t1 where a=3;
 -- Follow up with Insert from Secondary master
 insert into test.t1 values (3, "Dalriada");
 -- Restart replication in both directions
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
+START REPLICA;
 -- Check data on both sites
 --   diverged with NDB$EPOCH
 --   consistent with NDB$EPOCH2 
@@ -2859,9 +2677,7 @@ server_id	master_server_id	master_epoch	count	a	d
 Test 9 : Insert, Insert-Update-Delete conflict
 ------------------------------------------------
 -- Stop replication on Secondary Master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Insert row on Primary Master
 insert into test.t1 values (4, "Haymarket");
 -- Insert row on Secondary Master
@@ -2909,9 +2725,7 @@ server_id	master_server_id	master_epoch	count	a	d
 select * from test.t1 order by a;
 a	b
 -- Restart Secondary Master's slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Check data on Secondary Master, should be same as Primary Master
 select * from test.t1;
 a	b
@@ -2920,9 +2734,7 @@ a	b
 Test 10 : Update, Delete-Insert-Update conflict
 ------------------------------------------------
 -- Stop replication on Secondary Master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update row on Primary Master
 update test.t1 set b="Blind poet" where a=4;
 -- Delete row on Secondary Master
@@ -2974,9 +2786,7 @@ select * from test.t1 order by a;
 a	b
 4	The Tankard
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Check data on Secondary Master - should be as Primary
 select * from test.t1 order by a;
 a	b
@@ -3143,9 +2953,7 @@ server_id	master_server_id	master_epoch	count	a	d
 -------------------------------
 Test 3 : Insert-Insert conflict
 -------------------------------
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Insert a row on the Primary Master
 insert into test.t1 values (2, "Loopy Lornas");
 -- Insert a row on the secondary Master
@@ -3172,9 +2980,7 @@ a	b
 1	Beach house
 2	Cloisters
 -- Restart secondary Masters slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Reexamine secondary Master's data (should be same as Primary Masters)
 select * from test.t1 order by a;
 a	b
@@ -3184,9 +2990,7 @@ a	b
 Test 4 : Update-Update conflict
 -------------------------------
 -- Stop replication to secondary master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update row on Primary Master
 update test.t1 set b="Peters Yard" where a=2;
 -- Show data on Primary Master
@@ -3228,10 +3032,8 @@ select * from test.t1 order by a;
 a	b
 1	Beach house
 2	Toast
--- Now restart slave, will re-align row
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+-- Now restart replica, will re-align row
+START REPLICA;
 -- Check that Secondary is re-aligned
 select * from test.t1 order by a;
 a	b
@@ -3241,9 +3043,7 @@ a	b
 Test 5 : Update-Delete conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update on Primary Master
 update test.t1 set b="Pear tree" where a = 2;
 -- Delete on Secondary Master
@@ -3272,9 +3072,7 @@ select * from test.t1 order by a;
 a	b
 1	Beach house
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, aligned with Master
 select * from test.t1 order by a;
 a	b
@@ -3284,9 +3082,7 @@ a	b
 Test 6 : Delete-Update conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Delete on Primary Master
 delete from test.t1 where a=2;
 -- Update on Secondary Master
@@ -3317,9 +3113,7 @@ a	b
 1	Beach house
 2	Black pig
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, aligned with Master (deleted)
 select * from test.t1 order by a;
 a	b
@@ -3328,9 +3122,7 @@ a	b
 Test 7 : Delete-Delete conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Delete on Primary Master
 delete from test.t1 where a=1;
 -- Delete on Secondary Master
@@ -3362,9 +3154,7 @@ server_id	master_server_id	master_epoch	count	a	d
 select * from test.t1 order by a;
 a	b
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, no row
 select * from test.t1 order by a;
 a	b
@@ -3378,24 +3168,16 @@ select * from test.t1 order by a;
 a	b
 3	Espy
 -- Stop replication in both directions
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
+STOP REPLICA;
 -- Delete row from both clusters
 delete from test.t1 where a=3;
 delete from test.t1 where a=3;
 -- Follow up with Insert from Secondary master
 insert into test.t1 values (3, "Dalriada");
 -- Restart replication in both directions
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
+START REPLICA;
 -- Check data on both sites
 --   diverged with NDB$EPOCH
 --   consistent with NDB$EPOCH2 
@@ -3436,9 +3218,7 @@ server_id	master_server_id	master_epoch	count	a	d
 Test 9 : Insert, Insert-Update-Delete conflict
 ------------------------------------------------
 -- Stop replication on Secondary Master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Insert row on Primary Master
 insert into test.t1 values (4, "Haymarket");
 -- Insert row on Secondary Master
@@ -3486,9 +3266,7 @@ server_id	master_server_id	master_epoch	count	a	d
 select * from test.t1 order by a;
 a	b
 -- Restart Secondary Master's slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Check data on Secondary Master, should be same as Primary Master
 select * from test.t1;
 a	b
@@ -3497,9 +3275,7 @@ a	b
 Test 10 : Update, Delete-Insert-Update conflict
 ------------------------------------------------
 -- Stop replication on Secondary Master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update row on Primary Master
 update test.t1 set b="Blind poet" where a=4;
 -- Delete row on Secondary Master
@@ -3551,9 +3327,7 @@ select * from test.t1 order by a;
 a	b
 4	The Tankard
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Check data on Secondary Master - should be as Primary
 select * from test.t1 order by a;
 a	b
@@ -3720,9 +3494,7 @@ server_id	master_server_id	master_epoch	count	a	d
 -------------------------------
 Test 3 : Insert-Insert conflict
 -------------------------------
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Insert a row on the Primary Master
 insert into test.t1 values (2, "Loopy Lornas");
 -- Insert a row on the secondary Master
@@ -3749,9 +3521,7 @@ a	b
 1	Beach house
 2	Cloisters
 -- Restart secondary Masters slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Reexamine secondary Master's data (should be same as Primary Masters)
 select * from test.t1 order by a;
 a	b
@@ -3761,9 +3531,7 @@ a	b
 Test 4 : Update-Update conflict
 -------------------------------
 -- Stop replication to secondary master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update row on Primary Master
 update test.t1 set b="Peters Yard" where a=2;
 -- Show data on Primary Master
@@ -3805,10 +3573,8 @@ select * from test.t1 order by a;
 a	b
 1	Beach house
 2	Toast
--- Now restart slave, will re-align row
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+-- Now restart replica, will re-align row
+START REPLICA;
 -- Check that Secondary is re-aligned
 select * from test.t1 order by a;
 a	b
@@ -3818,9 +3584,7 @@ a	b
 Test 5 : Update-Delete conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update on Primary Master
 update test.t1 set b="Pear tree" where a = 2;
 -- Delete on Secondary Master
@@ -3849,9 +3613,7 @@ select * from test.t1 order by a;
 a	b
 1	Beach house
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, aligned with Master
 select * from test.t1 order by a;
 a	b
@@ -3861,9 +3623,7 @@ a	b
 Test 6 : Delete-Update conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Delete on Primary Master
 delete from test.t1 where a=2;
 -- Update on Secondary Master
@@ -3894,9 +3654,7 @@ a	b
 1	Beach house
 2	Black pig
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, aligned with Master (deleted)
 select * from test.t1 order by a;
 a	b
@@ -3905,9 +3663,7 @@ a	b
 Test 7 : Delete-Delete conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Delete on Primary Master
 delete from test.t1 where a=1;
 -- Delete on Secondary Master
@@ -3939,9 +3695,7 @@ server_id	master_server_id	master_epoch	count	a	d
 select * from test.t1 order by a;
 a	b
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, no row
 select * from test.t1 order by a;
 a	b
@@ -3955,24 +3709,16 @@ select * from test.t1 order by a;
 a	b
 3	Espy
 -- Stop replication in both directions
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
+STOP REPLICA;
 -- Delete row from both clusters
 delete from test.t1 where a=3;
 delete from test.t1 where a=3;
 -- Follow up with Insert from Secondary master
 insert into test.t1 values (3, "Dalriada");
 -- Restart replication in both directions
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
+START REPLICA;
 -- Check data on both sites
 --   diverged with NDB$EPOCH
 --   consistent with NDB$EPOCH2 
@@ -4013,9 +3759,7 @@ server_id	master_server_id	master_epoch	count	a	d
 Test 9 : Insert, Insert-Update-Delete conflict
 ------------------------------------------------
 -- Stop replication on Secondary Master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Insert row on Primary Master
 insert into test.t1 values (4, "Haymarket");
 -- Insert row on Secondary Master
@@ -4063,9 +3807,7 @@ server_id	master_server_id	master_epoch	count	a	d
 select * from test.t1 order by a;
 a	b
 -- Restart Secondary Master's slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Check data on Secondary Master, should be same as Primary Master
 select * from test.t1;
 a	b
@@ -4074,9 +3816,7 @@ a	b
 Test 10 : Update, Delete-Insert-Update conflict
 ------------------------------------------------
 -- Stop replication on Secondary Master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update row on Primary Master
 update test.t1 set b="Blind poet" where a=4;
 -- Delete row on Secondary Master
@@ -4128,9 +3868,7 @@ select * from test.t1 order by a;
 a	b
 4	The Tankard
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Check data on Secondary Master - should be as Primary
 select * from test.t1 order by a;
 a	b
@@ -4297,9 +4035,7 @@ server_id	master_server_id	master_epoch	count	a	d
 -------------------------------
 Test 3 : Insert-Insert conflict
 -------------------------------
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Insert a row on the Primary Master
 insert into test.t1 values (2, "Loopy Lornas");
 -- Insert a row on the secondary Master
@@ -4326,9 +4062,7 @@ a	b
 1	Beach house
 2	Cloisters
 -- Restart secondary Masters slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Reexamine secondary Master's data (should be same as Primary Masters)
 select * from test.t1 order by a;
 a	b
@@ -4338,9 +4072,7 @@ a	b
 Test 4 : Update-Update conflict
 -------------------------------
 -- Stop replication to secondary master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update row on Primary Master
 update test.t1 set b="Peters Yard" where a=2;
 -- Show data on Primary Master
@@ -4382,10 +4114,8 @@ select * from test.t1 order by a;
 a	b
 1	Beach house
 2	Toast
--- Now restart slave, will re-align row
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+-- Now restart replica, will re-align row
+START REPLICA;
 -- Check that Secondary is re-aligned
 select * from test.t1 order by a;
 a	b
@@ -4395,9 +4125,7 @@ a	b
 Test 5 : Update-Delete conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update on Primary Master
 update test.t1 set b="Pear tree" where a = 2;
 -- Delete on Secondary Master
@@ -4426,9 +4154,7 @@ select * from test.t1 order by a;
 a	b
 1	Beach house
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, aligned with Master
 select * from test.t1 order by a;
 a	b
@@ -4438,9 +4164,7 @@ a	b
 Test 6 : Delete-Update conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Delete on Primary Master
 delete from test.t1 where a=2;
 -- Update on Secondary Master
@@ -4471,9 +4195,7 @@ a	b
 1	Beach house
 2	Black pig
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, aligned with Master (deleted)
 select * from test.t1 order by a;
 a	b
@@ -4482,9 +4204,7 @@ a	b
 Test 7 : Delete-Delete conflict
 -------------------------------
 -- Stop Secondary slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Delete on Primary Master
 delete from test.t1 where a=1;
 -- Delete on Secondary Master
@@ -4516,9 +4236,7 @@ server_id	master_server_id	master_epoch	count	a	d
 select * from test.t1 order by a;
 a	b
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Examine data on Secondary Master after slave restart, no row
 select * from test.t1 order by a;
 a	b
@@ -4532,24 +4250,16 @@ select * from test.t1 order by a;
 a	b
 3	Espy
 -- Stop replication in both directions
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
+STOP REPLICA;
 -- Delete row from both clusters
 delete from test.t1 where a=3;
 delete from test.t1 where a=3;
 -- Follow up with Insert from Secondary master
 insert into test.t1 values (3, "Dalriada");
 -- Restart replication in both directions
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
+START REPLICA;
 -- Check data on both sites
 --   diverged with NDB$EPOCH
 --   consistent with NDB$EPOCH2 
@@ -4590,9 +4300,7 @@ server_id	master_server_id	master_epoch	count	a	d
 Test 9 : Insert, Insert-Update-Delete conflict
 ------------------------------------------------
 -- Stop replication on Secondary Master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Insert row on Primary Master
 insert into test.t1 values (4, "Haymarket");
 -- Insert row on Secondary Master
@@ -4640,9 +4348,7 @@ server_id	master_server_id	master_epoch	count	a	d
 select * from test.t1 order by a;
 a	b
 -- Restart Secondary Master's slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Check data on Secondary Master, should be same as Primary Master
 select * from test.t1;
 a	b
@@ -4651,9 +4357,7 @@ a	b
 Test 10 : Update, Delete-Insert-Update conflict
 ------------------------------------------------
 -- Stop replication on Secondary Master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Update row on Primary Master
 update test.t1 set b="Blind poet" where a=4;
 -- Delete row on Secondary Master
@@ -4705,9 +4409,7 @@ select * from test.t1 order by a;
 a	b
 4	The Tankard
 -- Restart Secondary Master slave
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Check data on Secondary Master - should be as Primary
 select * from test.t1 order by a;
 a	b
@@ -4802,9 +4504,7 @@ a int primary key,
 b int,
 c varchar(2000)) engine=ndb;
 -- Stop replication from Primary -> Secondary
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 -- Insert a row on Primary
 insert into test.t1 values (1,1,repeat('B', 2000));
 -- Generate a large batch of inserts with early + late conflicts
@@ -4837,9 +4537,7 @@ ndb_conflict_fn_epoch2
 Exception table contents
 SELECT server_id, master_server_id, master_epoch, count, a, d FROM `t1$EX` ORDER BY server_id, master_server_id, master_epoch, count;
 SELECT * FROM `t1$EX` ORDER BY a, d;
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 -- Look at Seconday row
 select a,b,sha1(c) from test.t1 where a=1;
 a	b	sha1(c)
@@ -4851,13 +4549,9 @@ a	b	sha1(c)
 Test batching of DELETE vs DELETE with following INSERT
 delete from test.t1;
 insert into test.t1 values (1, 1, "Ma Brows");
--- Stop Slave in both directions
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+-- Stop Replica in both directions
+STOP REPLICA;
+STOP REPLICA;
 -- Delete row on Primary Cluster
 delete from test.t1 where a=1;
 -- Delete row on Secondary Cluster, followed by Insert in later 'batch'
@@ -4877,7 +4571,7 @@ insert into test.t1 values (1, 1, 'Malleny arms');
 COMMIT;
 end%
 call test.doit(200);
--- Restart slave on Primary Cluster
+-- Restart replica on Primary Cluster
 start replica;
 -- Show data on Primary Cluster (should have row inserted on Secondary)
 select * from test.t1 where a=1;
@@ -4887,10 +4581,8 @@ a	b	c
 select * from test.t1 where a=1;
 a	b	c
 1	1	Malleny arms
---Restart slave on Secondary Cluster
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+--Restart replica on Secondary Cluster
+START REPLICA;
 -- Show data on Clusters after slaves restarted+synced
 For NDB$EPOCH, the data will be missing
 as expected with delete vs delete conflict
@@ -4933,6 +4625,6 @@ drop table mysql.ndb_replication;
 -- Attempt to get system back in pre-test state
 stop replica;
 reset replica;
-include/rpl_end.inc
+include/rpl/deinit.inc
 SET GLOBAL ndb_applier_conflict_role="NONE";
 SET GLOBAL ndb_applier_conflict_role="NONE";

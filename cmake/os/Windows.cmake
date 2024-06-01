@@ -1,15 +1,16 @@
-# Copyright (c) 2010, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2010, 2024, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -98,7 +99,11 @@ IF(MSVC)
   STRING_APPEND(WIN_STL_DEBUG_ITERATORS_DOC
     "debug checks, 1 for simple checks only, 0 for disabled.")
 
-  SET(WIN_STL_DEBUG_ITERATORS 2 CACHE STRING "${WIN_STL_DEBUG_ITERATORS_DOC}")
+  IF(WIN32_CLANG)
+    SET(WIN_STL_DEBUG_ITERATORS 0 CACHE STRING "${WIN_STL_DEBUG_ITERATORS_DOC}")
+  ELSE()
+    SET(WIN_STL_DEBUG_ITERATORS 2 CACHE STRING "${WIN_STL_DEBUG_ITERATORS_DOC}")
+  ENDIF()
   SET_PROPERTY(CACHE WIN_STL_DEBUG_ITERATORS PROPERTY STRINGS 0 1 2)
 
   OPTION(LINK_STATIC_RUNTIME_LIBRARIES "Link with /MT" OFF)
@@ -106,13 +111,14 @@ IF(MSVC)
     SET(LINK_STATIC_RUNTIME_LIBRARIES ON)
   ENDIF()
 
-  # Remove the /RTC1 debug compiler option that cmake includes by default for MSVC
-  # as its presence significantly slows MTR testing and rarely detects bugs.
+  # Remove the /RTC1 debug compiler option that cmake includes by default for
+  # MSVC as its significantly slows MTR testing and rarely detects bugs.
   IF (NOT WIN_DEBUG_RTC)
     STRING(REPLACE "/RTC1"  "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
   ENDIF()
 
-  STRING_APPEND(CMAKE_CXX_FLAGS_DEBUG " -D_ITERATOR_DEBUG_LEVEL=${WIN_STL_DEBUG_ITERATORS}")
+  STRING_APPEND(CMAKE_CXX_FLAGS_DEBUG
+    " -D_ITERATOR_DEBUG_LEVEL=${WIN_STL_DEBUG_ITERATORS}")
 
   # Enable debug info also in Release build,
   # and create PDB to be able to analyze crashes.

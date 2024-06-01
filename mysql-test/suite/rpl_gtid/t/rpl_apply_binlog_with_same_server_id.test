@@ -23,8 +23,8 @@
 
 # This test requires row format binlogging.
 --source include/have_binlog_format_row.inc
---source include/only_mts_replica_parallel_workers.inc
---source include/only_mts_replica_parallel_type_logical_clock.inc
+--source include/have_replica_parallel_workers.inc
+--source include/have_replica_parallel_type_logical_clock.inc
 
 # 1) Supress a warning.
 call mtr.add_suppression("using --replicate-same-server-id in conjunction with --log-replica-updates would lead to infinite loops in this server.");
@@ -46,8 +46,8 @@ call mtr.add_suppression("using --replicate-same-server-id in conjunction with -
 
 # 6) Start replica in parallel mode.
 SET GLOBAL RELAY_LOG_PURGE=OFF;
-CHANGE MASTER TO RELAY_LOG_FILE='replicate-relay-bin.000001', RELAY_LOG_POS=1, MASTER_HOST='dummy';
-START SLAVE SQL_THREAD;
+CHANGE REPLICATION SOURCE TO RELAY_LOG_FILE='replicate-relay-bin.000001', RELAY_LOG_POS=1, SOURCE_HOST='dummy';
+START REPLICA SQL_THREAD;
 
 # 7) Wait for replica to finish.
 --let $show_statement= SHOW PROCESSLIST
@@ -57,5 +57,5 @@ START SLAVE SQL_THREAD;
 
 # 8) Cleanup.
 SET GLOBAL RELAY_LOG_PURGE=ON;
-STOP SLAVE SQL_THREAD;
+STOP REPLICA SQL_THREAD;
 CHANGE REPLICATION SOURCE TO SOURCE_HOST='127.0.0.1', SOURCE_USER='root';

@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2017, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1799,4 +1800,50 @@ bool Ndb_dd_client::dbug_shuffle_spi_for_NDB_tables() {
   return false;
 }
 
+bool Ndb_dd_client::change_version_for_table(const char *schema_name,
+                                             const char *table_name,
+                                             uint new_version) {
+  DBUG_TRACE;
+
+  if (!mdl_lock_schema(schema_name)) {
+    assert(false);
+    return false;
+  }
+
+  // Read new schema from DD
+  const dd::Schema *schema = nullptr;
+  if (m_client->acquire(schema_name, &schema)) {
+    return false;
+  }
+  if (schema == nullptr) {
+    // Database does not exist
+    return false;
+  }
+
+  if (!mdl_locks_acquire_exclusive(schema_name, table_name)) {
+    assert(false);
+    return false;
+  }
+
+  // Read table from DD
+  const dd::Table *table_def = nullptr;
+  if (m_client->acquire(schema_name, table_name, &table_def)) return false;
+
+  if (table_def == nullptr) {
+    return false;
+  }
+
+  const Ndb_dd_handle ndb_id = ndb_dd_table_get_spi_and_version(table_def);
+  if (!set_object_id_and_version_in_table(schema_name, table_name, ndb_id.spi,
+                                          new_version)) {
+    return false;
+  }
+  // Save updated table definitions to DD
+  commit();
+
+  std::cout << "Ndb_dd_client: Changed version of " << schema_name << "."
+            << table_name << " to " << new_version << std::endl;
+
+  return true;
+}
 #endif

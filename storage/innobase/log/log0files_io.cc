@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
 as published by the Free Software Foundation.
 
-This program is also distributed with certain software (including
+This program is designed to work with certain software (including
 but not limited to OpenSSL) that is licensed under separate terms,
 as designated in a particular file or component or in included license
 documentation.  The authors of MySQL hereby grant you an additional
 permission to link the program and your derivative works with the
-separately licensed software that they have included with MySQL.
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -281,9 +282,30 @@ dberr_t Log_file_handle::open() {
 
   ut_ad(s_n_open.fetch_add(1) + 1 <= LOG_MAX_OPEN_FILES);
 
+  /* Note on `OS_FILE_AIO` flag: We don't plan to execute asynchronous IOs on
+  redolog files, all access is through synchronous `os_file_io` calls. The
+  OS_FILE_AIO on Windows causes the file to be in the Overlapped IO mode. The
+  Overlapped IO only affects the low level kernel code, but at the higher level
+  of abstraction the `os_file_io` may need to use `GetOverlappedResult` to wait
+  for the operation to complete before returning, so from the point of view of
+  InnoDB the calls are blocking. All of the operations on redo log files
+  shouldn't really overlap in time, because all operations are done when holding
+  `log_sys->writer_mutex`. Except for `FlushFileBuffers`, which are called when
+  holding `log_sys->flusher_mutex`. On Windows not using Overlapped IO mode
+  means that concurrent synchronous IO requests are serialized on this file,
+  including `WriteFile` and `FlushFileBuffers` calls, which for good performance
+  we need to be executed concurrently. Not having file opened for Overlapped IO
+  mode is impacting performance on Windows very negatively, for example on
+  Sysbench TPCC workloads.
+  However, for non-Overlapped IO mode the `FlushFileBuffers` is not documented
+  to be serialized with other file operations, yet in current implementation it
+  is. And it makes sense, as it is kind of file operation even if it is not
+  listed explicitly on the list of methods that are serialized. So we don't
+  expect this to change and we consider it is a bug in the MSDN documentation
+  that `FlushFileBuffers` is not mentioned on these lists. */
   m_raw_handle =
       os_file_create(innodb_log_file_key, m_file_path.c_str(), OS_FILE_OPEN,
-                     OS_FILE_NORMAL, OS_LOG_FILE, read_only, &m_is_open);
+                     OS_FILE_AIO, OS_LOG_FILE, read_only, &m_is_open);
   if (m_is_open) {
     return DB_SUCCESS;
   }
@@ -895,7 +917,7 @@ static dberr_t log_rename_file_low(const Log_files_context &ctx
 
 #ifndef _WIN32
   if (success) {
-    log_flush_directory_low(ctx.m_root_path.c_str());
+    log_flush_directory_low(log_directory_path(ctx));
   }
 #endif /* !_WIN32 */
 

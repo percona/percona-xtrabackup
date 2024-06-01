@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -61,11 +62,11 @@ static std::enable_if_t<std::is_unsigned<T>::value,
                         stdx::expected<T, std::error_code>>
 from_chars(const std::string &value, int base = 10) {
   if (value.empty()) {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 
   if (base < 2 || base > 36) {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 
   uint64_t num{};
@@ -74,13 +75,11 @@ from_chars(const std::string &value, int base = 10) {
 
     const auto digit = from_digit(c);
     if (digit == -1) {
-      return stdx::make_unexpected(
-          make_error_code(std::errc::invalid_argument));
+      return stdx::unexpected(make_error_code(std::errc::invalid_argument));
     }
 
     if (digit >= base) {
-      return stdx::make_unexpected(
-          make_error_code(std::errc::invalid_argument));
+      return stdx::unexpected(make_error_code(std::errc::invalid_argument));
     }
 
     num += digit;
@@ -88,7 +87,7 @@ from_chars(const std::string &value, int base = 10) {
 
   // check for overflow
   if (static_cast<T>(num) != num) {
-    return stdx::make_unexpected(make_error_code(std::errc::value_too_large));
+    return stdx::unexpected(make_error_code(std::errc::value_too_large));
   }
 
   return {static_cast<T>(num)};
@@ -98,48 +97,53 @@ namespace mysql_harness {
 
 static stdx::expected<TCPAddress, std::error_code> make_tcp_address_ipv6(
     const std::string &endpoint) {
+  using ret_type = stdx::expected<TCPAddress, std::error_code>;
+
   if (endpoint[0] != '[') {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 
   // IPv6 with port
   size_t pos = endpoint.find(']');
   if (pos == std::string::npos) {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 
   const auto addr = endpoint.substr(1, pos - 1);
   const auto addr_res = net::ip::make_address_v6(addr.c_str());
   if (!addr_res) {
-    return addr_res.get_unexpected();
+    return stdx::unexpected(addr_res.error());
   }
 
   ++pos;
   if (pos == endpoint.size()) {
     // ] was last character,  no port
-    return {std::in_place, addr, 0};
+
+    return ret_type{std::in_place, addr, 0};
   }
 
   if (endpoint[pos] != ':') {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 
   const auto port_str = endpoint.substr(++pos);
   const auto port_res = from_chars<uint16_t>(port_str);
 
   if (!port_res) {
-    return port_res.get_unexpected();
+    return stdx::unexpected(port_res.error());
   }
 
   auto port = port_res.value();
 
-  return {std::in_place, addr, port};
+  return ret_type{std::in_place, addr, port};
 }
 
 stdx::expected<TCPAddress, std::error_code> make_tcp_address(
     const std::string &endpoint) {
+  using ret_type = stdx::expected<TCPAddress, std::error_code>;
+
   if (endpoint.empty()) {
-    return {std::in_place, "", 0};
+    return ret_type{std::in_place, "", 0};
   }
 
   if (endpoint[0] == '[') {
@@ -148,26 +152,26 @@ stdx::expected<TCPAddress, std::error_code> make_tcp_address(
     // IPv6 without port
     const auto addr_res = net::ip::make_address_v6(endpoint.c_str());
     if (!addr_res) {
-      return addr_res.get_unexpected();
+      return stdx::unexpected(addr_res.error());
     }
 
-    return {std::in_place, endpoint, 0};
+    return ret_type{std::in_place, endpoint, 0};
   } else {
     // IPv4 or address
     const auto pos = endpoint.find(":");
     if (pos == std::string::npos) {
       // no port
-      return {std::in_place, endpoint, 0};
+      return ret_type{std::in_place, endpoint, 0};
     }
 
     auto addr = endpoint.substr(0, pos);
     auto port_str = endpoint.substr(pos + 1);
     const auto port_res = from_chars<uint16_t>(port_str);
     if (!port_res) {
-      return port_res.get_unexpected();
+      return stdx::unexpected(port_res.error());
     }
 
-    return {std::in_place, addr, port_res.value()};
+    return ret_type{std::in_place, addr, port_res.value()};
   }
 }
 

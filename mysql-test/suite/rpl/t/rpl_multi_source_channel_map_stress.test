@@ -17,19 +17,19 @@
 --source include/not_group_replication_plugin.inc
 # This test case is binary log format agnostic
 --source include/have_binlog_format_row.inc
---source include/master-slave.inc
+--source include/rpl/init_source_replica.inc
 
---source include/rpl_connection_slave.inc
+--source include/rpl/connection_replica.inc
 
 CALL mtr.add_suppression('Replica failed to initialize connection metadata structure from the repository');
 CALL mtr.add_suppression('This operation cannot be performed with a running replica');
 CALL mtr.add_suppression('Could not find target log file mentioned in applier metadata in the index file');
 # For case:
-# STOP SLAVE SQL_THREAD; // IO_THREAD is running
-# CHANGE MASTER TO relay_log_name = 'non-existing relay log name',...;
-# While CHANGE MASTER throwns an error, group_relay_log_name is changed to the
+# STOP REPLICA SQL_THREAD; // IO_THREAD is running
+# CHANGE REPLICATION SOURCE TO relay_log_name = 'non-existing relay log name',...;
+# While CHANGE REPLICATION SOURCE throwns an error, group_relay_log_name is changed to the
 # non-existing file name.
-# START SLAVE SQL_THREAD; // It will log below error.
+# START REPLICA SQL_THREAD; // It will log below error.
 CALL mtr.add_suppression('Could not find relay log file');
 CALL mtr.add_suppression('A replica with the same server_uuid/server_id as this replica has connected to the source');
 
@@ -42,8 +42,8 @@ SET @@GLOBAL.event_scheduler= OFF;
 # Define the amount of channels to create
 --let $num_channels= 2
 
-# Stop slave for the default channel
---source include/stop_slave.inc
+# Stop replica for the default channel
+--source include/rpl/stop_replica.inc
 
 --let $c= 0
 while ($c <= $num_channels)
@@ -61,13 +61,13 @@ while ($c <= $num_channels)
   --replace_result $MASTER_MYPORT SOURCE_PORT
   --eval CREATE EVENT e_change_master_io_ch$c  ON SCHEDULE EVERY 1 SECOND DO CHANGE REPLICATION SOURCE TO SOURCE_USER='root', SOURCE_HOST='127.0.0.1', SOURCE_PORT=$MASTER_MYPORT FOR CHANNEL $cn
   --eval CREATE EVENT e_change_master_sql_ch$c ON SCHEDULE EVERY 1 SECOND DO CHANGE REPLICATION SOURCE TO RELAY_LOG_FILE='slave-relay-bin$rls.000001', RELAY_LOG_POS=4 FOR CHANNEL $cn
-  --eval CREATE EVENT e_start_slave_io_ch$c    ON SCHEDULE EVERY 1 SECOND DO START SLAVE IO_THREAD FOR CHANNEL $cn
-  --eval CREATE EVENT e_stop_slave_io_ch$c     ON SCHEDULE EVERY 1 SECOND DO STOP SLAVE IO_THREAD FOR CHANNEL $cn
-  --eval CREATE EVENT e_reset_slave_ch$c       ON SCHEDULE EVERY 1 SECOND DO RESET SLAVE FOR CHANNEL $cn
-  --eval CREATE EVENT e_reset_slave_all_ch$c   ON SCHEDULE EVERY 1 SECOND DO RESET SLAVE ALL FOR CHANNEL $cn
-  --eval CREATE EVENT e_start_slave_sql_ch$c   ON SCHEDULE EVERY 1 SECOND DO START SLAVE SQL_THREAD FOR CHANNEL $cn
-  --eval CREATE EVENT e_stop_slave_sql_ch$c    ON SCHEDULE EVERY 1 SECOND DO STOP SLAVE SQL_THREAD FOR CHANNEL $cn
-  --eval CREATE EVENT e_sss_ch$c               ON SCHEDULE EVERY 1 SECOND DO SHOW SLAVE STATUS FOR CHANNEL $cn
+  --eval CREATE EVENT e_start_slave_io_ch$c    ON SCHEDULE EVERY 1 SECOND DO START REPLICA IO_THREAD FOR CHANNEL $cn
+  --eval CREATE EVENT e_stop_slave_io_ch$c     ON SCHEDULE EVERY 1 SECOND DO STOP REPLICA IO_THREAD FOR CHANNEL $cn
+  --eval CREATE EVENT e_reset_slave_ch$c       ON SCHEDULE EVERY 1 SECOND DO RESET REPLICA FOR CHANNEL $cn
+  --eval CREATE EVENT e_reset_slave_all_ch$c   ON SCHEDULE EVERY 1 SECOND DO RESET REPLICA ALL FOR CHANNEL $cn
+  --eval CREATE EVENT e_start_slave_sql_ch$c   ON SCHEDULE EVERY 1 SECOND DO START REPLICA SQL_THREAD FOR CHANNEL $cn
+  --eval CREATE EVENT e_stop_slave_sql_ch$c    ON SCHEDULE EVERY 1 SECOND DO STOP REPLICA SQL_THREAD FOR CHANNEL $cn
+  --eval CREATE EVENT e_sss_ch$c               ON SCHEDULE EVERY 1 SECOND DO SHOW REPLICA STATUS FOR CHANNEL $cn
   if ($c == 0)
   {
     --eval CREATE EVENT e_reset_master ON SCHEDULE EVERY 1 SECOND DO RESET BINARY LOGS AND GTIDS
@@ -120,11 +120,11 @@ SET @@GLOBAL.event_scheduler= OFF;
 while ($c > 0)
 {
   --error 0, ER_REPLICA_CHANNEL_DOES_NOT_EXIST
-  --eval STOP SLAVE FOR CHANNEL 'ch$c'
+  --eval STOP REPLICA FOR CHANNEL 'ch$c'
   --dec $c
 }
-STOP SLAVE FOR CHANNEL '';
-RESET SLAVE ALL;
+STOP REPLICA FOR CHANNEL '';
+RESET REPLICA ALL;
 # Reconfigure the default channel
 --replace_result $MASTER_MYPORT SOURCE_PORT
 --eval CHANGE REPLICATION SOURCE TO SOURCE_USER='root', SOURCE_HOST='127.0.0.1', SOURCE_PORT=$MASTER_MYPORT
@@ -134,8 +134,8 @@ RESET SLAVE ALL;
 SET @@GLOBAL.event_scheduler = @saved_event_scheduler;
 SET @@GLOBAL.relay_log_purge = @saved_relay_log_purge;
 
-# To avoid problems in start_slave.inc and rpl_end.inc
+# To avoid problems in rpl/start_replica.inc and rpl/deinit.inc
 --let $rpl_channel_name=
 --let $_for_channel_clause=
---source include/start_slave.inc
---source include/rpl_end.inc
+--source include/rpl/start_replica.inc
+--source include/rpl/deinit.inc

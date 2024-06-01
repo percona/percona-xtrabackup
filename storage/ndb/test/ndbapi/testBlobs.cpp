@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -3217,9 +3218,9 @@ static int bugtest_36756() {
       {{-1, 626, 0, 0, NdbTransaction::Aborted},    // AE
        {0, 626, 0, 626, NdbTransaction::Started}},  // IE
                                                     // PkWrite
-      {{0, 0, 0, 0, NdbTransaction::Started},   // AE
-       {0, 0, 0, 0, NdbTransaction::Started}},  // IE
-                                                // PkDelete
+      {{0, 0, 0, 0, NdbTransaction::Started},       // AE
+       {0, 0, 0, 0, NdbTransaction::Started}},      // IE
+                                                    // PkDelete
       {{-1, 626, 0, 0, NdbTransaction::Aborted},    // AE
        {0, 626, 0, 626, NdbTransaction::Started}},  // IE
                                                     // UkRead
@@ -3232,8 +3233,8 @@ static int bugtest_36756() {
       {{-1, 626, 0, 0, NdbTransaction::Aborted},    // AE
        {0, 626, 0, 626, NdbTransaction::Started}},  // IE
                                                     // UkDelete
-      {{-1, 626, 0, 0, NdbTransaction::Aborted},   // AE
-       {0, 626, 0, 626, NdbTransaction::Started}}  // IE
+      {{-1, 626, 0, 0, NdbTransaction::Aborted},    // AE
+       {0, 626, 0, 626, NdbTransaction::Started}}   // IE
   };
 
   DBG("bugtest_36756 : IgnoreError Delete of nonexisting tuple aborts");

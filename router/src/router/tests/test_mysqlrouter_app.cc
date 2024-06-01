@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -276,8 +277,9 @@ TEST_F(AppTest, CmdLineExtraConfigNoDefaultFail) {
     // in success
     bool parse_ok = mysqlrouter::substitute_envvar(path);
     if (parse_ok) {
-      std::string real_path =
-          mysqlrouter::substitute_variable(path, "{origin}", g_program_name);
+      std::string real_path = mysqlrouter::substitute_variable(
+          path, "{origin}",
+          mysql_harness::Path(g_program_name).dirname().str());
       ASSERT_FALSE(mysql_harness::Path(real_path).exists())
           << "expected that '" << real_path << "' (part of CONFIG_FILES='"
           << CONFIG_FILES << "') does not exist";

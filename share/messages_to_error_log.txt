@@ -1,15 +1,16 @@
-# Copyright (c) 2017, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2017, 2024, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # Without limiting anything contained in the foregoing, this file,
 # which is part of C Driver for MySQL (Connector/C), is also subject to the
@@ -119,7 +120,7 @@ ER_DD_INIT_FAILED
 ER_DD_UPDATING_PLUGIN_MD_FAILED
   eng "Failed to update plugin metadata in dictionary tables."
 
-ER_DD_POPULATING_TABLES_FAILED
+OBSOLETE_ER_DD_POPULATING_TABLES_FAILED
   eng "Failed to Populate DD tables."
 
 ER_DD_VIEW_CANT_CREATE
@@ -585,7 +586,7 @@ ER_CANT_SET_UP_PERSISTED_VALUES
 ER_CANT_SAVE_GTIDS
   eng "Failed to save the set of Global Transaction Identifiers of the last binary log into the mysql.gtid_executed table while the server was shutting down. The next server restart will make another attempt to save Global Transaction Identifiers into the table."
 
-ER_AUTH_CANT_SET_DEFAULT_PLUGIN
+OBSOLETE_ER_AUTH_CANT_SET_DEFAULT_PLUGIN
   eng "Can't start server: Invalid value for --default-authentication-plugin"
 
 ER_CANT_JOIN_SHUTDOWN_THREAD
@@ -1073,7 +1074,7 @@ ER_DD_CREATED_FOR_UPGRADE
 ER_ERRMSG_CANT_FIND_FILE
   eng "Can't find error-message file '%s'. Check error-message file location and 'lc-messages-dir' configuration directive."
 
-ER_ERRMSG_LOADING_55_STYLE
+OBSOLETE_ER_ERRMSG_LOADING_55_STYLE
   eng "Using pre 5.5 semantics to load error messages from %s. If this is not intended, refer to the documentation for valid usage of --lc-messages-dir and --language parameters."
 
 ER_ERRMSG_MISSING_IN_FILE
@@ -4118,16 +4119,16 @@ ER_KEYRING_INVALID_KEY_TYPE
 ER_KEYRING_INVALID_KEY_LENGTH
   eng "Invalid key length for given block cipher"
 
-ER_KEYRING_FAILED_TO_CREATE_KEYRING_DIR
+OBSOLETE_ER_KEYRING_FAILED_TO_CREATE_KEYRING_DIR
   eng "Could not create keyring directory. The keyring_file will stay unusable until correct path to the keyring directory gets provided"
 
-ER_KEYRING_FILE_INIT_FAILED
+OBSOLETE_ER_KEYRING_FILE_INIT_FAILED
   eng "keyring_file initialization failure. Please check if the keyring_file_data points to readable keyring file or keyring file can be created in the specified location. The keyring_file will stay unusable until correct path to the keyring file gets provided"
 
-ER_KEYRING_INTERNAL_EXCEPTION_FAILED_FILE_INIT
+OBSOLETE_ER_KEYRING_INTERNAL_EXCEPTION_FAILED_FILE_INIT
   eng "keyring_file initialization failure due to internal exception inside the plugin."
 
-ER_KEYRING_FAILED_TO_GENERATE_KEY
+OBSOLETE_ER_KEYRING_FAILED_TO_GENERATE_KEY
   eng "Failed to generate a key due to internal exception inside keyring_file plugin"
 
 ER_KEYRING_CHECK_KEY_FAILED_DUE_TO_INVALID_KEY
@@ -4163,7 +4164,7 @@ ER_KEYRING_FAILED_TO_TRUNCATE_FILE
 ER_KEYRING_UNKNOWN_ERROR
   eng "Unknown error %d"
 
-ER_KEYRING_FAILED_TO_SET_KEYRING_FILE_DATA
+OBSOLETE_ER_KEYRING_FAILED_TO_SET_KEYRING_FILE_DATA
   eng "keyring_file_data cannot be set to new value as the keyring file cannot be created/accessed in the provided path"
 
 ER_KEYRING_FILE_IO_ERROR
@@ -4262,43 +4263,43 @@ ER_KEYRING_OKV_FAILED_TO_SET_KEY_FILE
 ER_KEYRING_OKV_KEY_MISMATCH
   eng "Private key does not match the certificate public key"
 
-ER_KEYRING_ENCRYPTED_FILE_INCORRECT_KEYRING_FILE
+OBSOLETE_ER_KEYRING_ENCRYPTED_FILE_INCORRECT_KEYRING_FILE
   eng "Incorrect Keyring file"
 
-ER_KEYRING_ENCRYPTED_FILE_DECRYPTION_FAILED
+OBSOLETE_ER_KEYRING_ENCRYPTED_FILE_DECRYPTION_FAILED
   eng "Keyring_encrypted_file decryption failed. Please verify --keyring-encrypted-file-password option value."
 
-ER_KEYRING_ENCRYPTED_FILE_FOUND_MALFORMED_BACKUP_FILE
+OBSOLETE_ER_KEYRING_ENCRYPTED_FILE_FOUND_MALFORMED_BACKUP_FILE
   eng "Found malformed keyring backup file - removing it"
 
-ER_KEYRING_ENCRYPTED_FILE_FAILED_TO_RESTORE_KEYRING
+OBSOLETE_ER_KEYRING_ENCRYPTED_FILE_FAILED_TO_RESTORE_KEYRING
   eng "Error while restoring keyring from backup file cannot overwrite keyring with backup"
 
-ER_KEYRING_ENCRYPTED_FILE_FAILED_TO_FLUSH_KEYRING
+OBSOLETE_ER_KEYRING_ENCRYPTED_FILE_FAILED_TO_FLUSH_KEYRING
   eng "Error while flushing in-memory keyring into keyring file"
 
-ER_KEYRING_ENCRYPTED_FILE_ENCRYPTION_FAILED
+OBSOLETE_ER_KEYRING_ENCRYPTED_FILE_ENCRYPTION_FAILED
   eng "Keyring_encrypted_file encryption failed. Please verify --keyring-encrypted-file-password option value."
 
-ER_KEYRING_ENCRYPTED_FILE_INVALID_KEYRING_DIR
+OBSOLETE_ER_KEYRING_ENCRYPTED_FILE_INVALID_KEYRING_DIR
   eng "keyring_encrypted_file_data cannot be set to new value as the keyring file cannot be created/accessed in the provided path"
 
-ER_KEYRING_ENCRYPTED_FILE_FAILED_TO_CREATE_KEYRING_DIR
+OBSOLETE_ER_KEYRING_ENCRYPTED_FILE_FAILED_TO_CREATE_KEYRING_DIR
   eng "Could not create keyring directory The keyring_encrypted_file will stay unusable until correct path to the keyring directory gets provided"
 
-ER_KEYRING_ENCRYPTED_FILE_PASSWORD_IS_INVALID
+OBSOLETE_ER_KEYRING_ENCRYPTED_FILE_PASSWORD_IS_INVALID
   eng "The keyring_encrypted_file_password must be set to a valid value."
 
-ER_KEYRING_ENCRYPTED_FILE_PASSWORD_IS_TOO_LONG
+OBSOLETE_ER_KEYRING_ENCRYPTED_FILE_PASSWORD_IS_TOO_LONG
   eng "Too long keyring_encrypted_file_password value."
 
-ER_KEYRING_ENCRYPTED_FILE_INIT_FAILURE
+OBSOLETE_ER_KEYRING_ENCRYPTED_FILE_INIT_FAILURE
   eng "keyring_encrypted_file initialization failure. Please check if the keyring_encrypted_file_data points to readable keyring file or keyring file can be created in the specified location or password to decrypt keyring file is correct."
 
-ER_KEYRING_ENCRYPTED_FILE_INIT_FAILED_DUE_TO_INTERNAL_ERROR
+OBSOLETE_ER_KEYRING_ENCRYPTED_FILE_INIT_FAILED_INTERNAL_ERROR
   eng "keyring_encrypted_file initialization failure due to internal exception inside the plugin"
 
-ER_KEYRING_ENCRYPTED_FILE_GEN_KEY_FAILED_DUE_TO_INTERNAL_ERROR
+OBSOLETE_ER_KEYRING_ENCRYPTED_FILE_GEN_KEY_FAILED_INTERNAL_ERROR
   eng "Failed to generate a key due to internal exception inside keyring_encrypted_file plugin"
 
 ER_KEYRING_AWS_FAILED_TO_SET_CMK_ID
@@ -4397,7 +4398,7 @@ ER_GRP_RPL_EVENT_HANDLING_ERROR
 ER_GRP_RPL_ERROR_GTID_EXECUTION_INFO
   eng "Error when extracting group GTID execution information, some recovery operations may face future issues."
 
-ER_GRP_RPL_CERTIFICATE_SIZE_ERROR
+OBSOLETE_ER_GRP_RPL_CERTIFICATE_SIZE_ERROR
   eng "An error occurred when trying to reduce the Certification information size for transmission."
 
 ER_GRP_RPL_CREATE_APPLIER_CACHE_ERROR
@@ -5624,7 +5625,7 @@ ER_IB_MSG_29
 ER_IB_MSG_30
   eng "%s"
 
-ER_IB_MSG_31
+OBSOLETE_ER_IB_MSG_31
   eng "%s"
 
 ER_IB_MSG_32
@@ -6086,10 +6087,10 @@ ER_IB_MSG_183
 ER_IB_MSG_184
   eng "%s"
 
-ER_IB_MSG_185
+OBSOLETE_ER_IB_MSG_185
   eng "%s"
 
-ER_IB_MSG_186
+OBSOLETE_ER_IB_MSG_186
   eng "%s"
 
 ER_IB_MSG_187
@@ -6212,10 +6213,10 @@ ER_IB_MSG_225
 ER_IB_MSG_226
   eng "%s"
 
-ER_IB_MSG_227
+OBSOLETE_ER_IB_MSG_227
   eng "%s"
 
-ER_IB_MSG_228
+OBSOLETE_ER_IB_MSG_228
   eng "%s"
 
 ER_IB_MSG_229
@@ -6863,7 +6864,7 @@ ER_IB_MSG_442
 ER_IB_MSG_443
   eng "%s"
 
-ER_IB_MSG_444
+OBSOLETE_ER_IB_MSG_444
   eng "%s"
 
 ER_IB_MSG_445
@@ -7157,7 +7158,7 @@ ER_IB_MSG_540
 ER_IB_MSG_541
   eng "%s"
 
-ER_IB_MSG_542
+OBSOLETE_ER_IB_MSG_542
   eng "%s"
 
 ER_IB_MSG_543
@@ -7361,7 +7362,7 @@ ER_IB_MSG_608
 ER_IB_MSG_609
   eng "%s"
 
-ER_IB_MSG_610
+OBSOLETE_ER_IB_MSG_610
   eng "%s"
 
 ER_IB_MSG_611
@@ -7385,20 +7386,20 @@ ER_IB_MSG_616
 ER_IB_MSG_617
   eng "%s"
 
-ER_IB_MSG_618
+OBSOLETE_ER_IB_MSG_618
   eng "%s"
 
 ER_IB_MSG_619
   eng "%s"
 
-ER_IB_MSG_620
+ER_IB_MSG_IBUF_CURSOR_RESTORATION_FAILED
+  eng "ibuf cursor restoration fails!. ibuf record inserted to page %s:%s"
+
+OBSOLETE_ER_IB_MSG_621
   eng "%s"
 
-ER_IB_MSG_621
-  eng "%s"
-
-ER_IB_MSG_622
-  eng "%s"
+ER_IB_MSG_IBUF_FAILED_TO_RESTORE_POSITION
+  eng "Failed to restore ibuf position."
 
 ER_IB_MSG_623
   eng "%s"
@@ -7406,7 +7407,7 @@ ER_IB_MSG_623
 ER_IB_MSG_624
   eng "%s"
 
-ER_IB_MSG_625
+OBSOLETE_ER_IB_MSG_625
   eng "%s"
 
 ER_IB_MSG_626
@@ -8069,8 +8070,8 @@ ER_IB_MSG_844
 ER_IB_MSG_845
   eng "%s"
 
-ER_IB_MSG_846
-  eng "%s"
+ER_IB_MSG_CANT_DECRYPT_REDO_LOG
+  eng "Decryption of redo log block at offset %llu in file %s failed because there's no keyring configured"
 
 ER_IB_MSG_847
   eng "%s"
@@ -9083,8 +9084,8 @@ ER_IB_MSG_1182
 ER_IB_MSG_1183
   eng "%s"
 
-ER_IB_MSG_1184
-  eng "%s"
+ER_IB_ERR_ACCESSING_OUT_OF_BOUND_FIELD_IN_INDEX
+   eng "Trying to access update undo rec field %llu in index %s of table %s but index has only %llu fields. %s. Run also CHECK TABLE %s. n_fields = %llu, i = %llu, ptr = %p."
 
 ER_IB_MSG_1185
   eng "%s"
@@ -9564,7 +9565,7 @@ ER_AUDIT_LOG_USER_FIRST_CHARACTER_MUST_BE_ALPHANUMERIC
 ER_AUDIT_LOG_JSON_FILTER_DOES_NOT_EXIST
   eng "Specified filter has not been found."
 
-ER_IB_MSG_1271
+OBSOLETE_ER_IB_MSG_1271
   eng "Cannot upgrade server earlier than 5.7 to 8.0"
 
 ER_STARTING_INIT
@@ -9973,28 +9974,28 @@ ER_CACHING_SHA2_PASSWORD_SECOND_PASSWORD_USED_INFORMATION
   eng "Second password was used for login by user: '%s'@'%s'."
 
 ER_GRP_RPL_SEND_TRX_PREPARED_MESSAGE_FAILED
-  eng "Error sending transaction '%d:%lld' prepared message from session '%u'."
+  eng "Error sending transaction '%s:%lld' prepared message from session '%u'."
 
 ER_GRP_RPL_RELEASE_COMMIT_AFTER_GROUP_PREPARE_FAILED
-  eng "Error releasing transaction '%d:%lld' for commit on session '%u' after being prepared on all group members."
+  eng "Error releasing transaction '%s:%lld' for commit on session '%u' after being prepared on all group members."
 
 ER_GRP_RPL_TRX_ALREADY_EXISTS_ON_TCM_ON_AFTER_CERTIFICATION
-  eng "Transaction '%d:%lld' already exists on Group Replication consistency manager while being registered after conflict detection."
+  eng "Transaction '%s:%lld' already exists on Group Replication consistency manager while being registered after conflict detection."
 
 ER_GRP_RPL_FAILED_TO_INSERT_TRX_ON_TCM_ON_AFTER_CERTIFICATION
-  eng "Error registering transaction '%d:%lld' on Group Replication consistency manager after conflict detection."
+  eng "Error registering transaction '%s:%lld' on Group Replication consistency manager after conflict detection."
 
 ER_GRP_RPL_REGISTER_TRX_TO_WAIT_FOR_GROUP_PREPARE_FAILED
-  eng "Error registering transaction '%d:%lld' from session '%u' to wait for being prepared on all group members."
+  eng "Error registering transaction '%s:%lld' from session '%u' to wait for being prepared on all group members."
 
 ER_GRP_RPL_TRX_WAIT_FOR_GROUP_PREPARE_FAILED
-  eng "Error on transaction '%d:%lld' from session '%u' while waiting for being prepared on all group members."
+  eng "Error on transaction '%s:%lld' from session '%u' while waiting for being prepared on all group members."
 
 ER_GRP_RPL_TRX_DOES_NOT_EXIST_ON_TCM_ON_HANDLE_REMOTE_PREPARE
-  eng "Transaction '%d:%lld' does not exist on Group Replication consistency manager while receiving remote transaction prepare."
+  eng "Transaction '%s:%lld' does not exist on Group Replication consistency manager while receiving remote transaction prepare."
 
 ER_GRP_RPL_RELEASE_BEGIN_TRX_AFTER_DEPENDENCIES_COMMIT_FAILED
-  eng "Error releasing transaction '%d:%lld' for execution on session '%u' after its dependencies did complete commit."
+  eng "Error releasing transaction '%s:%lld' for execution on session '%u' after its dependencies did complete commit."
 
 ER_GRP_RPL_REGISTER_TRX_TO_WAIT_FOR_DEPENDENCIES_FAILED
   eng "Error registering transaction from session '%u' to wait for its dependencies to complete commit."
@@ -10653,7 +10654,7 @@ ER_ACCESS_DENIED_FOR_USER_ACCOUNT_BLOCKED_BY_PASSWORD_LOCK
 ER_INNODB_OUT_OF_RESOURCES
   eng "%s"
 
-ER_DD_UPGRADE_FOUND_PREPARED_XA_TRANSACTION
+OBSOLETE_ER_DD_UPGRADE_FOUND_PREPARED_XA_TRANSACTION
   eng "Upgrade cannot proceed due to an existing prepared XA transaction."
 
 ER_MIGRATE_TABLE_TO_DD_OOM
@@ -10827,7 +10828,7 @@ ER_INVALID_XPLUGIN_SOCKET_SAME_AS_SERVER
 ER_INNODB_UNABLE_TO_ACQUIRE_DD_OBJECT
   eng "%s"
 
-ER_WARN_LOG_DEPRECATED_PARTITION_PREFIX_KEY
+OBSOLETE_ER_WARN_LOG_DEPRECATED_PARTITION_PREFIX_KEY
   eng "Column '%.64s.%.64s.%.64s' having prefix key part '%.64s(%u)' is ignored by the partitioning function. Use of prefixed columns in the PARTITION BY KEY() clause is deprecated and will be removed in a future release."
 
 ER_IB_MSG_UNDO_TRUNCATE_TOO_OFTEN
@@ -11215,7 +11216,7 @@ ER_NOTE_KEYRING_COMPONENT_INITIALIZED
   eng "Keyring component initialized successfully."
 
 ER_KEYRING_COMPONENT_NOT_INITIALIZED
-  eng "The component is not initialized properly. Make sure that configuration is proper and use ALTER INSTANCE RELOAD KEYRING to reinitialize the component."
+  eng "The component is not initialized properly. Error: %s. Make sure that configuration is proper and use ALTER INSTANCE RELOAD KEYRING to reinitialize the component."
 
 ER_KEYRING_COMPONENT_EXCEPTION
   eng "Keyring component encountered an exception while executing : '%s' API of service: '%s'"
@@ -12288,6 +12289,12 @@ ER_GRP_RPL_MEMBER_INFO_DOES_NOT_EXIST
 ER_USAGE_DEPRECATION_COUNTER
   eng "Deprecated '%s' used %s times, last time used '%s'."
 
+ER_WAITING_FOR_NO_CONNECTIONS
+  eng "Waiting for %u connections to be closed."
+
+ER_WAITING_FOR_NO_THDS
+  eng "Waiting for THDs in partition %u to be closed, %u still left. %u THDs left in total for all partitions."
+
 #
 # End of 8.0 error messages intended to be written to the server error log.
 #
@@ -12592,6 +12599,138 @@ ER_GRP_RPL_MSG_DECODING_FAILED
 ER_GRP_RPL_APPLIER_ERROR_PACKET_RECEIVED
   eng "The Applier process of Group Replication found an error and was requested to stop: %s"
 
+ER_LANGUAGE_COMPONENT_INSTALL_ERROR
+  eng "Cannot install the component."
+
+ER_WARN_LANGUAGE_COMPONENT_CANNOT_UNINSTALL
+  eng "Cannot uninstall the language component: %s."
+
+ER_LANGUAGE_COMPONENT_SERVER_ERROR
+  eng "Calling component service: %s."
+
+ER_LANGUAGE_COMPONENT_INTERNAL_ERROR
+  eng "Internal error while %s."
+
+ER_LANGUAGE_COMPONENT_VM_API_FUNCTION_ERROR
+  eng "Internal VM API function failed: %s."
+
+ER_LANGUAGE_COMPONENT_VM_INTERNAL_ERROR
+  eng "Internal VM error while %s."
+
+ER_WARN_LANGUAGE_COMPONENT_RESOURCE_LIMIT
+  eng "The resource limit has been exceeded. Details: %s."
+
+ER_BLOCKED_CIPHER
+   eng "Value for option '%s' contains cipher '%s' that is blocked. Please refer to the documentation for allowed ciphers."
+
+ER_KEYRING_COMPONENT_KEYRING_FILE_NAME_EMPTY
+   eng "Keyring file path is empty in configuration file."
+
+ER_KEYRING_COMPONENT_KEYRING_FILE_READ_FAILED
+   eng "Failed to read keyring file: %s."
+
+ER_KEYRING_COMPONENT_KEYRING_FILE_DECRYPT_FAILED
+   eng "Failed to decrypt keyring file: %s."
+
+ER_KEYRING_COMPONENT_KEYRING_FILE_INVALID_FORMAT
+   eng "The keyring file content is not in a valid JSON format."
+
+ER_KEYRING_COMPONENT_KEYRING_FILE_JSON_EXTRACT_FAILED
+   eng "Failed to extract a valid JSON data from keyring file."
+
+ER_KEYRING_COMPONENT_KEYRING_FILE_KEY_EXTRACT_FAILED
+   eng "Failed to extract key from keyring file JSON data."
+
+ER_NOTE_KEYRING_COMPONENT_NOT_INITIALIZED
+   eng "Keyring component is not initialized."
+
+ER_NOTE_KEYRING_COMPONENT_EMPTY_DATA_ID
+   eng "Provided Data ID is empty."
+
+ER_NOTE_KEYRING_COMPONENT_KEYS_METADATA_ITERATOR_INIT_FAILED
+  eng "Failed to initialize metadata iterator."
+
+ER_NOTE_KEYRING_COMPONENT_KEY_READ_ITERATOR_INIT_FAILED
+  eng "Failed to initialize key reader iterator."
+
+ER_NOTE_KEYRING_COMPONENT_KEY_READ_ITERATOR_FETCH_FAILED
+  eng "Failed to read key from key reader iterator."
+
+ER_BACKGROUND_HISTOGRAM_UPDATE
+  eng "%*s"
+
+ER_IB_MSG_SUBMIT_DETAILED_BUG_REPORT
+  eng "Submit a detailed bug report to http://bugs.mysql.com"
+
+ER_AUTO_INCREMENT_NOT_SUPPORTED_FOR_FLOAT_DOUBLE
+  eng "AUTO_INCREMENT is not supported with DOUBLE/FLOAT field. Please consider fixing (Schema:%s, Table:%s, Column:%s)."
+
+ER_SERVER_DOWNGRADE_SYS_SCHEMA
+  eng "Downgrading the sys schema."
+
+ER_SERVER_DOWNGRADE_HELP_TABLE_STATUS
+  eng "Downgrade of help tables %s."
+
+ER_KEYRING_MIGRATE_SKIPPED_KEY
+  eng "Could not find data pointed by data_id: %s, auth_id: %s. Skipping."
+
+ER_KEYRING_MIGRATE_MEMORY_DEALLOCATION_FAILED
+  eng "Failed to deallocate reader_object."
+
+ER_LOG_CLIENT_INTERACTION_TIMEOUT
+  eng "A connection from %s was closed by the server due to a timeout in the communication layer (vio:%d, packet:%d) %ld seconds after the last command started. Currently configured wait_timeout is %ld seconds."
+
+ER_GRP_RPL_PREEMPTIVE_GARBAGE_COLLECTION_DIFF_FROM_GRP
+  eng "The member is configured with a group_replication_preemptive_garbage_collection option value '%d' different from the group '%d'. The member will now exit the group."
+
+ER_IB_LONG_ROLLBACK_FULL
+  eng "Still rolling back transaction %llu; %llu undo records rolled back out of %llu total (%lu%% complete). Transaction info: last state: %s"
+
+ER_IB_LONG_ROLLBACK
+  eng "Still rolling back transaction %llu; %llu undo records rolled back out of %llu total (%lu%% complete)."
+
+ER_INVALID_FILE_FORMAT
+  eng "Invalid format of file '%s'."
+
+ER_LOG_SANITIZATION
+  eng "Relay log sanitization: %s"
+
+ER_WARN_LOG_DEPRECATED_NON_STANDARD_KEY
+  eng "Foreign key '%.64s' on table '%.64s'.'%.64s' refers to non-unique key or partial key. This is deprecated and will be removed in a future release."
+
+ER_THREAD_POOL_MTL_DISABLE
+  eng "Disabling MTL in thread group %u since it has %u (=MTL per group) long running transactions."
+
+ER_THREAD_POOL_MTL_REENABLE
+  eng "Re-enabling MTL in thread group %u since it is down to %u long running transactions."
+
+ER_LOG_PARTITION_PREFIX_KEY_NOT_SUPPORTED
+  eng "Column '%.64s.%.64s.%.64s' having prefix key part '%.64s(%u)' in the PARTITION BY KEY() clause is not supported."
+
+ER_LDAP_AUTH_INFO_USER_MAP
+  eng "Login user: %s@%s (external: %s) authenticated as: %s"
+
+ER_ACCESS_DENIED_NO_PROXY_GRANT_WITH_NAME
+  eng "Access denied for user '%s'@'%s', missing proxy privilege to '%s'."
+
+ER_ACCESS_DENIED_NO_PROXY_WITH_NAME
+  eng "Access denied for user '%s'@'%s', proxied user '%s' doesn't exist."
+
+ER_GRP_RPL_RECOVERY_WAIT_APPLIER_BACKLOG_START
+  eng "Distributed recovery will wait until the transactions '%s' contained on the 'group_replication_applier' channel are applied."
+
+ER_GRP_RPL_RECOVERY_WAIT_APPLIER_BACKLOG_FINISH
+  eng "Distributed recovery finished applying the transactions '%s' contained on the 'group_replication_applier' channel."
+
+ER_BULK_READER_ZSTD_ERROR_LOG
+  eng "ZSTD decompression failed: %s"
+
+ER_SECONDARY_ENGINE_DDL_TRACK_PROGRESS
+  eng "%s"
+
+ER_IB_MSG_INNODB_FLUSH_METHOD
+  eng "Using innodb_flush_method=%s"
+
 # DO NOT add server-to-client messages here;
 # they go in messages_to_clients.txt
 # in the same directory as this file.
@@ -12604,9 +12743,10 @@ ER_GRP_RPL_APPLIER_ERROR_PACKET_RECEIVED
 
 
 #
-# End of 8.1+ error messages intended to be written to the server error log.
+# End of 8.1, 8.2, 8.3, 8.4 error messages intended to be written to the server error log.
 #
 
+<<<<<<< HEAD
 #
 # Start of Percona Server 8.0 server error log messages
 #
@@ -12625,6 +12765,10 @@ ER_KEYRING_COMPONENT_KMS_ERROR
 # End of Percona Server 8.0 server error log messages
 #
 
+||||||| 824e2b40640
+
+=======
+>>>>>>> mysql-8.4.0
 ################################################################################
 # Error numbers 50000 to 51999 are reserved. Please do not use them for
 # other error messages.

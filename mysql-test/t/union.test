@@ -122,8 +122,8 @@ insert into t2 values (11),(12),(13),(14),(15);
 (select * from t1 limit 2) union (select * from t2 limit 20,3);
 set SQL_SELECT_LIMIT=2;
 (select * from t1 limit 1) union (select * from t2 limit 3);
-(select * from t1 limit 3) intersect (select * from t1 limit 3);
-(select * from t1 limit 4) except (select * from t1 limit 1);
+(select * from t1 limit 3) intersect (select * from t1 limit 3) order by a;
+(select * from t1 limit 4) except (select * from t1 limit 1) order by a;
 set SQL_SELECT_LIMIT=DEFAULT;
 drop table t1,t2;
 
@@ -2845,3 +2845,15 @@ SELECT 2 UNION SELECT 1
 ON DUPLICATE KEY UPDATE c1 = 1 IN (SELECT 1);
 
 DROP TABLE t1;
+
+--echo # Bug#36112585: Data type is changed from VAR_STRING to STRING by UNION
+--echo #               if all values are empty string
+
+CREATE TABLE t
+SELECT 'AAA' AS a, '' AS b, '' AS c
+UNION ALL
+SELECT 'BBB', 'b', '';
+
+DESCRIBE t;
+
+DROP TABLE t;

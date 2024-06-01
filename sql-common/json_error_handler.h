@@ -1,18 +1,19 @@
 #ifndef JSON_ERROR_HANDLER_INCLUDED
 #define JSON_ERROR_HANDLER_INCLUDED
 
-/* Copyright (c) 2022, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,11 +28,16 @@
 #include <functional>
 
 class THD;
+struct CHARSET_INFO;
+struct MYSQL_TIME_STATUS;
 
 using JsonParseErrorHandler =
     std::function<void(const char *parse_err, size_t err_offset)>;
 using JsonErrorHandler = std::function<void()>;
-
+using JsonCoercionHandler =
+    std::function<void(const char *target_type, int error_code)>;
+using JsonCoercionDeprecatedHandler =
+    std::function<void(MYSQL_TIME_STATUS &status)>;
 /**
   Error handler for the functions that serialize a JSON value in the JSON binary
   storage format. The member functions are called when an error occurs, and they
@@ -99,6 +105,39 @@ class JsonSerializationDefaultErrorHandler final
 
  private:
   const THD *m_thd;
+};
+
+/// Callback function called when a coercion error occurs. It reports the
+/// error as ERROR
+class JsonCoercionErrorHandler {
+ public:
+  explicit JsonCoercionErrorHandler(const char *msgnam) : m_msgnam(msgnam) {}
+  void operator()(const char *target_type, int error_code) const;
+
+ private:
+  /// The name of the field/expression being coerced to be used
+  /// in error message if conversion failed.
+  const char *m_msgnam;
+};
+
+/// Callback function called when a coercion error occurs. It reports the
+/// error as WARNING
+class JsonCoercionWarnHandler {
+ public:
+  explicit JsonCoercionWarnHandler(const char *msgnam) : m_msgnam(msgnam) {}
+  void operator()(const char *target_type, int error_code) const;
+
+ private:
+  /// The name of the field/expression being coerced to be used
+  /// in error message if conversion failed.
+  const char *m_msgnam;
+};
+
+/// Callback function that checks if MYSQL_TIME_STATUS contains a deprecation
+/// warning. If it does, it issues the warning and resets the status indication.
+class JsonCoercionDeprecatedDefaultHandler {
+ public:
+  void operator()(MYSQL_TIME_STATUS &status) const;
 };
 
 #endif  // MYSQL_SERVER

@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 2017, 2023, Oracle and/or its affiliates.
+Copyright (c) 2017, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -1227,15 +1228,6 @@ uint64_t Arch_Block::get_file_offset(uint64_t block_num, Arch_Blk_Type type) {
   return offset;
 }
 
-bool Arch_Block::is_zeroes(const byte *block) {
-  for (ulint i = 0; i < ARCH_PAGE_BLK_SIZE; i++) {
-    if (block[i] != 0) {
-      return (false);
-    }
-  }
-  return (true);
-}
-
 bool Arch_Block::validate(byte *block) {
   auto data_length = Arch_Block::get_data_len(block);
   auto block_checksum = Arch_Block::get_checksum(block);
@@ -1246,7 +1238,7 @@ bool Arch_Block::validate(byte *block) {
         << Arch_Block::get_block_number(block);
     ut_d(ut_error);
     ut_o(return (false));
-  } else if (Arch_Block::is_zeroes(block)) {
+  } else if (ut::is_zeros(block, ARCH_PAGE_BLK_SIZE)) {
     return (false);
   }
 

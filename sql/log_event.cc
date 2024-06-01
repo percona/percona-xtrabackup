@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -373,8 +374,8 @@ static void inline slave_rows_error_report(enum loglevel level, int ha_error,
                                            const char *log_name, ulong pos) {
   const char *handler_error = (ha_error ? HA_ERR(ha_error) : nullptr);
   bool is_group_replication_applier_channel =
-      channel_map.is_group_replication_channel_name(
-          (const_cast<Relay_log_info *>(rli))->get_channel(), true);
+      channel_map.is_group_replication_applier_channel_name(
+          (const_cast<Relay_log_info *>(rli))->get_channel());
   char buff[MAX_SLAVE_ERRMSG], *slider;
   const char *buff_end = buff + sizeof(buff);
   size_t len;
@@ -2388,18 +2389,15 @@ void Log_event::print_base64(IO_CACHE *file, PRINT_EVENT_INFO *print_event_info,
         print_event_info->m_table_map.set_table(map->get_table_id(), map);
         break;
       }
-      case mysql::binlog::event::WRITE_ROWS_EVENT:
-      case mysql::binlog::event::WRITE_ROWS_EVENT_V1: {
+      case mysql::binlog::event::WRITE_ROWS_EVENT: {
         ev = new Write_rows_log_event((const char *)ptr, &fd_evt);
         break;
       }
-      case mysql::binlog::event::DELETE_ROWS_EVENT:
-      case mysql::binlog::event::DELETE_ROWS_EVENT_V1: {
+      case mysql::binlog::event::DELETE_ROWS_EVENT: {
         ev = new Delete_rows_log_event((const char *)ptr, &fd_evt);
         break;
       }
       case mysql::binlog::event::UPDATE_ROWS_EVENT:
-      case mysql::binlog::event::UPDATE_ROWS_EVENT_V1:
       case mysql::binlog::event::PARTIAL_UPDATE_ROWS_EVENT: {
         ev = new Update_rows_log_event((const char *)ptr, &fd_evt);
         break;
@@ -2973,7 +2971,7 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
     }
     ptr_group->checkpoint_seqno = rli->rli_checkpoint_seqno;
     ptr_group->ts = common_header->when.tv_sec +
-                    (time_t)exec_time;  // Seconds_behind_master related
+                    (time_t)exec_time;  // Seconds_behind_source related
     rli->rli_checkpoint_seqno++;
     /*
       Coordinator should not use the main memroot however its not
@@ -4892,9 +4890,9 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
     /*
       In the slave thread, we may sometimes execute some DROP / * 40005
       TEMPORARY * / TABLE that come from parts of binlogs (likely if we
-      use RESET SLAVE or CHANGE MASTER TO), while the temporary table
-      has already been dropped. To ignore such irrelevant "table does
-      not exist errors", we silently clear the error if TEMPORARY was used.
+      use RESET REPLICA or CHANGE REPLICATION SOURCE TO), while the temporary
+      table has already been dropped. To ignore such irrelevant "table does not
+      exist errors", we silently clear the error if TEMPORARY was used.
     */
     if (thd->lex->sql_command == SQLCOM_DROP_TABLE &&
         thd->lex->drop_temporary && thd->is_error() &&
@@ -5469,6 +5467,13 @@ int Format_description_log_event::do_apply_event(Relay_log_info const *rli) {
 }
 
 int Format_description_log_event::do_update_pos(Relay_log_info *rli) {
+  // if we are processing FDE from the binlog file directly (binlog file
+  // is being applied directly acting as the relay log), we need to
+  // skip logical clock check in the first event that updates the logical clock
+  if (!is_relay_log_event()) {
+    rli->current_mts_submode->indicate_start_of_new_file();
+  }
+
   if (server_id == (uint32)::server_id) {
     /*
       We only increase the relay log position if we are skipping
@@ -7518,7 +7523,7 @@ int Execute_load_query_log_event::do_apply_event(Relay_log_info const *rli) {
 
   /*
     If there was an error the slave is going to stop, leave the
-    file so that we can re-execute this event at START SLAVE.
+    file so that we can re-execute this event at START REPLICA.
   */
   if (!error) {
     /*
@@ -7884,7 +7889,6 @@ Rows_log_event::Rows_log_event(
       m_cols.bitmap;  // See explanation below while setting is_valid.
 
   if (m_type == mysql::binlog::event::UPDATE_ROWS_EVENT ||
-      m_type == mysql::binlog::event::UPDATE_ROWS_EVENT_V1 ||
       m_type == mysql::binlog::event::PARTIAL_UPDATE_ROWS_EVENT) {
     /* if bitmap_init fails, is_valid will be set to false*/
     if (likely(!bitmap_init(
@@ -8082,21 +8086,14 @@ size_t Rows_log_event::get_data_size() {
                   : 0) +
              (m_rows_cur - m_rows_buf););
 
-  int data_size = 0;
-  const bool is_v2_event =
-      common_header->type_code > mysql::binlog::event::DELETE_ROWS_EVENT_V1;
-  if (is_v2_event) {
-    data_size = Binary_log_event::ROWS_HEADER_LEN_V2;
-    if (m_extra_row_info.have_ndb_info())
-      data_size +=
-          EXTRA_ROW_INFO_TYPECODE_LENGTH + m_extra_row_info.get_ndb_length();
+  int data_size = Binary_log_event::ROWS_HEADER_LEN_V2;
+  if (m_extra_row_info.have_ndb_info())
+    data_size +=
+        EXTRA_ROW_INFO_TYPECODE_LENGTH + m_extra_row_info.get_ndb_length();
 
-    if (m_extra_row_info.have_part())
-      data_size +=
-          EXTRA_ROW_INFO_TYPECODE_LENGTH + m_extra_row_info.get_part_length();
-  } else {
-    data_size = Binary_log_event::ROWS_HEADER_LEN_V1;
-  }
+  if (m_extra_row_info.have_part())
+    data_size +=
+        EXTRA_ROW_INFO_TYPECODE_LENGTH + m_extra_row_info.get_part_length();
   data_size += no_bytes_in_map(&m_cols);
   data_size += (uint)(end - buf);
 

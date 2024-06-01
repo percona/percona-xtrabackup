@@ -29,7 +29,7 @@ if (`SELECT "$binlog" != "ON"`)
 RESET BINARY LOGS AND GTIDS;
 --enable_query_log
 
-# Following code 'inspired' by include/wait_for_binlog_event.inc
+# Following code 'inspired' by include/rpl/wait_for_binlog_event.inc
 
 --let $wait_binlog_event=drop table
 
@@ -49,7 +49,10 @@ while (`SELECT INSTR("$_event","$wait_binlog_event") = 0`)
 
   connection $source_server;
   --disable_query_log
+  # Supress warning for no replica update filter in NDB
+  --disable_warnings
   create table wait_schema_logging (a int primary key) engine=ndb;
+  --enable_warnings
   drop table wait_schema_logging;
   --enable_query_log
   connection $dest_server;

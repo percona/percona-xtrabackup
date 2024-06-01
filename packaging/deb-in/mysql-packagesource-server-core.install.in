@@ -1,15 +1,16 @@
-# Copyright (c) 2016, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2016, 2024, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -23,44 +24,121 @@
 # binaries
 usr/bin/ibd2sdi
 usr/bin/innochecksum
-usr/bin/lz4_decompress
 usr/bin/my_print_defaults
 usr/bin/mysqlbinlog
 usr/bin/myisamchk
 usr/bin/myisamlog
 usr/bin/myisampack
 usr/bin/mysql_migrate_keyring
-usr/bin/mysql_ssl_rsa_setup
 usr/bin/mysql_tzinfo_to_sql
-usr/bin/mysql_upgrade
 usr/bin/mysql_secure_installation
 usr/bin/mysqld_multi
 usr/bin/mysqld_safe
 usr/bin/perror
-usr/bin/zlib_decompress
 usr/sbin/mysqld
 # man pages
 usr/share/man/man1/ibd2sdi.1
 usr/share/man/man1/innochecksum.1
-usr/share/man/man1/lz4_decompress.1
 usr/share/man/man1/my_print_defaults.1
 usr/share/man/man1/myisamchk.1
 usr/share/man/man1/myisamlog.1
 usr/share/man/man1/myisampack.1
 usr/share/man/man1/mysql_secure_installation.1
-usr/share/man/man1/mysql_ssl_rsa_setup.1
 usr/share/man/man1/mysql_tzinfo_to_sql.1
-usr/share/man/man1/mysql_upgrade.1
 usr/share/man/man1/mysql.server.1
 usr/share/man/man1/mysqlbinlog.1
 usr/share/man/man1/mysqld_multi.1
 usr/share/man/man1/mysqld_safe.1
 usr/share/man/man1/perror.1
-usr/share/man/man1/zlib_decompress.1
 usr/share/man/man8/mysqld.8
 # private shared libraries
-usr/lib/mysql/private/libprotobuf-lite.so.3.19.4
-usr/lib/mysql/private/libprotobuf.so.3.19.4
+usr/lib/mysql/private/libprotobuf-lite.so.24.4.0
+usr/lib/mysql/private/libprotobuf.so.24.4.0
+usr/lib/mysql/private/libabsl_bad_any_cast_impl.so
+usr/lib/mysql/private/libabsl_bad_optional_access.so
+usr/lib/mysql/private/libabsl_bad_variant_access.so
+usr/lib/mysql/private/libabsl_base.so
+usr/lib/mysql/private/libabsl_city.so
+usr/lib/mysql/private/libabsl_civil_time.so
+usr/lib/mysql/private/libabsl_cord_internal.so
+usr/lib/mysql/private/libabsl_cord.so
+usr/lib/mysql/private/libabsl_cordz_functions.so
+usr/lib/mysql/private/libabsl_cordz_handle.so
+usr/lib/mysql/private/libabsl_cordz_info.so
+usr/lib/mysql/private/libabsl_cordz_sample_token.so
+usr/lib/mysql/private/libabsl_crc32c.so
+usr/lib/mysql/private/libabsl_crc_cord_state.so
+usr/lib/mysql/private/libabsl_crc_cpu_detect.so
+usr/lib/mysql/private/libabsl_crc_internal.so
+usr/lib/mysql/private/libabsl_debugging_internal.so
+usr/lib/mysql/private/libabsl_demangle_internal.so
+usr/lib/mysql/private/libabsl_die_if_null.so
+usr/lib/mysql/private/libabsl_examine_stack.so
+usr/lib/mysql/private/libabsl_exponential_biased.so
+usr/lib/mysql/private/libabsl_failure_signal_handler.so
+usr/lib/mysql/private/libabsl_flags_commandlineflag_internal.so
+usr/lib/mysql/private/libabsl_flags_commandlineflag.so
+usr/lib/mysql/private/libabsl_flags_config.so
+usr/lib/mysql/private/libabsl_flags_internal.so
+usr/lib/mysql/private/libabsl_flags_marshalling.so
+usr/lib/mysql/private/libabsl_flags_parse.so
+usr/lib/mysql/private/libabsl_flags_private_handle_accessor.so
+usr/lib/mysql/private/libabsl_flags_program_name.so
+usr/lib/mysql/private/libabsl_flags_reflection.so
+usr/lib/mysql/private/libabsl_flags.so
+usr/lib/mysql/private/libabsl_flags_usage_internal.so
+usr/lib/mysql/private/libabsl_flags_usage.so
+usr/lib/mysql/private/libabsl_graphcycles_internal.so
+usr/lib/mysql/private/libabsl_hash.so
+usr/lib/mysql/private/libabsl_hashtablez_sampler.so
+usr/lib/mysql/private/libabsl_int128.so
+usr/lib/mysql/private/libabsl_kernel_timeout_internal.so
+usr/lib/mysql/private/libabsl_leak_check.so
+usr/lib/mysql/private/libabsl_log_entry.so
+usr/lib/mysql/private/libabsl_log_flags.so
+usr/lib/mysql/private/libabsl_log_globals.so
+usr/lib/mysql/private/libabsl_log_initialize.so
+usr/lib/mysql/private/libabsl_log_internal_check_op.so
+usr/lib/mysql/private/libabsl_log_internal_conditions.so
+usr/lib/mysql/private/libabsl_log_internal_format.so
+usr/lib/mysql/private/libabsl_log_internal_globals.so
+usr/lib/mysql/private/libabsl_log_internal_log_sink_set.so
+usr/lib/mysql/private/libabsl_log_internal_message.so
+usr/lib/mysql/private/libabsl_log_internal_nullguard.so
+usr/lib/mysql/private/libabsl_log_internal_proto.so
+usr/lib/mysql/private/libabsl_log_severity.so
+usr/lib/mysql/private/libabsl_log_sink.so
+usr/lib/mysql/private/libabsl_low_level_hash.so
+usr/lib/mysql/private/libabsl_malloc_internal.so
+usr/lib/mysql/private/libabsl_periodic_sampler.so
+usr/lib/mysql/private/libabsl_random_distributions.so
+usr/lib/mysql/private/libabsl_random_internal_distribution_test_util.so
+usr/lib/mysql/private/libabsl_random_internal_platform.so
+usr/lib/mysql/private/libabsl_random_internal_pool_urbg.so
+usr/lib/mysql/private/libabsl_random_internal_randen_hwaes_impl.so
+usr/lib/mysql/private/libabsl_random_internal_randen_hwaes.so
+usr/lib/mysql/private/libabsl_random_internal_randen_slow.so
+usr/lib/mysql/private/libabsl_random_internal_randen.so
+usr/lib/mysql/private/libabsl_random_internal_seed_material.so
+usr/lib/mysql/private/libabsl_random_seed_gen_exception.so
+usr/lib/mysql/private/libabsl_random_seed_sequences.so
+usr/lib/mysql/private/libabsl_raw_hash_set.so
+usr/lib/mysql/private/libabsl_raw_logging_internal.so
+usr/lib/mysql/private/libabsl_scoped_set_env.so
+usr/lib/mysql/private/libabsl_spinlock_wait.so
+usr/lib/mysql/private/libabsl_stacktrace.so
+usr/lib/mysql/private/libabsl_statusor.so
+usr/lib/mysql/private/libabsl_status.so
+usr/lib/mysql/private/libabsl_strerror.so
+usr/lib/mysql/private/libabsl_str_format_internal.so
+usr/lib/mysql/private/libabsl_strings_internal.so
+usr/lib/mysql/private/libabsl_strings.so
+usr/lib/mysql/private/libabsl_string_view.so
+usr/lib/mysql/private/libabsl_symbolize.so
+usr/lib/mysql/private/libabsl_synchronization.so
+usr/lib/mysql/private/libabsl_throw_delegate.so
+usr/lib/mysql/private/libabsl_time.so
+usr/lib/mysql/private/libabsl_time_zone.so
 # private data files
 usr/lib/mysql/private/icudt73l/cnvalias.icu
 usr/lib/mysql/private/icudt73l/uemoji.icu
@@ -83,7 +161,6 @@ usr/lib/mysql/plugin/rewriter.so
 usr/lib/mysql/plugin/mypluglib.so
 usr/lib/mysql/plugin/locking_service.so
 usr/lib/mysql/plugin/adt_null.so
-usr/lib/mysql/plugin/keyring_file.so
 usr/lib/mysql/plugin/keyring_udf.so
 usr/lib/mysql/plugin/auth_socket.so
 usr/lib/mysql/plugin/validate_password.so

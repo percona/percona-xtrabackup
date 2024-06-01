@@ -1,4 +1,4 @@
-include/master-slave.inc
+include/rpl/init_source_replica.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
@@ -15,21 +15,15 @@ Warnings:
 Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 SET GLOBAL replica_parallel_workers= 8;
 SET GLOBAL replica_preserve_commit_order= ON;
-include/start_slave.inc
+include/rpl/start_replica.inc
 [connection master1]
 CALL mtr.add_suppression(".*Following users were specified in CREATE USER IF NOT EXISTS but they already exist.*");
 CALL mtr.add_suppression(".*Following users were specified in ALTER USER IF EXISTS but they do not exist.*");
-SET @save_binlog_transaction_dependency_tracking= @@global.binlog_transaction_dependency_tracking;
-Warnings:
-Warning	1287	'@@binlog_transaction_dependency_tracking' is deprecated and will be removed in a future release.
-SET @@global.binlog_transaction_dependency_tracking = COMMIT_ORDER;
-Warnings:
-Warning	1287	'@@binlog_transaction_dependency_tracking' is deprecated and will be removed in a future release.
 CREATE TABLE t1 (c1 INT PRIMARY KEY) ENGINE = InnoDB;
 CREATE TABLE t2 (c1 INT PRIMARY KEY) ENGINE = InnoDB;
 CREATE TABLE commands (a INT AUTO_INCREMENT PRIMARY KEY, b VARCHAR(100));
 LOAD DATA INFILE '../../std_data/acl.csv' INTO TABLE commands(b);
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 
 # Check for CREATE USER u1;
 
@@ -66,7 +60,7 @@ include/assert.inc [Exactly 0 GTIDs should have been committed since last invoca
 [connection slave]
 ROLLBACK;;
 TRUNCATE TABLE t1; TRUNCATE TABLE t2;;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 
 # Check for CREATE USER IF NOT EXISTS u1;
 
@@ -105,7 +99,7 @@ include/assert.inc [Exactly 0 GTIDs should have been committed since last invoca
 [connection slave]
 ROLLBACK;;
 TRUNCATE TABLE t1; TRUNCATE TABLE t2;;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 
 # Check for CREATE USER IF NOT EXISTS u2;
 
@@ -142,7 +136,7 @@ include/assert.inc [Exactly 0 GTIDs should have been committed since last invoca
 [connection slave]
 ROLLBACK;;
 TRUNCATE TABLE t1; TRUNCATE TABLE t2;;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 
 # Check for CREATE ROLE r1;
 
@@ -179,7 +173,7 @@ include/assert.inc [Exactly 0 GTIDs should have been committed since last invoca
 [connection slave]
 ROLLBACK;;
 TRUNCATE TABLE t1; TRUNCATE TABLE t2;;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 
 # Check for GRANT SELECT ON *.* TO r1;
 
@@ -216,7 +210,7 @@ include/assert.inc [Exactly 0 GTIDs should have been committed since last invoca
 [connection slave]
 ROLLBACK;;
 TRUNCATE TABLE t1; TRUNCATE TABLE t2;;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 
 # Check for DROP ROLE r1;
 
@@ -253,7 +247,7 @@ include/assert.inc [Exactly 0 GTIDs should have been committed since last invoca
 [connection slave]
 ROLLBACK;;
 TRUNCATE TABLE t1; TRUNCATE TABLE t2;;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 
 # Check for GRANT SELECT ON db1.* TO u1;
 
@@ -290,7 +284,7 @@ include/assert.inc [Exactly 0 GTIDs should have been committed since last invoca
 [connection slave]
 ROLLBACK;;
 TRUNCATE TABLE t1; TRUNCATE TABLE t2;;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 
 # Check for REVOKE ALL PRIVILEGES ON *.* FROM u1;
 
@@ -327,7 +321,7 @@ include/assert.inc [Exactly 0 GTIDs should have been committed since last invoca
 [connection slave]
 ROLLBACK;;
 TRUNCATE TABLE t1; TRUNCATE TABLE t2;;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 
 # Check for RENAME USER u1 to u3;
 
@@ -364,7 +358,7 @@ include/assert.inc [Exactly 0 GTIDs should have been committed since last invoca
 [connection slave]
 ROLLBACK;;
 TRUNCATE TABLE t1; TRUNCATE TABLE t2;;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 
 # Check for ALTER USER IF EXISTS u1 IDENTIFIED BY "pass";
 
@@ -403,7 +397,7 @@ include/assert.inc [Exactly 0 GTIDs should have been committed since last invoca
 [connection slave]
 ROLLBACK;;
 TRUNCATE TABLE t1; TRUNCATE TABLE t2;;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 
 # Check for ALTER USER IF EXISTS u3 IDENTIFIED BY "pass";
 
@@ -440,7 +434,7 @@ include/assert.inc [Exactly 0 GTIDs should have been committed since last invoca
 [connection slave]
 ROLLBACK;;
 TRUNCATE TABLE t1; TRUNCATE TABLE t2;;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 
 # Check for ALTER USER u3 IDENTIFIED BY "pass3";
 
@@ -477,7 +471,7 @@ include/assert.inc [Exactly 0 GTIDs should have been committed since last invoca
 [connection slave]
 ROLLBACK;;
 TRUNCATE TABLE t1; TRUNCATE TABLE t2;;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 
 # Check for DROP USER u3;
 
@@ -514,7 +508,7 @@ include/assert.inc [Exactly 0 GTIDs should have been committed since last invoca
 [connection slave]
 ROLLBACK;;
 TRUNCATE TABLE t1; TRUNCATE TABLE t2;;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 
 # Check for DROP USER IF EXISTS u1;
 
@@ -553,7 +547,7 @@ include/assert.inc [Exactly 0 GTIDs should have been committed since last invoca
 [connection slave]
 ROLLBACK;;
 TRUNCATE TABLE t1; TRUNCATE TABLE t2;;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 
 # Check for DROP USER IF EXISTS u2;
 
@@ -590,21 +584,18 @@ include/assert.inc [Exactly 0 GTIDs should have been committed since last invoca
 [connection slave]
 ROLLBACK;;
 TRUNCATE TABLE t1; TRUNCATE TABLE t2;;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 
 # Cleanup
 
 [connection master1]
-SET GLOBAL binlog_transaction_dependency_tracking=@save_binlog_transaction_dependency_tracking;
-Warnings:
-Warning	1287	'@@binlog_transaction_dependency_tracking' is deprecated and will be removed in a future release.
 DROP TABLE t1,t2,commands;
-include/sync_slave_sql_with_master.inc
-include/stop_slave.inc
+include/rpl/sync_to_replica.inc
+include/rpl/stop_replica.inc
 SET GLOBAL replica_parallel_type=@save_replica_parallel_type;
 Warnings:
 Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 SET GLOBAL replica_parallel_workers=@save_replica_parallel_workers;
 SET GLOBAL replica_preserve_commit_order=@save_replica_preserve_commit_order;
-include/start_slave.inc
-include/rpl_end.inc
+include/rpl/start_replica.inc
+include/rpl/deinit.inc

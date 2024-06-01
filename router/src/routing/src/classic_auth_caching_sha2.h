@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2022, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -30,6 +31,7 @@
 
 #include <openssl/ssl.h>
 
+#include "basic_protocol_splicer.h"
 #include "classic_auth.h"
 #include "classic_connection_base.h"
 #include "mysql/harness/stdx/expected.h"
@@ -49,23 +51,47 @@ class AuthCachingSha2Password : public AuthBase {
                                              std::string_view pwd);
 
   static stdx::expected<size_t, std::error_code> send_public_key_request(
-      Channel *dst_channel, ClassicProtocolState *dst_protocol);
+      Channel &dst_channel, ClassicProtocolState &dst_protocol);
+
+  template <class Proto>
+  static stdx::expected<size_t, std::error_code> send_public_key_request(
+      TlsSwitchableConnection<Proto> &conn) {
+    return send_public_key_request(conn.channel(), conn.protocol());
+  }
 
   static stdx::expected<size_t, std::error_code> send_public_key(
-      Channel *dst_channel, ClassicProtocolState *dst_protocol,
+      Channel &dst_channel, ClassicProtocolState &dst_protocol,
       const std::string &public_key);
 
+  template <class Proto>
+  static stdx::expected<size_t, std::error_code> send_public_key(
+      TlsSwitchableConnection<Proto> &conn, const std::string &public_key) {
+    return send_public_key(conn.channel(), conn.protocol(), public_key);
+  }
+
   static stdx::expected<size_t, std::error_code>
-  send_plaintext_password_request(Channel *dst_channel,
-                                  ClassicProtocolState *dst_protocol);
+  send_plaintext_password_request(Channel &dst_channel,
+                                  ClassicProtocolState &dst_protocol);
 
   static stdx::expected<size_t, std::error_code> send_plaintext_password(
-      Channel *dst_channel, ClassicProtocolState *dst_protocol,
+      Channel &dst_channel, ClassicProtocolState &dst_protocol,
       const std::string &password);
 
+  template <class Proto>
+  static stdx::expected<size_t, std::error_code> send_plaintext_password(
+      TlsSwitchableConnection<Proto> &conn, const std::string &password) {
+    return send_plaintext_password(conn.channel(), conn.protocol(), password);
+  }
+
   static stdx::expected<size_t, std::error_code> send_encrypted_password(
-      Channel *dst_channel, ClassicProtocolState *dst_protocol,
+      Channel &dst_channel, ClassicProtocolState &dst_protocol,
       const std::string &password);
+
+  template <class Proto>
+  static stdx::expected<size_t, std::error_code> send_encrypted_password(
+      TlsSwitchableConnection<Proto> &conn, const std::string &password) {
+    return send_encrypted_password(conn.channel(), conn.protocol(), password);
+  }
 
   static bool is_public_key_request(const std::string_view &data);
   static bool is_public_key(const std::string_view &data);

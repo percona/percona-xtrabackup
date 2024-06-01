@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -150,25 +151,49 @@ class Transporter {
                                                used >= m_slowdown_limit);
   }
 
+  /**
+   * Update ndbinfo statistics about sendbuffer bytes allocated and
+   * used by transporter.
+   * Note that allocated bytes may be sparsely populated pages,
+   * resulting in an overallocation of pages as well.
+   * We expect the buffers soon to be packed in such cases.
+   */
+  void update_send_buffer_usage(Uint64 allocBytes, Uint64 usedBytes) {
+    m_send_buffer_alloc_bytes = allocBytes;
+    if (allocBytes > m_send_buffer_max_alloc_bytes)
+      m_send_buffer_max_alloc_bytes = allocBytes;
+
+    m_send_buffer_used_bytes = usedBytes;
+    if (usedBytes > m_send_buffer_max_used_bytes)
+      m_send_buffer_max_used_bytes = usedBytes;
+  }
+
   virtual bool doSend(bool need_wakeup = true) = 0;
 
   /* Get the configured maximum send buffer usage. */
-  Uint32 get_max_send_buffer() { return m_max_send_buffer; }
+  Uint32 get_max_send_buffer() const { return m_max_send_buffer; }
 
-  Uint32 get_connect_count() { return m_connect_count; }
+  Uint32 get_connect_count() const { return m_connect_count; }
   bool is_encrypted() const { return m_encrypted; }
 
   void inc_overload_count() { m_overload_count++; }
-  Uint32 get_overload_count() { return m_overload_count; }
+  Uint32 get_overload_count() const { return m_overload_count; }
   void inc_slowdown_count() { m_slowdown_count++; }
-  Uint32 get_slowdown_count() { return m_slowdown_count; }
+  Uint32 get_slowdown_count() const { return m_slowdown_count; }
   void set_recv_thread_idx(Uint32 recv_thread_idx) {
     m_recv_thread_idx = recv_thread_idx;
   }
   void set_transporter_active(bool active) { m_is_active = active; }
-  Uint32 get_recv_thread_idx() { return m_recv_thread_idx; }
+  bool is_transporter_active() const { return m_is_active; }
+  Uint32 get_recv_thread_idx() const { return m_recv_thread_idx; }
 
   TransporterType getTransporterType() const;
+
+  Uint64 get_alloc_bytes() const { return m_send_buffer_alloc_bytes; }
+  Uint64 get_max_alloc_bytes() const { return m_send_buffer_max_alloc_bytes; }
+
+  Uint64 get_used_bytes() const { return m_send_buffer_used_bytes; }
+  Uint64 get_max_used_bytes() const { return m_send_buffer_max_used_bytes; }
 
  protected:
   Transporter(TransporterRegistry &, TrpId transporter_index, TransporterType,
@@ -228,12 +253,19 @@ class Transporter {
   /* Overload limit, as configured with the OverloadLimit config parameter. */
   Uint32 m_overload_limit;
   Uint32 m_slowdown_limit;
-  void resetCounters();
   Uint64 m_bytes_sent;
   Uint64 m_bytes_received;
   Uint32 m_connect_count;
   Uint32 m_overload_count;
   Uint32 m_slowdown_count;
+
+  Uint64 m_send_buffer_alloc_bytes;
+  Uint64 m_send_buffer_max_alloc_bytes;  // Historic max use
+
+  Uint64 m_send_buffer_used_bytes;
+  Uint64 m_send_buffer_max_used_bytes;  // Historic max use
+
+  void resetCounters();
 
   // Sending/Receiving socket used by both client and server
   NdbSocket theSocket;
@@ -363,9 +395,14 @@ inline Uint32 Transporter::fetch_send_iovec_data(struct iovec dst[],
 }
 
 inline void Transporter::iovec_data_sent(int nBytesSent) {
-  Uint32 used_bytes =
+  Uint32 remaining_bytes =
       get_callback_obj()->bytes_sent(m_transporter_index, nBytesSent);
-  update_status_overloaded(used_bytes);
+  update_status_overloaded(remaining_bytes);
+
+  if (remaining_bytes == 0) {
+    m_send_buffer_alloc_bytes = 0;
+    m_send_buffer_used_bytes = 0;
+  }
 }
 
 inline bool Transporter::checksum_state::compute(const void *buf, size_t len) {

@@ -1,16 +1,17 @@
 /*
-Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
 as published by the Free Software Foundation.
 
-This program is also distributed with certain software (including
+This program is designed to work with certain software (including
 but not limited to OpenSSL) that is licensed under separate terms,
 as designated in a particular file or component or in included license
 documentation.  The authors of MySQL hereby grant you an additional
 permission to link the program and your derivative works with the
-separately licensed software that they have included with MySQL.
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -37,8 +38,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #include <sys/types.h>
 #include <time.h>
 
-#include "client/client_priv.h"
 #include "client/client_query_attributes.h"
+#include "client/include/client_priv.h"
+#include "client/include/user_registration.h"
 #include "client/multi_option.h"
 #include "client/my_readline.h"
 #include "client/pattern_matcher.h"
@@ -64,7 +66,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #include "strxmov.h"
 #include "strxnmov.h"
 #include "typelib.h"
-#include "user_registration.h"
 #include "violite.h"
 
 #ifdef HAVE_SYS_IOCTL_H
@@ -245,7 +246,6 @@ static char *shared_memory_base_name = nullptr;
 static uint opt_protocol = 0;
 static const CHARSET_INFO *charset_info = &my_charset_latin1;
 
-static char *opt_fido_register_factor = nullptr;
 static char *opt_oci_config_file = nullptr;
 static char *opt_authentication_oci_client_config_profile = nullptr;
 static char *opt_register_factor = nullptr;
@@ -259,11 +259,11 @@ static struct my_option my_empty_options[] = {
 
 static void usage(int version);
 
-#include "authentication_kerberos_clientopt-vars.h"
-#include "authentication_webauthn_clientopt-vars.h"
-#include "caching_sha2_passwordopt-vars.h"
-#include "multi_factor_passwordopt-vars.h"
-#include "sslopt-vars.h"
+#include "client/include/authentication_kerberos_clientopt-vars.h"
+#include "client/include/authentication_webauthn_clientopt-vars.h"
+#include "client/include/caching_sha2_passwordopt-vars.h"
+#include "client/include/multi_factor_passwordopt-vars.h"
+#include "client/include/sslopt-vars.h"
 
 const char *default_dbug_option = "d:t:o,/tmp/mysql.trace";
 static void *ssl_session_data = nullptr;
@@ -688,21 +688,21 @@ static COMMANDS commands[] = {
     {"LOOP", 0, nullptr, false, ""},
     {"LOW_PRIORITY", 0, nullptr, false, ""},
     {"MASTER", 0, nullptr, false, ""},
-    {"MASTER_CONNECT_RETRY", 0, nullptr, false, ""},
-    {"MASTER_HOST", 0, nullptr, false, ""},
-    {"MASTER_LOG_FILE", 0, nullptr, false, ""},
-    {"MASTER_LOG_POS", 0, nullptr, false, ""},
-    {"MASTER_PASSWORD", 0, nullptr, false, ""},
-    {"MASTER_PORT", 0, nullptr, false, ""},
-    {"MASTER_SERVER_ID", 0, nullptr, false, ""},
-    {"MASTER_SSL", 0, nullptr, false, ""},
-    {"MASTER_SSL_CA", 0, nullptr, false, ""},
-    {"MASTER_SSL_CAPATH", 0, nullptr, false, ""},
-    {"MASTER_SSL_CERT", 0, nullptr, false, ""},
-    {"MASTER_SSL_CIPHER", 0, nullptr, false, ""},
-    {"MASTER_TLS_VERSION", 0, nullptr, false, ""},
-    {"MASTER_SSL_KEY", 0, nullptr, false, ""},
-    {"MASTER_USER", 0, nullptr, false, ""},
+    {"SOURCE_CONNECT_RETRY", 0, nullptr, false, ""},
+    {"SOURCE_HOST", 0, nullptr, false, ""},
+    {"SOURCE_LOG_FILE", 0, nullptr, false, ""},
+    {"SOURCE_LOG_POS", 0, nullptr, false, ""},
+    {"SOURCE_PASSWORD", 0, nullptr, false, ""},
+    {"SOURCE_PORT", 0, nullptr, false, ""},
+    {"SOURCE_SERVER_ID", 0, nullptr, false, ""},
+    {"SOURCE_SSL", 0, nullptr, false, ""},
+    {"SOURCE_SSL_CA", 0, nullptr, false, ""},
+    {"SOURCE_SSL_CAPATH", 0, nullptr, false, ""},
+    {"SOURCE_SSL_CERT", 0, nullptr, false, ""},
+    {"SOURCE_SSL_CIPHER", 0, nullptr, false, ""},
+    {"SOURCE_TLS_VERSION", 0, nullptr, false, ""},
+    {"SOURCE_SSL_KEY", 0, nullptr, false, ""},
+    {"SOURCE_USER", 0, nullptr, false, ""},
     {"MATCH", 0, nullptr, false, ""},
     {"MAX_CONNECTIONS_PER_HOUR", 0, nullptr, false, ""},
     {"MAX_QUERIES_PER_HOUR", 0, nullptr, false, ""},
@@ -1910,7 +1910,7 @@ static struct my_option my_long_options[] = {
      "This option is disabled by default.",
      nullptr, nullptr, nullptr, GET_STR, OPT_ARG, 0, 0, 0, nullptr, 0, nullptr},
 #endif
-#include "multi_factor_passwordopt-longopts.h"
+#include "client/include/multi_factor_passwordopt-longopts.h"
 #ifdef _WIN32
     {"pipe", 'W', "Use named pipes to connect to server.", nullptr, nullptr,
      nullptr, GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
@@ -1956,8 +1956,8 @@ static struct my_option my_long_options[] = {
     {"socket", 'S', "The socket file to use for connection.",
      &opt_mysql_unix_port, &opt_mysql_unix_port, nullptr, GET_STR_ALLOC,
      REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
-#include "caching_sha2_passwordopt-longopts.h"
-#include "sslopt-longopts.h"
+#include "client/include/caching_sha2_passwordopt-longopts.h"
+#include "client/include/sslopt-longopts.h"
 
     {"table", 't', "Output in table format.", &output_tables, &output_tables,
      nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
@@ -2063,11 +2063,6 @@ static struct my_option my_long_options[] = {
      "Directory path safe for LOAD DATA LOCAL INFILE to read from.",
      &opt_load_data_local_dir, &opt_load_data_local_dir, nullptr, GET_STR,
      REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
-    {"fido-register-factor", 0,
-     "Specifies authentication factor, for which registration needs to be "
-     "done.",
-     &opt_fido_register_factor, &opt_fido_register_factor, nullptr, GET_STR,
-     REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"authentication-oci-client-config-profile", 0,
      "Specifies the configuration profile whose configuration options are to "
      "be read from the OCI configuration file. Default is DEFAULT.",
@@ -2082,8 +2077,8 @@ static struct my_option my_long_options[] = {
     {"telemetry-client", 0, "Load the telemetry_client plugin.",
      &opt_tel_plugin, &opt_tel_plugin, nullptr, GET_BOOL, NO_ARG, 0, 0, 0,
      nullptr, 0, nullptr},
-#include "authentication_kerberos_clientopt-longopts.h"
-#include "authentication_webauthn_clientopt-longopts.h"
+#include "client/include/authentication_kerberos_clientopt-longopts.h"
+#include "client/include/authentication_webauthn_clientopt-longopts.h"
     {"register-factor", 0,
      "Specifies factor for which registration needs to be done for.",
      &opt_register_factor, &opt_register_factor, nullptr, GET_STR, REQUIRED_ARG,
@@ -2211,10 +2206,10 @@ bool get_one_option(int optid, const struct my_option *opt [[maybe_unused]],
       opt_protocol = MYSQL_PROTOCOL_PIPE;
 #endif
       break;
-#include "sslopt-case.h"
+#include "client/include/sslopt-case.h"
 
-#include "authentication_kerberos_clientopt-case.h"
-#include "authentication_webauthn_clientopt-case.h"
+#include "client/include/authentication_kerberos_clientopt-case.h"
+#include "client/include/authentication_webauthn_clientopt-case.h"
 
     case 'V':
       usage(1);
@@ -4995,25 +4990,9 @@ static int sql_real_connect(char *host, char *database, char *user, char *,
   }
 
   /* do token device registration */
-  if (opt_fido_register_factor || opt_register_factor) {
+  if (opt_register_factor) {
     char errmsg[FN_REFLEN + 1]{0};
-    if (opt_fido_register_factor) {
-      put_info(
-          "--fido-register-factor option is deprecreted, instead use "
-          "--register-factor.",
-          INFO_INFO);
-      if (opt_register_factor) {
-        put_info(
-            "--register-factor is specified. Value of --fido-register-factor "
-            "will be ignored.",
-            INFO_INFO);
-      }
-    }
-
-    if (user_device_registration(&mysql_handle,
-                                 opt_register_factor ? opt_register_factor
-                                                     : opt_fido_register_factor,
-                                 errmsg)) {
+    if (user_device_registration(&mysql_handle, opt_register_factor, errmsg)) {
       put_info(errmsg, INFO_ERROR);
       return 1;
     }
@@ -5077,7 +5056,6 @@ static int sql_real_connect(char *host, char *database, char *user, char *,
   charset_info = mysql_handle.charset;
 
   connected = true;
-  mysql_handle.reconnect = debug_info_flag;  // We want to know if this happens
 #ifdef HAVE_READLINE
   build_completion_hash(opt_rehash, true);
 #endif

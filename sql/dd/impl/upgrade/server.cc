@@ -1,15 +1,16 @@
-/* Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -26,6 +27,10 @@
 #include <fcntl.h>
 #include <stdint.h>
 #include <sys/types.h>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+#include <string>
 
 #include "sql/dd/upgrade/server.h"
 #ifdef HAVE_UNISTD_H
@@ -34,17 +39,28 @@
 #include <vector>
 
 #include "my_dbug.h"
+#include "my_rapidjson_size_t.h"
 #include "mysql/components/services/log_builtins.h"
+#include "mysql/psi/mysql_file.h"
 #include "mysql/strings/m_ctype.h"
 #include "nulls.h"
+#include "rapidjson/document.h"
+#include "rapidjson/prettywriter.h"
+#include "rapidjson/stringbuffer.h"
 #include "scripts/mysql_fix_privilege_tables_sql.h"
 #include "scripts/sql_commands_system_tables_data_fix.h"
-#include "scripts/sql_firewall_stored_procedures.h"
+#include "scripts/sql_firewall_sp_firewall_group_delist.h"
+#include "scripts/sql_firewall_sp_firewall_group_enlist.h"
+#include "scripts/sql_firewall_sp_reload_firewall_group_rules.h"
+#include "scripts/sql_firewall_sp_reload_firewall_rules.h"
+#include "scripts/sql_firewall_sp_set_firewall_group_mode.h"
+#include "scripts/sql_firewall_sp_set_firewall_group_mode_and_user.h"
+#include "scripts/sql_firewall_sp_set_firewall_mode.h"
 #include "sql/dd/cache/dictionary_client.h"  // dd::cache::Dictionary_client
 #include "sql/dd/dd_schema.h"                // dd::Schema_MDL_locker
-#include "sql/dd/dd_table.h"  // dd::warn_on_deprecated_prefix_key_partition
-#include "sql/dd/dd_tablespace.h"                 // dd::fill_table_and_parts...
-#include "sql/dd/dd_trigger.h"                    // dd::create_trigger
+#include "sql/dd/dd_table.h"                 // dd::prefix_key_partition_exists
+#include "sql/dd/dd_tablespace.h"            // dd::fill_table_and_parts...
+#include "sql/dd/dd_trigger.h"               // dd::create_trigger
 #include "sql/dd/impl/bootstrap/bootstrap_ctx.h"  // dd::DD_bootstrap_ctx
 #include "sql/dd/impl/bootstrap/bootstrapper.h"
 #include "sql/dd/impl/tables/dd_properties.h"  // dd::tables::DD_properties
@@ -60,7 +76,8 @@
 #include "sql/sp.h"         // Stored_routine_creation_ctx
 #include "sql/sp_head.h"    // sp_head
 #include "sql/sql_base.h"
-#include "sql/sql_prepare.h"
+#include "sql/sql_table.h"
+#include "sql/statement/ed_connection.h"
 #include "sql/strfunc.h"
 #include "sql/table_trigger_dispatcher.h"  // Table_trigger_dispatcher
 #include "sql/thd_raii.h"
@@ -188,6 +205,22 @@ bool Syntax_error_handler::handle_condition(
   return false;
 }
 
+void Syntax_error_handler::reset_last_condition() {
+  // This method was created to handle a corner case in upgrades to 8.4
+  // where old servers contain routines with unsupported terminology.
+  // TODO: As upgrades to 9.0 only come from 8.4+, this code can be removed
+  // in 9.0
+  assert(
+      dd::bootstrap::DD_bootstrap_ctx::instance().is_server_upgrade_from_before(
+          bootstrap::SERVER_VERSION_80400) &&
+      strstr(reason.c_str(), " to use near 'SLAVE STATUS"));
+
+  parse_error_count--;
+  if (m_global_counter) (*m_global_counter)--;
+  is_parse_error = false;
+  reason = "";
+}
+
 bool Syntax_error_handler::has_too_many_errors() {
   return parse_error_count > MAX_SERVER_CHECK_FAILS;
 }
@@ -206,6 +239,10 @@ bool Upgrade_error_counter::has_too_many_errors() {
 }
 Upgrade_error_counter Upgrade_error_counter::operator++(int) {
   m_error_count++;
+  return *this;
+}
+Upgrade_error_counter Upgrade_error_counter::operator--(int) {
+  m_error_count--;
   return *this;
 }
 
@@ -422,7 +459,8 @@ class MySQL_check {
   }
 };
 
-bool ignore_error_and_execute(THD *thd, const char *query_ptr) {
+bool ignore_error_and_execute(THD *thd, const char *query_ptr,
+                              bool print_err = true) {
   Ed_connection con(thd);
   LEX_STRING str;
   lex_string_strmake(thd->mem_root, &str, query_ptr, strlen(query_ptr));
@@ -431,10 +469,102 @@ bool ignore_error_and_execute(THD *thd, const char *query_ptr) {
   if (con.execute_direct(str) &&
       std::find(ignored_errors.begin(), ignored_errors.end(),
                 con.get_last_errno()) == ignored_errors.end()) {
-    LogErr(ERROR_LEVEL, ER_DD_INITIALIZE_SQL_ERROR, query_ptr,
-           con.get_last_errno(), con.get_last_error());
+    if (print_err)
+      LogErr(ERROR_LEVEL, ER_DD_INITIALIZE_SQL_ERROR, query_ptr,
+             con.get_last_errno(), con.get_last_error());
     return true;
   }
+  return false;
+}
+
+/**
+ * This function will create the firewall's stored procedures.
+ *
+ * @param[in]        thd                thread context
+ * @param[in]        drop_query         DROP statement to drop procedure
+ * @param[in]        fw_proc            stored procedure's SQL definition
+ *
+ * @retval           false              execution of query successful
+ * @retval           true               execution of query failed
+ */
+static bool reinstall_firewall_procedures(THD *thd, const char *drop_query,
+                                          const char *fw_proc[]) {
+  if (!ignore_error_and_execute(thd, drop_query, false))
+    for (auto query = fw_proc; *query != nullptr; query++)
+      if (ignore_error_and_execute(thd, *query)) return true;
+
+  return false;
+}
+
+/**
+ * This function will check and create the firewall's stored procedures.
+ *
+ * @param[in]        thd                thread context
+ *
+ * @retval           false              execution of query successful
+ * @retval           true               execution of query failed
+ */
+static bool upgrade_firewall_procedures(THD *thd) {
+  struct firewall_installer {
+    const char *drop_query;
+    const char **fwproc;
+  };
+
+  static firewall_installer fw_commands[] = {
+      {"DROP PROCEDURE sp_set_firewall_mode", firewall_sp_set_firewall_mode},
+      {"DROP PROCEDURE sp_reload_firewall_rules",
+       firewall_sp_reload_firewall_rules},
+      {"DROP PROCEDURE sp_set_firewall_group_mode",
+       firewall_sp_set_firewall_group_mode},
+      {"DROP PROCEDURE sp_set_firewall_group_mode_and_user",
+       firewall_sp_set_firewall_group_mode_and_user},
+      {"DROP PROCEDURE sp_reload_firewall_group_rules",
+       firewall_sp_reload_firewall_group_rules},
+      {"DROP PROCEDURE sp_firewall_group_enlist",
+       firewall_sp_firewall_group_enlist},
+      {"DROP PROCEDURE sp_firewall_group_delist",
+       firewall_sp_firewall_group_delist},
+  };
+
+  for (auto &fw : fw_commands)
+    if (reinstall_firewall_procedures(thd, fw.drop_query, fw.fwproc))
+      return true;
+
+  return false;
+}
+
+/**
+ * This function will switch to the schema which is pointed by the
+ * mysql-firewall-database variable by executing USE.
+ *
+ * @param[in]        thd                thread context
+ * @param[out]       fw_schema          value of mysql-firewall-database
+ *
+ * @retval           false              execution of USE successful
+ * @retval           true               execution of USE failed
+ */
+static bool switch_to_firewall_schema(THD *thd, std::string &fw_schema) {
+  LEX_STRING firewall_schema_name = {nullptr, 0};
+  Ed_connection conn(thd);
+
+  lex_string_strmake(thd->mem_root, &firewall_schema_name,
+                     STRING_WITH_LEN("SELECT @@mysql_firewall_database"));
+
+  if (conn.execute_direct(firewall_schema_name)) return true;
+
+  const List<Ed_row> rows = *(conn.get_result_sets());
+  const MYSQL_LEX_STRING *result = rows[0]->get_column(0);
+  fw_schema = result->str;
+
+  // if firewall is installed in a schema other than mysql
+  // then switch to that schema
+
+  std::string command = "USE ";
+  command.append(fw_schema);  // forms USE <schema>
+
+  if (strcmp("mysql", fw_schema.c_str()))
+    if (ignore_error_and_execute(thd, command.c_str())) return true;
+
   return false;
 }
 
@@ -442,6 +572,8 @@ bool ignore_error_and_execute(THD *thd, const char *query_ptr) {
 static bool upgrade_firewall(THD *thd) {
   bool has_old_firewall_tables{false};
   bool has_new_firewall_tables{false};
+  bool error{false};
+  std::string fw_schema("mysql");
 
   {
     // lock required tables before checking their existence
@@ -452,7 +584,7 @@ static bool upgrade_firewall(THD *thd) {
                      "firewall_groups", MDL_SHARED, MDL_TRANSACTION);
 
     // check whether firewall tables exist
-    bool error =
+    error =
         (thd->mdl_context.acquire_lock(&request1,
                                        thd->variables.lock_wait_timeout) ||
          thd->mdl_context.acquire_lock(&request2,
@@ -467,13 +599,17 @@ static bool upgrade_firewall(THD *thd) {
     if (error) return true;
   }
 
-  // upgrade stored procedures, leave on error
-  if (has_old_firewall_tables && !has_new_firewall_tables)
-    for (auto query = &firewall_stored_procedures[0]; *query != nullptr;
-         query++)
-      if (ignore_error_and_execute(thd, *query)) return true;
+  // upgrade the procedures
+  if (has_old_firewall_tables || has_new_firewall_tables) {
+    error = switch_to_firewall_schema(thd, fw_schema) ||
+            upgrade_firewall_procedures(thd);
 
-  return false;
+    // we might have switched to another schema during fw upgrade
+    // go back to mysql
+    if (fw_schema != "mysql")
+      error |= ignore_error_and_execute(thd, "USE mysql");
+  }
+  return error;
 }
 
 bool fix_sys_schema(THD *thd) {
@@ -503,7 +639,10 @@ bool fix_sys_schema(THD *thd) {
     return false;
 
   const char **query_ptr;
-  LogErr(INFORMATION_LEVEL, ER_SERVER_UPGRADE_SYS_SCHEMA);
+  LogErr(INFORMATION_LEVEL,
+         dd::bootstrap::DD_bootstrap_ctx::instance().is_server_patch_downgrade()
+             ? ER_SERVER_DOWNGRADE_SYS_SCHEMA
+             : ER_SERVER_UPGRADE_SYS_SCHEMA);
   for (query_ptr = &mysql_sys_schema[0]; *query_ptr != nullptr; query_ptr++)
     if (ignore_error_and_execute(thd, *query_ptr)) return true;
   thd->mem_root->Clear();
@@ -546,34 +685,36 @@ bool fix_mysql_tables(THD *thd) {
 }
 
 bool upgrade_help_tables(THD *thd) {
+  // know if it's upgrade or downgrade
+  bool is_downgrade =
+      dd::bootstrap::DD_bootstrap_ctx::instance().is_server_patch_downgrade();
+
   if (dd::execute_query(thd, "USE mysql")) {
     LogErr(ERROR_LEVEL, ER_DD_UPGRADE_FAILED_FIND_VALID_DATA_DIR);
     return true;
   }
-  LogErr(INFORMATION_LEVEL, ER_SERVER_UPGRADE_HELP_TABLE_STATUS, "started");
+
+  LogErr(INFORMATION_LEVEL,
+         is_downgrade ? ER_SERVER_DOWNGRADE_HELP_TABLE_STATUS
+                      : ER_SERVER_UPGRADE_HELP_TABLE_STATUS,
+         "started");
+
   for (const char **query_ptr = &fill_help_tables[0]; *query_ptr != nullptr;
        query_ptr++)
     if (dd::execute_query(thd, *query_ptr)) {
-      LogErr(ERROR_LEVEL, ER_SERVER_UPGRADE_HELP_TABLE_STATUS, "failed");
+      LogErr(ERROR_LEVEL,
+             is_downgrade ? ER_SERVER_DOWNGRADE_HELP_TABLE_STATUS
+                          : ER_SERVER_UPGRADE_HELP_TABLE_STATUS,
+             "failed");
       return true;
     }
-  LogErr(INFORMATION_LEVEL, ER_SERVER_UPGRADE_HELP_TABLE_STATUS, "completed");
+
+  LogErr(INFORMATION_LEVEL,
+         is_downgrade ? ER_SERVER_DOWNGRADE_HELP_TABLE_STATUS
+                      : ER_SERVER_UPGRADE_HELP_TABLE_STATUS,
+         "completed");
+
   return false;
-}
-
-static void create_upgrade_file() {
-  FILE *out;
-  char upgrade_info_file[FN_REFLEN] = {0};
-  fn_format(upgrade_info_file, "mysql_upgrade_info", mysql_real_data_home_ptr,
-            "", MYF(0));
-
-  if ((out = my_fopen(upgrade_info_file, O_TRUNC | O_WRONLY, MYF(0)))) {
-    /* Write new version to file */
-    fputs(MYSQL_SERVER_VERSION, out);
-    my_fclose(out, MYF(0));
-    return;
-  }
-  LogErr(WARNING_LEVEL, ER_SERVER_UPGRADE_INFO_FILE, upgrade_info_file);
 }
 
 static bool get_shared_tablespace_names(
@@ -605,8 +746,11 @@ static bool check_tables(THD *thd, std::unique_ptr<Schema> &schema,
     invalid_triggers(thd, schema->name().c_str(), *table);
 
     // Check for usage of prefix key index in PARTITION BY KEY() function.
-    dd::warn_on_deprecated_prefix_key_partition(
-        thd, schema->name().c_str(), table->name().c_str(), table.get(), true);
+    if (dd::prefix_key_partition_exists(
+            schema->name().c_str(), table->name().c_str(), table.get(), true))
+      return true;
+
+    dd::check_non_standard_key_exists_in_fk(thd, table.get());
 
     // Check for partitioned innodb tables using shared spaces.
     if (!shared_spaces->empty() &&
@@ -627,6 +771,19 @@ static bool check_tables(THD *thd, std::unique_ptr<Schema> &schema,
         }
       }
     }
+
+    // Check if AUTO_INCREMENT is used with DOUBLE/FLOAT
+    for (const auto &col : *table->columns()) {
+      if (col->is_auto_increment() &&
+          (col->type() == enum_column_types::DOUBLE ||
+           col->type() == enum_column_types::FLOAT)) {
+        (*error_count)++;
+        LogErr(ERROR_LEVEL, ER_AUTO_INCREMENT_NOT_SUPPORTED_FOR_FLOAT_DOUBLE,
+               schema->name().c_str(), table->name().c_str(),
+               col->name().c_str());
+      }
+    }
+
     return error_count->has_too_many_errors();
   };
 
@@ -654,15 +811,30 @@ static bool check_events(THD *thd, std::unique_ptr<Schema> &schema,
 }
 
 static bool check_routines(THD *thd, std::unique_ptr<Schema> &schema,
+                           Syntax_error_handler &error_handler,
                            Upgrade_error_counter *error_count) {
   std::unique_ptr<Object_key> routine_key(
       dd::Routine::DD_table::create_key_by_schema_id(schema->id()));
 
   auto process_routine = [&](std::unique_ptr<dd::Routine> &routine) {
-    if (invalid_routine(thd, *schema, *routine))
-      LogErr(ERROR_LEVEL, ER_UPGRADE_PARSE_ERROR, "Routine",
-             schema->name().c_str(), routine->name().c_str(),
-             Syntax_error_handler::error_message());
+    if (invalid_routine(thd, *schema, *routine)) {
+      // This is a corner case in upgrades to 8.4 where old servers contain
+      // routines with unsupported terminology.
+      // TODO: As upgrades to 9.0 only come from 8.4+, this code can be removed
+      // in 9.0
+      if (dd::bootstrap::DD_bootstrap_ctx::instance()
+              .is_server_upgrade_from_before(bootstrap::SERVER_VERSION_80400) &&
+          schema->name() == "sys" && routine->name() == "diagnostics" &&
+          strstr(Syntax_error_handler::error_message(),
+                 " to use near 'SLAVE STATUS")) {
+        error_handler.reset_last_condition();
+        thd->clear_error();
+      } else {
+        LogErr(ERROR_LEVEL, ER_UPGRADE_PARSE_ERROR, "Routine",
+               schema->name().c_str(), routine->name().c_str(),
+               Syntax_error_handler::error_message());
+      }
+    }
     return error_count->has_too_many_errors();
   };
 
@@ -686,7 +858,144 @@ static bool check_views(THD *thd, std::unique_ptr<Schema> &schema,
   return thd->dd_client()->foreach<dd::View>(view_key.get(), process_view);
 }
 
+/* Make sure the old unsupported "mysql_upgrade_info" file is removed. */
+static void remove_legacy_upgrade_info_file() {
+  char upgrade_file[FN_REFLEN] = {0};
+  fn_format(upgrade_file, "mysql_upgrade_info", mysql_real_data_home_ptr, "",
+            MYF(0));
+  if (!my_access(upgrade_file, F_OK))
+    std::ignore = mysql_file_delete(key_file_misc, upgrade_file, MYF(0));
+}
 }  // namespace
+
+/*
+  Maintain a file named "mysql_upgrade_history" in the data directory.
+
+  The file will contain one entry for each upgrade. The format is structured
+  text on JSON format.
+
+  Errors will be written as warnings to the error log; if we e.g. fail to
+  open the upgrade history file, we will not abort the server since this file
+  is not considered a critical feature of the server.
+
+  @param initialize   If this is the initialization of the data directory.
+*/
+void update_upgrade_history_file(bool initialize) {
+  /* Name of the "mysql_upgrade_history" file. */
+  char upgrade_file[FN_REFLEN] = {0};
+  fn_format(upgrade_file, "mysql_upgrade_history", mysql_real_data_home_ptr, "",
+            MYF(0));
+
+  /* JSON keys. */
+  constexpr char k_file_format[] = "file_format";
+  constexpr char k_upgrade_history[] = "upgrade_history";
+  constexpr char k_date[] = "date";
+  constexpr char k_version[] = "version";
+  constexpr char k_maturity[] = "maturity";
+  constexpr char k_initialize[] = "initialize";
+  constexpr char v_file_format[] = "1";
+
+  /* If > max entries, we keep the first and the (max - 1)  last ones. */
+  constexpr int MAX_HISTORY_SIZE = 1000;
+  static_assert(MAX_HISTORY_SIZE >= 2,
+                "The upgrade history should contain at least the first "
+                "and last entry.");
+  using namespace rapidjson;
+  Document doc;
+
+  /* Open file if it exists, auto close on return. */
+  auto deleter = [&](FILE *ptr) {
+    if (ptr != nullptr) my_fclose(ptr, MYF(0));
+  };
+  std::unique_ptr<FILE, decltype(deleter)> fp(nullptr, deleter);
+
+  MY_STAT sa;
+  char errbuf[MYSYS_STRERROR_SIZE];
+  bool file_exists = (my_stat(upgrade_file, &sa, MYF(0)) != nullptr);
+  bool append = file_exists;  // Append to current doc if possible.
+
+  /* If the file exists, read the doc and see if it is valid. */
+  if (file_exists) {
+    fp.reset(my_fopen(upgrade_file, O_RDONLY, MYF(0)));
+    if (fp == nullptr) {
+      LogErr(WARNING_LEVEL, ER_SERVER_CANT_OPEN_FILE, upgrade_file, my_errno(),
+             my_strerror(errbuf, sizeof(errbuf), my_errno()));
+      return;
+    }
+
+    /* Read contents into buffer. */
+    char buff[512] = {0};
+    std::string parsed_value;
+    do {
+      parsed_value.append(buff);
+      buff[0] = '\0';
+    } while (fgets(buff, sizeof(buff) - 1, fp.get()));
+
+    /* Parse JSON, check expected format. */
+    ParseResult ok = doc.Parse(parsed_value.c_str());
+    if (!(ok && doc.IsObject() && doc[k_file_format].IsString() &&
+          doc[k_upgrade_history].IsArray())) {
+      LogErr(WARNING_LEVEL, ER_INVALID_FILE_FORMAT, upgrade_file);
+      append = false;  // Cannot append, must overwrite with an empty doc.
+    }
+  }
+
+  /* If the file existed with valid contents, append, otherwise, overwrite. */
+  if (append) {
+    /* If current version is same as last entry, return. */
+    Value &hist = doc[k_upgrade_history].GetArray();
+    int count = hist.Size();
+    if (count > 0 &&
+        !strcmp(hist[count - 1][k_version].GetString(), server_version))
+      return;
+
+    /* If the doc contains too many entries, remove from the second and on. */
+    int remove_count = (count - MAX_HISTORY_SIZE) + 1;
+    if (remove_count > 0) {
+      hist.Erase(hist.Begin() + 1, hist.Begin() + remove_count + 1);
+    }
+  } else {
+    /* Otherwise, if no file existed, initialize an empty JSON document. */
+    doc.SetObject();
+    doc.AddMember(k_file_format, v_file_format, doc.GetAllocator());
+    Value history(kArrayType);
+    doc.AddMember(k_upgrade_history, history, doc.GetAllocator());
+  }
+
+  /* Append timestamp, MYSQL_SERVER_VERSION and LTS info to version array. */
+  std::stringstream str;
+  std::time_t sec = my_micro_time() / 1000000;
+  str << std::put_time(std::gmtime(&sec), "%F %T");
+  Value date(str.str().c_str(), str.str().size(), doc.GetAllocator());
+  Value version(server_version, strlen(server_version), doc.GetAllocator());
+  Value maturity(MYSQL_VERSION_MATURITY);
+
+  Value new_version;
+  new_version.SetObject();
+  new_version.AddMember(k_date, date, doc.GetAllocator());
+  new_version.AddMember(k_version, version, doc.GetAllocator());
+  new_version.AddMember(k_maturity, maturity, doc.GetAllocator());
+  if (initialize) {
+    Value init(true);
+    new_version.AddMember(k_initialize, init, doc.GetAllocator());
+  }
+  doc[k_upgrade_history].GetArray().PushBack(new_version, doc.GetAllocator());
+
+  /* Reopen the file, which is auto closed on function return. */
+  fp.reset(my_fopen(upgrade_file, O_CREAT | O_TRUNC | O_WRONLY, MYF(0)));
+  if (fp == nullptr) {
+    LogErr(WARNING_LEVEL, ER_SERVER_CANT_OPEN_FILE, upgrade_file, my_errno(),
+           my_strerror(errbuf, sizeof(errbuf), my_errno()));
+    return;
+  }
+
+  /* Write JSON document to a buffer and further to file with a newline. */
+  rapidjson::StringBuffer buffer;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+  doc.Accept(writer);
+  fputs(buffer.GetString(), fp.get());
+  fputs("\n", fp.get());
+}
 
 /*
   This function runs checks on the database before running the upgrade to make
@@ -731,7 +1040,7 @@ bool do_server_upgrade_checks(THD *thd) {
   auto process_schema = [&](std::unique_ptr<Schema> &schema) {
     return check_tables(thd, schema, &shared_spaces, &error_count) ||
            check_events(thd, schema, &error_count) ||
-           check_routines(thd, schema, &error_count) ||
+           check_routines(thd, schema, error_handler, &error_count) ||
            check_views(thd, schema, &error_count);
   };
 
@@ -740,7 +1049,12 @@ bool do_server_upgrade_checks(THD *thd) {
     thd->pop_internal_handler();
     return dd::end_transaction(thd, true);
   }
-
+  ulong non_std_key_cnt = deprecated_use_fk_on_non_standard_key_count;
+  if (non_std_key_cnt != 0) {
+    LogErr(WARNING_LEVEL, ER_USAGE_DEPRECATION_COUNTER,
+           "foreign key referring to a non-unique or partial key",
+           std::to_string(non_std_key_cnt).c_str(), "during upgrade");
+  }
   thd->pop_internal_handler();
   return false;
 }
@@ -915,7 +1229,8 @@ bool upgrade_system_schemas(THD *thd) {
           dd::tables::DD_properties::instance().set(
               thd, "MYSQLD_VERSION_UPGRADED", MYSQL_VERSION_ID);
   }
-  create_upgrade_file();
+
+  remove_legacy_upgrade_info_file();
   bootstrap_error_handler.set_log_error(true);
 
   if (dd::bootstrap::DD_bootstrap_ctx::instance().is_server_patch_downgrade()) {

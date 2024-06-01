@@ -1,4 +1,4 @@
-include/master-slave.inc
+include/rpl/init_source_replica.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
@@ -15,18 +15,18 @@ SET @old_binlog_row_image= @@binlog_row_image;
 # basic assertion that binlog_row_image='FULL' is the
 # default 
 #####################################################
-CON: 'master', IMG: 'FULL', RESTART SLAVE: 'N'
+CON: 'master', IMG: 'FULL', RESTART REPLICA: 'N'
 SET SESSION binlog_row_image= 'FULL';
 SET GLOBAL binlog_row_image= 'FULL';
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
 binlog_row_image	FULL
-CON: 'slave', IMG: 'FULL', RESTART SLAVE: 'Y'
+CON: 'slave', IMG: 'FULL', RESTART REPLICA: 'Y'
 SET SESSION binlog_row_image= 'FULL';
 SET GLOBAL binlog_row_image= 'FULL';
-include/stop_slave.inc
-include/start_slave.inc
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
@@ -42,21 +42,21 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t;;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET @img_types= 'MINIMAL NOBLOB FULL';
-CON: 'master', IMG: 'MINIMAL', RESTART SLAVE: 'N'
+CON: 'master', IMG: 'MINIMAL', RESTART REPLICA: 'N'
 Variable_name	Value
 binlog_row_image	MINIMAL
-CON: 'slave', IMG: 'MINIMAL', RESTART SLAVE: 'Y'
-include/stop_slave.inc
-include/start_slave.inc
+CON: 'slave', IMG: 'MINIMAL', RESTART REPLICA: 'Y'
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
 Variable_name	Value
 binlog_row_image	MINIMAL
 ITERATIONS: row_img: MINIMAL, indexes: UK-NOT-NULL
-include/rpl_reset.inc
+include/rpl/reset.inc
 CREATING TABLE IN master WITH INDEX 'UK-NOT-NULL'
 CREATE TABLE t (c1 int NOT NULL, c2 int, c3 blob, unique key(c1));
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 INSERT INTO t VALUES (1,2,"a");
 SET sql_mode = default;
@@ -73,12 +73,12 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=2;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ITERATIONS: row_img: MINIMAL, indexes: PK
-include/rpl_reset.inc
+include/rpl/reset.inc
 CREATING TABLE IN master WITH INDEX 'PK'
 CREATE TABLE t (c1 int, c2 int, c3 blob, primary key(c1));
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 INSERT INTO t VALUES (1,2,"a");
 SET sql_mode = default;
@@ -95,12 +95,12 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=2;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ITERATIONS: row_img: MINIMAL, indexes: UK
-include/rpl_reset.inc
+include/rpl/reset.inc
 CREATING TABLE IN master WITH INDEX 'UK'
 CREATE TABLE t (c1 int, c2 int, c3 blob, unique key(c1));
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 INSERT INTO t VALUES (1,2,"a");
 SET sql_mode = default;
@@ -117,12 +117,12 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=2;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ITERATIONS: row_img: MINIMAL, indexes: K
-include/rpl_reset.inc
+include/rpl/reset.inc
 CREATING TABLE IN master WITH INDEX 'K'
 CREATE TABLE t (c1 int, c2 int, c3 blob, key(c1));
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 INSERT INTO t VALUES (1,2,"a");
 SET sql_mode = default;
@@ -139,12 +139,12 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=2;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ITERATIONS: row_img: MINIMAL, indexes: NONE
-include/rpl_reset.inc
+include/rpl/reset.inc
 CREATING TABLE IN master WITH INDEX 'NONE'
 CREATE TABLE t (c1 int, c2 int, c3 blob);
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 INSERT INTO t VALUES (1,2,"a");
 SET sql_mode = default;
@@ -161,20 +161,20 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=2;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
-CON: 'master', IMG: 'NOBLOB', RESTART SLAVE: 'N'
+include/rpl/sync_to_replica.inc
+CON: 'master', IMG: 'NOBLOB', RESTART REPLICA: 'N'
 Variable_name	Value
 binlog_row_image	NOBLOB
-CON: 'slave', IMG: 'NOBLOB', RESTART SLAVE: 'Y'
-include/stop_slave.inc
-include/start_slave.inc
+CON: 'slave', IMG: 'NOBLOB', RESTART REPLICA: 'Y'
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
 Variable_name	Value
 binlog_row_image	NOBLOB
 ITERATIONS: row_img: NOBLOB, indexes: UK-NOT-NULL
-include/rpl_reset.inc
+include/rpl/reset.inc
 CREATING TABLE IN master WITH INDEX 'UK-NOT-NULL'
 CREATE TABLE t (c1 int NOT NULL, c2 int, c3 blob, unique key(c1));
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 INSERT INTO t VALUES (1,2,"a");
 SET sql_mode = default;
@@ -191,12 +191,12 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=2;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ITERATIONS: row_img: NOBLOB, indexes: PK
-include/rpl_reset.inc
+include/rpl/reset.inc
 CREATING TABLE IN master WITH INDEX 'PK'
 CREATE TABLE t (c1 int, c2 int, c3 blob, primary key(c1));
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 INSERT INTO t VALUES (1,2,"a");
 SET sql_mode = default;
@@ -213,12 +213,12 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=2;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ITERATIONS: row_img: NOBLOB, indexes: UK
-include/rpl_reset.inc
+include/rpl/reset.inc
 CREATING TABLE IN master WITH INDEX 'UK'
 CREATE TABLE t (c1 int, c2 int, c3 blob, unique key(c1));
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 INSERT INTO t VALUES (1,2,"a");
 SET sql_mode = default;
@@ -235,12 +235,12 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=2;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ITERATIONS: row_img: NOBLOB, indexes: K
-include/rpl_reset.inc
+include/rpl/reset.inc
 CREATING TABLE IN master WITH INDEX 'K'
 CREATE TABLE t (c1 int, c2 int, c3 blob, key(c1));
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 INSERT INTO t VALUES (1,2,"a");
 SET sql_mode = default;
@@ -257,12 +257,12 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=2;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ITERATIONS: row_img: NOBLOB, indexes: NONE
-include/rpl_reset.inc
+include/rpl/reset.inc
 CREATING TABLE IN master WITH INDEX 'NONE'
 CREATE TABLE t (c1 int, c2 int, c3 blob);
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 INSERT INTO t VALUES (1,2,"a");
 SET sql_mode = default;
@@ -279,20 +279,20 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=2;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
-CON: 'master', IMG: 'FULL', RESTART SLAVE: 'N'
+include/rpl/sync_to_replica.inc
+CON: 'master', IMG: 'FULL', RESTART REPLICA: 'N'
 Variable_name	Value
 binlog_row_image	FULL
-CON: 'slave', IMG: 'FULL', RESTART SLAVE: 'Y'
-include/stop_slave.inc
-include/start_slave.inc
+CON: 'slave', IMG: 'FULL', RESTART REPLICA: 'Y'
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
 Variable_name	Value
 binlog_row_image	FULL
 ITERATIONS: row_img: FULL, indexes: UK-NOT-NULL
-include/rpl_reset.inc
+include/rpl/reset.inc
 CREATING TABLE IN master WITH INDEX 'UK-NOT-NULL'
 CREATE TABLE t (c1 int NOT NULL, c2 int, c3 blob, unique key(c1));
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 INSERT INTO t VALUES (1,2,"a");
 SET sql_mode = default;
@@ -309,12 +309,12 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=2;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ITERATIONS: row_img: FULL, indexes: PK
-include/rpl_reset.inc
+include/rpl/reset.inc
 CREATING TABLE IN master WITH INDEX 'PK'
 CREATE TABLE t (c1 int, c2 int, c3 blob, primary key(c1));
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 INSERT INTO t VALUES (1,2,"a");
 SET sql_mode = default;
@@ -331,12 +331,12 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=2;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ITERATIONS: row_img: FULL, indexes: UK
-include/rpl_reset.inc
+include/rpl/reset.inc
 CREATING TABLE IN master WITH INDEX 'UK'
 CREATE TABLE t (c1 int, c2 int, c3 blob, unique key(c1));
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 INSERT INTO t VALUES (1,2,"a");
 SET sql_mode = default;
@@ -353,12 +353,12 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=2;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ITERATIONS: row_img: FULL, indexes: K
-include/rpl_reset.inc
+include/rpl/reset.inc
 CREATING TABLE IN master WITH INDEX 'K'
 CREATE TABLE t (c1 int, c2 int, c3 blob, key(c1));
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 INSERT INTO t VALUES (1,2,"a");
 SET sql_mode = default;
@@ -375,12 +375,12 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=2;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ITERATIONS: row_img: FULL, indexes: NONE
-include/rpl_reset.inc
+include/rpl/reset.inc
 CREATING TABLE IN master WITH INDEX 'NONE'
 CREATE TABLE t (c1 int, c2 int, c3 blob);
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 INSERT INTO t VALUES (1,2,"a");
 SET sql_mode = default;
@@ -397,67 +397,67 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=2;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET @img_types= 'MINIMAL NOBLOB FULL';
-CON: 'master', IMG: 'MINIMAL', RESTART SLAVE: 'N'
+CON: 'master', IMG: 'MINIMAL', RESTART REPLICA: 'N'
 Variable_name	Value
 binlog_row_image	MINIMAL
-CON: 'slave', IMG: 'MINIMAL', RESTART SLAVE: 'Y'
-include/stop_slave.inc
-include/start_slave.inc
+CON: 'slave', IMG: 'MINIMAL', RESTART REPLICA: 'Y'
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
 Variable_name	Value
 binlog_row_image	MINIMAL
 ITERATIONS: row_img: MINIMAL
-include/rpl_reset.inc
-include/sync_slave_sql_with_master.inc
-include/sync_slave_sql_with_master.inc
-include/rpl_reset.inc
+include/rpl/reset.inc
+include/rpl/sync_to_replica.inc
+include/rpl/sync_to_replica.inc
+include/rpl/reset.inc
 ####### MINIMAL PARTICULAR SCENARIO ######
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ####### MINIMAL OTHER PARTICULAR SCENARIO ######
-include/sync_slave_sql_with_master.inc
-CON: 'master', IMG: 'NOBLOB', RESTART SLAVE: 'N'
+include/rpl/sync_to_replica.inc
+CON: 'master', IMG: 'NOBLOB', RESTART REPLICA: 'N'
 Variable_name	Value
 binlog_row_image	NOBLOB
-CON: 'slave', IMG: 'NOBLOB', RESTART SLAVE: 'Y'
-include/stop_slave.inc
-include/start_slave.inc
+CON: 'slave', IMG: 'NOBLOB', RESTART REPLICA: 'Y'
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
 Variable_name	Value
 binlog_row_image	NOBLOB
 ITERATIONS: row_img: NOBLOB
-include/rpl_reset.inc
-include/sync_slave_sql_with_master.inc
-include/sync_slave_sql_with_master.inc
-include/rpl_reset.inc
+include/rpl/reset.inc
+include/rpl/sync_to_replica.inc
+include/rpl/sync_to_replica.inc
+include/rpl/reset.inc
 ####### NOBLOB PARTICULAR SCENARIO ######
-include/sync_slave_sql_with_master.inc
-CON: 'master', IMG: 'FULL', RESTART SLAVE: 'N'
+include/rpl/sync_to_replica.inc
+CON: 'master', IMG: 'FULL', RESTART REPLICA: 'N'
 Variable_name	Value
 binlog_row_image	FULL
-CON: 'slave', IMG: 'FULL', RESTART SLAVE: 'Y'
-include/stop_slave.inc
-include/start_slave.inc
+CON: 'slave', IMG: 'FULL', RESTART REPLICA: 'Y'
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
 Variable_name	Value
 binlog_row_image	FULL
 ITERATIONS: row_img: FULL
-include/rpl_reset.inc
-include/sync_slave_sql_with_master.inc
-include/sync_slave_sql_with_master.inc
-include/rpl_reset.inc
+include/rpl/reset.inc
+include/rpl/sync_to_replica.inc
+include/rpl/sync_to_replica.inc
+include/rpl/reset.inc
 ################## SPECIAL CASES #########################
-include/rpl_reset.inc
-CON: 'master', IMG: 'NOBLOB', RESTART SLAVE: 'N'
+include/rpl/reset.inc
+CON: 'master', IMG: 'NOBLOB', RESTART REPLICA: 'N'
 SET SESSION binlog_row_image= 'NOBLOB';
 SET GLOBAL binlog_row_image= 'NOBLOB';
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
 binlog_row_image	NOBLOB
-CON: 'slave', IMG: 'NOBLOB', RESTART SLAVE: 'Y'
+CON: 'slave', IMG: 'NOBLOB', RESTART REPLICA: 'Y'
 SET SESSION binlog_row_image= 'NOBLOB';
 SET GLOBAL binlog_row_image= 'NOBLOB';
-include/stop_slave.inc
-include/start_slave.inc
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
@@ -484,11 +484,11 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=2;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ###################################
 # PK (does not contain blob, but blob is updated)
 ###################################
-include/rpl_reset.inc
+include/rpl/reset.inc
 CREATE TABLE t (c1 int, c2 int, c3 blob, primary key(c1,c2));
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 INSERT INTO t VALUES (1,2,"a");
@@ -510,23 +510,23 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=2;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ###################################
 # AUTOINC columns
 ###################################
-include/rpl_reset.inc
-CON: 'master', IMG: 'MINIMAL', RESTART SLAVE: 'N'
+include/rpl/reset.inc
+CON: 'master', IMG: 'MINIMAL', RESTART REPLICA: 'N'
 SET SESSION binlog_row_image= 'MINIMAL';
 SET GLOBAL binlog_row_image= 'MINIMAL';
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
 binlog_row_image	MINIMAL
-CON: 'slave', IMG: 'MINIMAL', RESTART SLAVE: 'Y'
+CON: 'slave', IMG: 'MINIMAL', RESTART REPLICA: 'Y'
 SET SESSION binlog_row_image= 'MINIMAL';
 SET GLOBAL binlog_row_image= 'MINIMAL';
-include/stop_slave.inc
-include/start_slave.inc
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
@@ -536,23 +536,23 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 INSERT INTO t(c2) VALUES (2);
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ##################################################################
 # Test that slave does not write more columns than the ones it has 
 ##################################################################
-include/rpl_reset.inc
-CON: 'master', IMG: 'MINIMAL', RESTART SLAVE: 'N'
+include/rpl/reset.inc
+CON: 'master', IMG: 'MINIMAL', RESTART REPLICA: 'N'
 SET SESSION binlog_row_image= 'MINIMAL';
 SET GLOBAL binlog_row_image= 'MINIMAL';
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
 binlog_row_image	MINIMAL
-CON: 'slave', IMG: 'MINIMAL', RESTART SLAVE: 'Y'
+CON: 'slave', IMG: 'MINIMAL', RESTART REPLICA: 'Y'
 SET SESSION binlog_row_image= 'MINIMAL';
 SET GLOBAL binlog_row_image= 'MINIMAL';
-include/stop_slave.inc
-include/start_slave.inc
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
@@ -568,23 +568,23 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 UPDATE t SET c2=3, c3='bbbbb' WHERE c2=2;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ##################################################################
 # Test that slave fills default columns in its own columns
 ##################################################################
-include/rpl_reset.inc
-CON: 'master', IMG: 'FULL', RESTART SLAVE: 'N'
+include/rpl/reset.inc
+CON: 'master', IMG: 'FULL', RESTART REPLICA: 'N'
 SET SESSION binlog_row_image= 'FULL';
 SET GLOBAL binlog_row_image= 'FULL';
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
 binlog_row_image	FULL
-CON: 'slave', IMG: 'FULL', RESTART SLAVE: 'Y'
+CON: 'slave', IMG: 'FULL', RESTART REPLICA: 'Y'
 SET SESSION binlog_row_image= 'FULL';
 SET GLOBAL binlog_row_image= 'FULL';
-include/stop_slave.inc
-include/start_slave.inc
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
@@ -608,23 +608,23 @@ c1	c2
 1	NULL
 2	NULL
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ##################################################################
 # Test that slave uses partial BI when master contains more columns
 ##################################################################
-include/rpl_reset.inc
-CON: 'master', IMG: 'MINIMAL', RESTART SLAVE: 'N'
+include/rpl/reset.inc
+CON: 'master', IMG: 'MINIMAL', RESTART REPLICA: 'N'
 SET SESSION binlog_row_image= 'MINIMAL';
 SET GLOBAL binlog_row_image= 'MINIMAL';
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
 binlog_row_image	MINIMAL
-CON: 'slave', IMG: 'MINIMAL', RESTART SLAVE: 'Y'
+CON: 'slave', IMG: 'MINIMAL', RESTART REPLICA: 'Y'
 SET SESSION binlog_row_image= 'MINIMAL';
 SET GLOBAL binlog_row_image= 'MINIMAL';
-include/stop_slave.inc
-include/start_slave.inc
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
@@ -646,24 +646,24 @@ SELECT * FROM t;
 c1	c2	c3
 1	4	3
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ##################################################################
 # Test that if master has binlog_row_image=MINIMAL and slave has 
 # NOBLOB or FULL, it will log the expected columns
 ##################################################################
-include/rpl_reset.inc
-CON: 'master', IMG: 'MINIMAL', RESTART SLAVE: 'N'
+include/rpl/reset.inc
+CON: 'master', IMG: 'MINIMAL', RESTART REPLICA: 'N'
 SET SESSION binlog_row_image= 'MINIMAL';
 SET GLOBAL binlog_row_image= 'MINIMAL';
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
 binlog_row_image	MINIMAL
-CON: 'slave', IMG: 'FULL', RESTART SLAVE: 'Y'
+CON: 'slave', IMG: 'FULL', RESTART REPLICA: 'Y'
 SET SESSION binlog_row_image= 'FULL';
 SET GLOBAL binlog_row_image= 'FULL';
-include/stop_slave.inc
-include/start_slave.inc
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
@@ -682,20 +682,20 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=4;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
-include/rpl_reset.inc
-CON: 'master', IMG: 'MINIMAL', RESTART SLAVE: 'N'
+include/rpl/sync_to_replica.inc
+include/rpl/reset.inc
+CON: 'master', IMG: 'MINIMAL', RESTART REPLICA: 'N'
 SET SESSION binlog_row_image= 'MINIMAL';
 SET GLOBAL binlog_row_image= 'MINIMAL';
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
 binlog_row_image	MINIMAL
-CON: 'slave', IMG: 'NOBLOB', RESTART SLAVE: 'Y'
+CON: 'slave', IMG: 'NOBLOB', RESTART REPLICA: 'Y'
 SET SESSION binlog_row_image= 'NOBLOB';
 SET GLOBAL binlog_row_image= 'NOBLOB';
-include/stop_slave.inc
-include/start_slave.inc
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
@@ -714,23 +714,23 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 DELETE FROM t WHERE c2=4;
 SET sql_mode = default;
 DROP TABLE t;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 ################################################################
 # Test that the slave stop with error if no usable data is on BI
 ################################################################
-include/rpl_reset.inc
-CON: 'master', IMG: 'MINIMAL', RESTART SLAVE: 'N'
+include/rpl/reset.inc
+CON: 'master', IMG: 'MINIMAL', RESTART REPLICA: 'N'
 SET SESSION binlog_row_image= 'MINIMAL';
 SET GLOBAL binlog_row_image= 'MINIMAL';
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
 binlog_row_image	MINIMAL
-CON: 'slave', IMG: 'NOBLOB', RESTART SLAVE: 'Y'
+CON: 'slave', IMG: 'NOBLOB', RESTART REPLICA: 'Y'
 SET SESSION binlog_row_image= 'NOBLOB';
 SET GLOBAL binlog_row_image= 'NOBLOB';
-include/stop_slave.inc
-include/start_slave.inc
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
@@ -742,29 +742,29 @@ CREATE TABLE t (c1 int NOT NULL, c2 int, primary key(c1));
 INSERT INTO t VALUES (1,2,3);
 UPDATE t SET c2=4 WHERE c2=2;
 DROP TABLE t;
-include/wait_for_slave_sql_error.inc [errno=1032]
+include/rpl/wait_for_applier_error.inc [errno=1032]
 DROP TABLE t;
-include/stop_slave_io.inc
+include/rpl/stop_receiver.inc
 RESET REPLICA;
-include/rpl_reset.inc
-CON: 'master', IMG: 'FULL', RESTART SLAVE: 'N'
+include/rpl/reset.inc
+CON: 'master', IMG: 'FULL', RESTART REPLICA: 'N'
 SET SESSION binlog_row_image= 'FULL';
 SET GLOBAL binlog_row_image= 'FULL';
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
 binlog_row_image	FULL
-CON: 'slave', IMG: 'FULL', RESTART SLAVE: 'Y'
+CON: 'slave', IMG: 'FULL', RESTART REPLICA: 'Y'
 SET SESSION binlog_row_image= 'FULL';
 SET GLOBAL binlog_row_image= 'FULL';
-include/stop_slave.inc
-include/start_slave.inc
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
 binlog_row_image	FULL
 CREATE TABLE t1(id INT PRIMARY KEY, a INT) ENGINE = INNODB;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 INSERT INTO t1 (id, a) VALUES (1, 1);
 SET sql_mode = default;
@@ -777,18 +777,18 @@ Note	1003	update `test`.`t1` set `test`.`t1`.`a` = (`test`.`t1`.`a` + 1) where (
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 UPDATE t1 SET a=a+1 WHERE id < 2;
 SET sql_mode = default;
-CON: 'master', IMG: 'NOBLOB', RESTART SLAVE: 'N'
+CON: 'master', IMG: 'NOBLOB', RESTART REPLICA: 'N'
 SET SESSION binlog_row_image= 'NOBLOB';
 SET GLOBAL binlog_row_image= 'NOBLOB';
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
 binlog_row_image	NOBLOB
-CON: 'slave', IMG: 'NOBLOB', RESTART SLAVE: 'Y'
+CON: 'slave', IMG: 'NOBLOB', RESTART REPLICA: 'Y'
 SET SESSION binlog_row_image= 'NOBLOB';
 SET GLOBAL binlog_row_image= 'NOBLOB';
-include/stop_slave.inc
-include/start_slave.inc
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
@@ -802,18 +802,18 @@ Note	1003	update `test`.`t1` set `test`.`t1`.`a` = (`test`.`t1`.`a` + 1) where (
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 UPDATE t1 SET a=a+1 WHERE id < 2;
 SET sql_mode = default;
-CON: 'master', IMG: 'MINIMAL', RESTART SLAVE: 'N'
+CON: 'master', IMG: 'MINIMAL', RESTART REPLICA: 'N'
 SET SESSION binlog_row_image= 'MINIMAL';
 SET GLOBAL binlog_row_image= 'MINIMAL';
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
 binlog_row_image	MINIMAL
-CON: 'slave', IMG: 'MINIMAL', RESTART SLAVE: 'Y'
+CON: 'slave', IMG: 'MINIMAL', RESTART REPLICA: 'Y'
 SET SESSION binlog_row_image= 'MINIMAL';
 SET GLOBAL binlog_row_image= 'MINIMAL';
-include/stop_slave.inc
-include/start_slave.inc
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
 FLUSH TABLES;
 SHOW VARIABLES LIKE 'binlog_row_image';
 Variable_name	Value
@@ -827,9 +827,9 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 UPDATE t1 SET a=a+1 WHERE id < 2;
 SET sql_mode = default;
 DROP TABLE t1;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SET GLOBAL binlog_row_image= @old_binlog_row_image;
 SET SESSION binlog_row_image= @old_binlog_row_image;
 SET GLOBAL binlog_row_image= @old_binlog_row_image;
 SET SESSION binlog_row_image= @old_binlog_row_image;
-include/rpl_end.inc
+include/rpl/deinit.inc

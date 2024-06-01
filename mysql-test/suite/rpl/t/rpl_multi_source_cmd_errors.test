@@ -6,12 +6,12 @@
 #    is not issued, then certain COMMANDS shall fail.
 # 2. When a non existent channel is provided as input,
 #    certain commands shall fail
-# 3. CHANGE MASTER errors related to Channel as input.
+# 3. CHANGE REPLICATION SOURCE errors related to Channel as input.
 #
 
 #Skip on group replication runs
 --source include/not_group_replication_plugin.inc
---source include/have_binlog_format_mixed.inc
+--source include/have_binlog_format_row.inc
 --source include/have_debug.inc
 
 --echo #
@@ -19,13 +19,13 @@
 --echo #.
 --let $rpl_multi_source= 1
 --let $rpl_topology= 1->2,3->2
---source include/rpl_init.inc
+--source include/rpl/init.inc
 
 # Multisource replication is already setup.
 
 # On slave
 --let $rpl_connection_name= server_2
---source include/rpl_connection.inc
+--source include/connection.inc
 --echo #
 --echo #  1. Test ER_REPLICA_MULTIPLE_CHANNELS_CMD
 --echo #
@@ -39,29 +39,29 @@ SHOW RELAYLOG EVENTS;
 SELECT SOURCE_POS_WAIT("dummy-bin.000001", 4);
 
 --error ER_REPLICA_MULTIPLE_CHANNELS_CMD
-START SLAVE UNTIL SOURCE_LOG_FILE = "dummy-bin.0000001", SOURCE_LOG_POS = 1729
+START REPLICA UNTIL SOURCE_LOG_FILE = "dummy-bin.0000001", SOURCE_LOG_POS = 1729
 
 #--error ER_REPLICA_MULTIPLE_CHANNELS_CMD
 #SELECT WAIT_FOR_EXECUTED_GTID_SET("1111-1111-1111-1111:1");
 
 --error ER_REPLICA_MULTIPLE_CHANNELS_CMD
-START SLAVE UNTIL SOURCE_LOG_FILE = "dummy-bin.000001", SOURCE_LOG_POS = 4;
+START REPLICA UNTIL SOURCE_LOG_FILE = "dummy-bin.000001", SOURCE_LOG_POS = 4;
 
 
 --echo #
 --echo # 2. Test errors of commands on an invalid channel
 --echo #
 --error ER_REPLICA_CHANNEL_DOES_NOT_EXIST
-START SLAVE FOR CHANNEL "non_existent";
+START REPLICA FOR CHANNEL "non_existent";
 
 --error ER_REPLICA_CHANNEL_DOES_NOT_EXIST
-STOP SLAVE FOR CHANNEL "non_existent";
+STOP REPLICA FOR CHANNEL "non_existent";
 
 --error ER_REPLICA_CHANNEL_DOES_NOT_EXIST
 SHOW RELAYLOG EVENTS FOR CHANNEL "non_existent";
 
 --error ER_REPLICA_CHANNEL_DOES_NOT_EXIST
-RESET SLAVE FOR CHANNEL "non_existent";
+RESET REPLICA FOR CHANNEL "non_existent";
 
 --error ER_REPLICA_CHANNEL_DOES_NOT_EXIST
 FLUSH RELAY LOGS FOR CHANNEL "non_existent";
@@ -71,7 +71,7 @@ SELECT SOURCE_POS_WAIT("dummy-bin.00001",4, 3, "non_existtent");
 
 --echo #
 --echo #  3a) Test that proper error messages are sent out when invalid
---echo #      channel names are given for change master command.
+--echo #      channel names are given for change replication source command.
 --echo #
 --error ER_REPLICA_CHANNEL_NAME_INVALID_OR_TOO_LONG
 CHANGE REPLICATION SOURCE TO SOURCE_HOST = "127.0.0.1", SOURCE_USER = "root" FOR CHANNEL "A123456789A123456789A123456789A123456789A123456789A123456789A123456789";
@@ -101,7 +101,7 @@ CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=10 FOR CHANNEL
 --error ER_REPLICA_CHANNEL_OPERATION_NOT_ALLOWED
 CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=10 FOR CHANNEL "group_replication_recovery";
 
---echo # Assert that channels are not created for failed CHANGE MASTER command.
+--echo # Assert that channels are not created for failed CHANGE REPLICATION SOURCE command.
 --echo # and number of channels configured must be 2
 --let $assert_text= there shall be only two rows representing 2 channels.
 --let $assert_cond= [SELECT COUNT(*) FROM performance_schema.replication_applier_configuration] = 2;
@@ -110,4 +110,4 @@ CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=10 FOR CHANNEL
 # End MSR setup.
 --let $rpl_skip_sync= 1
 --let $rpl_only_running_threads= 1
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

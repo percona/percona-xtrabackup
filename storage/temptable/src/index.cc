@@ -1,15 +1,16 @@
-/* Copyright (c) 2016, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -205,7 +206,17 @@ void Hash_duplicates::erase(const Cursor &target) {
   m_hash_table.erase(target.hash_iterator());
 }
 
-void Hash_duplicates::truncate() { m_hash_table.clear(); }
+void Hash_duplicates::truncate() {
+  /* If the index is truncated repeatedly (For instance : Query_expression
+  empties the temporary tables frequently) then clearing the container may
+  take noticeable time. This may happen because clear() may not deallocate
+  the internal hash buckets immediately, instead it memset(s) them to 0.
+  Usually buckets are deallocated when the container is destroyed.
+  Therefore, avoid calling clear() when it is not required. */
+  if (!m_hash_table.empty()) {
+    m_hash_table.clear();
+  }
+}
 
 Cursor Hash_duplicates::begin() const { return Cursor(m_hash_table.begin()); }
 
@@ -264,7 +275,17 @@ void Hash_unique::erase(const Cursor &target) {
   m_hash_table.erase(target.hash_iterator());
 }
 
-void Hash_unique::truncate() { m_hash_table.clear(); }
+void Hash_unique::truncate() {
+  /* If the index is truncated repeatedly (For instance : Query_expression
+  empties the temporary tables frequently) then clearing the container may
+  take noticeable time. This may happen because clear() may not deallocate
+  the internal hash buckets immediately, instead it memset(s) them to 0.
+  Usually buckets are deallocated when the container is destroyed.
+  Therefore, avoid calling clear() when it is not required. */
+  if (!m_hash_table.empty()) {
+    m_hash_table.clear();
+  }
+}
 
 Cursor Hash_unique::begin() const { return Cursor(m_hash_table.begin()); }
 

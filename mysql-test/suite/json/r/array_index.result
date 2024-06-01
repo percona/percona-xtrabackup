@@ -3359,7 +3359,6 @@ id	j
 5	["6", "3", "10", "95"]
 4	["7", "15", "3", "27"]
 DROP TABLE test;
-# restart:
 #
 # Bug#35507211 virtual longlong Item_typecast_signed::val_int():
 #              Assertion `is_nullable()' fail
@@ -3382,3 +3381,55 @@ HANDLER t1 OPEN ;
 HANDLER t1 READ FIRST WHERE c1 MEMBER ( c1 ) IS NOT FALSE LIMIT 100 , 100 ;
 ERROR 22032: Invalid data type for JSON data in argument 2 to function member of; a JSON string or JSON type is required.
 DROP TABLE t1;
+#
+# Bug#36155387: Hypergraph: Too many rows from index range scan
+#               for JSON_CONTAINS
+#
+CREATE TABLE t(j JSON, KEY ((CAST(j->'$[*]' AS SIGNED ARRAY))));
+INSERT INTO t VALUES ('[1,2,3]'), ('[1]'), ('[2]'), ('[3]');
+INSERT INTO t SELECT '[]' FROM t;
+INSERT INTO t SELECT '[]' FROM t;
+INSERT INTO t SELECT '[]' FROM t;
+INSERT INTO t SELECT '[]' FROM t;
+ANALYZE TABLE t;
+Table	Op	Msg_type	Msg_text
+test.t	analyze	status	OK
+EXPLAIN FORMAT=tree SELECT * FROM t WHERE JSON_CONTAINS(j->'$[*]', '[1,2,3]');
+EXPLAIN
+-> Filter: json_contains(cast(json_extract(j,_utf8mb4'$[*]') as signed array),json'[1, 2, 3]')  (rows=6)
+    -> Index range scan on t using functional_index over (3 MEMBER OF (json_extract(j,_utf8mb4'$[*]'))) OR (2 MEMBER OF (json_extract(j,_utf8mb4'$[*]'))) OR (1 MEMBER OF (json_extract(j,_utf8mb4'$[*]')))  (rows=6)
+
+SELECT * FROM t WHERE JSON_CONTAINS(j->'$[*]', '[1,2,3]');
+j
+[1, 2, 3]
+DROP TABLE t;
+#
+# Bug#36288425: Hypergraph: Wrong result with range queries
+#               and multi-valued indexes
+#
+CREATE TABLE t (
+id int NOT NULL,
+doc_id int DEFAULT NULL,
+doc json DEFAULT NULL,
+PRIMARY KEY (id),
+KEY mv_doc_id (doc_id,(cast(json_extract(doc,'$.val') as unsigned array)))
+);
+INSERT INTO t VALUES
+(1, 2, '{"val":[1,2,3,4,5]}'), (2, 1, '{"val":[2,3,4,5]}'),
+(3, 2, '{"val":[2]}'), (4, NULL, '{"val":[3,4,5]}'),
+(5, 2, '{"val":[4,5]}'), (6, 3, '{"val":[1]}'),
+(7, 4, '{"val":[2,3,4,5]}'),(9, NULL, '{"val":[3,4,5]}'),
+(10, 4, '{"val":[4,5]}');
+ANALYZE TABLE t;
+Table	Op	Msg_type	Msg_text
+test.t	analyze	status	OK
+EXPLAIN FORMAT = tree SELECT * FROM t WHERE doc_id >= 3 and doc_id < 4;
+EXPLAIN
+-> Filter: ((t.doc_id >= 3) and (t.doc_id < 4))  (rows=1)
+    -> Index range scan on t using mv_doc_id over (3 <= doc_id < 4)  (rows=1)
+
+SELECT * FROM t WHERE doc_id >= 3 and doc_id < 4;
+id	doc_id	doc
+6	3	{"val": [1]}
+DROP TABLE t;
+# restart:

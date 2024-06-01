@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 2013, 2023, Oracle and/or its affiliates.
+Copyright (c) 2013, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -311,19 +312,8 @@ void Datafile::set_name(const char *name) {
   }
 }
 
-/** Reads a few significant fields from the first page of the first
-datafile, which must already be open.
-@param[in]      read_only_mode  If true, then readonly mode checks are enforced.
-@return DB_SUCCESS or DB_IO_ERROR if page cannot be read */
-dberr_t Datafile::read_first_page(bool read_only_mode) {
-  if (m_handle.m_file == OS_FILE_CLOSED) {
-    dberr_t err = open_or_create(read_only_mode);
-
-    if (err != DB_SUCCESS) {
-      return (err);
-    }
-  }
-
+dberr_t Datafile::read_first_page() {
+  ut_ad(is_open());
   /* Align the memory for a possible read from a raw device */
   m_first_page = static_cast<byte *>(
       ut::aligned_alloc(UNIV_PAGE_SIZE_MAX, UNIV_PAGE_SIZE));
@@ -532,15 +522,9 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
   dberr_t err_code = DB_CORRUPTION; /* default error code */
 
   m_is_valid = true;
+  ut_ad(is_open());
 
-  /* fil_space_read_name_and_filepath will acquire the fil shard mutex. If there
-  is any other thread that tries to open this file, it will have the fil
-  mutex and will wait for this file to open. It will not succeed on Windows
-  as we don't open the file for shared write. */
-  auto guard = create_scope_guard([this]() { close(); });
-
-  if (m_first_page == nullptr &&
-      read_first_page(srv_read_only_mode) != DB_SUCCESS) {
+  if (m_first_page == nullptr && read_first_page() != DB_SUCCESS) {
     error_txt = "Cannot read first page";
   } else {
     ut_ad(m_first_page);
@@ -549,6 +533,11 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
       *flush_lsn = mach_read_from_8(m_first_page + FIL_PAGE_FILE_FLUSH_LSN);
     }
   }
+  /* fil_space_read_name_and_filepath will acquire the fil shard mutex. If there
+  is any other thread that tries to open this file, it will have the fil
+  mutex and will wait for this file to open. It will not succeed on Windows
+  as we don't open the file for shared write. */
+  close();
 
   if (error_txt == nullptr && m_space_id == TRX_SYS_SPACE && !m_flags) {
     /* Check if the whole page is blank. */
@@ -730,6 +719,7 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
   m_encryption_op_in_progress =
       fsp_header_encryption_op_type_in_progress(m_first_page, page_size);
 #endif /* UNIV_HOTBACKUP */
+<<<<<<< HEAD
 
   if (FSP_FLAGS_GET_ENCRYPTION(m_flags) && !srv_backup_mode &&
       use_dumped_tablespace_keys) {
@@ -743,6 +733,13 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
     }
   }
 
+||||||| 824e2b40640
+
+=======
+  /* Following call will attempt to acquire a Fil_shard mutex, which can cause
+  a deadlock if done while holding file handle open. */
+  ut_ad(!is_open());
+>>>>>>> mysql-8.4.0
   if (fil_space_read_name_and_filepath(m_space_id, &prev_name,
                                        &prev_filepath)) {
     if (0 == strcmp(m_filepath, prev_filepath)) {

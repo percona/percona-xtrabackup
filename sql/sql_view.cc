@@ -1,15 +1,16 @@
-/* Copyright (c) 2004, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2004, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1634,9 +1635,16 @@ bool parse_view_definition(THD *thd, Table_ref *view_ref) {
   view_ref->derived_key_list.clear();
 
   assert(view_lex == thd->lex);
-  old_lex->set_execute_only_in_hypergraph_optimizer(
-      view_lex->can_execute_only_in_hypergraph_optimizer(),
-      view_lex->get_only_supported_in_hypergraph_reason());
+  if (view_lex->can_execute_only_in_hypergraph_optimizer()) {
+    old_lex->set_execute_only_in_hypergraph_optimizer(
+        /*execute_in_hypergraph_optimizer_param=*/true,
+        view_lex->get_only_supported_in_hypergraph_reason());
+  }
+  if (view_lex->can_execute_only_in_secondary_engine()) {
+    old_lex->set_execute_only_in_secondary_engine(
+        /*execute_only_in_secondary_engine_param=*/true,
+        view_lex->get_not_supported_in_primary_reason());
+  }
 
   thd->lex = old_lex;  // Needed for prepare_security
 

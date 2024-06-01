@@ -1,15 +1,16 @@
-/* Copyright (c) 2002, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -223,6 +224,12 @@ TABLE *Common_table_expr::clone_tmp_table(THD *thd, Table_ref *tl) {
   t->set_not_started();
 
   if (tmp_tables.push_back(tl)) return nullptr; /* purecov: inspected */
+
+  if (tl->derived_result != nullptr) {
+    // Make clone's copy of tmp_table_param contain correct info, so copy
+    tl->derived_result->tmp_table_param =
+        tmp_tables[0]->derived_result->tmp_table_param;
+  }
 
   return t;
 }
@@ -526,17 +533,29 @@ bool copy_field_info(THD *thd, Item *orig_expr, Item *cloned_expr) {
   mem_root_deque<Field_info> field_info(thd->mem_root);
   Query_block *depended_from = nullptr;
   Name_resolution_context *context = nullptr;
+  bool in_outer_ref = false;
   // Collect information for fields from the original expression
   if (WalkItem(orig_expr, enum_walk::PREFIX,
-               [&field_info, &depended_from, &context](Item *inner_item) {
+               [&field_info, &depended_from, &context,
+                &in_outer_ref](Item *inner_item) {
                  Query_block *saved_depended_from = depended_from;
                  Name_resolution_context *saved_context = context;
                  if (inner_item->type() == Item::REF_ITEM ||
                      inner_item->type() == Item::FIELD_ITEM) {
                    Item_ident *ident = down_cast<Item_ident *>(inner_item);
-                   assert(depended_from == nullptr ||
+                   // An Item_outer_ref always references
+                   // a Item_ref object which has the reference to
+                   // the original expression. Item_outer_ref
+                   // and the original expression are updated with the
+                   // "depended_from" information but not the Item_ref.
+                   // So we skip the checks for Item_ref.
+                   assert(in_outer_ref || depended_from == nullptr ||
                           depended_from == ident->depended_from ||
                           depended_from == ident->context->query_block);
+                   in_outer_ref =
+                       inner_item->type() == Item::REF_ITEM &&
+                       down_cast<Item_ref *>(inner_item)->ref_type() ==
+                           Item_ref::OUTER_REF;
                    if (ident->depended_from != nullptr)
                      depended_from = ident->depended_from;
                    if (context == nullptr ||
@@ -580,15 +599,21 @@ bool copy_field_info(THD *thd, Item *orig_expr, Item *cloned_expr) {
 
 /**
   Given an item and a query block, this function creates a clone of the
-  item (unresolved) by reparsing the item.
+  item (unresolved) by reparsing the item. Used during condition pushdown
+  to derived tables.
 
   @param thd            Current thread.
   @param item           Item to be reparsed to get a clone.
   @param query_block    query block where expression is being parsed
+  @param derived_table  derived table to which the item belongs to.
+                        "nullptr" when cloning to make a copy of the
+                        original condition to be pushed down
+                        to a derived table that has SET operations.
 
   @returns A copy of the original item (unresolved) on success else nullptr.
 */
-static Item *parse_expression(THD *thd, Item *item, Query_block *query_block) {
+static Item *parse_expression(THD *thd, Item *item, Query_block *query_block,
+                              Table_ref *derived_table) {
   // Set up for parsing item
   LEX *const old_lex = thd->lex;
   LEX new_lex;
@@ -654,8 +679,11 @@ static Item *parse_expression(THD *thd, Item *item, Query_block *query_block) {
     thd->lex->param_list = old_lex->param_list;
   }
 
-  // Get a newly created item from parser
-  const bool result = parse_sql(thd, &parser_state, nullptr);
+  // Get a newly created item from parser. Use the view creation
+  // context if the item being parsed is part of a view.
+  View_creation_ctx *view_creation_ctx =
+      derived_table != nullptr ? derived_table->view_creation_ctx : nullptr;
+  const bool result = parse_sql(thd, &parser_state, view_creation_ctx);
 
   // If a statement is being re-prepared, then all the parameters
   // that are cloned above need to be synced with the original
@@ -716,18 +744,19 @@ Item *resolve_expression(THD *thd, Item *item, Query_block *query_block) {
   thd->lex->allow_sum_func |= static_cast<nesting_map>(1)
                               << thd->lex->current_query_block()->nest_level;
 
-  const bool ret = item->fix_fields(thd, &item);
+  if (item->fix_fields(thd, &item)) {
+    return nullptr;
+  }
   // For items with params, propagate the default data type.
   if (item->data_type() == MYSQL_TYPE_INVALID &&
-      item->propagate_type(thd, item->default_data_type()))
+      item->propagate_type(thd, item->default_data_type())) {
     return nullptr;
+  }
   // Restore original state back
   thd->want_privilege = save_old_privilege;
   thd->lex->set_current_query_block(saved_current_query_block);
   thd->lex->allow_sum_func = save_allow_sum_func;
-  // If fix_fields returned error, do not return an unresolved
-  // expression.
-  return ret ? nullptr : item;
+  return item;
 }
 
 /**
@@ -785,15 +814,17 @@ Item *resolve_expression(THD *thd, Item *item, Query_block *query_block) {
   and resolve it against the tables of the query block where it will be
   placed.
 
-  @param thd      Current thread
-  @param item     Item for which clone is requested
+  @param thd            Current thread
+  @param item           Item for which clone is requested
+  @param derived_table  derived table to which the item belongs to.
 
   @returns
   Cloned object for the item.
 */
 
-Item *Query_block::clone_expression(THD *thd, Item *item) {
-  Item *cloned_item = parse_expression(thd, item, this);
+Item *Query_block::clone_expression(THD *thd, Item *item,
+                                    Table_ref *derived_table) {
+  Item *cloned_item = parse_expression(thd, item, this, derived_table);
   if (cloned_item == nullptr) return nullptr;
   if (item->item_name.is_set())
     cloned_item->item_name.set(item->item_name.ptr(), item->item_name.length());
@@ -1095,7 +1126,7 @@ bool Condition_pushdown::make_cond_for_derived() {
     if (derived_query_expression->is_set_operation()) {
       m_cond_to_push =
           derived_query_expression->outer_query_block()->clone_expression(
-              thd, orig_cond_to_push);
+              thd, orig_cond_to_push, /*derived_table=*/nullptr);
       if (m_cond_to_push == nullptr) return true;
       m_cond_to_push->apply_is_true();
     }

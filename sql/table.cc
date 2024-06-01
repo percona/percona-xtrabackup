@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -108,6 +109,7 @@
 #include "sql/sql_error.h"
 #include "sql/sql_lex.h"
 #include "sql/sql_opt_exec_shared.h"
+#include "sql/sql_optimizer.h"
 #include "sql/sql_parse.h"       // check_stack_overrun
 #include "sql/sql_partition.h"   // mysql_unpack_partition
 #include "sql/sql_plugin.h"      // plugin_unlock
@@ -2614,8 +2616,8 @@ bool unpack_value_generator(THD *thd, TABLE *table,
   const CHARSET_INFO *save_character_set_client =
       thd->variables.character_set_client;
   // Subquery is not allowed in generated expression
-  const bool save_allow_subselects = thd->lex->expr_allows_subselect;
-  thd->lex->expr_allows_subselect = false;
+  const bool save_allows_subquery = thd->lex->expr_allows_subquery;
+  thd->lex->expr_allows_subquery = false;
   // allow_sum_func is also 0, banning group aggregates and window functions.
   assert(thd->lex->allow_sum_func == 0);
 
@@ -2650,7 +2652,7 @@ bool unpack_value_generator(THD *thd, TABLE *table,
     thd->swap_query_arena(save_arena, &val_generator_arena);
     thd->variables.character_set_client = save_character_set_client;
     thd->want_privilege = save_old_privilege;
-    thd->lex->expr_allows_subselect = save_allow_subselects;
+    thd->lex->expr_allows_subquery = save_allows_subquery;
   };
 
   // Properties that need to be restored before leaving the scope if an
@@ -2675,7 +2677,7 @@ bool unpack_value_generator(THD *thd, TABLE *table,
   assert((*val_generator)->expr_item != nullptr &&
          (*val_generator)->expr_str.str == nullptr);
 
-  thd->lex->expr_allows_subselect = save_allow_subselects;
+  thd->lex->expr_allows_subquery = save_allows_subquery;
 
   // Set the stored_in_db attribute of the column it depends on (if any)
   if (field != nullptr) (*val_generator)->set_field_stored(field->stored_in_db);
@@ -7337,6 +7339,58 @@ bool Table_ref::is_external() const {
   return false;
 }
 
+bool Table_ref::validate_tablesample_clause(THD *thd) {
+  if (is_view_or_derived()) {
+    my_error(ER_TABLESAMPLE_ONLY_ON_BASE_TABLES, MYF(0));
+    return true;
+  }
+
+  if (!sampling_percentage->fixed &&
+      sampling_percentage->fix_fields(thd, &sampling_percentage)) {
+    return true;
+  }
+
+  if (sampling_percentage->data_type() == MYSQL_TYPE_INVALID) {
+    if (sampling_percentage->propagate_type(
+            thd, Type_properties(MYSQL_TYPE_DOUBLE, true)))
+      return true;
+    sampling_percentage->pin_data_type();
+    return false;
+  }
+
+  if (sampling_percentage->result_type() != REAL_RESULT &&
+      sampling_percentage->result_type() != INT_RESULT &&
+      sampling_percentage->result_type() != DECIMAL_RESULT) {
+    my_error(ER_TABLESAMPLE_PERCENTAGE, MYF(0));
+    return true;
+  }
+
+  if (sampling_percentage->const_item() && update_sampling_percentage()) {
+    return true;
+  }
+  return thd->is_error();
+}
+
+bool Table_ref::update_sampling_percentage() {
+  assert(has_tablesample() && sampling_percentage->fixed);
+  if (sampling_percentage->null_value) {
+    my_error(ER_TABLESAMPLE_PERCENTAGE, MYF(0));
+    return true;
+  }
+
+  sampling_percentage_val = sampling_percentage->val_real();
+
+  if (sampling_percentage_val < 0 || sampling_percentage_val > 100) {
+    my_error(ER_TABLESAMPLE_PERCENTAGE, MYF(0));
+    return true;
+  }
+  return false;
+}
+
+double Table_ref::get_sampling_percentage() const {
+  return sampling_percentage_val;
+}
+
 void LEX_MFA::copy(LEX_MFA *m, MEM_ROOT *alloc) {
   nth_factor = m->nth_factor;
   uses_identified_by_clause = m->uses_identified_by_clause;
@@ -7797,8 +7851,11 @@ void TABLE::disable_logical_diffs_for_current_row(const Field *field) const {
 }
 
 const histograms::Histogram *TABLE::find_histogram(uint field_index) const {
-  if (histograms == nullptr) return nullptr;
-  return histograms->find_histogram(field_index);
+  const handler *primary = get_primary_handler();
+  if (primary == nullptr) return nullptr;
+  const TABLE *table = primary->get_table();
+  if (table == nullptr || table->histograms == nullptr) return nullptr;
+  return table->histograms->find_histogram(field_index);
 }
 
 //////////////////////////////////////////////////////////////////////////

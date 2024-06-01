@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -54,7 +55,6 @@ extern thread_local EmulatedJamBuffer *NDB_THREAD_TLS_JAM;
 extern NdbRecordPrintFormat g_ndbrecord_print_format;
 extern bool ga_skip_unknown_objects;
 extern bool ga_skip_broken_objects;
-extern bool opt_include_stored_grants;
 
 extern ndb_password_state g_backup_password_state;
 
@@ -594,8 +594,7 @@ bool RestoreMetaData::markSysTables() {
         strcmp(tableName, NDB_REP_DB "/def/" NDB_APPLY_TABLE) == 0 ||
         strcmp(tableName, NDB_REP_DB "/def/" NDB_SCHEMA_TABLE) == 0 ||
         strcmp(tableName, "mysql/def/ndb_schema_result") == 0 ||
-        (strcmp(tableName, "mysql/def/ndb_sql_metadata") == 0 &&
-         !opt_include_stored_grants)) {
+        strcmp(tableName, "mysql/def/ndb_sql_metadata") == 0) {
       table->m_isSysTable = true;
       if (strcmp(tableName, "SYSTAB_0") == 0 ||
           strcmp(tableName, "sys/def/SYSTAB_0") == 0)

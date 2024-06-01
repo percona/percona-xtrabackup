@@ -1,15 +1,16 @@
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -40,6 +41,7 @@
 #include <utility>
 
 #include "decimal.h"
+#include "field_types.h"
 #include "mf_wcomp.h"  // wild_one, wild_many
 #include "my_alloc.h"
 #include "my_bitmap.h"
@@ -1391,22 +1393,22 @@ bool Arg_comparator::set_cmp_func(Item_result_field *owner_arg, Item **left_arg,
  */
 inline bool wrap_in_cast(Item **item, enum_field_types type) {
   THD *thd = current_thd;
-  Item *cast;
+  Item *cast = nullptr;
   switch (type) {
     case MYSQL_TYPE_DATETIME: {
-      if (!(cast = new Item_typecast_datetime(*item, false))) return true;
+      cast = new Item_typecast_datetime(*item, false);
       break;
     }
     case MYSQL_TYPE_DATE: {
-      if (!(cast = new Item_typecast_date(*item, false))) return true;
+      cast = new Item_typecast_date(*item, false);
       break;
     }
     case MYSQL_TYPE_TIME: {
-      if (!(cast = new Item_typecast_time(*item))) return true;
+      cast = new Item_typecast_time(*item);
       break;
     }
     case MYSQL_TYPE_DOUBLE: {
-      if (!(cast = new Item_typecast_real(*item))) return true;
+      cast = new Item_typecast_real(*item);
       break;
     }
     default: {
@@ -1414,8 +1416,9 @@ inline bool wrap_in_cast(Item **item, enum_field_types type) {
       return true;
     }
   }
+  if (cast == nullptr) return true;
 
-  cast->fix_fields(thd, item);
+  if (cast->fix_fields(thd, item)) return true;
   thd->change_item_tree(item, cast);
 
   return false;
@@ -2537,6 +2540,14 @@ longlong Item_in_optimizer::val_int() {
 void Item_in_optimizer::cleanup() {
   Item_bool_func::cleanup();
   result_for_null_param = UNKNOWN;
+  // Restore the changes done to the cached object during execution.
+  // E.g. constant expressions in "left_expr" might have been
+  // replaced with cached items (cache_const_expr_transformer())
+  // which live only for one execution and these cached items
+  // replace the original items in "cache" during execution.
+  if (cache != nullptr) {
+    cache->store(down_cast<Item_in_subselect *>(args[0])->left_expr);
+  }
 }
 
 bool Item_in_optimizer::is_null() {
@@ -3620,10 +3631,16 @@ bool Item_func_if::resolve_type_inner(THD *thd) {
 }
 
 TYPELIB *Item_func_if::get_typelib() const {
+  if (data_type() != MYSQL_TYPE_ENUM && data_type() != MYSQL_TYPE_SET) {
+    return nullptr;
+  }
   assert((args[1]->data_type() == MYSQL_TYPE_NULL) ^
          (args[2]->data_type() == MYSQL_TYPE_NULL));
-  return args[1]->data_type() != MYSQL_TYPE_NULL ? args[1]->get_typelib()
-                                                 : args[2]->get_typelib();
+  TYPELIB *typelib = args[1]->data_type() != MYSQL_TYPE_NULL
+                         ? args[1]->get_typelib()
+                         : args[2]->get_typelib();
+  assert(typelib != nullptr);
+  return typelib;
 }
 
 double Item_func_if::val_real() {
@@ -3735,6 +3752,10 @@ bool Item_func_nullif::resolve_type_inner(THD *thd) {
     cached_result_type = STRING_RESULT;
   }
   return false;
+}
+
+TYPELIB *Item_func_nullif::get_typelib() const {
+  return args[0]->get_typelib();
 }
 
 /**
@@ -4217,6 +4238,9 @@ bool Item_func_case::resolve_type_inner(THD *thd) {
 }
 
 TYPELIB *Item_func_case::get_typelib() const {
+  if (data_type() != MYSQL_TYPE_ENUM && data_type() != MYSQL_TYPE_SET) {
+    return nullptr;
+  }
   TYPELIB *typelib = nullptr;
   for (uint i = 0; i < ncases; i += 2) {
     if (typelib == nullptr) {
@@ -4375,6 +4399,9 @@ bool Item_func_coalesce::resolve_type_inner(THD *thd) {
 }
 
 TYPELIB *Item_func_coalesce::get_typelib() const {
+  if (data_type() != MYSQL_TYPE_ENUM && data_type() != MYSQL_TYPE_SET) {
+    return nullptr;
+  }
   TYPELIB *typelib = nullptr;
   for (uint i = 0; i < arg_count; i++) {
     if (typelib == nullptr) {
@@ -5188,7 +5215,7 @@ bool Item_func_in::resolve_type(THD *thd) {
     if (!(*arg)->const_for_execution()) {
       m_values_are_const = false;
       // @todo - rewrite as has_subquery() ???
-      if ((*arg)->real_item()->type() == Item::SUBSELECT_ITEM)
+      if ((*arg)->real_item()->type() == Item::SUBQUERY_ITEM)
         dep_subq_in_list = true;
       break;
     } else {

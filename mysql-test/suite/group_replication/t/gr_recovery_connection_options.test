@@ -7,16 +7,16 @@
 #   1) Start server1 to boot the group. Insert some data for recovery. Create
 #      the recovery user for the donor connection.
 #   2) Start server2 after changing the connection credentials using the
-#      change master for the server. See that the recovery is successful.
+#      change replication source for the server. See that the recovery is successful.
 #   3) On server3 set incorrect password. Keep recovery retry count to low.
 #   4) Set DEBUG point to verify member is in RECOVERY state. Start server3.
 #      Check that members is recovering. Then, recovery failed causing the
 #      member to go to ERROR state.
-#   5) On server3 set master_user to empty user.
+#   5) On server3 set Source_User to empty user.
 #   6) Set DEBUG point to verify member is in RECOVERY state. Start server3.
 #      Check that members is recovering. Then, recovery failed causing the
 #      member to go to ERROR state.
-#   7) On server3 set master_user to non-existing user.
+#   7) On server3 set Source_User to non-existing user.
 #   8) Set DEBUG point to verify member is in RECOVERY state. Start server3.
 #      Check that members is recovering. Then, recovery failed causing the
 #      member to go to ERROR state.
@@ -27,7 +27,7 @@
 --source include/have_debug.inc
 --source include/have_group_replication_xcom_communication_stack.inc
 --let $group_replication_group_name= b5eb4110-a3a2-11e3-a5e2-0800200c9a66
---source include/set_privilege_checks_user_as_system_user.inc
+--source include/rpl/set_privilege_checks_user_as_system_user.inc
 --let $rpl_privilege_checks_user_grant_option = 1
 --source include/have_group_replication_plugin.inc
 
@@ -94,6 +94,7 @@ call mtr.add_suppression("For details please check performance_schema.replicatio
 call mtr.add_suppression("Maximum number of retries when*");
 call mtr.add_suppression("Fatal error during the incremental recovery process of Group Replication. The server will leave the group.");
 call mtr.add_suppression("The server was automatically set into read only mode after an error was detected.");
+call mtr.add_suppression("The server was automatically set into offline mode after an error was detected.");
 call mtr.add_suppression("The member is leaving a group without being on one");
 call mtr.add_suppression("The member is already leaving or joining a group.");
 call mtr.add_suppression("Error leaving the group");
@@ -130,7 +131,7 @@ SET DEBUG_SYNC= "now SIGNAL signal.recovery_end";
 --source include/gr_wait_for_member_state.inc
 
 --echo #
---echo # Set MASTER_USER to an empty user name, watching it fail
+--echo # Set Source_User to an empty user name, watching it fail
 --echo #
 
 --source include/stop_group_replication.inc
@@ -145,15 +146,15 @@ SET DEBUG_SYNC= "now SIGNAL signal.recovery_end";
 --let $group_replication_member_state= ERROR
 --source include/gr_wait_for_member_state.inc
 
---echo # Verify that the show slave status shows specific IO_error
+--echo # Verify that the show replica status shows specific IO_error
 --let $rpl_channel_name= 'group_replication_recovery'
 --let $slave_io_errno= convert_error(ER_REPLICA_FATAL_ERROR)
---source include/wait_for_slave_io_error.inc
+--source include/rpl/wait_for_receiver_error.inc
 
 --source include/stop_group_replication.inc
 
 --echo #
---echo # Set MASTER_USER to non existing user, watching it fail
+--echo # Set Source_User to non existing user, watching it fail
 --echo #
 
 CHANGE REPLICATION SOURCE TO SOURCE_USER= 'parveez', SOURCE_PASSWORD= 'me' FOR CHANNEL 'group_replication_recovery';
@@ -166,8 +167,8 @@ SET DEBUG_SYNC= "now SIGNAL signal.recovery_end";
 --let $group_replication_member_state= ERROR
 --source include/gr_wait_for_member_state.inc
 
---echo # Verify that show slave status shows specific IO_ERROR
-let $show_statement= SHOW SLAVE STATUS FOR CHANNEL 'group_replication_recovery';
+--echo # Verify that show replica status shows specific IO_ERROR
+let $show_statement= SHOW REPLICA STATUS FOR CHANNEL 'group_replication_recovery';
 let $field= Last_IO_Errno;
 let $condition= = '1045';
 --source include/wait_show_condition.inc

@@ -1,4 +1,4 @@
-include/master-slave.inc
+include/rpl/init_source_replica.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
@@ -24,13 +24,11 @@ SELECT @the_epoch;
 SELECT * FROM t1 ORDER BY c3;
 c1	c2	c3
 row1	will go away	1
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 # restart
 set SQL_LOG_BIN=0;
 insert into t2 values (1);
-include/show_binlog_events.inc
+include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000001	#	Query	#	#	BEGIN
 master-bin.000001	#	Table_map	#	#	table_id: # (test.t1)
@@ -39,9 +37,7 @@ master-bin.000001	#	Write_rows	#	#	table_id: #
 master-bin.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
 master-bin.000001	#	Query	#	#	COMMIT
 set SQL_LOG_BIN=1;
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 INSERT INTO t1 VALUES ("row2","will go away",2),("row3","will change",3),("row4","D",4);
 DELETE FROM t1 WHERE c3 = 1;
 UPDATE t1 SET c2="should go away" WHERE c3 = 2;
@@ -65,9 +61,7 @@ row5	E	5
 ==== clean up ====
 DROP TABLE t1;
 DROP TABLE t2;
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 CHANGE REPLICATION SOURCE TO
-SOURCE_PORT=<MASTER_PORT>;
-include/stop_dump_threads.inc
+SOURCE_PORT=<SOURCE_PORT>;
+include/rpl/stop_dump_threads.inc

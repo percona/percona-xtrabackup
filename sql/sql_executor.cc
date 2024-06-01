@@ -1,15 +1,16 @@
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1479,10 +1480,11 @@ static AccessPath *GetAccessPathForDerivedTable(THD *thd, QEP_TAB *qep_tab,
 
 /**
    Recalculate the cost of 'path'.
+   @param thd Current thread.
    @param path the access path for which we update the cost numbers.
    @param outer_query_block the query block to which 'path' belongs.
 */
-static void RecalculateTablePathCost(AccessPath *path,
+static void RecalculateTablePathCost(THD *thd, AccessPath *path,
                                      const Query_block &outer_query_block) {
   switch (path->type) {
     case AccessPath::FILTER: {
@@ -1501,7 +1503,7 @@ static void RecalculateTablePathCost(AccessPath *path,
     } break;
 
     case AccessPath::SORT:
-      EstimateSortCost(path);
+      EstimateSortCost(thd, path);
       break;
 
     case AccessPath::LIMIT_OFFSET:
@@ -1534,7 +1536,7 @@ static void RecalculateTablePathCost(AccessPath *path,
 }
 
 AccessPath *MoveCompositeIteratorsFromTablePath(
-    AccessPath *path, const Query_block &outer_query_block) {
+    THD *thd, AccessPath *path, const Query_block &outer_query_block) {
   assert(path->cost() >= 0.0);
   AccessPath *table_path = path->materialize().table_path;
   AccessPath *bottom_of_table_path = nullptr;
@@ -1561,6 +1563,9 @@ AccessPath *MoveCompositeIteratorsFromTablePath(
           EstimateMaterializeCost(current_thd, path);
         }
         return true;
+      case AccessPath::SAMPLE_SCAN: /* LCOV_EXCL_LINE */
+        // SampleScan can be executed only in the secondary engine.
+        assert(false); /* LCOV_EXCL_LINE */
       default:
         // New possible bottom, so keep going.
         bottom_of_table_path = sub_path;
@@ -1630,7 +1635,7 @@ AccessPath *MoveCompositeIteratorsFromTablePath(
     // includes the cost of its descendants.
     for (auto ancestor = ancestor_paths.end() - 1;
          ancestor >= ancestor_paths.begin(); ancestor--) {
-      RecalculateTablePathCost(*ancestor, outer_query_block);
+      RecalculateTablePathCost(thd, *ancestor, outer_query_block);
     }
   }
 
@@ -1692,7 +1697,7 @@ AccessPath *GetAccessPathForDerivedTable(
             : false);
     EstimateMaterializeCost(thd, path);
     path = MoveCompositeIteratorsFromTablePath(
-        path, *query_expression->outer_query_block());
+        thd, path, *query_expression->outer_query_block());
     if (query_expression->offset_limit_cnt != 0) {
       // LIMIT is handled inside MaterializeIterator, but OFFSET is not.
       // SQL_CALC_FOUND_ROWS cannot occur in a derived table's definition.
@@ -1736,7 +1741,7 @@ AccessPath *GetAccessPathForDerivedTable(
         query_expression->m_reject_multiple_rows);
     EstimateMaterializeCost(thd, path);
     path = MoveCompositeIteratorsFromTablePath(
-        path, *query_expression->outer_query_block());
+        thd, path, *query_expression->outer_query_block());
   }
 
   path->set_cost_before_filter(path->cost());
@@ -1761,6 +1766,8 @@ static AccessPath *GetTableAccessPath(THD *thd, QEP_TAB *qep_tab,
     table_path = NewMaterializedTableFunctionAccessPath(
         thd, qep_tab->table(), qep_tab->table_ref->table_function,
         qep_tab->access_path());
+
+    CopyBasicProperties(*qep_tab->access_path(), table_path);
   } else if (qep_tab->materialize_table == QEP_TAB::MATERIALIZE_SEMIJOIN) {
     Semijoin_mat_exec *sjm = qep_tab->sj_mat_exec();
 
@@ -1834,7 +1841,7 @@ static AccessPath *GetTableAccessPath(THD *thd, QEP_TAB *qep_tab,
         /*reject_multiple_rows=*/false);
     EstimateMaterializeCost(thd, table_path);
     table_path = MoveCompositeIteratorsFromTablePath(
-        table_path, *qep_tab->join()->query_block);
+        thd, table_path, *qep_tab->join()->query_block);
 
 #ifndef NDEBUG
     // Make sure we clear this table out when the join is reset,
@@ -3097,7 +3104,7 @@ AccessPath *JOIN::create_root_access_path_for_join() {
       // see below. We won't be aggregating twice, though.)
       if (!qep_tab->tmp_table_param->precomputed_group_by) {
         path = NewAggregateAccessPath(thd, path, query_block->olap);
-        EstimateAggregateCost(path, query_block);
+        EstimateAggregateCost(thd, path, query_block);
       }
     }
 
@@ -3341,7 +3348,7 @@ AccessPath *JOIN::create_root_access_path_for_join() {
 #endif
     if (!tmp_table_param.precomputed_group_by) {
       path = NewAggregateAccessPath(thd, path, query_block->olap);
-      EstimateAggregateCost(path, query_block);
+      EstimateAggregateCost(thd, path, query_block);
     }
   }
 

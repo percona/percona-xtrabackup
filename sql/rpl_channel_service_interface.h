@@ -1,15 +1,16 @@
-/* Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -62,7 +63,7 @@ enum enum_multi_threaded_workers_type {
 
 /**
  SSL information to be used when creating a channel.
- It maps the SSL options present in a CHANGE MASTER.
+ It maps the SSL options present in a CHANGE REPLICATION SOURCE.
 */
 struct Channel_ssl_info {
   int use_ssl;                 // use SSL
@@ -82,7 +83,8 @@ void initialize_channel_ssl_info(Channel_ssl_info *channel_ssl_info);
 
 /**
  Creation information for a channel.
- It includes the data that is usually associated to a change master command
+ It includes the data that is usually associated to a change replication source
+ command
 */
 struct Channel_creation_info {
   enum_channel_type type;
@@ -149,7 +151,8 @@ struct Channel_connection_info {
 void initialize_channel_connection_info(Channel_connection_info *channel_info);
 
 /**
-  Initializes a channel connection in a similar way to a change master command.
+  Initializes a channel connection in a similar way to a change replication
+  source command.
 
   @note If the channel exists, it is reconfigured with the new options.
         About the logs, the preserve_relay_logs option allows the user to
@@ -612,5 +615,21 @@ bool set_replication_failover_channels_configuration(
     @retval true   Error
  */
 bool force_my_replication_failover_channels_configuration_on_all_members();
+
+/**
+ Calculate transactions that are waiting to be applied on channel.
+
+ gtid_set_to_apply will contain a list of UUIDs with intervals that represent
+ transactions that will be applied.
+
+  @param[in]  channel name of the channel
+  @param[out] gtid_set_to_apply transactions on backlog to be applied.
+
+  @return the operation status
+    @retval 0  OK
+    @retval !=0   Error
+ */
+int channel_get_gtid_set_to_apply(const char *channel,
+                                  std::string &gtid_set_to_apply);
 
 #endif  // RPL_SERVICE_INTERFACE_INCLUDE

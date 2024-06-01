@@ -1,15 +1,16 @@
-/* Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -314,7 +315,7 @@ string HashJoinTypeToString(RelationalExpression::Type join_type,
 static bool AddSubqueryPaths(const Item *item_arg, const char *source_text,
                              vector<ExplainChild> *children) {
   const auto add_subqueries = [children, source_text](const Item *item) {
-    if (item->type() != Item::SUBSELECT_ITEM) {
+    if (item->type() != Item::SUBQUERY_ITEM) {
       return false;
     }
 
@@ -845,6 +846,7 @@ static unique_ptr<Json_object> ExplainQueryPlan(
     bool is_root_of_join) {
   string dml_desc;
   string access_type;
+  string query_type;
   unique_ptr<Json_object> obj = nullptr;
 
   /* Create a Json object for the SELECT path */
@@ -862,6 +864,7 @@ static unique_ptr<Json_object> ExplainQueryPlan(
         access_type = "insert_values";
         [[fallthrough]];
       case SQLCOM_INSERT_SELECT:
+        query_type = "insert";
         dml_desc = string("Insert into ") +
                    query_plan->get_lex()->insert_table_leaf->table->alias;
         break;
@@ -869,11 +872,23 @@ static unique_ptr<Json_object> ExplainQueryPlan(
         access_type = "replace_values";
         [[fallthrough]];
       case SQLCOM_REPLACE_SELECT:
+        query_type = "replace";
         dml_desc = string("Replace into ") +
                    query_plan->get_lex()->insert_table_leaf->table->alias;
         break;
+      case SQLCOM_SELECT:
+        query_type = "select";
+        break;
+      case SQLCOM_UPDATE:
+      case SQLCOM_UPDATE_MULTI:
+        query_type = "update";
+        break;
+      case SQLCOM_DELETE:
+      case SQLCOM_DELETE_MULTI:
+        query_type = "delete";
+        break;
       default:
-        // SELECTs have no top-level node.
+        assert(false);
         break;
     }
   }
@@ -901,6 +916,10 @@ static unique_ptr<Json_object> ExplainQueryPlan(
       return nullptr;
     }
     obj = std::move(dml_obj);
+  }
+
+  if (!query_type.empty()) {
+    AddMemberToObject<Json_string>(obj, "query_type", query_type);
   }
 
   return obj;
@@ -1083,6 +1102,30 @@ static unique_ptr<Json_object> SetObjectMembers(
         error |= AddMemberToObject<Json_string>(obj, "message",
                                                 table.file->explain_extra());
       error |= AddChildrenFromPushedCondition(table, children);
+      break;
+    }
+    case AccessPath::SAMPLE_SCAN: {
+      const TABLE &table = *path->sample_scan().table;
+      description += string("Sample scan on ") + table.alias;
+      if (table.s->is_secondary_engine()) {
+        error |= AddMemberToObject<Json_string>(obj, "secondary_engine",
+                                                table.file->table_type());
+        description +=
+            string(" in secondary engine ") + table.file->table_type();
+      }
+      description += table.file->explain_extra();
+
+      error |= AddMemberToObject<Json_string>(obj, "table_name", table.alias);
+      error |= AddMemberToObject<Json_string>(obj, "access_type", "table");
+      error |= AddChildrenFromPushedCondition(table, children);
+
+      error |= AddMemberToObject<Json_string>(
+          obj, "sampling_type",
+          SamplingTypeToString(table.pos_in_table_list->get_sampling_type()));
+      error |= AddMemberToObject<Json_double>(
+          obj, "percentage",
+          table.pos_in_table_list->get_sampling_percentage());
+
       break;
     }
     case AccessPath::INDEX_SCAN: {
@@ -2098,123 +2141,6 @@ void Explain_format_tree::ExplainPrintTreeNode(const Json_dom *json, int level,
   *explain += children_explain;
 }
 
-namespace {
-
-/// The maximal number of digits we use in decimal numbers (e.g. "123456" or
-/// "0.00123").
-constexpr int kPlainNumberLength = 6;
-
-/// The maximal number of digits in engineering format mantissas, e.g.
-/// "12.3e+6".
-constexpr int kMantissaLength = 3;
-
-/// The  smallest number (absolute value) that we do not format as "0".
-constexpr double kMinNonZeroNumber = 1.0e-12;
-
-/// For decimal numbers, include enough decimals to ensure that any rounding
-/// error is less than `<number>*10^kLogPrecision` (i.e. less than 1%).
-constexpr int kLogPrecision = -2;
-
-/// The smallest number (absolute value) that we format as decimal (rather than
-/// engineering format).
-const double kMinPlainFormatNumber =
-    std::pow(10, 1 - kPlainNumberLength - kLogPrecision);
-
-/// Find the number of integer digits (i.e. those before the decimal point) in
-/// 'd' when represented as a decimal number.
-int IntegerDigits(double d) {
-  return d == 0.0 ? 1
-                  : std::max(1, 1 + static_cast<int>(
-                                        std::floor(std::log10(std::abs(d)))));
-}
-
-/**
-   Format 'd' as a decimal number with enough decimals to get a rounding error
-   less than d*10^log_precision, without any trailing fractional zeros.
-*/
-std::string DecimalFormat(double d, int log_precision) {
-  assert(d != 0.0);
-  constexpr int max_digits = 18;
-  assert(IntegerDigits(d + 0.5) <= max_digits);
-
-  // The position of the first nonzero digit, relative to the decimal point.
-  const int first_nonzero_digit_pos =
-      static_cast<int>(std::floor(std::log10(std::abs(d))));
-
-  // The number of decimals needed for the required precision.
-  const int decimals = std::max(0, -log_precision - first_nonzero_digit_pos);
-
-  // Add space for sign, decimal point and zero termination.
-  char buff[max_digits + 3];
-  // NOTE: We cannot use %f, since MSVC and GCC round 0.5 in different
-  // directions, so tests would not be reproducible between platforms.
-  // Format/round using my_fcvt() instead.
-  my_fcvt(d, decimals, buff, nullptr);
-  if (strchr(buff, '.') == nullptr) {
-    return buff;
-  } else {
-    // Remove trailing fractional zeros.
-    return std::regex_replace(buff, std::regex("[.]?0+$"), "");
-  }
-}
-
-/**
-   Format 'd' in engineering format, i.e. `<mantissa>e<sign><exponent>`
-   where 1.0<=mantissa<1000.0 and exponent is a multiple of 3.
-*/
-std::string EngineeringFormat(double d) {
-  assert(d != 0.0);
-  int exp = std::floor(std::log10(std::abs(d)) / 3.0) * 3;
-  double mantissa = d / std::pow(10.0, exp);
-  std::ostringstream stream;
-
-  if (mantissa + 0.5 * std::pow(10, 3 - kMantissaLength) < 1000.0) {
-    stream << DecimalFormat(mantissa, 1 - kMantissaLength) << "e"
-           << std::showpos << exp;
-  } else {
-    // Cover the case where the mantissa will be rounded up to give an extra
-    // digit. For example, if d=999500000 and kMantissaLength=3, we want it to
-    // be formatted as "1e+9" rather than "1000e+6".
-    stream << DecimalFormat(mantissa / 1000.0, 1 - kMantissaLength) << "e"
-           << std::showpos << exp + 3;
-  }
-  return stream.str();
-}
-
-/// Format 'd' for "EXPLAIN FORMAT=TREE" output.
-std::string NumFormat(double d) {
-  if (std::abs(d) < kMinNonZeroNumber) {
-    return "0";
-  } else if (std::abs(d) < kMinPlainFormatNumber ||
-             IntegerDigits(d + 0.5) > kPlainNumberLength) {
-    return EngineeringFormat(d);
-  } else {
-    return DecimalFormat(d, kLogPrecision);
-  }
-}
-
-/// Integer exponentiation.
-uint64_t constexpr Power(uint64_t base, int power) {
-  assert(power >= 0);
-  uint64_t result = 1;
-  for (int i = 0; i < power; i++) {
-    result *= base;
-  }
-  return result;
-}
-
-/// Format 'l' for "EXPLAIN FORM=TREE" output.
-std::string NumFormat(uint64_t l) {
-  constexpr uint64_t limit = Power(10, kPlainNumberLength);
-  if (l >= limit) {
-    return EngineeringFormat(l);
-  } else {
-    return std::to_string(l);
-  }
-}
-
-}  // Anonymous namespace.
-
 void Explain_format_tree::ExplainPrintCosts(const Json_object *obj,
                                             string *explain) {
   bool has_first_cost = obj->get("estimated_first_row_cost") != nullptr;
@@ -2228,11 +2154,12 @@ void Explain_format_tree::ExplainPrintCosts(const Json_object *obj,
 
     if (has_first_cost) {
       double first_row_cost = GetJSONDouble(obj, "estimated_first_row_cost");
-      stream << "  (cost=" << NumFormat(first_row_cost) << ".."
-             << NumFormat(last_cost) << " rows=" << NumFormat(rows) << ")";
+      stream << "  (cost=" << FormatNumberReadably(first_row_cost) << ".."
+             << FormatNumberReadably(last_cost)
+             << " rows=" << FormatNumberReadably(rows) << ")";
     } else {
-      stream << "  (cost=" << NumFormat(last_cost)
-             << " rows=" << NumFormat(rows) << ")";
+      stream << "  (cost=" << FormatNumberReadably(last_cost)
+             << " rows=" << FormatNumberReadably(rows) << ")";
     }
 
     *explain += stream.str();
@@ -2256,10 +2183,10 @@ void Explain_format_tree::ExplainPrintCosts(const Json_object *obj,
           down_cast<Json_int *>(obj->get("actual_loops"))->value();
 
       std::ostringstream stream;
-      stream << "(actual time=" << NumFormat(actual_first_row_ms) << ".."
-             << NumFormat(actual_last_row_ms)
-             << " rows=" << NumFormat(actual_rows)
-             << " loops=" << NumFormat(actual_loops) << ")";
+      stream << "(actual time=" << FormatNumberReadably(actual_first_row_ms)
+             << ".." << FormatNumberReadably(actual_last_row_ms)
+             << " rows=" << FormatNumberReadably(actual_rows)
+             << " loops=" << FormatNumberReadably(actual_loops) << ")";
 
       *explain += stream.str();
     }

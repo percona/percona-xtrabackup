@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -320,20 +321,28 @@ dberr_t Merge_file_sort::Output_file::write(const mrec_t *mrec,
   if (unlikely(m_ptr + rec_size + need >= m_buffer.first + m_buffer.second)) {
     const size_t n_write = m_ptr - m_buffer.first;
     const auto len = ut_uint64_align_down(n_write, IO_BLOCK_SIZE);
-    auto err = ddl::pwrite(m_file.get(), m_buffer.first, len, m_offset);
+    if (len != 0) {
+      auto err = ddl::pwrite(m_file.get(), m_buffer.first, len, m_offset);
 
-    if (err != DB_SUCCESS) {
-      return err;
+      if (err != DB_SUCCESS) {
+        return err;
+      }
+
+      ut_a(n_write >= len);
+      const auto n_move = n_write - len;
+
+      m_ptr = m_buffer.first;
+      memmove(m_ptr, m_ptr + len, n_move);
+      m_ptr += n_move;
+
+      m_offset += len;
     }
 
-    ut_a(n_write >= len);
-    const auto n_move = n_write - len;
-
-    m_ptr = m_buffer.first;
-    memmove(m_ptr, m_ptr + len, n_move);
-    m_ptr += n_move;
-
-    m_offset += len;
+    if (unlikely(m_ptr + rec_size + need >= m_buffer.first + m_buffer.second)) {
+      // Should be caught earlier
+      ut_d(ut_error);
+      ut_o(return DB_TOO_BIG_RECORD);
+    }
   }
 
   m_last_mrec = m_ptr;

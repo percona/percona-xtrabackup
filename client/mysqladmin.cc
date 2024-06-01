@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -34,7 +35,7 @@
 #include <time.h>
 #include <string>
 
-#include "client/client_priv.h"
+#include "client/include/client_priv.h"
 #include "compression.h"
 #include "m_string.h"
 #include "my_alloc.h"
@@ -59,6 +60,7 @@
 #define MAX_MYSQL_VAR 8192
 #define SHUTDOWN_DEF_TIMEOUT 3600 /* Wait for shutdown */
 #define MAX_TRUNC_LENGTH 3
+#define FIRST_SOURCE_COMMAND_VERSION 80200
 
 const char *host = nullptr;
 char *user = nullptr;
@@ -98,10 +100,10 @@ static uint ex_val_max_len[MAX_MYSQL_VAR];
 static bool ex_status_printed = false; /* First output is not relative. */
 static uint ex_var_count, max_var_length, max_val_length;
 
-#include "sslopt-vars.h"
+#include "client/include/sslopt-vars.h"
 
-#include "caching_sha2_passwordopt-vars.h"
-#include "multi_factor_passwordopt-vars.h"
+#include "client/include/caching_sha2_passwordopt-vars.h"
+#include "client/include/multi_factor_passwordopt-vars.h"
 
 static void usage(void);
 extern "C" bool get_one_option(int optid, const struct my_option *opt,
@@ -232,7 +234,7 @@ static struct my_option my_long_options[] = {
      REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"no-beep", 'b', "Turn off beep on error.", &opt_nobeep, &opt_nobeep,
      nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
-#include "multi_factor_passwordopt-longopts.h"
+#include "client/include/multi_factor_passwordopt-longopts.h"
 #ifdef _WIN32
     {"pipe", 'W', "Use named pipes to connect to server.", nullptr, nullptr,
      nullptr, GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
@@ -267,9 +269,9 @@ static struct my_option my_long_options[] = {
     {"sleep", 'i', "Execute commands repeatedly with a sleep between.",
      &interval, &interval, nullptr, GET_INT, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
      nullptr},
-#include "sslopt-longopts.h"
+#include "client/include/sslopt-longopts.h"
 
-#include "caching_sha2_passwordopt-longopts.h"
+#include "client/include/caching_sha2_passwordopt-longopts.h"
 
     {"user", 'u', "User for login if not current user.", &user, &user, nullptr,
      GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
@@ -341,7 +343,7 @@ bool get_one_option(int optid, const struct my_option *opt [[maybe_unused]],
     case '#':
       DBUG_PUSH(argument ? argument : "d:t:o,/tmp/mysqladmin.trace");
       break;
-#include "sslopt-case.h"
+#include "client/include/sslopt-case.h"
 
     case 'V':
       print_version();
@@ -592,7 +594,6 @@ static bool sql_connect(MYSQL *mysql, uint wait) {
               mysql, [](const char *err) { fprintf(stderr, "%s\n", err); }))
         return true;
 
-      mysql->reconnect = true;
       if (info) {
         fputs("\n", stderr);
         (void)fflush(stderr);
@@ -676,6 +677,7 @@ static int execute_commands(MYSQL *mysql, int argc, char **argv) {
   for (; argc > 0; argv++, argc--) {
     int option;
     bool log_warnings = true;
+    std::string admin_reset_command = "RESET REPLICA, BINARY LOGS AND GTIDS";
     switch (option = find_type(argv[0], &command_typelib, FIND_TYPE_BASIC)) {
       case ADMIN_CREATE: {
         char buff[FN_REFLEN + 20];
@@ -747,9 +749,13 @@ static int execute_commands(MYSQL *mysql, int argc, char **argv) {
         }
         break;
       case ADMIN_REFRESH:
+        if (mysql_get_server_version(mysql) < FIRST_SOURCE_COMMAND_VERSION) {
+          admin_reset_command = "RESET REPLICA, MASTER";
+        }
+
         if (mysql_query(mysql, "FLUSH PRIVILEGES, STATUS") ||
             mysql_query(mysql, "FLUSH TABLES WITH READ LOCK") ||
-            mysql_query(mysql, "RESET REPLICA, MASTER")) {
+            mysql_query(mysql, admin_reset_command.c_str())) {
           my_printf_error(0, "refresh failed; error: '%s'", error_flags,
                           mysql_error(mysql));
           return -1;
@@ -1126,21 +1132,13 @@ static int execute_commands(MYSQL *mysql, int argc, char **argv) {
         break;
 
       case ADMIN_PING:
-        mysql->reconnect = false; /* We want to know of reconnects */
         if (!mysql_ping(mysql)) {
           if (option_silent < 2) puts("mysqld is alive");
         } else {
-          if (mysql_errno(mysql) == CR_SERVER_GONE_ERROR) {
-            mysql->reconnect = true;
-            if (!mysql_ping(mysql))
-              puts("connection was down, but mysqld is now alive");
-          } else {
-            my_printf_error(0, "mysqld doesn't answer to ping, error: '%s'",
-                            error_flags, mysql_error(mysql));
-            return -1;
-          }
+          my_printf_error(0, "mysqld doesn't answer to ping, error: '%s'",
+                          error_flags, mysql_error(mysql));
+          return -1;
         }
-        mysql->reconnect = true; /* Automatic reconnect is default */
         break;
       default:
         my_printf_error(0, "Unknown command: '%-.60s'", error_flags, argv[0]);
@@ -1209,7 +1207,6 @@ static void usage(void) {
   flush-logs            Flush all logs\n\
   flush-status		Clear status variables\n\
   flush-tables          Flush all tables\n\
-  flush-threads         Flush the thread cache\n\
   flush-privileges      Reload grant tables (same as reload)\n\
   kill id,id,...	Kill mysql threads");
   puts(

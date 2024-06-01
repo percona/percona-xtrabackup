@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -78,7 +79,6 @@
 #include "sql_update.h"  // Sql_cmd_update
 #include "string_with_len.h"
 #include "template_utils.h"
-
 class PT_hint_list;
 
 extern int my_hint_parser_parse(THD *thd, Hint_scanner *scanner,
@@ -174,7 +174,7 @@ void st_parsing_options::reset() {
 /**
  Cleans slave connection info.
 */
-void struct_slave_connection::reset() {
+void struct_replica_connection::reset() {
   user = nullptr;
   password = nullptr;
   plugin_auth = nullptr;
@@ -442,7 +442,7 @@ void LEX::reset() {
   m_sql_cmd = nullptr;
   query_tables = nullptr;
   reset_query_tables_list(false);
-  expr_allows_subselect = true;
+  expr_allows_subquery = true;
   use_only_table_context = false;
   contains_plaintext_password = false;
   keep_diagnostics = DA_KEEP_NOTHING;
@@ -464,7 +464,7 @@ void LEX::reset() {
   is_explain_analyze = false;
   set_using_hypergraph_optimizer(false);
   is_lex_started = true;
-  reset_slave_info.all = false;
+  reset_replica_info.all = false;
   mi.channel = nullptr;
 
   wild = nullptr;
@@ -482,7 +482,6 @@ void LEX::reset() {
   clear_privileges();
   grant_as.cleanup();
   alter_user_attribute = enum_alter_user_attribute::ALTER_USER_COMMENT_NOT_USED;
-  m_is_replication_deprecated_syntax_used = false;
   m_was_replication_command_executed = false;
 
   grant_if_exists = false;
@@ -2973,6 +2972,15 @@ void Table_ref::print(const THD *thd, String *str,
         }
         str->append(')');
       }
+      if (has_tablesample()) {
+        str->append(" TABLESAMPLE ");
+        str->append(SamplingTypeToString(get_sampling_type()));
+        str->append('(');
+        auto *item_decimal =
+            new (thd->mem_root) Item_decimal(get_sampling_percentage());
+        item_decimal->print(thd, str, QT_ORDINARY);
+        str->append(") ");
+      }
     }
     if (my_strcasecmp(table_alias_charset, cmp_name, alias)) {
       char t_alias_buff[MAX_ALIAS_NAME];
@@ -3799,9 +3807,7 @@ bool LEX::can_not_use_merged() {
 */
 
 bool LEX::need_correct_ident() {
-  if (is_explain() && explain_format->is_iterator_based() &&
-      explain_format->is_hierarchical())
-    return true;
+  if (is_explain() && explain_format->is_iterator_based()) return true;
   switch (sql_command) {
     case SQLCOM_SHOW_CREATE:
     case SQLCOM_SHOW_TABLES:
@@ -4389,6 +4395,10 @@ bool Query_block::save_properties(THD *thd) {
 
   saved_cond_count = cond_count;
 
+  if (!base_ref_items.empty()) {
+    m_saved_base_items =
+        base_ref_items.prefix(fields.size()).Clone(thd->mem_root);
+  }
   if (group_list.first &&
       save_order_properties(thd, &group_list, &group_list_ptrs))
     return true;
@@ -4916,6 +4926,11 @@ bool Query_block::save_cmd_properties(THD *thd) {
   they are ready for optimization.
 */
 void Query_block::restore_cmd_properties() {
+  // Restore base_ref_items. Do this before we dive into subqueries, so that
+  // their outer references point to valid items when they update used tables.
+  std::copy(m_saved_base_items.begin(), m_saved_base_items.end(),
+            base_ref_items.begin());
+
   for (Query_expression *u = first_inner_query_expression(); u;
        u = u->next_query_expression())
     u->restore_cmd_properties();
@@ -4983,7 +4998,7 @@ bool LEX::set_wild(LEX_STRING w) {
   return wild == nullptr;
 }
 
-void LEX_MASTER_INFO::initialize() {
+void LEX_SOURCE_INFO::initialize() {
   host = user = password = log_file_name = bind_addr = nullptr;
   network_namespace = nullptr;
   port = connect_retry = 0;
@@ -5020,7 +5035,7 @@ void LEX_MASTER_INFO::initialize() {
   assign_gtids_to_anonymous_transactions_manual_uuid = nullptr;
 }
 
-void LEX_MASTER_INFO::set_unspecified() {
+void LEX_SOURCE_INFO::set_unspecified() {
   initialize();
   sql_delay = -1;
 }

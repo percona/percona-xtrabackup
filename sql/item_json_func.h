@@ -1,18 +1,19 @@
 #ifndef ITEM_JSON_FUNC_INCLUDED
 #define ITEM_JSON_FUNC_INCLUDED
 
-/* Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1269,9 +1270,6 @@ bool parse_json(const String &res, Json_dom_ptr *dom, bool require_str_or_json,
  */
 enum_json_diff_status apply_json_diffs(Field_json *field,
                                        const Json_diff_vector *diffs);
-
-typedef Prealloced_array<size_t, 16> Sorted_index_array;
-bool sort_and_remove_dups(const Json_wrapper &orig, Sorted_index_array *v);
 
 bool save_json_to_field(THD *thd, Field *field, const Json_wrapper *w,
                         bool no_error);

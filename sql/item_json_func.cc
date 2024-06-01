@@ -1,15 +1,16 @@
-/* Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -837,180 +838,6 @@ bool Item_func_json_schema_validation_report::val_json(Json_wrapper *wr) {
 
 typedef Prealloced_array<size_t, 16> Sorted_index_array;
 
-/**
-  Sort the elements of a JSON array and remove duplicates.
-
-  @param[in]  orig  the original JSON array
-  @param[out] v     vector that will be filled with the indexes of the array
-                    elements in increasing order
-  @return false on success, true on error
-*/
-bool sort_and_remove_dups(const Json_wrapper &orig, Sorted_index_array *v) {
-  if (v->reserve(orig.length())) return true; /* purecov: inspected */
-
-  for (size_t i = 0; i < orig.length(); i++) v->push_back(i);
-
-  // Sort the array...
-  const auto less = [&orig](size_t idx1, size_t idx2) {
-    return orig[idx1].compare(orig[idx2]) < 0;
-  };
-  std::sort(v->begin(), v->end(), less);
-
-  // ... and remove duplicates.
-  const auto equal = [&orig](size_t idx1, size_t idx2) {
-    return orig[idx1].compare(orig[idx2]) == 0;
-  };
-  v->erase(std::unique(v->begin(), v->end(), equal), v->end());
-
-  return false;
-}
-
-/**
-  Check if one Json_wrapper contains all the elements of another
-  Json_wrapper.
-
-  @param[in]  thd           THD handle
-  @param[in]  doc_wrapper   the containing document
-  @param[in]  containee_wr  the possibly contained document
-  @param[out] result        true if doc_wrapper contains containee_wr,
-                            false otherwise
-  @retval false on success
-  @retval true on failure
-*/
-static bool contains_wr(const THD *thd, const Json_wrapper &doc_wrapper,
-                        const Json_wrapper &containee_wr, bool *result) {
-  if (doc_wrapper.type() == enum_json_type::J_OBJECT) {
-    if (containee_wr.type() != enum_json_type::J_OBJECT ||
-        containee_wr.length() > doc_wrapper.length()) {
-      *result = false;
-      return false;
-    }
-
-    for (const auto &c_oi : Json_object_wrapper(containee_wr)) {
-      Json_wrapper d_wr = doc_wrapper.lookup(c_oi.first);
-
-      if (d_wr.type() == enum_json_type::J_ERROR) {
-        // No match for this key. Give up.
-        *result = false;
-        return false;
-      }
-
-      // key is the same, now compare values
-      if (contains_wr(thd, d_wr, c_oi.second, result))
-        return true; /* purecov: inspected */
-
-      if (!*result) {
-        // Value didn't match, give up.
-        return false;
-      }
-    }
-
-    // All members in containee_wr found a match in doc_wrapper.
-    *result = true;
-    return false;
-  }
-
-  if (doc_wrapper.type() == enum_json_type::J_ARRAY) {
-    const Json_wrapper *wr = &containee_wr;
-    Json_wrapper a_wr;
-
-    if (containee_wr.type() != enum_json_type::J_ARRAY) {
-      // auto-wrap scalar or object in an array for uniform treatment later
-      const Json_wrapper scalar = containee_wr;
-      Json_array_ptr array(new (std::nothrow) Json_array());
-      if (array == nullptr || array->append_alias(scalar.clone_dom()))
-        return true; /* purecov: inspected */
-      a_wr = Json_wrapper(std::move(array));
-      wr = &a_wr;
-    }
-
-    // Indirection vectors containing the original indices
-    Sorted_index_array d(key_memory_JSON);
-    Sorted_index_array c(key_memory_JSON);
-
-    // Sort both vectors, so we can compare efficiently
-    if (sort_and_remove_dups(doc_wrapper, &d) || sort_and_remove_dups(*wr, &c))
-      return true; /* purecov: inspected */
-
-    size_t doc_i = 0;
-
-    for (size_t c_i = 0; c_i < c.size(); c_i++) {
-      Json_wrapper candidate = (*wr)[c[c_i]];
-      if (candidate.type() == enum_json_type::J_ARRAY) {
-        bool found = false;
-        /*
-          We do not increase doc_i here, use a tmp. We might need to check again
-          against doc_i: this allows duplicates in the candidate.
-        */
-        for (size_t tmp = doc_i; tmp < d.size(); tmp++) {
-          auto d_wr = doc_wrapper[d[tmp]];
-          const auto dtype = d_wr.type();
-
-          // Skip past all non-arrays.
-          if (dtype < enum_json_type::J_ARRAY) {
-            /*
-              Remember the position so that we don't need to skip past
-              these elements again for the next candidate.
-            */
-            doc_i = tmp;
-            continue;
-          }
-
-          /*
-            No more potential matches for this candidate if we've
-            moved past all the arrays.
-          */
-          if (dtype > enum_json_type::J_ARRAY) break;
-
-          if (contains_wr(thd, d_wr, candidate, result))
-            return true; /* purecov: inspected */
-          if (*result) {
-            found = true;
-            break;
-          }
-        }
-
-        if (!found) {
-          *result = false;
-          return false;
-        }
-      } else {
-        bool found = false;
-        size_t tmp = doc_i;
-
-        while (tmp < d.size()) {
-          auto d_wr = doc_wrapper[d[tmp]];
-          const auto dtype = d_wr.type();
-          if (dtype == enum_json_type::J_ARRAY ||
-              dtype == enum_json_type::J_OBJECT) {
-            if (contains_wr(thd, d_wr, candidate, result))
-              return true; /* purecov: inspected */
-            if (*result) {
-              found = true;
-              break;
-            }
-          } else if (d_wr.compare(candidate) == 0) {
-            found = true;
-            break;
-          }
-          tmp++;
-        }
-
-        if (doc_i == d.size() || !found) {
-          *result = false;
-          return false;
-        }
-      }
-    }
-
-    *result = true;
-    return false;
-  }
-
-  *result = (doc_wrapper.compare(containee_wr) == 0);
-  return false;
-}
-
 void Item_func_json_contains::cleanup() {
   Item_int_func::cleanup();
 
@@ -1056,13 +883,13 @@ longlong Item_func_json_contains::val_int() {
       }
 
       bool ret;
-      if (contains_wr(thd, v[0], containee_wr, &ret))
+      if (json_wrapper_contains(v[0], containee_wr, &ret))
         return error_int(); /* purecov: inspected */
       null_value = false;
       return ret;
     } else {
       bool ret;
-      if (contains_wr(thd, doc_wrapper, containee_wr, &ret))
+      if (json_wrapper_contains(doc_wrapper, containee_wr, &ret))
         return error_int(); /* purecov: inspected */
       null_value = false;
       return ret;
@@ -1211,116 +1038,12 @@ bool get_json_wrapper(Item **args, uint arg_idx, String *str,
   return false;
 }
 
-/**
-  Extended type ids so that JSON_TYPE() can give useful type
-  names to certain sub-types of J_OPAQUE.
-*/
-enum class enum_json_opaque_type {
-  J_OPAQUE_BLOB = static_cast<int>(enum_json_type::J_ERROR) + 1,
-  J_OPAQUE_BIT,
-  J_OPAQUE_GEOMETRY
-};
-
-/**
-  Maps the enumeration value of type enum_json_type into a string.
-  For example:
-  json_type_string_map[J_OBJECT] == "OBJECT"
-*/
-static constexpr const char *json_type_string_map[] = {
-    "NULL",
-    "DECIMAL",
-    "INTEGER",
-    "UNSIGNED INTEGER",
-    "DOUBLE",
-    "STRING",
-    "OBJECT",
-    "ARRAY",
-    "BOOLEAN",
-    "DATE",
-    "TIME",
-    "DATETIME",
-    "TIMESTAMP",
-    "OPAQUE",
-    "ERROR",
-
-    // OPAQUE types with special names
-    "BLOB",
-    "BIT",
-    "GEOMETRY",
-};
-
-/// A constexpr version of std::strlen.
-static constexpr uint32 strlen_const(const char *str) {
-  return *str == '\0' ? 0 : 1 + strlen_const(str + 1);
-}
-
-/// Find the length of the longest string in a range.
-static constexpr uint32 longest_string(const char *const *begin,
-                                       const char *const *end) {
-  return begin == end
-             ? 0
-             : std::max(strlen_const(*begin), longest_string(begin + 1, end));
-}
-
-/**
-   The maximum length of a string in json_type_string_map including
-   a final zero char.
-*/
-static constexpr uint32 typelit_max_length =
-    longest_string(
-        json_type_string_map,
-        json_type_string_map + array_elements(json_type_string_map)) +
-    1;
-
 bool Item_func_json_type::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_JSON)) return true;
   set_nullable(true);
   m_value.set_charset(&my_charset_utf8mb4_bin);
-  set_data_type_string(typelit_max_length, &my_charset_utf8mb4_bin);
+  set_data_type_string(kMaxJsonTypeNameLength + 1, &my_charset_utf8mb4_bin);
   return false;
-}
-
-/**
-   Compute an index into json_type_string_map
-   to be applied to certain sub-types of J_OPAQUE.
-
-   @param field_type The refined field type of the opaque value.
-
-   @return an index into json_type_string_map
-*/
-static uint opaque_index(enum_field_types field_type) {
-  switch (field_type) {
-    case MYSQL_TYPE_VARCHAR:
-    case MYSQL_TYPE_TINY_BLOB:
-    case MYSQL_TYPE_MEDIUM_BLOB:
-    case MYSQL_TYPE_LONG_BLOB:
-    case MYSQL_TYPE_BLOB:
-    case MYSQL_TYPE_VAR_STRING:
-    case MYSQL_TYPE_STRING:
-      return static_cast<uint>(enum_json_opaque_type::J_OPAQUE_BLOB);
-
-    case MYSQL_TYPE_BIT:
-      return static_cast<uint>(enum_json_opaque_type::J_OPAQUE_BIT);
-
-    case MYSQL_TYPE_GEOMETRY: {
-      /**
-        Should not get here. This path should be orphaned by the
-        work done on implicit CASTing of geometry values to geojson
-        objects. However, that work was done late in the project
-        cycle for WL#7909. Do something sensible in case we missed
-        something.
-
-        FIXME.
-      */
-      /* purecov: begin deadcode */
-      assert(false);
-      return static_cast<uint>(enum_json_opaque_type::J_OPAQUE_GEOMETRY);
-      /* purecov: end */
-    }
-
-    default:
-      return static_cast<uint>(enum_json_type::J_OPAQUE);
-  }
 }
 
 String *Item_func_json_type::val_str(String *) {
@@ -1334,14 +1057,8 @@ String *Item_func_json_type::val_str(String *) {
       return nullptr;
     }
 
-    const enum_json_type type = wr.type();
-    uint typename_idx = static_cast<uint>(type);
-    if (type == enum_json_type::J_OPAQUE) {
-      typename_idx = opaque_index(wr.field_type());
-    }
-
     m_value.length(0);
-    if (m_value.append(json_type_string_map[typename_idx]))
+    if (m_value.append(json_type_name(wr)))
       return error_str(); /* purecov: inspected */
 
   } catch (...) {
@@ -1378,7 +1095,9 @@ static bool get_date_from_json(Item_func *item, MYSQL_TIME *ltime,
   Json_wrapper wr;
   if (item->val_json(&wr)) return true;
   if (item->null_value) return true;
-  return wr.coerce_date(ltime, item->func_name());
+  return wr.coerce_date(JsonCoercionWarnHandler{item->func_name()},
+                        JsonCoercionDeprecatedDefaultHandler{}, ltime,
+                        DatetimeConversionFlags(current_thd));
 }
 
 bool Item_json_func::get_date(MYSQL_TIME *ltime, my_time_flags_t flags) {
@@ -1389,7 +1108,8 @@ static bool get_time_from_json(Item_func *item, MYSQL_TIME *ltime) {
   Json_wrapper wr;
   if (item->val_json(&wr)) return true;
   if (item->null_value) return true;
-  return wr.coerce_time(ltime, item->func_name());
+  return wr.coerce_time(JsonCoercionWarnHandler{item->func_name()},
+                        JsonCoercionDeprecatedDefaultHandler{}, ltime);
 }
 
 bool Item_json_func::get_time(MYSQL_TIME *ltime) {
@@ -1400,7 +1120,7 @@ longlong val_int_from_json(Item_func *item) {
   Json_wrapper wr;
   if (item->val_json(&wr)) return 0;
   if (item->null_value) return 0;
-  return wr.coerce_int(item->func_name());
+  return wr.coerce_int(JsonCoercionWarnHandler{item->func_name()});
 }
 
 longlong Item_json_func::val_int() { return val_int_from_json(this); }
@@ -1409,7 +1129,7 @@ static double val_real_from_json(Item_func *item) {
   Json_wrapper wr;
   if (item->val_json(&wr)) return 0.0;
   if (item->null_value) return 0.0;
-  return wr.coerce_real(item->func_name());
+  return wr.coerce_real(JsonCoercionWarnHandler{item->func_name()});
 }
 
 double Item_json_func::val_real() { return val_real_from_json(this); }
@@ -1421,8 +1141,8 @@ static my_decimal *val_decimal_from_json(Item_func *item,
     return item->error_decimal(decimal_value);
   }
   if (item->null_value) return nullptr;
-
-  return wr.coerce_decimal(decimal_value, item->func_name());
+  return wr.coerce_decimal(JsonCoercionWarnHandler{item->func_name()},
+                           decimal_value);
 }
 
 my_decimal *Item_json_func::val_decimal(my_decimal *decimal_value) {
@@ -3515,8 +3235,10 @@ longlong Item_func_json_storage_free::val_int() {
   if (null_value) return 0;
 
   size_t space;
-  if (wrapper.get_free_space(&space))
+  if (wrapper.get_free_space(JsonSerializationDefaultErrorHandler(current_thd),
+                             &space)) {
     return error_int(); /* purecov: inspected */
+  }
 
   return space;
 }
@@ -4153,7 +3875,12 @@ bool save_json_to_field(THD *thd, Field *field, const Json_wrapper *w,
     return (fld->store_json(w) != TYPE_OK);
   }
 
-  const enum_coercion_error cr_error = no_error ? CE_WARNING : CE_ERROR;
+  JsonCoercionHandler error_handler;
+  if (no_error) {
+    error_handler = JsonCoercionWarnHandler{field->field_name};
+  } else {
+    error_handler = JsonCoercionErrorHandler{field->field_name};
+  }
   if (w->type() == enum_json_type::J_ARRAY ||
       w->type() == enum_json_type::J_OBJECT) {
     if (!no_error)
@@ -4171,8 +3898,7 @@ bool save_json_to_field(THD *thd, Field *field, const Json_wrapper *w,
   bool err = false;
   switch (field->result_type()) {
     case INT_RESULT: {
-      const longlong value =
-          w->coerce_int(field->field_name, cr_error, &err, nullptr);
+      const longlong value = w->coerce_int(error_handler, &err, nullptr);
 
       // If the Json_wrapper holds a numeric value, grab the signedness from it.
       // If not, grab the signedness from the column where we are storing the
@@ -4207,7 +3933,9 @@ bool save_json_to_field(THD *thd, Field *field, const Json_wrapper *w,
           case enum_json_type::J_DATETIME:
           case enum_json_type::J_TIMESTAMP:
             date_time_handled = true;
-            err = w->coerce_date(&ltime, "JSON_TABLE", cr_error);
+            err = w->coerce_date(error_handler,
+                                 JsonCoercionDeprecatedDefaultHandler{}, &ltime,
+                                 DatetimeConversionFlags(current_thd));
             break;
           default:
             break;
@@ -4215,7 +3943,8 @@ bool save_json_to_field(THD *thd, Field *field, const Json_wrapper *w,
       } else if (field->type() == MYSQL_TYPE_TIME &&
                  w->type() == enum_json_type::J_TIME) {
         date_time_handled = true;
-        err = w->coerce_time(&ltime, "JSON_TABLE", cr_error);
+        err = w->coerce_time(error_handler,
+                             JsonCoercionDeprecatedDefaultHandler{}, &ltime);
       }
       if (date_time_handled) {
         err = err || field->store_time(&ltime);
@@ -4240,13 +3969,13 @@ bool save_json_to_field(THD *thd, Field *field, const Json_wrapper *w,
       break;
     }
     case REAL_RESULT: {
-      const double value = w->coerce_real(field->field_name, cr_error, &err);
+      const double value = w->coerce_real(error_handler, &err);
       if (!err && (field->store(value) >= TYPE_WARN_OUT_OF_RANGE)) err = true;
       break;
     }
     case DECIMAL_RESULT: {
       my_decimal value;
-      w->coerce_decimal(&value, field->field_name, cr_error, &err);
+      w->coerce_decimal(error_handler, &value, &err);
       if (!err && (field->store_decimal(&value) >= TYPE_WARN_OUT_OF_RANGE))
         err = true;
       break;
@@ -5120,7 +4849,7 @@ int64_t Item_func_json_value::extract_integer_value() {
   bool err = false;
   bool unsigned_val = false;
   const int64_t value =
-      wr.coerce_int(func_name(), CE_IGNORE, &err, &unsigned_val);
+      wr.coerce_int([](const char *, int) {}, &err, &unsigned_val);
 
   if (!err && (unsigned_flag == unsigned_val || value >= 0)) return value;
 
@@ -5153,7 +4882,7 @@ int64_t Item_func_json_value::extract_year_value() {
   bool err = false;
   bool unsigned_val = false;
   const int64_t value =
-      wr.coerce_int(func_name(), CE_IGNORE, &err, &unsigned_val);
+      wr.coerce_int([](const char *, int) {}, &err, &unsigned_val);
 
   if (!err && ((value == 0) || (value > 1900 && value <= 2155))) return value;
 
@@ -5178,8 +4907,10 @@ bool Item_func_json_value::extract_date_value(MYSQL_TIME *ltime) {
     *ltime = *return_default->temporal_default;
     return false;
   }
-
-  if (!wr.coerce_date(ltime, func_name(), CE_IGNORE)) return false;
+  if (!wr.coerce_date([](const char *, int) {},
+                      JsonCoercionDeprecatedDefaultHandler{}, ltime,
+                      DatetimeConversionFlags(current_thd)))
+    return false;
 
   if (handle_json_value_conversion_error(m_on_error, "DATE", this) ||
       null_value) {
@@ -5204,8 +4935,9 @@ bool Item_func_json_value::extract_time_value(MYSQL_TIME *ltime) {
     *ltime = *return_default->temporal_default;
     return false;
   }
-
-  if (!wr.coerce_time(ltime, func_name(), CE_IGNORE)) return false;
+  if (!wr.coerce_time([](const char *, int) {},
+                      JsonCoercionDeprecatedDefaultHandler{}, ltime))
+    return false;
 
   if (handle_json_value_conversion_error(m_on_error, "TIME", this) ||
       null_value) {
@@ -5231,7 +4963,9 @@ bool Item_func_json_value::extract_datetime_value(MYSQL_TIME *ltime) {
     return false;
   }
 
-  if (!wr.coerce_date(ltime, func_name(), CE_IGNORE, TIME_DATETIME_ONLY))
+  if (!wr.coerce_date(
+          [](const char *, int) {}, JsonCoercionDeprecatedDefaultHandler{},
+          ltime, TIME_DATETIME_ONLY | DatetimeConversionFlags(current_thd)))
     return false;
 
   if (handle_json_value_conversion_error(m_on_error, "DATETIME", this) ||
@@ -5258,7 +4992,7 @@ my_decimal *Item_func_json_value::extract_decimal_value(my_decimal *value) {
   }
 
   bool err = false;
-  wr.coerce_decimal(value, func_name(), CE_IGNORE, &err);
+  wr.coerce_decimal([](const char *, int) {}, value, &err);
   if (!err && decimal_within_range(this, value)) return value;
 
   if (handle_json_value_conversion_error(m_on_error, "DECIMAL", this) ||
@@ -5327,7 +5061,7 @@ double Item_func_json_value::extract_real_value() {
   if (return_default != nullptr) return return_default->real_default;
 
   bool err = false;
-  const double value = wr.coerce_real(func_name(), CE_IGNORE, &err);
+  const double value = wr.coerce_real([](const char *, int) {}, &err);
   if (!err) {
     if (data_type() == MYSQL_TYPE_FLOAT) {
       // Remove any extra (double) precision.

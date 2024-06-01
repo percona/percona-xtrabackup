@@ -1,4 +1,4 @@
-include/master-slave.inc
+include/rpl/init_source_replica.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
@@ -12,19 +12,19 @@ INSERT INTO t2 VALUES(1);
 # Verify that transactions' gtids can be reported
 # from global.gtid_executed correctly.
 #
-include/assert.inc [committed gtids MASTER_UUID:1-4]
+include/assert.inc [committed gtids Source_UUID:1-4]
 #
-# Store gtids MASTER_UUID:1-4 in gtid_executed table on binlog rotation
+# Store gtids Source_UUID:1-4 in gtid_executed table on binlog rotation
 #
 FLUSH LOGS;
 SELECT * FROM mysql.gtid_executed;
 source_uuid	interval_start	interval_end	gtid_tag
 MASTER_UUID	1	4	
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 #
 # connection slave
 #
-include/assert.inc [committed gtids MASTER_UUID:1-4]
+include/assert.inc [committed gtids Source_UUID:1-4]
 #
 # Verify that slave thread stores gtid into gtid_executed table within
 # each transaction if binlog is on and log_slave_updated is disabled.
@@ -57,7 +57,7 @@ SLAVE_UUID	1	2
 # logs if binlog is enabled and log_replica_updates is disabled.
 #
 PURGE BINARY LOGS TO 'slave-bin.000002';
-include/assert.inc [purged gtids SLAVE_UUID:1-2,MASTER_UUID:1-4]
+include/assert.inc [purged gtids SLAVE_UUID:1-2,Source_UUID:1-4]
 #
 # Verify that we can get the correct set from 'gtid_executed' table
 # when executing a big transaction that exceeds the max size of the
@@ -139,4 +139,4 @@ SLAVE_UUID	1	2
 SLAVE_UUID	3	3	
 SET @@session.binlog_transaction_compression= SAVED;
 DROP TABLE t1,t2;
-include/rpl_end.inc
+include/rpl/deinit.inc

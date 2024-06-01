@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -153,7 +154,7 @@ static int NdbMutex_InitWithName_local(NdbMutex *pNdbMutex, const char *name,
 
 #ifdef NDB_MUTEX_DEADLOCK_DETECTOR
   if (result == 0) {
-    ndb_mutex_created(pNdbMutex);
+    ndb_mutex_created(pNdbMutex->m_mutex_state);
   }
 #endif
   DBUG_RETURN(result);
@@ -165,7 +166,7 @@ int NdbMutex_Deinit(NdbMutex *p_mutex) {
   if (p_mutex == nullptr) return -1;
 
 #ifdef NDB_MUTEX_DEADLOCK_DETECTOR
-  ndb_mutex_destoyed(p_mutex);
+  ndb_mutex_destroyed(p_mutex->m_mutex_state);
 #endif
 
 #ifdef NDB_MUTEX_STRUCT
@@ -261,7 +262,7 @@ int NdbMutex_Lock(NdbMutex *p_mutex) {
   assert(result == 0);
 
 #ifdef NDB_MUTEX_DEADLOCK_DETECTOR
-  ndb_mutex_locked(p_mutex);
+  ndb_mutex_locked(p_mutex->m_mutex_state);
 #endif
 
   return result;
@@ -271,6 +272,10 @@ int NdbMutex_Unlock(NdbMutex *p_mutex) {
   int result;
 
   if (p_mutex == nullptr) return -1;
+
+#ifdef NDB_MUTEX_DEADLOCK_DETECTOR
+  ndb_mutex_unlocked(p_mutex->m_mutex_state);
+#endif
 
 #ifdef NDB_MUTEX_STAT
   {
@@ -291,10 +296,6 @@ int NdbMutex_Unlock(NdbMutex *p_mutex) {
   result = native_mutex_unlock(p_mutex);
 #endif
   assert(result == 0);
-
-#ifdef NDB_MUTEX_DEADLOCK_DETECTOR
-  ndb_mutex_unlocked(p_mutex);
-#endif
 
   return result;
 }
@@ -328,10 +329,31 @@ int NdbMutex_Trylock(NdbMutex *p_mutex) {
   assert(result == 0 || result == EBUSY);
 
 #ifdef NDB_MUTEX_DEADLOCK_DETECTOR
-  if (result == 0) {
-    ndb_mutex_try_locked(p_mutex);
+  if (result == 0) {  // trylock got the lock
+    ndb_mutex_locked(p_mutex->m_mutex_state, /*is_blocking=*/false);
   }
 #endif
 
   return result;
 }
+
+#ifdef NDB_MUTEX_DEADLOCK_DETECTOR
+ndb_mutex_state *NdbMutex_CreateSerializedRegion(void) {
+  ndb_mutex_state *mutex_state = nullptr;
+  ndb_mutex_created(mutex_state);
+  return mutex_state;
+}
+
+void NdbMutex_DestroySerializedRegion(struct ndb_mutex_state *mutex_state) {
+  ndb_mutex_destroyed(mutex_state);
+}
+
+void NdbMutex_EnterSerializedRegion(struct ndb_mutex_state *mutex_state) {
+  /* Note: Exclude the region 'lock' from deadlock detection */
+  ndb_mutex_locked(mutex_state, /*is_blocking=*/false);
+}
+
+void NdbMutex_LeaveSerializedRegion(struct ndb_mutex_state *mutex_state) {
+  ndb_mutex_unlocked(mutex_state);
+}
+#endif

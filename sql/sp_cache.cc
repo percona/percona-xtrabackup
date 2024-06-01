@@ -1,15 +1,16 @@
-/* Copyright (c) 2002, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -72,6 +73,19 @@ class sp_cache {
   */
   void enforce_limit(ulong upper_limit_for_elements) {
     if (m_hashtable.size() > upper_limit_for_elements) m_hashtable.clear();
+  }
+
+  /**
+   * @brief Check if the sp_cache contains the specified element.
+   *
+   * @param sp sp_head
+   * @return true if the element is in the cache.
+   * @return false if not.
+   */
+  bool has(sp_head *sp) {
+    for (auto &element : m_hashtable)
+      if (element.second.get() == sp) return true;
+    return false;
   }
 
  private:
@@ -207,4 +221,21 @@ int64 sp_cache_version() { return atomic_Cversion; }
 */
 void sp_cache_enforce_limit(sp_cache *c, ulong upper_limit_for_elements) {
   if (c) c->enforce_limit(upper_limit_for_elements);
+}
+
+/**
+ * @brief Check if the sp_cache contains the specified stored program.
+ *
+ * @note If the sp is part of a recursion, check if the first instance is part
+ * of the sp_cache
+ *
+ * @param[in] cp - the sp_cache that is to be checked.
+ * @param[in] sp - the stored program that needs to be part of that cache.
+ * @return true if the element is in the cache.
+ * @return false if not.
+ */
+bool sp_cache_has(sp_cache *cp, sp_head *sp) {
+  auto first_instance_sp = sp;
+  if (sp->m_recursion_level != 0) first_instance_sp = sp->m_first_instance;
+  return (cp != nullptr) && cp->has(first_instance_sp);
 }

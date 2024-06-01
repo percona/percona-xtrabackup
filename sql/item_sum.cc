@@ -1,15 +1,16 @@
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -40,6 +41,7 @@
 #include <utility>  // std::forward
 
 #include "decimal.h"
+#include "field_types.h"
 #include "my_alloc.h"
 #include "my_base.h"
 #include "my_byteorder.h"
@@ -85,6 +87,7 @@
 #include "sql/sql_optimizer.h"
 #include "sql/sql_resolver.h"  // setup_order
 #include "sql/sql_select.h"
+#include "sql/sql_time.h"
 #include "sql/sql_tmp_table.h"  // create_tmp_table
 #include "sql/srs_fetcher.h"    // Srs_fetcher
 #include "sql/system_variables.h"
@@ -159,37 +162,30 @@ ulonglong Item_sum::ram_limitation(THD *thd) {
 */
 
 bool Item_sum::init_sum_func_check(THD *thd) {
+  LEX *const lex = thd->lex;
+  base_query_block = lex->current_query_block();
   if (m_is_window_function) {
-    /*
-      Are either no aggregates of any kind allowed at this level, or
-      specifically not window functions?
-    */
-    LEX *const lex = thd->lex;
-    if (((~lex->allow_sum_func | lex->m_deny_window_func) >>
-         lex->current_query_block()->nest_level) &
-        0x1) {
+    if (lex->deny_window_function(base_query_block)) {
       my_error(ER_WINDOW_INVALID_WINDOW_FUNC_USE, MYF(0), func_name());
       return true;
     }
     in_sum_func = nullptr;
   } else {
-    if (!thd->lex->allow_sum_func) {
+    if (!lex->allow_sum_func) {
       my_error(ER_INVALID_GROUP_FUNC_USE, MYF(0));
       return true;
     }
     // Set a reference to the containing set function if there is one
-    in_sum_func = thd->lex->in_sum_func;
+    in_sum_func = lex->in_sum_func;
     /*
       Set this object as the current containing set function, used when
       checking arguments of this set function.
     */
-    thd->lex->in_sum_func = this;
+    lex->in_sum_func = this;
   }
-  save_deny_window_func = thd->lex->m_deny_window_func;
-  thd->lex->m_deny_window_func |=
-      (nesting_map)1 << thd->lex->current_query_block()->nest_level;
+  save_deny_window_func = lex->m_deny_window_func;
+  lex->m_deny_window_func |= (nesting_map)1 << base_query_block->nest_level;
   // @todo: When resolving once, move following code to constructor
-  base_query_block = thd->lex->current_query_block();
   aggr_query_block = nullptr;  // Aggregation query block is undetermined yet
   referenced_by[0] = nullptr;
   /*
@@ -197,8 +193,7 @@ bool Item_sum::init_sum_func_check(THD *thd) {
     re-done, so referenced_by[1] isn't set again. So keep it as it was in
     preparation.
   */
-  if (thd->lex->current_query_block()->first_execution)
-    referenced_by[1] = nullptr;
+  if (base_query_block->first_execution) referenced_by[1] = nullptr;
   max_aggr_level = -1;
   max_sum_func_level = -1;
   used_tables_cache = 0;
@@ -5567,6 +5562,29 @@ bool Item_lead_lag::fix_fields(THD *thd, Item **items) {
   return false;
 }
 
+TYPELIB *Item_lead_lag::get_typelib() const {
+  switch (data_type()) {
+    case MYSQL_TYPE_ENUM:
+    case MYSQL_TYPE_SET:
+      // If the return type is enum or set, either the first argument or the
+      // optional third argument must also be an enum or a set, so we get the
+      // TYPELIB from one of them. Note that we cannot get it from the first
+      // argument unconditionally, because it is not guaranteed that both the
+      // first and the third argument are enums or sets. One of them could have
+      // the NULL type.
+      if (TYPELIB *typelib = args[0]->get_typelib(); typelib != nullptr) {
+        return typelib;
+      } else {
+        assert(arg_count == 3);
+        typelib = args[2]->get_typelib();
+        assert(typelib != nullptr);
+        return typelib;
+      }
+    default:
+      return nullptr;
+  }
+}
+
 bool Item_lead_lag::check_wf_semantics2(Window_evaluation_requirements *r) {
   /*
     Semantic check of the offset argument. Should be a integral constant,
@@ -5862,7 +5880,7 @@ double Item_sum_json::val_real() {
   }
   if (null_value || m_wrapper->empty()) return 0.0;
 
-  return m_wrapper->coerce_real(func_name());
+  return m_wrapper->coerce_real(JsonCoercionWarnHandler{func_name()});
 }
 
 longlong Item_sum_json::val_int() {
@@ -5877,7 +5895,7 @@ longlong Item_sum_json::val_int() {
   }
   if (null_value || m_wrapper->empty()) return 0;
 
-  return m_wrapper->coerce_int(func_name());
+  return m_wrapper->coerce_int(JsonCoercionWarnHandler{func_name()});
 }
 
 my_decimal *Item_sum_json::val_decimal(my_decimal *decimal_value) {
@@ -5894,19 +5912,23 @@ my_decimal *Item_sum_json::val_decimal(my_decimal *decimal_value) {
     return error_decimal(decimal_value);
   }
 
-  return m_wrapper->coerce_decimal(decimal_value, func_name());
+  return m_wrapper->coerce_decimal(JsonCoercionWarnHandler{func_name()},
+                                   decimal_value);
 }
 
 bool Item_sum_json::get_date(MYSQL_TIME *ltime, my_time_flags_t) {
   if (null_value || m_wrapper->empty()) return true;
 
-  return m_wrapper->coerce_date(ltime, func_name());
+  return m_wrapper->coerce_date(JsonCoercionWarnHandler{func_name()},
+                                JsonCoercionDeprecatedDefaultHandler{}, ltime,
+                                DatetimeConversionFlags(current_thd));
 }
 
 bool Item_sum_json::get_time(MYSQL_TIME *ltime) {
   if (null_value || m_wrapper->empty()) return true;
 
-  return m_wrapper->coerce_time(ltime, func_name());
+  return m_wrapper->coerce_time(JsonCoercionWarnHandler{func_name()},
+                                JsonCoercionDeprecatedDefaultHandler{}, ltime);
 }
 
 void Item_sum_json::reset_field() {
@@ -6228,8 +6250,10 @@ bool Item_func_grouping::fix_fields(THD *thd, Item **ref) {
 
   if (Item_func::fix_fields(thd, ref)) return true;
 
+  m_query_block = thd->lex->current_query_block();
+
   // Make GROUPING function dependent upon all tables (prevents const-ness)
-  used_tables_cache |= thd->lex->current_query_block()->all_tables_map();
+  used_tables_cache |= m_query_block->all_tables_map();
 
   /*
     More than 64 args cannot be supported as the bitmask which is
@@ -6244,11 +6268,9 @@ bool Item_func_grouping::fix_fields(THD *thd, Item **ref) {
     GROUPING() is not allowed in a WHERE condition or a JOIN condition and
     cannot be used without rollup.
   */
-  Query_block *select = thd->lex->current_query_block();
-
-  if (!select->is_non_primitive_grouped() ||
-      select->resolve_place == Query_block::RESOLVE_JOIN_NEST ||
-      select->resolve_place == Query_block::RESOLVE_CONDITION) {
+  if (!m_query_block->is_non_primitive_grouped() ||
+      m_query_block->resolve_place == Query_block::RESOLVE_JOIN_NEST ||
+      m_query_block->resolve_place == Query_block::RESOLVE_CONDITION) {
     my_error(ER_INVALID_GROUP_FUNC_USE, MYF(0));
     return true;
   }
@@ -6339,8 +6361,7 @@ void Item_func_grouping::update_used_tables() {
     GROUPING function can never be a constant item. It's
     result always depends on ROLLUP result.
   */
-  used_tables_cache |=
-      current_thd->lex->current_query_block()->all_tables_map();
+  used_tables_cache |= m_query_block->all_tables_map();
 }
 
 inline Item *Item_rollup_sum_switcher::current_arg() const {
@@ -6582,7 +6603,10 @@ void Item_sum_collect::read_result_field() {
       return;
     case ResultType::Value:
       std::unique_ptr<gis::Geometry> geo = geometryExtractionResult.GetValue();
-      srid = geometryExtractionResult.GetSrs()->id();
+      auto srs = geometryExtractionResult.GetSrs();
+      if (srs != nullptr) {
+        srid = srs->id();
+      }
       switch (geo->type()) {
         case gis::Geometry_type::kGeometrycollection:
           m_geometrycollection = std::unique_ptr<gis::Geometrycollection>(

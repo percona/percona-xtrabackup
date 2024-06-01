@@ -1,15 +1,16 @@
-/* Copyright (c) 2011, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -461,21 +462,18 @@ Field *create_tmp_field(THD *thd, TABLE *table, Item *item, Item::Type type,
 
       [[fallthrough]];
     case Item::COND_ITEM:
-    case Item::FIELD_AVG_ITEM:
-    case Item::FIELD_BIT_ITEM:
-    case Item::FIELD_STD_ITEM:
-    case Item::FIELD_VARIANCE_ITEM:
-    case Item::SUBSELECT_ITEM:
+    case Item::AGGR_FIELD_ITEM:
+    case Item::SUBQUERY_ITEM:
       /* The following can only happen with 'CREATE TABLE ... SELECT' */
-    case Item::PROC_ITEM:
     case Item::INT_ITEM:
     case Item::REAL_ITEM:
     case Item::DECIMAL_ITEM:
     case Item::STRING_ITEM:
     case Item::REF_ITEM:
     case Item::NULL_ITEM:
-    case Item::VARBIN_ITEM:
+    case Item::HEX_BIN_ITEM:
     case Item::PARAM_ITEM:
+    case Item::ROUTINE_FIELD_ITEM:
     case Item::SUM_FUNC_ITEM:
       if (type == Item::SUM_FUNC_ITEM && !is_wf) {
         Item_sum *item_sum = down_cast<Item_sum *>(item);
@@ -495,7 +493,7 @@ Field *create_tmp_field(THD *thd, TABLE *table, Item *item, Item::Type type,
         }
       }
       break;
-    case Item::TYPE_HOLDER:
+    case Item::TYPE_HOLDER_ITEM:
       result = down_cast<Item_aggregate_type *>(item)->make_field_by_type(
           table, thd->is_strict_mode());
       break;
@@ -1035,7 +1033,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
     if (not_all_columns) {
       if (item->has_aggregation() && type != Item::SUM_FUNC_ITEM) {
         if (item->is_outer_reference()) item->update_used_tables();
-        if (type == Item::SUBSELECT_ITEM ||
+        if (type == Item::SUBQUERY_ITEM ||
             (item->used_tables() & ~OUTER_REF_TABLE_BIT)) {
           /*
             Mark that we have ignored an item that refers to a summary
@@ -1409,7 +1407,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
       table->set_set_op(set_counter,
                         param->m_operation == Temp_table_param::TTP_EXCEPT,
                         param->m_last_operation_is_distinct);
-      table->set_hashing(
+      table->set_use_hash_map(
           thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HASH_SET_OPERATIONS));
     }
 
@@ -2383,7 +2381,7 @@ bool instantiate_tmp_table(THD *thd, TABLE *table) {
   table->in_use = thd;
 
   TABLE_SHARE *const share = table->s;
-  if (table->uses_hashing()) share->keys = 0;
+  if (table->uses_hash_map()) share->keys = 0;
 
 #ifndef NDEBUG
   for (uint i = 0; i < share->fields; i++)

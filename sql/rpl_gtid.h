@@ -1,15 +1,16 @@
-/* Copyright (c) 2011, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1904,6 +1905,11 @@ class Gtid_set {
     const int gno_sid_separator_length;
     const int empty_set_string_length;
   };
+
+  /// @brief Checks if this Gtid set contains any tagged GTIDs
+  /// @retval true This gtid set contains tagged GTIDs
+  /// @retval false This gtid set contains only untagged GTIDs
+  bool contains_tags() const;
   /**
     Returns the length of the output from to_string.
 
@@ -4258,6 +4264,12 @@ int gtid_acquire_ownership_multiple(THD *thd);
   Return sidno for a given tsid, see Tsid_map::add_sid() for details.
 */
 rpl_sidno get_sidno_from_global_tsid_map(const mysql::gtid::Tsid &tsid);
+
+/**
+  Return Tsid for a given sidno on the global_tsid_map.
+  See Tsid_map::sidno_to_tsid() for details.
+*/
+const mysql::gtid::Tsid &get_tsid_from_global_tsid_map(rpl_sidno sidno);
 
 /**
   Return last gno for a given sidno, see

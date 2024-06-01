@@ -2005,20 +2005,20 @@ execute abc;
 deallocate prepare abc;
 
 
-create procedure proc_1() reset slave;
+create procedure proc_1() RESET REPLICA;
 call proc_1();
 call proc_1();
 call proc_1();
 delimiter |;
 --error ER_STMT_NOT_ALLOWED_IN_SF_OR_TRG
-create function func_1() returns int begin reset slave; return 1; end|
+create function func_1() returns int begin RESET REPLICA; return 1; end|
 create function func_1() returns int begin call proc_1(); return 1; end|
 delimiter ;|
 --error ER_STMT_NOT_ALLOWED_IN_SF_OR_TRG
 select func_1(), func_1(), func_1() from dual;
 drop function func_1;
 drop procedure proc_1;
-prepare abc from "reset slave";
+prepare abc from "RESET REPLICA";
 execute abc;
 execute abc;
 execute abc;
@@ -2258,25 +2258,25 @@ execute abc;
 deallocate prepare abc;
 
 
-create procedure proc_1() start slave;
+create procedure proc_1() START REPLICA;
 drop procedure proc_1;
 delimiter |;
 --error ER_COMMIT_NOT_ALLOWED_IN_SF_OR_TRG
-create function func_1() returns int begin start slave; return 1; end|
+create function func_1() returns int begin START REPLICA; return 1; end|
 delimiter ;|
 
-prepare abc from "start slave";
+prepare abc from "START REPLICA";
 deallocate prepare abc;
 
 
-create procedure proc_1() stop slave;
+create procedure proc_1() STOP REPLICA;
 drop procedure proc_1;
 delimiter |;
 --error ER_COMMIT_NOT_ALLOWED_IN_SF_OR_TRG
-create function func_1() returns int begin stop slave; return 1; end|
+create function func_1() returns int begin STOP REPLICA; return 1; end|
 delimiter ;|
 
-prepare abc from "stop slave";
+prepare abc from "STOP REPLICA";
 deallocate prepare abc;
 
 
@@ -2294,17 +2294,17 @@ prepare abc from "show binlog events";
 deallocate prepare abc;
 
 
-create procedure proc_1() show slave status;
+create procedure proc_1() SHOW REPLICA STATUS;
 drop procedure proc_1;
 delimiter |;
 --error ER_SP_NO_RETSET
-create function func_1() returns int begin show slave status; return 1; end|
+create function func_1() returns int begin SHOW REPLICA STATUS; return 1; end|
 delimiter ;|
 --error ER_SP_DOES_NOT_EXIST
 select func_1(), func_1(), func_1() from dual;
 --error ER_SP_DOES_NOT_EXIST
 drop function func_1;
-prepare abc from "show slave status";
+prepare abc from "SHOW REPLICA STATUS";
 deallocate prepare abc;
 
 

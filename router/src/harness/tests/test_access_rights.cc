@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2021, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -153,16 +154,16 @@ TEST_P(AllowUserReadWritableTest, set_and_verify) {
 
 const AccessRightsParam allow_user_read_writable_params[] = {
     {"r________", only_user_readable_perms,
-     stdx::make_unexpected(make_error_code(std::errc::permission_denied))},
+     stdx::unexpected(make_error_code(std::errc::permission_denied))},
     {"rw_______", only_user_read_writable_perms, {}},
 #ifndef _WIN32
     {"rwx______", only_user_rwx_perms,
-     stdx::make_unexpected(make_error_code(std::errc::permission_denied))},
+     stdx::unexpected(make_error_code(std::errc::permission_denied))},
 #endif
     {"rw_rw_r__", other_readable_perms,
-     stdx::make_unexpected(make_error_code(std::errc::permission_denied))},
+     stdx::unexpected(make_error_code(std::errc::permission_denied))},
     {"rw_rw_rw_", all_read_writable_perms,
-     stdx::make_unexpected(make_error_code(std::errc::permission_denied))},
+     stdx::unexpected(make_error_code(std::errc::permission_denied))},
 };
 
 INSTANTIATE_TEST_SUITE_P(Spec, AllowUserReadWritableTest,
@@ -239,9 +240,9 @@ const AccessRightsParam deny_other_read_writable_params[] = {
     {"r________", only_user_readable_perms, {}},
     {"rw_______", only_user_read_writable_perms, {}},
     {"rw_rw_r__", other_readable_perms,
-     stdx::make_unexpected(make_error_code(std::errc::permission_denied))},
+     stdx::unexpected(make_error_code(std::errc::permission_denied))},
     {"rw_rw_rw_", all_read_writable_perms,
-     stdx::make_unexpected(make_error_code(std::errc::permission_denied))},
+     stdx::unexpected(make_error_code(std::errc::permission_denied))},
 };
 
 INSTANTIATE_TEST_SUITE_P(Spec, DenyOtherReadWritableTest,

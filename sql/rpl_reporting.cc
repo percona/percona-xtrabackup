@@ -1,15 +1,16 @@
-/* Copyright (c) 2007, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2007, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -46,23 +47,25 @@ Slave_reporting_capability::Slave_reporting_capability(char const *thread_name)
 
 /**
   Check if the current error is of temporary nature or not.
-  Some errors are temporary in nature, such as
-  ER_LOCK_DEADLOCK and ER_LOCK_WAIT_TIMEOUT.  Ndb also signals
-  that the error is temporary by pushing a warning with the error code
-  ER_GET_TEMPORARY_ERRMSG, if the originating error is temporary.
 
-  @param      thd  a THD instance, typically of the slave SQL thread's.
-  @param error_arg  the error code for assessment.
-              defaults to zero which makes the function check the top
-              of the reported errors stack.
-  @param silent     bool indicating whether the error should be silently
-  handled.
+  Some error codes are always considered temporary in nature, such as
+  ER_LOCK_DEADLOCK and ER_LOCK_WAIT_TIMEOUT.
+
+  It is also possible to signal that the error is temporary by
+  pushing a warning with the error code ER_GET_TEMPORARY_ERRMSG or
+  ER_REPLICA_SILENT_RETRY_TRANSACTION.
+
+  @param      thd        Thread handle
+  @param      error_arg  The error code for assessment. Defaults to zero which
+                         makes the function check the top of the reported errors
+                         stack.
+  @param[out] silent     Return value indicating whether the error should be
+                         silently handled.
 
   @return 1 as the positive and 0 as the negative verdict
 */
 int Slave_reporting_capability::has_temporary_error(THD *thd, uint error_arg,
                                                     bool *silent) const {
-  uint error;
   DBUG_TRACE;
 
   DBUG_EXECUTE_IF(
@@ -77,12 +80,11 @@ int Slave_reporting_capability::has_temporary_error(THD *thd, uint error_arg,
   */
   if (thd->is_fatal_error() || (!thd->is_error() && error_arg == 0)) return 0;
 
-  error = (error_arg == 0) ? thd->get_stmt_da()->mysql_errno() : error_arg;
+  const uint error =
+      (error_arg == 0) ? thd->get_stmt_da()->mysql_errno() : error_arg;
 
   /*
-    Temporary error codes:
-    currently, InnoDB deadlock detected by InnoDB or lock
-    wait timeout (innodb_lock_wait_timeout exceeded).
+    Error codes which always are considered temporary.
     Notice, the temporary error requires slave_trans_retries != 0)
   */
   if (slave_trans_retries &&
@@ -90,7 +92,7 @@ int Slave_reporting_capability::has_temporary_error(THD *thd, uint error_arg,
     return 1;
 
   /*
-    currently temporary error set in ndbcluster
+    Check if temporary error is indicated by warning pushed by the engine.
   */
   Diagnostics_area::Sql_condition_iterator it =
       thd->get_stmt_da()->sql_conditions();

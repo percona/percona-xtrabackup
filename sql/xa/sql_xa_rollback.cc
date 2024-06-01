@@ -1,15 +1,16 @@
-/* Copyright (c) 2022, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -30,7 +31,8 @@
 #include "sql/sql_class.h"           // THD
 #include "sql/tc_log.h"              // tc_log
 #include "sql/transaction.h"  // trans_reset_one_shot_chistics, trans_track_end_trx
-#include "sql/transaction_info.h"  // Transaction_ctx
+#include "sql/transaction_info.h"      // Transaction_ctx
+#include "sql/xa/transaction_cache.h"  // xa::Transaction_cache
 
 Sql_cmd_xa_rollback::Sql_cmd_xa_rollback(xid_t *xid_arg)
     : Sql_cmd_xa_second_phase{xid_arg} {}
@@ -145,6 +147,9 @@ bool Sql_cmd_xa_rollback::process_detached_xa_rollback(THD *thd) {
   // This is normally done in ha_rollback_trans, but since we do not call this
   // for an external rollback we need to do it explicitly here.
   this->m_detached_trx_context->push_unsafe_rollback_warnings(thd);
+
+  assert(this->m_detached_trx_context != nullptr);
+  xa::Transaction_cache::remove(this->m_detached_trx_context.get());
   this->cleanup_context(thd);
 
   return this->m_result;

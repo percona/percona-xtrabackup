@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2014, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2014, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -325,18 +326,36 @@ class Ndb_binlog_thread : public Ndb_component {
 
   Ndb_binlog_index_rows m_binlog_index_rows;
 
+  // Epoch context handler
+  struct EpochContext {
+    // Counter for rows in event
+    unsigned int trans_row_count = 0;
+    // Counter for replicated rows in event
+    unsigned int replicated_row_count = 0;
+
+    /**
+      @brief Check if epoch is considered empty in regards to the
+      number of rows recorded in the epoch transaction. An epoch is
+      considered empty if 1) it did not record any 'real' rows in the
+      binlog (from user tables) AND 2) if logging ndb_apply_status
+      updates, it received updates applied by another replica (that
+      were not on ndb_apply_status).
+
+      @retval true for empty epoch
+    */
+    bool is_empty_epoch() const;
+  };
+
   // Functions for handling received events
   int handle_data_get_blobs(const TABLE *table,
                             const NdbValue *const value_array,
                             Ndb_blobs_buffer &buffer, ptrdiff_t ptrdiff) const;
   void handle_data_unpack_record(TABLE *table, const NdbValue *value,
                                  MY_BITMAP *defined, uchar *buf) const;
-  int handle_error(NdbEventOperation *pOp) const;
   void handle_non_data_event(THD *thd, NdbEventOperation *pOp,
                              NdbDictionary::Event::TableEvent type);
   int handle_data_event(const NdbEventOperation *pOp,
-                        injector_transaction &trans, unsigned &trans_row_count,
-                        unsigned &replicated_row_count);
+                        injector_transaction &trans, EpochContext &epoch_ctx);
   bool handle_events_for_epoch(THD *thd, injector *inj, Ndb *i_ndb,
                                NdbEventOperation *&i_pOp,
                                const Uint64 current_epoch);
@@ -349,7 +368,7 @@ class Ndb_binlog_thread : public Ndb_component {
                        Uint64 gap_epoch) const;
   void inject_table_map(injector_transaction &trans, Ndb *ndb) const;
   void commit_trans(injector_transaction &trans, THD *thd, Uint64 current_epoch,
-                    unsigned trans_row_count, unsigned replicated_row_count);
+                    EpochContext epoch_ctx);
 
   // Cache for NDB metadata
   class Metadata_cache {

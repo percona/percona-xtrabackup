@@ -1,15 +1,16 @@
-/* Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,7 +29,18 @@
 
 #include <sql/auth/auth_common.h> /* ssl_artifacts_status */
 
+/** The runtime value of whether admin TLS used different config or not */
 extern std::atomic_bool g_admin_ssl_configured;
+/**
+ The configure time value of whether admin TLS used different config or not.
+ The value for this is determined during system variable update.
+ True means that the ADMIN channel is using its own TLS configuration.
+ False means that the ADMIN channel is reusing the main channel's
+ TLS configuration.
+ To put this value into effect (and update @ref g_admin_ssl_configured)
+ one needs to execute the "ALTER INSTANCE RELOAD TLS" SQL command.
+*/
+extern bool opt_admin_ssl_configured;
 
 extern std::string mysql_main_channel;
 extern std::string mysql_admin_channel;
@@ -134,5 +146,5 @@ enum class TLS_version { TLSv12 = 0, TLSv13 };
 /**
   Helper method to validate values of --ssl-cipher and --admin-ssl-cipher
 */
-void validate_ciphers(const char *option, const char *val, TLS_version version);
+bool validate_ciphers(const char *option, const char *val, TLS_version version);
 #endif  // !SSL_INIT_CALLBACK_INCLUDED

@@ -1,15 +1,16 @@
-/* Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -2977,21 +2978,20 @@ bool uses_general_tablespace(const Table &t) {
   return false;
 }
 
-void warn_on_deprecated_prefix_key_partition(THD *thd, const char *schema_name,
-                                             const char *orig_table_name,
-                                             const Table *table,
-                                             const bool is_upgrade) {
+bool prefix_key_partition_exists(const char *schema_name,
+                                 const char *orig_table_name,
+                                 const Table *table, const bool is_upgrade) {
   DBUG_TRACE;
   assert(table);
 
   // Check if table is partitioned.
   const Table::enum_partition_type pt_type = table->partition_type();
-  if (pt_type == Table::enum_partition_type::PT_NONE) return;
+  if (pt_type == Table::enum_partition_type::PT_NONE) return false;
 
   // Check if table is partitioned by [LINEAR] KEY.
   if (pt_type != Table::PT_KEY_51 && pt_type != Table::PT_KEY_55 &&
       pt_type != Table::PT_LINEAR_KEY_51 && pt_type != Table::PT_LINEAR_KEY_55)
-    return;
+    return false;
 
   // Parse the partition expression to get the list of columns used.
   // NOTE : This is similar to working of set_field_list().
@@ -3062,21 +3062,21 @@ void warn_on_deprecated_prefix_key_partition(THD *thd, const char *schema_name,
       const CHARSET_INFO *cs = dd_get_mysql_charset(column->collation_id());
       const uint prefix_key_length = index_element->length() / cs->mbmaxlen;
 
-      // In case of UPGRADE from 5.7 or lower 8.0.x version, send warning to the
-      // error log. In case of CREATE|ALTER TABLE, send warning to client.
+      // In case of UPGRADE from 5.7 or lower 8.0.x version, send error to the
+      // error log. In case of CREATE|ALTER TABLE, send error to client.
       if (is_upgrade)
-        LogErr(WARNING_LEVEL, ER_WARN_LOG_DEPRECATED_PARTITION_PREFIX_KEY,
+        LogErr(ERROR_LEVEL, ER_LOG_PARTITION_PREFIX_KEY_NOT_SUPPORTED,
                schema_name, orig_table_name, column_name.c_str(),
                column_name.c_str(), prefix_key_length);
       else
-        push_warning_printf(
-            thd, Sql_condition::SL_WARNING,
-            ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT,
-            ER_THD(thd, ER_WARN_CLIENT_DEPRECATED_PARTITION_PREFIX_KEY),
-            schema_name, orig_table_name, column_name.c_str(),
-            column_name.c_str(), prefix_key_length);
+        my_error(ER_PARTITION_PREFIX_KEY_NOT_SUPPORTED, MYF(0), schema_name,
+                 orig_table_name, column_name.c_str(), column_name.c_str(),
+                 prefix_key_length);
+      // Return error when first prefix key is encountered
+      return true;
     }
   }
+  return false;
 }
 
 bool get_implicit_tablespace_options(THD *thd, const Table *table,
@@ -3155,6 +3155,56 @@ bool get_implicit_tablespace_options(THD *thd, const Table *table,
     /* purecov: end */
   }
 
+  return false;
+}
+
+bool check_non_standard_key_exists_in_fk(THD *thd, const Table *table) {
+  for (const dd::Foreign_key *fk : table->foreign_keys()) {
+    const dd::Table *parent_table_def = nullptr;
+    const dd::cache::Dictionary_client::Auto_releaser releaser(
+        thd->dd_client());
+    if (thd->dd_client()->acquire(fk->referenced_table_schema_name(),
+                                  fk->referenced_table_name(),
+                                  &parent_table_def))
+      return true;
+    if (parent_table_def == nullptr) return true;
+
+    bool found_standard_key = false;
+    uint fk_element_count = fk->elements().size();
+    for (const dd::Index *idx : parent_table_def->indexes()) {
+      if ((idx->type() == dd::Index::IT_PRIMARY ||
+           idx->type() == dd::Index::IT_UNIQUE)) {
+        uint num_idx_elements = 0;
+        for (const dd::Index_element *idx_el : idx->elements()) {
+          if (!idx_el->is_hidden()) num_idx_elements++;
+        }
+        if (num_idx_elements != fk_element_count) continue;
+
+        uint num_matched_cols = 0;
+        auto fk_element_iter = fk->elements().begin();
+        for (const dd::Index_element *idx_el : idx->elements()) {
+          if (idx_el->is_hidden() && idx_el->is_prefix()) continue;
+          if (my_strcasecmp(
+                  system_charset_info, idx_el->column().name().c_str(),
+                  (*fk_element_iter)->referenced_column_name().c_str()) == 0)
+            num_matched_cols++;
+          if (++fk_element_iter == fk->elements().end()) break;
+        }
+
+        if (num_matched_cols == num_idx_elements) {
+          found_standard_key = true;
+          break;
+        }
+      }
+    }
+    if (!found_standard_key) {
+      deprecated_use_fk_on_non_standard_key_last_timestamp = my_micro_time();
+      deprecated_use_fk_on_non_standard_key_count++;
+      LogErr(WARNING_LEVEL, ER_WARN_LOG_DEPRECATED_NON_STANDARD_KEY,
+             fk->name().c_str(), fk->referenced_table_schema_name().c_str(),
+             fk->referenced_table_name().c_str());
+    }
+  }
   return false;
 }
 }  // namespace dd

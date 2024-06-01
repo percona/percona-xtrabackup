@@ -5,7 +5,7 @@
 #
 --source include/have_ndb.inc
 --source include/have_binlog_format_mixed_or_row.inc
---source suite/ndb_rpl/ndb_master-slave.inc
+--source suite/ndb_rpl/ndb_rpl_init_source_replica.inc
 
 --echo Setup circular replication
 --echo The circle is setup between Primary and Secondary
@@ -36,13 +36,13 @@ select @secondary_server_port:=(variable_value+0)
 let $SECONDARY_SERVER_PORT= query_get_value('select @secondary_server_port as v', v,1);
 
 # Now set it up
-# Stop Slave @ Secondary
+# Stop Replica @ Secondary
 STOP REPLICA;
 # Clear Secondary Binlog
 RESET BINARY LOGS AND GTIDS;
 
 --source suite/ndb_rpl/t/ndb_connect_to_primary.inc
-# Stop Slave @ Primary 
+# Stop Replica @ Primary 
 STOP REPLICA;
 # Clear Primary Binlog
 RESET BINARY LOGS AND GTIDS;
@@ -142,7 +142,7 @@ create table test.t1 (
 --source suite/ndb_rpl/t/ndb_connect_to_secondary.inc
 
 --echo -- Stop replication from Primary -> Secondary
-stop slave;
+STOP REPLICA;
 
 --source suite/ndb_rpl/t/ndb_connect_to_primary.inc
 --echo -- Insert a row on Primary
@@ -187,7 +187,7 @@ drop procedure test.doit;
 --source suite/ndb_rpl/t/ndb_conflict_info.inc
 
 --source suite/ndb_rpl/t/ndb_connect_to_secondary.inc
-start slave;
+START REPLICA;
 
 --source suite/ndb_rpl/t/ndb_connect_to_primary.inc
 --echo -- Look at Seconday row
@@ -205,10 +205,10 @@ insert into test.t1 values (1, 1, "Ma Brows");
 --source suite/ndb_rpl/t/ndb_sync_primary_to_secondary.inc
 --source suite/ndb_rpl/t/ndb_sync_secondary_to_primary.inc
 --source suite/ndb_rpl/t/ndb_connect_to_primary.inc
---echo -- Stop Slave in both directions
-stop slave;
+--echo -- Stop Replica in both directions
+STOP REPLICA;
 --source suite/ndb_rpl/t/ndb_connect_to_secondary.inc
-stop slave;
+STOP REPLICA;
 --source suite/ndb_rpl/t/ndb_connect_to_primary.inc
 --echo -- Delete row on Primary Cluster
 delete from test.t1 where a=1;
@@ -237,7 +237,7 @@ delimiter ;%
 
 call test.doit(200);
 
---echo -- Restart slave on Primary Cluster
+--echo -- Restart replica on Primary Cluster
 --source suite/ndb_rpl/t/ndb_connect_to_primary.inc
 # TODO : Reenable with new slave counts
 #--source suite/ndb_rpl/include/ndb_init_replica_counts.inc
@@ -249,7 +249,7 @@ start replica;
 # TODO : Reenable with new slave counts
 #--disable_result_log
 # Don't include results as they vary depending on epoch boundaries
-#--source suite/ndb_rpl/include/ndb_slave_counts.inc
+#--source suite/ndb_rpl/include/ndb_replica_counts.inc
 #--enable_result_log
 #--echo -- Verify that batching occurred when replicating the above
 #select (@ndb_slave_execute_count - @ndb_slave_commit_count) > 1;
@@ -260,8 +260,8 @@ select * from test.t1 where a=1;
 --source suite/ndb_rpl/t/ndb_connect_to_secondary.inc
 select * from test.t1 where a=1;
 
---echo --Restart slave on Secondary Cluster
-start slave;
+--echo --Restart replica on Secondary Cluster
+START REPLICA;
 --source suite/ndb_rpl/t/ndb_sync_primary_to_secondary.inc
 --source suite/ndb_rpl/t/ndb_connect_to_secondary.inc
 
@@ -328,4 +328,4 @@ drop table mysql.ndb_replication;
 stop replica;
 reset replica;
 
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

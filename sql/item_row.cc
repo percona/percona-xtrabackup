@@ -1,15 +1,16 @@
-/* Copyright (c) 2002, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -208,6 +209,19 @@ Item *Item_row::transform(Item_transformer transformer, uchar *arg) {
     if (items[i] == nullptr) return nullptr; /* purecov: inspected */
   }
   return (this->*transformer)(arg);
+}
+
+Item *Item_row::compile(Item_analyzer analyzer, uchar **arg_p,
+                        Item_transformer transformer, uchar *arg_t) {
+  if (!(this->*analyzer)(arg_p)) return this;
+  for (uint i = 0; i < arg_count; i++) {
+    uchar *arg_v = *arg_p;
+    Item *new_item = items[i]->compile(analyzer, &arg_v, transformer, arg_t);
+    if (new_item == nullptr) return nullptr;
+    if (items[i] != new_item)
+      current_thd->change_item_tree(&items[i], new_item);
+  }
+  return (this->*transformer)(arg_t);
 }
 
 void Item_row::bring_value() {

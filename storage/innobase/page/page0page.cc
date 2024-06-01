@@ -1,18 +1,19 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2023, Oracle and/or its affiliates.
+Copyright (c) 1994, 2024, Oracle and/or its affiliates.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -819,13 +820,13 @@ static inline void page_delete_rec_list_write_log(
 
 /** Parses a log record of a record list end or start deletion.
  @return end of log record or NULL */
-byte *page_parse_delete_rec_list(
+const byte *page_parse_delete_rec_list(
     mlog_id_t type,      /*!< in: MLOG_LIST_END_DELETE,
                          MLOG_LIST_START_DELETE,
                          MLOG_COMP_LIST_END_DELETE or
                          MLOG_COMP_LIST_START_DELETE */
-    byte *ptr,           /*!< in: buffer */
-    byte *end_ptr,       /*!< in: buffer end */
+    const byte *ptr,     /*!< in: buffer */
+    const byte *end_ptr, /*!< in: buffer end */
     buf_block_t *block,  /*!< in/out: buffer block or NULL */
     dict_index_t *index, /*!< in: record descriptor */
     mtr_t *mtr)          /*!< in: mtr or NULL */

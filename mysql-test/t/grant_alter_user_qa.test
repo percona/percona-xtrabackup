@@ -962,9 +962,6 @@ let $expect_file= $MYSQLTEST_VARDIR/tmp/mysqld.1.expect;
 --echo # Restart server.
 --exec echo "restart:" > $expect_file
 
-# Turn on reconnect
---enable_reconnect
-
 # Call script that will poll the server waiting for it to be back online again
 --source include/wait_until_connected_again.inc
 
@@ -1022,7 +1019,7 @@ CREATE USER user10@localhost
             IDENTIFIED WITH 'mysql_native_password' AS '*67092806AE91BFB6BE72DE6C7BE2B7CCA8CFA9DF';
 --echo # Show binlog events
 --let $mask_user_password_events= 1
---source include/show_binlog_events.inc
+--source include/rpl/deprecated/show_binlog_events.inc
 --let $mask_user_password_events= 0
 
 # Cleanup
@@ -1205,9 +1202,6 @@ let $expect_file= $MYSQLTEST_VARDIR/tmp/mysqld.1.expect;
 --echo # Restart server.
 --exec echo "restart:" > $expect_file
 
-# Turn on reconnect
---enable_reconnect
-
 # Call script that will poll the server waiting for it to be back online again
 --source include/wait_until_connected_again.inc
 
@@ -1247,7 +1241,8 @@ GRANT ALL ON *.* TO user1@localhost;
 REVOKE SELECT ON *.* FROM user1@localhost;
 REVOKE CREATE USER ON *.* FROM user1@localhost;
 REVOKE SELECT ON mysql.* FROM user1@localhost;
-SHOW GRANTS FOR user1@localhost;
+--let $user = user1@localhost
+--source include/show_grants.inc
 --connect(con1, localhost, user1,)
 SELECT USER(), CURRENT_USER();
 SHOW CREATE USER user1@localhost;

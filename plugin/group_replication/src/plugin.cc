@@ -1,15 +1,16 @@
-/* Copyright (c) 2014, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -217,14 +218,14 @@ void set_auto_increment_handler_values();
 
 static void check_deprecated_variables() {
   MYSQL_THD thd = lv.plugin_is_auto_starting_on_install ? nullptr : current_thd;
-  if (ov.recovery_completion_policy_var != RECOVERY_POLICY_WAIT_EXECUTED) {
-    push_deprecated_warn_no_replacement(
-        thd, "group_replication_recovery_complete_at");
-  }
   if (ov.view_change_uuid_var != nullptr &&
       strcmp(ov.view_change_uuid_var, "AUTOMATIC")) {
     push_deprecated_warn_no_replacement(thd,
                                         "group_replication_view_change_uuid");
+  }
+  if (ov.allow_local_lower_version_join_var) {
+    push_deprecated_warn_no_replacement(
+        thd, "group_replication_allow_local_lower_version_join");
   }
 }
 
@@ -968,32 +969,33 @@ int configure_group_member_manager() {
   }
   // Configure Group Member Manager
   lv.plugin_version = server_version;
+  Member_version local_member_plugin_version(lv.plugin_version);
 
-  uint32 local_version = lv.plugin_version;
   DBUG_EXECUTE_IF("group_replication_compatibility_higher_major_version",
-                  { local_version = lv.plugin_version + (0x010000); };);
+                  { local_member_plugin_version.increment_major_version(); };);
   DBUG_EXECUTE_IF("group_replication_compatibility_higher_minor_version",
-                  { local_version = lv.plugin_version + (0x000100); };);
+                  { local_member_plugin_version.increment_minor_version(); };);
   DBUG_EXECUTE_IF("group_replication_compatibility_higher_patch_version",
-                  { local_version = lv.plugin_version + (0x000001); };);
+                  { local_member_plugin_version.increment_patch_version(); };);
   DBUG_EXECUTE_IF("group_replication_compatibility_lower_major_version",
-                  { local_version = lv.plugin_version - (0x010000); };);
+                  { local_member_plugin_version.decrement_major_version(); };);
   DBUG_EXECUTE_IF("group_replication_compatibility_lower_minor_version",
-                  { local_version = lv.plugin_version - (0x000100); };);
+                  { local_member_plugin_version.decrement_minor_version(); };);
   DBUG_EXECUTE_IF("group_replication_compatibility_lower_patch_version",
-                  { local_version = lv.plugin_version - (0x000001); };);
-  DBUG_EXECUTE_IF("group_replication_compatibility_restore_version",
-                  { local_version = lv.plugin_version; };);
-  DBUG_EXECUTE_IF("group_replication_legacy_election_version",
-                  { local_version = 0x080012; };);
-  DBUG_EXECUTE_IF("group_replication_legacy_election_version2",
-                  { local_version = 0x080015; };);
-  DBUG_EXECUTE_IF("group_replication_version_8_0_28",
-                  { local_version = 0x080028; };);
-  DBUG_EXECUTE_IF("group_replication_version_with_vcle", {
-    local_version = (MEMBER_VERSION_REMOVING_VCLE) - (0x000100);
+                  { local_member_plugin_version.decrement_patch_version(); };);
+  DBUG_EXECUTE_IF("group_replication_compatibility_restore_version", {
+    local_member_plugin_version = Member_version(lv.plugin_version);
   };);
-  Member_version local_member_plugin_version(local_version);
+  DBUG_EXECUTE_IF("group_replication_version_8_0_28",
+                  { local_member_plugin_version = Member_version(0x080028); };);
+  DBUG_EXECUTE_IF("group_replication_version_with_vcle", {
+    local_member_plugin_version = Member_version(MEMBER_VERSION_REMOVING_VCLE);
+    local_member_plugin_version.decrement_minor_version();
+  };);
+  DBUG_EXECUTE_IF("group_replication_version_clone_not_supported", {
+    local_member_plugin_version = Member_version(CLONE_GR_SUPPORT_VERSION);
+    local_member_plugin_version.decrement_minor_version();
+  };);
   DBUG_EXECUTE_IF("group_replication_force_member_uuid", {
     uuid = const_cast<char *>("cccccccc-cccc-cccc-cccc-cccccccccccc");
   };);
@@ -1015,7 +1017,7 @@ int configure_group_member_manager() {
         ov.enforce_update_everywhere_checks_var, ov.member_weight_var,
         lv.gr_lower_case_table_names, lv.gr_default_table_encryption,
         ov.advertise_recovery_endpoints_var, ov.view_change_uuid_var,
-        get_allow_single_leader());
+        get_allow_single_leader(), ov.preemptive_garbage_collection_var);
   } else {
     local_member_info = new Group_member_info(
         hostname, port, uuid, write_set_extraction_algorithm,
@@ -1025,7 +1027,7 @@ int configure_group_member_manager() {
         ov.enforce_update_everywhere_checks_var, ov.member_weight_var,
         lv.gr_lower_case_table_names, lv.gr_default_table_encryption,
         ov.advertise_recovery_endpoints_var, ov.view_change_uuid_var,
-        get_allow_single_leader());
+        get_allow_single_leader(), ov.preemptive_garbage_collection_var);
   }
 
 #ifndef NDEBUG
@@ -1084,54 +1086,55 @@ int configure_compatibility_manager() {
    */
   DBUG_EXECUTE_IF("group_replication_compatibility_rule_error_higher", {
     // Mark this member as being another version
-    Member_version other_version = lv.plugin_version + (0x010000);
+    Member_version other_version(lv.plugin_version);
+    other_version.increment_major_version();
     Member_version local_member_version(lv.plugin_version);
     compatibility_mgr->add_incompatibility(local_member_version, other_version);
   };);
   DBUG_EXECUTE_IF("group_replication_compatibility_rule_error_lower", {
     // Mark this member as being another version
-    Member_version other_version = lv.plugin_version;
-    Member_version local_member_version = lv.plugin_version + (0x000001);
+    Member_version other_version(lv.plugin_version);
+    Member_version local_member_version(lv.plugin_version);
+    local_member_version.increment_patch_version();
     compatibility_mgr->add_incompatibility(local_member_version, other_version);
   };);
   DBUG_EXECUTE_IF("group_replication_compatibility_higher_major_version", {
-    Member_version other_version = lv.plugin_version + (0x010000);
+    Member_version other_version(lv.plugin_version);
+    other_version.increment_major_version();
     compatibility_mgr->set_local_version(other_version);
   };);
   DBUG_EXECUTE_IF("group_replication_compatibility_higher_minor_version", {
-    Member_version other_version = lv.plugin_version + (0x000100);
+    Member_version other_version(lv.plugin_version);
+    other_version.increment_minor_version();
     compatibility_mgr->set_local_version(other_version);
   };);
   DBUG_EXECUTE_IF("group_replication_compatibility_higher_patch_version", {
-    Member_version other_version = lv.plugin_version + (0x000001);
+    Member_version other_version(lv.plugin_version);
+    other_version.increment_patch_version();
     compatibility_mgr->set_local_version(other_version);
   };);
   DBUG_EXECUTE_IF("group_replication_compatibility_lower_major_version", {
-    Member_version other_version = lv.plugin_version - (0x010000);
+    Member_version other_version(lv.plugin_version);
+    other_version.decrement_major_version();
     compatibility_mgr->set_local_version(other_version);
   };);
   DBUG_EXECUTE_IF("group_replication_compatibility_lower_minor_version", {
-    Member_version other_version = lv.plugin_version - (0x000100);
+    Member_version other_version(lv.plugin_version);
+    other_version.decrement_minor_version();
     compatibility_mgr->set_local_version(other_version);
   };);
   DBUG_EXECUTE_IF("group_replication_compatibility_lower_patch_version", {
-    Member_version other_version = lv.plugin_version - (0x000001);
+    Member_version other_version(lv.plugin_version);
+    other_version.decrement_patch_version();
     compatibility_mgr->set_local_version(other_version);
   };);
   DBUG_EXECUTE_IF("group_replication_compatibility_restore_version", {
     Member_version current_version = lv.plugin_version;
     compatibility_mgr->set_local_version(current_version);
   };);
-  DBUG_EXECUTE_IF("group_replication_legacy_election_version", {
-    Member_version higher_version(0x080012);
-    compatibility_mgr->set_local_version(higher_version);
-  };);
-  DBUG_EXECUTE_IF("group_replication_legacy_election_version2", {
-    Member_version higher_version(0x080015);
-    compatibility_mgr->set_local_version(higher_version);
-  };);
   DBUG_EXECUTE_IF("group_replication_version_with_vcle", {
-    Member_version version = (MEMBER_VERSION_REMOVING_VCLE) - (0x000100);
+    Member_version version(MEMBER_VERSION_REMOVING_VCLE);
+    version.decrement_minor_version();
     compatibility_mgr->set_local_version(version);
   };);
 
@@ -2798,8 +2801,6 @@ int initialize_recovery_module() {
       ov.recovery_ssl_crl_var, ov.recovery_ssl_crlpath_var,
       ov.recovery_ssl_verify_server_cert_var, ov.recovery_tls_version_var,
       ov.recovery_tls_ciphersuites_var);
-  recovery_module->set_recovery_completion_policy(
-      (enum_recovery_completion_policies)ov.recovery_completion_policy_var);
   recovery_module->set_recovery_donor_retry_count(ov.recovery_retry_count_var);
   recovery_module->set_recovery_donor_reconnect_interval(
       ov.recovery_reconnect_interval_var);
@@ -2860,6 +2861,8 @@ void set_enforce_update_everywhere_checks(bool option) {
 void set_single_primary_mode_var(bool option) {
   ov.single_primary_mode_var = option;
 }
+
+bool get_single_primary_mode_var() { return ov.single_primary_mode_var; }
 
 SERVICE_TYPE(registry) * get_plugin_registry() { return lv.reg_srv; }
 
@@ -3433,60 +3436,6 @@ static void update_ssl_server_cert_verification(MYSQL_THD, SYS_VAR *,
   }
 }
 
-// Recovery threshold update method
-static int check_recovery_completion_policy(MYSQL_THD thd, SYS_VAR *,
-                                            void *save,
-                                            struct st_mysql_value *value) {
-  DBUG_TRACE;
-
-  char buff[STRING_BUFFER_USUAL_SIZE];
-  const char *str;
-  TYPELIB *typelib = &ov.recovery_policies_typelib_t;
-  long long tmp;
-  long result;
-  int length;
-
-  push_deprecated_warn_no_replacement(thd,
-                                      "group_replication_recovery_complete_at");
-
-  Checkable_rwlock::Guard g(*lv.plugin_running_lock,
-                            Checkable_rwlock::TRY_READ_LOCK);
-  if (!plugin_running_lock_is_rdlocked(g)) return 1;
-
-  if (value->value_type(value) == MYSQL_VALUE_TYPE_STRING) {
-    length = sizeof(buff);
-    if (!(str = value->val_str(value, buff, &length))) goto err;
-    if ((result = (long)find_type(str, typelib, 0) - 1) < 0) goto err;
-  } else {
-    if (value->val_int(value, &tmp)) goto err;
-    if (tmp < 0 || tmp >= static_cast<long long>(typelib->count)) goto err;
-    result = (long)tmp;
-  }
-  *(long *)save = result;
-
-  return 0;
-
-err:
-  return 1;
-}
-
-static void update_recovery_completion_policy(MYSQL_THD, SYS_VAR *,
-                                              void *var_ptr, const void *save) {
-  DBUG_TRACE;
-
-  Checkable_rwlock::Guard g(*lv.plugin_running_lock,
-                            Checkable_rwlock::TRY_READ_LOCK);
-  if (!plugin_running_lock_is_rdlocked(g)) return;
-
-  ulong in_val = *static_cast<const ulong *>(save);
-  *static_cast<ulong *>(var_ptr) = in_val;
-
-  if (recovery_module != nullptr) {
-    recovery_module->set_recovery_completion_policy(
-        (enum_recovery_completion_policies)in_val);
-  }
-}
-
 // Component timeout update method
 
 static void update_component_timeout(MYSQL_THD, SYS_VAR *, void *var_ptr,
@@ -3956,6 +3905,23 @@ static int check_enforce_update_everywhere_checks(
   }
 
   *(bool *)save = enforce_update_everywhere_checks_val;
+
+  return 0;
+}
+
+static int check_allow_local_lower_version_join(MYSQL_THD thd, SYS_VAR *,
+                                                void *save,
+                                                struct st_mysql_value *value) {
+  DBUG_TRACE;
+  bool allow_local_lower_version_join_val;
+
+  push_deprecated_warn_no_replacement(
+      thd, "group_replication_allow_local_lower_version_join");
+
+  if (!get_bool_value_using_type_lib(value, allow_local_lower_version_join_val))
+    return 1;
+
+  *(bool *)save = allow_local_lower_version_join_val;
 
   return 0;
 }
@@ -4691,21 +4657,6 @@ static void initialize_ssl_option_map() {
       ov.RECOVERY_TLS_CIPHERSUITES_OPT;
 }
 
-// Recovery threshold options
-
-static MYSQL_SYSVAR_ENUM(recovery_complete_at,              /* name */
-                         ov.recovery_completion_policy_var, /* var */
-                         PLUGIN_VAR_OPCMDARG |
-                             PLUGIN_VAR_PERSIST_AS_READ_ONLY, /* optional var */
-                         "Recovery policies when handling cached transactions "
-                         "after state transfer."
-                         "possible values are TRANSACTIONS_CERTIFIED or "
-                         "TRANSACTION_APPLIED",             /* values */
-                         check_recovery_completion_policy,  /* check func. */
-                         update_recovery_completion_policy, /* update func. */
-                         RECOVERY_POLICY_WAIT_EXECUTED,     /* default */
-                         &ov.recovery_policies_typelib_t);  /* type lib */
-
 // Generic timeout setting
 
 static MYSQL_SYSVAR_ULONG(
@@ -4731,9 +4682,9 @@ static MYSQL_SYSVAR_BOOL(allow_local_lower_version_join,        /* name */
                              PLUGIN_VAR_PERSIST_AS_READ_ONLY, /* optional var */
                          "Allow this server to join the group even if it has a "
                          "lower plugin version than the group",
-                         nullptr, /* check func. */
-                         nullptr, /* update func*/
-                         0        /* default */
+                         check_allow_local_lower_version_join, /* check func. */
+                         nullptr,                              /* update func*/
+                         0                                     /* default */
 );
 
 static MYSQL_SYSVAR_ULONG(
@@ -4928,7 +4879,7 @@ static MYSQL_SYSVAR_ENUM(exit_state_action,        /* name */
                          "ABORT_SERVER and OFFLINE_MODE.",  /* values */
                          nullptr,                           /* check func. */
                          nullptr,                           /* update func. */
-                         EXIT_STATE_ACTION_READ_ONLY,       /* default */
+                         EXIT_STATE_ACTION_OFFLINE_MODE,    /* default */
                          &ov.exit_state_actions_typelib_t); /* type lib */
 
 static MYSQL_SYSVAR_UINT(autorejoin_tries,        /* name */
@@ -5306,6 +5257,67 @@ static MYSQL_SYSVAR_ENUM(
     &ov.communication_stack_values_typelib_t /* type lib */
 );
 
+bool get_preemptive_garbage_collection_var() {
+  return ov.preemptive_garbage_collection_var;
+}
+
+static int check_preemptive_garbage_collection(MYSQL_THD thd, SYS_VAR *,
+                                               void *save,
+                                               struct st_mysql_value *value) {
+  DBUG_TRACE;
+  bool in_val;
+
+  if (!get_bool_value_using_type_lib(value, in_val)) return 1;
+
+  Checkable_rwlock::Guard g(*lv.plugin_running_lock,
+                            Checkable_rwlock::TRY_READ_LOCK);
+  if (!plugin_running_lock_is_rdlocked(g)) return 1;
+
+  if (plugin_is_group_replication_running()) {
+    my_message(ER_GROUP_REPLICATION_RUNNING,
+               "The group_replication_preemptive_garbage_collection cannot be "
+               "changed when Group Replication is running",
+               MYF(0));
+    return 1;
+  }
+
+  *(bool *)save = in_val;
+
+  return 0;
+}
+
+static MYSQL_SYSVAR_BOOL(
+    preemptive_garbage_collection,        /* name */
+    ov.preemptive_garbage_collection_var, /* var */
+    PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_NODEFAULT |
+        PLUGIN_VAR_PERSIST_AS_READ_ONLY, /* optional var | no set default */
+    "This option is only effective in single-primary mode. "
+    "In multi-primary mode, this option is ignored and the feature "
+    "is inactive, thus there is no preemptive garbage collection.",
+    check_preemptive_garbage_collection,  /* check func. */
+    nullptr,                              /* update func*/
+    PREEMPTIVE_GARBAGE_COLLECTION_DEFAULT /* default*/
+);
+
+uint get_preemptive_garbage_collection_rows_threshold_var() {
+  return ov.preemptive_garbage_collection_rows_threshold_var;
+}
+
+static MYSQL_SYSVAR_UINT(
+    preemptive_garbage_collection_rows_threshold,          /* name */
+    ov.preemptive_garbage_collection_rows_threshold_var,   /* var */
+    PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_PERSIST_AS_READ_ONLY, /* optional var */
+    "The number of validating rows that triggers a preemptive "
+    "garbage collection round when "
+    "group_replication_preemptive_garbage_collection is enabled.",
+    nullptr,                                              /* check func */
+    nullptr,                                              /* update func */
+    PREEMPTIVE_GARBAGE_COLLECTION_ROWS_THRESHOLD_DEFAULT, /* default */
+    PREEMPTIVE_GARBAGE_COLLECTION_ROWS_THRESHOLD_MIN,     /* min */
+    PREEMPTIVE_GARBAGE_COLLECTION_ROWS_THRESHOLD_MAX,     /* max */
+    0                                                     /* block */
+);
+
 static SYS_VAR *group_replication_system_vars[] = {
     MYSQL_SYSVAR(group_name),
     MYSQL_SYSVAR(start_on_boot),
@@ -5324,7 +5336,6 @@ static SYS_VAR *group_replication_system_vars[] = {
     MYSQL_SYSVAR(recovery_ssl_crl),
     MYSQL_SYSVAR(recovery_ssl_crlpath),
     MYSQL_SYSVAR(recovery_ssl_verify_server_cert),
-    MYSQL_SYSVAR(recovery_complete_at),
     MYSQL_SYSVAR(recovery_reconnect_interval),
     MYSQL_SYSVAR(recovery_public_key_path),
     MYSQL_SYSVAR(recovery_get_public_key),
@@ -5366,6 +5377,8 @@ static SYS_VAR *group_replication_system_vars[] = {
     MYSQL_SYSVAR(view_change_uuid),
     MYSQL_SYSVAR(communication_stack),
     MYSQL_SYSVAR(paxos_single_leader),
+    MYSQL_SYSVAR(preemptive_garbage_collection),
+    MYSQL_SYSVAR(preemptive_garbage_collection_rows_threshold),
     nullptr,
 };
 

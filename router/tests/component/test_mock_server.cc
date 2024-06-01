@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2017, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -249,6 +250,7 @@ TEST_F(MockServerCLITestBase, classic_many_connections) {
   std::map<std::string, std::string> config{
       {"--module-prefix", get_data_dir().str()},
       {"--filename", get_data_dir().join("my_port.js").str()},
+      {"--bind-address", "127.0.0.1"},
       {"--port", std::to_string(bind_port)},
   };
 
@@ -406,6 +408,7 @@ TEST_P(MockServerConnectOkTest, classic_protocol) {
     }
   }
 
+  cmdline_args.emplace_back("--bind-address=127.0.0.1");
   cmdline_args.emplace_back("--port");
   cmdline_args.push_back(std::to_string(bind_port));
 
@@ -425,6 +428,7 @@ TEST_P(MockServerConnectOkTest, x_protocol) {
       {"datadir", get_data_dir().str()},
       {"certdir", SSL_TEST_DATA_DIR},
       {"hostname", "127.0.0.1"},
+      {"bind_address", "127.0.0.1"},
   };
 
   std::vector<std::string> cmdline_args{"--logging-folder",
@@ -438,6 +442,7 @@ TEST_P(MockServerConnectOkTest, x_protocol) {
     }
   }
 
+  cmdline_args.emplace_back("--bind-address=127.0.0.1");
   // set the classic port even though we don't use it.
   // otherwise it defaults to bind to port 3306 which may lead to "Address
   // already in use"
@@ -619,6 +624,7 @@ const MockServerConnectTestParam mock_server_connect_test_param[] = {
          "--filename", "@datadir@/mock_server_require_password.js",  //
          "--module-prefix", "@datadir@",                             //
          "--port", "@port@",                                         //
+         "--bind-address", "127.0.0.1",                              //
          "--verbose",                                                //
      },
      [](const std::map<std::string, std::string> &config) {
@@ -653,6 +659,7 @@ const MockServerConnectTestParam mock_server_connect_test_param[] = {
      {
          "--filename", "@datadir@/mock_server_cert_verify_cert.js",  //
          "--module-prefix", "@datadir@",                             //
+         "--bind-address", "127.0.0.1",                              //
          "--port", "@port@",                                         //
          "--ssl-mode", "required",                                   //
          "--ssl-ca", "@certdir@/crl-ca-cert.pem",                    //
@@ -669,6 +676,7 @@ const MockServerConnectTestParam mock_server_connect_test_param[] = {
      {
          "--filename", "@datadir@/mock_server_require_password.js",  //
          "--module-prefix", "@datadir@",                             //
+         "--bind-address", "127.0.0.1",                              //
          "--port", "@port@",                                         //
          "--ssl-mode", "preferred",                                  //
          "--ssl-key", "@certdir@/server-key.pem",                    //
@@ -684,6 +692,7 @@ const MockServerConnectTestParam mock_server_connect_test_param[] = {
      {
          "--filename", "@datadir@/mock_server_require_username.js",  //
          "--module-prefix", "@datadir@",                             //
+         "--bind-address", "127.0.0.1",                              //
          "--port", "@port@",                                         //
          "--ssl-mode", "preferred",                                  //
          "--ssl-key", "@certdir@/server-key.pem",                    //
@@ -700,6 +709,7 @@ const MockServerConnectTestParam mock_server_connect_test_param[] = {
      {
          "--filename", "@datadir@/my_port.js",       //
          "--module-prefix", "@datadir@",             //
+         "--bind-address", "127.0.0.1",              //
          "--port", "@port@",                         //
          "--ssl-mode", "preferred",                  //
          "--ssl-key", "@certdir@/server-key.pem",    //
@@ -725,6 +735,7 @@ const MockServerConnectTestParam mock_server_connect_test_param[] = {
      {
          "--filename", "@datadir@/mock_server_cert_verify_cert.js",  //
          "--module-prefix", "@datadir@",                             //
+         "--bind-address", "127.0.0.1",                              //
          "--port", "@port@",                                         //
          "--ssl-mode", "required",                                   //
          "--ssl-ca", "@certdir@/crl-ca-cert.pem",                    //
@@ -756,6 +767,7 @@ const MockServerConnectTestParam mock_server_connect_test_param[] = {
      {
          "--filename", "@datadir@/mock_server_cert_verify_issuer.js",  //
          "--module-prefix", "@datadir@",                               //
+         "--bind-address", "127.0.0.1",                                //
          "--port", "@port@",                                           //
          "--ssl-mode", "required",                                     //
          "--ssl-ca", "@certdir@/crl-ca-cert.pem",                      //
@@ -786,6 +798,7 @@ const MockServerConnectTestParam mock_server_connect_test_param[] = {
      {
          "--filename", "@datadir@/mock_server_cert_verify_subject.js",  //
          "--module-prefix", "@datadir@",                                //
+         "--bind-address", "127.0.0.1",                                 //
          "--port", "@port@",                                            //
          "--ssl-mode", "required",                                      //
          "--ssl-ca", "@certdir@/crl-ca-cert.pem",                       //
@@ -816,6 +829,7 @@ const MockServerConnectTestParam mock_server_connect_test_param[] = {
      {
          "--filename", "@datadir@/mock_server_cert_verify_subject.js",  //
          "--module-prefix", "@datadir@",                                //
+         "--bind-address", "127.0.0.1",                                 //
          "--port", "@port@",                                            //
          "--ssl-mode", "required",                                      //
          "--ssl-ca", "@certdir@/crl-ca-cert.pem",                       //
@@ -850,6 +864,7 @@ const MockServerConnectTestParam mock_server_connect_test_param[] = {
      {
          "--filename", "@datadir@/mock_server_cert_verify_subject.js",  //
          "--module-prefix", "@datadir@",                                //
+         "--bind-address", "127.0.0.1",                                 //
          "--port", "@port@",                                            //
          "--ssl-mode", "required",                                      //
          "--ssl-ca", "@certdir@/crl-ca-cert.pem",                       //
@@ -888,6 +903,7 @@ const MockServerConnectTestParam mock_server_connect_test_param[] = {
      {
          "--filename", "@datadir@/mock_server_cert_verify_subject.js",  //
          "--module-prefix", "@datadir@",                                //
+         "--bind-address", "127.0.0.1",                                 //
          "--port", "@port@",                                            //
          "--ssl-mode", "required",                                      //
          "--ssl-ca", "@certdir@/crl-ca-cert.pem",                       //
@@ -922,6 +938,7 @@ const MockServerConnectTestParam mock_server_connect_test_param[] = {
      {
          "--filename", "@datadir@/mock_server_cert_verify_subject.js",  //
          "--module-prefix", "@datadir@",                                //
+         "--bind-address", "127.0.0.1",                                 //
          "--port", "@port@",                                            //
          "--ssl-mode", "required",                                      //
          "--ssl-ca", "@certdir@/crl-ca-cert.pem",                       //
@@ -963,6 +980,7 @@ const MockServerConnectTestParam mock_server_connect_test_param[] = {
      {
          "--filename", "@datadir@/mock_server_cert_verify_subject.js",  //
          "--module-prefix", "@datadir@",                                //
+         "--bind-address", "127.0.0.1",                                 //
          "--port", "@port@",                                            //
          "--ssl-mode", "required",                                      //
          "--ssl-ca", "@certdir@/crl-ca-cert.pem",                       //
@@ -1005,15 +1023,16 @@ const MockServerConnectTestParam mock_server_connect_test_param[] = {
      }},
     {"xproto_mysqlsh_select_connection_id",
      {
-         "--filename", "@datadir@/tls_endpoint.js",      //
-         "--module-prefix", "@datadir@",                 //
-         "--port", "@port@",                             //
-         "--xport", "@xport@",                           //
-         "--ssl-mode", "required",                       //
-         "--ssl-ca", "@certdir@/crl-ca-cert.pem",        //
-         "--ssl-key", "@certdir@/crl-server-key.pem",    //
-         "--ssl-cert", "@certdir@/crl-server-cert.pem",  //
-         "--tls-version", "TLSv1.2",                     //
+         "--filename",      "@datadir@/tls_endpoint.js",      //
+         "--module-prefix", "@datadir@",                      //
+         "--bind-address",  "127.0.0.1",                      //
+         "--port",          "@port@",                         //
+         "--xport",         "@xport@",                        //
+         "--ssl-mode",      "required",                       //
+         "--ssl-ca",        "@certdir@/crl-ca-cert.pem",      //
+         "--ssl-key",       "@certdir@/crl-server-key.pem",   //
+         "--ssl-cert",      "@certdir@/crl-server-cert.pem",  //
+         "--tls-version",   "TLSv1.2",                        //
      },
      [](const std::map<std::string, std::string> &config) {
        auto sess = xcl::create_session();
@@ -1083,6 +1102,7 @@ TEST_P(MockServerCoreTest, check) {
 
   std::map<std::string, std::string> config{
       {"http_port", std::to_string(port_pool_.get_next_available())},
+      {"bind_address", "127.0.0.1"},
       {"port", std::to_string(port_pool_.get_next_available())},
       {"xport", std::to_string(port_pool_.get_next_available())},
       {"datadir", get_data_dir().str()},
@@ -1124,6 +1144,7 @@ const MockServerCoreTestParam mock_server_core_test_param[] = {
      {
          "--filename", "@datadir@/mock_server_require_password.js",  //
          "--module-prefix", "@datadir@",                             //
+         "--bind-address", "127.0.0.1",                              //
          "--port", "@port@",                                         //
          "--core-file",                                              //
      },
@@ -1132,6 +1153,7 @@ const MockServerCoreTestParam mock_server_core_test_param[] = {
      {
          "--filename", "@datadir@/mock_server_require_password.js",  //
          "--module-prefix", "@datadir@",                             //
+         "--bind-address", "127.0.0.1",                              //
          "--port", "@port@",                                         //
          "--core-file", "0",                                         //
      },
@@ -1140,6 +1162,7 @@ const MockServerCoreTestParam mock_server_core_test_param[] = {
      {
          "--filename", "@datadir@/mock_server_require_password.js",  //
          "--module-prefix", "@datadir@",                             //
+         "--bind-address", "127.0.0.1",                              //
          "--port", "@port@",                                         //
          "--core-file", "1",                                         //
      },
@@ -1148,6 +1171,7 @@ const MockServerCoreTestParam mock_server_core_test_param[] = {
      {
          "--filename", "@datadir@/mock_server_require_password.js",  //
          "--module-prefix", "@datadir@",                             //
+         "--bind-address", "127.0.0.1",                              //
          "--port", "@port@",                                         //
          "--core-file", "abc",                                       //
      },
@@ -1186,6 +1210,7 @@ TEST_P(MockServerCommandTest, check) {
           get_test_temp_dir_name(),
           "--module-prefix",
           get_data_dir().str(),
+          "--bind-address=127.0.0.1",
           "--port",
           std::to_string(port),
           "--xport",

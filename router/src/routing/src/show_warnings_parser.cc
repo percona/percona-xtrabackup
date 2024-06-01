@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2023, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -31,6 +32,10 @@
 stdx::expected<std::variant<std::monostate, ShowWarningCount, ShowWarnings>,
                std::string>
 ShowWarningsParser::parse() {
+  using ret_type = stdx::expected<
+      std::variant<std::monostate, ShowWarningCount, ShowWarnings>,
+      std::string>;
+
   if (accept(SHOW)) {
     if (accept(WARNINGS)) {
       stdx::expected<Limit, std::string> limit_res;
@@ -41,12 +46,14 @@ ShowWarningsParser::parse() {
 
       if (accept(END_OF_INPUT)) {
         if (limit_res) {
-          return {std::in_place,
-                  ShowWarnings{ShowWarnings::Verbosity::Warning,
-                               limit_res->row_count, limit_res->offset}};
+          return ret_type{
+              std::in_place,
+              ShowWarnings{ShowWarnings::Verbosity::Warning,
+                           limit_res->row_count, limit_res->offset}};
         }
 
-        return {std::in_place, ShowWarnings{ShowWarnings::Verbosity::Warning}};
+        return ret_type{std::in_place,
+                        ShowWarnings{ShowWarnings::Verbosity::Warning}};
       }
 
       // unexpected input after SHOW WARNINGS [LIMIT ...]
@@ -60,13 +67,14 @@ ShowWarningsParser::parse() {
 
       if (accept(END_OF_INPUT)) {
         if (limit_res) {
-          return {std::in_place,
-                  ShowWarnings{ShowWarningCount::Verbosity::Error,
-                               limit_res->row_count, limit_res->offset}};
+          return ret_type{
+              std::in_place,
+              ShowWarnings{ShowWarningCount::Verbosity::Error,
+                           limit_res->row_count, limit_res->offset}};
         }
 
-        return {std::in_place,
-                ShowWarnings{ShowWarningCount::Verbosity::Error}};
+        return ret_type{std::in_place,
+                        ShowWarnings{ShowWarningCount::Verbosity::Error}};
       }
 
       // unexpected input after SHOW ERRORS [LIMIT ...]
@@ -74,18 +82,18 @@ ShowWarningsParser::parse() {
     } else if (accept(COUNT_SYM) && accept('(') && accept('*') && accept(')')) {
       if (accept(WARNINGS)) {
         if (accept(END_OF_INPUT)) {
-          return {std::in_place,
-                  ShowWarningCount{ShowWarningCount::Verbosity::Warning,
-                                   ShowWarningCount::Scope::Session}};
+          return ret_type{std::in_place,
+                          ShowWarningCount{ShowWarningCount::Verbosity::Warning,
+                                           ShowWarningCount::Scope::Session}};
         }
 
         // unexpected input after SHOW COUNT(*) WARNINGS
         return {};
       } else if (accept(ERRORS)) {
         if (accept(END_OF_INPUT)) {
-          return {std::in_place,
-                  ShowWarningCount{ShowWarningCount::Verbosity::Error,
-                                   ShowWarningCount::Scope::Session}};
+          return ret_type{std::in_place,
+                          ShowWarningCount{ShowWarningCount::Verbosity::Error,
+                                           ShowWarningCount::Scope::Session}};
         }
 
         // unexpected input after SHOW COUNT(*) ERRORS
@@ -109,16 +117,17 @@ ShowWarningsParser::parse() {
           if (accept('.')) {
             auto ident_res = warning_count_ident();
             if (ident_res && accept(END_OF_INPUT)) {
-              return {std::in_place,
-                      ShowWarningCount(*ident_res,
-                                       ShowWarningCount::Scope::Session)};
+              return ret_type{
+                  std::in_place,
+                  ShowWarningCount(*ident_res,
+                                   ShowWarningCount::Scope::Session)};
             }
           }
         } else if (accept(LOCAL_SYM)) {
           if (accept('.')) {
             auto ident_res = warning_count_ident();
             if (ident_res && accept(END_OF_INPUT)) {
-              return {
+              return ret_type{
                   std::in_place,
                   ShowWarningCount(*ident_res, ShowWarningCount::Scope::Local)};
             }
@@ -126,7 +135,7 @@ ShowWarningsParser::parse() {
         } else {
           auto ident_res = warning_count_ident();
           if (ident_res && accept(END_OF_INPUT)) {
-            return {
+            return ret_type{
                 std::in_place,
                 ShowWarningCount(*ident_res, ShowWarningCount::Scope::None)};
           }
@@ -174,7 +183,7 @@ stdx::expected<Limit, std::string> ShowWarningsParser::limit() {
     }
   }
 
-  return stdx::make_unexpected(error_);
+  return stdx::unexpected(error_);
 }
 
 stdx::expected<ShowWarnings::Verbosity, std::string>
@@ -187,5 +196,5 @@ ShowWarningsParser::warning_count_ident() {
     }
   }
 
-  return stdx::make_unexpected(error_);
+  return stdx::unexpected(error_);
 }

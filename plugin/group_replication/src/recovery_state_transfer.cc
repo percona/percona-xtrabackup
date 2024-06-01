@@ -1,15 +1,16 @@
-/* Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,6 +28,7 @@
 #include "my_dbug.h"
 #include "my_systime.h"
 #include "mysql/components/services/log_builtins.h"
+#include "plugin/group_replication/include/compatibility_module.h"
 #include "plugin/group_replication/include/plugin.h"
 #include "plugin/group_replication/include/plugin_handlers/recovery_metadata.h"
 #include "plugin/group_replication/include/plugin_psi.h"
@@ -373,16 +375,26 @@ void Recovery_state_transfer::build_donor_list(string *selected_donor_uuid) {
 
   while (member_it != group_members->end()) {
     Group_member_info *member = *member_it;
-    // is online and it's not me
-    string m_uuid(member->get_uuid());
-    bool is_online =
+    const string m_uuid(member->get_uuid());
+    const bool is_online =
         member->get_recovery_status() == Group_member_info::MEMBER_ONLINE;
-    bool not_self = m_uuid.compare(member_uuid);
+    const bool not_self = m_uuid.compare(member_uuid);
     bool valid_donor = false;
 
+    // is online and it's not me
     if (is_online && not_self) {
-      if (member->get_member_version() <=
-          local_member_info->get_member_version()) {
+      const Member_version local_member_version =
+          local_member_info->get_member_version();
+      const Member_version donor_member_version = member->get_member_version();
+      std::set<Member_version> local_and_donor_member_versions;
+      local_and_donor_member_versions.insert(local_member_version);
+      local_and_donor_member_versions.insert(donor_member_version);
+
+      if (donor_member_version <= local_member_version) {
+        suitable_donors.push_back(member);
+        valid_donor = true;
+      } else if (Compatibility_module::do_all_versions_belong_to_the_same_lts(
+                     local_and_donor_member_versions)) {
         suitable_donors.push_back(member);
         valid_donor = true;
       } else if (get_allow_local_lower_version_join()) {

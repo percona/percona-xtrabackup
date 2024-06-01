@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 2017, 2023, Oracle and/or its affiliates.
+Copyright (c) 2017, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -298,14 +299,14 @@ void dd_mdl_release(THD *thd, MDL_ticket **mdl) {
   *mdl = nullptr;
 }
 
-THD *dd_thd_for_undo(const trx_t *trx) {
-  return trx->mysql_thd == nullptr ? current_thd : trx->mysql_thd;
+THD *dd_thd_for_undo(const trx_t &trx) {
+  return trx.mysql_thd == nullptr ? current_thd : trx.mysql_thd;
 }
 
 /** Check if current undo needs a MDL or not
 @param[in]      trx     transaction
 @return true if MDL is necessary, otherwise false */
-bool dd_mdl_for_undo(const trx_t *trx) {
+bool dd_mdl_for_undo(const trx_t &trx) {
   /* Try best to find a valid THD for checking, in case in background
   rollback thread, trx doesn't hold a mysql_thd */
   THD *thd = dd_thd_for_undo(trx);
@@ -320,7 +321,7 @@ bool dd_mdl_for_undo(const trx_t *trx) {
   4. In runtime asynchronous rollback, no need for MDL.
   Check TRX_FORCE_ROLLBACK. */
   return (thd != nullptr && !thd->transaction_rollback_request &&
-          ((trx->in_innodb & TRX_FORCE_ROLLBACK) == 0));
+          ((trx.in_innodb & TRX_FORCE_ROLLBACK) == 0));
 }
 
 #ifdef XTRABACKUP

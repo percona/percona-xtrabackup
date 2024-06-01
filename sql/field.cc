@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -5703,17 +5704,7 @@ void Field_year::sql_type(String &res) const {
 ****************************************************************************/
 
 my_time_flags_t Field_newdate::date_flags(const THD *thd) const {
-  my_time_flags_t date_flags = TIME_FUZZY_DATE;
-  if (thd->variables.sql_mode & MODE_NO_ZERO_DATE)
-    date_flags |= TIME_NO_ZERO_DATE;
-  if (thd->variables.sql_mode & MODE_NO_ZERO_IN_DATE)
-    date_flags |= TIME_NO_ZERO_IN_DATE;
-  if (thd->variables.sql_mode & MODE_INVALID_DATES)
-    date_flags |= TIME_INVALID_DATES;
-  if (thd->variables.sql_mode & MODE_TIME_TRUNCATE_FRACTIONAL)
-    date_flags |= TIME_FRAC_TRUNCATE;
-
-  return date_flags;
+  return TIME_FUZZY_DATE | DatetimeConversionFlags(thd);
 }
 
 type_conversion_status Field_newdate::store_internal(const MYSQL_TIME *ltime,
@@ -5849,17 +5840,7 @@ void Field_newdate::sql_type(String &res) const {
 ****************************************************************************/
 
 my_time_flags_t Field_datetime::date_flags(const THD *thd) const {
-  my_time_flags_t date_flags = TIME_FUZZY_DATE;
-  if (thd->variables.sql_mode & MODE_NO_ZERO_DATE)
-    date_flags |= TIME_NO_ZERO_DATE;
-  if (thd->variables.sql_mode & MODE_NO_ZERO_IN_DATE)
-    date_flags |= TIME_NO_ZERO_IN_DATE;
-  if (thd->variables.sql_mode & MODE_INVALID_DATES)
-    date_flags |= TIME_INVALID_DATES;
-  if (thd->variables.sql_mode & MODE_TIME_TRUNCATE_FRACTIONAL)
-    date_flags |= TIME_FRAC_TRUNCATE;
-
-  return date_flags;
+  return TIME_FUZZY_DATE | DatetimeConversionFlags(thd);
 }
 
 void Field_datetime::store_timestamp_internal(const my_timeval *tm) {
@@ -6005,17 +5986,7 @@ void Field_datetime::sql_type(String &res) const {
 ****************************************************************************/
 
 my_time_flags_t Field_datetimef::date_flags(const THD *thd) const {
-  my_time_flags_t date_flags = TIME_FUZZY_DATE;
-  if (thd->variables.sql_mode & MODE_NO_ZERO_DATE)
-    date_flags |= TIME_NO_ZERO_DATE;
-  if (thd->variables.sql_mode & MODE_NO_ZERO_IN_DATE)
-    date_flags |= TIME_NO_ZERO_IN_DATE;
-  if (thd->variables.sql_mode & MODE_INVALID_DATES)
-    date_flags |= TIME_INVALID_DATES;
-  if (thd->variables.sql_mode & MODE_TIME_TRUNCATE_FRACTIONAL)
-    date_flags |= TIME_FRAC_TRUNCATE;
-
-  return date_flags;
+  return TIME_FUZZY_DATE | DatetimeConversionFlags(thd);
 }
 
 void Field_datetimef::store_timestamp_internal(const my_timeval *tm) {
@@ -6438,16 +6409,14 @@ size_t Field_string::make_sort_key(uchar *to, size_t length,
 }
 
 void Field_string::sql_type(String &res) const {
-  THD *thd = current_thd;
   const CHARSET_INFO *cs = res.charset();
   size_t length;
 
-  length = cs->cset->snprintf(
-      cs, res.ptr(), res.alloced_length(), "%s(%d)",
-      ((type() == MYSQL_TYPE_VAR_STRING && !thd->variables.new_mode)
-           ? (has_charset() ? "varchar" : "varbinary")
-           : (has_charset() ? "char" : "binary")),
-      (int)field_length / charset()->mbmaxlen);
+  length = cs->cset->snprintf(cs, res.ptr(), res.alloced_length(), "%s(%d)",
+                              ((type() == MYSQL_TYPE_VAR_STRING)
+                                   ? (has_charset() ? "varchar" : "varbinary")
+                                   : (has_charset() ? "char" : "binary")),
+                              (int)field_length / charset()->mbmaxlen);
   res.length(length);
 }
 
@@ -7882,8 +7851,7 @@ longlong Field_json::val_int() const {
 
   Json_wrapper wr;
   if (val_json(&wr)) return 0; /* purecov: inspected */
-
-  return wr.coerce_int(field_name);
+  return wr.coerce_int(JsonCoercionWarnHandler{field_name});
 }
 
 double Field_json::val_real() const {
@@ -7891,8 +7859,7 @@ double Field_json::val_real() const {
 
   Json_wrapper wr;
   if (val_json(&wr)) return 0.0; /* purecov: inspected */
-
-  return wr.coerce_real(field_name);
+  return wr.coerce_real(JsonCoercionWarnHandler{field_name});
 }
 
 String *Field_json::val_str(String *buf1, String *) const {
@@ -7924,8 +7891,7 @@ my_decimal *Field_json::val_decimal(my_decimal *decimal_value) const {
     return decimal_value;
     /* purecov: end */
   }
-
-  return wr.coerce_decimal(decimal_value, field_name);
+  return wr.coerce_decimal(JsonCoercionWarnHandler{field_name}, decimal_value);
 }
 
 bool Field_json::pack_diff(uchar **to, ulonglong value_format) const {
@@ -8089,7 +8055,10 @@ bool Field_json::get_date(MYSQL_TIME *ltime, my_time_flags_t) const {
   ASSERT_COLUMN_MARKED_FOR_READ;
 
   Json_wrapper wr;
-  const bool result = val_json(&wr) || wr.coerce_date(ltime, field_name);
+  const bool result =
+      val_json(&wr) ||
+      wr.coerce_date(JsonCoercionWarnHandler{field_name},
+                     JsonCoercionDeprecatedDefaultHandler{}, ltime);
   if (result)
     set_zero_time(ltime, MYSQL_TIMESTAMP_DATETIME); /* purecov: inspected */
   return result;
@@ -8099,7 +8068,10 @@ bool Field_json::get_time(MYSQL_TIME *ltime) const {
   ASSERT_COLUMN_MARKED_FOR_READ;
 
   Json_wrapper wr;
-  const bool result = val_json(&wr) || wr.coerce_time(ltime, field_name);
+  const bool result =
+      val_json(&wr) ||
+      wr.coerce_time(JsonCoercionWarnHandler{field_name},
+                     JsonCoercionDeprecatedDefaultHandler{}, ltime);
   if (result)
     set_zero_time(ltime, MYSQL_TIMESTAMP_TIME); /* purecov: inspected */
   return result;

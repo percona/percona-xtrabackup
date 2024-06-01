@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2022, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -255,9 +256,9 @@ void Lex_input_stream::body_utf8_append_literal(THD *thd, const LEX_STRING *txt,
   m_cpp_utf8_processed_ptr = end_ptr;
 }
 
-void Lex_input_stream::add_digest_token(uint token, Lexer_yystype *yylval) {
+void Lex_input_stream::add_digest_token(uint token, Lexer_yystype *lval) {
   if (m_digest != nullptr) {
-    m_digest = digest_add_token(m_digest, token, yylval);
+    m_digest = digest_add_token(m_digest, token, lval);
   }
 }
 
@@ -1357,6 +1358,8 @@ std::string_view SqlLexer::iterator::get_token_text(TokenId token_id) const {
     return {"\0", 1};
   } else if (token_id == 0) {  // YYEOF
     return {};
+  } else if (token_id == ABORT_SYM) {
+    return raw_token;
   } else if (token_id < 256) {  // 0-255 are plain ASCII characters
     return raw_token;
   } else if (token_id == IDENT) {

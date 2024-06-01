@@ -1,15 +1,16 @@
-# Copyright (c) 2006, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2006, 2024, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,16 +26,8 @@ ADD_WSHADOW_WARNING()
 # We are not interesting in profiling clients.
 DISABLE_MISSING_PROFILE_WARNING()
 
-## Subdirectory with common client code.
-ADD_SUBDIRECTORY(base)
-## Subdirectory for mysqlpump code.
-ADD_SUBDIRECTORY(dump)
 ## Subdirectory for mysql_migrate_keyring code.
 ADD_SUBDIRECTORY(migrate_keyring)
-
-INCLUDE_DIRECTORIES(
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
 
 MYSQL_ADD_EXECUTABLE(mysql
   ${CMAKE_SOURCE_DIR}/sql-common/net_ns.cc
@@ -46,15 +39,9 @@ MYSQL_ADD_EXECUTABLE(mysql
   multi_factor_passwordopt-vars.cc
   multi_option.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/common/user_registration.cc
-  LINK_LIBRARIES mysqlclient client_base ${EDITLINE_LIBRARY}
+  ${CMAKE_SOURCE_DIR}/sql-common/sql_string.cc
+  LINK_LIBRARIES mysqlclient ${EDITLINE_LIBRARY}
   )
-
-IF(NOT WITHOUT_SERVER)
-  MYSQL_ADD_EXECUTABLE(mysql_upgrade
-    upgrade/program.cc
-    LINK_LIBRARIES mysqlclient client_base
-    )
-ENDIF()
 
 MYSQL_ADD_EXECUTABLE(mysqltest
   mysqltest.cc
@@ -249,7 +236,6 @@ ENDIF()
 
 SET(MYSQLBINLOG_LIBRARIES
   mysql_binlog_event
-  client_base
   mysqlclient
   )
 
@@ -306,12 +292,6 @@ MYSQL_ADD_EXECUTABLE(mysql_config_editor
 MYSQL_ADD_EXECUTABLE(mysql_secure_installation
   mysql_secure_installation.cc
   LINK_LIBRARIES mysqlclient
-  )
-MYSQL_ADD_EXECUTABLE(mysql_ssl_rsa_setup
-  logger.cc
-  mysql_ssl_rsa_setup.cc
-  path.cc
-  LINK_LIBRARIES mysys
   )
 
 # "WIN32" also covers 64 bit. "echo" is used in some files below "mysql-test/".

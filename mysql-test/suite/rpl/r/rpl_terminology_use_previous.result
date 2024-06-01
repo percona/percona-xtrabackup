@@ -1,4 +1,4 @@
-include/master-slave.inc
+include/rpl/init_source_replica.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
@@ -6,14 +6,14 @@ Note	####	Storing MySQL user name or password information in the connection meta
 #### Specify scenarios ####
 
 #### Initialize Server State ####
-include/disable_binlog.inc
+include/rpl/disable_binlog.inc
 SET @save_replica_parallel_workers = @@global.replica_parallel_workers;
 SET @@global.replica_parallel_workers = 4;
-include/start_slave_sql.inc
+include/rpl/start_applier.inc
 SET @save_replica_net_timeout = @@global.replica_net_timeout;
 SET @@global.replica_net_timeout = 300;
 CREATE TABLE statement_result (name VARCHAR(256), KEY(name));
-include/disable_binlog.inc
+include/rpl/disable_binlog.inc
 CREATE TABLE statement_result (name VARCHAR(256), KEY(name));
 # Adding debug point 'syncpoint_begin_register_replica' to @@GLOBAL.debug
 SET @@session.debug_sync = "now WAIT_FOR reached_begin_register_replica";
@@ -210,16 +210,16 @@ include/include/save_result_in_table.inc [SET @@session.terminology_use_previous
 include/include/save_result_in_table.inc [SET @@session.terminology_use_previous = 0; SHOW REPLICA STATUS -> statement_result]
 include/assert.inc [There should be 1 unique 'new' command names in SHOW REPLICA STATUS(column 45) on server 1]
 include/assert.inc [There should be 0 unique 'old' command names in SHOW REPLICA STATUS(column 45) on server 1]
-* SHOW SLAVE STATUS(column 1)
-include/include/save_result_in_table.inc [SET @@session.terminology_use_previous = 0; SHOW SLAVE STATUS -> statement_result]
-include/include/save_result_in_table.inc [SET @@session.terminology_use_previous = 0; SHOW SLAVE STATUS -> statement_result]
-include/assert.inc [There should be 1 unique 'new' command names in SHOW SLAVE STATUS(column 1) on server 1]
-include/assert.inc [There should be 0 unique 'old' command names in SHOW SLAVE STATUS(column 1) on server 1]
-* SHOW SLAVE STATUS(column 45)
-include/include/save_result_in_table.inc [SET @@session.terminology_use_previous = 0; SHOW SLAVE STATUS -> statement_result]
-include/include/save_result_in_table.inc [SET @@session.terminology_use_previous = 0; SHOW SLAVE STATUS -> statement_result]
-include/assert.inc [There should be 1 unique 'new' command names in SHOW SLAVE STATUS(column 45) on server 1]
-include/assert.inc [There should be 0 unique 'old' command names in SHOW SLAVE STATUS(column 45) on server 1]
+* SHOW REPLICA STATUS(column 1)
+include/include/save_result_in_table.inc [SET @@session.terminology_use_previous = 0; SHOW REPLICA STATUS -> statement_result]
+include/include/save_result_in_table.inc [SET @@session.terminology_use_previous = 0; SHOW REPLICA STATUS -> statement_result]
+include/assert.inc [There should be 1 unique 'new' command names in SHOW REPLICA STATUS(column 1) on server 1]
+include/assert.inc [There should be 0 unique 'old' command names in SHOW REPLICA STATUS(column 1) on server 1]
+* SHOW REPLICA STATUS(column 45)
+include/include/save_result_in_table.inc [SET @@session.terminology_use_previous = 0; SHOW REPLICA STATUS -> statement_result]
+include/include/save_result_in_table.inc [SET @@session.terminology_use_previous = 0; SHOW REPLICA STATUS -> statement_result]
+include/assert.inc [There should be 1 unique 'new' command names in SHOW REPLICA STATUS(column 45) on server 1]
+include/assert.inc [There should be 0 unique 'old' command names in SHOW REPLICA STATUS(column 45) on server 1]
 
 #### Test terminology_use_previous=1 ####
 
@@ -412,16 +412,16 @@ include/include/save_result_in_table.inc [SET @@session.terminology_use_previous
 include/include/save_result_in_table.inc [SET @@session.terminology_use_previous = 1; SHOW REPLICA STATUS -> statement_result]
 include/assert.inc [There should be 0 unique 'new' command names in SHOW REPLICA STATUS(column 45) on server 1]
 include/assert.inc [There should be 1 unique 'old' command names in SHOW REPLICA STATUS(column 45) on server 1]
-* SHOW SLAVE STATUS(column 1)
-include/include/save_result_in_table.inc [SET @@session.terminology_use_previous = 1; SHOW SLAVE STATUS -> statement_result]
-include/include/save_result_in_table.inc [SET @@session.terminology_use_previous = 1; SHOW SLAVE STATUS -> statement_result]
-include/assert.inc [There should be 0 unique 'new' command names in SHOW SLAVE STATUS(column 1) on server 1]
-include/assert.inc [There should be 1 unique 'old' command names in SHOW SLAVE STATUS(column 1) on server 1]
-* SHOW SLAVE STATUS(column 45)
-include/include/save_result_in_table.inc [SET @@session.terminology_use_previous = 1; SHOW SLAVE STATUS -> statement_result]
-include/include/save_result_in_table.inc [SET @@session.terminology_use_previous = 1; SHOW SLAVE STATUS -> statement_result]
-include/assert.inc [There should be 0 unique 'new' command names in SHOW SLAVE STATUS(column 45) on server 1]
-include/assert.inc [There should be 1 unique 'old' command names in SHOW SLAVE STATUS(column 45) on server 1]
+* SHOW REPLICA STATUS(column 1)
+include/include/save_result_in_table.inc [SET @@session.terminology_use_previous = 1; SHOW REPLICA STATUS -> statement_result]
+include/include/save_result_in_table.inc [SET @@session.terminology_use_previous = 1; SHOW REPLICA STATUS -> statement_result]
+include/assert.inc [There should be 0 unique 'new' command names in SHOW REPLICA STATUS(column 1) on server 1]
+include/assert.inc [There should be 1 unique 'old' command names in SHOW REPLICA STATUS(column 1) on server 1]
+* SHOW REPLICA STATUS(column 45)
+include/include/save_result_in_table.inc [SET @@session.terminology_use_previous = 1; SHOW REPLICA STATUS -> statement_result]
+include/include/save_result_in_table.inc [SET @@session.terminology_use_previous = 1; SHOW REPLICA STATUS -> statement_result]
+include/assert.inc [There should be 0 unique 'new' command names in SHOW REPLICA STATUS(column 45) on server 1]
+include/assert.inc [There should be 1 unique 'old' command names in SHOW REPLICA STATUS(column 45) on server 1]
 # Check SET terminology_use_previous = DEFAULT
 SET @@session.terminology_use_previous = DEFAULT;
 Warnings:
@@ -434,11 +434,11 @@ Warning	1287	'@@terminology_use_previous' is deprecated and will be removed in a
 
 #### Clean up ####
 SET @@session.debug_sync = "now SIGNAL continue_begin_register_replica";
-include/wait_for_slave_io_to_start.inc
+include/rpl/wait_for_receiver_to_start.inc
 SET @@global.replica_parallel_workers = @save_replica_parallel_workers;
 SET @@global.replica_net_timeout = @save_replica_net_timeout;
-include/restore_binlog.inc
+include/rpl/restore_binlog.inc
 # Removing debug point 'syncpoint_begin_register_replica' from @@GLOBAL.debug
 DROP TABLE statement_result;
-include/sync_slave_sql_with_master.inc
-include/rpl_end.inc
+include/rpl/sync_to_replica.inc
+include/rpl/deinit.inc

@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2023, Oracle and/or its affiliates.
+Copyright (c) 2014, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -106,6 +107,10 @@ class Btree_load : private ut::Non_copyable {
   @param[in] level                  B-tree level
   @return error code */
   [[nodiscard]] dberr_t insert(dtuple_t *dtuple, size_t level) noexcept;
+
+  /** Public getter function to return number of records inserted
+  @return Number of records inserted */
+  [[nodiscard]] inline uint64_t get_n_recs() noexcept { return m_n_recs; }
 
  private:
   /** Set the root page on completion.

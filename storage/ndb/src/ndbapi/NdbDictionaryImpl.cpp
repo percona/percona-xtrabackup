@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -2616,7 +2617,9 @@ int NdbDictInterface::dictSignal(NdbApiSignal *sig, LinearSectionPtr ptr[3],
     if (i > 0) {
       Uint32 t = sleep + 10 * (rand() % mod);
 #ifdef VM_TRACE
-      g_eventLogger->info("retry sleep %ums on error %u", t, m_error.code);
+      g_eventLogger->info(
+          "NdbDictionary::dictSignal() : retry sleep %ums on error %u", t,
+          m_error.code);
 #endif
       NdbSleep_MilliSleep(t);
     }
@@ -5158,8 +5161,6 @@ int NdbDictionaryImpl::createEvent(NdbEventImpl &evnt) {
     if (col_impl) {
       evnt.m_facade->addColumn(*(col_impl->m_facade));
     } else {
-      g_eventLogger->info("Attr id %u in table %s not found", evnt.m_attrIds[i],
-                          evnt.getTableName());
       m_error.code = 4713;
       ERR_RETURN(getNdbError(), -1);
     }
@@ -5361,7 +5362,6 @@ int NdbDictInterface::createEvent(NdbEventImpl &evnt, int getFlag) {
         evnt.m_tableImpl->m_version != evntConf->getTableVersion() ||
         // evnt.m_attrListBitmask != evntConf->getAttrListBitmask() ||
         evnt.mi_type != evntConf->getEventType()) {
-      g_eventLogger->info("ERROR*************");
       m_buffer.clear();
       m_tableData.clear();
       ERR_RETURN(getNdbError(), 1);
@@ -5393,11 +5393,12 @@ int NdbDictInterface::executeSubscribeEvent(NdbEventOperationImpl &ev_op) {
   req->part = SubscriptionData::TableData;
   req->subscriberData = ev_op.m_oid;
   req->subscriberRef = m_reference;
+  req->requestInfo = ev_op.m_requestInfo;
 
-  DBUG_PRINT("info",
-             ("GSN_SUB_START_REQ subscriptionId=%d,subscriptionKey=%d,"
-              "subscriberData=%d",
-              req->subscriptionId, req->subscriptionKey, req->subscriberData));
+  DBUG_PRINT("info", ("GSN_SUB_START_REQ subscriptionId=%d,subscriptionKey=%d,"
+                      "subscriberData=%d requestInfo=%x",
+                      req->subscriptionId, req->subscriptionKey,
+                      req->subscriberData, req->requestInfo));
 
   int errCodes[] = {SubStartRef::Busy, SubStartRef::BusyWithNR,
                     SubStartRef::NotMaster, 0};
@@ -5911,9 +5912,6 @@ static int scanEventTable(Ndb *pNdb, const NdbDictionary::Table *pTab,
 
     if (retryAttempt) {
       if (retryAttempt >= retryMax) {
-        g_eventLogger->info(
-            "ERROR: has retried this operation %d times, failing!",
-            retryAttempt);
         goto error;
       }
       if (pTrans) pNdb->closeTransaction(pTrans);

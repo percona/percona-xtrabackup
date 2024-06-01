@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2023, Oracle and/or its affiliates.
+Copyright (c) 1995, 2024, Oracle and/or its affiliates.
 Copyright (c) 2008, 2009 Google Inc.
 Copyright (c) 2009, Percona Inc.
 
@@ -21,12 +21,13 @@ This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -77,6 +78,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "pars0pars.h"
 #include "que0que.h"
 #include "row0mysql.h"
+#include "sql/sql_class.h"
 #include "sql_thd_internal_api.h"
 #include "srv0mon.h"
 
@@ -107,6 +109,7 @@ Srv_cpu_usage srv_cpu_usage;
 
 #ifdef INNODB_DD_TABLE
 /* true when upgrading. */
+/* TODO To be removed in WL#16210 */
 bool srv_is_upgrade_mode = false;
 bool srv_downgrade_logs = false;
 bool srv_upgrade_old_undo_found = false;
@@ -3087,6 +3090,9 @@ void srv_purge_coordinator_thread() {
   srv_slot_t *slot;
 
   THD *thd = create_internal_thd();
+
+  // Allow purge in read only mode as well.
+  thd->set_skip_readonly_check();
 
   purge_sys->is_this_a_purge_thread = true;
 

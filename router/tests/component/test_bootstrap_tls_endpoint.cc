@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -78,141 +79,133 @@ const BootstrapTlsEndpointFailParams bootstrap_tls_endpoint_fail_params[] = {
     // client-ssl-mode
     {"client_ssl_mode_invalid",  // BS_ARGS_BAD_01
      {"--client-ssl-mode", "foo"},
-     stdx::make_unexpected(
-         "value 'foo' provided to --client-ssl-mode is not one "
-         "of DISABLED,PREFERRED,REQUIRED,PASSTHROUGH"s)},
+     stdx::unexpected("value 'foo' provided to --client-ssl-mode is not one "
+                      "of DISABLED,PREFERRED,REQUIRED,PASSTHROUGH"s)},
     {"client_ssl_mode_empty",  // BS_ARGS_BAD_02
      {"--client-ssl-mode", ""},
-     stdx::make_unexpected("value '' provided to --client-ssl-mode is not one "
-                           "of DISABLED,PREFERRED,REQUIRED,PASSTHROUGH"s)},
+     stdx::unexpected("value '' provided to --client-ssl-mode is not one "
+                      "of DISABLED,PREFERRED,REQUIRED,PASSTHROUGH"s)},
     {"client_ssl_mode_space",  // BS_ARGS_BAD_03
      {"--client-ssl-mode", " "},
-     stdx::make_unexpected("value ' ' provided to --client-ssl-mode is not one "
-                           "of DISABLED,PREFERRED,REQUIRED,PASSTHROUGH"s)},
+     stdx::unexpected("value ' ' provided to --client-ssl-mode is not one "
+                      "of DISABLED,PREFERRED,REQUIRED,PASSTHROUGH"s)},
     {"client_ssl_mode_no_value",  // BS_ARGS_BAD_04
      {"--client-ssl-mode", "--foo"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: option '--client-ssl-mode' expects a value, got nothing"s)},
     {"client_ssl_mode_as_last_arg",  // BS_ARGS_BAD_05
      {"--client-ssl-mode"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: option '--client-ssl-mode' expects a value, got nothing"s)},
 
     // server-ssl-mode
     {"server_ssl_mode_invalid",  // BS_ARGS_BAD_06
      {"--server-ssl-mode", "foo"},
-     stdx::make_unexpected(
-         "value 'foo' provided to --server-ssl-mode is not one "
-         "of DISABLED,PREFERRED,REQUIRED,AS_CLIENT"s)},
+     stdx::unexpected("value 'foo' provided to --server-ssl-mode is not one "
+                      "of DISABLED,PREFERRED,REQUIRED,AS_CLIENT"s)},
     {"server_ssl_mode_empty",  // BS_ARGS_BAD_07
      {"--server-ssl-mode", ""},
-     stdx::make_unexpected("value '' provided to --server-ssl-mode is not one "
-                           "of DISABLED,PREFERRED,REQUIRED,AS_CLIENT"s)},
+     stdx::unexpected("value '' provided to --server-ssl-mode is not one "
+                      "of DISABLED,PREFERRED,REQUIRED,AS_CLIENT"s)},
     {"server_ssl_mode_space",  // BS_ARGS_BAD_08
      {"--server-ssl-mode", " "},
-     stdx::make_unexpected("value ' ' provided to --server-ssl-mode is not one "
-                           "of DISABLED,PREFERRED,REQUIRED,AS_CLIENT"s)},
+     stdx::unexpected("value ' ' provided to --server-ssl-mode is not one "
+                      "of DISABLED,PREFERRED,REQUIRED,AS_CLIENT"s)},
     {"server_ssl_mode_no_value",  // BS_ARGS_BAD_09
      {"--server-ssl-mode", "--foo"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: option '--server-ssl-mode' expects a value, got nothing"s)},
     {"server_ssl_mode_as_last_arg",  // BS_ARGS_BAD_10
      {"--server-ssl-mode"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: option '--server-ssl-mode' expects a value, got nothing"s)},
 
     // server-ssl-verify
     {"server_ssl_verify_invalid",  // BS_ARGS_BAD_11
      {"--server-ssl-verify", "foo"},
-     stdx::make_unexpected(
-         "value 'foo' provided to --server-ssl-verify is not one "
-         "of DISABLED,VERIFY_CA,VERIFY_IDENTITY"s)},
+     stdx::unexpected("value 'foo' provided to --server-ssl-verify is not one "
+                      "of DISABLED,VERIFY_CA,VERIFY_IDENTITY"s)},
     {"server_ssl_verify_empty",  // BS_ARGS_BAD_12
      {"--server-ssl-verify", ""},
-     stdx::make_unexpected(
-         "value '' provided to --server-ssl-verify is not one "
-         "of DISABLED,VERIFY_CA,VERIFY_IDENTITY"s)},
+     stdx::unexpected("value '' provided to --server-ssl-verify is not one "
+                      "of DISABLED,VERIFY_CA,VERIFY_IDENTITY"s)},
     {"server_ssl_verify_no_value",  // BS_ARGS_BAD_13
      {"--server-ssl-verify", "--foo"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: option '--server-ssl-verify' expects a value, got nothing"s)},
     {"server_ssl_verify_as_last_arg",  // BS_ARGS_BAD_14
      {"--server-ssl-verify"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: option '--server-ssl-verify' expects a value, got nothing"s)},
 
     // client-ssl-cipher
     {"client_ssl_cipher_empty",  // BS_ARGS_EMPTY_Q_01
      {"--client-ssl-cipher", ""},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Value for option '--client-ssl-cipher' can't be empty"s)},
 
     // client-ssl-curves
     {"client_ssl_curves_empty",  // BS_ARGS_EMPTY_Q_02
      {"--client-ssl-curves", ""},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Value for option '--client-ssl-curves' can't be empty"s)},
 
     // client-ssl-cert
     {"client_ssl_cert_empty",  // BS_ARGS_EMPTY_Q_03
      {"--client-ssl-cert", ""},
-     stdx::make_unexpected(
-         "Value for option '--client-ssl-cert' can't be empty"s)},
+     stdx::unexpected("Value for option '--client-ssl-cert' can't be empty"s)},
     {"client_ssl_cert_without_key",
      {"--client-ssl-cert", "foo"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "If --client-ssl-cert is set, --client-ssl-key can't be empty"s)},
 
     // client-ssl-key
     {"client_ssl_key_empty",  // BS_ARGS_EMPTY_Q_04
      {"--client-ssl-key", ""},
-     stdx::make_unexpected(
-         "Value for option '--client-ssl-key' can't be empty"s)},
+     stdx::unexpected("Value for option '--client-ssl-key' can't be empty"s)},
     {"client_ssl_key_without_cert",
      {"--client-ssl-key", "foo"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "If --client-ssl-key is set, --client-ssl-cert can't be empty"s)},
 
     // client-ssl-dh-params
     {"client_ssl_dh_params_empty",  // BS_ARGS_EMPTY_Q_05
      {"--client-ssl-dh-params", ""},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Value for option '--client-ssl-dh-params' can't be empty"s)},
 
     // server-ssl-cipher
     {"server_ssl_cipher_empty",  // BS_ARGS_EMPTY_Q_06
      {"--server-ssl-cipher", ""},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Value for option '--server-ssl-cipher' can't be empty"s)},
 
     // server-ssl-curves
     {"server_ssl_curves_empty",  // BS_ARGS_EMPTY_Q_07
      {"--server-ssl-curves", ""},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Value for option '--server-ssl-curves' can't be empty"s)},
 
     // server-ssl-ca
     {"server_ssl_ca_empty",  // BS_ARGS_EMPTY_Q_08
      {"--server-ssl-ca", ""},
-     stdx::make_unexpected(
-         "Value for option '--server-ssl-ca' can't be empty"s)},
+     stdx::unexpected("Value for option '--server-ssl-ca' can't be empty"s)},
 
     // server-ssl-capath
     {"server_ssl_capath_empty",  // BS_ARGS_EMPTY_Q_09
      {"--server-ssl-capath", ""},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Value for option '--server-ssl-capath' can't be empty"s)},
 
     // server-ssl-crl
     {"server_ssl_crl_empty",  // BS_ARGS_EMPTY_Q_10
      {"--server-ssl-crl", ""},
-     stdx::make_unexpected(
-         "Value for option '--server-ssl-crl' can't be empty"s)},
+     stdx::unexpected("Value for option '--server-ssl-crl' can't be empty"s)},
 
     // server-ssl-crlpath
     {"server_ssl_crlpath_empty",  // BS_ARGS_EMPTY_Q_11
      {"--server-ssl-crlpath", ""},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Value for option '--server-ssl-crlpath' can't be empty"s)},
 
 };
@@ -253,59 +246,59 @@ TEST_P(BootstrapTlsEndpointWithoutBootstrapFail, check) {
 const BootstrapTlsEndpointFailParams bootstrap_tls_endpoint_without_bootstrap_fail_params[] = {
     {"client_ssl_mode",  // BS_NOBS_C_01
      {"--client-ssl-mode", "disabled"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: Option --client-ssl-mode can only be used together with -B/--bootstrap"s)},
     {"client_ssl_cipher",  // BS_NOBS_C_02
      {"--client-ssl-cipher", "some-valid-cipher"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: Option --client-ssl-cipher can only be used together with -B/--bootstrap"s)},
     {"client_ssl_curves",  // BS_NOBS_C_03
      {"--client-ssl-curves", "some-valid-curves"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: Option --client-ssl-curves can only be used together with -B/--bootstrap"s)},
     {"client_ssl_cert_and_key",  // BS_NOBS_C_04
      {"--client-ssl-cert", "some-cert", "--client-ssl-key", "some-key"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: Option --client-ssl-cert can only be used together with -B/--bootstrap"s)},
     {"client_ssl_key_and_cert",  // BS_NOBS_C_05
      {"--client-ssl-key", "some-key", "--client-ssl-cert", "some-cert"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: Option --client-ssl-key can only be used together with -B/--bootstrap"s)},
     {"client_ssl_dh_params",  // BS_NOBS_C_06
      {"--client-ssl-dh-params", "some-valid-dh-params"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: Option --client-ssl-dh-params can only be used together with -B/--bootstrap"s)},
     {"server_ssl_mode",  // BS_NOBS_S_01
      {"--server-ssl-mode", "disabled"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: Option --server-ssl-mode can only be used together with -B/--bootstrap"s)},
     {"server_ssl_verify",  // BS_NOBS_S_02
      {"--server-ssl-verify", "disabled"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: Option --server-ssl-verify can only be used together with -B/--bootstrap"s)},
     {"server_ssl_cipher",  // BS_NOBS_S_03
      {"--server-ssl-cipher", "some-valid-ciphers"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: Option --server-ssl-cipher can only be used together with -B/--bootstrap"s)},
     {"server_ssl_curves",  // BS_NOBS_S_04
      {"--server-ssl-curves", "some-valid-curves"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: Option --server-ssl-curves can only be used together with -B/--bootstrap"s)},
     {"server_ssl_ca",  // BS_NOBS_S_05
      {"--server-ssl-ca", "some-valid-ca-file.pem"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: Option --server-ssl-ca can only be used together with -B/--bootstrap"s)},
     {"server_ssl_capath",  // BS_NOBS_S_05
      {"--server-ssl-capath", "some-valid-capath"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: Option --server-ssl-capath can only be used together with -B/--bootstrap"s)},
     {"server_ssl_crl",  // BS_NOBS_S_05
      {"--server-ssl-crl", "some-valid-crl-file.pem"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: Option --server-ssl-crl can only be used together with -B/--bootstrap"s)},
     {"server_ssl_crlpath",  // BS_NOBS_S_05
      {"--server-ssl-crlpath", "some-valid-crlpath"},
-     stdx::make_unexpected(
+     stdx::unexpected(
          "Error: Option --server-ssl-crlpath can only be used together with -B/--bootstrap"s)},
 };
 
@@ -557,7 +550,8 @@ const BootstrapTlsEndpointParams
                                           }));
          }},
         {"server_ssl_verify_verify_identity",  // BS_ARGCASE_SV_02
-         {"--server-ssl-verify", "verify_identITY"},
+         {"--server-ssl-verify", "verify_identITY", "--server-ssl-ca",
+          "some-valid-ca-file.pem"},
          [](const std::vector<std::string> &config_file_lines) {
            ASSERT_THAT(config_file_lines,
                        ::testing::IsSupersetOf({
@@ -567,7 +561,8 @@ const BootstrapTlsEndpointParams
                        }));
          }},
         {"server_ssl_verify_verify_ca",  // BS_ARGCASE_SV_03
-         {"--server-ssl-verify", "verify_CA"},
+         {"--server-ssl-verify", "verify_CA", "--server-ssl-ca",
+          "some-valid-ca-file.pem"},
          [](const std::vector<std::string> &config_file_lines) {
            ASSERT_THAT(config_file_lines, ::testing::IsSupersetOf({
                                               "client_ssl_mode=PREFERRED",
@@ -1077,7 +1072,7 @@ const BootstrapTlsEndpointParams bootstrap_tls_endpoint_params[] = {
                                                  // BS_CERT_KEY_CONFIG_PERSISTS_06
                                                  // BS_CERT_KEY_CONFIG_PERSISTS_09
                                                  // BS_CERT_KEY_CONFIG_PERSISTS_12
-     {"--client-ssl-mode", "PASSTHROUGH"},
+     {"--client-ssl-mode", "PASSTHROUGH", "--disable-rw-split"},
      [](const std::vector<std::string> &config_file_lines) {
        check_no_cert_generated(config_file_lines, "PASSTHROUGH", "AS_CLIENT");
 
@@ -1089,7 +1084,7 @@ const BootstrapTlsEndpointParams bootstrap_tls_endpoint_params[] = {
      }},
     {"client_ssl_mode_disabled_no_cert_gen",  // BS_MODES_05,
                                               // BS_CERT_KEY_MODE_05
-     {"--client-ssl-mode", "DISABLED"},
+     {"--client-ssl-mode", "DISABLED", "--disable-rw-split"},
      [](const std::vector<std::string> &config_file_lines) {
        check_no_cert_generated(config_file_lines, "DISABLED", "PREFERRED");
 

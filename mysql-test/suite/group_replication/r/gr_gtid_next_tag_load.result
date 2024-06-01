@@ -57,7 +57,7 @@ SET GTID_NEXT='AUTOMATIC';
 #       executing queries
 
 [connection server1]
-include/rpl_sync.inc
+include/rpl/sync.inc
 
 # T1.4. Verify that executed tagged GTIDs exist in the gtid_executed
 
@@ -121,23 +121,18 @@ include/assert.inc [Ensure that group_replication_group_name transactions have e
 DROP TABLE t1;
 [connection server1]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server2]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server3]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server4]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server5]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server1]
 
@@ -194,7 +189,7 @@ SET GTID_NEXT='AUTOMATIC';
 #       executing queries
 
 [connection server1]
-include/rpl_sync.inc
+include/rpl/sync.inc
 
 # T1.4. Verify that executed tagged GTIDs exist in the gtid_executed
 
@@ -253,23 +248,18 @@ include/assert.inc [Ensure that gtid_executed contains expected number of transa
 DROP TABLE t1;
 [connection server1]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server2]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server3]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server4]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server5]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server1]
 
@@ -326,7 +316,7 @@ SET GTID_NEXT='AUTOMATIC';
 #       executing queries
 
 [connection server1]
-include/rpl_sync.inc
+include/rpl/sync.inc
 
 # T1.4. Verify that executed tagged GTIDs exist in the gtid_executed
 
@@ -385,23 +375,18 @@ include/assert.inc [Ensure that gtid_executed contains expected number of transa
 DROP TABLE t1;
 [connection server1]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server2]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server3]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server4]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server5]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server1]
 
@@ -458,7 +443,7 @@ SET GTID_NEXT='AUTOMATIC';
 #       executing queries
 
 [connection server1]
-include/rpl_sync.inc
+include/rpl/sync.inc
 
 # T1.4. Verify that executed tagged GTIDs exist in the gtid_executed
 
@@ -522,23 +507,18 @@ include/assert.inc [Ensure that group_replication_group_name transactions have e
 DROP TABLE t1;
 [connection server1]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server2]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server3]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server4]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server5]
 include/stop_group_replication.inc
-SET GLOBAL group_replication_gtid_assignment_block_size=1000000;
 RESET BINARY LOGS AND GTIDS;
 [connection server1]
 include/group_replication_end.inc

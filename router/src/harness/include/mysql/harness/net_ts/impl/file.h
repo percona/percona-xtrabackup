@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -125,7 +126,7 @@ inline stdx::expected<int, std::error_code> fcntl(
     file_handle_type fd, const FileControlOption &cmd) {
   int res;
   if (-1 == (res = ::fcntl(fd, cmd.name(), cmd.value()))) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 
   return {res};
@@ -147,21 +148,21 @@ pipe(int flags = 0) {
     // on windows we can't set the flags
     //
     // PIPE_WAIT only exists for named-pipes
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
   if (0 == ::CreatePipe(&fds[0], &fds[1], nullptr, 0)) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 #elif defined(__linux__) || defined(__FreeBSD__)
   // pipe2() exists
   // FreeBSD 10.0
   // Linux 2.6.27
   if (0 != ::pipe2(fds.data(), flags)) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 #else
   if (0 != ::pipe(fds.data())) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 
   set_file_status fl(flags);
@@ -170,7 +171,7 @@ pipe(int flags = 0) {
     close(fds[0]);
     close(fds[1]);
 
-    return stdx::make_unexpected(fcntl_res.error());
+    return stdx::unexpected(fcntl_res.error());
   }
 
   fcntl_res = fcntl(fds[1], fl);
@@ -178,7 +179,7 @@ pipe(int flags = 0) {
     close(fds[0]);
     close(fds[1]);
 
-    return stdx::make_unexpected(fcntl_res.error());
+    return stdx::unexpected(fcntl_res.error());
   }
 #endif
 
@@ -196,12 +197,12 @@ inline stdx::expected<size_t, std::error_code> write(file_handle_type handle,
 #if defined(_WIN32)
   DWORD transfered{0};
   if (0 == ::WriteFile(handle, buf, buf_len, &transfered, nullptr)) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 #else
   ssize_t transfered = ::write(handle, buf, buf_len);
   if (-1 == transfered) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 #endif
 
@@ -218,12 +219,12 @@ inline stdx::expected<size_t, std::error_code> read(file_handle_type handle,
 #if defined(_WIN32)
   DWORD transfered{0};
   if (0 == ::ReadFile(handle, buf, buf_len, &transfered, nullptr)) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 #else
   ssize_t transfered = ::read(handle, buf, buf_len);
   if (-1 == transfered) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 #endif
 
@@ -243,7 +244,7 @@ inline stdx::expected<void, std::error_code> close(
   if (0 != ::close(native_handle))
 #endif
   {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
   return {};
 }  // namespace file

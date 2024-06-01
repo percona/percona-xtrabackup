@@ -1,15 +1,16 @@
-/* Copyright (c) 2010, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -67,19 +68,15 @@ class Sql_cmd_analyze_table : public Sql_cmd_ddl_table {
     Specifies which (if any) of the commands UPDATE HISTOGRAM or DROP HISTOGRAM
     that is specified after ANALYZE TABLE tbl.
   */
-  enum class Histogram_command {
-    NONE,              ///< Neither UPDATE or DROP histogram is specified
-    UPDATE_HISTOGRAM,  ///< UPDATE HISTOGRAM ... is specified after ANALYZE
-                       ///< TABLE
-    DROP_HISTOGRAM     ///< DROP HISTOGRAM ... is specified after ANALYZE TABLE
-  };
+  enum class Histogram_command { NONE, UPDATE_HISTOGRAM, DROP_HISTOGRAM };
 
   /**
     Constructor, used to represent a ANALYZE TABLE statement.
   */
   Sql_cmd_analyze_table(THD *thd, Alter_info *alter_info,
                         Histogram_command histogram_command,
-                        int histogram_buckets, LEX_STRING data);
+                        int histogram_buckets, LEX_STRING data,
+                        bool histogram_auto_update);
 
   bool execute(THD *thd) override;
 
@@ -107,6 +104,9 @@ class Sql_cmd_analyze_table : public Sql_cmd_ddl_table {
   /// The histogram json literal for update
   const LEX_STRING m_data;
 
+  /// True if AUTO UPDATE was specified by the user in UPDATE HISTOGRAM.
+  bool m_histogram_auto_update;
+
   /// @return The histogram command specified, if any.
   Histogram_command get_histogram_command() const {
     return m_histogram_command;
@@ -117,6 +117,9 @@ class Sql_cmd_analyze_table : public Sql_cmd_ddl_table {
 
   /// @return The histogram json literal specified in UPDATE HISTOGRAM.
   LEX_STRING get_histogram_data_string() const { return m_data; }
+
+  /// @return True if AUTO UPDATE was specified in UPDATE HISTOGRAM.
+  bool get_histogram_auto_update() const { return m_histogram_auto_update; }
 
   /// @return The fields specified in UPDATE/DROP HISTOGRAM
   const columns_set &get_histogram_fields() const { return m_histogram_fields; }
@@ -144,7 +147,8 @@ class Sql_cmd_analyze_table : public Sql_cmd_ddl_table {
     @param table The table specified in ANALYZE TABLE
     @param results A map where the results of the operations will be stored.
 
-    @return false on success, true on error.
+    @return False on success, true if a fatal error was encountered when
+    updating histograms, or if no histograms were updated.
   */
   bool update_histogram(THD *thd, Table_ref *table,
                         histograms::results_map &results);
@@ -170,11 +174,22 @@ class Sql_cmd_analyze_table : public Sql_cmd_ddl_table {
     the changes depending on success or failure. If histograms were modified we
     update the current snapshot of the table's histograms on the TABLE_SHARE.
 
+    After the histogram command has been handled we check whether a fatal error
+    was encountered:
+
+    - If not we send the result of histogram operations back to the client as a
+      result set along with any errors in the diagnostics area. The diagnostics
+      area is cleared following this operation.
+
+    - If a fatal error was encountered we propagate the error up and leave the
+      diagnostics area as it is.
+
     @param thd Thread handler.
     @param table The table specified in ANALYZE TABLE
 
-    @return True if sending the results of the histogram operations fails. False
-    otherwise (even if the histogram operations themselves fail).
+    @return True if a fatal error was encountered or if sending the results of
+    the histogram operations fails. False otherwise (even if the histogram
+    operations themselves fail, without a fatal error).
   */
   bool handle_histogram_command(THD *thd, Table_ref *table);
 

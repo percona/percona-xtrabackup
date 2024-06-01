@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -170,6 +171,7 @@ Note: YYTHD is passed as an argument to yyparse(), and subsequently to yylex().
 #include "strxnmov.h"
 #include "thr_lock.h"
 #include "violite.h"
+#include "sql/tablesample.h"
 
 /* this is to get the bison compilation windows warnings out */
 #ifdef _MSC_VER
@@ -562,7 +564,7 @@ void warn_on_deprecated_user_defined_collation(
   2. We should not introduce new shift/reduce conflicts any more.
 */
 
-%expect 63
+%expect 59
 
 /*
    MAINTAINER:
@@ -910,30 +912,30 @@ void warn_on_deprecated_user_defined_collation(
 %token  LOOP_SYM 547
 %token  LOW_PRIORITY 548
 %token  LT 549                            /* OPERATOR */
-%token<lexer.keyword> MASTER_AUTO_POSITION_SYM 550
-%token  MASTER_BIND_SYM 551
-%token<lexer.keyword> MASTER_CONNECT_RETRY_SYM 552
-%token<lexer.keyword> MASTER_DELAY_SYM 553
-%token<lexer.keyword> MASTER_HOST_SYM 554
-%token<lexer.keyword> MASTER_LOG_FILE_SYM 555
-%token<lexer.keyword> MASTER_LOG_POS_SYM 556
-%token<lexer.keyword> MASTER_PASSWORD_SYM 557
-%token<lexer.keyword> MASTER_PORT_SYM 558
-%token<lexer.keyword> MASTER_RETRY_COUNT_SYM 559
-/* %token<lexer.keyword> MASTER_SERVER_ID_SYM 560 */ /* UNUSED */
-%token<lexer.keyword> MASTER_SSL_CAPATH_SYM 561
-%token<lexer.keyword> MASTER_TLS_VERSION_SYM 562
-%token<lexer.keyword> MASTER_SSL_CA_SYM 563
-%token<lexer.keyword> MASTER_SSL_CERT_SYM 564
-%token<lexer.keyword> MASTER_SSL_CIPHER_SYM 565
-%token<lexer.keyword> MASTER_SSL_CRL_SYM 566
-%token<lexer.keyword> MASTER_SSL_CRLPATH_SYM 567
-%token<lexer.keyword> MASTER_SSL_KEY_SYM 568
-%token<lexer.keyword> MASTER_SSL_SYM 569
-%token  MASTER_SSL_VERIFY_SERVER_CERT_SYM 570
+%token<lexer.keyword> OBSOLETE_TOKEN_550 550 /* was: MASTER_AUTO_POSITION_SYM */
+%token OBSOLETE_TOKEN_551 551 /* was: MASTER_BIND_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_552 552 /* was: MASTER_CONNECT_RETRY_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_553 553 /* was: MASTER_DELAY_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_554 554 /* was: MASTER_HOST_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_555 555 /* was: MASTER_LOG_FILE_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_556 556 /* was: MASTER_LOG_POS_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_557 557 /* was: MASTER_PASSWORD_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_558 558 /* was: MASTER_PORT_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_559 559 /* was: MASTER_RETRY_COUNT_SYM */
+/* %token<lexer.keyword> OBSOLETE_TOKEN_560 560 */ /* was: MASTER_SERVER_ID_SYM | UNUSED */
+%token<lexer.keyword> OBSOLETE_TOKEN_561 561 /* was: MASTER_SSL_CAPATH_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_562 562 /* was: MASTER_TLS_VERSION_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_563 563 /* was: MASTER_SSL_CA_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_564 564 /* was: MASTER_SSL_CERT_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_565 565 /* was: MASTER_SSL_CIPHER_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_566 566 /* was: MASTER_SSL_CRL_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_567 567 /* was: MASTER_SSL_CRLPATH_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_568 568 /* was: MASTER_SSL_KEY_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_569 569 /* was: MASTER_SSL_SYM */
+%token  OBSOLETE_TOKEN_570 570 /* was: MASTER_SSL_VERIFY_SERVER_CERT_SYM */
 %token<lexer.keyword> MASTER_SYM 571
-%token<lexer.keyword> MASTER_USER_SYM 572
-%token<lexer.keyword> MASTER_HEARTBEAT_PERIOD_SYM 573
+%token<lexer.keyword> OBSOLETE_TOKEN_572 572 /* was: MASTER_USER_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_573 573 /* was: MASTER_HEARTBEAT_PERIOD_SYM */
 %token  MATCH 574                         /* SQL-2003-R */
 %token<lexer.keyword> MAX_CONNECTIONS_PER_HOUR 575
 %token<lexer.keyword> MAX_QUERIES_PER_HOUR 576
@@ -1330,8 +1332,8 @@ void warn_on_deprecated_user_defined_collation(
 %token<lexer.keyword> RESOURCE_SYM 963          /* MYSQL */
 %token  SYSTEM_SYM 964                    /* SQL-2003-R */
 %token<lexer.keyword> VCPU_SYM 965              /* MYSQL */
-%token<lexer.keyword> MASTER_PUBLIC_KEY_PATH_SYM 966    /* MYSQL */
-%token<lexer.keyword> GET_MASTER_PUBLIC_KEY_SYM 967     /* MYSQL */
+%token<lexer.keyword> OBSOLETE_TOKEN_966 966    /* was: MASTER_PUBLIC_KEY_PATH_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_967 967    /* was: GET_MASTER_PUBLIC_KEY_SYM */
 %token<lexer.keyword> RESTART_SYM 968                   /* SQL-2003-N */
 %token<lexer.keyword> DEFINITION_SYM 969                /* MYSQL */
 %token<lexer.keyword> DESCRIPTION_SYM 970               /* MYSQL */
@@ -1353,10 +1355,10 @@ void warn_on_deprecated_user_defined_collation(
 %token<lexer.keyword> OJ_SYM 986                        /* ODBC */
 %token<lexer.keyword> NETWORK_NAMESPACE_SYM 987         /* MYSQL */
 %token<lexer.keyword> RANDOM_SYM 988                    /* MYSQL */
-%token<lexer.keyword> MASTER_COMPRESSION_ALGORITHM_SYM 989 /* MYSQL */
-%token<lexer.keyword> MASTER_ZSTD_COMPRESSION_LEVEL_SYM 990  /* MYSQL */
+%token<lexer.keyword> OBSOLETE_TOKEN_989 989 /* was: MASTER_COMPRESSION_ALGORITHM_SYM */
+%token<lexer.keyword> OBSOLETE_TOKEN_990 990  /* was: MASTER_ZSTD_COMPRESSION_LEVEL_SYM */
 %token<lexer.keyword> PRIVILEGE_CHECKS_USER_SYM 991     /* MYSQL */
-%token<lexer.keyword> MASTER_TLS_CIPHERSUITES_SYM 992   /* MYSQL */
+%token<lexer.keyword> OBSOLETE_TOKEN_992 992   /* was: MASTER_TLS_CIPHERSUITES_SYM */
 %token<lexer.keyword> REQUIRE_ROW_FORMAT_SYM 993        /* MYSQL */
 %token<lexer.keyword> PASSWORD_LOCK_TIME_SYM 994        /* MYSQL */
 %token<lexer.keyword> FAILED_LOGIN_ATTEMPTS_SYM 995     /* MYSQL */
@@ -1429,9 +1431,9 @@ void warn_on_deprecated_user_defined_collation(
 %token<lexer.keyword> INITIAL_SYM                1197      /* SQL-2016-R */
 %token<lexer.keyword> CHALLENGE_RESPONSE_SYM     1198      /* MYSQL */
 
-%token<lexer.keyword> GTID_ONLY_SYM 1199                       /* MYSQL */
+%token<lexer.keyword> GTID_ONLY_SYM 1199                   /* MYSQL */
 
-%token                INTERSECT_SYM              1200 /* SQL-1992-R */
+%token                INTERSECT_SYM 1200                     /* SQL-1992-R */
 
 %token<lexer.keyword> BULK_SYM                   1201  /* MYSQL */
 %token<lexer.keyword> URL_SYM                    1202   /* MYSQL */
@@ -1439,7 +1441,7 @@ void warn_on_deprecated_user_defined_collation(
 
 %token                DOLLAR_QUOTED_STRING_SYM   1204   /* INTERNAL (used in lexer) */
 
-%token<lexer.keyword> PARSE_TREE_SYM     1205      /* MYSQL */
+%token<lexer.keyword> PARSE_TREE_SYM             1205   /* MYSQL */
 
 %token<lexer.keyword> LOG_SYM                    1206   /* MYSQL */
 %token<lexer.keyword> GTIDS_SYM                  1207   /* MYSQL */
@@ -1447,6 +1449,17 @@ void warn_on_deprecated_user_defined_collation(
 %token<lexer.keyword> PARALLEL_SYM       1208      /* MYSQL */
 %token<lexer.keyword> S3_SYM             1209      /* MYSQL */
 %token<lexer.keyword> QUALIFY_SYM        1210      /* MYSQL */
+
+%token<lexer.keyword> AUTO_SYM                   1211   /* MYSQL */
+%token<lexer.keyword> MANUAL_SYM                 1212   /* MYSQL */
+%token<lexer.keyword> BERNOULLI_SYM              1213  /* SQL-2016-N */
+%token<lexer.keyword> TABLESAMPLE_SYM            1214  /* SQL-2016-R */
+
+/*
+  NOTE! When adding new non-standard keywords, make sure they are added to the
+  list ident_keywords_unambiguous lest they become reserved keywords.
+*/
+
 /*
   Precedence rules used to resolve the ambiguity when using keywords as idents
   in the case e.g.:
@@ -1495,7 +1508,7 @@ void warn_on_deprecated_user_defined_collation(
 %right  NOT_SYM NOT2_SYM
 %right  BINARY_SYM COLLATE_SYM
 %left  INTERVAL_SYM
-%left SUBQUERY_AS_EXPR
+%left  PREFER_PARENTHESES
 %left '(' ')'
 
 %left EMPTY_FROM_CLAUSE
@@ -1532,6 +1545,7 @@ void warn_on_deprecated_user_defined_collation(
         json_attribute
         opt_channel
         opt_explain_for_schema
+        opt_compression_algorithm
 
 %type <lex_str_list> TEXT_STRING_sys_list
 
@@ -1559,6 +1573,7 @@ void warn_on_deprecated_user_defined_collation(
         view_check_option
         signed_num
         opt_ignore_unknown_user
+        opt_histogram_num_buckets
 
 
 %type <order_direction>
@@ -1637,6 +1652,7 @@ void warn_on_deprecated_user_defined_collation(
         in_expression_user_variable_assignment
         rvalue_system_or_user_variable
         install_set_rvalue
+        sampling_percentage
 
 %type <item_string> window_name opt_existing_window_name
 
@@ -1787,11 +1803,12 @@ void warn_on_deprecated_user_defined_collation(
         opt_interval
         opt_source_order
         opt_load_algorithm
+        opt_histogram_auto_update
 
 %type <show_cmd_type> opt_show_cmd_type
 
 /*
-  A bit field of SLAVE_IO, SLAVE_SQL flags.
+  A bit field of REPLICA_IO, REPLICA_SQL flags.
 */
 %type <num> opt_replica_thread_option_list
 %type <num> replica_thread_option_list
@@ -1808,6 +1825,8 @@ void warn_on_deprecated_user_defined_collation(
 
 %type <order_list> order_list group_list gorder_list opt_gorder_clause
       alter_order_list opt_partition_clause opt_window_order_by_clause
+
+%type<tablesample> opt_tablesample_clause
 
 %type <c_str> field_length opt_field_length type_datetime_precision
         opt_place
@@ -1833,6 +1852,7 @@ void warn_on_deprecated_user_defined_collation(
         table_reference_list table_reference_list_parens explicit_table
 
 %type <olap_type> olap_opt
+%type <tablesample_type> sampling_method
 
 %type <group> opt_group_clause
 
@@ -1985,7 +2005,6 @@ void warn_on_deprecated_user_defined_collation(
         show_function_status_stmt
         show_grants_stmt
         show_keys_stmt
-        show_master_status_stmt
         show_open_tables_stmt
         show_parse_tree_stmt
         show_plugins_stmt
@@ -2398,7 +2417,7 @@ simple_statement:
         | analyze_table_stmt
         | binlog_base64_event           { $$= nullptr; }
         | call_stmt
-        | change                        { $$= nullptr; }
+        | change_replication_stmt       { $$= nullptr; }
         | check_table_stmt
         | checksum                      { $$= nullptr; }
         | clone_stmt                    { $$= nullptr; }
@@ -2489,7 +2508,6 @@ simple_statement:
         | show_function_status_stmt
         | show_grants_stmt
         | show_keys_stmt
-        | show_master_status_stmt
         | show_open_tables_stmt
         | show_parse_tree_stmt
         | show_plugins_stmt
@@ -2624,24 +2642,15 @@ help:
           }
         ;
 
-/* change master */
+/* change replication source */
 
-change_replication_source:
-          MASTER_SYM
-          {
-            push_deprecated_warn(YYTHD, "CHANGE MASTER",
-                                        "CHANGE REPLICATION SOURCE");
-          }
-        | REPLICATION SOURCE_SYM
-        ;
-
-change:
-          CHANGE change_replication_source TO_SYM
+change_replication_stmt:
+          CHANGE REPLICATION SOURCE_SYM TO_SYM
           {
             LEX *lex = Lex;
-            lex->sql_command = SQLCOM_CHANGE_MASTER;
+            lex->sql_command = SQLCOM_CHANGE_REPLICATION_SOURCE;
             /*
-              Clear LEX_MASTER_INFO struct. repl_ignore_server_ids is cleared
+              Clear LEX_SOURCE_INFO struct. repl_ignore_server_ids is cleared
               in THD::cleanup_after_query. So it is guaranteed to be empty here.
             */
             assert(Lex->mi.repl_ignore_server_ids.empty());
@@ -2649,7 +2658,7 @@ change:
           }
           source_defs opt_channel
           {
-            if (Lex->set_channel_name($6))
+            if (Lex->set_channel_name($7))
               MYSQL_YYABORT;  // OOM
           }
         | CHANGE REPLICATION FILTER_SYM
@@ -2873,235 +2882,8 @@ source_defs:
         | source_defs ',' source_def
         ;
 
-change_replication_source_auto_position:
-          MASTER_AUTO_POSITION_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_AUTO_POSITION",
-                                        "SOURCE_AUTO_POSITION");
-
-          }
-        | SOURCE_AUTO_POSITION_SYM
-        ;
-
-change_replication_source_host:
-          MASTER_HOST_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_HOST",
-                                        "SOURCE_HOST");
-          }
-        | SOURCE_HOST_SYM
-        ;
-
-change_replication_source_bind:
-          MASTER_BIND_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_BIND",
-                                        "SOURCE_BIND");
-
-          }
-        | SOURCE_BIND_SYM
-        ;
-
-change_replication_source_user:
-          MASTER_USER_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_USER",
-                                        "SOURCE_USER");
-          }
-        | SOURCE_USER_SYM
-        ;
-
-change_replication_source_password:
-          MASTER_PASSWORD_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_PASSWORD",
-                                        "SOURCE_PASSWORD");
-          }
-        | SOURCE_PASSWORD_SYM
-        ;
-
-change_replication_source_port:
-          MASTER_PORT_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_PORT",
-                                        "SOURCE_PORT");
-          }
-        | SOURCE_PORT_SYM
-        ;
-
-change_replication_source_connect_retry:
-          MASTER_CONNECT_RETRY_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_CONNECT_RETRY",
-                                        "SOURCE_CONNECT_RETRY");
-          }
-        | SOURCE_CONNECT_RETRY_SYM
-        ;
-
-change_replication_source_retry_count:
-          MASTER_RETRY_COUNT_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_RETRY_COUNT",
-                                        "SOURCE_RETRY_COUNT");
-          }
-        | SOURCE_RETRY_COUNT_SYM
-        ;
-
-change_replication_source_delay:
-          MASTER_DELAY_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_DELAY",
-                                        "SOURCE_DELAY");
-          }
-        | SOURCE_DELAY_SYM
-        ;
-
-change_replication_source_ssl:
-          MASTER_SSL_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_SSL",
-                                        "SOURCE_SSL");
-          }
-        | SOURCE_SSL_SYM
-        ;
-
-change_replication_source_ssl_ca:
-          MASTER_SSL_CA_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_SSL_CA",
-                                        "SOURCE_SSL_CA");
-          }
-        | SOURCE_SSL_CA_SYM
-        ;
-
-change_replication_source_ssl_capath:
-          MASTER_SSL_CAPATH_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_SSL_CAPATH",
-                                        "SOURCE_SSL_CAPATH");
-          }
-        | SOURCE_SSL_CAPATH_SYM
-        ;
-
-change_replication_source_ssl_cipher:
-          MASTER_SSL_CIPHER_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_SSL_CIPHER",
-                                        "SOURCE_SSL_CIPHER");
-          }
-        | SOURCE_SSL_CIPHER_SYM
-        ;
-
-change_replication_source_ssl_crl:
-          MASTER_SSL_CRL_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_SSL_CRL",
-                                        "SOURCE_SSL_CRL");
-          }
-        | SOURCE_SSL_CRL_SYM
-        ;
-
-change_replication_source_ssl_crlpath:
-          MASTER_SSL_CRLPATH_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_SSL_CRLPATH",
-                                        "SOURCE_SSL_CRLPATH");
-          }
-        | SOURCE_SSL_CRLPATH_SYM
-        ;
-
-change_replication_source_ssl_key:
-          MASTER_SSL_KEY_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_SSL_KEY",
-                                        "SOURCE_SSL_KEY");
-          }
-        | SOURCE_SSL_KEY_SYM
-        ;
-
-change_replication_source_ssl_verify_server_cert:
-          MASTER_SSL_VERIFY_SERVER_CERT_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_SSL_VERIFY_SERVER_CERT",
-                                        "SOURCE_SSL_VERIFY_SERVER_CERT");
-          }
-        | SOURCE_SSL_VERIFY_SERVER_CERT_SYM
-        ;
-
-change_replication_source_tls_version:
-          MASTER_TLS_VERSION_SYM
-          {
-             push_deprecated_warn(YYTHD, "MASTER_TLS_VERSION",
-                                         "SOURCE_TLS_VERSION");
-          }
-        | SOURCE_TLS_VERSION_SYM
-        ;
-
-change_replication_source_tls_ciphersuites:
-          MASTER_TLS_CIPHERSUITES_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_TLS_CIPHERSUITES",
-                                        "SOURCE_TLS_CIPHERSUITES");
-          }
-        | SOURCE_TLS_CIPHERSUITES_SYM
-        ;
-
-change_replication_source_ssl_cert:
-          MASTER_SSL_CERT_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_SSL_CERT",
-                                        "SOURCE_SSL_CERT");
-          }
-        | SOURCE_SSL_CERT_SYM
-        ;
-
-change_replication_source_public_key:
-          MASTER_PUBLIC_KEY_PATH_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_PUBLIC_KEY_PATH",
-                                        "SOURCE_PUBLIC_KEY_PATH");
-          }
-        | SOURCE_PUBLIC_KEY_PATH_SYM
-        ;
-
-change_replication_source_get_source_public_key:
-          GET_MASTER_PUBLIC_KEY_SYM
-          {
-            push_deprecated_warn(YYTHD, "GET_MASTER_PUBLIC_KEY",
-                                        "GET_SOURCE_PUBLIC_KEY");
-          }
-        | GET_SOURCE_PUBLIC_KEY_SYM
-        ;
-
-change_replication_source_heartbeat_period:
-          MASTER_HEARTBEAT_PERIOD_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_HEARTBEAT_PERIOD",
-                                        "SOURCE_HEARTBEAT_PERIOD");
-          }
-        | SOURCE_HEARTBEAT_PERIOD_SYM
-        ;
-
-change_replication_source_compression_algorithm:
-          MASTER_COMPRESSION_ALGORITHM_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_COMPRESSION_ALGORITHM",
-                                        "SOURCE_COMPRESSION_ALGORITHM");
-          }
-        | SOURCE_COMPRESSION_ALGORITHM_SYM
-        ;
-
-change_replication_source_zstd_compression_level:
-          MASTER_ZSTD_COMPRESSION_LEVEL_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_ZSTD_COMPRESSION_LEVEL",
-                                        "SOURCE_ZSTD_COMPRESSION_LEVEL");
-          }
-        | SOURCE_ZSTD_COMPRESSION_LEVEL_SYM
-        ;
-
 source_def:
-          change_replication_source_host EQ TEXT_STRING_sys_nonewline
+          SOURCE_HOST_SYM EQ TEXT_STRING_sys_nonewline
           {
             Lex->mi.host = $3.str;
           }
@@ -3109,15 +2891,15 @@ source_def:
           {
             Lex->mi.network_namespace = $3.str;
           }
-        | change_replication_source_bind EQ TEXT_STRING_sys_nonewline
+        | SOURCE_BIND_SYM EQ TEXT_STRING_sys_nonewline
           {
             Lex->mi.bind_addr = $3.str;
           }
-        | change_replication_source_user EQ TEXT_STRING_sys_nonewline
+        | SOURCE_USER_SYM EQ TEXT_STRING_sys_nonewline
           {
             Lex->mi.user = $3.str;
           }
-        | change_replication_source_password EQ TEXT_STRING_sys_nonewline
+        | SOURCE_PASSWORD_SYM EQ TEXT_STRING_sys_nonewline
           {
             Lex->mi.password = $3.str;
             if (strlen($3.str) > 32)
@@ -3127,95 +2909,95 @@ source_def:
             }
             Lex->contains_plaintext_password= true;
           }
-        | change_replication_source_port EQ ulong_num
+        | SOURCE_PORT_SYM EQ ulong_num
           {
             Lex->mi.port = $3;
           }
-        | change_replication_source_connect_retry EQ ulong_num
+        | SOURCE_CONNECT_RETRY_SYM EQ ulong_num
           {
             Lex->mi.connect_retry = $3;
           }
-        | change_replication_source_retry_count EQ ulong_num
+        | SOURCE_RETRY_COUNT_SYM EQ ulong_num
           {
             Lex->mi.retry_count= $3;
-            Lex->mi.retry_count_opt= LEX_MASTER_INFO::LEX_MI_ENABLE;
+            Lex->mi.retry_count_opt= LEX_SOURCE_INFO::LEX_MI_ENABLE;
           }
-        | change_replication_source_delay EQ ulong_num
+        | SOURCE_DELAY_SYM EQ ulong_num
           {
-            if ($3 > MASTER_DELAY_MAX)
+            if ($3 > SOURCE_DELAY_MAX)
             {
               const char *msg= YYTHD->strmake(@3.cpp.start, @3.cpp.end - @3.cpp.start);
               my_error(ER_SOURCE_DELAY_VALUE_OUT_OF_RANGE, MYF(0),
-                       msg, MASTER_DELAY_MAX);
+                       msg, SOURCE_DELAY_MAX);
             }
             else
               Lex->mi.sql_delay = $3;
           }
-        | change_replication_source_ssl EQ ulong_num
+        | SOURCE_SSL_SYM EQ ulong_num
           {
             Lex->mi.ssl= $3 ?
-              LEX_MASTER_INFO::LEX_MI_ENABLE : LEX_MASTER_INFO::LEX_MI_DISABLE;
+              LEX_SOURCE_INFO::LEX_MI_ENABLE : LEX_SOURCE_INFO::LEX_MI_DISABLE;
           }
-        | change_replication_source_ssl_ca EQ TEXT_STRING_sys_nonewline
+        | SOURCE_SSL_CA_SYM EQ TEXT_STRING_sys_nonewline
           {
             Lex->mi.ssl_ca= $3.str;
           }
-        | change_replication_source_ssl_capath EQ TEXT_STRING_sys_nonewline
+        | SOURCE_SSL_CAPATH_SYM EQ TEXT_STRING_sys_nonewline
           {
             Lex->mi.ssl_capath= $3.str;
           }
-        | change_replication_source_tls_version EQ TEXT_STRING_sys_nonewline
+        | SOURCE_TLS_VERSION_SYM EQ TEXT_STRING_sys_nonewline
           {
             Lex->mi.tls_version= $3.str;
           }
-        | change_replication_source_tls_ciphersuites EQ source_tls_ciphersuites_def
-        | change_replication_source_ssl_cert EQ TEXT_STRING_sys_nonewline
+        | SOURCE_TLS_CIPHERSUITES_SYM EQ source_tls_ciphersuites_def
+        | SOURCE_SSL_CERT_SYM EQ TEXT_STRING_sys_nonewline
           {
             Lex->mi.ssl_cert= $3.str;
           }
-        | change_replication_source_ssl_cipher EQ TEXT_STRING_sys_nonewline
+        | SOURCE_SSL_CIPHER_SYM EQ TEXT_STRING_sys_nonewline
           {
             Lex->mi.ssl_cipher= $3.str;
           }
-        | change_replication_source_ssl_key EQ TEXT_STRING_sys_nonewline
+        | SOURCE_SSL_KEY_SYM EQ TEXT_STRING_sys_nonewline
           {
             Lex->mi.ssl_key= $3.str;
           }
-        | change_replication_source_ssl_verify_server_cert EQ ulong_num
+        | SOURCE_SSL_VERIFY_SERVER_CERT_SYM EQ ulong_num
           {
             Lex->mi.ssl_verify_server_cert= $3 ?
-              LEX_MASTER_INFO::LEX_MI_ENABLE : LEX_MASTER_INFO::LEX_MI_DISABLE;
+              LEX_SOURCE_INFO::LEX_MI_ENABLE : LEX_SOURCE_INFO::LEX_MI_DISABLE;
           }
-        | change_replication_source_ssl_crl EQ TEXT_STRING_sys_nonewline
+        | SOURCE_SSL_CRL_SYM EQ TEXT_STRING_sys_nonewline
           {
             Lex->mi.ssl_crl= $3.str;
           }
-        | change_replication_source_ssl_crlpath EQ TEXT_STRING_sys_nonewline
+        | SOURCE_SSL_CRLPATH_SYM EQ TEXT_STRING_sys_nonewline
           {
             Lex->mi.ssl_crlpath= $3.str;
           }
-        | change_replication_source_public_key EQ TEXT_STRING_sys_nonewline
+        | SOURCE_PUBLIC_KEY_PATH_SYM EQ TEXT_STRING_sys_nonewline
           {
             Lex->mi.public_key_path= $3.str;
           }
-        | change_replication_source_get_source_public_key EQ ulong_num
+        | GET_SOURCE_PUBLIC_KEY_SYM EQ ulong_num
           {
             Lex->mi.get_public_key= $3 ?
-              LEX_MASTER_INFO::LEX_MI_ENABLE :
-              LEX_MASTER_INFO::LEX_MI_DISABLE;
+              LEX_SOURCE_INFO::LEX_MI_ENABLE :
+              LEX_SOURCE_INFO::LEX_MI_DISABLE;
           }
-        | change_replication_source_heartbeat_period EQ NUM_literal
+        | SOURCE_HEARTBEAT_PERIOD_SYM EQ NUM_literal
           {
             Item *num= $3;
             ITEMIZE(num, &num);
 
             Lex->mi.heartbeat_period= (float) num->val_real();
-            if (Lex->mi.heartbeat_period > SLAVE_MAX_HEARTBEAT_PERIOD ||
+            if (Lex->mi.heartbeat_period > REPLICA_MAX_HEARTBEAT_PERIOD ||
                 Lex->mi.heartbeat_period < 0.0)
             {
                const char format[]= "%d";
-               char buf[4*sizeof(SLAVE_MAX_HEARTBEAT_PERIOD) + sizeof(format)];
-               sprintf(buf, format, SLAVE_MAX_HEARTBEAT_PERIOD);
+               char buf[4*sizeof(REPLICA_MAX_HEARTBEAT_PERIOD) + sizeof(format)];
+               sprintf(buf, format, REPLICA_MAX_HEARTBEAT_PERIOD);
                my_error(ER_REPLICA_HEARTBEAT_VALUE_OUT_OF_RANGE, MYF(0), buf);
                MYSQL_YYABORT;
             }
@@ -3234,27 +3016,27 @@ source_def:
                              ER_THD(YYTHD, ER_REPLICA_HEARTBEAT_VALUE_OUT_OF_RANGE_MIN));
                 Lex->mi.heartbeat_period= 0.0;
               }
-              Lex->mi.heartbeat_opt=  LEX_MASTER_INFO::LEX_MI_DISABLE;
+              Lex->mi.heartbeat_opt=  LEX_SOURCE_INFO::LEX_MI_DISABLE;
             }
-            Lex->mi.heartbeat_opt=  LEX_MASTER_INFO::LEX_MI_ENABLE;
+            Lex->mi.heartbeat_opt=  LEX_SOURCE_INFO::LEX_MI_ENABLE;
           }
         | IGNORE_SERVER_IDS_SYM EQ '(' ignore_server_id_list ')'
           {
-            Lex->mi.repl_ignore_server_ids_opt= LEX_MASTER_INFO::LEX_MI_ENABLE;
+            Lex->mi.repl_ignore_server_ids_opt= LEX_SOURCE_INFO::LEX_MI_ENABLE;
            }
-        | change_replication_source_compression_algorithm EQ TEXT_STRING_sys
+        | SOURCE_COMPRESSION_ALGORITHM_SYM EQ TEXT_STRING_sys
           {
             Lex->mi.compression_algorithm = $3.str;
            }
-        | change_replication_source_zstd_compression_level EQ ulong_num
+        | SOURCE_ZSTD_COMPRESSION_LEVEL_SYM EQ ulong_num
           {
             Lex->mi.zstd_compression_level = $3;
            }
-        | change_replication_source_auto_position EQ ulong_num
+        | SOURCE_AUTO_POSITION_SYM EQ ulong_num
           {
             Lex->mi.auto_position= $3 ?
-              LEX_MASTER_INFO::LEX_MI_ENABLE :
-              LEX_MASTER_INFO::LEX_MI_DISABLE;
+              LEX_SOURCE_INFO::LEX_MI_ENABLE :
+              LEX_SOURCE_INFO::LEX_MI_DISABLE;
           }
         | PRIVILEGE_CHECKS_USER_SYM EQ privilege_check_def
         | REQUIRE_ROW_FORMAT_SYM EQ ulong_num
@@ -3262,11 +3044,11 @@ source_def:
             switch($3) {
             case 0:
                 Lex->mi.require_row_format =
-                  LEX_MASTER_INFO::LEX_MI_DISABLE;
+                  LEX_SOURCE_INFO::LEX_MI_DISABLE;
                 break;
             case 1:
                 Lex->mi.require_row_format =
-                  LEX_MASTER_INFO::LEX_MI_ENABLE;
+                  LEX_SOURCE_INFO::LEX_MI_ENABLE;
                 break;
             default:
               const char* wrong_value = YYTHD->strmake(@3.raw.start, @3.raw.length());
@@ -3279,11 +3061,11 @@ source_def:
             switch($3) {
             case 0:
                 Lex->mi.m_source_connection_auto_failover =
-                  LEX_MASTER_INFO::LEX_MI_DISABLE;
+                  LEX_SOURCE_INFO::LEX_MI_DISABLE;
                 break;
             case 1:
                 Lex->mi.m_source_connection_auto_failover =
-                  LEX_MASTER_INFO::LEX_MI_ENABLE;
+                  LEX_SOURCE_INFO::LEX_MI_ENABLE;
                 break;
             default:
                 YYTHD->syntax_error_at(@3);
@@ -3296,11 +3078,11 @@ source_def:
             switch($3) {
             case 0:
                 Lex->mi.m_gtid_only =
-                  LEX_MASTER_INFO::LEX_MI_DISABLE;
+                  LEX_SOURCE_INFO::LEX_MI_DISABLE;
                 break;
             case 1:
                 Lex->mi.m_gtid_only =
-                  LEX_MASTER_INFO::LEX_MI_ENABLE;
+                  LEX_SOURCE_INFO::LEX_MI_ENABLE;
                 break;
             default:
                 YYTHD->syntax_error_at(@3,
@@ -3341,34 +3123,34 @@ privilege_check_def:
 table_primary_key_check_def:
           STREAM_SYM
           {
-            Lex->mi.require_table_primary_key_check= LEX_MASTER_INFO::LEX_MI_PK_CHECK_STREAM;
+            Lex->mi.require_table_primary_key_check= LEX_SOURCE_INFO::LEX_MI_PK_CHECK_STREAM;
           }
         | ON_SYM
           {
-            Lex->mi.require_table_primary_key_check= LEX_MASTER_INFO::LEX_MI_PK_CHECK_ON;
+            Lex->mi.require_table_primary_key_check= LEX_SOURCE_INFO::LEX_MI_PK_CHECK_ON;
           }
         | OFF_SYM
           {
-            Lex->mi.require_table_primary_key_check= LEX_MASTER_INFO::LEX_MI_PK_CHECK_OFF;
+            Lex->mi.require_table_primary_key_check= LEX_SOURCE_INFO::LEX_MI_PK_CHECK_OFF;
           }
         | GENERATE_SYM
           {
-            Lex->mi.require_table_primary_key_check= LEX_MASTER_INFO::LEX_MI_PK_CHECK_GENERATE;
+            Lex->mi.require_table_primary_key_check= LEX_SOURCE_INFO::LEX_MI_PK_CHECK_GENERATE;
           }
         ;
 
 assign_gtids_to_anonymous_transactions_def:
           OFF_SYM
           {
-            Lex->mi.assign_gtids_to_anonymous_transactions_type = LEX_MASTER_INFO::LEX_MI_ANONYMOUS_TO_GTID_OFF;
+            Lex->mi.assign_gtids_to_anonymous_transactions_type = LEX_SOURCE_INFO::LEX_MI_ANONYMOUS_TO_GTID_OFF;
           }
         | LOCAL_SYM
           {
-            Lex->mi.assign_gtids_to_anonymous_transactions_type = LEX_MASTER_INFO::LEX_MI_ANONYMOUS_TO_GTID_LOCAL;
+            Lex->mi.assign_gtids_to_anonymous_transactions_type = LEX_SOURCE_INFO::LEX_MI_ANONYMOUS_TO_GTID_LOCAL;
           }
         | TEXT_STRING
           {
-            Lex->mi.assign_gtids_to_anonymous_transactions_type = LEX_MASTER_INFO::LEX_MI_ANONYMOUS_TO_GTID_UUID;
+            Lex->mi.assign_gtids_to_anonymous_transactions_type = LEX_SOURCE_INFO::LEX_MI_ANONYMOUS_TO_GTID_UUID;
             Lex->mi.assign_gtids_to_anonymous_transactions_manual_uuid = $1.str;
             if (!mysql::gtid::Uuid::is_valid($1.str, mysql::gtid::Uuid::TEXT_LENGTH))
             {
@@ -3382,49 +3164,31 @@ assign_gtids_to_anonymous_transactions_def:
 source_tls_ciphersuites_def:
           TEXT_STRING_sys_nonewline
           {
-            Lex->mi.tls_ciphersuites = LEX_MASTER_INFO::SPECIFIED_STRING;
+            Lex->mi.tls_ciphersuites = LEX_SOURCE_INFO::SPECIFIED_STRING;
             Lex->mi.tls_ciphersuites_string= $1.str;
           }
         | NULL_SYM
           {
-            Lex->mi.tls_ciphersuites = LEX_MASTER_INFO::SPECIFIED_NULL;
+            Lex->mi.tls_ciphersuites = LEX_SOURCE_INFO::SPECIFIED_NULL;
             Lex->mi.tls_ciphersuites_string = nullptr;
           }
         ;
 
-source_log_file:
-          MASTER_LOG_FILE_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_LOG_FILE",
-                                        "SOURCE_LOG_FILE");
-          }
-        | SOURCE_LOG_FILE_SYM
-        ;
-
-source_log_pos:
-          MASTER_LOG_POS_SYM
-          {
-            push_deprecated_warn(YYTHD, "MASTER_LOG_POS",
-                                        "SOURCE_LOG_POS");
-          }
-        | SOURCE_LOG_POS_SYM
-        ;
-
 source_file_def:
-          source_log_file EQ TEXT_STRING_sys_nonewline
+          SOURCE_LOG_FILE_SYM EQ TEXT_STRING_sys_nonewline
           {
             Lex->mi.log_file_name = $3.str;
           }
-        | source_log_pos EQ ulonglong_num
+        | SOURCE_LOG_POS_SYM EQ ulonglong_num
           {
             Lex->mi.pos = $3;
             /*
                If the user specified a value < BIN_LOG_HEADER_SIZE, adjust it
                instead of causing subsequent errors.
                We need to do it in this file, because only there we know that
-               MASTER_LOG_POS has been explicitely specified. On the contrary
-               in change_master() (sql_repl.cc) we cannot distinguish between 0
-               (MASTER_LOG_POS explicitely specified as 0) and 0 (unspecified),
+               SOURCE_LOG_POS has been explicitely specified. On the contrary
+               in change_master() (rpl_replica.cc) we cannot distinguish between 0
+               (SOURCE_LOG_POS_SYM explicitely specified as 0) and 0 (unspecified),
                whereas we want to distinguish (specified 0 means "read the binlog
                from 0" (4 in fact), unspecified means "don't change the position
                (keep the preceding value)").
@@ -5015,11 +4779,6 @@ sp_proc_stmt_statement:
             sp_head *sp= lex->sphead;
 
             sp->m_flags|= sp_get_flags_for_command(lex);
-            if (lex->sql_command == SQLCOM_CHANGE_DB)
-            { /* "USE db" doesn't work in a procedure */
-              my_error(ER_SP_BADSTATEMENT, MYF(0), "USE");
-              MYSQL_YYABORT;
-            }
 
             // Mark statement as belonging to a stored procedure:
             if (lex->m_sql_cmd != nullptr)
@@ -7483,7 +7242,7 @@ field_length:
         | '(' NUM ')'           { $$= $2.str; };
 
 opt_field_length:
-          %empty { $$= nullptr; /* use default length */ }
+          %empty %prec PREFER_PARENTHESES { $$= nullptr; /* use default length */ }
         | field_length
         ;
 
@@ -8983,13 +8742,13 @@ standalone_alter_commands:
           {
             $$= NEW_PTN PT_alter_table_import_partition_tablespace(@$, $3);
           }
-        | SECONDARY_LOAD_SYM
+        | SECONDARY_LOAD_SYM opt_use_partition
           {
-            $$= NEW_PTN PT_alter_table_secondary_load(@$);
+            $$= NEW_PTN PT_alter_table_secondary_load(@$, $2);
           }
-        | SECONDARY_UNLOAD_SYM
+        | SECONDARY_UNLOAD_SYM opt_use_partition
           {
-            $$= NEW_PTN PT_alter_table_secondary_unload(@$);
+            $$= NEW_PTN PT_alter_table_secondary_unload(@$, $2);
           }
         ;
 
@@ -9311,7 +9070,7 @@ group_replication_start:
           START_SYM GROUP_REPLICATION
           {
             LEX *lex = Lex;
-            lex->slave_connection.reset();
+            lex->replica_connection.reset();
             lex->sql_command = SQLCOM_START_GROUP_REPLICATION;
           }
         ;
@@ -9335,7 +9094,7 @@ group_replication_start_option:
 group_replication_user:
           USER EQ TEXT_STRING_sys_nonewline
           {
-            Lex->slave_connection.user = $3.str;
+            Lex->replica_connection.user = $3.str;
             if ($3.length == 0)
             {
               my_error(ER_GROUP_REPLICATION_USER_EMPTY_MSG, MYF(0));
@@ -9347,7 +9106,7 @@ group_replication_user:
 group_replication_password:
           PASSWORD EQ TEXT_STRING_sys_nonewline
           {
-            Lex->slave_connection.password = $3.str;
+            Lex->replica_connection.password = $3.str;
             Lex->contains_plaintext_password = true;
             if ($3.length > 32)
             {
@@ -9360,42 +9119,32 @@ group_replication_password:
 group_replication_plugin_auth:
           DEFAULT_AUTH_SYM EQ TEXT_STRING_sys_nonewline
           {
-            Lex->slave_connection.plugin_auth= $3.str;
+            Lex->replica_connection.plugin_auth= $3.str;
           }
         ;
-
-replica:
-        SLAVE { Lex->set_replication_deprecated_syntax_used(); }
-      | REPLICA_SYM
-      ;
-
 stop_replica_stmt:
-          STOP_SYM replica opt_replica_thread_option_list opt_channel
+          STOP_SYM REPLICA_SYM opt_replica_thread_option_list opt_channel
           {
             LEX *lex=Lex;
-            lex->sql_command = SQLCOM_SLAVE_STOP;
+            lex->sql_command = SQLCOM_REPLICA_STOP;
             lex->type = 0;
-            lex->slave_thd_opt= $3;
-            if (lex->is_replication_deprecated_syntax_used())
-              push_deprecated_warn(YYTHD, "STOP SLAVE", "STOP REPLICA");
+            lex->replica_thd_opt= $3;
             if (lex->set_channel_name($4))
               MYSQL_YYABORT;  // OOM
           }
         ;
 
 start_replica_stmt:
-          START_SYM replica opt_replica_thread_option_list
+          START_SYM REPLICA_SYM opt_replica_thread_option_list
           {
             LEX *lex=Lex;
             /* Clean previous replica connection values */
-            lex->slave_connection.reset();
-            lex->sql_command = SQLCOM_SLAVE_START;
+            lex->replica_connection.reset();
+            lex->sql_command = SQLCOM_REPLICA_START;
             lex->type = 0;
             /* We'll use mi structure for UNTIL options */
             lex->mi.set_unspecified();
-            lex->slave_thd_opt= $3;
-            if (lex->is_replication_deprecated_syntax_used())
-              push_deprecated_warn(YYTHD, "START SLAVE", "START REPLICA");
+            lex->replica_thd_opt= $3;
           }
           opt_replica_until
           opt_user_option opt_password_option
@@ -9405,12 +9154,12 @@ start_replica_stmt:
               It is not possible to set user's information when
               one is trying to start the SQL Thread.
             */
-            if ((Lex->slave_thd_opt & SLAVE_SQL) == SLAVE_SQL &&
-                (Lex->slave_thd_opt & SLAVE_IO) != SLAVE_IO &&
-                (Lex->slave_connection.user ||
-                 Lex->slave_connection.password ||
-                 Lex->slave_connection.plugin_auth ||
-                 Lex->slave_connection.plugin_dir))
+            if ((Lex->replica_thd_opt & REPLICA_SQL) == REPLICA_SQL &&
+                (Lex->replica_thd_opt & REPLICA_IO) != REPLICA_IO &&
+                (Lex->replica_connection.user ||
+                 Lex->replica_connection.password ||
+                 Lex->replica_connection.plugin_auth ||
+                 Lex->replica_connection.plugin_dir))
             {
               my_error(ER_SQLTHREAD_WITH_SECURE_REPLICA, MYF(0));
               MYSQL_YYABORT;
@@ -9480,7 +9229,7 @@ opt_user_option:
           %empty {}
         | USER EQ TEXT_STRING_sys
           {
-            Lex->slave_connection.user= $3.str;
+            Lex->replica_connection.user= $3.str;
           }
         ;
 
@@ -9488,7 +9237,7 @@ opt_password_option:
           %empty {}
         | PASSWORD EQ TEXT_STRING_sys
           {
-            Lex->slave_connection.password= $3.str;
+            Lex->replica_connection.password= $3.str;
             Lex->contains_plaintext_password= true;
           }
 
@@ -9496,7 +9245,7 @@ opt_default_auth_option:
           %empty {}
         | DEFAULT_AUTH_SYM EQ TEXT_STRING_sys
           {
-            Lex->slave_connection.plugin_auth= $3.str;
+            Lex->replica_connection.plugin_auth= $3.str;
           }
         ;
 
@@ -9504,7 +9253,7 @@ opt_plugin_dir_option:
           %empty {}
         | PLUGIN_DIR_SYM EQ TEXT_STRING_sys
           {
-            Lex->slave_connection.plugin_dir= $3.str;
+            Lex->replica_connection.plugin_dir= $3.str;
           }
         ;
 
@@ -9533,11 +9282,11 @@ replica_thread_option_list:
 replica_thread_option:
           SQL_THREAD
           {
-            $$= SLAVE_SQL;
+            $$= REPLICA_SQL;
           }
         | RELAY_THREAD
           {
-            $$= SLAVE_IO;
+            $$= REPLICA_IO;
           }
         ;
 
@@ -9545,7 +9294,7 @@ opt_replica_until:
           %empty
           {
             LEX *lex= Lex;
-            lex->mi.slave_until= false;
+            lex->mi.replica_until= false;
           }
         | UNTIL_SYM replica_until
           {
@@ -9567,7 +9316,7 @@ opt_replica_until:
                my_error(ER_BAD_REPLICA_UNTIL_COND, MYF(0));
                MYSQL_YYABORT;
             }
-            lex->mi.slave_until= true;
+            lex->mi.replica_until= true;
           }
         ;
 
@@ -9577,12 +9326,12 @@ replica_until:
         | SQL_BEFORE_GTIDS EQ TEXT_STRING_sys
           {
             Lex->mi.gtid= $3.str;
-            Lex->mi.gtid_until_condition= LEX_MASTER_INFO::UNTIL_SQL_BEFORE_GTIDS;
+            Lex->mi.gtid_until_condition= LEX_SOURCE_INFO::UNTIL_SQL_BEFORE_GTIDS;
           }
         | SQL_AFTER_GTIDS EQ TEXT_STRING_sys
           {
             Lex->mi.gtid= $3.str;
-            Lex->mi.gtid_until_condition= LEX_MASTER_INFO::UNTIL_SQL_AFTER_GTIDS;
+            Lex->mi.gtid_until_condition= LEX_SOURCE_INFO::UNTIL_SQL_AFTER_GTIDS;
           }
         | SQL_AFTER_MTS_GAPS
           {
@@ -9646,20 +9395,26 @@ analyze_table_stmt:
             if ($5.param) {
               $$= NEW_PTN PT_analyze_table_stmt(@$, YYMEM_ROOT, $2, $4,
                                                 $5.command, $5.param->num_buckets,
-                                                $5.columns, $5.param->data);
+                                                $5.columns, $5.param->data, $5.param->auto_update);
             } else {
               $$= NEW_PTN PT_analyze_table_stmt(@$, YYMEM_ROOT, $2, $4,
                                                 $5.command, 0,
-                                                $5.columns, {nullptr, 0});
+                                                $5.columns, {nullptr, 0}, false);
             }
           }
         ;
 
-opt_histogram_update_param:
+
+opt_histogram_auto_update:
+           %empty                { $$= false; }
+         | MANUAL_SYM UPDATE_SYM { $$= false; }
+         | AUTO_SYM UPDATE_SYM   { $$= true; }
+         ;
+
+opt_histogram_num_buckets:
           %empty
           {
-            $$.num_buckets= DEFAULT_NUMBER_OF_HISTOGRAM_BUCKETS;
-            $$.data= { nullptr, 0 };
+            $$= DEFAULT_NUMBER_OF_HISTOGRAM_BUCKETS;
           }
         | WITH NUM BUCKETS_SYM
           {
@@ -9673,13 +9428,21 @@ opt_histogram_update_param:
                        "ANALYZE TABLE");
               MYSQL_YYABORT;
             }
+            $$= num;
+          }
+        ;
 
-            $$.num_buckets= num;
+opt_histogram_update_param:
+          opt_histogram_num_buckets opt_histogram_auto_update
+          {
+            $$.num_buckets= $1;
+            $$.auto_update= $2;
             $$.data= { nullptr, 0 };
           }
         | USING DATA_SYM TEXT_STRING_literal
           {
             $$.num_buckets= 0;
+            $$.auto_update= false;
             $$.data= $3;
           }
         ;
@@ -9896,9 +9659,7 @@ opt_cache_key_list:
           %empty { $$= nullptr; }
         | key_or_index '(' opt_key_usage_list ')'
           {
-            init_index_hints($3, INDEX_HINT_USE,
-                             old_mode ? INDEX_HINT_MASK_JOIN
-                                      : INDEX_HINT_MASK_ALL);
+            init_index_hints($3, INDEX_HINT_USE, INDEX_HINT_MASK_ALL);
             $$= $3;
           }
         ;
@@ -9989,7 +9750,7 @@ select_stmt_with_into:
 
   Even if we define a query_expression not to have outer parentheses, we still
   get a shift/reduce conflict for the <subquery> rule, but we solve this by
-  using an artifical token SUBQUERY_AS_EXPR that has less priority than
+  using an artifical token PREFER_PARENTHESES that has less priority than
   parentheses. This ensures that the parser consumes as many parentheses as it
   can, and only when that fails will it try to reduce, and by then it will be
   clear from the lookahead token whether we have a subquery or just a
@@ -10026,7 +9787,7 @@ query_expression_body:
           {
             $$ = {$1, false};
           }
-        | query_expression_parens %prec SUBQUERY_AS_EXPR
+        | query_expression_parens %prec PREFER_PARENTHESES
           {
             $$ = {$1, true};
           }
@@ -10173,7 +9934,7 @@ explicit_table:
           {
             $$.init(YYMEM_ROOT);
             auto table= NEW_PTN
-                PT_table_factor_table_ident(@$, $2, nullptr, NULL_CSTR, nullptr);
+                PT_table_factor_table_ident(@$, $2, nullptr, NULL_CSTR, nullptr, nullptr);
             if ($$.push_back(table))
               MYSQL_YYABORT; // OOM
           }
@@ -11313,6 +11074,28 @@ sum_expr:
           }
         ;
 
+sampling_method:
+          SYSTEM_SYM     { $$= tablesample_type::SYSTEM_TABLESAMPLE_TYPE;    }
+        | BERNOULLI_SYM  { $$= tablesample_type::BERNOULLI_TABLESAMPLE_TYPE; }
+        ;
+
+sampling_percentage:
+           NUM_literal        { $$ = $1; }
+        | '@' ident_or_text   { $$ = NEW_PTN PTI_user_variable(@$, $2); }
+        | param_marker        { $$ = $1; }
+        ;
+
+opt_tablesample_clause:
+          %empty
+          {
+            /* empty */ { $$= nullptr; }
+          }
+        | TABLESAMPLE_SYM sampling_method '(' sampling_percentage ')'
+          {
+            $$= NEW_PTN PT_tablesample(@$,$2,$4);
+          }
+        ;
+
 window_func_call:       // Window functions which do not exist as set functions
           ROW_NUMBER_SYM '(' ')' windowing_clause
           {
@@ -12193,9 +11976,9 @@ single_table_parens:
         ;
 
 single_table:
-          table_ident opt_use_partition opt_table_alias opt_key_definition
+          table_ident opt_use_partition opt_table_alias opt_key_definition opt_tablesample_clause
           {
-            $$= NEW_PTN PT_table_factor_table_ident(@$, $1, $2, $3, $4);
+            $$= NEW_PTN PT_table_factor_table_ident(@$, $1, $2, $3, $4, $5);
           }
         ;
 
@@ -12361,7 +12144,7 @@ json_on_response:
 index_hint_clause:
           %empty
           {
-            $$= old_mode ?  INDEX_HINT_MASK_JOIN : INDEX_HINT_MASK_ALL;
+            $$= INDEX_HINT_MASK_ALL;
           }
         | FOR_SYM JOIN_SYM      { $$= INDEX_HINT_MASK_JOIN;  }
         | FOR_SYM ORDER_SYM BY  { $$= INDEX_HINT_MASK_ORDER; }
@@ -13837,25 +13620,14 @@ show_columns_stmt:
         ;
 
 show_binary_logs_stmt:
-          SHOW master_or_binary LOGS_SYM
+          SHOW BINARY_SYM LOGS_SYM
           {
-            if (Lex->is_replication_deprecated_syntax_used())
-            {
-              push_deprecated_warn(YYTHD, "SHOW MASTER LOGS", "SHOW BINARY LOGS");
-            }
             $$ = NEW_PTN PT_show_binlogs(@$);
           }
         ;
 
 show_replicas_stmt:
-          SHOW SLAVE HOSTS_SYM
-          {
-            Lex->set_replication_deprecated_syntax_used();
-            push_deprecated_warn(YYTHD, "SHOW SLAVE HOSTS", "SHOW REPLICAS");
-
-            $$ = NEW_PTN PT_show_replicas(@$);
-          }
-        | SHOW REPLICAS_SYM
+          SHOW REPLICAS_SYM
           {
             $$ = NEW_PTN PT_show_replicas(@$);
           }
@@ -14024,14 +13796,6 @@ show_create_view_stmt:
           }
         ;
 
-show_master_status_stmt:
-          SHOW MASTER_SYM STATUS_SYM
-          {
-            push_deprecated_warn(YYTHD, "SHOW MASTER STATUS", "SHOW BINARY LOG STATUS");
-            $$ = NEW_PTN PT_show_binary_log_status(@$);
-          }
-        ;
-
 show_binary_log_status_stmt:
           SHOW BINARY_SYM LOG_SYM STATUS_SYM
           {
@@ -14040,10 +13804,8 @@ show_binary_log_status_stmt:
         ;
 
 show_replica_status_stmt:
-          SHOW replica STATUS_SYM opt_channel
+          SHOW REPLICA_SYM STATUS_SYM opt_channel
           {
-            if (Lex->is_replication_deprecated_syntax_used())
-              push_deprecated_warn(YYTHD, "SHOW SLAVE STATUS", "SHOW REPLICA STATUS");
             $$ = NEW_PTN PT_show_replica_status(@$, $4);
           }
         ;
@@ -14125,22 +13887,6 @@ show_parse_tree_stmt:
 engine_or_all:
           ident_or_text
         | ALL           { $$ = {}; }
-        ;
-
-master_or_binary:
-          MASTER_SYM
-          {
-            Lex->set_replication_deprecated_syntax_used();
-          }
-        | BINARY_SYM
-        ;
-
-master_or_binary_logs_and_gtids:
-          MASTER_SYM
-          {
-            Lex->set_replication_deprecated_syntax_used();
-          }
-        | BINARY_SYM LOGS_SYM AND_SYM GTIDS_SYM
         ;
 
 opt_storage:
@@ -14508,31 +14254,16 @@ persisted_variable_ident:
         ;
 
 reset_option:
-          SLAVE
-            {
-              Lex->type|= REFRESH_SLAVE;
-              Lex->set_replication_deprecated_syntax_used();
-              push_deprecated_warn(YYTHD, "RESET SLAVE", "RESET REPLICA");
-            }
-          opt_replica_reset_options opt_channel
-          {
-            if (Lex->set_channel_name($4))
-              MYSQL_YYABORT;  // OOM
-          }
-        | REPLICA_SYM
+        REPLICA_SYM
           { Lex->type|= REFRESH_REPLICA; }
           opt_replica_reset_options opt_channel
           {
           if (Lex->set_channel_name($4))
             MYSQL_YYABORT;  // OOM
           }
-        | master_or_binary_logs_and_gtids
+        | BINARY_SYM LOGS_SYM AND_SYM GTIDS_SYM
           {
             Lex->type|= REFRESH_SOURCE;
-            if (Lex->is_replication_deprecated_syntax_used()){
-              Lex->type|= REFRESH_MASTER;
-              push_deprecated_warn(YYTHD, "RESET MASTER", "RESET BINARY LOGS AND GTIDS");
-            }
             /*
               RESET BINARY LOGS AND GTIDS should acquire global read lock
               in order to avoid any parallel transaction commits
@@ -14550,18 +14281,18 @@ reset_option:
         ;
 
 opt_replica_reset_options:
-          %empty      { Lex->reset_slave_info.all= false; }
-        | ALL         { Lex->reset_slave_info.all= true; }
+          %empty      { Lex->reset_replica_info.all= false; }
+        | ALL         { Lex->reset_replica_info.all= true; }
         ;
 
 source_reset_options:
           %empty {}
         | TO_SYM real_ulonglong_num
           {
-            if ($2 == 0 || $2 > MAX_ALLOWED_FN_EXT_RESET_MASTER)
+            if ($2 == 0 || $2 > MAX_ALLOWED_FN_EXT_RESET_BIN_LOGS)
             {
               my_error(ER_RESET_SOURCE_TO_VALUE_OUT_OF_RANGE, MYF(0),
-                       $2, MAX_ALLOWED_FN_EXT_RESET_MASTER);
+                       $2, MAX_ALLOWED_FN_EXT_RESET_BIN_LOGS);
               MYSQL_YYABORT;
             }
             else
@@ -14581,14 +14312,7 @@ purge:
         ;
 
 purge_options:
-          master_or_binary
-          {
-            if (Lex->is_replication_deprecated_syntax_used())
-            {
-              push_deprecated_warn(YYTHD, "PURGE MASTER LOGS TO", "PURGE BINARY LOGS TO");
-            }
-          }
-          LOGS_SYM purge_option
+          BINARY_SYM LOGS_SYM purge_option
         ;
 
 purge_option:
@@ -14633,6 +14357,10 @@ use:
           USE_SYM ident
           {
             LEX *lex=Lex;
+            if (lex->sphead) {
+              my_error(ER_SP_BADSTATEMENT, MYF(0), "USE");
+              MYSQL_YYABORT;
+            }
             lex->sql_command=SQLCOM_CHANGE_DB;
             lex->query_block->db= $2.str;
           }
@@ -14656,15 +14384,16 @@ load_stmt:
           table_ident                   /* 13 */
           opt_use_partition             /* 14 */
           opt_load_data_charset         /* 15 */
-          opt_xml_rows_identified_by    /* 16 */
-          opt_field_term                /* 17 */
-          opt_line_term                 /* 18 */
-          opt_ignore_lines              /* 19 */
-          opt_field_or_var_spec         /* 20 */
-          opt_load_data_set_spec        /* 21 */
-          opt_load_parallel             /* 22 */
-          opt_load_memory               /* 23 */
-          opt_load_algorithm            /* 24 */
+          opt_compression_algorithm     /* 16 */
+          opt_xml_rows_identified_by    /* 17 */
+          opt_field_term                /* 18 */
+          opt_line_term                 /* 19 */
+          opt_ignore_lines              /* 20 */
+          opt_field_or_var_spec         /* 21 */
+          opt_load_data_set_spec        /* 22 */
+          opt_load_parallel             /* 23 */
+          opt_load_memory               /* 24 */
+          opt_load_algorithm            /* 25 */
           {
             $$= NEW_PTN PT_load_table(@$, $2,  // data_or_xml
                                       $3,  // load_data_lock
@@ -14677,17 +14406,18 @@ load_stmt:
                                       $13, // table_ident
                                       $14, // opt_use_partition
                                       $15, // opt_load_data_charset
-                                      $16, // opt_xml_rows_identified_by
-                                      $17, // opt_field_term
-                                      $18, // opt_line_term
-                                      $19, // opt_ignore_lines
-                                      $20, // opt_field_or_var_spec
-                                      $21.set_var_list,// opt_load_data_set_spec
-                                      $21.set_expr_list,
-                                      $21.set_expr_str_list,
-                                      $22,  // opt_load_parallel
-                                      $23,  // opt_load_memory
-                                      $24); // opt_load_algorithm
+                                      $16, // opt_compression_algorithm
+                                      $17, // opt_xml_rows_identified_by
+                                      $18, // opt_field_term
+                                      $19, // opt_line_term
+                                      $20, // opt_ignore_lines
+                                      $21, // opt_field_or_var_spec
+                                      $22.set_var_list,// opt_load_data_set_spec
+                                      $22.set_expr_list,
+                                      $22.set_expr_str_list,
+                                      $23,  // opt_load_parallel
+                                      $24,  // opt_load_memory
+                                      $25); // opt_load_algorithm
           }
         ;
 
@@ -14720,15 +14450,19 @@ load_source_type:
 
 opt_source_count:
           %empty { $$= 0; }
-        | COUNT_SYM NUM { $$= atol($2.str); }
         | IDENT_sys NUM
           {
+            const long n_files= atol($2.str);
             // COUNT can be key word or identifier based on SQL mode
             if (my_strcasecmp(system_charset_info, $1.str, "count") != 0) {
               YYTHD->syntax_error_at(@1, "COUNT expected");
               YYABORT;
             }
-            $$= atol($2.str);
+            if (n_files == 0) {
+              YYTHD->syntax_error_at(@2, "The number of files cannot be zero");
+              MYSQL_YYABORT;
+            }
+            $$= n_files;
           }
         ;
 
@@ -14913,6 +14647,12 @@ opt_load_algorithm:
           %empty                    { $$ = false; }
         | ALGORITHM_SYM EQ BULK_SYM { $$ = true; }
         ;
+
+opt_compression_algorithm:
+          %empty                    { $$ = {}; }
+        | COMPRESSION_SYM EQ TEXT_STRING_sys { $$ = to_lex_cstring($3); }
+        ;
+
 
 opt_load_parallel:
           %empty              { $$ = 0; }
@@ -15573,10 +15313,12 @@ ident_keywords_unambiguous:
         | ATTRIBUTE_SYM
         | AUTHENTICATION_SYM
         | AUTOEXTEND_SIZE_SYM
+        | AUTO_SYM
         | AUTO_INC
         | AVG_ROW_LENGTH
         | AVG_SYM
         | BACKUP_SYM
+        | BERNOULLI_SYM
         | BINLOG_SYM
         | BIT_SYM %prec KEYWORD_USED_AS_IDENT
         | BLOCK_SYM
@@ -15679,7 +15421,6 @@ ident_keywords_unambiguous:
         | GEOMETRYCOLLECTION_SYM
         | GEOMETRY_SYM
         | GET_FORMAT
-        | GET_MASTER_PUBLIC_KEY_SYM
         | GET_SOURCE_PUBLIC_KEY_SYM
         | GRANTS
         | GROUP_REPLICATION
@@ -15721,32 +15462,8 @@ ident_keywords_unambiguous:
         | LOGFILE_SYM
         | LOGS_SYM
         | LOG_SYM
-        | MASTER_AUTO_POSITION_SYM
-        | MASTER_COMPRESSION_ALGORITHM_SYM
-        | MASTER_CONNECT_RETRY_SYM
-        | MASTER_DELAY_SYM
-        | MASTER_HEARTBEAT_PERIOD_SYM
-        | MASTER_HOST_SYM
         | NETWORK_NAMESPACE_SYM
-        | MASTER_LOG_FILE_SYM
-        | MASTER_LOG_POS_SYM
-        | MASTER_PASSWORD_SYM
-        | MASTER_PORT_SYM
-        | MASTER_PUBLIC_KEY_PATH_SYM
-        | MASTER_RETRY_COUNT_SYM
-        | MASTER_SSL_CAPATH_SYM
-        | MASTER_SSL_CA_SYM
-        | MASTER_SSL_CERT_SYM
-        | MASTER_SSL_CIPHER_SYM
-        | MASTER_SSL_CRLPATH_SYM
-        | MASTER_SSL_CRL_SYM
-        | MASTER_SSL_KEY_SYM
-        | MASTER_SSL_SYM
         | MASTER_SYM
-        | MASTER_TLS_CIPHERSUITES_SYM
-        | MASTER_TLS_VERSION_SYM
-        | MASTER_USER_SYM
-        | MASTER_ZSTD_COMPRESSION_LEVEL_SYM
         | MAX_CONNECTIONS_PER_HOUR
         | MAX_QUERIES_PER_HOUR
         | MAX_ROWS
@@ -16449,7 +16166,7 @@ table_lock:
 
             if (lock_type >= TL_WRITE_ALLOW_WRITE)
             {
-              /* LOCK TABLE ... WRITE/LOW_PRIORITY WRITE */
+              /* LOCK TABLE ... WRITE */
               mdl_lock_type= MDL_SHARED_NO_READ_WRITE;
             }
             else if (lock_type == TL_READ)
@@ -16472,11 +16189,6 @@ table_lock:
 lock_option:
           READ_SYM               { $$= TL_READ_NO_INSERT; }
         | WRITE_SYM              { $$= TL_WRITE_DEFAULT; }
-        | LOW_PRIORITY WRITE_SYM
-          {
-            $$= TL_WRITE_LOW_PRIORITY;
-            push_deprecated_warn(YYTHD, "LOW_PRIORITY WRITE", "WRITE");
-          }
         | READ_SYM LOCAL_SYM     { $$= TL_READ; }
         ;
 
@@ -17629,7 +17341,7 @@ table_subquery:
         ;
 
 subquery:
-          query_expression_parens %prec SUBQUERY_AS_EXPR
+          query_expression_parens %prec PREFER_PARENTHESES
           {
             $$= NEW_PTN PT_subquery(@$, $1);
           }
@@ -17711,7 +17423,7 @@ no_definer:
               We have to distinguish missing DEFINER-clause from case when
               CURRENT_USER specified as definer explicitly in order to properly
               handle CREATE TRIGGER statements which come to replication thread
-              from older master servers (i.e. to create non-suid trigger in this
+              from older source servers (i.e. to create non-suid trigger in this
               case).
             */
             YYTHD->lex->definer= nullptr;

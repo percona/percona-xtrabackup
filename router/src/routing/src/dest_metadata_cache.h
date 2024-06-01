@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -51,7 +52,6 @@ class DestMetadataCacheGroup final
                          const routing::RoutingStrategy routing_strategy,
                          const mysqlrouter::URIQuery &query,
                          const Protocol::Type protocol,
-                         const routing::Mode mode = routing::Mode::kUndefined,
                          metadata_cache::MetadataCacheAPIBase *cache_api =
                              metadata_cache::MetadataCacheAPI::instance());
 
@@ -138,9 +138,9 @@ class DestMetadataCacheGroup final
    *     [routing:metadata_read_only]
    *     ..
    *     destination =
-   * metadata_cache:///cluster_name/replicaset_name?allow_primary_reads=yes
+   * metadata_cache:///cluster_name/replicaset_name?role=PRIMARY_AND_SECONDARY
    *
-   * The 'allow_primary_reads' is part of uri_query_.
+   * The 'role' is part of uri_query_.
    */
   const mysqlrouter::URIQuery uri_query_;
 
@@ -173,8 +173,6 @@ class DestMetadataCacheGroup final
       bool primary_fallback);
 
   routing::RoutingStrategy routing_strategy_;
-
-  routing::Mode mode_;
 
   ServerRole server_role_;
 

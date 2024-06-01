@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2017, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -52,6 +53,7 @@
 #include "random_generator.h"
 #include "rest_api_testutils.h"
 #include "router_component_test.h"
+#include "router_config.h"        // MYSQL_ROUTER_VERSION
 #include "router_test_helpers.h"  // get_file_output
 #include "script_generator.h"
 #include "socket_operations.h"
@@ -431,6 +433,8 @@ class AccountReuseTestBase : public RouterComponentBootstrapTest {
       MockServerRestClient(server_http_port)
           .set_globals(
               "{"
+              "\"router_version\": \"" MYSQL_ROUTER_VERSION
+              "\","
               "\"custom_responses\": {" +
               custom_responses +
               "},"
@@ -499,12 +503,12 @@ class AccountReuseTestBase : public RouterComponentBootstrapTest {
     auto ai_res = net::impl::resolver::getaddrinfo(local_hostname.c_str(),
                                                    "3306", &hints);
     if (!ai_res) {
-      return stdx::make_unexpected(ai_res.error());
+      return stdx::unexpected(ai_res.error());
     }
 
     auto localhost_ip_res = net::ip::make_address("127.0.0.1");
     if (!localhost_ip_res) {
-      return stdx::make_unexpected(localhost_ip_res.error());
+      return stdx::unexpected(localhost_ip_res.error());
     }
 
     const auto localhost_ip = localhost_ip_res.value();
@@ -515,8 +519,7 @@ class AccountReuseTestBase : public RouterComponentBootstrapTest {
       net::ip::tcp::endpoint ep;
 
       if (ai->ai_addrlen > ep.capacity()) {
-        return stdx::make_unexpected(
-            make_error_code(std::errc::no_space_on_device));
+        return stdx::unexpected(make_error_code(std::errc::no_space_on_device));
       }
       std::memcpy(ep.data(), ai->ai_addr, ai->ai_addrlen);
       ep.resize(ai->ai_addrlen);
@@ -530,7 +533,7 @@ class AccountReuseTestBase : public RouterComponentBootstrapTest {
       }
     }
 
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         make_error_code(std::errc::no_such_file_or_directory));
   }
 
@@ -776,7 +779,8 @@ class AccountReuseTestBase : public RouterComponentBootstrapTest {
       const std::string &password = kAccountUserPassword) {
     return make_list(hostnames,
                      [&](const std::string &h) {
-                       return "'" + username + "'@'" + h + "' IDENTIFIED BY '" +
+                       return "'" + username + "'@'" + h +
+                              "' IDENTIFIED WITH `caching_sha2_password` BY '" +
                               password + "'";
                      }
 
@@ -1191,6 +1195,9 @@ TEST_F(AccountReuseTest, simple) {
   const uint16_t server_http_port = port_pool_.get_next_available();
 
   launch_mock_server(server_port, server_http_port);
+  set_mock_metadata(server_http_port, "00000000-0000-0000-0000-0000000000g1",
+                    classic_ports_to_gr_nodes({server_port}), 0, {server_port},
+                    0, false, "127.0.0.1", "", {2, 2, 0}, "mycluster");
 
   // run bootstrap
   ProcessWrapper &router =
@@ -4589,6 +4596,7 @@ TEST_F(RouterAccountHostTest, multiple_host_patterns) {
   // only difference that 1st time we run --bootstrap before the --account-host,
   // and second time we run it after
   const auto server_port = port_pool_.get_next_available();
+  const auto http_port = port_pool_.get_next_available();
 
   auto test_it = [&](const std::vector<std::string> &cmdline) -> void {
     const std::string json_stmts =
@@ -4597,11 +4605,15 @@ TEST_F(RouterAccountHostTest, multiple_host_patterns) {
             .str();
 
     // launch mock server that is our metadata server for the bootstrap
-    auto &server_mock =
-        launch_mysql_server_mock(json_stmts, server_port, EXIT_SUCCESS, false);
+    auto &server_mock = launch_mysql_server_mock(
+        json_stmts, server_port, EXIT_SUCCESS, false, http_port);
 
     // launch the router in bootstrap mode
     auto &router = launch_router_for_bootstrap(cmdline, EXIT_SUCCESS, true);
+    set_mock_metadata(http_port, "00000000-0000-0000-0000-0000000000g1",
+                      classic_ports_to_gr_nodes({server_port}), 0,
+                      {server_port}, 0, false, "127.0.0.1", "", {2, 2, 0},
+                      "mycluster");
 
     EXPECT_NO_THROW(router.wait_for_exit());
     // check if the bootstrapping was successful
@@ -4692,9 +4704,14 @@ TEST_F(RouterAccountHostTest, illegal_hostname) {
       get_data_dir().join("bootstrap_account_host_pattern_too_long.js").str();
   TempDirectory bootstrap_directory;
   const auto server_port = port_pool_.get_next_available();
+  const auto http_port = port_pool_.get_next_available();
 
   // launch mock server that is our metadata server for the bootstrap
-  launch_mysql_server_mock(json_stmts, server_port, EXIT_SUCCESS, false);
+  launch_mysql_server_mock(json_stmts, server_port, EXIT_SUCCESS, false,
+                           http_port);
+  set_mock_metadata(http_port, "00000000-0000-0000-0000-0000000000g1",
+                    classic_ports_to_gr_nodes({server_port}), 0, {server_port},
+                    0, false, "127.0.0.1", "", {2, 2, 0}, "mycluster");
 
   // launch the router in bootstrap mode
   auto &router = launch_router_for_bootstrap(
@@ -4721,14 +4738,19 @@ class RouterReportHostTest : public RouterComponentBootstrapTest {};
  */
 TEST_F(RouterReportHostTest, typical_usage) {
   const auto server_port = port_pool_.get_next_available();
+  const auto http_port = port_pool_.get_next_available();
 
   auto test_it = [&](const std::vector<std::string> &cmdline) -> void {
     const std::string json_stmts =
         get_data_dir().join("bootstrap_report_host.js").str();
 
     // launch mock server that is our metadata server for the bootstrap
-    auto &server_mock =
-        launch_mysql_server_mock(json_stmts, server_port, EXIT_SUCCESS, false);
+    auto &server_mock = launch_mysql_server_mock(
+        json_stmts, server_port, EXIT_SUCCESS, false, http_port);
+    set_mock_metadata(http_port, "00000000-0000-0000-0000-0000000000g1",
+                      classic_ports_to_gr_nodes({server_port}), 0,
+                      {server_port}, 0, false, "127.0.0.1", "", {2, 2, 0},
+                      "mycluster");
 
     // launch the router in bootstrap mode
     auto &router = launch_router_for_bootstrap(cmdline, EXIT_SUCCESS, true,

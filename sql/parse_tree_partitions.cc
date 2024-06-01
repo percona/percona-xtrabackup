@@ -1,15 +1,16 @@
-/* Copyright (c) 2016, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -387,7 +388,10 @@ bool PT_part_type_def::itemize_part_expr(Partition_parse_context *pc,
                                          const POS &pos, Item **item) {
   LEX *const lex = pc->thd->lex;
   lex->safe_to_cache_query = true;
+  lex->expr_allows_subquery = false;
   if ((*item)->itemize(pc, item)) return true;
+
+  lex->expr_allows_subquery = true;
 
   if (!lex->safe_to_cache_query) {
     error(pc, pos, ER_THD(pc->thd, ER_WRONG_EXPR_IN_PARTITION_FUNC_ERROR));

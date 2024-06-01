@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2023, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -108,14 +109,14 @@ class NodeAttributesTest : public RouterComponentMetadataTest {
     std::string routing_rw_section{""};
     if (!read_only) {
       routing_rw_section = get_metadata_cache_routing_section(
-          router_rw_port, "PRIMARY", "first-available", "", "rw");
+          router_rw_port, "PRIMARY", "first-available", "rw");
       routing_rw_section += get_metadata_cache_routing_section(
-          router_rw_x_port, "PRIMARY", "first-available", "", "x_rw", "x");
+          router_rw_x_port, "PRIMARY", "first-available", "x_rw", "x");
     }
     std::string routing_ro_section = get_metadata_cache_routing_section(
-        router_ro_port, "SECONDARY", "round-robin", "", "ro");
+        router_ro_port, "SECONDARY", "round-robin", "ro");
     routing_ro_section += get_metadata_cache_routing_section(
-        router_ro_x_port, "SECONDARY", "round-robin", "", "x_ro", "x");
+        router_ro_x_port, "SECONDARY", "round-robin", "x_ro", "x");
 
     router = &launch_router(metadata_cache_section,
                             routing_rw_section + routing_ro_section, node_ports,
@@ -711,9 +712,9 @@ TEST_P(NodesHiddenWithFallbackTest, PrimaryHidden) {
   const std::string metadata_cache_section =
       get_metadata_cache_section(GetParam().cluster_type);
   std::string routing_section = get_metadata_cache_routing_section(
-      router_rw_port, "PRIMARY", "round-robin", "", "rw");
+      router_rw_port, "PRIMARY", "round-robin", "rw");
   routing_section += get_metadata_cache_routing_section(
-      router_ro_port, "SECONDARY", "round-robin-with-fallback", "", "ro");
+      router_ro_port, "SECONDARY", "round-robin-with-fallback", "ro");
 
   launch_router(metadata_cache_section, routing_section, node_ports,
                 EXIT_SUCCESS,
@@ -785,9 +786,9 @@ TEST_P(NodesHiddenWithFallbackTest, SecondaryHidden) {
   const std::string metadata_cache_section =
       get_metadata_cache_section(GetParam().cluster_type);
   std::string routing_section = get_metadata_cache_routing_section(
-      router_rw_port, "PRIMARY", "round-robin", "", "rw");
+      router_rw_port, "PRIMARY", "round-robin", "rw");
   routing_section += get_metadata_cache_routing_section(
-      router_ro_port, "SECONDARY", "round-robin-with-fallback", "", "ro");
+      router_ro_port, "SECONDARY", "round-robin-with-fallback", "ro");
 
   launch_router(metadata_cache_section, routing_section, node_ports,
                 EXIT_SUCCESS,

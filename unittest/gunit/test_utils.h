@@ -1,15 +1,16 @@
-/* Copyright (c) 2011, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,12 +26,17 @@
 
 #include <string.h>
 #include <sys/types.h>
+#include <memory>
+#include <string_view>
 
 #include "gtest/gtest.h"
 #include "my_compiler.h"
 #include "my_sys.h"
 #include "mysql/components/services/bits/mysql_mutex_bits.h"
 #include "sql/error_handler.h"
+#include "sql/join_optimizer/optimizer_trace.h"
+#include "sql/opt_trace_context.h"
+#include "sql/sql_class.h"
 #include "sql/sql_error.h"
 
 class THD;
@@ -107,6 +113,44 @@ class DD_initializer {
   static void TearDown();
 };
 
+/// Enable unstructured trace for the lifetime of this object.
+class TraceGuard final {
+ public:
+  explicit TraceGuard(THD *thd) : m_context{&thd->opt_trace} {
+    // Start trace.
+    m_context->start(false, true, false, false, 0, 0, 0, 0);
+    m_context->set_unstructured_trace(&m_trace);
+  }
+
+  // No copying.
+  TraceGuard(const TraceGuard &) = delete;
+  TraceGuard &operator=(const TraceGuard &) = delete;
+
+  ~TraceGuard() {
+    m_context->set_unstructured_trace(nullptr);
+    // Stop trace.
+    m_context->end();
+  }
+
+  const TraceBuffer &contents() {
+    return m_context->unstructured_trace()->contents();
+  }
+
+ private:
+  /// The trace context in which we enable trace.
+  Opt_trace_context *m_context;
+  /// The trace.
+  UnstructuredTrace m_trace;
+};
+
 }  // namespace my_testing
+
+/// To allow SCOPED_TRACE(trace_buffer), as this requires
+/// "ostream << trace_buffer" to work.
+inline std::ostream &operator<<(std::ostream &stream,
+                                const TraceBuffer &buffer) {
+  buffer.ForEach([&](char ch) { stream << ch; });
+  return stream;
+}
 
 #endif  // TEST_UTILS_INCLUDED

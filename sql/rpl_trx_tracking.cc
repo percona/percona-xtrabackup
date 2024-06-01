@@ -1,15 +1,16 @@
-/* Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -295,28 +296,6 @@ void Writeset_trx_dependency_tracker::rotate(int64 start) {
 }
 
 /**
-  Get the writeset commit parent of transactions using the session dependencies.
-
-  @param[in]     thd             Current THD from which to extract trx context.
-  @param[in,out] sequence_number Sequence number of current transaction.
-  @param[in,out] commit_parent   Commit_parent of current transaction,
-                                 pre-filled with the commit_parent calculated
-                                 by the Write_set_trx_dependency_tracker as a
-                                 fall-back.
-*/
-void Writeset_session_trx_dependency_tracker::get_dependency(
-    THD *thd, int64 &sequence_number, int64 &commit_parent) {
-  int64 session_parent = thd->rpl_thd_ctx.dependency_tracker_ctx()
-                             .get_last_session_sequence_number();
-
-  if (session_parent != 0 && session_parent < sequence_number)
-    commit_parent = std::max(commit_parent, session_parent);
-
-  thd->rpl_thd_ctx.dependency_tracker_ctx().set_last_session_sequence_number(
-      sequence_number);
-}
-
-/**
   Get the dependencies in a transaction, the main entry point for the
   dependency tracking work.
 */
@@ -324,36 +303,8 @@ void Transaction_dependency_tracker::get_dependency(THD *thd,
                                                     int64 &sequence_number,
                                                     int64 &commit_parent) {
   sequence_number = commit_parent = 0;
-
-  switch (m_opt_tracking_mode) {
-    case DEPENDENCY_TRACKING_COMMIT_ORDER:
-      m_commit_order.get_dependency(thd, sequence_number, commit_parent);
-      break;
-    case DEPENDENCY_TRACKING_WRITESET:
-      m_commit_order.get_dependency(thd, sequence_number, commit_parent);
-      m_writeset.get_dependency(thd, sequence_number, commit_parent);
-      break;
-    case DEPENDENCY_TRACKING_WRITESET_SESSION:
-      m_commit_order.get_dependency(thd, sequence_number, commit_parent);
-      m_writeset.get_dependency(thd, sequence_number, commit_parent);
-      m_writeset_session.get_dependency(thd, sequence_number, commit_parent);
-      break;
-    default:
-      assert(0);  // blow up on debug
-      /*
-        Fallback to commit order on production builds.
-       */
-      m_commit_order.get_dependency(thd, sequence_number, commit_parent);
-  }
-}
-
-void Transaction_dependency_tracker::tracking_mode_changed() {
-  Logical_clock max_committed_transaction =
-      m_commit_order.get_max_committed_transaction();
-  int64 timestamp = max_committed_transaction.get_timestamp() -
-                    max_committed_transaction.get_offset();
-
-  m_writeset.rotate(timestamp);
+  m_commit_order.get_dependency(thd, sequence_number, commit_parent);
+  m_writeset.get_dependency(thd, sequence_number, commit_parent);
 }
 
 /**

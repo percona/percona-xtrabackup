@@ -1,15 +1,16 @@
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -110,8 +111,9 @@
 #include "sql/query_result.h"
 #include "sql/rpl_source.h"
 #include "sql/set_var.h"
-#include "sql/sp.h"        // sp_cache_routine
-#include "sql/sp_head.h"   // sp_head
+#include "sql/sp.h"       // sp_cache_routine
+#include "sql/sp_head.h"  // sp_head
+#include "sql/sp_rcontext.h"
 #include "sql/sql_base.h"  // close_thread_tables
 #include "sql/sql_bitmap.h"
 #include "sql/sql_check_constraint.h"
@@ -945,7 +947,7 @@ static struct show_privileges_st sys_privileges[] = {
     {"Show view", "Tables", "To see views with SHOW CREATE VIEW"},
     {"Shutdown", "Server Admin", "To shut down the server"},
     {"Super", "Server Admin",
-     "To use KILL thread, SET GLOBAL, CHANGE MASTER, etc."},
+     "To use KILL thread, SET GLOBAL, CHANGE REPLICATION SOURCE, etc."},
     {"Trigger", "Tables", "To use triggers"},
     {"Create tablespace", "Server Admin", "To create/alter/drop tablespaces"},
     {"Update", "Tables", "To update existing rows"},
@@ -1190,9 +1192,9 @@ bool mysqld_show_create(THD *thd, Table_ref *table_list) {
 
   buffer.length(0);
 
-  if (table_list->is_view())
+  if (table_list->is_view()) {
     buffer.set_charset(table_list->view_creation_ctx->get_client_cs());
-
+  }
   if (table_list->is_view())
     view_store_create_info(thd, table_list, &buffer);
   else if (store_create_info(thd, table_list, &buffer, nullptr,
@@ -1366,6 +1368,51 @@ bool mysqld_show_create_db(THD *thd, char *dbname,
   if (protocol->end_row()) return true;
   my_eof(thd);
   return false;
+}
+
+/****************************************************************************
+  Return only fields for API mysql_list_fields
+  Use "show table wildcard" in mysql instead of this
+****************************************************************************/
+void mysqld_list_fields(THD *thd, Table_ref *table_list, const char *wild) {
+  DBUG_TRACE;
+  DBUG_PRINT("enter", ("table: %s", table_list->table_name));
+  if (open_tables_for_query(thd, table_list,
+                            MYSQL_OPEN_FORCE_SHARED_HIGH_PRIO_MDL))
+    return;
+  if (table_list->is_view_or_derived()) {
+    // Setup materialized result table so that we can read the column list
+    if (table_list->resolve_derived(thd, false))
+      return; /* purecov: inspected */
+    if (table_list->setup_materialized_derived(thd))
+      return; /* purecov: inspected */
+  }
+  TABLE *table = table_list->table;
+  mem_root_deque<Item *> field_list(thd->mem_root);
+  Field **ptr, *field;
+  for (ptr = table->field; (field = *ptr); ptr++) {
+    if (!wild || !wild[0] ||
+        !wild_case_compare(system_charset_info, field->field_name, wild)) {
+      Item *item;
+      if (table_list->is_view()) {
+        item = new Item_ident_for_show(field, table_list->db,
+                                       table_list->table_name);
+        (void)item->fix_fields(thd, nullptr);
+      } else {
+        item = new Item_field(field);
+      }
+      field_list.push_back(item);
+    }
+  }
+  restore_record(table, s->default_values);  // Get empty record
+  table->use_all_columns();
+  if (thd->send_result_metadata(field_list, Protocol::SEND_DEFAULTS)) return;
+  if (table_list->is_view_or_derived()) {
+    close_tmp_table(table);
+    free_tmp_table(table);
+    table_list->table = nullptr;
+  }
+  my_eof(thd);
 }
 
 /*
@@ -2000,8 +2047,6 @@ bool store_create_info(THD *thd, Table_ref *table_list, String *packet,
     // Skip hidden system fields.
     if (field->is_hidden_by_system()) continue;
 
-    const enum_field_types field_type = field->real_type();
-
     if (ptr != first_field) packet->append(STRING_WITH_LEN(",\n"));
 
     packet->append(STRING_WITH_LEN("  "));
@@ -2015,14 +2060,6 @@ bool store_create_info(THD *thd, Table_ref *table_list, String *packet,
       type.set_charset(system_charset_info);
 
     field->sql_type(type);
-    /*
-      If the session variable 'show_old_temporals' is enabled and the field
-      is a temporal type of old format, add a comment to indicate the same.
-    */
-    if (thd->variables.show_old_temporals &&
-        (field_type == MYSQL_TYPE_TIME || field_type == MYSQL_TYPE_DATETIME ||
-         field_type == MYSQL_TYPE_TIMESTAMP))
-      type.append(" /* 5.5 binary format */");
     packet->append(type.ptr(), type.length(), system_charset_info);
 
     bool column_has_explicit_collation = false;
@@ -2792,17 +2829,25 @@ class List_process_list : public Do_THD_Impl {
       const LEX_CSTRING inspect_sctx_host = inspect_sctx->host();
       const LEX_CSTRING inspect_sctx_host_or_ip = inspect_sctx->host_or_ip();
 
-      {
-        MUTEX_LOCK(grd, &inspect_thd->LOCK_thd_protocol);
-
-        if ((!(inspect_thd->get_protocol() &&
-               inspect_thd->get_protocol()->connection_alive()) &&
-             !inspect_thd->system_thread) ||
-            (m_user && (inspect_thd->system_thread || !inspect_sctx_user.str ||
-                        strcmp(inspect_sctx_user.str, m_user)))) {
-          return;
-        }
+      /*
+        Since we only access a cached value of connection_alive, which is
+        also an atomic, we do not need to lock LOCK_thd_protocol here. We
+        may get a value that is slightly outdated, but we will not get a crash
+        due to reading invalid memory at least.
+      */
+      if (!inspect_thd->is_connected(true) ||
+          (m_user && (inspect_thd->system_thread || !inspect_sctx_user.str ||
+                      strcmp(inspect_sctx_user.str, m_user)))) {
+        return;
       }
+
+      DBUG_EXECUTE_IF(
+          "enable_debug_sync_after_reading_sp_sctx",
+          if (inspect_thd->sp_runtime_ctx != nullptr &&
+              (strcmp(inspect_thd->sp_runtime_ctx->sp->m_name.str, "proc") ==
+               0)) {
+            DEBUG_SYNC(m_client_thd, "after_reading_security_context");
+          });
 
       thd_info = new (m_client_thd->mem_root) thread_info;
 
@@ -3040,14 +3085,25 @@ class Fill_process_list : public Do_THD_Impl {
               ? NullS
               : client_priv_user;
 
-      {
-        MUTEX_LOCK(grd, &inspect_thd->LOCK_thd_protocol);
-        if ((!inspect_thd->get_protocol()->connection_alive() &&
-             !inspect_thd->system_thread) ||
-            (user && (inspect_thd->system_thread || !inspect_sctx_user.str ||
-                      strcmp(inspect_sctx_user.str, user))))
-          return;
+      /*
+        Since we only access a cached value of connection_alive, which is
+        also an atomic, we do not need to lock LOCK_thd_protocol here. We
+        may get a value that is slightly outdated, but we will not get a crash
+        due to reading invalid memory at least.
+      */
+      if (!inspect_thd->is_connected(true) ||
+          (user && (inspect_thd->system_thread || !inspect_sctx_user.str ||
+                    strcmp(inspect_sctx_user.str, user)))) {
+        return;
       }
+
+      DBUG_EXECUTE_IF(
+          "enable_debug_sync_after_reading_sp_sctx",
+          if (inspect_thd->sp_runtime_ctx != nullptr &&
+              (strcmp(inspect_thd->sp_runtime_ctx->sp->m_name.str, "proc") ==
+               0)) {
+            DEBUG_SYNC(m_client_thd, "after_reading_security_context");
+          });
 
       DBUG_EXECUTE_IF(
           "test_fill_proc_with_x_root",
@@ -4893,36 +4949,6 @@ struct run_hton_fill_schema_table_args {
   Item *cond;
 };
 
-static bool run_hton_fill_schema_table(THD *thd, plugin_ref plugin, void *arg) {
-  auto *args = (run_hton_fill_schema_table_args *)arg;
-  handlerton *hton = plugin_data<handlerton *>(plugin);
-  if (hton->fill_is_table && hton->state == SHOW_OPTION_YES)
-    hton->fill_is_table(hton, thd, args->tables, args->cond,
-                        get_schema_table_idx(args->tables->schema_table));
-  return false;
-}
-
-static int hton_fill_schema_table(THD *thd, Table_ref *tables, Item *cond) {
-  DBUG_TRACE;
-
-  struct run_hton_fill_schema_table_args args;
-  args.tables = tables;
-  args.cond = cond;
-
-  /* INFORMATION_SCHEMA.TABLESPACES is deprecated in 8.0 by WL#14064.
-   * This should be removed in 9.0 (or next GA) by WL#14065 */
-  if (!my_strcasecmp(system_charset_info, tables->table_name, "TABLESPACES"))
-    push_warning_printf(thd, Sql_condition::SL_WARNING,
-                        ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT,
-                        ER_THD(thd, ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT),
-                        "INFORMATION_SCHEMA.TABLESPACES");
-
-  plugin_foreach(thd, run_hton_fill_schema_table, MYSQL_STORAGE_ENGINE_PLUGIN,
-                 &args);
-
-  return 0;
-}
-
 ST_FIELD_INFO engines_fields_info[] = {
     {"ENGINE", 64, MYSQL_TYPE_STRING, 0, 0, "Engine", 0},
     {"SUPPORT", 8, MYSQL_TYPE_STRING, 0, 0, "Support", 0},
@@ -5027,25 +5053,6 @@ ST_FIELD_INFO plugin_fields_info[] = {
     {"LOAD_OPTION", 64, MYSQL_TYPE_STRING, 0, 0, nullptr, 0},
     {nullptr, 0, MYSQL_TYPE_STRING, 0, 0, nullptr, 0}};
 
-ST_FIELD_INFO tablespaces_fields_info[] = {
-    {"TABLESPACE_NAME", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 0, nullptr, 0},
-    {"ENGINE", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 0, nullptr, 0},
-    {"TABLESPACE_TYPE", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, MY_I_S_MAYBE_NULL,
-     nullptr, 0},
-    {"LOGFILE_GROUP_NAME", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0,
-     MY_I_S_MAYBE_NULL, nullptr, 0},
-    {"EXTENT_SIZE", 21, MYSQL_TYPE_LONGLONG, 0,
-     MY_I_S_MAYBE_NULL | MY_I_S_UNSIGNED, nullptr, 0},
-    {"AUTOEXTEND_SIZE", 21, MYSQL_TYPE_LONGLONG, 0,
-     MY_I_S_MAYBE_NULL | MY_I_S_UNSIGNED, nullptr, 0},
-    {"MAXIMUM_SIZE", 21, MYSQL_TYPE_LONGLONG, 0,
-     MY_I_S_MAYBE_NULL | MY_I_S_UNSIGNED, nullptr, 0},
-    {"NODEGROUP_ID", 21, MYSQL_TYPE_LONGLONG, 0,
-     MY_I_S_MAYBE_NULL | MY_I_S_UNSIGNED, nullptr, 0},
-    {"TABLESPACE_COMMENT", 2048, MYSQL_TYPE_STRING, 0, MY_I_S_MAYBE_NULL,
-     nullptr, 0},
-    {nullptr, 0, MYSQL_TYPE_STRING, 0, 0, nullptr, 0}};
-
 ST_FIELD_INFO tmp_table_columns_fields_info[] = {
     {"COLUMN_NAME", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 0, "Field", 0},
     {"COLUMN_TYPE", 65535, MYSQL_TYPE_STRING, 0, 0, "Type", 0},
@@ -5091,8 +5098,6 @@ ST_SCHEMA_TABLE schema_tables[] = {
      false},
     {"SCHEMA_PRIVILEGES", schema_privileges_fields_info,
      fill_schema_schema_privileges, nullptr, nullptr, false},
-    {"TABLESPACES", tablespaces_fields_info, hton_fill_schema_table, nullptr,
-     nullptr, false},
     {"TABLE_PRIVILEGES", table_privileges_fields_info,
      fill_schema_table_privileges, nullptr, nullptr, false},
     {"USER_PRIVILEGES", user_privileges_fields_info,
@@ -5139,7 +5144,7 @@ int finalize_schema_table(st_plugin_int *plugin) {
   if (schema_table) {
     if (plugin->plugin->deinit) {
       DBUG_PRINT("info", ("Deinitializing plugin: '%s'", plugin->name.str));
-      if (plugin->plugin->deinit(nullptr)) {
+      if (plugin->plugin->deinit(plugin)) {
         DBUG_PRINT("warning", ("Plugin '%s' deinit function returned error.",
                                plugin->name.str));
       }

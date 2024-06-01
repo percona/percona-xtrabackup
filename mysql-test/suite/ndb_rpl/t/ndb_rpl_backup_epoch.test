@@ -1,6 +1,6 @@
 --source include/have_multi_ndb.inc
 --source include/have_binlog_format_mixed_or_row.inc
---source suite/ndb_rpl/ndb_master-slave.inc
+--source suite/ndb_rpl/ndb_rpl_init_source_replica.inc
 --source suite/ndb/include/backup_restore_setup.inc
 
 --echo Test to show that combination of Backup + Restore and
@@ -46,7 +46,7 @@
 #    applied twice and the test would fail @12.
 
 --connection slave
-stop slave;
+STOP REPLICA;
 
 --connection master
 use test;
@@ -113,7 +113,7 @@ select max(a) from test.ticker;
 use test;
 create table ticker (a int primary key) engine=ndb;
 
-start slave;
+START REPLICA;
 
 --connection master
 --sync_slave_with_master
@@ -132,7 +132,7 @@ while($backup_count)
 {
   --echo Restore backup on the slave
   --connection slave
-  stop slave;
+  STOP REPLICA;
   truncate table test.ticker;
   delete from mysql.ndb_apply_status;
 
@@ -153,11 +153,11 @@ while($backup_count)
   #--echo Backup epoch of backup $backup_id is $backup_epoch
 
   --let $the_epoch = $backup_epoch
-  --source suite/ndb_rpl/t/ndb_rpl_change_master_to_epoch.inc
+  --source suite/ndb_rpl/t/ndb_rpl_change_replication_source_to_epoch.inc
 
   --connection slave
 
-  start slave;
+  START REPLICA;
 
   --connection master
   --sync_slave_with_master
@@ -171,16 +171,16 @@ while($backup_count)
   #select * from test.ticker order by a;
 
   --echo Now check Binlog apply alone
-  stop slave;
+  STOP REPLICA;
   truncate table test.ticker;
   delete from mysql.ndb_apply_status;
 
   --let $the_epoch = $backup_epoch
-  --source suite/ndb_rpl/t/ndb_rpl_change_master_to_epoch.inc
+  --source suite/ndb_rpl/t/ndb_rpl_change_replication_source_to_epoch.inc
 
   --connection slave
 
-  start slave;
+  START REPLICA;
 
   --connection master
   --sync_slave_with_master
@@ -223,10 +223,10 @@ drop table ticker;
 reset binary logs and gtids;
 
 --connection slave
-#start slave;
+#start replica;
 
 --remove_file $outfile
 
 --connection master
 --source suite/ndb/include/backup_restore_cleanup.inc
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

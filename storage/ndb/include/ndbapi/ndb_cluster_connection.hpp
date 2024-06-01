@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2004, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -41,6 +42,55 @@ class Ndb_cluster_connection_node_iter {
 
 class Ndb;
 class NdbWaitGroup;
+class LogHandler;
+
+/**
+ * NdbApiLogConsumer
+ *
+ * An object of this type can be passed to the
+ * Ndb_cluster_connection::set_log_consumer() method to define custom
+ * handling of NdbApi internal log messages.
+ * NdbApi will call this object's log() method every time an NdbApi
+ * event occurs.
+ *
+ * Ndb_cluster_connection::set_log_consumer(nullptr) should be called
+ * before the supplied NdbApiLogConsumer is deleted.
+ */
+class NdbApiLogConsumer {
+ public:
+  virtual ~NdbApiLogConsumer() = default;
+  enum LogLevel {
+    LL_ON,
+    LL_DEBUG,
+    LL_INFO,
+    LL_WARNING,
+    LL_ERROR,
+    LL_CRITICAL,
+    LL_ALERT,
+    LL_ALL
+  };
+
+  /**
+   * getLogLevelName
+   *
+   * Function returning a string describing the passed loglevel.
+   */
+  static const char *getLogLevelName(LogLevel ll);
+
+  /**
+   * log
+   *
+   * This function is called when NdbApi has an event of interest to
+   * report.
+   *
+   * Parameters :
+   *   LogLevel   The log level
+   *   Category   The log event category string
+   *   Message    The log event message
+   */
+  virtual void log(LogLevel level, const char *category,
+                   const char *message) = 0;
+};
 
 /**
  * @class Ndb_cluster_connection
@@ -197,6 +247,25 @@ class Ndb_cluster_connection {
   int set_timeout(int timeout_ms);
 
   /**
+   * Set log consumer
+   *
+   * Supply a consumer which will be passed NdbApi internal informational
+   * log messages for output.
+   *
+   * This consumer will be used for all NdbApi logging in the process, even
+   * with multiple ndb cluster connections in a process.
+   *
+   * The consumer must exist until all ndb_cluster_connections in the
+   * process are deleted, or the log consumer is set to NULL.
+   *
+   * Setting to NULL reverts to the default behaviour.
+   *
+   * @param log_consumer Pointer to log consumer.  Setting NULL reverts to the
+   *                     default behaviour.
+   */
+  static void set_log_consumer(NdbApiLogConsumer *log_consumer);
+
+  /**
    * Connect to a cluster management server
    *
    * @param no_retries specifies the number of retries to attempt
@@ -215,7 +284,7 @@ class Ndb_cluster_connection {
    *        -1 = non-recoverable error
    */
   int connect(int no_retries = 30, int retry_delay_in_seconds = 1,
-              int verbose = 0);
+              int verbose = 1);
 
 #ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   int start_connect_thread(int (*connect_callback)(void) = nullptr);

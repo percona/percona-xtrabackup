@@ -1,15 +1,16 @@
-/* Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -302,7 +303,8 @@ class Basic_binlog_file_reader : public IBasic_binlog_file_reader {
         m_data_istream(&m_error, &m_ifile, max_event_size),
         m_object_istream(&m_error, &m_data_istream),
         m_fde(BINLOG_VERSION, ::server_version),
-        m_verify_checksum(verify_checksum) {}
+        m_verify_checksum(verify_checksum),
+        m_file_name("") {}
 
   Basic_binlog_file_reader(const Basic_binlog_file_reader &) = delete;
   Basic_binlog_file_reader(const Basic_binlog_file_reader &&) = delete;
@@ -340,6 +342,7 @@ class Basic_binlog_file_reader : public IBasic_binlog_file_reader {
       *fdle = fd;
     else
       delete fd;
+    m_file_name = file_name;
     return false;
   }
   /**
@@ -409,6 +412,7 @@ class Basic_binlog_file_reader : public IBasic_binlog_file_reader {
     @brief Resets the error. Sets it to Binlog_read_error::SUCCESS.
    */
   void reset_error() { m_error.set_type(Binlog_read_error::SUCCESS); }
+  const char *get_file_name() const { return m_file_name; }
 
  private:
   Binlog_read_error m_error;
@@ -420,6 +424,7 @@ class Basic_binlog_file_reader : public IBasic_binlog_file_reader {
 
   mysql::binlog::event::Format_description_event m_fde;
   bool m_verify_checksum = false;
+  const char *m_file_name{""};
   my_off_t m_event_start_pos = 0;
 
   /**

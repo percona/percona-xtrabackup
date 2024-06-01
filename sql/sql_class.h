@@ -1,15 +1,16 @@
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -921,6 +922,24 @@ using Event_tracking_data =
 using Event_tracking_data_stack = std::stack<Event_tracking_data>;
 
 /**
+  Base class for secondary engine statement context objects. Secondary
+  storage engines may create classes derived from this one which
+  contain state they need to preserve in lifecycle of this query.
+*/
+class Secondary_engine_statement_context {
+ public:
+  /**
+    Destructs the secondary engine statement context object. It is
+    called after the query execution has completed. Secondary engines
+    may override the destructor in subclasses and add code that
+    performs cleanup tasks that are needed after query execution.
+  */
+  virtual ~Secondary_engine_statement_context() = default;
+
+  virtual bool is_primary_engine_optimal() const { return true; }
+};
+
+/**
   @class THD
   For each client connection we create a separate thread with THD serving as
   a thread/connection descriptor
@@ -1045,6 +1064,12 @@ class THD : public MDL_context_owner,
   */
   String m_rewritten_query;
 
+  /**
+    Current query's secondary engine statement context.
+  */
+  std::unique_ptr<Secondary_engine_statement_context>
+      m_secondary_engine_statement_context;
+
  public:
   /* Used to execute base64 coded binlog events in MySQL server */
   Relay_log_info *rli_fake;
@@ -1069,6 +1094,18 @@ class THD : public MDL_context_owner,
     ha_data associated with it and memorizes the fact of that.
   */
   void rpl_detach_engine_ha_data();
+
+  /*
+   Set secondary_engine_statement_context to new context.
+   This function assumes existing m_secondary_engine_statement_context is empty,
+   such that there's only context throughout the query's lifecycle.
+  */
+  void set_secondary_engine_statement_context(
+      std::unique_ptr<Secondary_engine_statement_context> context);
+
+  Secondary_engine_statement_context *secondary_engine_statement_context() {
+    return m_secondary_engine_statement_context.get();
+  }
 
   /**
     When the thread is a binlog or slave applier it reattaches the engine
@@ -1125,6 +1162,7 @@ class THD : public MDL_context_owner,
     @sa system_status_var::last_query_cost
   */
   double m_current_query_cost;
+
   /**
     Current query partial plans.
     @sa system_status_var::last_query_partial_plans
@@ -1246,6 +1284,14 @@ class THD : public MDL_context_owner,
  private:
   mysql_mutex_t LOCK_query_plan;
 
+  /**
+    Keep a cached value saying whether the connection is alive. Update when
+    pushing, popping or getting the protocol. Used by
+    information_schema.processlist to avoid locking mutexes that might
+    affect performance.
+  */
+  std::atomic<bool> m_cached_is_connection_alive;
+
  public:
   /// Locks the query plan of this THD
   void lock_query_plan() { mysql_mutex_lock(&LOCK_query_plan); }
@@ -1276,7 +1322,18 @@ class THD : public MDL_context_owner,
   Security_context *m_security_ctx;
 
   Security_context *security_context() const { return m_security_ctx; }
-  void set_security_context(Security_context *sctx) { m_security_ctx = sctx; }
+  void set_security_context(Security_context *sctx) {
+    if (sctx == m_security_ctx) return;
+
+    /*
+      To prevent race conditions arising from concurrent threads executing
+      I_S.PROCESSLIST, a mutex LOCK_thd_security_ctx safeguards the security
+      context switch.
+    */
+    mysql_mutex_lock(&LOCK_thd_security_ctx);
+    m_security_ctx = sctx;
+    mysql_mutex_unlock(&LOCK_thd_security_ctx);
+  }
   List<Security_context> m_view_ctx_list;
 
   /**
@@ -1297,7 +1354,7 @@ class THD : public MDL_context_owner,
 
   const Protocol *get_protocol() const { return m_protocol; }
 
-  Protocol *get_protocol() { return m_protocol; }
+  Protocol *get_protocol();
 
   SSL_handle get_ssl() const {
 #ifndef NDEBUG
@@ -1323,10 +1380,7 @@ class THD : public MDL_context_owner,
     return pointer_cast<const Protocol_classic *>(m_protocol);
   }
 
-  Protocol_classic *get_protocol_classic() {
-    assert(is_classic_protocol());
-    return pointer_cast<Protocol_classic *>(m_protocol);
-  }
+  Protocol_classic *get_protocol_classic();
 
  private:
   Protocol *m_protocol;  // Current protocol
@@ -3202,7 +3256,7 @@ class THD : public MDL_context_owner,
   bool is_classic_protocol() const;
 
   /** Return false if connection to client is broken. */
-  bool is_connected() final;
+  bool is_connected(bool use_cached_connection_alive = false) final;
 
   /**
     Mark the current error as fatal. Warning: this does not
@@ -3331,6 +3385,7 @@ class THD : public MDL_context_owner,
 
   /**
     Restore locations set by calls to nocheck_register_item_tree_change().
+    Note that this needs to happen before Item::cleanup is called.
   */
   void rollback_item_tree_changes();
 
@@ -4576,7 +4631,7 @@ class THD : public MDL_context_owner,
     This is used by replication to decide if the I/O thread should be
     killed or not when stopping the replication threads.
 
-    In ordinary STOP SLAVE case, the I/O thread will wait for disk space
+    In ordinary STOP REPLICA case, the I/O thread will wait for disk space
     or to be killed regardless of this flag value.
 
     In server shutdown case, if this flag is true, the I/O thread will be
@@ -4646,6 +4701,7 @@ class THD : public MDL_context_owner,
   bool m_secondary_engine_forced{false};
 
   void cleanup_after_parse_error();
+
   /**
     Flag that indicates if the user of current session has SYSTEM_USER privilege
   */
@@ -4730,6 +4786,10 @@ class THD : public MDL_context_owner,
 
  private:
   std::unordered_map<unsigned int, void *> external_store_;
+
+ public:
+  /* Indicates if we are inside loadable function */
+  bool in_loadable_function{false};
 
  public:
   Event_tracking_data get_event_tracking_data() {

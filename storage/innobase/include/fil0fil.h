@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2023, Oracle and/or its affiliates.
+Copyright (c) 1995, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -2112,10 +2113,11 @@ inline fil_space_t *fil_space_get_sys_space() {
 @param[in]      parse_only      Don't apply, parse only
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
-[[nodiscard]] byte *fil_tablespace_redo_create(byte *ptr, const byte *end,
-                                               const page_id_t &page_id,
-                                               ulint parsed_bytes,
-                                               bool parse_only);
+[[nodiscard]] const byte *fil_tablespace_redo_create(const byte *ptr,
+                                                     const byte *end,
+                                                     const page_id_t &page_id,
+                                                     ulint parsed_bytes,
+                                                     bool parse_only);
 
 /** Redo a tablespace delete.
 @param[in]      ptr             redo log record
@@ -2125,10 +2127,11 @@ inline fil_space_t *fil_space_get_sys_space() {
 @param[in]      parse_only      Don't apply, parse only
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
-[[nodiscard]] byte *fil_tablespace_redo_delete(byte *ptr, const byte *end,
-                                               const page_id_t &page_id,
-                                               ulint parsed_bytes,
-                                               bool parse_only);
+[[nodiscard]] const byte *fil_tablespace_redo_delete(const byte *ptr,
+                                                     const byte *end,
+                                                     const page_id_t &page_id,
+                                                     ulint parsed_bytes,
+                                                     bool parse_only);
 
 /** Redo a tablespace rename.
 This function doesn't do anything, simply parses the redo log record.
@@ -2139,10 +2142,11 @@ This function doesn't do anything, simply parses the redo log record.
 @param[in]      parse_only      Don't apply, parse only
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
-[[nodiscard]] byte *fil_tablespace_redo_rename(byte *ptr, const byte *end,
-                                               const page_id_t &page_id,
-                                               ulint parsed_bytes,
-                                               bool parse_only);
+[[nodiscard]] const byte *fil_tablespace_redo_rename(const byte *ptr,
+                                                     const byte *end,
+                                                     const page_id_t &page_id,
+                                                     ulint parsed_bytes,
+                                                     bool parse_only);
 
 /** Redo a tablespace extend
 @param[in]      ptr             redo log record
@@ -2152,10 +2156,11 @@ This function doesn't do anything, simply parses the redo log record.
 @param[in]      parse_only      Don't apply the log if true
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
-[[nodiscard]] byte *fil_tablespace_redo_extend(byte *ptr, const byte *end,
-                                               const page_id_t &page_id,
-                                               ulint parsed_bytes,
-                                               bool parse_only);
+[[nodiscard]] const byte *fil_tablespace_redo_extend(const byte *ptr,
+                                                     const byte *end,
+                                                     const page_id_t &page_id,
+                                                     ulint parsed_bytes,
+                                                     bool parse_only);
 
 /** Parse and process an encryption redo record.
 @param[in]      ptr             redo log record
@@ -2163,9 +2168,10 @@ This function doesn't do anything, simply parses the redo log record.
 @param[in]      space_id        the tablespace ID
 @param[in]      lsn             lsn for REDO record
 @return log record end, nullptr if not a complete record */
-[[nodiscard]] byte *fil_tablespace_redo_encryption(byte *ptr, const byte *end,
-                                                   space_id_t space_id,
-                                                   lsn_t lsn);
+[[nodiscard]] const byte *fil_tablespace_redo_encryption(const byte *ptr,
+                                                         const byte *end,
+                                                         space_id_t space_id,
+                                                         lsn_t lsn);
 
 /** Read the tablespace id to path mapping from the file
 @param[in]      recovery        true if called from crash recovery */

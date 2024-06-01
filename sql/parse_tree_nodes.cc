@@ -1,15 +1,16 @@
-/* Copyright (c) 2013, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -3298,9 +3299,10 @@ Sql_cmd *PT_analyze_table_stmt::make_cmd(THD *thd) {
 
   thd->lex->alter_info = &m_alter_info;
   auto cmd = new (thd->mem_root) Sql_cmd_analyze_table(
-      thd, &m_alter_info, m_command, m_num_buckets, m_data);
+      thd, &m_alter_info, m_command, m_num_buckets, m_data, m_auto_update);
   if (cmd == nullptr) return nullptr;
-  if (m_command != Sql_cmd_analyze_table::Histogram_command::NONE) {
+  if (m_command == Sql_cmd_analyze_table::Histogram_command::UPDATE_HISTOGRAM ||
+      m_command == Sql_cmd_analyze_table::Histogram_command::DROP_HISTOGRAM) {
     if (cmd->set_histogram_fields(m_columns)) return nullptr;
   }
   return cmd;
@@ -3852,6 +3854,18 @@ bool PT_table_factor_table_ident::do_contextualize(Parse_context *pc) {
       thd, table_ident, opt_table_alias, 0, yyps->m_lock_type, yyps->m_mdl_type,
       opt_key_definition, opt_use_partition, nullptr, pc);
   if (m_table_ref == nullptr) return true;
+
+  if (opt_tablesample != nullptr) {
+    /* Check if the input sampling percentage is a valid argument*/
+    if (opt_tablesample->m_sample_percentage->itemize(
+            pc, &opt_tablesample->m_sample_percentage))
+      return true;
+
+    thd->lex->set_execute_only_in_secondary_engine(true, TABLESAMPLE);
+    m_table_ref->set_tablesample(opt_tablesample->m_sampling_type,
+                                 opt_tablesample->m_sample_percentage);
+  }
+
   if (pc->select->add_joined_table(m_table_ref)) return true;
 
   return false;
@@ -4372,7 +4386,7 @@ bool PT_subquery::do_contextualize(Parse_context *pc) {
   if (super::do_contextualize(pc)) return true;
 
   LEX *lex = pc->thd->lex;
-  if (!lex->expr_allows_subselect || lex->sql_command == SQLCOM_PURGE) {
+  if (!lex->expr_allows_subquery || lex->sql_command == SQLCOM_PURGE) {
     error(pc, m_pos);
     return true;
   }

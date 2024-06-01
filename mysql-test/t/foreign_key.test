@@ -448,6 +448,7 @@ ALTER TABLE t2 MODIFY COLUMN b INT GENERATED ALWAYS AS (a+1) VIRTUAL;
 DROP TABLE t2, t1;
 
 --echo # Trying to drop columns used in multi-column FKs.
+SET restrict_fk_on_non_standard_key=OFF;
 CREATE TABLE t1(a INT PRIMARY KEY, b INT, INDEX(a, b));
 
 CREATE TABLE t2(a INT, b INT, FOREIGN KEY(a, b) REFERENCES t1(a, b));
@@ -465,6 +466,7 @@ ALTER TABLE t2 DROP COLUMN a;
 --error ER_FK_COLUMN_CANNOT_DROP
 ALTER TABLE t2 DROP COLUMN b;
 DROP TABLE t2, t1;
+SET restrict_fk_on_non_standard_key=ON;
 
 --echo # Index with prefix cannot be used for supporting FK.
 CREATE TABLE t1 (PK VARCHAR(100) PRIMARY KEY);
@@ -2950,6 +2952,7 @@ DROP SCHEMA mysqltest;
 --echo #
 --echo # 1) CREATE TABLE with FK and no parent key.
 --echo #
+SET restrict_fk_on_non_standard_key=OFF;
 CREATE TABLE parent(pk INT PRIMARY KEY, a INT);
 --error ER_FK_NO_INDEX_PARENT
 CREATE TABLE child (fk INT, FOREIGN KEY (fk) REFERENCES parent(a));
@@ -3165,6 +3168,7 @@ SELECT referenced_table_name, unique_constraint_name FROM
   ORDER BY referenced_table_name;
 DROP TABLE self, grandparent1, grandparent2;
 
+SET restrict_fk_on_non_standard_key=ON;
 
 --echo #
 --echo # Bug#25722927 "NEWDD FK: ALTER TABLE CHANGE COLUMN TYPE SHOULD CHECK FK CONSTRAINT"
@@ -4010,6 +4014,10 @@ CREATE TABLE t1(fld1 INT PRIMARY KEY, fld2 INT) ENGINE=INNODB;
 CREATE TABLE t2(fld1 INT PRIMARY KEY, fld2 INT, CONSTRAINT fk2
 FOREIGN KEY (fld1) REFERENCES t1 (fld1)) ENGINE=InnoDB;
 CREATE TABLE t3(fld1 INT PRIMARY KEY, fld2 INT) ENGINE=InnoDB;
+CREATE TABLE parent (id INT NOT NULL, PRIMARY KEY (id)) ENGINE=INNODB;
+CREATE TABLE child (id INT, parent_id INT, INDEX par_ind (parent_id), FOREIGN KEY (parent_id) REFERENCES parent(id)) ENGINE=INNODB;
+INSERT INTO parent (id) VALUES(1);
+INSERT INTO child (id,parent_id) VALUES(1,1);
 
 --echo # Set up stored routines
 CREATE PROCEDURE p1() SQL SECURITY INVOKER INSERT INTO t2 (fld1, fld2) VALUES (1, 2);
@@ -4037,21 +4045,31 @@ CREATE SQL SECURITY DEFINER VIEW v2 AS SELECT * FROM t2;
 CREATE USER user1@localhost;
 CREATE USER user2@localhost;
 CREATE USER user3@localhost;
+CREATE USER user4@localhost;
+CREATE USER user5@localhost;
+CREATE USER user6@localhost;
+CREATE USER user7@localhost;
 GRANT INSERT (fld1, fld2) ON t2 TO user1@localhost;
 GRANT INSERT ON v1 TO user2@localhost;
 GRANT INSERT ON v2 TO user2@localhost;
 GRANT SYSTEM_USER ON *.* TO user2@localhost;
-GRANT SET_USER_ID ON *.* TO user2@localhost;
+GRANT SET_ANY_DEFINER ON *.* TO user2@localhost;
 GRANT EXECUTE ON PROCEDURE p1 TO user2@localhost;
 GRANT EXECUTE ON PROCEDURE p2 TO user2@localhost;
 GRANT EXECUTE ON FUNCTION f1 TO user2@localhost;
 GRANT EXECUTE ON FUNCTION f2 TO user2@localhost;
+GRANT SELECT, DELETE, INSERT, UPDATE on wl8910db.* to user4@localhost;
+GRANT SELECT, DELETE, INSERT, UPDATE on wl8910db.parent to user5@localhost;
+GRANT SELECT, DELETE, INSERT, UPDATE on wl8910db.parent to user6@localhost;
+GRANT SELECT, DELETE, INSERT, UPDATE on wl8910db.child to user6@localhost;
+GRANT SELECT ON wl8910db.* TO user7@localhost;
+GRANT DELETE ON wl8910db.parent TO user7@localhost;
 
 --enable_connect_log
 
 connect (con1, localhost, user1,,wl8910db);
 --echo # Without patch, reveals parent table's information.
---error ER_NO_REFERENCED_ROW
+--error ER_NO_REFERENCED_ROW_2
 INSERT INTO t2 (fld1, fld2) VALUES (1, 2);
 
 --echo # Warning displayed does not reveal parent table information.
@@ -4070,7 +4088,7 @@ ALTER TABLE t2 ADD CONSTRAINT fk3 FOREIGN KEY (fld2) REFERENCES t3(fld1);
 
 connection con1;
 --echo # Without patch, reveals parent table's information.
---error ER_NO_REFERENCED_ROW
+--error ER_NO_REFERENCED_ROW_2
 INSERT INTO t2 (fld1, fld2) VALUES (1, 2);
 
 --echo # Warning displayed does not reveal parent table information.
@@ -4087,14 +4105,13 @@ INSERT INTO t2 (fld1, fld2) VALUES (1, 2);
 connection default;
 GRANT INSERT (fld1, fld2) ON t2 TO user2@localhost;
 GRANT CREATE ROUTINE ON wl8910db.* TO user2@localhost;
-GRANT CREATE VIEW ON wl8910db.* TO user2@localhost;
 
 --echo # Tests where DML reports FK constraint failure within Stored Routines.
 connect (con2, localhost, user2,,wl8910db);
 
 --echo # The SQL security for p1 is invoker where invoker lacks permission
 --echo # to parent table, hence parent table information is not displayed.
---error ER_NO_REFERENCED_ROW
+--error ER_NO_REFERENCED_ROW_2
 CALL p1();
 
 --echo # The SQL security p2 is definer, where the definer has access privilege
@@ -4104,7 +4121,7 @@ CALL p2();
 
 --echo # The SQL security for f1 is invoker where invoker lacks permission
 --echo # to parent table, hence parent table information is not displayed.
---error ER_NO_REFERENCED_ROW
+--error ER_NO_REFERENCED_ROW_2
 SELECT f1();
 
 --echo # The SQL security f2 is definer, where the definer has access privilege
@@ -4116,29 +4133,32 @@ SELECT f2();
 
 --echo # The invoker does not have access to the parent table, hence the parent
 --echo # table information is not displayed.
---error ER_NO_REFERENCED_ROW
+--error ER_NO_REFERENCED_ROW_2
 INSERT INTO v1 VALUES (1, 2);
 
 --echo # DML on view executed within the definer context where the invoker does
 --echo # not have access to the parent table, hence the parent table information
 --echo # is not displayed.
---error ER_NO_REFERENCED_ROW
+--error ER_NO_REFERENCED_ROW_2
 INSERT INTO v2 VALUES (1, 2);
 
 connection default;
 GRANT SELECT ON t1 TO user2@localhost;
 GRANT SELECT ON t3 TO user2@localhost;
+GRANT CREATE VIEW ON wl8910db.* TO user2@localhost;
 
-connection con2;
+disconnect con2;
+connect (con2, localhost, user2,,wl8910db);
+
 --echo # DML on view executed within the definer context where the invoker
 --echo # has access to the parent table, hence the parent table information
 --echo # is displayed.
 --error ER_NO_REFERENCED_ROW_2
 INSERT INTO v2 VALUES (1, 2);
 
---echo # Tests with SET_USER_ID
+--echo # Tests with SET_ANY_DEFINER
 
---echo # Set up stored routines and views by user with SET_USER_ID
+--echo # Set up stored routines and views by user with SET_ANY_DEFINER
 --echo # privilege.
 
 CREATE DEFINER=root@localhost PROCEDURE p3() SQL SECURITY DEFINER
@@ -4178,16 +4198,48 @@ SELECT f3();
 --error ER_NO_REFERENCED_ROW_2
 INSERT INTO v3 VALUES(4, 5);
 
+--echo # user4 have access to the child table, hence the child table
+--echo # information is displayed.
+connect (con4, localhost, user4,,wl8910db);
+--error ER_ROW_IS_REFERENCED_2
+DELETE FROM parent WHERE id = 1;
+
+--echo # user5 do not have access to the child table, hence the child table
+--echo # information is not displayed.
+connect (con5, localhost, user5,,wl8910db);
+--error ER_ROW_IS_REFERENCED_2
+DELETE FROM parent WHERE id = 1;
+
+--echo # user6 have access to the child table, hence the child table
+--echo # information is displayed.
+connect (con6, localhost, user6,,wl8910db);
+--error ER_ROW_IS_REFERENCED_2
+DELETE FROM parent WHERE id = 1;
+
+--echo # user7 have access to the child table, hence the child table
+--echo # information is displayed.
+connect (con7, localhost, user7,,wl8910db);
+--error ER_ROW_IS_REFERENCED_2
+DELETE FROM parent WHERE id = 1;
+
 --echo # Cleanup
 connection default;
 disconnect con1;
 disconnect con2;
 disconnect con3;
+disconnect con4;
+disconnect con5;
+disconnect con6;
+disconnect con7;
 DROP VIEW v1, v2, v3;
-DROP TABLE t2, t3, t1;
+DROP TABLE t2, t3, t1, parent, child;
 DROP USER user1@localhost;
 DROP USER user2@localhost;
 DROP USER user3@localhost;
+DROP USER user4@localhost;
+DROP USER user5@localhost;
+DROP USER user6@localhost;
+DROP USER user7@localhost;
 DROP PROCEDURE p1;
 DROP PROCEDURE p2;
 DROP PROCEDURE p3;
@@ -4449,6 +4501,7 @@ DROP TABLES child, parent, uncle;
 --echo # See dd_upgrade_test test for coverage of upgrade process for such
 --echo # foreign keys.
 --echo #
+SET restrict_fk_on_non_standard_key=OFF;
 CREATE TABLE parent (pk INT PRIMARY KEY, a INT, b INT, KEY(a), UNIQUE(b));
 --echo # This works both for non-unique and unique keys.
 CREATE TABLE child1 (fk1 INT, fk2 INT, FOREIGN KEY (fk1, fk2) REFERENCES parent (a, pk));
@@ -4542,7 +4595,7 @@ CREATE TABLE self (a CHAR(10), b int, fk1 int, fk2 CHAR(10), KEY(b),
 CREATE TABLE self (a INT, b CHAR(10), c int, fk1 int, fk2 int, KEY(c),
                    PRIMARY KEY (a, b(5)), FOREIGN KEY (fk1, fk2) REFERENCES self (c, a));
 
-
+SET restrict_fk_on_non_standard_key=ON;
 --echo #
 --echo # Bug#21308781 "DROP FOREIGN KEY LEAD TO INCONSISTENT TABLE STRUCTURE
 --echo #               ON MASTER AND SLAVE".
@@ -4855,6 +4908,7 @@ DROP TABLE t1;
 --echo #     orphan non-self-referencing foreign key. Parent index does not
 --echo #     exist in the table.
 --echo #     Table rename operation fails in this case.
+SET restrict_fk_on_non_standard_key = OFF;
 CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 INT, f3 INT,
                  FOREIGN KEY(f2) REFERENCES t2(f3));
 --error ER_FK_NO_INDEX_PARENT
@@ -4866,6 +4920,7 @@ ALTER TABLE t1 RENAME TO t2, ALGORITHM=INPLACE;
 --error ER_FK_NO_INDEX_PARENT
 RENAME TABLE t1 TO t2;
 DROP TABLE t1;
+SET restrict_fk_on_non_standard_key = ON;
 
 --echo # 11. Test case to verify table rename operation on the table containing
 --echo #     orphan non-self-referencing foreign key. Table's column is not
@@ -4883,5 +4938,159 @@ ALTER TABLE t1 RENAME TO t2, ALGORITHM=INPLACE;
 RENAME TABLE t1 TO t2;
 DROP TABLE t1;
 
+--echo # WL#15699: Restricts FK on non unique keys and partial keys
+--echo # Case 1 - CREATE FK on Simple Key should fail
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 INT, KEY(f2));
+--error ER_FK_NO_UNIQUE_INDEX_PARENT
+CREATE TABLE t2 (f1 INT PRIMARY KEY, f2 INT, KEY(f2),
+                 FOREIGN KEY(f2) REFERENCES t1(f2));
+DROP TABLE t1;
+
+--echo # Case 2 - ALTER FK on Simple Key should fail
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 INT, KEY(f2));
+CREATE TABLE t2 (f1 INT PRIMARY KEY, f2 INT, KEY(f2));
+--error ER_FK_NO_UNIQUE_INDEX_PARENT
+ALTER TABLE t2 ADD CONSTRAINT fk_t2_f2 FOREIGN KEY(f2) REFERENCES t1(f2);
+DROP TABLE t1, t2;
+
+--echo # Case 3 - CREATE FK on Partial Columns of Primary Key should fail
+CREATE TABLE t1 (f1 INT, f2 INT, f3 INT, PRIMARY KEY(f1, f2, f3));
+--error ER_FK_NO_UNIQUE_INDEX_PARENT
+CREATE TABLE t2 (f1 INT PRIMARY KEY, f2 INT, f3 INT,
+                 FOREIGN KEY(f1, f2) REFERENCES t1(f1, f2));
+DROP TABLE t1;
+
+--echo # Case 4 - CREATE FK on Partial Columns of Unique Key should fail
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 INT, f3 INT, UNIQUE KEY(f2, f3));
+--error ER_FK_NO_UNIQUE_INDEX_PARENT
+CREATE TABLE t2 (f1 INT PRIMARY KEY, f2 INT, f3 INT,
+                 FOREIGN KEY(f2) REFERENCES t1(f2));
+DROP TABLE t1;
+
+--echo # Case 5 - ALTER FK on Partial Columns of Unique Key should fail
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 INT, f3 INT, UNIQUE KEY(f2, f3));
+CREATE TABLE t2 (f1 INT PRIMARY KEY, f2 INT, f3 INT);
+--error ER_FK_NO_UNIQUE_INDEX_PARENT
+ALTER TABLE t2 ADD CONSTRAINT fk_t2_f2 FOREIGN KEY(f2) REFERENCES t1(f2);
+DROP TABLE t1, t2;
+
+SET restrict_fk_on_non_standard_key=OFF;
+--echo # Case 6 - When restrict_fk_on_non_standard_key is set to off,
+--echo #          FK on Partial Columns of Unique Key should pass
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 INT, f3 INT, UNIQUE KEY(f2, f3));
+CREATE TABLE t2 (f1 INT PRIMARY KEY, f2 INT, f3 INT,
+                 FOREIGN KEY(f2) REFERENCES t1(f2));
+show create table t1;
+show create table t2;
+DROP TABLE t2, t1;
+
+--echo # Case 7 - When restrict_fk_on_non_standard_key is set to off,
+--echo #          FK on Partial Columns of non Unique Key should pass
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 INT, f3 INT, KEY(f2, f3));
+CREATE TABLE t2 (f1 INT PRIMARY KEY, f2 INT, f3 INT,
+                 FOREIGN KEY(f2) REFERENCES t1(f2));
+show create table t1;
+show create table t2;
+DROP TABLE t2, t1;
+SET restrict_fk_on_non_standard_key=ON;
+
+--echo # Case 8 - FK on Prefix Column key should fail
+CREATE TABLE t1 (f1 INT, f2 VARCHAR(100), UNIQUE KEY(f2(10)));
+--error ER_FK_NO_UNIQUE_INDEX_PARENT
+CREATE TABLE t2 (f1 INT, f2 VARCHAR(100),
+                 FOREIGN KEY(f2) REFERENCES t1(f2));
+DROP TABLE t1;
+
+--echo # Case 9 - FK on Prefix Partial Column unique key should fail
+CREATE TABLE t1 (f1 INT, f2 VARCHAR(100), UNIQUE KEY(f1, f2(10)));
+--error ER_FK_NO_UNIQUE_INDEX_PARENT
+CREATE TABLE t2 (f1 INT, f2 VARCHAR(10),
+                 FOREIGN KEY(f1) REFERENCES t1(f1));
+--error ER_FK_NO_UNIQUE_INDEX_PARENT
+CREATE TABLE t2 (f1 INT, f2 VARCHAR(10),
+                 FOREIGN KEY(f2) REFERENCES t1(f2));
+--error ER_FK_NO_UNIQUE_INDEX_PARENT
+CREATE TABLE t2 (f1 INT, f2 VARCHAR(10),
+                 FOREIGN KEY(f1, f2) REFERENCES t1(f1, f2));
+
+DROP TABLE t1;
+--echo # Case 10 - FK on Partial Column with multiple unique key should fail
+CREATE TABLE t1 (f1 INT, f2 VARCHAR(100), f3 VARCHAR(100),
+                 UNIQUE KEY(f1, f2(10)),
+                 UNIQUE KEY(f1, f2, f3(10)));
+--error ER_FK_NO_UNIQUE_INDEX_PARENT
+CREATE TABLE t2 (f1 INT, f2 VARCHAR(100), f3 VARCHAR(10),
+                 FOREIGN KEY(f1, f2, f3) REFERENCES t1(f1, f2, f3));
+--error ER_FK_NO_UNIQUE_INDEX_PARENT
+CREATE TABLE t2 (f1 INT, f2 VARCHAR(10),
+                 FOREIGN KEY(f1) REFERENCES t1(f1));
+--error ER_FK_NO_UNIQUE_INDEX_PARENT
+CREATE TABLE t2 (f1 INT, f2 VARCHAR(100), f3 VARCHAR(100),
+                 FOREIGN KEY(f1, f2) REFERENCES t1(f1, f2));
+
+--echo # Case 11 - FK on Partial Column unique key with prefix should pass
+--echo #           with restrict_fk_on_non_standard_key set to off
+SET restrict_fk_on_non_standard_key=OFF;
+CREATE TABLE t2 (f1 INT, f2 VARCHAR(10),
+                 FOREIGN KEY(f1, f2) REFERENCES t1(f1, f2));
+
+--echo # Case 12 - FK on Composite Unique key with prefix should fail
+--echo #           with restrict_fk_on_non_standard_key set to off
+--error ER_FK_NO_INDEX_PARENT
+CREATE TABLE t3(f1 INT, f2 VARCHAR(10), f3 VARCHAR(10),
+                FOREIGN KEY(f1, f2, f3) REFERENCES t1(f1, f2, f3));
+DROP TABLE t2, t1;
+
+SET restrict_fk_on_non_standard_key=ON;
+
+--echo # Case 13 - FK on Functional Index column should fail
+CREATE TABLE ft1 (f1 VARCHAR(100), UNIQUE INDEX idx1 ((SUBSTRING(f1, 1, 10))) );
+--error ER_FK_NO_UNIQUE_INDEX_PARENT
+CREATE TABLE ft2 (f1 VARCHAR(100),
+                FOREIGN KEY(f1) REFERENCES ft1(f1));
+drop table ft1;
+
+--echo # Case 14 - FK on virtual generated column index should fail
+CREATE TABLE t1 (f1 VARCHAR(10), f2 VARCHAR(10),
+                 f3 VARCHAR(30) AS (CONCAT(f1, f2)) VIRTUAL,
+                 UNIQUE INDEX(f3));
+--error ER_FK_CANNOT_USE_VIRTUAL_COLUMN
+CREATE TABLE t2 (f1 VARCHAR(100),
+                FOREIGN KEY(f1) REFERENCES t1(f3));
+drop table t1;
+
+-- echo # Case 15 - Self Referencing FK with non unique key
+--error ER_FK_NO_UNIQUE_INDEX_PARENT
+CREATE TABLE self_ref(pk INT PRIMARY KEY, i INT, j INT, INDEX ix(i),
+                      FOREIGN KEY (j) REFERENCES self_ref(i));
+
+--error ER_FK_NO_UNIQUE_INDEX_PARENT
+CREATE TABLE self_ref(pk INT, i INT, j INT, k INT, key(pk),
+                      FOREIGN KEY (j,k) REFERENCES self_ref(pk,i));
+
+-- echo # Case 16 - Self Referencing FK with partial key
+--error ER_FK_NO_UNIQUE_INDEX_PARENT
+CREATE TABLE self_ref(pk INT, i INT, j INT, k INT, UNIQUE KEY(pk, i),
+                      FOREIGN KEY (j) REFERENCES self_ref(pk));
+
+-- echo # Case 17 - Self Referencing FK with prefix key
+--error ER_FK_NO_UNIQUE_INDEX_PARENT
+CREATE TABLE self_ref(f1 VARCHAR(100), f2 VARCHAR(100),
+                      PRIMARY KEY(f1(10)),
+                      FOREIGN KEY (f2) REFERENCES self_ref(f1));
+
+SET FOREIGN_KEY_CHECKS=OFF;
+CREATE TABLE t1 (pk INT PRIMARY KEY, b INT,
+                 FOREIGN KEY (b) REFERENCES t2(c));
+--error ER_FK_NO_UNIQUE_INDEX_PARENT
+CREATE TABLE t2 (pk1 INT PRIMARY KEY, c INT);
+
+SET restrict_fk_on_non_standard_key=OFF;
+--error ER_FK_NO_INDEX_PARENT
+CREATE TABLE t2 (pk1 INT PRIMARY KEY, c INT);
+
+DROP TABLE t1;
+
+SET restrict_fk_on_non_standard_key=ON;
 #Cleanup
 SET FOREIGN_KEY_CHECKS = DEFAULT;

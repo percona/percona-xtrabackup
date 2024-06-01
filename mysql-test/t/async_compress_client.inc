@@ -1,3 +1,5 @@
+--source include/suppress_tls_off.inc
+
 #
 # WL#13510: Helper file to verify compress protocol with asynchronous client
 # It expects the caller to set following two variables
@@ -32,7 +34,7 @@ connection default;
 disconnect caching_con1;
 
 --echo # connect with wrong password
---replace_result $MASTER_MYSOCK MASTER_SOCKET $MASTER_MYPORT MASTER_PORT
+--replace_result $MASTER_MYSOCK SOURCE_SOCKET $MASTER_MYPORT SOURCE_PORT
 --error ER_ACCESS_DENIED_ERROR
 connect(caching_con2,localhost,caching_sha2,caching1,testdb,,,SSL $COMPRESS_OPTION,,$COMPRESS_ALGORITHM);
 
@@ -54,7 +56,7 @@ ALTER USER caching_sha2@localhost ACCOUNT LOCK;
 --enable_async_client
 
 --echo # account is locked so connect should fail
---replace_result $MASTER_MYSOCK MASTER_SOCKET $MASTER_MYPORT MASTER_PORT
+--replace_result $MASTER_MYSOCK SOURCE_SOCKET $MASTER_MYPORT SOURCE_PORT
 --error 3118
 connect(caching_con3,localhost,caching_sha2,caching,testdb,,,SSL $COMPRESS_OPTION,,$COMPRESS_ALGORITHM);
 
@@ -73,7 +75,7 @@ disconnect caching_con3;
 
 --disable_async_client
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
---let $restart_parameters=restart: --ssl=off --loose-caching_sha2_password_private_key_path=$MYSQL_TEST_DIR/std_data/rsa_private_key.pem --loose-caching_sha2_password_public_key_path=$MYSQL_TEST_DIR/std_data/rsa_public_key.pem
+--let $restart_parameters=restart: --tls-version= --loose-caching_sha2_password_private_key_path=$MYSQL_TEST_DIR/std_data/rsa_private_key.pem --loose-caching_sha2_password_public_key_path=$MYSQL_TEST_DIR/std_data/rsa_public_key.pem
 --source include/restart_mysqld.inc
 --enable_async_client
 
@@ -101,7 +103,7 @@ disconnect caching_con5;
 --disable_async_client
 --echo # case3: authenticate user with sha256_password
 CREATE USER sha256@localhost IDENTIFIED WITH 'sha256_password' BY 'auth_string';
---let $restart_parameters=restart: --default-authentication-plugin=sha256_password
+--let $restart_parameters=restart: --authentication-policy=*:sha256_password
 --source include/restart_mysqld.inc
 --enable_async_client
 
@@ -126,19 +128,19 @@ disconnect sha256_con2;
 
 --disable_async_client
 --replace_result $MYSQL_TEST_DIR MYSQL_TEST_DIR
---let $restart_parameters=restart: --default-authentication-plugin=sha256_password --ssl=off --loose-sha256_password_private_key_path=$MYSQL_TEST_DIR/std_data/rsa_private_key.pem --loose-sha256_password_public_key_path=$MYSQL_TEST_DIR/std_data/rsa_public_key.pem
+--let $restart_parameters=restart: --authentication-policy=*:sha256_password --tls-version= --loose-sha256_password_private_key_path=$MYSQL_TEST_DIR/std_data/rsa_private_key.pem --loose-sha256_password_public_key_path=$MYSQL_TEST_DIR/std_data/rsa_public_key.pem
 --source include/restart_mysqld.inc
 --enable_async_client
 
 --echo # connect with wrong password and SSL disabled
---replace_result $MASTER_MYSOCK MASTER_SOCKET $MASTER_MYPORT MASTER_PORT
+--replace_result $MASTER_MYSOCK SOURCE_SOCKET $MASTER_MYPORT SOURCE_PORT
 --error ER_ACCESS_DENIED_ERROR, CR_AUTH_PLUGIN_ERR
 connect(sha256_con3,localhost,sha256,auth_string,,,,$COMPRESS_OPTION,sha256_password, $COMPRESS_ALGORITHM);
 
 --disable_async_client
 --echo # case4: authenticate user with mysql_native_password
 CREATE USER native_user@localhost IDENTIFIED WITH 'mysql_native_password' BY 'native';
---let $restart_parameters=restart: --default-authentication-plugin=mysql_native_password
+--let $restart_parameters=restart: --authentication-policy=*:mysql_native_password
 --source include/restart_mysqld.inc
 --enable_async_client
 

@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -845,6 +846,36 @@ class HARNESS_EXPORT Loader {
     }
   }
 
+  /**
+   * Register a callback that the Loader will call when exposing of the whole
+   * configuration is requested. This callback is supposed to expose the
+   * application-level configration options (not plugin specific ones).
+   *
+   * @param clb callback to register that takes 2 parameters
+   *            - bool indicating if the requested configuration is the initial
+   *              one (if true) or default (false)
+   *            - object representing default section of the current
+   *              configuration
+   */
+  void register_expose_app_config_callback(
+      std::function<void(const bool, const ConfigSection &)> clb) {
+    expose_app_config_clb_ = clb;
+  }
+
+  /**
+   * Load all the configured plugins.
+   */
+  void load_all();  // throws bad_plugin on load error
+
+  /**
+   * Request the application and all the configured plugins to expose their
+   * configuration in the DyncamicConfig object.
+   *
+   * @param initial if true initial configuration is to exposed, default
+   *                configuration otherwise
+   */
+  void expose_config_all(const bool initial);
+
  private:
   enum class Status { UNVISITED, ONGOING, VISITED };
 
@@ -900,7 +931,6 @@ class HARNESS_EXPORT Loader {
   // PluginFuncEnv will always exist when plugin stop() function is called.
 
   // start() calls these, indents reflect call hierarchy
-  void load_all();  // throws bad_plugin on load error
   void setup_info();
   std::exception_ptr
   run();  // returns first exception returned from below harness functions
@@ -1034,6 +1064,9 @@ class HARNESS_EXPORT Loader {
 
   // called after "main_loop()" exited.
   std::function<void()> after_first_finished_;
+
+  // called as a part of expose_config_all()
+  std::function<void(const bool, const ConfigSection &)> expose_app_config_clb_;
 
 #ifdef FRIEND_TEST
   friend class ::TestLoader;

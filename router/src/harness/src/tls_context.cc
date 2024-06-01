@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -215,13 +216,13 @@ TlsContext::TlsContext(const SSL_METHOD *method)
 stdx::expected<void, std::error_code> TlsContext::ssl_ca(
     const std::string &ca_file, const std::string &ca_path) {
   if (!ssl_ctx_) {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 
   if (1 != SSL_CTX_load_verify_locations(
                ssl_ctx_.get(), ca_file.empty() ? nullptr : ca_file.c_str(),
                ca_path.empty() ? nullptr : ca_path.c_str())) {
-    return stdx::make_unexpected(make_tls_error());
+    return stdx::unexpected(make_tls_error());
   }
   return {};
 }
@@ -229,7 +230,7 @@ stdx::expected<void, std::error_code> TlsContext::ssl_ca(
 stdx::expected<void, std::error_code> TlsContext::crl(
     const std::string &crl_file, const std::string &crl_path) {
   if (!ssl_ctx_) {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 
   auto *store = SSL_CTX_get_cert_store(ssl_ctx_.get());
@@ -237,12 +238,12 @@ stdx::expected<void, std::error_code> TlsContext::crl(
   if (1 != X509_STORE_load_locations(
                store, crl_file.empty() ? nullptr : crl_file.c_str(),
                crl_path.empty() ? nullptr : crl_path.c_str())) {
-    return stdx::make_unexpected(make_tls_error());
+    return stdx::unexpected(make_tls_error());
   }
 
   if (1 != X509_STORE_set_flags(
                store, X509_V_FLAG_CRL_CHECK | X509_V_FLAG_CRL_CHECK_ALL)) {
-    return stdx::make_unexpected(make_tls_error());
+    return stdx::unexpected(make_tls_error());
   }
 
   return {};
@@ -255,12 +256,11 @@ stdx::expected<void, std::error_code> TlsContext::curves_list(
 #if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(1, 0, 2)
   if (1 != SSL_CTX_set1_curves_list(ssl_ctx_.get(),
                                     const_cast<char *>(curves.c_str()))) {
-    return stdx::make_unexpected(make_tls_error());
+    return stdx::unexpected(make_tls_error());
   }
   return {};
 #else
-  return stdx::make_unexpected(
-      make_error_code(std::errc::function_not_supported));
+  return stdx::unexpected(make_error_code(std::errc::function_not_supported));
 #endif
 }
 
@@ -293,11 +293,11 @@ stdx::expected<void, std::error_code> TlsContext::version_range(
 #if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(1, 1, 0)
   if (1 != SSL_CTX_set_min_proto_version(ssl_ctx_.get(),
                                          o11x_version(min_version))) {
-    return stdx::make_unexpected(make_tls_error());
+    return stdx::unexpected(make_tls_error());
   }
   if (1 != SSL_CTX_set_max_proto_version(ssl_ctx_.get(),
                                          o11x_version(max_version))) {
-    return stdx::make_unexpected(make_tls_error());
+    return stdx::unexpected(make_tls_error());
   }
 #else
   // disable all by default
@@ -430,18 +430,17 @@ get_rsa_key_size(X509 *x509) {
   EVP_PKEY *public_key = public_key_storage.get();
 #endif
   if (public_key == nullptr) {
-    return stdx::make_unexpected(
-        make_error_code(TlsCertErrc::kNotACertificate));
+    return stdx::unexpected(make_error_code(TlsCertErrc::kNotACertificate));
   }
 
   if (EVP_PKEY_base_id(public_key) != EVP_PKEY_RSA) {
-    return stdx::make_unexpected(make_error_code(TlsCertErrc::kNoRSACert));
+    return stdx::unexpected(make_error_code(TlsCertErrc::kNoRSACert));
   }
 
 #if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(3, 0, 0)
   int key_bits;
   if (!EVP_PKEY_get_int_param(public_key, OSSL_PKEY_PARAM_BITS, &key_bits)) {
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         make_error_code(std::errc::no_such_file_or_directory));
   }
 
@@ -457,7 +456,7 @@ get_rsa_key_size(X509 *x509) {
   RSA *rsa_key = rsa_key_storage.get();
 #endif
   if (!rsa_key) {
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         make_error_code(std::errc::no_such_file_or_directory));
   }
   return RSA_bits(rsa_key);
@@ -470,7 +469,7 @@ stdx::expected<void, std::error_code> TlsContext::load_key_and_cert(
   if (!cert_chain_file.empty()) {
     if (1 != SSL_CTX_use_certificate_chain_file(ssl_ctx_.get(),
                                                 cert_chain_file.c_str())) {
-      return stdx::make_unexpected(make_tls_error());
+      return stdx::unexpected(make_tls_error());
     }
   }
 #if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(1, 0, 2)
@@ -484,7 +483,7 @@ stdx::expected<void, std::error_code> TlsContext::load_key_and_cert(
       auto ec = key_size_res.error();
 
       if (ec != TlsCertErrc::kNoRSACert) {
-        return stdx::make_unexpected(key_size_res.error());
+        return stdx::unexpected(key_size_res.error());
       }
 
       // if it isn't a RSA Key ... just continue.
@@ -492,22 +491,22 @@ stdx::expected<void, std::error_code> TlsContext::load_key_and_cert(
       const auto key_size = *key_size_res;
 
       if (key_size < kMinRsaKeySize) {
-        return stdx::make_unexpected(
+        return stdx::unexpected(
             make_error_code(TlsCertErrc::kRSAKeySizeToSmall));
       }
     }
   } else {
     // doesn't exist
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         make_error_code(std::errc::no_such_file_or_directory));
   }
 #endif
   if (1 != SSL_CTX_use_PrivateKey_file(ssl_ctx_.get(), private_key_file.c_str(),
                                        SSL_FILETYPE_PEM)) {
-    return stdx::make_unexpected(make_tls_error());
+    return stdx::unexpected(make_tls_error());
   }
   if (1 != SSL_CTX_check_private_key(ssl_ctx_.get())) {
-    return stdx::make_unexpected(make_tls_error());
+    return stdx::unexpected(make_tls_error());
   }
 
   return {};

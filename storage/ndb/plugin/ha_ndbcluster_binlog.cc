@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2006, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2006, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -337,6 +338,13 @@ static bool ndbcluster_binlog_index_remove_file(THD *thd, const char *filename);
   to remove any rows in its mysql.ndb_binlog_index table which
   references the removed file.
 
+  @note This function can be activated by:
+   - User session calling PURGE BINARY LOGS
+   - MySQL Server startup checking time to purge
+   - rotate+purge triggered by writing to binlog, this means that the
+     ndb binlog thread itself may invoke this function when writing epoch
+     transactions to binlog.
+
   @param thd Thread handle
   @param filename Name of the binlog file which has been removed
 
@@ -364,6 +372,8 @@ static int ndbcluster_binlog_index_purge_file(THD *thd, const char *filename) {
     return 0;  // Nothing to do, slave thread
   }
 
+  ndb_log_info("Purging binlog file: '%s'", filename);
+
   // Create a separate temporary THD, primarily in order to isolate from any
   // active transactions in the THD passed by caller. NOTE! This should be
   // revisited
@@ -385,6 +395,8 @@ static int ndbcluster_binlog_index_purge_file(THD *thd, const char *filename) {
 
   /* Relink original THD */
   thd->store_globals();
+
+  if (error == 0) ndb_log_info("Purged binlog file: '%s'", filename);
 
   return error;
 }
@@ -4697,6 +4709,21 @@ int ndbcluster_binlog_start() {
     return -1;
   }
 
+  if (!opt_log_replica_updates) {
+    // Check conditions to enable filtering of replica updates in NDB,
+    // otherwise print warning to notify user about the limitation.
+    if (opt_server_id_bits != 32) {
+      ndb_log_warning(
+          "Binlog: Replica updates are only filtered in NDB when using "
+          "--server-id-bits=32");
+    }
+    if (opt_ndb_log_apply_status || opt_ndb_log_orig) {
+      ndb_log_warning(
+          "Binlog: Replica updates are only filtered in NDB when "
+          "--ndb-log-apply_status and --ndb-log-orig are OFF");
+    }
+  }
+
   ndb_binlog_thread.init();
 
   /**
@@ -4990,12 +5017,6 @@ static int ndbcluster_setup_binlog_for_share(THD *thd, Ndb *ndb,
         return -1;
       }
     }
-    // The function that check if event exist will silently mark the NDB table
-    // definition as 'Invalid' when the event's table version does not match the
-    // cached NDB table definitions version. This indicates that the caller have
-    // used a stale version of the NDB table definition and is a problem which
-    // has to be fixed by the caller of this function.
-    assert(ndbtab->getObjectStatus() != NdbDictionary::Object::Invalid);
 
     if (share->have_event_operation()) {
       DBUG_PRINT("info", ("binlogging already setup"));
@@ -5276,12 +5297,15 @@ struct AnyValueFilter {
    @param ndbtab        The Ndb table to create event operation for
    @param event_name    Name of the event in NDB to create event operation on
    @param event_data    Pointer to Ndb_event_data to setup for receiving events
+   @param skip_setup_datanode_anyvalue_filter Don't setup anyvalue filters in
+                        datanode when creating event subscription.
 
    @return Pointer to created NdbEventOperation on success, nullptr on failure
 */
 NdbEventOperation *Ndb_binlog_client::create_event_op_in_NDB(
     Ndb *ndb, const NdbDictionary::Table *ndbtab, const std::string &event_name,
-    const Ndb_event_data *event_data) {
+    const Ndb_event_data *event_data,
+    bool skip_setup_datanode_anyvalue_filter) {
   int retries = 100;
   while (true) {
     // Create the event operation. This incurs one roundtrip to check that event
@@ -5315,6 +5339,28 @@ NdbEventOperation *Ndb_binlog_client::create_event_op_in_NDB(
     /* Check if user explicitly requires monitoring of empty updates */
     op->setAllowEmptyUpdate(opt_ndb_log_empty_update);
 
+    // Setup nologging to be filtered in NDB
+    if (!skip_setup_datanode_anyvalue_filter) {
+      ndb_log_verbose(1, "Binlog: filter nologging in NDB");
+      op->setFilterAnyvalueMySQLNoLogging();
+    }
+
+    // Setup replica updates to be filtered in NDB
+    if (!opt_log_replica_updates && !skip_setup_datanode_anyvalue_filter) {
+      if (opt_server_id_bits != 32 || opt_ndb_log_apply_status ||
+          opt_ndb_log_orig) {
+        // Conditions for enabling filter of replica updates in NDB are not met
+        ndb_log_warning("Binlog: not filtering replica updates in NDB");
+      } else {
+        ndb_log_info("Binlog: filter replica updates in NDB");
+        op->setFilterAnyvalueMySQLNoReplicaUpdates();
+      }
+    }
+
+    /*
+     * Set the filter function to be applied on the anyValue when
+     * event data is returned
+     */
     op->setAnyValueFilter(AnyValueFilter::do_filter);
 
     // Setup the attributes that should be subscribed.
@@ -5450,6 +5496,12 @@ int Ndb_binlog_client::create_event_op(NDB_SHARE *share,
       Ndb_schema_dist_client::is_schema_dist_result_table(share->db,
                                                           share->table_name);
 
+  // Skip anyvalue filter in NDB for the util tables used for
+  //  1) schema distribution
+  //  2) replication applier status
+  const bool skip_setup_anyvalue_filter = is_schema_dist_setup ||          // 1
+                                          share->is_apply_status_table();  // 2
+
   const bool use_full_event =
       share->get_binlog_full() || share->get_subscribe_constrained();
   const std::string event_name =
@@ -5471,8 +5523,8 @@ int Ndb_binlog_client::create_event_op(NDB_SHARE *share,
     return -1;
   }
 
-  NdbEventOperation *new_op =
-      create_event_op_in_NDB(ndb, ndbtab, event_name, event_data);
+  NdbEventOperation *new_op = create_event_op_in_NDB(
+      ndb, ndbtab, event_name, event_data, skip_setup_anyvalue_filter);
   if (new_op == nullptr) {
     // Warnings already printed/logged
     Ndb_event_data::destroy(event_data);
@@ -5972,26 +6024,6 @@ void Ndb_binlog_thread::handle_data_unpack_record(TABLE *table,
 }
 
 /**
-  Handle error state on one event received from NDB
-
-  @param pOp The NdbEventOperation which indicated there was an error
-
-  @return 0 for success
-*/
-int Ndb_binlog_thread::handle_error(NdbEventOperation *pOp) const {
-  DBUG_TRACE;
-
-  const Ndb_event_data *const event_data =
-      Ndb_event_data::get_event_data(pOp->getCustomData());
-  const NDB_SHARE *const share = event_data->share;
-
-  log_error("Unhandled error %d for table %s", pOp->hasError(),
-            share->key_string());
-  pOp->clearError();
-  return 0;
-}
-
-/**
    Inject an incident (aka. 'lost events' or 'gap') into the injector,
    indicating that problem has occurred while processing the event stream.
 
@@ -6172,27 +6204,30 @@ static bool check_defined(MY_BITMAP *defined, const TABLE *const table) {
 #endif
 
 // Subclass to allow forward declaration of the nested class
-class injector_transaction : public injector::transaction {};
+class injector_transaction : public injector::transaction {
+ public:
+  injector_transaction(THD *thd, bool calc_writeset_hash)
+      : injector::transaction(thd, calc_writeset_hash) {}
+};
 
 /**
    @brief Handle one data event received from NDB
 
-   @param pOp           The NdbEventOperation that received data
-   @param trans         The injector transaction
-   @param[out] trans_row_count       Counter for rows in event
-   @param[out] replicated_row_count  Counter for replicated rows in event
+   @param pOp             The NdbEventOperation that received data
+   @param trans           The injector transaction
+   @param[out] epoch_ctx  Epoch context for accumulated counters
    @return 0 for success, other values (normally -1) for error
  */
 int Ndb_binlog_thread::handle_data_event(const NdbEventOperation *pOp,
                                          injector_transaction &trans,
-                                         unsigned &trans_row_count,
-                                         unsigned &replicated_row_count) {
+                                         EpochContext &epoch_ctx) {
   bool reflected_op = false;
   bool refresh_op = false;
   bool read_op = false;
   uint32 anyValue = pOp->getAnyValue();
   if (ndbcluster_anyvalue_is_reserved(anyValue)) {
     if (ndbcluster_anyvalue_is_nologging(anyValue)) {
+      DBUG_EXECUTE_IF("test_log_replica_updates_filter", { abort(); });
       return 0;
     }
 
@@ -6247,27 +6282,18 @@ int Ndb_binlog_thread::handle_data_event(const NdbEventOperation *pOp,
       const NDBEVENT::TableEvent event_type = pOp->getEventType();
       if (event_type == NDBEVENT::TE_INSERT ||
           event_type == NDBEVENT::TE_UPDATE) {
-        // Initialize "unused_bitmap" which is an output parameter from
-        // handle_data_unpack_record, afterwards it's not used which means it
-        // need not be initialized with anything useful
-        MY_BITMAP unused_bitmap;
-        Ndb_bitmap_buf<NDB_MAX_ATTRIBUTES_IN_TABLE> unused_bitbuf;
-        ndb_bitmap_init(&unused_bitmap, unused_bitbuf, table->s->fields);
+        const Uint32 orig_server_id = event_data->unpack_uint32(0);
+        const Uint64 orig_epoch = event_data->unpack_uint64(1);
 
-        // Unpack data event on mysql.ndb_apply_status to get orig_server_id
-        // and orig_epoch
-        handle_data_unpack_record(table, event_data->ndb_value[0].get(),
-                                  &unused_bitmap, table->record[0]);
+        DBUG_PRINT("info", ("ndb_apply_status from logging_server_id: %d",
+                            logging_server_id));
+        DBUG_PRINT("info", ("  orig_server_id: %u", orig_server_id));
+        DBUG_PRINT("info", ("  orig_epoch: %llu", orig_epoch));
+        DBUG_PRINT("info",
+                   ("  log_name: '%s'", event_data->unpack_string(2) + 1));
 
-        // Assume that mysql.ndb_apply_status table has two fields (which should
-        // thus have been unpacked)
-        ndbcluster::ndbrequire(table->field[0] != nullptr &&
-                               table->field[1] != nullptr);
-
-        const Uint32 orig_server_id =
-            (Uint32) static_cast<Field_long *>(table->field[0])->val_int();
-        const Uint64 orig_epoch =
-            static_cast<Field_longlong *>(table->field[1])->val_int();
+        DBUG_PRINT("info", ("  start_pos: %u", event_data->unpack_uint32(3)));
+        DBUG_PRINT("info", ("  end_pos: %u", event_data->unpack_uint32(4)));
 
         if (opt_ndb_log_apply_status) {
           /*
@@ -6316,13 +6342,14 @@ int Ndb_binlog_thread::handle_data_event(const NdbEventOperation *pOp,
   else {
     assert(!reflected_op && !refresh_op);
     /* Track that we received a replicated row event */
-    if (likely(count_this_event)) replicated_row_count++;
+    if (likely(count_this_event)) epoch_ctx.replicated_row_count++;
 
     if (!log_this_slave_update) {
       /*
         This event comes from a slave applier since it has an originating
         server id set. Since option to log slave updates is not set, skip it.
       */
+      DBUG_EXECUTE_IF("test_log_replica_updates_filter", { abort(); });
       return 0;
     }
   }
@@ -6372,7 +6399,6 @@ int Ndb_binlog_thread::handle_data_event(const NdbEventOperation *pOp,
     extra_row_info_ptr = extra_row_info.generateBuffer();
   }
 
-  assert(trans.good());
   assert(table != nullptr);
 
   DBUG_EXECUTE("", Ndb_table_map::print_table("table", table););
@@ -6406,7 +6432,7 @@ int Ndb_binlog_thread::handle_data_event(const NdbEventOperation *pOp,
     case NDBEVENT::TE_INSERT:
       if (likely(count_this_event)) {
         row.n_inserts++;
-        trans_row_count++;
+        epoch_ctx.trans_row_count++;
       }
       DBUG_PRINT("info", ("INSERT INTO %s.%s", table->s->db.str,
                           table->s->table_name.str));
@@ -6436,7 +6462,7 @@ int Ndb_binlog_thread::handle_data_event(const NdbEventOperation *pOp,
     case NDBEVENT::TE_DELETE:
       if (likely(count_this_event)) {
         row.n_deletes++;
-        trans_row_count++;
+        epoch_ctx.trans_row_count++;
       }
       DBUG_PRINT("info", ("DELETE FROM %s.%s", table->s->db.str,
                           table->s->table_name.str));
@@ -6481,7 +6507,7 @@ int Ndb_binlog_thread::handle_data_event(const NdbEventOperation *pOp,
     case NDBEVENT::TE_UPDATE:
       if (likely(count_this_event)) {
         row.n_updates++;
-        trans_row_count++;
+        epoch_ctx.trans_row_count++;
       }
       DBUG_PRINT("info",
                  ("UPDATE %s.%s", table->s->db.str, table->s->table_name.str));
@@ -6679,8 +6705,7 @@ bool Ndb_binlog_thread::handle_events_for_epoch(THD *thd, injector *inj,
   fix_per_epoch_trans_settings(thd);
 
   // Create new binlog transaction
-  injector_transaction trans;
-  inj->new_trans(thd, &trans, opt_ndb_log_trans_dependency);
+  injector_transaction trans(thd, opt_ndb_log_trans_dependency);
 
   if (event_type == NdbDictionary::Event::TE_EMPTY) {
     // Handle empty epoch
@@ -6691,7 +6716,7 @@ bool Ndb_binlog_thread::handle_events_for_epoch(THD *thd, injector *inj,
                           (uint)(ndb_latest_handled_binlog_epoch >> 32),
                           (uint)(ndb_latest_handled_binlog_epoch)));
 
-      commit_trans(trans, thd, current_epoch, 0, 0);
+      commit_trans(trans, thd, current_epoch, EpochContext{});
     }
 
     i_pOp = i_ndb->nextEvent2();
@@ -6725,29 +6750,19 @@ bool Ndb_binlog_thread::handle_events_for_epoch(THD *thd, injector *inj,
 
   inject_table_map(trans, i_ndb);
 
-  if (trans.good()) {
-    /* Inject ndb_apply_status WRITE_ROW event */
-    if (!inject_apply_status_write(trans, current_epoch)) {
-      log_error("Failed to inject apply status write row");
-      return false;  // Error, failed to inject ndb_apply_status
-    }
+  /* Inject ndb_apply_status WRITE_ROW event */
+  if (!inject_apply_status_write(trans, current_epoch)) {
+    log_error("Failed to inject apply status write row");
+    return false;  // Error, failed to inject ndb_apply_status
   }
 
-  unsigned trans_row_count = 0;
-  unsigned replicated_row_count = 0;
+  EpochContext epoch_ctx;
   do {
-    if (i_pOp->hasError() && handle_error(i_pOp) < 0) {
-      // NOTE! The 'handle_error' function currently always return 0
-      log_error("Failed to handle error on event operation");
-      return false;  // Failed to handle error on event op
-    }
-
     assert(check_event_list_consistency(i_ndb, i_pOp));
 
     const NdbDictionary::Event::TableEvent event_type = i_pOp->getEventType();
     if (event_type < NDBEVENT::TE_FIRST_NON_DATA_EVENT) {
-      if (handle_data_event(i_pOp, trans, trans_row_count,
-                            replicated_row_count) != 0) {
+      if (handle_data_event(i_pOp, trans, epoch_ctx) != 0) {
         log_error("Failed to handle data event");
         return false;  // Error, failed to handle data event
       }
@@ -6768,8 +6783,7 @@ bool Ndb_binlog_thread::handle_events_for_epoch(THD *thd, injector *inj,
     or is == NULL
   */
 
-  commit_trans(trans, thd, current_epoch, trans_row_count,
-               replicated_row_count);
+  commit_trans(trans, thd, current_epoch, epoch_ctx);
 
   return true;  // OK
 }
@@ -6939,7 +6953,7 @@ bool Ndb_binlog_thread::inject_apply_status_write(injector_transaction &trans,
   ndbcluster::ndbrequire(ret == 0);
 
   ret = trans.write_row(::server_id, tbl, &apply_status_table->s->all_set,
-                        apply_status_table->record[0]);
+                        apply_status_table->record[0], nullptr);
 
   assert(ret == 0);
 
@@ -6991,7 +7005,7 @@ bool Ndb_binlog_thread::check_reconnect_incident(
 
   // Write an incident event to the binlog since it's not possible to know what
   // has happened in the cluster while not being connected.
-  LEX_CSTRING msg;
+  LEX_CSTRING msg{};
   switch (incident_id) {
     case MYSQLD_STARTUP:
       msg = {STRING_WITH_LEN("mysqld startup")};
@@ -7028,12 +7042,13 @@ void Ndb_binlog_thread::recall_pending_purges(THD *thd) {
   // Iterate list of pending purges and delete corresponding
   // rows from ndb_binlog_index table
   for (const std::string &filename : m_pending_purges) {
-    log_verbose(1, "Purging binlog file: '%s'", filename.c_str());
+    log_info("Purging binlog file: '%s'", filename.c_str());
 
     if (Ndb_binlog_index_table_util::remove_rows_for_file(thd,
                                                           filename.c_str())) {
       log_warning("Failed to purge binlog file: '%s'", filename.c_str());
     }
+    log_info("Purged binlog file: '%s'", filename.c_str());
   }
   // All pending purges performed, clear the list
   m_pending_purges.clear();
@@ -7061,34 +7076,32 @@ static Uint64 find_epoch_to_handle(const NdbEventOperation *s_pOp,
   return ndb_latest_received_binlog_epoch;
 }
 
+bool Ndb_binlog_thread::EpochContext::is_empty_epoch() const {
+  DBUG_TRACE;
+  DBUG_PRINT("enter", ("trans_row_count: %d", trans_row_count));
+  DBUG_PRINT("enter", ("replicated_row_count: %d", replicated_row_count));
+  if (trans_row_count) {
+    DBUG_PRINT("exit", ("binlog has recorded rows -> not empty"));
+    return false;
+  }
+  if (opt_ndb_log_apply_status && replicated_row_count) {
+    DBUG_PRINT("info", ("logging updates to ndb_apply_status"));
+    DBUG_PRINT("exit", ("received rows applied by a replica "
+                        "-> not empty"));
+    return false;
+  }
+  DBUG_PRINT("exit", ("empty epoch"));
+  return true;
+}
+
 void Ndb_binlog_thread::commit_trans(injector_transaction &trans, THD *thd,
                                      Uint64 current_epoch,
-                                     unsigned trans_row_count,
-                                     unsigned replicated_row_count) {
-  if (!trans.good()) {
+                                     EpochContext epoch_ctx) {
+  DBUG_TRACE;
+  if (!opt_ndb_log_empty_epochs && epoch_ctx.is_empty_epoch()) {
+    /* nothing to commit, rollback instead */
+    (void)trans.rollback();  // Rollback never fails (by design)
     return;
-  }
-
-  if (!opt_ndb_log_empty_epochs) {
-    /*
-      If
-        - We did not add any 'real' rows to the Binlog
-      AND
-        - We did not apply any slave row updates, only
-          ndb_apply_status updates
-      THEN
-        Don't write the Binlog transaction which just
-        contains ndb_apply_status updates.
-        (For circular rep with log_apply_status, ndb_apply_status
-        updates will propagate while some related, real update
-        is propagating)
-    */
-    if ((trans_row_count == 0) &&
-        (!(opt_ndb_log_apply_status && replicated_row_count))) {
-      /* nothing to commit, rollback instead */
-      (void)trans.rollback();  // Rollback never fails (by design)
-      return;
-    }
   }
 
   thd->set_proc_info("Committing events to binlog");

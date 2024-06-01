@@ -1,15 +1,16 @@
-/* Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -51,8 +52,6 @@
       joins against these can enable a limited form of hash join
       that preserves ordering on the left side).
  */
-
-#include <string>
 
 class Query_block;
 class THD;
@@ -134,18 +133,14 @@ struct JoinHypergraph;
 
   @param thd Thread handle.
   @param query_block The query block to find a plan for.
-  @param trace If not nullptr, will be filled with human-readable optimizer
-    trace showing some of the inner workings of the code.
  */
-AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block,
-                              std::string *trace);
+AccessPath *FindBestQueryPlan(THD *thd, Query_block *query_block);
 
 // See comment in .cc file.
 bool FinalizePlanForQueryBlock(THD *thd, Query_block *query_block);
 
 // Exposed for unit testing only.
-void FindSargablePredicates(THD *thd, std::string *trace,
-                            JoinHypergraph *graph);
+void FindSargablePredicates(THD *thd, JoinHypergraph *graph);
 
 void EstimateAggregateCost(AccessPath *path);
 void EstimateMaterializeCost(THD *thd, AccessPath *path);

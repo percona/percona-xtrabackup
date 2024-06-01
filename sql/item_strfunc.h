@@ -1,15 +1,16 @@
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -675,11 +676,24 @@ class Item_func_user : public Item_func_sysconst {
 
 class Item_func_current_user : public Item_func_user {
   typedef Item_func_user super;
+  /*
+     Used to pass a security context to the resolver functions.
+     Only used for definer views. In all other contexts, the security context
+     passed here is nullptr and is instead looked up dynamically at run time
+     from the current THD.
+  */
+  Name_resolution_context *context = nullptr;
 
-  Name_resolution_context *context;
+  // Copied from context in fix_fields if definer Security_context
+  // is set in Name_resolution_context
+  LEX_CSTRING definer_priv_user = {};
+  LEX_CSTRING definer_priv_host = {};
 
  protected:
   type_conversion_status save_in_field_inner(Field *field, bool) override;
+
+  // Overridden to copy definer priv_user and priv_host
+  bool resolve_type(THD *) override;
 
  public:
   explicit Item_func_current_user(const POS &pos) : super(pos) {}
@@ -718,37 +732,19 @@ class Item_func_elt final : public Item_str_func {
 class Item_func_make_set final : public Item_str_func {
   typedef Item_str_func super;
 
-  Item *item;
   String tmp_str;
 
  public:
-  Item_func_make_set(const POS &pos, Item *a, PT_item_list *opt_list)
-      : Item_str_func(pos, opt_list), item(a) {}
+  Item_func_make_set(const POS &pos, PT_item_list *opt_list)
+      : Item_str_func(pos, opt_list) {}
 
-  bool do_itemize(Parse_context *pc, Item **res) override;
   String *val_str(String *str) override;
   bool fix_fields(THD *thd, Item **ref) override;
-  void fix_after_pullout(Query_block *parent_query_block,
-                         Query_block *removed_query_block) override;
-  bool split_sum_func(THD *thd, Ref_item_array ref_item_array,
-                      mem_root_deque<Item *> *fields) override;
   bool resolve_type(THD *) override;
-  void update_used_tables() override;
   const char *func_name() const override { return "make_set"; }
 
-  bool walk(Item_processor processor, enum_walk walk, uchar *arg) override {
-    if ((walk & enum_walk::PREFIX) && (this->*processor)(arg)) return true;
-    if (item->walk(processor, walk, arg)) return true;
-    for (uint i = 0; i < arg_count; i++) {
-      if (args[i]->walk(processor, walk, arg)) return true;
-    }
-    return ((walk & enum_walk::POSTFIX) && (this->*processor)(arg));
-  }
-
-  Item *transform(Item_transformer transformer, uchar *arg) override;
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
-  Item *get_item() { return item; }
 };
 
 class Item_func_format final : public Item_str_ascii_func {

@@ -1,15 +1,16 @@
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -52,7 +53,7 @@
 #include "sql/psi_memory_key.h"
 #include "sql/rpl_mi.h"       // Master_info
 #include "sql/rpl_msr.h"      // channel_map
-#include "sql/rpl_replica.h"  // SLAVE_SQL
+#include "sql/rpl_replica.h"  // REPLICA_SQL
 #include "sql/rpl_rli.h"      // Relay_log_info
 #include "sql/sql_class.h"
 #include "sql/sql_lex.h"
@@ -199,19 +200,20 @@ int Rpl_filter::copy_global_replication_filters() {
   if (rpl_global_filter.is_empty()) return 0;
 
   THD *thd = current_thd;
-  if (thd != nullptr && thd->lex->sql_command == SQLCOM_CHANGE_MASTER) {
+  if (thd != nullptr &&
+      thd->lex->sql_command == SQLCOM_CHANGE_REPLICATION_SOURCE) {
     /*
       Acquire the write lock when copying global replication filter if
-      a new channel is being created by CHANGE MASTER TO ... FOR CHANNEL
-      command after server startup, in case SHOW SLAVE STATUS or
+      a new channel is being created by CHANGE REPLICATION SOURCE TO ... FOR
+      CHANNEL command after server startup, in case SHOW REPLICA STATUS or
       SELECT * FROM performance_schema.replication_applier_filters is
       querying the filter in parallel. We do not have the race problem
       when creating a new channel from repository during server startup.
       Note: we hold a write lock of channel_map when executing
-      CHANGE MASTER TO ... FOR CHANNEL <channel_name>, and hold a read
-      lock of channel_map when executing CHANGE REPLICATION FILTER
-      (the global replication filters). So we do not need to lock the
-      global replication filters for read.
+      CHANGE REPLICATION SOURCE TO ... FOR CHANNEL <channel_name>, and hold a
+      read lock of channel_map when executing CHANGE REPLICATION FILTER (the
+      global replication filters). So we do not need to lock the global
+      replication filters for read.
     */
     wrlock();
     need_unlock = true;
@@ -1401,7 +1403,7 @@ bool Sql_cmd_change_repl_filter::change_rpl_filter(THD *thd) {
         mysql_mutex_lock(&mi->rli->run_lock);
         /* Check the running status of all SQL threads */
         init_thread_mask(&thread_mask, mi, false /*not inverse*/);
-        if (thread_mask & SLAVE_SQL) {
+        if (thread_mask & REPLICA_SQL) {
           /* We refuse if any slave thread is running */
           my_error(ER_REPLICA_CHANNEL_SQL_THREAD_MUST_STOP, MYF(0),
                    mi->get_channel());
@@ -1520,7 +1522,7 @@ bool Sql_cmd_change_repl_filter::change_rpl_filter(THD *thd) {
     /* check the status of SQL thread */
     init_thread_mask(&thread_mask, mi, false /*not inverse*/);
     /* We refuse if the slave thread is running */
-    if (thread_mask & SLAVE_SQL) {
+    if (thread_mask & REPLICA_SQL) {
       my_error(ER_REPLICA_CHANNEL_SQL_THREAD_MUST_STOP, MYF(0),
                mi->get_channel());
       ret = true;

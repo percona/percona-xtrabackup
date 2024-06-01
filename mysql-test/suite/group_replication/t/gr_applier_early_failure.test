@@ -29,18 +29,18 @@
 --echo #
 
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
+--source include/connection.inc
 
 CREATE TABLE t1 (c1 INT NOT NULL PRIMARY KEY) ENGINE=InnoDB;
 
---source include/rpl_sync.inc
+--source include/rpl/sync.inc
 
 --echo #
 --echo # 2. Insert a row on server 2 with log to the binlog disabled
 --echo #
 
 --let $rpl_connection_name= server2
---source include/rpl_connection.inc
+--source include/connection.inc
 
 SET SESSION sql_log_bin= 0;
 INSERT INTO t1 VALUES (1);
@@ -53,12 +53,12 @@ SET SESSION sql_log_bin= 1;
 --echo #
 
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
+--source include/connection.inc
 
 INSERT INTO t1 VALUES (1);
 
 --let $rpl_connection_name= server2
---source include/rpl_connection.inc
+--source include/connection.inc
 
 --echo # Expect ERROR state.
 --let $group_replication_member_state= ERROR
@@ -111,6 +111,7 @@ call mtr.add_suppression("Unable to initialize the Group Replication applier mod
 call mtr.add_suppression("The applier thread execution was aborted. Unable to process more transactions, this member will now leave the group.");
 call mtr.add_suppression("Fatal error during execution on the Applier process of Group Replication. The server will now leave the group.");
 call mtr.add_suppression("The server was automatically set into read only mode after an error was detected.");
+call mtr.add_suppression("The server was automatically set into offline mode after an error was detected.");
 call mtr.add_suppression("Unable to confirm whether the server has left the group or not. Check *.*");
 call mtr.add_suppression("Skipping leave operation: concurrent attempt to leave the group is on-going.");
 call mtr.add_suppression("Replica SQL for channel 'group_replication_applier': Could not execute Write_rows event on table");
@@ -126,7 +127,7 @@ call mtr.add_suppression("Error reading relay log event for channel 'group_repli
 SET SESSION sql_log_bin= 1;
 
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
+--source include/connection.inc
 
 --source include/stop_group_replication.inc
 

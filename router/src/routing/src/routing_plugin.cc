@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -44,10 +45,10 @@
 #include "mysqlrouter/destination.h"
 #include "mysqlrouter/io_component.h"
 #include "mysqlrouter/routing_component.h"
+#include "mysqlrouter/ssl_mode.h"
 #include "mysqlrouter/supported_routing_options.h"
 #include "plugin_config.h"
 #include "scope_guard.h"
-#include "ssl_mode.h"
 
 using mysql_harness::AppInfo;
 using mysql_harness::ConfigSection;
@@ -268,7 +269,7 @@ static void start(mysql_harness::PluginFuncEnv *env) {
   }
 
   try {
-    RoutingPluginConfig config(section);
+    const RoutingPluginConfig config(section);
 
     if (config.router_require_enforce != 0) {
       if (config.source_ssl_ca_file.empty() &&
@@ -502,21 +503,6 @@ static void start(mysql_harness::PluginFuncEnv *env) {
             name.c_str());
       }
 
-      auto &pool_component = ConnectionPoolComponent::get_instance();
-      auto default_pool_name = pool_component.default_pool_name();
-      auto default_pool = pool_component.get(default_pool_name);
-      if (!default_pool) {
-        log_warning(
-            "[%s].connection_sharing=1 has been ignored, as "
-            "there is no [connection_pool]",
-            name.c_str());
-      } else if (default_pool->max_pooled_connections() == 0) {
-        log_warning(
-            "[%s].connection_sharing=1 has been ignored, as "
-            "[connection_pool].max_idle_server_connections=0",
-            name.c_str());
-      }
-
       if (config.protocol == Protocol::Type::kXProtocol) {
         log_warning("[%s].connection_sharing=1 has been ignored, as protocol=x",
                     name.c_str());
@@ -585,6 +571,23 @@ static const std::array<const char *, 6> required = {{
     "destination_status",
 }};
 
+static void expose_configuration(mysql_harness::PluginFuncEnv *env,
+                                 const char *key, bool initial) {
+  const mysql_harness::AppInfo *info = get_app_info(env);
+
+  if (!info->config) return;
+
+  for (const mysql_harness::ConfigSection *section : info->config->sections()) {
+    if (section->name != kSectionName || section->key != key) {
+      continue;
+    }
+
+    RoutingPluginConfig config(section);
+    config.expose_configuration(key, info->config->get_default_section(),
+                                initial);
+  }
+}
+
 mysql_harness::Plugin ROUTING_PLUGIN_EXPORT harness_plugin_routing = {
     mysql_harness::PLUGIN_ABI_VERSION,       // abi-version
     mysql_harness::ARCHITECTURE_DESCRIPTOR,  // arch
@@ -604,4 +607,5 @@ mysql_harness::Plugin ROUTING_PLUGIN_EXPORT harness_plugin_routing = {
     true,     // declares_readiness
     routing_supported_options.size(),
     routing_supported_options.data(),
+    expose_configuration,
 };

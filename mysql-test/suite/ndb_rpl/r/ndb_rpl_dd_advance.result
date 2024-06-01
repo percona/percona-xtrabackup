@@ -1,4 +1,4 @@
-include/master-slave.inc
+include/rpl/init_source_replica.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
@@ -170,16 +170,10 @@ SELECT * FROM t1 where c1 = 1;
 c1	c2	c3	c5
 1	2.00	b1b1b1b1b1b1b1b1b1b1	NULL
 DROP TABLE t1;
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-RESET SLAVE;
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
+STOP REPLICA;
+RESET REPLICA;
 RESET BINARY LOGS AND GTIDS;
-START SLAVE;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 ******** Create additional TABLESPACE test 2 **************
 CREATE TABLESPACE ts2
 ADD DATAFILE 'datafile03.dat'
@@ -241,12 +235,8 @@ USE tpcb;
 SELECT COUNT(*) FROM account;
 COUNT(*)
 1000
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-RESET SLAVE;
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
+STOP REPLICA;
+RESET REPLICA;
 DROP PROCEDURE IF EXISTS tpcb.load;
 DROP PROCEDURE IF EXISTS tpcb.trans;
 DROP TABLE IF EXISTS tpcb.account;
@@ -290,9 +280,7 @@ SOURCE_LOG_FILE = 'master-bin.000001',
 SOURCE_LOG_POS = <the_pos> ;
 * 4. *
 * 5. *
-START SLAVE;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 **** We should be ready to continue on *************
 ****** Let's make sure we match *******
 ***** MASTER *******
@@ -326,4 +314,4 @@ DROP DATAFILE 'datafile04.dat';
 DROP TABLESPACE ts2;
 DROP LOGFILE GROUP lg1 ENGINE=NDB;
 ****** Do dumps compare ************
-include/rpl_end.inc
+include/rpl/deinit.inc

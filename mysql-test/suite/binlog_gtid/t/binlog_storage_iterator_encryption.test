@@ -6,18 +6,28 @@
 #
 # This file runs tests with binlog encryption on
 #
+--source include/have_component_keyring_file.inc
+--source ../mysql-test/suite/component_keyring_file/inc/setup_component.inc
+
+--echo # Restart mysql server with binlog_encryption on.
+--let $restart_parameters=restart:--binlog_encryption=ON $PLUGIN_DIR_OPT $RPL_OBS_EXAMPLE_OPT
+--source include/restart_mysqld_no_echo.inc
+
 --source include/have_binlog_format_row.inc
 --source include/have_debug_sync.inc
 --source include/have_binlog_encryption_on.inc
+
 
 # The content of the binary log changes when compression is enabled
 # and therefore this running this test with compression would cause
 # an artificial failure.
 --source include/not_binlog_transaction_compression_on.inc
 
---source include/gtid_utils.inc
+--source include/rpl/gtid_utils.inc
 
 # run the tests
---source extra/binlog_tests/binlog_storage_iterator.inc
+--let $restart_parameters=restart: $PLUGIN_DIR_OPT
+--source common/binlog/storage_iterator.inc
 
---source include/gtid_utils_end.inc
+--source include/rpl/gtid_utils_end.inc
+--source ../mysql-test/suite/component_keyring_file/inc/teardown_component.inc

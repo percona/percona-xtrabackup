@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -315,8 +316,7 @@ Path Path::real_path() const {
 stdx::expected<void, std::error_code> delete_dir(
     const std::string &dir) noexcept {
   if (_rmdir(dir.c_str()) != 0) {
-    return stdx::make_unexpected(
-        std::error_code(errno, std::generic_category()));
+    return stdx::unexpected(std::error_code(errno, std::generic_category()));
   }
 
   return {};
@@ -340,7 +340,7 @@ stdx::expected<void, std::error_code> delete_file(
     }
   }
 
-  return stdx::make_unexpected(
+  return stdx::unexpected(
       std::error_code(GetLastError(), std::system_category()));
 }
 
@@ -399,12 +399,12 @@ static stdx::expected<void, std::error_code> make_file_private_win32(
               AclBuilder::WellKnownSid{WinLocalServiceSid},
               GENERIC_READ | (read_only_for_local_service ? 0 : GENERIC_WRITE))
           .build();
-  if (!build_res) return build_res.get_unexpected();
+  if (!build_res) return stdx::unexpected(build_res.error());
 
   auto sd_alloced = std::move(build_res.value());
 
   auto set_res = access_rights_set(filename, sd_alloced);
-  if (!set_res) return set_res.get_unexpected();
+  if (!set_res) return stdx::unexpected(set_res.error());
 
   return {};
 }
@@ -420,18 +420,18 @@ static stdx::expected<void, std::error_code> make_file_private_win32(
 static stdx::expected<void, std::error_code> set_everyone_group_access_rights(
     const std::string &file_name, DWORD mask) {
   auto sec_desc_res = access_rights_get(file_name);
-  if (!sec_desc_res) return sec_desc_res.get_unexpected();
+  if (!sec_desc_res) return stdx::unexpected(sec_desc_res.error());
 
   // add (Everyone, mask) to the existing permissions
   using namespace win32::access_rights;
   const auto build_res = AclBuilder{std::move(sec_desc_res.value())}
                              .set(AclBuilder::WellKnownSid{WinWorldSid}, mask)
                              .build();
-  if (!build_res) return build_res.get_unexpected();
+  if (!build_res) return stdx::unexpected(build_res.error());
 
   // apply them back again.
   const auto set_res = access_rights_set(file_name, build_res.value());
-  if (!set_res) return set_res.get_unexpected();
+  if (!set_res) return stdx::unexpected(set_res.error());
 
   return {};
 }

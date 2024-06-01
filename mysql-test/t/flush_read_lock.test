@@ -54,7 +54,7 @@
 --echo # with FTWRL. This is class #4 -- incompatible
 --echo # becuase issue implicit COMMIT which is not a no-op.
 --echo # Finally, there are administrative statements (such as 
---echo # RESET SLAVE) that do not take any locks and do not
+--echo # RESET REPLICA) that do not take any locks and do not
 --echo # issue COMMIT.
 --echo # This is class #5.
 --echo # The goal of this coverage is to test statements
@@ -111,7 +111,7 @@ connection default;
 --echo # with various statements.
 --echo #
 --echo # These tests don't cover some classes of statements:
---echo # - Replication-related - CHANGE MASTER TO, START/STOP SLAVE and etc
+--echo # - Replication-related - CHANGE REPLICATION SOURCE TO, START/STOP REPLICA and etc
 --echo #   (all compatible with FTWRL).
 --echo # - Plugin-related - INSTALL/UNINSTALL (incompatible with FTWRL,
 --echo #   require plugin support).
@@ -307,14 +307,15 @@ set debug_sync= "RESET";
 --echo #
 --echo # Provide format description BINLOG statement first.
 BINLOG '
-MfmqTA8BAAAAZwAAAGsAAAABAAQANS41LjctbTMtZGVidWctbG9nAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAx+apMEzgNAAgAEgAEBAQEEgAAVAAEGggAAAAICAgCAA==
+BHzAZQ8BAAAAewAAAH8AAAAAAAQAOC40LjAtZGVidWcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAEfMBlEwANAAgAAAAABAAEAAAAYwAEGggAAAAAAAACAAAACgoKKioAEjQA
+CigAAAG9bFwE
 ';
 --echo # Now test compatibility for BINLOG statement which is 
 --echo # equivalent to INSERT INTO t1_base VALUES (1).
 let $statement= BINLOG '
-MfmqTBMBAAAALgAAAN0AAAAAACgAAAAAAAEABHRlc3QAB3QxX2Jhc2UAAQMAAQ==
-MfmqTBcBAAAAIgAAAP8AAAAAACgAAAAAAAEAAf/+AQAAAA==
+BnzAZRMBAAAANQAAAPYtAAAAACUBAAAAAAEABHRlc3QAB3QxX2Jhc2UAAQMAAQEBACYsoOE=
+BnzAZR4BAAAAKAAAAB4uAAAAACUBAAAAAAEAAgAB/wACAAAAyb0y+g==
 ';
 let $cleanup_stmt1= delete from t1_base where i = 1 limit 1;
 --echo # Skip last part of compatibility testing as this statement

@@ -18,17 +18,17 @@ RESET PERSIST event_scheduler;
 CREATE DATABASE bug27374791;
 USE bug27374791;
 CREATE TABLE T( i int);
-include/show_binlog_events.inc
+include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 BEGIN;
 INSERT INTO T values (9);
-include/show_binlog_events.inc
+include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 SET PERSIST max_connections=31;
-include/show_binlog_events.inc
+include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 RESET PERSIST;
-include/show_binlog_events.inc
+include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 SET GLOBAL max_connections=DEFAULT;
 DROP DATABASE bug27374791;
@@ -250,9 +250,7 @@ RESET PERSIST size;
 ERROR HY000: Variable size does not exist in persisted config file
 SELECT JSON_OBJECTAGG(id,x) FROM t;
 ERROR 42S22: Unknown column 'id' in 'field list'
-RESET SLAVE;
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
+RESET REPLICA;
 DROP DATABASE bug27903874;
 #
 # Bug #27512616: SET PERSIST COMMAND FAILS TO MAP DEFAULT(NULL) VALUES IN
@@ -396,19 +394,19 @@ RESET PERSIST;
 # Bug #30030648: NO DEPRECATION WARNING ON SERVER RESTART FOR SET PERSISTED OPTIONS
 #
 # should report warning
-SET GLOBAL avoid_temporal_upgrade=TRUE;
+SET GLOBAL delayed_insert_limit=100;
 Warnings:
-Warning	1287	'@@avoid_temporal_upgrade' is deprecated and will be removed in a future release.
+Warning	1287	'@@delayed_insert_limit' is deprecated and will be removed in a future release.
 # should report warning
-SET PERSIST_ONLY avoid_temporal_upgrade=TRUE;
+SET PERSIST_ONLY delayed_insert_limit=100;
 Warnings:
-Warning	1287	'@@avoid_temporal_upgrade' is deprecated and will be removed in a future release.
+Warning	1287	'@@delayed_insert_limit' is deprecated and will be removed in a future release.
 # should report warning
-SET PERSIST avoid_temporal_upgrade=TRUE;
+SET PERSIST delayed_insert_limit=100;
 Warnings:
-Warning	1287	'@@avoid_temporal_upgrade' is deprecated and will be removed in a future release.
+Warning	1287	'@@delayed_insert_limit' is deprecated and will be removed in a future release.
 # Restart server
-include/assert_grep.inc [Assert that there is a warning at bootstrap when setting --avoid_temporal_upgrade]
+include/assert_grep.inc [Assert that there is a warning at bootstrap when setting --delayed_insert_limit]
 RESET PERSIST;
 #
 # Bug #28749668: SKIP_NAME_RESOLVE CAN BE PERSIT_ONLY-ED TO ON, BUT NOT OFF
@@ -479,20 +477,20 @@ RESET PERSIST;
 SET PERSIST temptable_use_mmap=FALSE;
 Warnings:
 Warning	1287	'temptable_use_mmap' is deprecated and will be removed in a future release.
-SET PERSIST avoid_temporal_upgrade=TRUE;
+SET PERSIST delayed_insert_limit=100;
 Warnings:
-Warning	1287	'@@avoid_temporal_upgrade' is deprecated and will be removed in a future release.
+Warning	1287	'@@delayed_insert_limit' is deprecated and will be removed in a future release.
 # restart:--log_error=LOG_ERR --no-console
 include/assert_grep.inc [Assert that there is a warning at bootstrap when setting temptable_use_mmap]
-include/assert_grep.inc [Assert that there is a warning at bootstrap when setting avoid_temporal_upgrade]
+include/assert_grep.inc [Assert that there is a warning at bootstrap when setting delayed_insert_limit]
 RESET PERSIST;
 SET PERSIST_ONLY temptable_use_mmap=FALSE;
-SET PERSIST_ONLY avoid_temporal_upgrade=TRUE;
+SET PERSIST_ONLY delayed_insert_limit=100;
 Warnings:
-Warning	1287	'@@avoid_temporal_upgrade' is deprecated and will be removed in a future release.
+Warning	1287	'@@delayed_insert_limit' is deprecated and will be removed in a future release.
 # restart:--log_error=LOG_ERR --no-console
 include/assert_grep.inc [Assert that there is a warning at bootstrap when setting temptable_use_mmap]
-include/assert_grep.inc [Assert that there is a warning at bootstrap when setting avoid_temporal_upgrade]
+include/assert_grep.inc [Assert that there is a warning at bootstrap when setting delayed_insert_limit]
 RESET PERSIST;
 # restart:
 #

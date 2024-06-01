@@ -1,14 +1,14 @@
 ################################################################################
 # This test validates the behavior of the group replication recovery channel
-# against common slave commands like START/STOP/RESET SLAVE.
+# against common slave commands like START/STOP/RESET REPLICA.
 #
 # Test:
 # 0. The test requires three servers: M1, M2 and M3.
 # 1. Bootstrap start group replication on M2. Add some data for recovery.
 #    Start M1.
 # 2. Stop replication on M1. On M2 lock a table to block recovery. Start M1.
-# 3. Execute a STOP SLAVE command and see the recovery channel still active.
-# 4. Execute a RESET SLAVE ALL command and see the recovery channel is not
+# 3. Execute a STOP REPLICA command and see the recovery channel still active.
+# 4. Execute a RESET REPLICA ALL command and see the recovery channel is not
 #    affected on M1 when GR node is active.
 # 5. Kill the server M1. The recovery channel should still be there but it's
 #    not started. Recreate the slave channel to test that it started
@@ -70,21 +70,21 @@ LOCK TABLE t1 READ;
 --source include/start_group_replication.inc
 
 #
-# Phase 3: Execute a STOP SLAVE command and see the channel still active.
+# Phase 3: Execute a STOP REPLICA command and see the channel still active.
 #
 
 let $wait_condition=
   SELECT COUNT(*)=1 FROM performance_schema.replication_connection_status where CHANNEL_NAME="group_replication_recovery" and SERVICE_STATE="ON";
 --source include/wait_condition.inc
 
-STOP SLAVE;
+STOP REPLICA;
 
 --let $assert_text= 'The group replication recovery channel is ON'
 --let $assert_cond= [SELECT COUNT(*) AS count FROM performance_schema.replication_connection_status where CHANNEL_NAME="group_replication_recovery" and SERVICE_STATE="ON", count, 1] = 1
 --source include/assert.inc
 
 #
-# Phase 4: Execute a RESET SLAVE ALL command and see the recovery channel is
+# Phase 4: Execute a RESET REPLICA ALL command and see the recovery channel is
 # not affected as GR node is active.
 #
 
@@ -106,7 +106,7 @@ SET GLOBAL SUPER_READ_ONLY=0; # Bug#22097534
 --file_exists $recovery_relay_log_index
 
 --error ER_REPLICA_CHANNEL_OPERATION_NOT_ALLOWED
-RESET SLAVE ALL;
+RESET REPLICA ALL;
 
 --let $assert_text= 'The group replication recovery channel is present'
 --let $assert_cond= [SELECT COUNT(*) AS count FROM mysql.slave_relay_log_info WHERE channel_name="group_replication_recovery", count, 1] = 1
@@ -133,7 +133,7 @@ RESET SLAVE ALL;
 --connection server1
 --replace_result $SERVER_MYPORT_3 SERVER_3_PORT
 --eval CHANGE REPLICATION SOURCE TO SOURCE_HOST="127.0.0.1", SOURCE_USER="root", SOURCE_PASSWORD="", SOURCE_PORT=$SERVER_MYPORT_3, SOURCE_AUTO_POSITION=1 FOR CHANNEL "channel_1"
---source include/start_slave.inc
+--source include/rpl/start_replica.inc
 
 --let $assert_text= 'The created slave channel is ON'
 --let $assert_cond= [SELECT COUNT(*) AS count FROM performance_schema.replication_connection_status where CHANNEL_NAME="channel_1" and SERVICE_STATE="ON", count, 1] = 1
@@ -147,14 +147,14 @@ RESET SLAVE ALL;
 --replace_result $_group_replication_local_address GROUP_REPLICATION_LOCAL_ADDRESS $_group_replication_group_seeds GROUP_REPLICATION_GROUP_SEEDS
 --source include/kill_and_restart_mysqld.inc
 
-#Needed as we are not using rpl_restart_server.inc
+#Needed as we are not using rpl/restart_server.inc
 --let $rpl_server_number= 1
---source include/rpl_reconnect.inc
+--source include/rpl/reconnect.inc
 
 # Wait until group has only 1 member, that is, server1 death is detected by
 # the group.
 --let $rpl_connection_name= server2
---source include/rpl_connection.inc
+--source include/connection.inc
 
 --let $group_replication_member_state= UNREACHABLE
 --let $group_replication_member_id= $member1_uuid
@@ -173,10 +173,10 @@ RESET SLAVE ALL;
 --source include/gr_wait_for_number_of_members.inc
 
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
+--source include/connection.inc
 # Wait for the slave channel start
 --let $rpl_channel_name= 'channel_1'
---source include/wait_for_slave_to_start.inc
+--source include/rpl/wait_for_replica_to_start.inc
 --let $rpl_channel_name=
 
 --let $assert_text= 'The group replication recovery channel is present'
@@ -201,7 +201,7 @@ DROP TABLE t1;
 
 --connection server1
 
---source include/stop_slave.inc
+--source include/rpl/stop_replica.inc
 CHANGE REPLICATION SOURCE TO SOURCE_AUTO_POSITION=0 FOR CHANNEL "channel_1";
 
 --source include/start_group_replication.inc

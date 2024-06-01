@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2017, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -50,7 +51,6 @@ struct GoodTestData {
     std::string user;
     std::chrono::milliseconds ttl;
     std::string metadata_cluster;
-    std::vector<TCPAddress> bootstrap_addresses;
   } expected;
 };
 
@@ -69,10 +69,7 @@ std::ostream &operator<<(std::ostream &os, const GoodTestData &test_data) {
   return os << "user=" << test_data.expected.user << ", "
             << "ttl="
             << mysqlrouter::ms_to_seconds_string(test_data.expected.ttl) << ", "
-            << "metadata_cluster=" << test_data.expected.metadata_cluster
-            << ", "
-            << "bootstrap_server_addresses="
-            << test_data.expected.bootstrap_addresses;
+            << "metadata_cluster=" << test_data.expected.metadata_cluster;
 }
 
 /**
@@ -94,8 +91,6 @@ TEST_P(MetadataCachePluginConfigGoodTest, GoodConfigs) {
   EXPECT_THAT(plugin_config.ttl, Eq(test_data.expected.ttl));
   EXPECT_THAT(plugin_config.cluster_name,
               StrEq(test_data.expected.metadata_cluster));
-  EXPECT_THAT(plugin_config.metadata_servers_addresses,
-              ContainerEq(test_data.expected.bootstrap_addresses));
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -105,9 +100,8 @@ INSTANTIATE_TEST_SUITE_P(
         {{std::map<std::string, std::string>({
              {"user", "foo"},  // required
          })},
+         {"foo", mysqlrouter::kDefaultMetadataTTLCluster, ""}},
 
-         {"foo", metadata_cache::kDefaultMetadataTTL, "",
-          std::vector<TCPAddress>()}},
         // TTL = 0.5 seconds
         {{std::map<std::string, std::string>({
              {
@@ -119,9 +113,8 @@ INSTANTIATE_TEST_SUITE_P(
                  "0.5",
              },
          })},
+         {"foo", std::chrono::milliseconds(500), ""}},
 
-         {"foo", std::chrono::milliseconds(500), "",
-          std::vector<TCPAddress>()}},
         // TTL = 0 seconds
         {{std::map<std::string, std::string>({
              {
@@ -133,7 +126,8 @@ INSTANTIATE_TEST_SUITE_P(
                  "0",
              },
          })},
-         {"foo", std::chrono::milliseconds(0), "", std::vector<TCPAddress>()}},
+         {"foo", std::chrono::milliseconds(0), ""}},
+
         // TTL = 5 seconds
         {{std::map<std::string, std::string>({
              {
@@ -145,50 +139,8 @@ INSTANTIATE_TEST_SUITE_P(
                  "5",
              },
          })},
-         {"foo", std::chrono::milliseconds(5000), "",
-          std::vector<TCPAddress>()}},
-        // bootstrap_servers, nicely split into pieces
-        {{std::map<std::string, std::string>({
-             {
-                 "user",
-                 "foo",
-             },  // required
-             {
-                 "ttl",
-                 "0.5",
-             },
-             {
-                 "bootstrap_server_addresses",
-                 "mysql://foobar,mysql://fuzzbozz",
-             },
-         })},
-         {"foo", std::chrono::milliseconds(500), "",
-          std::vector<TCPAddress>({
-              {
-                  TCPAddress("foobar", metadata_cache::kDefaultMetadataPort),
-              },
-              {
-                  TCPAddress("fuzzbozz", metadata_cache::kDefaultMetadataPort),
-              },
-          })}},
-        // bootstrap_servers, single value
-        {{std::map<std::string, std::string>({
-             {
-                 "user",
-                 "foo",
-             },  // required
-             {
-                 "bootstrap_server_addresses",
-                 "mysql://foobar",
-             },
-         })},
+         {"foo", std::chrono::milliseconds(5000), ""}},
 
-         {"foo", metadata_cache::kDefaultMetadataTTL, "",
-          std::vector<TCPAddress>({
-              {
-                  TCPAddress("foobar", metadata_cache::kDefaultMetadataPort),
-              },
-          })}},
         // metadata_cluster
         {{std::map<std::string, std::string>({
              {
@@ -200,24 +152,12 @@ INSTANTIATE_TEST_SUITE_P(
                  "0.5",
              },
              {
-                 "bootstrap_server_addresses",
-                 "mysql://foobar,mysql://fuzzbozz",
-             },
-             {
                  "metadata_cluster",
                  "whatisthis",
              },
          })},
 
-         {"foo", std::chrono::milliseconds(500), "whatisthis",
-          std::vector<TCPAddress>({
-              {
-                  TCPAddress("foobar", metadata_cache::kDefaultMetadataPort),
-              },
-              {
-                  TCPAddress("fuzzbozz", metadata_cache::kDefaultMetadataPort),
-              },
-          })}},
+         {"foo", std::chrono::milliseconds(500), "whatisthis"}},
     })));
 
 // the Bad

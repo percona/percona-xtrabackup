@@ -1,10 +1,10 @@
 --echo #########################################################################
 --echo # Verify that the "ch1" and "ch2" channels would copy the global
 --echo # replication filters to its own per-channel replication filters
---echo # when they are being created and configured by CHANGE MASTER TO
+--echo # when they are being created and configured by CHANGE REPLICATION SOURCE TO
 --echo # ... FOR CHANNEL.
 --echo #
---echo # Verify RESET SLAVE and RESET SLAVE FOR CHANNEL
+--echo # Verify RESET REPLICA and RESET REPLICA FOR CHANNEL
 --echo # - deletes all relay log files of named channels and reinitializes
 --echo # them.
 --echo # - For default channel, it restart the relay log from .000001
@@ -12,23 +12,23 @@
 --echo # - For named channel, it restart the relay log from ch.000001
 --echo # - retains all replication filters from all replication channels.
 --echo #
---echo # Verify that "'RESET SLAVE ALL FOR CHANNEL '<channel_name>'" removes
+--echo # Verify that "'RESET REPLICA ALL FOR CHANNEL '<channel_name>'" removes
 --echo # the replication channel specified by 'FOR CHANNEL' clause and all
 --echo # replication filters of the channel. There is no effect to other
 --echo # channels.
 --echo #
---echo # "RESET SLAVE ALL FOR CHANNEL ''" removes the default channel and all
+--echo # "RESET REPLICA ALL FOR CHANNEL ''" removes the default channel and all
 --echo # replication filters of the channel firstly, but then create a new
 --echo # default channel which is not configured yet. So performance_schema.
---echo # replication_applier_filters and SHOW SLAVE STATUS do not show it.
+--echo # replication_applier_filters and SHOW REPLICA STATUS do not show it.
 --echo #
 --echo # Verify that default channel would copy global replication filters
 --echo # to its per-channel replication filters if there are no per-channel
 --echo # replication filters and there are global replication filters on the
 --echo # filter type when it is being configured. Then performance_schema.
---echo # replication_applier_filters and SHOW SLAVE STATUS show it.
+--echo # replication_applier_filters and SHOW REPLICA STATUS show it.
 --echo #
---echo # Verify that "RESET SLAVE ALL" with no FOR CHANNEL clause removes all
+--echo # Verify that "RESET REPLICA ALL" with no FOR CHANNEL clause removes all
 --echo # replication channels, so it shall remove all per-channel replication
 --echo # filters but does not touch all global replication filters. When the
 --echo # new channel is being configured, it therefore uses the global filters
@@ -36,24 +36,24 @@
 --echo # replication filters).
 --echo #
 --echo #########################################################################
-# The test doesn't relate to binlog format, so it is just tested on mixed mode.
-#Skip on group replication runs
+
+# Skip on group replication runs
 --source include/not_group_replication_plugin.inc
 
-
---source include/have_binlog_format_mixed.inc
---source include/master-slave.inc
+# This test is binary_log format agnostic so row is chosen.
+--source include/have_binlog_format_row.inc
+--source include/rpl/init_source_replica.inc
 
 # Clean all configuration changes after running the test.
 --source include/force_restart.inc
 
---source include/rpl_connection_slave.inc
+--source include/rpl/connection_replica.inc
 --let $datadir= `SELECT @@GLOBAL.datadir`
 
 --echo #
 --echo # Verify that the "ch1" and "ch2" channels would copy the global
 --echo # replication filters to its own per-channel replication filters
---echo # when they are being created and configured by CHANGE MASTER TO
+--echo # when they are being created and configured by CHANGE REPLICATION SOURCE TO
 --echo # ... FOR CHANNEL.
 --echo #
 SELECT COUNT(*) FROM performance_schema.replication_applier_global_filters;
@@ -72,25 +72,25 @@ FLUSH RELAY LOGS FOR CHANNEL "ch2";
 --echo #
 --let $rpl_channel_name= 'ch1'
 --let $status_items= Replicate_Do_DB, Replicate_Ignore_DB, Replicate_Do_Table, Replicate_Ignore_Table, Replicate_Wild_Do_Table, Replicate_Wild_Ignore_Table, Replicate_Rewrite_DB
---source include/show_slave_status.inc
+--source include/rpl/deprecated/show_replica_status.inc
 --let $rpl_channel_name= 'ch2'
 --let $status_items= Replicate_Do_DB, Replicate_Ignore_DB, Replicate_Do_Table, Replicate_Ignore_Table, Replicate_Wild_Do_Table, Replicate_Wild_Ignore_Table, Replicate_Rewrite_DB
---source include/show_slave_status.inc
+--source include/rpl/deprecated/show_replica_status.inc
 SELECT COUNT(*) FROM performance_schema.replication_applier_filters;
 SELECT CHANNEL_NAME, FILTER_NAME, FILTER_RULE, CONFIGURED_BY, COUNTER FROM performance_schema.replication_applier_filters;
 
 --echo #
---echo # RESET SLAVE FOR CHANNEL "ch1" deletes all relay log files of ch1.
+--echo # RESET REPLICA FOR CHANNEL "ch1" deletes all relay log files of ch1.
 --echo #
-eval RESET SLAVE FOR CHANNEL "ch1";
+eval RESET REPLICA FOR CHANNEL "ch1";
 
 --echo #
---echo # Verify that "RESET SLAVE FOR CHANNEL '<channel_name>'" retains
+--echo # Verify that "RESET REPLICA FOR CHANNEL '<channel_name>'" retains
 --echo # replication filters of the channel.
 --echo #
 --let $rpl_channel_name= 'ch1'
 --let $status_items= Replicate_Do_DB, Replicate_Ignore_DB, Replicate_Do_Table, Replicate_Ignore_Table, Replicate_Wild_Do_Table, Replicate_Wild_Ignore_Table, Replicate_Rewrite_DB
---source include/show_slave_status.inc
+--source include/rpl/deprecated/show_replica_status.inc
 SELECT COUNT(*) FROM performance_schema.replication_applier_filters;
 SELECT CHANNEL_NAME, FILTER_NAME, FILTER_RULE, CONFIGURED_BY, COUNTER FROM performance_schema.replication_applier_filters;
 
@@ -98,24 +98,24 @@ SELECT CHANNEL_NAME, FILTER_NAME, FILTER_RULE, CONFIGURED_BY, COUNTER FROM perfo
 --list_files $datadir *ch1*
 
 --echo #
---echo # RESET SLAVE deletes all relay log files of ch2
+--echo # RESET REPLICA deletes all relay log files of ch2
 --echo #
 --let $rpl_channel_name=
 --disable_warnings
---source include/stop_slave.inc
+--source include/rpl/stop_replica.inc
 --enable_warnings
-RESET SLAVE;
+RESET REPLICA;
 
 --echo #
---echo # Verify that "RESET SLAVE" retains all replication filters from
+--echo # Verify that "RESET REPLICA" retains all replication filters from
 --echo # all replication channels.
 --echo #
 --let $rpl_channel_name= 'ch1'
 --let $status_items= Replicate_Do_DB, Replicate_Ignore_DB, Replicate_Do_Table, Replicate_Ignore_Table, Replicate_Wild_Do_Table, Replicate_Wild_Ignore_Table, Replicate_Rewrite_DB
---source include/show_slave_status.inc
+--source include/rpl/deprecated/show_replica_status.inc
 --let $rpl_channel_name= 'ch2'
 --let $status_items= Replicate_Do_DB, Replicate_Ignore_DB, Replicate_Do_Table, Replicate_Ignore_Table, Replicate_Wild_Do_Table, Replicate_Wild_Ignore_Table, Replicate_Rewrite_DB
---source include/show_slave_status.inc
+--source include/rpl/deprecated/show_replica_status.inc
 SELECT COUNT(*) FROM performance_schema.replication_applier_filters;
 SELECT CHANNEL_NAME, FILTER_NAME, FILTER_RULE, CONFIGURED_BY, COUNTER FROM performance_schema.replication_applier_filters;
 
@@ -123,7 +123,7 @@ SELECT CHANNEL_NAME, FILTER_NAME, FILTER_RULE, CONFIGURED_BY, COUNTER FROM perfo
 --list_files $datadir *ch2*
 
 --echo #
---echo # RESET SLAVE resets relay log of default channel from .000001
+--echo # RESET REPLICA resets relay log of default channel from .000001
 --echo #
 # relay log files of default channel is still there
 --let $relay_log_index= `SELECT @@GLOBAL.relay_log_index`
@@ -141,42 +141,42 @@ SELECT CHANNEL_NAME, FILTER_NAME, FILTER_RULE, CONFIGURED_BY, COUNTER FROM perfo
 --file_exists $relay_log_base_name-ch1.000001
 --file_exists $relay_log_base_name-ch2.000001
 
-RESET SLAVE ALL FOR CHANNEL 'ch1';
+RESET REPLICA ALL FOR CHANNEL 'ch1';
 --echo #
---echo # Verify that "'RESET SLAVE ALL FOR CHANNEL '<channel_name>'" removes
+--echo # Verify that "'RESET REPLICA ALL FOR CHANNEL '<channel_name>'" removes
 --echo # the replication channel specified by 'FOR CHANNEL' clause and all
 --echo # replication filters of the channel. There is no effect to other
 --echo # channels.
 --echo #
 --error ER_REPLICA_CHANNEL_DOES_NOT_EXIST
-RESET SLAVE ALL FOR CHANNEL 'ch1';
+RESET REPLICA ALL FOR CHANNEL 'ch1';
 --error ER_REPLICA_CHANNEL_DOES_NOT_EXIST
-SHOW SLAVE STATUS FOR CHANNEL 'ch1';
+SHOW REPLICA STATUS FOR CHANNEL 'ch1';
 SELECT COUNT(*) FROM performance_schema.replication_applier_filters;
 SELECT CHANNEL_NAME, FILTER_NAME, FILTER_RULE, CONFIGURED_BY, COUNTER FROM performance_schema.replication_applier_filters;
 
-RESET SLAVE ALL FOR CHANNEL '';
+RESET REPLICA ALL FOR CHANNEL '';
 --echo #
---echo # "RESET SLAVE ALL FOR CHANNEL ''" removes the default channel and all
+--echo # "RESET REPLICA ALL FOR CHANNEL ''" removes the default channel and all
 --echo # replication filters of the channel firstly, but then create a new
 --echo # default channel which is not configured yet. So performance_schema.
---echo # replication_applier_filters and SHOW SLAVE STATUS do not show it.
+--echo # replication_applier_filters and SHOW REPLICA STATUS do not show it.
 --echo #
 SELECT COUNT(*) FROM performance_schema.replication_applier_filters;
 SELECT CHANNEL_NAME, FILTER_NAME, FILTER_RULE, CONFIGURED_BY, COUNTER FROM performance_schema.replication_applier_filters;
 --let $rpl_channel_name= ''
 --let $status_items= Replicate_Do_DB, Replicate_Ignore_DB, Replicate_Do_Table, Replicate_Ignore_Table, Replicate_Wild_Do_Table, Replicate_Wild_Ignore_Table, Replicate_Rewrite_DB
---source include/show_slave_status.inc
+--source include/rpl/deprecated/show_replica_status.inc
 
 --echo #
 --echo # Verify that default channel would copy global replication filters
 --echo # to its per-channel replication filters if there are no per-channel
 --echo # replication filters and there are global replication filters on the
 --echo # filter type when it is being configured. Then performance_schema.
---echo # replication_applier_filters and SHOW SLAVE STATUS show it.
+--echo # replication_applier_filters and SHOW REPLICA STATUS show it.
 --echo #
 --disable_warnings
---replace_result $MASTER_MYPORT MASTER_PORT
+--replace_result $MASTER_MYPORT SOURCE_PORT
 eval CHANGE REPLICATION SOURCE TO SOURCE_HOST="127.0.0.1", SOURCE_PORT=$MASTER_MYPORT,
      SOURCE_USER="root" FOR CHANNEL '';
 --enable_warnings
@@ -184,17 +184,17 @@ SELECT COUNT(*) FROM performance_schema.replication_applier_filters;
 SELECT CHANNEL_NAME, FILTER_NAME, FILTER_RULE, CONFIGURED_BY, COUNTER FROM performance_schema.replication_applier_filters;
 --let $rpl_channel_name= ''
 --let $status_items= Replicate_Do_DB, Replicate_Ignore_DB, Replicate_Do_Table, Replicate_Ignore_Table, Replicate_Wild_Do_Table, Replicate_Wild_Ignore_Table, Replicate_Rewrite_DB
---source include/show_slave_status.inc
+--source include/rpl/deprecated/show_replica_status.inc
 
 --echo #
---echo # Verify that "RESET SLAVE ALL" with no FOR CHANNEL clause removes all
+--echo # Verify that "RESET REPLICA ALL" with no FOR CHANNEL clause removes all
 --echo # replication channels, so it shall remove all per-channel replication
 --echo # filters but does not touch all global replication filters. When the
 --echo # new channel is being configured, it therefore uses the global filters
 --echo # (copies all global replication filters to its own per-channel
 --echo # replication filters).
 --echo #
-RESET SLAVE ALL;
+RESET REPLICA ALL;
 
 # all files of "ch1" and "ch2" are removed
 --list_files $datadir *ch1*
@@ -207,13 +207,13 @@ RESET SLAVE ALL;
 --let $relay_log_basename= `SELECT @@GLOBAL.relay_log_basename`
 --file_exists $relay_log_basename.000001
 
-# Verify that "RESET SLAVE ALL" removes all replication channels and
+# Verify that "RESET REPLICA ALL" removes all replication channels and
 # clear all replication filters but does not touch all global
 # replication filters.
 --error ER_REPLICA_CHANNEL_DOES_NOT_EXIST
-SHOW SLAVE STATUS FOR CHANNEL 'ch1';
+SHOW REPLICA STATUS FOR CHANNEL 'ch1';
 --error ER_REPLICA_CHANNEL_DOES_NOT_EXIST
-SHOW SLAVE STATUS FOR CHANNEL 'ch2';
+SHOW REPLICA STATUS FOR CHANNEL 'ch2';
 SELECT COUNT(*) FROM performance_schema.replication_applier_filters;
 SELECT CHANNEL_NAME, FILTER_NAME, FILTER_RULE, CONFIGURED_BY, COUNTER FROM performance_schema.replication_applier_filters;
 SELECT COUNT(*) FROM performance_schema.replication_applier_global_filters;
@@ -223,7 +223,7 @@ SELECT FILTER_NAME, FILTER_RULE, CONFIGURED_BY FROM performance_schema.replicati
 # filters (copies all global replication filters to its own per-channel
 # replication filters).
 --disable_warnings
---replace_result $MASTER_MYPORT MASTER_PORT
+--replace_result $MASTER_MYPORT SOURCE_PORT
 eval CHANGE REPLICATION SOURCE TO SOURCE_HOST="127.0.0.1", SOURCE_PORT=$MASTER_MYPORT,
      SOURCE_USER="root";
 --enable_warnings
@@ -231,6 +231,6 @@ SELECT COUNT(*) FROM performance_schema.replication_applier_filters;
 SELECT CHANNEL_NAME, FILTER_NAME, FILTER_RULE, CONFIGURED_BY, COUNTER FROM performance_schema.replication_applier_filters;
 
 --let $rpl_channel_name=
---source include/start_slave.inc
---source include/rpl_end.inc
+--source include/rpl/start_replica.inc
+--source include/rpl/deinit.inc
 

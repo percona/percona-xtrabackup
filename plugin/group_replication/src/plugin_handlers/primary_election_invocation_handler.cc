@@ -1,15 +1,16 @@
-/* Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -443,45 +444,20 @@ Group_member_info_list_iterator sort_and_get_lowest_version_member_position(
    */
   it = all_members_info->begin();
   Group_member_info *first_member = *it;
-  uint32 lowest_major_version =
-      first_member->get_member_version().get_major_version();
 
   /* to avoid read compatibility issue leader should be picked only from lowest
      version members so save position where member version differs.
-     From 8.0.17 patch version will be considered during version comparison.
 
      set lowest_version_end when major version changes
-
-     eg: for a list: 5.7.18, 5.7.18, 5.7.19, 5.7.20, 5.7.21, 8.0.2
-         the members to be considered for election will be:
-            5.7.18, 5.7.18, 5.7.19, 5.7.20, 5.7.21
-         and server_uuid based algorithm will be used to elect primary
-
-     eg: for a list: 5.7.20, 5.7.21, 8.0.2, 8.0.2
-         the members to be considered for election will be:
-            5.7.20, 5.7.21
-         and member weight based algorithm will be used to elect primary
 
      eg: for a list: 8.0.17, 8.0.18, 8.0.19
          the members to be considered for election will be:
             8.0.17
-
-     eg: for a list: 8.0.13, 8.0.17, 8.0.18
-         the members to be considered for election will be:
-            8.0.13, 8.0.17, 8.0.18
-         and member weight based algorithm will be used to elect primary
   */
 
   for (it = all_members_info->begin() + 1; it != all_members_info->end();
        it++) {
-    if (first_member->get_member_version() >=
-            PRIMARY_ELECTION_PATCH_CONSIDERATION &&
-        (first_member->get_member_version() != (*it)->get_member_version())) {
-      lowest_version_end = it;
-      break;
-    }
-    if (lowest_major_version !=
-        (*it)->get_member_version().get_major_version()) {
+    if (first_member->get_member_version() != (*it)->get_member_version()) {
       lowest_version_end = it;
       break;
     }

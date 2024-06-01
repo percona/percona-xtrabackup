@@ -1,15 +1,16 @@
-/* Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -236,7 +237,7 @@ static bool analyze_int_field_constant(THD *thd, Item_field *f,
     case INT_RESULT:
       break;
     case STRING_RESULT: {
-      if ((*const_val)->type() == Item::VARBIN_ITEM) {
+      if ((*const_val)->type() == Item::HEX_BIN_ITEM) {
         /*
           0x digits have STRING_RESULT but are ints in int
           context.
@@ -470,7 +471,7 @@ static bool analyze_decimal_field_constant(THD *thd, const Item_field *f,
     0xnnn numbers, which also have STRING result type, but should be treated
     the same as ints.
   */
-  if (ir == STRING_RESULT && (*const_val)->type() != Item::VARBIN_ITEM) {
+  if (ir == STRING_RESULT && (*const_val)->type() != Item::HEX_BIN_ITEM) {
     was_string_or_real = true;
     ir = DECIMAL_RESULT;
   }
@@ -1337,9 +1338,9 @@ bool fold_condition(THD *thd, Item *cond, Item **retcond,
         [1] See `create_tmp_field_from_item' case INT_RESULT.
       */
       seen_field = true;
-    } else if (args[i]->const_for_execution() && type != Item::SUBSELECT_ITEM) {
+    } else if (args[i]->const_for_execution() && type != Item::SUBQUERY_ITEM) {
       /*
-        Re test on Item::SUBSELECT_ITEM above: we exclude optimize time
+        Re test on Item::SUBQUERY_ITEM above: we exclude optimize time
         evaluation of constant subqueries for now; since it could still be
         expensive to evaluate and we have no cost model to decide whether
         folding it would save total time spent. It may turn out not to be

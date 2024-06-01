@@ -1,8 +1,15 @@
-include/master-slave.inc
+# ----------------------------------------------------------------------
+# Setup
+# Creating local configuration file for keyring component: component_keyring_file
+# Creating manifest file for current MySQL server instance
+# Re-starting mysql server with manifest file
+# ----------------------------------------------------------------------
+include/rpl/init_source_replica.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
 [connection master]
+SET GLOBAL binlog_encryption=ON;
 CREATE TABLE t2 (c2 TEXT) ENGINE=MYISAM;
 # Adding debug point 'ensure_binlog_cache_temporary_file_is_encrypted' to @@GLOBAL.debug
 INSERT INTO t2 VALUES (REPEAT('123', 16384.0));
@@ -18,7 +25,14 @@ INSERT INTO t2 VALUES (REPEAT('on1', 16384.0));
 # Adding debug point 'ensure_binlog_cache_is_reset' to @@GLOBAL.debug
 INSERT INTO t2 VALUES ("567");
 # Removing debug point 'ensure_binlog_cache_is_reset' from @@GLOBAL.debug
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 [connection master]
 DROP TABLE t2;
-include/rpl_end.inc
+# ----------------------------------------------------------------------
+# Teardown
+# Removing manifest file for current MySQL server instance
+# Removing local keyring file for keyring component: component_keyring_file
+# Removing local configuration file for keyring component: component_keyring_file
+# Restarting server without the manifest file
+# ----------------------------------------------------------------------
+include/rpl/deinit.inc

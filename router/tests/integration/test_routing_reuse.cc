@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -109,11 +110,11 @@ static std::vector<std::vector<std::vector<std::string>>> result_as_vector(
 static stdx::expected<std::vector<std::vector<std::string>>, MysqlError>
 query_one_result(MysqlClient &cli, std::string_view stmt) {
   auto cmd_res = cli.query(stmt);
-  if (!cmd_res) return stdx::make_unexpected(cmd_res.error());
+  if (!cmd_res) return stdx::unexpected(cmd_res.error());
 
   auto results = result_as_vector(*cmd_res);
   if (results.size() != 1) {
-    return stdx::make_unexpected(MysqlError{1, "Too many results", "HY000"});
+    return stdx::unexpected(MysqlError{1, "Too many results", "HY000"});
   }
 
   return results.front();
@@ -323,8 +324,7 @@ class SharedServer {
                                            static_cast<int>(0xc000013a)})
 #endif
             .spawn({
-                "--no-defaults",
-                "--lc-messages-dir=" + lc_messages_dir.str(),
+                "--no-defaults", "--lc-messages-dir=" + lc_messages_dir.str(),
                 "--datadir=" + mysqld_dir_name(),
                 "--log-error=" + mysqld_dir_name() +
                     mysql_harness::Path::directory_separator + "mysqld.err",
@@ -336,7 +336,9 @@ class SharedServer {
                 "--mysqlx-socket=" +
                     Path(mysqld_dir_name()).join("mysqlx.sock").str(),
                 // disable LOAD DATA/SELECT INTO on the server
-                "--secure-file-priv=NULL",
+                "--secure-file-priv=NULL", "--require-secure-transport=OFF",
+                "--mysql-native-password=ON",  // For testing legacy
+                                               // mysql_native_password
             });
     proc.set_logging_path(mysqld_dir_name(), "mysqld.err");
     if (!proc.wait_for_sync_point_result()) mysqld_failed_to_start_ = true;
@@ -364,7 +366,7 @@ class SharedServer {
     cli.password(account.password);
 
     auto connect_res = cli.connect(server_host(), server_port());
-    if (!connect_res) return connect_res.get_unexpected();
+    if (!connect_res) return stdx::unexpected(connect_res.error());
 
     return cli;
   }
@@ -377,7 +379,7 @@ class SharedServer {
         sess->connect(server_host().c_str(), server_mysqlx_port(),
                       account.username.c_str(), account.password.c_str(), "");
 
-    if (xerr.error() != 0) return stdx::make_unexpected(xerr);
+    if (xerr.error() != 0) return stdx::unexpected(xerr);
 
     return sess;
   }
@@ -747,7 +749,7 @@ class ReuseConnectionTest
     auto xerr =
         sess->connect(shared_router_->host(), shared_router_->xport(param),
                       account.username.c_str(), account.password.c_str(), "");
-    if (xerr.error() != 0) return stdx::make_unexpected(xerr);
+    if (xerr.error() != 0) return stdx::unexpected(xerr);
 
     return sess;
   }
@@ -770,12 +772,12 @@ TcpPortPool ReuseConnectionTest::port_pool_;
 static stdx::expected<unsigned long, MysqlError> fetch_connection_id(
     MysqlClient &cli) {
   auto query_res = cli.query("SELECT connection_id()");
-  if (!query_res) return query_res.get_unexpected();
+  if (!query_res) return stdx::unexpected(query_res.error());
 
   // get the first field, of the first row of the first resultset.
   for (const auto &result : *query_res) {
     if (result.field_count() == 0) {
-      return stdx::make_unexpected(MysqlError(1, "not a resultset", "HY000"));
+      return stdx::unexpected(MysqlError(1, "not a resultset", "HY000"));
     }
 
     for (auto row : result.rows()) {
@@ -785,7 +787,7 @@ static stdx::expected<unsigned long, MysqlError> fetch_connection_id(
     }
   }
 
-  return stdx::make_unexpected(MysqlError(1, "no rows", "HY000"));
+  return stdx::unexpected(MysqlError(1, "no rows", "HY000"));
 }
 
 TEST_P(ReuseConnectionTest, classic_protocol_ping) {

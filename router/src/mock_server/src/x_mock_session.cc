@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -67,7 +68,7 @@ stdx::expected<size_t, std::error_code> MySQLXProtocol::decode_frame(
   auto buf = net::buffer(recv_buffer_);
   auto decode_res =
       classic_protocol::decode<classic_protocol::wire::FixedInt<4>>(buf, {});
-  if (!decode_res) return decode_res.get_unexpected();
+  if (!decode_res) return stdx::unexpected(decode_res.error());
 
   auto hdr_size = decode_res->first;
   auto payload_size = decode_res->second.value();
@@ -77,8 +78,7 @@ stdx::expected<size_t, std::error_code> MySQLXProtocol::decode_frame(
 
   if (buf.size() < payload_size) {
     // not enough data.
-    return stdx::make_unexpected(
-        make_error_code(std::errc::operation_would_block));
+    return stdx::unexpected(make_error_code(std::errc::operation_would_block));
   }
 
   payload.resize(payload_size);
@@ -94,8 +94,12 @@ stdx::expected<std::pair<xcl::XProtocol::Client_message_type_id,
                          std::unique_ptr<xcl::XProtocol::Message>>,
                std::error_code>
 MySQLXProtocol::decode_single_message(const std::vector<uint8_t> &payload) {
+  using ret_type =
+      stdx::expected<std::pair<xcl::XProtocol::Client_message_type_id,
+                               std::unique_ptr<xcl::XProtocol::Message>>,
+                     std::error_code>;
   if (payload.empty())
-    return stdx::make_unexpected(make_error_code(std::errc::bad_message));
+    return stdx::unexpected(make_error_code(std::errc::bad_message));
 
   uint8_t header_msg_id = payload[0];
 
@@ -105,12 +109,12 @@ MySQLXProtocol::decode_single_message(const std::vector<uint8_t> &payload) {
   auto buf = net::buffer(payload) + 1;
 
   try {
-    return {std::in_place, msg_id,
-            protocol_decoder_.decode_message(
-                header_msg_id, static_cast<const uint8_t *>(buf.data()),
-                buf.size())};
+    return ret_type{std::in_place, msg_id,
+                    protocol_decoder_.decode_message(
+                        header_msg_id, static_cast<const uint8_t *>(buf.data()),
+                        buf.size())};
   } catch (...) {
-    return stdx::make_unexpected(make_error_code(std::errc::bad_message));
+    return stdx::unexpected(make_error_code(std::errc::bad_message));
   }
 }
 
@@ -193,7 +197,7 @@ MySQLXProtocol::gr_state_changed_from_json(const std::string &json_string) {
       if (it->value.IsUint()) {
         result->set_type(it->value.GetUint());
       } else {
-        return stdx::make_unexpected(
+        return stdx::unexpected(
             "Invalid json type for field 'type', expected 'uint' got " +
             std::to_string(it->value.GetType()));
       }
@@ -206,7 +210,7 @@ MySQLXProtocol::gr_state_changed_from_json(const std::string &json_string) {
       if (it->value.IsString()) {
         result->set_view_id(it->value.GetString());
       } else {
-        return stdx::make_unexpected(
+        return stdx::unexpected(
             "Invalid json type for field 'view_id', expected 'string' got " +
             std::to_string(it->value.GetType()));
       }
@@ -232,8 +236,7 @@ MySQLXProtocol::get_notice_message(const unsigned id,
     case Mysqlx::Notice::Frame_Type_SESSION_VARIABLE_CHANGED:
     case Mysqlx::Notice::Frame_Type_SESSION_STATE_CHANGED:
     default:
-      return stdx::make_unexpected("Unsupported notice id: " +
-                                   std::to_string(id));
+      return stdx::unexpected("Unsupported notice id: " + std::to_string(id));
   }
 }
 

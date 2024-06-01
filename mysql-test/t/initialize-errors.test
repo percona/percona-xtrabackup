@@ -4,7 +4,7 @@
 let BASEDIR= `select @@basedir`;
 let DDIR=$MYSQL_TMP_DIR/installdb_test;
 let MYSQLD_LOG=$MYSQL_TMP_DIR/server.log;
-let extra_args=--no-defaults --innodb_dedicated_server=OFF --console --loose-skip-auto_generate_certs --loose-skip-sha256_password_auto_generate_rsa_keys --skip-ssl --basedir=$BASEDIR --lc-messages-dir=$MYSQL_SHAREDIR;
+let extra_args=--no-defaults --innodb_dedicated_server=OFF --console --loose-skip-auto_generate_certs --loose-skip-sha256_password_auto_generate_rsa_keys --tls-version= --basedir=$BASEDIR --lc-messages-dir=$MYSQL_SHAREDIR;
 let PASSWD_FILE=$MYSQL_TMP_DIR/password_file.txt;
 
 --echo # shut server down
@@ -51,7 +51,6 @@ source $passwd_file;
 
 --echo # Restart the server against DDIR
 --exec echo "restart:--datadir=$DDIR " > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
---enable_reconnect
 --source include/wait_until_connected_again.inc
 
 --echo # connect as root
@@ -135,5 +134,4 @@ remove_file $MYSQLD_LOG;
 --echo #
 --echo # Restarting the server
 --exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
---enable_reconnect
 --source include/wait_until_connected_again.inc

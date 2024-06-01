@@ -1,18 +1,19 @@
 /*****************************************************************************
 
 
-Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
 as published by the Free Software Foundation.
 
-This program is also distributed with certain software (including
+This program is designed to work with certain software (including
 but not limited to OpenSSL) that is licensed under separate terms,
 as designated in a particular file or component or in included license
 documentation.  The authors of MySQL hereby grant you an additional
 permission to link the program and your derivative works with the
-separately licensed software that they have included with MySQL.
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -682,7 +683,7 @@ dberr_t Arch_File_Ctx::Recovery::parse_reset_points(
     /* This means there was no reset for this file and hence the
     reset block was not flushed. */
 
-    ut_ad(Arch_Block::is_zeroes(buf));
+    ut_ad(ut::is_zeros(buf, ARCH_PAGE_BLK_SIZE));
     info.m_reset_pos.init();
     info.m_reset_pos.m_block_num = file_index;
     return err;

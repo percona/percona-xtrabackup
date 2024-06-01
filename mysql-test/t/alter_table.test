@@ -673,6 +673,14 @@ select * from t1 where i between 2 and 4 and v in ('def','3r4f','lmn');
 drop table t1;
 
 #
+# Bug#36399271 Allow primary key on JSON datatype for external tables
+#
+create table t1 (t varchar(3073));
+--error ER_TOO_LONG_KEY
+alter table t1 add primary key (t(3073));
+drop table t1;
+
+#
 # Bug#6073 "ALTER table minor glich": ALTER TABLE complains that an index
 # without # prefix is not allowed for TEXT columns, while index
 # is defined with prefix.
@@ -2151,7 +2159,7 @@ ALTER TABLE t TABLESPACE s;
 
 --echo # Drop table and tablespace.
 DROP TABLE t;
-DROP TABLESPACE s ENGINE InnoDB;
+DROP TABLESPACE s;
 
 --echo #
 --echo # Bug#20279241 - ALTER TABLE ... CHARACTER SET utf8mb3, CONVERT TO
@@ -2671,7 +2679,7 @@ DROP TABLE t1, t2;
 --echo #
 --echo # WL#10761 : ALTER TABLE RENAME COLUMN
 --echo #
-
+SET restrict_fk_on_non_standard_key=OFF;
 CREATE TABLE t1(a INT, b VARCHAR(30), c FLOAT);
 SHOW CREATE TABLE t1;
 INSERT INTO t1 VALUES(1,'abcd',1.234);
@@ -2828,6 +2836,7 @@ ALTER TABLE t1 CHANGE b `nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn
 SHOW CREATE TABLE t1;
 SELECT * FROM t1;
 
+SET restrict_fk_on_non_standard_key=ON;
 # Cleanup
 DROP VIEW v1;
 DROP TABLE t3,t1,t2;

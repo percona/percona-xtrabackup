@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 2017, 2023, Oracle and/or its affiliates.
+Copyright (c) 2017, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
 as published by the Free Software Foundation.
 
-This program is also distributed with certain software (including
+This program is designed to work with certain software (including
 but not limited to OpenSSL) that is licensed under separate terms,
 as designated in a particular file or component or in included license
 documentation.  The authors of MySQL hereby grant you an additional
 permission to link the program and your derivative works with the
-separately licensed software that they have included with MySQL.
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -158,8 +159,9 @@ byte *Log_test::create_mlog_rec(byte *rec, Key key, Value value,
   return ptr;
 }
 
-byte *Log_test::parse_mlog_rec(byte *begin, byte *end, Key &key, Value &value,
-                               lsn_t &start_lsn, lsn_t &end_lsn) {
+const byte *Log_test::parse_mlog_rec(const byte *begin, const byte *end,
+                                     Key &key, Value &value, lsn_t &start_lsn,
+                                     lsn_t &end_lsn) {
   if (begin + 2 * 8 + 2 > end) {
     return nullptr;
   }
@@ -188,12 +190,12 @@ byte *Log_test::parse_mlog_rec(byte *begin, byte *end, Key &key, Value &value,
   return begin;
 }
 
-byte *Log_test::parse_mlog_rec(byte *begin, byte *end) {
+const byte *Log_test::parse_mlog_rec(const byte *begin, const byte *end) {
   Key key;
   Value value;
   lsn_t start_lsn, end_lsn;
 
-  byte *ptr = parse_mlog_rec(begin, end, key, value, start_lsn, end_lsn);
+  auto ptr = parse_mlog_rec(begin, end, key, value, start_lsn, end_lsn);
 
   if (ptr == nullptr) {
     return nullptr;

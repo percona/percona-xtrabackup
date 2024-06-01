@@ -1,16 +1,17 @@
 /*
- * Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
  * as published by the Free Software Foundation.
  *
- * This program is also distributed with certain software (including
+ * This program is designed to work with certain software (including
  * but not limited to OpenSSL) that is licensed under separate terms,
  * as designated in a particular file or component or in included license
  * documentation.  The authors of MySQL hereby grant you an additional
  * permission to link the program and your derivative works with the
- * separately licensed software that they have included with MySQL.
+ * separately licensed software that they have either included with
+ * the program or referenced in the documentation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,22 +29,18 @@
 #include <memory>
 #include <vector>
 
+#include "mysql/harness/net_ts.h"
 #include "plugin/x/src/helper/multithread/mutex.h"
 #include "plugin/x/src/interface/socket_events.h"
 #include "plugin/x/src/xpl_performance_schema.h"
 
-struct event_base;
-
 namespace ngs {
 
 class Socket_events : public xpl::iface::Socket_events {
+ private:
+  using Socket = net::ip::tcp::socket;
+
  public:
-#ifdef _WIN32
-  // mimick evutil_socket_t in libevent-2.x
-  using socket_type = intptr_t;
-#else
-  using socket_type = int;
-#endif
   Socket_events();
   ~Socket_events() override;
 
@@ -57,14 +54,16 @@ class Socket_events : public xpl::iface::Socket_events {
   void break_loop() override;
 
  private:
-  static void timeout_call(socket_type sock, short which, void *arg);
-  static void socket_data_avaiable(socket_type sock, short which, void *arg);
+  class EntryTimer;
+  class EntryAcceptingSocket;
 
-  struct Timer_data;
-  struct Socket_data;
-  struct event_base *m_evbase;
-  std::vector<Socket_data *> m_socket_events;
-  std::vector<Timer_data *> m_timer_events;
+  void callback_timeout(EntryTimer *timer_entry, std::error_code ec);
+  void callback_accept_socket(EntryAcceptingSocket *acceptors_entry,
+                              std::error_code ec);
+
+  net::io_context m_io_context;
+  std::vector<EntryAcceptingSocket *> m_socket_events;
+  std::vector<EntryTimer *> m_timer_events;
   xpl::Mutex m_timers_mutex{KEY_mutex_x_socket_events_timers};
 };
 

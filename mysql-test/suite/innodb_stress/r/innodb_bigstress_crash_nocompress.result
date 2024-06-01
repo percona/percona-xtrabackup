@@ -1,4 +1,4 @@
-include/master-slave.inc
+include/rpl/init_source_replica.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
@@ -14,32 +14,20 @@ ENGINE=INNODB;
 CREATE TABLE errors (msg TEXT);
 Wait for reconnect
 Checksum master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+STOP REPLICA;
+START REPLICA;
 Checksum slave
 Wait for reconnect
 Checksum master
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+STOP REPLICA;
+START REPLICA;
 Checksum slave
 DROP TABLE t1;
 DROP TABLE errors;
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
-include/stop_slave.inc
-include/start_slave.inc
-include/stop_slave.inc
-include/rpl_reconnect.inc
-include/rpl_end.inc
+STOP REPLICA;
+START REPLICA;
+include/rpl/stop_replica.inc
+include/rpl/start_replica.inc
+include/rpl/stop_replica.inc
+include/rpl/reconnect.inc
+include/rpl/deinit.inc

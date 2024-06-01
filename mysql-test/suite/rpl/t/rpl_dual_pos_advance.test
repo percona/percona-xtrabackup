@@ -1,51 +1,51 @@
 # This test checks that in a dual-head setup
 # A->B->A, where A has --log-replica-updates (why would it?
 # assume that there is a C as slave of A),
-# then the Exec_master_log_pos of SHOW SLAVE STATUS does
+# then the Exec_Source_Log_Pos of SHOW REPLICA STATUS does
 # not stay too low on B(BUG#13023 due to events ignored because
 # of their server id).
 # It also will test BUG#13861.
 --source include/not_group_replication_plugin.inc
 
 --let $rpl_topology= 1->2->1
---source include/rpl_init.inc
+--source include/rpl/init.inc
 
 # now we test it
 
 connection server_2;
 
 create table t1 (n int);
-let $master_log_file= query_get_value(SHOW BINARY LOG STATUS, File, 1);
-let $master_log_pos_1= query_get_value(SHOW BINARY LOG STATUS, Position, 1);
-let $master_log_pos_1= `SELECT $master_log_pos_1 + 3`;
+let $source_log_file= query_get_value(SHOW BINARY LOG STATUS, File, 1);
+let $source_log_pos_1= query_get_value(SHOW BINARY LOG STATUS, Position, 1);
+let $source_log_pos_1= `SELECT $source_log_pos_1 + 3`;
 
 --let $sync_slave_connection= server_1
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 
 #
 # BUG#13861 - START SLAVE UNTIL may stop 1 evnt too late if
 #             log-replica-updates and circul repl
 #
-source include/stop_slave.inc;
+source include/rpl/stop_replica.inc;
 
 create table t2 (n int); # create one ignored event
 
 --let $sync_slave_connection= server_2
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 
 show tables;
 
 create table t3 (n int) engine=innodb;
-let $master_log_pos_2= query_get_value(SHOW BINARY LOG STATUS, Position, 1);
-let $master_log_pos_2= `SELECT $master_log_pos_2 + 5`;
+let $source_log_pos_2= query_get_value(SHOW BINARY LOG STATUS, Position, 1);
+let $source_log_pos_2= `SELECT $source_log_pos_2 + 5`;
 # there is the event: Gtid_log_event
---let $master_log_pos_2= `SELECT $master_log_pos_2 + 57`
+--let $source_log_pos_2= `SELECT $source_log_pos_2 + 57`
 set @a=1;
 insert into t3 values(@a);
-let $master_log_pos_3= query_get_value(SHOW BINARY LOG STATUS, Position, 1);
-let $master_log_pos_3= `SELECT $master_log_pos_3 + 5`;
+let $source_log_pos_3= query_get_value(SHOW BINARY LOG STATUS, Position, 1);
+let $source_log_pos_3= `SELECT $source_log_pos_3 + 5`;
 # there is the event: Gtid_log_event
---let $master_log_pos_3= `SELECT $master_log_pos_3 + 57`
+--let $source_log_pos_3= `SELECT $source_log_pos_3 + 57`
 begin;
 insert into t3 values(2);
 insert into t3 values(3);
@@ -55,12 +55,12 @@ insert into t3 values(4);
 
 connection server_1;
 
-# bug is that START SLAVE UNTIL may stop too late, we test that by
+# bug is that START REPLICA UNTIL may stop too late, we test that by
 # asking it to stop before creation of t3.
 
---replace_result $master_log_file MASTER_LOG_FILE $master_log_pos_1 MASTER_LOG_POS
-eval start slave until SOURCE_LOG_FILE="$master_log_file",SOURCE_LOG_POS=$master_log_pos_1;
---source include/wait_for_slave_sql_to_stop.inc
+--replace_result $source_log_file SOURCE_LOG_FILE $source_log_pos_1 SOURCE_LOG_POS
+eval START REPLICA until SOURCE_LOG_FILE="$source_log_file",SOURCE_LOG_POS=$source_log_pos_1;
+--source include/rpl/wait_for_applier_to_stop.inc
 
 # then BUG#13861 causes t3 to show up below (because stopped too
 # late).
@@ -68,18 +68,18 @@ eval start slave until SOURCE_LOG_FILE="$master_log_file",SOURCE_LOG_POS=$master
 show tables;
 
 # ensure that we do not break set @a=1; insert into t3 values(@a);
---replace_result $master_log_file MASTER_LOG_FILE $master_log_pos_2 MASTER_LOG_POS
-eval start slave until SOURCE_LOG_FILE="$master_log_file",SOURCE_LOG_POS=$master_log_pos_2;
---source include/wait_for_slave_sql_to_stop.inc
+--replace_result $source_log_file SOURCE_LOG_FILE $source_log_pos_2 SOURCE_LOG_POS
+eval START REPLICA until SOURCE_LOG_FILE="$source_log_file",SOURCE_LOG_POS=$source_log_pos_2;
+--source include/rpl/wait_for_applier_to_stop.inc
 select * from t3;
 
 # ensure that we do not break transaction
---replace_result $master_log_file MASTER_LOG_FILE $master_log_pos_3 MASTER_LOG_POS
-eval start slave until SOURCE_LOG_FILE="$master_log_file",SOURCE_LOG_POS=$master_log_pos_3;
---source include/wait_for_slave_sql_to_stop.inc
+--replace_result $source_log_file SOURCE_LOG_FILE $source_log_pos_3 SOURCE_LOG_POS
+eval START REPLICA until SOURCE_LOG_FILE="$source_log_file",SOURCE_LOG_POS=$source_log_pos_3;
+--source include/rpl/wait_for_applier_to_stop.inc
 select * from t3;
 
-source include/start_slave.inc;
+source include/rpl/start_replica.inc;
 
 # BUG#13023 is that Exec_master_log_pos may stay too low "forever":
 
@@ -90,18 +90,18 @@ create table t5 (n int);
 create table t6 (n int);
 
 --let $sync_slave_connection= server_2
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 
 # then BUG#13023 caused hang below ("master" looks behind, while it's
 # not in terms of updates done).
 --let $sync_slave_connection= server_1
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 
 show tables;
 
 # cleanup
 drop table t1, t2, t3, t4, t5, t6;
---source include/rpl_end.inc
+--source include/rpl/deinit.inc
 # In this test, the master is also a slave (1->2->1). This configuration
 # may cause failure in an immediate test which expects only 1->2 configuration
 #  Use force_restart to avoid that situation.

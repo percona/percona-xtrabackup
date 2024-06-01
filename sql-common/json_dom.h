@@ -1,18 +1,19 @@
 #ifndef JSON_DOM_INCLUDED
 #define JSON_DOM_INCLUDED
 
-/* Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -30,6 +31,7 @@
 #include <memory>  // unique_ptr
 #include <new>
 #include <string>
+#include <string_view>
 #include <type_traits>  // is_base_of
 #include <utility>
 #include <vector>
@@ -1136,16 +1138,6 @@ bool double_quote(const char *cptr, size_t length, String *buf);
 Json_dom_ptr merge_doms(Json_dom_ptr left, Json_dom_ptr right);
 
 /**
-  How Json_wrapper would handle coercion error
-*/
-
-enum enum_coercion_error {
-  CE_WARNING,  // Throw a warning, default
-  CE_ERROR,    // Throw an error
-  CE_IGNORE    // Let the caller handle the error
-};
-
-/**
   Abstraction for accessing JSON values irrespective of whether they
   are (started out as) binary JSON values or JSON DOM values. The
   purpose of this is to allow uniform access for callers. It allows us
@@ -1587,84 +1579,80 @@ class Json_wrapper {
   /**
     Extract an int (signed or unsigned) from the JSON if possible
     coercing if need be.
-    @param[in]  msgnam to use in error message if conversion failed
-    @param[in]  cr_error Whether to raise an error or warning on
-                         data truncation
+
+    @param[in]  error_handler function to be called on conversion errors
     @param[out] err    true <=> error occur during coercion
     @param[out] unsigned_flag Whether the value read from JSON data is
                               unsigned
 
     @returns json value coerced to int
   */
-  longlong coerce_int(const char *msgnam, enum_coercion_error cr_error,
-                      bool *err, bool *unsigned_flag) const;
+  longlong coerce_int(const JsonCoercionHandler &error_handler, bool *err,
+                      bool *unsigned_flag) const;
 
-  /// Shorthand for coerce_int(msgnam, CE_WARNING, nullptr, nullptr).
-  longlong coerce_int(const char *msgnam) const {
-    return coerce_int(msgnam, CE_WARNING, nullptr, nullptr);
+  /// Shorthand for coerce_int(error_handler, nullptr, nullptr).
+  longlong coerce_int(const JsonCoercionHandler &error_handler) const {
+    return coerce_int(error_handler, nullptr, nullptr);
   }
 
   /**
     Extract a real from the JSON if possible, coercing if need be.
 
-    @param[in]  msgnam to use in error message if conversion failed
-    @param[in]  cr_error Whether to raise an error or warning on
-                         data truncation
+    @param[in]  error_handler function to be called on conversion errors
     @param[out] err    true <=> error occur during coercion
     @returns json value coerced to real
   */
-  double coerce_real(const char *msgnam, enum_coercion_error cr_error,
-                     bool *err) const;
+  double coerce_real(const JsonCoercionHandler &error_handler, bool *err) const;
 
-  /// Shorthand for coerce_real(msgnam, CE_WARNING, nullptr).
-  double coerce_real(const char *msgnam) const {
-    return coerce_real(msgnam, CE_WARNING, nullptr);
+  /// Shorthand for coerce_real(error_handler, nullptr).
+  double coerce_real(const JsonCoercionHandler &error_handler) const {
+    return coerce_real(error_handler, nullptr);
   }
 
   /**
     Extract a decimal from the JSON if possible, coercing if need be.
 
-    @param[in,out] decimal_value a value buffer
-    @param[in]  msgnam to use in error message if conversion failed
-    @param[in]  cr_error Whether to raise an error or warning on
-                         data truncation
-    @param[out] err    true <=> error occur during coercion
+    @param[in]     error_handler  function to be called on conversion errors
+    @param[in,out] decimal_value  a value buffer
+    @param[out]    err            true <=> error occur during coercion
     @returns json value coerced to decimal
   */
-  my_decimal *coerce_decimal(my_decimal *decimal_value, const char *msgnam,
-                             enum_coercion_error cr_error, bool *err) const;
+  my_decimal *coerce_decimal(const JsonCoercionHandler &error_handler,
+                             my_decimal *decimal_value, bool *err) const;
 
-  /// Shorthand for coerce_decimal(decimal_value, msgnam, CE_WARNING, nullptr).
-  my_decimal *coerce_decimal(my_decimal *decimal_value, const char *msgnam) {
-    return coerce_decimal(decimal_value, msgnam, CE_WARNING, nullptr);
+  /// Shorthand for coerce_decimal(error_handler, decimal_value, nullptr).
+  my_decimal *coerce_decimal(const JsonCoercionHandler &error_handler,
+                             my_decimal *decimal_value) const {
+    return coerce_decimal(error_handler, decimal_value, nullptr);
   }
 
   /**
     Extract a date from the JSON if possible, coercing if need be.
 
+    @param[in]  error_handler function to be called on conversion errors
+    @param[in]  deprecation_checker function to be called to check for
+                                    deprecated datetime format in ltime
     @param[in,out] ltime a value buffer
-    @param msgnam to use in error message if conversion failed
-    @param[in]  cr_error Whether to raise an error or warning on
-                         data truncation
     @param[in] date_flags_arg Flags to use for string -> date conversion
     @returns json value coerced to date
    */
-  bool coerce_date(MYSQL_TIME *ltime, const char *msgnam,
-                   enum_coercion_error cr_error = CE_WARNING,
-                   my_time_flags_t date_flags_arg = 0) const;
+  bool coerce_date(const JsonCoercionHandler &error_handler,
+                   const JsonCoercionDeprecatedHandler &deprecation_checker,
+                   MYSQL_TIME *ltime, my_time_flags_t date_flags_arg = 0) const;
 
   /**
     Extract a time value from the JSON if possible, coercing if need be.
 
+    @param[in]  error_handler function to be called on conversion errors
+    @param[in]  deprecation_checker function to be called to check for
+                                    deprecated datetime format in ltime
     @param[in,out] ltime a value buffer
-    @param msgnam  to use in error message if conversion failed
-    @param[in]  cr_error Whether to raise an error or warning on
-                         data truncation
 
     @returns json value coerced to time
   */
-  bool coerce_time(MYSQL_TIME *ltime, const char *msgnam,
-                   enum_coercion_error cr_error = CE_WARNING) const;
+  bool coerce_time(const JsonCoercionHandler &error_handler,
+                   const JsonCoercionDeprecatedHandler &deprecation_checker,
+                   MYSQL_TIME *ltime) const;
 
   /**
     Make a sort key that can be used by filesort to order JSON values.
@@ -1702,12 +1690,15 @@ class Json_wrapper {
   /**
     Calculate the amount of unused space inside a JSON binary value.
 
+    @param[in] error_handler the handler that is invoked if an error occurs
     @param[out] space  the amount of unused space, or zero if this is a DOM
     @return false on success
     @return true if the JSON binary value was invalid
   */
-  bool get_free_space(size_t *space) const;
+  bool get_free_space(const JsonSerializationErrorHandler &error_handler,
+                      size_t *space) const;
 
+#ifdef MYSQL_SERVER
   /**
     Attempt a binary partial update by replacing the value at @a path with @a
     new_value. On successful completion, the updated document will be available
@@ -1762,7 +1753,8 @@ class Json_wrapper {
   */
   bool binary_remove(const Field_json *field, const Json_seekable_path &path,
                      String *result, bool *found_path);
-#ifdef MYSQL_SERVER
+#endif  // ifdef MYSQL_SERVER
+
   /**
     Sort contents. Applicable to JSON arrays only.
   */
@@ -1772,7 +1764,6 @@ class Json_wrapper {
     sorted.
   */
   void remove_duplicates(const CHARSET_INFO *cs = nullptr);
-#endif
 };
 
 /**
@@ -1941,5 +1932,25 @@ class Json_scalar_holder {
     ::new (m_scalar_ptr) T(std::forward<Args>(args)...);
   }
 };
+
+/**
+  Check if one Json_wrapper contains all the elements of another
+  Json_wrapper.
+
+  @param[in]  doc_wrapper   the containing document
+  @param[in]  containee_wr  the possibly contained document
+  @param[out] result        true if doc_wrapper contains containee_wr,
+                            false otherwise
+  @retval false on success
+  @retval true on failure
+*/
+bool json_wrapper_contains(const Json_wrapper &doc_wrapper,
+                           const Json_wrapper &containee_wr, bool *result);
+
+/// Returns the name of the type of the JSON document contained in "doc".
+std::string_view json_type_name(const Json_wrapper &doc);
+
+/// The maximum length of the type name returned from JSON_TYPE.
+extern const size_t kMaxJsonTypeNameLength;
 
 #endif /* JSON_DOM_INCLUDED */

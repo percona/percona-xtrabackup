@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -26,7 +27,7 @@
 
 #include "mysqlrouter/rest_api_utils.h"
 
-bool RestApiSpecHandler::try_handle_request(HttpRequest &req,
+bool RestApiSpecHandler::try_handle_request(http::base::Request &req,
                                             const std::string & /* base_path */,
                                             const std::vector<std::string> &) {
   if (!ensure_http_method(req, HttpMethod::Get | HttpMethod::Head)) {
@@ -39,7 +40,7 @@ bool RestApiSpecHandler::try_handle_request(HttpRequest &req,
 
   if (!ensure_no_params(req)) return true;
 
-  auto out_hdrs = req.get_output_headers();
+  auto &out_hdrs = req.get_output_headers();
   out_hdrs.add("Content-Type", "application/json");
 
   if (!req.is_modified_since(last_modified_)) {
@@ -51,10 +52,7 @@ bool RestApiSpecHandler::try_handle_request(HttpRequest &req,
 
   req.add_last_modified(last_modified_);
   if (req.get_method() == HttpMethod::Get) {
-    auto chunk = req.get_output_buffer();
-    chunk.add(spec.data(), spec.size());
-
-    req.send_reply(HttpStatusCode::Ok, "Ok", chunk);
+    req.send_reply(HttpStatusCode::Ok, "Ok", spec);
   } else {
     // HEAD has no content, but a Content-Length
     //
@@ -67,6 +65,6 @@ bool RestApiSpecHandler::try_handle_request(HttpRequest &req,
   return true;
 }
 
-void RestApiHttpRequestHandler::handle_request(HttpRequest &req) {
+void RestApiHttpRequestHandler::handle_request(http::base::Request &req) {
   rest_api_->handle_paths(req);
 }

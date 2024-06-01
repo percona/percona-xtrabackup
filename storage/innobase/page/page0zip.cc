@@ -1,18 +1,19 @@
 /*****************************************************************************
 
-Copyright (c) 2005, 2023, Oracle and/or its affiliates.
+Copyright (c) 2005, 2024, Oracle and/or its affiliates.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -1824,9 +1825,9 @@ void page_zip_write_rec(
 
 /** Parses a log record of writing a BLOB pointer of a record.
  @return end of log record or NULL */
-byte *page_zip_parse_write_blob_ptr(
-    byte *ptr,                /*!< in: redo log buffer */
-    byte *end_ptr,            /*!< in: redo log buffer end */
+const byte *page_zip_parse_write_blob_ptr(
+    const byte *ptr,          /*!< in: redo log buffer */
+    const byte *end_ptr,      /*!< in: redo log buffer end */
     page_t *page,             /*!< in/out: uncompressed page */
     page_zip_des_t *page_zip) /*!< in/out: compressed page */
 {
@@ -1955,9 +1956,9 @@ void page_zip_write_blob_ptr(
 
 /** Parses a log record of writing the node pointer of a record.
  @return end of log record or NULL */
-byte *page_zip_parse_write_node_ptr(
-    byte *ptr,                /*!< in: redo log buffer */
-    byte *end_ptr,            /*!< in: redo log buffer end */
+const byte *page_zip_parse_write_node_ptr(
+    const byte *ptr,          /*!< in: redo log buffer */
+    const byte *end_ptr,      /*!< in: redo log buffer end */
     page_t *page,             /*!< in/out: uncompressed page */
     page_zip_des_t *page_zip) /*!< in/out: compressed page */
 {
@@ -2451,9 +2452,9 @@ void page_zip_dir_add_slot(page_zip_des_t *page_zip, bool is_clustered) {
 
 /** Parses a log record of writing to the header of a page.
  @return end of log record or NULL */
-byte *page_zip_parse_write_header(
-    byte *ptr,                /*!< in: redo log buffer */
-    byte *end_ptr,            /*!< in: redo log buffer end */
+const byte *page_zip_parse_write_header(
+    const byte *ptr,          /*!< in: redo log buffer */
+    const byte *end_ptr,      /*!< in: redo log buffer end */
     page_t *page,             /*!< in/out: uncompressed page */
     page_zip_des_t *page_zip) /*!< in/out: compressed page */
 {
@@ -2712,9 +2713,9 @@ void page_zip_copy_recs(
 
 /** Parses a log record of compressing an index page.
  @return end of log record or NULL */
-byte *page_zip_parse_compress(
-    byte *ptr,                /*!< in: buffer */
-    byte *end_ptr,            /*!< in: buffer end */
+const byte *page_zip_parse_compress(
+    const byte *ptr,          /*!< in: buffer */
+    const byte *end_ptr,      /*!< in: buffer end */
     page_t *page,             /*!< out: uncompressed page */
     page_zip_des_t *page_zip) /*!< out: compressed page */
 {

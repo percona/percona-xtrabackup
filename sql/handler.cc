@@ -1,15 +1,16 @@
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -131,7 +132,6 @@
 #include "string_with_len.h"
 #include "template_utils.h"
 #include "uniques.h"  // Unique_on_insert
-#include "varlen_sort.h"
 
 /**
   @def MYSQL_TABLE_IO_WAIT
@@ -747,7 +747,7 @@ int ha_finalize_handlerton(st_plugin_int *plugin) {
       engine plugins.
     */
     DBUG_PRINT("info", ("Deinitializing plugin: '%s'", plugin->name.str));
-    if (plugin->plugin->deinit(nullptr)) {
+    if (plugin->plugin->deinit(plugin)) {
       DBUG_PRINT("warning", ("Plugin '%s' deinit function returned error.",
                              plugin->name.str));
     }
@@ -889,7 +889,7 @@ err_deinit:
     Let plugin do its inner deinitialization as plugin->init()
     was successfully called before.
   */
-  if (plugin->plugin->deinit) (void)plugin->plugin->deinit(nullptr);
+  if (plugin->plugin->deinit) (void)plugin->plugin->deinit(plugin);
 
 err:
   my_free(hton);
@@ -1083,7 +1083,7 @@ void ha_pre_dd_shutdown(void) {
   Administrative and status information statements do not modify
   engine data, and thus do not start a statement transaction and
   also have no effect on the normal transaction. Examples of such
-  statements are SHOW STATUS and RESET SLAVE.
+  statements are SHOW STATUS and RESET REPLICA.
 
   Similarly DDL statements are not transactional,
   and therefore a transaction is [almost] never started for a DDL
@@ -4374,7 +4374,9 @@ void handler::print_error(int error, myf errflag) {
       */
       thd->push_internal_handler(&foreign_key_error_handler);
       get_error_message(error, &str);
-      my_error(ER_ROW_IS_REFERENCED_2, errflag, str.c_ptr_safe());
+      std::string err_msg = str.c_ptr_safe();
+      err_msg = " (" + err_msg + ")";
+      my_error(ER_ROW_IS_REFERENCED_2, errflag, err_msg.c_str());
       thd->pop_internal_handler();
       return;
     }
@@ -4386,7 +4388,9 @@ void handler::print_error(int error, myf errflag) {
       */
       thd->push_internal_handler(&foreign_key_error_handler);
       get_error_message(error, &str);
-      my_error(ER_NO_REFERENCED_ROW_2, errflag, str.c_ptr_safe());
+      std::string err_msg = str.c_ptr_safe();
+      err_msg = " (" + err_msg + ")";
+      my_error(ER_NO_REFERENCED_ROW_2, errflag, err_msg.c_str());
       thd->pop_internal_handler();
       return;
     }
@@ -4608,7 +4612,7 @@ int handler::ha_check_for_upgrade(HA_CHECK_OPT *check_opt) {
 }
 
 // Function identifies any old data type present in table.
-int check_table_for_old_types(const TABLE *table, bool check_temporal_upgrade) {
+int check_table_for_old_types(const TABLE *table) {
   Field **field;
 
   for (field = table->field; (*field); field++) {
@@ -4637,12 +4641,10 @@ int check_table_for_old_types(const TABLE *table, bool check_temporal_upgrade) {
     if ((*field)->type() == MYSQL_TYPE_YEAR && (*field)->field_length == 2)
       return HA_ADMIN_NEEDS_ALTER;  // obsolete YEAR(2) type
 
-    if (check_temporal_upgrade) {
-      if (((*field)->real_type() == MYSQL_TYPE_TIME) ||
-          ((*field)->real_type() == MYSQL_TYPE_DATETIME) ||
-          ((*field)->real_type() == MYSQL_TYPE_TIMESTAMP))
-        return HA_ADMIN_NEEDS_ALTER;
-    }
+    if (((*field)->real_type() == MYSQL_TYPE_TIME) ||
+        ((*field)->real_type() == MYSQL_TYPE_DATETIME) ||
+        ((*field)->real_type() == MYSQL_TYPE_TIMESTAMP))
+      return HA_ADMIN_NEEDS_ALTER;
   }
   return 0;
 }
@@ -4744,13 +4746,7 @@ int handler::ha_check(THD *thd, HA_CHECK_OPT *check_opt) {
     return 0;
 
   if (table->s->mysql_version < MYSQL_VERSION_ID) {
-    // Check for old temporal format if avoid_temporal_upgrade is disabled.
-    mysql_mutex_lock(&LOCK_global_system_variables);
-    const bool check_temporal_upgrade = !avoid_temporal_upgrade;
-    mysql_mutex_unlock(&LOCK_global_system_variables);
-
-    if ((error = check_table_for_old_types(table, check_temporal_upgrade)))
-      return error;
+    if ((error = check_table_for_old_types(table))) return error;
     error = ha_check_for_upgrade(check_opt);
     if (error && (error != HA_ADMIN_NEEDS_CHECK)) return error;
     if (!error && (check_opt->sql_flags & TT_FOR_UPGRADE)) return 0;
@@ -6868,9 +6864,18 @@ int DsMrr_impl::dsmrr_fill_buffer() {
   const uint elem_size = h->ref_length + (int)is_mrr_assoc * sizeof(void *);
   assert((rowids_buf_cur - rowids_buf) % elem_size == 0);
 
-  varlen_sort(
-      rowids_buf, rowids_buf_cur, elem_size,
-      [this](const uchar *a, const uchar *b) { return h->cmp_ref(a, b) < 0; });
+  // Store the handler in a thread local variable so that it is available in the
+  // stateless comparator passed to qsort.
+  thread_local const handler *current_handler;
+  current_handler = h;
+
+  qsort(rowids_buf, (rowids_buf_cur - rowids_buf) / elem_size, elem_size,
+        [](const void *a, const void *b) {
+          return current_handler->cmp_ref(
+              static_cast<const unsigned char *>(a),
+              static_cast<const unsigned char *>(b));
+        });
+
   rowids_buf_last = rowids_buf_cur;
   rowids_buf_cur = rowids_buf;
   return 0;

@@ -1,15 +1,16 @@
-/* Copyright (c) 2021, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -82,6 +83,31 @@ AccessPath MakeAppend(MEM_ROOT *mem_root, AccessPath *c1, AccessPath *c2) {
   params->push_back(param2);
 
   path.append().children = params;
+  return path;
+}
+
+AccessPath MakeStream(TABLE *table, AccessPath *child) {
+  AccessPath path;
+  path.type = AccessPath::STREAM;
+  path.stream().child = child;
+  path.stream().table = table;
+  return path;
+}
+
+AccessPath MakeMaterialize(MEM_ROOT *mem_root, TABLE *table,
+                           AccessPath *subquery_path) {
+  AccessPath path;
+  path.type = AccessPath::MATERIALIZE;
+  path.materialize().table_path =
+      new (mem_root) AccessPath(MakeTableScan(table));
+
+  MaterializePathParameters *param = new (mem_root) MaterializePathParameters;
+  param->m_operands.init(mem_root);
+  param->m_operands.emplace_back();
+  param->m_operands.back().subquery_path = subquery_path;
+  param->table = table;
+  path.materialize().param = param;
+
   return path;
 }
 
@@ -343,6 +369,47 @@ TEST(WalkAccessPathsTest, PushedJoinRef) {
         },
         include_pruned_tables);
     EXPECT_THAT(tables, ElementsAre(&t1));
+  }
+}
+
+TEST(WalkAccessPathsTest, MaterializedTables) {
+  MEM_ROOT mem_root{PSI_NOT_INSTRUMENTED, 1024};
+
+  TABLE t1;
+  TABLE t2;
+  TABLE tmp1;
+  TABLE tmp2;
+
+  AccessPath ts1 = MakeTableScan(&t1);
+  AccessPath ts2 = MakeTableScan(&t2);
+
+  AccessPath lhs = MakeStream(&tmp1, &ts1);
+  AccessPath rhs = MakeMaterialize(&mem_root, &tmp2, &ts2);
+  AccessPath join = MakeNestedLoopJoin(&lhs, &rhs);
+
+  /* We have this access path tree:
+   *
+   *           NESTED_LOOP_JOIN
+   *                /   \
+   *       STREAM(tmp1) MATERIALIZE(tmp2)
+   *              /       \
+   *   TABLE_SCAN(t1)   TABLE_SCAN(t2)
+   *
+   * WalkTablesUnderAccessPath() should see each of the temporary tables (tmp1
+   * and tmp2) once, and none of the base tables (t1 and t2). It used to see
+   * tmp2 twice due to bug#36190386.
+   */
+
+  for (bool include_pruned_tables : {true, false}) {
+    vector<const TABLE *> tables;
+    WalkTablesUnderAccessPath(
+        &join,
+        [&tables](const TABLE *table) {
+          tables.push_back(table);
+          return false;
+        },
+        include_pruned_tables);
+    EXPECT_THAT(tables, ElementsAre(&tmp1, &tmp2));
   }
 }
 

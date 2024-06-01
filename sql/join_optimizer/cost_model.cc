@@ -1,15 +1,16 @@
-/* Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -38,6 +39,7 @@
 #include "sql/join_optimizer/find_contained_subqueries.h"
 #include "sql/join_optimizer/join_optimizer.h"
 #include "sql/join_optimizer/materialize_path_parameters.h"
+#include "sql/join_optimizer/optimizer_trace.h"
 #include "sql/join_optimizer/overflow_bitset.h"
 #include "sql/join_optimizer/print_utils.h"
 #include "sql/join_optimizer/relational_expression.h"
@@ -91,13 +93,34 @@ double EstimateCostForRefAccess(THD *thd, TABLE *table, unsigned key_idx,
                            /*worst_seeks=*/DBL_MAX);
 }
 
-void EstimateSortCost(AccessPath *path) {
-  AccessPath *child = path->sort().child;
-  const double num_input_rows = child->num_output_rows();
-  const double num_output_rows =
-      path->sort().limit != HA_POS_ERROR
-          ? std::min<double>(num_input_rows, path->sort().limit)
-          : num_input_rows;
+void EstimateSortCost(THD *thd, AccessPath *path, double distinct_rows) {
+  const auto &sort{path->sort()};
+  assert(sort.remove_duplicates || distinct_rows == kUnknownRowCount);
+
+  const double limit{sort.limit == HA_POS_ERROR
+                         ? std::numeric_limits<double>::max()
+                         : sort.limit};
+
+  const double num_input_rows{sort.child->num_output_rows()};
+
+  if (sort.remove_duplicates && distinct_rows == kUnknownRowCount) {
+    Prealloced_array<const Item *, 4> sort_items(PSI_NOT_INSTRUMENTED);
+    for (const ORDER *order = sort.order; order != nullptr;
+         order = order->next) {
+      sort_items.push_back(*order->item);
+    }
+
+    distinct_rows = EstimateDistinctRows(
+        thd, num_input_rows, {sort_items.cbegin(), sort_items.size()});
+  }
+
+  /*
+    If remove_duplicates is set, we incur the cost of sorting the entire
+    input, even if 'limit' is set. (See check_if_pq_applicable() for details.)
+   */
+  const double sort_result_rows{sort.remove_duplicates
+                                    ? num_input_rows
+                                    : std::min(limit, num_input_rows)};
 
   double sort_cost;
   if (num_input_rows <= 1.0) {
@@ -112,27 +135,17 @@ void EstimateSortCost(AccessPath *path) {
     // large values of n. So we always calculate it as n + k log k:
     sort_cost = kSortOneRowCost *
                 (num_input_rows +
-                 num_output_rows * std::max(log2(num_output_rows), 1.0));
+                 sort_result_rows * std::max(log2(sort_result_rows), 1.0));
   }
 
-  if (path->sort().remove_duplicates) {
-    Prealloced_array<const Item *, 4> sort_items(PSI_NOT_INSTRUMENTED);
-    for (const ORDER *order = path->sort().order; order != nullptr;
-         order = order->next) {
-      sort_items.push_back(*order->item);
-    }
-
-    const double aggregate_rows = EstimateDistinctRows(
-        num_input_rows, {sort_items.cbegin(), sort_items.size()}, nullptr);
-
-    path->set_num_output_rows(std::min(num_output_rows, aggregate_rows));
-  } else {
-    path->set_num_output_rows(num_output_rows);
-  }
-
-  path->set_cost(child->cost() + sort_cost);
+  path->set_cost(sort.child->cost() + sort_cost);
   path->set_init_cost(path->cost());
   path->set_init_once_cost(0.0);
+
+  path->set_num_output_rows(sort.remove_duplicates
+                                ? std::min(distinct_rows, limit)
+                                : std::min(num_input_rows, limit));
+
   path->num_output_rows_before_filter = path->num_output_rows();
   path->set_cost_before_filter(path->cost());
 }
@@ -294,9 +307,9 @@ using TermArray = Bounds_checked_array<const Item *const>;
 */
 class AggregateRowEstimator {
  public:
+  /// @param thd Current thread.
   /// @param terms The aggregation terms.
-  /// @param trace Append optimizer trace text to this if non-null.
-  AggregateRowEstimator(TermArray terms, string *trace);
+  AggregateRowEstimator(THD *thd, TermArray terms);
 
   // No copying of this type.
   AggregateRowEstimator(const AggregateRowEstimator &) = delete;
@@ -324,7 +337,7 @@ class AggregateRowEstimator {
       @returns The estimate, or kNoEstimate if no more suitable indexes could be
       found.
   */
-  double MakeNextEstimate();
+  double MakeNextEstimate(THD *thd);
 
   /// Get the set of terms for which we have found an index.
   /// Bit number corresponds to position in the 'terms' argument to the
@@ -353,10 +366,7 @@ class AggregateRowEstimator {
   MutableOverflowBitset m_consumed_terms;
 
   /// The index prefixes we found for 'm_terms'.
-  Mem_root_array<Prefix *> m_prefixes{current_thd->mem_root};
-
-  /// Optimizer trace text.
-  string *m_trace;
+  Mem_root_array<Prefix *> m_prefixes;
 
   /// Find an Item_field pointing to 'field' in 'm_terms', if there is one.
   /// @param field The field we look for.
@@ -372,10 +382,10 @@ class AggregateRowEstimator {
   }
 };
 
-AggregateRowEstimator::AggregateRowEstimator(TermArray terms, string *trace)
+AggregateRowEstimator::AggregateRowEstimator(THD *thd, TermArray terms)
     : m_terms{terms},
-      m_consumed_terms{current_thd->mem_root, terms.size()},
-      m_trace(trace) {
+      m_consumed_terms{thd->mem_root, terms.size()},
+      m_prefixes{thd->mem_root} {
   /* Find keys (indexes) for which:
      - One or more of 'terms' form a prefix of the key.
      - Records per key estimates are available for some prefix of the key.
@@ -406,10 +416,10 @@ AggregateRowEstimator::AggregateRowEstimator(TermArray terms, string *trace)
             key_part_no++;
           }
 
-          m_prefixes.push_back(new (current_thd->mem_root)
-                                   Prefix({key, key_part_no}));
-          if (m_trace != nullptr) {
-            *m_trace += "Adding prefix: " + m_prefixes.back()->Print() + "\n";
+          m_prefixes.push_back(new (thd->mem_root) Prefix({key, key_part_no}));
+          if (TraceStarted(thd)) {
+            Trace(thd) << "Adding prefix: " << m_prefixes.back()->Print()
+                       << "\n";
           }
         }
         key_map.clear_bit(key_idx);
@@ -419,7 +429,7 @@ AggregateRowEstimator::AggregateRowEstimator(TermArray terms, string *trace)
   }
 }
 
-double AggregateRowEstimator::MakeNextEstimate() {
+double AggregateRowEstimator::MakeNextEstimate(THD *thd) {
   // Pick the longest prefix until we have used all terms or m_prefixes,
   // or until all prefixes have length==0.
   while (m_terms.size() >
@@ -450,11 +460,11 @@ double AggregateRowEstimator::MakeNextEstimate() {
         // some earlier key. We can thus only use the prefix 0..key_part_no of
         // this key.
         const Prefix shortened_prefix{prefix->m_key, key_part_no};
-        if (m_trace != nullptr) {
-          *m_trace += "Shortening prefix " + prefix->Print() + "\n  into  " +
-                      shortened_prefix.Print() + ",\n  since field '" +
-                      field->field_name +
-                      "' is already covered by an earlier estimate.\n";
+        if (TraceStarted(thd)) {
+          Trace(thd) << "Shortening prefix " << prefix->Print() << "\n  into  "
+                     << shortened_prefix.Print() << ",\n  since field '"
+                     << field->field_name
+                     << "' is already covered by an earlier estimate.\n";
         }
         *prefix = shortened_prefix;
         terms_missing = true;
@@ -481,10 +491,10 @@ double AggregateRowEstimator::MakeNextEstimate() {
           prefix->m_key->table->file->stats.records /
           prefix->m_key->records_per_key(prefix->m_length - 1);
 
-      if (m_trace != nullptr) {
-        *m_trace += "Choosing longest prefix " + prefix->Print() +
-                    " with estimated distinct values: " +
-                    StringPrintf("%.1f", row_estimate) + "\n";
+      if (TraceStarted(thd)) {
+        Trace(thd) << "Choosing longest prefix " << prefix->Print()
+                   << " with estimated distinct values: "
+                   << StringPrintf("%.1f", row_estimate) << "\n";
       }
 
       return row_estimate;
@@ -568,14 +578,14 @@ TermArray GetAggregationTerms(const JOIN &join) {
  combined estimate that falls between the two extremes of
  functional dependence and no correlation.
 
+@param thd Current thread.
 @param terms The terms for which we estimate the number of distinct
              combinations.
 @param child_rows The row estimate for the input path.
-@param trace Append optimizer trace text to this if non-null.
 @returns The row estimate for the aggregate operation.
 */
-double EstimateDistinctRowsFromStatistics(TermArray terms, double child_rows,
-                                          string *trace) {
+double EstimateDistinctRowsFromStatistics(THD *thd, TermArray terms,
+                                          double child_rows) {
   // Estimated number of output rows.
   double output_rows = 1.0;
   // No of individual estimates (for disjoint subsets of the terms).
@@ -585,10 +595,10 @@ double EstimateDistinctRowsFromStatistics(TermArray terms, double child_rows,
 
   // Make row estimates for sets of terms that form prefixes
   // of (non-hash) indexes.
-  AggregateRowEstimator index_estimator(terms, trace);
+  AggregateRowEstimator index_estimator(thd, terms);
 
   while (true) {
-    const double distinct_values = index_estimator.MakeNextEstimate();
+    const double distinct_values = index_estimator.MakeNextEstimate(thd);
     if (distinct_values == AggregateRowEstimator::kNoEstimate) {
       break;
     }
@@ -615,8 +625,8 @@ double EstimateDistinctRowsFromStatistics(TermArray terms, double child_rows,
         // Make an estimate from the table row count.
         distinct_values = std::sqrt(field->table->file->stats.records);
 
-        if (trace != nullptr) {
-          *trace += StringPrintf(
+        if (TraceStarted(thd)) {
+          Trace(thd) << StringPrintf(
               "Estimating %.1f distinct values for field '%s'"
               " from table size.\n",
               distinct_values, field->field_name);
@@ -633,8 +643,8 @@ double EstimateDistinctRowsFromStatistics(TermArray terms, double child_rows,
           ++distinct_values;
         }
 
-        if (trace != nullptr) {
-          *trace += StringPrintf(
+        if (TraceStarted(thd)) {
+          Trace(thd) << StringPrintf(
               "Estimating %.1f distinct values for field '%s'"
               " from histogram.\n",
               distinct_values, field->field_name);
@@ -659,13 +669,6 @@ double EstimateDistinctRowsFromStatistics(TermArray terms, double child_rows,
 
   output_rows *= non_field_values;
 
-  if (trace != nullptr) {
-    *trace += StringPrintf(
-        "Estimating %.1f distinct values for %zu non-field terms"
-        " and %.1f in total.\n",
-        non_field_values, remaining_term_cnt, output_rows);
-  }
-
   // The estimate could exceed 'child_rows' if there e.g. is a restrictive
   // WHERE-condition, as estimates from indexes or histograms will not reflect
   // that.
@@ -673,10 +676,17 @@ double EstimateDistinctRowsFromStatistics(TermArray terms, double child_rows,
     // Combining estimates from different sources introduces uncertainty.
     // We therefore assume that there will be some reduction in the number
     // of rows.
-    return std::min(output_rows, std::pow(child_rows, 0.9));
+    output_rows = std::min(output_rows, std::pow(child_rows, 0.9));
   } else {
-    return std::min(output_rows, child_rows);
+    output_rows = std::min(output_rows, child_rows);
   }
+
+  if (TraceStarted(thd)) {
+    Trace(thd) << "Estimating " << non_field_values << " distinct values for "
+               << remaining_term_cnt << " non-field terms and " << output_rows
+               << " in total.\n";
+  }
+  return output_rows;
 }
 
 /**
@@ -758,24 +768,24 @@ double EstimateRollupRowsPrimitively(double aggregate_rows,
 
   were CARD(T1...TX) is a row estimate for aggregating on T1..TX.
 
+  @param thd Current thread.
   @param aggregate_rows Number of rows after aggregation.
   @param terms The group-by terms.
-  @param trace Optimizer trace.
   @return Estimated number of rollup rows.
 */
-double EstimateRollupRowsAdvanced(double aggregate_rows, TermArray terms,
-                                  string *trace) {
+double EstimateRollupRowsAdvanced(THD *thd, double aggregate_rows,
+                                  TermArray terms) {
   // Make a more accurate rollup row calculation for larger sets.
   double rollup_rows = 1.0;
   while (terms.size() > 1) {
     terms.resize(terms.size() - 1);
 
-    if (trace != nullptr) {
-      *trace += StringPrintf(
+    if (TraceStarted(thd)) {
+      Trace(thd) << StringPrintf(
           "\nEstimating row count for ROLLUP on %zu terms.\n", terms.size());
     }
     rollup_rows +=
-        EstimateDistinctRowsFromStatistics(terms, aggregate_rows, trace);
+        EstimateDistinctRowsFromStatistics(thd, terms, aggregate_rows);
   }
   return rollup_rows;
 }
@@ -783,15 +793,14 @@ double EstimateRollupRowsAdvanced(double aggregate_rows, TermArray terms,
 /**
    Estimate the row count for an aggregate operation (including ROLLUP rows
    for GROUP BY ... WITH ROLLUP).
+   @param thd Current thread.
    @param child The input to the aggregate path.
    @param query_block The query block to which the aggregation belongs.
    @param rollup True if we should add rollup rows to the estimate.
-   @param trace Optimizer trace.
    @returns The row estimate.
 */
-double EstimateAggregateRows(const AccessPath *child,
-                             const Query_block *query_block, bool rollup,
-                             string *trace) {
+double EstimateAggregateRows(THD *thd, const AccessPath *child,
+                             const Query_block *query_block, bool rollup) {
   if (query_block->is_implicitly_grouped()) {
     // For implicit grouping there will be 1 output row.
     return 1.0;
@@ -805,12 +814,12 @@ double EstimateAggregateRows(const AccessPath *child,
 
   // The aggregation terms.
   TermArray terms = GetAggregationTerms(*query_block->join);
-  if (trace != nullptr) {
-    *trace += StringPrintf(
+  if (TraceStarted(thd)) {
+    Trace(thd) << StringPrintf(
         "\nEstimating row count for aggregation on %zu terms.\n", terms.size());
   }
 
-  double output_rows = EstimateDistinctRows(child_rows, terms, trace);
+  double output_rows = EstimateDistinctRows(thd, child_rows, terms);
 
   if (rollup) {
     // Do a simple and cheap calculation for small result sets.
@@ -820,8 +829,8 @@ double EstimateAggregateRows(const AccessPath *child,
         [terms](double aggregate_rows) {
           return EstimateRollupRowsPrimitively(aggregate_rows, terms.size());
         },
-        [terms, trace](double aggregate_rows) {
-          return EstimateRollupRowsAdvanced(aggregate_rows, terms, trace);
+        [thd, terms](double aggregate_rows) {
+          return EstimateRollupRowsAdvanced(thd, aggregate_rows, terms);
         },
         simple_rollup_limit, simple_rollup_limit * 1.1, output_rows);
   }
@@ -831,7 +840,7 @@ double EstimateAggregateRows(const AccessPath *child,
 
 }  // Anonymous namespace.
 
-double EstimateDistinctRows(double child_rows, TermArray terms, string *trace) {
+double EstimateDistinctRows(THD *thd, double child_rows, TermArray terms) {
   if (terms.empty()) {
     // DISTINCT/GROUP BY on a constant gives at most one row.
     return min(1.0, child_rows);
@@ -855,17 +864,17 @@ double EstimateDistinctRows(double child_rows, TermArray terms, string *trace) {
   return SmoothTransition(
       [&](double input_rows) { return std::sqrt(input_rows); },
       [&](double input_rows) {
-        return EstimateDistinctRowsFromStatistics(terms, input_rows, trace);
+        return EstimateDistinctRowsFromStatistics(thd, terms, input_rows);
       },
       simple_limit, simple_limit * 1.1, child_rows);
 }
 
-void EstimateAggregateCost(AccessPath *path, const Query_block *query_block,
-                           string *trace) {
+void EstimateAggregateCost(THD *thd, AccessPath *path,
+                           const Query_block *query_block) {
   const AccessPath *child = path->aggregate().child;
   if (path->num_output_rows() == kUnknownRowCount) {
     path->set_num_output_rows(EstimateAggregateRows(
-        child, query_block, path->aggregate().olap == ROLLUP_TYPE, trace));
+        thd, child, query_block, path->aggregate().olap == ROLLUP_TYPE));
   }
 
   path->set_init_cost(child->init_cost());
@@ -973,7 +982,8 @@ void EstimateWindowCost(AccessPath *path) {
   path->set_cost(child->cost() + kWindowOneRowCost * child->num_output_rows());
 }
 
-double EstimateSemijoinFanOut(double right_rows, const JoinPredicate &edge) {
+double EstimateSemijoinFanOut(THD *thd, double right_rows,
+                              const JoinPredicate &edge) {
   // The fields from edge.expr->right that appear in the join condition.
   Prealloced_array<const Item *, 6> condition_fields(PSI_NOT_INSTRUMENTED);
 
@@ -1007,7 +1017,7 @@ double EstimateSemijoinFanOut(double right_rows, const JoinPredicate &edge) {
   }
 
   const double distinct_rows = EstimateDistinctRows(
-      right_rows, {condition_fields.begin(), condition_fields.size()});
+      thd, right_rows, {condition_fields.begin(), condition_fields.size()});
 
   return std::min(1.0, distinct_rows * edge.selectivity);
 }

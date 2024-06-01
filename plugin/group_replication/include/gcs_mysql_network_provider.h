@@ -1,15 +1,16 @@
-/* Copyright (c) 2016, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -411,8 +412,9 @@ class Gcs_mysql_network_provider : public Network_provider {
   std::unique_ptr<Network_connection> open_connection(
       const std::string &address, const unsigned short port,
       const Network_security_credentials &security_credentials,
-      int connection_timeout =
-          Network_provider::default_connection_timeout()) override;
+      int connection_timeout = Network_provider::default_connection_timeout(),
+      network_provider_dynamic_log_level log_level =
+          network_provider_dynamic_log_level::PROVIDED) override;
 
   int close_connection(const Network_connection &connection) override;
 
@@ -423,6 +425,77 @@ class Gcs_mysql_network_provider : public Network_provider {
    * @param connection the connection data itself.
    */
   void set_new_connection(THD *thd, Network_connection *connection);
+};
+
+/**
+ * @brief Utilitarian class for Gcs_mysql_network_provider
+ *
+ */
+class Gcs_mysql_network_provider_util {
+ public:
+  // Out of range log value
+  static constexpr int OUT_OF_RANGE_LOG_LEVEL = 255;
+
+ private:
+  /**
+   * @brief Maps between Network Provider generic log level and MySQL error
+   * Log level
+   *
+   * @param net_provider_log_level Network Provider generic log level
+   * @return int MySQL error Log level if there is mapping
+   *             OUT_OF_RANGE_LOG_LEVEL, otherwise
+   */
+  static int from_network_provider_dynamic_log_level_mapping(
+      network_provider_dynamic_log_level net_provider_log_level) {
+    switch (net_provider_log_level) {
+      case network_provider_dynamic_log_level::FATAL:
+        return SYSTEM_LEVEL;
+
+      case network_provider_dynamic_log_level::ERROR:
+        return ERROR_LEVEL;
+
+      case network_provider_dynamic_log_level::WARNING:
+        return WARNING_LEVEL;
+
+      case network_provider_dynamic_log_level::INFO:
+        return INFORMATION_LEVEL;
+
+      default:
+        // If there is no mapping present, we will return an out of range
+        //  value in order to feed LogPluginErr.
+        // When provided a non-valid but non-negative number to LogPluginErr
+        //  it means that such levels will result in suppression of the
+        //  messages being logged
+        return Gcs_mysql_network_provider_util::OUT_OF_RANGE_LOG_LEVEL;
+    }
+  }
+
+ public:
+  /**
+   * @brief Converts from the intended developer fixed level to a dynamic
+   *        level provided from the API call, based on runtime conditions.
+   *
+   *        A developer might code that wants ERROR level to be written to the
+   *        log, but a runtime condition might modify it.
+   *
+   *        If log_level is PROVIDED, nothing changes and coded_log_level is
+   *        used. If log_level is other than PROVIDED, we will do a mapping
+   *        between log_level and MySQL log level.
+   *
+   *        For more information about this mechanism @see
+   *        network_provider_dynamic_log_level
+   *
+   * @param coded_log_level Developer intended log level
+   * @param log_level External API call log level
+   * @return int the actual runtime log level
+   */
+  static int log_level_adaptation(
+      int coded_log_level, network_provider_dynamic_log_level log_level) {
+    return log_level == network_provider_dynamic_log_level::PROVIDED
+               ? coded_log_level
+               : Gcs_mysql_network_provider_util::
+                     from_network_provider_dynamic_log_level_mapping(log_level);
+  }
 };
 
 #endif /* GCS_MYSQL_NETWORK_PROVIDER_INCLUDED */

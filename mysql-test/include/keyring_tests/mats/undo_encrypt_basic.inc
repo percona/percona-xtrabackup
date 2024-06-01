@@ -131,9 +131,7 @@ INSERT INTO t1 VALUES(9, "jjjjj");
 --source include/kill_mysqld.inc
 --exec echo "restart: $PLUGIN_DIR_OPT --innodb_data_home_dir=$MYSQLD_HOME_DATA_DIR --innodb_undo_directory=$MYSQLD_UNDO_DATADIR --datadir=$MYSQLD_DATADIR --innodb_page_size=$START_PAGE_SIZE --innodb_redo_log_capacity=$LOG_SIZE --innodb_undo_log_encrypt=ON" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
 
---enable_reconnect
 --source include/wait_until_connected_again.inc
---disable_reconnect
 
 SELECT * FROM t1 ORDER BY c1 LIMIT 10;
 DELETE FROM t1;
@@ -174,7 +172,7 @@ FLUSH ENGINE LOGS;
 
 --echo # Start the DB server with undo log encryption and keyring loaded. It should success.
 --let $restart_parameters="restart: $PLUGIN_DIR_OPT --innodb_data_home_dir=$MYSQLD_HOME_DATA_DIR --innodb_undo_directory=$MYSQLD_UNDO_DATADIR --datadir=$MYSQLD_DATADIR --innodb_page_size=$START_PAGE_SIZE --innodb_redo_log_capacity=$LOG_SIZE --innodb_undo_log_encrypt=ON"
---replace_result $MYSQL_TMP_DIR TMP_DIR $KEYRING_PLUGIN_OPT --plugin-dir=KEYRING_PATH $MYSQLD_HOME_DATA_DIR HOME_DIR $MYSQLD_UNDO_DATADIR UNDO_DIR $MYSQLD_DATADIR DATADIR $START_PAGE_SIZE PAGE_SIZE $LOG_SIZE LOG_SIZE
+--replace_result $MYSQL_TMP_DIR TMP_DIR $MYSQLD_HOME_DATA_DIR HOME_DIR $MYSQLD_UNDO_DATADIR UNDO_DIR $MYSQLD_DATADIR DATADIR $START_PAGE_SIZE PAGE_SIZE $LOG_SIZE LOG_SIZE
 --replace_regex /\.dll/.so/
 --source include/restart_mysqld_no_echo.inc
 

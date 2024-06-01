@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,6 +28,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>  // endian
 #include <bitset>
 #include <cstddef>  // ptrdiff_t
 #include <cstring>  // memset
@@ -53,7 +55,6 @@
 #include "mysql/harness/net_ts/socket.h"
 #include "mysql/harness/stdx/bit.h"  // byteswap
 #include "mysql/harness/stdx/expected.h"
-#include "mysql/harness/stdx/type_traits.h"  // endian
 
 namespace net {
 namespace ip {
@@ -66,7 +67,7 @@ namespace ip {
 template <class T>
 constexpr T host_to_network(const T t) noexcept {
   // no need to swap, host has network byte-order
-  if (stdx::endian::native == stdx::endian::big) return t;
+  if (std::endian::native == std::endian::big) return t;
 
   return stdx::byteswap(t);
 }
@@ -79,7 +80,7 @@ constexpr T host_to_network(const T t) noexcept {
 template <class T>
 constexpr T network_to_host(const T t) noexcept {
   // no need to swap, host has network byte-order
-  if (stdx::endian::native == stdx::endian::big) return t;
+  if (std::endian::native == std::endian::big) return t;
 
   return stdx::byteswap(t);
 }
@@ -394,15 +395,13 @@ inline stdx::expected<address_v6, std::error_code> make_address_v6(
     // empty and numerics with leading -|+ are invalid
     if (*after_percent == '\0' || *after_percent == '-' ||
         *after_percent == '+') {
-      return stdx::make_unexpected(
-          make_error_code(std::errc::invalid_argument));
+      return stdx::unexpected(make_error_code(std::errc::invalid_argument));
     }
 
     char *err{nullptr};
     scope_id = ::strtoul(after_percent, &err, 10);
     if (*err != '\0') {
-      return stdx::make_unexpected(
-          make_error_code(std::errc::invalid_argument));
+      return stdx::unexpected(make_error_code(std::errc::invalid_argument));
     }
 
     std::string before_percent(str, percent);
@@ -412,12 +411,14 @@ inline stdx::expected<address_v6, std::error_code> make_address_v6(
     inet_pton_res = ::inet_pton(AF_INET6, str, &ipv6_addr);
   }
   if (inet_pton_res == 1) {
-    return {std::in_place, ipv6_addr, scope_id};
+    using ret_type = stdx::expected<address_v6, std::error_code>;
+
+    return ret_type{std::in_place, ipv6_addr, scope_id};
   } else if (inet_pton_res == 0) {
     // parse failed
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   } else {
-    return stdx::make_unexpected(impl::socket::last_error_code());
+    return stdx::unexpected(impl::socket::last_error_code());
   }
 }
 
@@ -437,9 +438,9 @@ inline stdx::expected<address_v4, std::error_code> make_address_v4(
     return {ipv4_addr};
   } else if (res == 0) {
     // parse failed
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   } else {
-    return stdx::make_unexpected(impl::socket::last_error_code());
+    return stdx::unexpected(impl::socket::last_error_code());
   }
 }
 
@@ -458,7 +459,7 @@ inline stdx::expected<address, std::error_code> make_address(const char *str) {
     auto v4_res = make_address_v4(str);
 
     if (v4_res) return address{*v4_res};
-    return stdx::make_unexpected(v4_res.error());
+    return stdx::unexpected(v4_res.error());
   }
 }
 
@@ -630,7 +631,7 @@ class basic_resolver : public resolver_base {
         host_name.empty() ? nullptr : host_name.c_str(),
         service_name.empty() ? nullptr : service_name.c_str(), &hints);
 
-    if (!res) return stdx::make_unexpected(res.error());
+    if (!res) return stdx::unexpected(res.error());
 
     return results_type{std::move(res.value()), host_name, service_name};
   }
@@ -654,7 +655,7 @@ class basic_resolver : public resolver_base {
         host_name.data(), host_name.size(), service_name.data(),
         service_name.size(), flags);
     if (!nameinfo_res) {
-      return stdx::make_unexpected(nameinfo_res.error());
+      return stdx::unexpected(nameinfo_res.error());
     }
 
     // find \0 char in array. If \0 isn't found, end of array.

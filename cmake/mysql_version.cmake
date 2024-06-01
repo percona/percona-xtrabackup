@@ -1,15 +1,16 @@
-# Copyright (c) 2009, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2009, 2024, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,7 +25,7 @@
 # Global constants, only to be changed between major releases.
 #
 
-SET(SHARED_LIB_MAJOR_VERSION "23")
+SET(SHARED_LIB_MAJOR_VERSION "24")
 SET(SHARED_LIB_MINOR_VERSION "0")
 SET(PROTOCOL_VERSION "10")
 
@@ -62,27 +63,33 @@ MACRO(GET_MYSQL_VERSION)
     MESSAGE(FATAL_ERROR "MYSQL_VERSION file cannot be parsed.")
   ENDIF()
 
+<<<<<<< HEAD
   MYSQL_GET_CONFIG_VALUE("MYSQL_VERSION_STABILITY" MYSQL_VERSION_STABILITY MYSQL_VERSION)
+||||||| 824e2b40640
+  MYSQL_GET_CONFIG_VALUE("MYSQL_VERSION_STABILITY" MYSQL_VERSION_STABILITY)
+=======
+  MYSQL_GET_CONFIG_VALUE("MYSQL_VERSION_MATURITY" MYSQL_VERSION_MATURITY)
+>>>>>>> mysql-8.4.0
 
-  IF(NOT DEFINED MYSQL_VERSION_STABILITY)
+  IF(NOT DEFINED MYSQL_VERSION_MATURITY)
     MESSAGE(FATAL_ERROR "MYSQL_VERSION file cannot be parsed, missing version attributes.")
   ENDIF()
 
-  IF(NOT MYSQL_VERSION_STABILITY STREQUAL "\"LTS\"" AND
-     NOT MYSQL_VERSION_STABILITY STREQUAL "\"INNOVATION\"")
-    MESSAGE(FATAL_ERROR "MYSQL_VERSION_STABILITY can be set to INNOVATION or LTS.")
+  IF(NOT MYSQL_VERSION_MATURITY STREQUAL "\"LTS\"" AND
+     NOT MYSQL_VERSION_MATURITY STREQUAL "\"INNOVATION\"")
+    MESSAGE(FATAL_ERROR "MYSQL_VERSION_MATURITY can be set to INNOVATION or LTS.")
   ENDIF()
 
   # Versions like 8.0.x, 8.4.x, and x.7.y (x > 8) should be LTS
   IF ((MAJOR_VERSION EQUAL "8" AND MINOR_VERSION EQUAL "0" AND PATCH_VERSION GREATER "34") OR
       (MAJOR_VERSION EQUAL "8" AND MINOR_VERSION EQUAL "4") OR
       (MAJOR_VERSION GREATER "8" AND MINOR_VERSION EQUAL "7"))
-    IF (NOT MYSQL_VERSION_STABILITY STREQUAL "\"LTS\"")
+    IF (NOT MYSQL_VERSION_MATURITY STREQUAL "\"LTS\"")
       MESSAGE(FATAL_ERROR "Version ${MAJOR_VERSION}.${MINOR_VERSION}.${PATCH_VERSION} should "
                           "be an LTS release.")
     ENDIF()
   ELSE()
-    IF (NOT MYSQL_VERSION_STABILITY STREQUAL "\"INNOVATION\"")
+    IF (NOT MYSQL_VERSION_MATURITY STREQUAL "\"INNOVATION\"")
       MESSAGE(FATAL_ERROR "Version ${MAJOR_VERSION}.${MINOR_VERSION}.${PATCH_VERSION} should "
                           "be an innovation release.")
     ENDIF()

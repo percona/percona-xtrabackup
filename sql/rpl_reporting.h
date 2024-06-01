@@ -1,15 +1,16 @@
-/* Copyright (c) 2006, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2006, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -52,7 +53,7 @@ struct Gtid_specification;
  */
 class Slave_reporting_capability {
  public:
-  /** lock used to synchronize m_last_error on 'SHOW SLAVE STATUS' **/
+  /** lock used to synchronize m_last_error on 'SHOW REPLICA STATUS' **/
   mutable mysql_mutex_t err_lock;
   /**
      Constructor.
@@ -63,7 +64,7 @@ class Slave_reporting_capability {
 
   /**
      Writes a message and, if it's an error message, to Last_Error
-     (which will be displayed by SHOW SLAVE STATUS).
+     (which will be displayed by SHOW REPLICA STATUS).
 
      @param level       The severity level
      @param err_code    The error code
@@ -83,7 +84,7 @@ class Slave_reporting_capability {
       MY_ATTRIBUTE((format(printf, 5, 0)));
 
   /**
-     Clear errors. They will not show up under <code>SHOW SLAVE
+     Clear errors. They will not show up under <code>SHOW REPLICA
      STATUS</code>.
    */
   void clear_error() {

@@ -1,15 +1,16 @@
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -243,8 +244,8 @@ constexpr const std::array rsa_key_sizes{2048, 2048, 2048, 3072, 7680, 15360};
   already in the initial handshake using an optimistic guess of the
   authentication method to be used.
 
-  Server uses its default authentication method @ref default_auth_plugin to
-  produce initial authentication data payload and sends it to the client inside
+  Server uses its default authentication method defined by @ref authentication_policy
+  to produce initial authentication data payload and sends it to the client inside
   @ref page_protocol_connection_phase_packets_protocol_handshake, together with
   the name of the method used.
 
@@ -769,7 +770,6 @@ constexpr const std::array rsa_key_sizes{2048, 2048, 2048, 3072, 7680, 15360};
    @subpage page_caching_sha2_authentication_exchanges
    @subpage page_protocol_connection_phase_authentication_methods_clear_text_password
    @subpage page_protocol_connection_phase_authentication_methods_authentication_windows
-   @subpage page_fido_authentication_exchanges
    @subpage page_webauthn_authentication_exchanges
 */
 
@@ -803,175 +803,6 @@ constexpr const std::array rsa_key_sizes{2048, 2048, 2048, 3072, 7680, 15360};
   @subpage page_protocol_connection_phase_packets_protocol_auth_switch_response
   @subpage page_protocol_connection_phase_packets_protocol_auth_more_data
   @subpage page_protocol_connection_phase_packets_protocol_auth_next_factor_request
-*/
-
-/**
-  @page page_fido_authentication_exchanges authentication_fido information
-page_fido_authentication_exchanges
-  @section sect_fido_definition Definition
-  <ul>
-  <li>
-  The server side plugin name is *authentication_fido*
-  </li>
-  <li>
-  The client side plugin name is *authentication_fido_client*
-  </li>
-  <li>
-  Account - user account (user-host combination)
-  </li>
-  <li>
-  authentication_string - Transformation of Credential ID stored in mysql.user table
-  </li>
-  <li>
-  relying party ID - Unique name assigned to server by authentication_fido plugin
-  </li>
-  <li>
-  FIDO authenticator - A hardware token device
-  </li>
-  <li>
-  Salt - 32 byte long random data
-  </li>
-  <li>
-  Registration mode - Refers to state of connection where only ALTER USER is allowed
-  to do registration steps.
-  </li>
-  </ul>
-
-  @section sect_fido_info How authentication_fido works?
-
-  Plugin authentication_fido works in two phases.
-  <ul>
-   <li>
-    Registration of hardware token device
-   </li>
-   <li>
-    Authentication process
-   </li>
-  </ul>
-
-  Registration process:
-  This is a 2 step process for a given user account.
-  <ul>
-   <li>
-    Initiate registration step.
-   </li>
-   <li>
-    Finish registration step.
-   </li>
-  </ul>
-
-  Initiate registration:
-  --register-factor mysql client option initiates registration step.
-  Note that --fido-register-factor is deprecated.
-
-  <ol>
-   <li>
-    Client executes ALTER USER user() nth FACTOR INITIATE REGISTRATION;
-   </li>
-   <li>
-   Server sends a challenge comprising of 32 bytes random salt, user id, relying party ID
-   Format of challenge is:
-   | 1 byte capability | length encoded 32 bytes random salt | length encoded relying party ID | length encoded user id (`user name`\@`host name`) |
-   </li>
-   <li>
-   Client receives challenge and passes to authentication_fido_client plugin
-   with option "registration_challenge" using mysql_plugin_options()
-   </li>
-   <li>
-    FIDO authenticator prompts physical human user to perform gesture action.
-    This message can be accessed via callback. Register a callback with option
-    "fido_messages_callback" using mysql_plugin_options()
-   </li>
-   <li>
-    Once physical human user gesture action (touching the token) is performed,
-    FIDO authenticator generates a public/private key pair, a credential ID(
-    X.509 certificate, signature) and authenticator data.
-   </li>
-   <li>
-   Client extracts credential ID(aka challenge response) from authentication_fido_client
-   plugin with option "registration_response" using mysql_plugin_get_option()
-   Format of challenge response is:
-   |length encoded authenticator data|length encoded credential ID|
-   </li>
-  </ol>
-
-  Finish registration:
-  <ol>
-   <li>
-    Client executes ALTER USER user() nth FACTOR FINISH REGISTRATION SET CHALLENGE_RESPONSE AS '?';
-    parameter is binded to challenge response received during initiate registration step.
-   </li>
-   <li>
-    authentication_fido plugin verifies the challenge response and responds with an
-    @ref page_protocol_basic_ok_packet or rejects with @ref page_protocol_basic_err_packet
-   </li>
-  </ol>
-       @startuml
-         title Registration
-
-         participant server as "MySQL server"
-         participant client as "Client"
-         participant authenticator as "FIDO authenticator"
-
-         == Initiate registration ==
-
-         client -> server : connect
-         server -> client : OK packet. Connection is in registration mode where only ALTER USER command is allowed
-         client -> server : ALTER USER USER() nth FACTOR INITIATE REGISTRATION
-         server -> client : random challenge (32 byte random salt, user id, relying party ID)
-         client -> authenticator : random challenge
-         authenticator -> client : credential ID (X.509 certificate, signature), authenticator data
-
-         == Finish registration ==
-
-         client -> server : ALTER USER USER() nth FACTOR FINISH REGISTRATION SET CHALLENGE_RESPONSE = 'credential ID, authenticator data'
-         server -> client : Ok packet upon successful verification of credential ID
-       @enduml
-
-  Authentication process:
-  Once initial authentication methods defined for user account are successful,
-  server initiates fido authentication process. This includes following steps:
-   <ol>
-    <li>
-     Server sends a 32 byte random salt, relying party ID, credential ID to client.
-    </li>
-    <li>
-     Client receives it and sends to FIDO authenticator.
-    </li>
-    <li>
-     FIDO authenticator prompts physical human user to perform gesture action.
-    </li>
-    <li>
-     FIDO authenticator extracts the private key based on relying party ID and
-     signs the challenge.
-    </li>
-    <li>
-     Client sends signed challenge to server.
-    </li>
-    <li>
-     Server side fido authentication plugin verifies the signature with the
-     public key and responds with an @ref page_protocol_basic_ok_packet or with
-     @ref page_protocol_basic_err_packet
-    </li>
-   </ol>
-       @startuml
-         title Authentication
-
-         participant server as "MySQL server"
-         participant client as "Client"
-         participant authenticator as "FIDO authenticator"
-
-         == Authentication ==
-
-         client -> server : connect
-         server -> client : OK packet
-         server -> client : send client side fido authentication plugin name in OK packet
-         server -> client : sends 32 byte random salt, relying party ID, credential ID
-         client -> authenticator : sends 32 byte random salt, relying party ID, credential ID
-         authenticator -> client : signed challenge
-         client -> server : signed challenge
-         server -> client : verify signed challenge and send OK or ERR packet
-       @enduml
 */
 
 /**
@@ -1328,12 +1159,12 @@ inline const char *client_plugin_name(plugin_ref ref) {
 LEX_CSTRING validate_password_plugin_name = {
     STRING_WITH_LEN("validate_password")};
 
-LEX_CSTRING default_auth_plugin_name;
-
 const LEX_CSTRING Cached_authentication_plugins::cached_plugins_names[(
     uint)PLUGIN_LAST] = {{STRING_WITH_LEN("caching_sha2_password")},
                          {STRING_WITH_LEN("mysql_native_password")},
                          {STRING_WITH_LEN("sha256_password")}};
+
+LEX_CSTRING default_auth_plugin_name{STRING_WITH_LEN("caching_sha2_password")};
 
 /**
   Use known pointers for cached plugins to improve comparison time
@@ -1711,47 +1542,6 @@ bool Rsa_authentication_keys::read_rsa_keys() {
 void optimize_plugin_compare_by_pointer(LEX_CSTRING *plugin_name) {
   Cached_authentication_plugins::optimize_plugin_compare_by_pointer(
       plugin_name);
-}
-
-/**
- Initialize default authentication plugin based on command line options or
- configuration file settings.
-
- @param plugin_name Name of the plugin
- @param plugin_name_length Length of the string
-*/
-
-int set_default_auth_plugin(char *plugin_name, size_t plugin_name_length) {
-  default_auth_plugin_name.str = plugin_name;
-  default_auth_plugin_name.length = plugin_name_length;
-
-  optimize_plugin_compare_by_pointer(&default_auth_plugin_name);
-
-  if (!Cached_authentication_plugins::compare_plugin(
-          PLUGIN_SHA256_PASSWORD, default_auth_plugin_name) &&
-      !Cached_authentication_plugins::compare_plugin(
-          PLUGIN_MYSQL_NATIVE_PASSWORD, default_auth_plugin_name) &&
-      !Cached_authentication_plugins::compare_plugin(
-          PLUGIN_CACHING_SHA2_PASSWORD, default_auth_plugin_name))
-    return 1;
-
-  if (!Cached_authentication_plugins::compare_plugin(
-          PLUGIN_CACHING_SHA2_PASSWORD, default_auth_plugin_name))
-    LogErr(WARNING_LEVEL, ER_DEPRECATE_MSG_WITH_REPLACEMENT,
-           "default_authentication_plugin", "authentication_policy");
-  return 0;
-}
-/**
-  Return the default authentication plugin name
-
-  @retval
-    A string containing the default authentication plugin name
-*/
-std::string get_default_autnetication_plugin_name() {
-  if (default_auth_plugin_name.length > 0)
-    return default_auth_plugin_name.str;
-  else
-    return "";
 }
 
 bool auth_plugin_is_built_in(const char *plugin_name) {
@@ -2573,12 +2363,12 @@ static bool find_mpvio_user(THD *thd, MPVIO_EXT *mpvio) {
           af->get_auth_str_len();
       mpvio->auth_info.multi_factor_auth_info[f].is_registration_required =
           af->get_requires_registration();
-      DBUG_PRINT(
-          "info",
-          ("exit: user=%s, auth_string=%s, plugin=%s, authentication factor=%d",
-           mpvio->auth_info.user_name,
-           mpvio->auth_info.multi_factor_auth_info[f].auth_string,
-           af->get_plugin_str(), f));
+      DBUG_PRINT("info",
+                 ("exit: user=%s, auth_string=%s, plugin=%s, authentication "
+                  "factor=%d",
+                  mpvio->auth_info.user_name,
+                  mpvio->auth_info.multi_factor_auth_info[f].auth_string,
+                  af->get_plugin_str(), f));
       f++;
     }
   }
@@ -3431,8 +3221,8 @@ skip_to_ssl:
     }
   } else if (!compression->compression_optional) {
     /*
-      if server is configured to only allow connections with compression enabled
-      then check if client has enabled compression else report error
+      if server is configured to only allow connections with compression
+      enabled then check if client has enabled compression else report error
     */
     my_error(
         ER_WRONG_COMPRESSION_ALGORITHM_CLIENT, MYF(0),
@@ -4178,7 +3968,6 @@ int acl_authenticate(THD *thd, enum_server_command command) {
   */
   thd->reset_db(NULL_CSTR);
 
-  auth_plugin_name = default_auth_plugin_name;
   /* acl_authenticate() takes the data from net->read_pos */
   thd->get_protocol_classic()->get_net()->read_pos =
       thd->get_protocol_classic()->get_raw_packet();
@@ -4762,7 +4551,7 @@ static int init_sha256_password_handler(MYSQL_PLUGIN plugin_ref) {
  Save the scramble in mpvio for future re-use.
  It is useful when we need to pass the scramble to another plugin.
  Especially in case when old 5.1 client with no CLIENT_PLUGIN_AUTH capability
- tries to connect to server with default-authentication-plugin set to
+ tries to connect to server with default 1FA set to
  sha256_password
 
 */

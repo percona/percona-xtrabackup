@@ -1,4 +1,4 @@
-include/master-slave.inc
+include/rpl/init_source_replica.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
@@ -18,13 +18,9 @@ Aaron
 Aaron
 Ababa
 Ababa
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 SET PASSWORD FOR root@"localhost" = 'foo';
-START SLAVE;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 SET PASSWORD FOR root@"localhost" = '';
 CREATE TABLE t3(n INT);
 INSERT INTO t3 VALUES(1),(2);
@@ -38,31 +34,29 @@ SUM(LENGTH(word))
 DROP TABLE t1,t3;
 CREATE TABLE t1 (n INT) ENGINE=NDB;
 RESET BINARY LOGS AND GTIDS;
-include/stop_slave.inc
-RESET SLAVE;
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
+include/rpl/stop_replica.inc
+RESET REPLICA;
 SELECT COUNT(*) FROM t1;
 COUNT(*)
 5000
-include/save_master_pos.inc
+include/rpl/save_server_position.inc
 RESET BINARY LOGS AND GTIDS;
 LOCK TABLES t1 READ;
-include/start_slave.inc
-include/sync_slave_io.inc
+include/rpl/start_replica.inc
+include/rpl/sync_received_with_saved.inc
 UNLOCK TABLES;
-include/sync_slave_sql_with_io.inc
+include/rpl/sync_with_recieved.inc
 SELECT COUNT(*) FROM t1;
 COUNT(*)
 5000
 DROP TABLE t1;
 CREATE TABLE t1 (n INT);
 INSERT INTO t1 VALUES(3456);
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SELECT n FROM t1;
 n
 3456
 DROP TABLE t1;
 # mysql.user table restored to original values.
-include/sync_slave_sql_with_master.inc
-include/rpl_end.inc
+include/rpl/sync_to_replica.inc
+include/rpl/deinit.inc

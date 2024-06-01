@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -31,13 +32,16 @@
 
 #include "mysql/harness/config_option.h"
 #include "mysql/harness/config_parser.h"
+#include "mysql/harness/dynamic_config.h"
 #include "mysql/harness/loader.h"
 #include "mysql/harness/logging/logging.h"
 #include "mysql/harness/plugin.h"
 #include "mysql/harness/plugin_config.h"
+#include "mysql/harness/section_config_exposer.h"
 #include "mysql/harness/utility/string.h"  // ::join()
 
-#include "mysqlrouter/http_server_component.h"
+#include "mysqlrouter/component/http_server_component.h"
+#include "mysqlrouter/http_constants.h"
 #include "mysqlrouter/rest_api_component.h"
 #include "mysqlrouter/supported_rest_options.h"
 
@@ -67,11 +71,11 @@ class RestRouterPluginConfig : public mysql_harness::BasePluginConfig {
     GET_OPTION_CHECKED(require_realm, section, "require_realm", StringOption{});
   }
 
-  std::string get_default(const std::string & /* option */) const override {
+  std::string get_default(std::string_view /* option */) const override {
     return {};
   }
 
-  bool is_required(const std::string &option) const override {
+  bool is_required(std::string_view option) const override {
     if (option == "require_realm") return true;
     return false;
   }
@@ -291,6 +295,46 @@ static const std::array<const char *, 2> rest_router_plugin_requires = {
     "rest_api",
 };
 
+namespace {
+
+class RestRouterConfigExposer : public mysql_harness::SectionConfigExposer {
+ public:
+  using DC = mysql_harness::DynamicConfig;
+  RestRouterConfigExposer(const bool initial,
+                          const RestRouterPluginConfig &plugin_config,
+                          const mysql_harness::ConfigSection &default_section)
+      : mysql_harness::SectionConfigExposer(
+            initial, default_section,
+            DC::SectionId{"rest_configs", kSectionName}),
+        plugin_config_(plugin_config) {}
+
+  void expose() override {
+    expose_option("require_realm", plugin_config_.require_realm,
+                  std::string(kHttpDefaultAuthRealmName));
+  }
+
+ private:
+  const RestRouterPluginConfig &plugin_config_;
+};
+
+}  // namespace
+
+static void expose_configuration(mysql_harness::PluginFuncEnv *env,
+                                 const char * /*key*/, bool initial) {
+  const mysql_harness::AppInfo *info = get_app_info(env);
+
+  if (!info->config) return;
+
+  for (const mysql_harness::ConfigSection *section : info->config->sections()) {
+    if (section->name == kSectionName) {
+      RestRouterPluginConfig config{section};
+      RestRouterConfigExposer(initial, config,
+                              info->config->get_default_section())
+          .expose();
+    }
+  }
+}
+
 extern "C" {
 mysql_harness::Plugin DLLEXPORT harness_plugin_rest_router = {
     mysql_harness::PLUGIN_ABI_VERSION,       // abi-version
@@ -310,5 +354,6 @@ mysql_harness::Plugin DLLEXPORT harness_plugin_rest_router = {
     true,     // declares_readiness
     rest_plugin_supported_options.size(),
     rest_plugin_supported_options.data(),
+    expose_configuration,
 };
 }

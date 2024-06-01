@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2016, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -182,50 +183,6 @@ class ClusterMetadataGR : public ClusterMetadata {
 
   std::vector<std::tuple<std::string, unsigned long>> fetch_cluster_hosts()
       override;
-};
-
-class ClusterMetadataGRV1 : public ClusterMetadataGR {
- public:
-  ClusterMetadataGRV1(const MetadataSchemaVersion &schema_version,
-                      MySQLSession *mysql,
-                      mysql_harness::SocketOperationsBase *sockops =
-                          mysql_harness::SocketOperations::instance())
-      : ClusterMetadataGR(schema_version, mysql, sockops) {}
-
-  ~ClusterMetadataGRV1() override = default;
-
-  mysqlrouter::ClusterType get_type() override {
-    return mysqlrouter::ClusterType::GR_V1;
-  }
-
-  ClusterInfo fetch_metadata_servers() override;
-
-  std::vector<std::string> get_routing_mode_queries() override;
-
-  InstanceType fetch_current_instance_type() override {
-    // V1 of the metadata only supported GR instances
-    return InstanceType::GroupMember;
-  }
-
-  void verify_router_id_is_ours(
-      const uint32_t router_id,
-      const std::string &hostname_override = "") override;
-
-  void update_router_info(
-      const uint32_t router_id, const std::string &cluster_id,
-      const std::string &target_cluster, const std::string &rw_endpoint,
-      const std::string &ro_endpoint, const std::string &rw_split_endpoint,
-      const std::string &rw_x_endpoint, const std::string &ro_x_endpoint,
-      const std::string &username) override;
-
-  uint32_t register_router(const std::string &router_name, const bool overwrite,
-                           const std::string &hostname_override = "") override;
-
-  std::vector<std::string> get_grant_statements(
-      const std::string &new_accounts) const override;
-
- protected:
-  uint64_t query_cluster_count() override;
 };
 
 class ClusterMetadataGRV2 : public ClusterMetadataGR {

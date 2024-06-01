@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2022, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -46,6 +47,7 @@
 #include "mysql_com.h"
 #include "mysqlrouter/classic_protocol_message.h"
 #include "mysqlrouter/connection_pool_component.h"
+#include "mysqlrouter/utils.h"  // to_string
 #include "router_require.h"
 
 IMPORT_LOG_FUNCTIONS()
@@ -222,6 +224,8 @@ class SelectSessionVariablesHandler : public QuerySender::Handler {
 
 stdx::expected<Processor::Result, std::error_code> LazyConnector::process() {
   switch (stage()) {
+    case Stage::FromStash:
+      return from_stash();
     case Stage::Connect:
       return connect();
     case Stage::Connected:
@@ -274,9 +278,7 @@ stdx::expected<Processor::Result, std::error_code> LazyConnector::process() {
       }
 
       // reset the seq-id of the server side as this is a new command.
-      if (connection()->server_protocol() != nullptr) {
-        connection()->server_protocol()->seq_id(0xff);
-      }
+      connection()->server_protocol().seq_id(0xff);
 
       trace_span_end(trace_event_connect_);
 
@@ -286,16 +288,70 @@ stdx::expected<Processor::Result, std::error_code> LazyConnector::process() {
   harness_assert_this_should_not_execute();
 }
 
+stdx::expected<Processor::Result, std::error_code> LazyConnector::from_stash() {
+  connection()->has_transient_error_at_connect(false);
+
+  trace_event_connect_ =
+      trace_span(parent_event_, "mysql/prepare_server_connection");
+
+  if (!connection()->server_conn().is_open()) {
+    if (auto ep = connection()->destination_endpoint()) {
+      if (auto &tr = tracer()) {
+        tr.trace(Tracer::Event().stage("connect::from_stash"));
+      }
+
+      auto &pool_comp = ConnectionPoolComponent::get_instance();
+
+      if (auto pool =
+              pool_comp.get(ConnectionPoolComponent::default_pool_name())) {
+        TraceEvent *trace_event_from_stash = nullptr;
+
+        if (auto *ev = trace_event_connect_) {
+          trace_event_from_stash = trace_span(ev, "mysql/from_stash");
+        }
+
+        if (auto pop_res =
+                pool->unstash_mine(mysqlrouter::to_string(*ep), connection())) {
+          connection()->server_conn() = std::move(*pop_res);
+
+          // reset the seq-id of the server side as this is a new command.
+          connection()->server_protocol().seq_id(0xff);
+
+          if (auto &tr = tracer()) {
+            tr.trace(Tracer::Event().stage(
+                "connect::from_stash::unstashed::mine: fd=" +
+                std::to_string(connection()->server_conn().native_handle()) +
+                ", " + connection()->server_conn().endpoint()));
+          }
+
+          if (auto *ev = trace_event_from_stash) {
+            trace_set_connection_attributes(ev);
+            trace_span_end(ev);
+          }
+
+          stage(Stage::WaitGtidExecuted);
+          return Result::Again;
+        }
+
+        if (auto *ev = trace_event_from_stash) {
+          ev->attrs.emplace_back("mysql.error_message", "no match");
+          trace_span_end(ev, TraceEvent::StatusCode::kError);
+        }
+      }
+    }
+  }
+
+  stage(Stage::Connect);
+
+  return Result::Again;
+}
+
 stdx::expected<Processor::Result, std::error_code> LazyConnector::connect() {
   if (auto &tr = tracer()) {
     tr.trace(Tracer::Event().stage("connect::connect"));
   }
 
-  trace_event_connect_ =
-      trace_span(parent_event_, "mysql/prepare_server_connection");
-
-  auto *socket_splicer = connection()->socket_splicer();
-  auto &server_conn = socket_splicer->server_conn();
+  auto &server_conn = connection()->server_conn();
 
   if (!server_conn.is_open()) {
     stage(Stage::Connected);
@@ -318,10 +374,9 @@ stdx::expected<Processor::Result, std::error_code> LazyConnector::connect() {
  * the handshake part.
  */
 stdx::expected<Processor::Result, std::error_code> LazyConnector::connected() {
-  auto *socket_splicer = connection()->socket_splicer();
-  auto &server_conn = socket_splicer->server_conn();
-  auto *client_protocol = connection()->client_protocol();
-  auto *server_protocol = connection()->server_protocol();
+  auto &server_conn = connection()->server_conn();
+  auto &client_protocol = connection()->client_conn().protocol();
+  auto &server_protocol = server_conn.protocol();
 
   if (!server_conn.is_open()) {
     if (auto &tr = tracer()) {
@@ -344,13 +399,14 @@ stdx::expected<Processor::Result, std::error_code> LazyConnector::connected() {
   /*
    * if the connection is from the pool, we need a change user.
    */
-  if (server_protocol->server_greeting()) {
-    connection()->client_greeting_sent(true);
+  if (server_protocol.server_greeting()) {
+    connection()->server_conn().protocol().handshake_state(
+        ClassicProtocolState::HandshakeState::kFinished);
 
     if (!in_handshake_ &&
-        ((client_protocol->username() == server_protocol->username()) &&
-         (client_protocol->sent_attributes() ==
-          server_protocol->sent_attributes()))) {
+        ((client_protocol.username() == server_protocol.username()) &&
+         (client_protocol.sent_attributes() ==
+          server_protocol.sent_attributes()))) {
       // it is ok if the schema differs, it will be handled later set_schema()
 
       if (auto *ev = trace_event_authenticate_) {
@@ -365,10 +421,10 @@ stdx::expected<Processor::Result, std::error_code> LazyConnector::connected() {
         ev->attrs.emplace_back("mysql.remote.needs_full_handshake", true);
         ev->attrs.emplace_back(
             "mysql.remote.username_differs",
-            client_protocol->username() == server_protocol->username());
+            client_protocol.username() == server_protocol.username());
         ev->attrs.emplace_back("mysql.remote.connection_attributes_differ",
-                               client_protocol->sent_attributes() ==
-                                   server_protocol->sent_attributes());
+                               client_protocol.sent_attributes() ==
+                                   server_protocol.sent_attributes());
       }
 
       connection()->push_processor(std::make_unique<ChangeUserSender>(
@@ -387,10 +443,10 @@ stdx::expected<Processor::Result, std::error_code> LazyConnector::connected() {
         connection(), in_handshake_,
         [this](const classic_protocol::message::server::Error &err) {
           if (connect_error_is_transient(err) &&
-              (connection()->client_protocol()->password().has_value() ||
+              (connection()->client_protocol().password().has_value() ||
                !connection()
                     ->server_protocol()
-                    ->server_greeting()
+                    .server_greeting()
                     .has_value()) &&
               std::chrono::steady_clock::now() <
                   started_ + connection()->context().connect_retry_timeout()) {
@@ -422,7 +478,7 @@ stdx::expected<Processor::Result, std::error_code> LazyConnector::connected() {
 stdx::expected<Processor::Result, std::error_code>
 LazyConnector::authenticated() {
   if (!connection()->authenticated() ||
-      !connection()->socket_splicer()->server_conn().is_open()) {
+      !connection()->server_conn().is_open()) {
     if (auto &tr = tracer()) {
       tr.trace(Tracer::Event().stage("connect::authenticate::error"));
     }
@@ -433,6 +489,8 @@ LazyConnector::authenticated() {
 
     if (retry_connect_) {
       retry_connect_ = false;
+
+      connection()->has_transient_error_at_connect(true);
 
       stage(Stage::Connect);
       connection()->connect_timer().expires_after(kConnectRetryInterval);
@@ -526,10 +584,12 @@ stdx::expected<Processor::Result, std::error_code> LazyConnector::set_vars() {
   if (need_session_trackers) {
     set_session_var_if_not_set(stmt, sysvars, "session_track_gtids",
                                Value("OWN_GTID"));
-    set_session_var_if_not_set(stmt, sysvars, "session_track_transaction_info",
-                               Value("CHARACTERISTICS"));
+    set_session_var_if_not_set(stmt, sysvars, "session_track_schema",
+                               Value("ON"));
     set_session_var_if_not_set(stmt, sysvars, "session_track_state_change",
                                Value("ON"));
+    set_session_var_if_not_set(stmt, sysvars, "session_track_transaction_info",
+                               Value("CHARACTERISTICS"));
   }
 
   if (!stmt.empty()) {
@@ -580,12 +640,12 @@ LazyConnector::set_vars_done() {
 
 stdx::expected<Processor::Result, std::error_code>
 LazyConnector::set_server_option() {
-  auto *src_protocol = connection()->client_protocol();
-  auto *dst_protocol = connection()->server_protocol();
+  auto &src_protocol = connection()->client_protocol();
+  auto &dst_protocol = connection()->server_protocol();
 
-  bool client_has_multi_statements = src_protocol->client_capabilities().test(
+  bool client_has_multi_statements = src_protocol.client_capabilities().test(
       classic_protocol::capabilities::pos::multi_statements);
-  bool server_has_multi_statements = dst_protocol->client_capabilities().test(
+  bool server_has_multi_statements = dst_protocol.client_capabilities().test(
       classic_protocol::capabilities::pos::multi_statements);
 
   if (client_has_multi_statements == server_has_multi_statements) {
@@ -680,8 +740,8 @@ LazyConnector::fetch_sys_vars_done() {
 }
 
 stdx::expected<Processor::Result, std::error_code> LazyConnector::set_schema() {
-  auto client_schema = connection()->client_protocol()->schema();
-  auto server_schema = connection()->server_protocol()->schema();
+  auto client_schema = connection()->client_conn().protocol().schema();
+  auto server_schema = connection()->server_conn().protocol().schema();
 
   if (!client_schema.empty() && (client_schema != server_schema)) {
     if (auto &tr = tracer()) {
@@ -796,8 +856,11 @@ stdx::expected<Processor::Result, std::error_code>
 LazyConnector::pool_or_close() {
   stage(Stage::FallbackToWrite);
 
+#if 1
+  connection()->stash_server_conn();
+#else
   const auto pool_res = pool_server_connection();
-  if (!pool_res) return stdx::make_unexpected(pool_res.error());
+  if (!pool_res) return stdx::unexpected(pool_res.error());
 
   const auto still_open = *pool_res;
   if (still_open) {
@@ -813,6 +876,7 @@ LazyConnector::pool_or_close() {
 
     connection()->push_processor(std::make_unique<QuitSender>(connection()));
   }
+#endif
 
   return Result::Again;
 }
@@ -844,7 +908,7 @@ LazyConnector::fallback_to_write() {
   // the fallback will create a new trace-event
   trace_span_end(trace_event_connect_);
 
-  stage(Stage::Connect);
+  stage(Stage::FromStash);
   return Result::Again;
 }
 
@@ -955,7 +1019,7 @@ LazyConnector::fetch_user_attrs_done() {
   }
 
   auto enforce_res =
-      RouterRequire::enforce(connection()->socket_splicer()->client_channel(),
+      RouterRequire::enforce(connection()->client_conn().channel(),
                              *required_connection_attributes_fetcher_result_);
   if (!enforce_res) {
     failed(classic_protocol::message::server::Error{1045, "Access denied",
@@ -970,9 +1034,9 @@ LazyConnector::fetch_user_attrs_done() {
 
 stdx::expected<Processor::Result, std::error_code>
 LazyConnector::send_auth_ok() {
-  auto *socket_splicer = connection()->socket_splicer();
-  auto *dst_channel = socket_splicer->client_channel();
-  auto *dst_protocol = connection()->client_protocol();
+  auto &dst_conn = connection()->client_conn();
+  auto &dst_channel = dst_conn.channel();
+  auto &dst_protocol = dst_conn.protocol();
 
   if (!in_handshake_) {
     stage(Stage::Done);
@@ -986,7 +1050,7 @@ LazyConnector::send_auth_ok() {
   // tell the client that everything is ok.
   auto send_res =
       ClassicFrame::send_msg<classic_protocol::borrowed::message::server::Ok>(
-          dst_channel, dst_protocol, {0, 0, dst_protocol->status_flags(), 0});
+          dst_channel, dst_protocol, {0, 0, dst_protocol.status_flags(), 0});
   if (!send_res) return stdx::unexpected(send_res.error());
 
   stage(Stage::Done);

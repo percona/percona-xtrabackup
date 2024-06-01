@@ -1,15 +1,16 @@
-/* Copyright (c) 2014, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -213,6 +214,7 @@ bool is_plugin_waiting_to_set_server_read_mode();
 bool check_async_channel_running_on_secondary();
 void set_enforce_update_everywhere_checks(bool option);
 void set_single_primary_mode_var(bool option);
+bool get_single_primary_mode_var();
 void set_auto_increment_handler_values();
 void reset_auto_increment_handler_values(bool force_reset = false);
 SERVICE_TYPE(registry) * get_plugin_registry();
@@ -257,6 +259,8 @@ int get_flow_control_hold_percent_var();
 int get_flow_control_release_percent_var();
 ulong get_components_stop_timeout_var();
 ulong get_communication_stack_var();
+bool get_preemptive_garbage_collection_var();
+uint get_preemptive_garbage_collection_rows_threshold_var();
 
 // Plugin public methods
 int plugin_group_replication_init(MYSQL_PLUGIN plugin_info);

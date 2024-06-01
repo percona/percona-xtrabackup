@@ -55,9 +55,9 @@ SELECT USER(), CURRENT_USER();
 --echo
 # Create a table for our tests
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
+--source include/connection.inc
 CREATE TABLE t1(a INT PRIMARY KEY);
---source include/rpl_sync.inc
+--source include/rpl/sync.inc
 # Write to it without replicating the trx
 SET SESSION sql_log_bin= 0;
 INSERT INTO t1 VALUES (1);
@@ -68,7 +68,7 @@ SET @@GLOBAL.group_replication_exit_state_action = OFFLINE_MODE;
 
 # Write to the same row on member 2
 --let $rpl_connection_name= server2
---source include/rpl_connection.inc
+--source include/connection.inc
 INSERT INTO t1 VALUES (1);
 
 --echo
@@ -78,7 +78,7 @@ INSERT INTO t1 VALUES (1);
 --echo
 # Firstly verify that the member entered an error state
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
+--source include/connection.inc
 --let $group_replication_member_state= ERROR
 --source include/gr_wait_for_member_state.inc
 
@@ -94,7 +94,7 @@ INSERT INTO t1 VALUES (1);
 --echo #########################################################################
 --echo
 --let $rpl_connection_name= server1_user
---source include/rpl_connection.inc
+--source include/connection.inc
 --error CR_SERVER_GONE_ERROR, CR_SERVER_LOST
 SELECT USER(), CURRENT_USER();
 
@@ -103,7 +103,7 @@ SELECT USER(), CURRENT_USER();
 --echo # 5) Validate that non-admin users cannot connect.
 --echo #########################################################################
 --echo
---replace_result $MASTER_MYPORT MASTER_PORT $MASTER_MYSOCK MASTER_MYSOCK
+--replace_result $MASTER_MYPORT SOURCE_PORT $MASTER_MYSOCK MASTER_MYSOCK
 --error ER_SERVER_OFFLINE_MODE
 --connect(server1_user2, localhost,user,pass,,$MASTER_MYPORT,$MASTER_MYSOCK)
 
@@ -113,11 +113,12 @@ SELECT USER(), CURRENT_USER();
 --echo #########################################################################
 --echo
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
+--source include/connection.inc
 --source include/assert_and_disable_read_only.inc
 --source include/assert_and_disable_offline_mode.inc
 
 # Stop GR
+--let $skip_assert_offline_mode= 1
 --source include/stop_group_replication.inc
 
 # Delete the transaction that clashed, so the server doesn't error out right

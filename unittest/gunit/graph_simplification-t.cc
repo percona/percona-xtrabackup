@@ -1,15 +1,16 @@
-/* Copyright (c) 2021, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -110,7 +111,7 @@ class DestroyNodes {
   explicit DestroyNodes(const JoinHypergraph *graph) : m_graph(graph) {}
   void operator()() const {
     for (const JoinHypergraph::Node &node : m_graph->nodes) {
-      ::destroy_at(static_cast<Fake_TABLE *>(node.table));
+      ::destroy_at(static_cast<Fake_TABLE *>(node.table()));
     }
   }
 
@@ -135,7 +136,7 @@ using NodeGuard = Scope_guard<DestroyNodes>;
     table->alias = alias;
 
     g->nodes.push_back(
-        JoinHypergraph::Node{table, {}, {}, new (mem_root) CompanionSet()});
+        JoinHypergraph::Node{mem_root, table, new (mem_root) CompanionSet()});
     g->graph.AddNode();
   }
 
@@ -158,7 +159,7 @@ TEST(GraphSimplificationTest, SimpleStar) {
   AddEdge(initializer.thd(), RelationalExpression::INNER_JOIN, 0b1, 0b1000,
           0.01, &mem_root, &g);
 
-  GraphSimplifier s(&g, &mem_root);
+  GraphSimplifier s(initializer.thd(), &g);
 
   // Based on the selectivities, joining t1/t4 before t1/t2 will be the best
   // choice. This means we'll broaden the t1/t2 edge to {t1,t4}/t2.
@@ -227,7 +228,7 @@ TEST(GraphSimplificationTest, TwoCycles) {
 
   // Do simplification steps until we can't do more. (The number doesn't matter
   // all that much, but it should definitely be more than one.)
-  GraphSimplifier s(&g, &mem_root);
+  GraphSimplifier s(initializer.thd(), &g);
   ASSERT_EQ(GraphSimplifier::APPLIED_SIMPLIFICATION, s.DoSimplificationStep());
   ASSERT_EQ(GraphSimplifier::APPLIED_SIMPLIFICATION, s.DoSimplificationStep());
   ASSERT_EQ(GraphSimplifier::APPLIED_SIMPLIFICATION, s.DoSimplificationStep());
@@ -263,10 +264,10 @@ TEST(GraphSimplificationTest, ExistingHyperedge) {
   JoinHypergraph g(&mem_root, /*query_block=*/nullptr);
 
   NodeGuard node_guard = AddNodes(4, &mem_root, &g);
-  g.nodes[0].table->file->stats.records = 690;
-  g.nodes[1].table->file->stats.records = 6;
-  g.nodes[2].table->file->stats.records = 1;
-  g.nodes[3].table->file->stats.records = 1;
+  g.nodes[0].table()->file->stats.records = 690;
+  g.nodes[1].table()->file->stats.records = 6;
+  g.nodes[2].table()->file->stats.records = 1;
+  g.nodes[3].table()->file->stats.records = 1;
 
   AddEdge(initializer.thd(), RelationalExpression::INNER_JOIN, 0b1, 0b10, 0.2,
           &mem_root, &g);
@@ -275,7 +276,7 @@ TEST(GraphSimplificationTest, ExistingHyperedge) {
   AddEdge(initializer.thd(), RelationalExpression::INNER_JOIN, 0b11, 0b1000,
           0.1, &mem_root, &g);
 
-  GraphSimplifier s(&g, &mem_root);
+  GraphSimplifier s(initializer.thd(), &g);
 
   // First, one of t1-t2 and t2-t3 should come before the other.
   EXPECT_EQ(GraphSimplifier::APPLIED_SIMPLIFICATION, s.DoSimplificationStep());
@@ -316,10 +317,10 @@ TEST(GraphSimplificationTest, IndirectHierarcicalJoins) {
   JoinHypergraph g(&mem_root, /*query_block=*/nullptr);
 
   NodeGuard node_guard = AddNodes(4, &mem_root, &g);
-  g.nodes[0].table->file->stats.records = 0;
-  g.nodes[1].table->file->stats.records = 171;
-  g.nodes[2].table->file->stats.records = 6;
-  g.nodes[3].table->file->stats.records = 3824;
+  g.nodes[0].table()->file->stats.records = 0;
+  g.nodes[1].table()->file->stats.records = 171;
+  g.nodes[2].table()->file->stats.records = 6;
+  g.nodes[3].table()->file->stats.records = 3824;
 
   AddEdge(initializer.thd(), RelationalExpression::INNER_JOIN, 0b10, 0b100, 0.2,
           &mem_root, &g);
@@ -328,7 +329,7 @@ TEST(GraphSimplificationTest, IndirectHierarcicalJoins) {
   AddEdge(initializer.thd(), RelationalExpression::INNER_JOIN, 0b1, 0b1010, 0.1,
           &mem_root, &g);
 
-  GraphSimplifier s(&g, &mem_root);
+  GraphSimplifier s(initializer.thd(), &g);
 
   // No simplification steps should be possible, except for that we should
   // discover that t1-{t2,t4} must come late (see above).
@@ -372,11 +373,11 @@ TEST(GraphSimplificationTest, IndirectHierarcicalJoins2) {
   JoinHypergraph g(&mem_root, /*query_block=*/nullptr);
 
   NodeGuard node_guard = AddNodes(5, &mem_root, &g);
-  g.nodes[0].table->file->stats.records = 1;
-  g.nodes[1].table->file->stats.records = 1;
-  g.nodes[2].table->file->stats.records = 1;
-  g.nodes[3].table->file->stats.records = 1;
-  g.nodes[4].table->file->stats.records = 1;
+  g.nodes[0].table()->file->stats.records = 1;
+  g.nodes[1].table()->file->stats.records = 1;
+  g.nodes[2].table()->file->stats.records = 1;
+  g.nodes[3].table()->file->stats.records = 1;
+  g.nodes[4].table()->file->stats.records = 1;
 
   AddEdge(initializer.thd(), RelationalExpression::INNER_JOIN, 0b1, 0b10000,
           0.1, &mem_root, &g);  // t1-t5.
@@ -387,7 +388,7 @@ TEST(GraphSimplificationTest, IndirectHierarcicalJoins2) {
   AddEdge(initializer.thd(), RelationalExpression::INNER_JOIN, 0b11001, 0b10,
           0.01, &mem_root, &g);  // {t1,t4,t5}-t2.
 
-  GraphSimplifier s(&g, &mem_root);
+  GraphSimplifier s(initializer.thd(), &g);
 
   // We want first to put {t1,t4,t5}-t2 before t3-t4, but discover it is
   // impossible, so we apply the opposite.
@@ -423,9 +424,9 @@ TEST(GraphSimplificationTest, ConflictRules) {
   JoinHypergraph g(&mem_root, /*query_block=*/nullptr);
 
   NodeGuard node_guard = AddNodes(3, &mem_root, &g);
-  g.nodes[0].table->file->stats.records = 100;
-  g.nodes[1].table->file->stats.records = 10000;
-  g.nodes[2].table->file->stats.records = 0;
+  g.nodes[0].table()->file->stats.records = 100;
+  g.nodes[1].table()->file->stats.records = 10000;
+  g.nodes[2].table()->file->stats.records = 0;
 
   AddEdge(initializer.thd(), RelationalExpression::INNER_JOIN, 0b1, 0b10, 1.0,
           &mem_root, &g);
@@ -435,7 +436,7 @@ TEST(GraphSimplificationTest, ConflictRules) {
   g.edges[1].expr->conflict_rules.init(&mem_root);
   g.edges[1].expr->conflict_rules.push_back(ConflictRule{0b10, 0b1});
 
-  GraphSimplifier s(&g, &mem_root);
+  GraphSimplifier s(initializer.thd(), &g);
 
   // It would be fine here to have one simplification step,
   // in theory (t1-t2 before t2-t3), because it's not immediately
@@ -466,16 +467,16 @@ TEST(GraphSimplificationTest, Antijoin) {
   JoinHypergraph g(&mem_root, /*query_block=*/nullptr);
 
   NodeGuard node_guard = AddNodes(3, &mem_root, &g);
-  g.nodes[0].table->file->stats.records = 100;
-  g.nodes[1].table->file->stats.records = 100;
-  g.nodes[2].table->file->stats.records = 10000;
+  g.nodes[0].table()->file->stats.records = 100;
+  g.nodes[1].table()->file->stats.records = 100;
+  g.nodes[2].table()->file->stats.records = 10000;
 
   AddEdge(initializer.thd(), RelationalExpression::INNER_JOIN, 0b1, 0b10, 1.0,
           &mem_root, &g);
   AddEdge(initializer.thd(), RelationalExpression::ANTIJOIN, 0b10, 0b100, 1.0,
           &mem_root, &g);
 
-  GraphSimplifier s(&g, &mem_root);
+  GraphSimplifier s(initializer.thd(), &g);
 
   // t1-t2 should be broadened to t1-{t2,t3}, so that t2-t3 is taken first.
   EXPECT_EQ(GraphSimplifier::APPLIED_SIMPLIFICATION, s.DoSimplificationStep());
@@ -519,13 +520,13 @@ TEST(GraphSimplificationTest, CycleNeighboringHyperedges) {
    */
 
   NodeGuard node_guard = AddNodes(7, &mem_root, &g);
-  g.nodes[0].table->file->stats.records = 1500;
-  g.nodes[1].table->file->stats.records = 6000;
-  g.nodes[2].table->file->stats.records = 700;
-  g.nodes[3].table->file->stats.records = 200;
-  g.nodes[4].table->file->stats.records = 150;
-  g.nodes[5].table->file->stats.records = 1000;
-  g.nodes[6].table->file->stats.records = 1000;
+  g.nodes[0].table()->file->stats.records = 1500;
+  g.nodes[1].table()->file->stats.records = 6000;
+  g.nodes[2].table()->file->stats.records = 700;
+  g.nodes[3].table()->file->stats.records = 200;
+  g.nodes[4].table()->file->stats.records = 150;
+  g.nodes[5].table()->file->stats.records = 1000;
+  g.nodes[6].table()->file->stats.records = 1000;
 
   THD *thd = initializer.thd();
   AddEdge(thd, RelationalExpression::LEFT_JOIN, 0b1, 0b1110, 0.0007, &mem_root,
@@ -547,7 +548,7 @@ TEST(GraphSimplificationTest, CycleNeighboringHyperedges) {
   // that important. What matters, is that we're able to get past the third call
   // to DoSimplificationStep(), where we previously hit infinite recursion, and
   // continue to simplify the graph also after we hit the problematic condition.
-  GraphSimplifier s(&g, &mem_root);
+  GraphSimplifier s(initializer.thd(), &g);
 
   // First two simplifications are applied by adding the following constraints:
   //
@@ -621,14 +622,14 @@ TEST(GraphSimplificationTest, CyclicInformationSchemaView) {
    */
 
   NodeGuard node_guard = AddNodes(8, &mem_root, &g);
-  g.nodes[0].table->file->stats.records = 1399;
-  g.nodes[1].table->file->stats.records = 4706;
-  g.nodes[2].table->file->stats.records = 316;
-  g.nodes[3].table->file->stats.records = 222;
-  g.nodes[4].table->file->stats.records = 259;
-  g.nodes[5].table->file->stats.records = 6;
-  g.nodes[6].table->file->stats.records = 1;
-  g.nodes[7].table->file->stats.records = 1;
+  g.nodes[0].table()->file->stats.records = 1399;
+  g.nodes[1].table()->file->stats.records = 4706;
+  g.nodes[2].table()->file->stats.records = 316;
+  g.nodes[3].table()->file->stats.records = 222;
+  g.nodes[4].table()->file->stats.records = 259;
+  g.nodes[5].table()->file->stats.records = 6;
+  g.nodes[6].table()->file->stats.records = 1;
+  g.nodes[7].table()->file->stats.records = 1;
 
   THD *thd = initializer.thd();
   // t0-t1
@@ -659,7 +660,7 @@ TEST(GraphSimplificationTest, CyclicInformationSchemaView) {
   // Simplify the above graph as much as possible. The exact steps are not all
   // that important. What matters, is that we're not making a hypergraph that is
   // not joinable.
-  GraphSimplifier s(&g, &mem_root);
+  GraphSimplifier s(initializer.thd(), &g);
   while (s.DoSimplificationStep() !=
          GraphSimplifier::NO_SIMPLIFICATION_POSSIBLE) {
   }
@@ -682,7 +683,7 @@ TEST(GraphSimplificationTest, CyclicInformationSchemaView) {
   std::uniform_int_distribution<int> table_size(1, 10000);
   NodeGuard node_guard = AddNodes(graph_size, mem_root, g);
   for (int node_idx = 0; node_idx < graph_size; ++node_idx) {
-    g->nodes[node_idx].table->file->stats.records = table_size(*engine);
+    g->nodes[node_idx].table()->file->stats.records = table_size(*engine);
   }
 
   std::uniform_real_distribution<double> selectivity(0.001, 1.000);
@@ -701,7 +702,7 @@ TEST(GraphSimplificationTest, CyclicInformationSchemaView) {
   std::uniform_int_distribution<int> table_size(1, 10000);
   NodeGuard node_guard = AddNodes(graph_size, mem_root, g);
   for (int node_idx = 0; node_idx < graph_size; ++node_idx) {
-    g->nodes[node_idx].table->file->stats.records = table_size(*engine);
+    g->nodes[node_idx].table()->file->stats.records = table_size(*engine);
   }
 
   std::uniform_real_distribution<double> selectivity(0.001, 1.000);
@@ -726,7 +727,7 @@ TEST(GraphSimplificationTest, UndoRedo) {
   JoinHypergraph g(&mem_root, /*query_block=*/nullptr);
   NodeGuard node_guard = CreateStarJoin(initializer.thd(), /*graph_size=*/20,
                                         &engine, &mem_root, &g);
-  GraphSimplifier s(&g, &mem_root);
+  GraphSimplifier s(initializer.thd(), &g);
 
   std::uniform_int_distribution<int> back_or_forward(0, 4);
   for (;;) {  // Termination condition within loop.
@@ -770,7 +771,7 @@ static void BM_FullySimplifyStarJoin(int graph_size, size_t num_iterations) {
         CreateStarJoin(initializer.thd(), graph_size, &engine, &mem_root, &g);
 
     StartBenchmarkTiming();
-    GraphSimplifier s(&g, &mem_root);
+    GraphSimplifier s(initializer.thd(), &g);
     while (s.DoSimplificationStep() !=
            GraphSimplifier::NO_SIMPLIFICATION_POSSIBLE)
       ;
@@ -818,7 +819,7 @@ static void BM_FullySimplifyCliqueJoin(int graph_size, size_t num_iterations) {
         CreateCliqueJoin(initializer.thd(), graph_size, &engine, &mem_root, &g);
 
     StartBenchmarkTiming();
-    GraphSimplifier s(&g, &mem_root);
+    GraphSimplifier s(initializer.thd(), &g);
     while (s.DoSimplificationStep() !=
            GraphSimplifier::NO_SIMPLIFICATION_POSSIBLE)
       ;
