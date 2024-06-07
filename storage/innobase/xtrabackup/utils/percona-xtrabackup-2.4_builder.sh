@@ -342,7 +342,7 @@ install_deps() {
             PKGLIST+=" gcc-8 g++-8"
 	fi
         DEBIAN_FRONTEND=noninteractive apt-get -y install libreadline6 || true
-        if [ $DEBIAN_VERSION = bullseye -o $DEBIAN_VERSION = bookworm ]; then
+        if [ $DEBIAN_VERSION = bullseye -o $DEBIAN_VERSION = bookworm -o $DEBIAN_VERSION = noble ]; then
             apt install -y gcc-9 g++-9 cmake
             ln -s -f /usr/bin/g++-9 /usr/bin/g++
             ln -s -f /usr/bin/gcc-9 /usr/bin/gcc
@@ -355,7 +355,7 @@ install_deps() {
             ln -s -f /usr/bin/x86_64-linux-gnu-gcc-nm-9 /usr/bin/x86_64-linux-gnu-gcc-nm
             ln -s -f /usr/bin/x86_64-linux-gnu-gcc-ranlib-9 /usr/bin/x86_64-linux-gnu-gcc-ranlib
 	fi
-        if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" -o "${OS_NAME}" == "jammy" -o "${OS_NAME}" == "bookworm" ]; then
+        if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" -o "${OS_NAME}" == "jammy" -o "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "noble" ]; then
             PKGLIST+=" python3-sphinx python3-docutils"
         else
             PKGLIST+=" python-sphinx python-docutils"
