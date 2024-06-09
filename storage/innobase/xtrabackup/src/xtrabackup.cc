@@ -365,7 +365,9 @@ it every INNOBASE_WAKE_INTERVAL'th step. */
 ulong innobase_active_counter = 0;
 
 char *xtrabackup_debug_sync = NULL;
+#ifdef UNIV_DEBUG
 char *xtrabackup_debug_sync_thread = NULL;
+#endif /* UNIV_DEBUG */
 static std::string debug_sync_file_content;
 static const char *dbug_setting = nullptr;
 
@@ -1762,6 +1764,7 @@ void debug_sync_point(const char *name) {
 #endif
 }
 
+#ifdef UNIV_DEBUG
 void debug_sync_thread(const char *name) {
 #ifndef __WIN__
   FILE *fp;
@@ -1803,6 +1806,7 @@ void debug_sync_thread(const char *name) {
 
 #endif
 }
+#endif /* UNIV_DEBUG */
 
 static const char *xb_client_default_groups[] = {"xtrabackup", "client", 0, 0,
                                                  0};
