@@ -432,6 +432,10 @@ build_srpm(){
     cd $WORKDIR/rpmbuild/SPECS
     tar vxzf $WORKDIR/$TARFILE --wildcards '*/storage/innobase/xtrabackup/utils/*.spec' --strip=5
     #
+    #
+    sed -i "/^%changelog/a - Release ${VERSION}-${RELEASE}" percona-xtrabackup.spec
+    sed -i "/^%changelog/a * $(date "+%a") $(date "+%b") $(date "+%d") $(date "+%Y") Percona Development Team <info@percona.com> - ${VERSION}-${RELEASE}" percona-xtrabackup.spec
+    #
     cd $WORKDIR
     #
     mv -fv $TARFILE $WORKDIR/rpmbuild/SOURCES
