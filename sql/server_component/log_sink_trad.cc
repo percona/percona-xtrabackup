@@ -285,11 +285,6 @@ int log_sink_trad(void *instance [[maybe_unused]], log_line *ll) {
     }
 
     {
-      char internal_buff[LOG_BUFF_MAX];
-      size_t buff_size = sizeof(internal_buff);
-      char *buff_line = internal_buff;
-      size_t len;
-
       if (!(out_types & LOG_ITEM_LOG_LABEL)) {
         label = (prio == ERROR_LEVEL) ? "ERROR" : log_label_from_prio(prio);
         label_len = strlen(label);
@@ -303,7 +298,11 @@ int log_sink_trad(void *instance [[maybe_unused]], log_line *ll) {
         iso_timestamp = buff_local_time;
         iso_len = strlen(buff_local_time);
       }
-
+#ifndef XTRABACKUP
+      char internal_buff[LOG_BUFF_MAX];
+      size_t buff_size = sizeof(internal_buff);
+      char *buff_line = internal_buff;
+      size_t len;
       /*
         WL#11009 adds "error identifier" as a field in square brackets
         that directly precedes the error message. As a result, new
@@ -344,6 +343,13 @@ int log_sink_trad(void *instance [[maybe_unused]], log_line *ll) {
 
       // write log-event to log-file
       log_write_errstream(buff_line, len);
+#else
+      fprintf(stderr, "%.*s %u [%.*s] [MY-%06u] [%.*s] %.*s\n", (int)iso_len,
+              iso_timestamp, thread_id, (int)label_len, label, errcode,
+              (int)subsys_len, subsys, (int)msg_len, msg);
+      fflush(stderr);
+
+#endif /* !XTRABACKUP */
     }
   }
 
