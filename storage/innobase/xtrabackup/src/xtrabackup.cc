@@ -5539,6 +5539,18 @@ error:
   return false;
 }
 
+// Function to check if a string ends with another string
+static bool ends_with(const string &full_string, const string &ext) {
+  // Check if the ending string is longer than the full
+  // string
+  if (ext.size() > full_string.size()) return false;
+
+  // Compare the ending of the full string with the target
+  // ending
+  return full_string.compare(full_string.size() - ext.size(), ext.size(),
+                             ext) == 0;
+}
+
 /************************************************************************
 Scan .meta files and build std::unordered_map<space_id, meta_path>.
 This map is later used to delete the .delta and .meta file for a dropped
@@ -5558,6 +5570,12 @@ static bool xtrabackup_scan_meta(
   IORequest write_request(IORequest::WRITE | IORequest::PUNCH_HOLE);
 
   ut_a(xtrabackup_incremental);
+
+  // We dont want to add .new.meta to meta_map, as they are meant to be replace
+  // the old version of the file.
+  if (ends_with(entry.file_name, ".new.meta")) {
+    return true;
+  }
 
   if (!xb_read_delta_metadata(meta_path.c_str(), &info)) {
     goto error;
@@ -5790,28 +5808,27 @@ static bool prepare_handle_del_files(
       ut::free(space_name);
       return false;
     }
-
-    os_file_delete(0, del_file.c_str());
-    if (xtrabackup_incremental) {
-      auto [exists, meta_file] = is_in_meta_map(fil_space->id);
-      if (exists) {
-        // create .delta path from .meta
-        std::string delta_file =
-            meta_file.substr(0, strlen(meta_file.c_str()) - strlen(".meta")) +
-            ".delta";
-        xb::info() << "Deleting incremental meta file: " << meta_file;
-        delete_force(meta_file);
-        xb::info() << "Deleting incremental delta file: " << delta_file;
-        delete_force(delta_file);
-      }
-    }
-    return true;
-  } else {
-    // if table was already deleted then return true
-    os_file_delete(0, del_file.c_str());
-    return true;
   }
+
+  if (xtrabackup_incremental) {
+    auto [exists, meta_file] = is_in_meta_map(space_id);
+    if (exists) {
+      // create .delta path from .meta
+      std::string delta_file =
+          meta_file.substr(0, strlen(meta_file.c_str()) - strlen(".meta")) +
+          ".delta";
+      xb::info() << "Deleting incremental meta file: " << meta_file;
+      delete_force(meta_file);
+      xb::info() << "Deleting incremental delta file: " << delta_file;
+      delete_force(delta_file);
+    }
+  }
+
+  xb::info() << "prepare_handle_del_files: deleting " << del_file.c_str();
+  os_file_delete(0, del_file.c_str());
+  return true;
 }
+
 /************************************************************************
 Callback to handle datadir entry. Deletes entry if it has no matching
 fil_space in fil_system directory.
