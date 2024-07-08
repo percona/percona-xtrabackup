@@ -1,6 +1,0 @@
-
-Enable the repository: :bash:`percona-release enable-only tools release`
-
-If |Percona XtraBackup| is intented to be used in combination with
-the upstream MySQL Server, you only need to enable the ``tools``
-repository: :bash:`percona-release enable-only tools`.
