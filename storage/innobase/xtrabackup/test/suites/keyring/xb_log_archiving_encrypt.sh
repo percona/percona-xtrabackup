@@ -9,8 +9,9 @@ MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_redo_log_encrypt
 "
 
+KEYRING_TYPE="component"
+. inc/keyring_common.sh
 . inc/keyring_file.sh
-
-start_server
+configure_server_with_component
 
 . inc/xb_log_archiving.sh

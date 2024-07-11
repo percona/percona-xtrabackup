@@ -1944,15 +1944,7 @@ bool dynamic_plugins_are_initialized = false;
 static const char *default_dbug_option;
 #endif
 
-<<<<<<< HEAD
 #ifndef XTRABACKUP
-bool opt_use_ssl = true;
-bool opt_use_admin_ssl = true;
-||||||| 824e2b40640
-bool opt_use_ssl = true;
-bool opt_use_admin_ssl = true;
-=======
->>>>>>> mysql-8.4.0
 ulong opt_ssl_fips_mode = SSL_FIPS_MODE_OFF;
 #endif
 
@@ -7066,14 +7058,8 @@ static int init_ssl() {
 }
 
 static int init_ssl_communication() {
-<<<<<<< HEAD
 #if !defined(XTRABACKUP)
-  if (TLS_channel::singleton_init(&mysql_main, mysql_main_channel, opt_use_ssl,
-||||||| 824e2b40640
-  if (TLS_channel::singleton_init(&mysql_main, mysql_main_channel, opt_use_ssl,
-=======
   if (TLS_channel::singleton_init(&mysql_main, mysql_main_channel,
->>>>>>> mysql-8.4.0
                                   &server_main_callback, opt_initialize))
     return 1;
 
@@ -7093,7 +7079,6 @@ static int init_ssl_communication() {
         LogErr(SYSTEM_LEVEL, ER_TLS_CONFIGURATION_REUSED,
                mysql_admin_channel.c_str(), mysql_main_channel.c_str());
     }
-  }
 #endif
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
@@ -10560,349 +10545,323 @@ struct my_option my_long_early_options[] = {
 */
 
 struct my_option my_long_options[] = {
-    {"allow-suspicious-udfs", 0,
-     "Allows use of UDFs consisting of only one symbol xxx() "
-     "without corresponding xxx_init() or xxx_deinit(). That also means "
-     "that one can load any function from any library, for example exit() "
-     "from libc.so",
-     &opt_allow_suspicious_udfs, &opt_allow_suspicious_udfs, nullptr, GET_BOOL,
-     NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
-    {"ansi", 'a',
-     "Use ANSI SQL syntax instead of MySQL syntax. This mode "
-     "will also set transaction isolation level 'serializable'.",
-     nullptr, nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    /*
-      Because Sys_var_bit does not support command-line options, we need to
-      explicitly add one for --autocommit
-    */
-    {"autocommit", 0, "Set default value for autocommit (0 or 1)",
-     &opt_autocommit, &opt_autocommit, nullptr, GET_BOOL, OPT_ARG, 1, 0, 0,
-     &source_autocommit, /* arg_source, to be copied to Sys_var */
-     0, nullptr},
-    {"binlog-do-db", OPT_BINLOG_DO_DB,
-     "Include only updates to the specified database when writing the "
-     "binary log.",
-     nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    {"binlog-ignore-db", OPT_BINLOG_IGNORE_DB,
-     "Exclude updates to the specified database when writing the binary "
-     "log.",
-     nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    {"character-set-filesystem", 0, "Set the filesystem character set.",
-     &character_set_filesystem_name, &character_set_filesystem_name, nullptr,
-     GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
-    {"character-set-server", 'C', "Set the default character set.",
-     &default_character_set_name, &default_character_set_name, nullptr, GET_STR,
-     REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
-    {"chroot", 'r', "Chroot mysqld daemon during startup.", &mysqld_chroot,
-     &mysqld_chroot, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    {"collation-server", 0, "Set the default collation.",
-     &default_collation_name, &default_collation_name, nullptr, GET_STR,
-     REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
-    {"console", OPT_CONSOLE,
-     "Write error output on screen; don't remove the console window on "
-     "windows.",
-     &opt_console, &opt_console, nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    {"core-file", OPT_WANT_CORE, "Write core on errors.", nullptr, nullptr,
-     nullptr, GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
-    /* default-storage-engine should have "MyISAM" as def_value. Instead
-       of initializing it here it is done in init_common_variables() due
-       to a compiler bug in Sun Studio compiler. */
-    {"default-storage-engine", 0, "The default storage engine for new tables",
-     &default_storage_engine, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0,
-     nullptr, 0, nullptr},
-    {"default-tmp-storage-engine", 0,
-     "The default storage engine for new explicit temporary tables",
-     &default_tmp_storage_engine, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0,
-     0, nullptr, 0, nullptr},
-    {"default-time-zone", 0, "Set the default time zone.", &default_tz_name,
-     &default_tz_name, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    {"exit-info", 'T', "Used for debugging. Use at your own risk.", nullptr,
-     nullptr, nullptr, GET_LONG, OPT_ARG, 0, 0, 0, nullptr, 0, nullptr},
-    {"external-locking", 0,
-     "Use system (external) locking (disabled by "
-     "default).  With this option enabled you can run myisamchk to test "
-     "(not repair) tables while the MySQL server is running. Disable with "
-     "--skip-external-locking.",
-     &opt_external_locking, &opt_external_locking, nullptr, GET_BOOL, NO_ARG, 0,
-     0, 0, nullptr, 0, nullptr},
-    /* We must always support the next option to make scripts like mysqltest
-       easier to do */
-    {"gdb", 0, "Set up signals usable for debugging.", &opt_debugging,
-     &opt_debugging, nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  {"allow-suspicious-udfs", 0,
+   "Allows use of UDFs consisting of only one symbol xxx() "
+   "without corresponding xxx_init() or xxx_deinit(). That also means "
+   "that one can load any function from any library, for example exit() "
+   "from libc.so",
+   &opt_allow_suspicious_udfs, &opt_allow_suspicious_udfs, nullptr, GET_BOOL,
+   NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  {"ansi", 'a',
+   "Use ANSI SQL syntax instead of MySQL syntax. This mode "
+   "will also set transaction isolation level 'serializable'.",
+   nullptr, nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  /*
+    Because Sys_var_bit does not support command-line options, we need to
+    explicitly add one for --autocommit
+  */
+  {"autocommit", 0, "Set default value for autocommit (0 or 1)",
+   &opt_autocommit, &opt_autocommit, nullptr, GET_BOOL, OPT_ARG, 1, 0, 0,
+   &source_autocommit, /* arg_source, to be copied to Sys_var */
+   0, nullptr},
+  {"binlog-do-db", OPT_BINLOG_DO_DB,
+   "Include only updates to the specified database when writing the "
+   "binary log.",
+   nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+   nullptr},
+  {"binlog-ignore-db", OPT_BINLOG_IGNORE_DB,
+   "Exclude updates to the specified database when writing the binary "
+   "log.",
+   nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+   nullptr},
+  {"character-set-filesystem", 0, "Set the filesystem character set.",
+   &character_set_filesystem_name, &character_set_filesystem_name, nullptr,
+   GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  {"character-set-server", 'C', "Set the default character set.",
+   &default_character_set_name, &default_character_set_name, nullptr, GET_STR,
+   REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  {"chroot", 'r', "Chroot mysqld daemon during startup.", &mysqld_chroot,
+   &mysqld_chroot, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+   nullptr},
+  {"collation-server", 0, "Set the default collation.", &default_collation_name,
+   &default_collation_name, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+   nullptr},
+  {"console", OPT_CONSOLE,
+   "Write error output on screen; don't remove the console window on "
+   "windows.",
+   &opt_console, &opt_console, nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0,
+   nullptr},
+  {"core-file", OPT_WANT_CORE, "Write core on errors.", nullptr, nullptr,
+   nullptr, GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  /* default-storage-engine should have "MyISAM" as def_value. Instead
+     of initializing it here it is done in init_common_variables() due
+     to a compiler bug in Sun Studio compiler. */
+  {"default-storage-engine", 0, "The default storage engine for new tables",
+   &default_storage_engine, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0,
+   nullptr, 0, nullptr},
+  {"default-tmp-storage-engine", 0,
+   "The default storage engine for new explicit temporary tables",
+   &default_tmp_storage_engine, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0,
+   0, nullptr, 0, nullptr},
+  {"default-time-zone", 0, "Set the default time zone.", &default_tz_name,
+   &default_tz_name, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+   nullptr},
+  {"exit-info", 'T', "Used for debugging. Use at your own risk.", nullptr,
+   nullptr, nullptr, GET_LONG, OPT_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  {"external-locking", 0,
+   "Use system (external) locking (disabled by "
+   "default).  With this option enabled you can run myisamchk to test "
+   "(not repair) tables while the MySQL server is running. Disable with "
+   "--skip-external-locking.",
+   &opt_external_locking, &opt_external_locking, nullptr, GET_BOOL, NO_ARG, 0,
+   0, 0, nullptr, 0, nullptr},
+  /* We must always support the next option to make scripts like mysqltest
+     easier to do */
+  {"gdb", 0, "Set up signals usable for debugging.", &opt_debugging,
+   &opt_debugging, nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
 #if defined(HAVE_LINUX_LARGE_PAGES) || defined(HAVE_SOLARIS_LARGE_PAGES)
-    {"super-large-pages", 0, "Enable support for super large pages.",
-     &opt_super_large_pages, &opt_super_large_pages, nullptr, GET_BOOL, OPT_ARG,
-     0, 0, 1, nullptr, 1, nullptr},
+  {"super-large-pages", 0, "Enable support for super large pages.",
+   &opt_super_large_pages, &opt_super_large_pages, nullptr, GET_BOOL, OPT_ARG,
+   0, 0, 1, nullptr, 1, nullptr},
 #endif
-    {"lc-messages", 0, "Set the language used for the error messages.",
-     &lc_messages, &lc_messages, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0,
-     nullptr, 0, nullptr},
-    {"lc-time-names", 0,
-     "Set the language used for the month names and the days of the week.",
-     &lc_time_names_name, &lc_time_names_name, nullptr, GET_STR, REQUIRED_ARG,
-     0, 0, 0, nullptr, 0, nullptr},
-    {"log-bin", OPT_BIN_LOG,
-     "Configures the name prefix to use for binary log files. If the --log-bin "
-     "option is not supplied, the name prefix defaults to \"binlog\". If the "
-     "--log-bin option is supplied without argument, the name prefix defaults "
-     "to \"HOSTNAME-bin\", where HOSTNAME is the machine's hostname. To set a "
-     "different name prefix for binary log files, use --log-bin=name. To "
-     "disable "
-     "binary logging, use the --skip-log-bin or --disable-log-bin option.",
-     &opt_bin_logname, &opt_bin_logname, nullptr, GET_STR_ALLOC, OPT_ARG, 0, 0,
-     0, nullptr, 0, nullptr},
-    {"log-bin-index", 0, "File that holds the names for binary log files.",
-     &opt_binlog_index_name, &opt_binlog_index_name, nullptr, GET_STR,
-     REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
-    {"relay-log-index", 0, "File that holds the names for relay log files.",
-     &opt_relaylog_index_name, &opt_relaylog_index_name, nullptr, GET_STR,
-     REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
-    {"log-isam", OPT_ISAM_LOG, "Log all MyISAM changes to file.",
-     &myisam_log_filename, &myisam_log_filename, nullptr, GET_STR, OPT_ARG, 0,
-     0, 0, nullptr, 0, nullptr},
-    {"log-short-format", 0,
-     "Don't log extra information to update and slow-query logs.",
-     &opt_short_log_format, &opt_short_log_format, nullptr, GET_BOOL, NO_ARG, 0,
-     0, 0, nullptr, 0, nullptr},
-    {"log-tc", 0,
-     "Path to transaction coordinator log (used for transactions that affect "
-     "more than one storage engine, when binary log is disabled).",
-     &opt_tc_log_file, &opt_tc_log_file, nullptr, GET_STR, REQUIRED_ARG, 0, 0,
-     0, nullptr, 0, nullptr},
-    {"log-tc-size", 0, "Size of transaction coordinator log.", &opt_tc_log_size,
-     &opt_tc_log_size, nullptr, GET_ULONG, REQUIRED_ARG,
-     TC_LOG_MIN_PAGES *my_getpagesize(), TC_LOG_MIN_PAGES *my_getpagesize(),
-     ULONG_MAX, nullptr, my_getpagesize(), nullptr},
-    {"master-retry-count", OPT_MASTER_RETRY_COUNT,
-     "The number of times this replica will attempt to connect to a source "
-     "before giving up. "
-     "This option is deprecated and will be removed in a future version. "
-     "Use 'CHANGE REPLICATION SOURCE TO SOURCE_RETRY_COUNT = <num>' instead.",
-     &source_retry_count, &source_retry_count, nullptr, GET_ULONG, REQUIRED_ARG,
-     10, 0, 0, nullptr, 0, nullptr},
-    {"max-binlog-dump-events", 0,
-     "Option used by mysql-test for debugging and testing of replication.",
-     &max_binlog_dump_events, &max_binlog_dump_events, nullptr, GET_INT,
-     REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
-    {"memlock", 0, "Lock mysqld in memory.", &locked_in_memory,
-     &locked_in_memory, nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    {"port-open-timeout", 0,
-     "Maximum time in seconds to wait for the port to become free. "
-     "(Default: No wait).",
-     &mysqld_port_timeout, &mysqld_port_timeout, nullptr, GET_UINT,
-     REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
-    {"replicate-do-db", OPT_REPLICATE_DO_DB,
-     "Make replication applier threads apply only changes to the specified "
-     "database. "
-     "To specify more than one database, use the directive multiple times, "
-     "once for each database. Note that this will only work if you do not use "
-     "cross-database queries such as UPDATE some_db.some_table SET foo='bar' "
-     "while having selected a different or no database. If you need cross "
-     "database updates to work, make sure you have 3.23.28 or later, and use "
-     "replicate-wild-do-table=db_name.%.",
-     nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    {"replicate-do-table", OPT_REPLICATE_DO_TABLE,
-     "Make replication applier threads apply only changes to the specified "
-     "table. "
-     "To specify more than one table, use the directive multiple times, once "
-     "for each table. This will work for cross-database updates, in contrast "
-     "to replicate-do-db.",
-     nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    {"replicate-ignore-db", OPT_REPLICATE_IGNORE_DB,
-     "Make replication applier threads skip changes to the specified "
-     "database. "
-     "To specify more than one database to ignore, use this option multiple "
-     "times, once for each database. If there are statements that update "
-     "multiple databases, this will work correctly only when the source "
-     "server uses binlog_format=ROW.",
-     nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    {"replicate-ignore-table", OPT_REPLICATE_IGNORE_TABLE,
-     "Make replication applier threads skip changes to the specified table."
-     "To ignore more than one table, use the option multiple times, once for "
-     "each table. If there are statements that update multiple tables, this "
-     "will work correctly only when the source server uses binlog_format=ROW.",
-     nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    {"replicate-rewrite-db", OPT_REPLICATE_REWRITE_DB,
-     "Make replication applier threads rename a database, so changes in one "
-     "database on the source will be applied in another database on this "
-     "replica. Example: "
-     "replicate-rewrite-db=source_db_name->replica_db_name.",
-     nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    {"replicate-same-server-id", 0,
-     "In replication, if set to 1, do not skip events having our server id. "
-     "Default value is 0 (to break infinite loops in circular replication). "
-     "Can't be set to 1 if --log-replica-updates is used.",
-     &replicate_same_server_id, &replicate_same_server_id, nullptr, GET_BOOL,
-     NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
-    {"replicate-wild-do-table", OPT_REPLICATE_WILD_DO_TABLE,
-     "Make replication applier threads apply changes only in tables that "
-     "match the specified wildcard pattern. To specify more than one pattern, "
-     "use the option multiple times, once for each pattern. If there are "
-     "statements that update both tables that are included and excluded by "
-     "the pattern, this will only work correctly when the source server uses "
-     "binlog_format=ROW. "
-     "Example: replicate-wild-do-table=foo%.bar% will "
-     "replicate only updates to tables in all databases that start with foo "
-     "and whose table names start with bar.",
-     nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    {"replicate-wild-ignore-table", OPT_REPLICATE_WILD_IGNORE_TABLE,
-     "Make replication applier threads skip changes to tables that match "
-     "the specified wildcard pattern. To specify more than one pattern, use "
-     "the option multiple times, once for each pattern. If there are "
-     "statements that update both tables that are included and tables that "
-     "are excluded by the pattern, this will only work correctly when the "
-     "source server uses binlog_format=ROW. "
-     "Example: when using replicate-wild-ignore-table=foo%.bar%, "
-     "the applier thread will not apply updates to tables in databases that "
-     "start with foo and whose table names start with bar.",
-     nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    {"safe-user-create", 0,
-     "Don't allow new user creation by the user who has no write privileges to "
-     "the mysql.user table.",
-     &opt_safe_user_create, &opt_safe_user_create, nullptr, GET_BOOL, NO_ARG, 0,
-     0, 0, nullptr, 0, nullptr},
-    {"show-replica-auth-info", 0,
-     "Include user and password in SHOW REPLICAS statements.",
-     &opt_show_replica_auth_info, &opt_show_replica_auth_info, nullptr,
-     GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
-    {"show-slave-auth-info", OPT_SHOW_SLAVE_AUTH_INFO_DEPRECATED,
-     "This option is deprecated and will be removed in a future version. "
-     "Use show-replica-auth-info instead.",
-     &opt_show_replica_auth_info, &opt_show_replica_auth_info, nullptr,
-     GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
-    {"skip-new", OPT_SKIP_NEW, "Don't use new, possibly wrong routines.",
-     nullptr, nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    {"skip-stack-trace", OPT_SKIP_STACK_TRACE,
-     "Don't print a stack trace on failure.", nullptr, nullptr, nullptr,
-     GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  {"lc-messages", 0, "Set the language used for the error messages.",
+   &lc_messages, &lc_messages, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr,
+   0, nullptr},
+  {"lc-time-names", 0,
+   "Set the language used for the month names and the days of the week.",
+   &lc_time_names_name, &lc_time_names_name, nullptr, GET_STR, REQUIRED_ARG, 0,
+   0, 0, nullptr, 0, nullptr},
+  {"log-bin", OPT_BIN_LOG,
+   "Configures the name prefix to use for binary log files. If the --log-bin "
+   "option is not supplied, the name prefix defaults to \"binlog\". If the "
+   "--log-bin option is supplied without argument, the name prefix defaults "
+   "to \"HOSTNAME-bin\", where HOSTNAME is the machine's hostname. To set a "
+   "different name prefix for binary log files, use --log-bin=name. To "
+   "disable "
+   "binary logging, use the --skip-log-bin or --disable-log-bin option.",
+   &opt_bin_logname, &opt_bin_logname, nullptr, GET_STR_ALLOC, OPT_ARG, 0, 0, 0,
+   nullptr, 0, nullptr},
+  {"log-bin-index", 0, "File that holds the names for binary log files.",
+   &opt_binlog_index_name, &opt_binlog_index_name, nullptr, GET_STR,
+   REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  {"relay-log-index", 0, "File that holds the names for relay log files.",
+   &opt_relaylog_index_name, &opt_relaylog_index_name, nullptr, GET_STR,
+   REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  {"log-isam", OPT_ISAM_LOG, "Log all MyISAM changes to file.",
+   &myisam_log_filename, &myisam_log_filename, nullptr, GET_STR, OPT_ARG, 0, 0,
+   0, nullptr, 0, nullptr},
+  {"log-short-format", 0,
+   "Don't log extra information to update and slow-query logs.",
+   &opt_short_log_format, &opt_short_log_format, nullptr, GET_BOOL, NO_ARG, 0,
+   0, 0, nullptr, 0, nullptr},
+  {"log-tc", 0,
+   "Path to transaction coordinator log (used for transactions that affect "
+   "more than one storage engine, when binary log is disabled).",
+   &opt_tc_log_file, &opt_tc_log_file, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0,
+   nullptr, 0, nullptr},
+  {"log-tc-size", 0, "Size of transaction coordinator log.", &opt_tc_log_size,
+   &opt_tc_log_size, nullptr, GET_ULONG, REQUIRED_ARG,
+   TC_LOG_MIN_PAGES * my_getpagesize(), TC_LOG_MIN_PAGES * my_getpagesize(),
+   ULONG_MAX, nullptr, my_getpagesize(), nullptr},
+  {"master-retry-count", OPT_MASTER_RETRY_COUNT,
+   "The number of times this replica will attempt to connect to a source "
+   "before giving up. "
+   "This option is deprecated and will be removed in a future version. "
+   "Use 'CHANGE REPLICATION SOURCE TO SOURCE_RETRY_COUNT = <num>' instead.",
+   &source_retry_count, &source_retry_count, nullptr, GET_ULONG, REQUIRED_ARG,
+   10, 0, 0, nullptr, 0, nullptr},
+  {"max-binlog-dump-events", 0,
+   "Option used by mysql-test for debugging and testing of replication.",
+   &max_binlog_dump_events, &max_binlog_dump_events, nullptr, GET_INT,
+   REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  {"memlock", 0, "Lock mysqld in memory.", &locked_in_memory, &locked_in_memory,
+   nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  {"port-open-timeout", 0,
+   "Maximum time in seconds to wait for the port to become free. "
+   "(Default: No wait).",
+   &mysqld_port_timeout, &mysqld_port_timeout, nullptr, GET_UINT, REQUIRED_ARG,
+   0, 0, 0, nullptr, 0, nullptr},
+  {"replicate-do-db", OPT_REPLICATE_DO_DB,
+   "Make replication applier threads apply only changes to the specified "
+   "database. "
+   "To specify more than one database, use the directive multiple times, "
+   "once for each database. Note that this will only work if you do not use "
+   "cross-database queries such as UPDATE some_db.some_table SET foo='bar' "
+   "while having selected a different or no database. If you need cross "
+   "database updates to work, make sure you have 3.23.28 or later, and use "
+   "replicate-wild-do-table=db_name.%.",
+   nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+   nullptr},
+  {"replicate-do-table", OPT_REPLICATE_DO_TABLE,
+   "Make replication applier threads apply only changes to the specified "
+   "table. "
+   "To specify more than one table, use the directive multiple times, once "
+   "for each table. This will work for cross-database updates, in contrast "
+   "to replicate-do-db.",
+   nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+   nullptr},
+  {"replicate-ignore-db", OPT_REPLICATE_IGNORE_DB,
+   "Make replication applier threads skip changes to the specified "
+   "database. "
+   "To specify more than one database to ignore, use this option multiple "
+   "times, once for each database. If there are statements that update "
+   "multiple databases, this will work correctly only when the source "
+   "server uses binlog_format=ROW.",
+   nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+   nullptr},
+  {"replicate-ignore-table", OPT_REPLICATE_IGNORE_TABLE,
+   "Make replication applier threads skip changes to the specified table."
+   "To ignore more than one table, use the option multiple times, once for "
+   "each table. If there are statements that update multiple tables, this "
+   "will work correctly only when the source server uses binlog_format=ROW.",
+   nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+   nullptr},
+  {"replicate-rewrite-db", OPT_REPLICATE_REWRITE_DB,
+   "Make replication applier threads rename a database, so changes in one "
+   "database on the source will be applied in another database on this "
+   "replica. Example: "
+   "replicate-rewrite-db=source_db_name->replica_db_name.",
+   nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+   nullptr},
+  {"replicate-same-server-id", 0,
+   "In replication, if set to 1, do not skip events having our server id. "
+   "Default value is 0 (to break infinite loops in circular replication). "
+   "Can't be set to 1 if --log-replica-updates is used.",
+   &replicate_same_server_id, &replicate_same_server_id, nullptr, GET_BOOL,
+   NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  {"replicate-wild-do-table", OPT_REPLICATE_WILD_DO_TABLE,
+   "Make replication applier threads apply changes only in tables that "
+   "match the specified wildcard pattern. To specify more than one pattern, "
+   "use the option multiple times, once for each pattern. If there are "
+   "statements that update both tables that are included and excluded by "
+   "the pattern, this will only work correctly when the source server uses "
+   "binlog_format=ROW. "
+   "Example: replicate-wild-do-table=foo%.bar% will "
+   "replicate only updates to tables in all databases that start with foo "
+   "and whose table names start with bar.",
+   nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+   nullptr},
+  {"replicate-wild-ignore-table", OPT_REPLICATE_WILD_IGNORE_TABLE,
+   "Make replication applier threads skip changes to tables that match "
+   "the specified wildcard pattern. To specify more than one pattern, use "
+   "the option multiple times, once for each pattern. If there are "
+   "statements that update both tables that are included and tables that "
+   "are excluded by the pattern, this will only work correctly when the "
+   "source server uses binlog_format=ROW. "
+   "Example: when using replicate-wild-ignore-table=foo%.bar%, "
+   "the applier thread will not apply updates to tables in databases that "
+   "start with foo and whose table names start with bar.",
+   nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+   nullptr},
+  {"safe-user-create", 0,
+   "Don't allow new user creation by the user who has no write privileges to "
+   "the mysql.user table.",
+   &opt_safe_user_create, &opt_safe_user_create, nullptr, GET_BOOL, NO_ARG, 0,
+   0, 0, nullptr, 0, nullptr},
+  {"show-replica-auth-info", 0,
+   "Include user and password in SHOW REPLICAS statements.",
+   &opt_show_replica_auth_info, &opt_show_replica_auth_info, nullptr, GET_BOOL,
+   NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  {"show-slave-auth-info", OPT_SHOW_SLAVE_AUTH_INFO_DEPRECATED,
+   "This option is deprecated and will be removed in a future version. "
+   "Use show-replica-auth-info instead.",
+   &opt_show_replica_auth_info, &opt_show_replica_auth_info, nullptr, GET_BOOL,
+   NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  {"skip-new", OPT_SKIP_NEW, "Don't use new, possibly wrong routines.", nullptr,
+   nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  {"skip-stack-trace", OPT_SKIP_STACK_TRACE,
+   "Don't print a stack trace on failure.", nullptr, nullptr, nullptr,
+   GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
 #if defined(_WIN32)
-    {"slow-start-timeout", 0,
-     "Maximum number of milliseconds that the service control manager should "
-     "wait "
-     "before trying to kill the windows service during startup"
-     "(Default: 15000).",
-     &slow_start_timeout, &slow_start_timeout, nullptr, GET_ULONG, REQUIRED_ARG,
-     15000, 0, 0, nullptr, 0, nullptr},
+  {"slow-start-timeout", 0,
+   "Maximum number of milliseconds that the service control manager should "
+   "wait "
+   "before trying to kill the windows service during startup"
+   "(Default: 15000).",
+   &slow_start_timeout, &slow_start_timeout, nullptr, GET_ULONG, REQUIRED_ARG,
+   15000, 0, 0, nullptr, 0, nullptr},
 #endif
-    {"sporadic-binlog-dump-fail", 0,
-     "Option used by mysql-test for debugging and testing of replication.",
-     &opt_sporadic_binlog_dump_fail, &opt_sporadic_binlog_dump_fail, 0,
-     GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
-<<<<<<< HEAD
-#ifndef XTRABACKUP
-    {"ssl", OPT_USE_SSL,
-     "Enable SSL for connection (automatically enabled with other flags).",
-     &opt_use_ssl, &opt_use_ssl, nullptr, GET_BOOL, OPT_ARG, 1, 0, 0, nullptr,
-     0, nullptr},
-    {"admin-ssl", OPT_USE_ADMIN_SSL,
-     "Enable SSL for admin interface (automatically enabled with other flags).",
-     &opt_use_admin_ssl, &opt_use_admin_ssl, nullptr, GET_BOOL, OPT_ARG, 1, 0,
-     0, nullptr, 0, nullptr},
-#endif /* XTRABACKUP */
-||||||| 824e2b40640
-    {"ssl", OPT_USE_SSL,
-     "Enable SSL for connection (automatically enabled with other flags).",
-     &opt_use_ssl, &opt_use_ssl, nullptr, GET_BOOL, OPT_ARG, 1, 0, 0, nullptr,
-     0, nullptr},
-    {"admin-ssl", OPT_USE_ADMIN_SSL,
-     "Enable SSL for admin interface (automatically enabled with other flags).",
-     &opt_use_admin_ssl, &opt_use_admin_ssl, nullptr, GET_BOOL, OPT_ARG, 1, 0,
-     0, nullptr, 0, nullptr},
-=======
->>>>>>> mysql-8.4.0
+  {"sporadic-binlog-dump-fail", 0,
+   "Option used by mysql-test for debugging and testing of replication.",
+   &opt_sporadic_binlog_dump_fail, &opt_sporadic_binlog_dump_fail, 0, GET_BOOL,
+   NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
 #ifdef _WIN32
-    {"standalone", 0, "Dummy option to start as a standalone program (NT).",
-     nullptr, nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    {"no-monitor", 0, "Disable monitor process.", &opt_no_monitor,
-     &opt_no_monitor, nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  {"standalone", 0, "Dummy option to start as a standalone program (NT).",
+   nullptr, nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  {"no-monitor", 0, "Disable monitor process.", &opt_no_monitor,
+   &opt_no_monitor, nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
 #endif
-    {"symbolic-links", 's',
-     "Enable symbolic link support (deprecated and will be  removed in a future"
-     " release).",
-     &my_enable_symlinks, &my_enable_symlinks, nullptr, GET_BOOL, NO_ARG, 0, 0,
-     0, nullptr, 0, nullptr},
-    {"sysdate-is-now", 0,
-     "Non-default option to alias SYSDATE() to NOW() to make it "
-     "safe-replicable. "
-     "Since 5.0, SYSDATE() returns a `dynamic' value different for different "
-     "invocations, even within the same statement.",
-     &global_system_variables.sysdate_is_now, nullptr, nullptr, GET_BOOL,
-     NO_ARG, 0, 0, 1, nullptr, 1, nullptr},
-    {"tc-heuristic-recover", 0,
-     "Decision to use in heuristic recover process. Possible values are OFF, "
-     "COMMIT or ROLLBACK.",
-     &tc_heuristic_recover, &tc_heuristic_recover,
-     &tc_heuristic_recover_typelib, GET_ENUM, REQUIRED_ARG,
-     TC_HEURISTIC_NOT_USED, 0, 0, nullptr, 0, nullptr},
+  {"symbolic-links", 's',
+   "Enable symbolic link support (deprecated and will be  removed in a future"
+   " release).",
+   &my_enable_symlinks, &my_enable_symlinks, nullptr, GET_BOOL, NO_ARG, 0, 0, 0,
+   nullptr, 0, nullptr},
+  {"sysdate-is-now", 0,
+   "Non-default option to alias SYSDATE() to NOW() to make it "
+   "safe-replicable. "
+   "Since 5.0, SYSDATE() returns a `dynamic' value different for different "
+   "invocations, even within the same statement.",
+   &global_system_variables.sysdate_is_now, nullptr, nullptr, GET_BOOL, NO_ARG,
+   0, 0, 1, nullptr, 1, nullptr},
+  {"tc-heuristic-recover", 0,
+   "Decision to use in heuristic recover process. Possible values are OFF, "
+   "COMMIT or ROLLBACK.",
+   &tc_heuristic_recover, &tc_heuristic_recover, &tc_heuristic_recover_typelib,
+   GET_ENUM, REQUIRED_ARG, TC_HEURISTIC_NOT_USED, 0, 0, nullptr, 0, nullptr},
 #if defined(ENABLED_DEBUG_SYNC)
-    {"debug-sync-timeout", OPT_DEBUG_SYNC_TIMEOUT,
-     "Enable the debug sync facility "
-     "and optionally specify a default wait timeout in seconds. "
-     "A zero value keeps the facility disabled.",
-     &opt_debug_sync_timeout, nullptr, nullptr, GET_UINT, OPT_ARG, 0, 0,
-     UINT_MAX, nullptr, 0, nullptr},
+  {"debug-sync-timeout", OPT_DEBUG_SYNC_TIMEOUT,
+   "Enable the debug sync facility "
+   "and optionally specify a default wait timeout in seconds. "
+   "A zero value keeps the facility disabled.",
+   &opt_debug_sync_timeout, nullptr, nullptr, GET_UINT, OPT_ARG, 0, 0, UINT_MAX,
+   nullptr, 0, nullptr},
 #endif /* defined(ENABLED_DEBUG_SYNC) */
-    {"transaction-isolation", 0, "Default transaction isolation level.",
-     &global_system_variables.transaction_isolation,
-     &global_system_variables.transaction_isolation, &tx_isolation_typelib,
-     GET_ENUM, REQUIRED_ARG, ISO_REPEATABLE_READ, 0, 0, nullptr, 0, nullptr},
-    {"transaction-read-only", 0,
-     "Default transaction access mode. "
-     "True if transactions are read-only.",
-     &global_system_variables.transaction_read_only,
-     &global_system_variables.transaction_read_only, nullptr, GET_BOOL, OPT_ARG,
-     0, 0, 0, nullptr, 0, nullptr},
-    {"user", 'u', "Run mysqld daemon as user.", nullptr, nullptr, nullptr,
-     GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
-    {"early-plugin-load", OPT_EARLY_PLUGIN_LOAD,
-     "Optional semicolon-separated list of plugins to load before storage "
-     "engine "
-     "initialization, where each plugin is identified as name=library, where "
-     "name is the plugin name and library is the plugin library in plugin_dir.",
-     nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    {"plugin-load", OPT_PLUGIN_LOAD,
-     "Optional semicolon-separated list of plugins to load, where each plugin "
-     "is "
-     "identified as name=library, where name is the plugin name and library "
-     "is the plugin library in plugin_dir.",
-     nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    {"plugin-load-add", OPT_PLUGIN_LOAD_ADD,
-     "Optional semicolon-separated list of plugins to load, where each plugin "
-     "is "
-     "identified as name=library, where name is the plugin name and library "
-     "is the plugin library in plugin_dir. This option adds to the list "
-     "specified by --plugin-load in an incremental way. "
-     "Multiple --plugin-load-add are supported.",
-     nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
-     nullptr},
-    {"upgrade", 0,
-     "Set server upgrade mode. NONE to abort server if automatic upgrade of "
-     "the server is needed; MINIMAL to start the server, but skip upgrade "
-     "steps that are not absolutely necessary; AUTO (default) to upgrade the "
-     "server if required; FORCE to force upgrade server.",
-     &opt_upgrade_mode, &opt_upgrade_mode, &upgrade_mode_typelib, GET_ENUM,
-     REQUIRED_ARG, UPGRADE_AUTO, 0, 0, nullptr, 0, nullptr},
+  {"transaction-isolation", 0, "Default transaction isolation level.",
+   &global_system_variables.transaction_isolation,
+   &global_system_variables.transaction_isolation, &tx_isolation_typelib,
+   GET_ENUM, REQUIRED_ARG, ISO_REPEATABLE_READ, 0, 0, nullptr, 0, nullptr},
+  {"transaction-read-only", 0,
+   "Default transaction access mode. "
+   "True if transactions are read-only.",
+   &global_system_variables.transaction_read_only,
+   &global_system_variables.transaction_read_only, nullptr, GET_BOOL, OPT_ARG,
+   0, 0, 0, nullptr, 0, nullptr},
+  {"user", 'u', "Run mysqld daemon as user.", nullptr, nullptr, nullptr,
+   GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
+  {"early-plugin-load", OPT_EARLY_PLUGIN_LOAD,
+   "Optional semicolon-separated list of plugins to load before storage "
+   "engine "
+   "initialization, where each plugin is identified as name=library, where "
+   "name is the plugin name and library is the plugin library in plugin_dir.",
+   nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+   nullptr},
+  {"plugin-load", OPT_PLUGIN_LOAD,
+   "Optional semicolon-separated list of plugins to load, where each plugin "
+   "is "
+   "identified as name=library, where name is the plugin name and library "
+   "is the plugin library in plugin_dir.",
+   nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+   nullptr},
+  {"plugin-load-add", OPT_PLUGIN_LOAD_ADD,
+   "Optional semicolon-separated list of plugins to load, where each plugin "
+   "is "
+   "identified as name=library, where name is the plugin name and library "
+   "is the plugin library in plugin_dir. This option adds to the list "
+   "specified by --plugin-load in an incremental way. "
+   "Multiple --plugin-load-add are supported.",
+   nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+   nullptr},
+  {"upgrade", 0,
+   "Set server upgrade mode. NONE to abort server if automatic upgrade of "
+   "the server is needed; MINIMAL to start the server, but skip upgrade "
+   "steps that are not absolutely necessary; AUTO (default) to upgrade the "
+   "server if required; FORCE to force upgrade server.",
+   &opt_upgrade_mode, &opt_upgrade_mode, &upgrade_mode_typelib, GET_ENUM,
+   REQUIRED_ARG, UPGRADE_AUTO, 0, 0, nullptr, 0, nullptr},
 
-    {nullptr, 0, nullptr, nullptr, nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0,
-     0, nullptr, 0, nullptr}};
+  {nullptr, 0, nullptr, nullptr, nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0, 0,
+   nullptr, 0, nullptr}
+};
 
 static int show_queries(THD *thd, SHOW_VAR *var, char *) {
   var->type = SHOW_LONGLONG;
@@ -12101,35 +12060,7 @@ bool mysqld_get_one_option(int optid,
     case OPT_BINLOG_EXPIRE_LOGS_SECONDS:
       binlog_expire_logs_seconds_supplied = true;
       break;
-<<<<<<< HEAD
 #ifndef XTRABACKUP
-    case OPT_SSL_KEY:
-    case OPT_SSL_CERT:
-    case OPT_SSL_CA:
-    case OPT_SSL_CAPATH:
-    case OPT_SSL_CRL:
-    case OPT_SSL_CRLPATH:
-      /*
-        Enable use of SSL if we are using any ssl option.
-        One can disable SSL later by using --skip-ssl or --ssl=0.
-      */
-      opt_use_ssl = true;
-      break;
-||||||| 824e2b40640
-    case OPT_SSL_KEY:
-    case OPT_SSL_CERT:
-    case OPT_SSL_CA:
-    case OPT_SSL_CAPATH:
-    case OPT_SSL_CRL:
-    case OPT_SSL_CRLPATH:
-      /*
-        Enable use of SSL if we are using any ssl option.
-        One can disable SSL later by using --skip-ssl or --ssl=0.
-      */
-      opt_use_ssl = true;
-      break;
-=======
->>>>>>> mysql-8.4.0
     case OPT_TLS_CIPHERSUITES:
       if (validate_ciphers(opt->name, argument, TLS_version::TLSv13))
         return true;

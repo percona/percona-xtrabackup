@@ -171,9 +171,6 @@ static constexpr os_fd_t OS_FILE_CLOSED = OS_FD_CLOSED;
 
 #endif /* _WIN32 */
 
-/** Umask for creating files */
-extern ulint os_innodb_umask;
-
 /** Common file descriptor for file IO instrumentation with PFS
 on windows and other platforms */
 struct pfs_os_file_t {

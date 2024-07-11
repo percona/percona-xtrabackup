@@ -12745,8 +12745,6 @@ ER_IB_MSG_INNODB_FLUSH_METHOD
 #
 # End of 8.1, 8.2, 8.3, 8.4 error messages intended to be written to the server error log.
 #
-
-<<<<<<< HEAD
 #
 # Start of Percona Server 8.0 server error log messages
 #
@@ -12765,10 +12763,6 @@ ER_KEYRING_COMPONENT_KMS_ERROR
 # End of Percona Server 8.0 server error log messages
 #
 
-||||||| 824e2b40640
-
-=======
->>>>>>> mysql-8.4.0
 ################################################################################
 # Error numbers 50000 to 51999 are reserved. Please do not use them for
 # other error messages.

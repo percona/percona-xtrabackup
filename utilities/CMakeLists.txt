@@ -135,38 +135,6 @@ MYSQL_ADD_EXECUTABLE(perror
   LINK_LIBRARIES mysys
   SKIP_INSTALL
   )
-<<<<<<< HEAD
-IF(WITH_LZ4 STREQUAL "bundled")
-  MYSQL_ADD_EXECUTABLE(lz4_decompress
-    lz4_decompress.cc
-    COMPONENT Server
-    LINK_LIBRARIES ext::lz4 mysys
-    SKIP_INSTALL
-    )
-ENDIF()
-
-MYSQL_ADD_EXECUTABLE(zlib_decompress
-  zlib_decompress.cc
-  COMPONENT Server
-  LINK_LIBRARIES ext::zlib mysys
-  SKIP_INSTALL
-  )
-||||||| 824e2b40640
-IF(WITH_LZ4 STREQUAL "bundled")
-  MYSQL_ADD_EXECUTABLE(lz4_decompress
-    lz4_decompress.cc
-    COMPONENT Server
-    LINK_LIBRARIES ext::lz4 mysys
-    )
-ENDIF()
-
-MYSQL_ADD_EXECUTABLE(zlib_decompress
-  zlib_decompress.cc
-  COMPONENT Server
-  LINK_LIBRARIES ext::zlib mysys
-  )
-=======
->>>>>>> mysql-8.4.0
 
 # All targets below belong to COMPONENT Server and depend on InnoDB.
 IF(WITHOUT_SERVER)

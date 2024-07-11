@@ -21,22 +21,11 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-<<<<<<< HEAD:include/sslopt-case.h
 /**
   @file include/sslopt-case.h
 */
-
 
 #if defined(MYSQL_SERVER) && !defined(XTRABACKUP)
-||||||| 824e2b40640:include/sslopt-case.h
-/**
-  @file include/sslopt-case.h
-*/
-
-#ifdef MYSQL_SERVER
-=======
-#ifdef MYSQL_SERVER
->>>>>>> mysql-8.4.0:client/include/sslopt-case.h
 #error This header is supposed to be used only in the client
 #endif
 

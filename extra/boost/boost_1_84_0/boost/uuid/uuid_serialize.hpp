@@ -12,9 +12,22 @@
 #ifndef BOOST_UUID_SERIALIZE_HPP
 #define BOOST_UUID_SERIALIZE_HPP
 
+#include <boost/type_traits/integral_constant.hpp>
 #include <boost/uuid/uuid.hpp>
-#include <boost/serialization/level.hpp>
 
-BOOST_CLASS_IMPLEMENTATION(boost::uuids::uuid, boost::serialization::primitive_type)
+// BOOST_CLASS_IMPLEMENTATION(boost::uuids::uuid,
+// boost::serialization::primitive_type)
+
+namespace boost {
+namespace serialization {
+
+template <class T>
+struct implementation_level_impl;
+template <>
+struct implementation_level_impl<const uuids::uuid>
+    : boost::integral_constant<int, 1> {};
+
+}  // namespace serialization
+}  // namespace boost
 
 #endif // BOOST_UUID_SERIALIZE_HPP

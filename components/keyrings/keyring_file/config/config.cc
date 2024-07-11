@@ -89,21 +89,13 @@ bool find_and_read_config_file(std::unique_ptr<Config_pod> &config_pod,
     full_path.append(config_file_name);
     return false;
   };
-<<<<<<< HEAD
-  if (set_config_path(path) == true) return true;
-#ifdef XTRABACKUP
-  path = xtrabackup::components::component_config_path;
-#endif
-||||||| 824e2b40640
-  if (set_config_path(path) == true) return true;
-
-=======
   if (set_config_path(path) == true) {
     err = "Failed to set path to configuration file";
     return true;
   }
-
->>>>>>> mysql-8.4.0
+#ifdef XTRABACKUP
+  path = xtrabackup::components::component_config_path;
+#endif
   /* Read config file that's located at shared library location */
   std::unique_ptr<Config_reader> config_reader(new (std::nothrow)
                                                    Config_reader(path));

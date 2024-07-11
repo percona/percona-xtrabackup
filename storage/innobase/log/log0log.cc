@@ -1927,21 +1927,6 @@ dberr_t log_sys_init(bool expect_no_files, lsn_t flushed_lsn,
     return err;
   }
 
-  /* Check creator of log files and mark fields of recv_sys: is_cloned_db,
-  is_meb_db if needed. */
-<<<<<<< HEAD
-  err = log_sys_handle_creator(log);
-  if (err != DB_SUCCESS) {
-    return err;
-  }
-
-  if (log_file_header_check_flag(log_flags, LOG_HEADER_FLAG_NO_LOGGING)) {
-    auto result = mtr_t::s_logging.disable(nullptr);
-    /* Currently never fails. */
-    ut_a(result == 0);
-    srv_redo_log = false;
-  }
-
 #ifdef XTRABACKUP
   /**
    *  Adjust xb_log_detected_format on backup. For prepare we do it at
@@ -1952,24 +1937,9 @@ dberr_t log_sys_init(bool expect_no_files, lsn_t flushed_lsn,
   }
 #endif  // XTRABACKUP
 
-  return DB_SUCCESS;
-||||||| 824e2b40640
-  err = log_sys_handle_creator(log);
-  if (err != DB_SUCCESS) {
-    return err;
-  }
-
-  if (log_file_header_check_flag(log_flags, LOG_HEADER_FLAG_NO_LOGGING)) {
-    auto result = mtr_t::s_logging.disable(nullptr);
-    /* Currently never fails. */
-    ut_a(result == 0);
-    srv_redo_log = false;
-  }
-
-  return DB_SUCCESS;
-=======
+  /* Check creator of log files and mark fields of recv_sys: is_cloned_db,
+  is_meb_db if needed. */
   return log_sys_handle_creator(log);
->>>>>>> mysql-8.4.0
 }
 
 void log_sys_close() {

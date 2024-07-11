@@ -9,7 +9,7 @@ master_id=1
 slave_id=2
 slave2_id=3
 slave3_id=4
-binlog_slave_info_pattern='^CHANGE MASTER TO MASTER_LOG_FILE='\''mysql-bin.[0-9]+'\'', MASTER_LOG_POS=[0-9]+;$'
+binlog_slave_info_pattern='^CHANGE REPLICATION SOURCE TO SOURCE_LOG_FILE='\''mysql-bin.[0-9]+'\'', SOURCE_LOG_POS=[0-9]+;$'
 pxb_log_binlog_info_pattern='filename '\''mysql-bin.[0-9]+'\'', position '\''[0-9]+'\'''
 pxb_log_slave_info_pattern='master host '\''[a-zA-Z0-9\.-]+'\'', filename '\''mysql-bin.[0-9]+'\'', position '\''[0-9]+'\'', channel name: '\''[a-zA-Z0-9\.-]*'\'''
 
@@ -33,10 +33,10 @@ function test_slave_info() {
   slave_id=$3
 
   switch_server $slave_id
-  if ! mysql -e "SHOW SLAVE STATUS\G" | grep -q 'Last_IO_Errno: 0' ; then
+  if ! mysql -e "SHOW REPLICA STATUS\G" | grep -q 'Last_IO_Errno: 0' ; then
     die 'Slave IO error'
   fi
-  if ! mysql -e "SHOW SLAVE STATUS\G" | grep -q 'Last_SQL_Errno: 0' ; then
+  if ! mysql -e "SHOW REPLICA STATUS\G" | grep -q 'Last_SQL_Errno: 0' ; then
     die 'Slave SQL error'
   fi
   stop_server_with_id $slave_id
@@ -44,15 +44,15 @@ function test_slave_info() {
   xtrabackup --prepare --target-dir=$backup_dir
   xtrabackup --copy-back --target-dir=$backup_dir
   start_server_with_id $slave_id
-  mysql -e "STOP SLAVE"
-  cat $backup_dir/xtrabackup_slave_info | sed "s/CHANGE MASTER TO/CHANGE MASTER TO MASTER_HOST='localhost', MASTER_USER='root', MASTER_PORT=${SRV_MYSQLD_PORT[$master_id]},/" | mysql
-  mysql -e "START SLAVE"
+  mysql -e "STOP REPLICA"
+  cat $backup_dir/xtrabackup_slave_info | sed "s/CHANGE REPLICATION SOURCE TO/CHANGE REPLICATION SOURCE TO SOURCE_HOST='localhost', SOURCE_USER='root', SOURCE_PORT=${SRV_MYSQLD_PORT[$master_id]},/" | mysql
+  mysql -e "START REPLICA"
   sync_slave_with_master $master_id $slave_id
   switch_server $slave_id
-  if ! mysql -e "SHOW SLAVE STATUS\G" | grep -q 'Last_IO_Errno: 0' ; then
+  if ! mysql -e "SHOW REPLICA STATUS\G" | grep -q 'Last_IO_Errno: 0' ; then
     die 'Slave IO error'
   fi
-  if ! mysql -e "SHOW SLAVE STATUS\G" | grep -q 'Last_SQL_Errno: 0' ; then
+  if ! mysql -e "SHOW REPLICA STATUS\G" | grep -q 'Last_SQL_Errno: 0' ; then
     die 'Slave SQL error'
   fi
 }
@@ -105,7 +105,7 @@ run_cmd egrep "MySQL binlog position: $pxb_log_binlog_info_pattern" $topdir/pxb.
 run_cmd egrep "MySQL slave binlog position: $pxb_log_slave_info_pattern" $topdir/pxb.log
 
 # PXB-3033 - Execute STOP SLAVE before copying non-InnoDB tables
-grep -A 5 'Slave is safe to backup.' $topdir/pxb.log | grep -q 'Starting to backup non-InnoDB tables and files' || die 'STOP SLAVE in wrong place'
+grep -A 5 'Slave is safe to backup.' $topdir/pxb.log | grep -q 'Starting to backup non-InnoDB tables and files' || die 'STOP REPLICA in wrong place'
 
 run_cmd egrep -q "$binlog_slave_info_pattern" \
     $topdir/backup/xtrabackup_slave_info
@@ -181,7 +181,7 @@ fi
 
 run_cmd egrep -q '^SET GLOBAL gtid_purged=.*;$' \
     $topdir/backup/xtrabackup_slave_info
-run_cmd egrep -q '^CHANGE MASTER TO MASTER_AUTO_POSITION=1;$' \
+run_cmd egrep -q '^CHANGE REPLICATION SOURCE TO SOURCE_AUTO_POSITION=1;$' \
     $topdir/backup/xtrabackup_slave_info
 
 test_slave_info $topdir/backup $master_id $slave2_id

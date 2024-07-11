@@ -23,11 +23,8 @@ vc_file=$PTDEBUG_VERSION_CHECK_HOME/percona-version-check
 
 [ ! -f $vc_file ] || die "$vc_file exists!"
 
-# MySQL using "caching_sha2_password" authentication plugin by default, but
-# most distributions come with libmysqlclient 5.6.x which doesn't have it
-# available
 mysql -e "ALTER USER 'root'@'localhost' \
-IDENTIFIED WITH mysql_native_password BY ''"
+IDENTIFIED WITH 'caching_sha2_password' BY ''"
 
 # VersionCheck is enabled by default, but the test suite adds --no-version-check
 # to IB_ARGS so we don't execute it for all tests.

@@ -197,32 +197,12 @@ still created. See Kernel Bugzilla Bug 218049 */
 }
 
 #ifndef _WIN32
-<<<<<<< HEAD
-/** Umask for creating files */
-ulint os_innodb_umask = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
-||||||| 824e2b40640
-/** Umask for creating files */
-static ulint os_innodb_umask = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
-=======
 /** This specifies the file permissions InnoDB uses when it creates files in
 Unix; the value of os_innodb_umask is initialized in ha_innodb.cc to my_umask.
 It is a global value and can't be modified once it is set. */
 static mode_t os_innodb_umask = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
->>>>>>> mysql-8.4.0
 #else
-<<<<<<< HEAD
-/** Umask for creating files */
-ulint os_innodb_umask = 0;
-
-/* On Windows when using native AIO the number of AIO requests
-||||||| 824e2b40640
-/** Umask for creating files */
-static ulint os_innodb_umask = 0;
-
-/* On Windows when using native AIO the number of AIO requests
-=======
 /** On Windows when using native AIO the number of AIO requests
->>>>>>> mysql-8.4.0
 that a thread can handle at a given time is limited to 32
 i.e.: SRV_N_PENDING_IOS_PER_THREAD */
 constexpr uint32_t SRV_N_PENDING_IOS_PER_THREAD =

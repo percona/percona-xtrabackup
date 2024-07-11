@@ -37,7 +37,7 @@ sync_slave_with_master $slave_id $master_id
 
 switch_server $slave_id
 
-$MYSQL $MYSQL_ARGS -e "SHOW SLAVE STATUS\G"
+$MYSQL $MYSQL_ARGS -e "SHOW REPLICA STATUS\G"
 
 xtrabackup --backup --slave-info --target-dir=$topdir/backup
 
@@ -47,4 +47,4 @@ echo "---"
 cat $f
 echo "---"
 run_cmd egrep -q '^SET GLOBAL gtid_purged='\''[0-9a-f:, -]+'\' $f
-run_cmd egrep -q '^CHANGE MASTER TO MASTER_AUTO_POSITION=1' $f
+run_cmd egrep -q '^CHANGE REPLICATION SOURCE TO SOURCE_AUTO_POSITION=1' $f

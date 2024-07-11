@@ -25,12 +25,6 @@
   @file include/sslopt-longopts.h
 */
 
-<<<<<<< HEAD:include/sslopt-longopts.h
-#if !defined(MYSQL_SERVER) || defined(XTRABACKUP)
-||||||| 824e2b40640:include/sslopt-longopts.h
-#ifndef MYSQL_SERVER
-=======
->>>>>>> mysql-8.4.0:client/include/sslopt-longopts.h
 {"ssl-mode",
  OPT_SSL_MODE,
  "SSL connection mode.",

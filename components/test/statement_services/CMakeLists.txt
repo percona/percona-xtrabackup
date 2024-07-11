@@ -23,52 +23,8 @@
 
 DISABLE_MISSING_PROFILE_WARNING()
 
-<<<<<<< HEAD:plugin/keyring/CMakeLists.txt
 INCLUDE_DIRECTORIES(SYSTEM ${BOOST_PATCHES_DIR} ${BOOST_INCLUDE_DIR})
 
-MYSQL_ADD_PLUGIN(keyring_file
-  buffer.cc
-  buffered_file_io.cc
-  checker/checker.cc
-  checker/checker_factory.cc
-  checker/checker_ver_1_0.cc
-  checker/checker_ver_2_0.cc
-  common/keyring_impl.cc
-  common/keyring_key.cc
-  common/keys_container.cc
-  common/keys_iterator.cc
-  common/keyring_impl.cc
-  converter.cc
-  digest.cc
-  file_io.cc
-  hash_to_buffer_serializer.cc
-  keyring.cc
-  LINK_LIBRARIES OpenSSL::SSL OpenSSL::Crypto
-  MODULE_ONLY
-  MODULE_OUTPUT_NAME "keyring_file"
-  )
-||||||| 824e2b40640:plugin/keyring/CMakeLists.txt
-MYSQL_ADD_PLUGIN(keyring_file
-  buffer.cc
-  buffered_file_io.cc
-  checker/checker.cc
-  checker/checker_factory.cc
-  checker/checker_ver_1_0.cc
-  checker/checker_ver_2_0.cc
-  common/keyring_impl.cc
-  common/keyring_key.cc
-  common/keys_container.cc
-  common/keys_iterator.cc
-  converter.cc
-  digest.cc
-  file_io.cc
-  hash_to_buffer_serializer.cc
-  keyring.cc
-  LINK_LIBRARIES OpenSSL::SSL OpenSSL::Crypto
-  MODULE_ONLY
-  MODULE_OUTPUT_NAME "keyring_file"
-  )
-=======
 MYSQL_ADD_COMPONENT(test_execute_regular_statement
     test_execute_regular_statement.cc
     utils.cc
@@ -82,4 +38,3 @@ MYSQL_ADD_COMPONENT(test_execute_prepared_statement
     MODULE_ONLY
     TEST_ONLY
 )
->>>>>>> mysql-8.4.0:components/test/statement_services/CMakeLists.txt

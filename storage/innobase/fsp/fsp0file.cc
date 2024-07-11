@@ -719,7 +719,6 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
   m_encryption_op_in_progress =
       fsp_header_encryption_op_type_in_progress(m_first_page, page_size);
 #endif /* UNIV_HOTBACKUP */
-<<<<<<< HEAD
 
   if (FSP_FLAGS_GET_ENCRYPTION(m_flags) && !srv_backup_mode &&
       use_dumped_tablespace_keys) {
@@ -732,14 +731,9 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
       Encryption::set_master_key(master_key_id);
     }
   }
-
-||||||| 824e2b40640
-
-=======
   /* Following call will attempt to acquire a Fil_shard mutex, which can cause
   a deadlock if done while holding file handle open. */
   ut_ad(!is_open());
->>>>>>> mysql-8.4.0
   if (fil_space_read_name_and_filepath(m_space_id, &prev_name,
                                        &prev_filepath)) {
     if (0 == strcmp(m_filepath, prev_filepath)) {

@@ -10421,31 +10421,6 @@ bool fil_check_missing_tablespaces() {
   return fil_system->check_missing_tablespaces();
 }
 
-<<<<<<< HEAD
-/** Parse a file name retrieved from a MLOG_FILE_* record,
-and return the absolute file path and tablespace name
-@param[in]  file_name path emitted by the redo log
-@param[in]  flags tablespace flags emitted by the redo log
-@param[in]  space_id tablesapce ID emitted by the redo log
-@param[out] absolute_path absolute path of tablespace
-@param[out] tablespace_name name in the form of database/table */
-static void fil_make_abs_file_path(const char *file_name, ulint flags,
-                                   space_id_t space_id,
-                                   std::string &absolute_path,
-                                   std::string &tablespace_name) {
-  Datafile df;
-
-  df.set_filepath(file_name);
-  df.set_flags(flags);
-  df.set_space_id(space_id);
-  df.set_name(nullptr);
-
-  absolute_path = df.filepath();
-  tablespace_name = df.name();
-}
-
-||||||| 824e2b40640
-=======
 /** Parse a path from a buffer.
 @param[in]      ptr             redo log record
 @param[in]      end             end of the redo log buffer
@@ -10502,7 +10477,28 @@ const static byte *parse_path_from_redo(const byte *ptr, const byte *end,
   return ptr;
 }
 
->>>>>>> mysql-8.4.0
+/** Parse a file name retrieved from a MLOG_FILE_* record,
+and return the absolute file path and tablespace name
+@param[in]  file_name path emitted by the redo log
+@param[in]  flags tablespace flags emitted by the redo log
+@param[in]  space_id tablesapce ID emitted by the redo log
+@param[out] absolute_path absolute path of tablespace
+@param[out] tablespace_name name in the form of database/table */
+static void fil_make_abs_file_path(const char *file_name, ulint flags,
+                                   space_id_t space_id,
+                                   std::string &absolute_path,
+                                   std::string &tablespace_name) {
+  Datafile df;
+
+  df.set_filepath(file_name);
+  df.set_flags(flags);
+  df.set_space_id(space_id);
+  df.set_name(nullptr);
+
+  absolute_path = df.filepath();
+  tablespace_name = df.name();
+}
+
 /** Redo a tablespace create.
 @param[in]      ptr             redo log record
 @param[in]      end             end of the redo log buffer
@@ -10560,7 +10556,7 @@ const byte *fil_tablespace_redo_create(const byte *ptr, const byte *end,
   std::string abs_file_path;
   std::string tablespace_name;
 
-  fil_make_abs_file_path(name, flags, page_id.space(), abs_file_path,
+  fil_make_abs_file_path(name.c_str(), flags, page_id.space(), abs_file_path,
                          tablespace_name);
 
   if (!srv_backup_mode &&
@@ -10607,23 +10603,10 @@ const byte *fil_tablespace_redo_create(const byte *ptr, const byte *end,
     return ptr;
   }
 
-<<<<<<< HEAD
-||||||| 824e2b40640
-  /* Update filename with correct partition case, if needed. */
-  std::string name_str(name);
-  std::string space_name;
-  fil_update_partition_name(page_id.space(), 0, false, space_name, name_str);
-
-  auto abs_name = Fil_path::get_real_path(name_str);
-
-=======
   /* Update filename with correct partition case, if needed. */
   std::string space_name;
   fil_update_partition_name(page_id.space(), 0, false, space_name, name);
 
-  auto abs_name = Fil_path::get_real_path(name);
-
->>>>>>> mysql-8.4.0
   /* Duplicates should have been sorted out before we get here. */
   ut_a(result.second->size() == 1);
 
@@ -10671,22 +10654,12 @@ const byte *fil_tablespace_redo_rename(const byte *ptr, const byte *end,
     return nullptr;
   }
 
-<<<<<<< HEAD
-  ptr += to_len;
-  Fil_path::normalize(to_name);
-
 #ifdef XTRABACKUP
   if (parse_only) {
     return ptr;
   }
 #endif /* XTRABACKUP */
 
-||||||| 824e2b40640
-  ptr += to_len;
-  Fil_path::normalize(to_name);
-
-=======
->>>>>>> mysql-8.4.0
 #ifdef UNIV_HOTBACKUP
 
   if (!parse_only) {
@@ -10694,6 +10667,9 @@ const byte *fil_tablespace_redo_rename(const byte *ptr, const byte *end,
   }
 
 #else /* !UNIV_HOTBACKUP */
+
+  std::string space_name;
+  fil_update_partition_name(page_id.space(), 0, false, space_name, to_name);
 
   if (from_name == to_name) {
     ib::error(ER_IB_MSG_360)
@@ -10708,7 +10684,7 @@ const byte *fil_tablespace_redo_rename(const byte *ptr, const byte *end,
   if (!srv_backup_mode) {
     bool success;
     if (fil_tablespace_open_for_recovery(page_id.space()) != DB_SUCCESS) {
-      xb::info() << "Rename failed. Cannot find " << SQUOTE(from_name) << "!";
+      xb::info() << "Rename failed. Cannot find " << from_name << "!";
       return (ptr);
     }
 
@@ -10720,10 +10696,10 @@ const byte *fil_tablespace_redo_rename(const byte *ptr, const byte *end,
     std::string abs_file_path;
     std::string tablespace_name;
 
-    fil_make_abs_file_path(to_name, space->flags, space->id, abs_file_path,
-                           tablespace_name);
+    fil_make_abs_file_path(to_name.c_str(), space->flags, space->id,
+                           abs_file_path, tablespace_name);
 
-    success = fil_op_replay_rename(page_id, from_name, to_name);
+    success = fil_op_replay_rename(page_id, from_name.c_str(), to_name.c_str());
     ut_a(success);
 
     xb_tablespace_map_add(abs_file_path.c_str(), tablespace_name.c_str());
@@ -10949,7 +10925,7 @@ const byte *fil_tablespace_redo_delete(const byte *ptr, const byte *end,
     success = fil_tablespace_open_for_recovery(page_id.space());
 
     if (!success) {
-      xb::info(ER_IB_MSG_356) << "Delete " << SQUOTE(name) << " failed!";
+      xb::info(ER_IB_MSG_356) << "Delete " << name << " failed!";
       return (ptr);
     }
 

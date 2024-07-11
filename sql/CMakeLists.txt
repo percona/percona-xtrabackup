@@ -1154,31 +1154,6 @@ ELSE()
   SET(MYSQLD_SOURCE main.cc)
 ENDIF()
 
-<<<<<<< HEAD
-||||||| 824e2b40640
-MYSQL_ADD_EXECUTABLE(mysqld
-  ${MYSQLD_SOURCE} DESTINATION ${INSTALL_SBINDIR} COMPONENT Server
-  )
-
-# We depend on protobuf because of the mysqlx plugin and replication.
-IF(UNIX_INSTALL_RPATH_ORIGIN_PRIV_LIBDIR)
-  ADD_INSTALL_RPATH_FOR_PROTOBUF(mysqld)
-ENDIF()
-
-=======
-MYSQL_ADD_EXECUTABLE(mysqld
-  ${MYSQLD_SOURCE} DESTINATION ${INSTALL_SBINDIR} COMPONENT Server
-  )
-# You may want to redirect output for this one,
-# the list of exported symbols is loooong.
-ADD_OBJDUMP_TARGET(show_mysqld "$<TARGET_FILE:mysqld>" DEPENDS mysqld)
-
-# We depend on protobuf because of the mysqlx plugin and replication.
-IF(UNIX_INSTALL_RPATH_ORIGIN_PRIV_LIBDIR)
-  ADD_INSTALL_RPATH_FOR_PROTOBUF(mysqld)
-ENDIF()
-
->>>>>>> mysql-8.4.0
 OPTION(DEBUG_EXTNAME "Build server as mysqld-debug (debug builds only)" OFF)
 MARK_AS_ADVANCED(DEBUG_EXTNAME)
 

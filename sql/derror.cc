@@ -237,44 +237,10 @@ bool MY_LOCALE_ERRMSGS::read_texts() {
   if ((file = mysql_file_open(key_file_ERRMSG,
                               fn_format(name, ERRMSG_FILE, lang_path, "", 4),
                               O_RDONLY, MYF(0))) < 0) {
-<<<<<<< HEAD
-    /*
-      Trying pre-5.5 semantics of the --language parameter.
-      It included the language-specific part, e.g.:
-
-      --language=/path/to/english/
-    */
-    if ((file = mysql_file_open(
-             key_file_ERRMSG,
-             fn_format(name, ERRMSG_FILE, lc_messages_dir, "", 4), O_RDONLY,
-             MYF(0))) < 0) {
 #ifndef XTRABACKUP
-      LogErr(ERROR_LEVEL, ER_ERRMSG_CANT_FIND_FILE, name);
-#endif
-      goto open_err;
-    }
-
-    LogErr(WARNING_LEVEL, ER_ERRMSG_LOADING_55_STYLE, lc_messages_dir);
-||||||| 824e2b40640
-    /*
-      Trying pre-5.5 semantics of the --language parameter.
-      It included the language-specific part, e.g.:
-
-      --language=/path/to/english/
-    */
-    if ((file = mysql_file_open(
-             key_file_ERRMSG,
-             fn_format(name, ERRMSG_FILE, lc_messages_dir, "", 4), O_RDONLY,
-             MYF(0))) < 0) {
-      LogErr(ERROR_LEVEL, ER_ERRMSG_CANT_FIND_FILE, name);
-      goto open_err;
-    }
-
-    LogErr(WARNING_LEVEL, ER_ERRMSG_LOADING_55_STYLE, lc_messages_dir);
-=======
     LogErr(ERROR_LEVEL, ER_ERRMSG_CANT_FIND_FILE, name);
+#endif
     goto open_err;
->>>>>>> mysql-8.4.0
   }
 
   // Read the header from the file

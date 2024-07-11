@@ -238,29 +238,6 @@ static bool recv_writer_is_active() {
 
 #ifndef UNIV_HOTBACKUP
 
-<<<<<<< HEAD
-||||||| 824e2b40640
-/** Reads a specified log segment to a buffer.
-@param[in,out]  log             redo log
-@param[in,out]  buf             buffer where to read
-@param[in]      start_lsn       read area start
-@param[in]      end_lsn         read area end
-@return lsn up to which data was available on disk (ideally end_lsn) */
-static lsn_t recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
-                               lsn_t end_lsn);
-
-=======
-/** Reads a specified log segment to a buffer.
-@param[in,out]  log             redo log
-@param[in,out]  buf             buffer where to read
-@param[in]      start_lsn       read area start
-@param[in]      end_lsn         read area end
-@return lsn up to which data was available on disk (ideally end_lsn)
-or zero in case of error */
-static lsn_t recv_read_log_seg(log_t &log, byte *buf, lsn_t start_lsn,
-                               lsn_t end_lsn);
-
->>>>>>> mysql-8.4.0
 /** Initialize crash recovery environment. Can be called iff
 recv_needed_recovery == false. */
 static void recv_init_crash_recovery();
@@ -1859,7 +1836,7 @@ static const byte *recv_parse_or_apply_log_rec_body(
 
           ut_ad(LSN_MAX != start_lsn);
 
-          byte *ptr_copy = ptr;
+          const byte *ptr_copy = ptr;
           ptr_copy += 2;  // skip offset
           ulint len = mach_read_from_2(ptr_copy);
           ptr_copy += 2;
@@ -2682,8 +2659,8 @@ static pxb_space_page *recv_get_page_map(space_id_t space_id) {
  * later when we run the --prepare phase.
  */
 static void recv_calculate_hash_heap(mlog_id_t type, space_id_t space_id,
-                                     page_no_t page_no, byte *body,
-                                     byte *rec_end, lsn_t start_lsn) {
+                                     page_no_t page_no, const byte *body,
+                                     const byte *rec_end, lsn_t start_lsn) {
   if (!recv_recovery_on && xtrabackup_start_checkpoint > start_lsn) return;
 
   ut_ad(type != MLOG_FILE_DELETE);
@@ -3932,12 +3909,6 @@ bool meb_scan_log_recs(
       }
 
       if (!recv_sys->found_corrupt_log) {
-<<<<<<< HEAD
-        more_data =
-            recv_sys_add_to_parsing_buf(log_block, scanned_lsn, data_len);
-||||||| 824e2b40640
-        more_data = recv_sys_add_to_parsing_buf(log_block, scanned_lsn);
-=======
         /* Since the recv_sys_add_to_parsing_buf is "idempotent" if the
         scanned_lsn is not larger than the one already processed. Therefore,
         it is fine to call recv_sys_add_to_parsing_buf after the
@@ -3950,8 +3921,8 @@ bool meb_scan_log_recs(
         }
 #endif /* UNIV_DEBUG && HAVE_ASAN */
         more_data =
-            recv_sys_add_to_parsing_buf(log_block, scanned_lsn) || more_data;
->>>>>>> mysql-8.4.0
+            recv_sys_add_to_parsing_buf(log_block, scanned_lsn, data_len) ||
+            more_data;
       }
 
       recv_sys->scanned_lsn = scanned_lsn;
@@ -4108,19 +4079,11 @@ Parses and hashes the log records if new data found.
                                         an mtr which we can ignore, as it is
                                         already applied to tablespace files)
                                         until which all redo log has been
-<<<<<<< HEAD
                                         scanned
-@param[in,out]  to_lsn                  LSN to stop recovery at */
-static void recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn,
-                                   lsn_t to_lsn) {
-||||||| 824e2b40640
-                                        scanned */
-static void recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn) {
-=======
-                                        scanned
+@param[in,out]  to_lsn                  LSN to stop recovery at
 @return DB_SUCCESS if successfull */
-static dberr_t recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn) {
->>>>>>> mysql-8.4.0
+static dberr_t recv_recovery_begin(log_t &log, const lsn_t checkpoint_lsn,
+                                   lsn_t to_lsn) {
   mutex_enter(&recv_sys->mutex);
   recv_sys->len = 0;
   recv_sys->recovered_offset = 0;
@@ -4313,7 +4276,6 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
 
   ut_a(checkpoint_lsn == checkpoint_header.m_checkpoint_lsn);
 
-<<<<<<< HEAD
   ut_ad(to_lsn >= checkpoint_lsn);
 
   /* Read the encryption header to get the encryption information. */
@@ -4322,15 +4284,6 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
     return DB_ERROR;
   }
 
-||||||| 824e2b40640
-  /* Read the encryption header to get the encryption information. */
-  err = log_encryption_read(log);
-  if (err != DB_SUCCESS) {
-    return DB_ERROR;
-  }
-
-=======
->>>>>>> mysql-8.4.0
   /* Start reading the log from the checkpoint LSN up. */
 
   ut_ad(RECV_SCAN_SIZE <= log.buf_size);
@@ -4361,16 +4314,10 @@ dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
     }
   }
 
-<<<<<<< HEAD
-  recv_recovery_begin(log, checkpoint_lsn, to_lsn);
-||||||| 824e2b40640
-  recv_recovery_begin(log, checkpoint_lsn);
-=======
-  err = recv_recovery_begin(log, checkpoint_lsn);
+  err = recv_recovery_begin(log, checkpoint_lsn, to_lsn);
   if (err != DB_SUCCESS) {
     return err;
   }
->>>>>>> mysql-8.4.0
 
   if (srv_read_only_mode && log.m_scanned_lsn > checkpoint_lsn) {
     ib::error(ER_IB_MSG_RECOVERY_IN_READ_ONLY);

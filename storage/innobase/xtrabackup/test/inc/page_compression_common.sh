@@ -3,7 +3,11 @@
 #
 
 . inc/common.sh
+KEYRING_TYPE="component"
+. inc/keyring_common.sh
 . inc/keyring_file.sh
+configure_server_with_component
+
 
 require_server_version_higher_than 5.7.10
 require_lz4
@@ -19,8 +23,6 @@ function is_multiple_of_page_size() {
     remainder=$((n % 16384 ))
     [ "$remainder" -eq 0 ]
 }
-
-start_server
 
 cat $MYSQLD_ERRFILE
 
@@ -136,6 +138,10 @@ function restore_and_verify() {
     xtrabackup --copy-back --target-dir=$topdir/backup --transition-key=123 \
                --generate-new-master-key \
                --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
+
+    cp ${instance_local_manifest}  $mysql_datadir
+    cp ${keyring_component_cnf} $mysql_datadir
+
 
     if [ $working_compression = "yes" ] ; then
         for i in {1..4} ; do

@@ -112,10 +112,16 @@ MYSQL_ADD_PLUGIN(myisam ha_myisam.cc
   LINK_LIBRARIES myisam_library
 )
 
-<<<<<<< HEAD
-||||||| 824e2b40640
-DISABLE_MISSING_PROFILE_WARNING()
-=======
+# mtr tests are failing for RelWithDebInfo builds with Visual Studio 2022.
+# Disabling /O2 for this file fixes it.
+# Looks like a compiler bug, possibly some bad inlining of static functions?
+IF(MSVC AND MSVC_VERSION GREATER 1930)
+  ADD_COMPILE_FLAGS(
+    mi_delete.cc
+    COMPILE_FLAGS "/Od"
+    )
+ENDIF()
+
 # mtr tests are failing for RelWithDebInfo builds with Visual Studio 2022.
 # Disabling /O2 for this file fixes it.
 # Looks like a compiler bug, possibly some bad inlining of static functions?
@@ -127,7 +133,6 @@ IF(MSVC AND MSVC_VERSION GREATER 1930)
 ENDIF()
 
 DISABLE_MISSING_PROFILE_WARNING()
->>>>>>> mysql-8.4.0
 
 MYSQL_ADD_EXECUTABLE(myisam_ftdump myisam_ftdump.cc SKIP_INSTALL
   LINK_LIBRARIES myisam_library)

@@ -46,6 +46,7 @@ MYSQL_METHODS mysql_methods = {
     csi_read_rows,     csi_use_result,        csi_fetch_row,
     csi_fetch_lengths, csi_flush_use_result,  csi_read_change_user_result,
 #if (!defined(MYSQL_SERVER) && !defined(MYSQL_COMPONENT)) || defined(XTRABACKUP)
+    nullptr,  // csi_list_fields,
     nullptr,  // csi_read_prepare_result,
     nullptr,  // csi_stmt_execute,
     nullptr,  // csi_read_binary_rows,

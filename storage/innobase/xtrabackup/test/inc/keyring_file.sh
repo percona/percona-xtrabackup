@@ -7,7 +7,7 @@
 . inc/common.sh
 
 if [ -z ${KEYRING_TYPE+x} ]; then
-  KEYRING_TYPE="plugin"
+  KEYRING_TYPE="component"
 fi
 
 if test -d $PWD/../../../../plugin_output_directory

@@ -4,9 +4,11 @@
 
 require_server_version_higher_than 5.7.10
 
+KEYRING_TYPE="component"
+. inc/keyring_common.sh
 . inc/keyring_file.sh
+configure_server_with_component
 
-start_server
 
 load_sakila
 
