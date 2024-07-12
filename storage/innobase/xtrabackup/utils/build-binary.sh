@@ -129,7 +129,7 @@ mkdir "$INSTALLDIR"
     if test "x$exit_value" = "x0"
     then
 
-        LIBLIST="libaio.so libprocps.so libreadline.so libtinfo.so libsasl2.so librtmp.so libssl3.so libsmime3.so libnss3.so libnssutil3.so libplds4.so libplc4.so libnspr4.so"
+        LIBLIST="libgcrypt.so libaio.so libprocps.so libreadline.so libtinfo.so libsasl2.so librtmp.so libssl3.so libsmime3.so libnss3.so libnssutil3.so libplds4.so libplc4.so libnspr4.so"
         DIRLIST="bin lib lib/private lib/plugin"
 
         LIBPATH=""
