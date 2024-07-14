@@ -65,6 +65,11 @@ parse_arguments() {
     done
 }
 
+switch_to_vault_repo() {
+    sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
+    sed -i 's|#\s*baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
+}
+
 check_workdir(){
     if [ "x$WORKDIR" = "x$CURDIR" ]
     then
@@ -234,6 +239,9 @@ install_deps() {
     CURPLACE=$(pwd)
     if [ "$OS" == "rpm" ]
     then
+        if [ $RHEL = 7 ]; then
+            switch_to_vault_repo
+        fi
         yum -y install git wget yum-utils curl
         yum install -y https://repo.percona.com/yum/percona-release-latest.noarch.rpm
         if [ x"$ARCH" = "xx86_64" ]; then
@@ -297,6 +305,7 @@ install_deps() {
                 sleep 1
                 echo "waiting"
             done
+            switch_to_vault_repo
             until yum -y makecache; do
                 yum clean all
                 sleep 1
