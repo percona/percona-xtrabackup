@@ -5712,26 +5712,40 @@ static bool prepare_handle_ren_files(
       ut::free(space_name);
       return false;
     }
-    // rename .delta .meta files as well
-    if (xtrabackup_incremental) {
-      std::string from_path =
-          entry.datadir + OS_PATH_SEPARATOR + std::string{space_name};
-      ;
-      std::string to_path = entry.datadir + ren_file_content;
-
-      rename_force(from_path + ".ibd.delta", to_path + ".delta");
-      rename_force(from_path + ".ibd.meta", to_path + ".meta");
-    }
-    // delete the .ren file, we don't need it anymore
-    os_file_delete(0, ren_path.c_str());
-    ut::free(oldpath);
-    ut::free(space_name);
-
-    return true;
   }
 
-  xb::error() << "prepare_handle_ren_files(): failed to handle " << ren_path;
-  return false;
+  // rename .delta .meta files as well
+  if (xtrabackup_incremental) {
+    auto [exists, meta_file] = is_in_meta_map(source_space_id);
+    if (exists) {
+      std::string to_path = entry.datadir + ren_file_content;
+
+      // create .delta path from .meta
+      std::string delta_file =
+          meta_file.substr(0, strlen(meta_file.c_str()) - strlen(".meta")) +
+          ".delta";
+
+      std::string to_delta(to_path + ".delta");
+      xb::info() << "Renaming incremental delta file from: " << delta_file
+                 << " to: " << to_delta;
+      rename_force(delta_file, to_delta);
+
+      std::string to_meta(to_path + ".meta");
+      xb::info() << "Renaming incremental meta file from: " << meta_file
+                 << " to: " << to_meta;
+      rename_force(meta_file, to_meta);
+    } else if (fil_space == nullptr) {
+      // This means the tablespace is neither found in the fullbackup dir
+      // nor in the inc backup directory as .meta and .delta
+      xb::error() << "prepare_handle_ren_files(): failed to handle "
+                  << ren_path;
+      return false;
+    }
+  }
+
+  // delete the .ren file, we don't need it anymore
+  os_file_delete(0, ren_path.c_str());
+  return true;
 }
 
 /** Handle .corrupt files. These files should be removed before we do *.ibd scan
