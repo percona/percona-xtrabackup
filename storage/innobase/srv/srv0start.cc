@@ -675,6 +675,13 @@ dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space) {
     }
   }
 
+  // Track undo tablespaces that are found after server is locked
+  // if lock_ddl is REDUCED, we will do one more undo scan via
+  // srv_undo_tablespaces_init()/open()
+  if (ddl_tracker && is_server_locked()) {
+    ddl_tracker->add_undo_tablespace(space_id, file_name);
+  }
+
   if (undo::is_reserved(space_id)) {
     undo::spaces->add(undo_space);
   }
@@ -1782,7 +1789,7 @@ dberr_t srv_start(bool create_new_db IF_XB(, lsn_t to_lsn)) {
     return (srv_init_abort(err));
   }
 
-  err = fil_scan_for_tablespaces(false, false);
+  err = fil_scan_for_tablespaces(false, false, false);
 
   if (err != DB_SUCCESS) {
     return (srv_init_abort(err));
