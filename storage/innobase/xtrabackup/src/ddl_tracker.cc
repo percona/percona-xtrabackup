@@ -23,9 +23,11 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <univ.i>
 #include "backup_copy.h"
 #include "file_utils.h"
+#include "fsp0fsp.h"               // fsp_is_undo_tablespace
 #include "sql_thd_internal_api.h"  // create_thd, destroy_thd
-#include "xb0xb.h"                 // check_if_skip_table
-#include "xtrabackup.h"            // datafiles_iter_t
+#include "srv0start.h"
+#include "xb0xb.h"       // check_if_skip_table
+#include "xtrabackup.h"  // datafiles_iter_t
 
 void ddl_tracker_t::backup_file_op(uint32_t space_id, mlog_id_t type,
                                    const byte *buf, ulint len,
@@ -78,6 +80,17 @@ void ddl_tracker_t::add_table_from_ibd_scan(const space_id_t space_id,
   tables_in_backup[space_id] = name;
 }
 
+void ddl_tracker_t::add_undo_tablespace(const space_id_t space_id,
+                                        std::string name) {
+  Fil_path::normalize(name);
+  std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
+  if (is_server_locked()) {
+    after_lock_undo[name] = space_id;
+  } else {
+    before_lock_undo[name] = space_id;
+  }
+}
+
 void ddl_tracker_t::add_corrupted_tablespace(const space_id_t space_id,
                                              const std::string &path) {
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
@@ -87,6 +100,13 @@ void ddl_tracker_t::add_corrupted_tablespace(const space_id_t space_id,
 
 void ddl_tracker_t::add_to_recopy_tables(space_id_t space_id, lsn_t start_lsn,
                                          const std::string operation) {
+  // There should never be MLOG_INDEX_LOAD. However MLOG_WRITE_STRING on
+  // new undo tabelsapce creation is possible. But we ignore this as the UNDOs
+  // are tracked separately
+  if (fsp_is_undo_tablespace(space_id)) {
+    return;
+  }
+
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
   recopy_tables.insert(space_id);
   xb::info() << "DDL tracking : LSN: " << start_lsn << " " << operation
@@ -105,6 +125,11 @@ void ddl_tracker_t::add_missing_table(std::string path) {
 void ddl_tracker_t::add_create_table_from_redo(const space_id_t space_id,
                                                lsn_t start_lsn,
                                                const char *name) {
+  // undo tablespaces are tracked separately.
+  if (fsp_is_undo_tablespace(space_id)) {
+    return;
+  }
+
   std::string new_space_name = name;
   Fil_path::normalize(new_space_name);
   if (Fil_path::has_prefix(new_space_name, Fil_path::DOT_SLASH)) {
@@ -147,6 +172,11 @@ void ddl_tracker_t::add_rename_table_from_redo(const space_id_t space_id,
 void ddl_tracker_t::add_drop_table_from_redo(const space_id_t space_id,
                                              lsn_t start_lsn,
                                              const char *name) {
+  // undo tablespaces are tracked separately.
+  if (fsp_is_undo_tablespace(space_id)) {
+    return;
+  }
+
   std::string new_space_name{name};
   Fil_path::normalize(new_space_name);
   if (Fil_path::has_prefix(new_space_name, Fil_path::DOT_SLASH)) {
@@ -169,6 +199,13 @@ bool ddl_tracker_t::is_missing_table(const std::string &name) {
 
 void ddl_tracker_t::add_renamed_table(const space_id_t &space_id,
                                       std::string new_name) {
+  // undo tablespaces are tracked separately.
+  if (fsp_is_undo_tablespace(space_id)) {
+    // MLOG_FILE_RENAME is never done for undo tablespace
+    ut_ad(0);
+    return;
+  }
+
   Fil_path::normalize(new_name);
   if (Fil_path::has_prefix(new_name, Fil_path::DOT_SLASH)) {
     new_name.erase(0, 2);
@@ -233,15 +270,89 @@ std::string ddl_tracker_t::convert_file_name(space_id_t space_id,
   return file_name.substr(0, sep_pos + 1) + std::to_string(space_id) + ext;
 }
 
+// Helper function to print the contents of a vector of pairs
+void printVector(const filevec &vec) {
+  for (const auto &element : vec) {
+    xb::info() << element.first << ": " << element.second << " ";
+  }
+}
+
+// Function to find new, deleted, and changed files between two unordered_maps
+std::tuple<filevec, filevec> findChanges(const name_to_space_id_t &before,
+                                         const name_to_space_id_t &after) {
+  filevec newFiles;
+  filevec deletedOrChangedFiles;
+
+  // Iterate through the after map to find new, changed, and unchanged files
+  for (const auto &pair : after) {
+    auto itBefore = before.find(pair.first);
+    if (itBefore == before.end()) {
+      // Element is new
+      newFiles.emplace_back(pair.first, pair.second);
+    } else {
+      // Element exists in before map
+      if (itBefore->second != pair.second) {
+        // Element value has changed
+        deletedOrChangedFiles.emplace_back(
+            pair.first, itBefore->second);  // Use old value from before map
+        newFiles.emplace_back(pair.first, pair.second);
+      }
+    }
+  }
+
+  // Look for deleted
+  for (const auto &pair : before) {
+    auto itAfter = after.find(pair.first);
+
+    if (itAfter == after.end()) {
+      // Element is not present in the after map. This is deleted
+      deletedOrChangedFiles.emplace_back(pair.first, pair.second);
+    }
+  }
+
+  return {newFiles, deletedOrChangedFiles};
+}
+
+std::tuple<filevec, filevec> ddl_tracker_t::handle_undo_ddls() {
+  xb::info() << "DDL tracking: handling undo DDLs";
+
+  undo_spaces_deinit();
+  undo_spaces_init();
+  xb_scan_for_tablespaces(false, true);
+
+  // Generates the after_lock_undo list
+  srv_undo_tablespaces_init(false, true);
+
+  auto [newfiles, deletedOrChangedFiles] =
+      findChanges(before_lock_undo, after_lock_undo);
+
+  // Print the results
+  xb::info() << "New UNDO files: ";
+  printVector(newfiles);
+
+  xb::info() << "Deleted or truncated UNDO files: ";
+  printVector(deletedOrChangedFiles);
+
+  return {newfiles, deletedOrChangedFiles};
+}
+
 void ddl_tracker_t::handle_ddl_operations() {
+  fil_close_all_files();
+  fil_close();
+  fil_init(LONG_MAX);
+
+  auto [new_undo_files, deleted_undo_files] = handle_undo_ddls();
+
   xb::info() << "DDL tracking : handling DDL operations";
 
   if (new_tables.empty() && renames.empty() && drops.empty() &&
-      recopy_tables.empty() && corrupted_tablespaces.empty()) {
+      recopy_tables.empty() && corrupted_tablespaces.empty() &&
+      new_undo_files.empty() && deleted_undo_files.empty()) {
     xb::info()
         << "DDL tracking : Finished handling DDL operations - No changes";
     return;
   }
+
   dberr_t err;
 
   for (auto &tablespace : corrupted_tablespaces) {
@@ -333,7 +444,6 @@ void ddl_tracker_t::handle_ddl_operations() {
         "%s", table.second.second.c_str());
   }
 
-  fil_close_all_files();
   for (auto table = new_tables.begin(); table != new_tables.end();) {
     if (check_if_skip_table(table->second.c_str())) {
       table = new_tables.erase(table);
@@ -342,6 +452,18 @@ void ddl_tracker_t::handle_ddl_operations() {
     std::tie(err, std::ignore) = fil_open_for_xtrabackup(
         table->second, table->second.substr(0, table->second.length() - 4));
     table++;
+  }
+
+  // Create .del files for deleted undo tablespaces
+  for (auto &elem : deleted_undo_files) {
+    backup_file_printf(
+        convert_file_name(elem.second, elem.first, ".ibu.del").c_str(), "%s",
+        "");
+  }
+
+  // Add new undo files to be recopied
+  for (auto &elem : new_undo_files) {
+    new_tables[elem.second] = elem.first;
   }
 
   if (new_tables.empty()) return;
