@@ -82,6 +82,8 @@ void ddl_tracker_t::add_table_from_ibd_scan(const space_id_t space_id,
 
 void ddl_tracker_t::add_undo_tablespace(const space_id_t space_id,
                                         std::string name) {
+  ut_ad(fsp_is_undo_tablespace(space_id));
+
   Fil_path::normalize(name);
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
   if (is_server_locked()) {
@@ -122,11 +124,18 @@ void ddl_tracker_t::add_missing_table(std::string path) {
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
   missing_tables.insert(path);
 }
+
 void ddl_tracker_t::add_create_table_from_redo(const space_id_t space_id,
                                                lsn_t start_lsn,
                                                const char *name) {
   // undo tablespaces are tracked separately.
   if (fsp_is_undo_tablespace(space_id)) {
+    return;
+  }
+
+  // tables in system tablespace need not be tracked. They can be
+  // created via redo log
+  if (fsp_is_system_tablespace(space_id)) {
     return;
   }
 
@@ -146,6 +155,12 @@ void ddl_tracker_t::add_rename_table_from_redo(const space_id_t space_id,
                                                lsn_t start_lsn,
                                                const char *old_name,
                                                const char *new_name) {
+  // Rename of tables in system tablespace is only rename in DD. this is
+  // tracked via redo log
+  if (fsp_is_system_tablespace(space_id)) {
+    return;
+  }
+
   std::string old_space_name{old_name};
   std::string new_space_name{new_name};
 
@@ -177,6 +192,12 @@ void ddl_tracker_t::add_drop_table_from_redo(const space_id_t space_id,
     return;
   }
 
+  // DROP table in system tablespace is drop indexes. There is no file removal
+  // this is also tracked/redone from redo
+  if (fsp_is_system_tablespace(space_id)) {
+    return;
+  }
+
   std::string new_space_name{name};
   Fil_path::normalize(new_space_name);
   if (Fil_path::has_prefix(new_space_name, Fil_path::DOT_SLASH)) {
@@ -203,6 +224,12 @@ void ddl_tracker_t::add_renamed_table(const space_id_t &space_id,
   if (fsp_is_undo_tablespace(space_id)) {
     // MLOG_FILE_RENAME is never done for undo tablespace
     ut_ad(0);
+    return;
+  }
+
+  // rename tables in system tablespace is only rename in DD
+  // tracked via redo. Skip this
+  if (fsp_is_system_tablespace(space_id)) {
     return;
   }
 
@@ -381,6 +408,8 @@ void ddl_tracker_t::handle_ddl_operations() {
   for (auto &table : recopy_tables) {
     if (tables_in_backup.find(table) != tables_in_backup.end()) {
       if (renames.find(table) != renames.end()) {
+        // We never create .del for ibdata*
+        ut_ad(!fsp_is_system_tablespace(table));
         backup_file_printf(
             convert_file_name(table, renames[table].first, ".ibd.del").c_str(),
             "%s", "");
@@ -408,6 +437,8 @@ void ddl_tracker_t::handle_ddl_operations() {
       continue;
     }
 
+    // We never create .del for ibdata*
+    ut_ad(!fsp_is_system_tablespace(table.first));
     backup_file_printf(
         convert_file_name(table.first, table.second, ".ibd.del").c_str(), "%s",
         "");
@@ -449,8 +480,55 @@ void ddl_tracker_t::handle_ddl_operations() {
       table = new_tables.erase(table);
       continue;
     }
-    std::tie(err, std::ignore) = fil_open_for_xtrabackup(
-        table->second, table->second.substr(0, table->second.length() - 4));
+
+    if (fsp_is_system_tablespace(table->first)) {
+      // open system tablespace for recopying
+      srv_sys_space.shutdown();
+
+      srv_sys_space.set_space_id(TRX_SYS_SPACE);
+
+      /* Create the filespace flags. */
+      ulint fsp_flags =
+          fsp_flags_init(univ_page_size, false, false, false, false);
+      srv_sys_space.set_flags(fsp_flags);
+
+      srv_sys_space.set_name("innodb_system");
+      srv_sys_space.set_path(srv_data_home);
+
+      /* Supports raw devices */
+      if (!srv_sys_space.parse_params(innobase_data_file_path, true,
+                                      xtrabackup_prepare)) {
+        xb::error() << "Cannot parse system tablespace params";
+        ut_ad(0);
+        return;
+      }
+      dberr_t err;
+      page_no_t sum_of_new_sizes;
+      lsn_t flush_lsn;
+
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+      err = srv_sys_space.check_file_spec(false, 0);
+
+      if (err != DB_SUCCESS) {
+        xb::error() << "could not find data files at the specified datadir";
+        ut_ad(0);
+        return;
+      }
+
+      err = srv_sys_space.open_or_create(false, false, &sum_of_new_sizes,
+                                         &flush_lsn);
+
+      if (err != DB_SUCCESS) {
+        xb::error() << "could not reopen system tablespace";
+        ut_ad(0);
+        return;
+      }
+
+    } else {
+      std::tie(err, std::ignore) = fil_open_for_xtrabackup(
+          table->second, table->second.substr(0, table->second.length() - 4));
+    }
     table++;
   }
 
