@@ -5614,11 +5614,6 @@ static void rename_file(const std::string &from, const std::string &to) {
 
 static void rename_force(const std::string &from, const std::string &to) {
   MY_STAT stat_info;
-  if (access(to.c_str(), R_OK) == 0) {
-    if (my_delete(to.c_str(), MYF(MY_WME))) {
-      exit(EXIT_FAILURE);
-    }
-  }
   /* check if dest folder exists */
   std::string dest_dir = to.substr(0, to.find_last_of("/"));
   /* create target dir if not exist */
