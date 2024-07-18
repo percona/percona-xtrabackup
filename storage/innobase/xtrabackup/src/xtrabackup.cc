@@ -2469,7 +2469,7 @@ error:
   return (true);
 }
 
-static void xb_scan_for_tablespaces(bool is_prep_handle_ddls) {
+void xb_scan_for_tablespaces(bool is_prep_handle_ddls, bool only_undo) {
   /* This is the default directory for IBD and IBU files. Put it first
   in the list of known directories. */
   fil_set_scan_dir(MySQL_datadir_path.path());
@@ -2488,7 +2488,8 @@ static void xb_scan_for_tablespaces(bool is_prep_handle_ddls) {
   --innodb-undo-directory also. */
   fil_set_scan_dir(Fil_path::remove_quotes(MySQL_undo_path), true);
 
-  if (fil_scan_for_tablespaces(true, is_prep_handle_ddls) != DB_SUCCESS) {
+  if (fil_scan_for_tablespaces(true, is_prep_handle_ddls, only_undo) !=
+      DB_SUCCESS) {
     exit(EXIT_FAILURE);
   }
 }
@@ -3362,6 +3363,11 @@ static void data_copy_thread_func(data_thread_ctxt_t *ctxt) {
     if (xtrabackup_copy_datafile(node, num)) {
       xb::error() << "failed to copy datafile " << node->name;
       *(ctxt->error) = true;
+    } else {
+      if (ddl_tracker && fsp_is_undo_tablespace(node->space->id)) {
+        ddl_tracker->add_undo_tablespace(node->space->id,
+                                         node->space->files.front().name);
+      }
     }
   }
 
@@ -3615,7 +3621,7 @@ static dberr_t xb_load_tablespaces(bool is_prep_handle_ddls)
   }
 
   xb::info() << "Generating a list of tablespaces";
-  xb_scan_for_tablespaces(is_prep_handle_ddls);
+  xb_scan_for_tablespaces(is_prep_handle_ddls, false);
 
   /* Add separate undo tablespaces to fil_system */
 
@@ -7045,6 +7051,7 @@ skip_check:
   xb_data_files_close();
   fil_close();
   innodb_free_param();
+  undo_spaces_deinit();
 
   /* Handle `CREATE` DDL files produced by DDL tracking during backup */
   if (xtrabackup_incremental_dir) {

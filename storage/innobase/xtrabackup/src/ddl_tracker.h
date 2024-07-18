@@ -23,7 +23,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "log0types.h"
 #include "mtr0types.h"
 typedef std::unordered_map<space_id_t, std::string> space_id_to_name_t;
+typedef std::unordered_map<std::string, space_id_t> name_to_space_id_t;
 typedef std::unordered_map<space_id_t, std::string> meta_map_t;
+using filevec = std::vector<std::pair<std::string, space_id_t>>;
 
 extern meta_map_t meta_map;
 
@@ -32,6 +34,8 @@ class ddl_tracker_t {
   space_id_to_name_t tables_in_backup;
   /** Tablspaces with their ID and name, as they were copied to backup.*/
   space_id_to_name_t new_tables;
+  name_to_space_id_t before_lock_undo;
+  name_to_space_id_t after_lock_undo;
   /** Tablespaces involved in encryption or bulk index load.*/
   std::unordered_set<space_id_t> recopy_tables;
   /** Drop operations found in redo log. */
@@ -53,7 +57,11 @@ class ddl_tracker_t {
   recopy_tables concurrently */
   std::mutex m_ddl_tracker_mutex;
 
+  std::tuple<filevec, filevec> handle_undo_ddls();
+
  public:
+  void add_undo_tablespace(const space_id_t space_id, std::string name);
+
   /** Add a new table in the DDL tracker table list.
    @param[in]	space_id	tablespace identifier
    @param[in]	name      tablespace name */

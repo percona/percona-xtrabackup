@@ -3708,8 +3708,8 @@ void Dir_Walker::walk_posix(const Path &basedir, bool recursive, Function &&f) {
         continue;
       }
 
-      if (file_type == OS_FILE_TYPE_DIR && recursive) {
-        directories.push(Entry(path, current.m_depth + 1));
+      if (file_type == OS_FILE_TYPE_DIR) {
+        if (recursive) directories.push(Entry(path, current.m_depth + 1));
       } else {
         f(path, current.m_depth + 1);
       }

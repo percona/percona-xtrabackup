@@ -54,11 +54,11 @@ vlog "Resuming xtrabackup"
 kill -SIGCONT $xb_pid
 run_cmd wait $job_pid
 
-if ! egrep -q 'DDL tracking : LSN: [0-9]* delete space ID: [0-9]* Name: undo_1.ibu' $topdir/backup.log ; then
+if ! egrep -q 'Deleted undo file: ./undo_1.ibu : [0-9]*' $topdir/backup.log ; then
     die "xtrabackup did not handle delete table DDL"
 fi
 
-if ! egrep -q 'DDL tracking : LSN: [0-9]* create space ID: [0-9]* Name: undo_1.ibu' $topdir/backup.log ; then
+if ! egrep -q 'New undo file: ./undo_1.ibu : [0-9]*' $topdir/backup.log ; then
     die "xtrabackup did not handle new table DDL"
 fi
 

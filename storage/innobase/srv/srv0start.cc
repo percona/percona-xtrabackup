@@ -657,10 +657,12 @@ dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space) {
   }
 
   DBUG_EXECUTE_IF(
-      "undo_space_open",
-      if (strncmp(file_name, "./undo_1.ibu", strlen("./undo_1.ibu")) == 0) {
-        *const_cast<const char **>(&xtrabackup_debug_sync) = "undo_space_open";
-        debug_sync_point("undo_space_open");
+      "undo_space_open", if (!is_server_locked()) {
+        if (strncmp(file_name, "./undo_1.ibu", strlen("./undo_1.ibu")) == 0) {
+          *const_cast<const char **>(&xtrabackup_debug_sync) =
+              "undo_space_open";
+          debug_sync_point("undo_space_open");
+        }
       });
 
   /* Now that space and node exist, make sure this undo tablespace
@@ -673,6 +675,13 @@ dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space) {
       fil_space_free(space_id, false);
       return DB_CANNOT_OPEN_FILE;
     }
+  }
+
+  // Track undo tablespaces that are found after server is locked
+  // if lock_ddl is REDUCED, we will do one more undo scan via
+  // srv_undo_tablespaces_init()/open()
+  if (ddl_tracker && is_server_locked()) {
+    ddl_tracker->add_undo_tablespace(space_id, file_name);
   }
 
   if (undo::is_reserved(space_id)) {
@@ -1782,7 +1791,7 @@ dberr_t srv_start(bool create_new_db IF_XB(, lsn_t to_lsn)) {
     return (srv_init_abort(err));
   }
 
-  err = fil_scan_for_tablespaces(false, false);
+  err = fil_scan_for_tablespaces(false, false, false);
 
   if (err != DB_SUCCESS) {
     return (srv_init_abort(err));

@@ -518,8 +518,15 @@ class Tablespace_dirs {
   void set_scan_dirs(const std::string &directories);
 
   /** Discover tablespaces by reading the header from .ibd files.
+  @param[in] populate_fil_cache   if true, tabelspace are loaded to cache
+  @param[in] is_prep_handled_ddls if true, xtrabackup uses
+                                  ibd_open_for_recovery instead of
+                                  fil_open_for_xtrabackup()
+  @param[in] only_undo            if true, only the undo tablespaces are
+                                  discovered
   @return DB_SUCCESS if all goes well */
-  [[nodiscard]] dberr_t scan(bool populate_fil_cache, bool is_prep_handle_ddls);
+  [[nodiscard]] dberr_t scan(bool populate_fil_cache, bool is_prep_handle_ddls,
+                             bool only_undo);
 
   /** Clear all the tablespace file data but leave the list of
   scanned directories in place. */
@@ -1700,9 +1707,17 @@ class Fil_system {
   }
 
   /** Scan the directories to build the tablespace ID to file name
-  mapping table. */
-  dberr_t scan(bool populate_fil_cache, bool is_prep_handle_ddls) {
-    return (m_dirs.scan(populate_fil_cache, is_prep_handle_ddls));
+  mapping table
+  @param[in] populate_fil_cache   if true, tabelspace are loaded to cache
+  @param[in] is_prep_handled_ddls if true, xtrabackup uses
+                                  ibd_open_for_recovery instead of
+                                  fil_open_for_xtrabackup()
+  @param[in] only_undo            if true, only the undo tablespaces are
+                                  discovered
+  @return DB_SUCCESS on success, other codes on errors */
+  dberr_t scan(bool populate_fil_cache, bool is_prep_handle_ddls,
+               bool only_undo) {
+    return (m_dirs.scan(populate_fil_cache, is_prep_handle_ddls, only_undo));
   }
 
   /** Open all known tablespaces. */
@@ -11964,10 +11979,14 @@ void Tablespace_dirs::set_scan_dirs(const std::string &in_directories) {
 }
 
 /** Discover tablespaces by reading the header from .ibd files.
-@param[in]      in_directories  Directories to scan
+@param[in] populate_fil_cache   if true, tabelspace are loaded to cache
+@param[in] is_prep_handled_ddls if true, xtrabackup uses ibd_open_for_recovery
+                                instead of fil_open_for_xtrabackup()
+@param[in] only_undo            if true, only the undo tablespaces are
+discovered
 @return DB_SUCCESS if all goes well */
-dberr_t Tablespace_dirs::scan(bool populate_fil_cache,
-                              bool is_prep_handle_ddls) {
+dberr_t Tablespace_dirs::scan(bool populate_fil_cache, bool is_prep_handle_ddls,
+                              bool only_undo) {
   Scanned_files ibd_files;
   Scanned_files undo_files;
   uint16_t count = 0;
@@ -11982,9 +12001,10 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache,
 
     ib::info(ER_IB_MSG_379) << "Scanning '" << dir.path() << "'";
 
-    /* Walk the sub-tree of dir. */
-
-    Dir_Walker::walk(real_path_dir, true, [&](const std::string &path) {
+    /* Walk the sub-tree of dir. If it is undo tablespaces only discovery,
+    used by xtrabackup, we dont do look into sub directories */
+    bool walk_subtree = only_undo ? false : true;
+    Dir_Walker::walk(real_path_dir, walk_subtree, [&](const std::string &path) {
       /* If it is a file and the suffix matches ".ibd"
       or the undo file name format then store it for
       determining the space ID. */
@@ -12001,11 +12021,12 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache,
 
       using Value = Scanned_files::value_type;
 
-      if (Fil_path::has_suffix(IBD, file.c_str())) {
-        ibd_files.push_back(Value{count, file});
-
-      } else if (Fil_path::is_undo_tablespace_name(file)) {
+      if (Fil_path::is_undo_tablespace_name(file)) {
         undo_files.push_back(Value{count, file});
+      } else if (only_undo) {
+        return;
+      } else if (Fil_path::has_suffix(IBD, file.c_str())) {
+        ibd_files.push_back(Value{count, file});
       }
 
       if (std::chrono::steady_clock::now() - start_time >= PRINT_INTERVAL) {
@@ -12055,7 +12076,7 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache,
       check = std::bind(&Tablespace_dirs::duplicate_check, this, _1, _2, _3, _4,
                         _5, _6);
 
-  if (!populate_fil_cache) {
+  if (!populate_fil_cache && ibd_files.size() > 0) {
     par_for(PFS_NOT_INSTRUMENTED, ibd_files, n_threads, check, &m, &unique,
             &duplicates);
   }
@@ -12081,7 +12102,7 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache,
 
   debug_sync_point("xtrabackup_suspend_between_file_discovery_and_open");
 
-  if (err == DB_SUCCESS && populate_fil_cache) {
+  if (err == DB_SUCCESS && populate_fil_cache && !only_undo) {
     bool result = true;
     std::function<void(const Const_iter &, const Const_iter &, size_t, bool &,
                        bool)>
@@ -12105,11 +12126,15 @@ void fil_set_scan_dirs(const std::string &directories) {
 }
 
 /** Discover tablespaces by reading the header from .ibd files.
-@param[in]  populate_fil_cache Whether to load tablespaces into fil cache
+@param[in] populate_fil_cache   Whether to load tablespaces into fil cache
+@param[in] is_prep_handled_ddls if true, xtrabackup uses ibd_open_for_recovery
+                                instead of fil_open_for_xtrabackup()
+@param[in] only_undo            if true, only the undo tablespaces are
+                                discovered
 @return DB_SUCCESS if all goes well */
 dberr_t fil_scan_for_tablespaces(bool populate_fil_cache,
-                                 bool is_prep_handle_ddls) {
-  return (fil_system->scan(populate_fil_cache, is_prep_handle_ddls));
+                                 bool is_prep_handle_ddls, bool only_undo) {
+  return (fil_system->scan(populate_fil_cache, is_prep_handle_ddls, only_undo));
 }
 
 /** Open all known tablespaces. */
