@@ -271,9 +271,9 @@ std::string ddl_tracker_t::convert_file_name(space_id_t space_id,
 }
 
 // Helper function to print the contents of a vector of pairs
-void printVector(const filevec &vec) {
+void printVector(const std::string &operation, const filevec &vec) {
   for (const auto &element : vec) {
-    xb::info() << element.first << ": " << element.second << " ";
+    xb::info() << operation << element.first << " : " << element.second << " ";
   }
 }
 
@@ -328,10 +328,10 @@ std::tuple<filevec, filevec> ddl_tracker_t::handle_undo_ddls() {
 
   // Print the results
   xb::info() << "New UNDO files: ";
-  printVector(newfiles);
+  printVector("New undo file: ", newfiles);
 
   xb::info() << "Deleted or truncated UNDO files: ";
-  printVector(deletedOrChangedFiles);
+  printVector("Deleted undo file: ", deletedOrChangedFiles);
 
   return {newfiles, deletedOrChangedFiles};
 }

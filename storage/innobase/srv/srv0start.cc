@@ -657,10 +657,12 @@ dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space) {
   }
 
   DBUG_EXECUTE_IF(
-      "undo_space_open",
-      if (strncmp(file_name, "./undo_1.ibu", strlen("./undo_1.ibu")) == 0) {
-        *const_cast<const char **>(&xtrabackup_debug_sync) = "undo_space_open";
-        debug_sync_point("undo_space_open");
+      "undo_space_open", if (!is_server_locked()) {
+        if (strncmp(file_name, "./undo_1.ibu", strlen("./undo_1.ibu")) == 0) {
+          *const_cast<const char **>(&xtrabackup_debug_sync) =
+              "undo_space_open";
+          debug_sync_point("undo_space_open");
+        }
       });
 
   /* Now that space and node exist, make sure this undo tablespace
