@@ -942,6 +942,12 @@ dberr_t SysTablespace::open_or_create(bool is_temp, bool create_new_db,
     }
   }
 
+  // Add system tablespace for tracking purpose. We might have
+  // to recopy it
+  if (ddl_tracker && opt_lock_ddl == LOCK_DDL_REDUCED) {
+    ddl_tracker->add_table_from_ibd_scan(space->id, space->name);
+  }
+
   return (err);
 }
 #endif /* !UNIV_HOTBACKUP */
