@@ -6995,75 +6995,78 @@ skip_check:
 
   xb_normalize_init_values();
 
-  if (!xb_process_datadir(
-          xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".",
-          ".corrupt", prepare_handle_corrupt_files, NULL)) {
-    xb_data_files_close();
-    goto error_cleanup;
-  }
-
   Tablespace_map::instance().deserialize("./");
 
-  /* Handle `RENAME/DELETE` DDL files produced by DDL tracking during backup */
-  err = xb_data_files_init(true);
-  if (err != DB_SUCCESS) {
-    xb::error() << "xb_data_files_init() failed "
-                << "with error code " << err;
-    goto error_cleanup;
-  }
-
-  // This should be done before handling .del files. Because we have to delete
-  // the correct delta files for the corresponding .del files.
-  if (xtrabackup_incremental_dir) {
-    // Build meta map
+  if (opt_lock_ddl == LOCK_DDL_REDUCED) {
     if (!xb_process_datadir(
             xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".",
-            ".meta", xtrabackup_scan_meta, NULL)) {
+            ".corrupt", prepare_handle_corrupt_files, NULL)) {
       xb_data_files_close();
       goto error_cleanup;
     }
-  }
 
-  // This should be done before rename because .del files are created after
-  // consolidating or skipping intermediate operations (renames etc). So they
-  // should be processed before renames.
-  if (!xb_process_datadir(
-          xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".", ".del",
-          prepare_handle_del_files, NULL)) {
+    /* Handle `RENAME/DELETE` DDL files produced by DDL tracking during backup
+     */
+    err = xb_data_files_init(true);
+    if (err != DB_SUCCESS) {
+      xb::error() << "xb_data_files_init() failed "
+                  << "with error code " << err;
+      goto error_cleanup;
+    }
+
+    // This should be done before handling .del files. Because we have to delete
+    // the correct delta files for the corresponding .del files.
+    if (xtrabackup_incremental_dir) {
+      // Build meta map
+      if (!xb_process_datadir(
+              xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".",
+              ".meta", xtrabackup_scan_meta, NULL)) {
+        xb_data_files_close();
+        goto error_cleanup;
+      }
+    }
+
+    // This should be done before rename because .del files are created after
+    // consolidating or skipping intermediate operations (renames etc). So they
+    // should be processed before renames.
+    if (!xb_process_datadir(
+            xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".",
+            ".del", prepare_handle_del_files, NULL)) {
+      xb_data_files_close();
+      goto error_cleanup;
+    }
+
+    // This should be done after processing .meta and .del
+    if (!xb_process_datadir(
+            xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".",
+            ".ren", prepare_handle_ren_files, NULL)) {
+      xb_data_files_close();
+      goto error_cleanup;
+    }
+
     xb_data_files_close();
-    goto error_cleanup;
-  }
+    fil_close();
+    innodb_free_param();
+    undo_spaces_deinit();
 
-  // This should be done after processing .meta and .del
-  if (!xb_process_datadir(
-          xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".", ".ren",
-          prepare_handle_ren_files, NULL)) {
-    xb_data_files_close();
-    goto error_cleanup;
-  }
+    /* Handle `CREATE` DDL files produced by DDL tracking during backup */
+    if (xtrabackup_incremental_dir) {
+      /** This is the new file, this might be less than the original .ibd
+       * because we are copying the file while there are still dirty pages in
+       * the BP. Those changes will later be conciliated via redo log*/
+      xb_process_datadir(xtrabackup_incremental_dir, ".new.meta",
+                         prepare_handle_new_files, NULL);
+      xb_process_datadir(xtrabackup_incremental_dir, ".new.delta",
+                         prepare_handle_new_files, NULL);
+      xb_process_datadir(xtrabackup_incremental_dir, ".new",
+                         prepare_handle_new_files, NULL);
+    } else {
+      xb_process_datadir(".", ".new", prepare_handle_new_files, NULL);
+    }
 
-  xb_data_files_close();
-  fil_close();
-  innodb_free_param();
-  undo_spaces_deinit();
-
-  /* Handle `CREATE` DDL files produced by DDL tracking during backup */
-  if (xtrabackup_incremental_dir) {
-    /** This is the new file, this might be less than the original .ibd because
-     * we are copying the file while there are still dirty pages in the BP.
-     * Those changes will later be conciliated via redo log*/
-    xb_process_datadir(xtrabackup_incremental_dir, ".new.meta",
-                       prepare_handle_new_files, NULL);
-    xb_process_datadir(xtrabackup_incremental_dir, ".new.delta",
-                       prepare_handle_new_files, NULL);
-    xb_process_datadir(xtrabackup_incremental_dir, ".new",
-                       prepare_handle_new_files, NULL);
-  } else {
-    xb_process_datadir(".", ".new", prepare_handle_new_files, NULL);
-  }
-
-  if (innodb_init_param()) {
-    goto error_cleanup;
+    if (innodb_init_param()) {
+      goto error_cleanup;
+    }
   }
 
   if (xtrabackup_incremental) {
