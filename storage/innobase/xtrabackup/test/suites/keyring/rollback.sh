@@ -36,7 +36,7 @@ trap "kill_bg_trx $uncommitted_trx" EXIT
 wait_for_bg_trx
 
 vlog "Backup"
-xtrabackup --lock-ddl --backup --target-dir=$topdir/backup \
+xtrabackup --backup --target-dir=$topdir/backup \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
 kill_bg_trx $uncommitted_trx
@@ -66,7 +66,7 @@ vlog "Test 2: No rollback on encrypted table. Lack of keyring shouldn't fail the
 
 vlog "Backup"
 rm -rf $topdir/backup
-xtrabackup --lock-ddl --backup --target-dir=$topdir/backup \
+xtrabackup --backup --target-dir=$topdir/backup \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
 vlog "Record db state"

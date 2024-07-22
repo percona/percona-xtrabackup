@@ -90,6 +90,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #include "mysqld.h"
 
 #include <sys/types.h>
+#include <xb0xb.h>
 #include <zlib.h>
 #include <ctime>
 #include <functional>
@@ -3150,9 +3151,13 @@ pfs_os_file_t os_file_create_func(const char *name, ulint create_mode,
   int create_flag;
   const char *mode_str = nullptr;
 
-  on_error_no_exit = create_mode & OS_FILE_ON_ERROR_NO_EXIT ? true : false;
-  on_error_silent = create_mode & OS_FILE_ON_ERROR_SILENT ? true : false;
-
+  if (opt_lock_ddl == LOCK_DDL_REDUCED && !is_server_locked()) {
+    on_error_no_exit = true;
+    on_error_silent = true;
+  } else {
+    on_error_no_exit = create_mode & OS_FILE_ON_ERROR_NO_EXIT ? true : false;
+    on_error_silent = create_mode & OS_FILE_ON_ERROR_SILENT ? true : false;
+  }
   create_mode &= ~OS_FILE_ON_ERROR_NO_EXIT;
   create_mode &= ~OS_FILE_ON_ERROR_SILENT;
 
@@ -3637,13 +3642,24 @@ void Dir_Walker::walk_posix(const Path &basedir, bool recursive, Function &&f) {
     DIR *parent = opendir(current.m_path.c_str());
 
     if (parent == nullptr) {
-      ib::info(ER_IB_MSG_784) << "Failed to walk directory"
-                              << " '" << current.m_path << "'";
-
+      if (opt_lock_ddl != LOCK_DDL_REDUCED) {
+        ib::info(ER_IB_MSG_784) << "Failed to walk directory"
+                                << " '" << current.m_path << "'";
+      }
       continue;
     }
 
-    if (!is_directory(current.m_path)) {
+    auto [exists, file_type] = is_directory(current.m_path);
+
+    if (!exists) {
+      if (opt_lock_ddl != LOCK_DDL_REDUCED) {
+        ib::info(ER_IB_MSG_784) << "Failed to walk directory"
+                                << " '" << current.m_path << "'";
+      }
+      continue;
+    }
+
+    if (file_type == OS_FILE_TYPE_FILE) {
       f(current.m_path, current.m_depth);
     }
 
@@ -3675,8 +3691,25 @@ void Dir_Walker::walk_posix(const Path &basedir, bool recursive, Function &&f) {
         continue;
       }
 
-      if (is_directory(path) && recursive) {
-        directories.push(Entry(path, current.m_depth + 1));
+      DBUG_EXECUTE_IF(
+          "dir_walker_dbug", if (strncmp(dirent->d_name, "drop_table.ibd",
+                                         strlen("drop_table.ibd")) == 0) {
+            *const_cast<const char **>(&xtrabackup_debug_sync) = "dir_walker";
+
+            debug_sync_point("dir_walker");
+          });
+
+      auto [exists, file_type] = is_directory(path);
+
+      if (!exists) {
+        if (opt_lock_ddl != LOCK_DDL_REDUCED) {
+          ib::info() << "Path: " << path << " is missing ";
+        }
+        continue;
+      }
+
+      if (file_type == OS_FILE_TYPE_DIR) {
+        if (recursive) directories.push(Entry(path, current.m_depth + 1));
       } else {
         f(path, current.m_depth + 1);
       }
@@ -7913,6 +7946,16 @@ void os_file_set_umask(ulint umask) { os_innodb_umask = umask; }
 @return the umask to use for file creation. */
 ulint os_file_get_umask() { return (os_innodb_umask); }
 
+#ifdef XTRABACKUP
+std::tuple<bool, os_file_type_t> Dir_Walker::is_directory(const Path &path) {
+  os_file_type_t type;
+  bool exists;
+
+  os_file_status(path.c_str(), &exists, &type);
+
+  return {exists, type};
+}
+#else
 /** Check if the path is a directory. The file/directory must exist.
 @param[in]      path            The path to check
 @return true if it is a directory */
@@ -7932,6 +7975,7 @@ bool Dir_Walker::is_directory(const Path &path) {
 
   return (false);
 }
+#endif /* XTRABACKUP */
 
 dberr_t os_file_write_retry(IORequest &type, const char *name,
                             pfs_os_file_t file, const void *buf,

@@ -518,8 +518,15 @@ class Tablespace_dirs {
   void set_scan_dirs(const std::string &directories);
 
   /** Discover tablespaces by reading the header from .ibd files.
+  @param[in] populate_fil_cache   if true, tabelspace are loaded to cache
+  @param[in] is_prep_handled_ddls if true, xtrabackup uses
+                                  ibd_open_for_recovery instead of
+                                  fil_open_for_xtrabackup()
+  @param[in] only_undo            if true, only the undo tablespaces are
+                                  discovered
   @return DB_SUCCESS if all goes well */
-  [[nodiscard]] dberr_t scan(bool populate_fil_cache);
+  [[nodiscard]] dberr_t scan(bool populate_fil_cache, bool is_prep_handle_ddls,
+                             bool only_undo);
 
   /** Clear all the tablespace file data but leave the list of
   scanned directories in place. */
@@ -678,7 +685,7 @@ class Tablespace_dirs {
   @param[in]  thread_id Thread ID
   @param[out] result false in case of failure */
   void open_ibd(const Const_iter &start, const Const_iter &end,
-                size_t thread_id, bool &result);
+                size_t thread_id, bool &result, bool is_prep_handle_ddls);
 
  private:
   /** Directories scanned and the files discovered under them. */
@@ -1171,12 +1178,11 @@ class Fil_shard {
   @param[in]    punch_hole      true if supported for this file
   @param[in]    atomic_write    true if the file has atomic write enabled
   @param[in]    max_pages       maximum number of pages in file
-  @return pointer to the file name
-  @retval nullptr if error */
-  [[nodiscard]] fil_node_t *create_node(const char *name, page_no_t size,
-                                        fil_space_t *space, bool is_raw,
-                                        bool punch_hole, bool atomic_write,
-                                        page_no_t max_pages = PAGE_NO_MAX);
+  @return DB_SUCCESS if success, else other DB_* for errors */
+  [[nodiscard]] dberr_t create_node(const char *name, page_no_t size,
+                                    fil_space_t *space, bool is_raw,
+                                    bool punch_hole, bool atomic_write,
+                                    page_no_t max_pages = PAGE_NO_MAX);
 
 #ifdef UNIV_DEBUG
   /** Validate a shard. */
@@ -1644,6 +1650,8 @@ class Fil_system {
   @return DB_SUCCESS if the open was successful */
   [[nodiscard]] dberr_t open_for_recovery(space_id_t space_id);
 
+  [[nodiscard]] dberr_t open_for_prepare(const std::string &path);
+
   /** This function should be called after recovery has completed.
   Check for tablespace files for which we did not see any
   MLOG_FILE_DELETE or MLOG_FILE_RENAME record. These could not
@@ -1699,9 +1707,17 @@ class Fil_system {
   }
 
   /** Scan the directories to build the tablespace ID to file name
-  mapping table. */
-  dberr_t scan(bool populate_fil_cache) {
-    return (m_dirs.scan(populate_fil_cache));
+  mapping table
+  @param[in] populate_fil_cache   if true, tabelspace are loaded to cache
+  @param[in] is_prep_handled_ddls if true, xtrabackup uses
+                                  ibd_open_for_recovery instead of
+                                  fil_open_for_xtrabackup()
+  @param[in] only_undo            if true, only the undo tablespaces are
+                                  discovered
+  @return DB_SUCCESS on success, other codes on errors */
+  dberr_t scan(bool populate_fil_cache, bool is_prep_handle_ddls,
+               bool only_undo) {
+    return (m_dirs.scan(populate_fil_cache, is_prep_handle_ddls, only_undo));
   }
 
   /** Open all known tablespaces. */
@@ -1826,7 +1842,6 @@ class Fil_system {
   void meb_name_process(char *name, space_id_t space_id, bool deleted);
 
 #endif /* UNIV_HOTBACKUP */
-
  private:
   /** Open an ibd tablespace and add it to the InnoDB data structures.
   This is similar to fil_ibd_open() except that it is used while
@@ -2497,17 +2512,15 @@ bool fil_fusionio_enable_atomic_write(pfs_os_file_t file) {
 @param[in]      punch_hole      true if supported for this file
 @param[in]      atomic_write    true if the file has atomic write enabled
 @param[in]      max_pages       maximum number of pages in file
-@return pointer to the file name
-@retval nullptr if error */
-fil_node_t *Fil_shard::create_node(const char *name, page_no_t size,
-                                   fil_space_t *space, bool is_raw,
-                                   bool punch_hole, bool atomic_write,
-                                   page_no_t max_pages) {
+@return DB_SUCCESS if success, else other DB_* for errors */
+dberr_t Fil_shard::create_node(const char *name, page_no_t size,
+                               fil_space_t *space, bool is_raw, bool punch_hole,
+                               bool atomic_write, page_no_t max_pages) {
   ut_ad(name != nullptr);
   ut_ad(fil_system != nullptr);
 
   if (space == nullptr) {
-    return nullptr;
+    return DB_CANNOT_OPEN_FILE;
   }
 
   fil_node_t file{};
@@ -2534,15 +2547,18 @@ fil_node_t *Fil_shard::create_node(const char *name, page_no_t size,
 
   os_file_stat_t stat_info = os_file_stat_t();
 
-#ifdef UNIV_DEBUG
-  dberr_t err =
-#endif /* UNIV_DEBUG */
+  DBUG_EXECUTE_IF(
+      "shard_create_node", if (strncmp(name, "./test/drop_table.ibd",
+                                       strlen("./test/drop_table.ibd")) == 0) {
+        *const_cast<const char **>(&xtrabackup_debug_sync) =
+            "shard_create_node";
 
-      os_file_get_status(
-          file.name, &stat_info, false,
-          fsp_is_system_temporary(space->id) ? true : srv_read_only_mode);
+        debug_sync_point("shard_create_node");
+      });
 
-  ut_ad(err == DB_SUCCESS);
+  dberr_t err = os_file_get_status(
+      file.name, &stat_info, false,
+      fsp_is_system_temporary(space->id) ? true : srv_read_only_mode);
 
   file.block_size = stat_info.block_size;
 
@@ -2577,7 +2593,7 @@ fil_node_t *Fil_shard::create_node(const char *name, page_no_t size,
   ut_a(space->id == TRX_SYS_SPACE || space->purpose == FIL_TYPE_TEMPORARY ||
        space->files.size() == 1);
 
-  return &space->files.front();
+  return err;
 }
 
 /** Attach a file to a tablespace. File must be closed.
@@ -2588,19 +2604,16 @@ fil_node_t *Fil_shard::create_node(const char *name, page_no_t size,
 @param[in]      is_raw          true if a raw device or a raw disk partition
 @param[in]      atomic_write    true if the file has atomic write enabled
 @param[in]      max_pages       maximum number of pages in file
-@return pointer to the file name
-@retval nullptr if error */
-char *fil_node_create(const char *name, page_no_t size, fil_space_t *space,
-                      bool is_raw, bool atomic_write, page_no_t max_pages) {
+@return DB_SUCCESS if success, else other DB_* for errors */
+dberr_t fil_node_create(const char *name, page_no_t size, fil_space_t *space,
+                        bool is_raw, bool atomic_write, page_no_t max_pages) {
   auto shard = fil_system->shard_by_id(space->id);
 
-  fil_node_t *file;
+  dberr_t err = shard->create_node(name, size, space, is_raw,
+                                   IORequest::is_punch_hole_supported(),
+                                   atomic_write, max_pages);
 
-  file = shard->create_node(name, size, space, is_raw,
-                            IORequest::is_punch_hole_supported(), atomic_write,
-                            max_pages);
-
-  return file == nullptr ? nullptr : file->name;
+  return (err);
 }
 
 dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
@@ -2611,20 +2624,21 @@ dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
   do {
     ut_a(!file->is_open);
 
-    file->handle = os_file_create_simple_no_error_handling(
-        innodb_data_file_key, file->name, OS_FILE_OPEN, OS_FILE_READ_ONLY,
-        read_only_mode, &success);
-
+    file->handle =
+        os_file_create(innodb_data_file_key, file->name, OS_FILE_OPEN,
+                       OS_FILE_NORMAL, OS_DATA_FILE, read_only_mode, &success);
     if (!success) {
-      /* The following call prints an error message */
-      os_file_get_last_error(true);
+      if (opt_lock_ddl != LOCK_DDL_REDUCED) {
+        /* The following call prints an error message */
+        os_file_get_last_error(true);
 
-      ib::warn(ER_IB_MSG_268) << "Cannot open '" << file->name
-                              << "'."
-                                 " Have you deleted .ibd files under a"
-                                 " running mysqld server?";
+        ib::warn(ER_IB_MSG_268) << "Cannot open '" << file->name
+                                << "'."
+                                   " Have you deleted .ibd files under a"
+                                   " running mysqld server?";
+      }
 
-      return DB_ERROR;
+      return DB_CANNOT_OPEN_FILE;
     }
 
   } while (!success);
@@ -2703,7 +2717,12 @@ dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
     }
   }
 
+  /* space_id mismatch can happen for truncation of tablespaces. Regular and
+   * Undo */
   if (space_id != space->id) {
+    if (srv_backup_mode && opt_lock_ddl == LOCK_DDL_REDUCED)
+      return DB_CANNOT_OPEN_FILE;
+
     ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_270)
         << "Tablespace id is " << space->id
         << " in the data dictionary but in file " << file->name << " it is "
@@ -3124,6 +3143,13 @@ bool Fil_shard::open_file(fil_node_t *file) {
     }
   }
 
+  DBUG_EXECUTE_IF(
+      "before_file_open_dbug",
+      if (strcmp(file->name, "./test/drop_table.ibd") == 0) {
+        *const_cast<const char **>(&xtrabackup_debug_sync) = "before_file_open";
+        debug_sync_point("before_file_open");
+      });
+
   /* Open the file for reading and writing, in Windows normally in the
   unbuffered async I/O mode, though global variables may make os_file_create()
   to fall back to the normal file I/O mode. */
@@ -3350,7 +3376,7 @@ There must not be any pending i/o's or flushes on the files.
 @param[in]      space_id        Tablespace ID
 @param[in]      x_latched       Whether the caller holds X-mode space->latch
 @return true if success */
-static bool fil_space_free(space_id_t space_id, bool x_latched) {
+bool fil_space_free(space_id_t space_id, bool x_latched) {
   ut_ad(space_id != TRX_SYS_SPACE);
 
   auto shard = fil_system->shard_by_id(space_id);
@@ -3368,6 +3394,10 @@ static bool fil_space_free(space_id_t space_id, bool x_latched) {
   ut_a(space == nullptr);
 
   return true;
+}
+
+space_id_t fil_get_tablespace_id(const std::string &filename) {
+  return Fil_system::get_tablespace_id(filename);
 }
 
 #ifdef UNIV_HOTBACKUP
@@ -6003,10 +6033,7 @@ static dberr_t fil_create_tablespace(space_id_t space_id, const char *name,
 
   auto shard = fil_system->shard_by_id(space_id);
 
-  fil_node_t *file_node =
-      shard->create_node(path, size, space, false, punch_hole, atomic_write);
-
-  err = (file_node == nullptr) ? DB_ERROR : DB_SUCCESS;
+  err = shard->create_node(path, size, space, false, punch_hole, atomic_write);
 
 #if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP)
   /* Temporary tablespace creation need not be redo logged */
@@ -6167,12 +6194,11 @@ dberr_t fil_ibd_open(bool validate, fil_type_t purpose, space_id_t space_id,
   /* We do not measure the size of the file, that is why
   we pass the 0 below */
 
-  const fil_node_t *file =
-      shard->create_node(df.filepath(), 0, space, false,
-                         IORequest::is_punch_hole_supported(), atomic_write);
+  err = shard->create_node(df.filepath(), 0, space, false,
+                           IORequest::is_punch_hole_supported(), atomic_write);
 
-  if (file == nullptr) {
-    return DB_ERROR;
+  if (err != DB_SUCCESS) {
+    return err;
   }
 
   /* Set encryption operation in progress */
@@ -6522,11 +6548,9 @@ fil_load_status Fil_shard::ibd_open_for_recovery(space_id_t space_id,
   the rounding formula for extents and pages is somewhat complex; we
   let create_node() do that task. */
 
-  const fil_node_t *file;
+  err = create_node(df.filepath(), 0, space, false, true, false);
 
-  file = create_node(df.filepath(), 0, space, false, true, false);
-
-  ut_a(file != nullptr);
+  ut_a(err == DB_SUCCESS);
 
   /* For encryption tablespace, initial encryption information. */
   if (FSP_FLAGS_GET_ENCRYPTION(space->flags) &&
@@ -10182,6 +10206,22 @@ dberr_t fil_tablespace_open_for_recovery(space_id_t space_id) {
   return fil_system->open_for_recovery(space_id);
 }
 
+dberr_t Fil_system::open_for_prepare(const std::string &path) {
+  space_id_t space_id = get_tablespace_id(path);
+  fil_space_t *space;
+
+  auto status = ibd_open_for_recovery(space_id, path, space);
+
+  if (status == FIL_LOAD_DBWLR_CORRUPTION) {
+    return DB_CORRUPTION;
+  }
+  return DB_SUCCESS;
+}
+
+dberr_t fil_open_for_prepare(const std::string &path) {
+  return fil_system->open_for_prepare(path);
+}
+
 Fil_state fil_tablespace_path_equals(space_id_t space_id,
                                      const char *space_name, ulint fsp_flags,
                                      std::string old_path,
@@ -10448,11 +10488,16 @@ static void fil_make_abs_file_path(const char *file_name, ulint flags,
 @param[in]      page_id         Tablespace Id and first page in file
 @param[in]      parsed_bytes    Number of bytes parsed so far
 @param[in]      parse_only      Don't apply, parse only
+@param[in]      start_lsn       LSN of the redo record
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
 byte *fil_tablespace_redo_create(byte *ptr, const byte *end,
                                  const page_id_t &page_id, ulint parsed_bytes,
-                                 bool parse_only) {
+                                 bool parse_only IF_XB(, lsn_t start_lsn)) {
+#ifdef XTRABACKUP
+  byte *start_ptr = ptr;
+#endif /* XTRABACKUP */
+
   ut_a(page_id.page_no() == 0);
 
   /* We never recreate the system tablespace. */
@@ -10507,6 +10552,12 @@ byte *fil_tablespace_redo_create(byte *ptr, const byte *end,
 
     return nullptr;
   }
+
+#ifdef XTRABACKUP
+  if (ddl_tracker && redo_catchup_completed)
+    ddl_tracker->backup_file_op(page_id.space(), MLOG_FILE_CREATE, start_ptr,
+                                static_cast<ulint>(end - start_ptr), start_lsn);
+#endif /* XTRABACKUP */
 
   if (parse_only) {
     return ptr;
@@ -10588,7 +10639,12 @@ byte *fil_tablespace_redo_create(byte *ptr, const byte *end,
 
 byte *fil_tablespace_redo_rename(byte *ptr, const byte *end,
                                  const page_id_t &page_id, ulint parsed_bytes,
-                                 bool parse_only [[maybe_unused]]) {
+                                 bool parse_only
+                                 [[maybe_unused]] IF_XB(, lsn_t start_lsn)) {
+#ifdef XTRABACKUP
+  byte *start_ptr = ptr;
+#endif /* XTRABACKUP */
+
   ut_a(page_id.page_no() == 0);
 
   /* We never recreate the system tablespace. */
@@ -10667,6 +10723,12 @@ byte *fil_tablespace_redo_rename(byte *ptr, const byte *end,
 
   ptr += to_len;
   Fil_path::normalize(to_name);
+
+#ifdef XTRABACKUP
+  if (ddl_tracker && redo_catchup_completed)
+    ddl_tracker->backup_file_op(page_id.space(), MLOG_FILE_RENAME, start_ptr,
+                                static_cast<ulint>(end - start_ptr), start_lsn);
+#endif /* XTRABACKUP */
 
 #ifdef XTRABACKUP
   if (parse_only) {
@@ -10905,12 +10967,16 @@ byte *fil_tablespace_redo_extend(byte *ptr, const byte *end,
 @param[in]      page_id         Tablespace Id and first page in file
 @param[in]      parsed_bytes    Number of bytes parsed so far
 @param[in]      parse_only      Don't apply, parse only
+@param[in]      start_lsn       LSN of the redo record
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
 byte *fil_tablespace_redo_delete(byte *ptr, const byte *end,
                                  const page_id_t &page_id, ulint parsed_bytes,
-                                 bool parse_only) {
+                                 bool parse_only IF_XB(, lsn_t start_lsn)) {
   ut_a(page_id.page_no() == 0);
+#ifdef XTRABACKUP
+  byte *start_ptr = ptr;
+#endif /* XTRABACKUP */
 
   /* We never recreate the system tablespace. */
   ut_a(page_id.space() != TRX_SYS_SPACE);
@@ -10955,6 +11021,18 @@ byte *fil_tablespace_redo_delete(byte *ptr, const byte *end,
     return nullptr;
   }
 
+  const auto result =
+      fil_system->get_scanned_filename_by_space_id(page_id.space());
+
+  recv_sys->deleted.insert(page_id.space());
+  recv_sys->missing_ids.erase(page_id.space());
+
+#ifdef XTRABACKUP
+  if (ddl_tracker && redo_catchup_completed)
+    ddl_tracker->backup_file_op(page_id.space(), MLOG_FILE_DELETE, start_ptr,
+                                static_cast<ulint>(end - start_ptr), start_lsn);
+#endif /* XTRABACKUP */
+
   if (parse_only) {
     return ptr;
   }
@@ -10985,12 +11063,6 @@ byte *fil_tablespace_redo_delete(byte *ptr, const byte *end,
       ut_a(err == DB_SUCCESS);
     }
   }
-
-  const auto result =
-      fil_system->get_scanned_filename_by_space_id(page_id.space());
-
-  recv_sys->deleted.insert(page_id.space());
-  recv_sys->missing_ids.erase(page_id.space());
 
   if (result.second == nullptr) {
     /* No files map to this tablespace ID. The drop must
@@ -11498,7 +11570,7 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
   file.set_name(name.c_str());
   file.set_filepath(path.c_str());
 
-  dberr_t err = file.open_read_only(true);
+  dberr_t err = file.open_read_only(opt_lock_ddl != LOCK_DDL_REDUCED);
   if (err != DB_SUCCESS) {
     return {err, SPACE_UNKNOWN};
   }
@@ -11509,6 +11581,14 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
   err = file.validate_first_page(SPACE_UNKNOWN, &flush_lsn, false);
 
   space_id_t space_id = file.space_id();
+
+  /* Note that table has been renamed during scan, we will skip
+  opening renamed table since original table was loaded to cache
+  and copy/rename will be handled by ddl_tracker */
+  if (ddl_tracker && err == DB_TABLESPACE_EXISTS) {
+    ddl_tracker->add_renamed_table(space_id, path);
+  }
+
   if (err == DB_PAGE_IS_BLANK) {
     /* allow corrupted first page for xtrabackup, it could be just
     zero-filled page, which we'll restore from redo log later */
@@ -11535,9 +11615,10 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
 
   ut_a(space != NULL);
 
-  char *fn = fil_node_create(file.filepath(), n_pages, space, false, false);
-  if (fn == nullptr) {
-    return {DB_ERROR, space_id};
+  err = fil_node_create(file.filepath(), n_pages, space, false, false);
+  if (err != DB_SUCCESS) {
+    fil_space_free(space->id, false);
+    return {DB_CANNOT_OPEN_FILE, space_id};
   }
 
   /* For encrypted tablespace, initialize encryption
@@ -11561,7 +11642,16 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
   /* by opening the tablespace we forcing node and space objects
   in the cache to be populated with fields from space header */
   if (!fil_space_open(space->id)) {
+    if (srv_backup_mode && opt_lock_ddl == LOCK_DDL_REDUCED) {
+      if (fil_close_tablespace(space->id) != DB_SUCCESS)
+        xb::warn() << "Failed to close space_id: " << space->id;
+      return {DB_CANNOT_OPEN_FILE, space_id};
+    }
+
     xb::error() << "Failed to open tablespace " << space->name;
+  } else if (ddl_tracker) {
+    /* Note that we have opened and loaded the table to cache for copying */
+    ddl_tracker->add_table_from_ibd_scan(space_id, path);
   }
 
   if (!srv_backup_mode || srv_close_files) {
@@ -11577,7 +11667,8 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
 @param[in]  thread_id Thread ID
 @param[in,out]  result  result of the open */
 void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
-                               size_t thread_id, bool &result) {
+                               size_t thread_id, bool &result,
+                               bool is_prep_handle_ddls) {
   if (!result) return;
 
   for (auto it = start; it != end; ++it) {
@@ -11589,15 +11680,36 @@ void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
       continue;
     }
 
-    /* cannot use auto [err, space_id] = fil_open_for_xtrabackup() as space_id
-    is unused here and we get unused variable error during compilation */
-    dberr_t err;
-    std::tie(err, std::ignore) = fil_open_for_xtrabackup(
-        phy_filename, filename.substr(0, filename.length() - 4));
-    /* PXB-2275 - Allow DB_INVALID_ENCRYPTION_META as we will test it in the
-    end of the backup */
-    if (err != DB_SUCCESS && err != DB_INVALID_ENCRYPTION_META) {
-      result = false;
+    /* when processing ddl files on prepare phase we should load data files
+    without first page validation */
+    if (is_prep_handle_ddls) {
+      dberr_t err = fil_open_for_prepare(phy_filename);
+      if (err != DB_SUCCESS) {
+        result = false;
+      }
+    } else {
+      /* cannot use auto [err, space_id] = fil_open_for_xtrabackup() as space_id
+      is unused here and we get unused variable error during compilation */
+      dberr_t err;
+      std::tie(err, std::ignore) = fil_open_for_xtrabackup(
+          phy_filename, filename.substr(0, filename.length() - 4));
+
+      /* Allow deleted tables between disovery and file open when
+      LOCK_DDL_REDUCED, they will be handled by ddl_tracker */
+      if (err == DB_CANNOT_OPEN_FILE && opt_lock_ddl == LOCK_DDL_REDUCED) {
+        ddl_tracker->add_missing_table(phy_filename);
+      } else if (err == DB_TABLESPACE_EXISTS &&
+                 opt_lock_ddl == LOCK_DDL_REDUCED) {
+        /* table was renamed during scan. Since original table was loaded to
+        cache and rename ddl will be handled by ddl_tracker we skip loading
+        duplicate tablespace */
+        continue;
+      } else
+        /* PXB-2275 - Allow DB_INVALID_ENCRYPTION_META as we will test it in
+        the end of the backup */
+        if (err != DB_SUCCESS && err != DB_INVALID_ENCRYPTION_META) {
+          result = false;
+        }
     }
   }
 }
@@ -11867,9 +11979,14 @@ void Tablespace_dirs::set_scan_dirs(const std::string &in_directories) {
 }
 
 /** Discover tablespaces by reading the header from .ibd files.
-@param[in]      in_directories  Directories to scan
+@param[in] populate_fil_cache   if true, tabelspace are loaded to cache
+@param[in] is_prep_handled_ddls if true, xtrabackup uses ibd_open_for_recovery
+                                instead of fil_open_for_xtrabackup()
+@param[in] only_undo            if true, only the undo tablespaces are
+discovered
 @return DB_SUCCESS if all goes well */
-dberr_t Tablespace_dirs::scan(bool populate_fil_cache) {
+dberr_t Tablespace_dirs::scan(bool populate_fil_cache, bool is_prep_handle_ddls,
+                              bool only_undo) {
   Scanned_files ibd_files;
   Scanned_files undo_files;
   uint16_t count = 0;
@@ -11884,9 +12001,10 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache) {
 
     ib::info(ER_IB_MSG_379) << "Scanning '" << dir.path() << "'";
 
-    /* Walk the sub-tree of dir. */
-
-    Dir_Walker::walk(real_path_dir, true, [&](const std::string &path) {
+    /* Walk the sub-tree of dir. If it is undo tablespaces only discovery,
+    used by xtrabackup, we dont do look into sub directories */
+    bool walk_subtree = only_undo ? false : true;
+    Dir_Walker::walk(real_path_dir, walk_subtree, [&](const std::string &path) {
       /* If it is a file and the suffix matches ".ibd"
       or the undo file name format then store it for
       determining the space ID. */
@@ -11903,11 +12021,12 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache) {
 
       using Value = Scanned_files::value_type;
 
-      if (Fil_path::has_suffix(IBD, file.c_str())) {
-        ibd_files.push_back(Value{count, file});
-
-      } else if (Fil_path::is_undo_tablespace_name(file)) {
+      if (Fil_path::is_undo_tablespace_name(file)) {
         undo_files.push_back(Value{count, file});
+      } else if (only_undo) {
+        return;
+      } else if (Fil_path::has_suffix(IBD, file.c_str())) {
+        ibd_files.push_back(Value{count, file});
       }
 
       if (std::chrono::steady_clock::now() - start_time >= PRINT_INTERVAL) {
@@ -11957,7 +12076,7 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache) {
       check = std::bind(&Tablespace_dirs::duplicate_check, this, _1, _2, _3, _4,
                         _5, _6);
 
-  if (!populate_fil_cache) {
+  if (!populate_fil_cache && ibd_files.size() > 0) {
     par_for(PFS_NOT_INSTRUMENTED, ibd_files, n_threads, check, &m, &unique,
             &duplicates);
   }
@@ -11981,12 +12100,16 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache) {
     err = DB_SUCCESS;
   }
 
-  if (err == DB_SUCCESS && populate_fil_cache) {
-    bool result = true;
-    std::function<void(const Const_iter &, const Const_iter &, size_t, bool &)>
-        open = std::bind(&Tablespace_dirs::open_ibd, this, _1, _2, _3, _4);
+  debug_sync_point("xtrabackup_suspend_between_file_discovery_and_open");
 
-    par_for(PFS_NOT_INSTRUMENTED, ibd_files, n_threads, open, result);
+  if (err == DB_SUCCESS && populate_fil_cache && !only_undo) {
+    bool result = true;
+    std::function<void(const Const_iter &, const Const_iter &, size_t, bool &,
+                       bool)>
+        open = std::bind(&Tablespace_dirs::open_ibd, this, _1, _2, _3, _4, _5);
+
+    par_for(PFS_NOT_INSTRUMENTED, ibd_files, n_threads, open, result,
+            is_prep_handle_ddls);
 
     if (!result) err = DB_FAIL;
   }
@@ -12003,10 +12126,15 @@ void fil_set_scan_dirs(const std::string &directories) {
 }
 
 /** Discover tablespaces by reading the header from .ibd files.
-@param[in]  populate_fil_cache Whether to load tablespaces into fil cache
+@param[in] populate_fil_cache   Whether to load tablespaces into fil cache
+@param[in] is_prep_handled_ddls if true, xtrabackup uses ibd_open_for_recovery
+                                instead of fil_open_for_xtrabackup()
+@param[in] only_undo            if true, only the undo tablespaces are
+                                discovered
 @return DB_SUCCESS if all goes well */
-dberr_t fil_scan_for_tablespaces(bool populate_fil_cache) {
-  return (fil_system->scan(populate_fil_cache));
+dberr_t fil_scan_for_tablespaces(bool populate_fil_cache,
+                                 bool is_prep_handle_ddls, bool only_undo) {
+  return (fil_system->scan(populate_fil_cache, is_prep_handle_ddls, only_undo));
 }
 
 /** Open all known tablespaces. */

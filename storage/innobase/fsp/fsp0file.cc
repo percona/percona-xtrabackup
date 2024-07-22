@@ -121,9 +121,11 @@ dberr_t Datafile::open_read_only(bool strict) {
   }
 
   set_open_flags(OS_FILE_OPEN);
-  m_handle = os_file_create_simple_no_error_handling(
-      innodb_data_file_key, m_filepath, m_open_flags, OS_FILE_READ_ONLY, true,
-      &success);
+
+  m_handle = os_file_create(
+      innodb_data_file_key, m_filepath,
+      OS_FILE_OPEN | OS_FILE_ON_ERROR_SILENT | OS_FILE_ON_ERROR_NO_EXIT,
+      OS_FILE_NORMAL, OS_DATA_FILE, OS_FILE_READ_ONLY, &success);
 
   if (success) {
     m_exists = true;

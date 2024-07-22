@@ -25,6 +25,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "changed_page_tracking.h"
 #include "datasink.h"
 #include "mysql.h"
+#include "xb0xb.h"
 #include "xb_dict.h"
 #include "xb_regex.h"
 #include "xbstream.h"
@@ -208,6 +209,8 @@ extern uint opt_dump_innodb_buffer_pool_timeout;
 extern uint opt_dump_innodb_buffer_pool_pct;
 extern bool opt_dump_innodb_buffer_pool;
 
+extern TYPELIB opt_lock_ddl_typelib;
+
 extern bool punch_hole_supported;
 extern bool compile_regex(const char *regex_string, const char *error_context,
                           xb_regex_t *compiled_re);
@@ -237,15 +240,22 @@ enum binlog_info_enum {
 void xtrabackup_io_throttling(void);
 bool xb_write_delta_metadata(const char *filename, const xb_delta_info_t *info);
 
+std::string ddl_lock_type_to_str(lock_ddl_type_t type);
+
+lock_ddl_type_t ddl_lock_type_from_str(std::string type);
+
 datafiles_iter_t *datafiles_iter_new(
     const std::shared_ptr<const xb::backup::dd_space_ids>);
 fil_node_t *datafiles_iter_next(datafiles_iter_t *it);
 void datafiles_iter_free(datafiles_iter_t *it);
 
+bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n,
+                              const char *dest_name);
+
 /************************************************************************
 Initialize the tablespace memory cache and populate it by scanning for and
 opening data files */
-ulint xb_data_files_init(void);
+ulint xb_data_files_init(bool is_prep_handle_ddls);
 
 /************************************************************************
 Destroy the tablespace memory cache. */
@@ -332,4 +342,6 @@ bool xb_process_datadir(const char *path,   /*!<in: datadir path */
 @param[in,out]	buf		log header buffer
 @param[in]	lsn		lsn to update */
 void update_log_temp_checkpoint(byte *buf, lsn_t lsn);
+
+void xb_scan_for_tablespaces(bool is_prep_handle_ddls, bool only_undo);
 #endif /* XB_XTRABACKUP_H */

@@ -1790,10 +1790,14 @@ class Dir_Walker {
  public:
   using Path = std::string;
 
+#ifdef XTRABACKUP
+  static std::tuple<bool, os_file_type_t> is_directory(const Path &path);
+#else
   /** Check if the path is a directory. The file/directory must exist.
   @param[in]    path            The path to check
   @return true if it is a directory */
   static bool is_directory(const Path &path);
+#endif /* XTRABACKUP */
 
   /** Depth first traversal of the directory starting from basedir
   @param[in]  basedir    Start scanning from this directory
