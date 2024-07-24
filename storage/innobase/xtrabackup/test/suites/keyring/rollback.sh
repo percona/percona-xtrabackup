@@ -69,6 +69,10 @@ cp ${keyring_component_cnf} $mysql_datadir
 start_server
 verify_db_state test
 
+# Reconfigure without innodb_undo_log_encrypt/redo_log_encrypt/binlog_encrypt
+MYSQLD_EXTRA_MY_CNF_OPTS=""
+configure_server_with_component
+
 vlog "Test 2: No rollback on encrypted table. Lack of keyring shouldn't fail the prepare"
 
 vlog "Backup"
