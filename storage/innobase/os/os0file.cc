@@ -7891,7 +7891,10 @@ void os_file_set_umask(mode_t umask) {
 }
 
 #ifdef XTRABACKUP
-void os_file_allow_reset_umask() { umask_was_already_set = false; }
+void os_file_reset_umask() {
+  umask_was_already_set = false;
+  os_innodb_umask = my_umask;
+}
 #endif /* XTRABACKUP */
 
 #endif

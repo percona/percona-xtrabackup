@@ -1772,7 +1772,7 @@ constexpr mode_t os_innodb_umask_default = std::numeric_limits<mode_t>::max();
 #ifdef XTRABACKUP
 /** We need to allow resetting the umask in case of xtrabackup.
  */
-void os_file_allow_reset_umask();
+void os_file_reset_umask();
 #endif /* XTRABACKUP */
 
 #endif

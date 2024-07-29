@@ -2036,7 +2036,7 @@ static bool innodb_init_param(void) {
     }
   }
 
-  os_file_allow_reset_umask();
+  os_file_reset_umask();
 
   os_file_set_umask((ulint)0664);
 
