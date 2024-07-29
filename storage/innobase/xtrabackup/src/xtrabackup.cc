@@ -2036,6 +2036,10 @@ static bool innodb_init_param(void) {
     }
   }
 
+  os_file_allow_reset_umask();
+
+  os_file_set_umask((ulint)0664);
+
   /* Setup the memory alloc/free tracing mechanisms before calling
   any functions that could possibly allocate memory. */
   ut_new_boot();

@@ -201,6 +201,7 @@ still created. See Kernel Bugzilla Bug 218049 */
 Unix; the value of os_innodb_umask is initialized in ha_innodb.cc to my_umask.
 It is a global value and can't be modified once it is set. */
 static mode_t os_innodb_umask = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
+static bool umask_was_already_set{false};
 #else
 /** On Windows when using native AIO the number of AIO requests
 that a thread can handle at a given time is limited to 32
@@ -7884,11 +7885,15 @@ void os_aio_print_pending_io(FILE *file) { AIO::print_to_file(file); }
 
 #ifndef _WIN32
 void os_file_set_umask(mode_t umask) {
-  static bool was_already_set{false};
-  ut_a(!was_already_set);
-  was_already_set = true;
+  ut_a(!umask_was_already_set);
+  umask_was_already_set = true;
   os_innodb_umask = umask;
 }
+
+#ifdef XTRABACKUP
+void os_file_allow_reset_umask() { umask_was_already_set = false; }
+#endif /* XTRABACKUP */
+
 #endif
 
 /** Check if the path is a directory. The file/directory must exist.
