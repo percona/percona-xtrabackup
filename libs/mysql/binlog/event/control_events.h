@@ -1,15 +1,16 @@
-/* Copyright (c) 2014, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -367,7 +368,7 @@ class Format_description_event : public Binary_log_event {
   A stop event is written to the log files under these circumstances:
   - A master writes the event to the binary log when it shuts down.
   - A slave writes the event to the relay log when it shuts down or
-    when a RESET SLAVE statement is executed.
+    when a RESET REPLICA statement is executed.
 
   @section Stop_event_binary_format Binary Format
 
@@ -387,7 +388,7 @@ class Stop_event : public Binary_log_event {
     A Stop_event is occurs under these circumstances:
     -  A master writes the event to the binary log when it shuts down
     -  A slave writes the event to the relay log when it shuts down or when a
-       RESET SLAVE statement is executed
+       RESET REPLICA statement is executed
     @param buf  Contains the serialized event.
     @param fde  An FDE event (see Rotate_event constructor for more info).
   */
@@ -1159,7 +1160,7 @@ class Gtid_event : public Binary_log_event,
         mysql::serialization::define_field(immediate_commit_timestamp),
         mysql::serialization::define_field(
             original_commit_timestamp, Field_encode_predicate([this]() -> bool {
-              return this->original_commit_timestamp ==
+              return this->original_commit_timestamp !=
                      this->immediate_commit_timestamp;
             })),
         mysql::serialization::define_field(transaction_length),
@@ -1756,6 +1757,10 @@ class Heartbeat_event : public Binary_log_event {
   const char *get_log_ident() { return log_ident; }
   // Return the length of file name
   unsigned int get_ident_len() { return ident_len; }
+
+  ~Heartbeat_event() {
+    if (log_ident) bapi_free(const_cast<char *>(log_ident));
+  }
 
  protected:
   const char *log_ident;

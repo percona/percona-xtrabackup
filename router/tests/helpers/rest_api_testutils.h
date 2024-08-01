@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -82,7 +83,7 @@ void fetch_json(RestClient &rest_client, const std::string &uri,
  */
 void request_json(
     RestClient &rest_client, const std::string &uri,
-    HttpMethod::type http_method, HttpStatusCode::key_type http_status_code,
+    HttpMethod::key_type http_method, HttpStatusCode::key_type http_status_code,
     JsonDocument &json_doc,
     const std::string &expected_content_type = "application/json");
 
@@ -151,7 +152,7 @@ void json_schema_validate(const JsonDocument &json_doc,
 void mark_object_additional_properties(JsonValue &v,
                                        JsonDocument::AllocatorType &allocator);
 
-std::string http_method_to_string(const HttpMethod::type method);
+std::string http_method_to_string(const HttpMethod::key_type method);
 
 /**
  * wait until a REST endpoint is ready to handle requests.

@@ -16,16 +16,17 @@
 # Execute simple statments on master which does not cause any error on slave.
 # Check that no warning should be generated on slave.
 ###############################################################################
+# This test case is specific to binlog_format=statement
 --source include/have_binlog_format_statement.inc
 # Inorder to grep a specific error pattern in error log a fresh error log
 # needs to be generated.
 --source include/force_restart.inc
---source include/master-slave.inc
+--source include/rpl/init_source_replica.inc
 
 CREATE TABLE t1 (c1 INT) ENGINE=InnoDB;
 INSERT INTO test.t1 VALUES (100);
 DROP TABLE t1;
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 
 # Script produces different warning when executed along with MTS, hence added
 # a generic replace regular expression.
@@ -35,4 +36,4 @@ DROP TABLE t1;
 --source include/grep_pattern.inc
 --remove_file $grep_file
 
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

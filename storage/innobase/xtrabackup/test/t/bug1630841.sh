@@ -5,7 +5,7 @@
 require_server_version_higher_than 5.6.0
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
-default-authentication-plugin=sha256_password
+authentication-policy=sha256_password
 ssl-ca=${PWD}/inc/ssl-certs/cacert.pem
 ssl-cert=${PWD}/inc/ssl-certs/server-cert.pem
 ssl-key=${PWD}/inc/ssl-certs/server-key.pem
@@ -92,7 +92,7 @@ if [ "$SEVER_SSL" = "openssl" -a "$XTRABACKUP_SSL" = "openssl" ]
 then
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
-default-authentication-plugin=sha256_password
+authentication-policy=sha256_password
 sha256_password_private_key_path=${PWD}/inc/ssl-certs/rsa_private_key.pem
 sha256_password_public_key_path=${PWD}/inc/ssl-certs/rsa_public_key.pem
 "

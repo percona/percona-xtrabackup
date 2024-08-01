@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -39,14 +40,17 @@
 // Harness interface include files
 #include "mysql/harness/config_option.h"
 #include "mysql/harness/config_parser.h"
+#include "mysql/harness/dynamic_config.h"
 #include "mysql/harness/loader.h"
 #include "mysql/harness/logging/logging.h"
 #include "mysql/harness/plugin.h"
 #include "mysql/harness/plugin_config.h"
+#include "mysql/harness/section_config_exposer.h"
 #include "mysql/harness/utility/string.h"
 
-#include "mysqlrouter/http_auth_backend_component.h"
+#include "mysqlrouter/component/http_auth_backend_component.h"
 #include "mysqlrouter/http_auth_backend_export.h"
+#include "mysqlrouter/http_constants.h"
 #include "mysqlrouter/metadata_cache.h"
 #include "mysqlrouter/supported_http_options.h"
 
@@ -74,12 +78,12 @@ class HtpasswdPluginConfig : public mysql_harness::BasePluginConfig {
     GET_OPTION_CHECKED(filename, section, "filename", StringOption{});
   }
 
-  std::string get_default(const std::string &option) const override {
+  std::string get_default(std::string_view option) const override {
     if (option == "filename") return "users";
     return std::string();
   }
 
-  bool is_required(const std::string & /* option */) const override {
+  bool is_required(std::string_view /* option */) const override {
     return false;
   }
 };
@@ -120,11 +124,11 @@ class PluginConfig : public mysql_harness::BasePluginConfig {
     GET_OPTION_CHECKED(backend, section, "backend", StringOption{});
   }
 
-  std::string get_default(const std::string & /* option */) const override {
-    return std::string();
+  std::string get_default(std::string_view /* option */) const override {
+    return {};
   }
 
-  bool is_required(const std::string &option) const override {
+  bool is_required(std::string_view option) const override {
     if (option == "backend") return true;
     return false;
   }
@@ -219,6 +223,51 @@ static const std::array<const char *, 2> required = {{
     "router_protobuf",
 }};
 
+namespace {
+
+class HttpAuthBackendConfigExposer
+    : public mysql_harness::SectionConfigExposer {
+ public:
+  using DC = mysql_harness::DynamicConfig;
+  HttpAuthBackendConfigExposer(
+      const bool initial, const PluginConfig &plugin_config,
+      const mysql_harness::ConfigSection &default_section,
+      const std::string &key)
+      : mysql_harness::SectionConfigExposer(
+            initial, default_section,
+            DC::SectionId{"http_authentication_backends", key}),
+        plugin_config_(plugin_config) {}
+
+  void expose() override {
+    expose_option("backend", plugin_config_.backend,
+                  std::string(kHttpAuthPluginDefaultBackend));
+    expose_option("filename", plugin_config_.filename, "");
+  }
+
+ private:
+  const PluginConfig &plugin_config_;
+};
+
+}  // namespace
+
+static void expose_configuration(mysql_harness::PluginFuncEnv *env,
+                                 const char *key, bool initial) {
+  const mysql_harness::AppInfo *info = get_app_info(env);
+
+  if (!info->config) return;
+
+  for (const mysql_harness::ConfigSection *section : info->config->sections()) {
+    if (section->name != kSectionName || section->key != key) {
+      continue;
+    }
+
+    PluginConfig config(section);
+    HttpAuthBackendConfigExposer(initial, config,
+                                 info->config->get_default_section(), key)
+        .expose();
+  }
+}
+
 extern "C" {
 mysql_harness::Plugin HTTP_AUTH_BACKEND_EXPORT
     harness_plugin_http_auth_backend = {
@@ -239,5 +288,6 @@ mysql_harness::Plugin HTTP_AUTH_BACKEND_EXPORT
         false,    // declares_readiness
         http_backend_supported_options.size(),
         http_backend_supported_options.data(),
+        expose_configuration,
 };
 }

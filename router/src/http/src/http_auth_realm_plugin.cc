@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -47,15 +48,18 @@
 
 // Harness interface include files
 #include "mysql/harness/config_parser.h"
+#include "mysql/harness/dynamic_config.h"
 #include "mysql/harness/loader.h"
 #include "mysql/harness/logging/logging.h"
 #include "mysql/harness/plugin.h"
 #include "mysql/harness/plugin_config.h"
+#include "mysql/harness/section_config_exposer.h"
 #include "mysql/harness/utility/string.h"
 
-#include "mysqlrouter/http_auth_backend_component.h"
-#include "mysqlrouter/http_auth_realm_component.h"
+#include "mysqlrouter/component/http_auth_backend_component.h"
+#include "mysqlrouter/component/http_auth_realm_component.h"
 #include "mysqlrouter/http_auth_realm_export.h"
+#include "mysqlrouter/http_constants.h"
 #include "mysqlrouter/supported_http_options.h"
 
 IMPORT_LOG_FUNCTIONS()
@@ -88,8 +92,8 @@ class HttpAuthRealmPluginConfig : public mysql_harness::BasePluginConfig {
     GET_OPTION_CHECKED(name, section, "name", StringOption{});
   }
 
-  std::string get_default(const std::string &option) const override {
-    const std::map<std::string, std::string> defaults{
+  std::string get_default(std::string_view option) const override {
+    const std::map<std::string_view, std::string> defaults{
         {"require", "valid-user"},
     };
 
@@ -100,7 +104,7 @@ class HttpAuthRealmPluginConfig : public mysql_harness::BasePluginConfig {
     return it->second;
   }
 
-  bool is_required(const std::string &option) const override {
+  bool is_required(std::string_view option) const override {
     if (option == "name") return true;
     if (option == "backend") return true;
     if (option == "method") return true;
@@ -109,7 +113,6 @@ class HttpAuthRealmPluginConfig : public mysql_harness::BasePluginConfig {
 };
 
 std::shared_ptr<HttpAuthRealmComponent::value_type> auth_realms;
-constexpr const char kMethodNameBasic[]{"basic"};
 
 static void init(mysql_harness::PluginFuncEnv *env) {
   const mysql_harness::AppInfo *info = get_app_info(env);
@@ -119,7 +122,7 @@ static void init(mysql_harness::PluginFuncEnv *env) {
   }
 
   try {
-    std::set<std::string> known_methods{{kMethodNameBasic}};
+    std::set<std::string> known_methods{{std::string(kHttpDefaultAuthMethod)}};
     std::set<std::string> known_backends;
     for (const mysql_harness::ConfigSection *section :
          info->config->sections()) {
@@ -145,7 +148,7 @@ static void init(mysql_harness::PluginFuncEnv *env) {
 
       HttpAuthRealmPluginConfig config(section);
 
-      if (config.method != kMethodNameBasic) {
+      if (config.method != kHttpDefaultAuthMethod) {
         throw std::invalid_argument(
             "unsupported authentication method for [http_auth_realm] '" +
             section->key + "': " + config.method + ", supported method(s): " +
@@ -199,6 +202,51 @@ static const std::array<const char *, 1> required = {{
     "logger",
 }};
 
+namespace {
+
+class HttpAuthRealmConfigExposer : public mysql_harness::SectionConfigExposer {
+ public:
+  using DC = mysql_harness::DynamicConfig;
+  HttpAuthRealmConfigExposer(
+      const bool initial, const HttpAuthRealmPluginConfig &plugin_config,
+      const mysql_harness::ConfigSection &default_section)
+      : mysql_harness::SectionConfigExposer(
+            initial, default_section,
+            DC::SectionId{"http_authentication_realm", ""}),
+        plugin_config_(plugin_config) {}
+
+  void expose() override {
+    expose_option("name", plugin_config_.name, "default_realm");
+    expose_option("backend", plugin_config_.backend,
+                  std::string(kHttpDefaultAuthBackendName));
+    expose_option("method", plugin_config_.method,
+                  std::string(kHttpDefaultAuthMethod));
+    expose_option("require", plugin_config_.require,
+                  plugin_config_.get_default("require"));
+  }
+
+ private:
+  const HttpAuthRealmPluginConfig &plugin_config_;
+};
+
+}  // namespace
+
+static void expose_configuration(mysql_harness::PluginFuncEnv *env,
+                                 const char * /*key*/, bool initial) {
+  const mysql_harness::AppInfo *info = get_app_info(env);
+
+  if (!info->config) return;
+
+  for (const mysql_harness::ConfigSection *section : info->config->sections()) {
+    if (section->name == kSectionName) {
+      HttpAuthRealmPluginConfig config{section};
+      HttpAuthRealmConfigExposer(initial, config,
+                                 info->config->get_default_section())
+          .expose();
+    }
+  }
+}
+
 extern "C" {
 mysql_harness::Plugin HTTP_AUTH_REALM_EXPORT harness_plugin_http_auth_realm = {
     mysql_harness::PLUGIN_ABI_VERSION,       // abi-version
@@ -218,5 +266,6 @@ mysql_harness::Plugin HTTP_AUTH_REALM_EXPORT harness_plugin_http_auth_realm = {
     false,    // declares_readiness
     http_auth_realm_suported_options.size(),
     http_auth_realm_suported_options.data(),
+    expose_configuration,
 };
 }

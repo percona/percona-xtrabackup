@@ -4,35 +4,35 @@
 # Problem:
 # =======
 # If you have a relay log index file that has ended up with
-# some relay log files that do not exists, then RESET SLAVE
+# some relay log files that do not exists, then RESET REPLICA
 # ALL is not enough to get back to a clean state.
 ###############################################################################
 # Remove all slave-relay-bin.0* files (do not remove slave-relay-bin.index)
 # During server restart rli initialization will fail as there are no
-# relay logs.  In case of bug RESET SLAVE will not do the required clean up
-# as rli is not inited and subsequent START SLAVE will fail.
+# relay logs.  In case of bug RESET REPLICA will not do the required clean up
+# as rli is not inited and subsequent START REPLICA will fail.
 # Disable "Warning  1612  Being purged log ./slave-relay-bin.0* was not found"
 # because it is different on Unix and Windows systems.
 
---source include/have_binlog_format_mixed.inc
---source include/master-slave.inc
+--source include/have_binlog_format_row.inc
+--source include/rpl/init_source_replica.inc
 
---source include/rpl_connection_master.inc
+--source include/rpl/connection_source.inc
 CREATE TABLE t1 (c1 INT);
 INSERT INTO t1 (c1) VALUES (1);
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 
---source include/rpl_connection_slave.inc
---source include/stop_slave_sql.inc
+--source include/rpl/connection_replica.inc
+--source include/rpl/stop_applier.inc
 --let $MYSQLD_SLAVE_DATADIR= `select @@datadir`
 
---source include/rpl_connection_master.inc
+--source include/rpl/connection_source.inc
 # Generate more relay logs on slave.
 FLUSH LOGS;
 FLUSH LOGS;
 INSERT INTO t1 (c1) VALUES (2);
 
---source include/sync_slave_io_with_master.inc
+--source include/rpl/sync_to_replica_received.inc
 call mtr.add_suppression("File '.*slave-relay-bin.");
 call mtr.add_suppression("Could not open log file");
 call mtr.add_suppression("Failed to open the relay log");
@@ -44,50 +44,50 @@ call mtr.add_suppression("Failed to create or recover replication info repositor
 call mtr.add_suppression("listed in the index, but failed to stat");
 call mtr.add_suppression("Error counting relay log space");
 
-# Stop slave
+# Stop replica
 --let $rpl_server_number= 2
---source include/rpl_stop_server.inc
+--source include/rpl/stop_server.inc
 
 # Delete file(s)
 --echo # Removing $remove_pattern file(s)
 --let $remove_pattern= slave-relay-bin.0*
 --remove_files_wildcard $MYSQLD_SLAVE_DATADIR $remove_pattern
 
-# Start slave
+# Start replica
 --let $rpl_server_number= 2
---source include/rpl_start_server.inc
+--source include/rpl/start_server.inc
 
-# Start slave must fail because of the removed file(s).
+# Start replica must fail because of the removed file(s).
 --error ER_REPLICA_AM_INIT_REPOSITORY
-START SLAVE;
+START REPLICA;
 
 # Try a second time, it must fail again.
 --error ER_REPLICA_AM_INIT_REPOSITORY
-START SLAVE;
+START REPLICA;
 
-# Retrieve master executed position before reset slave.
---let $master_exec_file= query_get_value("SHOW SLAVE STATUS", Relay_Master_Log_File, 1)
---let $master_exec_pos= query_get_value("SHOW SLAVE STATUS", Exec_Master_Log_Pos, 1)
+# Retrieve master executed position before reset replica.
+--let $master_exec_file= query_get_value("SHOW REPLICA STATUS", Relay_Source_Log_File, 1)
+--let $master_exec_pos= query_get_value("SHOW REPLICA STATUS", Exec_Source_Log_Pos, 1)
 
-# Reset slave.
+# Reset replica.
 # Disable "Warning  1612  Being purged log ./slave-relay-bin.0* was not found"
 # because it is different on Unix and Windows systems.
 --disable_warnings
-RESET SLAVE;
+RESET REPLICA;
 --enable_warnings
 RESET BINARY LOGS AND GTIDS;
 DROP TABLE t1;
-# Start slave.
---source include/start_slave.inc
+# Start replica.
+--source include/rpl/start_replica.inc
 
---source include/rpl_connection_master.inc
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/connection_source.inc
+--source include/rpl/sync_to_replica.inc
 # Check consistency.
 --let $diff_tables= master:t1, slave:t1
 --source include/diff_tables.inc
 
 # Cleanup
---source include/rpl_connection_master.inc
+--source include/rpl/connection_source.inc
 DROP TABLE t1;
---source include/sync_slave_sql_with_master.inc
---source include/rpl_end.inc
+--source include/rpl/sync_to_replica.inc
+--source include/rpl/deinit.inc

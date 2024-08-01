@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2023, Oracle and/or its affiliates.
+Copyright (c) 1996, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -264,6 +265,9 @@ struct TrxFactory {
 
     trx->dict_operation_lock_mode = 0;
 
+    ut_a(trx->in_innodb == 0);
+    ut_a(trx->in_depth == 0);
+
     trx->xid = ut::new_withkey<xid_t>(UT_NEW_THIS_FILE_PSI_KEY);
 
     trx->detailed_error = reinterpret_cast<char *>(
@@ -500,11 +504,12 @@ static void trx_free(trx_t *&trx) {
 
   ut_ad(trx->read_view == nullptr);
   ut_ad(trx->is_dd_trx == false);
+  ut_ad(trx->in_depth == 0);
 
   /* trx locking state should have been reset before returning trx
   to pool */
   ut_ad(trx->will_lock == 0);
-
+  trx->in_innodb &= TRX_FORCE_ROLLBACK_MASK;
   trx_pools->mem_free(trx);
 
   trx = nullptr;
@@ -619,6 +624,7 @@ void trx_free_prepared_or_active_recovered(trx_t *trx) {
   trx->state.store(TRX_STATE_NOT_STARTED, std::memory_order_relaxed);
   trx->will_lock = 0;
 
+  trx_validate_state_before_free(trx);
   trx_free(trx);
 }
 
@@ -718,8 +724,9 @@ static void trx_resurrect_table_ids(trx_t *trx, const trx_undo_ptr_t *undo_ptr,
   // Since resurrecting a transaction can take a long time, progress is logged
   // at regular intervals to the error log. The debug value is provided for
   // testing
-  auto const progress_log_interval =
-      DBUG_EVALUATE_IF("resurrect_logs", 1s, 30s);
+  auto const progress_log_interval = 30s;
+  const bool progress_log_debug =
+      DBUG_EVALUATE_IF("resurrect_logs", true, false);
 
   do {
     ulint type;
@@ -750,7 +757,7 @@ static void trx_resurrect_table_ids(trx_t *trx, const trx_undo_ptr_t *undo_ptr,
     auto now = std::chrono::steady_clock::now();
     auto time_diff = now - last_progress_log_time;
 
-    if (time_diff >= progress_log_interval) {
+    if (time_diff >= progress_log_interval || progress_log_debug) {
       ib::info(ER_IB_RESURRECT_RECORD_PROGRESS, n_undo_recs, n_undo_pages);
       last_progress_log_time = now;
     }
@@ -772,6 +779,8 @@ void trx_resurrect_locks(bool all) {
       continue;
     }
 
+    const bool is_prepared = trx_state_eq(trx, TRX_STATE_PREPARED);
+
     const table_id_set &tables = element.second;
 
     for (auto table_id : tables) {
@@ -791,17 +800,13 @@ void trx_resurrect_locks(bool all) {
         continue;
       }
 
-      bool is_XA = false;
-
-      if (trx->state.load(std::memory_order_relaxed) == TRX_STATE_PREPARED &&
-          !dict_table_is_sdi(table->id)) {
+      if (is_prepared && !dict_table_is_sdi(table->id)) {
         trx->mod_tables.insert(table);
-        is_XA = true;
       }
       DICT_TF2_FLAG_SET(table, DICT_TF2_RESURRECT_PREPARED);
 
       /* We don't rollback DDL or XA prepared transaction in background */
-      if (!all || is_XA) {
+      if (trx->ddl_operation || is_prepared) {
         lock_table_ix_resurrect(table, trx);
         ib::info(ER_IB_RESURRECT_ACQUIRE_TABLE_LOCK, ulong(table->id),
                  table->name.m_name);
@@ -2578,34 +2583,18 @@ void trx_print_low(FILE *f,
 
   const auto trx_state = trx->state.load(std::memory_order_relaxed);
 
-  switch (trx_state) {
-    case TRX_STATE_NOT_STARTED:
-      fputs(", not started", f);
-      break;
-    case TRX_STATE_FORCED_ROLLBACK:
-      fputs(", forced rollback", f);
-      break;
-    case TRX_STATE_ACTIVE:
-      fprintf(f, ", ACTIVE %lu sec",
-              (ulong)std::chrono::duration_cast<std::chrono::seconds>(
-                  std::chrono::system_clock::now() -
-                  trx->start_time.load(std::memory_order_relaxed))
-                  .count());
-      break;
-    case TRX_STATE_PREPARED:
-      fprintf(f, ", ACTIVE (PREPARED) %lu sec",
-              (ulong)std::chrono::duration_cast<std::chrono::seconds>(
-                  std::chrono::system_clock::now() -
-                  trx->start_time.load(std::memory_order_relaxed))
-                  .count());
-      break;
-    case TRX_STATE_COMMITTED_IN_MEMORY:
-      fputs(", COMMITTED IN MEMORY", f);
-      break;
-    default:
-      fprintf(f, ", state %lu", static_cast<ulong>(trx_state));
-      ut_d(ut_error);
-      ut_o(break);
+  if (const char *const state_string = trx_state_string(trx_state)) {
+    fprintf(f, ", %s", state_string);
+  } else {
+    fprintf(f, ", state %d", to_int(trx_state));
+  }
+
+  if (trx_state == TRX_STATE_ACTIVE || trx_state == TRX_STATE_PREPARED) {
+    unsigned long secs = std::chrono::duration_cast<std::chrono::seconds>(
+                             std::chrono::system_clock::now() -
+                             trx->start_time.load(std::memory_order_relaxed))
+                             .count();
+    fprintf(f, " %lu sec", secs);
   }
 
   /* prevent a race condition */

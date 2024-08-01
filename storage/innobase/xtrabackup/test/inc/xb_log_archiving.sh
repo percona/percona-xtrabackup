@@ -35,6 +35,11 @@ rm -rf $mysql_datadir
 xtrabackup --copy-back --target-dir=$topdir/backup \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
+if [[ "${KEYRING_TYPE}" = "component" ]]; then
+  cp ${instance_local_manifest}  $mysql_datadir
+  cp ${keyring_component_cnf} $mysql_datadir
+fi           
+
 start_server
 
 mysql -e "CHECKSUM TABLE t" test

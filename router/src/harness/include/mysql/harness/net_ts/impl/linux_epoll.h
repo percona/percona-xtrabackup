@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -61,8 +62,7 @@ inline stdx::expected<int, std::error_code> create() {
     int epfd = ::epoll_create1(EPOLL_CLOEXEC);
 
     if (-1 == epfd) {
-      return stdx::make_unexpected(
-          std::error_code{errno, std::generic_category()});
+      return stdx::unexpected(std::error_code{errno, std::generic_category()});
     }
 
     return epfd;
@@ -72,8 +72,7 @@ inline stdx::expected<void, std::error_code> ctl(int epfd, Cmd cmd, int fd,
                                                  epoll_event *ev) {
   return uninterruptable([&]() -> stdx::expected<void, std::error_code> {
     if (-1 == ::epoll_ctl(epfd, static_cast<int>(cmd), fd, ev)) {
-      return stdx::make_unexpected(
-          std::error_code{errno, std::generic_category()});
+      return stdx::unexpected(std::error_code{errno, std::generic_category()});
     }
 
     return {};
@@ -86,10 +85,10 @@ inline stdx::expected<size_t, std::error_code> wait(
   int res = ::epoll_wait(epfd, fd_events, num_fd_events, timeout.count());
 
   if (res < 0) {
-    return stdx::make_unexpected(impl::socket::last_error_code());
+    return stdx::unexpected(impl::socket::last_error_code());
   } else if (res == 0) {
     // timed out
-    return stdx::make_unexpected(make_error_code(std::errc::timed_out));
+    return stdx::unexpected(make_error_code(std::errc::timed_out));
   }
 
   return res;

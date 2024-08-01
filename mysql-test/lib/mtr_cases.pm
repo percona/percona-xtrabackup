@@ -1,16 +1,17 @@
 # -*- cperl -*-
-# Copyright (c) 2005, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2005, 2024, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1640,12 +1641,12 @@ my @tags = (
   [ "include/ndb_no_result_file.inc", "ndb_no_result_file_test", 1 ],
 
   # The tests with below four .inc files are considered to be rpl tests.
-  [ "include/rpl_init.inc",    "rpl_test", 1 ],
-  [ "include/rpl_ip_mix.inc",  "rpl_test", 1 ],
-  [ "include/rpl_ip_mix2.inc", "rpl_test", 1 ],
-  [ "include/rpl_ipv6.inc",    "rpl_test", 1 ],
+  [ "include/rpl/init.inc",    "rpl_test", 1 ],
+  [ "common/rpl/ip_mix.inc",  "rpl_test", 1 ],
+  [ "common/rpl/ip_mix2.inc", "rpl_test", 1 ],
+  [ "common/rpl/ipv6.inc",    "rpl_test", 1 ],
 
-  [ "include/ndb_master-slave.inc", "ndb_test",       1 ],
+  [ "include/ndb_rpl_init_source_replica.inc", "ndb_test",       1 ],
   [ "federated.inc",                "federated_test", 1 ],
   [ "include/not_windows.inc",      "not_windows",    1 ],
   [ "include/not_parallel.inc",     "not_parallel",   1 ],

@@ -1,15 +1,16 @@
-/* Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -179,7 +180,8 @@ struct RelationalExpression {
         join_conditions(thd->mem_root),
         equijoin_conditions(thd->mem_root),
         properties_for_join_conditions(thd->mem_root),
-        properties_for_equijoin_conditions(thd->mem_root) {}
+        properties_for_equijoin_conditions(thd->mem_root),
+        m_pushable_conditions(thd->mem_root) {}
 
   table_map tables_in_subtree;
 
@@ -190,7 +192,6 @@ struct RelationalExpression {
 
   // If type == TABLE.
   const Table_ref *table;
-  Mem_root_array<Item *> join_conditions_pushable_to_this;
 
   // The CompanionSet that this object is part of.
   CompanionSet *companion_set{nullptr};
@@ -233,6 +234,27 @@ struct RelationalExpression {
   // out of this join; this is in addition to the regular connectivity
   // check. See FindHyperedgeAndJoinConflicts() for more details.
   Mem_root_array<ConflictRule> conflict_rules;
+
+  const Mem_root_array<Item *> &pushable_conditions() const {
+    return m_pushable_conditions;
+  }
+
+  /// Add a condition that can be pushed down to the acces path for 'table'.
+  void AddPushable(Item *cond) {
+    assert(type == TABLE);
+    assert(table->map() && cond->used_tables() != 0);
+    // Don't add duplicates.
+    if (std::none_of(m_pushable_conditions.cbegin(),
+                     m_pushable_conditions.cend(), [&](const Item *other) {
+                       return ItemsAreEqual(cond, other, true);
+                     })) {
+      m_pushable_conditions.push_back(cond);
+    }
+  }
+
+ private:
+  /// Conditions that can be pushed down to the acces path for 'table'
+  Mem_root_array<Item *> m_pushable_conditions;
 };
 
 // Check conflict rules; usually, they will be empty, but the hyperedges are

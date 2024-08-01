@@ -1,15 +1,16 @@
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    Without limiting anything contained in the foregoing, this file,
    which is part of C Driver for MySQL (Connector/C), is also subject to the
@@ -1404,14 +1405,27 @@ static bool net_read_raw_loop(NET *net, size_t count) {
     /* First packet always wait for net_wait_timeout */
     if (net->pkt_nr == 0 && (vio_was_timeout(net->vio) || is_packet_timeout)) {
       net->last_errno = ER_CLIENT_INTERACTION_TIMEOUT;
+
       /* Socket should be closed after trying to write/send error. */
       THD *thd = current_thd;
       if (thd) {
+        auto now = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::microseconds(my_micro_time()));
+        auto start = std::chrono::seconds(thd->start_time.tv_sec);
+
+        auto dur = now - start;
+        auto wtout = std::chrono::seconds(thd_get_net_wait_timeout(thd));
+
         Security_context *sctx = thd->security_context();
-        std::string timeout{std::to_string(thd_get_net_wait_timeout(thd))};
         Auth_id auth_id(sctx->priv_user(), sctx->priv_host());
-        LogErr(INFORMATION_LEVEL, ER_NET_WAIT_ERROR2, timeout.c_str(),
-               auth_id.auth_str().c_str());
+
+        LogErr(INFORMATION_LEVEL, ER_LOG_CLIENT_INTERACTION_TIMEOUT,
+               auth_id.auth_str().c_str(), vio_was_timeout(net->vio),
+               is_packet_timeout, dur.count(), wtout.count());
+        if (dur < wtout) {
+          LogErr(ERROR_LEVEL, ER_CONDITIONAL_DEBUG,
+                 "IO-layer timeout before wait_timeout was reached.");
+        }
       } else {
         LogErr(INFORMATION_LEVEL, ER_NET_WAIT_ERROR);
       }

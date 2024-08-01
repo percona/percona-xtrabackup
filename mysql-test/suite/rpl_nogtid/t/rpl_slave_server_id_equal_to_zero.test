@@ -1,7 +1,7 @@
 # ==== Purpose ====
 #
 # This test case verify if a server will throw the proper error when
-# trying to configure it as a slave and start slave's threads when it's
+# trying to configure it as a slave and start replica's threads when it's
 # server-id is 0.
 #
 # The "Part One" of the test case will have a slave started with
@@ -28,10 +28,10 @@
 # This test case is binlog format agnostic
 --source include/have_binlog_format_row.inc
 # This test case does not depend on GTID
---source include/master-slave.inc
+--source include/rpl/init_source_replica.inc
 
 # Assert that the slave was started with server_id > 0
---source include/rpl_connection_slave.inc
+--source include/rpl/connection_replica.inc
 CALL mtr.add_suppression('Server id not set, will not start replica');
 CALL mtr.add_suppression('Replica is not configured or failed to initialize properly');
 --let $assert_text= slave's server_id was greater than 0 at startup
@@ -40,21 +40,21 @@ CALL mtr.add_suppression('Replica is not configured or failed to initialize prop
 --let $original_slave_server_id= `SELECT @@GLOBAL.server_id`
 
 # Replication runs fine
---source include/rpl_connection_master.inc
+--source include/rpl/connection_source.inc
 CREATE TABLE t1 (c1 INT) ENGINE=InnoDB;
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 
 ##
 ## Part One: Server initialized slave at startup (server_id > 0)
 ##
 
 # Change slave @@GLOBAL.server_id to 0
---source include/stop_slave.inc
+--source include/rpl/stop_replica.inc
 SET @@GLOBAL.server_id= 0;
 
-# Start slave should fail
+# Start replica should fail
 --error ER_BAD_REPLICA
-START SLAVE;
+START REPLICA;
 
 # Assert that the reason of the failure was the server_id=0
 --let $assert_file=$MYSQLTEST_VARDIR/log/mysqld.2.err
@@ -63,19 +63,19 @@ START SLAVE;
 --let $assert_count= 1
 --source include/assert_grep.inc
 
-# Change master still works
+# Change replication source still works
 CHANGE REPLICATION SOURCE TO SOURCE_LOG_POS=4;
 
-# Start slave for channel should fail
+# Start replica for channel should fail
 --error ER_REPLICA_CHANNEL_DOES_NOT_EXIST
-START SLAVE FOR CHANNEL 'any_channel';
+START REPLICA FOR CHANNEL 'any_channel';
 
-# Change master still works and will create the channel
+# Change replication source still works and will create the channel
 CHANGE REPLICATION SOURCE TO SOURCE_LOG_POS=4, SOURCE_HOST='127.0.0.1' FOR CHANNEL 'any_channel';
 
-# Start slave for channel should fail
+# Start replica for channel should fail
 --error ER_BAD_REPLICA
-START SLAVE FOR CHANNEL 'any_channel';
+START REPLICA FOR CHANNEL 'any_channel';
 
 # Assert that the reason of the failure was the server_id=0
 --let $assert_text= Slave for channel didn't started because of server_id=0
@@ -84,16 +84,16 @@ START SLAVE FOR CHANNEL 'any_channel';
 --source include/assert_grep.inc
 
 # Remove the created channel
-RESET SLAVE ALL FOR CHANNEL 'any_channel';
+RESET REPLICA ALL FOR CHANNEL 'any_channel';
 
 # Remove the t1 table on slave to allow it to be replicated again
 DROP TABLE t1;
 
-# Restore slave's server_id and start slave again
+# Restore slave's server_id and start replica again
 --eval SET @@GLOBAL.server_id= $original_slave_server_id
---source include/start_slave.inc
---source include/rpl_connection_master.inc
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/start_replica.inc
+--source include/rpl/connection_source.inc
+--source include/rpl/sync_to_replica.inc
 
 ##
 ## Part Two: Server didn't initialized slave at startup (server_id = 0)
@@ -102,46 +102,46 @@ DROP TABLE t1;
 # Restart the slave with server_id=0
 --let $rpl_server_number= 2
 --let $rpl_server_parameters= --server-id=0
---source include/rpl_restart_server.inc
+--source include/rpl/restart_server.inc
 
 # Assert that the slave was started with server_id=0
---source include/rpl_connection_slave.inc
+--source include/rpl/connection_replica.inc
 --let $assert_text= slave's server_id was 0 at startup
 --let $assert_cond= [ SELECT @@GLOBAL.server_id = 0 ]
 --source include/assert.inc
 
-# Start slave should fail as not configured
+# Start replica should fail as not configured
 --error ER_REPLICA_CONFIGURATION
-START SLAVE;
+START REPLICA;
 
-# Change master should fail as slave not configured
+# Change replication source should fail as slave not configured
 --error ER_REPLICA_CONFIGURATION
 CHANGE REPLICATION SOURCE TO SOURCE_LOG_POS=4;
 
-# Start slave for channel should fail as not configured
+# Start replica for channel should fail as not configured
 --error ER_REPLICA_CONFIGURATION
-START SLAVE FOR CHANNEL 'any_channel';
+START REPLICA FOR CHANNEL 'any_channel';
 
-# Change master for channel should fail as slave not configured
+# Change replication source for channel should fail as slave not configured
 --error ER_REPLICA_CONFIGURATION
 CHANGE REPLICATION SOURCE TO SOURCE_LOG_POS=4 FOR CHANNEL 'any_channel';
 
 # Set original slave's server_id into @@GLOBAL.server_id
 --eval SET @@GLOBAL.server_id= $original_slave_server_id
 
-# Start slave should still fail as not configured
+# Start replica should still fail as not configured
 --error ER_REPLICA_CONFIGURATION
-START SLAVE;
+START REPLICA;
 
-# Change master should still fail as slave not configured
+# Change replication source should still fail as slave not configured
 --error ER_REPLICA_CONFIGURATION
 CHANGE REPLICATION SOURCE TO SOURCE_LOG_POS=4;
 
-# Start slave for channel should still fail as not configured
+# Start replica for channel should still fail as not configured
 --error ER_REPLICA_CONFIGURATION
-START SLAVE FOR CHANNEL 'any_channel';
+START REPLICA FOR CHANNEL 'any_channel';
 
-# Change master for channel should still fail as slave not configured
+# Change replication source for channel should still fail as slave not configured
 --error ER_REPLICA_CONFIGURATION
 CHANGE REPLICATION SOURCE TO SOURCE_LOG_POS=4 FOR CHANNEL 'any_channel';
 
@@ -151,15 +151,15 @@ SET PERSIST server_id=2;
 # Restart the server with server_id=0
 --let $rpl_server_number= 2
 --let $rpl_server_parameters= --server-id=0 --skip_replica_start=0
---source include/rpl_restart_server.inc
---source include/check_slave_is_running.inc
---source include/check_slave_no_error.inc
+--source include/rpl/restart_server.inc
+--source include/rpl/assert_replica_running.inc
+--source include/rpl/assert_replica_no_error.inc
 
 ##
 ## Cleanup
 ##
 
 # Master cleanup
---source include/rpl_connection_master.inc
+--source include/rpl/connection_source.inc
 DROP TABLE t1;
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

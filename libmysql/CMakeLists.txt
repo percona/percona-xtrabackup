@@ -1,15 +1,16 @@
-# Copyright (c) 2006, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2006, 2024, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -55,7 +56,10 @@ SET(CLIENT_API_FUNCTIONS
   mysql_info
   mysql_init
   mysql_insert_id
+  mysql_kill
   mysql_list_dbs
+  mysql_list_fields
+  mysql_list_processes
   mysql_list_tables
   mysql_more_results
   mysql_next_result
@@ -82,6 +86,7 @@ SET(CLIENT_API_FUNCTIONS
   mysql_real_escape_string
   mysql_real_escape_string_quote
   mysql_real_query
+  mysql_refresh
   mysql_rollback
   mysql_row_seek
   mysql_row_tell
@@ -108,7 +113,9 @@ SET(CLIENT_API_FUNCTIONS
   mysql_set_character_set
   mysql_set_local_infile_default
   mysql_set_local_infile_handler
+  mysql_shutdown
   mysql_sqlstate
+  mysql_ssl_set
   mysql_stat
   mysql_stmt_affected_rows
   mysql_stmt_attr_get

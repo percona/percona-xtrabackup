@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,8 +26,10 @@
 #include <NdbSleep.h>
 #include <ndb_global.h>
 #include <ndb_opts.h>
-#include <NDBT.hpp>
 #include <NdbApi.hpp>
+#include "NdbToolsLogging.hpp"
+#include "NdbToolsProgramExitCodes.hpp"
+#include "util/NdbOut.hpp"
 #include "util/require.h"
 
 #include "my_alloc.h"
@@ -100,24 +103,24 @@ int main(int argc, char **argv) {
 #ifndef NDEBUG
   opt_debug = "d:t:O,/tmp/ndb_desc.trace";
 #endif
-  if (opts.handle_options()) return NDBT_ProgramExit(NDBT_WRONGARGS);
+  if (opts.handle_options()) return NdbToolsProgramExitCode::WRONG_ARGS;
 
   Ndb_cluster_connection con(opt_ndb_connectstring, opt_ndb_nodeid);
   con.set_name("ndb_desc");
   con.configure_tls(opt_tls_search_path, opt_mgm_tls);
   if (con.connect(opt_connect_retries - 1, opt_connect_retry_delay, 1) != 0) {
     ndbout << "Unable to connect to management server." << endl;
-    return NDBT_ProgramExit(NDBT_FAILED);
+    return NdbToolsProgramExitCode::FAILED;
   }
   if (con.wait_until_ready(30, 0) < 0) {
     ndbout << "Cluster nodes not ready in 30 seconds." << endl;
-    return NDBT_ProgramExit(NDBT_FAILED);
+    return NdbToolsProgramExitCode::FAILED;
   }
 
   Ndb MyNdb(&con, _dbname);
   if (MyNdb.init() != 0) {
     NDB_ERR(MyNdb.getNdbError());
-    return NDBT_ProgramExit(NDBT_FAILED);
+    return NdbToolsProgramExitCode::FAILED;
   }
 
   for (int i = 0; i < argc; i++) {
@@ -139,7 +142,7 @@ int main(int argc, char **argv) {
       ndbout << "No such object: " << argv[i] << endl << endl;
   }
 
-  return NDBT_ProgramExit(NDBT_OK);
+  return NdbToolsProgramExitCode::OK;
 }
 
 void desc_AutoGrowSpecification(
@@ -310,7 +313,7 @@ int desc_table(Ndb *myndb, char const *name) {
       const NdbDictionary::Column *column = pTab->getColumn(i);
       if ((column->getType() == NdbDictionary::Column::Blob) ||
           (column->getType() == NdbDictionary::Column::Text)) {
-        NDBT_Table *blobTable = (NDBT_Table *)column->getBlobTable();
+        const NdbDictionary::Table *blobTable = column->getBlobTable();
 
         if (blobTable) /* blob table present */
         {

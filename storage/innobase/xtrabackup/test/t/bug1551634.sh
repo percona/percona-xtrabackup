@@ -61,7 +61,7 @@ function run_test()
 
     setup_slave $slave_mode USE_CHANNELS $slave_id $master1_id $master2_id
 
-    test `mysql -N -se "SHOW SLAVE STATUS" | wc -l` -eq 2
+    test `mysql -N -se "SHOW REPLICA STATUS" | wc -l` -eq 2
 
     vlog "############################################################"
     vlog "Backing up slave"
@@ -74,7 +74,7 @@ function run_test()
 
     cat $topdir/backup/xtrabackup_slave_info
     vlog "Verifying that there are 2 different channels in xtrabackup_slave_info"
-    test `egrep -c '^CHANGE MASTER TO.*FOR CHANNEL '\''master-[0-9]+'\' \
+    test `egrep -c '^CHANGE REPLICATION SOURCE TO.*FOR CHANNEL '\''master-[0-9]+'\' \
         $topdir/backup/xtrabackup_slave_info` -eq 2 || die
 
     for i in ${SRV_MYSQLD_IDS[@]}

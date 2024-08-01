@@ -41,8 +41,7 @@
 --source include/restart_mysqld.inc
 
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
---enable_reconnect
+--source include/connection.inc
 
 --source include/start_and_bootstrap_group_replication.inc
 
@@ -52,14 +51,14 @@ while($i>0)
   if ($i == 1)
   {
     #
-    # 1. Assertion: assert that the hostname reported in SHOW SLAVE STATUS is correct
+    # 1. Assertion: assert that the hostname reported in SHOW REPLICA STATUS is correct
     #
     --let $hostname_read= `SELECT MEMBER_HOST FROM performance_schema.replication_group_members`
     --let $hostname_source= performance_schema.replication_group_members
   }
 
   --let $assert_cond= "$hostname_read" = "$lengthy_hostname"
-  --let $assert_text= Hostname in $hostname_source matches the one set through CHANGE MASTER TO
+  --let $assert_text= Hostname in $hostname_source matches the one set through CHANGE REPLICATION SOURCE TO
   --source include/assert.inc
 
   --dec $i

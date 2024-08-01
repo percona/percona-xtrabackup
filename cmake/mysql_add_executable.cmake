@@ -1,15 +1,16 @@
-# Copyright (c) 2009, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2009, 2024, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -96,6 +97,7 @@ FUNCTION(MYSQL_ADD_EXECUTABLE target_arg)
     INCLUDE_DIRECTORIES # for TARGET_INCLUDE_DIRECTORIES
     SYSTEM_INCLUDE_DIRECTORIES # for TARGET_INCLUDE_DIRECTORIES SYSTEM
     LINK_LIBRARIES
+    LINK_OPTIONS
     )
   CMAKE_PARSE_ARGUMENTS(ARG
     "${EXECUTABLE_OPTIONS}"
@@ -124,6 +126,7 @@ FUNCTION(MYSQL_ADD_EXECUTABLE target_arg)
   ADD_VERSION_INFO(${target} EXECUTABLE sources)
 
   ADD_EXECUTABLE(${target} ${sources})
+  TARGET_COMPILE_FEATURES(${target} PUBLIC cxx_std_20)
 
   SET_PATH_TO_CUSTOM_SSL_FOR_APPLE(${target})
 
@@ -145,6 +148,9 @@ FUNCTION(MYSQL_ADD_EXECUTABLE target_arg)
   ENDIF()
   IF(ARG_LINK_LIBRARIES)
     TARGET_LINK_LIBRARIES(${target} ${ARG_LINK_LIBRARIES})
+  ENDIF()
+  IF(ARG_LINK_OPTIONS)
+    MY_TARGET_LINK_OPTIONS(${target} ${ARG_LINK_OPTIONS})
   ENDIF()
 
   IF(ARG_EXCLUDE_FROM_PGO)

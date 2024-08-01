@@ -1,15 +1,16 @@
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -397,23 +398,23 @@ class Rpl_filter {
   /*
     While slave is not running after server startup, the replication filter
     can be modified by CHANGE REPLICATION FILTER filter [, filter...]
-    [FOR CHANNEL <channel_name>] and CHANGE MASTER TO ... FOR CHANNEL,
-    and read by querying P_S.replication_applier_global_filters,
-    querying P_S.replication_applier_filters, and SHOW SLAVE STATUS
+    [FOR CHANNEL <channel_name>] and CHANGE REPLICATION SOURCE TO ... FOR
+    CHANNEL, and read by querying P_S.replication_applier_global_filters,
+    querying P_S.replication_applier_filters, and SHOW REPLICA STATUS
     [FOR CHANNEL <channel_name>]. So the lock is introduced to protect
     some member functions called by above commands. See below.
 
     The read lock should be held when calling the following member functions:
-      get_do_table(String* str);  // SHOW SLAVE STATUS
-      get_ignore_table(String* str); // SHOW SLAVE STATUS
-      get_wild_do_table(String* str); // SHOW SLAVE STATUS
-      get_wild_ignore_table(String* str); // SHOW SLAVE STATUS
-      get_rewrite_db(const char* db, size_t *new_len); // SHOW SLAVE STATUS
-      get_rewrite_db(String *str); // SHOW SLAVE STATUS
-      get_do_db(); // SHOW SLAVE STATUS
-      get_do_db(String *str);  // SHOW SLAVE STATUS
-      get_ignore_db();  // SHOW SLAVE STATUS
-      get_ignore_db(String *str);  // SHOW SLAVE STATUS
+      get_do_table(String* str);  // SHOW REPLICA STATUS
+      get_ignore_table(String* str); // SHOW REPLICA STATUS
+      get_wild_do_table(String* str); // SHOW REPLICA STATUS
+      get_wild_ignore_table(String* str); // SHOW REPLICA STATUS
+      get_rewrite_db(const char* db, size_t *new_len); // SHOW REPLICA STATUS
+      get_rewrite_db(String *str); // SHOW REPLICA STATUS
+      get_do_db(); // SHOW REPLICA STATUS
+      get_do_db(String *str);  // SHOW REPLICA STATUS
+      get_ignore_db();  // SHOW REPLICA STATUS
+      get_ignore_db(String *str);  // SHOW REPLICA STATUS
       put_filters_into_vector(...);  // query P_S tables
       get_filter_count();  // query P_S tables
 
@@ -425,15 +426,16 @@ class Rpl_filter {
       set_wild_do_table(mem_root_deque<Item *> *list); // CHANGE RPL. FILTER
       set_wild_ignore_table(mem_root_deque<Item *> *list); // CHANGE RPL. FILTER
       set_db_rewrite(mem_root_deque<Item *> *list); // CHANGE RPL. FILTER
-      copy_global_replication_filters(); // CHANGE MASTER TO ... FOR CHANNEL
+      copy_global_replication_filters(); // CHANGE REPLICATION SOURCE TO ... FOR
+    CHANNEL
 
     Please acquire a wrlock when modifying the replication filter (CHANGE
     REPLICATION FILTER filter [, filter...] [FOR CHANNEL <channel_name>]
-    and CHANGE MASTER TO ... FOR CHANNEL).
+    and CHANGE REPLICATION SOURCE TO ... FOR CHANNEL).
     Please acqurie a rdlock when reading the replication filter (
     SELECT * FROM performance_schema.replication_applier_global_filters,
     SELECT * FROM performance_schema.replication_applier_filters and
-    SHOW SLAVE STATUS [FOR CHANNEL <channel_name>]).
+    SHOW REPLICA STATUS [FOR CHANNEL <channel_name>]).
 
     Other member functions do not need the protection of the lock and we can
     access thd->rli_slave->rpl_filter to filter log event without the

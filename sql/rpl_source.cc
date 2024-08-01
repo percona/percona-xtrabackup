@@ -1,15 +1,16 @@
-/* Copyright (c) 2010, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -219,7 +220,7 @@ void unregister_replica(THD *thd, bool only_mine, bool need_lock_slave_list) {
 }
 
 /**
-  Execute a SHOW REPLICAS / SHOW SLAVE HOSTS statement.
+  Execute a SHOW REPLICAS statement.
 
   @param thd Pointer to THD object for the client thread executing the
   statement.
@@ -241,10 +242,6 @@ bool show_replicas(THD *thd) {
   field_list.push_back(new Item_return_int("Port", 7, MYSQL_TYPE_LONG));
   field_list.push_back(new Item_return_int("Source_Id", 10, MYSQL_TYPE_LONG));
   field_list.push_back(new Item_empty_string("Replica_UUID", UUID_LENGTH));
-
-  // TODO: once the old syntax is removed, remove this as well.
-  if (thd->lex->is_replication_deprecated_syntax_used())
-    rename_fields_use_old_replica_source_terms(thd, field_list);
 
   if (thd->send_result_metadata(field_list,
                                 Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF))
@@ -475,12 +472,6 @@ bool show_replicas(THD *thd) {
     <td>0</td><td colspan="2">---</td></tr>
   <tr><td>@ref sect_protocol_replication_event_write_rows_v0</td>
     <td>0</td><td colspan="2">---</td></tr>
-  <tr><td>@ref sect_protocol_replication_event_delete_rows_v1</td>
-    <td>8/6</td><td colspan="2">---</td></tr>
-  <tr><td>@ref sect_protocol_replication_event_update_rows_v1</td>
-    <td>8/6</td><td colspan="2">---</td></tr>
-  <tr><td>@ref sect_protocol_replication_event_write_rows_v1</td>
-    <td>8/6</td><td colspan="2">---</td></tr>
   <tr><td>@ref sect_protocol_replication_event_incident</td>
     <td>2</td><td colspan="2">---</td></tr>
   <tr><td>@ref sect_protocol_replication_event_heartbeat</td>
@@ -564,8 +555,8 @@ bool show_replicas(THD *thd) {
   logs.
 
   It is added by the master after the replication connection was idle for
-  `x` seconds to update the slave's `Seconds_behind_master timestamp in the
-  SHOW SLAVE STATUS output.
+  `x` seconds to update the slave's  Seconds_behind_source timestamp in the
+  SHOW REPLICA STATUS output.
 
   It has no payload nor post-header.
 
@@ -797,9 +788,6 @@ bool show_replicas(THD *thd) {
   @subsection sect_protocol_replication_event_delete_rows_v0 DELETE_ROWS_EVENTv0
   @subsection sect_protocol_replication_event_update_rows_v0 UPDATE_ROWS_EVENTv0
   @subsection sect_protocol_replication_event_write_rows_v0 WRITE_ROWS_EVENTv0
-  @subsection sect_protocol_replication_event_delete_rows_v1 DELETE_ROWS_EVENTv1
-  @subsection sect_protocol_replication_event_update_rows_v1 UPDATE_ROWS_EVENTv1
-  @subsection sect_protocol_replication_event_write_rows_v1 WRITE_ROWS_EVENTv1
   @subsection sect_protocol_replication_event_delete_rows_v2 DELETE_ROWS_EVENTv2
   @subsection sect_protocol_replication_event_update_rows_v2 UPDATE_ROWS_EVENTv2
   @subsection sect_protocol_replication_event_write_rows_v2 WRITE_ROWS_EVENTv2

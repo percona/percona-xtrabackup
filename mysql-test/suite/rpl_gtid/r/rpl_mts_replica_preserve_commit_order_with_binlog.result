@@ -1,4 +1,4 @@
-include/master-slave.inc
+include/rpl/init_source_replica.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
@@ -20,18 +20,13 @@ Warnings:
 Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 SET GLOBAL replica_parallel_workers= 4;
 SET GLOBAL replica_preserve_commit_order= ON;
-include/start_slave.inc
+include/rpl/start_replica.inc
 
-# 2. On master binlog_transaction_dependency_tracking
-#    is set to COMMIT_ORDER.
-
+# 2. On source binlog_transaction_dependency_history_size is set to 1,
+#    which will fallback to commit order dependency tracking algorithm.
 [connection master]
-SET @save_binlog_transaction_dependency_tracking= @@global.binlog_transaction_dependency_tracking;
-Warnings:
-Warning	1287	'@@binlog_transaction_dependency_tracking' is deprecated and will be removed in a future release.
-SET @@global.binlog_transaction_dependency_tracking = COMMIT_ORDER;
-Warnings:
-Warning	1287	'@@binlog_transaction_dependency_tracking' is deprecated and will be removed in a future release.
+include/save_sysvars.inc [ "GLOBAL.binlog_transaction_dependency_history_size" ]
+SET GLOBAL binlog_transaction_dependency_history_size = 1;
 
 # 3. On master create table t1 and t2 and sync it to slave.
 
@@ -39,7 +34,7 @@ Warning	1287	'@@binlog_transaction_dependency_tracking' is deprecated and will b
 CREATE TABLE t1 (c1 INT PRIMARY KEY) ENGINE = InnoDB;
 CREATE TABLE t2 (c1 INT PRIMARY KEY) ENGINE = InnoDB;
 INSERT INTO t2 VALUES (1);
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 include/assert.inc [Verify t2 contains only one row]
 
 # 4. On server2 enable after_commit_order_thread_becomes_leader,
@@ -136,14 +131,12 @@ SET DEBUG_SYNC= "now SIGNAL continue_before_commit_order_leader_waits_for_binlog
 [connection master]
 DROP TABLE t1;
 DROP TABLE t2;
-SET GLOBAL binlog_transaction_dependency_tracking=@save_binlog_transaction_dependency_tracking;
-Warnings:
-Warning	1287	'@@binlog_transaction_dependency_tracking' is deprecated and will be removed in a future release.
-include/sync_slave_sql_with_master.inc
-include/stop_slave.inc
+include/restore_sysvars.inc
+include/rpl/sync_to_replica.inc
+include/rpl/stop_replica.inc
 SET GLOBAL replica_parallel_type = @save_replica_parallel_type;
 Warnings:
 Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 SET GLOBAL replica_parallel_workers = @save_replica_parallel_workers;
 SET GLOBAL replica_preserve_commit_order = @save_replica_preserve_commit_order;
-include/rpl_end.inc
+include/rpl/deinit.inc

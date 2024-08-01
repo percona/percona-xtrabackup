@@ -1,15 +1,16 @@
-/* Copyright (c) 2004, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2004, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -52,6 +53,7 @@
 #include "sql/sql_executor.h"  // QEP_TAB
 #include "sql/sql_lex.h"
 #include "sql/sql_plugin_var.h"  // SYS_VAR
+#include "sql/transaction.h"
 #ifndef NDEBUG
 #include "sql/sql_test.h"  // print_where
 #endif
@@ -11985,7 +11987,10 @@ static int ndbcluster_discover(handlerton *, THD *thd, const char *db,
     return 1;
   }
 
-  {
+  // Function to install table in DD
+  const auto install_in_dd = [](Thd_ndb *thd_ndb,
+                                const NdbDictionary::Table *ndbtab,
+                                const char *db, const char *name) {
     Uint32 version;
     void *unpacked_data;
     Uint32 unpacked_len;
@@ -12000,25 +12005,7 @@ static int ndbcluster_discover(handlerton *, THD *thd, const char *db,
 
     ndb_log_info("Attempting to install table %s.%s in DD", db, name);
 
-    Ndb_dd_client dd_client(thd);
-    bool table_exists_in_DD;
-    // This function is called in two cases. 1) when the table is not present
-    // in DD or 2) when the metadata of the table gets changed. In 2nd case,
-    // this function updates the metadata of table from the storage engine,
-    // installs and commits the changes into DD . So, if there is
-    // an active transaction, then the changes done till now will also gets
-    // committed. So, Push error when there is an active transction.
-    if (dd_client.table_exists(db, name, table_exists_in_DD) &&
-        table_exists_in_DD && thd->in_active_multi_stmt_transaction()) {
-      thd_ndb->push_warning(
-          "Failed to discover table '%s' from NDB, table "
-          "definition changed",
-          name);
-      my_error(HA_ERR_TABLE_DEF_CHANGED, MYF(0), db, name);
-      free(unpacked_data);
-      return 1;
-    }
-
+    Ndb_dd_client dd_client(thd_ndb->get_thd());
     if (version == 1) {
       // Upgrade the "old" metadata and install the table into DD,
       // don't use force_overwrite since this function would never
@@ -12031,7 +12018,6 @@ static int ndbcluster_discover(handlerton *, THD *thd, const char *db,
             "not upgrade table with extra metadata version 1",
             name);
         my_error(ER_NO_SUCH_TABLE, MYF(0), db, name);
-        ndbtab_g.invalidate();
         free(unpacked_data);
         return 1;
       }
@@ -12040,7 +12026,7 @@ static int ndbcluster_discover(handlerton *, THD *thd, const char *db,
       dd::sdi_t sdi;
       sdi.assign(static_cast<const char *>(unpacked_data), unpacked_len);
       const std::string tablespace_name =
-          ndb_table_tablespace_name(ndb->getDictionary(), ndbtab);
+          ndb_table_tablespace_name(thd_ndb->ndb->getDictionary(), ndbtab);
       if (!tablespace_name.empty()) {
         // Acquire IX MDL on tablespace
         if (!dd_client.mdl_lock_tablespace(tablespace_name.c_str(), true)) {
@@ -12049,7 +12035,6 @@ static int ndbcluster_discover(handlerton *, THD *thd, const char *db,
               "not acquire metadata lock on tablespace '%s'",
               name, tablespace_name.c_str());
           my_error(ER_NO_SUCH_TABLE, MYF(0), db, name);
-          ndbtab_g.invalidate();
           free(unpacked_data);
           return 1;
         }
@@ -12066,7 +12051,6 @@ static int ndbcluster_discover(handlerton *, THD *thd, const char *db,
             "not install table in DD",
             name);
         my_error(ER_NO_SUCH_TABLE, MYF(0), db, name);
-        ndbtab_g.invalidate();
         free(unpacked_data);
         return 1;
       }
@@ -12074,20 +12058,54 @@ static int ndbcluster_discover(handlerton *, THD *thd, const char *db,
 
 #ifndef NDEBUG
     // Run metadata check except if this is discovery during a DROP TABLE
-    if (thd_sql_command(thd) != SQLCOM_DROP_TABLE) {
+    if (thd_ndb->sql_command() != SQLCOM_DROP_TABLE) {
       const dd::Table *dd_table;
       assert(dd_client.get_table(db, name, &dd_table) &&
-             Ndb_metadata::compare(thd, ndb, db, ndbtab, dd_table));
+             Ndb_metadata::compare(thd_ndb->get_thd(), thd_ndb->ndb, db, ndbtab,
+                                   dd_table));
     }
 #endif
 
-    // NOTE! It might be possible to not commit the transaction
-    // here, assuming the caller would then commit or rollback.
     dd_client.commit();
     free(unpacked_data);
+    ndb_log_info("Successfully installed table %s.%s in DD", db, name);
+    return 0;
+  };
+
+  // Since installing table in DD  requires commit it's not allowed to
+  // discover while in an active transaction.
+  if (thd->in_active_multi_stmt_transaction()) {
+    if (thd_ndb->get_applier()) {
+      // Special case for replica applier which will rollback transaction,
+      // install in DD and return error plus warning to retry.
+      trans_rollback_stmt(thd);
+      trans_rollback(thd);
+
+      // Install table
+      const int ret = install_in_dd(thd_ndb, ndbtab, db, name);
+      if (ret != 0) {
+        ndbtab_g.invalidate();
+        return ret;
+      }
+      // Push warning to make applier retry transaction.
+      thd_ndb->push_warning(ER_REPLICA_SILENT_RETRY_TRANSACTION,
+                            "Transaction rolled back due to discovery, retry");
+      my_error(ER_TABLE_DEF_CHANGED, MYF(0), db, name);
+      return 1;
+    }
+    thd_ndb->push_warning(
+        "Failed to discover table '%s' from NDB, not allowed in "
+        "active transaction",
+        name);
+    my_error(ER_TABLE_DEF_CHANGED, MYF(0), db, name);
+    return 1;
   }
 
-  ndb_log_info("Successfully installed table %s.%s in DD", db, name);
+  const int ret = install_in_dd(thd_ndb, ndbtab, db, name);
+  if (ret != 0) {
+    ndbtab_g.invalidate();
+    return ret;
+  }
 
   // Don't return any sdi in order to indicate that table definitions exists
   // and has been installed into DD
@@ -12576,12 +12594,18 @@ static int ndbcluster_init(void *handlerton_ptr) {
   }
 
   std::function<bool()> start_channel_func = []() -> bool {
+    DBUG_EXECUTE_IF("ndb_replica_change_t1_version", {
+      //  Change DD version of t1, this forces the applier to reinstall table
+      Ndb_dd_client dd_client(current_thd);
+      assert(dd_client.change_version_for_table("test", "t1", 37));
+    });
+
     if (!wait_setup_completed(opt_ndb_wait_setup)) {
       ndb_log_error(
           "Replica: Connection to NDB not ready after %lu seconds. "
           "Consider increasing --ndb-wait-setup value",
           opt_ndb_wait_setup);
-      return false;
+      // Continue and fail with better error when starting to use NDB
     }
     return true;
   };
@@ -14903,15 +14927,12 @@ static int create_table_set_up_partition_info(partition_info *part_info,
       }
     };
 
-    if (!current_thd->variables.new_mode) {
-      // When new_mode is removed, keep below warning.
-      push_warning_printf(
-          current_thd, Sql_condition::SL_WARNING,
-          ER_WARN_DEPRECATED_ENGINE_SYNTAX_NO_REPLACEMENT,
-          ER_THD(current_thd, ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT),
-          partition_type_description(part_info->part_type),
-          ndbcluster_hton_name);
-    }
+    push_warning_printf(
+        current_thd, Sql_condition::SL_WARNING,
+        ER_WARN_DEPRECATED_ENGINE_SYNTAX_NO_REPLACEMENT,
+        ER_THD(current_thd, ER_WARN_DEPRECATED_ENGINE_SYNTAX_NO_REPLACEMENT),
+        partition_type_description(part_info->part_type), ndbcluster_hton_name);
+
     /*
        Create a shadow field for those tables that have user defined
        partitioning. This field stores the value of the partition
@@ -17484,9 +17505,8 @@ bool ha_ndbcluster::upgrade_table(THD *thd, const char *db_name,
 
   @param  hton  Handlerton of the SE
 
-  @return Void
 */
-static void ndbcluster_pre_dd_shutdown(handlerton *) {
+static void ndbcluster_pre_dd_shutdown(handlerton *hton [[maybe_unused]]) {
   // Stop and deinitialize the ndb_metadata_change_monitor thread
   ndb_metadata_change_monitor_thread.stop();
   ndb_metadata_change_monitor_thread.deinit();
@@ -17995,6 +18015,21 @@ static MYSQL_SYSVAR_BOOL(log_empty_update,         /* name */
                          0        /* default */
 );
 
+static int ndb_log_orig_check(THD *thd, SYS_VAR *sys_var, void *save,
+                              st_mysql_value *value) {
+  int r = check_func_bool(thd, sys_var, save, value);
+  if (r == 0) {
+    if (!opt_log_replica_updates) {
+      push_warning_printf(thd, Sql_condition::SL_WARNING,
+                          ER_WRONG_VALUE_FOR_VAR,
+                          "Variable 'ndb_log_orig' can't be changed when "
+                          "'log_replica_updates' is OFF");
+      return 1;
+    }
+  }
+  return r;
+}
+
 bool opt_ndb_log_orig;
 static MYSQL_SYSVAR_BOOL(
     log_orig,         /* name */
@@ -18003,9 +18038,9 @@ static MYSQL_SYSVAR_BOOL(
     "Log originating server id and epoch in ndb_binlog_index. Each epoch "
     "may in this case have multiple rows in ndb_binlog_index, one for "
     "each originating epoch.",
-    nullptr, /* check func. */
-    nullptr, /* update func. */
-    0        /* default */
+    ndb_log_orig_check, /* check func. */
+    nullptr,            /* update func. */
+    0                   /* default */
 );
 
 bool opt_ndb_log_bin;
@@ -18040,15 +18075,30 @@ static MYSQL_SYSVAR_BOOL(log_empty_epochs,                 /* name */
                          0                                 /* default */
 );
 
+static int ndb_log_apply_status_check(THD *thd, SYS_VAR *sys_var, void *save,
+                                      st_mysql_value *value) {
+  int r = check_func_bool(thd, sys_var, save, value);
+  if (r == 0) {
+    if (!opt_log_replica_updates) {
+      push_warning_printf(
+          thd, Sql_condition::SL_WARNING, ER_WRONG_VALUE_FOR_VAR,
+          "Variable 'ndb_log_apply_status' can't be changed when "
+          "'log_replica_updates' is OFF");
+      return 1;
+    }
+  }
+  return r;
+}
+
 bool opt_ndb_log_apply_status;
 static MYSQL_SYSVAR_BOOL(
     log_apply_status,         /* name */
     opt_ndb_log_apply_status, /* var */
     PLUGIN_VAR_OPCMDARG,
     "Log ndb_apply_status updates from Master in the Binlog",
-    nullptr, /* check func. */
-    nullptr, /* update func. */
-    0        /* default */
+    ndb_log_apply_status_check, /* check func. */
+    nullptr,                    /* update func. */
+    0                           /* default */
 );
 
 bool opt_ndb_log_transaction_id;

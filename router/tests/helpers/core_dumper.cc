@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2022, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -66,7 +67,7 @@ stdx::expected<std::string, std::error_code> CoreDumper::dump() {
 stdx::expected<std::string, std::error_code> CoreDumper::dump(
     const std::string &core_file_name) {
   if (core_file_name.empty() || !mysql_harness::Path(core_file_name).exists()) {
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         make_error_code(std::errc::no_such_file_or_directory));
   }
 
@@ -83,7 +84,7 @@ stdx::expected<std::string, std::error_code> CoreDumper::gdb(
     const std::string &core_file_name) {
   std::string debugger_path = find_executable_path("gdb");
   if (debugger_path.empty()) {
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         make_error_code(std::errc::no_such_file_or_directory));
   }
 
@@ -117,7 +118,7 @@ quit)";
   } catch (const std::exception &e) {
     std::cerr << "getting stacktrace with " << debugger_path
               << " failed: " << e.what() << "\n";
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         make_error_code(std::errc::no_such_file_or_directory));
   }
 }
@@ -129,7 +130,7 @@ stdx::expected<std::string, std::error_code> CoreDumper::lldb(
     const std::string &core_file_name) {
   std::string debugger_path = find_executable_path("lldb");
   if (debugger_path.empty()) {
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         make_error_code(std::errc::no_such_file_or_directory));
   }
 
@@ -156,7 +157,7 @@ stdx::expected<std::string, std::error_code> CoreDumper::lldb(
   } catch (const std::exception &e) {
     std::cerr << "getting stacktrace with " << debugger_path
               << " failed: " << e.what() << "\n";
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         make_error_code(std::errc::no_such_file_or_directory));
   }
 }
@@ -164,7 +165,7 @@ stdx::expected<std::string, std::error_code> CoreDumper::lldb(
 stdx::expected<std::string, std::error_code> CoreDumper::cdb(
     const std::string &core_file_name [[maybe_unused]]) {
 #ifndef _WIN32
-  return stdx::make_unexpected(
+  return stdx::unexpected(
       make_error_code(std::errc::no_such_file_or_directory));
 #endif
 
@@ -203,7 +204,7 @@ stdx::expected<std::string, std::error_code> CoreDumper::cdb(
 
     if (debugger_path.empty()) {
       // still not found
-      return stdx::make_unexpected(
+      return stdx::unexpected(
           make_error_code(std::errc::no_such_file_or_directory));
     }
   }
@@ -314,7 +315,7 @@ stdx::expected<std::string, std::error_code> CoreDumper::cdb(
   } catch (const std::exception &e) {
     std::cerr << "getting stacktrace with " << debugger_path
               << " failed: " << e.what() << "\n";
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         make_error_code(std::errc::no_such_file_or_directory));
   }
 }

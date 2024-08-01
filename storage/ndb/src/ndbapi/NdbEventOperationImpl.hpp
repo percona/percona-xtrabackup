@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -616,7 +617,6 @@ class NdbEventOperationImpl : public NdbEventOperation {
   EventBufData *m_data_item;
 
   void *m_custom_data;
-  int m_has_error;
 
   Uint32 m_fragmentId;
   UtilBuffer m_buffer;
@@ -635,6 +635,9 @@ class NdbEventOperationImpl : public NdbEventOperation {
 
   // Used for allowing empty updates be passed to the user
   bool m_allow_empty_update;
+
+  // Placeholder for the requestinfo which will be sent in SubStartReq
+  Uint32 m_requestInfo;
 
   // Default implementation that performs no filtering
   static Uint32 default_anyvalue_filter(Uint32 any_value) { return any_value; }
@@ -888,7 +891,7 @@ class NdbEventBuffer {
   void add_blob_data(EventBufDataHead *main_data, EventBufData *blob_data);
 
   void *alloc(Uint32 sz);
-  Uint32 get_free_data_sz() const;
+  Uint64 get_free_data_sz() const;
   Uint64 get_used_data_sz() const;
 
   // Must report status if buffer manager state is changed
@@ -982,7 +985,7 @@ class NdbEventBuffer {
     (Included in ::get_free_data_sz())
   */
   EventMemoryBlock *m_mem_block_free;
-  Uint32 m_mem_block_free_sz;  // Total size of above
+  Uint64 m_mem_block_free_sz;  // Total size of above
 
   bool m_queue_empty_epoch;
 

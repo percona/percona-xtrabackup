@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -45,8 +46,9 @@
 #include <sstream>
 #include <utility>
 
-#include "caching_sha2_passwordopt-vars.h"
-#include "client/client_priv.h"
+#include "client/include/caching_sha2_passwordopt-vars.h"
+#include "client/include/client_priv.h"
+#include "client/include/sslopt-vars.h"
 #include "compression.h"
 #include "m_string.h"
 #include "my_byteorder.h"
@@ -73,7 +75,6 @@
 #include "sql/rpl_gtid.h"
 #include "sql_common.h"
 #include "sql_string.h"
-#include "sslopt-vars.h"
 #include "typelib.h"
 #include "welcome_copyright_notice.h"  // ORACLE_WELCOME_COPYRIGHT_NOTICE
 
@@ -1241,14 +1242,14 @@ static bool shall_skip_gtids(const Log_event *ev) {
   R1. After FLUSH [RELAY] LOGS
   R2. When mysqld receives SIGHUP
   R3. When relay log size grows too big
-  R4. Immediately after START SLAVE
+  R4. Immediately after START REPLICA
   R5. When slave IO thread reconnects without user doing
-      START SLAVE/STOP SLAVE
+      START REPLICA/STOP REPLICA
   R6. When master dump thread starts a new binlog
-  R7. CHANGE MASTER which deletes all relay logs
-  R8. RESET SLAVE
+  R7. CHANGE REPLICATION SOURCE which deletes all relay logs
+  R8. RESET REPLICA
 
-  (Remark: CHANGE MASTER which does not delete any relay log,
+  (Remark: CHANGE REPLICATION SOURCE which does not delete any relay log,
   does not cause any rotation at all.)
 
   The 8 cases generate the three types of FD events as follows:
@@ -1260,9 +1261,9 @@ static bool shall_skip_gtids(const Log_event *ev) {
     previously, there is no master FD event.
   - In case R3, the slave IO thread generates a fake master FD
     event.
-  - In cases R4 and R5, if AUTOPOSITION=0 and MASTER_LOG_POS>4,
+  - In cases R4 and R5, if AUTOPOSITION=0 and SOURCE_LOG_POS>4,
     the master dump thread generates a fake master FD event.
-  - In cases R4 and R5, if AUTOPOSITION=1 or MASTER_LOG_POS<=4,
+  - In cases R4 and R5, if AUTOPOSITION=1 or SOURCE_LOG_POS<=4,
     the master dump thread generates a real master FD event.
   - In case R6, the master dump thread generates a real master FD
     event.
@@ -1616,18 +1617,12 @@ static Exit_status process_event(PRINT_EVENT_INFO *print_event_info,
       case mysql::binlog::event::WRITE_ROWS_EVENT:
       case mysql::binlog::event::DELETE_ROWS_EVENT:
       case mysql::binlog::event::UPDATE_ROWS_EVENT:
-      case mysql::binlog::event::WRITE_ROWS_EVENT_V1:
-      case mysql::binlog::event::UPDATE_ROWS_EVENT_V1:
-      case mysql::binlog::event::DELETE_ROWS_EVENT_V1:
       case mysql::binlog::event::PARTIAL_UPDATE_ROWS_EVENT: {
         bool stmt_end = false;
         Table_map_log_event *ignored_map = nullptr;
         if (ev_type == mysql::binlog::event::WRITE_ROWS_EVENT ||
             ev_type == mysql::binlog::event::DELETE_ROWS_EVENT ||
             ev_type == mysql::binlog::event::UPDATE_ROWS_EVENT ||
-            ev_type == mysql::binlog::event::WRITE_ROWS_EVENT_V1 ||
-            ev_type == mysql::binlog::event::DELETE_ROWS_EVENT_V1 ||
-            ev_type == mysql::binlog::event::UPDATE_ROWS_EVENT_V1 ||
             ev_type == mysql::binlog::event::PARTIAL_UPDATE_ROWS_EVENT) {
           Rows_log_event *new_ev = (Rows_log_event *)ev;
           if (new_ev->get_flags(Rows_log_event::STMT_END_F)) stmt_end = true;
@@ -1963,8 +1958,8 @@ static struct my_option my_long_options[] = {
      nullptr},
     {"socket", 'S', "The socket file to use for connection.", &sock, &sock,
      nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
-#include "caching_sha2_passwordopt-longopts.h"
-#include "sslopt-longopts.h"
+#include "client/include/caching_sha2_passwordopt-longopts.h"
+#include "client/include/sslopt-longopts.h"
 
     {"start-datetime", OPT_START_DATETIME,
      "Start reading the binlog at first event having a datetime equal or "
@@ -2209,7 +2204,7 @@ extern "C" bool get_one_option(int optid, const struct my_option *opt,
       DBUG_PUSH(argument ? argument : default_dbug_option);
       break;
 #endif
-#include "sslopt-case.h"
+#include "client/include/sslopt-case.h"
 
     case 'd':
       one_database = true;
@@ -2394,7 +2389,6 @@ static Exit_status safe_connect() {
   if (ssl_client_check_post_connect_ssl_setup(
           mysql_handle, [](const char *err) { error("%s", err); }))
     return ERROR_STOP;
-  mysql_handle->reconnect = true;
   return OK_CONTINUE;
 }
 

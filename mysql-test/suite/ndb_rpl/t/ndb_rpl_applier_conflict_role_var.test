@@ -1,16 +1,16 @@
 --source include/have_ndb.inc
---source suite/ndb_rpl/ndb_master-slave.inc
+--source suite/ndb_rpl/ndb_rpl_init_source_replica.inc
 
 connection slave;
 
 show global variables like 'ndb_applier_conflict_role';
 
-#show slave status;
+#show replica status;
 
---let $status_items=Slave_SQL_Running
---source include/show_slave_status.inc
-stop slave sql_thread;
---source include/show_slave_status.inc
+--let $status_items=Replica_SQL_Running
+--source include/rpl/deprecated/show_replica_status.inc
+STOP REPLICA sql_thread;
+--source include/rpl/deprecated/show_replica_status.inc
 
 --echo Show set-to-same state is ok
 set global ndb_applier_conflict_role = NONE;
@@ -60,8 +60,8 @@ set global ndb_applier_conflict_role = "NONE";
 --echo Now test transitions not possible due to 
 --echo Slave SQL thread running
 
-start slave sql_thread;
---source include/show_slave_status.inc
+START REPLICA sql_thread;
+--source include/rpl/deprecated/show_replica_status.inc
 
 --echo From NONE
 set global ndb_applier_conflict_role = "NONE";
@@ -77,12 +77,12 @@ show global variables like 'ndb_applier_conflict_role';
 set global ndb_applier_conflict_role = "PASS";
 show global variables like 'ndb_applier_conflict_role';
 
-stop slave sql_thread;
+STOP REPLICA sql_thread;
 
 --echo From PRIMARY
 set global ndb_applier_conflict_role = "PRIMARY";
 
-start slave sql_thread;
+START REPLICA sql_thread;
 
 set global ndb_applier_conflict_role = "PRIMARY";
 --error 1220
@@ -95,12 +95,12 @@ show global variables like 'ndb_applier_conflict_role';
 set global ndb_applier_conflict_role = "PASS";
 show global variables like 'ndb_applier_conflict_role';
 
-stop slave sql_thread;
+STOP REPLICA sql_thread;
 
 --echo From SECONDARY
 set global ndb_applier_conflict_role = "SECONDARY";
 
-start slave sql_thread;
+START REPLICA sql_thread;
 
 set global ndb_applier_conflict_role = "SECONDARY";
 --error 1220
@@ -113,13 +113,13 @@ show global variables like 'ndb_applier_conflict_role';
 set global ndb_applier_conflict_role = "PASS";
 show global variables like 'ndb_applier_conflict_role';
 
-stop slave sql_thread;
+STOP REPLICA sql_thread;
 
 --echo From PASS
 set global ndb_applier_conflict_role = "NONE";
 set global ndb_applier_conflict_role = "PASS";
 
-start slave sql_thread;
+START REPLICA sql_thread;
 
 set global ndb_applier_conflict_role = "PASS";
 --error 1220
@@ -132,7 +132,7 @@ show global variables like 'ndb_applier_conflict_role';
 set global ndb_applier_conflict_role = "NONE";
 show global variables like 'ndb_applier_conflict_role';
 
-stop slave sql_thread;
+STOP REPLICA sql_thread;
 
 set global ndb_applier_conflict_role = "NONE";
 
@@ -167,9 +167,9 @@ show global variables like 'ndb_applier_conflict_role';
 
 set global ndb_applier_conflict_role = NON;
 
-start slave sql_thread;
+START REPLICA sql_thread;
 
---source include/rpl_end.inc
+--source include/rpl/deinit.inc
 
 --echo
 --echo # Reboot server setting with both ndb_slave_conflict_role & ndb_applier_conflict_role variable.

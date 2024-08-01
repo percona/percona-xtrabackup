@@ -1,15 +1,16 @@
-/* Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    Without limiting anything contained in the foregoing, this file,
    which is part of C Driver for MySQL (Connector/C), is also subject to the
@@ -160,6 +161,7 @@ using std::swap;
   }
 
 #define caching_sha2_password_plugin_name "caching_sha2_password"
+#define MYSQL_NATIVE_PASSWORD_PLUGIN_NAME "mysql_native_password"
 
 PSI_memory_key key_memory_mysql_options;
 PSI_memory_key key_memory_MYSQL_DATA;
@@ -1334,10 +1336,10 @@ bool cli_advanced_command(MYSQL *mysql, enum enum_server_command command,
   DBUG_TRACE;
 
   if (mysql->net.vio == nullptr || net->error == NET_ERROR_SOCKET_UNUSABLE) {
-    /* Do reconnect if possible */
+    /* Do reconnect is possible */
     if (!mysql->reconnect || mysql_reconnect(mysql) || stmt_skip) {
       set_mysql_error(mysql, CR_SERVER_LOST, unknown_sqlstate);
-      return true; /* reconnect == false OR reconnect failed */
+      return true;
     }
     /* reconnect succeeded */
     assert(mysql->net.vio != nullptr);
@@ -1410,7 +1412,6 @@ bool cli_advanced_command(MYSQL *mysql, enum enum_server_command command,
     }
     end_server(mysql);
     if (mysql_reconnect(mysql) || stmt_skip) goto end;
-
     MYSQL_TRACE(SEND_COMMAND, mysql,
                 (command, header_length, arg_length, header, arg));
     if (net_write_command(net, (uchar)command, header, header_length, arg,
@@ -2370,6 +2371,8 @@ static void cli_fetch_lengths(ulong *to, MYSQL_ROW column,
 
   @param mysql          connection handle
   @param alloc          memory allocator root
+  @param default_value  flag telling if default values should be read from
+                        descriptor
   @param server_capabilities  protocol capability flags which determine format
   of the descriptor
   @param row            field descriptor
@@ -2378,8 +2381,9 @@ static void cli_fetch_lengths(ulong *to, MYSQL_ROW column,
   @returns 0 on success.
 */
 
-static int unpack_field(MYSQL *mysql, MEM_ROOT *alloc, uint server_capabilities,
-                        MYSQL_ROWS *row, MYSQL_FIELD *field) {
+static int unpack_field(MYSQL *mysql, MEM_ROOT *alloc, bool default_value,
+                        uint server_capabilities, MYSQL_ROWS *row,
+                        MYSQL_FIELD *field) {
   ulong lengths[9]; /* Max length of each field */
   DBUG_TRACE;
 
@@ -2393,7 +2397,7 @@ static int unpack_field(MYSQL *mysql, MEM_ROOT *alloc, uint server_capabilities,
   if (server_capabilities & CLIENT_PROTOCOL_41) {
     uchar *pos;
     /* fields count may be wrong */
-    cli_fetch_lengths(&lengths[0], row->data, 7);
+    cli_fetch_lengths(&lengths[0], row->data, default_value ? 8 : 7);
     field->catalog = strmake_root(alloc, (char *)row->data[0], lengths[0]);
     field->db = strmake_root(alloc, (char *)row->data[1], lengths[1]);
     field->table = strmake_root(alloc, (char *)row->data[2], lengths[2]);
@@ -2423,6 +2427,11 @@ static int unpack_field(MYSQL *mysql, MEM_ROOT *alloc, uint server_capabilities,
     field->decimals = (uint)pos[9];
 
     if (IS_NUM(field->type)) field->flags |= NUM_FLAG;
+    if (default_value && row->data[7]) {
+      field->def = strmake_root(alloc, (char *)row->data[7], lengths[7]);
+      field->def_length = lengths[7];
+    } else
+      field->def = nullptr;
     field->max_length = 0;
   }
 #ifndef DELETE_SUPPORT_OF_4_0_PROTOCOL
@@ -2438,7 +2447,7 @@ static int unpack_field(MYSQL *mysql, MEM_ROOT *alloc, uint server_capabilities,
       return 1;
     }
 
-    cli_fetch_lengths(&lengths[0], row->data, 5);
+    cli_fetch_lengths(&lengths[0], row->data, default_value ? 6 : 5);
     field->org_table = field->table =
         strmake_root(alloc, (char *)row->data[0], lengths[0]);
     field->name = strmake_root(alloc, (char *)row->data[1], lengths[1]);
@@ -2470,10 +2479,43 @@ static int unpack_field(MYSQL *mysql, MEM_ROOT *alloc, uint server_capabilities,
       field->decimals = (uint)(uchar)row->data[4][1];
     }
     if (IS_NUM(field->type)) field->flags |= NUM_FLAG;
+    if (default_value && row->data[5]) {
+      field->def = strmake_root(alloc, (char *)row->data[5], lengths[5]);
+      field->def_length = lengths[5];
+    } else
+      field->def = nullptr;
     field->max_length = 0;
   }
 #endif /* DELETE_SUPPORT_OF_4_0_PROTOCOL */
   return 0;
+}
+
+/***************************************************************************
+  Change field rows to field structs
+***************************************************************************/
+MYSQL_FIELD *unpack_fields(MYSQL *mysql, MYSQL_ROWS *data, MEM_ROOT *alloc,
+                           uint fields, bool default_value,
+                           uint server_capabilities) {
+  MYSQL_ROWS *row;
+  MYSQL_FIELD *field, *result;
+  DBUG_TRACE;
+  field = result = (MYSQL_FIELD *)alloc->Alloc((uint)sizeof(*field) * fields);
+  if (!result) {
+    set_mysql_error(mysql, CR_OUT_OF_MEMORY, unknown_sqlstate);
+    return nullptr;
+  }
+  memset(field, 0, sizeof(MYSQL_FIELD) * fields);
+  for (row = data; row; row = row->next, field++) {
+    /* fields count may be wrong */
+    if (field < result || static_cast<uint>(field - result) >= fields) {
+      return nullptr;
+    }
+    if (unpack_field(mysql, alloc, default_value, server_capabilities, row,
+                     field)) {
+      return nullptr;
+    }
+  }
+  return result;
 }
 
 /**
@@ -2540,7 +2582,7 @@ net_async_status cli_read_metadata_ex_nonblocking(MYSQL *mysql, MEM_ROOT *alloc,
       goto end;
     }
 
-    if (unpack_field(mysql, alloc, mysql->server_capabilities,
+    if (unpack_field(mysql, alloc, false, mysql->server_capabilities,
                      &async_data->async_read_metadata_data,
                      async_data->async_read_metadata_fields +
                          async_data->async_read_metadata_cur_field)) {
@@ -2632,7 +2674,8 @@ MYSQL_FIELD *cli_read_metadata_ex(MYSQL *mysql, MEM_ROOT *alloc,
   */
   for (f = 0; f < field_count; ++f) {
     if (read_one_row(mysql, field, data.data, len) == -1) return nullptr;
-    if (unpack_field(mysql, alloc, mysql->server_capabilities, &data, fields++))
+    if (unpack_field(mysql, alloc, false, mysql->server_capabilities, &data,
+                     fields++))
       return nullptr;
   }
   /* Read EOF packet in case of old client */
@@ -3195,6 +3238,7 @@ static MYSQL_METHODS client_methods = {
     cli_read_change_user_result /* read_change_user_result */
 #if !defined(MYSQL_SERVER) || defined(XTRABACKUP)
     ,
+    cli_list_fields,         /* list_fields */
     cli_read_prepare_result, /* read_prepare_result */
     cli_stmt_execute,        /* stmt_execute */
     cli_read_binary_rows,    /* read_binary_rows */
@@ -3259,7 +3303,6 @@ MYSQL *STDCALL mysql_init(MYSQL *mysql) {
     set_mysql_error(nullptr, CR_OUT_OF_MEMORY, unknown_sqlstate);
     return nullptr;
   }
-
   /*
     By default we don't reconnect because it could silently corrupt data (after
     reconnection you potentially lose table locks, user variables, session
@@ -3363,6 +3406,28 @@ void mysql_extension_free(MYSQL_EXTENSION *ext) {
   free_state_change_info(ext);
   mysql_extension_bind_free(ext);
   my_free(ext);
+}
+
+/*
+  Fill in SSL part of MYSQL structure and set 'use_ssl' flag.
+  NB! Errors are not reported until you do mysql_real_connect.
+*/
+bool STDCALL mysql_ssl_set(MYSQL *mysql [[maybe_unused]],
+                           const char *key [[maybe_unused]],
+                           const char *cert [[maybe_unused]],
+                           const char *ca [[maybe_unused]],
+                           const char *capath [[maybe_unused]],
+                           const char *cipher [[maybe_unused]]) {
+  bool result = false;
+  DBUG_TRACE;
+  result = mysql_options(mysql, MYSQL_OPT_SSL_KEY, key) +
+                   mysql_options(mysql, MYSQL_OPT_SSL_CERT, cert) +
+                   mysql_options(mysql, MYSQL_OPT_SSL_CA, ca) +
+                   mysql_options(mysql, MYSQL_OPT_SSL_CAPATH, capath) +
+                   mysql_options(mysql, MYSQL_OPT_SSL_CIPHER, cipher)
+               ? true
+               : false;
+  return result;
 }
 
 /*
@@ -6932,7 +6997,7 @@ static mysql_state_machine_status csm_parse_handshake(
       }
     } else {
       ctx->scramble_data_len = (int)(pkt_end - ctx->scramble_data);
-      ctx->scramble_plugin = caching_sha2_password_plugin_name;
+      ctx->scramble_plugin = MYSQL_NATIVE_PASSWORD_PLUGIN_NAME;
     }
   } else {
     set_mysql_error(mysql, CR_MALFORMED_PACKET, unknown_sqlstate);

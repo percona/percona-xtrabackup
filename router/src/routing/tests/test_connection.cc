@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -35,7 +36,7 @@
 #include "mysql/harness/net_ts/internet.h"
 #include "mysql/harness/stdx/expected.h"
 #include "mysql/harness/tls_error.h"
-#include "protocol/base_protocol.h"
+#include "mysqlrouter/base_protocol.h"
 #include "protocol/classic_protocol.h"
 #include "routing_mocks.h"
 #include "socket_operations.h"
@@ -66,7 +67,7 @@ class MockProtocol : public BaseProtocol {
   stdx::expected<size_t, std::error_code> copy_packets(int, int, bool,
                                                        std::vector<uint8_t> &,
                                                        int *, bool &, bool) {
-    return stdx::make_unexpected(make_error_code(std::errc::connection_reset));
+    return stdx::unexpected(make_error_code(std::errc::connection_reset));
   }
 };
 
@@ -121,7 +122,7 @@ TEST_F(TestRoutingConnection, IsCallbackCalledAtRunExit) {
   // pretend the server side is readable.
   EXPECT_CALL(io_ops, poll_one(_))
       .WillRepeatedly(
-          Return(stdx::make_unexpected(make_error_code(std::errc::timed_out))));
+          Return(stdx::unexpected(make_error_code(std::errc::timed_out))));
 
   EXPECT_CALL(*dynamic_cast<MockProtocol *>(&context.get_protocol()),
               get_type())
@@ -134,8 +135,8 @@ TEST_F(TestRoutingConnection, IsCallbackCalledAtRunExit) {
 
   // pretend the server closed the socket on the first recvmsg().
   EXPECT_CALL(sock_ops, recvmsg(server_socket_handle, _, _))
-      .WillOnce(Return(
-          stdx::make_unexpected(make_error_code(net::stream_errc::eof))));
+      .WillOnce(
+          Return(stdx::unexpected(make_error_code(net::stream_errc::eof))));
 
   // each FD is removed once
   EXPECT_CALL(io_ops, remove_fd(client_socket_handle)).Times(1);

@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -121,7 +122,7 @@ struct OsslDeleter<RSA> {
 stdx::expected<void, std::error_code> set_dh_params_from_filename(
     SSL_CTX *ssl_ctx, const std::string &dh_params) {
   OsslUniquePtr<BIO> pem_bio_storage(BIO_new_file(dh_params.c_str(), "rb"));
-  if (!pem_bio_storage) return stdx::make_unexpected(make_tls_error());
+  if (!pem_bio_storage) return stdx::unexpected(make_tls_error());
 
   auto pem_bio = pem_bio_storage.get();
 
@@ -131,7 +132,7 @@ stdx::expected<void, std::error_code> set_dh_params_from_filename(
       OSSL_DECODER_CTX_new_for_pkey(
           &dhpkey, "PEM", nullptr, "DH", OSSL_KEYMGMT_SELECT_DOMAIN_PARAMETERS,
           nullptr /* libctx */, nullptr /* propquery */));
-  if (!decoder_ctx_storage) return stdx::make_unexpected(make_tls_error());
+  if (!decoder_ctx_storage) return stdx::unexpected(make_tls_error());
 
   auto *decoder_ctx = decoder_ctx_storage.get();
 
@@ -148,7 +149,7 @@ stdx::expected<void, std::error_code> set_dh_params_from_filename(
       // DECODER::unsupported: No supported data to decode. Input type: PEM
       ERR_raise(ERR_LIB_OSSL_DECODER, ERR_R_UNSUPPORTED);
     }
-    return stdx::make_unexpected(make_tls_error());
+    return stdx::unexpected(make_tls_error());
   }
 
   OsslUniquePtr<EVP_PKEY> dhpkey_storage(
@@ -158,7 +159,7 @@ stdx::expected<void, std::error_code> set_dh_params_from_filename(
       EVP_PKEY_CTX_new(dhpkey, nullptr));
 
   if (1 != EVP_PKEY_param_check(evp_ctx_storage.get())) {
-    return stdx::make_unexpected(make_tls_error());
+    return stdx::unexpected(make_tls_error());
   }
 
   int dh_bits;
@@ -167,17 +168,17 @@ stdx::expected<void, std::error_code> set_dh_params_from_filename(
     //
     // on the other side it should never fail as the "bits" should be always
     // present.
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 #else
   OsslUniquePtr<DH> dh_storage(
       PEM_read_bio_DHparams(pem_bio, nullptr, nullptr, nullptr));
-  if (!dh_storage) return stdx::make_unexpected(make_tls_error());
+  if (!dh_storage) return stdx::unexpected(make_tls_error());
 
   DH *dh = dh_storage.get();
 
   int codes = 0;
-  if (1 != DH_check(dh, &codes)) return stdx::make_unexpected(make_tls_error());
+  if (1 != DH_check(dh, &codes)) return stdx::unexpected(make_tls_error());
 
   if (codes != 0) {
     throw std::runtime_error("check of DH params failed: ");
@@ -195,12 +196,12 @@ stdx::expected<void, std::error_code> set_dh_params_from_filename(
 #if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(3, 0, 0)
   // on success, ownership if pkey is moved to the ssl-ctx
   if (1 != SSL_CTX_set0_tmp_dh_pkey(ssl_ctx, dhpkey)) {
-    return stdx::make_unexpected(make_tls_error());
+    return stdx::unexpected(make_tls_error());
   }
   (void)dhpkey_storage.release();
 #else
   if (1 != SSL_CTX_set_tmp_dh(ssl_ctx, dh)) {
-    return stdx::make_unexpected(make_tls_error());
+    return stdx::unexpected(make_tls_error());
   }
 #endif
 
@@ -212,7 +213,7 @@ stdx::expected<void, std::error_code> set_dh_params_from_filename(
  */
 stdx::expected<void, std::error_code> set_auto_dh_params(SSL_CTX *ssl_ctx) {
   if (false != set_dh(ssl_ctx)) {
-    return stdx::make_unexpected(make_tls_error());
+    return stdx::unexpected(make_tls_error());
   }
 
   return {};
@@ -245,10 +246,10 @@ stdx::expected<void, std::error_code> TlsServerContext::init_tmp_dh(
     const std::string &dh_params) {
   if (!dh_params.empty()) {
     auto set_res = set_dh_params_from_filename(ssl_ctx_.get(), dh_params);
-    if (!set_res) return stdx::make_unexpected(set_res.error());
+    if (!set_res) return stdx::unexpected(set_res.error());
   } else {
     auto set_res = set_auto_dh_params(ssl_ctx_.get());
-    if (!set_res) return stdx::make_unexpected(set_res.error());
+    if (!set_res) return stdx::unexpected(set_res.error());
   }
 
   // ensure DH keys are only used once
@@ -267,8 +268,7 @@ stdx::expected<void, std::error_code> TlsServerContext::verify(
 
       if (tls_opts) {
         // tls_opts MUST be zero if verify is NONE
-        return stdx::make_unexpected(
-            make_error_code(std::errc::invalid_argument));
+        return stdx::unexpected(make_error_code(std::errc::invalid_argument));
       }
       break;
     case TlsVerify::PEER:
@@ -297,7 +297,7 @@ stdx::expected<void, std::error_code> TlsServerContext::cipher_list(
 
   // load the cipher-list
   if (1 != SSL_CTX_set_cipher_list(ssl_ctx_.get(), ci.c_str())) {
-    return stdx::make_unexpected(make_tls_error());
+    return stdx::unexpected(make_tls_error());
   }
 
   return {};
@@ -361,7 +361,7 @@ stdx::expected<void, std::error_code> TlsServerContext::session_id_context(
     const unsigned char *sid_ctx, unsigned int sid_ctx_len) {
   if (0 ==
       SSL_CTX_set_session_id_context(ssl_ctx_.get(), sid_ctx, sid_ctx_len)) {
-    return stdx::make_unexpected(make_tls_error());
+    return stdx::unexpected(make_tls_error());
   }
 
   return {};

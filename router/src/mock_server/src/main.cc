@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2017, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -120,14 +121,6 @@ class MysqlServerMockFrontend {
   bool is_print_and_exit() { return do_print_and_exit_; }
 
   void run() {
-    signal_handler_.register_ignored_signals_handler();
-    signal_handler_.block_all_nonfatal_signals();
-    signal_handler_.register_fatal_signal_handler(config_.core_file);
-    signal_handler_.spawn_signal_handler_thread();
-#ifdef _WIN32
-    signal_handler_.register_ctrl_c_handler();
-#endif
-
     init_DIM();
     std::unique_ptr<mysql_harness::LoaderConfig> loader_config(
         new mysql_harness::LoaderConfig(mysql_harness::Config::allow_keys));
@@ -168,6 +161,15 @@ class MysqlServerMockFrontend {
     const std::string logfile_name = "mock_server_" + config_.port + ".log";
     logger_conf.add("filename", logfile_name);
 
+    // initialize the signal handler
+    signal_handler_.register_ignored_signals_handler();
+    signal_handler_.block_all_nonfatal_signals();
+    signal_handler_.register_fatal_signal_handler(config_.core_file);
+    signal_handler_.spawn_signal_handler_thread();
+#ifdef _WIN32
+    signal_handler_.register_ctrl_c_handler();
+#endif
+
     // assume all path relative to the installed binary
     auto plugin_dir = mysql_harness::get_plugin_dir(origin_dir_.str());
     loader_config->set_default("plugin_folder", plugin_dir);
@@ -196,6 +198,7 @@ class MysqlServerMockFrontend {
 
       auto &http_server_config = loader_config->add("http_server", "");
       http_server_config.set("library", "http_server");
+      http_server_config.set("bind_address", config_.bind_address);
       http_server_config.set("port", config_.http_port);
       http_server_config.set("static_folder", "");
     }
@@ -220,6 +223,7 @@ class MysqlServerMockFrontend {
     if (!config_.xport.empty()) {
       auto &mock_x_server_config = loader_config->add("mock_server", "x");
       mock_x_server_config.set("library", "mock_server");
+      mock_x_server_config.set("bind_address", config_.bind_address);
       mock_x_server_config.set("port", config_.xport);
       mock_x_server_config.set("filename", config_.queries_filename);
       mock_x_server_config.set("module_prefix", config_.module_prefix);

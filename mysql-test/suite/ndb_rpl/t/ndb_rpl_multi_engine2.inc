@@ -1,18 +1,18 @@
 #############################################################
 # Author: Rafal
 # Date: 2007-08-20
-# based on rpl_multi_engine3.inc
+# based on common/rpl/multi_engine3.inc
 #############################################################
 
 connection slave;
-STOP SLAVE;
-RESET SLAVE;
+STOP REPLICA;
+RESET REPLICA;
 
 connection master;
 RESET BINARY LOGS AND GTIDS;
 
 connection slave;
-START SLAVE;
+START REPLICA;
 
 --echo --- Populate t1 with data ---
 connection master;

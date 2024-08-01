@@ -1,15 +1,16 @@
-/* Copyright (c) 2017, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1054,8 +1055,19 @@ int Client::validate_remote_params() {
       continue;
     }
 
-    /* Built-in plugins with no shared object should already be installed. */
-    assert(!so_name.empty());
+    /*
+      Regardless of whether a plugin is builtin or not, donor will always
+      send plugin name (always non-empty) and dynamic library name (can be
+      empty).
+
+      The assumption is that if plugin is not installed, it must have
+      a corresponding dynamic library.
+
+      This is true for all plugins except mysql_native_password which
+      does not have a corresponding shared library but is disabled by
+      default.
+    */
+    assert(!so_name.empty() || plugin_name == "mysql_native_password");
 
     if (so_name.empty() || plugin_is_loadable(so_name)) {
       continue;

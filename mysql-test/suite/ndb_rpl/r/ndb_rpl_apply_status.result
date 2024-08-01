@@ -1,4 +1,4 @@
-include/master-slave.inc
+include/rpl/init_source_replica.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
@@ -50,7 +50,7 @@ select count(*) from mysql.ndb_apply_status;
 count(*)
 1
 drop table t1;
-*** Test reset slave clearing ndb_apply_status ***
+*** Test reset replica clearing ndb_apply_status ***
 create table test.t1 (a int primary key) engine=ndb;
 insert into test.t1 values (1);
 Add a dummy entry
@@ -58,42 +58,34 @@ insert into mysql.ndb_apply_status values (999, 9677, 'CaramelLog', 1977, 2015);
 select count(1) from mysql.ndb_apply_status;
 count(1)
 2
-*** Standard reset slave should clear ndb_apply_status ***
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-reset slave;
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
+*** Standard reset replica should clear ndb_apply_status ***
+STOP REPLICA;
+RESET REPLICA;
 select count(1) from mysql.ndb_apply_status;
 count(1)
 0
 reset binary logs and gtids;
-include/rpl_start_slaves.inc
-*** Test reset slave all ***
+include/rpl/start_all_replicas.inc
+*** Test reset replica all ***
 insert into test.t1 values (2);
 Add a dummy entry
 insert into mysql.ndb_apply_status values (999, 9677, 'CaramelLog', 1977, 2015);
 select count(1) from mysql.ndb_apply_status;
 count(1)
 2
-*** Reset slave all should clear ndb_apply_status ***
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-reset slave all;
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
+*** Reset replica all should clear ndb_apply_status ***
+STOP REPLICA;
+RESET REPLICA all;
 select count(1) from mysql.ndb_apply_status;
 count(1)
 0
 reset binary logs and gtids;
-RESET SLAVE ALL zapped Master info - re-set it.
-include/rpl_change_topology.inc [new topology=1->2]
+RESET REPLICA ALL zapped Master info - re-set it.
+include/rpl/change_topology.inc [new topology=1->2]
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
-include/rpl_start_slaves.inc
+include/rpl/start_all_replicas.inc
 *** Test effect of ndb_clear_apply_status = 0 ***
 set global ndb_clear_apply_status=0;
 insert into test.t1 values (3);
@@ -102,46 +94,38 @@ insert into mysql.ndb_apply_status values (999, 9677, 'CaramelLog', 1977, 2015);
 select count(1) from mysql.ndb_apply_status;
 count(1)
 2
-*** Standard reset slave should NOT clear ndb_apply_status ***
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-reset slave;
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
+*** Standard reset replica should NOT clear ndb_apply_status ***
+STOP REPLICA;
+RESET REPLICA;
 select count(1) from mysql.ndb_apply_status;
 count(1)
 2
 delete from mysql.ndb_apply_status;
 reset binary logs and gtids;
-include/rpl_start_slaves.inc
-*** Test reset slave all ***
+include/rpl/start_all_replicas.inc
+*** Test reset replica all ***
 insert into test.t1 values (4);
 Add a dummy entry
 insert into mysql.ndb_apply_status values (999, 9677, 'CaramelLog', 1977, 2015);
 select count(1) from mysql.ndb_apply_status;
 count(1)
 2
-*** Reset slave all should NOT clear ndb_apply_status ***
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-reset slave all;
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
+*** Reset replica all should NOT clear ndb_apply_status ***
+STOP REPLICA;
+RESET REPLICA all;
 select count(1) from mysql.ndb_apply_status;
 count(1)
 2
 reset binary logs and gtids;
-RESET SLAVE ALL zapped Master info - re-set it.
-include/rpl_change_topology.inc [new topology=1->2]
+RESET REPLICA ALL zapped Master info - re-set it.
+include/rpl/change_topology.inc [new topology=1->2]
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
-include/rpl_start_slaves.inc
+include/rpl/start_all_replicas.inc
 set global ndb_clear_apply_status=1;
 drop table test.t1;
-include/rpl_end.inc
+include/rpl/deinit.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.

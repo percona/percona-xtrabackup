@@ -1,15 +1,15 @@
 # ==== Purpose ====
 #
-# This test will check if reset slave is generating correct Previous_gtids
-# event in first relay log file after a RESET SLAVE.
+# This test will check if reset replica is generating correct Previous_gtids
+# event in first relay log file after a RESET REPLICA.
 #
 # It will:
 # 1) generate some workload at the master;
 # 2) sync the slave with the master;
-# 3) stop slave replication threads;
+# 3) stop replica replication threads;
 # 4) do RESET BINARY LOGS AND GTIDS on the master;
 # 5) do RESET BINARY LOGS AND GTIDS on the slave;
-# 6) do RESET SLAVE on the slave;
+# 6) do RESET REPLICA on the slave;
 # 7) restart the slave.
 #
 # Slave shall be able to sync with master without issues.
@@ -21,26 +21,26 @@
 
 # This test case is binary log format agnostic
 --source include/have_binlog_format_row.inc
---source include/master-slave.inc
+--source include/rpl/init_source_replica.inc
 
 CREATE TABLE t1 (c1 INT);
---source include/sync_slave_sql_with_master.inc
---source include/stop_slave.inc
+--source include/rpl/sync_to_replica.inc
+--source include/rpl/stop_replica.inc
 
---source include/rpl_connection_master.inc
+--source include/rpl/connection_source.inc
 RESET BINARY LOGS AND GTIDS;
 
---source include/rpl_connection_slave.inc
+--source include/rpl/connection_replica.inc
 RESET BINARY LOGS AND GTIDS;
-RESET SLAVE;
---source include/start_slave.inc
+RESET REPLICA;
+--source include/rpl/start_replica.inc
 
 --source include/kill_and_restart_mysqld.inc
 
 --let $rpl_server_number= 2
---source include/rpl_reconnect.inc
+--source include/rpl/reconnect.inc
 
---source include/rpl_connection_master.inc
+--source include/rpl/connection_source.inc
 DROP TABLE t1;
 
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

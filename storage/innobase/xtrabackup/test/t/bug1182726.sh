@@ -25,5 +25,5 @@ multi_row_insert incremental_sample.test \({1..100},100\)
 switch_server $slave_id
 
 xtrabackup --backup --slave-info --safe-slave-backup --no-lock --target-dir=$topdir/backup
-egrep -q '^CHANGE MASTER TO MASTER_LOG_FILE='\''mysql-bin.[0-9]+'\'', MASTER_LOG_POS=[0-9]+;$' \
+egrep -q '^CHANGE REPLICATION SOURCE TO SOURCE_LOG_FILE='\''mysql-bin.[0-9]+'\'', SOURCE_LOG_POS=[0-9]+;$' \
     $topdir/backup/xtrabackup_slave_info

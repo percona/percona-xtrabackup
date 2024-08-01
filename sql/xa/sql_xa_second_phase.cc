@@ -1,15 +1,16 @@
-/* Copyright (c) 2022, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -29,7 +30,6 @@
 #include "sql/rpl_replica_commit_order_manager.h"  // Commit_order_manager
 #include "sql/sql_class.h"                         // THD
 #include "sql/transaction_info.h"                  // Transaction_ctx
-#include "sql/xa/transaction_cache.h"              // xa::Transaction_cache
 
 Sql_cmd_xa_second_phase::Sql_cmd_xa_second_phase(xid_t *xid_arg)
     : m_xid(xid_arg) {}
@@ -166,7 +166,6 @@ void Sql_cmd_xa_second_phase::exit_commit_order(THD *thd) const {
 }
 
 void Sql_cmd_xa_second_phase::cleanup_context(THD *thd) const {
-  assert(this->m_detached_trx_context != nullptr);
   auto thd_xs = thd->get_transaction()->xid_state();
 
   // Restoring the binlogged status of the thd_xid_state after borrowing it
@@ -176,7 +175,6 @@ void Sql_cmd_xa_second_phase::cleanup_context(THD *thd) const {
   MDL_context_backup_manager::instance().delete_backup(
       this->m_xid->key(), this->m_xid->key_length());
 
-  xa::Transaction_cache::remove(this->m_detached_trx_context.get());
   gtid_state_commit_or_rollback(thd, this->m_need_clear_owned_gtid,
                                 !this->m_result);
 }

@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,7 +26,7 @@
 #ifndef MYSQL_HARNESS_NET_TS_IMPL_KQUEUE_H_
 #define MYSQL_HARNESS_NET_TS_IMPL_KQUEUE_H_
 
-#include "router_config.h"  // HAVE_KQUEUE
+#include "my_config.h"  // HAVE_KQUEUE
 
 #ifdef HAVE_KQUEUE
 #include <chrono>
@@ -45,7 +46,7 @@ inline stdx::expected<int, std::error_code> create() {
   int res = ::kqueue();
 
   if (res == -1) {
-    return stdx::make_unexpected(impl::socket::last_error_code());
+    return stdx::unexpected(impl::socket::last_error_code());
   }
 
   return {res};
@@ -57,7 +58,7 @@ inline stdx::expected<int, std::error_code> kevent(
   int res = ::kevent(kedf, changelist, nchanges, eventlist, nevents, timeout);
 
   if (res == -1) {
-    return stdx::make_unexpected(impl::socket::last_error_code());
+    return stdx::unexpected(impl::socket::last_error_code());
   }
 
   return {res};

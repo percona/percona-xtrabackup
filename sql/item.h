@@ -1,18 +1,19 @@
 #ifndef ITEM_INCLUDED
 #define ITEM_INCLUDED
 
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -966,36 +967,30 @@ class Item : public Parse_tree_node {
                               const std::nothrow_t &) noexcept {}
 
   enum Type {
-    INVALID_ITEM = 0,
-    FIELD_ITEM,
-    FUNC_ITEM,
-    SUM_FUNC_ITEM,
-    STRING_ITEM,
-    INT_ITEM,
-    REAL_ITEM,
-    NULL_ITEM,
-    VARBIN_ITEM,
-    METADATA_COPY_ITEM,
-    FIELD_AVG_ITEM,
-    DEFAULT_VALUE_ITEM,
-    PROC_ITEM,
-    COND_ITEM,
-    REF_ITEM,
-    FIELD_STD_ITEM,
-    FIELD_VARIANCE_ITEM,
-    INSERT_VALUE_ITEM,
-    SUBSELECT_ITEM,
-    ROW_ITEM,
-    CACHE_ITEM,
-    TYPE_HOLDER,
-    PARAM_ITEM,
-    TRIGGER_FIELD_ITEM,
-    DECIMAL_ITEM,
-    XPATH_NODESET,
-    XPATH_NODESET_CMP,
-    VIEW_FIXER_ITEM,
-    FIELD_BIT_ITEM,
-    VALUES_COLUMN_ITEM
+    INVALID_ITEM,
+    FIELD_ITEM,          ///< A reference to a field (column) in a table.
+    FUNC_ITEM,           ///< A function call reference.
+    SUM_FUNC_ITEM,       ///< A grouped aggregate function, or window function.
+    AGGR_FIELD_ITEM,     ///< A special field for certain aggregate operations.
+    STRING_ITEM,         ///< A string literal value.
+    INT_ITEM,            ///< An integer literal value.
+    DECIMAL_ITEM,        ///< A decimal literal value.
+    REAL_ITEM,           ///< A floating-point literal value.
+    NULL_ITEM,           ///< A NULL value.
+    HEX_BIN_ITEM,        ///< A hexadecimal or binary literal value.
+    DEFAULT_VALUE_ITEM,  ///< A default value for a column.
+    COND_ITEM,           ///< An AND or OR condition.
+    REF_ITEM,            ///< An indirect reference to another item.
+    INSERT_VALUE_ITEM,   ///< A value from a VALUES function (deprecated).
+    SUBQUERY_ITEM,       ///< A subquery or predicate referencing a subquery.
+    ROW_ITEM,            ///< A row of other items.
+    CACHE_ITEM,          ///< An internal item used to cache values.
+    TYPE_HOLDER_ITEM,    ///< An internal item used to help aggregate a type.
+    PARAM_ITEM,          ///< A dynamic parameter used in a prepared statement.
+    ROUTINE_FIELD_ITEM,  ///< A variable inside a routine (proc, func, trigger)
+    TRIGGER_FIELD_ITEM,  ///< An OLD or NEW field, used in trigger definitions.
+    XPATH_NODESET_ITEM,  ///< Used in XPATH expressions.
+    VALUES_COLUMN_ITEM   ///< A value from a VALUES clause.
   };
 
   enum cond_result { COND_UNDEF, COND_OK, COND_TRUE, COND_FALSE };
@@ -1515,6 +1510,7 @@ class Item : public Parse_tree_node {
   inline void set_data_type_bool() {
     set_data_type(MYSQL_TYPE_LONGLONG);
     collation.set_numeric();
+    decimals = 0;
     max_length = 1;
   }
 
@@ -1533,6 +1529,7 @@ class Item : public Parse_tree_node {
     set_data_type(type);
     collation.set_numeric();
     unsigned_flag = unsigned_prop;
+    decimals = 0;
     fix_char_length(max_width);
   }
 
@@ -1544,6 +1541,7 @@ class Item : public Parse_tree_node {
   inline void set_data_type_longlong() {
     set_data_type(MYSQL_TYPE_LONGLONG);
     collation.set_numeric();
+    decimals = 0;
     fix_char_length(21);
   }
 
@@ -1748,6 +1746,7 @@ class Item : public Parse_tree_node {
   void set_data_type_year() {
     set_data_type(MYSQL_TYPE_YEAR);
     collation.set_numeric();
+    decimals = 0;
     fix_char_length(4);  // YYYY
     unsigned_flag = true;
   }
@@ -3186,6 +3185,16 @@ class Item : public Parse_tree_node {
           m_default_value(default_value) {}
   };
 
+  struct Item_func_call_replacement : Item_replacement {
+    Item_func *m_target;  ///< The function call to be replaced
+    Item_field *m_item;   ///< The replacement field
+    Item_func_call_replacement(Item_func *func_target, Item_field *item,
+                               Query_block *select)
+        : Item_replacement(select, select),
+          m_target(func_target),
+          m_item(item) {}
+  };
+
   struct Item_view_ref_replacement : Item_replacement {
     Item *m_target;  ///< The item identifying the view_ref to be replaced
     Field *m_field;  ///< The replacement field
@@ -3217,6 +3226,7 @@ class Item : public Parse_tree_node {
     operation of the original transformed query block.
   */
   virtual Item *replace_item_field(uchar *) { return this; }
+  virtual Item *replace_func_call(uchar *) { return this; }
   virtual Item *replace_item_view_ref(uchar *) { return this; }
   virtual Item *replace_aggregate(uchar *) { return this; }
   virtual Item *replace_outer_ref(uchar *) { return this; }
@@ -3888,9 +3898,6 @@ class Item_splocal final : public Item_sp_variable,
                            private Settable_routine_parameter {
   uint m_var_idx;
 
-  Type m_type;
-  Item_result m_result_type;
-
  public:
   /*
     If this variable is a parameter in LIMIT clause.
@@ -3933,10 +3940,12 @@ class Item_splocal final : public Item_sp_variable,
              enum_query_type query_type) const override;
 
  public:
-  inline uint get_var_idx() const { return m_var_idx; }
+  uint get_var_idx() const { return m_var_idx; }
 
-  inline enum Type type() const override { return m_type; }
-  inline Item_result result_type() const override { return m_result_type; }
+  Type type() const override { return ROUTINE_FIELD_ITEM; }
+  Item_result result_type() const override {
+    return type_to_result(data_type());
+  }
   bool val_json(Json_wrapper *result) override;
 
  private:
@@ -4063,7 +4072,7 @@ class Item_num : public Item_basic_constant {
   bool check_partition_func_processor(uchar *) override { return false; }
 };
 
-#define NO_FIELD_INDEX ((uint16)(-1))
+inline constexpr uint16 NO_FIELD_INDEX((uint16)(-1));
 
 class Item_ident : public Item {
   typedef Item super;
@@ -4364,9 +4373,9 @@ class Item_field : public Item_ident {
     For fields referencing such tables, table number is always 0, and other
     uses of table_ref is not needed.
   */
-  Table_ref *table_ref;
+  Table_ref *table_ref{nullptr};
   /// Source field
-  Field *field;
+  Field *field{nullptr};
 
  private:
   /// Result field
@@ -4400,29 +4409,27 @@ class Item_field : public Item_ident {
   */
   bool m_protected_by_any_value{false};
 
- public:
   /**
+    Holds a list of items whose values must be equal to the value of
+    this field, during execution.
+
     Used during optimization to perform multiple equality analysis,
     this analysis should be performed during preparation instead, so that
     Item_field can be const after preparation.
   */
-  Item_equal *item_equal{nullptr};
+  Item_equal *m_multi_equality{nullptr};
+
+ public:
   /**
     Index for this field in table->field array. Holds NO_FIELD_INDEX
     if index value is not known.
   */
-  uint16 field_index;
-
-  void set_item_equal(Item_equal *item_equal_arg) {
-    if (item_equal == nullptr && item_equal_arg != nullptr) {
-      item_equal = item_equal_arg;
-    }
-  }
+  uint16 field_index{NO_FIELD_INDEX};
+  Item_equal *multi_equality() const { return m_multi_equality; }
 
   void set_item_equal_all_join_nests(Item_equal *item_equal) {
-    if (item_equal != nullptr) {
-      item_equal_all_join_nests = item_equal;
-    }
+    assert(item_equal != nullptr);
+    item_equal_all_join_nests = item_equal;
   }
 
   // A list of fields that are considered "equal" to this field. E.g., a query
@@ -4442,9 +4449,9 @@ class Item_field : public Item_ident {
     if any_privileges set to true then here real effective privileges will
     be stored
   */
-  uint have_privileges;
+  uint have_privileges{0};
   /* field need any privileges (for VIEW creation) */
-  bool any_privileges;
+  bool any_privileges{false};
   /*
     if this field is used in a context where covering prefix keys
     are supported.
@@ -5683,7 +5690,7 @@ class Item_blob final : public Item_partition_func_safe_string {
                                         &my_charset_bin) {
     set_data_type(MYSQL_TYPE_BLOB);
   }
-  enum Type type() const override { return TYPE_HOLDER; }
+  enum Type type() const override { return STRING_ITEM; }
   bool check_function_as_value_generator(uchar *args) override {
     Check_function_as_value_generator_parameters *func_arg =
         pointer_cast<Check_function_as_value_generator_parameters *>(args);
@@ -5736,7 +5743,7 @@ class Item_hex_string : public Item_basic_constant {
 
   Item_hex_string(const POS &pos, const LEX_STRING &literal);
 
-  enum Type type() const override { return VARBIN_ITEM; }
+  enum Type type() const override { return HEX_BIN_ITEM; }
   double val_real() override {
     assert(fixed);
     return (double)(ulonglong)Item_hex_string::val_int();
@@ -6464,7 +6471,8 @@ class Item_metadata_copy final : public Item {
     collation.set(item->collation);
   }
 
-  enum Type type() const override { return METADATA_COPY_ITEM; }
+  // This is unused - use same code as type holder item.
+  enum Type type() const override { return TYPE_HOLDER_ITEM; }
   Item_result result_type() const override { return cached_result_type; }
   table_map used_tables() const override { return 1; }
 
@@ -7269,7 +7277,7 @@ class Item_type_holder final : public Item_aggregate_type {
   /// Query_expression::get_unit_column_types() always contains named items.
   Item_type_holder(THD *thd, Item *item) : super(thd, item) {}
 
-  enum Type type() const override { return TYPE_HOLDER; }
+  enum Type type() const override { return TYPE_HOLDER_ITEM; }
 
   double val_real() override;
   longlong val_int() override;

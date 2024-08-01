@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -88,7 +89,7 @@ NdbOut &operator<<(NdbOut &no, const CommitTransactionRecord &ctr) {
   printOut("Record type:", ctr.m_recordType);
   printOut("TableId", ctr.m_tableId);
   printOut("SchemaVersion:", ctr.m_schemaVersion);
-  printOut("FfragmentId", ctr.m_fragmentId);
+  printOut("FragmentId", ctr.m_fragmentId);
   printOut("File no. of Prep. Op.", ctr.m_fileNumberOfPrepareOperation);
   printOut("Start page no. of Prep. Op.",
            ctr.m_startPageNumberOfPrepareOperation);
@@ -119,7 +120,7 @@ NdbOut &operator<<(NdbOut &no, const InvalidCommitTransactionRecord &ictr) {
   no << "------INVALID COMMIT TRANSACTION RECORD--------" << endl << endl;
   printOut("Record type:", ictr.m_recordType);
   printOut("TableId", ictr.m_tableId);
-  printOut("FfragmentId", ictr.m_fragmentId);
+  printOut("FragmentId", ictr.m_fragmentId);
   printOut("File no. of Prep. Op.", ictr.m_fileNumberOfPrepareOperation);
   printOut("Start page no. of Prep. Op.",
            ictr.m_startPageNumberOfPrepareOperation);
@@ -182,7 +183,7 @@ NdbOut &operator<<(NdbOut &no, const PrepareOperationRecord &por) {
 
 #if 1
   // Print keydata
-  Uint32 *p = (Uint32 *)&por.m_keyInfo;
+  const Uint32 *p = &por.m_key_attr_Info[0];
   for (Uint32 i = 0; i < por.m_keyLength; i++) {
     printOut("keydata:", *p);
     p++;

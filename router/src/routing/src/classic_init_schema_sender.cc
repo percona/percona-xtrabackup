@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2023, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -50,19 +51,18 @@ stdx::expected<Processor::Result, std::error_code> InitSchemaSender::process() {
 }
 
 stdx::expected<Processor::Result, std::error_code> InitSchemaSender::command() {
-  auto *socket_splicer = connection()->socket_splicer();
-  auto dst_channel = socket_splicer->server_channel();
-  auto dst_protocol = connection()->server_protocol();
+  auto &dst_conn = connection()->server_conn();
+  auto &dst_protocol = dst_conn.protocol();
 
   if (auto &tr = tracer()) {
     tr.trace(Tracer::Event().stage("init_schema::command"));
     tr.trace(Tracer::Event().stage(">> " + schema_));
   }
 
-  dst_protocol->seq_id(0xff);
+  dst_protocol.seq_id(0xff);
 
   auto send_res = ClassicFrame::send_msg(
-      dst_channel, dst_protocol,
+      dst_conn,
       classic_protocol::borrowed::message::client::InitSchema{schema_});
   if (!send_res) return send_server_failed(send_res.error());
 
@@ -72,15 +72,13 @@ stdx::expected<Processor::Result, std::error_code> InitSchemaSender::command() {
 
 stdx::expected<Processor::Result, std::error_code>
 InitSchemaSender::response() {
-  auto *socket_splicer = connection()->socket_splicer();
-  auto src_channel = socket_splicer->server_channel();
-  auto src_protocol = connection()->server_protocol();
+  auto &src_conn = connection()->server_conn();
+  auto &src_protocol = src_conn.protocol();
 
-  auto read_res =
-      ClassicFrame::ensure_has_msg_prefix(src_channel, src_protocol);
+  auto read_res = ClassicFrame::ensure_has_msg_prefix(src_conn);
   if (!read_res) return recv_server_failed(read_res.error());
 
-  const uint8_t msg_type = src_protocol->current_msg_type().value();
+  const uint8_t msg_type = src_protocol.current_msg_type().value();
 
   enum class Msg {
     Error = ClassicFrame::cmd_byte<classic_protocol::message::server::Error>(),
@@ -100,17 +98,16 @@ InitSchemaSender::response() {
     tr.trace(Tracer::Event().stage("init_schema::response"));
   }
 
-  return stdx::make_unexpected(make_error_code(std::errc::bad_message));
+  return stdx::unexpected(make_error_code(std::errc::bad_message));
 }
 
 stdx::expected<Processor::Result, std::error_code> InitSchemaSender::ok() {
-  auto *socket_splicer = connection()->socket_splicer();
-  auto src_channel = socket_splicer->server_channel();
-  auto src_protocol = connection()->server_protocol();
+  auto &src_conn = connection()->server_conn();
+  auto &src_protocol = src_conn.protocol();
 
   auto msg_res =
       ClassicFrame::recv_msg<classic_protocol::borrowed::message::server::Ok>(
-          src_channel, src_protocol);
+          src_conn);
   if (!msg_res) return recv_server_failed(msg_res.error());
 
   if (auto &tr = tracer()) {
@@ -121,32 +118,32 @@ stdx::expected<Processor::Result, std::error_code> InitSchemaSender::ok() {
 
   if (!msg.session_changes().empty()) {
     auto track_res = connection()->track_session_changes(
-        net::buffer(msg.session_changes()), src_protocol->shared_capabilities(),
+        net::buffer(msg.session_changes()), src_protocol.shared_capabilities(),
         true /* ignore some-stage-changed. */
     );
+    if (!track_res) {
+      // ignore
+    }
   }
 
-  discard_current_msg(src_channel, src_protocol);
+  discard_current_msg(src_conn);
 
   stage(Stage::Done);
   return Result::Again;
 }
 
 stdx::expected<Processor::Result, std::error_code> InitSchemaSender::error() {
-  auto *socket_splicer = connection()->socket_splicer();
-  auto src_channel = socket_splicer->server_channel();
-  auto src_protocol = connection()->server_protocol();
+  auto &src_conn = connection()->server_conn();
 
   auto msg_res = ClassicFrame::recv_msg<
-      classic_protocol::borrowed::message::server::Error>(src_channel,
-                                                          src_protocol);
+      classic_protocol::borrowed::message::server::Error>(src_conn);
   if (!msg_res) return recv_server_failed(msg_res.error());
 
   if (auto &tr = tracer()) {
     tr.trace(Tracer::Event().stage("init_schema::error"));
   }
 
-  discard_current_msg(src_channel, src_protocol);
+  discard_current_msg(src_conn);
 
   stage(Stage::Done);
   return Result::Again;

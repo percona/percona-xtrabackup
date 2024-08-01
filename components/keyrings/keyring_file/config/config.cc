@@ -1,15 +1,16 @@
-/* Copyright (c) 2021, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -68,9 +69,13 @@ const std::string config_file_name = "component_keyring_file.cnf";
 /* Config names */
 const std::string config_options[] = {"read_local_config", "path", "read_only"};
 
-bool find_and_read_config_file(std::unique_ptr<Config_pod> &config_pod) {
+bool find_and_read_config_file(std::unique_ptr<Config_pod> &config_pod,
+                               std::string &err) {
   config_pod = std::make_unique<Config_pod>();
-  if (!config_pod) return true;
+  if (!config_pod) {
+    err = "Failed to allocate memory for configuration details";
+    return true;
+  }
   /* Get shared library location */
   std::string path(g_component_path);
 
@@ -84,7 +89,10 @@ bool find_and_read_config_file(std::unique_ptr<Config_pod> &config_pod) {
     full_path.append(config_file_name);
     return false;
   };
-  if (set_config_path(path) == true) return true;
+  if (set_config_path(path) == true) {
+    err = "Failed to set path to configuration file";
+    return true;
+  }
 #ifdef XTRABACKUP
   path = xtrabackup::components::component_config_path;
 #endif
@@ -110,15 +118,22 @@ bool find_and_read_config_file(std::unique_ptr<Config_pod> &config_pod) {
       }
     }
   }
-
+  std::string missing_option;
   if (config_reader->get_element<std::string>(
-          config_options[1], config_pod.get()->config_file_path_) ||
-      config_reader->get_element<bool>(config_options[2],
+          config_options[1], config_pod.get()->config_file_path_)) {
+    missing_option = config_options[1];
+    goto error;
+  }
+  if (config_reader->get_element<bool>(config_options[2],
                                        config_pod.get()->read_only_)) {
-    config_pod.reset();
-    return true;
+    missing_option = config_options[2];
+    goto error;
   }
   return false;
+error:
+  config_pod.reset();
+  err = "Could not find '" + missing_option + "' value in configuration file";
+  return true;
 }
 
 bool create_config(

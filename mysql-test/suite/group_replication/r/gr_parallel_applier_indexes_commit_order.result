@@ -30,7 +30,7 @@ SET SESSION sql_log_bin= 1;
 [connection server1]
 CREATE TABLE t1 (a INT NOT NULL PRIMARY KEY) ENGINE=InnoDB;
 INSERT INTO t1 VALUES (0);
-include/rpl_sync.inc
+include/rpl/sync.inc
 
 # Force a binary log rotate on remote servers: 2 and 3.
 #
@@ -112,20 +112,20 @@ UNLOCK TABLES;
 # Wait for group synchronization.
 #
 [connection server1]
-include/rpl_sync.inc
+include/rpl/sync.inc
 
 ############################################################
 # 3.  Verify that above transactions are committed on server
 #     2 and 3 on the same order they were on server 1.
 #
 
-# include/gr_mts_indexes_commit_order_validation.inc
+# include/gr_mta_indexes_commit_order_validation.inc
 # Parameters: server_number: 2
 [connection server2]
 
 # Assert parallel indexes, the 4 groups of transactions
 # must be parallel.
-include/include/assert_logical_timestamps.inc [0 0;3 4;3 5;3 6;3 7;3 8;3 9;3 10;3 11;3 12;3 13;3 14;3 15;3 16;3 17;3 18;3 19;3 20]
+include/include/rpl/assert_logical_timestamps.inc [0 0;2 3;2 4;2 5;2 6;2 7;2 8;2 9;2 10;2 11;2 12;2 13;2 14;2 15;2 16;2 17;2 18;2 19]
 include/stop_group_replication.inc
 
 # Binary log will be reapplied one by one later through mysql. The
@@ -166,13 +166,13 @@ include/assert.inc ['There are no row which is null']
 include/assert.inc ['There are 16 rows']
 DROP TABLE t1;
 
-# include/gr_mts_indexes_commit_order_validation.inc
+# include/gr_mta_indexes_commit_order_validation.inc
 # Parameters: server_number: 3
 [connection server3]
 
 # Assert parallel indexes, the 4 groups of transactions
 # must be parallel.
-include/include/assert_logical_timestamps.inc [0 0;4 5;4 6;4 7;4 8;4 9;4 10;4 11;4 12;4 13;4 14;4 15;4 16;4 17;4 18;4 19;4 20;4 21]
+include/include/rpl/assert_logical_timestamps.inc [0 0;2 3;2 4;2 5;2 6;2 7;2 8;2 9;2 10;2 11;2 12;2 13;2 14;2 15;2 16;2 17;2 18;2 19]
 include/stop_group_replication.inc
 
 # Binary log will be reapplied one by one later through mysql. The

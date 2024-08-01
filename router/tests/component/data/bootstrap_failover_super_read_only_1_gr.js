@@ -9,6 +9,7 @@ var options = {
       mysqld.global.gr_node_host, mysqld.global.gr_nodes),
   innodb_cluster_instances: gr_memberships.cluster_nodes(
       mysqld.global.gr_node_host, mysqld.global.cluster_nodes),
+  router_version: mysqld.global.router_version,
 };
 
 var common_responses = common_stmts.prepare_statement_responses(
@@ -20,7 +21,6 @@ var common_responses = common_stmts.prepare_statement_responses(
       "router_select_current_instance_attributes",
       "router_select_replication_group_name",
       "router_select_group_membership",
-      "router_select_metadata_v2",
       "router_count_clusters_v2",
       "router_check_member_state",
       "router_select_members_count",
@@ -45,6 +45,7 @@ var common_responses_regex = common_stmts.prepare_statement_responses_regex(
       "router_grant_on_v2_routers",
       "router_update_routers_in_metadata",
       "router_update_router_options_in_metadata",
+      "router_select_config_defaults_stored_gr_cluster",
     ],
     options);
 

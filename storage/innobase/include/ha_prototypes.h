@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 2006, 2023, Oracle and/or its affiliates.
+Copyright (c) 2006, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -365,7 +366,6 @@ inline void send_errno_warn(THD *thd, int err, const std::string &context) {
 
 extern const char *TROUBLESHOOTING_MSG;
 extern const char *TROUBLESHOOT_DATADICT_MSG;
-extern const char *BUG_REPORT_MSG;
 extern const char *FORCE_RECOVERY_MSG;
 extern const char *ERROR_CREATING_MSG;
 extern const char *OPERATING_SYSTEM_ERROR_MSG;
@@ -472,7 +472,7 @@ ulong thd_parallel_read_threads(THD *thd);
 
 /** Return the maximum buffer size to use for DDL.
 @param[in]      thd       Session instance, or nullptr to query the global
-                          innodb_parallel_read_threads value.
+                          innodb_ddl_buffer_size value.
 @return memory upper limit in bytes. */
 [[nodiscard]] ulong thd_ddl_buffer_size(THD *thd);
 

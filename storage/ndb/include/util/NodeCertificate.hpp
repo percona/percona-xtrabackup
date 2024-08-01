@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2022, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2022, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -334,11 +335,21 @@ inline SigningRequest *SigningRequest::open(const PkiFile::PathName &p) {
 
 class SerialNumber {
  public:
-  static constexpr const size_t MaxLength = 20;
-  // Create a random serial number; caller should free using ASN1_STRING_free()
+  static constexpr size_t MaxLengthInBytes = 20;
   static struct asn1_string_st *random(size_t length = 10);
   static int print(char *buf, int len, const struct asn1_string_st *);
+  static std::string_view print_0x(const asn1_string_st *serial);
   static void free(struct asn1_string_st *);
+
+  class HexString {
+   public:
+    HexString(const struct asn1_string_st *);
+    const char *c_str() { return buf.c_str(); }
+
+   private:
+    static constexpr size_t Length = 2 + (MaxLengthInBytes * 2) + 1;
+    cstrbuf<Length> buf;
+  };
 };
 
 class ClusterCertAuthority {

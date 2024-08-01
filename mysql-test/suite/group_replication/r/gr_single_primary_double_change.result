@@ -25,7 +25,7 @@ include/start_group_replication.inc
 [connection server1]
 include/gr_wait_primary_member_uuid.inc
 CREATE TABLE t1 (c1 INT NOT NULL PRIMARY KEY, c2 INT) ENGINE=InnoDB;
-include/rpl_sync.inc
+include/rpl/sync.inc
 
 ###########################################################
 # 2. Lock the table on server 2 and insert data server 1.
@@ -41,7 +41,7 @@ INSERT INTO t1 VALUES(1,1);
 # the new primary.
 include/stop_group_replication.inc
 [connection server2]
-include/rpl_gr_wait_for_number_of_members.inc
+include/rpl/gr_wait_for_number_of_members.inc
 include/assert.inc [Verify server2 is primary]
 
 ###########################################################
@@ -55,10 +55,16 @@ include/start_group_replication.inc
 # 5. Insert a transaction on server 2. Since the server is
 #  still in read mode, it shall fail.
 [connection server2]
+SET @group_replication_consistency_save_auto_failover_inc= @@SESSION.group_replication_consistency;
+SET @@SESSION.group_replication_consistency= 'EVENTUAL';
 INSERT INTO t1 VALUES(1,2);
 ERROR HY000: The MySQL server is running with the --super-read-only option so it cannot execute this statement
+SET @@SESSION.group_replication_consistency= @group_replication_consistency_save_auto_failover_inc;
 [connection server_2]
+SET @group_replication_consistency_save_auto_failover_inc= @@SESSION.group_replication_consistency;
+SET @@SESSION.group_replication_consistency= 'EVENTUAL';
 UNLOCK TABLES;
+SET @@SESSION.group_replication_consistency= @group_replication_consistency_save_auto_failover_inc;
 include/assert.inc ['The value of Count_conflicts_detected should be 0 on server 2']
 
 ###########################################################

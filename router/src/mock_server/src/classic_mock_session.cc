@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -70,7 +71,7 @@ stdx::expected<size_t, std::error_code> MySQLClassicProtocol::read_packet(
 
   auto decode_res =
       classic_protocol::decode<classic_protocol::frame::Header>(buf, {});
-  if (!decode_res) return decode_res.get_unexpected();
+  if (!decode_res) return stdx::unexpected(decode_res.error());
 
   const auto hdr_frame = decode_res.value();
 
@@ -80,7 +81,7 @@ stdx::expected<size_t, std::error_code> MySQLClassicProtocol::read_packet(
   const auto payload_size = hdr.payload_size();
 
   if (payload_size == 0xffffff) {
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         make_error_code(std::errc::operation_not_supported));
   }
 
@@ -89,7 +90,7 @@ stdx::expected<size_t, std::error_code> MySQLClassicProtocol::read_packet(
 
   if (buf.size() < payload_size) {
     // not enough data.
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         make_error_code(classic_protocol::codec_errc::not_enough_input));
   }
 
@@ -177,7 +178,8 @@ void MySQLServerMockSessionClassic::client_greeting() {
           [this](std::error_code ec, size_t /* transferred */) {
             if (ec) {
               if (ec != std::errc::operation_canceled &&
-                  ec != make_error_condition(std::errc::connection_reset)) {
+                  ec != make_error_condition(std::errc::connection_reset) &&
+                  ec != net::stream_errc::eof) {
                 // op-cancelled: .cancel() was called
                 // connection-reset: client closed the connection after
                 // handshake was sent.
@@ -626,6 +628,10 @@ void MySQLClassicProtocol::encode_auth_fast_message() {
       classic_protocol::message::server::AuthMethodData>>(
       {seq_no_++, {"\x03"}}, shared_capabilities(),
       net::dynamic_buffer(send_buffer_));
+
+  if (!encode_res) {
+    // ignore
+  }
 }
 
 void MySQLClassicProtocol::encode_auth_switch_message(
@@ -634,6 +640,9 @@ void MySQLClassicProtocol::encode_auth_switch_message(
       classic_protocol::message::server::AuthMethodSwitch>>(
       {seq_no_++, msg}, shared_capabilities(),
       net::dynamic_buffer(send_buffer_));
+  if (!encode_res) {
+    // ignore
+  }
 }
 
 void MySQLClassicProtocol::encode_server_greeting(
@@ -644,6 +653,9 @@ void MySQLClassicProtocol::encode_server_greeting(
       classic_protocol::message::server::Greeting>>(
       {seq_no_++, greeting}, server_capabilities(),
       net::dynamic_buffer(send_buffer_));
+  if (!encode_res) {
+    // ignore
+  }
 }
 
 stdx::expected<std::string, std::error_code> cert_get_name(X509_NAME *name) {
@@ -654,7 +666,7 @@ stdx::expected<std::string, std::error_code> cert_get_name(X509_NAME *name) {
 #if 0
   int res = X509_NAME_print_ex(bio.get(), name, 0, XN_FLAG_ONELINE);
   if (res <= 0) {
-    return stdx::make_unexpected(make_tls_error());
+    return stdx::unexpected(make_tls_error());
   }
 
   BUF_MEM *buf;
@@ -665,7 +677,8 @@ stdx::expected<std::string, std::error_code> cert_get_name(X509_NAME *name) {
 #else
   std::array<char, 256> buf;
 
-  return {std::in_place, X509_NAME_oneline(name, buf.data(), buf.size())};
+  return stdx::expected<std::string, std::error_code>{
+      std::in_place, X509_NAME_oneline(name, buf.data(), buf.size())};
 #endif
 }
 
@@ -682,14 +695,14 @@ stdx::expected<void, ErrorResponse> MySQLServerMockSessionClassic::authenticate(
   auto handshake_data_res =
       json_reader_->handshake(false /* not is_greeting */);
   if (!handshake_data_res) {
-    return stdx::make_unexpected(handshake_data_res.error());
+    return stdx::unexpected(handshake_data_res.error());
   }
 
   auto handshake = handshake_data_res.value();
 
   if (handshake.username.has_value()) {
     if (handshake.username.value() != protocol_.username()) {
-      return stdx::make_unexpected(ErrorResponse{
+      return stdx::unexpected(ErrorResponse{
           ER_ACCESS_DENIED_ERROR,  // 1045
           "Access Denied for user '" + protocol_.username() + "'@'localhost'",
           "28000"});
@@ -700,7 +713,7 @@ stdx::expected<void, ErrorResponse> MySQLServerMockSessionClassic::authenticate(
     if (!protocol_.authenticate(
             protocol_.auth_method_name(), protocol_.auth_method_data(),
             handshake.password.value(), client_auth_method_data)) {
-      return stdx::make_unexpected(ErrorResponse{
+      return stdx::unexpected(ErrorResponse{
           ER_ACCESS_DENIED_ERROR,  // 1045
           "Access Denied for user '" + protocol_.username() + "'@'localhost'",
           "28000"});
@@ -714,7 +727,7 @@ stdx::expected<void, ErrorResponse> MySQLServerMockSessionClassic::authenticate(
         SSL_get_peer_certificate(ssl), &X509_free};
     if (!client_cert) {
       log_info("cert required, no cert received.");
-      return stdx::make_unexpected(ErrorResponse{
+      return stdx::unexpected(ErrorResponse{
           ER_ACCESS_DENIED_ERROR,  // 1045
           "Access Denied for user '" + protocol_.username() + "'@'localhost'",
           "28000"});
@@ -728,7 +741,7 @@ stdx::expected<void, ErrorResponse> MySQLServerMockSessionClassic::authenticate(
       log_debug("client-cert::subject: %s", subject_res.value().c_str());
 
       if (handshake.cert_subject.value() != subject_res.value()) {
-        return stdx::make_unexpected(ErrorResponse{
+        return stdx::unexpected(ErrorResponse{
             ER_ACCESS_DENIED_ERROR,  // 1045
             "Access Denied for user '" + protocol_.username() + "'@'localhost'",
             "28000"});
@@ -743,7 +756,7 @@ stdx::expected<void, ErrorResponse> MySQLServerMockSessionClassic::authenticate(
       log_debug("client-cert::issuer: %s", issuer_res.value().c_str());
 
       if (handshake.cert_issuer.value() != issuer_res.value()) {
-        return stdx::make_unexpected(ErrorResponse{
+        return stdx::unexpected(ErrorResponse{
             ER_ACCESS_DENIED_ERROR,  // 1045
             "Access Denied for user '" + protocol_.username() + "'@'localhost'",
             "28000"});
@@ -755,7 +768,7 @@ stdx::expected<void, ErrorResponse> MySQLServerMockSessionClassic::authenticate(
     if (verify_res != X509_V_OK) {
       log_info("ssl-verify failed: %ld", verify_res);
 
-      return stdx::make_unexpected(ErrorResponse{
+      return stdx::unexpected(ErrorResponse{
           ER_ACCESS_DENIED_ERROR,  // 1045
           "Access Denied for user '" + protocol_.username() + "'@'localhost'",
           "28000"});

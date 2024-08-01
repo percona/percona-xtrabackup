@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2022, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -26,8 +27,6 @@
 #define MYSQL_HARNESS_STDX_ITERATOR_H_
 
 #include <type_traits>
-
-#include "mysql/harness/stdx/type_traits.h"  // remove_cvref_t
 
 // from C++20
 
@@ -54,7 +53,7 @@ struct has_value_type : std::false_type {};
 
 template <class T>
 struct has_value_type<T,
-                      std::void_t<typename stdx::remove_cvref_t<T>::value_type>>
+                      std::void_t<typename std::remove_cvref_t<T>::value_type>>
     : std::true_type {};
 
 template <class T, bool = has_value_type<T>::value>
@@ -116,7 +115,7 @@ template <class T>
 struct indirectly_readable_traits<
     T, std::enable_if_t<impl::has_value_type<T>::value>>
     : impl::indirectly_readable_traits_member_value_type<
-          stdx::remove_cvref_t<T>> {};
+          std::remove_cvref_t<T>> {};
 
 template <class T>
 struct indirectly_readable_traits<
@@ -128,11 +127,11 @@ struct indirectly_readable_traits<const T> : indirectly_readable_traits<T> {};
 
 template <class T>
 using iter_value_t =
-    typename indirectly_readable_traits<stdx::remove_cvref_t<T>>::value_type;
+    typename indirectly_readable_traits<std::remove_cvref_t<T>>::value_type;
 
 template <class T>
 using iter_reference_t =
-    typename impl::iter_reference<stdx::remove_cvref_t<T>>::reference;
+    typename impl::iter_reference<std::remove_cvref_t<T>>::reference;
 
 }  // namespace stdx
 

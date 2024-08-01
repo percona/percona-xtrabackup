@@ -1,15 +1,16 @@
-# Copyright (c) 2006, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2006, 2024, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -76,7 +77,7 @@ ELSEIF(APPLE)
   # We must postpone the version test until we have called 'uname -r' below.
 ELSEIF(UNIX)
   # This is currently minimum version on all supported platforms.
-  IF(CMAKE_VERSION VERSION_LESS 3.5.1)
+  IF(CMAKE_VERSION VERSION_LESS 3.14.6)
     # Default cmake is 2.8.12.2 on RedHat
     IF(EXISTS "/etc/redhat-release")
       MESSAGE(WARNING "Please use cmake3 rather than cmake on this platform")
@@ -90,7 +91,7 @@ ELSEIF(UNIX)
       # On SunOS /opt/csw/bin/cmake is (most likely) too old.
       FIND_PROGRAM(MY_UNAME uname /bin /usr/bin /usr/local/bin /sbin)
       IF(MY_UNAME)
-        EXEC_PROGRAM(uname ARGS -s OUTPUT_VARIABLE MY_HOST_SYSTEM_NAME)
+        EXECUTE_PROCESS(COMMAND uname -s OUTPUT_VARIABLE MY_HOST_SYSTEM_NAME)
         IF(MY_HOST_SYSTEM_NAME MATCHES "SunOS")
           FIND_PROGRAM(MY_CMAKE cmake /usr/bin
             NO_CMAKE_ENVIRONMENT_PATH
@@ -98,7 +99,7 @@ ELSEIF(UNIX)
             )
           IF(MY_CMAKE)
             MESSAGE(STATUS "Found ${MY_CMAKE}")
-            EXEC_PROGRAM(${MY_CMAKE} ARGS --version)
+            EXECUTE_PROCESS(COMMAND ${MY_CMAKE} --version)
           ELSE()
             MESSAGE(STATUS "Please install /usr/bin/cmake ")
           ENDIF()
@@ -211,7 +212,8 @@ IF(UNIX)
       OUTPUT_STRIP_TRAILING_WHITESPACE
       RESULT_VARIABLE MY_UNAME_MACHINE_RESULT
       )
-    EXEC_PROGRAM(${MY_UNAME} ARGS -r OUTPUT_VARIABLE MY_HOST_SYSTEM_VERSION)
+    EXECUTE_PROCESS(COMMAND ${MY_UNAME} -r
+      OUTPUT_VARIABLE MY_HOST_SYSTEM_VERSION)
   ENDIF()
   FIND_PROGRAM(MY_DPKG_BUILDFLAGS dpkg-buildflags /bin /usr/bin)
   FIND_PROGRAM(MY_RPM rpm /bin /usr/bin)
@@ -335,7 +337,13 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
         FIND_PROGRAM(ALTERNATIVE_LD ld
           NO_DEFAULT_PATH
           PATHS "${OPT_PATH}/root/usr/bin")
+        FIND_PROGRAM(ALTERNATIVE_AR gcc-ar
+          NO_DEFAULT_PATH
+          PATHS "${OPT_PATH}/root/usr/bin")
         FIND_PROGRAM(ALTERNATIVE_AR ar
+          NO_DEFAULT_PATH
+          PATHS "${OPT_PATH}/root/usr/bin")
+        FIND_PROGRAM(ALTERNATIVE_RANLIB gcc-ranlib
           NO_DEFAULT_PATH
           PATHS "${OPT_PATH}/root/usr/bin")
         FIND_PROGRAM(ALTERNATIVE_RANLIB ranlib
@@ -711,7 +719,7 @@ IF(WITH_DEFAULT_COMPILER_OPTIONS)
 ENDIF()
 
 # Assume, for now at least, that we want build-id for all kinds of Linux builds.
-IF(LINUX)
+IF(LINUX AND NOT LINUX_ALPINE)
   OPTION(WITH_BUILD_ID "Add --build-id=sha1 to all executables." ON)
   IF(WITH_BUILD_ID)
     SET(HAVE_BUILD_ID_SUPPORT 1)
@@ -753,7 +761,6 @@ INCLUDE(zstd)
 INCLUDE(lz4)
 INCLUDE(icu)
 INCLUDE(libbacktrace)
-INCLUDE(libevent)
 INCLUDE(ssl)
 INCLUDE(sasl)
 INCLUDE(ldap)
@@ -770,10 +777,10 @@ INCLUDE(mysql_add_executable)
 INCLUDE(curl)
 INCLUDE(rapidjson)
 INCLUDE(fprofile)
-INCLUDE(gloves)
 INCLUDE(fido2)
 INCLUDE(win_jemalloc)
 INCLUDE(libs_mysql_create_library)
+INCLUDE(libcno)
 
 # To simplify building of JET, skip all dependencies for other targets.
 IF(EXISTS ${CMAKE_SOURCE_DIR}/internal/CMakeLists.txt)
@@ -866,20 +873,14 @@ OPTION(WITH_AUTHENTICATION_KERBEROS
   ${WITH_AUTHENTICATION_KERBEROS_DEFAULT})
 
 IF(WITH_INTERNAL AND (NOT SOLARIS))
-  SET(WITH_AUTHENTICATION_FIDO_DEFAULT ON)
   SET(WITH_AUTHENTICATION_WEBAUTHN_DEFAULT ON)
 ELSE()
-  SET(WITH_AUTHENTICATION_FIDO_DEFAULT OFF)
   SET(WITH_AUTHENTICATION_WEBAUTHN_DEFAULT OFF)
 ENDIF()
 
 IF(WITH_INTERNAL)
   SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_SOURCE_DIR}/internal/cmake)
 ENDIF()
-
-OPTION(WITH_AUTHENTICATION_FIDO
-  "Report error if the FIDO authentication plugin cannot be built."
-  ${WITH_AUTHENTICATION_FIDO_DEFAULT})
 
 OPTION(WITH_AUTHENTICATION_WEBAUTHN
   "Report error if the WEBAUTHN authentication plugin cannot be built."
@@ -889,7 +890,6 @@ OPTION(WITH_AUTHENTICATION_WEBAUTHN
 # Also default ON in pushbuild, for our community builds.
 IF(WITH_AUTHENTICATION_KERBEROS OR
     WITH_AUTHENTICATION_LDAP OR
-    WITH_AUTHENTICATION_FIDO OR
     WITH_AUTHENTICATION_WEBAUTHN OR
     DEFINED ENV{PB2WORKDIR})
   SET(WITH_AUTHENTICATION_CLIENT_PLUGINS_DEFAULT ON)
@@ -902,8 +902,6 @@ ENDIF()
 #   authentication_kerberos_client.so
 # The LDAP client authentication plugin
 #   authentication_ldap_sasl_client.so
-# The FIDO client authentication plugin
-#   authentication_fido_client.so
 # The WEBAUTHN client authentication plugin
 #   authentication_webauthn_client.so
 # The OCI client authentication plugin
@@ -913,7 +911,6 @@ OPTION(WITH_AUTHENTICATION_CLIENT_PLUGINS
   ${WITH_AUTHENTICATION_CLIENT_PLUGINS_DEFAULT})
 
 IF(NOT WITH_AUTHENTICATION_WEBAUTHN AND
-    NOT WITH_AUTHENTICATION_FIDO AND
     NOT WITH_AUTHENTICATION_CLIENT_PLUGINS)
   SET(WITH_FIDO "none")
   SET(WITH_FIDO "none" CACHE STRING "fido2 is disabled")
@@ -1697,7 +1694,6 @@ SET(SYSTEM_LIBRARIES
   CURL      # Xcode
   EDITLINE  # Xcode
   ICU       # Homebrew  icu4c
-  LIBEVENT  # Homebrew  libevent
   LZ4       # Homebrew  lz4
   PROTOBUF  # Homebrew  protobuf
   SSL       # Homebrew  openssl@1.1 or openssl@3
@@ -1765,6 +1761,12 @@ IF(WITH_SYSTEM_LIBS)
   UNSET(WITH_SYSTEM_LIBS)
   UNSET(WITH_SYSTEM_LIBS CACHE)
 ENDIF()
+
+# See whether backtrace is supported.
+MYSQL_CHECK_BACKTRACE()
+
+# Add bundled libcno
+MYSQL_CHECK_CNO()
 
 # Add bundled or system zlib.
 MYSQL_CHECK_ZLIB()
@@ -1916,17 +1918,6 @@ IF(EDITLINE_WARN_GIVEN)
     )
 ENDIF()
 
-# Add libevent
-MYSQL_CHECK_LIBEVENT()
-UNSET(LIBEVENT_WARN_GIVEN)
-WARN_MISSING_SYSTEM_LIBEVENT(LIBEVENT_WARN_GIVEN)
-IF(LIBEVENT_WARN_GIVEN)
-  MESSAGE(FATAL_ERROR
-    "-DWITH_LIBEVENT=system, but missing system libraries.\n"
-    "You can use -DWITH_LIBEVENT=bundled instead."
-    )
-ENDIF()
-
 # Add lz4 library
 MYSQL_CHECK_LZ4()
 # Add icu library
@@ -1968,7 +1959,7 @@ MYSQL_CHECK_FIDO_DLLS()
 IF(APPLE)
   GET_FILENAME_COMPONENT(HOMEBREW_BASE ${HOMEBREW_HOME} DIRECTORY)
   IF(EXISTS ${HOMEBREW_BASE}/include/boost)
-    FOREACH(SYSTEM_LIB ICU LIBEVENT LZ4 PROTOBUF ZSTD FIDO)
+    FOREACH(SYSTEM_LIB ICU LZ4 PROTOBUF ZSTD FIDO)
       IF(WITH_${SYSTEM_LIB} STREQUAL "system")
         MESSAGE(FATAL_ERROR
           "WITH_${SYSTEM_LIB}=system is not compatible with Homebrew boost\n"
@@ -1982,7 +1973,7 @@ IF(APPLE)
     ENDFOREACH()
   ENDIF()
   # Ensure that we look in /usr/local/include or /opt/homebrew/include
-  FOREACH(SYSTEM_LIB ICU LIBEVENT LZ4 PROTOBUF ZSTD FIDO)
+  FOREACH(SYSTEM_LIB ICU LZ4 PROTOBUF ZSTD FIDO)
     IF(WITH_${SYSTEM_LIB} STREQUAL "system")
       INCLUDE_DIRECTORIES(SYSTEM ${HOMEBREW_BASE}/include)
       BREAK()
@@ -1990,13 +1981,10 @@ IF(APPLE)
   ENDFOREACH()
 ENDIF()
 
-IF(WITH_AUTHENTICATION_FIDO OR WITH_AUTHENTICATION_WEBAUTHN OR
+IF(WITH_AUTHENTICATION_WEBAUTHN OR
   WITH_AUTHENTICATION_CLIENT_PLUGINS)
   IF(WITH_FIDO STREQUAL "system" AND
     NOT WITH_SSL STREQUAL "system")
-      IF (WITH_AUTHENTICATION_FIDO)
-        MESSAGE(WARNING "-DWITH_AUTHENTICATION_FIDO=ON")
-      ENDIF()
       IF (WITH_AUTHENTICATION_WEBAUTHN)
         MESSAGE(WARNING "-DWITH_AUTHENTICATION_WEBAUTHN=ON")
       ENDIF()
@@ -2004,16 +1992,12 @@ IF(WITH_AUTHENTICATION_FIDO OR WITH_AUTHENTICATION_WEBAUTHN OR
   ENDIF()
 
   # FIDO (or libudev) missing, warn about what is missing, and break the build.
-  IF((WITH_AUTHENTICATION_FIDO OR WITH_AUTHENTICATION_WEBAUTHN) AND
+  IF(WITH_AUTHENTICATION_WEBAUTHN AND
     NOT FIDO_FOUND)
     SET(UDEV_WARN_MISSING)
     SET(FIDO_WARN_MISSING)
     WARN_MISSING_SYSTEM_UDEV(UDEV_WARN_MISSING)
     WARN_MISSING_SYSTEM_FIDO(FIDO_WARN_MISSING)
-    IF (WITH_AUTHENTICATION_FIDO)
-      MESSAGE(FATAL_ERROR
-        "-DWITH_AUTHENTICATION_FIDO=ON, but missing required libraries")
-    ENDIF()
     IF (WITH_AUTHENTICATION_WEBAUTHN)
       MESSAGE(FATAL_ERROR
         "-DWITH_AUTHENTICATION_WEBAUTHN=ON, but missing required libraries")
@@ -2054,11 +2038,31 @@ IF(WITH_TIRPC STREQUAL "bundled")
   ADD_SUBDIRECTORY(extra/tirpc)
 ENDIF()
 
+IF(HAVE_ASAN AND MY_COMPILER_IS_CLANG AND WITH_PROTOBUF STREQUAL "bundled")
+  # This works for some clang versions, see:
+  # https://github.com/google/sanitizers/issues/1017
+  #
+  # cmake -DWITH_SYSTEM_LIBS=1 is recommended for sanitizing.
+  # Alas, that is not possible on older Linux systems, so we try to
+  # make "bundled" builds work as well.
+  #
+  # The underlying problem is that we link with libprotobuf-lite.so everywhere,
+  # except for one plugin which links with libprotobuf.so.
+  # Many symbols will be exported by both libraries, which may give ODR
+  # violations when built with ASAN.
+  #
+  # Appending to FLAGS gives warnings when linking shared libs and executables.
+  # STRING_APPEND(CMAKE_C_FLAGS   " -mllvm -asan-use-private-alias=1")
+  # STRING_APPEND(CMAKE_CXX_FLAGS " -mllvm -asan-use-private-alias=1")
+  ADD_COMPILE_OPTIONS(-mllvm -asan-use-private-alias=1)
+ENDIF()
+
 IF(WITH_PROTOBUF STREQUAL "bundled" OR WITH_FIDO STREQUAL "bundled")
   # Protobuf library is a target, installed to <root>/${INSTALL_PRIV_LIBDIR}
   # INSTALL_RPATH must be set for all binaries linking with libprotobuf.
   IF(WITH_PROTOBUF STREQUAL "bundled")
     SET(UNIX_INSTALL_RPATH_ORIGIN_PRIV_LIBDIR 1)
+    ADD_SUBDIRECTORY(extra/abseil)
     ADD_SUBDIRECTORY(extra/protobuf)
   ENDIF()
 
@@ -2070,7 +2074,7 @@ IF(WITH_PROTOBUF STREQUAL "bundled" OR WITH_FIDO STREQUAL "bundled")
     # Do not break the build here in case of missing libudev on Linux.
     SET(UDEV_WARN_MISSING FALSE)
     WARN_MISSING_SYSTEM_UDEV(UDEV_WARN_MISSING)
-    IF((WITH_AUTHENTICATION_FIDO OR WITH_AUTHENTICATION_WEBAUTHN
+    IF((WITH_AUTHENTICATION_WEBAUTHN
         OR WITH_AUTHENTICATION_CLIENT_PLUGINS) AND NOT UDEV_WARN_MISSING)
       # Silence warning about CMP0075
       CMAKE_PUSH_CHECK_STATE()
@@ -2303,6 +2307,9 @@ IF(NOT WITHOUT_SERVER AND WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
       IF(MY_COMPILER_IS_GNU)
         MY_TARGET_LINK_OPTIONS(server_unittest_library
           "-Wno-alloc-size-larger-than")
+        # In functions generated by protobuf:
+        MY_TARGET_LINK_OPTIONS(server_unittest_library
+          "-Wno-stringop-overflow")
       ENDIF()
     ENDIF()
   ELSE()
@@ -2348,10 +2355,11 @@ CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/sql/sql_builtin.cc.in
     ${CMAKE_BINARY_DIR}/sql/sql_builtin.cc)
 
 # depends on mysql_version.h to exist
-IF(NOT WITHOUT_SERVER)
-  IF(WITH_ROUTER)
-    ADD_SUBDIRECTORY(router)
-  ENDIF()
+IF(NOT WITHOUT_SERVER AND WITH_ROUTER)
+  ADD_SUBDIRECTORY(router)
+ELSE()
+  # Define harness_net_ts target and public include directories.
+  ADD_SUBDIRECTORY(router/src/harness/include)
 ENDIF()
 
 IF(ENABLE_GCOV)

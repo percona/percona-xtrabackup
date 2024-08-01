@@ -17,29 +17,29 @@
 --let $rpl_topology= 3->2,1->2
 --let $rpl_multi_source= 1
 --let $rpl_skip_start_slave= 1
---source include/rpl_init.inc
+--source include/rpl/init.inc
 
 --let $rpl_connection_name= server_2
---source include/rpl_connection.inc
+--source include/connection.inc
 SET @save.replica_parallel_workers= @@global.replica_parallel_workers;
 
 --echo # Test for Single Threaded Slave
 SET GLOBAL replica_parallel_workers= 0;
-START SLAVE;
---source extra/rpl_tests/rpl_perfschema_order_by.test
+START REPLICA;
+--source common/rpl/rpl_perfschema_order_by.test
 
 --echo # Test for Multi Threaded Slave
-STOP SLAVE;
+STOP REPLICA;
 SET GLOBAL replica_parallel_workers = 2;
-START SLAVE;
---source extra/rpl_tests/rpl_perfschema_order_by.test
+START REPLICA;
+--source common/rpl/rpl_perfschema_order_by.test
 
 #Cleanup
-STOP SLAVE;
+STOP REPLICA;
 --disable_warnings
 SET @@global.replica_parallel_workers= @save.replica_parallel_workers;
 --enable_warnings
-START SLAVE;
+START REPLICA;
 
 --let $rpl_skip_sync= 1
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

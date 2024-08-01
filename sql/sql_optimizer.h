@@ -1,18 +1,19 @@
 #ifndef SQL_OPTIMIZER_INCLUDED
 #define SQL_OPTIMIZER_INCLUDED
 
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1107,10 +1108,6 @@ bool optimize_cond(THD *thd, Item **conds, COND_EQUAL **cond_equal,
 Item *substitute_for_best_equal_field(THD *thd, Item *cond,
                                       COND_EQUAL *cond_equal,
                                       JOIN_TAB **table_join_idx);
-bool build_equal_items(THD *thd, Item *cond, Item **retcond,
-                       COND_EQUAL *inherited, bool do_inherit,
-                       mem_root_deque<Table_ref *> *join_list,
-                       COND_EQUAL **cond_equal_ref);
 bool is_indexed_agg_distinct(JOIN *join,
                              mem_root_deque<Item_field *> *out_args);
 Key_use_array *create_keyuse_for_table(

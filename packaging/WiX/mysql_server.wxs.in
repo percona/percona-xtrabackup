@@ -1,18 +1,19 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
 
 <!--
-   Copyright (c) 2010, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -43,7 +44,7 @@
     <Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable"/>
 
     <!-- Upgrade -->
-    <Upgrade Id="@UPGRADE_ID@">
+    <Upgrade Id="@UPGRADE_CODE@">
       <?if '@PATCH_VERSION@' != '0'?>
       <UpgradeVersion 
         Minimum="@MAJOR_VERSION@.@MINOR_VERSION@.0"
@@ -123,7 +124,7 @@
     <!-- Custom actions used by the UI -->
     <CustomAction Id="LaunchConfigurator" BinaryRef="Wix4UtilCA_X86" DllEntry="WixShellExec" Execute="immediate" Return="check" Impersonate="yes" />
     <Property Id="WixShellExecTarget" Value="[#F.bin_mysql_configurator.exe]"/>
-    <CustomAction Id="RemoveConfigArtifacts"  FileRef="F.bin_mysql_configurator.exe" ExeCommand="--remove" Execute="deferred" Return="ignore" Impersonate="no" />
+    <CustomAction Id="RemoveConfigArtifacts"  FileRef="F.bin_mysql_configurator.exe" ExeCommand="--removenoshow" Execute="deferred" Return="ignore" Impersonate="no" />
     <InstallExecuteSequence>
       <Custom Action="RemoveConfigArtifacts" After="InstallInitialize" Condition="(NOT UPGRADINGPRODUCTCODE) AND (REMOVE=&quot;ALL&quot;) AND UILevel &gt; 2" />
     </InstallExecuteSequence>

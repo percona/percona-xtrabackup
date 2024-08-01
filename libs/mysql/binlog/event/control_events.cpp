@@ -1,15 +1,16 @@
-/* Copyright (c) 2014, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -111,10 +112,11 @@ Format_description_event::Format_description_event(uint8_t binlog_ver,
           RAND_HEADER_LEN, USER_VAR_HEADER_LEN, FORMAT_DESCRIPTION_HEADER_LEN,
           XID_HEADER_LEN, BEGIN_LOAD_QUERY_HEADER_LEN,
           EXECUTE_LOAD_QUERY_HEADER_LEN, TABLE_MAP_HEADER_LEN, 0, 0, 0,
-          ROWS_HEADER_LEN_V1,     /* WRITE_ROWS_EVENT_V1*/
-          ROWS_HEADER_LEN_V1,     /* UPDATE_ROWS_EVENT_V1*/
-          ROWS_HEADER_LEN_V1,     /* DELETE_ROWS_EVENT_V1*/
-          INCIDENT_HEADER_LEN, 0, /* HEARTBEAT_LOG_EVENT*/
+          /*
+            First three values are unused as the code for V1 Rows events
+            were removed in 8.4.0
+          */
+          0, 0, 0, INCIDENT_HEADER_LEN, 0, /* HEARTBEAT_LOG_EVENT*/
           IGNORABLE_HEADER_LEN, IGNORABLE_HEADER_LEN, ROWS_HEADER_LEN_V2,
           ROWS_HEADER_LEN_V2, ROWS_HEADER_LEN_V2,
           Gtid_event::POST_HEADER_LENGTH, /*GTID_EVENT*/
@@ -808,7 +810,13 @@ Heartbeat_event::Heartbeat_event(const char *buf,
     READER_THROW("Invalid Heartbeat information");
 
   ident_len = READER_CALL(available_to_read);
+  if (ident_len == 0) READER_THROW("Event is smaller than expected");
+
   if (ident_len > FN_REFLEN - 1) ident_len = FN_REFLEN - 1;
+
+  READER_TRY_SET(log_ident, strndup<const char *>, ident_len);
+  if (log_ident == nullptr)
+    READER_THROW("Invalid binary log file name in Heartbeat event");
 
   READER_CATCH_ERROR;
   BAPI_VOID_RETURN;

@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2023, Oracle and/or its affiliates.
+Copyright (c) 1996, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -63,7 +64,7 @@ static const uint32_t TRX_FORCE_ROLLBACK_DISABLE = 1 << 29;
 /** Mark the transaction for forced rollback */
 static const uint32_t TRX_FORCE_ROLLBACK = 1U << 31;
 
-/** For masking out the above four flags */
+/** For masking out the above flags */
 static const uint32_t TRX_FORCE_ROLLBACK_MASK = 0x1FFFFFFF;
 
 /** Transaction execution states when trx->state == TRX_STATE_ACTIVE */

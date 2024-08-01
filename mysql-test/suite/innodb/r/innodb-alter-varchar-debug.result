@@ -170,10 +170,10 @@ DROP TABLE t1;
 # Bug#15863023 - case3. enlarge varchar other alter operations+charset
 SET DEBUG_SYNC = 'RESET';
 CREATE TABLE t1 (a INT DEFAULT 100 , b VARCHAR(254) CHARACTER SET latin1,
-c VARCHAR(254) CHARACTER SET utf8) ENGINE=Innodb CHARSET=utf8;
+c VARCHAR(254) CHARACTER SET utf8mb3) ENGINE=Innodb CHARSET=utf8mb3;
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 CREATE INDEX c1 ON t1(c);
 INSERT IGNORE INTO t1 (a,b) VALUES (1,repeat('a',254)),(2,repeat('b',254)),(3,repeat('c',300));
 Warnings:
@@ -184,7 +184,7 @@ a	LEFT(b,10)	LENGTH(b) = 254
 2	bbbbbbbbbb	1
 3	cccccccccc	1
 SET DEBUG_SYNC = 'row_log_apply_before SIGNAL s1 WAIT_FOR s2';
-ALTER TABLE t1 ADD INDEX idx(b),CHANGE b b varchar(255) CHARACTER SET latin1,CHANGE c c varchar(255) CHARACTER SET utf8,DROP INDEX c1 ,ALGORITHM=INPLACE;;
+ALTER TABLE t1 ADD INDEX idx(b),CHANGE b b varchar(255) CHARACTER SET latin1,CHANGE c c varchar(255) CHARACTER SET utf8mb3,DROP INDEX c1 ,ALGORITHM=INPLACE;;
 SET DEBUG_SYNC='now WAIT_FOR s1';
 INSERT IGNORE INTO t1 (a,b) VALUES (4,repeat('d',300));
 Warnings:
@@ -221,7 +221,7 @@ a	LEFT(b,10)	LENGTH(b) = 254	c
 100	zzzzzzzzzz	1	Môžem
 SET DEBUG_SYNC='now SIGNAL s2';
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
@@ -262,10 +262,10 @@ DROP TABLE t1;
 # if length is more than 255
 SET DEBUG_SYNC = 'RESET';
 CREATE TABLE t1 (a INT DEFAULT 100 , b VARCHAR(254) CHARACTER SET latin1,
-c VARCHAR(254) CHARACTER SET utf8, d CHAR(10) DEFAULT 'test') ENGINE=Innodb CHARSET=utf8;
+c VARCHAR(254) CHARACTER SET utf8mb3, d CHAR(10) DEFAULT 'test') ENGINE=Innodb CHARSET=utf8mb3;
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 CREATE INDEX c1 ON t1(c);
 INSERT IGNORE INTO t1 (a,b) VALUES (1,repeat('a',254)),(2,repeat('b',254)),(3,repeat('c',300));
 Warnings:
@@ -275,19 +275,22 @@ a	LEFT(b,10)	LENGTH(b) = 254
 1	aaaaaaaaaa	1
 2	bbbbbbbbbb	1
 3	cccccccccc	1
-ALTER TABLE t1 ADD INDEX idx(b),CHANGE b b varchar(256) CHARACTER SET latin1,CHANGE c c varchar(256) CHARACTER SET utf8,DROP INDEX c1 ,ALGORITHM=INPLACE;
+ALTER TABLE t1 ADD INDEX idx(b),CHANGE b b varchar(256) CHARACTER SET latin1,CHANGE c c varchar(256) CHARACTER SET utf8mb3,DROP INDEX c1 ,ALGORITHM=INPLACE;
 ERROR 0A000: ALGORITHM=INPLACE is not supported. Reason: Cannot change column type INPLACE. Try ALGORITHM=COPY.
 ALTER TABLE t1 ADD INDEX idx(b),CHANGE d d char(100) ,ALGORITHM=INPLACE;
 ERROR 0A000: ALGORITHM=INPLACE is not supported. Reason: Cannot change column type INPLACE. Try ALGORITHM=COPY.
 ALTER TABLE t1 ADD INDEX idx1(b),CHANGE d d VARCHAR(100) ,ALGORITHM=INPLACE;
 ERROR 0A000: ALGORITHM=INPLACE is not supported. Reason: Cannot change column type INPLACE. Try ALGORITHM=COPY.
-ALTER TABLE t1 ADD INDEX idx(b),CHANGE b b varchar(355) CHARACTER SET latin1,CHANGE c c varchar(255) CHARACTER SET utf8,DROP INDEX c1 ;
+ALTER TABLE t1 ADD INDEX idx(b),CHANGE b b varchar(355) CHARACTER SET latin1,CHANGE c c varchar(255) CHARACTER SET utf8mb3,DROP INDEX c1 ;
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 DROP TABLE t1;
 # Bug#15863023 - case6 enlarge varchar other
 # alter operations with fk on parent
 SET DEBUG_SYNC = 'RESET';
+SET restrict_fk_on_non_standard_key=OFF;
+Warnings:
+Warning	4166	'restrict_fk_on_non_standard_key' is deprecated and will be removed in a future release. Foreign key referring to non-unique or partial keys is unsafe and may break replication.
 CREATE TABLE t1 (a INT PRIMARY KEY, b VARCHAR(254) charset latin1, KEY(b)) ENGINE=Innodb;
 CREATE TABLE t2 (a2 INT , b2 VARCHAR(254) charset latin1, CONSTRAINT fk FOREIGN KEY (a2) REFERENCES t1 (a) ON UPDATE CASCADE ON DELETE CASCADE) ENGINE=Innodb;
 INSERT IGNORE INTO t1 (a,b) VALUES (1,repeat('a',254)),(2,repeat('b',254)),(3,repeat('c',300));
@@ -301,6 +304,9 @@ a	LEFT(b,10)	LENGTH(b) = 254
 1	aaaaaaaaaa	1
 2	bbbbbbbbbb	1
 3	cccccccccc	1
+SET restrict_fk_on_non_standard_key=OFF;
+Warnings:
+Warning	4166	'restrict_fk_on_non_standard_key' is deprecated and will be removed in a future release. Foreign key referring to non-unique or partial keys is unsafe and may break replication.
 ALTER TABLE t2 CHANGE b2 b2 varchar(255) charset latin1, DROP FOREIGN KEY fk,ADD CONSTRAINT fk FOREIGN KEY (b2) REFERENCES t1 (b),ADD INDEX idx(a2) ,ALGORITHM=INPLACE;
 ERROR 0A000: ALGORITHM=INPLACE is not supported. Reason: Adding foreign keys needs foreign_key_checks=OFF. Try ALGORITHM=COPY.
 SET DEBUG_SYNC = 'row_log_apply_before SIGNAL s1 WAIT_FOR s2';
@@ -331,6 +337,9 @@ a	LEFT(b,10)	LENGTH(b) = 254
 3	cccccccccc	1
 4	dddddddddd	1
 SET DEBUG_SYNC='now SIGNAL s2';
+SET restrict_fk_on_non_standard_key=ON;
+Warnings:
+Warning	1681	'restrict_fk_on_non_standard_key' is deprecated and will be removed in a future release.
 SET foreign_key_checks = 1;
 SHOW CREATE TABLE t1;
 Table	Create Table
@@ -366,4 +375,7 @@ a	LEFT(b,10)	LENGTH(b) = 254
 4	dddddddddd	1
 5	kkkkkkkkkk	0
 DROP TABLE t2,t1;
+SET restrict_fk_on_non_standard_key=ON;
+Warnings:
+Warning	1681	'restrict_fk_on_non_standard_key' is deprecated and will be removed in a future release.
 SET DEBUG_SYNC = 'RESET';

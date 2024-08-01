@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2021, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,8 +26,10 @@
 #include <chrono>
 
 #include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
 #include "config_builder.h"
+#include "mock_server_testutils.h"
 #include "mysql/harness/string_utils.h"  // split_string
 #include "router_component_test.h"
 #include "router_component_testutils.h"
@@ -80,8 +83,12 @@ TEST_P(BootstrapDebugLevelOkTest, BootstrapDebugLevelOk) {
       "SELECT * FROM mysql_innodb_cluster_metadata.schema_version";
 
   const uint16_t server_port = port_pool_.get_next_available();
+  const uint16_t http_port = port_pool_.get_next_available();
   const std::string json_stmts = get_data_dir().join(tracefile).str();
-  launch_mysql_server_mock(json_stmts, server_port, EXIT_SUCCESS, false);
+  launch_mysql_server_mock(json_stmts, server_port, EXIT_SUCCESS, false,
+                           http_port);
+  set_mock_metadata(http_port, "00000000-0000-0000-0000-0000000000g1",
+                    classic_ports_to_gr_nodes({server_port}), 0, {server_port});
 
   // launch the router in bootstrap mode
   std::vector<std::string> cmdline = {
@@ -100,9 +107,9 @@ TEST_P(BootstrapDebugLevelOkTest, BootstrapDebugLevelOk) {
       get_file_output("mysqlrouter.conf", bootstrap_dir.name());
   const std::vector<std::string> lines =
       mysql_harness::split_string(conf_content, '\n');
-  EXPECT_THAT(lines, ::testing::Contains("level=INFO"));
+  EXPECT_THAT(lines, ::testing::Contains("level=info"));
   EXPECT_THAT(lines, ::testing::Not(::testing::Contains(
-                         ::testing::AnyOf("level=debug", "level=DEBUG"))));
+                         ::testing::AnyOf("level=debug", "level=debug"))));
 }
 
 INSTANTIATE_TEST_SUITE_P(BootstrapDebugLevelOk, BootstrapDebugLevelOkTest,
@@ -288,11 +295,11 @@ TEST_F(RouterConfigOwerwriteTest, OverwriteOptionMissingInTheConfig) {
 
   launch_router({"-c", conf_file, overwrite_param}, EXIT_SUCCESS, 5s);
 
-  make_bad_connection(router_port);
+  EXPECT_NO_THROW(make_bad_connection(router_port));
 
   // since we set the max_connect_errors threshold to 1 and made one connection
   // error already the next connection attempt should fail
-  verify_new_connection_fails(router_port);
+  EXPECT_NO_FATAL_FAILURE(verify_new_connection_fails(router_port));
 }
 
 class OverwriteIgnoreUnknownOptionTest

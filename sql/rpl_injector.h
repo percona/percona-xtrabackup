@@ -1,15 +1,16 @@
-/* Copyright (c) 2006, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2006, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,10 +29,10 @@
 #include "lex_string.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
+#include "my_io.h"                              // FN_REFLEN
 #include "mysql/binlog/event/control_events.h"  // enum_incidents
 #include "sql/table.h"                          // TABLE
 
-class MYSQL_BIN_LOG;
 class THD;
 struct MY_BITMAP;
 
@@ -75,8 +76,6 @@ class injector {
       default constructible.
    */
   class transaction {
-    friend class injector;
-
    public:
     /* Convenience definitions */
     typedef uchar *record_type;
@@ -174,21 +173,24 @@ class injector {
       my_off_t m_file_pos;
     };
 
-    transaction() : m_thd(nullptr) {}
-    transaction(transaction const &);
-    ~transaction();
+    /*
+      Create a new transaction.
 
-    /* Clear transaction, i.e., make calls to 'good()' return false. */
-    void clear() { m_thd = nullptr; }
+      The parameter "calc_writeset_hash" controls whether writeset hashes for
+      transaction dependencies will be calculated for rows added to the
+      transaction, without this the list of hashes will be empty and thus no
+      dependencies are detected. The ability to control this is important where
+      MTA is not used, calculating writeset hashes is wasted work, and in NDB
+      all binlog content is processed by a single thread and CPU consumption
+      might be a bottleneck.
+    */
+    transaction(THD *thd, bool calc_writeset_hash);
+    transaction(const transaction &) = delete;
+    transaction(const transaction &&) = delete;
+    transaction &operator=(const transaction &) = delete;
+    transaction &operator=(const transaction &&) = delete;
 
-    /* Is the transaction in a good state? */
-    bool good() const { return m_thd != nullptr; }
-
-    /* Default assignment operator: standard implementation */
-    transaction &operator=(transaction t) {
-      swap(t);
-      return *this;
-    }
+    ~transaction() {}
 
     /*
 
@@ -213,24 +215,18 @@ class injector {
     */
     int write_row(server_id_type sid, table tbl, MY_BITMAP const *cols,
                   record_type record, const unsigned char *extra_row_info);
-    int write_row(server_id_type sid, table tbl, MY_BITMAP const *cols,
-                  record_type record);
 
     /*
       Add a 'delete row' entry to the transaction.
     */
     int delete_row(server_id_type sid, table tbl, MY_BITMAP const *cols,
                    record_type record, const unsigned char *extra_row_info);
-    int delete_row(server_id_type sid, table tbl, MY_BITMAP const *cols,
-                   record_type record);
     /*
       Add an 'update row' entry to the transaction.
     */
     int update_row(server_id_type sid, table tbl, MY_BITMAP const *before_cols,
                    MY_BITMAP const *after_cols, record_type before,
                    record_type after, const unsigned char *extra_row_info);
-    int update_row(server_id_type sid, table tbl, MY_BITMAP const *cols,
-                   record_type before, record_type after);
 
     /*
       Commit a transaction.
@@ -276,17 +272,6 @@ class injector {
     binlog_pos next_pos() const;
 
    private:
-    /* Only the injector may construct these object */
-    transaction(MYSQL_BIN_LOG *, THD *, bool calc_writeset_hash);
-
-    void swap(transaction &o) {
-      std::swap(m_start_pos, o.m_start_pos);
-      std::swap(m_next_pos, o.m_next_pos);
-      std::swap(m_thd, o.m_thd);
-      std::swap(m_state, o.m_state);
-      std::swap(m_calc_writeset_hash, o.m_calc_writeset_hash);
-    }
-
     enum enum_state {
       START_STATE, /* Start state */
       TABLE_STATE, /* At least one table has been registered */
@@ -341,30 +326,13 @@ class injector {
       return m_state == STATE_COUNT ? 1 : 0;
     }
 
+    char m_start_name_buf[FN_REFLEN];
+    char m_end_name_buf[FN_REFLEN];
     binlog_pos m_start_pos;
     binlog_pos m_next_pos;
-    THD *m_thd;
-    bool m_calc_writeset_hash{false};
+    THD *const m_thd;
+    const bool m_calc_writeset_hash{false};
   };
-
-  /*
-     Create a new transaction.  This member function will prepare for a
-     sequence of *_row calls by, for example, reserving resources and
-     locking files. The call uses placement semantics and will overwrite
-     the transaction.
-
-       injector::transaction trans2;
-       inj->new_trans(thd, &trans, <calc_writeset_hash>);
-
-     The parameter "calc_writeset_hash" controls wheter writeset hashes for
-     transaction dependencies will be calculated for rows added to the
-     transaction, without this the list of hashes will be empty and thus no
-     dependencies are detected. The ability to control this is important where
-     MTA is not used, calculating writeset hashes is wasted work, and in NDB all
-     binlog content is processed by a single thread and CPU consumption might be
-     a bottleneck.
-   */
-  void new_trans(THD *, transaction *, bool calc_writeset_hash);
 
   int record_incident(
       THD *, mysql::binlog::event::Incident_event::enum_incident incident,

@@ -86,6 +86,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <list>
 #include <set>
 #include <sstream>
+#include "sql/signal_handler.h"
 
 #include <api0api.h>
 #include <api0misc.h>
@@ -412,8 +413,6 @@ std::set<std::string> param_set;
 
 static ulonglong global_max_value;
 
-extern "C" void handle_fatal_signal(int sig);
-
 bool opt_galera_info = false;
 bool opt_slave_info = false;
 bool opt_page_tracking = false;
@@ -506,8 +505,8 @@ char xtrabackup_version_str[30] = "";   /* 8.0.20.debug| 8.0.20 */
 char mysql_server_flavor[256] = "";     /* Percona|MariaDB|Oracle */
 unsigned long xb_server_version;
 
-#include "caching_sha2_passwordopt-vars.h"
-#include "sslopt-vars.h"
+#include "client/include/caching_sha2_passwordopt-vars.h"
+#include "client/include/sslopt-vars.h"
 
 bool redo_catchup_completed = false;
 extern struct rand_struct sql_rand;
@@ -1320,8 +1319,8 @@ struct my_option xb_client_options[] = {
      10 * 1024 * 1024, 2 * UNIV_PAGE_SIZE_MAX, UINT_MAX, 0, UNIV_PAGE_SIZE_MAX,
      0},
 
-#include "caching_sha2_passwordopt-longopts.h"
-#include "sslopt-longopts.h"
+#include "client/include/caching_sha2_passwordopt-longopts.h"
+#include "client/include/sslopt-longopts.h"
 
 #if !defined(HAVE_YASSL)
     {"server-public-key-path", OPT_SERVER_PUBLIC_KEY,
@@ -1959,7 +1958,7 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
       xtrabackup_use_memory_set = true;
       break;
 
-#include "sslopt-case.h"
+#include "client/include/sslopt-case.h"
 
     case '?':
       usage();
@@ -2037,9 +2036,9 @@ static bool innodb_init_param(void) {
     }
   }
 
-  os_innodb_umask = (ulint)0664;
+  os_file_reset_umask();
 
-  os_file_set_umask(my_umask);
+  os_file_set_umask((ulint)0664);
 
   /* Setup the memory alloc/free tracing mechanisms before calling
   any functions that could possibly allocate memory. */
@@ -6767,7 +6766,7 @@ static void setup_signals()
 #ifdef HAVE_STACKTRACE
   my_init_stacktrace();
 #endif
-  sa.sa_handler = handle_fatal_signal;
+  sa.sa_sigaction = handle_fatal_signal;
   sigaction(SIGSEGV, &sa, NULL);
   sigaction(SIGABRT, &sa, NULL);
   sigaction(SIGBUS, &sa, NULL);

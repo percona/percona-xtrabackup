@@ -18,18 +18,18 @@
 -- source include/have_myisam.inc
 -- source include/have_binlog_format_row.inc
 -- source include/not_crashrep.inc
--- source include/master-slave.inc
+-- source include/rpl/init_source_replica.inc
 
 
 # Reset source
 connection slave;
---source include/stop_slave.inc
+--source include/rpl/stop_replica.inc
 
 connection master;
 RESET BINARY LOGS AND GTIDS;
 
 #connection slave;
-#--source include/start_slave.inc
+#--source include/rpl/start_replica.inc
 
 connection master;
 call mtr.add_suppression("Attempting backtrace");
@@ -52,15 +52,13 @@ eval SET SESSION debug=CONCAT(IF(LENGTH('$old_debug') > 0, "$old_debug:", ""), "
 INSERT INTO t2 (a) VALUES (REPEAT('a',16384));
 
 -- source include/wait_until_disconnected.inc
--- enable_reconnect
 -- echo # Restart the master server
 -- exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
 -- source include/wait_until_connected_again.inc
--- disable_reconnect
 
 -- echo # Test the halfly binlogged non-transaction statement will be trimmed
 -- echo # from the crashed binlog file
--- source include/show_binlog_events.inc
+-- source include/rpl/deprecated/show_binlog_events.inc
 
 -- echo # Test the data will not be recovered successfully
 -- echo # after the master restart.

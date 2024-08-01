@@ -1,15 +1,16 @@
-/* Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -478,22 +479,22 @@ bool rename_check_constraints(const char *old_table_name, dd::Table *new_tab);
 bool uses_general_tablespace(const Table &t);
 
 /**
-  Throw deprecation warnings if table uses prefix keys in the partitioning
-  function.
+  Check and give error if table uses prefix keys in the partitioning function.
 
-  @param  thd             Thread handler
   @param  schema_name     Schema name
   @param  orig_table_name Original table name (required in case of ALTER TABLE,
   since temporary table name is created)
   @param  table           dd::Table instance
-  @param  is_upgrade      True if this is called during upgrade. Warning will be
+  @param  is_upgrade      True if this is called during upgrade. Error will be
   sent to error log instead of the client.
 
+  @return true  - On failure
+  @return false - On success
+
 */
-void warn_on_deprecated_prefix_key_partition(THD *thd, const char *schema_name,
-                                             const char *orig_table_name,
-                                             const Table *table,
-                                             const bool is_upgrade);
+bool prefix_key_partition_exists(const char *schema_name,
+                                 const char *orig_table_name,
+                                 const Table *table, const bool is_upgrade);
 
 /**
   Get the autoextend_size option value for implicit tablespaces
@@ -506,5 +507,14 @@ void warn_on_deprecated_prefix_key_partition(THD *thd, const char *schema_name,
 */
 bool get_implicit_tablespace_options(THD *thd, const Table *table,
                                      ulonglong *autoextend_size);
+
+/**
+  Validate if table uses foreign keys referring to proper index.
+  FK cannot refer to non unique index and partial elements in index.
+
+  @param  thd             Thread handle.
+  @param  table           dd::Table instance of referenced table
+*/
+bool check_non_standard_key_exists_in_fk(THD *thd, const Table *table);
 }  // namespace dd
 #endif  // DD_TABLE_INCLUDED

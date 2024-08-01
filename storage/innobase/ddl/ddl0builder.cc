@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -1527,18 +1528,14 @@ dberr_t Builder::bulk_add_row(Cursor &cursor, Row &row, size_t thread_id,
     IF_ENABLED("ddl_write_failure", set_error(DB_TEMP_FILE_WRITE_FAIL);
                return get_error();)
 
-    auto persistor = [&](IO_buffer io_buffer, os_offset_t &n) -> dberr_t {
+    auto persistor = [&](IO_buffer io_buffer) -> dberr_t {
       auto &file = thread_ctx->m_file;
 
       ut_a(!(file.m_size % IO_BLOCK_SIZE));
 
-      if (n == 0) {
-        n = ut_uint64_align_down(io_buffer.second, IO_BLOCK_SIZE);
-      } else {
-        ut_a(n == io_buffer.second);
-        n = ut_uint64_align_up(io_buffer.second, IO_BLOCK_SIZE);
-      }
-      ut_a(n >= IO_BLOCK_SIZE);
+      os_offset_t n = io_buffer.second;
+      ut_a(n != 0);
+      ut_a(n % IO_BLOCK_SIZE == 0);
 
       auto err =
           ddl::pwrite(file.m_file.get(), io_buffer.first, n, file.m_size);

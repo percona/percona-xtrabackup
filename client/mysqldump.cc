@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -37,7 +38,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "client/client_priv.h"
+#include "client/include/client_priv.h"
 #include "client/multi_option.h"
 #include "compression.h"
 #include "m_string.h"
@@ -178,10 +179,10 @@ static uint my_end_arg;
 static char *opt_mysql_unix_port = nullptr;
 static char *opt_bind_addr = nullptr;
 static int first_error = 0;
-#include "authentication_kerberos_clientopt-vars.h"
-#include "caching_sha2_passwordopt-vars.h"
-#include "multi_factor_passwordopt-vars.h"
-#include "sslopt-vars.h"
+#include "client/include/authentication_kerberos_clientopt-vars.h"
+#include "client/include/caching_sha2_passwordopt-vars.h"
+#include "client/include/multi_factor_passwordopt-vars.h"
+#include "client/include/sslopt-vars.h"
 
 FILE *md_result_file = nullptr;
 FILE *stderror_file = nullptr;
@@ -545,7 +546,7 @@ static struct my_option my_long_options[] = {
      "InnoDB table, but will make the dump itself take considerably longer.",
      &opt_order_by_primary, &opt_order_by_primary, nullptr, GET_BOOL, NO_ARG, 0,
      0, 0, nullptr, 0, nullptr},
-#include "multi_factor_passwordopt-longopts.h"
+#include "client/include/multi_factor_passwordopt-longopts.h"
 #ifdef _WIN32
     {"pipe", 'W', "Use named pipes to connect to server.", nullptr, nullptr,
      nullptr, GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
@@ -623,8 +624,8 @@ static struct my_option my_long_options[] = {
     {"socket", 'S', "The socket file to use for connection.",
      &opt_mysql_unix_port, &opt_mysql_unix_port, nullptr, GET_STR, REQUIRED_ARG,
      0, 0, 0, nullptr, 0, nullptr},
-#include "caching_sha2_passwordopt-longopts.h"
-#include "sslopt-longopts.h"
+#include "client/include/caching_sha2_passwordopt-longopts.h"
+#include "client/include/sslopt-longopts.h"
 
     {"tab", 'T',
      "Create tab-separated textfile for each table to given path. (Create .sql "
@@ -725,7 +726,7 @@ static struct my_option my_long_options[] = {
     {"ignore-views", 0, "Skip dumping table views.", &opt_ignore_views,
      &opt_ignore_views, nullptr, GET_BOOL, OPT_ARG, 0, 0, 0, nullptr, 0,
      nullptr},
-#include "authentication_kerberos_clientopt-longopts.h"
+#include "client/include/authentication_kerberos_clientopt-longopts.h"
     {nullptr, 0, nullptr, nullptr, nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0,
      0, nullptr, 0, nullptr}};
 
@@ -855,6 +856,36 @@ static void short_usage(void) {
   printf("For more options, use %s --help\n", my_progname);
 }
 
+static void get_safe_server_info(char *safe_server_info,
+                                 size_t safe_server_info_len) {
+  const char *server_info = mysql_get_server_info(&mysql_connection);
+  if (server_info == nullptr) {
+    safe_server_info[0] = 0;
+    return;
+  }
+  DBUG_EXECUTE_IF("server_version_injection_test", {
+    const char *payload = "8.0.0-injection_test\n\\! touch /tmp/xxx";
+    server_info = payload;
+  });
+  for (size_t i = 0; i < safe_server_info_len; ++i) {
+    // End of string.
+    if (server_info[i] == 0) {
+      safe_server_info[i] = 0;
+      return;
+    }
+    // Version may include only alphanumeric and punctuation characters.
+    // Cut off the rest of the string if incorrect character found.
+    if (!(isalnum(server_info[i]) || ispunct(server_info[i]))) {
+      safe_server_info[i] = 0;
+      fprintf(stderr,
+              "-- Warning: version string returned by server is incorrect.\n");
+      return;
+    }
+    safe_server_info[i] = server_info[i];
+  }
+  safe_server_info[safe_server_info_len - 1] = 0;
+}
+
 static void write_header(FILE *sql_file, char *db_name) {
   if (opt_xml) {
     fputs("<?xml version=\"1.0\"?>\n", sql_file);
@@ -873,6 +904,8 @@ static void write_header(FILE *sql_file, char *db_name) {
 
     bool freemem = false;
     char const *text = fix_identifier_with_newline(db_name, &freemem);
+    char safe_server_info[SERVER_VERSION_LENGTH];
+    get_safe_server_info(safe_server_info, SERVER_VERSION_LENGTH);
     print_comment(sql_file, false, "-- Host: %s    Database: %s\n",
                   current_host ? current_host : "localhost", text);
     if (freemem) my_free(const_cast<char *>(text));
@@ -880,8 +913,7 @@ static void write_header(FILE *sql_file, char *db_name) {
     print_comment(
         sql_file, false,
         "-- ------------------------------------------------------\n");
-    print_comment(sql_file, false, "-- Server version\t%s\n",
-                  mysql_get_server_info(&mysql_connection));
+    print_comment(sql_file, false, "-- Server version\t%s\n", safe_server_info);
 
     if (opt_set_charset)
       fprintf(
@@ -996,9 +1028,9 @@ static bool get_one_option(int optid, const struct my_option *opt,
       DBUG_PUSH(argument ? argument : default_dbug_option);
       debug_check_flag = true;
       break;
-#include "sslopt-case.h"
+#include "client/include/sslopt-case.h"
 
-#include "authentication_kerberos_clientopt-case.h"
+#include "client/include/authentication_kerberos_clientopt-case.h"
 
     case 'V':
       print_version();
@@ -1762,11 +1794,6 @@ static int connect_to_db(char *host, char *user) {
     /* Don't switch charsets for 4.1 and earlier.  (bug#34192). */
     server_supports_switching_charsets = false;
   }
-  /*
-    As we're going to set SQL_MODE, it would be lost on reconnect, so we
-    cannot reconnect.
-  */
-  mysql->reconnect = false;
   snprintf(buff, sizeof(buff), "/*!40100 SET @@SQL_MODE='%s' */",
            ansi_mode ? "ANSI" : "");
   if (mysql_query_with_error_report(mysql, nullptr, buff)) return 1;

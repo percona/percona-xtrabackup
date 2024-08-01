@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -43,6 +44,7 @@
 #include "mysqlrouter/rest_client.h"
 #include "rest_api_testutils.h"
 #include "router_component_test.h"
+#include "router_component_testutils.h"
 
 using ::testing::Eq;
 using namespace std::chrono_literals;
@@ -106,18 +108,17 @@ class ShutdownTest : public RouterComponentTest {
 
     IOContext io_ctx;
     RestClient rest_client(io_ctx, kHostname, http_port);
-    HttpRequest req =
-        rest_client.request_sync(HttpMethod::Get, kRestGlobalsUri);
+    auto req = rest_client.request_sync(HttpMethod::Get, kRestGlobalsUri);
 
     EXPECT_TRUE(req) << "HTTP Request to " << kHostname << ":"
                      << std::to_string(http_port)
                      << " failed (early): " << req.error_msg() << std::endl;
-    EXPECT_GT(req.get_response_code(), 0u)
+    EXPECT_GT(req.get_response_code(), 0)
         << "HTTP Request to " << kHostname << ":" << std::to_string(http_port)
         << " failed: " << req.error_msg() << std::endl;
-    EXPECT_EQ(req.get_response_code(), 200u);
+    EXPECT_EQ(req.get_response_code(), 200);
 
-    auto resp_body = req.get_input_buffer();
+    auto &resp_body = req.get_input_buffer();
     auto resp_body_content = resp_body.pop_front(resp_body.length());
 
     // parse JSON
@@ -216,20 +217,17 @@ TEST_F(ShutdownTest, flaky_connection_to_cluster) {
   }
 
   // write Router config
-  std::string servers;
-  for (unsigned port : cluster_node_ports)
-    servers += "mysql://127.0.0.1:" + std::to_string(port) + ",";
-  servers.resize(servers.size() - 1);  // trim last ","
+  const auto state_file = create_state_file(
+      get_test_temp_dir_name(),
+      create_state_file_content("gr-id", "", cluster_node_ports, 0));
   const std::string config =
       /*[DEFAULT]*/
       "connect_timeout = " + std::to_string(kConnectTimeout.count() / 1000) +
       "\n"
-      "\n"
+      "dynamic_state = " +
+      state_file + "\n\n" +
       "[metadata_cache:test]\n"
       "router_id=1\n"
-      "bootstrap_server_addresses=" +
-      servers +
-      "\n"
       "user=mysql_router1_user\n"
       "metadata_cluster=test\n"
       "ttl=0.1\n"

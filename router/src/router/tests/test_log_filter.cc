@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2017, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -40,7 +41,7 @@ class LogFilterTest : public testing::Test {
   static const std::string alter_pattern_;
 };
 /*static*/ const std::string LogFilterTest::create_pattern_ =
-    "(CREATE USER '([[:graph:]]+)' IDENTIFIED BY) "
+    "(CREATE USER '([[:graph:]]+)' IDENTIFIED WITH `caching_sha2_password` BY) "
     "([[:graph:]]*)";
 /*static*/ const std::string LogFilterTest::alter_pattern_ =
     "(ALTER USER [[:graph:]]+ IDENTIFIED WITH) ([[:graph:]]*) (BY) "
@@ -48,50 +49,61 @@ class LogFilterTest : public testing::Test {
 
 TEST_F(LogFilterTest, IsStatementNotChangedWhenNoPatternAdded) {
   const std::string statement =
-      "CREATE USER 'router_1t3f' IDENTIFIED BY 'password123'";
+      "CREATE USER 'router_1t3f' IDENTIFIED WITH `caching_sha2_password` BY "
+      "'password123'";
   EXPECT_THAT(log_filter.filter(statement), testing::Eq(statement));
 }
 
 TEST_F(LogFilterTest, IsStatementNotChangedWhenNoPatternMatched) {
   const std::string statement =
-      "xxxxxx USER 'router_1t3f' IDENTIFIED BY 'password123'";
+      "xxxxxx USER 'router_1t3f' IDENTIFIED WITH `caching_sha2_password` BY "
+      "'password123'";
   log_filter.add_pattern(create_pattern_, "***");
   EXPECT_THAT(log_filter.filter(statement), testing::Eq(statement));
 }
 
 TEST_F(LogFilterTest, IsEmptyPasswordHiddenWhenPatternMatched) {
-  const std::string statement = "CREATE USER 'router_1t3f' IDENTIFIED BY ''";
+  const std::string statement =
+      "CREATE USER 'router_1t3f' IDENTIFIED WITH `caching_sha2_password` BY ''";
   log_filter.add_pattern(create_pattern_, "$1 ***");
   const std::string expected_result(
-      "CREATE USER 'router_1t3f' IDENTIFIED BY ***");
+      "CREATE USER 'router_1t3f' IDENTIFIED WITH `caching_sha2_password` BY "
+      "***");
   EXPECT_THAT(log_filter.filter(statement), testing::Eq(expected_result));
 }
 
 TEST_F(LogFilterTest, IsSpecialCharacterPasswordHiddenWhenPatternMatched) {
   const std::string statement =
-      "CREATE USER 'router_1t3f' IDENTIFIED BY '%$_*@'";
+      "CREATE USER 'router_1t3f' IDENTIFIED WITH `caching_sha2_password` BY "
+      "'%$_*@'";
   log_filter.add_pattern(create_pattern_, "$1 ***");
   const std::string expected_result(
-      "CREATE USER 'router_1t3f' IDENTIFIED BY ***");
+      "CREATE USER 'router_1t3f' IDENTIFIED WITH `caching_sha2_password` BY "
+      "***");
   EXPECT_THAT(log_filter.filter(statement), testing::Eq(expected_result));
 }
 
 TEST_F(LogFilterTest, IsPasswordHiddenWhenPatternMatched) {
   const std::string statement =
-      "CREATE USER 'router_1t3f' IDENTIFIED BY 'password123'";
+      "CREATE USER 'router_1t3f' IDENTIFIED WITH `caching_sha2_password` BY "
+      "'password123'";
   log_filter.add_pattern(create_pattern_, "$1 ***");
   const std::string expected_result(
-      "CREATE USER 'router_1t3f' IDENTIFIED BY ***");
+      "CREATE USER 'router_1t3f' IDENTIFIED WITH `caching_sha2_password` BY "
+      "***");
   EXPECT_THAT(log_filter.filter(statement), testing::Eq(expected_result));
 }
 
 TEST_F(LogFilterTest, IsPasswordHiddenWhenPatternSameAsReplacement) {
   // this is a cornercase that exists if password is passed in plaintext && is
   // '***'
-  const std::string statement = "CREATE USER 'router_1t3f' IDENTIFIED BY '***'";
+  const std::string statement =
+      "CREATE USER 'router_1t3f' IDENTIFIED WITH `caching_sha2_password` BY "
+      "'***'";
   log_filter.add_pattern(create_pattern_, "$1 ***");
   const std::string expected_result(
-      "CREATE USER 'router_1t3f' IDENTIFIED BY ***");
+      "CREATE USER 'router_1t3f' IDENTIFIED WITH `caching_sha2_password` BY "
+      "***");
   EXPECT_THAT(log_filter.filter(statement), testing::Eq(expected_result));
 }
 

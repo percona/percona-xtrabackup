@@ -1,13 +1,11 @@
-include/master-slave.inc
+include/rpl/init_source_replica.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
 [connection master]
 Test to show that combination of Backup + Restore and
 Binlog positioning correctly recovers a slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 use test;
 create table ticker (a int primary key) engine=ndb;
 reset binary logs and gtids;
@@ -51,9 +49,7 @@ max(a)
 Replicate as normal
 use test;
 create table ticker (a int primary key) engine=ndb;
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 Expect 200 entries on Slave
 select count(1) from test.ticker;
 count(1)
@@ -63,9 +59,7 @@ max(a)
 200
 Verify backup restoration is correct wrt binlog positions
 Restore backup on the slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 truncate table test.ticker;
 delete from mysql.ndb_apply_status;
 select @backup_rows:=count(1) from test.ticker;
@@ -73,9 +67,7 @@ select @backup_max_val:=max(a) from test.ticker;
 select @backup_rows - @backup_max_val;
 @backup_rows - @backup_max_val
 0
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 Expect 200 rows when backup and binlog subset combined on slave
 select count(1) from test.ticker;
 count(1)
@@ -84,14 +76,10 @@ select max(a) from test.ticker;
 max(a)
 200
 Now check Binlog apply alone
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 truncate table test.ticker;
 delete from mysql.ndb_apply_status;
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 select @log_rows:=count(1) from test.ticker;
 select @log_max_val:=ifnull(max(a),200) from test.ticker;
 Expect 200 when adding backup and log rows
@@ -102,9 +90,7 @@ select @log_max_val;
 @log_max_val
 200
 Restore backup on the slave
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 truncate table test.ticker;
 delete from mysql.ndb_apply_status;
 select @backup_rows:=count(1) from test.ticker;
@@ -112,9 +98,7 @@ select @backup_max_val:=max(a) from test.ticker;
 select @backup_rows - @backup_max_val;
 @backup_rows - @backup_max_val
 0
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 Expect 200 rows when backup and binlog subset combined on slave
 select count(1) from test.ticker;
 count(1)
@@ -123,14 +107,10 @@ select max(a) from test.ticker;
 max(a)
 200
 Now check Binlog apply alone
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 truncate table test.ticker;
 delete from mysql.ndb_apply_status;
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 select @log_rows:=count(1) from test.ticker;
 select @log_max_val:=ifnull(max(a),200) from test.ticker;
 Expect 200 when adding backup and log rows
@@ -144,4 +124,4 @@ Cleanup
 drop procedure tick;
 drop table ticker;
 reset binary logs and gtids;
-include/rpl_end.inc
+include/rpl/deinit.inc

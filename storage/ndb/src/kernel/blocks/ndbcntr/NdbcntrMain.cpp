@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -186,7 +187,7 @@ static BlockInfo ALL_BLOCKS[] = {
     {DBDIH_REF, 1, 7000, 7173, true},    {DBLQH_REF, 1, 5000, 5030, true},
     {DBACC_REF, 1, 3000, 3999, true},    {DBTUP_REF, 1, 4000, 4007, true},
     {DBDICT_REF, 1, 6000, 6003, true},   {NDBCNTR_REF, 0, 1000, 1999, true},
-    {CMVMI_REF, 1, 9000, 9999, true},  // before QMGR
+    {CMVMI_REF, 1, 9600, 9999, true},  // before QMGR
     {QMGR_REF, 1, 1, 999, true},         {TRIX_REF, 1, 0, 0, true},
     {BACKUP_REF, 1, 10000, 10999, true}, {DBUTIL_REF, 1, 11000, 11999, true},
     {SUMA_REF, 1, 13000, 13999, true},   {DBTUX_REF, 1, 12000, 12999, true},
@@ -196,16 +197,16 @@ static BlockInfo ALL_BLOCKS[] = {
     {THRMAN_REF, 1, 0, 0, true},         {DBQLQH_REF, 1, 0, 0, false},
     {DBQACC_REF, 1, 0, 0, false},        {DBQTUP_REF, 1, 0, 0, false},
     {QBACKUP_REF, 1, 0, 0, false},       {DBQTUX_REF, 1, 0, 0, false},
-    {QRESTORE_REF, 1, 0, 0, false}};
+    {QRESTORE_REF, 1, 0, 0, false},      {TRPMAN_REF, 1, 0, 0, true}};
 
 static const Uint32 ALL_BLOCKS_SZ = sizeof(ALL_BLOCKS) / sizeof(BlockInfo);
 
 static BlockReference readConfigOrder[ALL_BLOCKS_SZ] = {
-    CMVMI_REF,  NDBFS_REF,   DBINFO_REF, DBTUP_REF,   DBACC_REF,   DBTC_REF,
-    DBLQH_REF,  DBTUX_REF,   DBDICT_REF, DBDIH_REF,   NDBCNTR_REF, QMGR_REF,
-    TRIX_REF,   BACKUP_REF,  DBUTIL_REF, SUMA_REF,    TSMAN_REF,   LGMAN_REF,
-    PGMAN_REF,  RESTORE_REF, DBSPJ_REF,  THRMAN_REF,  DBQLQH_REF,  DBQACC_REF,
-    DBQTUP_REF, QBACKUP_REF, DBQTUX_REF, QRESTORE_REF};
+    CMVMI_REF,  TRPMAN_REF, NDBFS_REF,   DBINFO_REF, DBTUP_REF,   DBACC_REF,
+    DBTC_REF,   DBLQH_REF,  DBTUX_REF,   DBDICT_REF, DBDIH_REF,   NDBCNTR_REF,
+    QMGR_REF,   TRIX_REF,   BACKUP_REF,  DBUTIL_REF, SUMA_REF,    TSMAN_REF,
+    LGMAN_REF,  PGMAN_REF,  RESTORE_REF, DBSPJ_REF,  THRMAN_REF,  DBQLQH_REF,
+    DBQACC_REF, DBQTUP_REF, QBACKUP_REF, DBQTUX_REF, QRESTORE_REF};
 
 /*******************************/
 /*  CONTINUEB                  */
@@ -5081,6 +5082,16 @@ void Ndbcntr::Missra::execSTTORRY(Signal *signal) {
   }
 
   currentBlockIndex++;
+#ifdef ERROR_INSERT
+  if (cntr.cerrorInsert == 1029) {
+    signal->theData[0] = ZBLOCK_STTOR;
+    g_eventLogger->info(
+        "NdbCntrMain stalling Next STTOR on phase %u blockIndex %u",
+        currentStartPhase, currentBlockIndex);
+    cntr.sendSignalWithDelay(cntr.reference(), GSN_CONTINUEB, signal, 100, 1);
+    return;
+  }
+#endif
   sendNextSTTOR(signal);
 }
 
@@ -6259,6 +6270,11 @@ void Ndbcntr::sendWriteLocalSysfileConf(Signal *signal) {
       signal->theData[0] = restorable_gci;
       execRESTORABLE_GCI_REP(signal);
     }
+  }
+
+  if (ERROR_INSERTED(1028) && ctypeOfStart == NodeState::ST_SYSTEM_RESTART) {
+    jam();
+    CRASH_INSERTION(1028);
   }
 }
 

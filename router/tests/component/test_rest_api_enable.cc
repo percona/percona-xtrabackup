@@ -1,16 +1,17 @@
 /*
- Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+ Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
  as published by the Free Software Foundation.
 
- This program is also distributed with certain software (including
+ This program is designed to work with certain software (including
  but not limited to OpenSSL) that is licensed under separate terms,
  as designated in a particular file or component or in included license
  documentation.  The authors of MySQL hereby grant you an additional
  permission to link the program and your derivative works with the
- separately licensed software that they have included with MySQL.
+ separately licensed software that they have either included with
+ the program or referenced in the documentation.
 
  This program is distributed in the hope that it will be useful,
  but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -89,7 +90,6 @@ class TestRestApiEnable : public RouterComponentBootstrapTest {
         "--bootstrap=" + gr_member_ip + ":" + std::to_string(cluster_node_port),
         "-d",
         temp_test_dir.name(),
-        "--conf-set-option=DEFAULT.logging_folder=" + get_logging_dir().str(),
         "--conf-set-option=logger.level=DEBUG",
     };
 
@@ -105,6 +105,27 @@ class TestRestApiEnable : public RouterComponentBootstrapTest {
                           std::to_string(router_port_x_rw),
                       "--conf-set-option=routing:bootstrap_x_ro.bind_port=" +
                           std::to_string(router_port_x_ro)});
+
+      // Let's overwrite the default bind_address to prevent the MacOS firewall
+      // from complaining
+      cmdline.insert(
+          cmdline.end(),
+          {"--conf-set-option=DEFAULT.bind_address=127.0.0.1",
+           "--conf-set-option=routing:bootstrap_rw.bind_address=127.0.0.1",
+           "--conf-set-option=routing:bootstrap_ro.bind_address=127.0.0.1",
+           "--conf-set-option=routing:bootstrap_x_rw.bind_address=127.0.0.1",
+           "--conf-set-option=routing:bootstrap_x_ro.bind_address=127.0.0.1"});
+
+      if (std::find(additional_config.begin(), additional_config.end(),
+                    "--disable-rw-split") == additional_config.end()) {
+        // if --disable-rw-split isn't set, set the bind-port and bind-address
+        cmdline.insert(
+            cmdline.end(),
+            {"--conf-set-option=routing:bootstrap_rw_split.bind_port=" +
+                 std::to_string(router_port_rw_split),
+             "--conf-set-option=routing:bootstrap_rw_split.bind_address="
+             "127.0.0.1"});
+      }
     }
 
     std::move(std::begin(additional_config), std::end(additional_config),
@@ -116,10 +137,6 @@ class TestRestApiEnable : public RouterComponentBootstrapTest {
 
     EXPECT_TRUE(router_bootstrap.expect_output(
         "MySQL Router configured for the InnoDB Cluster 'mycluster'"));
-
-    auto plugin_dir = mysql_harness::get_plugin_dir(get_origin().str());
-    EXPECT_TRUE(add_line_to_config_file(config_path.str(), "DEFAULT",
-                                        "plugin_folder", plugin_dir));
 
     return router_bootstrap;
   }
@@ -258,7 +275,8 @@ class TestRestApiEnable : public RouterComponentBootstrapTest {
   }
 
   void assert_rest_works(const uint16_t port) {
-    const auto uri = std::string(rest_api_basepath) + "/router/status";
+    const auto uri = "https://" + gr_member_ip + ":" + std::to_string(port) +
+                     rest_api_basepath + "/router/status";
 
     const auto ca_file =
         datadir_path.join(cert_filenames.at(CertFile::k_ca_cert));
@@ -278,9 +296,7 @@ class TestRestApiEnable : public RouterComponentBootstrapTest {
     }
 
     IOContext io_ctx;
-    auto https_client = std::make_unique<HttpsClient>(
-        io_ctx, std::move(tls_ctx), gr_member_ip, port);
-    RestClient rest_client(std::move(https_client));
+    RestClient rest_client(io_ctx, std::move(tls_ctx));
 
     JsonDocument json_doc;
     // We do not care to authenticate, just check if we got a response
@@ -363,6 +379,7 @@ class TestRestApiEnable : public RouterComponentBootstrapTest {
   uint16_t custom_port;
   uint16_t router_port_rw;
   uint16_t router_port_ro;
+  uint16_t router_port_rw_split;
   uint16_t router_port_x_rw;
   uint16_t router_port_x_ro;
   ProcessWrapper *cluster_node;
@@ -405,6 +422,7 @@ class TestRestApiEnable : public RouterComponentBootstrapTest {
   void set_router_accepting_ports() {
     router_port_rw = port_pool_.get_next_available();
     router_port_ro = port_pool_.get_next_available();
+    router_port_rw_split = port_pool_.get_next_available();
     router_port_x_rw = port_pool_.get_next_available();
     router_port_x_ro = port_pool_.get_next_available();
   }
@@ -865,9 +883,9 @@ TEST_P(RestApiInvalidUserCerts,
       datadir_path.real_path().join(router_key_filename).str() +
       "' or SSL certificate file '" +
       datadir_path.real_path().join(router_cert_filename).str() + "' failed";
-  EXPECT_THAT(
-      router.get_logfile_content("mysqlrouter.log", get_logging_dir().str()),
-      ::testing::HasSubstr(log_error));
+  EXPECT_THAT(router.get_logfile_content("mysqlrouter.log",
+                                         temp_test_dir.name() + "/log"),
+              ::testing::HasSubstr(log_error));
 }
 
 INSTANTIATE_TEST_SUITE_P(CheckRestApiInvalidUserCerts, RestApiInvalidUserCerts,

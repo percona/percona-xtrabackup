@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -81,7 +82,7 @@ ThreadAffinity::affinity() const noexcept {
   thread_affinity_cpu_set_type cpuset;
 
   if (0 != pthread_getaffinity_np(thread_id_, sizeof(cpuset), &cpuset)) {
-    return stdx::make_unexpected(net::impl::socket::last_error_code());
+    return stdx::unexpected(net::impl::socket::last_error_code());
   }
 
   std::bitset<CPU_SETSIZE> cpus;
@@ -99,7 +100,7 @@ ThreadAffinity::affinity() const noexcept {
       SetThreadAffinityMask(thread_id_, GetCurrentProcessorNumber());
 
   if (cur_mask == 0) {
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         std::error_code(GetLastError(), std::generic_category()));
   }
 
@@ -107,9 +108,9 @@ ThreadAffinity::affinity() const noexcept {
   SetThreadAffinityMask(thread_id_, cur_mask);
 
   // create bitmask from old_mask.
-  return {std::in_place, cur_mask};
+  return std::bitset<ThreadAffinity::max_cpus>{cur_mask};
 #else
-  return stdx::make_unexpected(make_error_code(std::errc::not_supported));
+  return stdx::unexpected(make_error_code(std::errc::not_supported));
 #endif
 }
 
@@ -133,18 +134,18 @@ stdx::expected<void, std::error_code> ThreadAffinity::affinity(
   }
 
   if (0 != pthread_setaffinity_np(thread_id_, sizeof(cpuset), &cpuset)) {
-    return stdx::make_unexpected(net::impl::socket::last_error_code());
+    return stdx::unexpected(net::impl::socket::last_error_code());
   }
 
   return {};
 #elif defined(_WIN32)
   DWORD_PTR new_mask = cpus.to_ullong();
   if (new_mask == 0) {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
   DWORD_PTR old_mask = SetThreadAffinityMask(thread_id_, new_mask);
   if (old_mask == 0) {
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         std::error_code(GetLastError(), std::generic_category()));
   }
 
@@ -156,7 +157,7 @@ stdx::expected<void, std::error_code> ThreadAffinity::affinity(
 #if 0
   // to be tested.
   if (cpus.count() != 1) {
-    return stdx::make_unexpected(make_error_code(std::errc::not_supported));
+    return stdx::unexpected(make_error_code(std::errc::not_supported));
   }
 
   int affinity_tag = reinterpret_cast<int>(cpus.to_ulong());
@@ -166,13 +167,13 @@ stdx::expected<void, std::error_code> ThreadAffinity::affinity(
   thread_policy_set(mach_thread_id, THREAD_AFFINITY_POLICY,
                     reinterpret_cast<thread_policy_t>(&policy), 1);
 #else
-  return stdx::make_unexpected(make_error_code(std::errc::not_supported));
+  return stdx::unexpected(make_error_code(std::errc::not_supported));
 #endif
 #elif defined(__sun)
   // - processor_bind(), pset_bind()
-  return stdx::make_unexpected(make_error_code(std::errc::not_supported));
+  return stdx::unexpected(make_error_code(std::errc::not_supported));
 #else
-  return stdx::make_unexpected(make_error_code(std::errc::not_supported));
+  return stdx::unexpected(make_error_code(std::errc::not_supported));
 #endif
 }
 

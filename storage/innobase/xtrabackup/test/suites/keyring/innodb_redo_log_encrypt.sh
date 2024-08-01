@@ -11,9 +11,10 @@ innodb_redo_log_encrypt=ON
 innodb_undo_log_encrypt=ON
 "
 
+KEYRING_TYPE="component"
+. inc/keyring_common.sh
 . inc/keyring_file.sh
-
-start_server
+configure_server_with_component
 
 load_sakila
 
@@ -56,6 +57,9 @@ function test_do() {
 	rm -rf $mysql_datadir
 
 	xtrabackup --copy-back --target-dir=$topdir/backup ${xtra_restore_args}
+
+	cp ${instance_local_manifest}  $mysql_datadir
+    cp ${keyring_component_cnf} $mysql_datadir
 
 	start_server
 

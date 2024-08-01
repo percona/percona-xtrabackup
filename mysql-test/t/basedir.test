@@ -26,10 +26,10 @@ let SHUTDOWN_SQL= $MYSQL_TMP_DIR/shutdown.sql;
 # Need to save this as PWD env var is overriden when invoking perl
 let BDIR= $PWD;
 
-let DEFARGS= --no-defaults --plugin-dir=$PLUGIN_DIR --innodb_dedicated_server=OFF --explicit_defaults_for_timestamp --socket=$MYSQLD_SOCKET --port=$MYSQLD_PORT --skip-ssl --secure-file-priv="" --datadir=$DDIR --skip-mysqlx;
+let DEFARGS= --no-defaults --plugin-dir=$PLUGIN_DIR --innodb_dedicated_server=OFF --explicit_defaults_for_timestamp --socket=$MYSQLD_SOCKET --port=$MYSQLD_PORT --tls-version= --secure-file-priv="" --datadir=$DDIR --skip-mysqlx;
 
 let INIT_FILE_ARGS= $DEFARGS --log-error=$MYSQLD_LOG --init-file=$SHUTDOWN_SQL;
-let INIT_FILE_ARGS_D= --no-defaults --plugin-dir=$PLUGIN_DIR --innodb_dedicated_server=OFF --explicit_defaults_for_timestamp --socket=$MYSQLD_SOCKET --port=$MYSQLD_PORT  --skip-mysqlx --skip-ssl --secure-file-priv="" --datadir=$MTR_DATADIR -D --log-error=$MYSQLD_LOG;
+let INIT_FILE_ARGS_D= --no-defaults --plugin-dir=$PLUGIN_DIR --innodb_dedicated_server=OFF --explicit_defaults_for_timestamp --socket=$MYSQLD_SOCKET --port=$MYSQLD_PORT  --skip-mysqlx --tls-version= --secure-file-priv="" --datadir=$MTR_DATADIR -D --log-error=$MYSQLD_LOG;
 
 write_file $SHUTDOWN_SQL;
   SHUTDOWN;
@@ -212,9 +212,7 @@ EOF
 EOF
 
 --echo # Wait for daemon server to start
---enable_reconnect
 --source include/wait_until_connected_again.inc
---disable_reconnect
 
 --echo # Execute a query to see that it is running OK
 SHOW DATABASES;
@@ -240,6 +238,5 @@ SHOW DATABASES;
 --echo # Restart mysqld of mtr
 --echo #
 --exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
---enable_reconnect
 --source include/wait_until_connected_again.inc
 --source include/xplugin_wait_for_interfaces.inc

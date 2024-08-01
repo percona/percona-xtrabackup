@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -49,7 +50,7 @@ stdx::expected<size_t, std::error_code> ProtocolBase::write_ssl(
   const auto res = SSL_write(ssl_.get(), buf.data(), buf.size());
 
   if (res <= 0) {
-    return stdx::make_unexpected(make_tls_ssl_error(ssl_.get(), res));
+    return stdx::unexpected(make_tls_ssl_error(ssl_.get(), res));
   } else {
     return res;
   }
@@ -63,8 +64,7 @@ stdx::expected<size_t, std::error_code> ProtocolBase::read_ssl(
     auto ec = make_tls_ssl_error(ssl_.get(), res);
 
     // if ec.code() == 0, then we had EOF
-    return stdx::make_unexpected(ec ? ec
-                                    : make_error_code(net::stream_errc::eof));
+    return stdx::unexpected(ec ? ec : make_error_code(net::stream_errc::eof));
   } else {
     return res;
   }
@@ -74,7 +74,7 @@ stdx::expected<size_t, std::error_code> ProtocolBase::avail_ssl() {
   const auto res = SSL_pending(ssl_.get());
 
   if (res <= 0) {
-    return stdx::make_unexpected(make_tls_ssl_error(ssl_.get(), res));
+    return stdx::unexpected(make_tls_ssl_error(ssl_.get(), res));
   } else {
     return res;
   }
@@ -141,7 +141,7 @@ stdx::expected<void, std::error_code> ProtocolBase::tls_accept() {
   stdx::expected<void, std::error_code> result{};
   const auto accept_res = SSL_accept(ssl);
   if (accept_res != 1) {
-    result = stdx::make_unexpected(make_tls_ssl_error(ssl, accept_res));
+    result = stdx::unexpected(make_tls_ssl_error(ssl, accept_res));
   }
 
   // if the initial memory bio is processed, switch to the fd for more data.

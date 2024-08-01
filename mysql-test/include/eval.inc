@@ -20,7 +20,7 @@
 #
 #     It is also possible to nest sub-statements on this form, like:
 #       [master:SHOW BINLOG EVENTS FROM
-#        [slave:SHOW SLAVE STATUS, Master_Log_Pos, 1],
+#        [slave:SHOW REPLICA STATUS, Source_Log_Pos, 1],
 #        1, Position]
 #
 #   [SQL_STATEMENT]
@@ -34,7 +34,7 @@
 #
 # ==== Usage ====
 #
-# --let $eval_expr= [SHOW SLAVE STATUS, Relay_Log_Pos, 1] + 47
+# --let $eval_expr= [SHOW REPLICA STATUS, Relay_Log_Pos, 1] + 47
 # [--let $eval_no_result= 1]
 # [--let $rpl_debug= 1]
 # --source include/eval.inc
@@ -126,7 +126,7 @@ while ($_eval_rbracket)
       --echo # debug: connection='$_eval_connection' sub-statement=$_eval_substmt
     }
     --let $rpl_connection_name= $_eval_connection
-    --source include/rpl_connection.inc
+    --source include/connection.inc
   }
   if (!$_eval_connection)
   {
@@ -154,7 +154,7 @@ while ($_eval_rbracket)
   if ($_eval_connection)
   {
     --let $rpl_connection_name= $_eval_old_connection
-    --source include/rpl_connection.inc
+    --source include/connection.inc
   }
 
   if ($rpl_debug)

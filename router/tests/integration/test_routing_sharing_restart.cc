@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2022, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -60,7 +61,6 @@
 #include "mysqlrouter/classic_protocol_codec_message.h"
 #include "mysqlrouter/classic_protocol_frame.h"
 #include "mysqlrouter/classic_protocol_message.h"
-#include "mysqlrouter/http_request.h"
 #include "mysqlrouter/utils.h"
 #include "openssl_version.h"  // ROUTER_OPENSSL_VERSION
 #include "process_manager.h"
@@ -105,24 +105,24 @@ template <size_t N>
 stdx::expected<std::array<std::string, N>, MysqlError> query_one(
     MysqlClient &cli, std::string_view stmt) {
   auto cmd_res = cli.query(stmt);
-  if (!cmd_res) return stdx::make_unexpected(cmd_res.error());
+  if (!cmd_res) return stdx::unexpected(cmd_res.error());
 
   auto results = std::move(*cmd_res);
 
   auto res_it = results.begin();
   if (!(res_it != results.end())) {
-    return stdx::make_unexpected(MysqlError(1, "No results", "HY000"));
+    return stdx::unexpected(MysqlError(1, "No results", "HY000"));
   }
 
   if (res_it->field_count() != N) {
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         MysqlError(1, "field-count doesn't match", "HY000"));
   }
 
   auto rows = res_it->rows();
   auto rows_it = rows.begin();
   if (rows_it == rows.end()) {
-    return stdx::make_unexpected(MysqlError(1, "No rows", "HY000"));
+    return stdx::unexpected(MysqlError(1, "No rows", "HY000"));
   }
 
   std::array<std::string, N> out;
@@ -132,12 +132,12 @@ stdx::expected<std::array<std::string, N>, MysqlError> query_one(
 
   ++rows_it;
   if (rows_it != rows.end()) {
-    return stdx::make_unexpected(MysqlError(1, "Too many rows", "HY000"));
+    return stdx::unexpected(MysqlError(1, "Too many rows", "HY000"));
   }
 
   ++res_it;
   if (res_it != results.end()) {
-    return stdx::make_unexpected(MysqlError(1, "Too many results", "HY000"));
+    return stdx::unexpected(MysqlError(1, "Too many results", "HY000"));
   }
 
   return out;
@@ -149,7 +149,7 @@ static stdx::expected<uint64_t, std::error_code> from_string(
   uint64_t num;
   auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), num);
 
-  if (ec != std::errc{}) return stdx::make_unexpected(make_error_code(ec));
+  if (ec != std::errc{}) return stdx::unexpected(make_error_code(ec));
 
   return num;
 }
@@ -318,7 +318,8 @@ class SharedRouter {
                      {"backend", "file"},
                      {"filename", userfile},
                  })
-        .section("http_server", {{"port", std::to_string(rest_port_)}});
+        .section("http_server", {{"bind_address", "127.0.0.1"},
+                                 {"port", std::to_string(rest_port_)}});
 
     for (const auto &param : share_connection_params) {
       auto port_key =
@@ -408,12 +409,11 @@ class SharedRouter {
 
     if (auto *v = JsonPointer(pointer).Get(json_doc)) {
       if (!v->IsInt()) {
-        return stdx::make_unexpected(
-            make_error_code(std::errc::invalid_argument));
+        return stdx::unexpected(make_error_code(std::errc::invalid_argument));
       }
       return v->GetInt();
     } else {
-      return stdx::make_unexpected(
+      return stdx::unexpected(
           make_error_code(std::errc::no_such_file_or_directory));
     }
   }
@@ -423,6 +423,11 @@ class SharedRouter {
                         "/idleServerConnections");
   }
 
+  stdx::expected<int, std::error_code> stashed_server_connections() {
+    return rest_get_int(rest_api_basepath + "/connection_pool/main/status",
+                        "/stashedServerConnections");
+  }
+
   stdx::expected<void, std::error_code> wait_for_idle_server_connections(
       int expected_value, std::chrono::seconds timeout) {
     using clock_type = std::chrono::steady_clock;
@@ -430,12 +435,31 @@ class SharedRouter {
     const auto end_time = clock_type::now() + timeout;
     do {
       auto int_res = idle_server_connections();
-      if (!int_res) return stdx::make_unexpected(int_res.error());
+      if (!int_res) return stdx::unexpected(int_res.error());
 
       if (*int_res == expected_value) return {};
 
       if (clock_type::now() > end_time) {
-        return stdx::make_unexpected(make_error_code(std::errc::timed_out));
+        return stdx::unexpected(make_error_code(std::errc::timed_out));
+      }
+
+      std::this_thread::sleep_for(kIdleServerConnectionsSleepTime);
+    } while (true);
+  }
+
+  stdx::expected<void, std::error_code> wait_for_stashed_server_connections(
+      int expected_value, std::chrono::seconds timeout) {
+    using clock_type = std::chrono::steady_clock;
+
+    const auto end_time = clock_type::now() + timeout;
+    do {
+      auto int_res = stashed_server_connections();
+      if (!int_res) return stdx::unexpected(int_res.error());
+
+      if (*int_res == expected_value) return {};
+
+      if (clock_type::now() > end_time) {
+        return stdx::unexpected(make_error_code(std::errc::timed_out));
       }
 
       std::this_thread::sleep_for(kIdleServerConnectionsSleepTime);
@@ -901,7 +925,7 @@ TEST_P(ShareConnectionTestWithRestartedServer,
 
     // wait until connection is in the pool.
     if (can_share) {
-      ASSERT_NO_ERROR(shared_router()->wait_for_idle_server_connections(
+      ASSERT_NO_ERROR(shared_router()->wait_for_stashed_server_connections(
           std::min(ndx + 1, kNumServers), 10s));
     }
   }
@@ -992,8 +1016,6 @@ TEST_P(ShareConnectionTestWithRestartedServer,
 
           auto msg = frame.payload();
 
-          int expected_error_code =
-              2003;  // Can't connect to remove MySQL Server
           switch (ndx) {
             case 0:   // sleep
             case 5:   // create-db
@@ -1017,7 +1039,7 @@ TEST_P(ShareConnectionTestWithRestartedServer,
             case 39:
 
               // unknown command
-              expected_error_code = 1047;
+              EXPECT_EQ(msg.error_code(), 1047) << msg.message();
               break;
             case cmd_byte<
                 classic_protocol::message::client::StmtExecute>():  // 23
@@ -1026,16 +1048,19 @@ TEST_P(ShareConnectionTestWithRestartedServer,
             case cmd_byte<
                 classic_protocol::message::client::StmtFetch>():  // 28
 
-              // unknown prepared statement handler.
-              expected_error_code = 1243;
+              // unknown prepared statement handler
+              // malformed packet
+              EXPECT_THAT(msg.error_code(), AnyOf(1243, 1835)) << msg.message();
               break;
             case cmd_byte<
                 classic_protocol::message::client::SetOption>():  // 27
-              expected_error_code = 1835;  // malformed packet
+              // malformed packet
+              EXPECT_EQ(msg.error_code(), 1835) << msg.message();
+              break;
+            default:
+              EXPECT_EQ(msg.error_code(), 2003) << msg.message();
               break;
           }
-
-          EXPECT_EQ(msg.error_code(), expected_error_code) << msg.message();
         }
       }
     }
@@ -1080,7 +1105,7 @@ TEST_P(ShareConnectionTestWithRestartedServer,
 
     // wait until connection is in the pool.
     if (can_share) {
-      ASSERT_NO_ERROR(shared_router()->wait_for_idle_server_connections(
+      ASSERT_NO_ERROR(shared_router()->wait_for_stashed_server_connections(
           std::min(ndx + 1, kNumServers), 10s));
     }
   }
@@ -1152,10 +1177,8 @@ TEST_P(ShareConnectionTestWithRestartedServer,
 
       auto msg = frame.payload();
 
-      int expected_error_code = 1835;  // malformed packet
       switch (ndx) {
         case 0:   // sleep
-        case 4:   // list-fields
         case 5:   // create-db
         case 6:   // drop-db
         case 7:   // refresh
@@ -1178,45 +1201,54 @@ TEST_P(ShareConnectionTestWithRestartedServer,
         case 39:
 
           // unknown command
-          expected_error_code = 1047;
+          EXPECT_THAT(msg.error_code(), 1047) << msg.message();
           break;
         case cmd_byte<classic_protocol::message::client::StmtExecute>():  // 23
         case cmd_byte<classic_protocol::message::client::StmtReset>():    // 26
         case cmd_byte<classic_protocol::message::client::StmtFetch>():    // 28
-
-          // unknown prepared statement handler | malformed packet.
-          expected_error_code = can_share ? 1243 : 1835;
+          // unknown prepared statement handler
+          // malformed packet
+          EXPECT_THAT(msg.error_code(), AnyOf(1243, 1835)) << msg.message();
           break;
         case cmd_byte<classic_protocol::message::client::InitSchema>():  // 2
 
-          expected_error_code = 1046;  // no database selected
+          // no database selected
+          EXPECT_THAT(msg.error_code(), 1046) << msg.message();
           break;
         case cmd_byte<classic_protocol::message::client::Query>():  // 3
-          expected_error_code = (GetParam().client_ssl_mode == kPreferred &&
-                                 GetParam().server_ssl_mode == kAsClient)
-                                    ? 1065  // query was empty
-                                    : 1835  // malformed packet
-              ;
+
+          // query was empty
+          // malformed packet
+          EXPECT_THAT(msg.error_code(), AnyOf(1065, 1835)) << msg.message();
+          break;
+        case cmd_byte<classic_protocol::message::client::ListFields>():  // 4
+
+          EXPECT_THAT(msg.error_code(), AnyOf(1047,   // unknown command in 9.0
+                                              1835))  // malformed packet in 8.4
+              << msg.message();
           break;
         case cmd_byte<classic_protocol::message::client::StmtPrepare>():  // 22
 
-          expected_error_code = 1065;  // query was empty
+          // query was empty
+          EXPECT_THAT(msg.error_code(), 1065) << msg.message();
           break;
         case cmd_byte<classic_protocol::message::client::BinlogDump>():  // 18
         case cmd_byte<
             classic_protocol::message::client::BinlogDumpGtid>():  // 30
         case 13:                                                   // debug
-          expected_error_code = 1227;  // access denied; SUPER is needed.
+                  // access denied; SUPER is needed.
+          EXPECT_THAT(msg.error_code(), 1227) << msg.message();
           break;
         case cmd_byte<
             classic_protocol::message::client::RegisterReplica>():  // 21
 
           // access denied
-          expected_error_code = 1045;
+          EXPECT_THAT(msg.error_code(), 1045) << msg.message();
+          break;
+        default:
+          EXPECT_THAT(msg.error_code(), 1835) << msg.message();
           break;
       }
-
-      EXPECT_EQ(msg.error_code(), expected_error_code) << msg.message();
     } else if (expected_response == ExpectedResponse::Ok) {
       buf.resize(1024);  // should be large enough.
 
@@ -1327,7 +1359,7 @@ TEST_P(ShareConnectionTestWithRestartedServer,
 
     if (can_share) {
       ASSERT_NO_ERROR(
-          shared_router()->wait_for_idle_server_connections(1, 10s));
+          shared_router()->wait_for_stashed_server_connections(1, 10s));
 
       this->wait_for_connections_to_server_expired(my_port);
     }
@@ -1615,7 +1647,7 @@ TEST_P(ShareConnectionTestWithRestartedServer,
 
     if (can_share) {
       ASSERT_NO_ERROR(
-          shared_router()->wait_for_idle_server_connections(1, 10s));
+          shared_router()->wait_for_stashed_server_connections(1, 10s));
 
       ASSERT_NO_FATAL_FAILURE(
           this->wait_for_connections_to_server_expired(my_port));
@@ -1746,7 +1778,7 @@ TEST_P(ShareConnectionTestWithRestartedServer,
 
     if (can_share) {
       ASSERT_NO_ERROR(
-          shared_router()->wait_for_idle_server_connections(1, 10s));
+          shared_router()->wait_for_stashed_server_connections(1, 10s));
     }
 
     // reconnects
@@ -1857,16 +1889,33 @@ TEST_P(ShareConnectionTestWithRestartedServer,
  */
 TEST_P(ShareConnectionTestWithRestartedServer,
        classic_protocol_kill_my_backend_reconnect_select) {
-  SCOPED_TRACE("// connecting to server");
-  std::array<MysqlClient, 4> clis;  // more clients then destinations.
+  const bool can_share = GetParam().can_share();
 
-  for (auto &cli : clis) {
+  SCOPED_TRACE("// connecting to server");
+  std::array<MysqlClient, 4> clis;  // one per destination
+
+  for (auto [ndx, cli] : stdx::views::enumerate(clis)) {
+    if (can_share && ndx == 3) {
+      // wait for all connections to be pooled.
+      ASSERT_NO_ERROR(
+          shared_router()->wait_for_stashed_server_connections(3, 10s));
+    }
+
     cli.username("root");
     cli.password("");
 
+    // ndx=3 uses a pooled connection.
     ASSERT_NO_ERROR(cli.connect(shared_router()->host(),
                                 shared_router()->port(GetParam())));
   }
+
+  if (can_share) {
+    // wait for ndx=3 to be back in the pool.
+    ASSERT_NO_ERROR(
+        shared_router()->wait_for_stashed_server_connections(3, 10s));
+  }
+
+  SCOPED_TRACE("// querying port of first server");
 
   auto port_res = query_one<1>(clis[0], "SELECT @@port");
   ASSERT_NO_ERROR(port_res);
@@ -1876,14 +1925,20 @@ TEST_P(ShareConnectionTestWithRestartedServer,
 
   uint16_t my_port = *my_port_num_res;
 
-  // shut down the server connection is for while the connection is pooled.
+  if (can_share) {
+    // wait for clis[0] to be back in the pool again.
+    ASSERT_NO_ERROR(
+        shared_router()->wait_for_stashed_server_connections(3, 10s));
+  }
+
+  // shut down the server connection while the connection is pooled.
   // wait for the server to shutdown
   int nodes_shutdown{0};
   // shut down the intermediate router while the connection is pooled
 
   for (auto [ndx, s] : stdx::views::enumerate(shared_servers())) {
     if (s->server_port() == my_port) {
-      auto inter = intermediate_routers()[ndx];
+      auto *inter = intermediate_routers()[ndx];
 
       ASSERT_NO_FATAL_FAILURE(this->stop_intermediate_router(inter));
 
@@ -1896,7 +1951,7 @@ TEST_P(ShareConnectionTestWithRestartedServer,
   {
     auto cmd_res = query_one<1>(clis[0], "SELECT @@port");
     ASSERT_ERROR(cmd_res);
-    if (!GetParam().can_share()) {
+    if (!can_share) {
       // not pooled, the connection is closed directly.
       EXPECT_EQ(cmd_res.error().value(), 2013) << cmd_res.error();
       EXPECT_THAT(cmd_res.error().message(),
@@ -1927,7 +1982,7 @@ TEST_P(ShareConnectionTestWithRestartedServer,
     auto cmd_res = query_one<1>(clis[3], "SELECT @@port");
     ASSERT_ERROR(cmd_res);
 
-    if (!GetParam().can_share()) {
+    if (!can_share) {
       // not pooled, the connection is closed directly.
       EXPECT_EQ(cmd_res.error().value(), 2013) << cmd_res.error();
       EXPECT_THAT(cmd_res.error().message(),

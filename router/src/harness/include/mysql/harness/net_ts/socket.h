@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -372,7 +373,7 @@ class basic_socket_impl_base {
 
   stdx::expected<void, std::error_code> non_blocking(bool mode) {
     if (!is_open()) {
-      return stdx::make_unexpected(
+      return stdx::unexpected(
           std::make_error_code(std::errc::bad_file_descriptor));
     }
     non_blocking_ = mode;
@@ -392,12 +393,12 @@ class basic_socket_impl_base {
 
   stdx::expected<void, std::error_code> native_non_blocking(bool mode) {
     if (!is_open()) {
-      return stdx::make_unexpected(
+      return stdx::unexpected(
           std::make_error_code(std::errc::bad_file_descriptor));
     }
 
     if (!mode && non_blocking()) {
-      return stdx::make_unexpected(
+      return stdx::unexpected(
           std::make_error_code(std::errc::invalid_argument));
     }
 
@@ -430,8 +431,7 @@ class basic_socket_impl_base {
 
   stdx::expected<void, std::error_code> cancel() {
     if (!is_open()) {
-      return stdx::make_unexpected(
-          make_error_code(std::errc::bad_file_descriptor));
+      return stdx::unexpected(make_error_code(std::errc::bad_file_descriptor));
     }
 
     io_ctx_->cancel(native_handle());
@@ -502,11 +502,11 @@ class basic_socket_impl : public basic_socket_impl_base {
   stdx::expected<void, error_type> open(
       const protocol_type &protocol = protocol_type(), int flags = 0) {
     if (is_open()) {
-      return stdx::make_unexpected(make_error_code(socket_errc::already_open));
+      return stdx::unexpected(make_error_code(socket_errc::already_open));
     }
     auto res = io_ctx_->socket_service()->socket(
         protocol.family(), protocol.type() | flags, protocol.protocol());
-    if (!res) return stdx::make_unexpected(res.error());
+    if (!res) return stdx::unexpected(res.error());
 #ifdef SOCK_NONBLOCK
     if ((flags & SOCK_NONBLOCK) != 0) {
       native_non_blocking_ = 1;
@@ -519,7 +519,7 @@ class basic_socket_impl : public basic_socket_impl_base {
   stdx::expected<void, error_type> assign(
       const protocol_type &protocol, const native_handle_type &native_handle) {
     if (is_open()) {
-      return stdx::make_unexpected(make_error_code(socket_errc::already_open));
+      return stdx::unexpected(make_error_code(socket_errc::already_open));
     }
     protocol_ = protocol;
     native_handle_ = native_handle;
@@ -538,22 +538,23 @@ class basic_socket_impl : public basic_socket_impl_base {
                                                  struct sockaddr *endpoint_data,
                                                  socklen_t *endpoint_size,
                                                  int flags = 0) {
+    using ret_type = stdx::expected<socket_type, error_type>;
     if (flags != 0) {
       auto res = io_ctx_->socket_service()->accept4(
           native_handle(), endpoint_data, endpoint_size, flags);
       if (res) {
         return socket_type{io_ctx, protocol_, res.value()};
       } else if (res.error() != std::errc::operation_not_supported) {
-        return stdx::make_unexpected(res.error());
+        return stdx::unexpected(res.error());
       }
 
       // otherwise fall through to accept without flags
     }
     auto res = io_ctx_->socket_service()->accept(native_handle(), endpoint_data,
                                                  endpoint_size);
-    if (!res) return stdx::make_unexpected(res.error());
+    if (!res) return stdx::unexpected(res.error());
 
-    return {std::in_place, io_ctx, protocol_, std::move(res.value())};
+    return ret_type{std::in_place, io_ctx, protocol_, std::move(res.value())};
   }
 
   stdx::expected<socket_type, error_type> accept(io_context &io_ctx,
@@ -610,7 +611,7 @@ class basic_socket_impl : public basic_socket_impl_base {
     auto res = io_ctx_->socket_service()->getsockname(
         native_handle(), reinterpret_cast<struct sockaddr *>(ep.data()),
         &ep_len);
-    if (!res) return stdx::make_unexpected(res.error());
+    if (!res) return stdx::unexpected(res.error());
 
     ep.resize(ep_len);
 
@@ -624,7 +625,7 @@ class basic_socket_impl : public basic_socket_impl_base {
     auto res = io_ctx_->socket_service()->getpeername(
         native_handle(), reinterpret_cast<struct sockaddr *>(ep.data()),
         &ep_len);
-    if (!res) return stdx::make_unexpected(res.error());
+    if (!res) return stdx::unexpected(res.error());
 
     ep.resize(ep_len);
 
@@ -673,10 +674,10 @@ class basic_socket_impl : public basic_socket_impl_base {
     io_control_bytes_avail_recv ioc;
 
     auto res = io_control(ioc);
-    if (!res) return stdx::make_unexpected(res.error());
+    if (!res) return stdx::unexpected(res.error());
 
     if (ioc.value() < 0) {
-      return stdx::make_unexpected(make_error_code(std::errc::invalid_seek));
+      return stdx::unexpected(make_error_code(std::errc::invalid_seek));
     }
 
     // value is not negative, safe to cast to unsigned
@@ -687,7 +688,7 @@ class basic_socket_impl : public basic_socket_impl_base {
     io_control_at_mark ioc;
 
     auto res = io_control(ioc);
-    if (!res) return stdx::make_unexpected(res.error());
+    if (!res) return stdx::unexpected(res.error());
 
     return ioc.value();
   }
@@ -779,18 +780,18 @@ class basic_socket : public socket_base, private basic_socket_impl<Protocol> {
           get_executor().context().async_wait(
               native_handle(), net::socket_base::wait_write,
               [this, __compl_handler = std::move(__compl_handler)](
-                  std::error_code ec) mutable {
-                if (ec) {
-                  __compl_handler(ec);
+                  std::error_code error_code) mutable {
+                if (error_code) {
+                  __compl_handler(error_code);
                   return;
                 }
 
                 // finish the non-blocking connect
                 net::socket_base::error so_error;
 
-                auto res = get_option(so_error);
-                if (!res) {
-                  __compl_handler(res.error());
+                auto result = get_option(so_error);
+                if (!result) {
+                  __compl_handler(result.error());
                   return;
                 }
 
@@ -1124,7 +1125,7 @@ class basic_stream_socket : public basic_socket<Protocol> {
 
     if (res && res.value() == 0) {
       // remote did a orderly shutdown
-      return stdx::make_unexpected(make_error_code(net::stream_errc::eof));
+      return stdx::unexpected(make_error_code(net::stream_errc::eof));
     }
 
     return res;
@@ -1156,7 +1157,7 @@ class basic_stream_socket : public basic_socket<Protocol> {
 
     if (res && res.value() == 0) {
       // remote did a orderly shutdown
-      return stdx::make_unexpected(make_error_code(net::stream_errc::eof));
+      return stdx::unexpected(make_error_code(net::stream_errc::eof));
     }
 
     return res;
@@ -1612,7 +1613,7 @@ stdx::expected<InputIterator, std::error_code> connect(
     }
   }
 
-  return stdx::make_unexpected(make_error_code(socket_errc::not_found));
+  return stdx::unexpected(make_error_code(socket_errc::not_found));
 }
 
 template <class Protocol, class InputIterator, class ConnectCondition>

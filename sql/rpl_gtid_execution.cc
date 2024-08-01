@@ -1,15 +1,16 @@
-/* Copyright (c) 2011, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -168,7 +169,7 @@ bool set_gtid_next(THD *thd, const Gtid_specification &spec) {
           }
           // If this thread is a slave SQL thread or slave SQL worker
           // thread, we need this additional condition to determine if it
-          // has been stopped by STOP SLAVE [SQL_THREAD].
+          // has been stopped by STOP REPLICA [SQL_THREAD].
           if ((thd->system_thread &
                (SYSTEM_THREAD_SLAVE_SQL | SYSTEM_THREAD_SLAVE_WORKER)) != 0) {
             // TODO: error is *not* reported on cancel
@@ -277,7 +278,7 @@ int gtid_acquire_ownership_multiple(THD *thd) {
     if (thd->killed || connection_events_loop_aborted()) return 1;
     // If this thread is a slave SQL thread or slave SQL worker
     // thread, we need this additional condition to determine if it
-    // has been stopped by STOP SLAVE [SQL_THREAD].
+    // has been stopped by STOP REPLICA [SQL_THREAD].
     if ((thd->system_thread &
          (SYSTEM_THREAD_SLAVE_SQL | SYSTEM_THREAD_SLAVE_WORKER)) != 0) {
       assert(thd->rli_slave != nullptr);

@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2022, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2022, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -22,8 +23,6 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 #include "ndb_global.h"
-
-#include <openssl/ssl.h>
 
 #include "portlib/NdbTick.h"
 #include "portlib/ndb_socket.h"
@@ -40,20 +39,6 @@ bool ndb_socket_poller::set_max_count(unsigned count) {
   m_pfds = pfds;
   m_max_count = count;
   return true;
-}
-
-unsigned int ndb_socket_poller::add_readable(ndb_socket_t sock, SSL *ssl) {
-  if (ssl && SSL_pending(ssl)) {
-    assert(m_count < m_max_count);
-    const unsigned index = m_count;
-    m_ssl_pending++;
-    posix_poll_fd &pfd = m_pfds[m_count++];
-    pfd.events = 0;        // don't actually poll
-    pfd.revents = POLLIN;  // show that socket is ready to read
-    return index;
-  }
-
-  return add(sock, true, false);
 }
 
 unsigned int ndb_socket_poller::add(ndb_socket_t sock, bool read, bool write) {
@@ -74,17 +59,11 @@ unsigned int ndb_socket_poller::add(ndb_socket_t sock, bool read, bool write) {
 }
 
 int ndb_socket_poller::poll(int timeout) {
-  if (m_ssl_pending > 0 && m_ssl_pending == m_count)
-    return m_ssl_pending;  // no need to actually poll
-
   do {
     const NDB_TICKS start = NdbTick_getCurrentTicks();
 
     const int res = poll_unsafe(timeout);
-    if (likely(res >= 0))
-      return res + m_ssl_pending;
-    else if (m_ssl_pending)
-      return m_ssl_pending;
+    if (likely(res >= 0)) return res;
 
     const int error = ndb_socket_errno();
     if (res == -1 && (error == EINTR || error == EAGAIN)) {

@@ -1,7 +1,7 @@
 #
 # Set up masters server_1 and server_3 with server_2 being a slave.
 #
-include/rpl_init.inc [topology=1->2,3->2]
+include/rpl/init.inc [topology=1->2,3->2]
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
@@ -45,21 +45,21 @@ include/assert.inc [there shall be 2*global.replica_parallel_workers rows for 2 
 #
 include/assert.inc [pfs query shall return the correct query value of the channel_3 port.]
 include/assert.inc [service state of receiver thread shall be ON.]
-include/assert.inc [Value returned by SSS and PS table for Desired_Delay should be same.]
+include/assert.inc [Value returned by SRS and PS table for Desired_Delay should be same.]
 include/assert.inc [service state shall be ON]
 include/assert.inc [service state of coordinator shall be ON]
 #
 #  Stop the slave on channel_1 and verify that rows are still instact
 #
-include/stop_slave.inc [FOR CHANNEL 'channel_1']
+include/rpl/stop_replica.inc [FOR CHANNEL 'channel_1']
 #
 # Test case 5: Verify that selects work on named channels even
 #              after a channel is stopped. test that service state is OFF
 #
-include/assert.inc [After stop slave for channel, replication_connection_configuration is intact]
-include/assert.inc [After stop slave for channel, service state is OFF for connection_status table.]
-include/assert.inc [After stop slave for channel, service state is OFF for applier_status table.]
-include/assert.inc [After stop slave for channel, service state is OFF by replication_applier_status_by_worker table.]
+include/assert.inc [After stop replica for channel, replication_connection_configuration is intact]
+include/assert.inc [After stop replica for channel, service state is OFF for connection_status table.]
+include/assert.inc [After stop replica for channel, service state is OFF for applier_status table.]
+include/assert.inc [After stop replica for channel, service state is OFF by replication_applier_status_by_worker table.]
 #
 #  Test case 6): Do a sanity check that joins can be performed as replication tables
 #                 contain multiple rows now.
@@ -100,10 +100,8 @@ LAST_ERROR_TIMESTAMP	0000-00-00 00:00:00.000000
 #
 # Test case 7: Delete channel_3 and count the number of rows in each table.
 #
-include/stop_slave.inc [FOR CHANNEL 'channel_3']
-RESET SLAVE ALL FOR CHANNEL 'channel_3';
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
+include/rpl/stop_replica.inc [FOR CHANNEL 'channel_3']
+RESET REPLICA ALL FOR CHANNEL 'channel_3';
 include/assert.inc [there shall be 1 in replication connection_configuration table after a channel is deleted.]
 include/assert.inc [there shall be 1 in replication connection_status table after a channel is deleted.]
 include/assert.inc [there shall be 1 in replication applier_config table after a channel is deleted.]
@@ -113,13 +111,11 @@ include/assert.inc [there shall be global.replica_parallel_workers rows after a 
 #
 #  Test case 8: Do a complete delete and see if the number of rows are zero
 #
-RESET SLAVE ALL;
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
+RESET REPLICA ALL;
 include/assert.inc [there shall be 0 rows after all channels are deleted.]
 include/assert.inc [there shall be 0 rows after all channels are deleted.]
 include/assert.inc [there shall be 0 rows after all channels are deleted.]
 include/assert.inc [there shall be 0 rows after all channels are deleted.]
 include/assert.inc [there shall be 0 rows after all channels are deleted.]
 include/assert.inc [there shall be 0 rows after all channels are deleted.]
-include/rpl_end.inc
+include/rpl/deinit.inc

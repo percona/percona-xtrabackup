@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -39,6 +40,7 @@
 #include <Vector.hpp>
 #include "../../src/ndbapi/ndb_cluster_connection_impl.hpp"
 #include "NDBT_ReturnCodes.h"
+#include "NdbRestarter.hpp"
 
 class NDBT_Step;
 class NDBT_TestCase;
@@ -257,6 +259,7 @@ class NDBT_TestCase {
   virtual int runSteps(NDBT_Context *ctx) = 0;
   virtual int runVerifier(NDBT_Context *ctx) = 0;
   virtual int runFinal(NDBT_Context *ctx) = 0;
+  virtual int runCheckNoErrorInserted(NDBT_Context *ctx) = 0;
   virtual void addTable(const char *aTableName, bool isVerify = true) = 0;
 
   void startTimer(NDBT_Context *);
@@ -270,6 +273,7 @@ class NDBT_TestCase {
   NdbTimer timer;
   bool isVerifyTables;
   NDBT_DriverType m_driverType;
+  NdbRestarter _restarter;
 };
 
 static const int FAILED_TO_CREATE = 1000;
@@ -317,6 +321,7 @@ class NDBT_TestCaseImpl1 : public NDBT_TestCase {
   int runSteps(NDBT_Context *ctx) override;
   int runVerifier(NDBT_Context *ctx) override;
   int runFinal(NDBT_Context *ctx) override;
+  int runCheckNoErrorInserted(NDBT_Context *ctx) override;
   void print() override;
   void printHTML() override;
 

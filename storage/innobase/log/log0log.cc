@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2023, Oracle and/or its affiliates.
+Copyright (c) 1995, 2024, Oracle and/or its affiliates.
 Copyright (c) 2009, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -13,12 +13,13 @@ This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -705,6 +706,21 @@ dberr_t log_start(log_t &log, lsn_t checkpoint_lsn, lsn_t start_lsn,
   ut_a(checkpoint_lsn >= LOG_START_LSN);
   ut_a(start_lsn >= checkpoint_lsn);
   ut_a(arch_log_sys == nullptr || !arch_log_sys->is_active());
+  /* If flags in the header on disc indicate redo logging was disabled, then let
+  the module know logging should be turned off. We need to do it before anyone
+  attempts to write to the redo log, and conveniently the call to log_start()
+  indicates the moment the caller wants to start writing to the redo log. The
+  mtr_t::s_logging.disable(..) will set LOG_HEADER_FLAG_CRASH_UNSAFE flag in
+  redo header on disc, which we only know how to do in the currently supported
+  format. We should never write to files which are in the older format. This is
+  why we call this function only after upgrade was already performed. */
+  ut_a(log.m_format == Log_format::CURRENT);
+  if (log_file_header_check_flag(log.m_log_flags, LOG_HEADER_FLAG_NO_LOGGING)) {
+    auto result = mtr_t::s_logging.disable(nullptr);
+    /* Currently never fails. */
+    ut_a(result == 0);
+    srv_redo_log = false;
+  }
 
   log.write_to_file_requests_total.store(0);
   log.write_to_file_requests_interval.store(std::chrono::seconds::zero());
@@ -749,28 +765,22 @@ dberr_t log_start(log_t &log, lsn_t checkpoint_lsn, lsn_t start_lsn,
 
   Log_data_block_header block_header;
 
-  if (log.m_format == Log_format::CURRENT) {
-    {
-      auto file = log.m_files.find(block_lsn);
-      ut_a(file != log.m_files.end());
-      auto file_handle = file->open(Log_file_access_mode::READ_ONLY);
-      ut_a(file_handle.is_open());
+  {
+    auto file = log.m_files.find(block_lsn);
+    ut_a(file != log.m_files.end());
+    auto file_handle = file->open(Log_file_access_mode::READ_ONLY);
+    ut_a(file_handle.is_open());
 
-      const auto err = log_data_blocks_read(
-          file_handle, file->offset(block_lsn), OS_FILE_LOG_BLOCK_SIZE, block);
-      if (err != DB_SUCCESS) {
-        return err;
-      }
-      log_data_block_header_deserialize(block, block_header);
+    const auto err = log_data_blocks_read(file_handle, file->offset(block_lsn),
+                                          OS_FILE_LOG_BLOCK_SIZE, block);
+    if (err != DB_SUCCESS) {
+      return err;
     }
-
-    /* FOLLOWING IS NOT NEEDED IF WE DON'T ALLOW DISABLING crc32 checksum */
-    log_fix_first_rec_group(block_lsn, block_header, start_lsn);
-  } else {
-    ut_a(start_lsn % OS_FILE_LOG_BLOCK_SIZE == LOG_BLOCK_HDR_SIZE);
-    std::memset(block, 0x00, OS_FILE_LOG_BLOCK_SIZE);
-    block_header.m_first_rec_group = LOG_BLOCK_HDR_SIZE;
   }
+  log_data_block_header_deserialize(block, block_header);
+
+  /* FOLLOWING IS NOT NEEDED IF WE DON'T ALLOW DISABLING crc32 checksum */
+  log_fix_first_rec_group(block_lsn, block_header, start_lsn);
 
   block_header.set_lsn(block_lsn);
   /* The last mtr in the block might have been incomplete, thus we trim the
@@ -1917,20 +1927,6 @@ dberr_t log_sys_init(bool expect_no_files, lsn_t flushed_lsn,
     return err;
   }
 
-  /* Check creator of log files and mark fields of recv_sys: is_cloned_db,
-  is_meb_db if needed. */
-  err = log_sys_handle_creator(log);
-  if (err != DB_SUCCESS) {
-    return err;
-  }
-
-  if (log_file_header_check_flag(log_flags, LOG_HEADER_FLAG_NO_LOGGING)) {
-    auto result = mtr_t::s_logging.disable(nullptr);
-    /* Currently never fails. */
-    ut_a(result == 0);
-    srv_redo_log = false;
-  }
-
 #ifdef XTRABACKUP
   /**
    *  Adjust xb_log_detected_format on backup. For prepare we do it at
@@ -1941,7 +1937,9 @@ dberr_t log_sys_init(bool expect_no_files, lsn_t flushed_lsn,
   }
 #endif  // XTRABACKUP
 
-  return DB_SUCCESS;
+  /* Check creator of log files and mark fields of recv_sys: is_cloned_db,
+  is_meb_db if needed. */
+  return log_sys_handle_creator(log);
 }
 
 void log_sys_close() {

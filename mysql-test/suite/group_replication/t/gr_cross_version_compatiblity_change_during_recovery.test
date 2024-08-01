@@ -29,17 +29,15 @@
 --echo #    Start GR on M2 with higher patch version.
 --echo
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
-SET @debug1_save= @@GLOBAL.DEBUG;
-SET @@GLOBAL.DEBUG= 'd,group_replication_compatibility_lower_patch_version';
+--source include/connection.inc
+SET @@GLOBAL.DEBUG= '+d,group_replication_compatibility_lower_minor_version';
 --source include/start_and_bootstrap_group_replication.inc
 CREATE TABLE t1 (c1 INT NOT NULL PRIMARY KEY);
 
 --let $rpl_connection_name= server2
---source include/rpl_connection.inc
+--source include/connection.inc
 
-SET @debug2_save= @@GLOBAL.DEBUG;
-SET @@GLOBAL.DEBUG= 'd,group_replication_compatibility_higher_patch_version';
+SET @@GLOBAL.DEBUG= '+d,group_replication_compatibility_higher_minor_version';
 SET SESSION sql_log_bin=0;
 call mtr.add_suppression("Member version is read compatible with the group.");
 SET SESSION sql_log_bin=1;
@@ -50,14 +48,14 @@ SET SESSION sql_log_bin=1;
 --echo # 2. Block dump thread on M1.
 --echo
 
-## STATUS - ASSUMING 8.0.17 is original version
+## STATUS - ASSUMING 8.4.0 is original version
 # Server - State - Version - Weight - R/W
-#  M1    - ON    - 8.0.16  - 50     - W
-#  M2    - ON    - 8.0.18  - 50     - W
-#  M3    - OFF   - 8.0.17  - 50     - R
+#  M1    - ON    - 8.3.0  - 50     - W
+#  M2    - ON    - 8.5.0  - 50     - W
+#  M3    - OFF   - 8.4.0  - 50     - R
 
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
+--source include/connection.inc
 SET @@GLOBAL.DEBUG='+d,dump_thread_before_read_event';
 
 --echo
@@ -65,7 +63,7 @@ SET @@GLOBAL.DEBUG='+d,dump_thread_before_read_event';
 --echo
 
 --let $rpl_connection_name= server3
---source include/rpl_connection.inc
+--source include/connection.inc
 SET SESSION sql_log_bin=0;
 call mtr.add_suppression("Member version is read compatible with the group.");
 SET SESSION sql_log_bin=1;
@@ -81,7 +79,7 @@ SET SESSION sql_log_bin=1;
 --echo
 
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
+--source include/connection.inc
 
 # Wait for dump thread to be blocked.
 --let $wait_timeout= 300
@@ -98,11 +96,11 @@ SET @@GLOBAL.DEBUG='-d,dump_thread_before_read_event';
 SET DEBUG_SYNC = "now SIGNAL signal.continue";
 
 --let $rpl_connection_name= server_3
---source include/rpl_connection.inc
+--source include/connection.inc
 SET @@GLOBAL.group_replication_allow_local_lower_version_join=1;
 
 --let $rpl_connection_name= server3
---source include/rpl_connection.inc
+--source include/connection.inc
 --reap
 
 --echo
@@ -120,7 +118,7 @@ SET @@GLOBAL.group_replication_allow_local_lower_version_join=1;
 --source include/assert.inc
 
 --let $rpl_connection_name= server2
---source include/rpl_connection.inc
+--source include/connection.inc
 
 --let $assert_text= The super_read_only mode should be 1 on server2.
 --let $assert_cond= "[SELECT @@GLOBAL.super_read_only]" = 1;
@@ -131,19 +129,19 @@ SET @@GLOBAL.group_replication_allow_local_lower_version_join=1;
 --echo
 
 --let $rpl_connection_name= server3
---source include/rpl_connection.inc
+--source include/connection.inc
 SET @@GLOBAL.group_replication_allow_local_lower_version_join= 0;
 DROP TABLE t1;
---source include/rpl_sync.inc
+--source include/rpl/sync.inc
 
 --let $rpl_connection_name= server2
---source include/rpl_connection.inc
-SET @@GLOBAL.DEBUG= @debug2_save;
+--source include/connection.inc
+SET @@GLOBAL.DEBUG= '-d,group_replication_compatibility_higher_minor_version';
 --source include/stop_group_replication.inc
 
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
-SET @@GLOBAL.DEBUG= @debug1_save;
+--source include/connection.inc
+SET @@GLOBAL.DEBUG= '-d,group_replication_compatibility_lower_minor_version';
 SET DEBUG_SYNC= 'RESET';
 SET SESSION sql_log_bin = 0;
 DROP TABLE t1;
@@ -153,6 +151,6 @@ call mtr.add_suppression("Fatal error during execution on the Applier process of
 call mtr.add_suppression("The server was automatically set into read only mode after an error was detected.");
 call mtr.add_suppression("Skipping leave operation: concurrent attempt to leave the group is on-going.");
 SET SESSION sql_log_bin = 1;
---source include/stop_dump_threads.inc
+--source include/rpl/stop_dump_threads.inc
 
 --source include/group_replication_end.inc

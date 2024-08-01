@@ -753,7 +753,7 @@ bool detect_mysql_capabilities_for_backup() {
     mysql_variable status[] = {{"Auto_Position", &auto_position}, {NULL, NULL}};
 
     MYSQL_RES *res =
-        xb_mysql_query(mysql_connection, "SHOW SLAVE STATUS", true, true);
+        xb_mysql_query(mysql_connection, "SHOW REPLICA STATUS", true, true);
 
     slave_auto_position = true;
 
@@ -1193,11 +1193,11 @@ static char *get_slave_coordinates(MYSQL *connection) {
   char *result = NULL;
 
   mysql_variable slave_coordinates[] = {
-      {"Relay_Master_Log_File", &relay_log_file},
-      {"Exec_Master_Log_Pos", &exec_log_pos},
+      {"Relay_Source_Log_File", &relay_log_file},
+      {"Exec_Source_Log_Pos", &exec_log_pos},
       {NULL, NULL}};
 
-  read_mysql_variables(connection, "SHOW SLAVE STATUS", slave_coordinates,
+  read_mysql_variables(connection, "SHOW REPLICA STATUS", slave_coordinates,
                        false);
   ut_a(asprintf(&result, "%s\\%s", relay_log_file, exec_log_pos));
   free_mysql_variables(slave_coordinates);
@@ -1222,13 +1222,13 @@ bool wait_for_safe_slave(MYSQL *connection) {
   int open_temp_tables = 0;
   bool result = true;
 
-  mysql_variable status[] = {{"Read_Master_Log_Pos", &read_master_log_pos},
-                             {"Slave_SQL_Running", &slave_sql_running},
+  mysql_variable status[] = {{"Read_Source_Log_Pos", &read_master_log_pos},
+                             {"Replica_SQL_Running", &slave_sql_running},
                              {NULL, NULL}};
 
   sql_thread_started = false;
 
-  read_mysql_variables(connection, "SHOW SLAVE STATUS", status, false);
+  read_mysql_variables(connection, "SHOW REPLICA STATUS", status, false);
 
   if (!(read_master_log_pos && slave_sql_running)) {
     xb::info() << "Not checking slave open temp tables for "
@@ -1241,7 +1241,7 @@ bool wait_for_safe_slave(MYSQL *connection) {
     take that into account as part of total timeout.
     */
     sql_thread_started = true;
-    xb_mysql_query(connection, "STOP SLAVE SQL_THREAD", false);
+    xb_mysql_query(connection, "STOP REPLICA SQL_THREAD", false);
   }
 
 retry:
@@ -1259,7 +1259,7 @@ retry:
     prev_slave_coordinates = curr_slave_coordinates;
     curr_slave_coordinates = NULL;
 
-    xb_mysql_query(connection, "START SLAVE SQL_THREAD", false);
+    xb_mysql_query(connection, "START REPLICA SQL_THREAD", false);
     std::this_thread::sleep_for(std::chrono::seconds(sleep_time));
 
     curr_slave_coordinates = get_slave_coordinates(connection);
@@ -1271,7 +1271,7 @@ retry:
                     "not stopping the SQL thread.";
     } else {
       xb::info() << "Stopping SQL thread.";
-      xb_mysql_query(connection, "STOP SLAVE SQL_THREAD", false);
+      xb_mysql_query(connection, "STOP REPLICA SQL_THREAD", false);
     }
 
     open_temp_tables = get_open_temp_tables(connection);
@@ -1282,7 +1282,7 @@ retry:
     /* We are in a race here, slave might open other temp tables
     inbetween last check and stop. So we have to re-check
     and potentially retry after stopping SQL thread. */
-    xb_mysql_query(connection, "STOP SLAVE SQL_THREAD", false);
+    xb_mysql_query(connection, "STOP REPLICA SQL_THREAD", false);
     open_temp_tables = get_open_temp_tables(connection);
     if (open_temp_tables != 0) {
       goto retry;
@@ -1300,9 +1300,9 @@ retry:
   xb::info() << "Restoring SQL thread state to "
              << (sql_thread_started ? "STARTED" : "STOPPED");
   if (sql_thread_started) {
-    xb_mysql_query(connection, "START SLAVE SQL_THREAD", false);
+    xb_mysql_query(connection, "START REPLICA SQL_THREAD", false);
   } else {
-    xb_mysql_query(connection, "STOP SLAVE SQL_THREAD", false);
+    xb_mysql_query(connection, "STOP REPLICA SQL_THREAD", false);
   }
 
 cleanup:
@@ -1339,16 +1339,16 @@ bool write_slave_info(MYSQL *connection) {
 
   std::map<std::string, channel_info_t> channels;
 
-  mysql_variable status[] = {{"Master_Host", &master},
-                             {"Relay_Master_Log_File", &filename},
-                             {"Exec_Master_Log_Pos", &position},
+  mysql_variable status[] = {{"Source_Host", &master},
+                             {"Relay_Source_Log_File", &filename},
+                             {"Exec_Source_Log_Pos", &position},
                              {"Channel_Name", &channel_name},
-                             {"Slave_SQL_Running", &slave_sql_running},
+                             {"Replica_SQL_Running", &slave_sql_running},
                              {"Auto_Position", &auto_position},
                              {NULL, NULL}};
 
   MYSQL_RES *slave_status_res =
-      xb_mysql_query(connection, "SHOW SLAVE STATUS", true, true);
+      xb_mysql_query(connection, "SHOW REPLICA STATUS", true, true);
 
   while (read_mysql_variables_from_result(slave_status_res, status, false)) {
     channel_info_t info;
@@ -1379,7 +1379,7 @@ bool write_slave_info(MYSQL *connection) {
     if (ch == channels.end()) {
       xb::error() << "Failed to find information for channel "
                   << SQUOTE(channel.channel_name.c_str())
-                  << " in SHOW SLAVE STATUS output.";
+                  << " in SHOW REPLICA STATUS output.";
       result = false;
       goto cleanup;
     }
@@ -1391,8 +1391,8 @@ bool write_slave_info(MYSQL *connection) {
         slave_info << "SET GLOBAL gtid_purged='" << log_status.gtid_executed
                    << "';\n";
       }
-      slave_info << "CHANGE MASTER TO MASTER_AUTO_POSITION=1" << for_channel
-                 << ";\n";
+      slave_info << "CHANGE REPLICATION SOURCE TO SOURCE_AUTO_POSITION=1"
+                 << for_channel << ";\n";
 
       mysql_slave_position_s << "master host '" << ch->second.master
                              << "', purge list '" << log_status.gtid_executed
@@ -1405,8 +1405,8 @@ bool write_slave_info(MYSQL *connection) {
       const auto position = channel.relay_master_log_file.empty()
                                 ? ch->second.position
                                 : channel.exec_master_log_position;
-      slave_info << "CHANGE MASTER TO MASTER_LOG_FILE='" << filename
-                 << "', MASTER_LOG_POS=" << position << for_channel << ";\n";
+      slave_info << "CHANGE REPLICATION SOURCE TO SOURCE_LOG_FILE='" << filename
+                 << "', SOURCE_LOG_POS=" << position << for_channel << ";\n";
 
       mysql_slave_position_s << "master host '" << ch->second.master
                              << "', filename '" << filename << "', position '"
@@ -1625,8 +1625,8 @@ static void log_status_replication_parse(const char *s,
     cs.relay_log_file = ch["relay_log_file"].GetString();
     cs.relay_log_position = ch["relay_log_position"].GetUint64();
     if (server_flavor == FLAVOR_PERCONA_SERVER) {
-      cs.relay_master_log_file = ch["relay_master_log_file"].GetString();
-      cs.exec_master_log_position = ch["exec_master_log_position"].GetUint64();
+      cs.relay_master_log_file = ch["relay_source_log_file"].GetString();
+      cs.exec_master_log_position = ch["exec_source_log_position"].GetUint64();
     }
     log_status.channels.push_back(cs);
   }

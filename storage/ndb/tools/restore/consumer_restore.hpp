@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2004, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -95,12 +96,13 @@ class BackupRestore : public BackupConsumer {
     m_parallelism = parallelism;
     m_callback = 0;
     m_free_callback = 0;
-    m_temp_error = false;
     m_no_upgrade = false;
     m_tableChangesMask = 0;
     m_preserve_trailing_spaces = false;
     m_pk_update_warning_count = 0;
     m_cache.m_old_table = 0;
+    m_with_apply_status = false;
+    m_with_sql_metadata = false;
     m_disable_indexes = false;
     m_rebuild_indexes = false;
     snprintf(m_instance_name, BackupRestore::INSTANCE_ID_LEN, "%s",
@@ -130,7 +132,7 @@ class BackupRestore : public BackupConsumer {
   bool finalize_staging(const TableS &) override;
   bool finalize_table(const TableS &) override;
   bool rebuild_indexes(const TableS &) override;
-  bool has_temp_error() override;
+  void log_temp_errors() override;
   bool createSystable(const TableS &table) override;
   bool table_compatible_check(TableS &tableS) override;
   bool check_blobs(TableS &tableS) override;
@@ -240,6 +242,7 @@ class BackupRestore : public BackupConsumer {
   bool m_delete_epoch_tuple;
 
   bool m_with_apply_status;
+  bool m_with_sql_metadata;
   bool m_no_upgrade;  // for upgrade ArrayType from 5.0 backup file.
   bool m_no_restore_disk;
   Uint32 m_tableChangesMask;
@@ -266,7 +269,6 @@ class BackupRestore : public BackupConsumer {
 
   restore_callback_t *m_callback;
   restore_callback_t *m_free_callback;
-  bool m_temp_error;
   Uint64 m_pk_update_warning_count;
   bool m_fatal_error;
 
@@ -294,6 +296,14 @@ class BackupRestore : public BackupConsumer {
   void error_insert(unsigned int code) override { m_error_insert = code; }
 #endif
   static const PromotionRules m_allowed_promotion_attrs[];
+  /* TempErrorStat : Counts of temporary errors and their impact to restore */
+  struct TempErrorStat {
+    int code;
+    Uint64 count;
+    Uint64 sleepMillis;
+  };
+
+  Vector<struct TempErrorStat> m_tempErrors;
 };
 
 #endif

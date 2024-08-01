@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -47,6 +48,8 @@ TlsClientContext::TlsClientContext(TlsVerify mode, bool session_cache_mode,
       session_cache_mode_(session_cache_mode),
       session_cache_size_(session_cache_size),
       session_cache_timeout_(session_cache_timeout) {
+  if (!ssl_ctx_.get()) return;
+
   (void)set_ecdh(ssl_ctx_.get());
   (void)set_dh(ssl_ctx_.get());
   verify(mode);
@@ -75,7 +78,7 @@ TlsClientContext::TlsClientContext(TlsVerify mode, bool session_cache_mode,
 }
 
 TlsClientContext::~TlsClientContext() {
-  if (session_cache_mode_) {
+  if (session_cache_mode_ && ssl_ctx_.get()) {
     SSL_CTX_sess_set_get_cb(ssl_ctx_.get(), nullptr);
     SSL_CTX_sess_set_remove_cb(ssl_ctx_.get(), nullptr);
   }
@@ -103,12 +106,11 @@ stdx::expected<void, std::error_code> TlsClientContext::cipher_suites(
 // TLSv1.3 ciphers are controlled via SSL_CTX_set_ciphersuites()
 #if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(1, 1, 1)
   if (1 != SSL_CTX_set_ciphersuites(ssl_ctx_.get(), ciphers.c_str())) {
-    return stdx::make_unexpected(make_tls_error());
+    return stdx::unexpected(make_tls_error());
   }
 #else
   (void)ciphers;
-  return stdx::make_unexpected(
-      make_error_code(std::errc::function_not_supported));
+  return stdx::unexpected(make_error_code(std::errc::function_not_supported));
 #endif
 
   return {};
@@ -118,7 +120,7 @@ stdx::expected<void, std::error_code> TlsClientContext::cipher_list(
     const std::string &ciphers) {
   // TLSv1.3 ciphers are controlled via SSL_CTX_set_ciphersuites()
   if (1 != SSL_CTX_set_cipher_list(ssl_ctx_.get(), ciphers.c_str())) {
-    return stdx::make_unexpected(make_tls_error());
+    return stdx::unexpected(make_tls_error());
   }
 
   return {};
@@ -138,14 +140,12 @@ stdx::expected<void, std::error_code> TlsClientContext::verify_hostname(
   */
   if (1 != X509_VERIFY_PARAM_set1_ip_asc(param, server_host.c_str())) {
     if (1 != X509_VERIFY_PARAM_set1_host(param, server_host.c_str(), 0)) {
-      return stdx::make_unexpected(
-          make_error_code(std::errc::invalid_argument));
+      return stdx::unexpected(make_error_code(std::errc::invalid_argument));
     }
   }
 #else
   (void)server_host;
-  return stdx::make_unexpected(
-      make_error_code(std::errc::function_not_supported));
+  return stdx::unexpected(make_error_code(std::errc::function_not_supported));
 #endif
   return {};
 }
@@ -230,6 +230,6 @@ stdx::expected<SSL_SESSION *, std::error_code> TlsClientContext::get_session() {
     }
   }
 
-  return stdx::make_unexpected(
+  return stdx::unexpected(
       make_error_code(std::errc::no_such_file_or_directory));
 }

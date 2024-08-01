@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -150,7 +151,7 @@ namespace resolver {
 inline stdx::expected<void, std::error_code> gethostname(char *buf,
                                                          size_t buf_len) {
   if (0 != ::gethostname(buf, buf_len)) {
-    return stdx::make_unexpected(net::impl::socket::last_error_code());
+    return stdx::unexpected(net::impl::socket::last_error_code());
   }
 
   // POSIX says that it is unspecified if the returned string contains
@@ -162,7 +163,7 @@ inline stdx::expected<void, std::error_code> gethostname(char *buf,
   const auto end = buf + buf_len;
 
   if (end == std::find(begin, end, '\0')) {
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         std::error_code(make_error_code(std::errc::filename_too_long)));
   }
 
@@ -176,13 +177,13 @@ inline stdx::expected<void, std::error_code> getnameinfo(
   // macosx doesn't check the 'addrlen' parameter and reads garbage.
 
   if (addrlen < sizeof(*saddr)) {
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         make_error_code(net::ip::resolver_errc::bad_family));
   }
 
   if ((saddr->sa_family == AF_INET && addrlen < sizeof(sockaddr_in)) ||
       (saddr->sa_family == AF_INET6 && addrlen < sizeof(sockaddr_in6))) {
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         make_error_code(net::ip::resolver_errc::bad_family));
   }
 #endif
@@ -192,9 +193,9 @@ inline stdx::expected<void, std::error_code> getnameinfo(
 #ifdef EAI_SYSTEM
     // linux, freebsd, solaris, macosx
     if (ret == EAI_SYSTEM) {
-      return stdx::make_unexpected(net::impl::socket::last_error_code());
+      return stdx::unexpected(net::impl::socket::last_error_code());
     } else {
-      return stdx::make_unexpected(
+      return stdx::unexpected(
           std::error_code{ret, net::ip::resolver_category()});
     }
 #else
@@ -210,12 +211,10 @@ inline stdx::expected<void, std::error_code> getnameinfo(
       case EAI_SOCKTYPE:
         break;
       default:
-        return stdx::make_unexpected(
-            std::error_code{ret, std::system_category()});
+        return stdx::unexpected(std::error_code{ret, std::system_category()});
     }
 #endif
-    return stdx::make_unexpected(
-        std::error_code{ret, net::ip::resolver_category()});
+    return stdx::unexpected(std::error_code{ret, net::ip::resolver_category()});
 #endif
   }
 
@@ -234,9 +233,9 @@ getaddrinfo(const char *node, const char *service,
 #ifdef EAI_SYSTEM
     // linux, freebsd, solaris, macosx
     if (ret == EAI_SYSTEM) {
-      return stdx::make_unexpected(net::impl::socket::last_error_code());
+      return stdx::unexpected(net::impl::socket::last_error_code());
     } else {
-      return stdx::make_unexpected(
+      return stdx::unexpected(
           std::error_code{ret, net::ip::resolver_category()});
     }
 #else
@@ -252,16 +251,17 @@ getaddrinfo(const char *node, const char *service,
       case EAI_SOCKTYPE:
         break;
       default:
-        return stdx::make_unexpected(
-            std::error_code{ret, std::system_category()});
+        return stdx::unexpected(std::error_code{ret, std::system_category()});
     }
 #endif
-    return stdx::make_unexpected(
-        std::error_code{ret, net::ip::resolver_category()});
+    return stdx::unexpected(std::error_code{ret, net::ip::resolver_category()});
 #endif
   }
+  using ret_type = stdx::expected<
+      std::unique_ptr<struct addrinfo, void (*)(struct addrinfo *)>,
+      std::error_code>;
 
-  return {std::in_place, ainfo, &::freeaddrinfo};
+  return ret_type{std::in_place, ainfo, &::freeaddrinfo};
 }
 
 inline stdx::expected<const char *, std::error_code> inetntop(int af,
@@ -269,7 +269,7 @@ inline stdx::expected<const char *, std::error_code> inetntop(int af,
                                                               char *out,
                                                               size_t out_len) {
   if (nullptr == ::inet_ntop(af, src, out, out_len)) {
-    return stdx::make_unexpected(net::impl::socket::last_error_code());
+    return stdx::unexpected(net::impl::socket::last_error_code());
   }
   return out;
 }

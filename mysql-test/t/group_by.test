@@ -1177,9 +1177,9 @@ ANALYZE TABLE t2;
 EXPLAIN SELECT 1 FROM t2 WHERE a IN
   (SELECT a FROM t1 USE INDEX (i2) IGNORE INDEX (i2));
 
-SHOW VARIABLES LIKE 'old';  
+SHOW VARIABLES LIKE 'core_file';
 --error ER_INCORRECT_GLOBAL_LOCAL_VAR
-SET @@old = off;  
+SET @@core_file = off;
 
 DROP TABLE t1, t2;
 
@@ -1456,7 +1456,6 @@ SET BIG_TABLES=1;
 CREATE TABLE t1(a INT);
 INSERT INTO t1 VALUES (0),(0);
 --skip_if_hypergraph  # Does not use MyISAM temp tables, so no such restriction.
---error ER_WRONG_KEY_COLUMN
 SELECT 1 FROM t1 GROUP BY IF(`a`,'','');
 SELECT 1 FROM t1 GROUP BY TRIM(LEADING RAND() FROM '');
 --skip_if_hypergraph  # Different warnings.

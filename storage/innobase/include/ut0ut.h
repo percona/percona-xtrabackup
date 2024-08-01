@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2023, Oracle and/or its affiliates.
+Copyright (c) 1994, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -363,22 +364,23 @@ struct Wait_stats {
 namespace ib {
 
 /** Allows to monitor an event processing times, allowing to throttle the
-processing to one per THROTTLE_DELAY_SEC. */
+processing to one per throttle_delay_sec. */
 class Throttler {
+  using seconds = std::chrono::duration<uint64_t>;
+  using clock = std::chrono::steady_clock;
+  using time_point = std::chrono::time_point<clock, seconds>;
+
  public:
-  Throttler() : m_last_applied_time(0) {}
+  explicit Throttler(seconds delay = seconds{10})
+      : m_last_applied_time{}, m_throttle_delay{delay} {}
 
   /** Checks if the item should be processed or ignored to not process them more
-  frequently than one per THROTTLE_DELAY_SEC. */
+  frequently than one per throttle_delay_sec. */
   bool apply() {
-    const auto current_time = std::chrono::steady_clock::now();
-    const auto current_time_in_sec =
-        std::chrono::duration_cast<std::chrono::seconds>(
-            current_time.time_since_epoch())
-            .count();
+    const time_point current_time_in_sec =
+        std::chrono::time_point_cast<seconds>(clock::now());
     auto last_apply_time = m_last_applied_time.load();
-    if (last_apply_time + THROTTLE_DELAY_SEC <
-        static_cast<uint64_t>(current_time_in_sec)) {
+    if (last_apply_time + m_throttle_delay < current_time_in_sec) {
       if (m_last_applied_time.compare_exchange_strong(last_apply_time,
                                                       current_time_in_sec)) {
         return true;
@@ -393,11 +395,12 @@ class Throttler {
  private:
   /* Time when the last item was not throttled. Stored as number of seconds
   since epoch. */
-  std::atomic<uint64_t> m_last_applied_time;
+  std::atomic<time_point> m_last_applied_time;
+  static_assert(decltype(m_last_applied_time)::is_always_lock_free);
 
   /** Throttle all items within that amount seconds from the last non throttled
   one. */
-  static constexpr uint64_t THROTTLE_DELAY_SEC = 10;
+  const seconds m_throttle_delay;
 };
 
 }  // namespace ib

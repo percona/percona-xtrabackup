@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -85,7 +86,7 @@ stdx::expected<int, std::error_code> open(const char *fname, int flags,
 
   if (-1 == fd) {
     // _open() sets errno
-    return stdx::make_unexpected(last_posix_error_code());
+    return stdx::unexpected(last_posix_error_code());
   }
 
   return {fd};
@@ -96,11 +97,11 @@ stdx::expected<void, std::error_code> close(
 #ifdef _WIN32
   if (-1 == ::_close(handle)) {
     // _close() sets errno
-    return stdx::make_unexpected(last_posix_error_code());
+    return stdx::unexpected(last_posix_error_code());
   }
 #else
   if (-1 == ::close(handle)) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 #endif
 
@@ -111,11 +112,11 @@ stdx::expected<void, std::error_code> unlink(const char *fn) noexcept {
 #ifdef _WIN32
   if (-1 == ::_unlink(fn)) {
     // _unlink() sets errno
-    return stdx::make_unexpected(last_posix_error_code());
+    return stdx::unexpected(last_posix_error_code());
   }
 #else
   if (-1 == ::unlink(fn)) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 #endif
 
@@ -133,11 +134,11 @@ stdx::expected<stat_type, std::error_code> fstat(int handle) noexcept {
 #ifdef _WIN32
   if (-1 == ::_fstat64(handle, &st)) {
     // _fstat64() sets errno
-    return stdx::make_unexpected(last_posix_error_code());
+    return stdx::unexpected(last_posix_error_code());
   }
 #else
   if (-1 == ::fstat(handle, &st)) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 #endif
 
@@ -152,7 +153,7 @@ stdx::expected<std::size_t, std::error_code> write(
 #else
   const auto bytes_transferred = ::write(handle, data, len);
 #endif
-  if (bytes_transferred == -1) return stdx::make_unexpected(last_error_code());
+  if (bytes_transferred == -1) return stdx::unexpected(last_error_code());
 
   return bytes_transferred;
 }
@@ -162,8 +163,7 @@ stdx::expected<std::size_t, std::error_code> write(
 stdx::expected<file_handle::path_type, std::error_code>
 file_handle::current_path() const noexcept {
   if (handle_ == invalid_handle) {
-    return stdx::make_unexpected(
-        make_error_code(std::errc::bad_file_descriptor));
+    return stdx::unexpected(make_error_code(std::errc::bad_file_descriptor));
   }
 
 #if defined(__linux__) || defined(__sun)
@@ -180,7 +180,7 @@ file_handle::current_path() const noexcept {
   // the size of the symbolic link is the size of filename it points to
   struct stat st;
   if (0 != lstat(in.c_str(), &st)) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 
   std::string path_name;
@@ -198,7 +198,7 @@ file_handle::current_path() const noexcept {
 
   const ssize_t sz = readlink(in.data(), &path_name.front(), path_name.size());
   if (-1 == sz) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 
   if (sz > st.st_size) {
@@ -206,7 +206,7 @@ file_handle::current_path() const noexcept {
     // all we have is quite likely a truncated filename.
     //
     // Signal interrupted to trigger a retry by the caller.
-    return stdx::make_unexpected(make_error_code(std::errc::interrupted));
+    return stdx::unexpected(make_error_code(std::errc::interrupted));
   }
 
   path_name.resize(sz);
@@ -215,17 +215,16 @@ file_handle::current_path() const noexcept {
 #elif defined(_WIN32)
   HANDLE win_handle = reinterpret_cast<HANDLE>(_get_osfhandle(handle_));
   if (win_handle == INVALID_HANDLE_VALUE) {
-    return stdx::make_unexpected(
-        make_error_code(std::errc::bad_file_descriptor));
+    return stdx::unexpected(make_error_code(std::errc::bad_file_descriptor));
   }
   std::array<char, MAX_PATH + 1> path;
   const auto sz =
       GetFinalPathNameByHandle(win_handle, path.data(), path.size(), 0);
   if (sz == 0) {
     // GetLastError
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   } else if (sz > path.size()) {
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         std::error_code(ERROR_NOT_ENOUGH_MEMORY, std::system_category()));
   }
 
@@ -235,7 +234,7 @@ file_handle::current_path() const noexcept {
   path_name.resize(MAXPATHLEN + 1);
 
   if (-1 == fcntl(handle_, F_GETPATH, &path_name.front())) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 
   // as we don't have a length information, check for the \0 char
@@ -250,12 +249,12 @@ file_handle::current_path() const noexcept {
 
   size_t len;
   if (-1 == ::sysctl(mib.data(), mib.size(), nullptr, &len, nullptr, 0)) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 
   std::vector<char> buffer(len * 2);
   if (-1 == ::sysctl(mib.data(), mib.size(), buffer.data(), &len, nullptr, 0)) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 
   for (const char *p = buffer.data(); p < buffer.data() + len;) {
@@ -267,7 +266,7 @@ file_handle::current_path() const noexcept {
   }
 
   // fd wasn't found
-  return stdx::make_unexpected(make_error_code(std::errc::bad_file_descriptor));
+  return stdx::unexpected(make_error_code(std::errc::bad_file_descriptor));
 #elif defined(__sun)
   std::string path_name;
 
@@ -278,7 +277,7 @@ file_handle::current_path() const noexcept {
 
   ssize_t sz = ::readlink(in.data(), &path_name.front(), path_name.size());
   if (-1 == sz) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 
   path_name.resize(sz);
@@ -292,7 +291,7 @@ file_handle::current_path() const noexcept {
 stdx::expected<void, std::error_code> file_handle::unlink() {
   // unlink works on the filenames, but we have a filehandle
   auto res = current_path();
-  if (!res) return stdx::make_unexpected(res.error());
+  if (!res) return stdx::unexpected(res.error());
 
   return impl::unlink(res.value().c_str());
 }
@@ -376,8 +375,7 @@ stdx::expected<file_handle, std::error_code> file_handle::file(
     case caching::temporary:
       break;
     default:
-      return stdx::make_unexpected(
-          make_error_code(std::errc::invalid_argument));
+      return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 
   // as path_handle is currently an empty class, we can use the path here
@@ -387,19 +385,21 @@ stdx::expected<file_handle, std::error_code> file_handle::file(
 
   auto open_res = impl::open(path.c_str(), f, m);
   if (!open_res) {
-    return stdx::make_unexpected(open_res.error());
+    return stdx::unexpected(open_res.error());
   }
 
   auto handle = open_res.value();
 
   auto stat_res = impl::fstat(handle);
   if (!stat_res) {
-    return stdx::make_unexpected(stat_res.error());
+    return stdx::unexpected(stat_res.error());
   }
 
   auto st = stat_res.value();
 
-  return {std::in_place, handle, st.st_dev, st.st_ino, _caching, flags};
+  using ret_type = stdx::expected<file_handle, std::error_code>;
+
+  return ret_type{std::in_place, handle, st.st_dev, st.st_ino, _caching, flags};
 }
 
 /**

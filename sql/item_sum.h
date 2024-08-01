@@ -1,18 +1,19 @@
 #ifndef ITEM_SUM_INCLUDED
 #define ITEM_SUM_INCLUDED
 
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1178,7 +1179,7 @@ class Item_avg_field : public Item_sum_num_field {
   uint f_precision, f_scale, dec_bin_size;
   uint prec_increment;
   Item_avg_field(Item_result res_type, Item_sum_avg *item);
-  enum Type type() const override { return FIELD_AVG_ITEM; }
+  enum Type type() const override { return AGGR_FIELD_ITEM; }
   double val_real() override;
   my_decimal *val_decimal(my_decimal *) override;
   String *val_str(String *) override;
@@ -1204,7 +1205,7 @@ class Item_sum_bit_field : public Item_sum_hybrid_field {
   bool resolve_type(THD *) override { return false; }
   bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override;
   bool get_time(MYSQL_TIME *ltime) override;
-  enum Type type() const override { return FIELD_BIT_ITEM; }
+  enum Type type() const override { return AGGR_FIELD_ITEM; }
   const char *func_name() const override {
     assert(0);
     return "sum_bit_field";
@@ -1360,7 +1361,7 @@ class Item_variance_field : public Item_sum_num_field {
 
  public:
   Item_variance_field(Item_sum_variance *item);
-  enum Type type() const override { return FIELD_VARIANCE_ITEM; }
+  enum Type type() const override { return AGGR_FIELD_ITEM; }
   double val_real() override;
   String *val_str(String *str) override { return val_string_from_real(str); }
   my_decimal *val_decimal(my_decimal *dec_buf) override {
@@ -1494,7 +1495,7 @@ class Item_sum_std;
 class Item_std_field final : public Item_variance_field {
  public:
   Item_std_field(Item_sum_std *item);
-  enum Type type() const override { return FIELD_STD_ITEM; }
+  enum Type type() const override { return AGGR_FIELD_ITEM; }
   double val_real() override;
   my_decimal *val_decimal(my_decimal *) override;
   enum Item_result result_type() const override { return REAL_RESULT; }
@@ -2461,7 +2462,7 @@ class Item_ntile : public Item_non_framing_wf {
 /**
   LEAD/LAG window functions, cf. SQL 2011 Section 6.10 \<window function\>
 */
-class Item_lead_lag : public Item_non_framing_wf {
+class Item_lead_lag final : public Item_non_framing_wf {
   enum_null_treatment m_null_treatment;
   bool m_is_lead;  ///< if true, the function is LEAD, else LAG
   int64 m_n;       ///< canonicalized offset value
@@ -2502,6 +2503,7 @@ class Item_lead_lag : public Item_non_framing_wf {
 
   bool resolve_type(THD *thd) override;
   bool fix_fields(THD *thd, Item **items) override;
+  TYPELIB *get_typelib() const override;
   void update_after_wf_arguments_changed(THD *thd) override;
   void clear() override;
   bool check_wf_semantics1(THD *thd, Query_block *select,
@@ -2706,6 +2708,10 @@ class Item_func_grouping : public Item_int_func {
   bool fix_fields(THD *thd, Item **ref) override;
   void update_used_tables() override;
   bool aggregate_check_distinct(uchar *arg) override;
+
+ private:
+  /// The query block in which this function is called.
+  const Query_block *m_query_block{nullptr};
 };
 
 /**

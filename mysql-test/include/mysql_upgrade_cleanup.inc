@@ -2,9 +2,9 @@
 
 let $MYSQLD_DATADIR= `select @@datadir`;
 
-# mysql_upgrade should have created mysql_upgrade_info file,
+# The server should have created a mysql_upgrade_history file,
 # so the following command will do a clean-up.
---remove_file $MYSQLD_DATADIR/mysql_upgrade_info
+--remove_file $MYSQLD_DATADIR/mysql_upgrade_history
 
 #
 # See mysql_upgrade_preparation.inc
@@ -28,4 +28,3 @@ let $MYSQLD_DATADIR= `select @@datadir`;
 
 --enable_result_log
 --enable_query_log
-

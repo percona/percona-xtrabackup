@@ -1,18 +1,19 @@
 #ifndef ITEM_CMPFUNC_INCLUDED
 #define ITEM_CMPFUNC_INCLUDED
 
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -677,7 +678,7 @@ class Item_bool_func2 : public Item_bool_func {
   Item *replace_scalar_subquery(uchar *) override;
   friend class Arg_comparator;
   bool allow_replacement(Item_field *const original,
-                         Item_field *const subst) override {
+                         Item *const subst) override {
     /*
       If UNKNOWN results can be treated as false (e.g when placed in WHERE, ON
       or HAVING), a non-nullable field can be replaced with a nullable one.
@@ -1299,7 +1300,7 @@ class Item_func_opt_neg : public Item_int_func {
     return this;
   }
   bool allow_replacement(Item_field *const original,
-                         Item_field *const subst) override {
+                         Item *const subst) override {
     /*
       If UNKNOWN results can be treated as false (e.g when placed in WHERE, ON
       or HAVING), a non-nullable field can be replaced with a nullable one.
@@ -1567,6 +1568,7 @@ class Item_func_nullif final : public Item_bool_func2 {
   }
   bool resolve_type(THD *thd) override;
   bool resolve_type_inner(THD *thd) override;
+  TYPELIB *get_typelib() const override;
   const char *func_name() const override { return "nullif"; }
   enum Functype functype() const override { return NULLIF_FUNC; }
 

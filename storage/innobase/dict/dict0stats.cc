@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 2009, 2023, Oracle and/or its affiliates.
+Copyright (c) 2009, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -3461,52 +3462,6 @@ dberr_t dict_stats_rename_index(
   rw_lock_x_unlock(dict_operation_lock);
 
   return (ret);
-}
-
-/** Evict the stats tables if they loaded in tablespace cache and also
-close the stats .ibd files. We have to close stats tables because
-8.0 stats tables will use the same name. We load the stats from 5.7
-with a suffix "_backup57" and migrate the statistics. */
-void dict_stats_evict_tablespaces() {
-  ut_ad(srv_is_upgrade_mode);
-
-  space_id_t space_id_index_stats = fil_space_get_id_by_name(INDEX_STATS_NAME);
-
-  space_id_t space_id_table_stats = fil_space_get_id_by_name(TABLE_STATS_NAME);
-
-  trx_t *trx = trx_allocate_for_background();
-
-  trx_start_internal(trx, UT_LOCATION_HERE);
-
-  if (space_id_index_stats != SPACE_UNKNOWN) {
-    dberr_t err;
-
-    err = fil_close_tablespace(space_id_index_stats);
-
-    if (err != DB_SUCCESS) {
-      ib::info(ER_IB_MSG_227)
-          << "dict_stats_evict_tablespace: "
-          << " fil_close_tablespace(" << space_id_index_stats << ") failed! "
-          << ut_strerr(err);
-    }
-  }
-
-  if (space_id_table_stats != SPACE_UNKNOWN) {
-    dberr_t err;
-
-    err = fil_close_tablespace(space_id_table_stats);
-
-    if (err != DB_SUCCESS) {
-      ib::info(ER_IB_MSG_228)
-          << "dict_stats_evict_tablespace: "
-          << " fil_close_tablespace(" << space_id_index_stats << ") failed! "
-          << ut_strerr(err);
-    }
-  }
-
-  trx_commit_for_mysql(trx);
-
-  trx_free_for_background(trx);
 }
 
 TableStatsRecord::TableStatsRecord() { m_heap = nullptr; }

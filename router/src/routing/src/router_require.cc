@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2023, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -37,7 +38,11 @@
 IMPORT_LOG_FUNCTIONS()
 
 stdx::expected<void, classic_protocol::message::server::Error>
-RouterRequire::enforce(Channel *client_channel, Attributes attrs) {
+RouterRequire::enforce(Channel &client_channel, Attributes attrs) {
+  // as stdx::expected(unexpect, ...) is 'explicit', return {} can't be used.
+  using ret_type =
+      stdx::expected<void, classic_protocol::message::server::Error>;
+
   bool subject_is_required = attrs.subject.has_value();
 
   bool issuer_is_required = attrs.issuer.has_value();
@@ -47,16 +52,17 @@ RouterRequire::enforce(Channel *client_channel, Attributes attrs) {
 
   bool ssl_is_required = (attrs.ssl && *attrs.ssl) || x509_is_required;
 
-  if (ssl_is_required && (client_channel->ssl() == nullptr)) {
-    return {stdx::unexpect, 1045, "Access denied (required: ssl)", "28000"};
+  if (ssl_is_required && (client_channel.ssl() == nullptr)) {
+    return ret_type{stdx::unexpect, 1045, "Access denied (required: ssl)",
+                    "28000"};
   }
 
   if (x509_is_required) {
-    auto *client_ssl = client_channel->ssl();
+    auto *client_ssl = client_channel.ssl();
 
     if (X509_V_OK != SSL_get_verify_result(client_ssl)) {
-      return {stdx::unexpect, 1045, "Access denied (required: x509 invalid)",
-              "28000"};
+      return ret_type{stdx::unexpect, 1045,
+                      "Access denied (required: x509 invalid)", "28000"};
     }
 
     struct X509Deleter {
@@ -77,8 +83,9 @@ RouterRequire::enforce(Channel *client_channel, Attributes attrs) {
         subject_name.resize(strlen(subject_name.c_str()));
 
         if (subject_name != *attrs.subject) {
-          return {stdx::unexpect, 1045,
-                  "Access denied (required: x509-subject mismatch)", "28000"};
+          return ret_type{stdx::unexpect, 1045,
+                          "Access denied (required: x509-subject mismatch)",
+                          "28000"};
         }
       }
 
@@ -93,12 +100,14 @@ RouterRequire::enforce(Channel *client_channel, Attributes attrs) {
         issuer_name.resize(strlen(issuer_name.c_str()));
 
         if (issuer_name != *attrs.issuer) {
-          return {stdx::unexpect, 1045,
-                  "Access denied (required: x509-issuer mismatch)", "28000"};
+          return ret_type{stdx::unexpect, 1045,
+                          "Access denied (required: x509-issuer mismatch)",
+                          "28000"};
         }
       }
     } else {
-      return {stdx::unexpect, 1045, "Access denied (required: x509)", "28000"};
+      return ret_type{stdx::unexpect, 1045, "Access denied (required: x509)",
+                      "28000"};
     }
   }
 
@@ -201,7 +210,7 @@ class SelectUserAttributesHandler : public QuerySender::Handler {
 
     auto parse_res = parse_router_require(it->value());
     if (!parse_res) {
-      result_ = stdx::make_unexpected(classic_protocol::message::server::Error{
+      result_ = stdx::unexpected(classic_protocol::message::server::Error{
           kAccessDenied, "Access denied", "28000"});
       return;
     }
@@ -218,7 +227,7 @@ class SelectUserAttributesHandler : public QuerySender::Handler {
     // error, shouldn't happen. Log it.
     log_debug("fetching user-attrs failed: %s", err.message().c_str());
 
-    result_ = stdx::make_unexpected(err);
+    result_ = stdx::unexpected(err);
   }
 
   void on_error(const classic_protocol::message::server::Error &err) override {
@@ -227,7 +236,7 @@ class SelectUserAttributesHandler : public QuerySender::Handler {
     // error, shouldn't happen. Log it.
     log_debug("fetching user-attrs failed: %s", err.message().c_str());
 
-    result_ = stdx::make_unexpected(err);
+    result_ = stdx::unexpected(err);
   }
 
   void failed(classic_protocol::message::server::Error msg) {

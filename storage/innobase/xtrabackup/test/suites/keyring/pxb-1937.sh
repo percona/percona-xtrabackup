@@ -7,9 +7,11 @@ binlog-encryption
 log-bin=binlog
 "
 
+KEYRING_TYPE="component"
+. inc/keyring_common.sh
 . inc/keyring_file.sh
+configure_server_with_component
 
-start_server
 
 xtrabackup --backup --target-dir=$topdir/backup --transition-key=123
 
@@ -25,5 +27,8 @@ xtrabackup --no-defaults --datadir=$mysql_datadir \
            --transition-key=123 \
            --xtrabackup-plugin-dir=${plugin_dir} \
            ${keyring_args}
+
+cp ${instance_local_manifest}  $mysql_datadir
+cp ${keyring_component_cnf} $mysql_datadir
 
 start_server

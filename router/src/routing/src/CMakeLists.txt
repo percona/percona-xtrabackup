@@ -1,15 +1,16 @@
-# Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -35,6 +36,59 @@ TARGET_INCLUDE_DIRECTORIES(sql_lexer
 # generate sql_yacc.h
 ADD_DEPENDENCIES(sql_lexer GenServerSource)
 
+ADD_LIBRARY(routing_frontend_lib STATIC
+  routing.cc
+)
+
+TARGET_LINK_LIBRARIES(routing_frontend_lib
+  PUBLIC
+  harness_stdx)
+
+TARGET_INCLUDE_DIRECTORIES(
+  routing_frontend_lib
+PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/../include/
+  ${CMAKE_CURRENT_BINARY_DIR}/../include/
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../router/include/
+  ${CMAKE_CURRENT_BINARY_DIR}/../../router/include/
+)
+
+## routing_connections is used by "routing" and "connection_pool"
+ADD_LIBRARY(routing_connections SHARED
+  channel.cc
+  )
+TARGET_LINK_LIBRARIES(routing_connections
+  PUBLIC
+  harness_stdx
+  harness_tls
+  mysql_protocol
+  )
+TARGET_INCLUDE_DIRECTORIES(routing_connections
+  PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/../include/
+  ${CMAKE_CURRENT_BINARY_DIR}/../include/
+  )
+SET_TARGET_PROPERTIES(routing_connections PROPERTIES
+  OUTPUT_NAME "mysqlrouter_routing_connections"
+  SOVERSION 1
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/runtime_output_directory
+  LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/library_output_directory)
+INSTALL(TARGETS routing_connections
+  RUNTIME DESTINATION ${ROUTER_INSTALL_BINDIR} COMPONENT Router
+  ARCHIVE DESTINATION ${ROUTER_INSTALL_LIBDIR} COMPONENT Router
+  LIBRARY DESTINATION ${ROUTER_INSTALL_LIBDIR} COMPONENT Router
+  NAMELINK_SKIP
+  )
+ADD_INSTALL_RPATH_FOR_OPENSSL(routing_connections)
+SET_PATH_TO_CUSTOM_SSL_FOR_APPLE(routing_connections)
+
+GENERATE_EXPORT_HEADER(routing_connections
+  EXPORT_FILE_NAME ${CMAKE_CURRENT_BINARY_DIR}/../include/mysqlrouter/routing_connections_export.h)
+
 ADD_LIBRARY(routing SHARED
   mysql_routing.cc
   destination.cc
@@ -43,12 +97,10 @@ ADD_LIBRARY(routing SHARED
   dest_first_available.cc
   dest_next_available.cc
   dest_round_robin.cc
-  routing.cc
   context.cc
   mysql_routing_common.cc
   connection_container.cc
   routing_component.cc
-  channel.cc
   destination_ssl_context.cc
   classic_connection_base.cc
   classic_connection.cc
@@ -133,7 +185,9 @@ TARGET_LINK_LIBRARIES(routing
   harness_tls
   mysql_protocol
   router_lib
+  routing_connections
   router_mysqlxmessages
+  routing_frontend_lib
   ext::libprotobuf-lite
   metadata_cache
   connection_pool

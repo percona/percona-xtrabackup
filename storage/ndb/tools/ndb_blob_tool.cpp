@@ -1,15 +1,16 @@
-/* Copyright (c) 2012, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,9 +28,11 @@
 #include "util/require.h"
 
 #include <NdbSleep.h>
-#include <NDBT.hpp>
 #include <NdbApi.hpp>
 #include <NdbOut.hpp>
+#include "NDBT_Output.hpp"
+#include "NdbToolsProgramExitCodes.hpp"
+#include "util/OutputStream.hpp"
 
 static const char *opt_dbname = 0;
 static bool opt_check_orphans = false;
@@ -130,7 +133,8 @@ static int doconnect() {
   do {
     g_ncc = new Ndb_cluster_connection(opt_ndb_connectstring);
     g_ncc->configure_tls(opt_tls_search_path, opt_mgm_tls);
-    CHK2(g_ncc->connect(opt_connect_retries - 1, opt_connect_retry_delay) == 0,
+    CHK2(g_ncc->connect(opt_connect_retries - 1, opt_connect_retry_delay, 1) ==
+             0,
          getNdbError(g_ncc));
     CHK2(g_ncc->wait_until_ready(30, 10) == 0, getNdbError(g_ncc));
 
@@ -953,12 +957,12 @@ int main(int argc, char **argv) {
   opts.set_usage_funcs(short_usage_sub, usage);
   int ret = opts.handle_options();
   if (ret != 0 || checkopts(argc, argv) != 0)
-    return NDBT_ProgramExit(NDBT_WRONGARGS);
+    return NdbToolsProgramExitCode::WRONG_ARGS;
 
   setOutputLevel(opt_verbose ? 2 : 0);
 
   ret = doall();
   freeall();
-  if (ret == -1) return NDBT_ProgramExit(NDBT_FAILED);
-  return NDBT_ProgramExit(NDBT_OK);
+  if (ret == -1) return NdbToolsProgramExitCode::FAILED;
+  return NdbToolsProgramExitCode::OK;
 }

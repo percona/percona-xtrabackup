@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2021, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -68,6 +69,10 @@ class SocketCloseTest : public RouterComponentTest {
     auto default_section = get_DEFAULT_defaults();
     init_keyring(default_section, get_test_temp_dir_name(), router_user,
                  router_password);
+    const auto state_file =
+        create_state_file(get_test_temp_dir_name(),
+                          create_state_file_content("uuid", "", node_ports, 0));
+    default_section["dynamic_state"] = state_file;
 
     // launch the router
     const std::string conf_file = create_config_file(
@@ -112,24 +117,13 @@ class SocketCloseTest : public RouterComponentTest {
         gr_nodes[0].member_role = "SECONDARY";
         cluster_nodes[0].role = "SECONDARY";
       }
-      set_mock_metadata(node_http_ports[i], "", gr_nodes, i, cluster_nodes, 0,
-                        false, "localhost");
+      set_mock_metadata(node_http_ports[i], "uuid", gr_nodes, i, cluster_nodes,
+                        0, false, "localhost");
     }
   }
 
   std::string get_metadata_cache_section(
-      std::vector<uint16_t> metadata_server_ports,
       ClusterType cluster_type = ClusterType::GR_V2) {
-    std::string bootstrap_server_addresses;
-    bool use_comma = false;
-    for (const auto &port : metadata_server_ports) {
-      if (use_comma) {
-        bootstrap_server_addresses += ",";
-      } else {
-        use_comma = true;
-      }
-      bootstrap_server_addresses += "mysql://localhost:" + std::to_string(port);
-    }
     const std::string cluster_type_str =
         (cluster_type == ClusterType::RS_V2) ? "rs" : "gr";
 
@@ -138,8 +132,8 @@ class SocketCloseTest : public RouterComponentTest {
            cluster_type_str +
            "\n"
            "router_id=1\n"
-           "bootstrap_server_addresses=" +
-           bootstrap_server_addresses + "\n" + "user=" + router_user +
+           "user=" +
+           router_user +
            "\n"
            "connect_timeout=1\n"
            "metadata_cluster=test\n" +
@@ -150,8 +144,7 @@ class SocketCloseTest : public RouterComponentTest {
   std::string get_metadata_cache_routing_section(
       const std::optional<uint16_t> &router_port,
       const std::optional<std::string> &router_socket, const std::string &role,
-      const std::string &strategy, const std::string &mode = "",
-      const std::string &section_name = "default",
+      const std::string &strategy, const std::string &section_name = "default",
       const std::string &protocol = "classic") const {
     std::vector<std::pair<std::string, std::string>> options{
         {"destinations", "metadata-cache://test/default?role=" + role},
@@ -162,7 +155,6 @@ class SocketCloseTest : public RouterComponentTest {
     if (router_socket) options.emplace_back("socket", *router_socket);
 
     if (!strategy.empty()) options.emplace_back("routing_strategy", strategy);
-    if (!mode.empty()) options.emplace_back("mode", mode);
 
     return mysql_harness::ConfigBuilder::build_section(
         "routing:" + section_name, options);
@@ -197,7 +189,7 @@ class SocketCloseTest : public RouterComponentTest {
   void setup_router(ClusterType cluster_type, const Acceptors acceptors,
                     const bool read_only = false) {
     const std::string metadata_cache_section =
-        get_metadata_cache_section(node_ports, cluster_type);
+        get_metadata_cache_section(cluster_type);
 
     const bool use_tcp_port_acceptors =
         acceptors & static_cast<Acceptors>(AcceptorType::TcpSocket);
@@ -208,15 +200,15 @@ class SocketCloseTest : public RouterComponentTest {
     std::string routing_rw_section{""};
     if (!read_only) {
       routing_rw_section = get_metadata_cache_routing_section(
-          router_rw_port, router_rw_socket, "PRIMARY", "round-robin", "", "rw");
+          router_rw_port, router_rw_socket, "PRIMARY", "round-robin", "rw");
       routing_rw_section += get_metadata_cache_routing_section(
-          router_rw_x_port, router_rw_x_socket, "PRIMARY", "round-robin", "",
+          router_rw_x_port, router_rw_x_socket, "PRIMARY", "round-robin",
           "x_rw", "x");
     }
     std::string routing_ro_section = get_metadata_cache_routing_section(
-        router_ro_port, router_ro_socket, "SECONDARY", "round-robin", "", "ro");
+        router_ro_port, router_ro_socket, "SECONDARY", "round-robin", "ro");
     routing_ro_section += get_metadata_cache_routing_section(
-        router_ro_x_port, router_ro_x_socket, "SECONDARY", "round-robin", "",
+        router_ro_x_port, router_ro_x_socket, "SECONDARY", "round-robin",
         "x_ro", "x");
 
     router =
@@ -238,7 +230,7 @@ class SocketCloseTest : public RouterComponentTest {
   void toggle_auth_failure(const bool toggle, const uint16_t http_port,
                            const std::vector<uint16_t> &nodes) {
     auto globals =
-        mock_GR_metadata_as_json("", classic_ports_to_gr_nodes(nodes), 0,
+        mock_GR_metadata_as_json("uuid", classic_ports_to_gr_nodes(nodes), 0,
                                  classic_ports_to_cluster_nodes(nodes));
     JsonAllocator allocator;
 
@@ -283,8 +275,8 @@ class SocketCloseTest : public RouterComponentTest {
   void simulate_cluster_node_down(const std::vector<uint16_t> &node_ports,
                                   const uint16_t http_port) {
     auto globals =
-        mock_GR_metadata_as_json("", classic_ports_to_gr_nodes(node_ports), 0,
-                                 classic_ports_to_cluster_nodes(node_ports));
+        mock_GR_metadata_as_json("uuid", classic_ports_to_gr_nodes(node_ports),
+                                 0, classic_ports_to_cluster_nodes(node_ports));
     JsonAllocator allocator;
     globals.AddMember("transaction_count", 0, allocator);
     // Empty, node is not taken into account
@@ -304,7 +296,8 @@ class SocketCloseTest : public RouterComponentTest {
       gr_nodes[0].member_role = "SECONDARY";
       cluster_nodes[0].role = "SECONDARY";
     }
-    auto globals = mock_GR_metadata_as_json("", gr_nodes, 0, cluster_nodes);
+
+    auto globals = mock_GR_metadata_as_json("uuid", gr_nodes, 0, cluster_nodes);
     JsonAllocator allocator;
     globals.AddMember("transaction_count", 0, allocator);
     globals.AddMember("cluster_type",
@@ -1287,7 +1280,7 @@ TEST_F(SocketCloseTest, StaticRoundRobinTCPPort) {
       json_metadata, node_ports[0], EXIT_SUCCESS, false, node_http_ports[0]));
 
   set_mock_metadata(
-      node_http_ports[0], "", classic_ports_to_gr_nodes(node_ports), 0,
+      node_http_ports[0], "uuid", classic_ports_to_gr_nodes(node_ports), 0,
       classic_ports_to_cluster_nodes(node_ports), 0, false, "localhost");
 
   SCOPED_TRACE("// check we can connect to tcp:" + router_rw_port_str +
@@ -1365,7 +1358,7 @@ TEST_F(SocketCloseTest, StaticRoundRobinUnixSocket) {
       json_metadata, node_ports[0], EXIT_SUCCESS, false, node_http_ports[0]));
 
   set_mock_metadata(
-      node_http_ports[0], "", classic_ports_to_gr_nodes(node_ports), 0,
+      node_http_ports[0], "uuid", classic_ports_to_gr_nodes(node_ports), 0,
       classic_ports_to_cluster_nodes(node_ports), 0, false, "localhost");
 
   SCOPED_TRACE("// check we can connect to unix socket:" + *router_rw_socket +
@@ -1453,7 +1446,7 @@ TEST_P(FailToOpenROSocketAfterStartup, ROportTaken) {
   auto cluster_nodes = classic_ports_to_cluster_nodes(node_ports);
   cluster_nodes[1].attributes = R"({"tags" : {"_hidden": true} })";
   cluster_nodes[2].attributes = R"({"tags" : {"_hidden": true} })";
-  set_mock_metadata(node_http_ports[0], "",
+  set_mock_metadata(node_http_ports[0], "uuid",
                     classic_ports_to_gr_nodes(node_ports), 0, cluster_nodes, 0,
                     false, "127.0.0.1");
 
@@ -1469,7 +1462,7 @@ TEST_P(FailToOpenROSocketAfterStartup, ROportTaken) {
 
   SCOPED_TRACE("// Unhide one RO node");
   cluster_nodes[2].attributes = "";
-  set_mock_metadata(node_http_ports[0], "",
+  set_mock_metadata(node_http_ports[0], "uuid",
                     classic_ports_to_gr_nodes(node_ports), 0, cluster_nodes, 0,
                     false, "127.0.0.1");
   EXPECT_TRUE(wait_for_transaction_count_increase(node_http_ports[0], 4));
@@ -1528,7 +1521,7 @@ TEST_P(FailToOpenRWSocketAfterStartup, RWportTaken) {
   SCOPED_TRACE("// RW node hidden");
   auto cluster_nodes = classic_ports_to_cluster_nodes(node_ports);
   cluster_nodes[0].attributes = R"({"tags" : {"_hidden": true} })";
-  set_mock_metadata(node_http_ports[0], "",
+  set_mock_metadata(node_http_ports[0], "uuid",
                     classic_ports_to_gr_nodes(node_ports), 0, cluster_nodes, 0,
                     false, "127.0.0.1");
   EXPECT_TRUE(wait_for_transaction_count_increase(node_http_ports[0], 4));
@@ -1543,7 +1536,7 @@ TEST_P(FailToOpenRWSocketAfterStartup, RWportTaken) {
 
   SCOPED_TRACE("// Unhide RW node");
   cluster_nodes[0].attributes = "";
-  set_mock_metadata(node_http_ports[0], "",
+  set_mock_metadata(node_http_ports[0], "uuid",
                     classic_ports_to_gr_nodes(node_ports), 0, cluster_nodes, 0,
                     false, "127.0.0.1");
   EXPECT_TRUE(wait_for_transaction_count_increase(node_http_ports[0], 4));
@@ -1607,15 +1600,15 @@ TEST_P(FailToOpenSocketOnStartup, FailOnStartup) {
 
   SCOPED_TRACE("// start router against sockets that are in use.");
   const std::string metadata_cache_section =
-      get_metadata_cache_section(node_ports, GetParam().cluster_type);
+      get_metadata_cache_section(GetParam().cluster_type);
   std::string routing_section = get_metadata_cache_routing_section(
-      router_rw_port, "PRIMARY", "round-robin", "", "rw");
+      router_rw_port, "PRIMARY", "round-robin", "rw");
   routing_section += get_metadata_cache_routing_section(
-      router_rw_x_port, "PRIMARY", "round-robin", "", "x_rw", "x");
+      router_rw_x_port, "PRIMARY", "round-robin", "x_rw", "x");
   routing_section += get_metadata_cache_routing_section(
-      router_ro_port, "SECONDARY", "round-robin", "", "ro");
+      router_ro_port, "SECONDARY", "round-robin", "ro");
   routing_section += get_metadata_cache_routing_section(
-      router_ro_x_port, "SECONDARY", "round-robin", "", "x_ro", "x");
+      router_ro_x_port, "SECONDARY", "round-robin", "x_ro", "x");
 
   auto &router =
       launch_router(metadata_cache_section, routing_section, EXIT_FAILURE,
@@ -1686,12 +1679,12 @@ TEST_P(RoundRobinFallback, RoundRobinFallbackTest) {
 
   SCOPED_TRACE("// launch the router with metadata-cache configuration");
   const std::string metadata_cache_section =
-      get_metadata_cache_section(node_ports, GetParam().cluster_type);
+      get_metadata_cache_section(GetParam().cluster_type);
   std::string routing_section = get_metadata_cache_routing_section(
-      router_rw_port, std::nullopt, "PRIMARY", "round-robin", "", "rw");
+      router_rw_port, std::nullopt, "PRIMARY", "round-robin", "rw");
   routing_section += get_metadata_cache_routing_section(
       router_ro_port, std::nullopt, "SECONDARY", "round-robin-with-fallback",
-      "", "ro");
+      "ro");
 
   launch_router(metadata_cache_section, routing_section, EXIT_SUCCESS,
                 /*wait_for_notify_ready=*/30s);
@@ -1703,7 +1696,7 @@ TEST_P(RoundRobinFallback, RoundRobinFallbackTest) {
   auto cluster_nodes = classic_ports_to_cluster_nodes(node_ports);
   cluster_nodes[1].attributes = R"({"tags" : {"_hidden": true} })";
   cluster_nodes[2].attributes = R"({"tags" : {"_hidden": true} })";
-  set_mock_metadata(node_http_ports[0], "",
+  set_mock_metadata(node_http_ports[0], "uuid",
                     classic_ports_to_gr_nodes(node_ports), 0, cluster_nodes, 0,
                     false, "127.0.0.1");
   EXPECT_TRUE(wait_for_transaction_count_increase(node_http_ports[0], 4));
@@ -1719,7 +1712,7 @@ TEST_P(RoundRobinFallback, RoundRobinFallbackTest) {
   SCOPED_TRACE("// Unhide RO nodes");
   cluster_nodes[1].attributes = "";
   cluster_nodes[2].attributes = "";
-  set_mock_metadata(node_http_ports[0], "",
+  set_mock_metadata(node_http_ports[0], "uuid",
                     classic_ports_to_gr_nodes(node_ports), 0, cluster_nodes, 0,
                     false, "127.0.0.1");
   ASSERT_NO_FATAL_FAILURE(try_connection("127.0.0.1", *router_ro_port,
@@ -1729,7 +1722,7 @@ TEST_P(RoundRobinFallback, RoundRobinFallbackTest) {
 
   SCOPED_TRACE("// Hide primary node");
   cluster_nodes[0].attributes = R"({"tags" : {"_hidden": true} })";
-  set_mock_metadata(node_http_ports[0], "",
+  set_mock_metadata(node_http_ports[0], "uuid",
                     classic_ports_to_gr_nodes(node_ports), 0, cluster_nodes, 0,
                     false, "127.0.0.1");
   EXPECT_TRUE(wait_for_transaction_count_increase(node_http_ports[0], 4));
@@ -1764,11 +1757,11 @@ TEST_P(FirstAvailableDestMetadataCache, FirstAvailableDestMetadataCacheTest) {
 
   SCOPED_TRACE("// launch the router with metadata-cache configuration");
   const std::string metadata_cache_section =
-      get_metadata_cache_section(node_ports, GetParam().cluster_type);
+      get_metadata_cache_section(GetParam().cluster_type);
   std::string routing_section = get_metadata_cache_routing_section(
-      router_rw_port, std::nullopt, "PRIMARY", "first-available", "", "rw");
+      router_rw_port, std::nullopt, "PRIMARY", "first-available", "rw");
   routing_section += get_metadata_cache_routing_section(
-      router_ro_port, std::nullopt, "SECONDARY", "first-available", "", "ro");
+      router_ro_port, std::nullopt, "SECONDARY", "first-available", "ro");
 
   launch_router(metadata_cache_section, routing_section, EXIT_SUCCESS,
                 /*wait_for_notify_ready=*/30s);
@@ -1778,7 +1771,7 @@ TEST_P(FirstAvailableDestMetadataCache, FirstAvailableDestMetadataCacheTest) {
 
   SCOPED_TRACE("// Disable both secondary nodes");
   set_mock_metadata(
-      node_http_ports[0], "", classic_ports_to_gr_nodes({node_ports[0]}), 0,
+      node_http_ports[0], "uuid", classic_ports_to_gr_nodes({node_ports[0]}), 0,
       classic_ports_to_cluster_nodes({node_ports[0]}), 0, false, "localhost");
   EXPECT_TRUE(wait_for_transaction_count_increase(node_http_ports[0], 4));
 
@@ -1793,7 +1786,7 @@ TEST_P(FirstAvailableDestMetadataCache, FirstAvailableDestMetadataCacheTest) {
 
   SCOPED_TRACE("// Bring back first RO node");
   set_mock_metadata(
-      node_http_ports[0], "",
+      node_http_ports[0], "uuid",
       classic_ports_to_gr_nodes({node_ports[0], node_ports[1]}), 0,
       classic_ports_to_cluster_nodes({node_ports[0], node_ports[1]}), 0, false,
       "localhost");
@@ -1803,7 +1796,7 @@ TEST_P(FirstAvailableDestMetadataCache, FirstAvailableDestMetadataCacheTest) {
 
   SCOPED_TRACE("// Disable first RO node");
   set_mock_metadata(
-      node_http_ports[0], "", classic_ports_to_gr_nodes({node_ports[0]}), 0,
+      node_http_ports[0], "uuid", classic_ports_to_gr_nodes({node_ports[0]}), 0,
       classic_ports_to_cluster_nodes({node_ports[0]}), 0, false, "localhost");
   EXPECT_TRUE(wait_for_transaction_count_increase(node_http_ports[0], 4));
   EXPECT_TRUE(wait_for_port_used(*router_rw_port));
@@ -1811,7 +1804,7 @@ TEST_P(FirstAvailableDestMetadataCache, FirstAvailableDestMetadataCacheTest) {
 
   SCOPED_TRACE("// Bring back second RO node");
   set_mock_metadata(
-      node_http_ports[0], "",
+      node_http_ports[0], "uuid",
       classic_ports_to_gr_nodes({node_ports[0], node_ports[2]}), 0,
       classic_ports_to_cluster_nodes({node_ports[0], node_ports[2]}), 0, false,
       "localhost");
@@ -1821,7 +1814,7 @@ TEST_P(FirstAvailableDestMetadataCache, FirstAvailableDestMetadataCacheTest) {
 
   SCOPED_TRACE("// Disable first RO node");
   set_mock_metadata(
-      node_http_ports[0], "", classic_ports_to_gr_nodes({node_ports[0]}), 0,
+      node_http_ports[0], "uuid", classic_ports_to_gr_nodes({node_ports[0]}), 0,
       classic_ports_to_cluster_nodes({node_ports[0]}), 0, false, "localhost");
   EXPECT_TRUE(wait_for_transaction_count_increase(node_http_ports[0], 4));
   EXPECT_TRUE(wait_for_port_used(*router_rw_port));
@@ -1969,11 +1962,11 @@ TEST_F(SharedQuarantineSocketCloseWithFallback,
   const auto bind_port_r2 = port_pool_.get_next_available();
   const auto bind_port_r3 = port_pool_.get_next_available();
   const std::string metadata_cache_section =
-      get_metadata_cache_section(node_ports, ClusterType::GR_V2);
+      get_metadata_cache_section(ClusterType::GR_V2);
   std::string routing_section = get_metadata_cache_routing_section(
-      bind_port_r1, std::nullopt, "PRIMARY", "round-robin", "", "r1");
+      bind_port_r1, std::nullopt, "PRIMARY", "round-robin", "r1");
   routing_section += get_metadata_cache_routing_section(
-      bind_port_r2, std::nullopt, "SECONDARY", "round-robin-with-fallback", "",
+      bind_port_r2, std::nullopt, "SECONDARY", "round-robin-with-fallback",
       "r2");
   routing_section += get_static_routing_section(bind_port_r3, std::nullopt,
                                                 {node_ports[1]}, "round-robin");

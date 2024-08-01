@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2002, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2002, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -2279,50 +2280,6 @@ void sp_finish_parsing(THD *thd) {
   sp->m_parser_data.finish_parsing_sp_body(thd);
 }
 
-/// @return Item_result code corresponding to the RETURN-field type code.
-Item_result sp_map_result_type(enum enum_field_types type) {
-  switch (type) {
-    case MYSQL_TYPE_BIT:
-    case MYSQL_TYPE_BOOL:
-    case MYSQL_TYPE_TINY:
-    case MYSQL_TYPE_SHORT:
-    case MYSQL_TYPE_LONG:
-    case MYSQL_TYPE_LONGLONG:
-    case MYSQL_TYPE_INT24:
-      return INT_RESULT;
-    case MYSQL_TYPE_DECIMAL:
-    case MYSQL_TYPE_NEWDECIMAL:
-      return DECIMAL_RESULT;
-    case MYSQL_TYPE_FLOAT:
-    case MYSQL_TYPE_DOUBLE:
-      return REAL_RESULT;
-    default:
-      return STRING_RESULT;
-  }
-}
-
-/// @return Item::Type code corresponding to the RETURN-field type code.
-Item::Type sp_map_item_type(enum enum_field_types type) {
-  switch (type) {
-    case MYSQL_TYPE_BIT:
-    case MYSQL_TYPE_BOOL:
-    case MYSQL_TYPE_TINY:
-    case MYSQL_TYPE_SHORT:
-    case MYSQL_TYPE_LONG:
-    case MYSQL_TYPE_LONGLONG:
-    case MYSQL_TYPE_INT24:
-      return Item::INT_ITEM;
-    case MYSQL_TYPE_DECIMAL:
-    case MYSQL_TYPE_NEWDECIMAL:
-      return Item::DECIMAL_ITEM;
-    case MYSQL_TYPE_FLOAT:
-    case MYSQL_TYPE_DOUBLE:
-      return Item::REAL_ITEM;
-    default:
-      return Item::STRING_ITEM;
-  }
-}
-
 /**
   @param lex LEX-object, representing an SQL-statement inside SP.
 
@@ -2370,13 +2327,13 @@ uint sp_get_flags_for_command(LEX *lex) {
     case SQLCOM_SHOW_ENGINE_MUTEX:
     case SQLCOM_SHOW_EVENTS:
     case SQLCOM_SHOW_KEYS:
-    case SQLCOM_SHOW_MASTER_STAT:
+    case SQLCOM_SHOW_BINLOG_STATUS:
     case SQLCOM_SHOW_OPEN_TABLES:
     case SQLCOM_SHOW_PRIVILEGES:
     case SQLCOM_SHOW_PROCESSLIST:
     case SQLCOM_SHOW_PROC_CODE:
-    case SQLCOM_SHOW_SLAVE_HOSTS:
-    case SQLCOM_SHOW_SLAVE_STAT:
+    case SQLCOM_SHOW_REPLICAS:
+    case SQLCOM_SHOW_REPLICA_STATUS:
     case SQLCOM_SHOW_STATUS:
     case SQLCOM_SHOW_STATUS_FUNC:
     case SQLCOM_SHOW_STATUS_PROC:
@@ -2459,10 +2416,10 @@ uint sp_get_flags_for_command(LEX *lex) {
     case SQLCOM_CREATE_SERVER:
     case SQLCOM_ALTER_SERVER:
     case SQLCOM_DROP_SERVER:
-    case SQLCOM_CHANGE_MASTER:
+    case SQLCOM_CHANGE_REPLICATION_SOURCE:
     case SQLCOM_CHANGE_REPLICATION_FILTER:
-    case SQLCOM_SLAVE_START:
-    case SQLCOM_SLAVE_STOP:
+    case SQLCOM_REPLICA_START:
+    case SQLCOM_REPLICA_STOP:
     case SQLCOM_ALTER_INSTANCE:
     case SQLCOM_CREATE_ROLE:
     case SQLCOM_DROP_ROLE:

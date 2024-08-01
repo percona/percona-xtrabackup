@@ -1,17 +1,18 @@
 /*
-  Copyright (c) 2009, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2009, 2024, Oracle and/or its affiliates.
 
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,6 +29,8 @@
 
 #include <array>
 #include <filesystem>
+#include <memory>
+#include <optional>
 
 #include "util/BaseString.hpp"
 #include "util/require.h"
@@ -77,11 +80,26 @@ class NdbProcess {
 
    public:
     void add(const char *str);
+    /*
+     * For '--name=value' options which will be passed as one argument.
+     * Example: args.add("--id=", 7);
+     */
     void add(const char *str, const char *str2);
     void add(const char *str, int val);
-    void add(Uint64 val);
+    /*
+     * For '-name value' options which will be passed as two arguments.
+     * Example: args.add2("-id",7);
+     */
+    void add2(const char *str, const char *str2);
+    void add2(const char *str, int val);
+
+    /*
+     * Add arguments one by one from another argument list.
+     */
     void add(const Args &args);
+
     const Vector<BaseString> &args(void) const { return m_args; }
+    void clear() { m_args.clear(); }
   };
 
   ~NdbProcess() { assert(!running()); }
@@ -122,12 +140,42 @@ class NdbProcess {
     return proc;
   }
 
+  static std::unique_ptr<NdbProcess> create_via_ssh(
+      const BaseString &name, const BaseString &host, const BaseString &path,
+      const BaseString &cwd, const Args &args, Pipes *const fds = nullptr);
+
  private:
-  process_handle_t m_proc;
+#ifdef _WIN32
+  process_handle_t m_proc{InvalidHandle, InvalidHandle, 0, 0};
+#else
+  process_handle_t m_proc{InvalidHandle};
+#endif
   BaseString m_name;
   Pipes *m_pipes;
 
   NdbProcess(BaseString name, Pipes *fds) : m_name(name), m_pipes(fds) {}
+
+  /*
+   * Quoting function to be used for passing program name and arguments to a
+   * Windows program that follows the quoting of command line supported by
+   * Microsoft C/C++ runtime. See for example description in:
+   * https://learn.microsoft.com/en-us/cpp/cpp/main-function-command-line-args
+   *
+   * Note this quoting is not always suitable when calling other programs since
+   * they are free to interpret the command line as they wish and the possible
+   * quoting done may mess up.  For example cmd.exe treats unquoted ^
+   * differently.
+   */
+  static std::optional<BaseString> quote_for_windows_crt(
+      const char *str) noexcept;
+
+  static std::optional<BaseString> quote_for_windows_cmd_crt(
+      const char *str) noexcept;
+
+  static std::optional<BaseString> quote_for_posix_sh(const char *str) noexcept;
+
+  static std::optional<BaseString> quote_for_unknown_shell(
+      const char *str) noexcept;
 
   static bool start_process(process_handle_t &pid, const char *path,
                             const char *cwd, const Args &args, Pipes *pipes);
@@ -183,20 +231,234 @@ inline void NdbProcess::Args::add(const char *str, const char *str2) {
   m_args.push_back(tmp);
 }
 
+inline void NdbProcess::Args::add2(const char *str, const char *str2) {
+  BaseString tmp;
+  m_args.push_back(str);
+  m_args.push_back(str2);
+}
+
 inline void NdbProcess::Args::add(const char *str, int val) {
   BaseString tmp;
   tmp.assfmt("%s%d", str, val);
   m_args.push_back(tmp);
 }
 
-inline void NdbProcess::Args::add(Uint64 val) {
+inline void NdbProcess::Args::add2(const char *str, int val) {
+  m_args.push_back(str);
   BaseString tmp;
-  tmp.assfmt("%ju", uintmax_t{val});
+  tmp.assfmt("%d", val);
   m_args.push_back(tmp);
 }
 
 inline void NdbProcess::Args::add(const Args &args) {
   for (unsigned i = 0; i < args.m_args.size(); i++) add(args.m_args[i].c_str());
+}
+
+std::unique_ptr<NdbProcess> NdbProcess::create_via_ssh(
+    const BaseString &name, const BaseString &host, const BaseString &path,
+    const BaseString &cwd, const Args &args, Pipes *const fds) {
+  BaseString ssh_name = "ssh";
+  Args ssh_args;
+  ssh_args.add(host.c_str());
+  /*
+   * Arguments need to be quoted. What kind of quoting depends on what shell is
+   * used on remote host when ssh executes the command.
+   *
+   * And for Windows also what quoting the command itself requires on the
+   * command line.
+   *
+   * As a rough heuristic the type of quoting needed on remote host we look at
+   * command path and arguments. If backslash (\) is in any of them it is
+   * assumed that ssh executes command via cmd.exe and that command is a C/C++
+   * program. And if slash (/) is found it is assumed that ssh execute command
+   * via Bourne shell, sh, or compatible on remote host. This is not perfect but
+   * is a simple rule to document.
+   *
+   * On Windows it is assumed that ssh follows the quoting rules for Microsoft
+   * C/C++ runtime.
+   */
+  bool has_backslash = (strchr(path.c_str(), '\\'));
+  bool has_slash = (strchr(path.c_str(), '/'));
+  for (size_t i = 0; i < args.args().size(); i++) {
+    if (strchr(args.args()[i].c_str(), '\\')) has_backslash = true;
+    if (strchr(args.args()[i].c_str(), '/')) has_slash = true;
+  }
+  std::optional<BaseString> (*quote_func)(const char *str);
+  if (has_backslash && !has_slash)
+    quote_func = quote_for_windows_cmd_crt;
+  else if (!has_backslash && has_slash)
+    quote_func = quote_for_posix_sh;
+  else
+    quote_func = quote_for_unknown_shell;
+
+  auto qpath = quote_func(path.c_str());
+  if (!qpath) {
+    fprintf(stderr, "Function failed, could not quote command name: %s\n",
+            path.c_str());
+    return {};
+  }
+  ssh_args.add(qpath.value().c_str());
+  for (size_t i = 0; i < args.args().size(); i++) {
+    auto &arg = args.args()[i];
+    auto qarg = quote_func(arg.c_str());
+    if (!qarg) {
+      fprintf(stderr, "Function failed, could not quote command argument: %s\n",
+              arg.c_str());
+      return {};
+    }
+    ssh_args.add(qarg.value().c_str());
+  }
+  return create(name, ssh_name, cwd, ssh_args, fds);
+}
+
+std::optional<BaseString> NdbProcess::quote_for_windows_crt(
+    const char *str) noexcept {
+  /*
+   * Assuming program file names can not include " or end with a \ this
+   * function should be usable also for quoting the command part of command
+   * line when calling a C program via CreateProcess.
+   */
+  const char *p = str;
+  while (isprint(*p) && *p != ' ' && *p != '"' && *p != '*' && *p != '?') p++;
+  if (*p == '\0' && str[0] != '\0') return str;
+  BaseString ret;
+  ret.append('"');
+  size_t backslashes = 0;
+  while (*str) {
+    switch (*str) {
+      case '"':
+        if (backslashes) {
+          // backslashes preceding double quote needs quoting
+          ret.append(backslashes, '\\');
+          backslashes = 0;
+        }
+        // use double double quotes to quote double quote
+        ret.append('"');
+        break;
+      case '\\':
+        // Count backslashes in case they will be followed by double quote
+        backslashes++;
+        break;
+      default:
+        backslashes = 0;
+    }
+    ret.append(*str);
+    str++;
+  }
+  if (backslashes) ret.append(backslashes, '\\');
+  ret.append('"');
+  return ret;
+}
+
+std::optional<BaseString> NdbProcess::quote_for_windows_cmd_crt(
+    const char *str) noexcept {
+  /*
+   * Quoting of % is not handled and likely not possible when using double
+   * quotes. If for %xxx% there is an environment variable named xxx defined,
+   * that will be replaced in string by cmd.exe. If there is no such environment
+   * variable the %xxx% will be intact as is.
+   *
+   * Since cmd.exe do not allow any quoting of a double quote within double
+   * quotes we should make sure each argument have an even number of double
+   * quotes, else cmd.exe may treat the last double quote from one argument as
+   * beginning of a quotation ending at the first quote of next argument. That
+   * can be accomplished using "" when quoting a single " within an argument.
+   * But to make it more likely that a argument containing an even number of "
+   * be quoted in the same way for windows as for posix shell the alternate
+   * quoting method \" will be used in those cases. But only if none of ^ < > &
+   * | appear between even and odd double quotes since cmd.exe will interpret
+   * them specially.
+   */
+  const char *p = str;
+  bool dquote = true;  // Assume quoted will started with "
+  bool need_dquote = false;
+  bool need_quote = (*p == '\0');
+  while (!need_dquote && *p) {
+    switch (*p) {
+      case '^':
+      case '<':
+      case '>':
+      case '|':
+      case '&':
+        if (!dquote)
+          need_dquote = true;
+        else
+          need_quote = true;
+        break;
+      case '"':
+        dquote = !dquote;
+        need_quote = true;
+        break;
+      case ' ':
+      case '*':
+      case '?':
+        need_dquote = true;
+        break;
+      default:
+        if (!isprint(*p)) need_dquote = true;
+    }
+    p++;
+  }
+  if (!need_quote && !need_dquote) return str;
+  // If argument had even number of double quotes, dquote should be true.
+  if (!dquote) need_dquote = true;
+  BaseString ret;
+  ret.append('"');
+  int backslashes = 0;
+  while (*str) {
+    switch (*str) {
+      case '"':
+        if (backslashes) ret.append(backslashes, '\\');
+        backslashes = 0;
+        if (need_dquote)
+          ret.append('"');
+        else
+          ret.append('\\');
+        break;
+      case '\\':
+        backslashes++;
+        break;
+      default:
+        backslashes = 0;
+    }
+    ret.append(*str);
+    str++;
+  }
+  if (backslashes) ret.append(backslashes, '\\');
+  ret.append('"');
+  return ret;
+}
+
+std::optional<BaseString> NdbProcess::quote_for_posix_sh(
+    const char *str) noexcept {
+  const char *p = str;
+  while (*p && !strchr("\t\n \"#$&'()*;<>?\\`|~", *p)) p++;
+  if (*p == '\0' && p != str) return str;
+  BaseString ret;
+  ret.append('"');
+  while (*str) {
+    char ch = *str;
+    switch (ch) {
+      case '"':
+      case '$':
+      case '\\':
+      case '`':
+        ret.append('\\');
+        break;
+    }
+    ret.append(ch);
+    str++;
+  }
+  ret.append('"');
+  return ret;
+}
+
+std::optional<BaseString> NdbProcess::quote_for_unknown_shell(
+    const char *str) noexcept {
+  auto windows = quote_for_windows_cmd_crt(str);
+  auto posix = quote_for_posix_sh(str);
+  if (windows != posix) return {};
+  return windows;
 }
 
 #ifdef _WIN32
@@ -262,13 +524,36 @@ inline bool NdbProcess::wait(int &ret, int timeout) {
 inline bool NdbProcess::start_process(process_handle_t &pid, const char *path,
                                       const char *cwd, const Args &args,
                                       Pipes *pipes) {
-  /* Extract the command name from the full path, then append the arguments */
-  std::filesystem::path cmdName(std::filesystem::path(path).filename());
-  BaseString cmdLine(cmdName.string().c_str());
-  BaseString argStr;
-  argStr.assign(args.args(), " ");
-  cmdLine.append(" ");
-  cmdLine.append(argStr);
+  // If program without path need to lookup path, CreateProcess will not do
+  // that.
+  char full_path[PATH_MAX];
+  if (strpbrk(path, "/\\") == nullptr) {
+    DWORD len = SearchPath(nullptr, path, ".EXE", sizeof(full_path), full_path,
+                           nullptr);
+    if (len > 0) path = full_path;
+  }
+
+  std::optional<BaseString> quoted = quote_for_windows_crt(path);
+  if (!quoted) {
+    fprintf(stderr, "Function failed, could not quote command name: %s\n",
+            path);
+    return false;
+  }
+  BaseString cmdLine(quoted.value().c_str());
+
+  /* Quote each argument, and append it to the command line */
+  auto &args_vec = args.args();
+  for (size_t i = 0; i < args_vec.size(); i++) {
+    auto *arg = args_vec[i].c_str();
+    std::optional<BaseString> quoted = quote_for_windows_crt(arg);
+    if (!quoted) {
+      fprintf(stderr, "Function failed, could not quote command argument: %s\n",
+              arg);
+      return false;
+    }
+    cmdLine.append(' ');
+    cmdLine.append(quoted.value().c_str());
+  }
   char *command_line = strdup(cmdLine.c_str());
 
   STARTUPINFO si;
@@ -298,7 +583,13 @@ inline bool NdbProcess::start_process(process_handle_t &pid, const char *path,
           &pid)         // lpProcessInformation
   ) {
     printerror();
+    if (pipes) pipes->closeChildHandles();
     free(command_line);
+    // CreateProcess zero fills pid on failure, reinitialize it
+    pid.hProcess = INVALID_HANDLE_VALUE;
+    pid.hThread = INVALID_HANDLE_VALUE;
+    pid.dwProcessId = 0;
+    pid.dwThreadId = 0;
     return false;
   }
 
@@ -412,14 +703,17 @@ inline bool NdbProcess::start_process(process_handle_t &pid, const char *path,
     }
   }
 
-  // Concatenate arguments
-  BaseString args_str;
-  args_str.assign(args.args(), " ");
+  auto &args_vec = args.args();
+  size_t arg_cnt = args_vec.size();
+  char **argv = new char *[1 + arg_cnt + 1];
+  argv[0] = const_cast<char *>(path);
+  for (size_t i = 0; i < arg_cnt; i++)
+    argv[1 + i] = const_cast<char *>(args_vec[i].c_str());
+  argv[1 + arg_cnt] = nullptr;
 
-  char **argv = BaseString::argify(path, args_str.c_str());
   execvp(path, argv);
 
-  fprintf(stderr, "execv failed, errno: %d\n", errno);
+  fprintf(stderr, "execv failed, error %d '%s'\n", errno, strerror(errno));
   exit(1);
 }
 

@@ -4,7 +4,10 @@
 
 require_server_version_higher_than 8.0.15
 
+KEYRING_TYPE="component"
+. inc/keyring_common.sh
 . inc/keyring_file.sh
+configure_server_with_component
 
 
 function insert_char()
@@ -44,8 +47,6 @@ function insert_int2()
 }
 
 
-
-start_server
 
 mysql -e "CREATE TABLESPACE ts_encrypted ADD DATAFILE 'ts_encrypted.ibd' ENCRYPTION='Y' ENGINE='InnoDB'" test
 mysql -e "CREATE TABLESPACE ts_unencrypted ADD DATAFILE 'ts_unencrypted.ibd' ENGINE='InnoDB'" test
@@ -114,8 +115,13 @@ xtrabackup --datadir=$mysql_datadir --prepare \
 vlog "Copying files to their original locations"
 xtrabackup --copy-back \
     --target-dir=$full_backup_dir \
-    --keyring-file-data=$keyring_file_plugin
+    --xtrabackup-plugin-dir=$plugin_dir \
+    $keyring_args
+
 vlog "Data restored"
+
+cp ${instance_local_manifest}  $mysql_datadir
+cp ${keyring_component_cnf} $mysql_datadir
 
 start_server
 
@@ -207,8 +213,13 @@ vlog "Data destroyed"
 vlog "Copying files to their original locations"
 xtrabackup --copy-back \
     --target-dir=$full_backup_dir \
+    --xtrabackup-plugin-dir=$plugin_dir \
     $keyring_args
+
 vlog "Data restored"
+
+cp ${instance_local_manifest}  $mysql_datadir
+cp ${keyring_component_cnf} $mysql_datadir
 
 start_server
 

@@ -1,18 +1,19 @@
 #ifndef TABLE_INCLUDED
 #define TABLE_INCLUDED
 
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -60,6 +61,7 @@
 #include "sql/sql_plist.h"
 #include "sql/sql_plugin_ref.h"
 #include "sql/sql_sort.h"  // Sort_result
+#include "sql/tablesample.h"
 #include "thr_lock.h"
 #include "typelib.h"
 
@@ -1547,10 +1549,12 @@ struct TABLE {
   /// It will be true if any DISTINCT is given in the merged N-ary set
   /// operation. See is_distinct().
   bool m_last_operation_is_distinct{false};
-  /// If false, de-duplication happens via an index on this table, if
-  /// true, via an in-memory hash table, in which case we do not need to use
-  /// any index.
-  bool m_deduplicate_with_hashing{false};
+  /// If false, any de-duplication happens via an index on this table
+  /// (e.g. SELECT DISTINCT, set operation). If true, this table represents the
+  /// output of a set operation, and de-duplication happens via an in-memory
+  /// hash map, in which case we do not use any index, unless we get secondary
+  /// overflow.
+  bool m_deduplicate_with_hash_map{false};
 
  public:
   enum Set_operator_type {
@@ -1573,11 +1577,11 @@ struct TABLE {
   /// @return true if so, else false.
   bool is_union_or_table() const { return m_set_counter == nullptr; }
 
-  void set_hashing(bool use_hashing) {
-    m_deduplicate_with_hashing = use_hashing;
+  void set_use_hash_map(bool use_hash_map) {
+    m_deduplicate_with_hash_map = use_hash_map;
   }
 
-  bool uses_hashing() const { return m_deduplicate_with_hashing; }
+  bool uses_hash_map() const { return m_deduplicate_with_hash_map; }
 
   /// Returns the set operation type
   Set_operator_type set_op_type() {
@@ -2465,6 +2469,12 @@ struct TABLE {
 
   /**
     Find the histogram for the given field index.
+
+    @note If this is called on a TABLE object that belongs to a secondary
+    engine, it will take a round-trip through the handler in order to obtain the
+    histogram from the TABLE object associated with the primary engine. This is
+    done to avoid storing histograms on both the primary and secondary
+    TABLE_SHARE.
 
     @param field_index The index of the field we want to find a histogram for.
 
@@ -3655,8 +3665,15 @@ class Table_ref {
     for a new (identical) one.
    */
   AccessPath *access_path_for_derived{nullptr};
+  Item *sampling_percentage{nullptr};
 
  private:
+  /// Sampling information.
+  tablesample_type sampling_type{
+      tablesample_type::UNSPECIFIED_TABLESAMPLE_TYPE};
+
+  double sampling_percentage_val{0};
+
   /**
      This field is set to non-null for derived tables and views. It points
      to the Query_expression representing the derived table/view.
@@ -3743,6 +3760,24 @@ class Table_ref {
   LEX_STRING source{nullptr, 0};       ///< source of CREATE VIEW
   LEX_STRING timestamp{nullptr, 0};    ///< GMT time stamp of last operation
   LEX_USER definer;                    ///< definer of view
+  void set_tablesample(tablesample_type sampling_type_arg,
+                       Item *sampling_percentage_arg) {
+    sampling_type = sampling_type_arg;
+    sampling_percentage = sampling_percentage_arg;
+  }
+
+  bool has_tablesample() const {
+    return sampling_type != tablesample_type::UNSPECIFIED_TABLESAMPLE_TYPE;
+  }
+
+  bool update_sampling_percentage();
+
+  double get_sampling_percentage() const;
+
+  bool validate_tablesample_clause(THD *thd);
+
+  tablesample_type get_sampling_type() const { return sampling_type; }
+
   /**
     @note: This field is currently not reliable when read from dictionary:
     If an underlying view is changed, updatable_view is not changed,

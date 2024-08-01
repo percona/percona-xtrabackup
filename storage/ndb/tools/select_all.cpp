@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -30,8 +31,11 @@
 #include <NdbOut.hpp>
 
 #include <NdbSleep.h>
-#include <NDBT.hpp>
 #include <NdbApi.hpp>
+#include "NDBT_ResultRow.hpp"  // NDBT_ResultRow
+#include "NDBT_Table.hpp"      // NDBT_Table::discoverTableFromDb
+#include "NdbToolsLogging.hpp"
+#include "NdbToolsProgramExitCodes.hpp"
 
 #include "my_alloc.h"
 #include "portlib/ssl_applink.h"
@@ -113,19 +117,19 @@ int main(int argc, char **argv) {
 #ifndef NDEBUG
   opt_debug = "d:t:O,/tmp/ndb_select_all.trace";
 #endif
-  if (opts.handle_options()) return NDBT_ProgramExit(NDBT_WRONGARGS);
+  if (opts.handle_options()) return NdbToolsProgramExitCode::WRONG_ARGS;
   if (argc == 0) {
     ndbout
         << "Missing table name. Please see the below usage for correct command."
         << endl;
     opts.usage();
-    return NDBT_ProgramExit(NDBT_WRONGARGS);
+    return NdbToolsProgramExitCode::WRONG_ARGS;
   }
   if (argc > (!_order ? 1 : 2)) {
     ndbout << "Error. TOO MANY ARGUMENTS GIVEN." << endl;
     ndbout << "Please see the below usage for correct command." << endl;
     opts.usage();
-    return NDBT_ProgramExit(NDBT_WRONGARGS);
+    return NdbToolsProgramExitCode::WRONG_ARGS;
   }
 
   _tabname = argv[0];
@@ -134,17 +138,17 @@ int main(int argc, char **argv) {
   con.configure_tls(opt_tls_search_path, opt_mgm_tls);
   if (con.connect(opt_connect_retries - 1, opt_connect_retry_delay, 1) != 0) {
     ndbout << "Unable to connect to management server." << endl;
-    return NDBT_ProgramExit(NDBT_FAILED);
+    return NdbToolsProgramExitCode::FAILED;
   }
   if (con.wait_until_ready(30, 0) < 0) {
     ndbout << "Cluster nodes not ready in 30 seconds." << endl;
-    return NDBT_ProgramExit(NDBT_FAILED);
+    return NdbToolsProgramExitCode::FAILED;
   }
 
   Ndb MyNdb(&con, _dbname);
   if (MyNdb.init() != 0) {
     NDB_ERR(MyNdb.getNdbError());
-    return NDBT_ProgramExit(NDBT_FAILED);
+    return NdbToolsProgramExitCode::FAILED;
   }
 
   // Check if table exists in db
@@ -154,7 +158,7 @@ int main(int argc, char **argv) {
 
   if (pTab == NULL) {
     ndbout << " Table " << _tabname << " does not exist!" << endl;
-    return NDBT_ProgramExit(NDBT_WRONGARGS);
+    return NdbToolsProgramExitCode::WRONG_ARGS;
   }
 
   if (_order) {
@@ -162,26 +166,26 @@ int main(int argc, char **argv) {
       pIdx = MyNdb.getDictionary()->getIndex(argv[1], _tabname);
       if (pIdx == 0) {
         ndbout << " Index " << argv[1] << " does not exists" << endl;
-        return NDBT_ProgramExit(NDBT_WRONGARGS);
+        return NdbToolsProgramExitCode::WRONG_ARGS;
       }
     } else {
       ndbout << " Order flag given without an index" << endl;
-      return NDBT_ProgramExit(NDBT_WRONGARGS);
+      return NdbToolsProgramExitCode::WRONG_ARGS;
     }
   }
 
   if (_descending && !_order) {
     ndbout << " Descending flag given without order flag" << endl;
-    return NDBT_ProgramExit(NDBT_WRONGARGS);
+    return NdbToolsProgramExitCode::WRONG_ARGS;
   }
 
   if (scanReadRecords(&MyNdb, pTab, pIdx, _parallelism, _lock, _header,
                       _useHexFormat, (char)*_delimiter, _order,
                       _descending) != 0) {
-    return NDBT_ProgramExit(NDBT_FAILED);
+    return NdbToolsProgramExitCode::FAILED;
   }
 
-  return NDBT_ProgramExit(NDBT_OK);
+  return NdbToolsProgramExitCode::OK;
 }
 
 int scanReadRecords(Ndb *pNdb, const NdbDictionary::Table *pTab,

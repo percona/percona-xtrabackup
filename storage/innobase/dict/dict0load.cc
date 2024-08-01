@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2023, Oracle and/or its affiliates.
+Copyright (c) 1996, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -93,8 +94,7 @@ missing_sys_tblsp_t missing_spaces;
 
 /** This bool denotes if we found a Table or Partition with discarded Tablespace
 during load of SYS_TABLES (in dict_check_sys_tables).
-
-We use it to stop upgrade from 5.7 to 8.0 if there are discarded Tablespaces. */
+TODO To be removed in WL#16210 */
 bool has_discarded_tablespaces = false;
 
 /** Loads a table definition and also all its index definitions.
@@ -1269,9 +1269,12 @@ static bool dict_sys_tablespaces_rec_read(const rec_t *rec, space_id_t *id,
 /** Load and check each general tablespace mentioned in the SYS_TABLESPACES.
 Ignore system and file-per-table tablespaces.
 If it is valid, add it to the file_system list.
+TODO - This function is to be removed by WL#16210
+
 @param[in]      validate        true when the previous shutdown was not clean
 @return the highest space ID found. */
-static inline space_id_t dict_check_sys_tablespaces(bool validate) {
+[[maybe_unused]] static inline space_id_t dict_check_sys_tablespaces(
+    bool validate) {
   space_id_t max_space_id = 0;
   btr_pcur_t pcur;
   const rec_t *rec;
@@ -1422,9 +1425,11 @@ Search SYS_TABLES and check each tablespace mentioned that has not
 already been added to the fil_system.  If it is valid, add it to the
 file_system list.  Perform extra validation on the table if recovery from
 the REDO log occurred.
+TODO - This function is to be removed by WL#16210
+
 @param[in]      validate        Whether to do validation on the table.
 @return the highest space ID found. */
-static inline space_id_t dict_check_sys_tables(bool validate) {
+[[maybe_unused]] static inline space_id_t dict_check_sys_tables(bool validate) {
   space_id_t max_space_id = 0;
   btr_pcur_t pcur;
   const rec_t *rec;
@@ -3062,23 +3067,4 @@ load_next_index:
   }
 
   return DB_SUCCESS;
-}
-
-/** Load all tablespaces during upgrade */
-void dict_load_tablespaces_for_upgrade() {
-  ut_ad(srv_is_upgrade_mode);
-
-  dict_sys_mutex_enter();
-
-  mtr_t mtr;
-  mtr_start(&mtr);
-  space_id_t max_id = mtr_read_ulint(dict_hdr_get(&mtr) + DICT_HDR_MAX_SPACE_ID,
-                                     MLOG_4BYTES, &mtr);
-  mtr_commit(&mtr);
-  fil_set_max_space_id_if_bigger(max_id);
-
-  dict_check_sys_tablespaces(false);
-  dict_check_sys_tables(false);
-
-  dict_sys_mutex_exit();
 }

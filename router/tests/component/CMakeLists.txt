@@ -1,15 +1,16 @@
-# Copyright (c) 2017, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2017, 2024, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -97,7 +98,7 @@ add_test_file(${CMAKE_CURRENT_SOURCE_DIR}/${test_file}
     ${PROJECT_SOURCE_DIR}/src/http/include/
     ${PROJECT_SOURCE_DIR}/src/mock_server/include/mysqlrouter/
     ${CMAKE_SOURCE_DIR}/plugin/x/client
-  SYSTEM_INCLUDE_DIRS ${GMOCK_INCLUDE_DIRS} ${LIBEVENT_INCLUDE_DIRS}
+  SYSTEM_INCLUDE_DIRS ${GMOCK_INCLUDE_DIRS}
                       ${PROTOBUF_INCLUDE_DIR} ${MYSQLX_GENERATE_DIR}
   LIB_DEPENDS
   http_client
@@ -136,9 +137,12 @@ FOREACH(test_file
     )
 add_router_test_file(${CMAKE_CURRENT_SOURCE_DIR}/${test_file}
   MODULE "component"
-  SYSTEM_INCLUDE_DIRS ${GMOCK_INCLUDE_DIRS} ${LIBEVENT_INCLUDE_DIRS}
+  SYSTEM_INCLUDE_DIRS ${GMOCK_INCLUDE_DIRS}
                       ${PROTOBUF_INCLUDE_DIR} ${MYSQLX_GENERATE_DIR}
-  INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/plugin/x/client/
+  INCLUDE_DIRS
+  ${CMAKE_SOURCE_DIR}/plugin/x/client/
+  $<TARGET_PROPERTY:routing_connections,INCLUDE_DIRECTORIES>
+
   LIB_DEPENDS
   mysqlxclient_lite
   mysqlxmessages_lite
@@ -171,3 +175,6 @@ ENDFOREACH()
 IF(WIN32 OR NOT INSTALL_LAYOUT STREQUAL "STANDALONE")
   ADD_DEFINITIONS(-DSKIP_BOOTSTRAP_SYSTEM_DEPLOYMENT_TESTS)
 ENDIF()
+
+ADD_DEFINITIONS(
+  -DROUTER_SRC_DIR="${CMAKE_SOURCE_DIR}/router")

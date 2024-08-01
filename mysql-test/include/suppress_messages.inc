@@ -29,7 +29,7 @@
 #
 #   $suppress_on_current_connection
 #     By default, the script executes as follows:
-#     - if rpl_init.inc has been sourced, adds the suppressions on every
+#     - if rpl/init.inc has been sourced, adds the suppressions on every
 #       node in the toplogy (on the server_N connection).
 #     - otherwise, adds the suppressions only on the current connection.
 #     If this parameter is set, it adds the suppression only on the current
@@ -43,9 +43,23 @@
 #     case they appear as global suppressions.  This is useful if a
 #     test needs to use assert_error_log.inc to check for a warning
 #     that is suppressed globally.
+#
+#   $suppress_silent
+#     If $suppress_silent is set to 1 then the suppressions themselves
+#     and the includes are not printed to the mtr output during the
+#     execution of this script.
 
 --let $include_filename = suppress_messages.inc
+if ($suppress_silent)
+{
+  --let $saved_include_silent = $include_silent
+  --let $include_silent= 1
+}
 --source include/begin_include_file.inc
+if ($suppress_silent)
+{
+  --let $include_silent= $saved_include_silent
+}
 
 if (!$rpl_debug) {
   --disable_query_log
@@ -91,9 +105,9 @@ if ($rpl_inited) {
 while ($_sm_server_number <= $_sm_last_server_number) {
   if ($_sm_change_connection) {
     --let $rpl_connection_name = server_$_sm_server_number
-    --source include/rpl_connection.inc
+    --source include/connection.inc
   }
-  --source include/disable_binlog.inc
+  --source include/rpl/disable_binlog.inc
 
   --let $_sm_message_tail = $_sm_message_list
   while ($_sm_message_tail) {
@@ -117,7 +131,7 @@ while ($_sm_server_number <= $_sm_last_server_number) {
     --let $_sm_message_tail = escape(\',$_sm_message_tail)
   }
 
-  --source include/restore_binlog.inc
+  --source include/rpl/restore_binlog.inc
 
   --inc $_sm_server_number
 }

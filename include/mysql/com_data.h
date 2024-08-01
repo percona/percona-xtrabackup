@@ -1,15 +1,16 @@
-/* Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -93,6 +94,13 @@ struct COM_QUERY_DATA {
   unsigned long parameter_count;
 };
 
+struct COM_FIELD_LIST_DATA {
+  unsigned char *table_name;
+  unsigned int table_name_length;
+  const unsigned char *query;
+  unsigned int query_length;
+};
+
 union COM_DATA {
   COM_INIT_DB_DATA com_init_db;
   COM_SET_OPTION_DATA com_set_option;
@@ -103,6 +111,7 @@ union COM_DATA {
   COM_STMT_CLOSE_DATA com_stmt_close;
   COM_STMT_RESET_DATA com_stmt_reset;
   COM_QUERY_DATA com_query;
+  COM_FIELD_LIST_DATA com_field_list;
 };
 
 #endif /* PLUGIN_PROTOCOL_INCLUDED */

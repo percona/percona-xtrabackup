@@ -1,15 +1,16 @@
-/* Copyright (c) 2010, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -79,6 +80,12 @@ bool is_reload_request_denied(THD *thd, unsigned long op_type) {
   if (sctx->check_access(RELOAD_ACL, thd->db().str ? thd->db().str : "", true))
     return false;
 
+  if ((op_type & REFRESH_GRANT) &&
+      !sctx->has_global_grant(STRING_WITH_LEN("FLUSH_PRIVILEGES")).first) {
+    my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0),
+             "RELOAD or FLUSH_PRIVILEGES");
+    return true;
+  }
   if ((op_type & REFRESH_OPTIMIZER_COSTS) &&
       !sctx->has_global_grant(STRING_WITH_LEN("FLUSH_OPTIMIZER_COSTS")).first) {
     my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0),
@@ -102,9 +109,9 @@ bool is_reload_request_denied(THD *thd, unsigned long op_type) {
     return true;
   }
 
-  op_type &=
-      ~(REFRESH_OPTIMIZER_COSTS | REFRESH_STATUS | REFRESH_USER_RESOURCES |
-        REFRESH_TABLES | REFRESH_FOR_EXPORT | REFRESH_READ_LOCK);
+  op_type &= ~(REFRESH_GRANT | REFRESH_OPTIMIZER_COSTS | REFRESH_STATUS |
+               REFRESH_USER_RESOURCES | REFRESH_TABLES | REFRESH_FOR_EXPORT |
+               REFRESH_READ_LOCK);
 
   /* if it was just the above we're good */
   if (!op_type) return false;

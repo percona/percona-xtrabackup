@@ -1,15 +1,16 @@
-/* Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -129,26 +130,12 @@ Primary_election_validation_handler::validate_primary_version(
     }
   }
 
-  /* If all group members are above 8.0.17, consider patch level.
-     Else only major version is considered for back-portability. */
   if (!uuid.empty()) {
-    if (lowest_member_version >= PRIMARY_ELECTION_PATCH_CONSIDERATION) {
-      if (lowest_member_version < primary_member_version) {
-        error_msg.assign(
-            "The appointed primary member has a version that is"
-            " greater than the one of some of the members"
-            " in the group.");
-        return INVALID_PRIMARY;
-      }
-    } else {
-      if (lowest_member_version.get_major_version() <
-          primary_member_version.get_major_version()) {
-        error_msg.assign(
-            "The appointed primary member has a major version that is"
-            " greater than the one of some of the members"
-            " in the group.");
-        return INVALID_PRIMARY;
-      }
+    if (lowest_member_version < primary_member_version) {
+      error_msg.assign(
+          "The appointed primary member is not the lowest version"
+          " in the group.");
+      return INVALID_PRIMARY;
     }
   }
 

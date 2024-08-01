@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2023, Oracle and/or its affiliates.
+Copyright (c) 1997, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -75,7 +76,7 @@ introduced where a call to log_free_check() is bypassed. */
   bool online;
 
   ut_ad(index->is_clustered());
-  ut_ad(node->trx->in_rollback);
+  ut_ad(node->trx.in_rollback);
 
   mtr_start(&mtr);
 
@@ -89,7 +90,7 @@ introduced where a call to log_free_check() is bypassed. */
 
   online = dict_index_is_online_ddl(index);
   if (online) {
-    ut_ad(node->trx->dict_operation_lock_mode != RW_X_LATCH);
+    ut_ad(node->trx.dict_operation_lock_mode != RW_X_LATCH);
     ut_ad(node->table->id != DICT_INDEXES_ID);
     mtr_s_lock(dict_index_get_lock(index), &mtr, UT_LOCATION_HERE);
   }
@@ -102,7 +103,7 @@ introduced where a call to log_free_check() is bypassed. */
   btr_cur = node->pcur.get_btr_cur();
 
   ut_ad(rec_get_trx_id(btr_cur_get_rec(btr_cur), btr_cur->index) ==
-        node->trx->id);
+        node->trx.id);
   ut_ad(!rec_get_deleted_flag(btr_cur_get_rec(btr_cur),
                               dict_table_is_comp(btr_cur->index->table)));
 
@@ -132,7 +133,7 @@ retry:
                                         &mtr, UT_LOCATION_HERE);
   ut_a(success);
 
-  btr_cur_pessimistic_delete(&err, false, btr_cur, 0, true, node->trx->id,
+  btr_cur_pessimistic_delete(&err, false, btr_cur, 0, true, node->trx.id,
                              node->undo_no, node->rec_type, &mtr, &node->pcur,
                              nullptr);
 
@@ -312,7 +313,6 @@ retry:
 static void row_undo_ins_parse_undo_rec(undo_node_t *node, THD *thd,
                                         MDL_ticket **mdl) {
   dict_index_t *clust_index;
-  byte *ptr;
   undo_no_t undo_no;
   table_id_t table_id;
   ulint type;
@@ -322,8 +322,8 @@ static void row_undo_ins_parse_undo_rec(undo_node_t *node, THD *thd,
 
   ut_ad(node);
 
-  ptr = trx_undo_rec_get_pars(node->undo_rec, &type, &dummy, &dummy_extern,
-                              &undo_no, &table_id, type_cmpl);
+  auto ptr = trx_undo_rec_get_pars(node->undo_rec, &type, &dummy, &dummy_extern,
+                                   &undo_no, &table_id, type_cmpl);
   ut_ad(type == TRX_UNDO_INSERT_REC);
   node->rec_type = type;
 
@@ -469,7 +469,7 @@ dberr_t row_undo_ins(undo_node_t *node, /*!< in: row undo node */
   MDL_ticket *mdl = nullptr;
 
   ut_ad(node->state == UNDO_NODE_INSERT);
-  ut_ad(node->trx->in_rollback);
+  ut_ad(node->trx.in_rollback);
   ut_ad(trx_undo_roll_ptr_is_insert(node->roll_ptr));
 
   THD *thd = dd_thd_for_undo(node->trx);

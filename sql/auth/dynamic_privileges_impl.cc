@@ -1,15 +1,16 @@
-/* Copyright (c) 2017, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
 as published by the Free Software Foundation.
 
-This program is also distributed with certain software (including
+This program is designed to work with certain software (including
 but not limited to OpenSSL) that is licensed under separate terms,
 as designated in a particular file or component or in included license
 documentation.  The authors of MySQL hereby grant you an additional
 permission to link the program and your derivative works with the
-separately licensed software that they have included with MySQL.
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -278,7 +279,6 @@ bool dynamic_privilege_init(void) {
       service->register_privilege(STRING_WITH_LEN("GROUP_REPLICATION_ADMIN"));
   ret += service->register_privilege(STRING_WITH_LEN("ENCRYPTION_KEY_ADMIN"));
   ret += service->register_privilege(STRING_WITH_LEN("CONNECTION_ADMIN"));
-  ret += service->register_privilege(STRING_WITH_LEN("SET_USER_ID"));
   ret += service->register_privilege(STRING_WITH_LEN("XA_RECOVER_ADMIN"));
   ret += service->register_privilege(
       STRING_WITH_LEN("PERSIST_RO_VARIABLES_ADMIN"));
@@ -305,6 +305,7 @@ bool dynamic_privilege_init(void) {
   ret += service->register_privilege(STRING_WITH_LEN("FLUSH_STATUS"));
   ret += service->register_privilege(STRING_WITH_LEN("FLUSH_USER_RESOURCES"));
   ret += service->register_privilege(STRING_WITH_LEN("FLUSH_TABLES"));
+  ret += service->register_privilege(STRING_WITH_LEN("FLUSH_PRIVILEGES"));
   ret +=
       service->register_privilege(STRING_WITH_LEN("GROUP_REPLICATION_STREAM"));
   ret += service->register_privilege(
@@ -317,12 +318,7 @@ bool dynamic_privilege_init(void) {
   ret +=
       service->register_privilege(STRING_WITH_LEN("ALLOW_NONEXISTENT_DEFINER"));
   ret += service->register_privilege(STRING_WITH_LEN("TRANSACTION_GTID_TAG"));
-
-  // Set up default dynamic privileges deprecations
-  my_service<SERVICE_TYPE(dynamic_privilege_deprecation)> deprecation_service(
-      "dynamic_privilege_deprecation.mysql_server", srv_registry);
-  assert(deprecation_service.is_valid());
-  ret += deprecation_service->add(STRING_WITH_LEN("SET_USER_ID"));
+  ret += service->register_privilege(STRING_WITH_LEN("OPTIMIZE_LOCAL_TABLE"));
 
   return ret != 0;
 }

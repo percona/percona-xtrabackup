@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -73,11 +74,10 @@
 #include "sql/dd/string_type.h"
 #include "sql/dd/types/abstract_table.h"
 #include "sql/dd/types/schema.h"
-#include "sql/dd/upgrade_57/upgrade.h"  // dd::upgrade::in_progress
-#include "sql/debug_sync.h"             // DEBUG_SYNC
-#include "sql/derror.h"                 // ER_THD
-#include "sql/error_handler.h"          // Drop_table_error_handler
-#include "sql/events.h"                 // Events
+#include "sql/debug_sync.h"     // DEBUG_SYNC
+#include "sql/derror.h"         // ER_THD
+#include "sql/error_handler.h"  // Drop_table_error_handler
+#include "sql/events.h"         // Events
 #include "sql/handler.h"
 #include "sql/lock.h"       // lock_schema_name
 #include "sql/log.h"        // log_*()
@@ -420,8 +420,7 @@ bool mysql_create_db(THD *thd, const char *db, HA_CREATE_INFO *create_info) {
   MY_STAT stat_info;
   const bool schema_dir_exists =
       (mysql_file_stat(key_file_misc, path, &stat_info, MYF(0)) != nullptr);
-  if (thd->is_dd_system_thread() &&
-      (!opt_initialize || dd::upgrade_57::in_progress()) &&
+  if (thd->is_dd_system_thread() && !opt_initialize &&
       dd::get_dictionary()->is_dd_schema_name(db)) {
     /*
       CREATE SCHEMA statement is being executed from bootstrap thread.

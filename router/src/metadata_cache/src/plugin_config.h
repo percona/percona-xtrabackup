@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2016, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -34,10 +35,12 @@
 #include <string>
 #include <vector>
 
+#include "mysql/harness/config_option.h"
 #include "mysql/harness/config_parser.h"
 #include "mysql/harness/plugin.h"
 #include "mysql/harness/plugin_config.h"
 #include "mysqlrouter/cluster_metadata_dynamic_state.h"
+#include "router_options.h"
 #include "tcp_address.h"
 
 extern "C" {
@@ -57,8 +60,8 @@ class METADATA_CACHE_PLUGIN_EXPORT MetadataCachePluginConfig final
   /**
    * @param option name of the option
    */
-  std::string get_default(const std::string &option) const override;
-  bool is_required(const std::string &option) const override;
+  std::string get_default(std::string_view option) const override;
+  bool is_required(std::string_view option) const override;
 
   mutable std::unique_ptr<ClusterMetadataDynamicState>
       metadata_cache_dynamic_state;
@@ -92,6 +95,18 @@ class METADATA_CACHE_PLUGIN_EXPORT MetadataCachePluginConfig final
   mysqlrouter::ClusterType cluster_type;
   /** @brief  Id of the router in the metadata. */
   unsigned int router_id;
+  /** @brief  SSL settings for metadata cache connection. */
+  mysqlrouter::SSLOptions ssl_options;
+
+  // options configured in the metadata
+  std::string target_cluster;
+  mysqlrouter::TargetCluster::InvalidatedClusterRoutingPolicy
+      invalidated_cluster_policy{kDefautlInvalidatedClusterRoutingPolicy};
+  bool use_replica_primary_as_rw{false};
+  QuorumConnectionLostAllowTraffic unreachable_quorum_allowed_traffic{
+      kDefaultQuorumConnectionLostAllowTraffic};
+  std::chrono::seconds stats_updates_frequency{std::chrono::seconds(-1)};
+  ReadOnlyTargets read_only_targets{kDefaultReadOnlyTargets};
 
   /** @brief Gets (Group Replication ID for GR cluster or cluster_id for
    * ReplicaSet cluster) if preset in the dynamic configuration.
@@ -107,18 +122,20 @@ class METADATA_CACHE_PLUGIN_EXPORT MetadataCachePluginConfig final
    * dynamic state file . */
   uint64_t get_view_id() const;
 
+  void expose_configuration(const mysql_harness::ConfigSection &default_section,
+                            const bool initial) const;
+
  private:
   /** @brief Gets a list of metadata servers.
    *
    *
    * Throws std::invalid_argument on errors.
    *
-   * @param section Instance of ConfigSection
    * @param default_port Use this port when none was provided
    * @return std::vector<mysql_harness::TCPAddress>
    */
   std::vector<mysql_harness::TCPAddress> get_metadata_servers(
-      const mysql_harness::ConfigSection *section, uint16_t default_port) const;
+      uint16_t default_port) const;
 
   mysqlrouter::ClusterType get_cluster_type(
       const mysql_harness::ConfigSection *section);

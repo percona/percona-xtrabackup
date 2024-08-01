@@ -6,6 +6,10 @@ start_server
 
 load_sakila
 
+LC_ALL=C
+LANGUAGE=C
+export LANGUAGE LC_ALL
+
 mysql -e "CREATE TABLE t1 (a INT) ENGINE=MyISAM" test
 mysql -e "CREATE TABLE t2 (a INT) ENGINE=InnoDB" test
 
@@ -36,6 +40,7 @@ else
     XTRA_DOUBLEWRITE=""
 fi
 
+
 # files that present in the datadir, but not present in the backup
 diff -B -u <( ( ( cd $dir1; find . | grep -Ev $ign_list )
                 ( cd $dir1; find . | grep -Ev $ign_list )
@@ -47,6 +52,7 @@ diff -B -u <( ( ( cd $dir1; find . | grep -Ev $ign_list )
 ./client-key.pem
 ./mysql-bin.000001
 ./mysql-bin.000002
+./mysql_upgrade_history
 ./mysqld1.err
 ./private_key.pem
 ./public_key.pem
@@ -86,6 +92,7 @@ diff -B -u <( ( ( cd $dir1; find . | grep -Ev $ign_list )
 ./mysql-bin.000001
 ./mysql-bin.000002
 ./mysql-bin.000003
+./mysql_upgrade_history
 ./mysqld1.err
 ./private_key.pem
 ./public_key.pem

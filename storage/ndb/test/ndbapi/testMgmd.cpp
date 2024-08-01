@@ -1,17 +1,18 @@
 /*
-   Copyright (c) 2009, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2009, 2024, Oracle and/or its affiliates.
 
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -144,7 +145,7 @@ class Mgmd {
   void common_args(NdbProcess::Args &args, const char *working_dir) {
     args.add("--no-defaults");
     args.add("--configdir=", working_dir);
-    args.add("-f config.ini");
+    args.add("--config-file=", "config.ini");
     if (with_nodeid) {
       args.add("--ndb-nodeid=", m_nodeid);
     }
@@ -427,12 +428,41 @@ static bool create_expired_cert(NDBT_Workingdir &wd) {
   args.add("--ndb-tls-search-path=", wd.path());
   args.add("--passphrase=", "Trondheim");
   args.add("-l");                     // no-config mode
-  args.add("-t db");                  // type db
+  args.add("--node-type=", "db");     // type db
   args.add("--duration=", "-50000");  // negative seconds; already expired
 
   auto proc = NdbProcess::create("Create Keys", exe, wd.path(), args);
   bool r = proc->wait(ret, 10000);
   return (r && (ret == 0));
+}
+
+/* Print some information about a cert, and check that its validity is at
+   least 120 days. Return true if ok.
+*/
+static bool check_cert(const NDBT_Workingdir &wd, Node::Type type) {
+  static constexpr int MinDuration = 120 * CertLifetime::SecondsPerDay;
+
+  int duration = 0;
+  PkiFile::PathName certFile;
+  TlsSearchPath searchPath(wd.path());
+  if (ActiveCertificate::find(&searchPath, 0, type, certFile)) {
+    fprintf(stderr, "Reading cert file: %s \n", certFile.c_str());
+    X509 *cert = Certificate::open_one(certFile);
+    if (cert) {
+      char name[65];
+      Certificate::get_common_name(cert, name, sizeof(name));
+      const NodeCertificate *nc = NodeCertificate::for_peer(cert);
+      if (nc) {
+        duration = nc->duration();
+        printf(" ... Cert CN:       %s\n", name);
+        printf(" ... Cert Duration: %d\n", duration);
+        printf(" ... Cert Serial:   %s\n", nc->serial_number().c_str());
+        delete nc;
+      }
+      Certificate::free(cert);
+    }
+  }
+  return (duration >= MinDuration);
 }
 
 bool Print_find_in_file(const char *path, Vector<BaseString> search_string) {
@@ -590,7 +620,7 @@ int runTestBug45495(NDBT_Context *ctx, NDBT_Step *step) {
   for (unsigned i = 0; i < mgmds.size(); i++) {
     CHECK(mgmds[i]->stop());
     // Start from config2.ini
-    CHECK(mgmds[i]->start_from_config_ini(wd.path(), "-f config2.ini",
+    CHECK(mgmds[i]->start_from_config_ini(wd.path(), "-f", "config2.ini",
                                           "--initial", NULL));
 
     // Wait for mgmd to exit and check return status
@@ -617,7 +647,7 @@ int runTestBug45495(NDBT_Context *ctx, NDBT_Step *step) {
   for (unsigned i = 0; i < mgmds.size(); i++) {
     CHECK(mgmds[i]->stop());
     // Start from config2.ini
-    CHECK(mgmds[i]->start_from_config_ini(wd.path(), "-f config2.ini",
+    CHECK(mgmds[i]->start_from_config_ini(wd.path(), "-f", "config2.ini",
                                           "--reload", NULL));
     CHECK(mgmds[i]->connect(config));
     CHECK(mgmds[i]->wait_confirmed_config());
@@ -635,7 +665,7 @@ int runTestBug45495(NDBT_Context *ctx, NDBT_Step *step) {
   g_err << "** Reload mgmd initial(from generation=2)" << endl;
   for (unsigned i = 0; i < mgmds.size(); i++) {
     CHECK(mgmds[i]->stop());
-    CHECK(mgmds[i]->start_from_config_ini(wd.path(), "-f config2.ini",
+    CHECK(mgmds[i]->start_from_config_ini(wd.path(), "-f", "config2.ini",
                                           "--reload", "--initial", NULL));
 
     CHECK(mgmds[i]->connect(config));
@@ -859,8 +889,8 @@ int runTestNowaitNodes(NDBT_Context *ctx, NDBT_Step *step) {
     Mgmd *mgmd2 = mgmds[1];
     CHECK(mgmd2->stop());
     // Start from config2.ini
-    CHECK(mgmd2->start_from_config_ini(wd.path(), "-f config2.ini", "--reload",
-                                       NULL));
+    CHECK(mgmd2->start_from_config_ini(wd.path(), "-f", "config2.ini",
+                                       "--reload", NULL));
     CHECK(mgmd2->connect(config));
     CHECK(mgmd1->wait_confirmed_config());
     CHECK(mgmd2->wait_confirmed_config());
@@ -910,16 +940,18 @@ int runTestNowaitNodes2(NDBT_Context *ctx, NDBT_Step *step) {
   g_err << "** Start mgmd2 from config2.ini" << endl;
   Mgmd *mgmd2 = new Mgmd(2);
   mgmds.push_back(mgmd2);
-  CHECK(mgmd2->start_from_config_ini(wd.path(), "-f config2.ini", "--initial",
-                                     "--nowait-nodes=1-255", NULL));
+  CHECK(mgmd2->start_from_config_ini(wd.path(), "-f", "config2.ini",
+                                     "--initial", "--nowait-nodes=1-255",
+                                     NULL));
   CHECK(mgmd2->wait(ret));
   CHECK(ret == 1);
 
   CHECK(mgmd1->stop());
 
   g_err << "** Start mgmd2 again from config2.ini" << endl;
-  CHECK(mgmd2->start_from_config_ini(wd.path(), "-f config2.ini", "--initial",
-                                     "--nowait-nodes=1-255", NULL));
+  CHECK(mgmd2->start_from_config_ini(wd.path(), "-f", "config2.ini",
+                                     "--initial", "--nowait-nodes=1-255",
+                                     NULL));
 
   CHECK(mgmd2->connect(config));
   CHECK(mgmd2->wait_confirmed_config());
@@ -982,7 +1014,7 @@ int runBug56844(NDBT_Context *ctx, NDBT_Step *step) {
     for (unsigned i = 0; i < mgmds.size(); i++) {
       // Start from config2.ini
       CHECK(mgmds[i]->start_from_config_ini(
-          wd.path(), (l & 1) == 1 ? "-f config.ini" : "-f config2.ini",
+          wd.path(), "-f", (l & 1) == 1 ? "config.ini" : "config2.ini",
           "--reload", NULL));
     }
     for (unsigned i = 0; i < mgmds.size(); i++) {
@@ -1440,7 +1472,7 @@ int runTestMgmdwithoutnodeid(NDBT_Context *ctx, NDBT_Step *step) {
   CHECK(ConfigFactory::write_config_ini(
       config, path(wd.path(), "config2.ini", NULL).c_str()));
   with_nodeid = false;
-  CHECK(mgmd.start_from_config_ini(wd.path(), "-f config2.ini", "--initial",
+  CHECK(mgmd.start_from_config_ini(wd.path(), "-f", "config2.ini", "--initial",
                                    NULL));
   CHECK(mgmd.wait(exit_value));
   CHECK(exit_value == 1);
@@ -1464,7 +1496,7 @@ int runTestMgmdwithoutnodeid(NDBT_Context *ctx, NDBT_Step *step) {
   CHECK(ConfigFactory::write_config_ini(
       config3, path(wd.path(), "config3.ini", NULL).c_str()));
   with_nodeid = false;
-  CHECK(mgmd.start_from_config_ini(wd.path(), "-f config3.ini", "--initial",
+  CHECK(mgmd.start_from_config_ini(wd.path(), "-f", "config3.ini", "--initial",
                                    NULL));
   CHECK(mgmd.wait(exit_value));
   CHECK(exit_value == 1);
@@ -1594,6 +1626,7 @@ int runTestSshKeySigning(NDBT_Context *ctx, NDBT_Step *step) {
 
   NDBT_Workingdir wd("test_mgmd");  // temporary working directory
   Properties config = ConfigFactory::create();
+  ConfigFactory::put(config, "ndb_mgmd", 1, "RequireCertificate", "true");
   BaseString cfg_path = path(wd.path(), "config.ini", nullptr);
   CHECK(ConfigFactory::write_config_ini(config, cfg_path.c_str()));
 
@@ -1608,18 +1641,58 @@ int runTestSshKeySigning(NDBT_Context *ctx, NDBT_Step *step) {
   /* There will be a parent ndb_sign_keys process plus 3 ssh invocations */
   NdbProcess::Args args;
   int ret;
-  args.add("--config-file=", cfg_path.c_str());
-  args.add("--passphrase=", "Trondheim");
-  args.add("--ndb-tls-search-path=", wd.path());
-  args.add("--create-key");
-  args.add("--remote-exec-path=", exe.c_str());
-  args.add("--remote-CA-host=", "localhost");
-  auto proc = NdbProcess::create("Create Keys", exe, wd.path(), args);
-  bool r = proc->wait(ret, 3000);
-  if (!r) proc->stop();
-  CHECK(r);
+  {
+    args.add("--config-file=", cfg_path.c_str());
+    args.add("--passphrase=", "Trondheim");
+    args.add("--ndb-tls-search-path=", wd.path());
+    args.add("--create-key");
+    args.add("--remote-exec-path=", exe.c_str());
+    args.add("--remote-CA-host=", "localhost");
+    auto proc = NdbProcess::create("Create Keys", exe, wd.path(), args);
+    bool r = proc->wait(ret, 5000);
+    if (!r) proc->stop();
+    CHECK(r);
+    CHECK(ret == 0);
+  }
+  CHECK(check_cert(wd, Node::Type::DB));
 
-  CHECK(ret == 0);
+  /* Sign again, this time using openssl. ndb_sign_keys is called with
+     the --remote-openssl option, and with --CA-cert and --CA-key holding
+     the full paths to the CA PEM files on the remote server.
+  */
+  {
+    BaseString ca_cert(wd.path());
+    ca_cert.append(DIR_SEPARATOR).append(ClusterCertAuthority::CertFile);
+    BaseString ca_key(wd.path());
+    ca_key.append(DIR_SEPARATOR).append(ClusterCertAuthority::KeyFile);
+
+    args.clear();
+    args.add("--config-file=", cfg_path.c_str());
+    args.add("--passphrase=", "Trondheim");
+    args.add("--ndb-tls-search-path=", wd.path());
+    args.add("--remote-openssl");
+    args.add("--remote-CA-host=", "localhost");
+    args.add("--CA-cert=", ca_cert.c_str());
+    args.add("--CA-key=", ca_key.c_str());
+    auto proc = NdbProcess::create("OpenSSL", exe, wd.path(), args);
+    bool r = proc->wait(ret, 5000);
+    if (!r) proc->stop();
+    CHECK(r);
+    CHECK(ret == 0);
+  }
+  CHECK(check_cert(wd, Node::Type::DB));
+
+  /* Prove that the certificates created above are usable, by starting the mgmd.
+   */
+  args.clear();
+  Mgmd mgmd(1);
+  mgmd.common_args(args, wd.path());
+  args.add("--ndb-tls-search-path=", wd.path());
+  CHECK(mgmd.start(wd.path(), args));
+  CHECK(mgmd.connect(config, 1, 5));
+  CHECK(mgmd.wait_confirmed_config());
+  CHECK(mgmd.stop());
+
   return NDBT_OK;
 }
 

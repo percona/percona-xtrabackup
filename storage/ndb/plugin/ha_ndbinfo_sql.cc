@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2009, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2009, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -652,6 +653,21 @@ static struct view {
      "SELECT * "
      "FROM `ndbinfo`.`ndb$threads`"},
     {"ndbinfo", "threadstat", "SELECT * FROM `ndbinfo`.`ndb$threadstat`"},
+    {"ndbinfo", "transporter_details",
+     "SELECT node_id, block_instance, trp_id, remote_node_id, "
+     " CASE connection_status"
+     "  WHEN 0 THEN \"CONNECTED\""
+     "  WHEN 1 THEN \"CONNECTING\""
+     "  WHEN 2 THEN \"DISCONNECTED\""
+     "  WHEN 3 THEN \"DISCONNECTING\""
+     "  ELSE NULL "
+     " END AS status, "
+     " remote_address, bytes_sent, bytes_received, "
+     " connect_count, "
+     " overloaded, overload_count, slowdown, slowdown_count, encrypted, "
+     " sendbuffer_used_bytes, sendbuffer_max_used_bytes, "
+     " sendbuffer_alloc_bytes, sendbuffer_max_alloc_bytes "
+     "FROM `ndbinfo`.`ndb$transporter_details`"},
     {"ndbinfo", "transporters",
      "SELECT node_id, remote_node_id, "
      " CASE connection_status"

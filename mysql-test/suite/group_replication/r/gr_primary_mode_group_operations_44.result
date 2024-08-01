@@ -12,6 +12,7 @@ include/start_and_bootstrap_group_replication.inc
 set session sql_log_bin=0;
 call mtr.add_suppression("There was an issue on the primary election process: Could not wait for the execution of local transactions. The member will now leave the group.");
 call mtr.add_suppression("The server was automatically set into read only mode after an error was detected.");
+call mtr.add_suppression("The server was automatically set into offline mode after an error was detected.");
 call mtr.add_suppression("Skipping leave operation: concurrent attempt to leave the group is on-going.");
 set session sql_log_bin=1;
 include/start_group_replication.inc
@@ -31,7 +32,7 @@ include/stop_group_replication.inc
 
 # 6. Server2 will fail (applier thread stopped)  and leave the group
 [connection server3]
-include/rpl_gr_wait_for_number_of_members.inc
+include/rpl/gr_wait_for_number_of_members.inc
 # 7. Server3 is the new primary
 include/gr_assert_primary_member.inc
 

@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -141,7 +142,7 @@ struct NdbThread {
   void *object;
   void *thread_key;
 #ifdef NDB_MUTEX_DEADLOCK_DETECTOR
-  struct ndb_mutex_thr_state m_mutex_thr_state;
+  struct ndb_mutex_thr_state *m_mutex_thr_state;
 #endif
 };
 
@@ -246,7 +247,7 @@ static void *ndb_thread_wrapper(void *_ss) {
 #endif
 
 #ifdef NDB_MUTEX_DEADLOCK_DETECTOR
-      ndb_mutex_thread_init(&ss->m_mutex_thr_state);
+      ndb_mutex_thread_init(ss->m_mutex_thr_state);
 #endif
       NDB_THREAD_TLS_NDB_THREAD = ss;
       NdbMutex_Lock(ndb_thread_mutex);
@@ -296,7 +297,7 @@ struct NdbThread *NdbThread_CreateObject(const char *name) {
   tmpThread->inited = 1;
 
 #ifdef NDB_MUTEX_DEADLOCK_DETECTOR
-  ndb_mutex_thread_init(&tmpThread->m_mutex_thr_state);
+  ndb_mutex_thread_init(tmpThread->m_mutex_thr_state);
 #endif
 
   g_main_thread = tmpThread;
@@ -434,7 +435,7 @@ struct NdbThread *NdbThread_CreateLockObject(int tid) {
 #endif
 
 #ifdef NDB_MUTEX_DEADLOCK_DETECTOR
-  ndb_mutex_thread_init(&tmpThread->m_mutex_thr_state);
+  ndb_mutex_thread_init(tmpThread->m_mutex_thr_state);
 #endif
 
   DBUG_RETURN(tmpThread);
@@ -443,6 +444,9 @@ struct NdbThread *NdbThread_CreateLockObject(int tid) {
 void NdbThread_Destroy(struct NdbThread **p_thread) {
   DBUG_ENTER("NdbThread_Destroy");
   if (*p_thread != nullptr) {
+#ifdef NDB_MUTEX_DEADLOCK_DETECTOR
+    ndb_mutex_thread_exit((*p_thread)->m_mutex_thr_state);
+#endif
 #ifdef _WIN32
     HANDLE thread_handle = (*p_thread)->thread_handle;
     if (thread_handle) CloseHandle(thread_handle);
@@ -1649,6 +1653,9 @@ void NdbThread_End() {
   }
 
   if (g_main_thread) {
+#ifdef NDB_MUTEX_DEADLOCK_DETECTOR
+    ndb_mutex_thread_exit(g_main_thread->m_mutex_thr_state);
+#endif
     free(g_main_thread);
     g_main_thread = nullptr;
   }

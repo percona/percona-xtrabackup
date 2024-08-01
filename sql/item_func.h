@@ -1,18 +1,19 @@
 #ifndef ITEM_FUNC_INCLUDED
 #define ITEM_FUNC_INCLUDED
 
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -70,6 +71,7 @@ class THD;
 class sp_rcontext;
 struct MY_BITMAP;
 struct Parse_context;
+struct TYPELIB;
 
 template <class T>
 class List;
@@ -171,6 +173,8 @@ class Item_func : public Item_result_field {
   table_map not_null_tables_cache{0};
 
  public:
+  bool is_null_on_null() const { return null_on_null; }
+
   /*
     When updating Functype with new spatial functions,
     is_spatial_operator() should also be updated.
@@ -553,6 +557,8 @@ class Item_func : public Item_result_field {
                                             item_sep);
   }
 
+  Item *replace_func_call(uchar *) override;
+
   bool walk(Item_processor processor, enum_walk walk, uchar *arg) override;
   Item *transform(Item_transformer transformer, uchar *arg) override;
   Item *compile(Item_analyzer analyzer, uchar **arg_p,
@@ -572,7 +578,7 @@ class Item_func : public Item_result_field {
   }
 
   /**
-    Check whether a function allows replacement of a field with another:
+    Check whether a function allows replacement of a field with another item:
     In particular, a replacement that changes the metadata of some Item
     from non-nullable to nullable is not allowed.
     Notice that e.g. changing the nullability of an operand of a comparison
@@ -580,12 +586,12 @@ class Item_func : public Item_result_field {
     according to this criterion.
 
     @param original the field that could be replaced
-    @param subst    the field that could be the replacement
+    @param subst    the item that could be the replacement
 
     @returns true if replacement is allowed, false otherwise
   */
   virtual bool allow_replacement(Item_field *const original,
-                                 Item_field *const subst) {
+                                 Item *const subst) {
     return original->is_nullable() || !subst->is_nullable();
   }
 
@@ -1479,6 +1485,7 @@ class Item_func_rand final : public Item_real_func {
   rand_struct *m_rand{nullptr};
   bool first_eval{true};  // true if val_real() is called 1st time
  public:
+  Item_func_rand() : Item_real_func() {}
   Item_func_rand(const POS &pos, Item *a) : Item_real_func(pos, a) {}
   explicit Item_func_rand(const POS &pos) : Item_real_func(pos) {}
 
@@ -1573,6 +1580,7 @@ class Item_func_min_max : public Item_func_numhybrid {
   bool resolve_type_inner(THD *thd) override;
   void set_numeric_type() override {}
   enum Item_result result_type() const override { return hybrid_type; }
+  TYPELIB *get_typelib() const override;
 
   /**
     Make CAST(LEAST_OR_GREATEST(datetime_expr, varchar_expr))
@@ -1720,6 +1728,7 @@ class Item_rollup_group_item final : public Item_func {
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
   bool eq(const Item *item, bool binary_cmp) const override;
+  TYPELIB *get_typelib() const override;
 
   // Used by AggregateIterator.
   void set_current_rollup_level(int level) { m_current_rollup_level = level; }
@@ -3198,6 +3207,7 @@ class user_var_entry {
   /* Routines to access the value and its type */
   const char *ptr() const { return m_ptr; }
   size_t length() const { return m_length; }
+  /// The data type of this variable.
   Item_result type() const { return m_type; }
   /* Item-alike routines to access the value */
   double val_real(bool *null_value) const;

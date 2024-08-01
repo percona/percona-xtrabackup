@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,8 +28,10 @@
 #include <algorithm>
 #include <limits>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <openssl/evp.h>
@@ -88,17 +91,12 @@ class Digest {
    *
    * @param data data to update digest function with
    */
-  void update(const std::string &data) {
+  void update(const std::span<uint8_t> &data) {
     EVP_DigestUpdate(ctx_.get(), data.data(), data.size());
   }
 
-  /**
-   * update Digest.
-   *
-   * @param data data to update digest function with
-   */
-  void update(const std::vector<uint8_t> &data) {
-    EVP_DigestUpdate(ctx_.get(), data.data(), data.size());
+  void update(const std::string_view &data) {
+    EVP_DigestUpdate(ctx_.get(), data.data(), data.length());
   }
 
   /**

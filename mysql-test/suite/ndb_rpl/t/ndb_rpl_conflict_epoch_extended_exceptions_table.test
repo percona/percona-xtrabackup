@@ -5,7 +5,7 @@
 #
 --source include/have_ndb.inc
 --source include/have_binlog_format_mixed_or_row.inc
---source suite/ndb_rpl/ndb_master-slave.inc
+--source suite/ndb_rpl/ndb_rpl_init_source_replica.inc
 --source suite/ndb_rpl/t/ndb_trans_conflict_info_init.inc
 
 --echo Setup circular replication
@@ -18,7 +18,7 @@ echo SLAVE_SERVER_ID: $SLAVE_SERVER_ID;
 --connection master
 --replace_result $SLAVE_MYPORT SLAVE_PORT
 --eval CHANGE REPLICATION SOURCE TO SOURCE_HOST="127.0.0.1",SOURCE_PORT=$SLAVE_MYPORT,SOURCE_USER="root"
-START SLAVE;
+START REPLICA;
 let $MASTER_SERVER_ID= `select @@server_id`;
 echo MASTER_SERVER_ID: $MASTER_SERVER_ID;
 
@@ -205,7 +205,7 @@ enable_query_log;
 --sync_slave_with_master slave
 
 --connection slave
-stop slave;
+STOP REPLICA;
 
 --connection slave
 --echo Slave contents
@@ -257,7 +257,7 @@ select * from t1 order by a;
 select * from t2 order by a;
 
 --connection slave
-start slave;
+START REPLICA;
 
 --connection master
 
@@ -373,7 +373,7 @@ flush logs;
 --sync_slave_with_master master
 
 drop table mysql.ndb_replication;
-stop slave;
-reset slave;
-#change master to master_host='';
---source include/rpl_end.inc
+STOP REPLICA;
+RESET REPLICA;
+#change replication source to source_host='';
+--source include/rpl/deinit.inc

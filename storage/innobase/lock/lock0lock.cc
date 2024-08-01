@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2023, Oracle and/or its affiliates.
+Copyright (c) 1996, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -1153,8 +1154,8 @@ void RecLock::prepare() const {
       ib::error(ER_IB_MSG_635)
           << "A record lock wait happens in a dictionary"
              " operation. index "
-          << m_index->name << " of table " << m_index->table->name << ". "
-          << BUG_REPORT_MSG;
+          << m_index->name << " of table " << m_index->table->name << ". ";
+      ib::error(ER_IB_MSG_SUBMIT_DETAILED_BUG_REPORT);
       ut_d(ut_error);
   }
 
@@ -3621,7 +3622,8 @@ static dberr_t lock_table_enqueue_waiting(ulint mode, dict_table_t *table,
     case TRX_DICT_OP_INDEX:
       ib::error(ER_IB_MSG_642) << "A table lock wait happens in a dictionary"
                                   " operation. Table "
-                               << table->name << ". " << BUG_REPORT_MSG;
+                               << table->name << ".";
+      ib::error(ER_IB_MSG_SUBMIT_DETAILED_BUG_REPORT);
       ut_d(ut_error);
   }
 

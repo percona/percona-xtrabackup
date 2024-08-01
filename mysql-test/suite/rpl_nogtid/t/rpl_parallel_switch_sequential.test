@@ -1,6 +1,6 @@
 
 --source include/big_test.inc
---source include/master-slave.inc
+--source include/rpl/init_source_replica.inc
 --source include/have_binlog_format_mixed_or_row.inc
 
 let $max_workers= 4;
@@ -12,14 +12,14 @@ SET @@global.default_storage_engine='innodb';
 
 eval SET GLOBAL replica_parallel_workers= $max_workers;
 # As the test case is not going to do any synchronization with the master
-# before issuing STOP SLAVE in the non-deterministic activity, there is a
+# before issuing STOP REPLICA in the non-deterministic activity, there is a
 # chance that the slave applier be in MTS mode and in a condition that it
 # will throw the following error message:
 call mtr.add_suppression("The replica coordinator and worker threads are stopped, possibly leaving data in inconsistent state");
 call mtr.add_suppression("Request to stop replica SQL Thread received while applying a group that has non-transactional changes");
 
---source include/stop_slave.inc
---source include/start_slave.inc
+--source include/rpl/stop_replica.inc
+--source include/rpl/start_replica.inc
 
 --connection master
 SET @save_default_storage_engine=@@global.default_storage_engine;
@@ -89,7 +89,7 @@ while ($i) {
       let $k= 10;
       while ($k) {
 
-	# Can't be CREATE .. SELECT here because of BUG#11756034 that allows STOP SLAVE
+	# Can't be CREATE .. SELECT here because of BUG#11756034 that allows STOP REPLICA
 	# in the middle of CREATE-SELECT caused group.
 	# TODO: fix the bug and create a use case.
 
@@ -122,7 +122,7 @@ while ($i) {
         let $workers= 0;
       }
       eval SET GLOBAL replica_parallel_workers= $workers;
-      START SLAVE;
+      START REPLICA;
       --connection master
       let $slave_status= 0;
     }
@@ -131,7 +131,7 @@ while ($i) {
     if (!$slave_status)
     {
       --connection slave
-      STOP SLAVE;
+      STOP REPLICA;
       --connection master
       let $slave_status= 1;
     }
@@ -143,7 +143,7 @@ while ($i) {
 --enable_query_log
 --connection slave
 --disable_warnings
---source include/start_slave.inc
+--source include/rpl/start_replica.inc
 --enable_warnings
 
 #cleanup
@@ -167,4 +167,4 @@ SET GLOBAL replica_parallel_workers= @save_replica_parallel_workers;
 # to sync data
 
 --let slave-timeout= 3600
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

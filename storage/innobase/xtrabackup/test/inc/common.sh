@@ -567,7 +567,7 @@ plugin_dir=${MYSQL_BASEDIR}/lib/plugin/debug"
     GRANT BACKUP_ADMIN ON *.* TO rpl_user@'%';
     FLUSH PRIVILEGES;
     SET SQL_LOG_BIN=1;"
-    ${MYSQL} ${MYSQL_ARGS} -e "RESET SLAVE; CHANGE MASTER TO MASTER_USER='rpl_user', MASTER_PASSWORD='password' FOR CHANNEL 'group_replication_recovery';"
+    ${MYSQL} ${MYSQL_ARGS} -e "RESET REPLICA; CHANGE REPLICATION SOURCE TO SOURCE_USER='rpl_user', SOURCE_PASSWORD='password' FOR CHANNEL 'group_replication_recovery';"
 
     # Start/Bootstrap cluster
     if [[ ${i} -eq 1 ]];
@@ -645,9 +645,9 @@ function setup_slave()
     local extra=""
     if [ "$1" == "GTID" ]
     then
-        extra=", MASTER_AUTO_POSITION = 1"
+        extra=", SOURCE_AUTO_POSITION = 1"
         shift
-        echo "Setting up slave in GTID mode"
+        echo "Setting up replica in GTID mode"
     fi
 
     local use_channels=0
@@ -662,33 +662,33 @@ function setup_slave()
     shift
 
     switch_server $slave_id_arg
-    mysql -e "STOP SLAVE"
+    mysql -e "STOP REPLICA"
     while [ "$#" -ne 0 ]
     do
         local master_id_arg=$1
         shift
 
-        vlog "Setting up server #$slave_id_arg as a slave of server #$master_id_arg"
+        vlog "Setting up server #$slave_id_arg as a replica of server #$master_id_arg"
         if [ "$use_channels" -eq 1 ]
         then
             local master_channel="FOR CHANNEL 'master-$master_id_arg'"
         fi
 
         run_cmd $MYSQL $MYSQL_ARGS <<EOF
-CHANGE MASTER TO
-  MASTER_HOST='localhost',
-  MASTER_USER='root',
-  MASTER_PORT=${SRV_MYSQLD_PORT[$master_id_arg]}
+CHANGE REPLICATION SOURCE TO
+  SOURCE_HOST='localhost',
+  SOURCE_USER='root',
+  SOURCE_PORT=${SRV_MYSQLD_PORT[$master_id_arg]}
   $extra
   ${master_channel:-};
 EOF
     done
 
-    mysql -e "START SLAVE"
+    mysql -e "START REPLICA"
 }
 
 ########################################################################
-# Get executed gtid set from SHOW MASTER STATUS
+# Get executed gtid set from SHOW BINARY LOG STATUS
 ########################################################################
 function get_gtid_executed()
 {
@@ -703,13 +703,13 @@ function get_gtid_executed()
             break;
         fi
         count=$((count+1))
-    done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW MASTER STATUS\G' mysql`"
+    done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW BINARY LOG STATUS\G' mysql`"
 
     echo $res
 }
 
 ########################################################################
-# Get the binary log file from SHOW MASTER STATUS
+# Get the binary log file from SHOW BINARY LOG STATUS
 ########################################################################
 function get_binlog_file()
 {
@@ -724,13 +724,13 @@ function get_binlog_file()
             break;
         fi
         count=$((count+1))
-    done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW MASTER STATUS\G' mysql`"
+    done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW BINARY LOG STATUS\G' mysql`"
 
     echo $res
 }
 
 ########################################################################
-# Get the binary log offset from SHOW MASTER STATUS
+# Get the binary log offset from SHOW BINARY LOG STATUS
 ########################################################################
 function get_binlog_pos()
 {
@@ -745,13 +745,13 @@ function get_binlog_pos()
             break;
         fi
         count=$((count+1))
-    done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW MASTER STATUS\G' mysql`"
+    done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW BINARY LOG STATUS\G' mysql`"
 
     echo $res
 }
 
 ########################################################################
-# Wait until slave catches up with master.
+# Wait until replica catches up with source.
 # The timeout is hardcoded to 300 seconds
 #
 # Synopsis:
@@ -764,14 +764,14 @@ function sync_slave_with_master()
     local master_file
     local master_pos
 
-    vlog "Syncing slave (id=#$slave_id) with master (id=#$master_id)"
+    vlog "Syncing replica (id=#$slave_id) with source (id=#$master_id)"
 
     # Get master log pos
     switch_server $master_id
     master_file=`get_binlog_file`
     master_pos=`get_binlog_pos`
 
-    # Wait for the slave SQL thread to catch up
+    # Wait for the replica SQL thread to catch up
     switch_server $slave_id
 
     run_cmd $MYSQL $MYSQL_ARGS <<EOF
@@ -1406,7 +1406,7 @@ function backup_and_restore() {
     run_cmd $XB_BIN $XB_ARGS --prepare --target-dir=$topdir/backup
   else
     xtrabackup --backup --target-dir=$topdir/backup --xtrabackup-plugin-dir=${plugin_dir}
-    run_cmd $XB_BIN $XB_ARGS --xtrabackup-plugin-dir=${plugin_dir} --prepare \
+    run_cmd $XB_BIN $XB_ARGS --prepare --xtrabackup-plugin-dir=${plugin_dir} \
       --target-dir=$topdir/backup ${keyring_args}
   fi
 
@@ -1414,6 +1414,13 @@ function backup_and_restore() {
   stop_server
   rm -rf $mysql_datadir
   xtrabackup --copy-back --target-dir=$topdir/backup
+  
+  if [ ! -z ${instance_local_manifest+x} ]
+  then
+    cp ${instance_local_manifest}  $mysql_datadir
+    cp ${keyring_component_cnf} $mysql_datadir
+  fi
+
   start_server
   # Verify backup
   run_cmd verify_db_state $db

@@ -1,15 +1,16 @@
-# Copyright (c) 2017, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2017, 2024, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -74,7 +75,6 @@ usr/lib/mysql/plugin/debug/component_reference_cache.so
 usr/lib/mysql/plugin/debug/ddl_rewriter.so
 usr/lib/mysql/plugin/debug/group_replication.so
 usr/lib/mysql/plugin/debug/connection_control.so
-usr/lib/mysql/plugin/debug/keyring_file.so
 usr/lib/mysql/plugin/debug/keyring_udf.so
 usr/lib/mysql/plugin/debug/libpluginmecab.so
 usr/lib/mysql/plugin/debug/locking_service.so
@@ -97,7 +97,6 @@ SET (DEB_INSTALL_DEBUG_TEST_PLUGINS
 usr/lib/mysql/plugin/debug/auth.so
 usr/lib/mysql/plugin/debug/auth_test_plugin.so
 usr/lib/mysql/plugin/debug/authentication_ldap_sasl_client.so
-usr/lib/mysql/plugin/debug/authentication_fido_client.so
 usr/lib/mysql/plugin/debug/authentication_webauthn_client.so
 usr/lib/mysql/plugin/debug/authentication_kerberos_client.so
 usr/lib/mysql/plugin/debug/authentication_oci_client.so
@@ -105,6 +104,9 @@ usr/lib/mysql/plugin/debug/component_example_component1.so
 usr/lib/mysql/plugin/debug/component_example_component2.so
 usr/lib/mysql/plugin/debug/component_example_component3.so
 usr/lib/mysql/plugin/debug/component_log_sink_test.so
+usr/lib/mysql/plugin/debug/component_test_execute_prepared_statement.so
+usr/lib/mysql/plugin/debug/component_test_execute_regular_statement.so
+usr/lib/mysql/plugin/debug/component_test_mysql_signal_handler.so
 usr/lib/mysql/plugin/debug/component_test_string_service.so
 usr/lib/mysql/plugin/debug/component_test_string_service_charset.so
 usr/lib/mysql/plugin/debug/component_test_string_service_long.so
@@ -210,13 +212,9 @@ usr/lib/mysql/plugin/debug/authentication_ldap_simple.so
 usr/lib/mysql/plugin/debug/telemetry_client.so
 usr/lib/mysql/plugin/debug/data_masking.so
 usr/lib/mysql/plugin/debug/keyring_okv.so
-usr/lib/mysql/plugin/debug/keyring_encrypted_file.so
 usr/lib/mysql/plugin/debug/keyring_hashicorp.so
-usr/lib/mysql/plugin/debug/keyring_oci.so
-usr/lib/mysql/plugin/debug/openssl_udf.so
 usr/lib/mysql/plugin/debug/thread_pool.so
 usr/lib/mysql/plugin/debug/firewall.so
-usr/lib/mysql/plugin/debug/authentication_fido.so
 usr/lib/mysql/plugin/debug/component_keyring_encrypted_file.so
 usr/lib/mysql/plugin/debug/component_keyring_oci.so
 usr/lib/mysql/plugin/debug/component_enterprise_encryption.so

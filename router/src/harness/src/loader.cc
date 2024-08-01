@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -60,6 +61,7 @@
 #include "exception.h"
 #include "harness_assert.h"
 #include "my_thread.h"  // my_thread_self_setname
+#include "mysql/harness/dynamic_config.h"
 #include "mysql/harness/dynamic_loader.h"
 #include "mysql/harness/filesystem.h"
 #include "mysql/harness/logging/logging.h"
@@ -616,6 +618,16 @@ std::exception_ptr Loader::run() {
     }
   }
 
+  if (!first_eptr) {
+    try {
+      expose_config_all(/*initial*/ true);
+    } catch (const std::exception &e) {
+      log_warning(
+          "Failed storing plugins initial configuration in DynamicConfig: %s",
+          e.what());
+    }
+  }
+
   // run plugins if initialization didn't fail
   if (!first_eptr) {
     try {
@@ -1163,6 +1175,22 @@ void Loader::check_default_config_options_supported() {
 
     if (!option_supported) {
       report_unsupported_option("DEFAULT", option.first, error_out);
+    }
+  }
+}
+
+void Loader::expose_config_all(const bool initial) {
+  // expose "common" application options
+  if (expose_app_config_clb_) {
+    expose_app_config_clb_(initial, config_.get_default_section());
+  }
+
+  // let each plugin expose its options
+  PluginFuncEnv env(&appinfo_, nullptr);
+  for (const ConfigSection *section : config_.sections()) {
+    const auto &plugin = plugins_.at(section->name).plugin();
+    if (plugin->expose_configuration) {
+      plugin->expose_configuration(&env, section->key.c_str(), initial);
     }
   }
 }

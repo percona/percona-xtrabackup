@@ -1,15 +1,16 @@
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -873,6 +874,33 @@ void accumulate_statement_cost(const LEX *lex) {
   lex->thd->m_current_query_cost = total_cost;
 }
 
+namespace {
+/**
+   Gets the secondary storage engine pre prepare hook function, if any. If no
+   hook is found, this function returns false. If hook function is found, it
+   returns the return value of the hook. Please refer to
+   secondary_engine_pre_prepare_hook_t definition for description of its return
+   value.
+ */
+bool SecondaryEngineCallPrePrepareHook(THD *thd,
+                                       const LEX_CSTRING &secondary_engine) {
+  handlerton *hton = nullptr;
+  plugin_ref ref = ha_resolve_by_name(thd, &secondary_engine, false);
+  if (ref != nullptr) {
+    hton = plugin_data<handlerton *>(ref);
+  }
+
+  if (hton != nullptr) {
+    secondary_engine_pre_prepare_hook_t secondary_engine_pre_prepare_hook =
+        hton->secondary_engine_pre_prepare_hook;
+    if (secondary_engine_pre_prepare_hook != nullptr) {
+      return secondary_engine_pre_prepare_hook(thd);
+    }
+  }
+  return false;
+}
+}  // namespace
+
 /**
   Checks if a query should be retried using a secondary storage engine.
 
@@ -893,7 +921,10 @@ static bool retry_with_secondary_engine(THD *thd) {
 
   // Don't retry if there is a property of the statement that prevents use of
   // secondary engines.
-  if (sql_cmd->eligible_secondary_storage_engine(thd) == nullptr) {
+  const LEX_CSTRING *secondary_engine =
+      thd->lex->m_sql_cmd->eligible_secondary_storage_engine(thd);
+
+  if (secondary_engine == nullptr) {
     sql_cmd->disable_secondary_storage_engine();
     return false;
   }
@@ -916,33 +947,19 @@ static bool retry_with_secondary_engine(THD *thd) {
     return true;
   }
 
-  // Only attempt to use the secondary engine if the estimated cost of the query
-  // is higher than the specified cost threshold.
-  // We allow any query to be executed in the secondary_engine when it involves
-  // external tables.
-  if (!has_external_table(thd->lex) &&
-      (thd->m_current_query_cost <=
-       thd->variables.secondary_engine_cost_threshold)) {
-    Opt_trace_context *const trace = &thd->opt_trace;
-    if (trace->is_started()) {
-      const Opt_trace_object wrapper(trace);
-      Opt_trace_object oto(trace, "secondary_engine_not_used");
-      oto.add_alnum("reason",
-                    "The estimated query cost does not exceed "
-                    "secondary_engine_cost_threshold.");
-      oto.add("cost", thd->m_current_query_cost);
-      oto.add("threshold", thd->variables.secondary_engine_cost_threshold);
-    }
-    return false;
-  }
-
-  return true;
+  return SecondaryEngineCallPrePrepareHook(thd, *secondary_engine);
 }
 
 bool optimize_secondary_engine(THD *thd) {
   if (retry_with_secondary_engine(thd)) {
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
+    DBUG_EXECUTE_IF("emulate_user_query_kill", {
+      thd->get_stmt_da()->set_error_status(thd, ER_QUERY_INTERRUPTED);
+      return true;
+    });
     thd->get_stmt_da()->reset_diagnostics_area();
     thd->get_stmt_da()->set_error_status(thd, ER_PREPARE_FOR_SECONDARY_ENGINE);
+
     return true;
   }
 
@@ -971,6 +988,21 @@ bool optimize_secondary_engine(THD *thd) {
 }
 
 void notify_plugins_after_select(THD *thd, const Sql_cmd *cmd) {
+  /* Return if one of the 2 conditions is true:
+   * 1. when secondary engine statement context is not present, query cost is
+   * lower than the secondary than the engine threshold.
+   * 2. When secondary engine statement context is present, primary engine
+   * is the better execution engine for this query.
+   * This prevents calling plugin_foreach for short queries, reducing the
+   * overhead. */
+  if (((thd->secondary_engine_statement_context() == nullptr) &&
+       thd->m_current_query_cost <=
+           thd->variables.secondary_engine_cost_threshold) ||
+      ((thd->secondary_engine_statement_context() != nullptr) &&
+       thd->secondary_engine_statement_context()
+           ->is_primary_engine_optimal())) {
+    return;
+  }
   auto executed_in = (cmd != nullptr && cmd->using_secondary_storage_engine())
                          ? SelectExecutedIn::kSecondaryEngine
                          : SelectExecutedIn::kPrimaryEngine;
@@ -1026,13 +1058,7 @@ bool Sql_cmd_dml::execute_inner(THD *thd) {
   } else {
     if (unit->execute(thd)) return true;
 
-    /* Only call the plugin hook if the query cost is higher than the secondary
-     * engine threshold. This prevents calling plugin_foreach for short queries,
-     * reducing the overhead. */
-    if (thd->m_current_query_cost >
-        thd->variables.secondary_engine_cost_threshold) {
-      notify_plugins_after_select(thd, lex->m_sql_cmd);
-    }
+    notify_plugins_after_select(thd, lex->m_sql_cmd);
   }
 
   return false;
@@ -3734,22 +3760,6 @@ void JOIN::cleanup() {
       cleanup_table(cleanup.table);
     }
   }
-
-  if (rollup_state != RollupState::NONE) {
-    for (size_t i = 0; i < fields->size(); i++) {
-      Item *inner = unwrap_rollup_group(query_block->base_ref_items[i]);
-      if (inner->type() == Item::SUM_FUNC_ITEM) {
-        Item_sum *sum = down_cast<Item_sum *>(inner);
-        if (sum->is_rollup_sum_wrapper()) {
-          // unwrap sum switcher to restore original Item_sum
-          inner = down_cast<Item_rollup_sum_switcher *>(sum)->unwrap_sum();
-        }
-      }
-      query_block->base_ref_items[i] = inner;
-    }
-  }
-  /* Restore ref array to original state */
-  set_ref_item_slice(REF_SLICE_SAVED_BASE);
 }
 
 /**

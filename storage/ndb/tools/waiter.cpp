@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -42,7 +43,9 @@
 
 #include "my_alloc.h"
 
-static int waitClusterStatus(const char *_addr, ndb_mgm_node_status _status);
+static int waitClusterStatus(const char *_addr,
+                             const ndb_mgm_node_status _status);
+static int printNodesStatus(const ndb_mgm_node_status _status);
 
 static int _no_contact = 0;
 static int _not_started = 0;
@@ -51,6 +54,7 @@ static int _timeout = 120;  // Seconds
 static const char *_wait_nodes = 0;
 static const char *_nowait_nodes = 0;
 static NdbNodeBitmask nowait_nodes_bitmask;
+static int _verbose = 1;
 
 static TlsKeyManager tlsKeyManager;
 
@@ -81,9 +85,11 @@ static struct my_option my_long_options[] = {
     {"nowait-nodes", NDB_OPT_NOSHORT,
      "Nodes that will not be waited for, e.g. '2,3,4-7'", &_nowait_nodes,
      nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
+    {"verbose", 'v', "Control the amount of printout", &_verbose, nullptr,
+     nullptr, GET_INT, REQUIRED_ARG, 1, 0, 2, nullptr, 0, nullptr},
     NdbStdOpt::end_of_options};
 
-extern "C" void catch_signal(int signum) {}
+extern "C" void catch_signal(int /*signum*/) {}
 
 #include "../src/common/util/parse_mask.hpp"
 
@@ -122,26 +128,26 @@ int main(int argc, char **argv) {
     int res = parse_mask(_nowait_nodes, nowait_nodes_bitmask);
     if (res == -2 || (res > 0 && nowait_nodes_bitmask.get(0))) {
       ndbout_c("Invalid nodeid specified in nowait-nodes: %s", _nowait_nodes);
-      exit(-1);
+      return NdbToolsProgramExitCode::WRONG_ARGS;
     } else if (res < 0) {
       ndbout_c("Unable to parse nowait-nodes argument: %s", _nowait_nodes);
-      exit(-1);
+      return NdbToolsProgramExitCode::WRONG_ARGS;
     }
   }
 
   if (_wait_nodes) {
     if (_nowait_nodes) {
       ndbout_c("Can not set both wait-nodes and nowait-nodes.");
-      exit(-1);
+      return NdbToolsProgramExitCode::WRONG_ARGS;
     }
 
     int res = parse_mask(_wait_nodes, nowait_nodes_bitmask);
     if (res == -2 || (res > 0 && nowait_nodes_bitmask.get(0))) {
       ndbout_c("Invalid nodeid specified in wait-nodes: %s", _wait_nodes);
-      exit(-1);
+      return NdbToolsProgramExitCode::WRONG_ARGS;
     } else if (res < 0) {
       ndbout_c("Unable to parse wait-nodes argument: %s", _wait_nodes);
-      exit(-1);
+      return NdbToolsProgramExitCode::WRONG_ARGS;
     }
 
     // Don't wait for any other nodes than the ones we have set explicitly
@@ -150,81 +156,86 @@ int main(int argc, char **argv) {
 
   tlsKeyManager.init_mgm_client(opt_tls_search_path);
 
-  if (waitClusterStatus(connect_string, wait_status) != 0)
+  int retval = waitClusterStatus(connect_string, wait_status);
+  if (retval == -3) {
+    return 3;  // Connect to mgmd failed
+  }
+  if (_verbose == 1) {
+    /*
+     * Only print and check final node status for verbose=1.
+     * If verbose=0 nothing should be printed.
+     * If verbose>1 node status will be printed each time status is checked,
+     * no need to print it once again at end.
+     */
+    retval = printNodesStatus(wait_status);
+  }
+  if (retval != 0) {
     return NdbToolsProgramExitCode::FAILED;
+  }
 
   return NdbToolsProgramExitCode::OK;
 }
 
-#define MGMERR(h)                                          \
-  ndbout << "latest_error=" << ndb_mgm_get_latest_error(h) \
-         << ", line=" << ndb_mgm_get_latest_error_line(h) << endl;
+#define MGMERR(h)                                            \
+  if (_verbose > 1)                                          \
+    ndbout << "latest_error=" << ndb_mgm_get_latest_error(h) \
+           << ", line=" << ndb_mgm_get_latest_error_line(h) << endl;
 
-NdbMgmHandle handle = NULL;
+NdbMgmHandle handle = nullptr;
 
 Vector<ndb_mgm_node_state> ndbNodes;
 
 int getStatus() {
-  int retries = 0;
   struct ndb_mgm_cluster_state *status;
-  struct ndb_mgm_node_state *node;
 
   ndbNodes.clear();
 
-  while (retries < 10) {
-    status = ndb_mgm_get_status(handle);
-    if (status == NULL) {
-      ndbout << "status==NULL, retries=" << retries << endl;
+  status = ndb_mgm_get_status(handle);
+  if (status == nullptr) {
+    MGMERR(handle);
+    ndb_mgm_disconnect(handle);
+    if (ndb_mgm_connect_tls(handle, opt_connect_retries - 1,
+                            opt_connect_retry_delay, _verbose > 1,
+                            opt_mgm_tls)) {
       MGMERR(handle);
-      retries++;
-      ndb_mgm_disconnect(handle);
-      if (ndb_mgm_connect_tls(handle, opt_connect_retries - 1,
-                              opt_connect_retry_delay, 1, opt_mgm_tls)) {
-        MGMERR(handle);
-        ndberr << "Reconnect failed" << endl;
-        break;
-      }
-      continue;
+      if (_verbose > 1) ndberr << "Reconnect failed" << endl;
+      return -3;
     }
-    int count = status->no_of_nodes;
-    for (int i = 0; i < count; i++) {
-      node = &status->node_states[i];
-      switch (node->node_type) {
-        case NDB_MGM_NODE_TYPE_NDB:
-          if (!nowait_nodes_bitmask.get(node->node_id))
-            ndbNodes.push_back(*node);
-          break;
-        case NDB_MGM_NODE_TYPE_MGM:
-          /* Don't care about MGM nodes */
-          break;
-        case NDB_MGM_NODE_TYPE_API:
-          /* Don't care about API nodes */
-          break;
-        default:
-          if (node->node_status == NDB_MGM_NODE_STATUS_UNKNOWN ||
-              node->node_status == NDB_MGM_NODE_STATUS_NO_CONTACT) {
-            retries++;
-            ndbNodes.clear();
-            free(status);
-            status = NULL;
-            count = 0;
-
-            ndbout << "kalle" << endl;
-            break;
-          }
-          abort();
-          break;
-      }
+    if (_verbose > 1) ndbout << "Connect succeeded" << endl;
+    status = ndb_mgm_get_status(handle);
+    if (status == nullptr) {
+      MGMERR(handle);
+      return -1;
     }
-    if (status == 0) {
-      ndbout << "status == 0" << endl;
-      continue;
-    }
-    free(status);
-    return 0;
   }
 
-  return -1;
+  int count = status->no_of_nodes;
+  for (int i = 0; i < count; i++) {
+    struct ndb_mgm_node_state *node;
+    node = &status->node_states[i];
+    switch (node->node_type) {
+      case NDB_MGM_NODE_TYPE_NDB:
+        if (!nowait_nodes_bitmask.get(node->node_id)) ndbNodes.push_back(*node);
+        break;
+      case NDB_MGM_NODE_TYPE_MGM:
+        /* Don't care about MGM nodes */
+        break;
+      case NDB_MGM_NODE_TYPE_API:
+        /* Don't care about API nodes */
+        break;
+      default:
+        if (node->node_status == NDB_MGM_NODE_STATUS_UNKNOWN ||
+            node->node_status == NDB_MGM_NODE_STATUS_NO_CONTACT) {
+          ndbNodes.clear();
+          free(status);
+          return -3;
+        }
+        abort();
+        break;
+    }
+  }
+  free(status);
+  return 0;
 }
 
 static char *getTimeAsString(char *pStr, size_t len) {
@@ -242,7 +253,26 @@ static char *getTimeAsString(char *pStr, size_t len) {
   return pStr;
 }
 
-static int waitClusterStatus(const char *_addr, ndb_mgm_node_status _status) {
+int printNodesStatus(const ndb_mgm_node_status _status) {
+  int mismatches = 0;
+  for (unsigned n = 0; n < ndbNodes.size(); n++) {
+    ndb_mgm_node_state *ndbNode = &ndbNodes[n];
+
+    require(ndbNode != nullptr);
+
+    ndbout << "Node " << ndbNode->node_id << ": "
+           << ndb_mgm_get_node_status_string(ndbNode->node_status);
+    if (ndbNode->node_status != _status) {
+      mismatches++;
+      ndbout << " (waited for " << ndb_mgm_get_node_status_string(_status)
+             << ")";
+    }
+    ndbout << endl;
+  }
+  return (mismatches == 0) ? 0 : -1;
+}
+
+int waitClusterStatus(const char *_addr, const ndb_mgm_node_status _status) {
   int _startphase = -1;
 
 #ifndef _WIN32
@@ -251,9 +281,9 @@ static int waitClusterStatus(const char *_addr, ndb_mgm_node_status _status) {
 #endif
 
   handle = ndb_mgm_create_handle();
-  if (handle == NULL) {
+  if (handle == nullptr) {
     ndberr << "Could not create ndb_mgm handle" << endl;
-    return -1;
+    return -3;
   }
 
   if (ndb_mgm_set_connectstring(handle, _addr)) {
@@ -263,23 +293,30 @@ static int waitClusterStatus(const char *_addr, ndb_mgm_node_status _status) {
     } else {
       ndberr << "Connectstring is invalid" << endl;
     }
-    return -1;
+    return -3;
   }
   ndb_mgm_set_ssl_ctx(handle, tlsKeyManager.ctx());
 
-  if (tlsKeyManager.ctx())
-    ndbout << "Using Certificate: " << tlsKeyManager.cert_path();
+  const char *tls_mode;
+  if (opt_mgm_tls == 1)
+    tls_mode = " (using TLS)";
+  else if (tlsKeyManager.ctx())
+    tls_mode = " (trying TLS)";
+  else
+    tls_mode = " (using cleartext)";
 
   char buf[1024];
-  ndbout << "Connecting to management server at "
-         << ndb_mgm_get_connectstring(handle, buf, sizeof(buf)) << endl;
+  if (_verbose > 1)
+    ndbout << "Connecting to management server at "
+           << ndb_mgm_get_connectstring(handle, buf, sizeof(buf)) << tls_mode
+           << endl;
   if (ndb_mgm_connect_tls(handle, opt_connect_retries - 1,
-                          opt_connect_retry_delay, 1, opt_mgm_tls)) {
+                          opt_connect_retry_delay, _verbose > 1, opt_mgm_tls)) {
     MGMERR(handle);
     ndberr << "Connection to "
            << ndb_mgm_get_connectstring(handle, buf, sizeof(buf)) << " failed"
            << endl;
-    return -1;
+    return -3;
   }
 
   int attempts = 0;
@@ -318,15 +355,17 @@ static int waitClusterStatus(const char *_addr, ndb_mgm_node_status _status) {
       }
 
       if (!waitMore || resetAttempts > MAX_RESET_ATTEMPTS) {
-        ndberr << "waitNodeState(" << ndb_mgm_get_node_status_string(_status)
-               << ", " << _startphase << ")"
-               << " timeout after " << attempts << " attempts" << endl;
+        if (_verbose > 1)
+          ndberr << "waitNodeState(" << ndb_mgm_get_node_status_string(_status)
+                 << ", " << _startphase << ")"
+                 << " timeout after " << attempts << " attempts" << endl;
         return -1;
       }
 
-      ndberr << "waitNodeState(" << ndb_mgm_get_node_status_string(_status)
-             << ", " << _startphase << ")"
-             << " resetting timeout " << resetAttempts << endl;
+      if (_verbose > 1)
+        ndberr << "waitNodeState(" << ndb_mgm_get_node_status_string(_status)
+               << ", " << _startphase << ")"
+               << " resetting timeout " << resetAttempts << endl;
 
       start = now;
 
@@ -334,8 +373,15 @@ static int waitClusterStatus(const char *_addr, ndb_mgm_node_status _status) {
     }
 
     if (attempts > 0) NdbSleep_MilliSleep(100);
-    if (getStatus() != 0) {
-      return -1;
+    int retval = getStatus();
+    if (retval == -3) {
+      ndberr << "Connection to "
+             << ndb_mgm_get_connectstring(handle, buf, sizeof(buf)) << " failed"
+             << endl;
+      return -3;
+    }
+    if (retval != 0) {
+      return retval;
     }
 
     /* Assume all nodes are in state(if there is any) */
@@ -345,15 +391,16 @@ static int waitClusterStatus(const char *_addr, ndb_mgm_node_status _status) {
     for (unsigned n = 0; n < ndbNodes.size(); n++) {
       ndb_mgm_node_state *ndbNode = &ndbNodes[n];
 
-      require(ndbNode != NULL);
+      require(ndbNode != nullptr);
 
-      ndbout << "Node " << ndbNode->node_id << ": "
-             << ndb_mgm_get_node_status_string(ndbNode->node_status) << endl;
+      if (_verbose > 1)
+        ndbout << "Node " << ndbNode->node_id << ": "
+               << ndb_mgm_get_node_status_string(ndbNode->node_status) << endl;
 
       if (ndbNode->node_status != _status) allInState = false;
     }
 
-    if (!allInState) {
+    if (_verbose > 1 && !allInState) {
       char timestamp[9];
       ndbout << "[" << getTimeAsString(timestamp, sizeof(timestamp)) << "] "
              << "Waiting for cluster enter state "
@@ -364,6 +411,7 @@ static int waitClusterStatus(const char *_addr, ndb_mgm_node_status _status) {
 
     now = NdbTick_getCurrentTicks();
   }
+  if (!allInState) return -1;
   return 0;
 }
 

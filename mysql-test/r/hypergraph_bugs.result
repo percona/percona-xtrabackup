@@ -750,7 +750,7 @@ EXPLAIN
         -> Table scan on x2  (rows=100) (actual rows=100 loops=1)
 
 EXPLAIN ANALYZE SELECT 1 FROM t1 x1, t1 x2, t1 x3
-WHERE x1.a=x2.c AND x2.c=x3.v AND x1.b=x3.f;
+WHERE x1.a=x2.c AND x1.a=x3.v AND x1.b=x3.f;
 EXPLAIN
 -> Inner hash join (x1.a = x2.c)  (rows=800) (actual rows=200 loops=1)
     -> Inner hash join (cast(x1.a as double) = cast(x3.v as double)), (x1.b = x3.f)  (rows=200) (actual rows=200 loops=1)
@@ -1342,6 +1342,77 @@ EXPLAIN
     -> Single-row index lookup on t1 using PRIMARY (a=5)  (rows=1)
 
 DROP TABLE t1,t2;
+#
+# Bug#35997316 Hypergraph: Incomplete and inconvenient optimizer trace
+#
+CREATE TABLE t1 (a INT PRIMARY KEY, b INT);
+INSERT INTO t1 WITH RECURSIVE qn(n) AS
+(SELECT 0 UNION ALL SELECT n+1 FROM qn WHERE n+1<30) SELECT n, n%10 FROM qn;
+ANALYZE TABLE t1 UPDATE HISTOGRAM ON b;
+Table	Op	Msg_type	Msg_text
+test.t1	histogram	status	Histogram statistics created for column 'b'.
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+SET SESSION OPTIMIZER_TRACE='enabled=on';
+EXPLAIN FORMAT=TREE SELECT * FROM t1 x1
+WHERE x1.a IN (SELECT x2.b FROM t1 x2);
+EXPLAIN
+-> Hash semijoin (x1.a = x2.b)  (rows=10)
+    -> Index scan on x1 using PRIMARY  (rows=30)
+    -> Hash
+        -> Table scan on x2  (rows=30)
+
+SELECT REGEXP_SUBSTR(
+trace, "distinct values for field 'b' from histogram[^,]*",1,1,'n')
+FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+REGEXP_SUBSTR(
+trace, "distinct values for field 'b' from histogram[^,]*",1,1,'n')
+distinct values for field 'b' from histogram."
+SET SESSION OPTIMIZER_TRACE='enabled=off';
+DROP TABLE t1;
+#
+# Bug#36125903 Hypergraph: Inconsistent numeric precision for
+# AccessPath in optimizer trace
+#
+CREATE TABLE t1 (
+a INT PRIMARY KEY,
+b INT
+);
+INSERT INTO t1 WITH RECURSIVE qn(n) AS
+(SELECT 0 UNION ALL SELECT n+1 FROM qn WHERE n<100) SELECT n, n FROM qn;
+ANALYZE TABLE t1 UPDATE HISTOGRAM ON b;
+Table	Op	Msg_type	Msg_text
+test.t1	histogram	status	Histogram statistics created for column 'b'.
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+SET SESSION OPTIMIZER_TRACE="enabled=on";
+EXPLAIN FORMAT=TREE SELECT * FROM t1 x1, t1 x2, t1 x3, t1 x4;
+EXPLAIN
+-> Nested loop inner join  (rows=104e+6)
+    -> Nested loop inner join  (rows=1.03e+6)
+        -> Nested loop inner join  (rows=10201)
+            -> Table scan on x1  (rows=101)
+            -> Table scan on x2  (rows=101)
+        -> Table scan on x3  (rows=101)
+    -> Table scan on x4  (rows=101)
+
+SELECT REGEXP_SUBSTR(trace, " - \\{NESTED_LOOP_JOIN[^\n]*keeping",1,1,'n')
+FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+REGEXP_SUBSTR(trace, " - \\{NESTED_LOOP_JOIN[^\n]*keeping",1,1,'n')
+ - {NESTED_LOOP_JOIN, cost=260151, init_cost=0, rows=104e+6, join_order=(((x1,x2),x3),x4)} is first alternative, keeping
+EXPLAIN FORMAT=TREE SELECT * FROM t1 WHERE a=5 AND b=5;
+EXPLAIN
+-> Filter: (t1.b = 5)  (rows=0.0099)
+    -> Single-row index lookup on t1 using PRIMARY (a=5)  (rows=1)
+
+SELECT REGEXP_SUBSTR(trace, " - \\{FILTER[^\n]*keeping",1,1,'n')
+FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+REGEXP_SUBSTR(trace, " - \\{FILTER[^\n]*keeping",1,1,'n')
+ - {FILTER, cost=0.35, init_cost=0, rows=0.0099} is first alternative, keeping
+SET SESSION OPTIMIZER_TRACE="enabled=off";
+DROP TABLE t1;
 # Bug#5889990: Setting secondary_engine to OFF causes offload issues
 CREATE TABLE t(x INT, y INT);
 INSERT INTO t VALUES (1, 2), (2, 3);
@@ -1427,4 +1498,174 @@ x	score
 abc	0.031008131802082062
 abc abc	0.062016263604164124
 DROP TABLE t;
-SET optimizer_switch='hypergraph_optimizer=default';
+#
+# Bug #36135001: Hypergraph: Too low row estimate for index lookup
+#
+CREATE TABLE t1(
+a INT,
+b INT,
+c INT,
+d INT,
+PRIMARY KEY(a),
+KEY k1(d)
+);
+INSERT INTO t1
+WITH RECURSIVE qn(n) AS
+(SELECT 0 UNION ALL SELECT n+1 FROM qn WHERE n<19)
+SELECT n, n%10, n%10, n%10 FROM qn;
+ANALYZE TABLE t1 UPDATE HISTOGRAM ON b,c;
+Table	Op	Msg_type	Msg_text
+test.t1	histogram	status	Histogram statistics created for column 'b'.
+test.t1	histogram	status	Histogram statistics created for column 'c'.
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+EXPLAIN FORMAT=TREE SELECT * FROM t1 x1, t1 x2, t1 x3
+WHERE x1.b=x2.a AND x2.b=x3.a AND (x1.c < 5 OR x3.c=7);
+EXPLAIN
+-> Nested loop inner join  (rows=20)
+    -> Nested loop inner join  (rows=20)
+        -> Table scan on x1  (rows=20)
+        -> Single-row index lookup on x2 using PRIMARY (a=x1.b)  (rows=1)
+    -> Filter: ((x1.c < 5) or (x3.c = 7))  (rows=1)
+        -> Single-row index lookup on x3 using PRIMARY (a=x2.b)  (rows=1)
+
+EXPLAIN FORMAT=TREE SELECT * FROM t1 x1, t1 x2, t1 x3
+WHERE x1.b=x2.d AND x2.b=x3.d AND (x1.c < 5 OR x3.c=7) ORDER BY x3.d;
+EXPLAIN
+-> Nested loop inner join  (rows=80)
+    -> Sort: x2.b  (rows=40)
+        -> Inner hash join (x1.b = x2.d)  (rows=40)
+            -> Table scan on x1  (rows=20)
+            -> Hash
+                -> Table scan on x2  (rows=20)
+    -> Filter: ((x1.c < 5) or (x3.c = 7))  (rows=2)
+        -> Index lookup on x3 using k1 (d=x2.b)  (rows=2)
+
+EXPLAIN FORMAT=TREE SELECT * FROM t1 x1 LEFT JOIN t1 x2
+ON x1.a <=> x2.a AND  x1.a <=> x2.a;
+EXPLAIN
+-> Left hash join (x1.a <=> x2.a), (x1.a <=> x2.a)  (rows=20)
+    -> Table scan on x1  (rows=20)
+    -> Hash
+        -> Table scan on x2  (rows=20)
+
+DROP TABLE t1;
+#
+# Bug#35855573 Assertion `false && "Inconsistent row counts for
+# different AccessPath objects."'
+#
+CREATE TABLE t(pk INT PRIMARY KEY AUTO_INCREMENT, x INT);
+INSERT INTO t VALUES (), (), (), (), (), (), (), (), (), (), (), ();
+ANALYZE TABLE t;
+Table	Op	Msg_type	Msg_text
+test.t	analyze	status	OK
+EXPLAIN FORMAT=TREE SELECT DISTINCT t1.x, t2.x FROM t AS t1, t AS t2
+WHERE t1.pk = t2.x ORDER BY t2.x;
+EXPLAIN
+-> Sort with duplicate removal: t2.x  (rows=7.96)
+    -> Nested loop inner join  (rows=12)
+        -> Table scan on t2  (rows=12)
+        -> Single-row index lookup on t1 using PRIMARY (pk=t2.x)  (rows=1)
+
+EXPLAIN FORMAT=TREE SELECT DISTINCT t1.x, t1.pk FROM t AS t1, t AS t2
+WHERE t1.pk = t2.x ORDER BY t1.x;
+EXPLAIN
+-> Sort with duplicate removal: t1.x, t1.pk  (rows=9.36)
+    -> Nested loop inner join  (rows=12)
+        -> Table scan on t2  (rows=12)
+        -> Single-row index lookup on t1 using PRIMARY (pk=t2.x)  (rows=1)
+
+EXPLAIN FORMAT=TREE SELECT DISTINCT t1.pk, t2.x FROM t AS t1, t AS t2
+WHERE t1.pk = t2.x ORDER BY t2.x;
+EXPLAIN
+-> Sort with duplicate removal: t2.x  (rows=3.46)
+    -> Nested loop inner join  (rows=12)
+        -> Table scan on t2  (rows=12)
+        -> Single-row covering index lookup on t1 using PRIMARY (pk=t2.x)  (rows=1)
+
+DROP TABLE t;
+#
+# Bug#35991881 Hypergraph: Wrong init_cost for nested loop join
+#
+CREATE TABLE t1 (
+a INT PRIMARY KEY,
+b INT,
+c INT
+);
+INSERT INTO t1 WITH RECURSIVE qn(n) AS
+(SELECT 0 UNION ALL SELECT n+1 FROM qn WHERE n+1<20)
+SELECT n, n%10, n%10 FROM qn;
+ANALYZE TABLE t1 UPDATE HISTOGRAM ON b, c;
+Table	Op	Msg_type	Msg_text
+test.t1	histogram	status	Histogram statistics created for column 'b'.
+test.t1	histogram	status	Histogram statistics created for column 'c'.
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+EXPLAIN FORMAT=TREE SELECT * FROM t1 x1 JOIN
+(SELECT MAX(x2.c) k FROM t1 x2 JOIN t1 x3 ON x2.c < x3.b GROUP BY x3.c) d1
+ON x1.b=d1.k ORDER BY x1.a LIMIT 1;
+EXPLAIN
+-> Limit: 1 row(s)  (cost=74.8..74.8 rows=1)
+    -> Nested loop inner join  (cost=74.8..162 rows=20)
+        -> Index scan on x1 using PRIMARY  (cost=0.0125..0.25 rows=20)
+        -> Filter: (x1.b = d1.k)  (cost=73.9..73.9 rows=1)
+            -> Table scan on d1  (cost=70.5..72.9 rows=10)
+                -> Materialize  (cost=70.2..70.2 rows=10)
+                    -> Group aggregate: max(x2.c)  (cost=16.7..69.2 rows=10)
+                        -> Nested loop inner join  (cost=11.2..55.9 rows=133)
+                            -> Sort: x3.c  (cost=10.9..10.9 rows=20)
+                                -> Table scan on x3  (cost=0.0125..0.25 rows=20)
+                            -> Filter: (x2.c < x3.b)  (cost=0.338..2.25 rows=6.67)
+                                -> Table scan on x2  (cost=0.0125..0.25 rows=20)
+
+DROP TABLE t1;
+#
+# Bug#36032958: Assertion `IsEmpty(child.delayed_predicates)' failed
+#
+CREATE TABLE t(x INT, KEY(x));
+SELECT ROW_NUMBER() OVER () FROM t WHERE x = RAND() GROUP BY x;
+ROW_NUMBER() OVER ()
+DROP TABLE t;
+#
+# Bug#36099491: Assertion secondary_engine_cost_hook != nullptr
+#               failed with hypergraph_optimizer
+#
+CREATE TABLE t (a INT, b VARCHAR(10));
+INSERT INTO t (a)
+WITH RECURSIVE 150tup(n) AS
+(SELECT 1 UNION ALL SELECT n + 1 FROM 150tup WHERE n < 150)
+SELECT n FROM 150tup;
+ANALYZE TABLE t;
+Table	Op	Msg_type	Msg_text
+test.t	analyze	status	OK
+SELECT /*+ SET_VAR(optimizer_max_subgraph_pairs = 1) */ COUNT(*)
+FROM t AS t1 LEFT JOIN t AS t2 ON TRUE
+WHERE t1.a IN (SELECT * FROM (SELECT DISTINCT t2.a) AS t3);
+COUNT(*)
+150
+SELECT /*+ SET_VAR(optimizer_max_subgraph_pairs = 1) */ COUNT(*)
+FROM t AS t1 LEFT JOIN t AS t2 ON TRUE,
+LATERAL (SELECT DISTINCT t2.a FROM t) AS t3
+WHERE t1.a = t3.a;
+COUNT(*)
+150
+SELECT /*+ SET_VAR(optimizer_max_subgraph_pairs = 1) */ COUNT(*)
+FROM t AS t1 LEFT JOIN t AS t2 ON 1,
+JSON_TABLE(t2.b, '$[*]' COLUMNS(i INT PATH '$[0]')) AS t3
+WHERE t3.i < 10 AND t1.a = t3.i;
+COUNT(*)
+0
+DROP TABLE t;
+#
+# Bug#36098954: Assertion GraphSimplifier::EdgesAreNeighboring
+#               failed with hypergraph_optimizer
+#
+CREATE TABLE t(x INT);
+SELECT /*+ SET_VAR(optimizer_max_subgraph_pairs = 1) */ 1
+FROM t WHERE x IN (
+SELECT NULL FROM t AS t1, t AS t2 STRAIGHT_JOIN t AS t3 ON t2.x = t3.x
+) OR x = 1;
+1
+DROP TABLE t;

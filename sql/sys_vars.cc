@@ -1,15 +1,16 @@
-/* Copyright (c) 2009, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -57,6 +58,7 @@
 #include "mysql/components/services/log_shared.h"
 #include "mysql/my_loglevel.h"
 #include "mysql_com.h"
+#include "sql/auth/authentication_policy.h"
 #include "sql/protocol.h"
 #include "sql/rpl_trx_tracking.h"
 #ifdef HAVE_SYS_TIME_H
@@ -1090,20 +1092,6 @@ static Sys_var_charptr Sys_basedir(
     READ_ONLY NON_PERSIST GLOBAL_VAR(mysql_home_ptr),
     CMD_LINE(REQUIRED_ARG, 'b'), IN_FS_CHARSET, DEFAULT(nullptr));
 
-/*
-  --authentication_policy will take precedence over this variable
-  except in case where plugin name for first factor is not a concrete
-  value. Please refer authentication_policy variable.
-*/
-static Sys_var_charptr Sys_default_authentication_plugin(
-    "default_authentication_plugin",
-    "The default authentication plugin "
-    "used by the server to hash the password.",
-    READ_ONLY NON_PERSIST GLOBAL_VAR(default_auth_plugin),
-    CMD_LINE(REQUIRED_ARG), IN_FS_CHARSET, DEFAULT("caching_sha2_password"),
-    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(nullptr), ON_UPDATE(nullptr),
-    DEPRECATED_VAR("authentication_policy"));
-
 static PolyLock_mutex Plock_default_password_lifetime(
     &LOCK_default_password_lifetime);
 static Sys_var_uint Sys_default_password_lifetime(
@@ -1389,13 +1377,13 @@ static bool binlog_format_check(sys_var *self, THD *thd, set_var *var) {
        ROW/MIXED, the server must not write CREATE/DROP TEMPORARY TABLE
       to the binary log) in the following case:
         slave> SET @@global.binlog_format=STATEMENT;
-        slave> START SLAVE;
+        slave> START REPLICA;
         master> CREATE TEMPORARY TABLE t1(a INT);
         slave> [wait for t1 to replicate]
-        slave> STOP SLAVE;
+        slave> STOP REPLICA;
         slave> SET @@global.binlog_format=ROW / SET @@persist.binlog_format=ROW
         master> DROP TEMPORARY TABLE t1;
-        slave> START SLAVE;
+        slave> START REPLICA;
       Note: SET @@persist_only.binlog_format is not disallowed if any
       replication channel has temporary table(s), since unlike PERSIST,
       PERSIST_ONLY does not modify the runtime global system variable value.
@@ -1738,6 +1726,7 @@ static bool check_not_null(sys_var *, THD *, set_var *var) {
   empty and return true. This method also logs warning if the
   storage engine set is a disabled storage engine specified in
   disabled_storage_engines.
+  In addition, it checks if the requested storage engine can be used as default.
 
   @param self    pointer to system variable object.
   @param thd     Connection handle.
@@ -1771,6 +1760,9 @@ static bool check_storage_engine(sys_var *self, THD *thd, set_var *var) {
       if (ha_is_storage_engine_disabled(hton))
         LogErr(WARNING_LEVEL, ER_DISABLED_STORAGE_ENGINE_AS_DEFAULT,
                self->name.str, se_name.str);
+      if ((hton->flags & HTON_NO_DEFAULT_ENGINE_SUPPORT) != 0U) {
+        my_error(ER_ENGINE_CANNOT_BE_DEFAULT, MYF(0), se_name.str);
+      }
       plugin_unlock(nullptr, plugin);
     }
   }
@@ -1844,8 +1836,9 @@ static Sys_var_struct<CHARSET_INFO, Get_csname> Sys_character_set_system(
 
 static Sys_var_struct<CHARSET_INFO, Get_csname> Sys_character_set_server(
     "character_set_server", "The default character set",
-    SESSION_VAR(collation_server), NO_CMD_LINE, DEFAULT(&default_charset_info),
-    NO_MUTEX_GUARD, IN_BINLOG, ON_CHECK(check_charset_not_null));
+    PERSIST_AS_READONLY SESSION_VAR(collation_server), NO_CMD_LINE,
+    DEFAULT(&default_charset_info), NO_MUTEX_GUARD, IN_BINLOG,
+    ON_CHECK(check_charset_not_null));
 
 static bool check_charset_db(sys_var *self, THD *thd, set_var *var) {
   if (check_session_admin(self, thd, var)) return true;
@@ -3089,20 +3082,6 @@ static Sys_var_ulong Sys_net_retry_count(
     NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(nullptr),
     ON_UPDATE(fix_net_retry_count));
 
-static Sys_var_bool Sys_new_mode("new",
-                                 "Use very new possible \"unsafe\" functions",
-                                 SESSION_VAR(new_mode), CMD_LINE(OPT_ARG, 'n'),
-                                 DEFAULT(false), NO_MUTEX_GUARD, NOT_IN_BINLOG,
-                                 ON_CHECK(nullptr), ON_UPDATE(nullptr),
-                                 DEPRECATED_VAR(""));
-
-static Sys_var_bool Sys_old_mode("old", "Use compatible behavior",
-                                 READ_ONLY GLOBAL_VAR(old_mode),
-                                 CMD_LINE(OPT_ARG, OPT_OLD_OPTION),
-                                 DEFAULT(false), NO_MUTEX_GUARD, NOT_IN_BINLOG,
-                                 ON_CHECK(nullptr), ON_UPDATE(nullptr),
-                                 DEPRECATED_VAR(""));
-
 static Sys_var_bool Sys_old_alter_table("old_alter_table",
                                         "Use old, non-optimized alter table",
                                         SESSION_VAR(old_alter_table),
@@ -4029,8 +4008,7 @@ static Sys_var_enum Sys_replica_parallel_type(
     "databases. LOGICAL_CLOCK, which is the default, indicates that it decides "
     "whether two "
     "transactions can be applied in parallel using the logical timestamps "
-    "computed by the source, according to "
-    "binlog_transaction_dependency_tracking.",
+    "computed by the source.",
     PERSIST_AS_READONLY GLOBAL_VAR(mts_parallel_option),
     CMD_LINE(REQUIRED_ARG, OPT_REPLICA_PARALLEL_TYPE), mts_parallel_type_names,
     DEFAULT(MTS_PARALLEL_TYPE_LOGICAL_CLOCK), NO_MUTEX_GUARD, NOT_IN_BINLOG,
@@ -4039,35 +4017,8 @@ static Sys_var_enum Sys_replica_parallel_type(
 static Sys_var_deprecated_alias Sys_slave_parallel_type(
     "slave_parallel_type", Sys_replica_parallel_type);
 
-static bool update_binlog_transaction_dependency_tracking(sys_var *, THD *,
-                                                          enum_var_type) {
-  /*
-    the writeset_history_start needs to be set to 0 whenever there is a
-    change in the transaction dependency source so that WS and COMMIT
-    transition smoothly.
-  */
-  mysql_bin_log.m_dependency_tracker.tracking_mode_changed();
-  return false;
-}
-
 static PolyLock_mutex PLock_slave_trans_dep_tracker(
     &LOCK_replica_trans_dep_tracker);
-static const char *opt_binlog_transaction_dependency_tracking_names[] = {
-    "COMMIT_ORDER", "WRITESET", "WRITESET_SESSION", NullS};
-static Sys_var_enum Binlog_transaction_dependency_tracking(
-    "binlog_transaction_dependency_tracking",
-    "Selects the source of dependency information from which to "
-    "compute logical timestamps, which replicas can use to decide which "
-    "transactions can be executed in parallel when using "
-    "replica_parallel_type=LOGICAL_CLOCK. "
-    "Possible values are COMMIT_ORDER, WRITESET and WRITESET_SESSION.",
-    GLOBAL_VAR(mysql_bin_log.m_dependency_tracker.m_opt_tracking_mode),
-    CMD_LINE(REQUIRED_ARG, OPT_BINLOG_TRANSACTION_DEPENDENCY_TRACKING),
-    opt_binlog_transaction_dependency_tracking_names,
-    DEFAULT(DEPENDENCY_TRACKING_WRITESET), &PLock_slave_trans_dep_tracker,
-    NOT_IN_BINLOG, ON_CHECK(nullptr),
-    ON_UPDATE(update_binlog_transaction_dependency_tracking),
-    DEPRECATED_VAR(""));
 static Sys_var_ulong Binlog_transaction_dependency_history_size(
     "binlog_transaction_dependency_history_size",
     "Maximum number of rows to keep in the writeset history.",
@@ -4263,8 +4214,8 @@ bool Sys_var_gtid_mode::global_update(THD *thd, set_var *var) {
 
     Hold channel_map lock so that:
     - gtid_mode is not changed during the execution of some
-    replication command; particularly CHANGE MASTER. CHANGE MASTER
-    checks if GTID_MODE is compatible with AUTO_POSITION, and
+    replication command; particularly CHANGE REPLICATION SOURCE. CHANGE
+    REPLICATION SOURCE checks if GTID_MODE is compatible with AUTO_POSITION, and
     later it actually updates the in-memory structure for
     AUTO_POSITION.  If gtid_mode was changed between these calls,
     auto_position could be set incompatible with gtid_mode.
@@ -4844,15 +4795,15 @@ static Sys_var_enum Sys_ssl_fips_mode(
     "ssl_fips_mode",
     "SSL FIPS mode (applies only for OpenSSL); "
     "permitted values are: OFF, ON, STRICT",
-    READ_ONLY GLOBAL_VAR(opt_ssl_fips_mode),
-    CMD_LINE(REQUIRED_ARG, OPT_SSL_FIPS_MODE), ssl_fips_mode_names, DEFAULT(0),
-    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(nullptr), ON_UPDATE(nullptr),
-    DEPRECATED_VAR(""), sys_var::PARSE_EARLY);
+    READ_ONLY GLOBAL_VAR(opt_ssl_fips_mode), CMD_LINE(REQUIRED_ARG),
+    ssl_fips_mode_names, DEFAULT(0), NO_MUTEX_GUARD, NOT_IN_BINLOG,
+    ON_CHECK(nullptr), ON_UPDATE(nullptr), DEPRECATED_VAR(""),
+    sys_var::PARSE_EARLY);
 
 static Sys_var_bool Sys_auto_generate_certs(
     "auto_generate_certs",
-    "Auto generate SSL certificates at server startup if --ssl is set to "
-    "ON and none of the other SSL system variables are specified and "
+    "Auto generate SSL certificates at server startup if "
+    "none of the other SSL system variables are specified and "
     "certificate/key files are not present in data directory.",
     READ_ONLY NON_PERSIST GLOBAL_VAR(opt_auto_generate_certs),
     CMD_LINE(OPT_ARG), DEFAULT(true), NO_MUTEX_GUARD, NOT_IN_BINLOG,
@@ -5152,13 +5103,16 @@ static Sys_var_enum Sys_internal_tmp_mem_storage_engine(
     DEFAULT(TMP_TABLE_TEMPTABLE), NO_MUTEX_GUARD, NOT_IN_BINLOG,
     ON_CHECK(check_session_admin_no_super));
 
+/* Default is updated to min(3% of physical memory, 4 GB) */
 static Sys_var_ulonglong Sys_temptable_max_ram(
     "temptable_max_ram",
     "Maximum amount of memory (in bytes) the TempTable storage engine is "
     "allowed to allocate from the main memory (RAM) before starting to "
     "store data on disk.",
     GLOBAL_VAR(temptable_max_ram), CMD_LINE(REQUIRED_ARG),
-    VALID_RANGE(2 << 20 /* 2 MiB */, ULLONG_MAX), DEFAULT(1 << 30 /* 1 GiB */),
+    VALID_RANGE(2 << 20 /* 2 MiB */, ULLONG_MAX),
+    DEFAULT(std::clamp(ulonglong{3 * (my_physical_memory() / 100)},
+                       1ULL << 30 /* 1 GiB */, 1ULL << 32 /* 4 GiB */)),
     BLOCK_SIZE(1));
 
 static Sys_var_ulonglong Sys_temptable_max_mmap(
@@ -5167,13 +5121,13 @@ static Sys_var_ulonglong Sys_temptable_max_mmap(
     "allowed to allocate from MMAP-backed files before starting to "
     "store data on disk.",
     GLOBAL_VAR(temptable_max_mmap), CMD_LINE(REQUIRED_ARG),
-    VALID_RANGE(0, ULLONG_MAX), DEFAULT(1 << 30 /* 1 GiB */), BLOCK_SIZE(1));
+    VALID_RANGE(0, ULLONG_MAX), DEFAULT(0), BLOCK_SIZE(1));
 
 static Sys_var_bool Sys_temptable_use_mmap(
     "temptable_use_mmap",
     "Use mmap files for temptables. "
     "This variable is deprecated and will be removed in a future release.",
-    GLOBAL_VAR(temptable_use_mmap), CMD_LINE(OPT_ARG), DEFAULT(true),
+    GLOBAL_VAR(temptable_use_mmap), CMD_LINE(OPT_ARG), DEFAULT(false),
     NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(nullptr),
     ON_UPDATE(update_deprecated_with_removal_message), nullptr,
     sys_var::PARSE_NORMAL);
@@ -5805,14 +5759,7 @@ static Sys_var_have Sys_have_geometry(
     "have_geometry", "have_geometry",
     READ_ONLY NON_PERSIST GLOBAL_VAR(have_geometry), NO_CMD_LINE);
 
-static SHOW_COMP_OPTION have_ssl_func(THD *thd [[maybe_unused]]) {
-  return have_ssl() ? SHOW_OPTION_YES : SHOW_OPTION_DISABLED;
-}
-
 enum SHOW_COMP_OPTION Sys_var_have_func::dummy_;
-
-static Sys_var_have_func Sys_have_openssl("have_openssl", "have_openssl",
-                                          have_ssl_func, DEPRECATED_VAR(""));
 
 static Sys_var_have Sys_have_profiling(
     "have_profiling", "have_profiling",
@@ -5831,10 +5778,6 @@ static Sys_var_have Sys_have_query_cache(
 static Sys_var_have Sys_have_rtree_keys(
     "have_rtree_keys", "have_rtree_keys",
     READ_ONLY NON_PERSIST GLOBAL_VAR(have_rtree_keys), NO_CMD_LINE);
-
-static Sys_var_have_func Sys_have_ssl(
-    "have_ssl", "have_ssl", have_ssl_func,
-    DEPRECATED_VAR("performance_schema.tls_channel_status table"));
 
 static Sys_var_have Sys_have_symlink(
     "have_symlink", "have_symlink",
@@ -6526,11 +6469,23 @@ bool Sys_var_gtid_purged::global_update(THD *thd, set_var *var) {
   bool starts_with_plus = false;
   enum_return_status ret = gtid_set.add_gtid_text(
       var->save_result.string_value.str, nullptr, &starts_with_plus);
-
   if (ret != RETURN_STATUS_OK) {
     error = true;
     goto end;
   }
+
+  if (gtid_set.contains_tags()) {
+    // check tagged GTID privs
+    Security_context *sctx = thd->security_context();
+    if (!sctx->has_global_grant(STRING_WITH_LEN("TRANSACTION_GTID_TAG"))
+             .first) {
+      my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0),
+               "TRANSACTION_GTID_TAG and SYSTEM_VARIABLES_ADMIN");
+      error = true;
+      goto end;
+    }
+  }
+
   ret = gtid_state->add_lost_gtids(&gtid_set, starts_with_plus);
   if (ret != RETURN_STATUS_OK) {
     error = true;
@@ -6753,29 +6708,6 @@ static Sys_var_bool Sys_offline_mode("offline_mode",
                                      NO_MUTEX_GUARD, NOT_IN_BINLOG,
                                      ON_CHECK(check_offline_mode),
                                      ON_UPDATE(handle_offline_mode));
-
-static Sys_var_bool Sys_avoid_temporal_upgrade(
-    "avoid_temporal_upgrade",
-    "When this option is enabled, the pre-5.6.4 temporal types are "
-    "not upgraded to the new format for ALTER TABLE requests "
-    "ADD/CHANGE/MODIFY"
-    " COLUMN, ADD INDEX or FORCE operation. "
-    "This variable is deprecated and will be removed in a future release.",
-    GLOBAL_VAR(avoid_temporal_upgrade),
-    CMD_LINE(OPT_ARG, OPT_AVOID_TEMPORAL_UPGRADE), DEFAULT(false),
-    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(nullptr), ON_UPDATE(nullptr),
-    DEPRECATED_VAR(""));
-
-static Sys_var_bool Sys_show_old_temporals(
-    "show_old_temporals",
-    "When this option is enabled, the pre-5.6.4 temporal types will "
-    "be marked in the 'SHOW CREATE TABLE' and 'INFORMATION_SCHEMA.COLUMNS' "
-    "table as a comment in COLUMN_TYPE field. "
-    "This variable is deprecated and will be removed in a future release.",
-    SESSION_VAR(show_old_temporals), CMD_LINE(OPT_ARG, OPT_SHOW_OLD_TEMPORALS),
-    DEFAULT(false), NO_MUTEX_GUARD, NOT_IN_BINLOG,
-    ON_CHECK(check_session_admin_no_super), ON_UPDATE(nullptr),
-    DEPRECATED_VAR(""));
 
 static Sys_var_charptr Sys_disabled_storage_engines(
     "disabled_storage_engines",
@@ -7139,9 +7071,9 @@ static Sys_var_enum Sys_group_replication_consistency(
     "BEFORE_ON_PRIMARY_FAILOVER, BEFORE, AFTER, BEFORE_AND_AFTER",
     SESSION_VAR(group_replication_consistency), CMD_LINE(OPT_ARG),
     group_replication_consistency_names,
-    DEFAULT(GROUP_REPLICATION_CONSISTENCY_EVENTUAL), NO_MUTEX_GUARD,
-    NOT_IN_BINLOG, ON_CHECK(check_group_replication_consistency),
-    ON_UPDATE(nullptr));
+    DEFAULT(GROUP_REPLICATION_CONSISTENCY_BEFORE_ON_PRIMARY_FAILOVER),
+    NO_MUTEX_GUARD, NOT_IN_BINLOG,
+    ON_CHECK(check_group_replication_consistency), ON_UPDATE(nullptr));
 
 static bool check_binlog_encryption_admin(sys_var *, THD *thd, set_var *) {
   DBUG_TRACE;
@@ -7167,7 +7099,7 @@ bool Sys_var_binlog_encryption::global_update(THD *thd, set_var *var) {
   /* We unlock in following statement to avoid deadlock involving following
    * conditions.
    * ------------------------------------------------------------------------
-   * Thread 1 (START SLAVE)  has locked channel_map and waiting for cond_wait
+   * Thread 1 (START REPLICA)  has locked channel_map and waiting for cond_wait
    * that is supposed to be done by Thread 2.
    *
    * Thread 2 (handle_slave_io) is supposed to signal Thread 1 but waiting to
@@ -7409,39 +7341,32 @@ static Sys_var_bool Sys_skip_replica_start(
 
 static bool check_authentication_policy(sys_var *, THD *, set_var *var) {
   if (!(var->save_result.string_value.str)) return true;
-  return validate_authentication_policy(var->save_result.string_value.str);
+  return authentication_policy::policy_validate(
+      var->save_result.string_value.str);
 }
 
 static bool fix_authentication_policy(sys_var *, THD *, enum_var_type) {
   DBUG_TRACE;
-  update_authentication_policy();
+  authentication_policy::policy_update(opt_authentication_policy);
   return false;
 }
 /**
   This is a mutex used to protect @@global.authentication_policy variable.
 */
 static PolyLock_mutex PLock_authentication_policy(&LOCK_authentication_policy);
-/*
-  when authentication_policy = 'mysql_native_password,,' and
-  --default-authentication-plugin = 'caching_sha2_password'
-  set default as mysql_native_password.
-  --authentication_policy has precedence over --default-authentication-plugin
-  with 1 exception as below: when authentication_policy = '*,,' and
-  --default-authentication-plugin = 'mysql_native_password'
-  set default as mysql_native_password
-  in case no concrete plugin can be extracted from --authentication_policy
-  for first factor, server picks plugin name from
-  --default-authentication-plugin
-*/
+
 static Sys_var_charptr Sys_authentication_policy(
     "authentication_policy",
     "Defines policies around how user account can be configured with Multi "
     "Factor authentication methods during CREATE/ALTER USER statement. "
     "This variable accepts at-most 3 comma separated list of authentication "
-    "plugin names where each value refers to what authentication plugin should "
-    "be used in place of 1st Factor Authentication (FA), 2FA and 3FA method. "
-    "Value * indicates any plugin is allowed for 1FA, 2FA and 3FA method. "
-    "An empty value means nth FA method is optional.",
+    "factor descriptions. Allowed factor descriptions are: "
+    "(empty) - factor is optional, any authentication method is allowed. "
+    "* - factor is mandatory, any authentication method is allowed. "
+    "<plugin> - <plugin> is mandatory authentication method. "
+    "*:<plugin> - factor is mandatory, <plugin> is default authentication "
+    "method. The first factor cannot be optional and if neither mandatory nor "
+    "default method is specified, caching_sha2_password is assumed as default.",
     GLOBAL_VAR(opt_authentication_policy), CMD_LINE(REQUIRED_ARG),
     IN_FS_CHARSET, DEFAULT("*,,"), &PLock_authentication_policy, NOT_IN_BINLOG,
     ON_CHECK(check_authentication_policy),
@@ -7564,3 +7489,33 @@ static Sys_var_charptr Sys_debug_set_operations_secondary_overflow_at(
     CMD_LINE(REQUIRED_ARG), IN_FS_CHARSET, DEFAULT(""), NO_MUTEX_GUARD,
     NOT_IN_BINLOG, ON_CHECK(nullptr), ON_UPDATE(nullptr));
 #endif
+
+/**
+  Warn usage of restrict_fk_on_non_standard_key variable. When it is set
+  to false, warning should include usage of non std keys may break replication
+*/
+namespace {
+bool restrict_fk_on_non_standard_key_check(sys_var *self, THD *thd,
+                                           set_var *setv) {
+  if (setv->save_result.ulonglong_value == 0)
+    push_warning_printf(
+        thd, Sql_condition::SL_WARNING, ER_WARN_DEPRECATED_WITH_NOTE,
+        ER_THD(thd, ER_WARN_DEPRECATED_WITH_NOTE), self->name.str,
+        "Foreign key referring to non-unique or partial keys "
+        "is unsafe and may break replication.");
+  else
+    push_warning_printf(thd, Sql_condition::SL_WARNING,
+                        ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT,
+                        ER_THD(thd, ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT),
+                        self->name.str);
+  return false;
+}
+
+Sys_var_bool Sys_restrict_fk_on_non_standard_key(
+    "restrict_fk_on_non_standard_key",
+    "Disallow the creation of foreign keys referencing non-unique key "
+    "or partial key",
+    NON_PERSIST SESSION_VAR(restrict_fk_on_non_standard_key), CMD_LINE(OPT_ARG),
+    DEFAULT(true), NO_MUTEX_GUARD, NOT_IN_BINLOG,
+    ON_CHECK(restrict_fk_on_non_standard_key_check), ON_UPDATE(nullptr));
+}  // namespace

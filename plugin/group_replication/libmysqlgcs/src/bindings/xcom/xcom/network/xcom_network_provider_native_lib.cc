@@ -1,16 +1,17 @@
-/* Copyright (c) 2015, 2023, Oracle and/or its affiliates. All rights
+/* Copyright (c) 2015, 2024, Oracle and/or its affiliates. All rights
 reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -337,16 +338,88 @@ result Xcom_network_provider_library::gcs_shut_close_socket(int *sock) {
   ret_fd = -1;       \
   goto end
 
+bool Xcom_network_provider_library::poll_for_timed_connects(int fd,
+                                                            int timeout) {
+  int sysret;
+  int syserr;
+
+  struct pollfd fds;
+  fds.fd = fd;
+  fds.events = POLLOUT;
+  fds.revents = 0;
+
+  int poll_timeout = timeout;
+#if defined(_WIN32)
+  // Windows does not detect connect failures on connect
+  // It needs to go to poll, that also does not detect them.
+  // Lets add a very shot timeout on Windows to make it easier
+  // to detect these situations
+  constexpr int first_poll_timeout = 50;
+  poll_timeout = first_poll_timeout;
+#endif
+  while ((sysret = poll(&fds, 1, poll_timeout)) < 0) {
+    syserr = GET_OS_ERR;
+    if (syserr != SOCK_EINTR && syserr != SOCK_EINPROGRESS) {
+      return true;  // Error in poll
+    }
+#if defined(_WIN32)
+    else
+      poll_timeout = timeout;
+#endif
+  }
+  SET_OS_ERR(0);
+
+  if (sysret == 0) {
+    G_WARNING(
+        "Timed out while waiting for a connection via poll to be established! "
+        "Cancelling connection attempt. (socket= %d, error=%d)",
+        fd, sysret);
+    return true;  // We had a poll timeout.
+  }
+
+  return Xcom_network_provider_library::verify_poll_errors(fd, sysret, fds);
+}
+
+bool Xcom_network_provider_library::verify_poll_errors(int fd, int sysret,
+                                                       struct pollfd &fds) {
+  if (is_socket_error(sysret)) {
+    G_DEBUG(
+        "poll - Error while connecting! "
+        "(socket= %d, error=%d)",
+        fd, GET_OS_ERR);
+    return true;
+  }
+
+  int socket_errno = 0;
+  socklen_t socket_errno_len = sizeof(socket_errno);
+
+  if ((fds.revents & POLLOUT) == 0) {
+    return true;
+  }
+
+  if (fds.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+    return true;
+  }
+  if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (xcom_buf *)&socket_errno,
+                 &socket_errno_len) != 0) {
+    G_DEBUG("getsockopt socket %d failed.", fd);
+    return true;
+  } else {
+    if (socket_errno != 0) {
+      G_DEBUG("Connection to socket %d failed with error %d.", fd,
+              socket_errno);
+      return true;
+    }
+  }
+
+  return false;
+}
+
 int Xcom_network_provider_library::timed_connect_msec(
     int fd, struct sockaddr *sock_addr, socklen_t sock_size, int timeout) {
   int ret_fd = fd;
   int syserr;
   int sysret;
-  struct pollfd fds;
-
-  fds.fd = fd;
-  fds.events = POLLOUT;
-  fds.revents = 0;
 
   /* Set non-blocking */
   if (unblock_fd(fd) < 0) return -1;
@@ -371,69 +444,12 @@ int Xcom_network_provider_library::timed_connect_msec(
             fd, GET_OS_ERR);
         CONNECT_FAIL;
     }
+  }
 
-    SET_OS_ERR(0);
+  SET_OS_ERR(0);
 
-    int poll_timeout = timeout;
-#if defined(_WIN32)
-    // Windows does not detect connect failures on connect
-    // It needs to go to poll, that also does not detect them.
-    // Lets add a very shot timeout on Windows to make it easier
-    // to detect these situations
-    constexpr int first_poll_timeout = 50;
-    poll_timeout = first_poll_timeout;
-#endif
-    while ((sysret = poll(&fds, 1, poll_timeout)) < 0) {
-      syserr = GET_OS_ERR;
-      if (syserr != SOCK_EINTR && syserr != SOCK_EINPROGRESS) break;
-#if defined(_WIN32)
-      else
-        poll_timeout = timeout;
-#endif
-
-      SET_OS_ERR(0);
-    }
-
-    if (sysret == 0) {
-      G_DEBUG(
-          "Timed out while waiting for connection to be established! "
-          "Cancelling connection attempt. (socket= %d, error=%d)",
-          fd, sysret);
-      /* G_WARNING("poll - Timeout! Cancelling connection..."); */
-      CONNECT_FAIL;
-    }
-
-    if (is_socket_error(sysret)) {
-      G_DEBUG(
-          "poll - Error while connecting! "
-          "(socket= %d, error=%d)",
-          fd, GET_OS_ERR);
-      CONNECT_FAIL;
-    }
-
-    {
-      int socket_errno = 0;
-      socklen_t socket_errno_len = sizeof(socket_errno);
-
-      if ((fds.revents & POLLOUT) == 0) {
-        ret_fd = -1;
-      }
-
-      if (fds.revents & (POLLERR | POLLHUP | POLLNVAL)) {
-        ret_fd = -1;
-      }
-      if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (xcom_buf *)&socket_errno,
-                     &socket_errno_len) != 0) {
-        G_DEBUG("getsockopt socket %d failed.", fd);
-        ret_fd = -1;
-      } else {
-        if (socket_errno != 0) {
-          G_DEBUG("Connection to socket %d failed with error %d.", fd,
-                  socket_errno);
-          ret_fd = -1;
-        }
-      }
-    }
+  if (Xcom_network_provider_library::poll_for_timed_connects(fd, timeout)) {
+    CONNECT_FAIL;
   }
 
 end:

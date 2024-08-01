@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -26,6 +27,7 @@
 
 #include <ctime>  // time_t
 
+#include "http/base/http_time.h"
 #include "mysqlrouter/http_client.h"
 
 class HttpTimeParsesTest : public ::testing::Test,
@@ -42,14 +44,14 @@ class HttpTimeThrowsTest : public ::testing::Test,
 };
 
 TEST_P(HttpTimeParsesTest, time_from_rfc5322_fixdate) {
-  EXPECT_NO_THROW(
-      EXPECT_THAT(time_from_rfc5322_fixdate(std::get<0>(GetParam())),
-                  ::testing::Eq(std::get<1>(GetParam()))));
+  EXPECT_NO_THROW(EXPECT_THAT(
+      http::base::time_from_rfc5322_fixdate(std::get<0>(GetParam())),
+      ::testing::Eq(std::get<1>(GetParam()))));
 
   char date_buf[30];
   EXPECT_NO_THROW(
-      EXPECT_THAT(time_to_rfc5322_fixdate(std::get<1>(GetParam()), date_buf,
-                                          sizeof(date_buf)),
+      EXPECT_THAT(http::base::time_to_rfc5322_fixdate(
+                      std::get<1>(GetParam()), date_buf, sizeof(date_buf)),
                   ::testing::Eq(29)));
 
   // equal, if you ignore whitespace
@@ -75,7 +77,8 @@ INSTANTIATE_TEST_SUITE_P(
                         "Thu, 31 May 2018 05:18:20 GMT")));
 
 TEST_P(HttpTimeThrowsTest, time_from_rfc5322_fixdate_p) {
-  EXPECT_THROW(time_from_rfc5322_fixdate(GetParam()), std::out_of_range);
+  EXPECT_THROW(http::base::time_from_rfc5322_fixdate(GetParam()),
+               std::out_of_range);
 }
 
 INSTANTIATE_TEST_SUITE_P(HttpTimeThrows, HttpTimeThrowsTest,

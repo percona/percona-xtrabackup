@@ -2,9 +2,10 @@
 # PXB-1954: PXB gets stuck in prepare of full backup for encrypted tablespace
 #
 
+KEYRING_TYPE="component"
+. inc/keyring_common.sh
 . inc/keyring_file.sh
-
-start_server
+configure_server_with_component
 
 mysql test <<EOF
 CREATE TABLE t (a INT) ENCRYPTION='y';

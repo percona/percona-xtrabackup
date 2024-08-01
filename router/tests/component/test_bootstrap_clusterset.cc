@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2021, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -59,6 +60,8 @@ class RouterClusterSetBootstrapTest : public RouterComponentClusterSetTest {
       const bool disable_rest = true, const bool add_report_host = true) {
     if (disable_rest) params.push_back("--disable-rest");
     if (add_report_host) params.push_back("--report-host=dont.query.dns");
+    params.push_back("--conf-set-option=DEFAULT.plugin_folder=" +
+                     ProcessManager::get_plugin_dir().str());
 
     return ProcessManager::launch_router(
         params, expected_exit_code, /*catch_stderr=*/true, /*with_sudo=*/false,
@@ -104,8 +107,12 @@ TEST_P(ClusterSetBootstrapTargetClusterTest, ClusterSetBootstrapTargetCluster) {
   const std::string expected_target_cluster =
       GetParam().expected_target_cluster;
 
-  create_clusterset(view_id, target_cluster_id, /*primary_cluster_id*/ 0,
-                    "bootstrap_clusterset.js", "", expected_target_cluster);
+  ClusterSetOptions cs_options;
+  cs_options.target_cluster_id = target_cluster_id;
+  cs_options.tracefile = "bootstrap_clusterset.js";
+  cs_options.expected_target_cluster = expected_target_cluster;
+  create_clusterset(cs_options);
+
   const unsigned bootstrap_cluster_id = GetParam().bootstrap_cluster_id;
   const unsigned bootstrap_node_id = GetParam().bootstrap_node_id;
   const std::string target_cluster_param =
@@ -122,7 +129,7 @@ TEST_P(ClusterSetBootstrapTargetClusterTest, ClusterSetBootstrapTargetCluster) {
 
   std::vector<std::string> bootstrap_params = {
       "--bootstrap=127.0.0.1:" +
-          std::to_string(clusterset_data_.clusters[bootstrap_cluster_id]
+          std::to_string(cs_options.topology.clusters[bootstrap_cluster_id]
                              .nodes[bootstrap_node_id]
                              .classic_port),
       "-d", bootstrap_directory.name()};
@@ -146,8 +153,9 @@ TEST_P(ClusterSetBootstrapTargetClusterTest, ClusterSetBootstrapTargetCluster) {
 
   // check the state file that was produced
   // [@FR12]
-  check_state_file(state_file_path, ClusterType::GR_CS, clusterset_data_.uuid,
-                   clusterset_data_.get_md_servers_classic_ports(), view_id);
+  check_state_file(state_file_path, ClusterType::GR_CS,
+                   cs_options.topology.uuid,
+                   cs_options.topology.get_md_servers_classic_ports(), view_id);
 
   const std::string config_file_str = get_file_output(conf_file_path);
 
@@ -465,12 +473,14 @@ class ClusterSetConfUseGrNotificationParamTest
 TEST_P(ClusterSetConfUseGrNotificationParamTest,
        ClusterSetConfUseGrNotificationParam) {
   TempDirectory bootstrap_directory;
-  create_clusterset(view_id, /*target_cluster_id*/ 0, /*primary_cluster_id*/ 0,
-                    "bootstrap_clusterset.js");
+
+  ClusterSetOptions cs_options;
+  cs_options.tracefile = "bootstrap_clusterset.js";
+  create_clusterset(cs_options);
 
   std::vector<std::string> bootstrap_params = {
       "--bootstrap=127.0.0.1:" +
-          std::to_string(clusterset_data_.clusters[0].nodes[0].classic_port),
+          std::to_string(cs_options.topology.clusters[0].nodes[0].classic_port),
       "-d", bootstrap_directory.name()};
 
   bootstrap_params.insert(bootstrap_params.end(),
@@ -487,8 +497,9 @@ TEST_P(ClusterSetConfUseGrNotificationParamTest,
 
   // check the state file that was produced
   // [@FR12]
-  check_state_file(state_file_path, ClusterType::GR_CS, clusterset_data_.uuid,
-                   clusterset_data_.get_md_servers_classic_ports(), view_id);
+  check_state_file(state_file_path, ClusterType::GR_CS,
+                   cs_options.topology.uuid,
+                   cs_options.topology.get_md_servers_classic_ports(), view_id);
 
   // check if the expected config options were added to the configuration file
   const auto conf_file_content =
@@ -557,12 +568,13 @@ TEST_P(ClusterSetBootstrapParamsErrorTest, ClusterSetBootstrapParamsError) {
   const unsigned bootstrap_cluster_id = GetParam().bootstrap_cluster_id;
   const unsigned bootstrap_node_id = GetParam().bootstrap_node_id;
 
-  create_clusterset(view_id, /*target_cluster_id*/ 0, /*primary_cluster_id*/ 0,
-                    "bootstrap_clusterset.js");
+  ClusterSetOptions cs_options;
+  cs_options.tracefile = "bootstrap_clusterset.js";
+  create_clusterset(cs_options);
 
-  std::vector<std::string> bootsrtap_params{
+  std::vector<std::string> bootstrap_params{
       "--bootstrap=127.0.0.1:" +
-          std::to_string(clusterset_data_.clusters[bootstrap_cluster_id]
+          std::to_string(cs_options.topology.clusters[bootstrap_cluster_id]
                              .nodes[bootstrap_node_id]
                              .classic_port),
       "--connect-timeout=1",
@@ -570,11 +582,11 @@ TEST_P(ClusterSetBootstrapParamsErrorTest, ClusterSetBootstrapParamsError) {
       bootstrap_directory.name(),
   };
 
-  bootsrtap_params.insert(bootsrtap_params.end(),
+  bootstrap_params.insert(bootstrap_params.end(),
                           GetParam().bootstrap_params.begin(),
                           GetParam().bootstrap_params.end());
 
-  auto &router = launch_router_for_bootstrap(bootsrtap_params, EXIT_FAILURE);
+  auto &router = launch_router_for_bootstrap(bootstrap_params, EXIT_FAILURE);
 
   // verify that appropriate message was logged
 
@@ -726,13 +738,14 @@ TEST_P(ClusterSetBootstrapClusterNotFoundErrorTest,
   const unsigned bootstrap_cluster_id = GetParam().bootstrap_cluster_id;
   const unsigned bootstrap_node_id = GetParam().bootstrap_node_id;
 
-  create_clusterset(view_id, 0, /*primary_cluster_id*/ 0,
-                    "bootstrap_clusterset.js", "", "", "",
-                    /*simulate_cluster_not_found*/ true);
+  ClusterSetOptions cs_options;
+  cs_options.tracefile = "bootstrap_clusterset.js";
+  cs_options.simulate_cluster_not_found = true;
+  create_clusterset(cs_options);
 
-  std::vector<std::string> bootsrtap_params{
+  std::vector<std::string> bootstrap_params{
       "--bootstrap=127.0.0.1:" +
-          std::to_string(clusterset_data_.clusters[bootstrap_cluster_id]
+          std::to_string(cs_options.topology.clusters[bootstrap_cluster_id]
                              .nodes[bootstrap_node_id]
                              .classic_port),
       "--connect-timeout=1",
@@ -740,11 +753,11 @@ TEST_P(ClusterSetBootstrapClusterNotFoundErrorTest,
       bootstrap_directory.name(),
   };
 
-  bootsrtap_params.insert(bootsrtap_params.end(),
+  bootstrap_params.insert(bootstrap_params.end(),
                           GetParam().bootstrap_params.begin(),
                           GetParam().bootstrap_params.end());
 
-  auto &router = launch_router_for_bootstrap(bootsrtap_params, EXIT_FAILURE);
+  auto &router = launch_router_for_bootstrap(bootstrap_params, EXIT_FAILURE);
 
   // verify that appropriate message was logged
 
@@ -839,12 +852,14 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_F(RouterClusterSetBootstrapTest, ClusterSetBootstrapNoPrimaryError) {
   const unsigned non_existing_cluster_id{5};
 
-  create_clusterset(view_id, 0, /*primary_cluster_id*/ non_existing_cluster_id,
-                    "bootstrap_clusterset.js", "");
+  ClusterSetOptions cs_options;
+  cs_options.primary_cluster_id = non_existing_cluster_id;
+  cs_options.tracefile = "bootstrap_clusterset.js";
+  create_clusterset(cs_options);
 
-  std::vector<std::string> bootsrtap_params{
+  std::vector<std::string> bootstrap_params{
       "--bootstrap=127.0.0.1:" +
-          std::to_string(clusterset_data_.clusters[0].nodes[0].classic_port),
+          std::to_string(cs_options.topology.clusters[0].nodes[0].classic_port),
       "--connect-timeout=1",
       "-d",
       bootstrap_directory.name(),
@@ -852,7 +867,7 @@ TEST_F(RouterClusterSetBootstrapTest, ClusterSetBootstrapNoPrimaryError) {
       "primary",
   };
 
-  auto &router = launch_router_for_bootstrap(bootsrtap_params, EXIT_FAILURE);
+  auto &router = launch_router_for_bootstrap(bootstrap_params, EXIT_FAILURE);
 
   // verify that appropriate message was logged
   EXPECT_NO_THROW(router.wait_for_exit());
@@ -956,8 +971,12 @@ TEST_F(RouterClusterSetBootstrapTest, PrimaryClusterQueriedFirst) {
   const std::string expected_target_cluster =
       "00000000-0000-0000-0000-0000000000g2";
 
-  create_clusterset(view_id, target_cluster_id, primary_cluster_id,
-                    "bootstrap_clusterset.js", "", expected_target_cluster);
+  ClusterSetOptions cs_options;
+  cs_options.target_cluster_id = target_cluster_id;
+  cs_options.primary_cluster_id = primary_cluster_id;
+  cs_options.tracefile = "bootstrap_clusterset.js";
+  cs_options.expected_target_cluster = expected_target_cluster;
+  create_clusterset(cs_options);
 
   const unsigned bootstrap_node_id = 0;
   const std::string target_cluster_param = "--conf-target-cluster=current";
@@ -966,7 +985,7 @@ TEST_F(RouterClusterSetBootstrapTest, PrimaryClusterQueriedFirst) {
 
   std::vector<std::string> bootstrap_params = {
       "--bootstrap=127.0.0.1:" +
-          std::to_string(clusterset_data_.clusters[target_cluster_id]
+          std::to_string(cs_options.topology.clusters[target_cluster_id]
                              .nodes[bootstrap_node_id]
                              .classic_port),
       "-d", bootstrap_directory.name(), target_cluster_param,
@@ -979,9 +998,9 @@ TEST_F(RouterClusterSetBootstrapTest, PrimaryClusterQueriedFirst) {
   // check that the only nodes that we connected to during the bootstrap are the
   // one used as a -B parameter (first node of the second cluster) and the
   // primary node (first node of the third cluster)
-  for (size_t cluster_id = 0; cluster_id < clusterset_data_.clusters.size();
+  for (size_t cluster_id = 0; cluster_id < cs_options.topology.clusters.size();
        ++cluster_id) {
-    const auto &cluster = clusterset_data_.clusters[cluster_id];
+    const auto &cluster = cs_options.topology.clusters[cluster_id];
 
     for (size_t node_id = 0; node_id < cluster.nodes.size(); ++node_id) {
       const int expected_session_count =
@@ -1003,14 +1022,16 @@ TEST_F(RouterClusterSetBootstrapTest, PrimaryClusterQueriedFirst) {
 TEST_F(RouterClusterSetBootstrapTest, FailToBootstrapFromReadReplica) {
   const std::vector<size_t> gr_nodes_per_cluster{2, 2};
   const std::vector<size_t> read_replicas_per_cluster{1, 0};
-  create_clusterset(view_id, /*target_cluster_id*/ 0,
-                    /*primary_cluster_id*/ 0, "bootstrap_clusterset.js", "",
-                    ".*", false, false, gr_nodes_per_cluster,
-                    read_replicas_per_cluster);
+
+  ClusterSetOptions cs_options;
+  cs_options.tracefile = "bootstrap_clusterset.js";
+  cs_options.gr_nodes_number = gr_nodes_per_cluster;
+  cs_options.read_replicas_number = read_replicas_per_cluster;
+  create_clusterset(cs_options);
 
   const auto &read_replica_node =
-      clusterset_data_.clusters[0]
-          .nodes[clusterset_data_.clusters[0].nodes.size() - 1];
+      cs_options.topology.clusters[0]
+          .nodes[cs_options.topology.clusters[0].nodes.size() - 1];
   std::vector<std::string> bootstrap_params = {
       "--bootstrap=127.0.0.1:" + std::to_string(read_replica_node.classic_port),
       "-d", bootstrap_directory.name()};
@@ -1035,13 +1056,15 @@ TEST_F(RouterClusterSetBootstrapTest, BootstrapWithReadReaplicas) {
   // let's configure the ClusterSet so that each of 3 clusters has 1 Read
   // Replica
   const std::vector<size_t> read_replicas_per_cluster{1, 1, 1};
-  create_clusterset(view_id, /*target_cluster_id*/ 0,
-                    /*primary_cluster_id*/ 0, "bootstrap_clusterset.js", "",
-                    ".*", false, false, read_replicas_per_cluster);
+
+  ClusterSetOptions cs_options;
+  cs_options.tracefile = "bootstrap_clusterset.js";
+  cs_options.read_replicas_number = read_replicas_per_cluster;
+  create_clusterset(cs_options);
 
   std::vector<std::string> bootstrap_params = {
       "--bootstrap=127.0.0.1:" +
-          std::to_string(clusterset_data_.clusters[0].nodes[0].classic_port),
+          std::to_string(cs_options.topology.clusters[0].nodes[0].classic_port),
       "-d", bootstrap_directory.name()};
 
   auto &router = launch_router_for_bootstrap(bootstrap_params, EXIT_SUCCESS);
@@ -1053,8 +1076,97 @@ TEST_F(RouterClusterSetBootstrapTest, BootstrapWithReadReaplicas) {
 
   // the Read Replicas should not get written to the state file as metadata
   // servers
-  check_state_file(state_file_path, ClusterType::GR_CS, clusterset_data_.uuid,
-                   clusterset_data_.get_md_servers_classic_ports(), view_id);
+  check_state_file(state_file_path, ClusterType::GR_CS,
+                   cs_options.topology.uuid,
+                   cs_options.topology.get_md_servers_classic_ports(), view_id);
+}
+
+/**
+ * @test
+ *       Checks that the Router correctly exposes its configuration details when
+ * bootstrapped against the ClusterSet.
+ */
+TEST_F(RouterClusterSetBootstrapTest, ConfigExposedInMetadata) {
+  ClusterSetOptions cs_options;
+  cs_options.tracefile = "bootstrap_clusterset.js";
+  cs_options.simulate_config_defaults_stored_is_null = true;
+  create_clusterset(cs_options);
+
+  std::vector<std::string> bootsrtap_params{
+      "--bootstrap=127.0.0.1:" +
+          std::to_string(cs_options.topology.clusters[0].nodes[0].classic_port),
+      "-d",
+      bootstrap_directory.name(),
+      "--conf-target-cluster=primary",
+  };
+
+  const auto http_port = cs_options.topology.clusters[0].nodes[0].http_port;
+
+  auto &router = launch_router_for_bootstrap(bootsrtap_params, EXIT_SUCCESS);
+
+  check_exit_code(router, EXIT_SUCCESS);
+
+  RecordProperty("Worklog", "15649");
+  RecordProperty("RequirementId", "FR1,FR1.1,FR2,FR3,FR3.1");
+  RecordProperty("Description",
+                 "Testing if the Router correctly exposes it's full static "
+                 "configuration on bootstrap in the metadata when the target "
+                 "is Clusterset.");
+
+  // first validate the configuration json against general "public" schema for
+  // the structure corectness
+  const std::string public_config_schema =
+      get_file_output(Path(ROUTER_SRC_DIR)
+                          .join("src")
+                          .join("harness")
+                          .join("src")
+                          .join("configuration_schema.json")
+                          .str());
+
+  validate_config_stored_in_md(http_port, public_config_schema);
+
+  // then validate against strict schema that also checks the values specific to
+  // this bootstrap
+  const std::string strict_config_schema = get_file_output(
+      get_data_dir()
+          .join("default_bootstrap_configuration_schema_strict.json")
+          .str());
+
+  validate_config_stored_in_md(http_port, strict_config_schema);
+
+  RecordProperty("Worklog", "15649");
+  RecordProperty("RequirementId", "FR1,FR1.1,FR2,FR3,FR3.1");
+  RecordProperty(
+      "Description",
+      "Testing if on bootstrap the Router correctly exposes "
+      "ConfigurationChangesSchema and Defaults JSONs in "
+      "mysql_innodb_cluster_metadata.cluster.router_options.->>"
+      "Configuration.<router_version> when the target is ClusterSet.");
+
+  // Check if proper UpdateSchema was written on BS
+  const std::string public_config_update_schema_in_md =
+      get_config_update_schema_stored_in_md(http_port);
+
+  const std::string public_config_update_schema = get_json_in_pretty_format(
+      get_file_output(Path(ROUTER_SRC_DIR)
+                          .join("src")
+                          .join("harness")
+                          .join("src")
+                          .join("configuration_update_schema.json")
+                          .str()));
+
+  EXPECT_STREQ(public_config_update_schema.c_str(),
+               public_config_update_schema_in_md.c_str());
+
+  // Check if proper Configuration Defaults were written on bootstrap
+  const std::string public_configuration_defaults_in_md =
+      get_config_defaults_stored_in_md(http_port);
+
+  const std::string public_configuration_defaults = get_file_output(
+      get_data_dir().join("configuration_defaults_clusterset.json").str());
+
+  EXPECT_STREQ(public_configuration_defaults.c_str(),
+               public_configuration_defaults_in_md.c_str());
 }
 
 int main(int argc, char *argv[]) {

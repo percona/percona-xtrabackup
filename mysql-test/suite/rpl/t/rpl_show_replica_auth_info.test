@@ -8,21 +8,21 @@
 #     --show-slave-auth-info:
 #     R1.1. Server should not write deprecation warning to the error log.
 #     R1.2. SHOW REPLICAS should not include USER and PASSWORD columns.
-#     R1.3. SHOW SLAVE HOSTS should not include USER and PASSWORD columns.
+#     R1.3. SHOW REPLICAS should not include USER and PASSWORD columns.
 #
 # R2. When source server is started with --show-replica-auth-info:
 #     R2.1. Server should not write deprecation warning to the error log.
 #     R2.2. SHOW REPLICAS should include USER and PASSWORD columns.
-#     R2.3. SHOW SLAVE HOSTS should include USER and PASSWORD columns.
+#     R2.3. SHOW REPLICAS should include USER and PASSWORD columns.
 #
 # R3. When source server is started with --show-slave-auth-info:
 #     R3.1. Server should write deprecation warning to the error log.
 #     R3.2. SHOW REPLICAS should include USER and PASSWORD columns.
-#     R3.3. SHOW SLAVE HOSTS should include USER and PASSWORD columns.
+#     R3.3. SHOW REPLICAS should include USER and PASSWORD columns.
 
-# Test is binlog_format-agnostic
+# Test is debug_binlog_format agnostic
 --source include/have_binlog_format_row.inc
---source include/master-slave.inc
+--source include/rpl/init_source_replica.inc
 
 --echo ==== Init ====
 
@@ -33,13 +33,13 @@
 
 --let $restart = $MYSQL_TMP_DIR/restart.inc
 --write_file $restart END_OF_PROCEDURE
-  --source include/rpl_connection_slave.inc
-  --source include/stop_slave.inc
+  --source include/rpl/connection_replica.inc
+  --source include/rpl/stop_replica.inc
   --let $rpl_server_number = 1
-  --source include/rpl_restart_server.inc
-  --source include/rpl_connection_slave.inc
-  --source include/start_slave.inc
-  --source include/rpl_connection_master.inc
+  --source include/rpl/restart_server.inc
+  --source include/rpl/connection_replica.inc
+  --source include/rpl/start_replica.inc
+  --source include/rpl/connection_source.inc
 END_OF_PROCEDURE
 
 --source include/save_error_log_position.inc
@@ -57,7 +57,7 @@ END_OF_PROCEDURE
 --replace_result $server_2_uuid REPLICA_UUID $SLAVE_MYPORT REPLICA_PORT
 SHOW REPLICAS;
 --replace_result $server_2_uuid REPLICA_UUID $SLAVE_MYPORT REPLICA_PORT
-SHOW SLAVE HOSTS;
+SHOW REPLICAS;
 
 --echo ==== R3: show-slave-auth-info ====
 
@@ -77,7 +77,7 @@ SHOW SLAVE HOSTS;
 --replace_result $server_2_uuid REPLICA_UUID $SLAVE_MYPORT REPLICA_PORT
 SHOW REPLICAS;
 --replace_result $server_2_uuid REPLICA_UUID $SLAVE_MYPORT REPLICA_PORT
-SHOW SLAVE HOSTS;
+SHOW REPLICAS;
 
 --echo ==== R1: no command-line options ====
 
@@ -92,9 +92,9 @@ SHOW SLAVE HOSTS;
 --replace_result $server_2_uuid REPLICA_UUID $SLAVE_MYPORT REPLICA_PORT
 SHOW REPLICAS;
 --replace_result $server_2_uuid REPLICA_UUID $SLAVE_MYPORT REPLICA_PORT
-SHOW SLAVE HOSTS;
+SHOW REPLICAS;
 
 --echo ==== Clean up ====
 
 --remove_file $restart
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

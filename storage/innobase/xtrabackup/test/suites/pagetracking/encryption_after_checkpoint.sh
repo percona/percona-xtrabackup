@@ -3,11 +3,12 @@
 ############################################################################
 
 . inc/common.sh
+KEYRING_TYPE="component"
+. inc/keyring_common.sh
 . inc/keyring_file.sh
+configure_server_with_component
 
 require_debug_server
-
-start_server
 
 vlog "take incremental backup"
 mysql test <<EOF
@@ -47,7 +48,10 @@ xtrabackup --prepare --target-dir=$topdir/backup --incremental-dir=$topdir/inc -
 
 vlog "copy back"
 xtrabackup --copy-back --target-dir=$topdir/backup --transition-key=123 \
-               --generate-new-master-key --datadir=$mysql_datadir
+               --generate-new-master-key --datadir=$mysql_datadir --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
+
+cp ${instance_local_manifest}  $mysql_datadir
+cp ${keyring_component_cnf} $mysql_datadir
 
 start_server
 

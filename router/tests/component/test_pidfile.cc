@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -479,19 +480,19 @@ INSTANTIATE_TEST_SUITE_P(
         // shell does, so this should be identical to the quoted TS_FR10_02
         // case.
         PidFileOptionErrorParams(
-            "", "^Error: Invalid empty value for --pid-file option"),
+            "", "Error: Invalid empty value for --pid-file option"),
         // readonly dir : TS_FR11_01 (M)
         PidFileOptionErrorParams(
             mysql_harness::Path(FOO).join(READONLY_FOLDER).c_str(),
-            "^Error: Failed writing PID to .*/foo/readonly':.*"),
+            "Error: Failed writing PID to .*/foo/readonly':.*"),
         // readonly file : TS_FR11_02 (M)
         PidFileOptionErrorParams(
             mysql_harness::Path(FOO).join(READONLY_FILE).c_str(),
-            "^Error: Failed writing PID to .*/foo/readonly.pid':.*"),
+            "Error: Failed writing PID to .*/foo/readonly.pid':.*"),
         // nonexisting dir : TS_FR11_03 (M)
         PidFileOptionErrorParams(
             mysql_harness::Path(FOO).join(NONEXISTING).join(PIDFILE).c_str(),
-            "^Error: Failed writing PID to "
+            "Error: Failed writing PID to "
             ".*/foo/nonexisting/mysqlrouter.pid':.*")));
 
 /**
@@ -587,7 +588,7 @@ TEST_P(RouterPidfileOptionCfgValueTestError, PidFileOptionCfgValueTestError) {
 
   // expect error
   EXPECT_TRUE(
-      router.expect_output("^Error: PID filename '.*' is illegal", true));
+      router.expect_output("Error: PID filename '.*' is illegal", true));
 }
 
 INSTANTIATE_TEST_SUITE_P(PidFileOptionCfgValueTestError,
@@ -631,7 +632,7 @@ TEST_P(RouterPidfileOptionEnvValueTestError, PidFileOptionEnvValueTestError) {
 
   // expect error
   EXPECT_TRUE(
-      router.expect_output("^Error: PID filename '.*' is illegal", true));
+      router.expect_output("Error: PID filename '.*' is illegal", true));
 }
 
 INSTANTIATE_TEST_SUITE_P(PidFileOptionEnvValueTestError,
@@ -784,7 +785,7 @@ INSTANTIATE_TEST_SUITE_P(PidFileOptionSupremacyCornerCaseTest,
                              // empty value : TS_FR03_02
                              PidFileOptionSupremacyCornerCaseParams(
                                  "pid_file = ",
-                                 "^Error: PID filename '.*' is illegal.")));
+                                 "Error: PID filename '.*' is illegal.")));
 
 /**
  * @test
@@ -840,8 +841,8 @@ TEST_P(RouterPidfileOptionExistsTest, PidFileOptionExistsTest) {
   }
 
   // expect error
-  EXPECT_TRUE(router.expect_output(
-      "^Error: PID file .* found. Already running?", true));
+  EXPECT_TRUE(
+      router.expect_output("Error: PID file .* found. Already running?", true));
 
   // pid-file still exists
   EXPECT_TRUE(fullpath.exists()) << fullpath.str();

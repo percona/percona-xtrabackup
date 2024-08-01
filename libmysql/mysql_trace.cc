@@ -1,15 +1,16 @@
-/* Copyright (c) 2012, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    Without limiting anything contained in the foregoing, this file,
    which is part of C Driver for MySQL (Connector/C), is also subject to the
@@ -154,16 +155,11 @@ void mysql_trace_trace(MYSQL *m, enum trace_event ev,
   if (plugin->trace_event) {
     /*
       Temporarily disable tracing while executing plugin's method
-      by setting trace data pointer to NULL. Also, set reconnect
-      flag to 0 in case plugin executes any queries.
+      by setting trace data pointer to NULL.
     */
-    const bool saved_reconnect_flag = m->reconnect;
-
     TRACE_DATA(m) = nullptr;
-    m->reconnect = false;
     quit_tracing = plugin->trace_event(plugin, GET_DATA(trace_info), m,
                                        GET_STAGE(trace_info), ev, args);
-    m->reconnect = saved_reconnect_flag;
     TRACE_DATA(m) = trace_info;
   }
 

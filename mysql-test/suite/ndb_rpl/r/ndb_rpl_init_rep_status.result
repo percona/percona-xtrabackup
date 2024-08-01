@@ -1,12 +1,10 @@
-include/master-slave.inc
+include/rpl/init_source_replica.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
 [connection master]
 reset binary logs and gtids;
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 Generate something in the Masters Binlog
 use test;
 create table t1 (a int primary key, b int) engine=ndb;
@@ -20,42 +18,28 @@ select @slave_server_id;
 @slave_server_id
 2
 Default, no data, max replicated epoch will be 0.
-reset slave;
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+RESET REPLICA;
+START REPLICA;
 select server_id from mysql.ndb_apply_status order by server_id;
 server_id
 1
 Ndb_slave_max_replicated_epoch: 0
 Default, load of own serverid from ndb_apply_status, should be 111
 drop table test.t1;
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-reset slave;
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
+STOP REPLICA;
+RESET REPLICA;
 insert into mysql.ndb_apply_status values (@slave_server_id, 111, 'Fictional log', 222, 333);
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 select server_id from mysql.ndb_apply_status order by server_id;
 server_id
 1
 2
 Ndb_slave_max_replicated_epoch: 111
 drop table test.t1;
-Check that reset slave resets Ndb_slave_max_replicated_epoch to zero
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+Check that reset replica resets Ndb_slave_max_replicated_epoch to zero
+STOP REPLICA;
 Ndb_slave_max_replicated_epoch: 111
-reset slave;
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
+RESET REPLICA;
 Ndb_slave_max_replicated_epoch: 0
 Multiple-channel, load highest of configured serverids, should be 222
 set @other_local_server_id=@slave_server_id+1;
@@ -64,9 +48,7 @@ insert into mysql.ndb_apply_status values (@slave_server_id, 111, 'Fictional log
 insert into mysql.ndb_apply_status values (@other_local_server_id, 222, 'Fictional log', 222, 333);
 insert into mysql.ndb_apply_status values (@other_remote_server_id, 444, 'Fictional log', 222, 333);
 CHANGE REPLICATION SOURCE TO IGNORE_SERVER_IDS=(3);;
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 select server_id from mysql.ndb_apply_status order by server_id;
 server_id
 1
@@ -74,12 +56,8 @@ server_id
 3
 4
 Ndb_slave_max_replicated_epoch: 222
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 CHANGE REPLICATION SOURCE TO IGNORE_SERVER_IDS= ();
-start slave;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 drop table test.t1;
-include/rpl_end.inc
+include/rpl/deinit.inc

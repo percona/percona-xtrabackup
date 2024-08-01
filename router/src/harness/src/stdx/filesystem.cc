@@ -1,16 +1,17 @@
 /*
-Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
 as published by the Free Software Foundation.
 
-This program is also distributed with certain software (including
+This program is designed to work with certain software (including
 but not limited to OpenSSL) that is licensed under separate terms,
 as designated in a particular file or component or in included license
 documentation.  The authors of MySQL hereby grant you an additional
 permission to link the program and your derivative works with the
-separately licensed software that they have included with MySQL.
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -61,11 +62,11 @@ namespace impl {
 stdx::expected<void, std::error_code> unlink(const char *path_name) {
 #ifdef _WIN32
   if (-1 == ::_unlink(path_name)) {
-    return stdx::make_unexpected(last_posix_error_code());
+    return stdx::unexpected(last_posix_error_code());
   }
 #else
   if (-1 == ::unlink(path_name)) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 #endif
   return {};
@@ -74,11 +75,11 @@ stdx::expected<void, std::error_code> unlink(const char *path_name) {
 stdx::expected<void, std::error_code> rmdir(const char *path_name) {
 #ifdef _WIN32
   if (-1 == ::_rmdir(path_name)) {
-    return stdx::make_unexpected(last_posix_error_code());
+    return stdx::unexpected(last_posix_error_code());
   }
 #else
   if (-1 == ::rmdir(path_name)) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 #endif
   return {};
@@ -89,12 +90,12 @@ stdx::expected<std::string, std::error_code> getcwd() {
   std::array<char, MAX_PATH> cwd;
   if (nullptr == ::_getcwd(cwd.data(), cwd.size())) {
     // _getcwd() sets errno
-    return stdx::make_unexpected(last_posix_error_code());
+    return stdx::unexpected(last_posix_error_code());
   }
 #else
   std::array<char, PATH_MAX> cwd{};
   if (nullptr == ::getcwd(cwd.data(), cwd.size())) {
-    return stdx::make_unexpected(last_error_code());
+    return stdx::unexpected(last_error_code());
   }
 #endif
 

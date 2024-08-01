@@ -1,15 +1,16 @@
-/* Copyright (c) 2014, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -270,40 +271,23 @@ int Applier_module::apply_view_change_packet(
     Format_description_log_event *fde_evt, Continuation *cont) {
   int error = 0;
 
-  /* Start garbage collection duration. */
-  const auto garbage_collection_begin = Metrics_handler::get_current_time();
-
-  Gtid_set *group_executed_set = nullptr;
-  Tsid_map *tsid_map = nullptr;
+  Tsid_map sid_map(nullptr);
+  Gtid_set group_executed_set(&sid_map, nullptr);
   if (!view_change_packet->group_executed_set.empty()) {
-    tsid_map = new Tsid_map(nullptr);
-    group_executed_set = new Gtid_set(tsid_map, nullptr);
     if (intersect_group_executed_sets(view_change_packet->group_executed_set,
-                                      group_executed_set)) {
+                                      &group_executed_set)) {
       LogPluginErr(
           WARNING_LEVEL,
           ER_GRP_RPL_ERROR_GTID_EXECUTION_INFO); /* purecov: inspected */
-      delete tsid_map;                           /* purecov: inspected */
-      delete group_executed_set;                 /* purecov: inspected */
-      group_executed_set = nullptr;              /* purecov: inspected */
     }
   }
 
-  if (group_executed_set != nullptr) {
-    if (get_certification_handler()
-            ->get_certifier()
-            ->set_group_stable_transactions_set(group_executed_set)) {
-      LogPluginErr(WARNING_LEVEL,
-                   ER_GRP_RPL_CERTIFICATE_SIZE_ERROR); /* purecov: inspected */
-    }
-    delete tsid_map;
-    delete group_executed_set;
-  }
+  /*
+    We call `garbage_collect()` always to update the metrics.
+  */
+  get_certification_handler()->get_certifier()->garbage_collect(
+      &group_executed_set, true);
 
-  /* Update garbage collection metrics. */
-  const auto garbage_collection_end = Metrics_handler::get_current_time();
-  metrics_handler->add_garbage_collection_run(garbage_collection_begin,
-                                              garbage_collection_end);
   /*
     If all the group members are compatible to transfer the recovery metadata
     without using VCLE. Do not send the VCLE.

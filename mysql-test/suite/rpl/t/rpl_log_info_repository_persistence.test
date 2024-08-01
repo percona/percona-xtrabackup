@@ -7,7 +7,7 @@
 
 # TABLE type repo:
 # -------------------
-# R.P.T1: CHANGE MASTER sets the PRIVILEGE_CHECKS_USER correctly.
+# R.P.T1: CHANGE REPLICATION SOURCE sets the PRIVILEGE_CHECKS_USER correctly.
 # R.P.T2: PRIVILEGE_CHECKS_USER persists after restarting the server.
 # R.P.T3: RESET REPLICA should keep value of PRIVILEGE_CHECKS_USER.
 #
@@ -28,11 +28,11 @@
 # Prerequisites:
 #   1. add mtr suppression statement for errors on various error test cases for
 #      TABLE type repository.
-#   2. create user replication_applier to use in change master as
+#   2. create user replication_applier to use in change replication source as
 #      privilege_checks_user with REPLICATION_APPLIER privilege.
 #
 #
-# TC.P.T1: CHANGE MASTER sets the PRIVILEGE_CHECKS_USER correctly.
+# TC.P.T1: CHANGE REPLICATION SOURCE sets the PRIVILEGE_CHECKS_USER correctly.
 #   1. create two channels ch1 and ch2 when slave is configured with TABLE type
 #      repo. "ch1" has not PRIVILEGE_CHECKS_USER, "ch2" has
 #      'replication_applier'@'localhost' as PRIVILEGE_CHECK_USER.
@@ -58,10 +58,10 @@
 #      respectively pfs and slave_relay_log_info tables.
 #
 # TC.E.T1: privilege_checks_username has more than 32 length.
-#   a. CHANGE MASTER will result in ER_CLIENT_PRIVILEGE_CHECKS_USER_CORRUPT.
-#      1. issue change master for default channel "ch1" to set
+#   a. CHANGE REPLICATION SOURCE will result in ER_CLIENT_PRIVILEGE_CHECKS_USER_CORRUPT.
+#      1. issue change replication source for default channel "ch1" to set
 #         privilege_checks_user with privilege_check_username more than 32 char.
-#      2. change master fails due to ER_WRONG_STRING_LENGTH.
+#      2. change replication source fails due to ER_WRONG_STRING_LENGTH.
 #   b. server start will result in ER_LOG_WARN_PRIVILEGE_CHECKS_USER_CORRUPT.
 #      1. set debug point simulate_priv_check_username_above_limit to simulate
 #         failure of reading channel config of ch1 due to
@@ -70,14 +70,14 @@
 #      3. verify that channel config entry of "ch1" in pfs table has "<INVALID>"
 #         as PRIVILEGE_CHECKS_USER.
 #   c. SLAVE START will result in failure due to invalid config.
-#      1. start slave should fail due to ER_REPLICA_AM_INIT_REPOSITORY.
+#      1. start replica should fail due to ER_REPLICA_AM_INIT_REPOSITORY.
 #
 # TC.E.T2: privilege_checks_hostname has more than 255 length.
-#   a. CHANGE MASTER will result in ER_CLIENT_PRIVILEGE_CHECKS_USER_CORRUPT.
-#      1. issue change master for default channel "ch1" to set
+#   a. CHANGE REPLICATION SOURCE will result in ER_CLIENT_PRIVILEGE_CHECKS_USER_CORRUPT.
+#      1. issue change replication source for default channel "ch1" to set
 #         privilege_checks_user with privilege_check_hostname more than 255
 #         char.
-#      2. change master fails due to ER_WRONG_STRING_LENGTH.
+#      2. change replication source fails due to ER_WRONG_STRING_LENGTH.
 #   b. server start will result in ER_LOG_WARN_PRIVILEGE_CHECKS_USER_CORRUPT.
 #      1. set debug point simulate_priv_check_hostname_above_limit to simulate
 #         failure of reading channel config of ch1 due to
@@ -86,13 +86,13 @@
 #      3. verify that channel config entry of "ch1" in pfs table has "<INVALID>"
 #         as PRIVILEGE_CHECKS_USER.
 #   c. SLAVE START will result in failure due to invalid config.
-#      1. start slave should fail due to ER_REPLICA_AM_INIT_REPOSITORY.
+#      1. start replica should fail due to ER_REPLICA_AM_INIT_REPOSITORY.
 #
 # TC.E.T3: privilege_checks_hostname has @.
-#   a. CHANGE MASTER will result in ER_UNKNOWN_ERROR.
-#      1. issue change master for default channel "ch1" to set
+#   a. CHANGE REPLICATION SOURCE will result in ER_UNKNOWN_ERROR.
+#      1. issue change replication source for default channel "ch1" to set
 #         privilege_checks_user with privilege_check_hostname has @.
-#      2. change master fails due to ER_UNKNOWN_ERROR.
+#      2. change replication source fails due to ER_UNKNOWN_ERROR.
 #   b. server start will result in ER_LOG_WARN_PRIVILEGE_CHECKS_USER_CORRUPT.
 #      1. update config entry of channel "ch1" in mysql.slave_relay_log_info to
 #         'l@calhost' in privilege_checks_hostname.
@@ -100,21 +100,21 @@
 #      3. verify that channel config entry of "ch1" in pfs table has "<INVALID>"
 #         as PRIVILEGE_CHECKS_USER.
 #   c. SLAVE START will result in failure due to invalid config.
-#      1. start slave should fail due to ER_REPLICA_AM_INIT_REPOSITORY.
+#      1. start replica should fail due to ER_REPLICA_AM_INIT_REPOSITORY.
 #
 # TC.E.T4. privilege_checks_username is NULL and privilege_checks_hostname is
 #          not NULL.
-#   a. CHANGE MASTER will result in ER_CLIENT_PRIVILEGE_CHECKS_USER_CORRUPT.
+#   a. CHANGE REPLICATION SOURCE will result in ER_CLIENT_PRIVILEGE_CHECKS_USER_CORRUPT.
 #   b. server start will result in ER_LOG_WARN_PRIVILEGE_CHECKS_USER_CORRUPT.
 #   c. SLAVE START will result in failure due to invalid config.
-#      1. start slave should fail due to ER_REPLICA_AM_INIT_REPOSITORY.
+#      1. start replica should fail due to ER_REPLICA_AM_INIT_REPOSITORY.
 #
 # TC.E.T5. privilege_checks_username is anonymous.
-#   a. CHANGE MASTER will result in
+#   a. CHANGE REPLICATION SOURCE will result in
 #      ER_CLIENT_PRIVILEGE_CHECKS_USER_CANNOT_BE_ANONYMOUS.
-#      1. issue change master for default channel "" to set
+#      1. issue change replication source for default channel "" to set
 #         privilege_checks_user as ''@'localhost'.
-#      2. change master fails due to
+#      2. change replication source fails due to
 #         ER_CLIENT_PRIVILEGE_CHECKS_USER_CANNOT_BE_ANONYMOUS.
 
 #   b. server start will result in ER_LOG_WARN_PRIVILEGE_CHECKS_USER_CORRUPT.
@@ -124,15 +124,15 @@
 #      3. verify that channel config entry of "ch1" in pfs table has "<INVALID>"
 #         as PRIVILEGE_CHECKS_USER.
 #   c. SLAVE START will result in failure due to invalid config.
-#      1. start slave should fail due to ER_REPLICA_AM_INIT_REPOSITORY.
+#      1. start replica should fail due to ER_REPLICA_AM_INIT_REPOSITORY.
 #
 # TC.E.T6. privilege_checks_user is a non existent user.
-#   a. CHANGE MASTER will result in
+#   a. CHANGE REPLICATION SOURCE will result in
 #      ER_CLIENT_PRIVILEGE_CHECKS_USER_DOES_NOT_EXIST.
-#      1. issue change master for default channel "" to set
+#      1. issue change replication source for default channel "" to set
 #         privilege_checks_user as 'replication_applier_nonexist@'localhost',
 #         this user doesn't exist.
-#      2. change master fails due to
+#      2. change replication source fails due to
 #         ER_CLIENT_PRIVILEGE_CHECKS_USER_DOES_NOT_EXIST.
 #   b. server start will result in
 #      ER_LOG_WARN_PRIVILEGE_CHECKS_USER_DOES_NOT_EXIST.
@@ -142,7 +142,7 @@
 #      3. verify that channel config entry of "ch1" in pfs table has "<INVALID>"
 #         as PRIVILEGE_CHECKS_USER.
 #   c. SLAVE START will result in failure due to invalid config.
-#      1. start slave should fail due to ER_REPLICA_AM_INIT_REPOSITORY.
+#      1. start replica should fail due to ER_REPLICA_AM_INIT_REPOSITORY.
 #
 # ==== References ====
 #
@@ -153,9 +153,9 @@
 --source include/have_debug_sync.inc
 --source include/not_group_replication_plugin.inc
 --source include/have_binlog_format_row.inc
---source include/not_mts_replica_parallel_workers.inc
+--source include/not_replica_parallel_workers.inc
 --source include/not_have_privilege_checks_user.inc
---source include/master-slave.inc
+--source include/rpl/init_source_replica.inc
 
 # Number of channel config entries in mysql.slave_relay_log_info and
 # performance_schema.replication_applier_configuration. Before each usage,
@@ -217,7 +217,7 @@ END_OF_PROCEDURE
     --let $rpl_server_parameters =  --skip_replica_start
   }
   --let $explicit_default_wait_counter = 15000
-  --source include/rpl_restart_server.inc
+  --source include/rpl/restart_server.inc
 
   --let $count = `SELECT COUNT(*) FROM performance_schema.replication_applier_configuration WHERE CHANNEL_NAME=$channel AND PRIVILEGE_CHECKS_USER="<INVALID>"`
   --let $assert_text = Check entry for channel $channel in performance_schema.replication_applier_configuration
@@ -225,7 +225,7 @@ END_OF_PROCEDURE
   --source include/assert.inc
 END_OF_PROCEDURE
 
---source include/rpl_connection_slave.inc
+--source include/rpl/connection_replica.inc
 
 # Prerequisites:
 #   1. add mtr suppression statement for errors on various error test cases for
@@ -239,7 +239,7 @@ CALL mtr.add_suppression("Replica SQL for channel 'ch1': Replica failed to initi
 
 --let $MYSQLD_DATADIR= `select @@datadir`
 
-#   2. create user replication_applier to use in change master as
+#   2. create user replication_applier to use in change replication source as
 #      privilege_checks_user with REPLICATION_APPLIER privilege.
 CREATE USER 'replication_applier'@'localhost' IDENTIFIED BY 'password';
 GRANT REPLICATION_APPLIER ON * . * TO 'replication_applier'@'localhost';
@@ -252,12 +252,12 @@ CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=10, PRIVILEGE_
 # The debug point tests the execution flow where isn't nullptr
 # that is being passed to set_info but a variable with nullptr value.
 --echo #
---echo # Restart slave with TABLE repository to test with privilege_checks_user config.
+--echo # Restart replica with TABLE repository to test with privilege_checks_user config.
 --echo #
 --let $rpl_server_number = 2
 --let $rpl_server_parameters =  --debug=d,simulate_priv_check_user_nullptr_t
 --let $explicit_default_wait_counter = 15000
---source include/rpl_restart_server.inc
+--source include/rpl/restart_server.inc
 
 # verify (privilege_checks_username, privilege_checks_hostname), and
 # privilege_checks_user for default channel in mysql.slave_relay_log_info,
@@ -272,7 +272,7 @@ CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=10, PRIVILEGE_
 --source $MYSQL_TMP_DIR/assert_channel_config_with_table_repo.inc
 
 --echo #
---echo # TC.P.T1: CHANGE MASTER sets the PRIVILEGE_CHECKS_USER correctly.
+--echo # TC.P.T1: CHANGE REPLICATION SOURCE sets the PRIVILEGE_CHECKS_USER correctly.
 --echo #
 #   1. create two channels ch1 and ch2 when slave is configured with TABLE type
 #      repo. "ch1" has not PRIVILEGE_CHECKS_USER, "ch2" has
@@ -306,7 +306,7 @@ FLUSH RELAY LOGS FOR CHANNEL "ch2";
 --let $rpl_server_number = 2
 --let $rpl_server_parameters =
 --let $explicit_default_wait_counter = 15000
---source include/rpl_restart_server.inc
+--source include/rpl/restart_server.inc
 #   2. verify that there are three channel entries in both pfs and
 #      slave_relay_log_info tables.
 --let $num_channels = 3
@@ -365,13 +365,13 @@ RESET REPLICA FOR CHANNEL "";
 RESET REPLICA ALL FOR CHANNEL "";
 RESET REPLICA ALL FOR CHANNEL "ch2";
 
-STOP SLAVE FOR CHANNEL "ch1";
+STOP REPLICA FOR CHANNEL "ch1";
 --let $channel = "ch1"
 
 --echo #
 --echo # TC.E.T1: privilege_checks_username has more than 32 length.
 --echo #
-#      a. CHANGE MASTER will result in ER_CLIENT_PRIVILEGE_CHECKS_USER_CORRUPT.
+#      a. CHANGE REPLICATION SOURCE will result in ER_CLIENT_PRIVILEGE_CHECKS_USER_CORRUPT.
 --error ER_WRONG_STRING_LENGTH
 CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=10, PRIVILEGE_CHECKS_USER='repli_priv_checks_user_more_than_32'@'localhost' FOR CHANNEL "ch1";
 #      b. server start will result in ER_LOG_WARN_PRIVILEGE_CHECKS_USER_CORRUPT.
@@ -382,7 +382,7 @@ CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=10, PRIVILEGE_
 --source include/remove_debug_point.inc
 #      c. SLAVE START will result in failure due to invalid config.
 --error  ER_REPLICA_AM_INIT_REPOSITORY
-START SLAVE FOR CHANNEL "ch1";
+START REPLICA FOR CHANNEL "ch1";
 
 # Restore the correct channel config after error test case.
 RESET REPLICA FOR CHANNEL "ch1";
@@ -391,7 +391,7 @@ CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=11 FOR CHANNEL
 --echo #
 --echo # TC.E.T2: privilege_checks_hostname has more than 255 length.
 --echo #
-#      a. CHANGE MASTER will result in ER_CLIENT_PRIVILEGE_CHECKS_USER_CORRUPT.
+#      a. CHANGE REPLICATION SOURCE will result in ER_CLIENT_PRIVILEGE_CHECKS_USER_CORRUPT.
 --error ER_WRONG_STRING_LENGTH
 CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=12, PRIVILEGE_CHECKS_USER='replication_applier'@'replication_privilege_checks_hostname_more_than_255_replication_privilege_checks_hostname_more_than_255_replication_privilege_checks_hostname_more_than_255_replication_privilege_checks_hostname_more_than_255_replication_privilege_checks_hostname_more_than255' FOR CHANNEL "ch1" ;
 #      b. server start will result in ER_LOG_WARN_PRIVILEGE_CHECKS_USER_CORRUPT.
@@ -402,7 +402,7 @@ CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=12, PRIVILEGE_
 --source include/remove_debug_point.inc
 #      c. SLAVE START will result in failure due to invalid config.
 --error  ER_REPLICA_AM_INIT_REPOSITORY
-START SLAVE FOR CHANNEL "ch1";
+START REPLICA FOR CHANNEL "ch1";
 
 --let $debug_point =
 # Restore the correct channel config after error test case.
@@ -412,7 +412,7 @@ CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=11 FOR CHANNEL
 --echo #
 --echo # TC.E.T3: privilege_checks_hostname has @.
 --echo #
-#      a. CHANGE MASTER will result in ER_UNKNOWN_ERROR.
+#      a. CHANGE REPLICATION SOURCE will result in ER_UNKNOWN_ERROR.
 --error ER_UNKNOWN_ERROR
 CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=12, PRIVILEGE_CHECKS_USER='replication_applier'@'l@calhost' FOR CHANNEL "ch1" ;
 #      b. server start will result in ER_LOG_WARN_PRIVILEGE_CHECKS_USER_CORRUPT.
@@ -421,7 +421,7 @@ CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=12, PRIVILEGE_
 --source $MYSQL_TMP_DIR/assert_channel_invalid_config_update_of_table_repo_entry.inc
 #      c. SLAVE START will result in failure due to invalid config.
 --error  ER_REPLICA_AM_INIT_REPOSITORY
-START SLAVE FOR CHANNEL "ch1";
+START REPLICA FOR CHANNEL "ch1";
 
 # Restore the correct channel config after error test case.
 RESET REPLICA FOR CHANNEL "ch1";
@@ -437,7 +437,7 @@ CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=11 FOR CHANNEL
 --source $MYSQL_TMP_DIR/assert_channel_invalid_config_update_of_table_repo_entry.inc
 #   b. SLAVE START will result in failure due to invalid config.
 --error  ER_REPLICA_AM_INIT_REPOSITORY
-START SLAVE FOR CHANNEL "ch1";
+START REPLICA FOR CHANNEL "ch1";
 
 # Restore the correct channel config after error test case.
 RESET REPLICA FOR CHANNEL "ch1";
@@ -446,7 +446,7 @@ CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=11 FOR CHANNEL
 --echo #
 --echo # TC.E.T5. privilege_checks_username is anonymous.
 --echo #
-#      a. CHANGE MASTER will result in
+#      a. CHANGE REPLICATION SOURCE will result in
 #         ER_CLIENT_PRIVILEGE_CHECKS_USER_CANNOT_BE_ANONYMOUS.
 --error ER_CLIENT_PRIVILEGE_CHECKS_USER_CANNOT_BE_ANONYMOUS
 CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=12, PRIVILEGE_CHECKS_USER=''@'localhost' FOR CHANNEL "ch1" ;
@@ -456,7 +456,7 @@ CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=12, PRIVILEGE_
 --source $MYSQL_TMP_DIR/assert_channel_invalid_config_update_of_table_repo_entry.inc
 #      c. SLAVE START will result in failure due to invalid config.
 --error  ER_REPLICA_AM_INIT_REPOSITORY
-START SLAVE FOR CHANNEL "ch1";
+START REPLICA FOR CHANNEL "ch1";
 
 # Restore the correct channel config after error test case.
 RESET REPLICA FOR CHANNEL "ch1";
@@ -465,7 +465,7 @@ CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=11 FOR CHANNEL
 --echo #
 --echo # TC.E.T6. privilege_checks_user is a non existent user.
 --echo #
-#      a. CHANGE MASTER will result in ER_CLIENT_PRIVILEGE_CHECKS_USER_DOES_NOT_EXIST.
+#      a. CHANGE REPLICATION SOURCE will result in ER_CLIENT_PRIVILEGE_CHECKS_USER_DOES_NOT_EXIST.
 --error ER_CLIENT_PRIVILEGE_CHECKS_USER_DOES_NOT_EXIST
 CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=12, PRIVILEGE_CHECKS_USER='replication_applier_nonexist'@'localhost' FOR CHANNEL "ch1" ;
 #      b. server start will result in ER_LOG_WARN_PRIVILEGE_CHECKS_USER_DOES_NOT_EXIST.
@@ -474,7 +474,7 @@ CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=12, PRIVILEGE_
 --source $MYSQL_TMP_DIR/assert_channel_invalid_config_update_of_table_repo_entry.inc
 #      c. SLAVE START will result in failure due to invalid config.
 --error  ER_REPLICA_AM_INIT_REPOSITORY
-START SLAVE FOR CHANNEL "ch1";
+START REPLICA FOR CHANNEL "ch1";
 
 # Restore the correct channel config after error test case.
 RESET REPLICA FOR CHANNEL "ch1";
@@ -498,12 +498,12 @@ DROP USER 'replication_applier'@'localhost';
 --remove_file $MYSQL_TMP_DIR/assert_channel_config_with_table_repo.inc
 --remove_file $MYSQL_TMP_DIR/assert_channel_invalid_config_update_of_table_repo_entry.inc
 
---source include/stop_slave.inc
+--source include/rpl/stop_replica.inc
 RESET REPLICA ALL;
 --connection slave
 --replace_result $MASTER_MYPORT MASTER_MYPORT
 --eval CHANGE REPLICATION SOURCE TO SOURCE_USER='root', SOURCE_HOST="127.0.0.1", SOURCE_PORT=$MASTER_MYPORT;
---source include/start_slave.inc
+--source include/rpl/start_replica.inc
 --let $rpl_channel_name=
 --let $rpl_skip_sync= 1
-source include/rpl_end.inc;
+source include/rpl/deinit.inc;

@@ -1,15 +1,16 @@
-/* Copyright (c) 2014, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -268,7 +269,7 @@ class Multisource_info {
 
   /**
     Get the number of running channels which have asynchronous replication
-    failover feature, i.e. CHANGE MASTER TO option
+    failover feature, i.e. CHANGE REPLICATION SOURCE TO option
     SOURCE_CONNECTION_AUTO_FAILOVER, enabled.
 
     @return The number of channels.
@@ -319,17 +320,33 @@ class Multisource_info {
     return (is_valid);
   }
 
+  /// @brief Checks if a channel is the group replication applier channel
+  /// @param[in] channel Name of the channel to check
+  /// @returns true if it is the gr applier channel
+  bool is_group_replication_applier_channel_name(const char *channel);
+
+  /// @brief Checks if a channel is the group replication recovery channel
+  /// @param[in] channel Name of the channel to check
+  /// @returns true if it is the gr recovery channel
+  bool is_group_replication_recovery_channel_name(const char *channel);
+
   /**
     Returns if a channel name is one of the reserved group replication names
 
     @param channel    the channel name to test
-    @param is_applier compare only with applier name
 
     @retval      true   the name is a reserved name
     @retval      false  non reserved name
   */
-  bool is_group_replication_channel_name(const char *channel,
-                                         bool is_applier = false);
+  bool is_group_replication_channel_name(const char *channel);
+
+  /// @brief Check if the channel has an hostname or is a GR channel
+  /// @return true if the channel is configured or is a gr channel,
+  ///         false otherwise
+  bool is_channel_configured(Master_info *mi) {
+    return mi && (mi->host[0] ||
+                  is_group_replication_channel_name(mi->get_channel()));
+  }
 
   /**
      Forward iterators to initiate traversing of a map.
@@ -461,9 +478,9 @@ class Multisource_info {
   channel_map.rdlock() when querying P_S.replication_applier_filters table,
   we keep the rpl_channel_filters. So that we just need to hold the small
   rpl_channel_filters.rdlock() when querying P_S.replication_applier_filters
-  table. Many operations (RESET SLAVE [FOR CHANNEL], START SLAVE, INIT SLAVE,
-  END SLAVE, CHANGE MASTER TO, FLUSH RELAY LOGS, START CHANNEL, PURGE CHANNEL,
-  and so on) hold the channel_map.wrlock().
+  table. Many operations (RESET REPLICA [FOR CHANNEL], START REPLICA, INIT
+  SLAVE, END SLAVE, CHANGE REPLICATION SOURCE TO, FLUSH RELAY LOGS, START
+  CHANNEL, PURGE CHANNEL, and so on) hold the channel_map.wrlock().
 
   There is one instance, rpl_channel_filters, created globally for Multisource
   channel filters. The rpl_channel_filters is created when the server is
@@ -479,14 +496,14 @@ class Rpl_channel_filters {
     This lock was designed to protect the channel_to_filter from reading,
     adding, or removing its objects from the map. It is used to preventing
     the following commands to run in parallel:
-      RESET SLAVE ALL [FOR CHANNEL '<channel_name>']
-      CHANGE MASTER TO ... FOR CHANNEL
+      RESET REPLICA ALL [FOR CHANNEL '<channel_name>']
+      CHANGE REPLICATION SOURCE TO ... FOR CHANNEL
       SELECT FROM performance_schema.replication_applier_filters
 
-    Please acquire a wrlock when modifying the map structure (RESET SLAVE ALL
-    [FOR CHANNEL '<channel_name>'], CHANGE MASTER TO ... FOR CHANNEL).
-    Please acqurie a rdlock when querying existing filter(s) (SELECT FROM
-    performance_schema.replication_applier_filters).
+    Please acquire a wrlock when modifying the map structure (RESET REPLICA ALL
+    [FOR CHANNEL '<channel_name>'], CHANGE REPLICATION SOURCE TO ... FOR
+    CHANNEL). Please acqurie a rdlock when querying existing filter(s) (SELECT
+    FROM performance_schema.replication_applier_filters).
 
     Note: To modify the object from the map, please see the protection of
     m_rpl_filter_lock in Rpl_filter.

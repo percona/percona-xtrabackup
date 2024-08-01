@@ -8,13 +8,11 @@ Note	####	Storing MySQL user name or password information in the connection meta
 #    Start GR on M2 with higher patch version.
 
 [connection server1]
-SET @debug1_save= @@GLOBAL.DEBUG;
-SET @@GLOBAL.DEBUG= 'd,group_replication_compatibility_lower_patch_version';
+SET @@GLOBAL.DEBUG= '+d,group_replication_compatibility_lower_minor_version';
 include/start_and_bootstrap_group_replication.inc
 CREATE TABLE t1 (c1 INT NOT NULL PRIMARY KEY);
 [connection server2]
-SET @debug2_save= @@GLOBAL.DEBUG;
-SET @@GLOBAL.DEBUG= 'd,group_replication_compatibility_higher_patch_version';
+SET @@GLOBAL.DEBUG= '+d,group_replication_compatibility_higher_minor_version';
 SET SESSION sql_log_bin=0;
 call mtr.add_suppression("Member version is read compatible with the group.");
 SET SESSION sql_log_bin=1;
@@ -43,6 +41,8 @@ SET @@GLOBAL.DEBUG='-d,dump_thread_before_read_event';
 SET DEBUG_SYNC = "now SIGNAL signal.continue";
 [connection server_3]
 SET @@GLOBAL.group_replication_allow_local_lower_version_join=1;
+Warnings:
+Warning	1681	'group_replication_allow_local_lower_version_join' is deprecated and will be removed in a future release.
 [connection server3]
 
 # 5. Verify M3 is ONLINE and writable since its new lowest version.
@@ -55,13 +55,15 @@ include/assert.inc [The super_read_only mode should be 1 on server2.]
 
 [connection server3]
 SET @@GLOBAL.group_replication_allow_local_lower_version_join= 0;
+Warnings:
+Warning	1681	'group_replication_allow_local_lower_version_join' is deprecated and will be removed in a future release.
 DROP TABLE t1;
-include/rpl_sync.inc
+include/rpl/sync.inc
 [connection server2]
-SET @@GLOBAL.DEBUG= @debug2_save;
+SET @@GLOBAL.DEBUG= '-d,group_replication_compatibility_higher_minor_version';
 include/stop_group_replication.inc
 [connection server1]
-SET @@GLOBAL.DEBUG= @debug1_save;
+SET @@GLOBAL.DEBUG= '-d,group_replication_compatibility_lower_minor_version';
 SET DEBUG_SYNC= 'RESET';
 SET SESSION sql_log_bin = 0;
 DROP TABLE t1;
@@ -71,5 +73,5 @@ call mtr.add_suppression("Fatal error during execution on the Applier process of
 call mtr.add_suppression("The server was automatically set into read only mode after an error was detected.");
 call mtr.add_suppression("Skipping leave operation: concurrent attempt to leave the group is on-going.");
 SET SESSION sql_log_bin = 1;
-include/stop_dump_threads.inc
+include/rpl/stop_dump_threads.inc
 include/group_replication_end.inc

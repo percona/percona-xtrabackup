@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -30,37 +31,8 @@
 
 #include "mysql/harness/net_ts/socket.h"  // net::impl::socket::init
 #include "mysql/harness/stdx/expected_ostream.h"
+#include "router/tests/helpers/stdx_expected_no_error.h"
 #include "test/temp_directory.h"
-
-template <class T, class E>
-::testing::AssertionResult StdxExpectedSuccess(const char *expr,
-                                               const stdx::expected<T, E> &e) {
-  if (e) return ::testing::AssertionSuccess();
-
-  return ::testing::AssertionFailure() << "Expected: " << expr << " succeeds.\n"
-                                       << "  Actual: " << e.error() << "\n";
-}
-
-template <class T, class E>
-::testing::AssertionResult StdxExpectedFailure(const char *expr,
-                                               const stdx::expected<T, E> &e) {
-  if (!e) return ::testing::AssertionSuccess();
-
-  if constexpr (std::is_void_v<T>) {
-    return ::testing::AssertionFailure() << "Expected: " << expr << " fails.\n"
-                                         << "  Actual: succeeded\n";
-  } else {
-    return ::testing::AssertionFailure()
-           << "Expected: " << expr << " fails.\n"
-           << "  Actual: " << ::testing::PrintToString(e.value()) << "\n";
-  }
-}
-
-#define EXPECT_NO_ERROR(x) EXPECT_PRED_FORMAT1(StdxExpectedSuccess, (x))
-#define ASSERT_NO_ERROR(x) ASSERT_PRED_FORMAT1(StdxExpectedSuccess, (x))
-
-#define EXPECT_ERROR(x) EXPECT_PRED_FORMAT1(StdxExpectedFailure, (x))
-#define ASSERT_ERROR(x) ASSERT_PRED_FORMAT1(StdxExpectedFailure, (x))
 
 #ifdef NET_TS_HAS_UNIX_SOCKET
 
@@ -217,8 +189,9 @@ TEST(NetTS_local, stream_socket_bind_accept_connect_named) {
   EXPECT_NO_ERROR(acceptor.native_non_blocking(true));
 
   // should fail with EWOULDBLOCK
-  EXPECT_EQ(acceptor.accept(), stdx::make_unexpected(make_error_condition(
-                                   std::errc::operation_would_block)));
+  EXPECT_EQ(
+      acceptor.accept(),
+      stdx::unexpected(make_error_condition(std::errc::operation_would_block)));
   auto local_endp_res = acceptor.local_endpoint();
 
   ASSERT_NO_ERROR(local_endp_res);
@@ -251,9 +224,9 @@ TEST(NetTS_local, stream_socket_bind_accept_connect_named) {
 
   std::array<char, 5> source{{0x01, 0x02, 0x03, 0x04, 0x05}};
   std::array<char, 16> sink;
-  EXPECT_EQ(net::read(client_sock, net::buffer(sink)),
-            stdx::make_unexpected(
-                make_error_condition(std::errc::operation_would_block)));
+  EXPECT_EQ(
+      net::read(client_sock, net::buffer(sink)),
+      stdx::unexpected(make_error_condition(std::errc::operation_would_block)));
 
   auto write_res = net::write(server_sock, net::buffer(source));
   ASSERT_NO_ERROR(write_res) << write_res.error();
@@ -305,8 +278,9 @@ TEST(NetTS_local, stream_socket_bind_accept_connect_abstract) {
   EXPECT_NO_ERROR(acceptor.native_non_blocking(true));
 
   // should fail with EWOULDBLOCK
-  EXPECT_EQ(acceptor.accept(), stdx::make_unexpected(make_error_condition(
-                                   std::errc::operation_would_block)));
+  EXPECT_EQ(
+      acceptor.accept(),
+      stdx::unexpected(make_error_condition(std::errc::operation_would_block)));
 
   const auto local_endp_res = acceptor.local_endpoint();
   ASSERT_NO_ERROR(local_endp_res);
@@ -346,9 +320,9 @@ TEST(NetTS_local, stream_socket_bind_accept_connect_abstract) {
 
   std::array<char, 5> source{{0x01, 0x02, 0x03, 0x04, 0x05}};
   std::array<char, 16> sink;
-  EXPECT_EQ(net::read(client_sock, net::buffer(sink)),
-            stdx::make_unexpected(
-                make_error_condition(std::errc::operation_would_block)));
+  EXPECT_EQ(
+      net::read(client_sock, net::buffer(sink)),
+      stdx::unexpected(make_error_condition(std::errc::operation_would_block)));
 
   auto write_res = net::write(server_sock, net::buffer(source));
   ASSERT_NO_ERROR(write_res) << write_res.error();
@@ -400,8 +374,9 @@ TEST(NetTS_local, stream_socket_bind_accept_connect_autobind) {
   EXPECT_NO_ERROR(acceptor.native_non_blocking(true));
 
   // should fail with EWOULDBLOCK
-  EXPECT_EQ(acceptor.accept(), stdx::make_unexpected(make_error_condition(
-                                   std::errc::operation_would_block)));
+  EXPECT_EQ(
+      acceptor.accept(),
+      stdx::unexpected(make_error_condition(std::errc::operation_would_block)));
   auto local_endp_res = acceptor.local_endpoint();
   ASSERT_NO_ERROR(local_endp_res);
 
@@ -443,9 +418,9 @@ TEST(NetTS_local, stream_socket_bind_accept_connect_autobind) {
 
   std::array<char, 5> source{{0x01, 0x02, 0x03, 0x04, 0x05}};
   std::array<char, 16> sink;
-  EXPECT_EQ(net::read(client_sock, net::buffer(sink)),
-            stdx::make_unexpected(
-                make_error_condition(std::errc::operation_would_block)));
+  EXPECT_EQ(
+      net::read(client_sock, net::buffer(sink)),
+      stdx::unexpected(make_error_condition(std::errc::operation_would_block)));
 
   auto write_res = net::write(server_sock, net::buffer(source));
   ASSERT_NO_ERROR(write_res) << write_res.error();
@@ -506,7 +481,7 @@ TEST(NetTS_local, datagram_socket_bind_sendmsg_recvmsg) {
   local::datagram_protocol::endpoint recvfrom_endp;
   EXPECT_EQ(
       client_sock.receive_from(net::buffer(sink), recvfrom_endp),
-      stdx::make_unexpected(make_error_code(std::errc::operation_would_block)));
+      stdx::unexpected(make_error_code(std::errc::operation_would_block)));
 
   SCOPED_TRACE("// send something");
   std::array<char, 5> source{{0x01, 0x02, 0x03, 0x04, 0x05}};
@@ -556,7 +531,7 @@ TEST(NetTS_local, datagram_socketpair_recvfrom) {
   endpoint_type recvfrom_endp;
   EXPECT_EQ(
       client_sock.receive_from(net::buffer(sink), recvfrom_endp),
-      stdx::make_unexpected(make_error_code(std::errc::operation_would_block)));
+      stdx::unexpected(make_error_code(std::errc::operation_would_block)));
 
   SCOPED_TRACE("// send something");
   std::array<char, 5> source{{0x01, 0x02, 0x03, 0x04, 0x05}};
@@ -611,9 +586,9 @@ TYPED_TEST(LocalProtocolTest, socketpair) {
 
   SCOPED_TRACE("// up to now, there is no data");
   std::array<char, 16> sink;
-  EXPECT_EQ(client_sock.receive(net::buffer(sink)),
-            stdx::make_unexpected(
-                make_error_condition(std::errc::operation_would_block)));
+  EXPECT_EQ(
+      client_sock.receive(net::buffer(sink)),
+      stdx::unexpected(make_error_condition(std::errc::operation_would_block)));
 
   SCOPED_TRACE("// send something");
   std::array<char, 5> source{{0x01, 0x02, 0x03, 0x04, 0x05}};
@@ -715,7 +690,7 @@ TEST(NetTS_local, socketpair_unsupported_protocol) {
   // other OSes may return other error-codes
   EXPECT_EQ(
       local::connect_pair<protocol_type>(&io_ctx, server_sock, client_sock),
-      stdx::make_unexpected(
+      stdx::unexpected(
           make_error_code(std::errc::address_family_not_supported)));
 }
 

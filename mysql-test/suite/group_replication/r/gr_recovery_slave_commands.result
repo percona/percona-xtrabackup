@@ -12,8 +12,8 @@ call mtr.add_suppression("Replica channel 'group_replication_recovery' does not 
 set session sql_log_bin=1;
 include/start_and_bootstrap_group_replication.inc
 
-# CHM for 'group_replication_recovery' channel won't accept parameters other than
-# MASTER_USER and MASTER_PASSWORD
+# CRS for 'group_replication_recovery' channel won't accept parameters other than
+# Source_User and SOURCE_PASSWORD
 CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=10 FOR CHANNEL "group_replication_recovery";
 ERROR HY000: CHANGE REPLICATION SOURCE with the given parameters cannot be performed on channel 'group_replication_recovery'.
 CHANGE REPLICATION SOURCE TO SOURCE_TLS_CIPHERSUITES="foo" FOR CHANNEL "group_replication_recovery";
@@ -21,32 +21,32 @@ ERROR HY000: CHANGE REPLICATION SOURCE with the given parameters cannot be perfo
 CHANGE REPLICATION SOURCE TO SOURCE_CONNECTION_AUTO_FAILOVER=1 FOR CHANNEL "group_replication_recovery";
 ERROR HY000: CHANGE REPLICATION SOURCE with the given parameters cannot be performed on channel 'group_replication_recovery'.
 
-# ERROR when executing STOP SLAVE on GR recovery channel
-STOP SLAVE FOR CHANNEL 'group_replication_recovery';
+# ERROR when executing STOP REPLICA on GR recovery channel
+STOP REPLICA FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: Replica channel 'group_replication_recovery' does not exist.
 
-# ERROR when executing START SLAVE on GR recovery channel
-START SLAVE FOR CHANNEL 'group_replication_recovery';
+# ERROR when executing START REPLICA on GR recovery channel
+START REPLICA FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: Replica channel 'group_replication_recovery' does not exist.
 
-# ERROR when executing STOP SLAVE IO_THREAD on GR recovery channel
-STOP SLAVE IO_THREAD FOR CHANNEL 'group_replication_recovery';
+# ERROR when executing STOP REPLICA IO_THREAD on GR recovery channel
+STOP REPLICA IO_THREAD FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: Replica channel 'group_replication_recovery' does not exist.
 
-# ERROR when executing START SLAVE IO_THREAD on GR recovery channel
-START SLAVE IO_THREAD FOR CHANNEL 'group_replication_recovery';
+# ERROR when executing START REPLICA IO_THREAD on GR recovery channel
+START REPLICA IO_THREAD FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: Replica channel 'group_replication_recovery' does not exist.
 
-# ERROR when executing STOP SLAVE SQL_THREAD on GR recovery channel
-STOP SLAVE SQL_THREAD FOR CHANNEL 'group_replication_recovery';
+# ERROR when executing STOP REPLICA SQL_THREAD on GR recovery channel
+STOP REPLICA SQL_THREAD FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: Replica channel 'group_replication_recovery' does not exist.
 
-# ERROR when executing START SLAVE SQL_THREAD on GR recovery channel
-START SLAVE SQL_THREAD FOR CHANNEL 'group_replication_recovery';
+# ERROR when executing START REPLICA SQL_THREAD on GR recovery channel
+START REPLICA SQL_THREAD FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: Replica channel 'group_replication_recovery' does not exist.
 
-# ERROR when executing SHOW SLAVE STATUS on GR recovery channel
-SHOW SLAVE STATUS FOR CHANNEL 'group_replication_recovery';
+# ERROR when executing SHOW REPLICA STATUS on GR recovery channel
+SHOW REPLICA STATUS FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: Replica channel 'group_replication_recovery' does not exist.
 
 # ERROR when executing SHOW RELAYLOG EVENTS on GR recovery channel
@@ -57,12 +57,12 @@ ERROR HY000: Replica channel 'group_replication_recovery' does not exist.
 FLUSH RELAY LOGS FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: Replica channel 'group_replication_recovery' does not exist.
 
-# ERROR when executing RESET SLAVE command on GR recovery channel
-RESET SLAVE FOR CHANNEL "group_replication_recovery";
+# ERROR when executing RESET REPLICA command on GR recovery channel
+RESET REPLICA FOR CHANNEL "group_replication_recovery";
 ERROR HY000: Replica channel 'group_replication_recovery' does not exist.
 
-# ERROR when executing RESET SLAVE ALL command on GR recovery channel
-RESET SLAVE ALL FOR CHANNEL "group_replication_recovery";
+# ERROR when executing RESET REPLICA ALL command on GR recovery channel
+RESET REPLICA ALL FOR CHANNEL "group_replication_recovery";
 ERROR HY000: Replica channel 'group_replication_recovery' does not exist.
 
 # Add some data for recovery on M1. Start GR on M2.
@@ -79,31 +79,31 @@ include/start_group_replication.inc
 # Test commands for recovery channel when MEMBER_STATE: ONLINE and
 # recovery channel is PRESENT but INACTIVE.
 
-# STOP SLAVE is blocked on GR recovery channel
-STOP SLAVE FOR CHANNEL "group_replication_recovery";
+# STOP REPLICA is blocked on GR recovery channel
+STOP REPLICA FOR CHANNEL "group_replication_recovery";
 ERROR HY000: STOP REPLICA FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# START SLAVE is blocked on GR recovery channel
-START SLAVE FOR CHANNEL 'group_replication_recovery';
+# START REPLICA is blocked on GR recovery channel
+START REPLICA FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: START REPLICA FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# STOP SLAVE IO_THREAD is blocked on GR recovery channel
-STOP SLAVE IO_THREAD FOR CHANNEL 'group_replication_recovery';
+# STOP REPLICA IO_THREAD is blocked on GR recovery channel
+STOP REPLICA IO_THREAD FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: STOP REPLICA IO_THREAD FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# START SLAVE IO_THREAD is blocked on GR recovery channel
-START SLAVE IO_THREAD FOR CHANNEL 'group_replication_recovery';
+# START REPLICA IO_THREAD is blocked on GR recovery channel
+START REPLICA IO_THREAD FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: START REPLICA IO_THREAD FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# STOP SLAVE SQL_THREAD is blocked on GR recovery channel
-STOP SLAVE SQL_THREAD FOR CHANNEL 'group_replication_recovery';
+# STOP REPLICA SQL_THREAD is blocked on GR recovery channel
+STOP REPLICA SQL_THREAD FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: STOP REPLICA SQL_THREAD FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# START SLAVE SQL_THREAD is blocked on GR recovery channel
-START SLAVE SQL_THREAD FOR CHANNEL 'group_replication_recovery';
+# START REPLICA SQL_THREAD is blocked on GR recovery channel
+START REPLICA SQL_THREAD FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: START REPLICA SQL_THREAD FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# SHOW SLAVE STATUS - check that recovery channel is inactive
+# SHOW REPLICA STATUS - check that recovery channel is inactive
 include/assert.inc [recovery channel is inactive]
 
 # SHOW RELAYLOG EVENTS - check that relaylogs are created
@@ -112,16 +112,12 @@ include/assert.inc [Relay logs are created]
 # SUCCESS when executing FLUSH RELAY LOGS on GR recovery channel
 FLUSH RELAY LOGS FOR CHANNEL 'group_replication_recovery';
 
-# SUCCESS when executing RESET SLAVE on GR recovery channel
-RESET SLAVE FOR CHANNEL "group_replication_recovery";
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
+# SUCCESS when executing RESET REPLICA on GR recovery channel
+RESET REPLICA FOR CHANNEL "group_replication_recovery";
 
-# Execute RESET SLAVE ALL FOR CHANNEL to delete the recovery channel
+# Execute RESET REPLICA ALL FOR CHANNEL to delete the recovery channel
 # and related files
-RESET SLAVE ALL FOR CHANNEL "group_replication_recovery";
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
+RESET REPLICA ALL FOR CHANNEL "group_replication_recovery";
 
 # Stop GR on M2. Add data on M1. Lock table on M2 to block recovery.
 # Start GR on M2.
@@ -141,43 +137,43 @@ include/start_group_replication.inc
 # Now when M2 is in RECOVERING state, test commands for recovery channel
 # when MEMBER_STATE: RECOVERING and recovery channel is ACTIVE.
 
-# STOP SLAVE is blocked on GR recovery channel
-STOP SLAVE FOR CHANNEL "group_replication_recovery";
+# STOP REPLICA is blocked on GR recovery channel
+STOP REPLICA FOR CHANNEL "group_replication_recovery";
 ERROR HY000: STOP REPLICA FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# START SLAVE is blocked on GR recovery channel
-START SLAVE FOR CHANNEL 'group_replication_recovery';
+# START REPLICA is blocked on GR recovery channel
+START REPLICA FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: START REPLICA FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# STOP SLAVE IO_THREAD is blocked on GR recovery channel
-STOP SLAVE IO_THREAD FOR CHANNEL 'group_replication_recovery';
+# STOP REPLICA IO_THREAD is blocked on GR recovery channel
+STOP REPLICA IO_THREAD FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: STOP REPLICA IO_THREAD FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# START SLAVE IO_THREAD is blocked on GR recovery channel
-START SLAVE IO_THREAD FOR CHANNEL 'group_replication_recovery';
+# START REPLICA IO_THREAD is blocked on GR recovery channel
+START REPLICA IO_THREAD FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: START REPLICA IO_THREAD FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# START SLAVE IO_THREAD with UNTIL option is blocked on GR recovery channel
-START SLAVE IO_THREAD UNTIL SOURCE_LOG_FILE = 'server-binary-log.000001', SOURCE_LOG_POS = 754 FOR CHANNEL 'group_replication_recovery';
+# START REPLICA IO_THREAD with UNTIL option is blocked on GR recovery channel
+START REPLICA IO_THREAD UNTIL SOURCE_LOG_FILE = 'server-binary-log.000001', SOURCE_LOG_POS = 754 FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: START REPLICA IO_THREAD FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# STOP SLAVE SQL_THREAD is blocked on GR recovery channel
-STOP SLAVE SQL_THREAD FOR CHANNEL 'group_replication_recovery';
+# STOP REPLICA SQL_THREAD is blocked on GR recovery channel
+STOP REPLICA SQL_THREAD FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: STOP REPLICA SQL_THREAD FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# START SLAVE SQL_THREAD is blocked on GR recovery channel
-START SLAVE SQL_THREAD FOR CHANNEL 'group_replication_recovery';
+# START REPLICA SQL_THREAD is blocked on GR recovery channel
+START REPLICA SQL_THREAD FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: START REPLICA SQL_THREAD FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# START SLAVE SQL_THREAD with UNTIL option is blocked on GR recovery channel
-START SLAVE SQL_THREAD UNTIL SQL_AFTER_GTIDS='11111111-1111-1111-1111-111111111111:1-23' FOR CHANNEL 'group_replication_recovery';
+# START REPLICA SQL_THREAD with UNTIL option is blocked on GR recovery channel
+START REPLICA SQL_THREAD UNTIL SQL_AFTER_GTIDS='11111111-1111-1111-1111-111111111111:1-23' FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: START REPLICA SQL_THREAD FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# START SLAVE SQL_THREAD with UNTIL option is blocked on GR recovery channel
-START SLAVE SQL_THREAD UNTIL RELAY_LOG_FILE = 'server-relay-log-group_replication_recovery.000001', RELAY_LOG_POS = 854 FOR CHANNEL 'group_replication_recovery';
+# START REPLICA SQL_THREAD with UNTIL option is blocked on GR recovery channel
+START REPLICA SQL_THREAD UNTIL RELAY_LOG_FILE = 'server-relay-log-group_replication_recovery.000001', RELAY_LOG_POS = 854 FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: START REPLICA SQL_THREAD FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# SHOW SLAVE STATUS - check that recovery channel is active
+# SHOW REPLICA STATUS - check that recovery channel is active
 include/assert.inc [recovery channel is active]
 
 # SHOW RELAYLOG EVENTS - Relay log files should exists
@@ -187,12 +183,12 @@ include/assert.inc [Relay log name should not be empty as the command successful
 FLUSH RELAY LOGS FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: Error on observer while running replication hook 'before_commit'.
 
-# RESET SLAVE command is blocked only when recovery channel is active.
-RESET SLAVE FOR CHANNEL "group_replication_recovery";
+# RESET REPLICA command is blocked only when recovery channel is active.
+RESET REPLICA FOR CHANNEL "group_replication_recovery";
 ERROR HY000: This operation cannot be performed with running replication threads; run STOP REPLICA FOR CHANNEL 'group_replication_recovery' first
 
-# RESET SLAVE [ALL] command is blocked only when recovery channel is active.
-RESET SLAVE ALL FOR CHANNEL "group_replication_recovery";
+# RESET REPLICA [ALL] command is blocked only when recovery channel is active.
+RESET REPLICA ALL FOR CHANNEL "group_replication_recovery";
 ERROR HY000: This operation cannot be performed with running replication threads; run STOP REPLICA FOR CHANNEL 'group_replication_recovery' first
 
 # Unlock tables on M2 and drop table t1 on M1. Stop GR on M2. Test
@@ -202,48 +198,46 @@ ERROR HY000: This operation cannot be performed with running replication threads
 UNLOCK TABLES;
 [connection server1]
 DROP TABLE t1;
-include/rpl_sync.inc
+include/rpl/sync.inc
 [connection server2]
 include/stop_group_replication.inc
 
-# STOP SLAVE is blocked on GR recovery channel
-STOP SLAVE FOR CHANNEL "group_replication_recovery";
+# STOP REPLICA is blocked on GR recovery channel
+STOP REPLICA FOR CHANNEL "group_replication_recovery";
 ERROR HY000: STOP REPLICA FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# START SLAVE is blocked on GR recovery channel
-START SLAVE FOR CHANNEL 'group_replication_recovery';
+# START REPLICA is blocked on GR recovery channel
+START REPLICA FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: START REPLICA FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# STOP SLAVE IO_THREAD is blocked on GR recovery channel
-STOP SLAVE IO_THREAD FOR CHANNEL 'group_replication_recovery';
+# STOP REPLICA IO_THREAD is blocked on GR recovery channel
+STOP REPLICA IO_THREAD FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: STOP REPLICA IO_THREAD FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# START SLAVE IO_THREAD is blocked on GR recovery channel
-START SLAVE IO_THREAD FOR CHANNEL 'group_replication_recovery';
+# START REPLICA IO_THREAD is blocked on GR recovery channel
+START REPLICA IO_THREAD FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: START REPLICA IO_THREAD FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# STOP SLAVE SQL_THREAD is blocked on GR recovery channel
-STOP SLAVE SQL_THREAD FOR CHANNEL 'group_replication_recovery';
+# STOP REPLICA SQL_THREAD is blocked on GR recovery channel
+STOP REPLICA SQL_THREAD FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: STOP REPLICA SQL_THREAD FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# START SLAVE SQL_THREAD is blocked on GR recovery channel
-START SLAVE SQL_THREAD FOR CHANNEL 'group_replication_recovery';
+# START REPLICA SQL_THREAD is blocked on GR recovery channel
+START REPLICA SQL_THREAD FOR CHANNEL 'group_replication_recovery';
 ERROR HY000: START REPLICA SQL_THREAD FOR CHANNEL cannot be performed on channel 'group_replication_recovery'.
 
-# SHOW SLAVE STATUS - check that recovery channel is inactive
+# SHOW REPLICA STATUS - check that recovery channel is inactive
 include/assert.inc [recovery channel is inactive]
 
 # SHOW RELAYLOG EVENTS - check that relaylogs are not deleted
 include/assert.inc [Relay logs are not deleted]
 
-# Execute RESET SLAVE ALL FOR CHANNEL to delete the recovery channel
+# Execute RESET REPLICA ALL FOR CHANNEL to delete the recovery channel
 # and related files
-RESET SLAVE ALL FOR CHANNEL "group_replication_recovery";
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
+RESET REPLICA ALL FOR CHANNEL "group_replication_recovery";
 
-# ERROR when executing RESET SLAVE on GR recovery channel
-RESET SLAVE FOR CHANNEL "group_replication_recovery";
+# ERROR when executing RESET REPLICA on GR recovery channel
+RESET REPLICA FOR CHANNEL "group_replication_recovery";
 ERROR HY000: Replica channel 'group_replication_recovery' does not exist.
 
 # ERROR when executing FLUSH RELAY LOGS on GR recovery channel

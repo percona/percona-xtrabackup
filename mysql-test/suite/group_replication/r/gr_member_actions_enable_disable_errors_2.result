@@ -8,6 +8,7 @@ SET SESSION sql_log_bin = 0;
 call mtr.add_suppression("Unable to update the member actions configuration with the one sent by the primary. Please check the tables 'mysql.replication_group_member_actions' and 'mysql.replication_group_configuration_version'.");
 call mtr.add_suppression("A message sent through the Group Replication message deliver service was not delivered successfully. The server will now leave the group.*");
 call mtr.add_suppression("The server was automatically set into read only mode after an error was detected.");
+call mtr.add_suppression("The server was automatically set into offline mode after an error was detected.");
 call mtr.add_suppression("Skipping leave operation: concurrent attempt to leave the group is on-going.");
 SET SESSION sql_log_bin = 1;
 
@@ -61,7 +62,7 @@ group_replication_disable_member_action("mysql_disable_super_read_only_if_primar
 OK
 include/assert.inc [The version of replication_group_member_actions must be 2]
 include/assert.inc [The action mysql_disable_super_read_only_if_primary must be disabled]
-include/rpl_gr_wait_for_number_of_members.inc
+include/rpl/gr_wait_for_number_of_members.inc
 [connection server2]
 include/gr_wait_for_member_state.inc
 SET @@GLOBAL.DEBUG='-d,force_error_on_configuration_table_close';

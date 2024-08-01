@@ -1,15 +1,16 @@
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -42,7 +43,7 @@
 class Master_info;
 class Relay_log_info;
 class THD;
-struct LEX_MASTER_INFO;
+struct LEX_SOURCE_INFO;
 struct mysql_cond_t;
 struct mysql_mutex_t;
 class Rpl_channel_filters;
@@ -54,7 +55,7 @@ class Rpl_channel_filters;
 const long mts_online_stat_period = 60 * 2;
 const long mts_online_stat_count = 1024;
 
-typedef struct struct_slave_connection LEX_SLAVE_CONNECTION;
+typedef struct struct_replica_connection LEX_REPLICA_CONNECTION;
 
 typedef enum {
   SLAVE_THD_IO,
@@ -64,9 +65,9 @@ typedef enum {
 } SLAVE_THD_TYPE;
 
 /**
-  MASTER_DELAY can be at most (1 << 31) - 1.
+  SOURCE_DELAY can be at most (1 << 31) - 1.
 */
-#define MASTER_DELAY_MAX (0x7FFFFFFF)
+#define SOURCE_DELAY_MAX (0x7FFFFFFF)
 #if INT_MAX < 0x7FFFFFFF
 #error "don't support platforms where INT_MAX < 0x7FFFFFFF"
 #endif
@@ -86,7 +87,7 @@ typedef enum {
 /**
    The maximum is defined as (ULONG_MAX/1000) with 4 bytes ulong
 */
-#define SLAVE_MAX_HEARTBEAT_PERIOD 4294967
+#define REPLICA_MAX_HEARTBEAT_PERIOD 4294967
 
 #define REPLICA_NET_TIMEOUT 60
 
@@ -151,8 +152,8 @@ extern bool server_id_supplied;
   ### m_channel_lock ###
 
   It is used to SERIALIZE ALL administrative commands of replication: START
-  SLAVE, STOP SLAVE, CHANGE MASTER, RESET SLAVE, delete_slave_info_objects
-  (when mysqld stops)
+  SLAVE, STOP REPLICA, CHANGE REPLICATION SOURCE, RESET REPLICA,
+  delete_slave_info_objects (when mysqld stops)
 
   This thus protects us against a handful of deadlocks, being the know ones
   around lock_slave_threads and the mixed order they are acquired in some
@@ -350,7 +351,7 @@ extern bool server_id_supplied;
     | mi.data_lock, rli.data_lock
 */
 
-extern ulong master_retry_count;
+extern ulong source_retry_count;
 extern MY_BITMAP slave_error_mask;
 extern char slave_skip_error_names[];
 extern bool use_slave_mask;
@@ -436,7 +437,7 @@ class ReplicaInitializer {
 bool start_slave_cmd(THD *thd);
 bool stop_slave_cmd(THD *thd);
 bool change_master_cmd(THD *thd);
-int change_master(THD *thd, Master_info *mi, LEX_MASTER_INFO *lex_mi,
+int change_master(THD *thd, Master_info *mi, LEX_SOURCE_INFO *lex_mi,
                   bool preserve_logs = false);
 bool reset_slave_cmd(THD *thd);
 bool show_slave_status_cmd(THD *thd);
@@ -466,22 +467,23 @@ int init_recovery(Master_info *mi);
   does not exist, nothing is done.
 
   @param thread_mask Indicate which repositories will be initialized:
-  if (thread_mask&SLAVE_IO)!=0, then mi->init_info is called; if
-  (thread_mask&SLAVE_SQL)!=0, then mi->rli->init_info is called.
+  if (thread_mask&REPLICA_IO)!=0, then mi->init_info is called; if
+  (thread_mask&REPLICA_SQL)!=0, then mi->rli->init_info is called.
 
   @param force_load repositories will only read information if they
   are not yet initialized. When true this flag forces the repositories
   to load information from table or file.
 
-  @param skip_received_gtid_set_recovery When true, skips the received GTID
-                                         set recovery.
+  @param skip_received_gtid_set_and_relaylog_recovery When true, skips the
+  received GTID set and relay log recovery.
 
   @retval 0 Success
   @retval nonzero Error
 */
 int load_mi_and_rli_from_repositories(
     Master_info *mi, bool ignore_if_no_info, int thread_mask,
-    bool skip_received_gtid_set_recovery = false, bool force_load = false);
+    bool skip_received_gtid_set_and_relaylog_recovery = false,
+    bool force_load = false);
 void end_info(Master_info *mi);
 /**
   Clear the information regarding the `Master_info` and `Relay_log_info` objects
@@ -563,8 +565,8 @@ bool start_slave_threads(bool need_lock_slave, bool wait_for_start,
                          Master_info *mi, int thread_mask);
 bool start_slave(THD *thd);
 int stop_slave(THD *thd);
-bool start_slave(THD *thd, LEX_SLAVE_CONNECTION *connection_param,
-                 LEX_MASTER_INFO *master_param, int thread_mask_input,
+bool start_slave(THD *thd, LEX_REPLICA_CONNECTION *connection_param,
+                 LEX_SOURCE_INFO *master_param, int thread_mask_input,
                  Master_info *mi, bool set_mts_settings);
 int stop_slave(THD *thd, Master_info *mi, bool net_report, bool for_one_channel,
                bool *push_temp_table_warning);

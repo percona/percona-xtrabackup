@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -611,7 +612,8 @@ struct DuktapeStatementReader::Pimpl {
           }
 
           trackers.emplace_back(
-              classic_protocol::session_track::TransactionState(state));
+              classic_protocol::session_track::TransactionState(
+                  std::span<char, 8>(state)));
         } else if (type == "schema") {
           auto schema = get_object_string_value(-1, "schema");
 
@@ -1096,7 +1098,7 @@ DuktapeStatementReader::handshake(bool is_greeting) {
         duk_pop(ctx);  // retval
         duk_pop(ctx);  // handshake
 
-        return stdx::make_unexpected(ErrorResponse{
+        return stdx::unexpected(ErrorResponse{
             2013, "handshake-function must return an object, if set", "HY000"});
       }
     }
@@ -1169,14 +1171,14 @@ DuktapeStatementReader::handshake(bool is_greeting) {
   duk_pop(ctx);
 
   if (error) {
-    return stdx::make_unexpected(*error);
+    return stdx::unexpected(*error);
   }
   if (!server_greeting_res) {
     ec = server_greeting_res.error();
   }
 
   if (ec) {
-    return stdx::make_unexpected(ErrorResponse{2013, ec.message(), "HY000"});
+    return stdx::unexpected(ErrorResponse{2013, ec.message(), "HY000"});
   }
 
   return handshake_data{

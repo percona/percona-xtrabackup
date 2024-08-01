@@ -1,18 +1,19 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2023, Oracle and/or its affiliates.
+Copyright (c) 1994, 2024, Oracle and/or its affiliates.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -1047,7 +1048,7 @@ static void page_cur_insert_rec_write_log(
 
 /** Parses a log record of a record insert on a page.
  @return end of log record or NULL */
-byte *page_cur_parse_insert_rec(
+const byte *page_cur_parse_insert_rec(
     bool is_short,       /*!< in: true if short inserts */
     const byte *ptr,     /*!< in: buffer */
     const byte *end_ptr, /*!< in: buffer end */
@@ -1214,7 +1215,7 @@ byte *page_cur_parse_insert_rec(
     mem_heap_free(heap);
   }
 
-  return (const_cast<byte *>(ptr + end_seg_len));
+  return ptr + end_seg_len;
 }
 
 /** Inserts a record next to page cursor on an uncompressed page.
@@ -2005,14 +2006,14 @@ static inline bool page_copy_rec_list_to_created_page_write_log(
 
 /** Parses a log record of copying a record list end to a new created page.
  @return end of log record or NULL */
-byte *page_parse_copy_rec_list_to_created_page(
-    byte *ptr,           /*!< in: buffer */
-    byte *end_ptr,       /*!< in: buffer end */
+const byte *page_parse_copy_rec_list_to_created_page(
+    const byte *ptr,     /*!< in: buffer */
+    const byte *end_ptr, /*!< in: buffer end */
     buf_block_t *block,  /*!< in: page or NULL */
     dict_index_t *index, /*!< in: record descriptor */
     mtr_t *mtr)          /*!< in: mtr or NULL */
 {
-  byte *rec_end;
+  const byte *rec_end;
   ulint log_data_len;
   page_t *page;
   page_zip_des_t *page_zip;
@@ -2252,9 +2253,9 @@ static inline void page_cur_delete_rec_write_log(
 
 /** Parses log record of a record delete on a page.
  @return pointer to record end or NULL */
-byte *page_cur_parse_delete_rec(
-    byte *ptr,           /*!< in: buffer */
-    byte *end_ptr,       /*!< in: buffer end */
+const byte *page_cur_parse_delete_rec(
+    const byte *ptr,     /*!< in: buffer */
+    const byte *end_ptr, /*!< in: buffer end */
     buf_block_t *block,  /*!< in: page or NULL */
     dict_index_t *index, /*!< in: record descriptor */
     mtr_t *mtr)          /*!< in: mtr or NULL */

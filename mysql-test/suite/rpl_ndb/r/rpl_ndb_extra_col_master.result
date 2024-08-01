@@ -1,4 +1,4 @@
-include/master-slave.inc
+include/rpl/init_source_replica.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
@@ -92,7 +92,7 @@ f1	f2	f3	f4
 27	27	27	next
 29	29	29	second
 30	30	30	next
-include/check_slave_is_running.inc
+include/rpl/assert_replica_running.inc
 
 ***** Testing Altering table def scenario *****
 
@@ -422,18 +422,16 @@ f1	f2	f3	f4
 
 ** Check slave status **
 
-include/check_slave_is_running.inc
+include/rpl/assert_replica_running.inc
 
 ****************************************
 * columns in master at middle of table *
 * Expect: Proper error message         *
 ****************************************
 
-** Stop and Reset Slave **
+** Stop and Reset Replica **
 
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 
 ** create table slave side **
 CREATE TABLE t10 (a INT PRIMARY KEY, b BLOB, c CHAR(5)
@@ -444,8 +442,8 @@ CREATE TABLE t10 (a INT PRIMARY KEY, b BLOB, c CHAR(5)
 CREATE TABLE t10 (a INT KEY, b BLOB, f DOUBLE DEFAULT '233',
 c CHAR(5), e INT DEFAULT '1')ENGINE='NDB';
 
-*** Start Slave ***
-include/rpl_reset.inc
+*** Start Replica ***
+include/rpl/reset.inc
 
 *** Master Data Insert ***
 set @b1 = 'b1b1b1b1';
@@ -458,7 +456,7 @@ INSERT INTO t10 () VALUES(1,@b1,DEFAULT,'Kyle',DEFAULT),
 *** Expect slave to fail with Error 1677 ***
 ********************************************
 
-include/wait_for_slave_sql_error_and_skip.inc [errno=13146]
+include/rpl/wait_for_applier_error_and_skip.inc [errno=13146]
 
 *** Drop t10  ***
 DROP TABLE t10;
@@ -469,9 +467,7 @@ DROP TABLE t10;
 *********************************************
 
 *** Create t11 on slave  ***
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 CREATE TABLE t11 (a INT PRIMARY KEY, b BLOB, c VARCHAR(254)
 ) ENGINE='NDB';
 
@@ -479,8 +475,8 @@ CREATE TABLE t11 (a INT PRIMARY KEY, b BLOB, c VARCHAR(254)
 CREATE TABLE t11 (a INT KEY, b BLOB, f TEXT,
 c CHAR(5) DEFAULT 'test', e INT DEFAULT '1')ENGINE='NDB';
 
-*** Start Slave ***
-include/rpl_reset.inc
+*** Start Replica ***
+include/rpl/reset.inc
 
 *** Master Data Insert ***
 set @b1 = 'b1b1b1b1';
@@ -493,7 +489,7 @@ INSERT INTO t11 () VALUES(1,@b1,'Testing is fun','Kyle',DEFAULT),
 *** Expect slave to fail with Error 1677 ***
 ********************************************
 
-include/wait_for_slave_sql_error_and_skip.inc [errno=13146]
+include/rpl/wait_for_applier_error_and_skip.inc [errno=13146]
 
 *** Drop t11  ***
 DROP TABLE t11;
@@ -504,9 +500,7 @@ DROP TABLE t11;
 *********************************************
 
 *** Create t12 on slave  ***
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 CREATE TABLE t12 (a INT PRIMARY KEY, b BLOB, c BLOB
 ) ENGINE='NDB';
 
@@ -514,8 +508,8 @@ CREATE TABLE t12 (a INT PRIMARY KEY, b BLOB, c BLOB
 CREATE TABLE t12 (a INT KEY, b BLOB, f TEXT,
 c CHAR(5) DEFAULT 'test', e INT DEFAULT '1')ENGINE='NDB';
 
-*** Start Slave ***
-include/rpl_reset.inc
+*** Start Replica ***
+include/rpl/reset.inc
 
 *** Master Data Insert ***
 set @b1 = 'b1b1b1b1';
@@ -547,9 +541,7 @@ DROP TABLE t12;
 
 
 *** Create t14 on slave  ***
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 CREATE TABLE t14 (c1 INT PRIMARY KEY, c4 BLOB, c5 CHAR(5)
 ) ENGINE='NDB';
 
@@ -559,8 +551,8 @@ c6 INT DEFAULT '1',
 c7 TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
 )ENGINE='NDB';
 
-*** Start Slave ***
-include/rpl_reset.inc
+*** Start Replica ***
+include/rpl/reset.inc
 
 *** Master Data Insert ***
 ALTER TABLE t14 ADD COLUMN c2 DECIMAL(8,2) AFTER c1;
@@ -604,16 +596,14 @@ c1	c3	hex(c4)	c5	c6
 ************
 * Bug30415 *
 ************
-include/wait_for_slave_sql_error.inc [errno=1091]
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+include/rpl/wait_for_applier_error.inc [errno=1091]
+STOP REPLICA;
 
 *** Drop t14  ***
 DROP TABLE t14;
 DROP TABLE t14;
 RESET REPLICA;
-include/rpl_reset.inc
+include/rpl/reset.inc
 
 *************************************************
 * - Alter Master adding columns at end of table *
@@ -621,9 +611,7 @@ include/rpl_reset.inc
 *************************************************
 
 *** Create t15 on slave  ***
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 CREATE TABLE t15 (c1 INT PRIMARY KEY, c4 BLOB, c5 CHAR(5)
 ) ENGINE='NDB';
 
@@ -633,8 +621,8 @@ c6 INT DEFAULT '1',
 c7 TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
 )ENGINE='NDB';
 
-*** Start Slave ***
-include/rpl_reset.inc
+*** Start Replica ***
+include/rpl/reset.inc
 
 *** Master Data Insert ***
 ALTER TABLE t15 ADD COLUMN c2 DECIMAL(8,2) AFTER c7;
@@ -655,15 +643,13 @@ c1	hex(c4)	c5	c6	c7	c2
 *** Expect slave to fail with Error 1054 ***
 ********************************************
 
-include/wait_for_slave_sql_error.inc [errno=1054]
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+include/rpl/wait_for_applier_error.inc [errno=1054]
+STOP REPLICA;
 
 *** Drop t15  ***
 DROP TABLE t15;
 DROP TABLE t15;
-include/rpl_reset.inc
+include/rpl/reset.inc
 
 ************************************************
 * - Create index on Master column not on slave *
@@ -671,9 +657,7 @@ include/rpl_reset.inc
 ************************************************
 
 *** Create t16 on slave  ***
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 CREATE TABLE t16 (c1 INT PRIMARY KEY, c4 BLOB, c5 CHAR(5)
 ) ENGINE='NDB';
 
@@ -683,8 +667,8 @@ c6 INT DEFAULT '1',
 c7 TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
 )ENGINE='NDB';
 
-*** Start Slave ***
-include/rpl_reset.inc
+*** Start Replica ***
+include/rpl/reset.inc
 
 *** Master Create Index and Data Insert ***
 CREATE INDEX part_of_c6 ON t16 (c6);
@@ -703,15 +687,13 @@ c1	hex(c4)	c5	c6	c7
 *** BUG 30434 ***
 *****************
 
-include/wait_for_slave_sql_error.inc [errno=1072]
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+include/rpl/wait_for_applier_error.inc [errno=1072]
+STOP REPLICA;
 
 *** Drop t16  ***
 DROP TABLE t16;
 DROP TABLE t16;
-include/rpl_reset.inc
+include/rpl/reset.inc
 
 *****************************************************
 * - Delete rows using column on Master not on slave *
@@ -719,9 +701,7 @@ include/rpl_reset.inc
 *****************************************************
 
 *** Create t17 on slave  ***
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 CREATE TABLE t17 (c1 INT PRIMARY KEY, c4 BLOB, c5 CHAR(5)
 ) ENGINE='NDB';
 
@@ -731,8 +711,8 @@ c6 INT DEFAULT '1',
 c7 TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
 )ENGINE='NDB';
 
-*** Start Slave ***
-include/rpl_reset.inc
+*** Start Replica ***
+include/rpl/reset.inc
 
 *** Master Data Insert ***
 set @b1 = 'b1b1b1b1';
@@ -777,9 +757,7 @@ DROP TABLE t17;
 
 *** Create t18 on slave  ***
 
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 CREATE TABLE t18 (c1 INT PRIMARY KEY, c4 BLOB, c5 CHAR(5)
 ) ENGINE='NDB';
 
@@ -789,8 +767,8 @@ c6 INT DEFAULT '1',
 c7 TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
 )ENGINE='NDB';
 
-*** Start Slave ***
-include/rpl_reset.inc
+*** Start Replica ***
+include/rpl/reset.inc
 
 *** Master Data Insert ***
 set @b1 = 'b1b1b1b1';
@@ -834,9 +812,7 @@ DROP TABLE t18;
 *****************************************************
 
 *** Create t5 on slave  ***
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 CREATE TABLE t5 (c1 INT PRIMARY KEY, c4 BLOB, c5 CHAR(5)
 ) ENGINE='NDB';
 
@@ -846,8 +822,8 @@ c6 LONG,
 c7 TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
 )ENGINE='NDB';
 
-*** Start Slave ***
-include/rpl_reset.inc
+*** Start Replica ***
+include/rpl/reset.inc
 
 *** Master Data Insert ***
 set @b1 = 'b1b1b1b1';
@@ -868,7 +844,7 @@ c1	hex(c4)	c5
 3	6231623162316231	QA
 DROP TABLE t5;
 
-include/rpl_reset.inc
+include/rpl/reset.inc
 SET NAMES utf8;
 Warnings:
 Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
@@ -979,7 +955,7 @@ f1	f2	f3	f4
 27	27	27	next
 29	29	29	second
 30	30	30	next
-include/check_slave_is_running.inc
+include/rpl/assert_replica_running.inc
 
 ***** Testing Altering table def scenario *****
 
@@ -1309,18 +1285,16 @@ f1	f2	f3	f4
 
 ** Check slave status **
 
-include/check_slave_is_running.inc
+include/rpl/assert_replica_running.inc
 
 ****************************************
 * columns in master at middle of table *
 * Expect: Proper error message         *
 ****************************************
 
-** Stop and Reset Slave **
+** Stop and Reset Replica **
 
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 
 ** create table slave side **
 CREATE TABLE t10 (a INT PRIMARY KEY, b BLOB, c CHAR(5)
@@ -1331,8 +1305,8 @@ CREATE TABLE t10 (a INT PRIMARY KEY, b BLOB, c CHAR(5)
 CREATE TABLE t10 (a INT KEY, b BLOB, f DOUBLE DEFAULT '233',
 c CHAR(5), e INT DEFAULT '1')ENGINE='NDB';
 
-*** Start Slave ***
-include/rpl_reset.inc
+*** Start Replica ***
+include/rpl/reset.inc
 
 *** Master Data Insert ***
 set @b1 = 'b1b1b1b1';
@@ -1345,7 +1319,7 @@ INSERT INTO t10 () VALUES(1,@b1,DEFAULT,'Kyle',DEFAULT),
 *** Expect slave to fail with Error 1677 ***
 ********************************************
 
-include/wait_for_slave_sql_error_and_skip.inc [errno=13146]
+include/rpl/wait_for_applier_error_and_skip.inc [errno=13146]
 
 *** Drop t10  ***
 DROP TABLE t10;
@@ -1356,9 +1330,7 @@ DROP TABLE t10;
 *********************************************
 
 *** Create t11 on slave  ***
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 CREATE TABLE t11 (a INT PRIMARY KEY, b BLOB, c VARCHAR(254)
 ) ENGINE='NDB';
 
@@ -1366,8 +1338,8 @@ CREATE TABLE t11 (a INT PRIMARY KEY, b BLOB, c VARCHAR(254)
 CREATE TABLE t11 (a INT KEY, b BLOB, f TEXT,
 c CHAR(5) DEFAULT 'test', e INT DEFAULT '1')ENGINE='NDB';
 
-*** Start Slave ***
-include/rpl_reset.inc
+*** Start Replica ***
+include/rpl/reset.inc
 
 *** Master Data Insert ***
 set @b1 = 'b1b1b1b1';
@@ -1380,7 +1352,7 @@ INSERT INTO t11 () VALUES(1,@b1,'Testing is fun','Kyle',DEFAULT),
 *** Expect slave to fail with Error 1677 ***
 ********************************************
 
-include/wait_for_slave_sql_error_and_skip.inc [errno=13146]
+include/rpl/wait_for_applier_error_and_skip.inc [errno=13146]
 
 *** Drop t11  ***
 DROP TABLE t11;
@@ -1391,9 +1363,7 @@ DROP TABLE t11;
 *********************************************
 
 *** Create t12 on slave  ***
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 CREATE TABLE t12 (a INT PRIMARY KEY, b BLOB, c BLOB
 ) ENGINE='NDB';
 
@@ -1401,8 +1371,8 @@ CREATE TABLE t12 (a INT PRIMARY KEY, b BLOB, c BLOB
 CREATE TABLE t12 (a INT KEY, b BLOB, f TEXT,
 c CHAR(5) DEFAULT 'test', e INT DEFAULT '1')ENGINE='NDB';
 
-*** Start Slave ***
-include/rpl_reset.inc
+*** Start Replica ***
+include/rpl/reset.inc
 
 *** Master Data Insert ***
 set @b1 = 'b1b1b1b1';
@@ -1434,9 +1404,7 @@ DROP TABLE t12;
 
 
 *** Create t14 on slave  ***
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 CREATE TABLE t14 (c1 INT PRIMARY KEY, c4 BLOB, c5 CHAR(5)
 ) ENGINE='NDB';
 
@@ -1446,8 +1414,8 @@ c6 INT DEFAULT '1',
 c7 TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
 )ENGINE='NDB';
 
-*** Start Slave ***
-include/rpl_reset.inc
+*** Start Replica ***
+include/rpl/reset.inc
 
 *** Master Data Insert ***
 ALTER TABLE t14 ADD COLUMN c2 DECIMAL(8,2) AFTER c1;
@@ -1491,16 +1459,14 @@ c1	c3	hex(c4)	c5	c6
 ************
 * Bug30415 *
 ************
-include/wait_for_slave_sql_error.inc [errno=1091]
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+include/rpl/wait_for_applier_error.inc [errno=1091]
+STOP REPLICA;
 
 *** Drop t14  ***
 DROP TABLE t14;
 DROP TABLE t14;
 RESET REPLICA;
-include/rpl_reset.inc
+include/rpl/reset.inc
 
 *************************************************
 * - Alter Master adding columns at end of table *
@@ -1508,9 +1474,7 @@ include/rpl_reset.inc
 *************************************************
 
 *** Create t15 on slave  ***
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 CREATE TABLE t15 (c1 INT PRIMARY KEY, c4 BLOB, c5 CHAR(5)
 ) ENGINE='NDB';
 
@@ -1520,8 +1484,8 @@ c6 INT DEFAULT '1',
 c7 TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
 )ENGINE='NDB';
 
-*** Start Slave ***
-include/rpl_reset.inc
+*** Start Replica ***
+include/rpl/reset.inc
 
 *** Master Data Insert ***
 ALTER TABLE t15 ADD COLUMN c2 DECIMAL(8,2) AFTER c7;
@@ -1542,15 +1506,13 @@ c1	hex(c4)	c5	c6	c7	c2
 *** Expect slave to fail with Error 1054 ***
 ********************************************
 
-include/wait_for_slave_sql_error.inc [errno=1054]
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+include/rpl/wait_for_applier_error.inc [errno=1054]
+STOP REPLICA;
 
 *** Drop t15  ***
 DROP TABLE t15;
 DROP TABLE t15;
-include/rpl_reset.inc
+include/rpl/reset.inc
 
 ************************************************
 * - Create index on Master column not on slave *
@@ -1558,9 +1520,7 @@ include/rpl_reset.inc
 ************************************************
 
 *** Create t16 on slave  ***
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 CREATE TABLE t16 (c1 INT PRIMARY KEY, c4 BLOB, c5 CHAR(5)
 ) ENGINE='NDB';
 
@@ -1570,8 +1530,8 @@ c6 INT DEFAULT '1',
 c7 TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
 )ENGINE='NDB';
 
-*** Start Slave ***
-include/rpl_reset.inc
+*** Start Replica ***
+include/rpl/reset.inc
 
 *** Master Create Index and Data Insert ***
 CREATE INDEX part_of_c6 ON t16 (c6);
@@ -1590,15 +1550,13 @@ c1	hex(c4)	c5	c6	c7
 *** BUG 30434 ***
 *****************
 
-include/wait_for_slave_sql_error.inc [errno=1072]
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+include/rpl/wait_for_applier_error.inc [errno=1072]
+STOP REPLICA;
 
 *** Drop t16  ***
 DROP TABLE t16;
 DROP TABLE t16;
-include/rpl_reset.inc
+include/rpl/reset.inc
 
 *****************************************************
 * - Delete rows using column on Master not on slave *
@@ -1606,9 +1564,7 @@ include/rpl_reset.inc
 *****************************************************
 
 *** Create t17 on slave  ***
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 CREATE TABLE t17 (c1 INT PRIMARY KEY, c4 BLOB, c5 CHAR(5)
 ) ENGINE='NDB';
 
@@ -1618,8 +1574,8 @@ c6 INT DEFAULT '1',
 c7 TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
 )ENGINE='NDB';
 
-*** Start Slave ***
-include/rpl_reset.inc
+*** Start Replica ***
+include/rpl/reset.inc
 
 *** Master Data Insert ***
 set @b1 = 'b1b1b1b1';
@@ -1664,9 +1620,7 @@ DROP TABLE t17;
 
 *** Create t18 on slave  ***
 
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 CREATE TABLE t18 (c1 INT PRIMARY KEY, c4 BLOB, c5 CHAR(5)
 ) ENGINE='NDB';
 
@@ -1676,8 +1630,8 @@ c6 INT DEFAULT '1',
 c7 TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
 )ENGINE='NDB';
 
-*** Start Slave ***
-include/rpl_reset.inc
+*** Start Replica ***
+include/rpl/reset.inc
 
 *** Master Data Insert ***
 set @b1 = 'b1b1b1b1';
@@ -1721,9 +1675,7 @@ DROP TABLE t18;
 *****************************************************
 
 *** Create t5 on slave  ***
-STOP SLAVE;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
+STOP REPLICA;
 CREATE TABLE t5 (c1 INT PRIMARY KEY, c4 BLOB, c5 CHAR(5)
 ) ENGINE='NDB';
 
@@ -1733,8 +1685,8 @@ c6 LONG,
 c7 TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
 )ENGINE='NDB';
 
-*** Start Slave ***
-include/rpl_reset.inc
+*** Start Replica ***
+include/rpl/reset.inc
 
 *** Master Data Insert ***
 set @b1 = 'b1b1b1b1';
@@ -1755,7 +1707,7 @@ c1	hex(c4)	c5
 3	6231623162316231	QA
 DROP TABLE t5;
 
-include/rpl_reset.inc
+include/rpl/reset.inc
 SET NAMES utf8;
 Warnings:
 Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
@@ -1777,4 +1729,4 @@ c1
 0
 1
 DROP TABLE t1;
-include/rpl_end.inc
+include/rpl/deinit.inc

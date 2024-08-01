@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2004, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -927,26 +928,27 @@ const NdbDictionary::Table *BackupRestore::get_table(const TableS &tableS) {
   if (m_cache.m_old_table == tab) return m_cache.m_new_table;
   m_cache.m_old_table = tab;
 
+  /* Handle system tables and blob tables;
+     these have not been pre-loaded into m_new_tables.
+  */
   int cnt, id1, id2;
   char db[256], schema[256];
   if (strcmp(tab->getName(), "SYSTAB_0") == 0 ||
       strcmp(tab->getName(), "sys/def/SYSTAB_0") == 0) {
-    /*
-      Restore SYSTAB_0 to itself
-    */
-    m_cache.m_new_table = tab;
+    m_cache.m_new_table = tab;  // Restore SYSTAB_0 to itself
   } else if (m_with_apply_status &&
              (strcmp(tab->getName(), NDB_APPLY_TABLE) == 0 ||
               strcmp(tab->getName(), NDB_REP_DB "/def/" NDB_APPLY_TABLE) ==
                   0)) {
-    /*
-      Special case needed as ndb_apply_status is a 'system table',
-      and so not pre-loaded into the m_new_tables array.
-    */
     NdbDictionary::Dictionary *dict = m_ndb->getDictionary();
     m_ndb->setDatabaseName(NDB_REP_DB);
     m_ndb->setSchemaName("def");
     m_cache.m_new_table = dict->getTable(NDB_APPLY_TABLE);
+  } else if (m_with_sql_metadata &&
+             (strcmp(tab->getName(), "mysql/def/ndb_sql_metadata") == 0)) {
+    m_ndb->setDatabaseName("mysql");
+    m_ndb->setSchemaName("def");
+    m_cache.m_new_table = m_ndb->getDictionary()->getTable("ndb_sql_metadata");
   } else if ((cnt = sscanf(tab->getName(), "%[^/]/%[^/]/NDB$BLOB_%d_%d", db,
                            schema, &id1, &id2)) == 4) {
     m_ndb->setDatabaseName(db);
@@ -1459,7 +1461,21 @@ bool BackupRestore::object(Uint32 type, const void *ptr) {
   return true;
 }
 
-bool BackupRestore::has_temp_error() { return m_temp_error; }
+void BackupRestore::log_temp_errors() {
+  restoreLogger.log_info("Data and log restore successful");
+  if (m_tempErrors.size()) {
+    Uint64 totalDelayMillis = 0;
+    restoreLogger.log_info("Transient delays due to :");
+    for (Uint32 i = 0; i < m_tempErrors.size(); i++) {
+      restoreLogger.log_info("  Code %u  Count %llu  Delay millis %llu",
+                             m_tempErrors[i].code, m_tempErrors[i].count,
+                             m_tempErrors[i].sleepMillis);
+      totalDelayMillis += m_tempErrors[i].sleepMillis;
+    }
+    restoreLogger.log_info("Total transient delay millis : %llu",
+                           totalDelayMillis);
+  }
+}
 
 struct TransGuard {
   NdbTransaction *pTrans;
@@ -3698,13 +3714,30 @@ bool BackupRestore::errorHandler(restore_callback_t *cb) {
       return false;
       // ERROR!
 
-    case NdbError::TemporaryError:
-      restoreLogger.log_error("Temporary error: %u %s", error.code,
-                              error.message);
-      m_temp_error = true;
+    case NdbError::TemporaryError: {
+      struct TempErrorStat *errStat = nullptr;
+      for (Uint32 i = 0; i < m_tempErrors.size(); i++) {
+        if (m_tempErrors[i].code == error.code) {
+          errStat = &m_tempErrors[i];
+          break;
+        }
+      }
+      if (!errStat) {
+        TempErrorStat newStat;
+        newStat.code = error.code;
+        newStat.count = 0;
+        newStat.sleepMillis = 0;
+        m_tempErrors.push_back(newStat);
+        errStat = &m_tempErrors[m_tempErrors.size() - 1];
+      }
+
+      errStat->count++;
+      errStat->sleepMillis += sleepTime;
+
       NdbSleep_MilliSleep(sleepTime);
       return true;
       // RETRY
+    }
 
     case NdbError::UnknownResult:
       restoreLogger.log_error("Unknown: %u %s", error.code, error.message);

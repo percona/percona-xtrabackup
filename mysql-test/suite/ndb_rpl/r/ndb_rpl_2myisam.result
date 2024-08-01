@@ -1,4 +1,4 @@
-include/master-slave.inc
+include/rpl/init_source_replica.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
@@ -13,9 +13,6 @@ start_pos BIGINT UNSIGNED NOT NULL,
 end_pos BIGINT UNSIGNED NOT NULL,
 PRIMARY KEY USING HASH (server_id)) ENGINE=MYISAM
 CHARACTER SET latin1;
-set new=on;
-Warnings:
-Warning	1287	'@@new' is deprecated and will be removed in a future release.
 set default_storage_engine=ndbcluster;
 supports_native_partitioning: 0
 --- Start test 1 Basic testing ---
@@ -173,4 +170,4 @@ DELETE FROM t1;
 DROP TABLE IF EXISTS t1;
 set @@global.replica_exec_mode= 'STRICT';
 drop table mysql.ndb_apply_status;
-include/rpl_end.inc
+include/rpl/deinit.inc

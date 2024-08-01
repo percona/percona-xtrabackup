@@ -1,15 +1,16 @@
-/* Copyright (c) 2012, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -70,10 +71,11 @@ Return_status Gtid_specification::parse(Tsid_map *tsid_map, const char *text) {
   } else if (automatic_prefix_len) {
     type = AUTOMATIC_GTID;
     Tag defined_tag;
+    std::size_t pos = 0;
     // for AUTOMATIC: tag must be non-empty
-    std::tie(defined_tag, std::ignore) =
+    std::tie(defined_tag, pos) =
         Gtid::parse_tag_str(text, automatic_prefix_len);
-    if (defined_tag.is_empty()) {
+    if (defined_tag.is_empty() || text[pos] != '\0') {
       Gtid::report_parsing_error(text);
       return Return_status::error;
     }
@@ -139,6 +141,7 @@ std::size_t Gtid_specification::automatic_to_string(char *buf) const {
     strncpy(buf + pos, Gtid_specification::str_automatic_sep, sep_len + 1);
     pos += sep_len;
     pos += automatic_tag.to_string(buf + pos);
+    buf[pos++] = '\0';
   }
   return pos;
 }

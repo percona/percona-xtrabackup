@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2022, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -29,6 +30,7 @@
 #include <string>
 
 #include "await_client_or_server.h"
+#include "basic_protocol_splicer.h"
 #include "classic_binlog_dump_forwarder.h"
 #include "classic_change_user_forwarder.h"
 #include "classic_clone_forwarder.h"
@@ -61,11 +63,23 @@
 #include "mysqld_error.h"
 #include "mysqlrouter/connection_pool.h"
 #include "mysqlrouter/connection_pool_component.h"
+#include "mysqlrouter/utils.h"  // to_string
 #include "processor.h"
+#include "tracer.h"
 
 IMPORT_LOG_FUNCTIONS()
 
 using mysql_harness::hexify;
+
+namespace {
+template <class P>
+stdx::expected<Processor::Result, std::error_code> push_processor(
+    MysqlRoutingClassicConnectionBase *conn) {
+  conn->push_processor(std::make_unique<P>(conn));
+
+  return Processor::Result::Again;
+}
+}  // namespace
 
 stdx::expected<Processor::Result, std::error_code> CommandProcessor::process() {
   switch (stage()) {
@@ -75,6 +89,8 @@ stdx::expected<Processor::Result, std::error_code> CommandProcessor::process() {
       return wait_both();
     case Stage::Command:
       return command();
+    case Stage::FetchDiagnosticArea:
+      return fetch_diagnostic_area();
     case Stage::Done:
       return Result::Done;
   }
@@ -85,17 +101,10 @@ stdx::expected<Processor::Result, std::error_code> CommandProcessor::process() {
 stdx::expected<Processor::Result, std::error_code>
 CommandProcessor::is_authed() {
   // if authentication is lost, close the connection.
-  stage(connection()->authenticated() ? Stage::Command : Stage::Done);
+  stage(connection()->authenticated() ? Stage::FetchDiagnosticArea
+                                      : Stage::Done);
 
   return Result::Again;
-}
-
-template <class P>
-stdx::expected<Processor::Result, std::error_code> push_processor(
-    MysqlRoutingClassicConnectionBase *conn) {
-  conn->push_processor(std::make_unique<P>(conn));
-
-  return Processor::Result::Again;
 }
 
 void CommandProcessor::client_idle_timeout() {
@@ -301,6 +310,42 @@ class SelectSessionCollationConnectionHandler : public QuerySender::Handler {
   Value collation_connection_{std::nullopt};
 };
 
+stdx::expected<Processor::Result, std::error_code>
+CommandProcessor::fetch_diagnostic_area() {
+  auto &server_conn = connection()->server_conn();
+
+  if (connection()->disconnect_requested()) {
+    stage(Stage::Done);
+    return Result::Again;
+  }
+
+  if (server_conn.is_open() && connection()->connection_sharing_allowed()) {
+    if (connection()->diagnostic_area_changed()) {
+      // inject a SHOW WARNINGS.
+      connection()->push_processor(std::make_unique<QuerySender>(
+          connection(), "SHOW WARNINGS",
+          std::make_unique<ShowWarningsHandler>(connection())));
+
+      return Result::Again;
+    }
+
+    if (connection()->collation_connection_maybe_dirty()) {
+      connection()->push_processor(std::make_unique<QuerySender>(
+          connection(), "SELECT @@SESSION.collation_connection",
+          std::make_unique<SelectSessionCollationConnectionHandler>(
+              connection())));
+
+      return Result::Again;
+    }
+
+    // make the connection available to others.
+    connection()->stash_server_conn();
+  }
+
+  stage(Stage::Command);
+  return Result::Again;
+}
+
 /**
  * wait for an read-event from client and server at the same time.
  *
@@ -322,13 +367,9 @@ CommandProcessor::wait_both() {
 
         return Result::Again;
       case AwaitClientOrServerProcessor::AwaitResult::ServerReadable: {
-        auto *socket_splicer = connection()->socket_splicer();
+        auto &src_conn = connection()->server_conn();
 
-        auto *src_channel = socket_splicer->server_channel();
-        auto *src_protocol = connection()->server_protocol();
-
-        auto read_res =
-            ClassicFrame::ensure_has_msg_prefix(src_channel, src_protocol);
+        auto read_res = ClassicFrame::ensure_has_msg_prefix(src_conn);
         if (!read_res) return recv_server_failed(read_res.error());
 
         stage(Stage::Done);
@@ -344,23 +385,23 @@ CommandProcessor::wait_both() {
 
     harness_assert_this_should_not_execute();
   } else {
-    return stdx::make_unexpected(wait_both_result_.error());
+    return stdx::unexpected(wait_both_result_.error());
   }
 }
 
 stdx::expected<Processor::Result, std::error_code> CommandProcessor::command() {
-  auto *socket_splicer = connection()->socket_splicer();
-  auto *src_channel = socket_splicer->client_channel();
-  auto *src_protocol = connection()->client_protocol();
-  auto &server_conn = socket_splicer->server_conn();
+  auto &src_conn = connection()->client_conn();
+  auto &src_channel = src_conn.channel();
+  auto &src_protocol = src_conn.protocol();
+
+  auto &server_conn = connection()->server_conn();
 
   if (connection()->disconnect_requested()) {
     stage(Stage::Done);
     return Result::Again;
   }
 
-  auto read_res =
-      ClassicFrame::ensure_has_msg_prefix(src_channel, src_protocol);
+  auto read_res = ClassicFrame::ensure_has_msg_prefix(src_conn);
   if (!read_res) {
     // nothing to read. Wait for
     //
@@ -370,69 +411,7 @@ stdx::expected<Processor::Result, std::error_code> CommandProcessor::command() {
     auto ec = read_res.error();
 
     if (ec == std::errc::operation_would_block || ec == TlsErrc::kWantRead) {
-      if (auto &tr = tracer()) {
-        tr.trace(Tracer::Event().stage("client::idle"));
-      }
-
-      auto &t = connection()->read_timer();
-
-      using namespace std::chrono_literals;
-
-      if (server_conn.is_open() && connection()->connection_sharing_allowed()) {
-        if (auto &tr = tracer()) {
-          tr.trace(Tracer::Event().stage("client::idle::starting"));
-        }
-
-        if (connection()->diagnostic_area_changed()) {
-          // inject a SHOW WARNINGS.
-          connection()->push_processor(std::make_unique<QuerySender>(
-              connection(), "SHOW WARNINGS",
-              std::make_unique<ShowWarningsHandler>(connection())));
-
-          return Result::Again;
-        }
-
-        if (connection()->collation_connection_maybe_dirty()) {
-          connection()->push_processor(std::make_unique<QuerySender>(
-              connection(), "SELECT @@SESSION.collation_connection",
-              std::make_unique<SelectSessionCollationConnectionHandler>(
-                  connection())));
-
-          return Result::Again;
-        }
-
-        auto delay = connection()->context().connection_sharing_delay();
-        if (!delay.count()) {
-          client_idle_timeout();
-        } else {
-          // multiplex-timeout
-          t.expires_after(delay);
-          t.async_wait([this](auto ec) {
-            if (ec) return;
-
-            return client_idle_timeout();
-          });
-        }
-
-        return Result::RecvFromClient;
-
-#ifdef FUTURE_TASK_WAIT_TIMEOUT_ON_DETACHED
-      } else if (!server_conn.is_open()) {
-        // wait-timeout
-        //
-        // (future task): as the server may be disconnected, the router has to
-        // implemented a wait-timeout and close connections that are idling too
-        // long
-        t.expires_after(5min);
-        t.async_wait([this](auto ec) {
-          if (ec) return;
-
-          // abort the connection.
-          (void)connection()->socket_splicer()->client_conn().close();
-        });
-        return Result::RecvFromClient;
-#endif
-      } else if (server_conn.is_open()) {
+      if (server_conn.is_open()) {
         // client and server connection open.
         //
         // watch server-side for connection-close
@@ -446,6 +425,8 @@ stdx::expected<Processor::Result, std::error_code> CommandProcessor::command() {
 
         return Result::Again;
       }
+
+      return Result::RecvFromClient;
     }
 
     if (ec == TlsErrc::kZeroReturn) {
@@ -457,10 +438,9 @@ stdx::expected<Processor::Result, std::error_code> CommandProcessor::command() {
     return recv_client_failed(ec);
   }
 
-  const uint8_t msg_type = src_protocol->current_msg_type().value();
+  const uint8_t msg_type = src_protocol.current_msg_type().value();
 
-  connection()->client_protocol()->seq_id(
-      src_protocol->current_frame()->seq_id_);
+  connection()->client_protocol().seq_id(src_protocol.current_frame()->seq_id_);
 
   namespace client = classic_protocol::message::client;
 
@@ -498,19 +478,18 @@ stdx::expected<Processor::Result, std::error_code> CommandProcessor::command() {
   //
   // - change-user may have failed.
   // - a reconnect may have failed.
+
   stage(Stage::IsAuthed);
 
   // init the command tracer.
   connection()->events().active(
-      connection()->client_protocol()->trace_commands());
+      connection()->client_protocol().trace_commands());
 
   // The query processor handles SHOW WARNINGS which fetches the events.
   if (Msg{msg_type} != Msg::Query) connection()->events().clear();
 
   // reset the seq-id of the server side as this is a new command.
-  if (connection()->server_protocol() != nullptr) {
-    connection()->server_protocol()->seq_id(0xff);
-  }
+  connection()->server_protocol().seq_id(0xff);
 
   switch (Msg{msg_type}) {
     case Msg::Quit:
@@ -565,27 +544,26 @@ stdx::expected<Processor::Result, std::error_code> CommandProcessor::command() {
 
   // unknown command
   // drain the current command from the recv-buffers.
-  (void)ClassicFrame::ensure_has_full_frame(src_channel, src_protocol);
+  (void)ClassicFrame::ensure_has_full_frame(src_conn);
 
   log_debug("client sent unknown command: %s",
-            hexify(src_channel->recv_plain_view()).c_str());
+            hexify(src_channel.recv_plain_view()).c_str());
 
   // try to discard the current message.
   //
   // if the current message isn't received completely yet, drop the connection
   // after sending the error-message.
-  const auto discard_res = discard_current_msg(src_channel, src_protocol);
+  const auto discard_res = discard_current_msg(src_conn);
 
   const auto send_res = ClassicFrame::send_msg<
       classic_protocol::borrowed::message::server::Error>(
-      src_channel, src_protocol,
-      {ER_UNKNOWN_COM_ERROR, "Unknown command " + std::to_string(msg_type),
-       "HY000"});
+      src_conn, {ER_UNKNOWN_COM_ERROR,
+                 "Unknown command " + std::to_string(msg_type), "HY000"});
   if (!discard_res || !send_res) {
     stage(Stage::Done);  // closes the connection after the error-msg was sent.
 
     return Result::SendToClient;
-  } else {
-    return Result::SendToClient;
   }
+
+  return Result::SendToClient;
 }

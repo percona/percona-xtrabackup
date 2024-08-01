@@ -2472,7 +2472,7 @@
   should begin with this command:
 
   @verbatim
-  --source include/master-slave.inc
+  --source include/rpl/init_source_replica.inc
   @endverbatim
 
   To switch between the master and slave, use these commands:
@@ -2503,49 +2503,49 @@
   Several include files are available for use in tests that enable
   better control over the behavior of slave server I/O and SQL
   threads. The files are located in the <b>include</b> directory and
-  have names of the form <b>wait_for_slave_*.inc</b>. By using these
+  have names of the form <b>rpl/wait_for_(replica|receiver|applier)*.inc</b>. By using these
   files, you can help make replication tests more stable because it
   will be more likely that test failures are due to replication
   failures, not due to problems with the tests themselves.
 
   The slave-control include files address the issue that it is not
-  always sufficient to use a <b>START SLAVE</b> or <b>STOP
+  always sufficient to use a <b>START REPLICA</b> or <b>STOP
   SLAVE</b> statement by itself: When the statement returns, the
   slave may not have reached the desired operational state. For
-  example, with <b>START SLAVE</b>, the following considerations
+  example, with <b>START REPLICA</b>, the following considerations
   apply:
 
   <ul>
     <li>
       It is not necessary to wait for the SQL thread after <b>START
-      SLAVE</b> or <b>START SLAVE SQL_THREAD</b> because the thread
+      SLAVE</b> or <b>START REPLICA SQL_THREAD</b> because the thread
       will have started by the time statement returns.
     </li>
 
     <li>
       By contrast, it is necessary to wait for the I/O thread after
-      <b>START SLAVE</b> or <b>START SLAVE IO_THREAD</b> because
+      <b>START REPLICA</b> or <b>START REPLICA IO_THREAD</b> because
       although the thread will have started when the statement returns,
       it may not yet have established the connection to the master.
     </li>
   </ul>
 
   To verify that a slave has reached the desired state, combine the
-  use of <b>START SLAVE</b> or <b>STOP SLAVE</b> with an
+  use of <b>START REPLICA</b> or <b>STOP REPLICA</b> with an
   appropriate “wait” include file. The file contains code that waits
   until the state has been reached or a timeout occurs. For example,
   to verify that both slave threads have started, do this:
 
   @verbatim
-  START SLAVE
-  --source include/wait_for_slave_to_start.inc
+  START REPLICA
+  --source include/rpl/wait_for_replica_to_start.inc
   @endverbatim
 
   Similarly, to stop both slave threads, do this:
 
   @verbatim
-  STOP SLAVE;
-  --source include/wait_for_slave_to_stop.inc
+  STOP REPLICA;
+  --source include/rpl/wait_for_replica_to_stop.inc
   @endverbatim
 
   The following list describes the include files that are available
@@ -2553,59 +2553,59 @@
 
   <ul>
     <li>
-      <tt>wait_for_slave_to_start.inc</tt>
+      <tt>rpl/wait_for_replica_to_start.inc</tt>
 
       Waits for both slave threads (I/O and SQL) to start. Should be
-      preceded by a <b>START SLAVE</b> statement.
+      preceded by a <b>START REPLICA</b> statement.
     </li>
 
     <li>
-      <tt>wait_for_slave_to_stop.inc</tt>
+      <tt>rpl/wait_for_replica_to_stop.inc</tt>
 
       Waits for both slave threads (I/O and SQL) to stop. Should be
-      preceded by a <b>STOP SLAVE</b> statement.
+      preceded by a <b>STOP REPLICA</b> statement.
     </li>
 
     <li>
-      <tt>wait_for_slave_sql_to_stop.inc</tt>
+      <tt>rpl/wait_for_applier_to_stop.inc</tt>
 
       Waits for the slave SQL thread to stop. Should be preceded by
-      a <b>STOP SLAVE SQL_THREAD</b> statement.
+      a <b>STOP REPLICA SQL_THREAD</b> statement.
     </li>
 
     <li>
-      <tt>wait_for_slave_io_to_stop.inc</tt>
+      <tt>rpl/wait_for_receiver_to_stop.inc</tt>
 
       Waits for the slave I/O thread to stop. Should be preceded by
-      a <b>STOP SLAVE IO_THREAD</b> statement.
+      a <b>STOP REPLICA IO_THREAD</b> statement.
     </li>
 
     <li>
-      <tt>wait_for_slave_param.inc</tt>
+      <tt>rpl/wait_for_replica_status.inc</tt>
 
-      Waits until <b>SHOW SLAVE STATUS</b> output contains a given
+      Waits until <b>SHOW REPLICA STATUS</b> output contains a given
       value or a timeout occurs. Before including the file, you should
       set the <b>$slave_param</b> variable to the column name to
-      look for in <b>SHOW SLAVE STATUS</b> output, and
+      look for in <b>SHOW REPLICA STATUS</b> output, and
       <b>$slave_param_value</b> to the value that you are waiting
       for the column to have.
 
       Example:
 
       @verbatim
-  --let $slave_param= Slave_SQL_Running
+  --let $slave_param= Replica_SQL_Running
   --let $slave_param_value= No
-  --source include/slave_wait_slave_param.inc
+  --source include/rpl/wait_for_replica_status.inc
       @endverbatim
     </li>
 
     <li>
-      <tt>wait_for_slave_sql_error.inc</tt>
+      <tt>rpl/wait_for_applier_error.inc</tt>
 
       Waits until the SQL thread for the current connection has gotten
       an error or a timeout occurs. Occurrence of an error is
       determined by waiting for the <b>Last_SQL_Errno</b> column of
-      <b>SHOW SLAVE STATUS</b> output to have a nonzero value.
+      <b>SHOW REPLICA STATUS</b> output to have a nonzero value.
     </li>
   </ul>
 */
@@ -2751,7 +2751,6 @@
   --shutdown_server 10
   --source include/wait_until_disconnected.inc
   # Do something while server is down
-  --enable_reconnect
   --exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
   --source include/wait_until_connected_again.inc
   @endverbatim
@@ -5946,6 +5945,8 @@
 
       Open a connection to the server and make the connection the
       current connection.
+      It can also be used to re-connect a connection that was disconnected
+      by the server.
 
       The arguments to <b>connect</b> are:
 
@@ -6067,6 +6068,17 @@
       for the first five arguments and the <b><em>options</em></b>
       argument. For omitted port or socket options, @ref
       PAGE_MYSQLTEST "mysqltest" uses the default port or socket.
+
+      If you omit all arguments to connect or omit connection name or hostname,
+      it will try to reconnect the current connection using the current options.
+
+      @verbatim
+  connect; -- reconnects the current connection
+  connect(conn1); --reconnects conn1
+  connect(conn1,,root); --reconnects conn1 and ignores root
+  connect(,localhost); --reconnects the current connection, ignores localhost.
+  connect(,,,); --reconnects the current connection
+      @endverbatim
 
       @verbatim
   connect (conn1,localhost,root,,);
@@ -6381,19 +6393,6 @@
     </li>
 
     <li>
-      <tt>disable_reconnect</tt>, <tt>enable_reconnect</tt>
-
-      Disable or enable automatic reconnect for dropped connections.
-      (The default depends on the client library version.) This
-      command only applies to the current connection.
-
-      @verbatim
-  --disable_reconnect
-  --enable_reconnect
-      @endverbatim
-    </li>
-
-    <li>
       <tt>disable_result_log</tt>, <tt>enable_result_log</tt>
 
       Disable or enable the result log. This setting is enabled by
@@ -6704,7 +6703,7 @@
 
       @verbatim
   eval USE $DB;
-  eval CHANGE MASTER TO MASTER_PORT=$SLAVE_MYPORT;
+  eval CHANGE REPLICATION SOURCE TO SOURCE_PORT=$SLAVE_MYPORT;
   eval PREPARE STMT1 FROM "$my_stmt";
       @endverbatim
     </li>
@@ -7370,7 +7369,7 @@
 
       @verbatim
   --replace_result 1024 MAX_KEY_LENGTH 3072 MAX_KEY_LENGTH
-  replace_result $MASTER_MYPORT MASTER_PORT;
+  replace_result $MASTER_MYPORT SOURCE_PORT;
       @endverbatim
     </li>
 

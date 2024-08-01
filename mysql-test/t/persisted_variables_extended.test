@@ -61,7 +61,6 @@ let $MYSQL_SERVER_ID= `SELECT @@server_id`;
 --shutdown_server
 --source include/wait_until_disconnected.inc
 --exec echo "restart:--no-defaults" --basedir=$MYSQL_BASEDIR --datadir=$MYSQLD_DATADIR --socket=$MYSQL_SOCKET --pid-file=$MYSQL_PIDFILE --port=$MYSQL_PORT --lc-messages-dir=$MYSQL_MESSAGESDIR --secure-file-priv="" --server-id=$MYSQL_SERVER_ID --innodb_dedicated_server=OFF --skip-mysqlx > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
---enable_reconnect
 --source include/wait_until_connected_again.inc
 
 SELECT @@global.innodb_fast_shutdown;
@@ -115,7 +114,6 @@ EOF
 #--exec echo "restart:--defaults-extra-file=$MYSQLTEST_VARDIR/tmp/my_user_extra.cnf" --basedir=$MYSQL_BASEDIR --datadir=$MYSQLD_DATADIR --socket=$MYSQL_SOCKET --pid-file=$MYSQL_PIDFILE --port=$MYSQL_PORT --lc-messages-dir=$MYSQL_MESSAGESDIR --secure-file-priv="" --skip-mysqlx > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
 
 #--remove_file $MYSQLTEST_VARDIR/tmp/my_user_extra.cnf
---enable_reconnect
 --source include/wait_until_connected_again.inc
 
 --echo # Check values after restart.
@@ -158,7 +156,7 @@ SET PERSIST log_bin_trust_function_creators=1;
 
 --echo # SET PERSIST statement should not be bin logged.
 --echo # Show binlog events
---source include/show_binlog_events.inc
+--source include/rpl/deprecated/show_binlog_events.inc
 
 # String type variables.
 SET PERSIST block_encryption_mode= 'aes-128-ecb';
@@ -178,7 +176,6 @@ eval SET PERSIST slow_query_log_file='$slow_query_log_on';
 --source include/wait_until_disconnected.inc
 --echo # Restart server cmd line and mysql-auto.cnf testing.
 --exec echo "restart"  --max_connections=default --innodb_fast_shutdown=1 --innodb_flush_log_at_trx_commit=2 innodb_flush_sync=DEFAULT --skip-mysqlx > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
---enable_reconnect
 --source include/wait_until_connected_again.inc
 
 --echo # Check values after restart.
@@ -229,7 +226,6 @@ SELECT VARIABLE_NAME,VARIABLE_SOURCE
 --shutdown_server
 --source include/wait_until_disconnected.inc
 --exec echo "restart: --performance_schema=OFF --log-bin" --server-id=$MYSQL_SERVER_ID --skip-mysqlx > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
---enable_reconnect
 --source include/wait_until_connected_again.inc
 
 # Make sure we start with a clean slate. log_tables.test says this is OK.
@@ -260,7 +256,7 @@ SELECT VARIABLE_NAME, VARIABLE_SOURCE
 
 --echo # SET PERSIST statement should not be bin logged.
 --echo # Show binlog events
---source include/show_binlog_events.inc
+--source include/rpl/deprecated/show_binlog_events.inc
 
 --echo Show what is logged:
 --echo ------ rewrite ------
@@ -410,7 +406,6 @@ EOF
 --shutdown_server
 --source include/wait_until_disconnected.inc
 --exec echo "restart:--defaults-file=$MYSQLTEST_VARDIR/tmp/my_tmp.cnf" --basedir=$MYSQL_BASEDIR --datadir=$MYSQLD_DATADIR --socket=$MYSQL_SOCKET --pid-file=$MYSQL_PIDFILE --port=$MYSQL_PORT --lc-messages-dir=$MYSQL_MESSAGESDIR --secure-file-priv="" --server-id=$MYSQL_SERVER_ID --innodb_dedicated_server=OFF --skip-mysqlx > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
---enable_reconnect
 --source include/wait_until_connected_again.inc
 
 SELECT VARIABLE_NAME, VARIABLE_SOURCE

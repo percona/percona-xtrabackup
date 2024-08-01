@@ -3,12 +3,14 @@
 ############################################################################
 
 . inc/common.sh
+KEYRING_TYPE="component"
+. inc/keyring_common.sh
 . inc/keyring_file.sh
+configure_server_with_component
 
 require_debug_server
 require_server_version_higher_than 5.7.0
 
-start_server
 
 vlog "case#1 restore table created with encryption='n'"
 mysql test <<EOF

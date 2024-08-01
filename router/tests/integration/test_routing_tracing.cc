@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2023, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -64,7 +65,6 @@
 #include "mysqlrouter/classic_protocol_codec_message.h"
 #include "mysqlrouter/classic_protocol_frame.h"
 #include "mysqlrouter/classic_protocol_message.h"
-#include "mysqlrouter/http_request.h"
 #include "mysqlrouter/utils.h"
 #include "openssl_version.h"  // ROUTER_OPENSSL_VERSION
 #include "process_manager.h"
@@ -139,11 +139,11 @@ static std::vector<std::vector<std::vector<std::string>>> result_as_vector(
 static stdx::expected<std::vector<std::vector<std::string>>, MysqlError>
 query_one_result(MysqlClient &cli, std::string_view stmt) {
   auto cmd_res = cli.query(stmt);
-  if (!cmd_res) return stdx::make_unexpected(cmd_res.error());
+  if (!cmd_res) return stdx::unexpected(cmd_res.error());
 
   auto results = result_as_vector(*cmd_res);
   if (results.size() != 1) {
-    return stdx::make_unexpected(MysqlError{1, "Too many results", "HY000"});
+    return stdx::unexpected(MysqlError{1, "Too many results", "HY000"});
   }
 
   return results.front();
@@ -154,24 +154,24 @@ template <size_t N>
 stdx::expected<std::array<std::string, N>, MysqlError> query_one(
     MysqlClient &cli, std::string_view stmt) {
   auto cmd_res = cli.query(stmt);
-  if (!cmd_res) return stdx::make_unexpected(cmd_res.error());
+  if (!cmd_res) return stdx::unexpected(cmd_res.error());
 
   auto results = *cmd_res;
 
   auto res_it = results.begin();
   if (res_it == results.end()) {
-    return stdx::make_unexpected(MysqlError(1, "No results", "HY000"));
+    return stdx::unexpected(MysqlError(1, "No results", "HY000"));
   }
 
   if (res_it->field_count() != N) {
-    return stdx::make_unexpected(
+    return stdx::unexpected(
         MysqlError(1, "field-count doesn't match", "HY000"));
   }
 
   auto rows = res_it->rows();
   auto rows_it = rows.begin();
   if (rows_it == rows.end()) {
-    return stdx::make_unexpected(MysqlError(1, "No rows", "HY000"));
+    return stdx::unexpected(MysqlError(1, "No rows", "HY000"));
   }
 
   std::array<std::string, N> out;
@@ -181,12 +181,12 @@ stdx::expected<std::array<std::string, N>, MysqlError> query_one(
 
   ++rows_it;
   if (rows_it != rows.end()) {
-    return stdx::make_unexpected(MysqlError(1, "Too many rows", "HY000"));
+    return stdx::unexpected(MysqlError(1, "Too many rows", "HY000"));
   }
 
   ++res_it;
   if (res_it != results.end()) {
-    return stdx::make_unexpected(MysqlError(1, "Too many results", "HY000"));
+    return stdx::unexpected(MysqlError(1, "Too many results", "HY000"));
   }
 
   return out;
@@ -338,7 +338,8 @@ class SharedRouter {
                      {"backend", "file"},
                      {"filename", userfile},
                  })
-        .section("http_server", {{"port", std::to_string(rest_port_)}})
+        .section("http_server", {{"bind_address", "127.0.0.1"},
+                                 {"port", std::to_string(rest_port_)}})
         .section("connection_pool", {
                                         {"max_idle_server_connections", "1"},
                                     });
@@ -417,14 +418,13 @@ class SharedRouter {
 
     if (auto *v = JsonPointer(pointer).Get(json_doc)) {
       if (!v->IsInt()) {
-        return stdx::make_unexpected(
-            make_error_code(std::errc::invalid_argument));
+        return stdx::unexpected(make_error_code(std::errc::invalid_argument));
       }
       return v->GetInt();
     } else {
       std::cerr << json_doc << "\n";
 
-      return stdx::make_unexpected(
+      return stdx::unexpected(
           make_error_code(std::errc::no_such_file_or_directory));
     }
   }
@@ -446,12 +446,12 @@ class SharedRouter {
     const auto end_time = clock_type::now() + timeout;
     do {
       auto int_res = num_connections(param);
-      if (!int_res) return stdx::make_unexpected(int_res.error());
+      if (!int_res) return stdx::unexpected(int_res.error());
 
       if (*int_res == expected_value) return {};
 
       if (clock_type::now() > end_time) {
-        return stdx::make_unexpected(make_error_code(std::errc::timed_out));
+        return stdx::unexpected(make_error_code(std::errc::timed_out));
       }
 
       std::this_thread::sleep_for(kIdleServerConnectionsSleepTime);
@@ -463,6 +463,11 @@ class SharedRouter {
                         "/idleServerConnections");
   }
 
+  stdx::expected<int, std::error_code> stashed_server_connections() {
+    return rest_get_int(rest_api_basepath + "/connection_pool/main/status",
+                        "/stashedServerConnections");
+  }
+
   stdx::expected<void, std::error_code> wait_for_idle_server_connections(
       int expected_value, std::chrono::seconds timeout) {
     using clock_type = std::chrono::steady_clock;
@@ -470,12 +475,31 @@ class SharedRouter {
     const auto end_time = clock_type::now() + timeout;
     do {
       auto int_res = idle_server_connections();
-      if (!int_res) return stdx::make_unexpected(int_res.error());
+      if (!int_res) return stdx::unexpected(int_res.error());
 
       if (*int_res == expected_value) return {};
 
       if (clock_type::now() > end_time) {
-        return stdx::make_unexpected(make_error_code(std::errc::timed_out));
+        return stdx::unexpected(make_error_code(std::errc::timed_out));
+      }
+
+      std::this_thread::sleep_for(kIdleServerConnectionsSleepTime);
+    } while (true);
+  }
+
+  stdx::expected<void, std::error_code> wait_for_stashed_server_connections(
+      int expected_value, std::chrono::seconds timeout) {
+    using clock_type = std::chrono::steady_clock;
+
+    const auto end_time = clock_type::now() + timeout;
+    do {
+      auto int_res = stashed_server_connections();
+      if (!int_res) return stdx::unexpected(int_res.error());
+
+      if (*int_res == expected_value) return {};
+
+      if (clock_type::now() > end_time) {
+        return stdx::unexpected(make_error_code(std::errc::timed_out));
       }
 
       std::this_thread::sleep_for(kIdleServerConnectionsSleepTime);
@@ -797,16 +821,16 @@ class TracingTestBase : public RouterComponentTest {
       MysqlClient &cli) {
     auto warnings_res = query_one_result(cli, "SHOW warnings");
     if (!warnings_res) {
-      return stdx::make_unexpected(testing::AssertionFailure()
-                                   << warnings_res.error());
+      return stdx::unexpected(testing::AssertionFailure()
+                              << warnings_res.error());
     }
 
     auto warnings = *warnings_res;
 
     EXPECT_THAT(warnings, SizeIs(::testing::Ge(1)));
     if (warnings.empty()) {
-      return stdx::make_unexpected(testing::AssertionFailure()
-                                   << "expected warnings to be not empty.");
+      return stdx::unexpected(testing::AssertionFailure()
+                              << "expected warnings to be not empty.");
     }
 
     auto json_row = warnings_res->back();
@@ -815,8 +839,8 @@ class TracingTestBase : public RouterComponentTest {
 
     if (json_row.size() != 3 || json_row[0] != "Note" ||
         json_row[1] != kErRouterTrace) {
-      return stdx::make_unexpected(testing::AssertionFailure()
-                                   << "expected warnings to be not empty.");
+      return stdx::unexpected(testing::AssertionFailure()
+                              << "expected warnings to be not empty.");
     }
 
     return json_row[2];
@@ -1809,7 +1833,8 @@ TEST_P(TracingCommandTest,
   }
 
   if (can_trace && !expected_sharing_is_blocked) {
-    ASSERT_NO_ERROR(shared_router()->wait_for_idle_server_connections(1, 10s));
+    ASSERT_NO_ERROR(
+        shared_router()->wait_for_stashed_server_connections(1, 10s));
   }
 
   SCOPED_TRACE("// cmds with tracing");
@@ -1891,7 +1916,8 @@ TEST_P(TracingCommandTest,
 
   SCOPED_TRACE("// force a reconnect");
   if (can_trace && !expected_sharing_is_blocked) {
-    ASSERT_NO_ERROR(shared_router()->wait_for_idle_server_connections(1, 10s));
+    ASSERT_NO_ERROR(
+        shared_router()->wait_for_stashed_server_connections(1, 10s));
 
     for (auto *srv : shared_servers()) {
       srv->close_all_connections();

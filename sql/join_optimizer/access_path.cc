@@ -1,15 +1,16 @@
-/* Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -216,6 +217,8 @@ TABLE *GetBasicTable(const AccessPath *path) {
     // Basic access paths (those with no children, at least nominally).
     case AccessPath::TABLE_SCAN:
       return path->table_scan().table;
+    case AccessPath::SAMPLE_SCAN:
+      return path->sample_scan().table;
     case AccessPath::INDEX_SCAN:
       return path->index_scan().table;
     case AccessPath::INDEX_DISTANCE_SCAN:
@@ -1319,6 +1322,10 @@ unique_ptr_destroy_only<RowIterator> CreateIteratorFromAccessPath(
                                             std::move(job.children[0]));
         break;
       }
+      case AccessPath::SAMPLE_SCAN: { /* LCOV_EXCL_LINE */
+        // SampleScan can be executed only in the secondary engine.
+        assert(false); /* LCOV_EXCL_LINE */
+      }
     }
 
     if (iterator == nullptr) {
@@ -1515,16 +1522,14 @@ void ExpandSingleFilterAccessPath(THD *thd, AccessPath *path, const JOIN *join,
       filter_cost +=
           EstimateFilterCost(thd, filter_rows, condition, join->query_block)
               .cost_if_not_materialized;
-      filter_rows *= EstimateSelectivity(thd, condition, *expr->companion_set,
-                                         /*trace=*/nullptr);
+      filter_rows *= EstimateSelectivity(thd, condition, *expr->companion_set);
     }
     for (Item *condition : expr->join_conditions) {
       items.push_back(condition);
       filter_cost +=
           EstimateFilterCost(thd, filter_rows, condition, join->query_block)
               .cost_if_not_materialized;
-      filter_rows *= EstimateSelectivity(thd, condition, *expr->companion_set,
-                                         /*trace=*/nullptr);
+      filter_rows *= EstimateSelectivity(thd, condition, *expr->companion_set);
     }
     assert(!items.is_empty());
 

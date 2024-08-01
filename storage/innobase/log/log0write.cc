@@ -1,18 +1,19 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2023, Oracle and/or its affiliates.
+Copyright (c) 1995, 2024, Oracle and/or its affiliates.
 Copyright (c) 2009, Google Inc.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
 as published by the Free Software Foundation.
 
-This program is also distributed with certain software (including
+This program is designed to work with certain software (including
 but not limited to OpenSSL) that is licensed under separate terms,
 as designated in a particular file or component or in included license
 documentation.  The authors of MySQL hereby grant you an additional
 permission to link the program and your derivative works with the
-separately licensed software that they have included with MySQL.
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -736,7 +737,8 @@ static void log_writer_write_failed(log_t &log, dberr_t err);
 
 /** Writes fragment of the log buffer, not further than up to provided lsn.
 Stops after the first call to log_data_blocks_write() or after producing
-a new log file. If some data was written, the log.write_lsn is advanced.
+a new log file or if it notices that some other thread has written to the
+redo log meanwhile. If some data was written, the log.write_lsn is advanced.
 For more details see @see log_write_buffer().
 @param[in]  log             redo log
 @param[in]  next_write_lsn  write up to this lsn value */
@@ -2096,6 +2098,7 @@ static void log_writer_wait_on_consumers(log_t &log, lsn_t next_write_lsn) {
     for them already */
     ut_ad(name == "MEB");
     log_writer_mutex_exit(log);
+    log_sync_point("log_writer_waits_for_consumer");
     if (attempt++ % ATTEMPTS_BETWEEN_WARNINGS == 0) {
       ib::log_warn(ER_IB_MSG_LOG_WRITER_WAIT_ON_CONSUMER, name.c_str(),
                    ulonglong{oldest_needed_lsn});
@@ -2186,6 +2189,17 @@ static void log_writer_write_buffer(log_t &log, lsn_t next_write_lsn) {
 
   log_writer_wait_on_consumers(log, next_write_lsn);
   ut_ad(log_writer_mutex_own(log));
+  /* We do hold the log->writer_mutex now, but log_writer_wait_on_checkpoint(),
+  log_writer_wait_on_archiver(), or log_writer_wait_on_consumers() could have
+  released it for a moment. So, in case --innodb_log_writer_threads=OFF, another
+  thread could have already performed a write to the redo log, in which case we
+  should not even try to (over)write it again. In extreme case, the log buffer
+  already contains a different range of lsns, we might have moved to another
+  file, or even removed the old one, etc. If we detect that any write has
+  happened, we let the caller retry.*/
+  if (last_write_lsn != log.write_lsn.load()) {
+    return;
+  }
 
   DBUG_PRINT("ib_log",
              ("write " LSN_PF " to " LSN_PF, last_write_lsn, next_write_lsn));

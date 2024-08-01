@@ -1,15 +1,16 @@
-/* Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -230,6 +231,7 @@ struct AccessPath {
     // NOTE: When adding more paths to this section, also update GetBasicTable()
     // to handle them.
     TABLE_SCAN,
+    SAMPLE_SCAN,
     INDEX_SCAN,
     INDEX_DISTANCE_SCAN,
     REF,
@@ -524,6 +526,14 @@ struct AccessPath {
   const auto &table_scan() const {
     assert(type == TABLE_SCAN);
     return u.table_scan;
+  }
+  auto &sample_scan() {
+    assert(type == SAMPLE_SCAN);
+    return u.sample_scan;
+  }
+  const auto &sample_scan() const {
+    assert(type == SAMPLE_SCAN);
+    return u.sample_scan;
   }
   auto &index_scan() {
     assert(type == INDEX_SCAN);
@@ -926,6 +936,11 @@ struct AccessPath {
     } table_scan;
     struct {
       TABLE *table;
+      double sampling_percentage;
+      enum tablesample_type sampling_type;
+    } sample_scan;
+    struct {
+      TABLE *table;
       int idx;
       bool use_order;
       bool reverse;
@@ -1311,6 +1326,17 @@ inline AccessPath *NewTableScanAccessPath(THD *thd, TABLE *table,
   path->type = AccessPath::TABLE_SCAN;
   path->count_examined_rows = count_examined_rows;
   path->table_scan().table = table;
+  return path;
+}
+
+inline AccessPath *NewSampleScanAccessPath(THD *thd, TABLE *table,
+                                           double sampling_percentage,
+                                           bool count_examined_rows) {
+  AccessPath *path = new (thd->mem_root) AccessPath;
+  path->type = AccessPath::SAMPLE_SCAN;
+  path->count_examined_rows = count_examined_rows;
+  path->sample_scan().table = table;
+  path->sample_scan().sampling_percentage = sampling_percentage;
   return path;
 }
 

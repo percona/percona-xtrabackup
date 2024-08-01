@@ -1,15 +1,16 @@
-/* Copyright (c) 2011, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -315,12 +316,13 @@ enum Log_event_type {
 
   TABLE_MAP_EVENT = 19,
 
-  /**
+  /*
     The V1 event numbers are used from 5.1.16 until mysql-5.6.
+    Not generated since 8.2.0, and rejected by the applier since 8.4.0
   */
-  WRITE_ROWS_EVENT_V1 = 23,
-  UPDATE_ROWS_EVENT_V1 = 24,
-  DELETE_ROWS_EVENT_V1 = 25,
+  OBSOLETE_WRITE_ROWS_EVENT_V1 = 23,
+  OBSOLETE_UPDATE_ROWS_EVENT_V1 = 24,
+  OBSOLETE_DELETE_ROWS_EVENT_V1 = 25,
 
   /**
     Something out of the ordinary happened on the master
@@ -708,7 +710,7 @@ class Log_event_header {
 
   /*
     The offset in the log where this event originally appeared (it is
-    preserved in relay logs, making SHOW SLAVE STATUS able to print
+    preserved in relay logs, making SHOW REPLICA STATUS able to print
     coordinates of the event in the master's binlog).
   */
   unsigned long long log_pos;

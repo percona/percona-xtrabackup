@@ -1,15 +1,16 @@
-# Copyright (c) 2017, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2017, 2024, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # Without limiting anything contained in the foregoing, this file,
 # which is part of C Driver for MySQL (Connector/C), is also subject to the
@@ -5674,11 +5675,11 @@ ER_FORBID_SCHEMA_CHANGE
         eng "Changing schema from '%-.192s' to '%-.192s' is not allowed."
         ger "Wechsel des Schemas von '%-.192s' auf '%-.192s' ist nicht erlaubt"
 ER_ROW_IS_REFERENCED_2 23000
-        eng "Cannot delete or update a parent row: a foreign key constraint fails (%.192s)"
-        ger "Kann Eltern-Zeile nicht löschen oder aktualisieren: eine Fremdschlüsselbedingung schlägt fehl (%.192s)"
+        eng "Cannot delete or update a parent row: a foreign key constraint fails%.192s"
+        ger "Kann Eltern-Zeile nicht löschen oder aktualisieren: eine Fremdschlüsselbedingung schlägt fehl%.192s"
 ER_NO_REFERENCED_ROW_2 23000
-        eng "Cannot add or update a child row: a foreign key constraint fails (%.192s)"
-        ger "Kann Kind-Zeile nicht hinzufügen oder aktualisieren: eine Fremdschlüsselbedingung schlägt fehl (%.192s)"
+        eng "Cannot add or update a child row: a foreign key constraint fails%.192s"
+        ger "Kann Kind-Zeile nicht hinzufügen oder aktualisieren: eine Fremdschlüsselbedingung schlägt fehl%.192s"
 ER_SP_BAD_VAR_SHADOW 42000
         eng "Variable '%-.64s' must be quoted with `...`, or renamed"
         ger "Variable '%-.64s' muss mit `...` geschützt oder aber umbenannt werden"
@@ -9370,7 +9371,7 @@ ER_HOSTNAME_TOO_LONG
   eng "Hostname cannot be longer than %d characters."
 
 # When using this error message, use the ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT error code.
-ER_WARN_CLIENT_DEPRECATED_PARTITION_PREFIX_KEY
+OBSOLETE_ER_WARN_CLIENT_DEPRECATED_PARTITION_PREFIX_KEY
   eng "Column '%.64s.%.64s.%.64s' having prefix key part '%.64s(%u)' is ignored by the partitioning function. Use of prefixed columns in the PARTITION BY KEY() clause is deprecated and will be removed in a future release."
 
 ER_GROUP_REPLICATION_USER_EMPTY_MSG
@@ -9630,7 +9631,7 @@ ER_INVALID_PLUGIN_FOR_REGISTRATION
   eng "This operation is not supported for plugin \"%s\"."
 
 ER_PLUGIN_REQUIRES_REGISTRATION
-  eng "Authentication plugin requires registration. Please refer ALTER USER syntax or set --fido-register-factor command line option to do registration."
+  eng "Authentication plugin requires registration. Please refer ALTER USER syntax or set --register-factor command line option to do registration."
 
 ER_MFA_METHOD_EXISTS
   eng "%d factor authentication method exists. Please do ALTER USER... DROP %d factor before doing this operation OR do ALTER USER... MODIFY %d factor... to modify existing %d factor authentication method."
@@ -10009,13 +10010,13 @@ ER_LANGUAGE_COMPONENT
   eng "%s"
 
 ER_LANGUAGE_COMPONENT_NOT_AVAILABLE
-  eng "No Language component available"
+  eng "Language component: Not available."
 
 ER_LANGUAGE_COMPONENT_UNSUPPORTED_LANGUAGE
-  eng "Unsupported external language: %s"
+  eng "Language component: Unsupported language '%s'"
 
 ER_LANGUAGE_COMPONENT_CANNOT_UNINSTALL
-  eng "Cannot uninstall Multilingual Engine - there are sessions still connected. Please disconnect all sessions and try again."
+  eng "Language component: Cannot uninstall due to connected sessions. Please disconnect all sessions and try again."
 
 ER_SP_NO_ALTER_LANGUAGE
   eng "Altering the language of an existing routine is not possible."
@@ -10183,7 +10184,7 @@ ER_LH_WARN_TRUNCATED
 ER_LH_CANNOT_CONVERT_STRING
   eng "Column %d of %s : Cannot convert string %s."
 
-ER_LH_RESORCE_PRINCIPAL_ERR
+ER_LH_RESOURCE_PRINCIPAL_ERR
   eng "Resource principal error."
 
 ER_LH_AWS_AUTH_ERR
@@ -10207,7 +10208,7 @@ ER_LH_PARQUET_DECIMAL_CONVERSION_ERR
 ER_LH_STRING_TOO_LONG
   eng "Column %d in %s: String is too long."
 
-ER_LH_RESORCE_PRINCIPAL_BUCKET_ERR
+ER_LH_RESOURCE_PRINCIPAL_BUCKET_ERR
   eng "Resource Principal endpoint is not configured. Cannot access following buckets: %s."
 
 ER_LH_NO_FILES_FOUND
@@ -10320,6 +10321,111 @@ ER_LH_AVRO_CANNOT_PARSE_HEADER
 
 ER_LH_PARQUET_CANT_OPEN_FILE
   eng "Parquet reader cannot open %s. %s"
+
+ER_LH_TOO_LARGE_VALUE_ERR
+   eng "File %.*s: %s"
+
+ER_LH_TOO_LARGE_ROW_ERR
+   eng "File %.*s: %s"
+
+ER_TABLESAMPLE_PERCENTAGE 2202H
+  eng "Tablesample percentage should range between 0 and 100."
+
+ER_TABLESAMPLE_ONLY_ON_BASE_TABLES
+  eng "Tablesample can be applied only on base tables."
+
+OBSOLETE_ER_PARAMETER_INDEX_OUT_OF_RANGE
+  eng "Parameter index %llu is out of range"
+
+ER_RESULT_SIZE_LIMIT_EXCEEDED
+  eng "Result size limit exceeded."
+
+ER_LANGUAGE_COMPONENT_INTERNAL
+  eng "Language component: Internal error."
+
+ER_LANGUAGE_COMPONENT_CONCURRENCY_LIMIT
+  eng "Language component: Concurrency limit (%s) has been reached."
+
+ER_LANGUAGE_COMPONENT_RUNTIME
+  eng "%s> %s"
+
+ER_LANGUAGE_COMPONENT_TIMEZONE
+  eng "%s> Time zone %s is not supported."
+
+ER_LANGUAGE_COMPONENT_KEYWORD
+  eng "%s> The identifier '%s' is a reserved word."
+
+ER_LANGUAGE_COMPONENT_SET_SYSTEM_VARIABLE
+  eng "Language component: System variable '%s' cannot be configured when component is active."
+
+ER_LANGUAGE_COMPONENT_UNSUPPORTED_TYPE
+  eng "%s> %s"
+
+ER_LANGUAGE_COMPONENT_CONVERSION
+  eng "%s> %s"
+
+ER_WARN_SP_STATEMENT_PARTIALLY_EXECUTED
+  eng "Stored program statement is partially completed. Result set might not contain all the rows."
+
+ER_STMT_EXECUTION_NOT_ALLOWED_WITHIN_SP_OR_TRG_OR_UDF
+  eng "Executing SQL statement using %s Statement Handle Interface is not allowed within stored function, trigger or loadable function (UDF)."
+
+ER_LH_JSON_PARSING
+  eng "Column %d of %s : %s"
+
+ER_ENGINE_CANNOT_BE_DEFAULT
+  eng "Engine %s cannot be set as default_storage_engine."
+
+ER_PARTITION_PREFIX_KEY_NOT_SUPPORTED
+  eng "Column '%.64s.%.64s.%.64s' having prefix key part '%.64s(%u)' in the PARTITION BY KEY() clause is not supported."
+
+ER_WARN_DEPRECATED_NON_STANDARD_KEY
+  eng "Foreign key '%.64s' refers to non-unique key or partial key. This is deprecated and will be removed in a future release."
+
+ER_FK_NO_UNIQUE_INDEX_PARENT
+  eng "Failed to add the foreign key constraint. Missing unique key for constraint '%s' in the referenced table '%s'"
+
+ER_ACCESS_DENIED_NO_PROXY_GRANT
+  eng "Access denied for user '%-.48s'@'%-.64s', missing proxy privilege."
+
+ER_ACCESS_DENIED_NO_PROXY
+  eng "Access denied for user '%-.48s'@'%-.64s', proxied user doesn't exist."
+
+ER_LH_USER_DATA_ACCESS_FAILED
+  eng "Unable to access the following data locations: %s"
+
+ER_BULK_READER_ZSTD_ERROR
+  eng "ZSTD decompression failed: %s"
+
+ER_BULK_PARSER_ERROR
+  eng "%s"
+
+ER_LH_INVALID_JSON_FILE_FORMAT_SCHEMA
+  eng "Invalid json file format schema: %s"
+
+ER_LH_INFER_JSON_INVALID_SCHEMA
+  eng "Inferred invalid schema. A single column with JSON type is the only valid schema for JSON file format."
+
+ER_LH_JSON_FILE_FORMAT_WARN_INFER_SCHEMA
+  eng "Altered the inferred schema to a single JSON column."
+
+ER_NON_SCALAR_USED_AS_KEY
+  eng "Non-scalar (e.g., vector) column '%.64s' cannot be used as key."
+
+ER_INCOMPATIBLE_TYPE_AGG
+  eng "Columns aggregated with incompatible types: '%.64s', '%.64s'."
+
+ER_DATA_INCOMPATIBLE_WITH_VECTOR
+  eng "Value of type '%.16s, size: %zu' cannot be converted to 'vector' type."
+
+ER_EXCEEDS_VECTOR_MAX_DIMENSIONS
+  eng "Data size (%zu Bytes, %u dimensions) exceeds VECTOR max (%zu Bytes, %u dimensions) for column: '%.64s'"
+
+ER_TO_VECTOR_CONVERSION
+  eng "Data cannot be converted to a valid vector: '%.*s'"
+
+ER_EXTERNAL_UNSUPPORTED_INDEX_ALGORITHM
+  eng "This storage engine ignores the %s index algorithm."
 
 #
 #  End of 8.1+ error messages (server-to-client).

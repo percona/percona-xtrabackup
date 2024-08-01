@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -26,6 +27,8 @@
 #include <thread>
 
 #include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
 #ifdef RAPIDJSON_NO_SIZETYPEDEFINE
 #include "my_rapidjson_size_t.h"
 #endif
@@ -44,6 +47,8 @@
 #include "mysqlrouter/rest_client.h"
 #include "rest_api_testutils.h"
 #include "router_component_test.h"
+#include "router_component_testutils.h"  // make_bad_connection
+#include "tcp_address.h"
 #include "tcp_port_pool.h"
 #include "test/helpers.h"
 #include "test/temp_directory.h"
@@ -155,19 +160,23 @@ TEST_P(RestRoutingApiTest, ensure_openapi) {
   // route/health isActive == 0
   const std::string keyring_username = "mysql_router1_user";
   config_sections.push_back(mysql_harness::ConfigBuilder::build_section(
-      "metadata_cache:test",
-      {
-          {"router_id", "1"},
-          {"user", keyring_username},
-          {"metadata_cluster", "test"},
-          // 198.51.100.0/24 is a reserved address block, it could not be
-          // connected to. https://tools.ietf.org/html/rfc5737#section-4
-          {"bootstrap_server_addresses", "mysql://198.51.100.1"},
-          //"ttl", "0.5"
-      }));
+      "metadata_cache:test", {
+                                 {"router_id", "1"},
+                                 {"user", keyring_username},
+                                 {"metadata_cluster", "test"},
+                                 //"ttl", "0.5"
+                             }));
 
   std::map<std::string, std::string> default_section = get_DEFAULT_defaults();
   init_keyring(default_section, conf_dir_.name());
+
+  // 198.51.100.0/24 is a reserved address block, it could not be
+  // connected to. https://tools.ietf.org/html/rfc5737#section-4
+  const auto state_file = create_state_file(
+      get_test_temp_dir_name(),
+      create_state_file_content(
+          {mysql_harness::TCPAddress("198.51.100.1", 3060)}, "uuid", "", 0));
+  default_section["dynamic_state"] = state_file;
 
   const std::string conf_file{create_config_file(
       conf_dir_.name(), mysql_harness::join(config_sections, ""),
@@ -211,7 +220,7 @@ TEST_P(RestRoutingApiTest, ensure_openapi) {
   // call wait_port_ready a few times on "123" to trigger blocked client
   // on that route (we set max_connect_errors to 2)
   for (size_t i = 0; i < 3; ++i) {
-    ASSERT_TRUE(wait_for_port_ready(routing_ports_[2], 500ms));
+    ASSERT_NO_FATAL_FAILURE(make_bad_connection(routing_ports_[2]));
   }
 
   // wait until we see that the Router has blocked the host
@@ -1062,22 +1071,6 @@ TEST_F(RestRoutingApiTest, rest_routing_section_has_key) {
       << router_output;
 }
 
-static std::string get_server_addr_list(const std::vector<uint16_t> &ports) {
-  std::string result;
-  bool use_comma = false;
-
-  for (const auto &port : ports) {
-    if (use_comma) {
-      result += ",";
-    } else {
-      use_comma = true;
-    }
-    result += "mysql://localhost:" + std::to_string(port);
-  }
-
-  return result;
-}
-
 class RestRoutingApiTestCluster : public RestRoutingApiTest {};
 
 /**
@@ -1096,7 +1089,7 @@ TEST_P(RestRoutingApiTestCluster, ensure_openapi_cluster) {
   std::vector<uint16_t> node_classic_ports;
   uint16_t first_node_http_port{0};
   const std::string json_metadata =
-      get_data_dir().join("metadata_dynamic_nodes.js").str();
+      get_data_dir().join("metadata_dynamic_nodes_v2_gr.js").str();
   for (size_t i = 0; i < 3; ++i) {
     node_classic_ports.push_back(port_pool_.get_next_available());
     if (i == 0) first_node_http_port = port_pool_.get_next_available();
@@ -1109,7 +1102,7 @@ TEST_P(RestRoutingApiTestCluster, ensure_openapi_cluster) {
   ASSERT_TRUE(MockServerRestClient(first_node_http_port)
                   .wait_for_rest_endpoint_ready());
 
-  set_mock_metadata(first_node_http_port, "",
+  set_mock_metadata(first_node_http_port, "uuid",
                     classic_ports_to_gr_nodes(node_classic_ports), 0,
                     classic_ports_to_cluster_nodes(node_classic_ports));
 
@@ -1149,12 +1142,15 @@ TEST_P(RestRoutingApiTestCluster, ensure_openapi_cluster) {
                                  {"router_id", "1"},
                                  {"user", keyring_username},
                                  {"metadata_cluster", "test"},
-                                 {"bootstrap_server_addresses",
-                                  get_server_addr_list(node_classic_ports)},
                              }));
 
   auto default_section = get_DEFAULT_defaults();
   init_keyring(default_section, conf_dir_.name());
+
+  const auto state_file = create_state_file(
+      get_test_temp_dir_name(),
+      create_state_file_content("uuid", "", node_classic_ports, 0));
+  default_section["dynamic_state"] = state_file;
 
   const std::string conf_file{create_config_file(
       conf_dir_.name(), mysql_harness::join(config_sections, ""),

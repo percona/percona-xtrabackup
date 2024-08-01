@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 2013, 2023, Oracle and/or its affiliates.
+Copyright (c) 2013, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -530,10 +531,8 @@ dberr_t SysTablespace::read_lsn_and_check_flags(lsn_t *flushed_lsn) {
   files_t::iterator it = m_files.begin();
 
   ut_a(it->m_exists);
-  ut_ad(it->m_handle.m_file != OS_FILE_CLOSED);
-
-  dberr_t err =
-      it->read_first_page(m_ignore_read_only ? false : srv_read_only_mode);
+  ut_ad(it->is_open());
+  dberr_t err = it->read_first_page();
 
   if (err != DB_SUCCESS) {
     return (err);
@@ -553,37 +552,25 @@ dberr_t SysTablespace::read_lsn_and_check_flags(lsn_t *flushed_lsn) {
   }
 #endif
   /* Check the contents of the first page of the first datafile. */
-  for (int retry = 0; retry < 2; ++retry) {
-    err = it->validate_first_page(it->m_space_id, flushed_lsn, false);
-
-    if (err != DB_SUCCESS &&
-        (retry == 1 || it->open_or_create(srv_read_only_mode) != DB_SUCCESS ||
-         it->restore_from_doublewrite(0) != DB_SUCCESS)) {
+  err = it->validate_first_page(space_id(), flushed_lsn, false);
+  if (err != DB_SUCCESS) {
+    /* Perhaps the first page was torn? Recover it and validate again. */
+    if (it->open_or_create(srv_read_only_mode) != DB_SUCCESS ||
+        it->restore_from_doublewrite(0) != DB_SUCCESS) {
       it->close();
-
-      return (err);
+      return err;
+    }
+    err = it->validate_first_page(space_id(), flushed_lsn, false);
+    if (err != DB_SUCCESS) {
+      return err;
     }
   }
-
-  /* Make sure the tablespace space ID matches the
-  space ID on the first page of the first datafile. */
-  if (space_id() != it->m_space_id) {
-    ib::error(ER_IB_MSG_444)
-        << "The " << name() << " data file '" << it->name()
-        << "' has the wrong space ID. It should be " << space_id() << ", but "
-        << it->m_space_id << " was found";
-
-    it->close();
-
-    return (err);
-  }
+  ut_ad(!it->is_open());
 
   /* The flags of srv_sys_space do not have SDI Flag set.
   Update the flags of system tablespace to indicate the presence
   of SDI */
   set_flags(it->flags());
-
-  it->close();
 
   return (DB_SUCCESS);
 }

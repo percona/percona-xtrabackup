@@ -29,7 +29,7 @@ CREATE TABLE errors (msg TEXT);
 --connection master
 --let $pid_file = `SELECT @@pid_file`
 --let $crash_num = 0
---let $master_host = 127.0.0.1
+--let $source_host = 127.0.0.1
 --let $table = test
 --let $user = root
 --let $checksum = 0
@@ -40,18 +40,18 @@ if ($do_checksum)
     # populate the table and store its checksum before any load.
     let $exec =
 $PYTHON $MYSQL_TEST_DIR/suite/innodb_stress/t/load_generator.py $pid_file $kill_db_after
-$num_records 0 0 $user $master_host $MASTER_MYPORT
+$num_records 0 0 $user $source_host $MASTER_MYPORT
 $table 0 $max_rows $MYSQL_TMP_DIR/load_generator 0 0 0;
     exec $exec >> $MYSQL_TMP_DIR/load_generator/errors.log;
     let $checksum=query_get_value(CHECKSUM TABLE t1, Checksum, 1);
     # Master needs to be restarted to start with an empty buffer pool so
     # that logical read ahead gets used.
     let rpl_server_number = 1;
-    source include/rpl_restart_server.inc;
+    source include/rpl/restart_server.inc;
     connection slave;
-    # Start slave to avoid I/O thread retry errors
+    # Start replica to avoid I/O thread retry errors
     disable_warnings;
-    source include/start_slave.inc;
+    source include/rpl/start_replica.inc;
     enable_warnings;
     let $num_records = 0;
 }
@@ -69,14 +69,14 @@ while ($num_crashes)
   {
     let $exec =
 $PYTHON $MYSQL_TEST_DIR/suite/innodb_stress/t/load_generator.py $pid_file $kill_db_after
-$num_records  $num_workers $num_transactions $user $master_host $MASTER_MYPORT
+$num_records  $num_workers $num_transactions $user $source_host $MASTER_MYPORT
 $table 1 $max_rows $MYSQL_TMP_DIR/load_generator 0 $checksum $secondary_index_checks;
   }
   if (!$use_blob)
   {
     let $exec =
 $PYTHON $MYSQL_TEST_DIR/suite/innodb_stress/t/load_generator.py $pid_file $kill_db_after
-$num_records  $num_workers $num_transactions $user $master_host $MASTER_MYPORT
+$num_records  $num_workers $num_transactions $user $source_host $MASTER_MYPORT
 $table 0 $max_rows $MYSQL_TMP_DIR/load_generator 0 $checksum $secondary_index_checks;
   }
 
@@ -85,7 +85,6 @@ $table 0 $max_rows $MYSQL_TMP_DIR/load_generator 0 $checksum $secondary_index_ch
   if ($do_crash)
   {
     --echo Wait for reconnect
-    enable_reconnect;
     # Call script that will poll the server waiting for it to be back online again
     source include/wait_until_connected_again.inc;
     connection slave;
@@ -98,7 +97,7 @@ $table 0 $max_rows $MYSQL_TMP_DIR/load_generator 0 $checksum $secondary_index_ch
 
   # if sync_slave_with_master had a configurable timeout this would not be needed
   let $slave_sync_timeout = 7200;
-  --source include/wait_for_slave_to_sync_with_master.inc
+  --source include/rpl/deprecated/wait_for_replica_to_sync_with_source.inc
 
   connection slave;
   if ($fake_changes)
@@ -107,7 +106,7 @@ $table 0 $max_rows $MYSQL_TMP_DIR/load_generator 0 $checksum $secondary_index_ch
     let $slave_pid_file = `SELECT @@pid_file`;
     let $slave_exec =
 $PYTHON $MYSQL_TEST_DIR/suite/innodb_stress/t/load_generator.py $slave_pid_file $kill_db_after
-0  $num_workers $num_transactions $user $master_host $SLAVE_MYPORT
+0  $num_workers $num_transactions $user $source_host $SLAVE_MYPORT
 $table 0 $max_rows $MYSQL_TMP_DIR/load_generator_slave 1 $checksum $secondary_index_checks;
     exec $slave_exec >> $MYSQL_TMP_DIR/load_generator/errors.log;
   }
@@ -131,7 +130,7 @@ queries issued before the crash.;
     connection slave;
     eval select * into outfile '$MYSQLTEST_VARDIR/tmp/slave_all' from t1 order by id;
     eval select id into outfile '$MYSQLTEST_VARDIR/tmp/slave_id' from t1 order by id;
-    show slave status;
+    SHOW REPLICA STATUS;
 
     die;
   }
@@ -161,17 +160,17 @@ DROP TABLE errors;
 
 # if sync_slave_with_master had a configurable timeout this would not be needed
 let $slave_sync_timeout = 7200;
---source include/wait_for_slave_to_sync_with_master.inc
+--source include/rpl/deprecated/wait_for_replica_to_sync_with_source.inc
 
 --connection slave
---source include/stop_slave.inc
+--source include/rpl/stop_replica.inc
 # For stress tests sometimes the replication thread can not connect to master
 # temporarily. This is either because the master crashed and it is recovering
 # or the master is too busy and could not service the slave's requests.
 # mtr's internal check requires that there be no errors in slave status.
 # restarting replication clears the errors.
---source include/start_slave.inc
---source include/stop_slave.inc
+--source include/rpl/start_replica.inc
+--source include/rpl/stop_replica.inc
 
 connection master;
 
@@ -185,8 +184,8 @@ if ($fake_changes)
 if ($kill_db_after)
 {
   --let $rpl_server_number = 1
-  --source include/rpl_reconnect.inc
+  --source include/rpl/reconnect.inc
 }
 
 --let $rpl_only_running_threads= 1
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

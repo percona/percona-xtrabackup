@@ -1,15 +1,16 @@
-/* Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -46,6 +47,7 @@
 #include "sql/join_optimizer/interesting_orders.h"
 #include "sql/join_optimizer/interesting_orders_defs.h"
 #include "sql/join_optimizer/make_join_hypergraph.h"
+#include "sql/join_optimizer/optimizer_trace.h"
 #include "sql/join_optimizer/relational_expression.h"
 #include "sql/key.h"
 #include "sql/key_spec.h"
@@ -214,7 +216,7 @@ static void CollectFunctionalDependenciesFromUniqueIndexes(
     THD *thd, JoinHypergraph *graph, LogicalOrderings *orderings) {
   // Collect functional dependencies from unique indexes.
   for (JoinHypergraph::Node &node : graph->nodes) {
-    TABLE *table = node.table;
+    TABLE *table = node.table();
     for (unsigned key_idx = 0; key_idx < table->s->keys; ++key_idx) {
       KEY *key = &table->key_info[key_idx];
       if (!Overlaps(actual_key_flags(key), HA_NOSAME)) {
@@ -455,7 +457,7 @@ void BuildInterestingOrders(
     int *order_by_ordering_idx, int *group_by_ordering_idx,
     int *distinct_ordering_idx, Mem_root_array<ActiveIndexInfo> *active_indexes,
     Mem_root_array<SpatialDistanceScanInfo> *spatial_indexes,
-    Mem_root_array<FullTextIndexInfo> *fulltext_searches, string *trace) {
+    Mem_root_array<FullTextIndexInfo> *fulltext_searches) {
   JOIN *const join = query_block->join;
 
   // Collect ordering from ORDER BY.
@@ -618,7 +620,7 @@ void BuildInterestingOrders(
   // Collect list of all active indexes. We will be needing this for ref access
   // and full-text index search even if we don't have any interesting orders.
   for (unsigned node_idx = 0; node_idx < graph->nodes.size(); ++node_idx) {
-    TABLE *table = graph->nodes[node_idx].table;
+    TABLE *table = graph->nodes[node_idx].table();
     for (unsigned key_idx = 0; key_idx < table->s->keys; ++key_idx) {
       // NOTE: visible_index claims to contain “visible and enabled” indexes,
       // but we still need to check keys_in_use to ignore disabled indexes.
@@ -657,12 +659,11 @@ void BuildInterestingOrders(
 
   // Early exit if we don't have any interesting orderings.
   if (orderings->num_orderings() <= 1) {
-    if (trace != nullptr) {
-      *trace +=
-          "\nNo interesting orders found. Not collecting functional "
-          "dependencies.\n\n";
+    if (TraceStarted(thd)) {
+      Trace(thd) << "\nNo interesting orders found. Not collecting functional "
+                    "dependencies.\n\n";
     }
-    orderings->Build(thd, trace);
+    orderings->Build(thd);
     return;
   }
 
@@ -803,7 +804,7 @@ void BuildInterestingOrders(
   }
   orderings->SetRollup(join->rollup_state != JOIN::RollupState::NONE);
 
-  orderings->Build(thd, trace);
+  orderings->Build(thd);
 
   if (*order_by_ordering_idx != -1) {
     *order_by_ordering_idx =

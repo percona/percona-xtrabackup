@@ -1,15 +1,16 @@
-/* Copyright (c) 2016, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -128,6 +129,10 @@ struct MemoryMonitorHijackProbe : public MemoryMonitorReadOnlyProbe {
 class TempTableAllocator : public ::testing::Test {
  protected:
   void SetUp() override {
+    // Enable MMAP by default. We need to set it first, so the mmap_threshold()
+    // is not zero.
+    MemoryMonitorHijackProbe::mmap_enable();
+
     // Store the default thresholds of RAM and MMAP so we can restore them to
     // the original values prior to starting a new test
     m_default_ram_threshold = MemoryMonitorHijackProbe::ram_threshold();
@@ -136,12 +141,13 @@ class TempTableAllocator : public ::testing::Test {
     // Reset the RAM and MMAP consumption counters to zero
     EXPECT_EQ(MemoryMonitorHijackProbe::ram_consumption_reset(), 0);
     EXPECT_EQ(MemoryMonitorHijackProbe::mmap_consumption_reset(), 0);
-
-    // Enable MMAP by default
-    MemoryMonitorHijackProbe::mmap_enable();
   }
 
   void TearDown() override {
+    // Check all memory was released.
+    EXPECT_EQ(MemoryMonitorHijackProbe::ram_consumption(), 0);
+    EXPECT_EQ(MemoryMonitorHijackProbe::mmap_consumption(), 0);
+
     // Restore the original RAM and MMAP thresholds
     MemoryMonitorHijackProbe::max_ram_set(m_default_ram_threshold);
     MemoryMonitorHijackProbe::max_mmap_set(m_default_mmap_threshold);
@@ -179,6 +185,8 @@ TEST_F(TempTableAllocator, basic) {
   // Physically deallocate the shared-block (allocator keeps it alive
   // intentionally)
   EXPECT_FALSE(shared_block.is_empty());
+  temptable::Prefer_RAM_over_MMAP_policy::block_freed(shared_block.size(),
+                                                      shared_block.type());
   shared_block.destroy();
   EXPECT_TRUE(shared_block.is_empty());
 }
@@ -214,6 +222,8 @@ TEST_F(TempTableAllocator, shared_block_is_kept_after_last_deallocation) {
   // Physically deallocate the shared-block (allocator keeps it alive
   // intentionally)
   EXPECT_FALSE(shared_block.is_empty());
+  temptable::Prefer_RAM_over_MMAP_policy::block_freed(shared_block.size(),
+                                                      shared_block.type());
   shared_block.destroy();
   EXPECT_TRUE(shared_block.is_empty());
 }
@@ -265,6 +275,8 @@ TEST_F(TempTableAllocator, rightmost_chunk_deallocated_reused_for_allocation) {
   // Physically deallocate the shared-block (allocator keeps it alive
   // intentionally)
   EXPECT_FALSE(shared_block.is_empty());
+  temptable::Prefer_RAM_over_MMAP_policy::block_freed(shared_block.size(),
+                                                      shared_block.type());
   shared_block.destroy();
   EXPECT_TRUE(shared_block.is_empty());
 }
@@ -296,6 +308,8 @@ TEST_F(TempTableAllocator,
   // Physically deallocate the shared-block (allocator keeps it alive
   // intentionally)
   EXPECT_FALSE(shared_block.is_empty());
+  temptable::Prefer_RAM_over_MMAP_policy::block_freed(shared_block.size(),
+                                                      shared_block.type());
   shared_block.destroy();
   EXPECT_TRUE(shared_block.is_empty());
 }
@@ -327,12 +341,12 @@ TEST_F(TempTableAllocator,
   // Physically deallocate the shared-block (allocator keeps it alive
   // intentionally)
   EXPECT_FALSE(shared_block.is_empty());
+  temptable::Prefer_RAM_over_MMAP_policy::block_freed(shared_block.size(),
+                                                      shared_block.type());
   shared_block.destroy();
   EXPECT_TRUE(shared_block.is_empty());
 
-  // RAM consumption is not decremented to 0 (it's done elsewhere and not inside
-  // the allocator)
-  EXPECT_NE(MemoryMonitorReadOnlyProbe::ram_consumption(), 0);
+  EXPECT_EQ(MemoryMonitorReadOnlyProbe::ram_consumption(), 0);
 }
 
 TEST_F(
@@ -343,6 +357,9 @@ TEST_F(
   EXPECT_TRUE(shared_block.is_empty());
   temptable::Allocator<uint8_t> allocator(&shared_block,
                                           table_resource_monitor);
+
+  /* Set appropriate temptable_max_mmap */
+  MemoryMonitorHijackProbe::max_mmap_set(1 << 30 /* 1 GiB */);
 
   // RAM consumption should be greater or equal than
   // shared_block_n_elements bytes at this point
@@ -385,6 +402,8 @@ TEST_F(
   // Physically deallocate the shared-block (allocator keeps it alive
   // intentionally)
   EXPECT_FALSE(shared_block.is_empty());
+  temptable::Prefer_RAM_over_MMAP_policy::block_freed(shared_block.size(),
+                                                      shared_block.type());
   shared_block.destroy();
   EXPECT_TRUE(shared_block.is_empty());
 }
@@ -420,6 +439,8 @@ TEST_F(
   // Physically deallocate the shared-block (allocator keeps it alive
   // intentionally)
   EXPECT_FALSE(shared_block.is_empty());
+  temptable::Prefer_RAM_over_MMAP_policy::block_freed(shared_block.size(),
+                                                      shared_block.type());
   shared_block.destroy();
   EXPECT_TRUE(shared_block.is_empty());
 }
@@ -435,6 +456,9 @@ TEST_F(
 
   // Set some artificially low RAM threshold
   MemoryMonitorHijackProbe::max_ram_set(128);
+
+  /* Set appropriate temptable_max_mmap */
+  MemoryMonitorHijackProbe::max_mmap_set(1 << 30 /* 1 GiB */);
 
   // Size of the shared_block we will request must exceed the RAM threshold
   size_t shared_block_n_elements = 1024;
@@ -459,6 +483,8 @@ TEST_F(
   // Physically deallocate the shared-block (allocator keeps it alive
   // intentionally)
   EXPECT_FALSE(shared_block.is_empty());
+  temptable::Prefer_RAM_over_MMAP_policy::block_freed(shared_block.size(),
+                                                      shared_block.type());
   shared_block.destroy();
   EXPECT_TRUE(shared_block.is_empty());
 }
@@ -483,6 +509,9 @@ TEST_F(TempTableAllocator, block_size_cap) {
   constexpr size_t n_allocate = ALLOCATOR_MAX_BLOCK_BYTES / alloc_size + 10;
   std::array<uint8_t *, n_allocate> a;
 
+  /* Set appropriate temptable_max_mmap */
+  MemoryMonitorHijackProbe::max_mmap_set(1 << 30 /* 1 GiB */);
+
   for (size_t i = 0; i < n_allocate; ++i) {
     a[i] = allocator.allocate(alloc_size);
   }
@@ -496,6 +525,8 @@ TEST_F(TempTableAllocator, block_size_cap) {
   // Physically deallocate the shared-block (allocator keeps it alive
   // intentionally)
   EXPECT_FALSE(shared_block.is_empty());
+  temptable::Prefer_RAM_over_MMAP_policy::block_freed(shared_block.size(),
+                                                      shared_block.type());
   shared_block.destroy();
   EXPECT_TRUE(shared_block.is_empty());
 }
@@ -528,6 +559,14 @@ TEST_F(
   // Deallocate and check that the table resource monitor decreased accordingly
   allocator.deallocate(chunk_from_shared_block, 5_KiB);
   EXPECT_EQ(table_resource_monitor.consumption(), 0_KiB);
+
+  // Physically deallocate the shared-block (allocator keeps it alive
+  // intentionally)
+  EXPECT_FALSE(shared_block.is_empty());
+  temptable::Prefer_RAM_over_MMAP_policy::block_freed(shared_block.size(),
+                                                      shared_block.type());
+  shared_block.destroy();
+  EXPECT_TRUE(shared_block.is_empty());
 }
 
 TEST_F(
@@ -596,6 +635,14 @@ TEST_F(
   // decreased accordingly
   allocator.deallocate(chunk3, 50_KiB);
   EXPECT_EQ(table_resource_monitor.consumption(), 0_KiB);
+
+  // Physically deallocate the shared-block (allocator keeps it alive
+  // intentionally)
+  EXPECT_FALSE(shared_block.is_empty());
+  temptable::Prefer_RAM_over_MMAP_policy::block_freed(shared_block.size(),
+                                                      shared_block.type());
+  shared_block.destroy();
+  EXPECT_TRUE(shared_block.is_empty());
 }
 
 TEST_F(
@@ -642,6 +689,14 @@ TEST_F(
   // decreased accordingly
   allocator.deallocate(chunk1, 792_KiB);
   EXPECT_EQ(table_resource_monitor.consumption(), 0_KiB);
+
+  // Physically deallocate the shared-block (allocator keeps it alive
+  // intentionally)
+  EXPECT_FALSE(shared_block.is_empty());
+  temptable::Prefer_RAM_over_MMAP_policy::block_freed(shared_block.size(),
+                                                      shared_block.type());
+  shared_block.destroy();
+  EXPECT_TRUE(shared_block.is_empty());
 }
 
 TEST_F(TempTableAllocator,
@@ -650,6 +705,10 @@ TEST_F(TempTableAllocator,
   temptable::Block shared_block;
   temptable::Allocator<uint8_t> a1(&shared_block, table_resource_monitor);
   temptable::Allocator<uint8_t> a2(&shared_block, table_resource_monitor);
+
+  /* Set appropriate temptable_max_mmap */
+  MemoryMonitorHijackProbe::max_mmap_set(1 << 30 /* 1 GiB */);
+
   auto r11 = a1.allocate(512_KiB);
   temptable::Block b11 = temptable::Block(temptable::Chunk(r11));
   EXPECT_EQ(b11, shared_block);
@@ -730,6 +789,128 @@ TEST_F(TempTableAllocator,
   // 3. It uses the block-size growth policy to compute the block-size.
   // 4. It allocates the block of 2MiB of size.
   // 5. Returns a pointer from new block.
+
+  a1.deallocate(r11, 512_KiB);
+  a1.deallocate(r12, 256_KiB);
+  a1.deallocate(r13, 512_KiB);
+  a1.deallocate(r14, 128_KiB);
+  a1.deallocate(r15, 1_MiB - 512_KiB);
+  a2.deallocate(r21, 512_KiB);
+  a2.deallocate(r22, 1_MiB);
+
+  // Physically deallocate the shared-block (allocator keeps it alive
+  // intentionally)
+  EXPECT_FALSE(shared_block.is_empty());
+  temptable::Prefer_RAM_over_MMAP_policy::block_freed(shared_block.size(),
+                                                      shared_block.type());
+  shared_block.destroy();
+  EXPECT_TRUE(shared_block.is_empty());
+}
+
+TEST_F(
+    TempTableAllocator,
+    repeated_allocation_followed_by_deallocation_does_not_create_new_blocks) {
+  temptable::TableResourceMonitor table_resource_monitor(16 * 1024 * 1024);
+  {
+    temptable::Block shared_block;
+    ;
+    temptable::Allocator<uint8_t> allocator(&shared_block,
+                                            table_resource_monitor);
+    // RAM consumption is 0 at the start
+    EXPECT_EQ(MemoryMonitorReadOnlyProbe::ram_consumption(), 0);
+
+    auto r1 = allocator.allocate(800_KiB);
+    temptable::Block b1 = temptable::Block(temptable::Chunk(r1));
+    EXPECT_EQ(b1, shared_block);
+    EXPECT_EQ(b1.size(), shared_block.size());
+    EXPECT_EQ(b1.size(), 1_MiB);
+    // ^^
+    // 1. Allocator detects that shared_block is empty
+    // 2. It uses the block-size growth policy to compute the block-size
+    // 3. It allocates the block of 1MiB of size. Our shared_block is now 1MiB
+    // of size big.
+    // 4. Returns a pointer from shared_block.
+
+    auto r2 = allocator.allocate(800_KiB);
+    temptable::Block b2 = temptable::Block(temptable::Chunk(r2));
+    EXPECT_NE(b2, shared_block);
+    EXPECT_EQ(b2.size(), 1_MiB);
+    EXPECT_EQ(MemoryMonitorReadOnlyProbe::ram_consumption(), 2_MiB);
+    // ^^
+    // 1. Allocator detects that shared_block is not empty, but it can't use it
+    // to allocate new chunk.
+    // 2. It allocates a new block of 1MiB of size.
+    // 3. Returns a pointer from a new block.
+
+    {
+      auto r3 = allocator.allocate(800_KiB);
+      temptable::Block b3 = temptable::Block(temptable::Chunk(r3));
+      EXPECT_NE(b3, shared_block);
+      EXPECT_EQ(b3.size(), 2_MiB);
+      EXPECT_EQ(MemoryMonitorReadOnlyProbe::ram_consumption(), 4_MiB);
+      // ^^
+      // 1. Allocator detects that shared_block is not empty, but it can't use
+      // it to allocate new chunk.
+      // 2. Neither the current block can be used.
+      // 3. It allocates a new block of 1MiB of size.
+      // 4. Returns a pointer from a new block.
+
+      allocator.deallocate(r3, 800_KiB);
+      EXPECT_EQ(MemoryMonitorReadOnlyProbe::ram_consumption(), 4_MiB);
+      // ^^
+      // 1. Allocator removes the chunk from the current block.
+      // 2. It sees it is now empty, but caches it and does not deallocate it.
+      // 3. The consumption stays at 4MiB.
+    }
+
+    {
+      auto r3 = allocator.allocate(800_KiB);
+      temptable::Block b3 = temptable::Block(temptable::Chunk(r3));
+      EXPECT_NE(b3, shared_block);
+      EXPECT_EQ(b3.size(), 2_MiB);
+      EXPECT_EQ(MemoryMonitorReadOnlyProbe::ram_consumption(), 4_MiB);
+      // ^^
+      // 1. Allocator detects that shared_block is not empty, but it can't use
+      // it to allocate new chunk.
+      // 2. The current block can be used as it empty now.
+      // 3. It allocates a new block of 1MiB of size.
+      // 4. Returns a pointer from a new block.
+
+      allocator.deallocate(r3, 800_KiB);
+      EXPECT_EQ(MemoryMonitorReadOnlyProbe::ram_consumption(), 4_MiB);
+      // ^^
+      // 1. Allocator removes the chunk from the current block.
+      // 2. It sees it is now empty, but caches it and does not deallocate it.
+      // 3. The consumption stays at 4MiB.
+    }
+    allocator.deallocate(r2, 800_KiB);
+    EXPECT_EQ(MemoryMonitorReadOnlyProbe::ram_consumption(), 3_MiB);
+    // ^^
+    // 1. Allocator removes the chunk from old block.
+    // 2. It sees it is now empty, and is not the current one and deallocates
+    // it.
+    // 3. The consumption drops to 2MiB.
+    allocator.deallocate(r1, 800_KiB);
+
+    // Physically deallocate the shared-block (allocator keeps it alive
+    // intentionally)
+    EXPECT_FALSE(shared_block.is_empty());
+    temptable::Prefer_RAM_over_MMAP_policy::block_freed(shared_block.size(),
+                                                        shared_block.type());
+    shared_block.destroy();
+    EXPECT_TRUE(shared_block.is_empty());
+
+    EXPECT_EQ(MemoryMonitorReadOnlyProbe::ram_consumption(), 2_MiB);
+    // ^^
+    // 1. Shared block is deallocated.
+    // 2. Allocator still holds the current block alive.
+    // 3. The consumption should drop by the 1MiB used by the shared block.
+  }
+  EXPECT_EQ(MemoryMonitorReadOnlyProbe::ram_consumption(), 0_MiB);
+  // ^^
+  // 1. Allocator is destroyed.
+  // 2. It sees it has an empty current block and deallocates it.
+  // 3. The consumption should drop by the 2MiB used by the current block.
 }
 
 // Create some aliases to make our life easier when generating the test-cases
@@ -779,7 +960,7 @@ TEST_P(AllocatesSuccessfully,
   EXPECT_NO_THROW(chunk = allocator.allocate(n_elements));
   EXPECT_NE(chunk, nullptr);
 
-  // After successfull allocation, and depending on the use-case, RAM and MMAP
+  // After successful allocation, and depending on the use-case, RAM and MMAP
   // consumption should increase or stay at the same level accordingly
   if (ram_expected_to_be_increased) {
     EXPECT_GE(MemoryMonitorReadOnlyProbe::ram_consumption(),
@@ -1004,7 +1185,15 @@ TEST_P(
   } else {
     EXPECT_EQ(source_expected,
               temptable::Prefer_RAM_over_MMAP_policy::block_source(block_size));
+    // A block source was successfully provisioned, and the usage was recorded.
+    // Test the accounting when the block is freed.
+    temptable::Prefer_RAM_over_MMAP_policy::block_freed(block_size,
+                                                        source_expected);
   }
+
+  // Reset the usage and check it is back to where we started.
+  EXPECT_EQ(temptable::MemoryMonitor::RAM::consumption(), ram_consumption);
+  MemoryMonitorHijackProbe::ram_consumption_reset();
 }
 
 // Generate the test-case scenarios.

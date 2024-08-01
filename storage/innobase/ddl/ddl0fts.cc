@@ -1,17 +1,18 @@
 /****************************************************************************
 
-Copyright (c) 2010, 2023, Oracle and/or its affiliates.
+Copyright (c) 2010, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -913,7 +914,7 @@ void FTS::Parser::parse(Builder *builder) noexcept {
         auto &file = handler->m_file;
         handler->m_offsets.push_back(file.m_size);
 
-        auto persistor = [&](IO_buffer io_buffer, os_offset_t &) -> dberr_t {
+        auto persistor = [&](IO_buffer io_buffer) -> dberr_t {
           return builder->append(file, io_buffer);
         };
 
@@ -1042,7 +1043,7 @@ void FTS::Parser::parse(Builder *builder) noexcept {
 
       handler->m_offsets.push_back(file.m_size);
 
-      auto persistor = [&](IO_buffer io_buffer, os_offset_t &) -> dberr_t {
+      auto persistor = [&](IO_buffer io_buffer) -> dberr_t {
         return builder->append(file, io_buffer);
       };
 
@@ -1169,6 +1170,8 @@ dberr_t FTS::Inserter::write_word(Insert *ins_ctx,
                                   " index table, error ("
                                << ut_strerr(err) << ")";
       ret = err;
+    } else {
+      ut_ad(ins_ctx->m_btr_bulk->get_n_recs() > 0);
     }
 
     ut::free(fts_node->ilist);
@@ -1541,18 +1544,18 @@ dberr_t FTS::start_parse_threads(Builder *builder) noexcept {
 #else
     Runnable runnable{PSI_NOT_INSTRUMENTED, seqnum};
 #endif /* UNIV_PFS_THREAD */
+    runnable([&]() {
+      auto thd = create_internal_thd();
+      ut_ad(current_thd == thd);
 
-    my_thread_init();
+      thd->push_diagnostics_area(&parser->da, false);
+      parser->parse(builder);
+      thd->pop_diagnostics_area();
 
-    auto thd = create_internal_thd();
-    ut_ad(current_thd == thd);
-
-    thd->push_diagnostics_area(&parser->da, false);
-    parser->parse(builder);
-    thd->pop_diagnostics_area();
-
-    destroy_internal_thd(current_thd);
-    my_thread_end();
+      destroy_internal_thd(current_thd);
+      /* Return value ignored but required for Runnable::operator() */
+      return DB_SUCCESS;
+    });
   };
 
   size_t seqnum{1};
@@ -1613,7 +1616,7 @@ dberr_t FTS::insert(Builder *builder) noexcept {
 #endif /* UNIV_PFS_THREAD */
 
     if (!handler->m_files.empty()) {
-      err = m_inserter->insert(builder, handler);
+      err = runnable([&]() { return m_inserter->insert(builder, handler); });
     }
   };
 

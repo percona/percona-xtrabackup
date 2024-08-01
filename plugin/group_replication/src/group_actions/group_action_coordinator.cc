@@ -1,15 +1,16 @@
-/* Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -277,12 +278,13 @@ int Group_action_coordinator::stop_coordinator_process(bool coordinator_stop,
 
   if (wait) {
     mysql_mutex_lock(&group_thread_run_lock);
-    // Signal in case the thread is waiting for other members to finish
-    mysql_cond_broadcast(&group_thread_end_cond);
     while (action_handler_thd_state.is_thread_alive()) {
       DBUG_PRINT("sleep",
                  ("Waiting for the group action execution thread to end"));
-      mysql_cond_wait(&group_thread_run_cond, &group_thread_run_lock);
+      struct timespec abstime;
+      set_timespec(&abstime, 1);
+      mysql_cond_timedwait(&group_thread_run_cond, &group_thread_run_lock,
+                           &abstime);
     }
     mysql_mutex_unlock(&group_thread_run_lock);
   }
@@ -742,7 +744,10 @@ void Group_action_coordinator::signal_and_wait_action_termination(bool wait) {
     while (action_handler_thd_state.is_thread_alive()) {
       DBUG_PRINT("sleep",
                  ("Waiting for the group action execution thread to end"));
-      mysql_cond_wait(&group_thread_run_cond, &group_thread_run_lock);
+      struct timespec abstime;
+      set_timespec(&abstime, 1);
+      mysql_cond_timedwait(&group_thread_run_cond, &group_thread_run_lock,
+                           &abstime);
     }
   }
   mysql_mutex_unlock(&group_thread_run_lock);
@@ -852,7 +857,10 @@ int Group_action_coordinator::launch_group_action_handler_thread() {
   while (action_handler_thd_state.is_alive_not_running()) {
     DBUG_PRINT("sleep",
                ("Waiting for the group action execution thread to start"));
-    mysql_cond_wait(&group_thread_run_cond, &group_thread_run_lock);
+    struct timespec abstime;
+    set_timespec(&abstime, 1);
+    mysql_cond_timedwait(&group_thread_run_cond, &group_thread_run_lock,
+                         &abstime);
   }
   mysql_mutex_unlock(&group_thread_run_lock);
 
@@ -956,7 +964,10 @@ int Group_action_coordinator::execute_group_action_handler() {
   while (action_running && !coordinator_terminating) {
     DBUG_PRINT("sleep",
                ("Waiting for the group action execution process to terminate"));
-    mysql_cond_wait(&group_thread_end_cond, &group_thread_end_lock);
+    struct timespec abstime;
+    set_timespec(&abstime, 1);
+    mysql_cond_timedwait(&group_thread_end_cond, &group_thread_end_lock,
+                         &abstime);
   }
   mysql_mutex_unlock(&group_thread_end_lock);
 

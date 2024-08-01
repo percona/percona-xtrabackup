@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2022, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -98,13 +99,13 @@ AuthBase::public_key_from_ssl_ctx_as_pem(SSL_CTX *ssl_ctx) {
   char *data = nullptr;
   auto data_len = BIO_get_mem_data(bio.get(), &data);
 
-  return {std::in_place, data, data + data_len};
+  return stdx::expected<std::string, std::error_code>{std::in_place, data,
+                                                      data + data_len};
 #else
   // 1.0.1 has no SSL_CTX_get_certificate
   (void)ssl_ctx;
 
-  return stdx::make_unexpected(
-      make_error_code(std::errc::function_not_supported));
+  return stdx::unexpected(make_error_code(std::errc::function_not_supported));
 #endif
 }
 
@@ -115,7 +116,7 @@ stdx::expected<EvpPkey, std::error_code> AuthBase::public_key_from_pem(
 
   EvpPkey pkey{PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr)};
   if (!pkey) {
-    return stdx::make_unexpected(make_error_code(std::errc::bad_message));
+    return stdx::unexpected(make_error_code(std::errc::bad_message));
   }
 
   return pkey;
@@ -153,7 +154,7 @@ stdx::expected<std::string, std::error_code> AuthBase::public_key_encrypt(
       reinterpret_cast<unsigned char *>(data.data()), const_cast<RSA *>(rsa),
       RSA_PKCS1_OAEP_PADDING);
   if (encrypted_len == -1) {
-    return stdx::make_unexpected(make_error_code(std::errc::bad_message));
+    return stdx::unexpected(make_error_code(std::errc::bad_message));
   }
 #endif
 
@@ -165,11 +166,11 @@ stdx::expected<std::string, std::error_code> AuthBase::public_key_encrypt(
 stdx::expected<std::string, std::error_code> AuthBase::private_key_decrypt(
     std::string_view ciphertext, EVP_PKEY *priv) {
   if (ciphertext.empty()) {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 
   if (priv == nullptr) {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 
   std::array<unsigned char, 1024> plaintext;
@@ -178,8 +179,7 @@ stdx::expected<std::string, std::error_code> AuthBase::private_key_decrypt(
   {
     auto init_res = EVP_PKEY_decrypt_init(key_ctx.get());
     if (init_res != 1) {
-      return stdx::make_unexpected(
-          make_error_code(std::errc::invalid_argument));
+      return stdx::unexpected(make_error_code(std::errc::invalid_argument));
     }
   }
 
@@ -187,8 +187,7 @@ stdx::expected<std::string, std::error_code> AuthBase::private_key_decrypt(
     auto padding_res =
         EVP_PKEY_CTX_set_rsa_padding(key_ctx.get(), RSA_PKCS1_OAEP_PADDING);
     if (padding_res != 1) {
-      return stdx::make_unexpected(
-          make_error_code(std::errc::invalid_argument));
+      return stdx::unexpected(make_error_code(std::errc::invalid_argument));
     }
   }
 
@@ -203,11 +202,10 @@ stdx::expected<std::string, std::error_code> AuthBase::private_key_decrypt(
     if (decrypt_res != 1) {
       switch (decrypt_res) {
         case -2:
-          return stdx::make_unexpected(
+          return stdx::unexpected(
               make_error_code(std::errc::function_not_supported));
         default:
-          return stdx::make_unexpected(
-              make_error_code(std::errc::invalid_argument));
+          return stdx::unexpected(make_error_code(std::errc::invalid_argument));
       }
     }
   }
@@ -226,11 +224,12 @@ stdx::expected<std::string, std::error_code> AuthBase::private_key_decrypt(
       reinterpret_cast<unsigned char *>(plaintext.data()),
       const_cast<RSA *>(rsa), RSA_PKCS1_OAEP_PADDING);
   if (decrypted_len == -1) {
-    return stdx::make_unexpected(make_error_code(std::errc::bad_message));
+    return stdx::unexpected(make_error_code(std::errc::bad_message));
   }
 #endif
 
-  return {std::in_place, plaintext.data(), plaintext.data() + decrypted_len};
+  return stdx::expected<std::string, std::error_code>{
+      std::in_place, plaintext.data(), plaintext.data() + decrypted_len};
 }
 
 // xor the plaintext password with the repeated scramble.
@@ -247,7 +246,7 @@ stdx::expected<std::string, std::error_code> AuthBase::rsa_decrypt_password(
 #if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(1, 0, 2)
   auto decrypted_res = AuthBase::private_key_decrypt(
       encrypted, SSL_CTX_get0_privatekey(ssl_ctx));
-  if (!decrypted_res) return stdx::make_unexpected(decrypted_res.error());
+  if (!decrypted_res) return stdx::unexpected(decrypted_res.error());
 
   auto plaintext = *decrypted_res;
 
@@ -255,7 +254,7 @@ stdx::expected<std::string, std::error_code> AuthBase::rsa_decrypt_password(
 
   if (plaintext.size() == 0 || plaintext.back() != '\0') {
     // after decrypting and xor'ing the last byte should be a '\0'
-    return stdx::make_unexpected(make_error_code(std::errc::bad_message));
+    return stdx::unexpected(make_error_code(std::errc::bad_message));
   }
 
   // strip trailing \0
@@ -267,8 +266,7 @@ stdx::expected<std::string, std::error_code> AuthBase::rsa_decrypt_password(
   (void)encrypted;
   (void)nonce;
 
-  return stdx::make_unexpected(
-      make_error_code(std::errc::function_not_supported));
+  return stdx::unexpected(make_error_code(std::errc::function_not_supported));
 #endif
 }
 
@@ -278,10 +276,10 @@ stdx::expected<std::string, std::error_code> AuthBase::rsa_encrypt_password(
   plaintext.push_back('\0');
 
   if (nonce.empty()) {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
   if (!pkey) {
-    return stdx::make_unexpected(make_error_code(std::errc::invalid_argument));
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
   }
 
   xor_plaintext(plaintext, nonce);

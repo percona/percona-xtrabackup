@@ -53,12 +53,8 @@ create table test_db.t1(a int) engine ndb;
 --append_file $MYSQLTEST_VARDIR/tmp/mysqld.1.1.expect
 restart
 EOF
-# Turn on reconnect.
---enable_reconnect
 # Call script that will poll the server waiting for it to be back online again.
 --source include/wait_until_connected_again.inc
-# Turn off reconnect again.
---disable_reconnect
 
 --echo # Check that the tables are all discovered
 show tables;
@@ -70,11 +66,11 @@ show create table test_db.t1;
 -- connection server2
 insert into t1 (b) values('String to find');
 --echo # Wait for the row to be committed to binlog
---source include/wait_for_ndb_committed_to_binlog.inc
+--source include/rpl/wait_for_ndb_committed_to_binlog.inc
 
 insert into test_db.t1 values (1);
 --echo # Wait for the row to be committed to binlog
---source include/wait_for_ndb_committed_to_binlog.inc
+--source include/rpl/wait_for_ndb_committed_to_binlog.inc
 
 --connection server1
 --echo # check that data went in ok
@@ -89,7 +85,7 @@ let $MYSQLD_DATADIR= `select @@datadir;`;
 
 --echo # View binlog to verify that INSERTS were written properly
 --let $binlog_file=$MYSQLD_DATADIR/binlog.000003
---source include/show_binlog_events.inc
+--source include/rpl/deprecated/show_binlog_events.inc
 
 --echo # Cleanup
 drop database test_db;

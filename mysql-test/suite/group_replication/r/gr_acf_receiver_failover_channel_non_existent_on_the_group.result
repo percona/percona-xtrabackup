@@ -14,6 +14,7 @@ SET SESSION sql_log_bin= 0;
 call mtr.add_suppression("Unable to set SOURCE_CONNECTION_AUTO_FAILOVER on a non-existent or misconfigured replication channel 'ch1', please create the channel and rejoin the server to the group.");
 call mtr.add_suppression("A message sent through the Group Replication message deliver service was not delivered successfully. The server will now leave the group.*");
 call mtr.add_suppression("The server was automatically set into read only mode after an error was detected.");
+call mtr.add_suppression("The server was automatically set into offline mode after an error was detected.");
 call mtr.add_suppression("Skipping leave operation: concurrent attempt to leave the group is on-going.");
 SET SESSION sql_log_bin= 1;
 include/start_group_replication.inc
@@ -31,7 +32,7 @@ Note	1760	Storing MySQL user name or password information in the connection meta
 SELECT asynchronous_connection_failover_add_source('ch1', '127.0.0.1', SERVER_MYPORT_3, '', 50);;
 asynchronous_connection_failover_add_source('ch1', '127.0.0.1', SERVER_MYPORT_3, '', 50)
 The UDF asynchronous_connection_failover_add_source() executed successfully.
-include/start_slave.inc [FOR CHANNEL 'ch1']
+include/rpl/start_replica.inc [FOR CHANNEL 'ch1']
 include/assert.inc ['There is 1 row in performance_schema.replication_asynchronous_connection_failover']
 include/assert.inc ['The version of replication_asynchronous_connection_failover must be 1']
 include/assert.inc ['SOURCE_CONNECTION_AUTO_FAILOVER must be enabled on ch1']
@@ -56,5 +57,5 @@ include/assert_grep.inc [Unable to set SOURCE_CONNECTION_AUTO_FAILOVER on a non-
 include/stop_group_replication.inc
 [connection server1]
 include/stop_group_replication.inc
-include/rpl_reset_slave.inc
+include/rpl/reset_replica.inc
 include/group_replication_end.inc

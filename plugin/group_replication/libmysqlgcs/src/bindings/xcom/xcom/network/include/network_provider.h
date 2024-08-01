@@ -1,15 +1,16 @@
-/* Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -71,6 +72,43 @@ enum ssl_enum_fips_mode_options {
   FIPS_MODE_ON,
   FIPS_MODE_STRICT,
   LAST_SSL_FIPS_MODE
+};
+
+/**
+ * @brief Dynamic log level enum values
+ *
+ * Network Provider will allow external entities to change a given log level,
+ * determined by an external condition.
+ *
+ * For that, we create an enumeration that contains all possible generic log
+ * levels that we have seen in all implementations of a Network Provider.
+ *
+ * Each Network Provider specialization must provide a mapping between
+ * network_provider_dynamic_log_level and their specific log level.
+ *
+ * An example of this mechanism is as follows:
+ *
+ * Let us consider that a coder decided that a certain log output in
+ * open_connection, on an implementation of a network provider, is ERROR.
+ *
+ * At the same time, that developer allows an external entity that calls
+ * open_connection to override that log output. That could happen because the
+ * caller of open_connection wants to lower the verbosity due to too many errors
+ * in a short amount of time.
+ *
+ * The developer must then use the implemented mapping referenced above on
+ * that instruction and consume the input parameter of open_connection that
+ * refers to an external network_provider_dynamic_log_level.
+ */
+enum class network_provider_dynamic_log_level {
+  PROVIDED = 0,
+  FATAL,
+  ERROR,
+  WARNING,
+  INFO,
+  DEBUG,
+  TRACE,
+  LAST_NETWORK_PROVIDER_DYNAMIC_LOG_LEVEL
 };
 
 /**
@@ -171,34 +209,23 @@ struct Network_connection {
         has_error(false) {
   }
 
-  Network_connection(int parameter_fd
+  Network_connection(int parameter_fd, void *parameter_ssl_fd)
+      : fd(parameter_fd),
 #ifndef XCOM_WITHOUT_OPENSSL
-                     ,
-                     SSL *parameter_ssl_fd
+        ssl_fd(static_cast<SSL *>(parameter_ssl_fd)),
 #endif
-                     )
-      : fd(parameter_fd)
-#ifndef XCOM_WITHOUT_OPENSSL
-        ,
-        ssl_fd(parameter_ssl_fd)
-#endif
-        ,
         has_error(false) {
   }
 
-  Network_connection(int parameter_fd
+  Network_connection(int parameter_fd,
 #ifndef XCOM_WITHOUT_OPENSSL
-                     ,
-                     SSL *parameter_ssl_fd
+                     SSL *parameter_ssl_fd,
 #endif
-                     ,
                      bool parameter_has_error)
-      : fd(parameter_fd)
+      : fd(parameter_fd),
 #ifndef XCOM_WITHOUT_OPENSSL
-        ,
-        ssl_fd(parameter_ssl_fd)
+        ssl_fd(parameter_ssl_fd),
 #endif
-        ,
         has_error(parameter_has_error) {
   }
 
@@ -343,9 +370,11 @@ class Network_provider {
 
   virtual std::function<void()> get_secure_connections_context_cleaner() {
     std::function<void()> retval = []() {
+#ifndef XCOM_WITHOUT_OPENSSL
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
       ERR_remove_thread_state(nullptr);
 #endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
+#endif
     };
 
     return retval;
@@ -362,13 +391,17 @@ class Network_provider {
    * @param security_credentials security credentials to connect to the remote
    *                             endpoint
    * @param connection_timeout connection timeout
+   * @param log_level log level @see network_provider_dynamic_log_level for more
+   *                        information
    * @return std::unique_ptr<Network_connection> an established connection.
    *                                                 nullptr in case of failure.
    */
   virtual std::unique_ptr<Network_connection> open_connection(
       const std::string &address, const unsigned short port,
       const Network_security_credentials &security_credentials,
-      int connection_timeout = default_connection_timeout()) = 0;
+      int connection_timeout = default_connection_timeout(),
+      network_provider_dynamic_log_level log_level =
+          network_provider_dynamic_log_level::PROVIDED) = 0;
 
   /**
    * @brief Closes an open connection to another XCom endpoint served by the

@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -76,7 +77,7 @@
 #include "sql/protocol.h"
 #include "sql/query_options.h"
 #include "sql/select_lex_visitor.h"
-#include "sql/sp.h"           // sp_map_item_type
+#include "sql/sp.h"           // sp_prepare_func_item
 #include "sql/sp_rcontext.h"  // sp_rcontext
 #include "sql/sql_base.h"     // view_ref_found
 #include "sql/sql_bitmap.h"
@@ -987,8 +988,7 @@ bool Item_field::collect_item_field_or_ref_processor(uchar *arg) {
       if (already_collected->eq(this, true)) return false;
     }
   }
-  info->m_items->push_back(this);
-  return false;
+  return info->m_items->push_back(this);
 }
 
 bool Item_field::collect_item_field_or_view_ref_processor(uchar *arg) {
@@ -1010,8 +1010,7 @@ bool Item_field::collect_item_field_or_view_ref_processor(uchar *arg) {
     }
   }
   m_protected_by_any_value = info->m_any_value_level > 0;
-  info->m_item_fields_or_view_refs->push_back(this);
-  return false;
+  return info->m_item_fields_or_view_refs->push_back(this);
 }
 
 bool Item_field::add_field_to_set_processor(uchar *arg) {
@@ -1103,13 +1102,11 @@ bool Item_field::is_valid_for_pushdown(uchar *arg) {
     // pushdown if we have such expressions.
     Query_expression *derived_query_expression =
         derived_table->derived_query_expression();
-    Item_result result_type = INVALID_RESULT;
+    Item_result result_type = this->result_type();
     for (Query_block *qb = derived_query_expression->first_query_block();
          qb != nullptr; qb = qb->next_query_block()) {
       Item *item = qb->get_derived_expr(field->field_index());
-      if (result_type == INVALID_RESULT) {
-        result_type = item->result_type();
-      } else if (result_type != item->result_type()) {
+      if (result_type != item->result_type()) {
         return true;
       }
       if (item->has_subquery() || item->is_non_deterministic()) return true;
@@ -1219,7 +1216,8 @@ Item *Item_field::replace_with_derived_expr(uchar *arg) {
   if (derived_table != table_ref) return this;
   Query_block *query_block = dti->m_derived_query_block;
   return query_block->clone_expression(
-      current_thd, query_block->get_derived_expr(field->field_index()));
+      current_thd, query_block->get_derived_expr(field->field_index()),
+      derived_table);
 }
 
 Item *Item_field::replace_with_derived_expr_ref(uchar *arg) {
@@ -1965,10 +1963,7 @@ Item_splocal::Item_splocal(const Name_string sp_var_name, uint sp_var_idx,
       len_in_query(len_in_q) {
   set_nullable(true);
 
-  sp_var_type = real_type_to_type(sp_var_type);
-  m_type = sp_map_item_type(sp_var_type);
-  set_data_type(sp_var_type);
-  m_result_type = sp_map_result_type(sp_var_type);
+  set_data_type(real_type_to_type(sp_var_type));
 }
 
 Item *Item_splocal::this_item() {
@@ -2360,10 +2355,14 @@ bool Item::split_sum_func2(THD *thd, Ref_item_array ref_item_array,
 
   const bool is_aggr_func = type() == SUM_FUNC_ITEM && !m_is_window_function;
   const bool is_grouping = is_function_of_type(this, Item_func::GROUPING_FUNC);
-
   // An aggregate function is registered <=> referenced_by[0] != nullptr
   if (is_aggr_func && skip_registered &&
       down_cast<Item_sum *>(this)->referenced_by[0] != nullptr) {
+    return false;
+  }
+
+  if (type() == FUNC_ITEM && (down_cast<Item_func *>(this)->functype() ==
+                              Item_func::ROLLUP_GROUP_ITEM_FUNC)) {
     return false;
   }
   /*
@@ -2389,7 +2388,7 @@ bool Item::split_sum_func2(THD *thd, Ref_item_array ref_item_array,
              (type() != REF_ITEM ||                                   // (2)
               down_cast<Item_ref *>(this)->ref_type() ==              //
                   Item_ref::VIEW_REF) &&                              //
-             (type() != SUBSELECT_ITEM ||                             // (3)
+             (type() != SUBQUERY_ITEM ||                              // (3)
               (down_cast<Item_subselect *>(this)->subquery_type() ==  //
                    Item_subselect::SCALAR_SUBQUERY &&
                down_cast<Item_subselect *>(this)
@@ -2865,12 +2864,7 @@ Item_field::Item_field(THD *thd, Name_resolution_context *context_arg,
                        Table_ref *tr, Field *f)
     : Item_ident(context_arg, f->table->s->db.str, *f->table_name,
                  f->field_name),
-      table_ref(tr),
-      field(nullptr),
-      item_equal(nullptr),
-      field_index(NO_FIELD_INDEX),
-      have_privileges(0),
-      any_privileges(false) {
+      table_ref(tr) {
   set_field(f);
 
   // Possibly override original names that were assigned from table reference:
@@ -2895,13 +2889,7 @@ Item_field::Item_field(THD *thd, Name_resolution_context *context_arg,
 */
 Item_field::Item_field(Name_resolution_context *context_arg, const char *db_arg,
                        const char *table_name_arg, const char *field_name_arg)
-    : Item_ident(context_arg, db_arg, table_name_arg, field_name_arg),
-      table_ref(nullptr),
-      field(nullptr),
-      item_equal(nullptr),
-      field_index(NO_FIELD_INDEX),
-      have_privileges(0),
-      any_privileges(false) {
+    : Item_ident(context_arg, db_arg, table_name_arg, field_name_arg) {
   Query_block *select = current_thd->lex->current_query_block();
   collation.set(DERIVATION_IMPLICIT);
   if (select != nullptr && (select->parsing_place != CTX_HAVING &&
@@ -2919,13 +2907,7 @@ Item_field::Item_field(Name_resolution_context *context_arg, const char *db_arg,
 */
 Item_field::Item_field(const POS &pos, const char *db_arg,
                        const char *table_name_arg, const char *field_name_arg)
-    : Item_ident(pos, db_arg, table_name_arg, field_name_arg),
-      table_ref(nullptr),
-      field(nullptr),
-      item_equal(nullptr),
-      field_index(NO_FIELD_INDEX),
-      have_privileges(0),
-      any_privileges(false) {
+    : Item_ident(pos, db_arg, table_name_arg, field_name_arg) {
   collation.set(DERIVATION_IMPLICIT);
 }
 
@@ -2952,7 +2934,7 @@ Item_field::Item_field(THD *thd, Item_field *item)
       table_ref(item->table_ref),
       field(item->field),
       result_field(item->result_field),
-      item_equal(item->item_equal),
+      m_multi_equality(item->m_multi_equality),
       field_index(item->field_index),
       no_constant_propagation(item->no_constant_propagation),
       have_privileges(item->have_privileges),
@@ -2975,13 +2957,7 @@ Item_field::Item_field(THD *thd, Item_field *item)
   supplied field.
 */
 Item_field::Item_field(Field *f)
-    : Item_ident(nullptr, nullptr, *f->table_name, f->field_name),
-      table_ref(nullptr),
-      field(nullptr),
-      item_equal(nullptr),
-      field_index(NO_FIELD_INDEX),
-      have_privileges(0),
-      any_privileges(false) {
+    : Item_ident(nullptr, nullptr, *f->table_name, f->field_name) {
   if (f->table->pos_in_table_list != nullptr)
     context = &(f->table->pos_in_table_list->query_block->context);
 
@@ -3152,9 +3128,7 @@ void Item_ident::print(const THD *thd, String *str, enum_query_type query_type,
   }
 
   if (!(query_type & QT_NO_DB) && db_name_arg && db_name_arg[0] &&
-      (!alias_name_used() ||
-       (thd->lex->is_explain() && thd->lex->explain_format->is_hierarchical() &&
-        thd->lex->explain_format->is_iterator_based()))) {
+      !alias_name_used()) {
     const size_t d_name_len = strlen(d_name);
     if (!((query_type & QT_NO_DEFAULT_DB) &&
           db_is_default_db(d_name, d_name_len, thd))) {
@@ -3860,7 +3834,6 @@ bool Item_param::fix_fields(THD *, Item **) {
   }
   if (param_state() == NULL_VALUE) {
     // Parameter data type may be ignored, keep existing type
-    set_data_type_null();
     fixed = true;
     return false;
   }
@@ -4182,14 +4155,42 @@ bool Item_param::set_longdata(const char *str, ulong length) {
 bool Item_param::set_from_user_var(THD *thd [[maybe_unused]],
                                    const user_var_entry *entry) {
   DBUG_TRACE;
-  if (entry && entry->ptr()) {
+  if (entry != nullptr && entry->ptr() != nullptr) {
     // An existing user variable that is not NULL
 
-    // Pinning of data types only implemented for integers
-    assert(!is_type_pinned() || result_type() == INT_RESULT);
-    if (is_type_pinned() && entry->type() != INT_RESULT) {
-      my_error(ER_WRONG_ARGUMENTS, MYF(0), "EXECUTE");
-      return true;
+    /*
+      Pinning of data types is only implemented for numeric types
+      (integers, decimal values and float values). A pinned integer type will
+      only accept integer values. A pinned decimal type accepts integer and
+      decimal values. A pinned float type accept all numeric values.
+    */
+    assert(!is_type_pinned() || result_type() == INT_RESULT ||
+           result_type() == DECIMAL_RESULT || result_type() == REAL_RESULT);
+    if (is_type_pinned()) {
+      switch (data_type()) {
+        case MYSQL_TYPE_LONGLONG:
+          if (entry->type() != INT_RESULT) {
+            my_error(ER_WRONG_ARGUMENTS, MYF(0), "EXECUTE");
+            return true;
+          }
+          break;
+        case MYSQL_TYPE_NEWDECIMAL:
+          if (entry->type() != INT_RESULT && entry->type() != DECIMAL_RESULT) {
+            my_error(ER_WRONG_ARGUMENTS, MYF(0), "EXECUTE");
+            return true;
+          }
+          break;
+        case MYSQL_TYPE_DOUBLE:
+          if (entry->type() != INT_RESULT && entry->type() != DECIMAL_RESULT &&
+              entry->type() != REAL_RESULT) {
+            my_error(ER_WRONG_ARGUMENTS, MYF(0), "EXECUTE");
+            return true;
+          }
+          break;
+        default:
+          my_error(ER_WRONG_ARGUMENTS, MYF(0), "EXECUTE");
+          return true;
+      }
     }
     switch (entry->type()) {
       case REAL_RESULT:
@@ -4198,14 +4199,16 @@ bool Item_param::set_from_user_var(THD *thd [[maybe_unused]],
       case INT_RESULT:
         if (entry->unsigned_flag) {
           ulonglong val = *pointer_cast<const ulonglong *>(entry->ptr());
-          if (is_type_pinned() && !unsigned_flag && val > INT_MAX64) {
+          if (is_type_pinned() && data_type() == MYSQL_TYPE_LONGLONG &&
+              !unsigned_flag && val > INT_MAX64) {
             my_error(ER_DATA_OUT_OF_RANGE, MYF(0), "signed integer", "EXECUTE");
             return true;
           }
           set_int(val);
         } else {
           longlong val = *pointer_cast<const longlong *>(entry->ptr());
-          if (is_type_pinned() && unsigned_flag && val < 0) {
+          if (is_type_pinned() && data_type() == MYSQL_TYPE_LONGLONG &&
+              unsigned_flag && val < 0) {
             my_error(ER_DATA_OUT_OF_RANGE, MYF(0), "unsigned integer",
                      "EXECUTE");
             return true;
@@ -5356,12 +5359,9 @@ static bool resolve_ref_in_select_and_group(THD *thd, Item_ident *ref,
 
   if (select_ref == nullptr) return false;
 
-  if (select->resolve_place != Query_block::RESOLVE_QUALIFY &&
-      (*select_ref)->has_wf()) {
-    /*
-      We can't reference an alias to a window function expr from within
-      a subquery or a HAVING clause
-    */
+  if ((*select_ref)->has_wf() && (thd->lex->deny_window_function(select))) {
+    // E.g. SELECT wf() AS x .. grouped-aggregate-function( ..x.. )
+    //      SELECT wf() AS x .., (SELECT ... x FROM..)
     my_error(ER_WINDOW_INVALID_WINDOW_FUNC_ALIAS_USE, MYF(0), ref->field_name);
     return true;
   }
@@ -5432,7 +5432,8 @@ static bool resolve_ref_in_select_and_group(THD *thd, Item_ident *ref,
 
 int Item_field::fix_outer_field(THD *thd, Field **from_field,
                                 Item **reference) {
-  const bool field_found = (*from_field != not_found_field);
+  const bool field_found =
+      (*from_field != nullptr) && (*from_field != not_found_field);
   bool upward_lookup = false;
 
   /*
@@ -5958,8 +5959,16 @@ bool Item_field::fix_fields(THD *thd, Item **reference) {
             intermediate value to resolve referenced item only.
             In this case the new Item_ref item is unused.
           */
-          if (resolution == RESOLVED_AGAINST_ALIAS)
+          if (resolution == RESOLVED_AGAINST_ALIAS) {
             res = &qb->base_ref_items[counter];
+
+            if ((*res)->has_wf() && thd->lex->deny_window_function(qb)) {
+              // SELECT wf() AS x .. ORDER BY grouped-aggregate-function(..x..)
+              my_error(ER_WINDOW_INVALID_WINDOW_FUNC_ALIAS_USE, MYF(0),
+                       field_name);
+              return true;
+            }
+          }
 
           Item_ref *rf =
               new Item_ref(context, res, db_name, table_name, field_name,
@@ -6132,7 +6141,7 @@ void Item_field::cleanup() {
   if (table_ref == nullptr) table_name = nullptr;
 
   // Reset field before next optimization (multiple equality analysis)
-  item_equal = nullptr;
+  m_multi_equality = nullptr;
   item_equal_all_join_nests = nullptr;
   null_value = false;
 }
@@ -6273,14 +6282,17 @@ static void convert_zerofill_number_to_string(Item **item,
 
 Item *Item_field::equal_fields_propagator(uchar *arg) {
   if (no_constant_propagation) return this;
-  item_equal = find_item_equal((COND_EQUAL *)arg);
-  Item *item = item_equal != nullptr ? item_equal->const_arg() : nullptr;
+  m_multi_equality = find_item_equal((COND_EQUAL *)arg);
+  if (m_multi_equality == nullptr) return this;
+  Item *item = m_multi_equality->const_arg();
+  if (item == nullptr) return this;
+
   /*
     Disable const propagation if the constant is nullable and this item is not.
     If propagation was allowed in this case, it would also be necessary to
     propagate the new nullability up to the parents of this item.
   */
-  if (item == nullptr || (item->is_nullable() && !is_nullable())) {
+  if (item->is_nullable() && !is_nullable()) {
     return this;
   }
   if (field->is_flag_set(ZEROFILL_FLAG) && cmp_context == STRING_RESULT &&
@@ -6404,20 +6416,25 @@ Item *Item_default_value::replace_item_field(uchar *argp) {
 */
 
 Item *Item_field::replace_equal_field(uchar *arg) {
-  if (item_equal) {
-    Item *const_item = item_equal->const_arg();
-    if (const_item) {
-      if (!has_compatible_context(const_item)) return this;
+  if (m_multi_equality != nullptr) {
+    Replace_equal *replace = pointer_cast<Replace_equal *>(arg);
+    Item_func *func = replace->stack.head();
+
+    Item *const_item = m_multi_equality->const_arg();
+    if (const_item != nullptr) {
+      if (!has_compatible_context(const_item) ||
+          !func->allow_replacement(this, const_item)) {
+        return this;
+      }
       return const_item;
     }
-    Item_field *subst = item_equal->get_subst_item(this);
+    Item_field *subst = m_multi_equality->get_subst_item(this);
     assert(subst);
     assert(table_ref == subst->table_ref ||
            table_ref->table != subst->table_ref->table);
     if (table_ref != subst->table_ref && !field->eq(subst->field)) {
-      Replace_equal *replace = pointer_cast<Replace_equal *>(arg);
-      Item_func *func = replace->stack.head();
-      if (!func->allow_replacement(this, subst)) {
+      if (!has_compatible_context(subst) ||
+          !func->allow_replacement(this, subst)) {
         return this;
       }
       // We may have to undo the substitution that is done here when setting up
@@ -6425,7 +6442,7 @@ Item *Item_field::replace_equal_field(uchar *arg) {
       // reachable from hash join. Store which multi-equality we found the field
       // substitution in, so that we can go back and find a field that the hash
       // join can reach.
-      subst->set_item_equal_all_join_nests(item_equal);
+      subst->set_item_equal_all_join_nests(m_multi_equality);
       return subst;
     }
   }
@@ -6575,8 +6592,7 @@ Field *Item::make_string_field(TABLE *table) const {
     field = new (*THR_MALLOC) Field_blob(
         max_length, m_nullable, item_name.ptr(), collation.collation, true);
   /* Item_type_holder holds the exact type, do not change it */
-  else if (max_length > 0 &&
-           (type() != Item::TYPE_HOLDER || data_type() != MYSQL_TYPE_STRING))
+  else if (type() != Item::TYPE_HOLDER_ITEM || data_type() != MYSQL_TYPE_STRING)
     field = new (*THR_MALLOC) Field_varstring(
         max_length, m_nullable, item_name.ptr(), table->s, collation.collation);
   else
@@ -6686,7 +6702,7 @@ Field *Item::tmp_table_field_from_field_type(TABLE *table,
     case MYSQL_TYPE_MEDIUM_BLOB:
     case MYSQL_TYPE_LONG_BLOB:
     case MYSQL_TYPE_BLOB:
-      if (this->type() == Item::TYPE_HOLDER)
+      if (this->type() == Item::TYPE_HOLDER_ITEM)
         field = new (*THR_MALLOC) Field_blob(
             max_length, m_nullable, item_name.ptr(), collation.collation, true);
       else
@@ -7482,9 +7498,13 @@ bool Item_json::val_json(Json_wrapper *result) {
   syntax which gets translated into Item_json objects by the parser.
 */
 
-double Item_json::val_real() { return m_value->coerce_real(item_name.ptr()); }
+double Item_json::val_real() {
+  return m_value->coerce_real(JsonCoercionWarnHandler{item_name.ptr()});
+}
 
-longlong Item_json::val_int() { return m_value->coerce_int(item_name.ptr()); }
+longlong Item_json::val_int() {
+  return m_value->coerce_int(JsonCoercionWarnHandler{item_name.ptr()});
+}
 
 String *Item_json::val_str(String *str) {
   str->length(0);
@@ -7494,15 +7514,18 @@ String *Item_json::val_str(String *str) {
 }
 
 my_decimal *Item_json::val_decimal(my_decimal *buf) {
-  return m_value->coerce_decimal(buf, item_name.ptr());
+  return m_value->coerce_decimal(JsonCoercionWarnHandler{item_name.ptr()}, buf);
 }
 
 bool Item_json::get_date(MYSQL_TIME *ltime, my_time_flags_t) {
-  return m_value->coerce_date(ltime, item_name.ptr());
+  return m_value->coerce_date(JsonCoercionWarnHandler{item_name.ptr()},
+                              JsonCoercionDeprecatedDefaultHandler{}, ltime,
+                              DatetimeConversionFlags(current_thd));
 }
 
 bool Item_json::get_time(MYSQL_TIME *ltime) {
-  return m_value->coerce_time(ltime, item_name.ptr());
+  return m_value->coerce_time(JsonCoercionWarnHandler{item_name.ptr()},
+                              JsonCoercionDeprecatedDefaultHandler{}, ltime);
 }
 
 Item *Item_json::clone_item() const {
@@ -7707,7 +7730,7 @@ bool Item::cache_const_expr_analyzer(uchar **arg) {
     */
     if (const_for_execution() &&
         !(basic_const_item() || item->basic_const_item() ||
-          item->type() == Item::FIELD_ITEM || item->type() == SUBSELECT_ITEM ||
+          item->type() == Item::FIELD_ITEM || item->type() == SUBQUERY_ITEM ||
           item->type() == ROW_ITEM || item->type() == CACHE_ITEM ||
           item->type() == PARAM_ITEM))
       /*
@@ -8277,35 +8300,44 @@ bool Item_ref::fix_fields(THD *thd, Item **reference) {
       thd, context->view_error_handler, context->view_error_handler_arg);
 
   if (m_ref_item == nullptr) {
-    assert(context->query_block == thd->lex->current_query_block());
-    if (resolve_ref_in_select_and_group(thd, this, context->query_block,
-                                        &m_ref_item)) {
+    Query_block *qb = context->query_block;
+    assert(qb == thd->lex->current_query_block());
+    if (resolve_ref_in_select_and_group(thd, this, qb, &m_ref_item)) {
       return true;  // Some error occurred (e.g. ambiguous names).
     }
-    if (m_ref_item == nullptr) /* This reference was not resolved. */
-    {
-      Name_resolution_context *last_checked_context = context;
-      Name_resolution_context *outer_context = context->outer_context;
-
-      if (context->query_block->resolve_place == Query_block::RESOLVE_QUALIFY) {
-        Field *from_field = find_field_in_tables(
-            thd, this, context->first_name_resolution_table,
-            context->last_name_resolution_table, reference,
-            thd->lex->use_only_table_context ? REPORT_ALL_ERRORS
-                                             : IGNORE_EXCEPT_NON_UNIQUE,
-            thd->want_privilege, true);
-        if (thd->is_error()) return true;
-        if (from_field != nullptr && from_field != not_found_field) {
-          if (from_field != view_ref_found) {
-            Item_field *fld = new Item_field(
-                thd, context, from_field->table->pos_in_table_list, from_field);
-            if (fld == nullptr) return true;
-            *reference = fld;
-          }
-          return false;
+    if (m_ref_item == nullptr &&
+        qb->resolve_place == Query_block::RESOLVE_QUALIFY) {
+      Field *from_field = find_field_in_tables(
+          thd, this, context->first_name_resolution_table,
+          context->last_name_resolution_table, reference,
+          thd->lex->use_only_table_context ? REPORT_ALL_ERRORS
+                                           : IGNORE_EXCEPT_NON_UNIQUE,
+          thd->want_privilege, true);
+      if (thd->is_error()) return true;
+      if (from_field != nullptr && from_field != not_found_field) {
+        // This field is not resolved against an expression that is
+        // already present in the select list. So it needs to be
+        // added to the select list as hidden item.
+        if (from_field == view_ref_found) {
+          // When an expression is resolved against a field from a merged
+          // derived table, the newly created view reference is
+          // assigned to "reference" object passed to find_field_in_tables().
+          // Add the view reference to the select expression list as hidden
+          // item.
+          m_ref_item = qb->add_hidden_item(*reference);
+          *reference = this;
+        } else {
+          Item_field *fld = new Item_field(
+              thd, context, from_field->table->pos_in_table_list, from_field);
+          if (fld == nullptr) return true;
+          m_ref_item = qb->add_hidden_item(fld);
         }
       }
+    }
 
+    if (m_ref_item == nullptr) {
+      Name_resolution_context *last_checked_context = context;
+      Name_resolution_context *outer_context = context->outer_context;
       if (outer_context == nullptr) {
         /* The current reference cannot be resolved in this query. */
         my_error(ER_BAD_FIELD_ERROR, MYF(0), this->full_name(), thd->where);
@@ -9013,7 +9045,10 @@ bool Item_view_ref::collect_item_field_or_view_ref_processor(uchar *arg) {
                     : ((depended_from == info->m_transformed_block)  // 3
                            ? this
                            : nullptr));
-  if (item != nullptr) info->m_item_fields_or_view_refs->push_back(item);
+  bool error = false;
+  if (item != nullptr)
+    error = info->m_item_fields_or_view_refs->push_back(item);
+  if (error) return true;
   info->stop_at(this);
   return false;
 }
@@ -9068,7 +9103,7 @@ Item *Item_view_ref::replace_view_refs_with_clone(uchar *arg) {
   // block, the context to resolve the field will be different than
   // the derived table context (dt1).
   return dti->m_derived_query_block->outer_query_block()->clone_expression(
-      current_thd, ref_item());
+      current_thd, ref_item(), dti->m_derived_table);
 }
 
 bool Item_default_value::do_itemize(Parse_context *pc, Item **res) {
@@ -10139,7 +10174,7 @@ double Item_cache_json::val_real() {
 
   if (null_value) return 0.0;
 
-  return wr.coerce_real(whence(cached_field));
+  return wr.coerce_real(JsonCoercionWarnHandler{whence(cached_field)});
 }
 
 my_decimal *Item_cache_json::val_decimal(my_decimal *decimal_value) {
@@ -10149,7 +10184,8 @@ my_decimal *Item_cache_json::val_decimal(my_decimal *decimal_value) {
 
   if (null_value) return error_decimal(decimal_value);
 
-  return wr.coerce_decimal(decimal_value, whence(cached_field));
+  return wr.coerce_decimal(JsonCoercionWarnHandler{whence(cached_field)},
+                           decimal_value);
 }
 
 bool Item_cache_json::get_date(MYSQL_TIME *ltime, my_time_flags_t) {
@@ -10159,7 +10195,9 @@ bool Item_cache_json::get_date(MYSQL_TIME *ltime, my_time_flags_t) {
 
   if (null_value) return true;
 
-  return wr.coerce_date(ltime, whence(cached_field));
+  return wr.coerce_date(JsonCoercionWarnHandler{whence(cached_field)},
+                        JsonCoercionDeprecatedDefaultHandler{}, ltime,
+                        DatetimeConversionFlags(current_thd));
 }
 
 bool Item_cache_json::get_time(MYSQL_TIME *ltime) {
@@ -10169,7 +10207,8 @@ bool Item_cache_json::get_time(MYSQL_TIME *ltime) {
 
   if (null_value) return true;
 
-  return wr.coerce_time(ltime, whence(cached_field));
+  return wr.coerce_time(JsonCoercionWarnHandler{whence(cached_field)},
+                        JsonCoercionDeprecatedDefaultHandler{}, ltime);
 }
 
 longlong Item_cache_json::val_int() {
@@ -10178,7 +10217,7 @@ longlong Item_cache_json::val_int() {
 
   if (null_value) return 0;
 
-  return wr.coerce_int(whence(cached_field));
+  return wr.coerce_int(JsonCoercionWarnHandler{whence(cached_field)});
 }
 
 void Item_cache_json::sort() {
@@ -10399,7 +10438,7 @@ bool Item_cache_row::cache_value() {
   null_value = example->null_value;
 
   const bool cached_item_is_assigned =
-      example->type() != SUBSELECT_ITEM ||
+      example->type() != SUBQUERY_ITEM ||
       down_cast<Item_subselect *>(example)->is_value_assigned();
 
   for (uint i = 0; i < item_count; i++) {

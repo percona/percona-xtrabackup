@@ -1,18 +1,19 @@
 #ifndef SQL_COMMON_INCLUDED
 #define SQL_COMMON_INCLUDED
 
-/* Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -211,6 +212,7 @@ struct MYSQL_METHODS {
   void (*flush_use_result)(MYSQL *mysql, bool flush_all_results);
   int (*read_change_user_result)(MYSQL *mysql);
 #if (!defined(MYSQL_SERVER) && !defined(MYSQL_COMPONENT)) || defined(XTRABACKUP)
+  MYSQL_FIELD *(*list_fields)(MYSQL *mysql);
   bool (*read_prepare_result)(MYSQL *mysql, MYSQL_STMT *stmt);
   int (*stmt_execute)(MYSQL_STMT *stmt);
   int (*read_binary_rows)(MYSQL_STMT *stmt);
@@ -256,6 +258,9 @@ struct MYSQL_METHODS {
           1))
 
 extern CHARSET_INFO *default_client_charset_info;
+MYSQL_FIELD *unpack_fields(MYSQL *mysql, MYSQL_ROWS *data, MEM_ROOT *alloc,
+                           uint fields, bool default_value,
+                           uint server_capabilities);
 MYSQL_FIELD *cli_read_metadata_ex(MYSQL *mysql, MEM_ROOT *alloc,
                                   unsigned long field_count,
                                   unsigned int fields);

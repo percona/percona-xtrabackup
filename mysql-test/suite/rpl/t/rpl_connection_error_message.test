@@ -2,12 +2,12 @@
 #
 # R1. When slave fails to connect to master, the error message shown in
 #     performance_schema.replication_connection_status/LAST_ERROR_MESSAGE,
-#     and in SHOW SLAVE STATUS/LAST_IO_ERROR, should contain the reason
+#     and in SHOW REPLICA STATUS/LAST_IO_ERROR, should contain the reason
 #     for the failure.
 #
 # R2. When slave fails to connect to master, the messages in
 #     performance_schema.replication_connection_status/LAST_ERROR_MESSAGE,
-#     and in SHOW SLAVE STATUS/LAST_IO_ERROR, should both be identical.
+#     and in SHOW REPLICA STATUS/LAST_IO_ERROR, should both be identical.
 #
 # ==== Implementation ====
 #
@@ -18,7 +18,7 @@
 # In each of the cases:
 # - Verify that the error message in performance_schema contains
 #   'Access denied'/'Cant connect to MySQL'/'Unknown MySQL server host'
-# - Verify that the error message in SHOW SLAVE STATUS contains the same.
+# - Verify that the error message in SHOW REPLICA STATUS contains the same.
 #
 # ==== References ====
 #
@@ -27,7 +27,7 @@
 # Test should only run once.
 --source include/have_binlog_format_row.inc
 --let $rpl_skip_start_slave = 1
---source include/master-slave.inc
+--source include/rpl/init_source_replica.inc
 
 
 # Verify that the message has the expected form.
@@ -57,11 +57,11 @@
   --source include/assert.inc
 EOF
 
-# Check messages in both performance_schema and SHOW SLAVE STATUS.
+# Check messages in both performance_schema and SHOW REPLICA STATUS.
 #
 # This will check that the receiver error in performance_schema and
-# SHOW SLAVE STATUS contains $expected_message. It also checks that
-# both performance_schema and SHOW SLAVE STATUS contain literally the
+# SHOW REPLICA STATUS contains $expected_message. It also checks that
+# both performance_schema and SHOW REPLICA STATUS contain literally the
 # same message.
 #
 # Usage:
@@ -74,8 +74,8 @@ EOF
   if ($expected_message == '') {
     --die !!!ERROR IN TEST: you must set $expected_message
   }
-  START SLAVE IO_THREAD;
-  --source include/wait_for_slave_io_error.inc
+  START REPLICA IO_THREAD;
+  --source include/rpl/wait_for_receiver_error.inc
 
   --echo ---- Check performance_schema ----
 
@@ -84,16 +84,16 @@ EOF
   --source $script_dir/check_message.inc
   --let $message_ps = $message_noquotes
 
-  --echo ---- Check SHOW SLAVE STATUS ----
+  --echo ---- Check SHOW REPLICA STATUS ----
 
-  --let $message = query_get_value(SHOW SLAVE STATUS, Last_IO_Error, 1)
+  --let $message = query_get_value(SHOW REPLICA STATUS, Last_IO_Error, 1)
   --source $script_dir/check_message.inc
   --let $message_sss = $message_noquotes
 
   --echo ---- Check that messages are the same in both places ----
 
   --let $assert_cond = "$message_ps" = "$message_sss"
-  --let $assert_text = Error should be the same in both SSS and P_S
+  --let $assert_text = Error should be the same in both SRS and P_S
   --source include/assert.inc
 EOF
 
@@ -102,7 +102,7 @@ CHANGE REPLICATION SOURCE TO SOURCE_CONNECT_RETRY = 1, SOURCE_RETRY_COUNT = 1;
 
 --echo #### Test 1: invalid credentials ####
 
---source include/rpl_connection_slave.inc
+--source include/rpl/connection_replica.inc
 CHANGE REPLICATION SOURCE TO SOURCE_USER = 'foo';
 --let $slave_io_errno = convert_error(ER_ACCESS_DENIED_ERROR)
 --let $expected_message = Access denied for user foo
@@ -111,7 +111,7 @@ CHANGE REPLICATION SOURCE TO SOURCE_USER = 'foo';
 
 --echo #### Test 2: invalid port ####
 
---source include/rpl_connection_slave.inc
+--source include/rpl/connection_replica.inc
 CHANGE REPLICATION SOURCE TO SOURCE_PORT = 1;
 --let $slave_io_errno = 2003 # CR_CONN_HOST_ERROR
 --let $expected_message = Cant connect to MySQL server on
@@ -120,7 +120,7 @@ CHANGE REPLICATION SOURCE TO SOURCE_PORT = 1;
 
 --echo #### Test 3: invalid host ####
 
---source include/rpl_connection_slave.inc
+--source include/rpl/connection_replica.inc
 CHANGE REPLICATION SOURCE TO SOURCE_HOST = '999.999.999.999';
 --let $slave_io_errno = 2005 # CR_UNKNOWN_HOST
 --let $expected_message = Unknown MySQL server host
@@ -129,11 +129,11 @@ CHANGE REPLICATION SOURCE TO SOURCE_HOST = '999.999.999.999';
 
 --echo #### Clean up ####
 
-RESET SLAVE;
+RESET REPLICA;
 --remove_file $script_dir/check_message.inc
 --remove_file $script_dir/check_both_messages.inc
 --replace_result $MASTER_MYPORT PORT
 eval CHANGE REPLICATION SOURCE TO SOURCE_HOST = '127.0.0.1', SOURCE_PORT = $MASTER_MYPORT, SOURCE_USER = 'root';
---source include/start_slave.inc
+--source include/rpl/start_replica.inc
 
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

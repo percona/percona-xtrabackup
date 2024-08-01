@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2017, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -140,10 +141,10 @@ TEST_F(TestSetupTcpService, getaddrinfo_fails) {
                                           bind_port_);
 
   EXPECT_CALL(*sock_ops_, getaddrinfo(_, _, _))
-      .WillOnce(Return(ByMove(stdx::make_unexpected(
+      .WillOnce(Return(ByMove(stdx::unexpected(
           make_error_code(net::ip::resolver_errc::host_not_found)))));
 
-  EXPECT_EQ(tcp_acceptor.setup(), stdx::make_unexpected(make_error_code(
+  EXPECT_EQ(tcp_acceptor.setup(), stdx::unexpected(make_error_code(
                                       net::ip::resolver_errc::host_not_found)));
 }
 
@@ -156,13 +157,13 @@ TEST_F(TestSetupTcpService, socket_fails_for_all_addr) {
 
   // make all calls to socket() fail
   EXPECT_CALL(*sock_ops_, socket(_, _, _))
-      .WillOnce(Return(stdx::make_unexpected(
+      .WillOnce(Return(stdx::unexpected(
           make_error_code(std::errc::address_family_not_supported))))
-      .WillOnce(Return(stdx::make_unexpected(
+      .WillOnce(Return(stdx::unexpected(
           make_error_code(std::errc::address_family_not_supported))));
 
   EXPECT_EQ(tcp_acceptor.setup(),
-            stdx::make_unexpected(
+            stdx::unexpected(
                 make_error_code(std::errc::address_family_not_supported)));
 }
 
@@ -175,7 +176,7 @@ TEST_F(TestSetupTcpService, socket_fails) {
 
   // make the first call to socket() fail
   EXPECT_CALL(*sock_ops_, socket(_, _, _))
-      .WillOnce(Return(stdx::make_unexpected(
+      .WillOnce(Return(stdx::unexpected(
           make_error_code(std::errc::address_family_not_supported))))
       .WillOnce(Return(1));
 
@@ -207,8 +208,8 @@ TEST_F(TestSetupTcpService, setsockopt_fails) {
 
   // make the first call to setsockopt() fail
   EXPECT_CALL(*sock_ops_, setsockopt(_, _, _, _, _))
-      .WillOnce(Return(stdx::make_unexpected(
-          make_error_code(std::errc::bad_file_descriptor))))
+      .WillOnce(Return(
+          stdx::unexpected(make_error_code(std::errc::bad_file_descriptor))))
       .WillOnce(Return(result<void>{}));
 
   EXPECT_CALL(*sock_ops_, bind(_, _, _)).WillOnce(Return(result<void>{}));
@@ -240,7 +241,7 @@ TEST_F(TestSetupTcpService, bind_fails) {
       .WillOnce(Return(result<void>{}));
   EXPECT_CALL(*sock_ops_, bind(_, _, _))
       .WillOnce(Return(
-          stdx::make_unexpected(make_error_code(std::errc::invalid_argument))))
+          stdx::unexpected(make_error_code(std::errc::invalid_argument))))
       .WillOnce(Return(result<void>{}));
 
   EXPECT_CALL(*sock_ops_, listen(_, _)).WillOnce(Return(result<void>{}));
@@ -268,16 +269,15 @@ TEST_F(TestSetupTcpService, listen_fails) {
 
   EXPECT_CALL(*sock_ops_, listen(_, _))
       .WillOnce(Return(
-          stdx::make_unexpected(make_error_code(std::errc::invalid_argument))));
+          stdx::unexpected(make_error_code(std::errc::invalid_argument))));
 
   // those are called in the MySQLRouting destructor
   EXPECT_CALL(*sock_ops_, close(_));
   expect_io_ctx_cancel_calls(1);
 
   // the listen()'s error-code
-  EXPECT_EQ(
-      tcp_acceptor.setup(),
-      stdx::make_unexpected(make_error_code(std::errc::invalid_argument)));
+  EXPECT_EQ(tcp_acceptor.setup(),
+            stdx::unexpected(make_error_code(std::errc::invalid_argument)));
 }
 
 int main(int argc, char *argv[]) {

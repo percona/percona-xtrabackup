@@ -1,15 +1,16 @@
-/* Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -55,6 +56,7 @@
 #include "sql/sql_get_diagnostics.h"  // Diagnostics_information::Which_area
 #include "sql/sql_signal.h"           // enum_condition_item_name
 #include "sql/table.h"                // index_hint_type
+#include "sql/tablesample.h"          // enum for sampling methods
 #include "sql/trigger_def.h"          // enum_trigger_order_type
 #include "sql/window_lex.h"           // enum_window_frame_unit
 #include "sql/xa.h"                   // xa_option_words
@@ -86,6 +88,7 @@ class PT_exclusion;
 class PT_field_def_base;
 class PT_frame;
 class PT_group;
+class PT_tablesample;
 class PT_insert_values_list;
 class PT_into_destination;
 class PT_isolation_level;
@@ -432,7 +435,9 @@ union MY_SQL_PARSER_STYPE {
   PT_limit_clause *limit_clause;
   Parse_tree_node *node;
   enum olap_type olap_type;
+  enum tablesample_type tablesample_type;
   PT_group *group;
+  PT_tablesample *tablesample;
   PT_window_list *windows;
   PT_window *window;
   PT_frame *window_frame;
@@ -610,6 +615,7 @@ union MY_SQL_PARSER_STYPE {
   struct Histogram_param {
     int num_buckets;
     LEX_STRING data;
+    bool auto_update;
   } histogram_param;
   struct {
     Sql_cmd_analyze_table::Histogram_command command;

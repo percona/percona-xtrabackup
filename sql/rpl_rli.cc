@@ -1,15 +1,16 @@
-/* Copyright (c) 2006, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2006, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -63,6 +64,7 @@
 #include "sql/rpl_info_handler.h"
 #include "sql/rpl_mi.h"   // Master_info
 #include "sql/rpl_msr.h"  // channel_map
+#include "sql/rpl_relay_log_sanitizer.h"
 #include "sql/rpl_replica.h"
 #include "sql/rpl_reporting.h"
 #include "sql/rpl_rli_pdb.h"  // Slave_worker
@@ -255,7 +257,7 @@ Relay_log_info::Relay_log_info(bool is_slave_recovery,
       Group replication applier channel shall not use checksum on its relay
       log files.
     */
-    if (channel_map.is_group_replication_channel_name(param_channel, true)) {
+    if (channel_map.is_group_replication_applier_channel_name(param_channel)) {
       relay_log.relay_log_checksum_alg =
           mysql::binlog::event::BINLOG_CHECKSUM_ALG_OFF;
     }
@@ -371,11 +373,11 @@ void Relay_log_info::reset_notified_relay_log_change() {
    the current bitmap and starts using the clean bitmap indexed from zero
    of being reset rli_checkpoint_seqno.
 
-    New seconds_behind_master timestamp is installed.
+    New seconds_behind_source timestamp is installed.
 
    @param shift            number of bits to shift by Worker due to the
                            current checkpoint change.
-   @param new_ts           new seconds_behind_master timestamp value
+   @param new_ts           new seconds_behind_source timestamp value
                            unless zero. Zero could be due to FD event
                            or fake rotate event.
    @param update_timestamp if true, this function will update the
@@ -626,10 +628,10 @@ int Relay_log_info::wait_for_pos(THD *thd, String *log_name, longlong log_pos,
      this, these commands modify abort_pos_wait ; We just monitor abort_pos_wait
      and see if it has changed. Why do we have this mechanism instead of simply
      monitoring slave_running in the loop (we do this too), as CHANGE
-     MASTER/RESET SLAVE require that the SQL thread be stopped? This is because
-     if someones does: STOP REPLICA;CHANGE REPLICATION SOURCE/RESET REPLICA;
-     START REPLICA; the change may happen very quickly and we may not notice
-     that slave_running briefly switches between 1/0/1.
+     MASTER/RESET REPLICA require that the SQL thread be stopped? This is
+     because if someones does: STOP REPLICA;CHANGE REPLICATION SOURCE/RESET
+     REPLICA; START REPLICA; the change may happen very quickly and we may not
+     notice that slave_running briefly switches between 1/0/1.
   */
   init_abort_pos_wait = abort_pos_wait;
 
@@ -678,7 +680,7 @@ int Relay_log_info::wait_for_pos(THD *thd, String *log_name, longlong log_pos,
 
     /*
       group_master_log_name can be "", if we are just after a fresh
-      replication start or after a CHANGE MASTER TO MASTER_HOST/PORT
+      replication start or after a CHANGE REPLICATION SOURCE TO SOURCE_HOST/PORT
       (before we have executed one Rotate event from the master) or
       (rare) if the user is doing a weird slave setup (see next
       paragraph).  If group_master_log_name is "", we assume we don't
@@ -689,8 +691,8 @@ int Relay_log_info::wait_for_pos(THD *thd, String *log_name, longlong log_pos,
       configuration which does nothing), then group_master_log_pos
       will grow and group_master_log_name will stay "".
       Also in case the group master log position is invalid (e.g. after
-      CHANGE MASTER TO RELAY_LOG_POS ), we will wait till the first event
-      is read and the log position is valid again.
+      CHANGE REPLICATION SOURCE TO RELAY_LOG_POS ), we will wait till the first
+      event is read and the log position is valid again.
     */
     if (*group_master_log_name && !is_group_master_log_pos_invalid &&
         !is_applier_source_position_info_invalid()) {
@@ -830,13 +832,12 @@ int Relay_log_info::wait_for_gtid_set(THD *thd, const Gtid_set *wait_gtid_set,
                     &stage_waiting_for_the_replica_thread_to_advance_position,
                     &old_stage);
   /*
-     This function will abort when it notices that some CHANGE MASTER or
-     RESET BINARY LOGS AND GTIDS has changed the master info.
-     To catch this, these commands modify abort_pos_wait ; We just monitor
-     abort_pos_wait and see if it has changed.
-     Why do we have this mechanism instead of simply monitoring slave_running
-     in the loop (we do this too), as CHANGE REPLICATION SOURCE/RESET REPLICA
-     require that the SQL thread be stopped?
+     This function will abort when it notices that some CHANGE REPLICATION
+     SOURCE or RESET BINARY LOGS AND GTIDS has changed the master info. To catch
+     this, these commands modify abort_pos_wait ; We just monitor abort_pos_wait
+     and see if it has changed. Why do we have this mechanism instead of simply
+     monitoring slave_running in the loop (we do this too), as CHANGE
+     REPLICATION SOURCE/RESET REPLICA require that the SQL thread be stopped?
      This is because if someones does:
      STOP REPLICA;CHANGE REPLICATION SOURCE/RESET REPLICA; START REPLICA;
      the change may happen very quickly and we may not notice that
@@ -966,11 +967,11 @@ int Relay_log_info::inc_group_relay_log_pos(ulonglong log_pos,
     when the slave and master are 5.0 but with different event length (for
     example the slave is more recent than the master and features the event
     UID). It would give false SOURCE_POS_WAIT, false Exec_master_log_pos in
-    SHOW SLAVE STATUS, and so the user would do some CHANGE MASTER using this
-    value which would lead to badly broken replication.
-    Even the relay_log_pos will be corrupted in this case, because the len is
-    the relay log is not "val".
-    With the end_log_pos solution, we avoid computations involving lengths.
+    SHOW REPLICA STATUS, and so the user would do some CHANGE REPLICATION SOURCE
+    using this value which would lead to badly broken replication. Even the
+    relay_log_pos will be corrupted in this case, because the len is the relay
+    log is not "val". With the end_log_pos solution, we avoid computations
+    involving lengths.
   */
   DBUG_PRINT("info", ("log_pos: %lu  group_source_log_pos: %lu", (long)log_pos,
                       (long)group_master_log_pos));
@@ -978,8 +979,8 @@ int Relay_log_info::inc_group_relay_log_pos(ulonglong log_pos,
   if (log_pos > 0)  // 3.23 binlogs don't have log_posx
     group_master_log_pos = log_pos;
   /*
-    If the master log position was invalidiated by say, "CHANGE MASTER TO
-    RELAY_LOG_POS=N", it is now valid,
+    If the master log position was invalidiated by say, "CHANGE REPLICATION
+    SOURCE TO RELAY_LOG_POS=N", it is now valid,
    */
   if (is_group_master_log_pos_invalid) is_group_master_log_pos_invalid = false;
 
@@ -1075,11 +1076,11 @@ int Relay_log_info::purge_relay_logs(THD *thd, const char **errmsg,
     init_info checks for the existence of the relay log, this fails and
     init_info leaves inited to 0.
     In that pathological case, master_log_pos* will be properly reinited at
-    the next START SLAVE (as RESET SLAVE or CHANGE MASTER, the callers of
-    purge_relay_logs, will delete bogus *.info files or replace them with
-    correct files), however if the user does SHOW SLAVE STATUS before START
-    SLAVE, he will see old, confusing master_log_*. In other words, we reinit
-    master_log_* for SHOW SLAVE STATUS to display fine in any case.
+    the next START REPLICA (as RESET REPLICA or CHANGE REPLICATION SOURCE, the
+    callers of purge_relay_logs, will delete bogus *.info files or replace them
+    with correct files), however if the user does SHOW REPLICA STATUS before
+    START REPLICA, he will see old, confusing master_log_*. In other words, we
+    reinit master_log_* for SHOW REPLICA STATUS to display fine in any case.
   */
   group_master_log_name[0] = 0;
   group_master_log_pos = 0;
@@ -1098,8 +1099,8 @@ int Relay_log_info::purge_relay_logs(THD *thd, const char **errmsg,
           mi->reset means that the channel was reset but still exists. Channel
           shall have the index and the first relay log file.
 
-          Those files shall be remove in a following RESET SLAVE ALL (even when
-          channel was not inited again).
+          Those files shall be remove in a following RESET REPLICA ALL (even
+          when channel was not inited again).
         */
         (mi->reset && delete_only)) {
       assert(relay_log.is_relay_log);
@@ -1501,13 +1502,23 @@ err:
   return res;
 }
 
-int Relay_log_info::rli_init_info(bool skip_received_gtid_set_recovery) {
+int Relay_log_info::rli_init_info(
+    bool skip_received_gtid_set_and_relaylog_recovery) {
   int error = 0;
   enum_return_check check_return = ERROR_CHECKING_REPOSITORY;
   const char *msg = nullptr;
   DBUG_TRACE;
 
   mysql_mutex_assert_owner(&data_lock);
+
+  // Prepare for relay log sanitization
+  rpl::Relay_log_sanitizer relay_log_sanitizer;
+  bool execute_relay_log_sanitization =
+      !is_relay_log_recovery && !relay_log_sanitized &&
+      !skip_received_gtid_set_and_relaylog_recovery;
+
+  DBUG_EXECUTE_IF("dbug_disable_relay_log_truncation",
+                  { execute_relay_log_sanitization = false; };);
 
   /*
     If Relay_log_info is issued again after a failed init_info(), for
@@ -1612,7 +1623,7 @@ int Relay_log_info::rli_init_info(bool skip_received_gtid_set_recovery) {
     ln = add_channel_to_relay_log_name(relay_bin_channel, FN_REFLEN,
                                        ln_without_channel_name);
 
-    /* We send the warning only at startup, not after every RESET SLAVE */
+    /* We send the warning only at startup, not after every RESET REPLICA */
     if (!opt_relay_logname_supplied && !opt_relaylog_index_name_supplied &&
         !name_warning_sent) {
       /*
@@ -1647,6 +1658,14 @@ int Relay_log_info::rli_init_info(bool skip_received_gtid_set_recovery) {
       return 1;
     }
 
+    if (execute_relay_log_sanitization) {
+      relay_log_sanitizer.analyze_logs(relay_log,
+                                       opt_replica_sql_verify_checksum);
+      // sanitize relay_log if applicable, ignore errors, they will be reported
+      // later on
+      relay_log_sanitizer.sanitize_log(relay_log);
+    }
+
     if (!gtid_retrieved_initialized) {
       /* Store the GTID of a transaction spanned in multiple relay log files */
       Gtid_monitoring_info *partial_trx = mi->get_gtid_monitoring_info();
@@ -1656,6 +1675,7 @@ int Relay_log_info::rli_init_info(bool skip_received_gtid_set_recovery) {
       gtid_set->dbug_print("set of GTIDs in relay log before initialization");
       get_tsid_lock()->unlock();
 #endif
+
       /*
         In the init_gtid_set below we pass the mi->transaction_parser.
         This will be useful to ensure that we only add a GTID to
@@ -1669,7 +1689,7 @@ int Relay_log_info::rli_init_info(bool skip_received_gtid_set_recovery) {
         init_recovery.
       */
       if (!is_relay_log_recovery && !gtid_retrieved_initialized &&
-          !skip_received_gtid_set_recovery &&
+          !skip_received_gtid_set_and_relaylog_recovery &&
           relay_log.init_gtid_sets(
               gtid_set, nullptr, opt_replica_sql_verify_checksum,
               true /*true=need lock*/, &mi->transaction_parser, partial_trx)) {
@@ -1689,14 +1709,13 @@ int Relay_log_info::rli_init_info(bool skip_received_gtid_set_recovery) {
       correctly compute the set of previous gtids.
     */
     relay_log.set_previous_gtid_set_relaylog(gtid_set);
+
     /*
       note, that if open() fails, we'll still have index file open
       but a destructor will take care of that
     */
-
     mysql_mutex_t *log_lock = relay_log.get_log_lock();
     mysql_mutex_lock(log_lock);
-
     if (relay_log.open_binlog(
             ln, nullptr,
             (max_relay_log_size ? max_relay_log_size : max_binlog_size), true,
@@ -1706,7 +1725,6 @@ int Relay_log_info::rli_init_info(bool skip_received_gtid_set_recovery) {
       LogErr(ERROR_LEVEL, ER_RPL_CANT_OPEN_LOG_IN_AM_INIT_INFO);
       return 1;
     }
-
     mysql_mutex_unlock(log_lock);
   }
 
@@ -1830,6 +1848,12 @@ int Relay_log_info::rli_init_info(bool skip_received_gtid_set_recovery) {
     goto err;
   }
 
+  // applier metadata was read from disk, update receiver positions
+  if (execute_relay_log_sanitization) {
+    relay_log_sanitizer.update_source_position(mi);
+    relay_log_sanitized = true;
+  }
+
   /*
     In case of MTS the recovery is deferred until the end of
     load_mi_and_rli_from_repositories.
@@ -1882,7 +1906,7 @@ void Relay_log_info::set_master_info(Master_info *info) { mi = info; }
   Stores the file and position where the execute-slave thread are in the
   relay log:
 
-    - As this is only called by the slave thread or on STOP SLAVE, with the
+    - As this is only called by the slave thread or on STOP REPLICA, with the
       log_lock grabbed and the slave thread stopped, we don't need to have
       a lock here.
     - If there is an active transaction, then we don't update the position
@@ -2715,7 +2739,7 @@ my_off_t Relay_log_info::get_until_log_pos() {
 }
 
 int Relay_log_info::init_until_option(THD *thd,
-                                      const LEX_MASTER_INFO *master_param) {
+                                      const LEX_SOURCE_INFO *master_param) {
   DBUG_TRACE;
   int ret = 0;
   Until_option *option = nullptr;
@@ -2744,12 +2768,12 @@ int Relay_log_info::init_until_option(THD *thd,
     } else if (master_param->gtid) {
       Until_gtids *until_g = nullptr;
 
-      if (LEX_MASTER_INFO::UNTIL_SQL_BEFORE_GTIDS ==
+      if (LEX_SOURCE_INFO::UNTIL_SQL_BEFORE_GTIDS ==
           master_param->gtid_until_condition) {
         option = until_g = new Until_before_gtids(this);
         until_condition = UNTIL_SQL_BEFORE_GTIDS;
       } else {
-        assert(LEX_MASTER_INFO::UNTIL_SQL_AFTER_GTIDS ==
+        assert(LEX_SOURCE_INFO::UNTIL_SQL_AFTER_GTIDS ==
                master_param->gtid_until_condition);
 
         option = until_g = new Until_after_gtids(this);

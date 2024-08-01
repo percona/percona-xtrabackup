@@ -1,15 +1,16 @@
-# Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -47,9 +48,29 @@ leak:sasl_client_add_plugin
 # The GSS API plugin for SASL has leaks.
 leak:gss_acquire_cred_from
 
+# Memory leak due to JDK's assumption on object lifetime
+leak:java.lang.ProcessImpl*init
+
 # ndb_sign_keys leaks in some error-exit situations
 leak:ndb_sign_keys
 
-# Internal leak on protobuf when Map type is used.
-# Map is used on plugin/group_replication/protobuf/replication_group_recovery_metadata.proto
+# Internal leak in libprotobuf-lite
+# google::protobuf::internal::InitSCCImpl()
 leak:libprotobuf-lite.so
+
+# Bug#36170703 ndb api tools leak with TLS required on data nodes 
+# Suppress leak detection for them until leak is found.
+leak:ndb_blob_tool
+leak:ndb_config
+leak:ndb_delete_all
+leak:ndb_desc
+leak:ndb_drop_index
+leak:ndb_drop_table
+leak:ndb_import
+leak:ndb_index_stat
+leak:ndb_move_data
+leak:ndb_restore
+leak:ndb_select_all
+leak:ndb_select_count
+leak:ndb_show_tables
+leak:ndb_sign_keys

@@ -1,4 +1,4 @@
-include/master-slave.inc
+include/rpl/init_source_replica.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
@@ -18,18 +18,16 @@ set @var2= 'insert into t1 values (concat("from-var-", ?))';
 prepare stmt2 from @var2;
 set @var1='from-master-3';
 execute stmt2 using @var1;
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SELECT * FROM t1 ORDER BY n;
 n
 from-master-1
 from-master-2-'',
 from-var-from-master-3
 drop table t1;
-include/sync_slave_sql_with_master.inc
-stop slave;
-Warnings:
-Warning	1287	'STOP SLAVE' is deprecated and will be removed in a future release. Please use STOP REPLICA instead
-include/wait_for_slave_to_stop.inc
+include/rpl/sync_to_replica.inc
+STOP REPLICA;
+include/rpl/wait_for_replica_to_stop.inc
 
 ########################################################################
 #
@@ -38,9 +36,7 @@ include/wait_for_slave_to_stop.inc
 #
 ########################################################################
 # Connection: slave
-START SLAVE;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
+START REPLICA;
 # Connection: master
 CREATE DATABASE mysqltest1;
 CREATE TABLE t1(db_name CHAR(32), db_col_name CHAR(32));
@@ -49,7 +45,7 @@ EXECUTE stmt_d_1;
 use mysqltest1;
 EXECUTE stmt_d_1;
 # Connection: slave
-include/sync_slave_sql_with_master.inc
+include/rpl/sync_to_replica.inc
 SELECT * FROM t1;
 db_name	db_col_name
 test	utf8mb4_0900_ai_ci
@@ -58,4 +54,4 @@ test	utf8mb4_0900_ai_ci
 DROP DATABASE mysqltest1;
 use test;
 DROP TABLE t1;
-include/rpl_end.inc
+include/rpl/deinit.inc

@@ -1,15 +1,16 @@
-/* Copyright (c) 2016, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -73,7 +74,7 @@ bool Until_position::check_position(const char *log_name, my_off_t log_pos) {
 
   if (m_log_names_cmp_result == LOG_NAMES_CMP_UNKNOWN) {
     /*
-      If we are after RESET SLAVE, and the SQL slave thread has not processed
+      If we are after RESET REPLICA, and the SQL slave thread has not processed
       any event yet, it could be that group_master_log_name is "". In that case,
       just wait for more events (as there is no sensible comparison to do).
     */

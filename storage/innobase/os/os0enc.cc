@@ -1,17 +1,18 @@
 /***********************************************************************
 
-Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
 as published by the Free Software Foundation.
 
-This program is also distributed with certain software (including
+This program is designed to work with certain software (including
 but not limited to OpenSSL) that is licensed under separate terms,
 as designated in a particular file or component or in included license
 documentation.  The authors of MySQL hereby grant you an additional
 permission to link the program and your derivative works with the
-separately licensed software that they have included with MySQL.
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -37,6 +38,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #include "os0file.h"
 #include "page0page.h"
 #include "ut0crc32.h"
+#include "ut0mem.h"
 
 #include <errno.h>
 #include <mysql/components/services/keyring_generator.h>
@@ -804,7 +806,21 @@ bool Encryption::encrypt_log_block(byte *src_ptr,
 
   /* Encrypt the block. */
   /* Copy the header as is. */
-  memcpy(dst_ptr, src_ptr, LOG_BLOCK_HDR_SIZE);
+
+  /* Skip encryption if header is empty */
+  if (ut::is_zeros(src_ptr, LOG_BLOCK_HDR_SIZE)) {
+    /* Block is logically empty - this happens in write-ahead.
+    Don't waste time on encrypting it. Also, because write-ahead
+    blocks are "in future", and we might disable encryption at
+    any moment, we should avoid encrypting this block, so that
+    one can read it during recovery even when encryption is
+    disabled, soon after this call, before block gets filled
+    with data. */
+    std::memset(dst_ptr, 0x00, OS_FILE_LOG_BLOCK_SIZE);
+    return true;
+  }
+
+  std::memcpy(dst_ptr, src_ptr, LOG_BLOCK_HDR_SIZE);
 
   switch (m_type) {
     case NONE:
@@ -1176,8 +1192,6 @@ dberr_t Encryption::decrypt_log_block(byte *const buf) const noexcept {
     }
 
     default:
-      ib::error(ER_IB_MSG_846)
-          << "Encryption algorithm support missing: " << to_string(m_type);
       return (DB_UNSUPPORTED);
   }
 

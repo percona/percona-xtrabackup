@@ -1,31 +1,23 @@
-include/master-slave.inc
+include/rpl/init_source_replica.inc
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
 [connection master]
-RESET SLAVE;
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
-CHANGE REPLICATION SOURCE TO SOURCE_HOST='127.0.0.1',SOURCE_PORT=MASTER_PORT,SOURCE_USER='root';
+RESET REPLICA;
+CHANGE REPLICATION SOURCE TO SOURCE_HOST='127.0.0.1',SOURCE_PORT=SOURCE_PORT,SOURCE_USER='root';
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
-START SLAVE IO_THREAD;
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
-include/wait_for_slave_io_to_start.inc
-SHOW SLAVE HOSTS;
-Server_id	Host	Port	Master_id	Slave_UUID
-2		SLAVE_PORT	1	SLAVE_UUID
-3	slave2	SLAVE_PORT	1	SLAVE_UUID
-Warning	1287	SLAVE_PORT
-Warnings:
-include/stop_slave_io.inc
+START REPLICA IO_THREAD;
+include/rpl/wait_for_receiver_to_start.inc
+SHOW REPLICAS;
+Server_Id	Host	Port	Source_Id	Replica_UUID
+2		REPLICA_PORT	1	REPLICA_UUID
+3	slave2	REPLICA_PORT	1	REPLICA_UUID
+include/rpl/stop_receiver.inc
 CREATE TABLE t1(a int);
 DROP TABLE t1;
-SHOW SLAVE HOSTS;
-Server_id	Host	Port	Master_id	Slave_UUID
-2		SLAVE_PORT	1	SLAVE_UUID
-Warnings:
-Warning	1287	'SHOW SLAVE HOSTS' is deprecated and will be removed in a future release. Please use SHOW REPLICAS instead
-include/rpl_end.inc
+SHOW REPLICAS;
+Server_Id	Host	Port	Source_Id	Replica_UUID
+2		REPLICA_PORT	1	REPLICA_UUID
+include/rpl/deinit.inc

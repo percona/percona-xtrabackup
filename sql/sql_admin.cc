@@ -1,15 +1,16 @@
-/* Copyright (c) 2010, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -31,6 +32,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "keycache.h"
 #include "my_base.h"
@@ -72,6 +74,7 @@
 #include "sql/log.h"
 #include "sql/log_event.h"
 #include "sql/mdl.h"
+#include "sql/mem_root_array.h"
 #include "sql/mysqld.h"             // key_file_misc
 #include "sql/partition_element.h"  // PART_ADMIN
 #include "sql/protocol.h"
@@ -302,13 +305,14 @@ static inline bool table_not_corrupt_error(uint sql_errno) {
 
 Sql_cmd_analyze_table::Sql_cmd_analyze_table(
     THD *thd, Alter_info *alter_info, Histogram_command histogram_command,
-    int histogram_buckets, LEX_STRING data)
+    int histogram_buckets, LEX_STRING data, bool histogram_auto_update)
     : Sql_cmd_ddl_table(alter_info),
       m_histogram_command(histogram_command),
       m_histogram_fields(Column_name_comparator(),
                          Mem_root_allocator<String>(thd->mem_root)),
       m_histogram_buckets(histogram_buckets),
-      m_data{data} {}
+      m_data{data},
+      m_histogram_auto_update(histogram_auto_update) {}
 
 bool Sql_cmd_analyze_table::drop_histogram(THD *thd, Table_ref *table,
                                            histograms::results_map &results) {
@@ -464,6 +468,11 @@ bool Sql_cmd_analyze_table::send_histogram_results(
         message_type.assign("Error");
         message.assign("The server is in read-only mode.");
         table_name = "";
+        break;
+      case histograms::Message::SYSTEM_SCHEMA_NOT_SUPPORTED:
+        message_type.assign("Error");
+        message.assign(
+            "Histograms are not supported on the MySQL system schema.");
         break;
       case histograms::Message::JSON_FORMAT_ERROR:
         message_type.assign("Error");
@@ -636,14 +645,23 @@ bool Sql_cmd_analyze_table::send_histogram_results(
 
 bool Sql_cmd_analyze_table::update_histogram(THD *thd, Table_ref *table,
                                              histograms::results_map &results) {
-  histograms::columns_set fields;
+  Mem_root_array<histograms::HistogramSetting> settings(thd->mem_root);
+  for (const auto column : get_histogram_fields()) {
+    histograms::HistogramSetting setting;
+    // We need a null-terminated C-style string and column->ptr() is not
+    // guaranteed to be null-terminated so we create a null-terminated copy that
+    // we allocate on thd->mem_root.
+    setting.column_name = thd->strmake(column->ptr(), column->length());
+    setting.num_buckets = get_histogram_buckets();
+    setting.auto_update = get_histogram_auto_update();
+    setting.data = get_histogram_data_string();
+    if (settings.push_back(setting)) return true;  // OOM.
+  }
 
-  for (const auto column : get_histogram_fields())
-    fields.emplace(column->ptr(), column->length());
-
-  return histograms::update_histogram(thd, table, fields,
-                                      get_histogram_buckets(),
-                                      get_histogram_data_string(), results);
+  // We return true on error, but also in the case where no histograms were
+  // updated. The latter is to avoid writing empty statements to the binlog.
+  bool error = histograms::update_histograms(thd, table, &settings, results);
+  return error || settings.empty();
 }
 
 using Check_result = std::pair<bool, int>;
@@ -779,6 +797,7 @@ static bool mysql_admin_table(
     const char *db = table->db;
     bool fatal_error = false;
     bool open_error;
+    bool histogram_update_failed = false;
 
     DBUG_PRINT("admin", ("table: '%s'.'%s'", table->db, table->table_name));
     DBUG_PRINT("admin", ("extra_open_options: %u", extra_open_options));
@@ -1069,13 +1088,7 @@ static bool mysql_admin_table(
 
     if (operator_func == &handler::ha_repair &&
         !(check_opt->sql_flags & TT_USEFRM)) {
-      // Check for old temporal format if avoid_temporal_upgrade is disabled.
-      mysql_mutex_lock(&LOCK_global_system_variables);
-      const bool check_temporal_upgrade = !avoid_temporal_upgrade;
-      mysql_mutex_unlock(&LOCK_global_system_variables);
-
-      if ((check_table_for_old_types(table->table, check_temporal_upgrade) ==
-           HA_ADMIN_NEEDS_ALTER) ||
+      if ((check_table_for_old_types(table->table) == HA_ADMIN_NEEDS_ALTER) ||
           (table->table->file->ha_check_for_upgrade(check_opt) ==
            HA_ADMIN_NEEDS_ALTER)) {
         DBUG_PRINT("admin", ("recreating table"));
@@ -1143,6 +1156,14 @@ static bool mysql_admin_table(
     else {
       DBUG_PRINT("admin", ("calling operator_func '%s'", operator_name));
       result_code = (table->table->file->*operator_func)(thd, check_opt);
+
+      // Update histograms under ANALYZE TABLE.
+      if (operator_func == &handler::ha_analyze) {
+        if (histograms::auto_update_table_histograms(thd, table)) {
+          result_code = HA_ADMIN_FAILED;
+          histogram_update_failed = true;
+        }
+      }
     }
     DBUG_PRINT("admin", ("operator_func returned: %d", result_code));
 
@@ -1469,14 +1490,16 @@ static bool mysql_admin_table(
         if (open_for_modify && !open_error)
           table->table->file->info(HA_STATUS_CONST);
       } else if (open_for_modify || fatal_error) {
-        if (operator_func == &handler::ha_analyze)
+        if (operator_func == &handler::ha_analyze && !histogram_update_failed)
           /*
             Force update of key distribution statistics in rec_per_key array and
             info in TABLE::file::stats by marking existing TABLE instances as
-            needing reopening. Any subsequent statement that uses this table
-            will have to call handler::open() which will cause this information
-            to be updated. OTOH, such subsequent statements won't have to wait
-            for already running statements to go away since we do not invalidate
+            needing reopening. Upon reopening, the TABLE instances will also
+            acquire a pointer to the updated collection of histograms. Any
+            subsequent statement that uses this table will have to call
+            handler::open() which will cause this information to be updated.
+            OTOH, such subsequent statements won't have to wait for already
+            running statements to go away since we do not invalidate
             TABLE_SHARE.
           */
           tdc_remove_table(thd, TDC_RT_MARK_FOR_REOPEN, table->db,
@@ -1497,10 +1520,16 @@ static bool mysql_admin_table(
       }
     }
     /* Error path, a admin command failed. */
-    if (thd->transaction_rollback_request) {
+    if (thd->transaction_rollback_request || histogram_update_failed) {
       /*
-        Unlikely, but transaction rollback was requested by one of storage
-        engines (e.g. due to deadlock). Perform it.
+        There are two cases that can trigger a rollback request:
+
+        1. Unlikely, but transaction rollback was requested by one of storage
+           engines (e.g. due to deadlock).
+
+        2. The histogram update under ANALYZE TABLE failed, for example when
+           attempting to persist a new histogram to the dictionary. We roll back
+           the transaction and any changes to the dictionary.
       */
       DBUG_PRINT("admin", ("rollback"));
 
@@ -1639,124 +1668,6 @@ bool Sql_cmd_analyze_table::set_histogram_fields(List<String> *fields) {
 }
 
 /**
-  Retrieve an updated snapshot of the histograms on a table directly from the
-  dictionary (in an inefficient manner, querying all columns) and inserts this
-  snapshot in the Table_histograms_collection on the TABLE_SHARE. If the table
-  has a secondary engine we also insert a new snapshot on the secondary share.
-
-  @param thd The current thread.
-  @param table The table to retrieve updated histograms for.
-
-  @return False on success. Returns true if an error occurred in which case it
-  can have happened that none of the shares were updated, or that only one of
-  the shares (primary and secondary) were updated, even though we intended to
-  update both. I other words if this function returns true we do not know to
-  what extent the share(s) reflect the dictionary state.
-*/
-static bool update_share_histograms(THD *thd, Table_ref *table) {
-  assert(thd->mdl_context.owns_equal_or_stronger_lock(
-      MDL_key::TABLE, table->db, table->table_name, MDL_SHARED_READ));
-  assert(table->table != nullptr);
-
-  // If the table has a shadow copy in a secondary engine we must retrieve the
-  // TABLE_SHARE for the secondary engine as well.
-  TABLE_SHARE *share = table->table->s;
-  TABLE_SHARE *secondary_share = nullptr;
-  if (share->has_secondary_engine()) {
-    mysql_mutex_lock(&LOCK_open);
-    std::string secondary_key =
-        create_table_def_key_secondary(table->db, table->table_name);
-    secondary_share = get_table_share(
-        thd, table->db, table->table_name, secondary_key.c_str(),
-        secondary_key.length(), /*open_view=*/false, /*open_secondary=*/true);
-    mysql_mutex_unlock(&LOCK_open);
-  }
-  if (share->has_secondary_engine() && secondary_share == nullptr) return true;
-
-  auto share_guard = create_scope_guard([secondary_share]() {
-    if (secondary_share != nullptr) {
-      mysql_mutex_lock(&LOCK_open);
-      release_table_share(secondary_share);
-      mysql_mutex_unlock(&LOCK_open);
-    }
-  });
-
-  // Create Table_histograms objects for the primary and secondary share (if it
-  // exists) together with scope guards to clean up in case of failure.
-  Table_histograms *table_histograms =
-      Table_histograms::create(key_memory_table_share);
-  if (table_histograms == nullptr) return true;
-  auto table_histograms_guard =
-      create_scope_guard([table_histograms]() { table_histograms->destroy(); });
-
-  Table_histograms *table_histograms_secondary = nullptr;
-  if (secondary_share != nullptr) {
-    table_histograms_secondary =
-        Table_histograms::create(key_memory_table_share);
-    if (table_histograms_secondary == nullptr) return true;
-  }
-
-  auto table_histograms_secondary_guard =
-      create_scope_guard([table_histograms_secondary]() {
-        if (table_histograms_secondary != nullptr) {
-          table_histograms_secondary->destroy();
-        }
-      });
-
-  // Retrieve histograms from the data dictionary and add them to the
-  // TABLE_SHARE.
-  for (size_t i = 0; i < share->fields; ++i) {
-    const Field *field = share->field[i];
-    if (field->is_hidden_by_system()) continue;
-
-    const histograms::Histogram *histogram = nullptr;
-    if (histograms::find_histogram(thd, table->db, table->table_name,
-                                   field->field_name, &histogram)) {
-      return true;
-    }
-
-    if (histogram != nullptr) {
-      if (table_histograms->insert_histogram(field->field_index(), histogram)) {
-        return true;
-      }
-      if (table_histograms_secondary &&
-          table_histograms_secondary->insert_histogram(field->field_index(),
-                                                       histogram)) {
-        return true;
-      }
-    }
-  }
-
-  // Disable the scope guard that would release the secondary share and attempt
-  // to insert the new histogram snapshots and release the secondary share if it
-  // was acquired. Since acquiring/releasing shares and modifying the collection
-  // of histograms on the share is protected by LOCK_open we attempt to reduce
-  // the number of lock/unlock pairs by grouping these operations together.
-  share_guard.commit();
-
-  bool error = false;
-  mysql_mutex_lock(&LOCK_open);
-  if (share->m_histograms->insert(table_histograms)) {
-    error = true;
-  } else {
-    // If the insertion succeeded ownership responsibility was passed on, so we
-    // can disable the scope guard that would free the Table_histograms object.
-    table_histograms_guard.commit();
-  }
-
-  if (secondary_share != nullptr) {
-    if (secondary_share->m_histograms->insert(table_histograms_secondary)) {
-      error = true;
-    } else {
-      table_histograms_secondary_guard.commit();
-    }
-    release_table_share(secondary_share);
-  }
-  mysql_mutex_unlock(&LOCK_open);
-  return error;
-}
-
-/**
   Opens a table (acquiring an MDL_SHARED_READ metadata lock in the process) and
   acquires exclusive metadata locks on column statistics for all columns.
 
@@ -1772,6 +1683,11 @@ static bool open_table_and_lock_histograms(THD *thd, Table_ref *table,
     // Only one table can be specified for ANALYZE TABLE ... UPDATE/DROP
     // HISTOGRAM.
     results.emplace("", histograms::Message::MULTIPLE_TABLES_SPECIFIED);
+    return true;
+  }
+
+  if (strcmp(table->get_db_name(), "mysql") == 0) {
+    results.emplace("", histograms::Message::SYSTEM_SCHEMA_NOT_SUPPORTED);
     return true;
   }
 
@@ -1864,6 +1780,7 @@ bool Sql_cmd_analyze_table::handle_histogram_command_inner(
   });
 
   if (open_table_and_lock_histograms(thd, table, results)) return true;
+  DEBUG_SYNC(thd, "histogram_update_mdl_acquired");
 
   // UPDATE/DROP histograms. Commit on success. Rollback on error.
   switch (get_histogram_command()) {
@@ -1888,8 +1805,8 @@ bool Sql_cmd_analyze_table::handle_histogram_command_inner(
   // dictionary. We rollback any modifications to the histograms and request
   // that the share is re-initialized to ensure that the histograms on the share
   // accurately reflect the dictionary.
-  if (update_share_histograms(thd, table) || trans_commit_stmt(thd) ||
-      trans_commit(thd)) {
+  if (histograms::update_share_histograms(thd, table) ||
+      trans_commit_stmt(thd) || trans_commit(thd)) {
     tdc_remove_table(thd, TDC_RT_REMOVE_UNUSED, table->db, table->table_name,
                      false);
     return true;
@@ -1909,7 +1826,7 @@ bool Sql_cmd_analyze_table::handle_histogram_command(THD *thd,
                                                      Table_ref *table) {
   histograms::results_map results;
   handle_histogram_command_inner(thd, table, results);
-  return send_histogram_results(thd, results, table);
+  return thd->is_fatal_error() || send_histogram_results(thd, results, table);
 }
 
 bool Sql_cmd_analyze_table::execute(THD *thd) {
@@ -1972,14 +1889,46 @@ error:
   return res;
 }
 
+/*
+  Check if appropriate privilege exists for executing
+  OPTIMIZE [NO_WRITE_TO_BINLOG | LOCAL] TABLE command.
+
+  SYNOPSIS
+    check_optimize_table_access()
+    thd         Thread object
+
+  RETURN VALUES
+    false ok
+    true  error
+*/
+
+static bool check_optimize_table_access(THD *thd) {
+  Table_ref *first_table = thd->lex->query_block->get_table_list();
+  Security_context *sctx = thd->security_context();
+
+  /* For OPTIMIZE LOCAL|NO_WRITE_TO_BINLOG TABLE, we check for
+     OPTIMIZE_LOCAL_TABLE privilege and for OPTIMIZE TABLE we check
+     for SELECT and INSERT */
+  if (thd->lex->no_write_to_binlog) {
+    if (!sctx->has_global_grant(STRING_WITH_LEN("OPTIMIZE_LOCAL_TABLE"))
+             .first) {
+      my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "OPTIMIZE_LOCAL_TABLE");
+      return true;
+    }
+  } else if (check_table_access(thd, SELECT_ACL | INSERT_ACL, first_table,
+                                false, UINT_MAX, false))
+    return true;
+
+  return false;
+}
+
 bool Sql_cmd_optimize_table::execute(THD *thd) {
   Table_ref *first_table = thd->lex->query_block->get_table_list();
   bool res = true;
   DBUG_TRACE;
 
-  if (check_table_access(thd, SELECT_ACL | INSERT_ACL, first_table, false,
-                         UINT_MAX, false))
-    goto error; /* purecov: inspected */
+  if (check_optimize_table_access(thd)) goto error; /* purecov: inspected */
+
   thd->enable_slow_log = opt_log_slow_admin_statements;
   res = (specialflag & SPECIAL_NO_NEW_FUNC)
             ? mysql_recreate_table(thd, first_table, true)

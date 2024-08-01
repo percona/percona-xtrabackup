@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -760,8 +761,9 @@ extern "C" int ndb_mgm_connect(NdbMgmHandle handle, int no_retries,
             // retry with next mgmt server
             continue;
           }
-          fprintf(handle->errstream,
-                  "Unable to resolve local bind address: %s\n", bind_address);
+          if (verbose > 0)
+            fprintf(handle->errstream,
+                    "Unable to resolve local bind address: %s\n", bind_address);
 
           setError(handle, NDB_MGM_ILLEGAL_CONNECT_STRING, __LINE__,
                    "Unable to resolve local bind address: %s\n", bind_address);
@@ -775,10 +777,11 @@ extern "C" int ndb_mgm_connect(NdbMgmHandle handle, int no_retries,
       if (Ndb_getAddr(&addr, cfg.ids[i].name.c_str()) != 0) {
         invalid_Address++;
         if (cfg.ids.size() - invalid_Address == 0) {
-          fprintf(handle->errstream,
-                  "Unable to resolve any of the address"
-                  " in connect string: %s\n",
-                  cfg.makeConnectString(buf, sizeof(buf)));
+          if (verbose > 0)
+            fprintf(handle->errstream,
+                    "Unable to resolve any of the address"
+                    " in connect string: %s\n",
+                    cfg.makeConnectString(buf, sizeof(buf)));
 
           setError(handle, NDB_MGM_ILLEGAL_CONNECT_STRING, __LINE__,
                    "Unable to resolve any of the address"
@@ -793,10 +796,11 @@ extern "C" int ndb_mgm_connect(NdbMgmHandle handle, int no_retries,
       SocketClient s;
       s.set_connect_timeout(handle->timeout);
       if (!s.init(addr.get_address_family())) {
-        fprintf(handle->errstream,
-                "Unable to create socket, "
-                "while trying to connect with connect string: %s\n",
-                cfg.makeConnectString(buf, sizeof(buf)));
+        if (verbose > 0)
+          fprintf(handle->errstream,
+                  "Unable to create socket, "
+                  "while trying to connect with connect string: %s\n",
+                  cfg.makeConnectString(buf, sizeof(buf)));
 
         setError(handle, NDB_MGM_COULD_NOT_CONNECT_TO_SOCKET, __LINE__,
                  "Unable to create socket, "
@@ -816,11 +820,12 @@ extern "C" int ndb_mgm_connect(NdbMgmHandle handle, int no_retries,
           char *sockaddr_string = Ndb_combine_address_port(
               buf, sizeof(buf), bind_address, bind_address_port);
 
-          fprintf(handle->errstream,
-                  "Unable to bind local address '%s' errno: %d, "
-                  "while trying to connect with connect string: '%s'\n",
-                  sockaddr_string, err,
-                  cfg.makeConnectString(buf, sizeof(buf)));
+          if (verbose > 0)
+            fprintf(handle->errstream,
+                    "Unable to bind local address '%s' errno: %d, "
+                    "while trying to connect with connect string: '%s'\n",
+                    sockaddr_string, err,
+                    cfg.makeConnectString(buf, sizeof(buf)));
 
           setError(handle, NDB_MGM_BIND_ADDRESS, __LINE__,
                    "Unable to bind local address '%s' errno: %d, "
@@ -2385,8 +2390,11 @@ extern "C" int ndb_mgm_connect_tls(NdbMgmHandle handle, int retries,
 
   if (r == 0) return 0;  // TLS started successfully
 
-  if ((tls_level == CLIENT_TLS_RELAXED) && (r != -5))
-    return 0;  // -5 is fatal (handshake failed); otherwise okay.
+  // -5 is fatal (handshake failed); otherwise okay.
+  if ((tls_level == CLIENT_TLS_RELAXED) && (r != -5)) {
+    SET_ERROR(handle, NDB_MGM_NO_ERROR, "Connected using cleartext");
+    return 0;
+  }
 
   return -1;
 }

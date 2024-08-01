@@ -1,15 +1,16 @@
-/* Copyright (c) 2011, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -553,8 +554,8 @@ bool Slave_worker::read_info(Rpl_info_handler *from) {
 
 /*
   This function is used to make a copy of the worker object before we
-  destroy it while STOP SLAVE. This new object is then used to report the
-  worker status until next START SLAVE following which the new worker objects
+  destroy it while STOP REPLICA. This new object is then used to report the
+  worker status until next START REPLICA following which the new worker objects
   will be used.
 */
 void Slave_worker::copy_values_for_PFS(ulong worker_id,
@@ -1547,7 +1548,8 @@ void Slave_worker::do_report(loglevel level, int err_code,
       const_cast<Slave_worker *>(this)->get_master_log_name();
   ulonglong log_pos = const_cast<Slave_worker *>(this)->get_master_log_pos();
   bool is_group_replication_applier_channel =
-      channel_map.is_group_replication_channel_name(c_rli->get_channel(), true);
+      channel_map.is_group_replication_applier_channel_name(
+          c_rli->get_channel());
   THD *thd = info_thd;
 
   gtid_next->to_string(global_tsid_map, buff_gtid, true);

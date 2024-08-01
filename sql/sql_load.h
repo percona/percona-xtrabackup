@@ -1,15 +1,16 @@
-/* Copyright (c) 2006, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2006, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,7 +29,9 @@
 
 #include "lex_string.h"
 
+#include "my_compress.h"
 #include "my_sqlcommand.h"
+#include "mysql/components/services/bulk_load_service.h"
 #include "mysql/strings/m_ctype.h"
 #include "sql/current_thd.h"
 #include "sql/sql_cmd.h"         /* Sql_cmd */
@@ -45,20 +48,18 @@ class Table_ref;
 
 class Sql_cmd_load_table final : public Sql_cmd {
  public:
-  Sql_cmd_load_table(enum_filetype filetype, bool is_local_file,
-                     enum_source_type source_type, const LEX_STRING &filename,
-                     ulong file_count, bool in_key_order,
-                     On_duplicate on_duplicate, Table_ident *table,
-                     List<String> *opt_partitions,
-                     const CHARSET_INFO *opt_charset,
-                     String *opt_xml_rows_identified_by,
-                     const Field_separators &field_separators,
-                     const Line_separators &line_separators, ulong skip_lines,
-                     mem_root_deque<Item *> *opt_fields_or_vars,
-                     mem_root_deque<Item *> *opt_set_fields,
-                     mem_root_deque<Item *> *opt_set_exprs,
-                     List<String> *opt_set_expr_strings, ulong concurrency,
-                     ulonglong memory_size, bool is_bulk_operation)
+  Sql_cmd_load_table(
+      enum_filetype filetype, bool is_local_file, enum_source_type source_type,
+      const LEX_STRING &filename, ulong file_count, bool in_key_order,
+      On_duplicate on_duplicate, Table_ident *table,
+      List<String> *opt_partitions, const CHARSET_INFO *opt_charset,
+      LEX_CSTRING compression_algorithm, String *opt_xml_rows_identified_by,
+      const Field_separators &field_separators,
+      const Line_separators &line_separators, ulong skip_lines,
+      mem_root_deque<Item *> *opt_fields_or_vars,
+      mem_root_deque<Item *> *opt_set_fields,
+      mem_root_deque<Item *> *opt_set_exprs, List<String> *opt_set_expr_strings,
+      ulong concurrency, ulonglong memory_size, bool is_bulk_operation)
       : m_exchange(filename.str, false, filetype),
         m_is_local_file(is_local_file),
         m_bulk_source(source_type),
@@ -73,7 +74,8 @@ class Sql_cmd_load_table final : public Sql_cmd {
         m_opt_set_fields(*THR_MALLOC),
         m_opt_set_exprs(*THR_MALLOC),
         m_opt_set_expr_strings(opt_set_expr_strings),
-        m_is_bulk_operation(is_bulk_operation) {
+        m_is_bulk_operation(is_bulk_operation),
+        m_compression_algorithm_string(compression_algorithm) {
     if (opt_fields_or_vars)
       m_opt_fields_or_vars = std::move(*opt_fields_or_vars);
     assert((opt_set_fields == nullptr) ^ (opt_set_exprs != nullptr));
@@ -167,6 +169,7 @@ class Sql_cmd_load_table final : public Sql_cmd {
  private:
   /// true if BULK LOAD.
   bool m_is_bulk_operation;
+  LEX_CSTRING m_compression_algorithm_string;
 };
 
 #endif /* SQL_LOAD_INCLUDED */

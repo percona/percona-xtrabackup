@@ -31,15 +31,13 @@ CHANGE REPLICATION SOURCE TO SOURCE_HOST='localhost', SOURCE_USER='root', SOURCE
 Warnings:
 Note	1759	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	1760	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
-START SLAVE FOR CHANNEL 'ch3_1';
-Warnings:
-Warning	1287	'START SLAVE' is deprecated and will be removed in a future release. Please use START REPLICA instead
-include/wait_for_slave_io_error.inc [errno=13117 FOR CHANNEL 'ch3_1']
-include/wait_for_slave_sql_error.inc [errno=13117 FOR CHANNEL 'ch3_1']
+START REPLICA FOR CHANNEL 'ch3_1';
+include/rpl/wait_for_receiver_error.inc [errno=13117 FOR CHANNEL 'ch3_1']
+include/rpl/wait_for_applier_error.inc [errno=13117 FOR CHANNEL 'ch3_1']
 
 # 5. Verify occurrence of error message
-include/assert_grep.inc [Found the expected error about failure to start slave IO THREAD.]
-include/assert_grep.inc [Found the expected error about failure to start slave SQL THREAD.]
+include/assert_grep.inc [Found the expected error about failure to start replica IO THREAD.]
+include/assert_grep.inc [Found the expected error about failure to start replica SQL THREAD.]
 
 # 6. Unlock the action
 [connection server_2]
@@ -50,9 +48,7 @@ Mode switched to single-primary successfully.
 
 # 7. Clean up
 [connection server1]
-RESET SLAVE ALL FOR CHANNEL 'ch3_1';
-Warnings:
-Warning	1287	'RESET SLAVE' is deprecated and will be removed in a future release. Please use RESET REPLICA instead
+RESET REPLICA ALL FOR CHANNEL 'ch3_1';
 [connection server2]
 SET @@GLOBAL.DEBUG= '-d,group_replication_block_group_action';
 include/group_replication_end.inc

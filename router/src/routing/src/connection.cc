@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2021, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -46,8 +47,7 @@ stdx::expected<void, std::error_code> ConnectorBase::init_destination() {
   } else {
     // no backends
     log_warning("%d: no connectable destinations :(", __LINE__);
-    return stdx::make_unexpected(
-        make_error_code(DestinationsErrc::kNoDestinations));
+    return stdx::unexpected(make_error_code(DestinationsErrc::kNoDestinations));
   }
 }
 
@@ -116,10 +116,10 @@ stdx::expected<void, std::error_code> ConnectorBase::try_connect() {
   };
 
   auto open_res = server_sock_.open(server_endpoint_.protocol(), socket_flags);
-  if (!open_res) return open_res.get_unexpected();
+  if (!open_res) return stdx::unexpected(open_res.error());
 
   const auto non_block_res = server_sock_.native_non_blocking(true);
-  if (!non_block_res) return non_block_res.get_unexpected();
+  if (!non_block_res) return stdx::unexpected(non_block_res.error());
 
   server_sock_.set_option(net::ip::tcp::no_delay{true});
 
@@ -136,7 +136,7 @@ stdx::expected<void, std::error_code> ConnectorBase::try_connect() {
 
   if (!src_addr_str.empty()) {
     const auto src_addr_res = net::ip::make_address_v4(src_addr_str.c_str());
-    if (!src_addr_res) return src_addr_res.get_unexpected();
+    if (!src_addr_res) return stdx::unexpected(src_addr_res.error());
 
 #if defined(IP_BIND_ADDRESS_NO_PORT)
     // linux 4.2 introduced IP_BIND_ADDRESS_NO_PORT to delay assigning a
@@ -154,14 +154,14 @@ stdx::expected<void, std::error_code> ConnectorBase::try_connect() {
             "failed: "
             "%s",
             __LINE__, setsockopt_res.error().message().c_str());
-        return setsockopt_res.get_unexpected();
+        return stdx::unexpected(setsockopt_res.error());
       }
     }
 #endif
 
     const auto bind_res = server_sock_.bind(net::ip::tcp::endpoint(
         src_addr_res.value_or(net::ip::address_v4{}), 0));
-    if (!bind_res) return bind_res.get_unexpected();
+    if (!bind_res) return stdx::unexpected(bind_res.error());
   }
 #endif
 
@@ -172,7 +172,7 @@ stdx::expected<void, std::error_code> ConnectorBase::try_connect() {
         ec == make_error_condition(std::errc::operation_would_block)) {
       // connect in progress, wait for completion.
       func_ = Function::kConnectFinish;
-      return connect_res.get_unexpected();
+      return stdx::unexpected(connect_res.error());
     } else {
       last_ec_ = ec;
       return next_endpoint();
@@ -269,7 +269,7 @@ stdx::expected<void, std::error_code> ConnectorBase::next_destination() {
       return init_destination();
     } else {
       // we couldn't connect to any of the destinations. Give up.
-      return stdx::make_unexpected(last_ec_);
+      return stdx::unexpected(last_ec_);
     }
   }
 }

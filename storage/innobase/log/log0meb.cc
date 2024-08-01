@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
 as published by the Free Software Foundation.
 
-This program is also distributed with certain software (including
+This program is designed to work with certain software (including
 but not limited to OpenSSL) that is licensed under separate terms,
 as designated in a particular file or component or in included license
 documentation.  The authors of MySQL hereby grant you an additional
 permission to link the program and your derivative works with the
-separately licensed software that they have included with MySQL.
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1324,19 +1325,21 @@ static bool redo_log_archive_start(THD *thd, const char *label,
   ut_ad(session != nullptr);
 
   /*
-    Create the redo log archive file.
+    Create the redo log archive file. We create it with read-only access rights,
+    however, the returned handle will be open for read-write.
   */
-  ulint os_innodb_umask_saved = os_file_get_umask();
-#ifdef _WIN32
-  os_file_set_umask(_S_IREAD);
-#else  /* _WIN32 */
-  os_file_set_umask(S_IRUSR | S_IRGRP);
-#endif /* _WIN32 */
   bool success;
+#ifndef _WIN32
+  pfs_os_file_t file_handle =
+      os_file_create_simple_no_error_handling_with_umask(
+          redo_log_archive_file_key, file_pathname.c_str(), OS_FILE_CREATE,
+          OS_FILE_READ_WRITE, /*read_only*/ false, S_IRUSR | S_IRGRP, &success);
+
+#else
   pfs_os_file_t file_handle = os_file_create_simple_no_error_handling(
       redo_log_archive_file_key, file_pathname.c_str(), OS_FILE_CREATE,
       OS_FILE_READ_WRITE, /*read_only*/ false, &success);
-  os_file_set_umask(os_innodb_umask_saved);
+#endif
   if (!success) {
     int os_errno = errno;
     char errbuf[MYSYS_STRERROR_SIZE];
@@ -2416,8 +2419,7 @@ long long innodb_redo_log_consumer_advance(
     [[maybe_unused]] UDF_INIT *initid, UDF_ARGS *args,
     [[maybe_unused]] unsigned char *null_value,
     [[maybe_unused]] unsigned char *error) {
-  if (current_thd == nullptr ||
-      verify_privilege(current_thd, backup_admin_privilege)) {
+  if (current_thd == nullptr) {
     return 1;
   }
   return static_cast<long long>(meb::redo_log_consumer_advance(

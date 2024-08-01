@@ -2,10 +2,12 @@
 # PXB-1954: PXB gets stuck in prepare of full backup for encrypted tablespace
 #
 
-. inc/keyring_file.sh
 . inc/dictionary_common.sh
+KEYRING_TYPE="component"
+. inc/keyring_common.sh
+. inc/keyring_file.sh
+configure_server_with_component
 
-start_server
 
 mysql test <<EOF
 CREATE TABLE t (a INT) ENCRYPTION='y';
@@ -44,10 +46,11 @@ kill_bg_trx $uncommitted_trx
 vlog "Record db state"
 record_db_state test
 
+
 vlog "Prepare the backup without keyring. xtrabackup should fail"
 run_cmd_expect_failure $XB_BIN $XB_ARGS --prepare --target-dir=$topdir/backup > $topdir/pxb_prepare_fail.log 2>&1
 
-egrep -q "Encryption information in datafile: ./test/t.ibd can't be decrypted, please confirm that keyring is loaded" $topdir/pxb_prepare_fail.log || die "xtrabackup prepare didn't fail without keyring"
+egrep -q "Encryption can't find master key, please check the keyring is loaded." $topdir/pxb_prepare_fail.log || die "xtrabackup prepare didn't fail without keyring"
 
 vlog "Prepare the backup with keyring"
 xtrabackup --prepare --target-dir=$topdir/backup \
@@ -59,8 +62,16 @@ vlog "Restore"
 stop_server
 rm -rf $MYSQLD_DATADIR/*
 xtrabackup --move-back --target-dir=${topdir}/backup
+
+cp ${instance_local_manifest}  $mysql_datadir
+cp ${keyring_component_cnf} $mysql_datadir
+
 start_server
 verify_db_state test
+
+# Reconfigure without innodb_undo_log_encrypt/redo_log_encrypt/binlog_encrypt
+MYSQLD_EXTRA_MY_CNF_OPTS=""
+configure_server_with_component
 
 vlog "Test 2: No rollback on encrypted table. Lack of keyring shouldn't fail the prepare"
 
@@ -72,14 +83,26 @@ xtrabackup --lock-ddl --backup --target-dir=$topdir/backup \
 vlog "Record db state"
 record_db_state test
 
+stop_server
+
+mv $mysql_datadir/*.cnf $topdir/tmp/
+mv $mysql_datadir/*.my $topdir/tmp/
+
 vlog "Prepare the backup without keyring. xtrabackup should NOT fail.No redo or undo on encrypted table"
 vlog "We dont pass ${plugin_dir} and ${keyring_args} intentionally here"
 xtrabackup --prepare --target-dir=$topdir/backup 2>&1 | tee $topdir/pxb_prepare2.log
 
+mv $topdir/tmp/*.cnf $mysql_datadir/ 
+mv $topdir/tmp/*.my $mysql_datadir/ 
+
 vlog "Restore"
-stop_server
+
 rm -rf $MYSQLD_DATADIR/*
 xtrabackup --move-back --target-dir=${topdir}/backup
+
+cp ${instance_local_manifest}  $mysql_datadir
+cp ${keyring_component_cnf} $mysql_datadir
+
 start_server
 verify_db_state test
 rm $topdir/pxb_prepare.log

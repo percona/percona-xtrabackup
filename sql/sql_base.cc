@@ -1,15 +1,16 @@
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -578,6 +579,14 @@ static TABLE_SHARE *process_found_table_share(THD *thd [[maybe_unused]],
   return share;
 }
 
+// MDL_release_locks_visitor subclass to release MDL for COLUMN_STATISTICS.
+class Release_histogram_locks : public MDL_release_locks_visitor {
+ public:
+  bool release(MDL_ticket *ticket) override {
+    return ticket->get_key()->mdl_namespace() == MDL_key::COLUMN_STATISTICS;
+  }
+};
+
 /**
   Read any existing histogram statistics from the data dictionary and store a
   copy of them in the TABLE_SHARE.
@@ -585,6 +594,43 @@ static TABLE_SHARE *process_found_table_share(THD *thd [[maybe_unused]],
   This function is called while TABLE_SHARE is being set up and it should
   therefore be safe to modify the collection of histograms on the share without
   explicity locking LOCK_open.
+
+  @note We use short-lived MDL locks with explicit duration to protect the
+  histograms while reading them. We want to avoid using statement duration locks
+  on the histograms in order to prevent deadlocks of the following type:
+
+  Threads and commands:
+
+  Thread A: ALTER TABLE (TABLE_SHARE is not yet loaded in memory, so
+   read_histograms() will be invoked).
+
+  Thread B: ANALYZE TABLE ... UPDATE HISTOGRAM.
+
+  Problematic sequence of lock acquisitions:
+
+  A: Acquires SHARED_UPGRADABLE on table for ALTER TABLE.
+
+  A: Acquires SHARED_READ on histograms (with statement duration) when creating
+     TABLE_SHARE.
+
+  B: Acquires SHARED_READ on table.
+
+  B: Attempts to acquire EXCLUSIVE on histograms (in order to update them), but
+     gets stuck waiting for A to release SHARED_READ on histograms.
+
+  A: ((( A could release MDL LOCK on histograms here, if using explicit
+     duration, allowing B to progress )))
+
+  A: Attempts to upgrade the SHARED_UPGRADABLE on the table to EXCLUSIVE during
+     execution of the ALTER TABLE statement, but gets stuck waiting for thread B
+     to release SHARED_READ on table.
+
+  This deadlock scenario is prevented by releasing Thread A's lock on the
+  histograms early, before releasing its lock on the table, i.e. by using
+  explicit locks on the histograms rather than statement duration locks. When
+  Thread A releases the histogram locks, then Thread B can update the histograms
+  and eventually release its table lock, and finally Thread A can upgrade its
+  MDL lock and continue with its ALTER TABLE statement.
 
   @param thd Thread handler
   @param share The table share where to store the histograms
@@ -614,13 +660,18 @@ static bool read_histograms(THD *thd, TABLE_SHARE *share,
                                           column->name(), &mdl_key);
 
     MDL_request *request = new (thd->mem_root) MDL_request;
-    MDL_REQUEST_INIT_BY_KEY(request, &mdl_key, MDL_SHARED_READ, MDL_STATEMENT);
+    MDL_REQUEST_INIT_BY_KEY(request, &mdl_key, MDL_SHARED_READ, MDL_EXPLICIT);
     mdl_requests.push_front(request);
   }
 
   if (thd->mdl_context.acquire_locks(&mdl_requests,
                                      thd->variables.lock_wait_timeout))
     return true; /* purecov: deadcode */
+
+  auto mdl_guard = create_scope_guard([&]() {
+    Release_histogram_locks histogram_mdl_releaser;
+    thd->mdl_context.release_locks(&histogram_mdl_releaser);
+  });
 
   for (const auto column : table_def->columns()) {
     if (column->is_se_hidden()) continue;
@@ -780,6 +831,7 @@ TABLE_SHARE *get_table_share(THD *thd, const char *db, const char *table_name,
   */
   share->increment_ref_count();      // Mark in use
   share->m_open_in_progress = true;  // Mark being opened
+  DEBUG_SYNC(thd, "table_share_open_in_progress");
 
   /*
     Temporarily release LOCK_open before opening the table definition,
@@ -841,8 +893,8 @@ TABLE_SHARE *get_table_share(THD *thd, const char *db, const char *table_name,
       /*
         Read any existing histogram statistics from the data dictionary and
         store a copy of them in the TABLE_SHARE. We only perform this step for
-        non-temporary tables, since temporary tables have share->m_histograms
-        set to nullptr.
+        non-temporary and primary engine tables. When these conditions are not
+        met m_histograms is nullptr.
 
         We need to do this outside the protection of LOCK_open, since the data
         dictionary might have to open tables in order to read histogram data
@@ -6705,7 +6757,7 @@ static bool open_secondary_engine_tables(THD *thd, uint flags) {
     // Check if properties of query conflicts with engine mode:
     if (lex->can_execute_only_in_secondary_engine()) {
       my_error(ER_CANNOT_EXECUTE_IN_PRIMARY, MYF(0),
-               lex->get_not_supported_in_primary_reason());
+               lex->get_not_supported_in_primary_reason_str());
       return true;
     }
 
@@ -6756,7 +6808,7 @@ static bool open_secondary_engine_tables(THD *thd, uint flags) {
       // Table-less queries cannot be executed in secondary engine
       if (lex->can_execute_only_in_secondary_engine()) {
         my_error(ER_CANNOT_EXECUTE_IN_PRIMARY, MYF(0),
-                 lex->get_not_supported_in_primary_reason());
+                 lex->get_not_supported_in_primary_reason_str());
         return true;
       }
       thd->set_secondary_engine_optimization(
@@ -6866,6 +6918,19 @@ bool open_tables_for_query(THD *thd, Table_ref *tables, uint flags) {
     goto end;
 
   if (open_secondary_engine_tables(thd, flags)) goto end;
+
+  if (thd->secondary_engine_optimization() ==
+          Secondary_engine_optimization::PRIMARY_TENTATIVELY &&
+      has_external_table(thd->lex)) {
+    /* Avoid materializing parts of result in primary engine
+     * during the PRIMARY_TENTATIVELY optimization phase
+     * if there are external tables since this can
+     * take a long time compared to the execution of the query
+     * in the secondary engine and it's wasted work if we end up
+     * executing the query in the secondary engine. */
+    thd->lex->add_statement_options(OPTION_NO_CONST_TABLES |
+                                    OPTION_NO_SUBQUERY_DURING_OPTIMIZATION);
+  }
 
   return false;
 end:
@@ -10393,8 +10458,9 @@ void tdc_remove_table(THD *thd, enum_tdc_remove_table_type remove_type,
         used.
       */
       if (remove_type != TDC_RT_REMOVE_NOT_OWN_KEEP_SHARE &&
-          remove_type != TDC_RT_MARK_FOR_REOPEN)
+          remove_type != TDC_RT_MARK_FOR_REOPEN) {
         share->clear_version();
+      }
       table_cache_manager.free_table(thd, remove_type, share);
     } else if (remove_type != TDC_RT_MARK_FOR_REOPEN) {
       // There are no TABLE objects associated, so just remove the

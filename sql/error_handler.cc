@@ -1,15 +1,16 @@
-/* Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -496,7 +497,9 @@ bool Info_schema_error_handler::handle_condition(
 
 bool Foreign_key_error_handler::handle_condition(
     THD *, uint sql_errno, const char *, Sql_condition::enum_severity_level *,
-    const char *) {
+    const char *msg) {
+  std::string message{msg};
+  if (!message.ends_with(')')) return false;
   const TABLE_SHARE *share = m_table_handler->get_table_share();
 
   if (sql_errno == ER_NO_REFERENCED_ROW_2) {
@@ -506,8 +509,9 @@ bool Foreign_key_error_handler::handle_condition(
                       fk->referenced_table_db.length,
                       fk->referenced_table_name.str,
                       fk->referenced_table_name.length, TL_READ);
-      if (check_table_access(m_thd, TABLE_OP_ACLS, &table, true, 1, true)) {
-        my_error(ER_NO_REFERENCED_ROW, MYF(0));
+      if (check_some_access(m_thd, TABLE_OP_ACLS, &table) ||
+          ((&table)->grant.privilege & TABLE_OP_ACLS) == 0) {
+        my_error(ER_NO_REFERENCED_ROW_2, MYF(0), "");
         return true;
       }
     }
@@ -519,8 +523,9 @@ bool Foreign_key_error_handler::handle_condition(
                       fk_p->referencing_table_db.length,
                       fk_p->referencing_table_name.str,
                       fk_p->referencing_table_name.length, TL_READ);
-      if (check_table_access(m_thd, TABLE_OP_ACLS, &table, true, 1, true)) {
-        my_error(ER_ROW_IS_REFERENCED, MYF(0));
+      if (check_some_access(m_thd, TABLE_OP_ACLS, &table) ||
+          ((&table)->grant.privilege & TABLE_OP_ACLS) == 0) {
+        my_error(ER_ROW_IS_REFERENCED_2, MYF(0), "");
         return true;
       }
     }

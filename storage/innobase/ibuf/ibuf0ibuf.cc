@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2023, Oracle and/or its affiliates.
+Copyright (c) 1997, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -37,6 +38,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ibuf0ibuf.h"
 #include "sync0sync.h"
 
+#include <debug_sync.h>
 #include "my_dbug.h"
 
 #if defined UNIV_DEBUG || defined UNIV_IBUF_DEBUG
@@ -561,8 +563,9 @@ void ibuf_bitmap_page_init(buf_block_t *block, /*!< in: bitmap page */
 #endif /* !UNIV_HOTBACKUP */
 }
 
-byte *ibuf_parse_bitmap_init(byte *ptr, byte *end_ptr [[maybe_unused]],
-                             buf_block_t *block, mtr_t *mtr) {
+const byte *ibuf_parse_bitmap_init(const byte *ptr,
+                                   const byte *end_ptr [[maybe_unused]],
+                                   buf_block_t *block, mtr_t *mtr) {
   if (block) {
     ibuf_bitmap_page_init(block, mtr);
   }
@@ -1525,7 +1528,7 @@ static dtuple_t *ibuf_entry_build(
     ibuf_op_t op,          /*!< in: operation type */
     dict_index_t *index,   /*!< in: non-clustered index */
     const dtuple_t *entry, /*!< in: entry for a non-clustered index */
-    space_id_t space,      /*!< in: space id */
+    space_id_t space_id,   /*!< in: space id */
     page_no_t page_no,     /*!< in: index page number where entry should
                            be inserted */
     ulint counter,         /*!< in: counter value;
@@ -1567,7 +1570,7 @@ static dtuple_t *ibuf_entry_build(
 
   buf = static_cast<byte *>(mem_heap_alloc(heap, 4));
 
-  mach_write_to_4(buf, space);
+  mach_write_to_4(buf, space_id);
 
   dfield_set_data(field, buf, 4);
 
@@ -2240,8 +2243,14 @@ static ulint ibuf_merge_pages(
 
   *n_pages = 0;
 
-  /* Check if there is enough reusable space in redo log files. */
-  log_free_check();
+  /* The buf_read_ibuf_merge_pages(sync,..) will result in changes being applied
+  to pages, which will generate redo log, so it is important to ensure redo log
+  has enough space, if sync=true. We don't call log_free_check() here because
+  during ibuf contraction, we are starting a nested mtr and, log_free_check()
+  should have been called *before* starting the parent mtr. Usual background
+  thread does not start under a parent mtr to do the page merges. It always
+  does async IO though */
+  ut_ad(mtr_t::is_this_thread_inside_mtr() || !sync);
 
   ibuf_mtr_start(&mtr);
 
@@ -2263,6 +2272,7 @@ static ulint ibuf_merge_pages(
     ut_ad(ibuf->empty);
     ut_ad(page_get_space_id(pcur.get_page()) == IBUF_SPACE_ID);
     ut_ad(page_get_page_no(pcur.get_page()) == FSP_IBUF_TREE_ROOT_PAGE_NO);
+    ut_ad(!mtr.has_any_log_record());
 
     ibuf_mtr_commit(&mtr);
     pcur.close();
@@ -2272,10 +2282,7 @@ static ulint ibuf_merge_pages(
 
   sum_sizes = ibuf_get_merge_page_nos(true, pcur.get_rec(), &mtr, space_ids,
                                       page_nos, n_pages);
-#if 0 /* defined UNIV_IBUF_DEBUG */
-  fprintf(stderr, "Ibuf contract sync %lu pages %lu volume %lu\n",
-    sync, *n_pages, sum_sizes);
-#endif
+  ut_ad(!mtr.has_any_log_record());
   ibuf_mtr_commit(&mtr);
   pcur.close();
 
@@ -2378,7 +2385,7 @@ the issued reads to complete
 will be merged from ibuf trees to the pages read, 0 if ibuf is empty */
 static ulint ibuf_contract(bool sync) {
   ulint n_pages;
-
+  DEBUG_SYNC_C("ibuf_contract_started");
   return (ibuf_merge_pages(&n_pages, sync));
 }
 
@@ -2644,7 +2651,7 @@ static ulint ibuf_get_volume_buffered(
                             entry for the index page whose number is
                             page_no, latch mode has to be BTR_MODIFY_PREV
                             or BTR_MODIFY_TREE */
-    space_id_t space,       /*!< in: space id */
+    space_id_t space_id,    /*!< in: space id */
     page_no_t page_no,      /*!< in: page number of an index page */
     lint *n_recs,           /*!< in/out: minimum number of records on the
                             page after the buffered changes have been
@@ -2685,7 +2692,7 @@ static ulint ibuf_get_volume_buffered(
     ut_ad(page_align(rec) == page);
 
     if (page_no != ibuf_rec_get_page_no(mtr, rec) ||
-        space != ibuf_rec_get_space(mtr, rec)) {
+        space_id != ibuf_rec_get_space(mtr, rec)) {
       goto count_later;
     }
 
@@ -2732,7 +2739,7 @@ static ulint ibuf_get_volume_buffered(
     }
 
     if (page_no != ibuf_rec_get_page_no(mtr, rec) ||
-        space != ibuf_rec_get_space(mtr, rec)) {
+        space_id != ibuf_rec_get_space(mtr, rec)) {
       goto count_later;
     }
 
@@ -2749,7 +2756,7 @@ count_later:
 
   for (; !page_rec_is_supremum(rec); rec = page_rec_get_next_const(rec)) {
     if (page_no != ibuf_rec_get_page_no(mtr, rec) ||
-        space != ibuf_rec_get_space(mtr, rec)) {
+        space_id != ibuf_rec_get_space(mtr, rec)) {
       return (volume);
     }
 
@@ -2794,7 +2801,7 @@ count_later:
     }
 
     if (page_no != ibuf_rec_get_page_no(mtr, rec) ||
-        space != ibuf_rec_get_space(mtr, rec)) {
+        space_id != ibuf_rec_get_space(mtr, rec)) {
       return (volume);
     }
 
@@ -3015,7 +3022,7 @@ unique or clustered
     to insert */
 
 #ifdef UNIV_IBUF_DEBUG
-    fputs("Ibuf too big\n", stderr);
+    ib::info() << "Ibuf too big";
 #endif
     ibuf_contract(true);
 
@@ -3467,7 +3474,7 @@ static rec_t *ibuf_insert_to_index_page_low(
                            << block->page.size.physical() << ", bitmap bits "
                            << old_bits;
 
-  ib::error(ER_IB_MSG_610) << BUG_REPORT_MSG;
+  ib::error(ER_IB_MSG_SUBMIT_DETAILED_BUG_REPORT);
 
   ut_d(ut_error);
   ut_o(return nullptr);
@@ -3532,8 +3539,8 @@ static void ibuf_insert_to_index_page(
     ib::warn(ER_IB_MSG_614)
         << "The table where this index record belongs"
            " is now probably corrupt. Please run CHECK TABLE on"
-           " your tables. "
-        << BUG_REPORT_MSG;
+           " your tables.";
+    ib::warn(ER_IB_MSG_SUBMIT_DETAILED_BUG_REPORT);
 
     ut_d(ut_error);
 
@@ -3693,7 +3700,7 @@ static void ibuf_set_del_mark(
         << "page " << block->page.id << " (" << page_get_n_recs(page)
         << " records, index id " << btr_page_get_index_id(page) << ").";
 
-    ib::error(ER_IB_MSG_618) << BUG_REPORT_MSG;
+    ib::error(ER_IB_MSG_SUBMIT_DETAILED_BUG_REPORT);
     ut_d(ut_error);
   }
 }
@@ -3785,18 +3792,16 @@ static void ibuf_delete(const dtuple_t *entry, /*!< in: entry */
 }
 
 /** Restores insert buffer tree cursor position
- @return true if the position was restored; false if not */
-static bool ibuf_restore_pos(
-    space_id_t space,  /*!< in: space id */
-    page_no_t page_no, /*!< in: index page number where the record
-                       should belong */
-    const dtuple_t *search_tuple,
-    /*!< in: search tuple for entries of page_no */
-    ulint mode,       /*!< in: BTR_MODIFY_LEAF or BTR_MODIFY_TREE */
-    btr_pcur_t *pcur, /*!< in/out: persistent cursor whose
-                      position is to be restored */
-    mtr_t *mtr)       /*!< in/out: mini-transaction */
-{
+@param[in]        space_id      Tablespace id
+@param[in]        page_no       index page number where the record should belong
+@param [in]       search_tuple  search tuple for entries of page_no
+@param[in]        mode       BTR_MODIFY_LEAF or BTR_MODIFY_TREE
+@param[in,out]    pcur       persistent cursor whose position is to be restored
+@param[in, out]   mtr        mini-transaction
+@return true if the position was restored; false if not */
+static bool ibuf_restore_pos(space_id_t space_id, page_no_t page_no,
+                             const dtuple_t *search_tuple, ulint mode,
+                             btr_pcur_t *pcur, mtr_t *mtr) {
   ut_ad(mode == BTR_MODIFY_LEAF ||
         BTR_LATCH_MODE_WITHOUT_INTENTION(mode) == BTR_MODIFY_TREE);
 
@@ -3804,17 +3809,13 @@ static bool ibuf_restore_pos(
     return true;
   }
 
-  if (fil_space_get_flags(space) == UINT32_UNDEFINED) {
-    /* The tablespace has been dropped.  It is possible
-    that another thread has deleted the insert buffer
-    entry.  Do not complain. */
+  if (const auto space = fil_space_acquire_silent(space_id); space == nullptr) {
+    /* The tablespace has been(or being) deleted. Do not complain. */
     ibuf_btr_pcur_commit_specify_mtr(pcur, mtr);
   } else {
-    ib::error(ER_IB_MSG_620) << "ibuf cursor restoration fails!."
-                                " ibuf record inserted to page "
-                             << space << ":" << page_no;
-
-    ib::error(ER_IB_MSG_621) << BUG_REPORT_MSG;
+    fil_space_release(space);
+    ib::error(ER_IB_MSG_IBUF_CURSOR_RESTORATION_FAILED, space_id, page_no);
+    ib::error(ER_IB_MSG_SUBMIT_DETAILED_BUG_REPORT);
 
     rec_print_old(stderr, pcur->get_rec());
     rec_print_old(stderr, pcur->m_old_rec);
@@ -3822,10 +3823,8 @@ static bool ibuf_restore_pos(
 
     rec_print_old(stderr, page_rec_get_next(pcur->get_rec()));
 
-    ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_622)
-        << "Failed to restore ibuf position.";
+    ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_IBUF_FAILED_TO_RESTORE_POSITION);
   }
-
   return false;
 }
 
@@ -4069,8 +4068,7 @@ void ibuf_merge_or_delete_for_page(buf_block_t *block, const page_id_t &page_id,
                                   " run CHECK TABLE on your tables to determine"
                                   " if they are corrupt after this.";
 
-      ib::error(ER_IB_MSG_625) << "Please submit a detailed bug"
-                                  " report to http://bugs.mysql.com";
+      ib::error(ER_IB_MSG_SUBMIT_DETAILED_BUG_REPORT);
       ut_d(ut_error);
     }
   }

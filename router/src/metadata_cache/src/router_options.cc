@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -56,7 +57,7 @@ class MetadataJsonOptions {
     json_doc.Parse(options);
 
     if (!json_doc.IsObject()) {
-      return stdx::make_unexpected("not a valid JSON object");
+      return stdx::unexpected("not a valid JSON object");
     }
 
     const auto it = json_doc.FindMember(name);
@@ -65,7 +66,7 @@ class MetadataJsonOptions {
     }
 
     if (!it->value.IsString()) {
-      return stdx::make_unexpected("options." + name + " not a string");
+      return stdx::unexpected("options." + name + " not a string");
     }
 
     return it->value.GetString();
@@ -80,7 +81,7 @@ class MetadataJsonOptions {
     json_doc.Parse(options);
 
     if (!json_doc.IsObject()) {
-      return stdx::make_unexpected("not a valid JSON object");
+      return stdx::unexpected("not a valid JSON object");
     }
 
     const auto it = json_doc.FindMember(name);
@@ -92,8 +93,8 @@ class MetadataJsonOptions {
       rapidjson::StringBuffer sb;
       rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
       it->value.Accept(writer);
-      return stdx::make_unexpected("options." + name + "='" + sb.GetString() +
-                                   "'; not an unsigned int");
+      return stdx::unexpected("options." + name + "='" + sb.GetString() +
+                              "'; not an unsigned int");
     }
 
     return it->value.GetUint();
@@ -108,7 +109,7 @@ class MetadataJsonOptions {
     json_doc.Parse(options);
 
     if (json_doc.HasParseError() || !json_doc.IsObject()) {
-      return stdx::make_unexpected("not a valid JSON object");
+      return stdx::unexpected("not a valid JSON object");
     }
 
     const auto it = json_doc.FindMember(name);
@@ -121,8 +122,8 @@ class MetadataJsonOptions {
       rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
       it->value.Accept(writer);
 
-      return stdx::make_unexpected("options." + name + "='" + sb.GetString() +
-                                   "'; not a boolean");
+      return stdx::unexpected("options." + name + "='" + sb.GetString() +
+                              "'; not a boolean");
     }
 
     return it->value.GetBool();

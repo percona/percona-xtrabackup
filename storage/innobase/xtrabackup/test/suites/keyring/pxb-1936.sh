@@ -4,9 +4,10 @@
 
 require_server_version_higher_than 5.7.10
 
+KEYRING_TYPE="component"
+. inc/keyring_common.sh
 . inc/keyring_file.sh
-
-start_server
+configure_server_with_component
 
 mysql -e "CREATE TABLE t (a INT) ENCRYPTION='y'" test
 
@@ -22,12 +23,16 @@ xtrabackup --backup --target-dir=$topdir/backup
 
 stop_server
 
-run_cmd_expect_failure $XB_BIN $XB_ARGS --prepare --target-dir=$topdir/backup
+run_cmd_expect_failure $XB_BIN $XB_ARGS --prepare --target-dir=$topdir/backup > $topdir/pxb_prepare_fail.log 2>&1
 
+vlog "Destroying data: $MYSQLD_DATADIR"
 rm -rf $mysql_datadir
+vlog "Data destroyed"
+vlog "Destroying backup: $topdir/backup"
 rm -rf $topdir/backup
+vlog "Backup destroyed"
 
-start_server
+configure_server_with_component
 
 mysql -e "CREATE TABLE t (a INT) ENCRYPTION='y'" test
 

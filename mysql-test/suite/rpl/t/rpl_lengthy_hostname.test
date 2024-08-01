@@ -2,7 +2,7 @@
 # WL#12571: Support fully qualified hostnames longer than 60 characters
 #
 # This test case asserts that a lengthy hostname reported to the user
-# through the various interfaces, after being set through CHANGE MASTER,
+# through the various interfaces, after being set through CHANGE REPLICATION SOURCE,
 # is correctly displayed.
 #
 
@@ -14,16 +14,16 @@
 
 # we will configure the hostname ourselves
 --let $rpl_skip_start_slave= 1
---source include/master-slave.inc
+--source include/rpl/init_source_replica.inc
 
 --let $lengthy_hostname=host_1234567890abcdefghij1234567890abcdefghij1234567890abcdefghij1234567890abcdefghij1234567890abcdefghij1234567890abcdefghij1234567890abcdefghij1234567890abcdefghij1234567890abcdefghij1234567890abcdefghij1234567890abcdefghij1234567890abcdefghij1234567890
 
---source include/rpl_connection_slave.inc
+--source include/rpl/connection_replica.inc
 #
-# 1. Assertion: CHANGE MASTER TO (CMT) accepts a lengthy hostname
+# 1. Assertion: CHANGE REPLICATION SOURCE TO (CRST) accepts a lengthy hostname
 #
 
---replace_result $MASTER_MYPORT MASTER_PORT
+--replace_result $MASTER_MYPORT SOURCE_PORT
 --eval CHANGE REPLICATION SOURCE TO SOURCE_HOST="$lengthy_hostname", SOURCE_PORT=$MASTER_MYPORT
 
 --let $i=3
@@ -51,20 +51,20 @@ while($i>0)
   if ($i == 1)
   {
     #
-    # 4. Assertion: assert that the hostname reported in SHOW SLAVE STATUS is correct
+    # 4. Assertion: assert that the hostname reported in SHOW REPLICA STATUS is correct
     #
-    --let $hostname_read= query_get_value(SHOW SLAVE STATUS, Master_Host, 1)
-    --let $hostname_source= SHOW SLAVE STATUS
+    --let $hostname_read= query_get_value(SHOW REPLICA STATUS, Source_Host, 1)
+    --let $hostname_source= SHOW REPLICA STATUS
   }
 
   --let $assert_cond= "$hostname_read" = "$lengthy_hostname"
-  --let $assert_text= Hostname in $hostname_source matches the one set through CHANGE MASTER TO
+  --let $assert_text= Hostname in $hostname_source matches the one set through CHANGE REPLICATION SOURCE TO
   --source include/assert.inc
 
   --dec $i
 }
 
 --eval CHANGE REPLICATION SOURCE TO SOURCE_HOST="127.0.0.1"
---source include/start_slave.inc
+--source include/rpl/start_replica.inc
 
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

@@ -1,8 +1,7 @@
 ################################################################################
 # Validate that when a member joins a group, and it is missing data that was
 # purged from group binary logs, the joiner member will proceed by cloning a
-# a group member. Since server2 is from a higher major version than the
-# donor, cloning will not be possible and the joiner will error out.
+# a group member. Since cloning will fail, the joiner will error out.
 #
 # Test:
 # 0. The test requires two servers: M1 and M2.
@@ -12,12 +11,12 @@
 # 2. Install clone plugin on server2.
 #    Start GR, cloning is the option chosen as recovery
 #    from binary logs is not possible.
-#    But this server is from a higher major version than the donor,
-#    so cloning is not possible and the joiner will error out.
+#    Add debug point for clone to fail, the joiner will error out.
 # 3. Cleanup
 #
 
 --source include/have_debug.inc
+--source include/have_debug_sync.inc
 --source include/have_clone_plugin.inc
 --source include/have_group_replication_plugin.inc
 --let $rpl_skip_group_replication_start= 1
@@ -33,7 +32,7 @@
 --echo #    Commit some data and then purge all binary logs.
 --echo #    Bootstrap a group on server1.
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
+--source include/connection.inc
 
 # Install the clone plugin
 --replace_result $CLONE_PLUGIN CLONE_PLUGIN
@@ -46,7 +45,7 @@ INSERT INTO t1 VALUES (2);
 
 # Purge binary logs.
 SET sql_log_bin = 0;
---source include/gtid_utils.inc
+--source include/rpl/gtid_utils.inc
 SET sql_log_bin = 1;
 
 FLUSH BINARY LOGS;
@@ -65,21 +64,28 @@ FLUSH BINARY LOGS;
 --echo # 2. Install clone plugin on server2.
 --echo #    Start GR, cloning is the option chosen as recovery
 --echo #    from binary logs is not possible.
---echo #    But this server is from a higher major version than the donor,
---echo #    so cloning is not possible and the joiner will error out.
+--echo #    Add debug point for clone to fail, the joiner will error out.
 
 # Install the clone plugin
 --let $rpl_connection_name= server2
---source include/rpl_connection.inc
+--source include/connection.inc
 
 --replace_result $CLONE_PLUGIN CLONE_PLUGIN
 --eval INSTALL PLUGIN clone SONAME '$CLONE_PLUGIN'
 
-# Cause the member to broadcast and compare himself using a higher version
-SET @@GLOBAL.DEBUG= '+d,group_replication_compatibility_higher_major_version';
+# Clone cannot see difference in version so force clone command failure
+SET @@GLOBAL.DEBUG='+d,gr_run_clone_query_fail_once';
 
---let $group_replication_start_member_state= ERROR
---source include/start_group_replication.inc
+--replace_result $group_replication_group_name GROUP_REPLICATION_GROUP_NAME
+--eval SET GLOBAL group_replication_group_name= "$group_replication_group_name"
+
+--source include/start_group_replication_command.inc
+
+SET DEBUG_SYNC = "now WAIT_FOR signal.run_clone_query_waiting";
+SET DEBUG_SYNC = "now SIGNAL signal.run_clone_query_continue";
+
+--let $group_replication_member_state = ERROR
+--source include/gr_wait_for_member_state.inc
 
 --source include/stop_group_replication.inc
 
@@ -87,23 +93,25 @@ SET @@GLOBAL.DEBUG= '+d,group_replication_compatibility_higher_major_version';
 --echo ############################################################
 --echo # 3. Cleanup.
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
+--source include/connection.inc
 DROP TABLE t1;
---source include/gtid_utils_end.inc
+--source include/rpl/gtid_utils_end.inc
 
 UNINSTALL PLUGIN clone;
 
 --let $rpl_connection_name= server2
---source include/rpl_connection.inc
-SET @@GLOBAL.DEBUG= '-d,group_replication_compatibility_higher_major_version';
+--source include/connection.inc
+SET DEBUG_SYNC= 'RESET';
+SET @@GLOBAL.DEBUG='-d,gr_run_clone_query_fail_once';
 
 UNINSTALL PLUGIN clone;
 
 SET SESSION sql_log_bin=0;
-call mtr.add_suppression("No valid or ONLINE members exist to get the missing data from the group. For cloning check if donors of the same version and with clone plugin installed exist. For incremental recovery check.*");
 call mtr.add_suppression("Skipping leave operation: concurrent attempt to leave the group is on-going.");
-call mtr.add_suppression("Member version is read compatible with the group.");
 call mtr.add_suppression("The server was automatically set into read only mode after an error was detected.");
+call mtr.add_suppression("The server was automatically set into offline mode after an error was detected.");
+call mtr.add_suppression("This member will start distributed recovery using clone. It is due to no ONLINE member has the missing data for recovering in its binary logs.");
+call mtr.add_suppression("Due to a critical cloning error or lack of donors, distributed recovery cannot be executed. The member will now leave the group.");
 SET SESSION sql_log_bin=1;
 
 --source include/group_replication_end.inc

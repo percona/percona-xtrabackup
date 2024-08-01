@@ -1,15 +1,16 @@
-/* Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -116,36 +117,49 @@ inline FilterCost EstimateFilterCost(
 
 double EstimateCostForRefAccess(THD *thd, TABLE *table, unsigned key_idx,
                                 double num_output_rows);
-void EstimateSortCost(AccessPath *path);
+
+/**
+  Estimate costs and output rows for a SORT AccessPath.
+  @param thd Current thread.
+  @param path the AccessPath.
+  @param distinct_rows An estimate of the number of distinct rows, if
+     remove_duplicates==true and we have an estimate already.
+*/
+void EstimateSortCost(THD *thd, AccessPath *path,
+                      double distinct_rows = kUnknownRowCount);
+
 void EstimateMaterializeCost(THD *thd, AccessPath *path);
 
 /**
    Estimate the number of rows with a distinct combination of values for
    'terms'. @see EstimateDistinctRowsFromStatistics for additional details.
+   @param thd The current thread.
    @param child_rows The number of input rows.
    @param terms The terms for which we estimate the number of unique
                 combinations.
-   @param trace Optimizer trace.
    @returns The estimated number of output rows.
 */
-double EstimateDistinctRows(double child_rows,
-                            Bounds_checked_array<const Item *const> terms,
-                            std::string *trace = nullptr);
+double EstimateDistinctRows(THD *thd, double child_rows,
+                            Bounds_checked_array<const Item *const> terms);
 /**
    Estimate costs and result row count for an aggregate operation.
+   @param[in,out] thd The current thread.
    @param[in,out] path The AGGREGATE path.
    @param[in] query_block The Query_block to which 'path' belongs.
-   @param[in,out] trace Optimizer trace text.
  */
-void EstimateAggregateCost(AccessPath *path, const Query_block *query_block,
-                           std::string *trace = nullptr);
+void EstimateAggregateCost(THD *thd, AccessPath *path,
+                           const Query_block *query_block);
 void EstimateDeleteRowsCost(AccessPath *path);
 void EstimateUpdateRowsCost(AccessPath *path);
 
 /// Estimate the costs and row count for a STREAM AccessPath.
 void EstimateStreamCost(AccessPath *path);
 
-/// Estimate the costs and row count for a LIMIT_OFFSET AccessPath.
+/**
+   Estimate the costs and row count for a WINDOW AccessPath. As described in
+   @see AccessPath::m_init_cost, the cost to read k out of N rows would be
+   init_cost + (k/N) * (cost - init_cost).
+*/
 void EstimateLimitOffsetCost(AccessPath *path);
 
 /// Estimate the costs and row count for a WINDOW AccessPath.
@@ -182,19 +196,23 @@ void EstimateWindowCost(AccessPath *path);
    The fan out is then the selectivity of 'predicate' multiplied by the
    probability of t2 having at least one row.
 
+   @param thd The current thread.
    @param right_rows The number of input rows from the right hand relation.
    @param edge Join edge.
    @returns fan out.
  */
-double EstimateSemijoinFanOut(double right_rows, const JoinPredicate &edge);
+double EstimateSemijoinFanOut(THD *thd, double right_rows,
+                              const JoinPredicate &edge);
 
 /**
    Estimate the number of output rows from joining two relations.
+   @param thd The current thread.
    @param left_rows Number of rows in the left hand relation.
    @param right_rows Number of rows in the right hand relation.
    @param edge The join between the two relations.
 */
-inline double FindOutputRowsForJoin(double left_rows, double right_rows,
+inline double FindOutputRowsForJoin(THD *thd, double left_rows,
+                                    double right_rows,
                                     const JoinPredicate *edge) {
   switch (edge->expr->type) {
     case RelationalExpression::LEFT_JOIN:
@@ -205,7 +223,7 @@ inline double FindOutputRowsForJoin(double left_rows, double right_rows,
       return left_rows * std::max(right_rows * edge->selectivity, 1.0);
 
     case RelationalExpression::SEMIJOIN:
-      return left_rows * EstimateSemijoinFanOut(right_rows, *edge);
+      return left_rows * EstimateSemijoinFanOut(thd, right_rows, *edge);
 
     case RelationalExpression::ANTIJOIN:
       // Antijoin are estimated as simply the opposite of semijoin (see above),
@@ -213,7 +231,8 @@ inline double FindOutputRowsForJoin(double left_rows, double right_rows,
       // be really bad, so we assume at least 10% coming out as a fudge factor.
       // It's better to estimate too high than too low here.
       return left_rows *
-             std::max(1.0 - EstimateSemijoinFanOut(right_rows, *edge), 0.1);
+             std::max(1.0 - EstimateSemijoinFanOut(thd, right_rows, *edge),
+                      0.1);
 
     case RelationalExpression::INNER_JOIN:
     case RelationalExpression::STRAIGHT_INNER_JOIN:

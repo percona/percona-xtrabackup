@@ -4,7 +4,7 @@
 
 --source include/not_group_replication_plugin.inc
 source include/have_debug.inc;
-source include/master-slave.inc;
+source include/rpl/init_source_replica.inc;
 
 connection slave;
 
@@ -12,8 +12,8 @@ connection slave;
 call mtr.add_suppression("Failed during replica I/O thread initialization");
 call mtr.add_suppression("Replica SQL.*Failed during replica thread initialization.* MY-013117");
 
---source include/stop_slave.inc
-reset slave;
+--source include/rpl/stop_replica.inc
+RESET REPLICA;
 
 # Set debug flags on slave to force errors to occur
 --let $debug_point= simulate_io_replica_error_on_init
@@ -29,7 +29,7 @@ eval CHANGE REPLICATION SOURCE TO SOURCE_USER='root',
                       SOURCE_PORT=$MASTER_MYPORT;
 --enable_query_log
 
-start slave;
+START REPLICA;
 
 #
 # slave is going to stop because of emulated failures
@@ -39,12 +39,12 @@ start slave;
 # Wait for the SQL thread error
 --let $slave_sql_errno= convert_error(ER_REPLICA_FATAL_ERROR)
 --let $show_slave_sql_error= 1
---source include/wait_for_slave_sql_error.inc
+--source include/rpl/wait_for_applier_error.inc
 
 # Wait for the I/O thread error
 --let $slave_io_errno= convert_error(ER_REPLICA_FATAL_ERROR)
 --let $show_slave_io_error= 1
---source include/wait_for_slave_io_error.inc
+--source include/rpl/wait_for_receiver_error.inc
 #
 # Cleanup
 #
@@ -54,7 +54,7 @@ start slave;
 --source include/remove_debug_point.inc
 
 # Clear Last_SQL_Error and Last_IO_Error
-RESET SLAVE;
+RESET REPLICA;
 
 --let $rpl_only_running_threads= 1
---source include/rpl_end.inc
+--source include/rpl/deinit.inc

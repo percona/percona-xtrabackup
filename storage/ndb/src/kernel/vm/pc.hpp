@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -204,15 +205,24 @@ extern thread_local Uint32 NDB_THREAD_TLS_RES_OWNER;
 #define ERROR_INSERT_VARIABLE \
   mutable UintR cerrorInsert{0}, c_error_insert_extra { 0 }
 #define ERROR_INSERTED(x) (unlikely(cerrorInsert == (x)))
-#define ERROR_INSERTED_CLEAR(x) \
-  (cerrorInsert == (x) ? (cerrorInsert = 0, true) : false)
+#define ERROR_INSERTED_CLEAR(x)                                             \
+  (cerrorInsert == (x) ? (cerrorInsert = 0, c_error_insert_extra = 0, true) \
+                       : false)
 #define ERROR_INSERT_VALUE cerrorInsert
 #define ERROR_INSERT_EXTRA c_error_insert_extra
-#define SET_ERROR_INSERT_VALUE(x) cerrorInsert = x
+#define SET_ERROR_INSERT_VALUE(x) \
+  do {                            \
+    cerrorInsert = x;             \
+    c_error_insert_extra = 0;     \
+  } while (0)
 #define SET_ERROR_INSERT_VALUE2(x, y) \
   cerrorInsert = x;                   \
   c_error_insert_extra = y
-#define CLEAR_ERROR_INSERT_VALUE cerrorInsert = 0
+#define CLEAR_ERROR_INSERT_VALUE \
+  do {                           \
+    cerrorInsert = 0;            \
+    c_error_insert_extra = 0;    \
+  } while (0)
 #define CLEAR_ERROR_INSERT_EXTRA c_error_insert_extra = 0
 #else
 #define ERROR_INSERT_VARIABLE \

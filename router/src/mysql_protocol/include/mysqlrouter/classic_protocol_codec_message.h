@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -141,11 +142,11 @@ class Codec<borrowable::message::server::Greeting<Borrowed>>
 
     // proto-version
     auto protocol_version_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (protocol_version_res->value() != 0x09 &&
         protocol_version_res->value() != 0x0a) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     auto version_res = accu.template step<bw::NulTermString<Borrowed>>();
@@ -163,7 +164,7 @@ class Codec<borrowable::message::server::Greeting<Borrowed>>
       // capabilities are split into two a lower-2-byte part and a
       // higher-2-byte
       auto cap_lower_res = accu.template step<bw::FixedInt<2>>();
-      if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+      if (!accu.result()) return stdx::unexpected(accu.result().error());
 
       // 3.21.x doesn't send more.
       if (buffer_size(buffer) <= accu.result().value()) {
@@ -181,7 +182,7 @@ class Codec<borrowable::message::server::Greeting<Borrowed>>
       auto cap_hi_res = accu.template step<bw::FixedInt<2>>();
 
       // before we use cap_hi|cap_low check they don't have an error
-      if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+      if (!accu.result()) return stdx::unexpected(accu.result().error());
 
       classic_protocol::capabilities::value_type capabilities(
           cap_lower_res->value() | (cap_hi_res->value() << 16));
@@ -189,12 +190,11 @@ class Codec<borrowable::message::server::Greeting<Borrowed>>
       size_t auth_method_data_len{13};
       if (capabilities[classic_protocol::capabilities::pos::plugin_auth]) {
         auto auth_method_data_len_res = accu.template step<bw::FixedInt<1>>();
-        if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+        if (!accu.result()) return stdx::unexpected(accu.result().error());
 
         // should be 21, but least 8
         if (auth_method_data_len_res->value() < 8) {
-          return stdx::make_unexpected(
-              make_error_code(codec_errc::invalid_input));
+          return stdx::unexpected(make_error_code(codec_errc::invalid_input));
         }
         auth_method_data_len = auth_method_data_len_res->value() - 8;
       } else {
@@ -219,7 +219,7 @@ class Codec<borrowable::message::server::Greeting<Borrowed>>
         }
       }
 
-      if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+      if (!accu.result()) return stdx::unexpected(accu.result().error());
 
       return std::make_pair(
           accu.result().value(),
@@ -283,10 +283,10 @@ class Codec<borrowable::message::server::AuthMethodSwitch<Borrowed>>
 
     // proto-version
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     if (!caps[classic_protocol::capabilities::pos::plugin_auth]) {
@@ -296,7 +296,7 @@ class Codec<borrowable::message::server::AuthMethodSwitch<Borrowed>>
     auto auth_method_res = accu.template step<bw::NulTermString<Borrowed>>();
     auto auth_method_data_res = accu.template step<bw::String<Borrowed>>();
 
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(
         accu.result().value(),
@@ -348,14 +348,14 @@ class Codec<borrowable::message::server::AuthMethodData<Borrowed>>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
     auto auth_method_data_res = accu.template step<bw::String<Borrowed>>();
 
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(accu.result().value(),
                           value_type(auth_method_data_res->value()));
@@ -441,10 +441,10 @@ class Codec<borrowable::message::server::Ok<Borrowed>>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     auto affected_rows_res = accu.template step<bw::VarInt>();
@@ -480,7 +480,7 @@ class Codec<borrowable::message::server::Ok<Borrowed>>
       message_res = accu.template step<bw::String<Borrowed>>();
     }
 
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(
         accu.result().value(),
@@ -603,10 +603,10 @@ class Codec<borrowable::message::server::Eof<Borrowed>>
     namespace bw = borrowable::wire;
 
     const auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     if (caps[capabilities::pos::text_result_with_session_tracking]) {
@@ -645,7 +645,7 @@ class Codec<borrowable::message::server::Eof<Borrowed>>
         message_res = accu.template step<bw::String<Borrowed>>();
       }
 
-      if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+      if (!accu.result()) return stdx::unexpected(accu.result().error());
 
       return std::make_pair(
           accu.result().value(),
@@ -739,10 +739,10 @@ class Codec<borrowable::message::server::Error<Borrowed>>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     // decode all fields, check result later before they are used.
@@ -750,11 +750,14 @@ class Codec<borrowable::message::server::Error<Borrowed>>
     stdx::expected<bw::String<Borrowed>, std::error_code> sql_state_res;
     if (caps[capabilities::pos::protocol_41]) {
       auto sql_state_hash_res = accu.template step<bw::FixedInt<1>>();
+      if (!sql_state_hash_res) {
+        return stdx::unexpected(sql_state_hash_res.error());
+      }
       sql_state_res = accu.template step<bw::String<Borrowed>>(5);
     }
     auto message_res = accu.template step<bw::String<Borrowed>>();
 
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(
         accu.result().value(),
@@ -799,7 +802,7 @@ class Codec<borrowable::message::server::ColumnCount>
     namespace bw = borrowable::wire;
 
     auto count_res = accu.template step<bw::VarInt>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(accu.result().value(),
                           value_type(count_res->value()));
@@ -889,29 +892,26 @@ class Codec<borrowable::message::server::ColumnMeta<Borrowed>>
       const auto name_res = accu.template step<bw::VarString<Borrowed>>();
 
       const auto column_length_len_res = accu.template step<bw::VarInt>();
-      if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+      if (!accu.result()) return stdx::unexpected(accu.result().error());
 
       if (column_length_len_res->value() != 3) {
-        return stdx::make_unexpected(
-            make_error_code(codec_errc::invalid_input));
+        return stdx::unexpected(make_error_code(codec_errc::invalid_input));
       }
 
       const auto column_length_res = accu.template step<bw::FixedInt<3>>();
       const auto type_len_res = accu.template step<bw::VarInt>();
-      if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+      if (!accu.result()) return stdx::unexpected(accu.result().error());
 
       if (type_len_res->value() != 1) {
-        return stdx::make_unexpected(
-            make_error_code(codec_errc::invalid_input));
+        return stdx::unexpected(make_error_code(codec_errc::invalid_input));
       }
 
       const auto type_res = accu.template step<bw::FixedInt<1>>();
       const auto flags_and_decimals_len_res = accu.template step<bw::VarInt>();
-      if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+      if (!accu.result()) return stdx::unexpected(accu.result().error());
 
       if (flags_and_decimals_len_res->value() != flags_size + 1) {
-        return stdx::make_unexpected(
-            make_error_code(codec_errc::invalid_input));
+        return stdx::unexpected(make_error_code(codec_errc::invalid_input));
       }
 
       stdx::expected<bw::FixedInt<3>, std::error_code> flags_and_decimals_res(
@@ -927,7 +927,7 @@ class Codec<borrowable::message::server::ColumnMeta<Borrowed>>
         }
       }
 
-      if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+      if (!accu.result()) return stdx::unexpected(accu.result().error());
 
       const uint16_t flags =
           flags_and_decimals_res->value() & ((1 << (flags_size * 8)) - 1);
@@ -952,8 +952,7 @@ class Codec<borrowable::message::server::ColumnMeta<Borrowed>>
       const auto other_len_res = accu.template step<bw::VarInt>();
 
       if (other_len_res->value() != 12) {
-        return stdx::make_unexpected(
-            make_error_code(codec_errc::invalid_input));
+        return stdx::unexpected(make_error_code(codec_errc::invalid_input));
       }
 
       const auto collation_res = accu.template step<bw::FixedInt<2>>();
@@ -964,7 +963,7 @@ class Codec<borrowable::message::server::ColumnMeta<Borrowed>>
 
       accu.template step<void>(2);  // fillers
 
-      if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+      if (!accu.result()) return stdx::unexpected(accu.result().error());
 
       return std::make_pair(
           accu.result().value(),
@@ -1028,14 +1027,14 @@ class Codec<borrowable::message::server::SendFileRequest<Borrowed>>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     auto filename_res = accu.template step<bw::String<Borrowed>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(accu.result().value(),
                           value_type(filename_res->value()));
@@ -1110,10 +1109,12 @@ class Codec<borrowable::message::server::StmtPrepareOk>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
+    if (!cmd_byte_res) return stdx::unexpected(cmd_byte_res.error());
     auto stmt_id_res = accu.template step<bw::FixedInt<4>>();
     auto column_count_res = accu.template step<bw::FixedInt<2>>();
     auto param_count_res = accu.template step<bw::FixedInt<2>>();
     auto filler_res = accu.template step<bw::FixedInt<1>>();
+    if (!filler_res) return stdx::unexpected(filler_res.error());
     auto warning_count_res = accu.template step<bw::FixedInt<2>>();
 
     // by default, metadata isn't optional
@@ -1126,7 +1127,7 @@ class Codec<borrowable::message::server::StmtPrepareOk>
       }
     }
 
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(
         accu.result().value(),
@@ -1191,13 +1192,13 @@ class Codec<borrowable::message::server::Row<Borrowed>>
         fields.emplace_back(std::nullopt);
       } else {
         auto field_res = accu.template step<bw::VarString<Borrowed>>();
-        if (!field_res) return stdx::make_unexpected(field_res.error());
+        if (!field_res) return stdx::unexpected(field_res.error());
 
         fields.emplace_back(field_res->value());
       }
     }
 
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(accu.result().value(), value_type(fields));
   }
@@ -1310,16 +1311,16 @@ class Codec<borrowable::message::server::StmtRow<Borrowed>>
     impl::DecodeBufferAccumulator accu(buffer, caps);
 
     const auto row_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     // first byte is 0x00
     if (row_byte_res->value() != 0x00) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     const auto nullbits_res =
         accu.template step<bw::String<Borrowed>>(bytes_per_bits(types.size()));
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     const auto nullbits = nullbits_res->value();
 
@@ -1333,8 +1334,7 @@ class Codec<borrowable::message::server::StmtRow<Borrowed>>
 
       if (!(nullbits[byte_pos] & (1 << bit_pos))) {
         stdx::expected<size_t, std::error_code> field_size_res(
-            stdx::make_unexpected(
-                make_error_code(std::errc::invalid_argument)));
+            stdx::unexpected(make_error_code(std::errc::invalid_argument)));
         switch (types[n]) {
           case field_type::Bit:
           case field_type::Blob:
@@ -1350,8 +1350,7 @@ class Codec<borrowable::message::server::StmtRow<Borrowed>>
           case field_type::NewDecimal:
           case field_type::Geometry: {
             auto string_field_size_res = accu.template step<bw::VarInt>();
-            if (!accu.result())
-              return stdx::make_unexpected(accu.result().error());
+            if (!accu.result()) return stdx::unexpected(accu.result().error());
 
             field_size_res = string_field_size_res->value();
           } break;
@@ -1360,8 +1359,7 @@ class Codec<borrowable::message::server::StmtRow<Borrowed>>
           case field_type::Timestamp:
           case field_type::Time: {
             auto time_field_size_res = accu.template step<bw::FixedInt<1>>();
-            if (!accu.result())
-              return stdx::make_unexpected(accu.result().error());
+            if (!accu.result()) return stdx::unexpected(accu.result().error());
 
             field_size_res = time_field_size_res->value();
           } break;
@@ -1384,13 +1382,13 @@ class Codec<borrowable::message::server::StmtRow<Borrowed>>
         }
 
         if (!field_size_res) {
-          return stdx::make_unexpected(
+          return stdx::unexpected(
               make_error_code(codec_errc::field_type_unknown));
         }
 
         const auto value_res =
             accu.template step<bw::String<Borrowed>>(field_size_res.value());
-        if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+        if (!accu.result()) return stdx::unexpected(accu.result().error());
 
         values.push_back(value_res->value());
       } else {
@@ -1398,7 +1396,7 @@ class Codec<borrowable::message::server::StmtRow<Borrowed>>
       }
     }
 
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(accu.result().value(), value_type(types, values));
   }
@@ -1438,7 +1436,7 @@ class Codec<borrowable::message::server::Statistics<Borrowed>>
 
     auto stats_res = accu.template step<bw::String<Borrowed>>();
 
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(accu.result().value(),
                           value_type(stats_res->value()));
@@ -1477,10 +1475,10 @@ class CodecSimpleCommand
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != Base::cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     return std::make_pair(accu.result().value(), ValueType());
@@ -1691,14 +1689,14 @@ class Codec<borrowable::message::client::InitSchema<Borrowed>>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     auto schema_res = accu.template step<bw::String<Borrowed>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(accu.result().value(),
                           value_type(schema_res->value()));
@@ -1843,7 +1841,7 @@ class Codec<borrowable::message::client::Query<Borrowed>>
       case field_type::Geometry: {
         auto string_field_size_res = accu.template step<bw::VarInt>();
         if (!accu.result()) {
-          return stdx::make_unexpected(accu.result().error());
+          return stdx::unexpected(accu.result().error());
         }
 
         return string_field_size_res->value();
@@ -1854,7 +1852,7 @@ class Codec<borrowable::message::client::Query<Borrowed>>
       case field_type::Time: {
         auto time_field_size_res = accu.template step<bw::FixedInt<1>>();
         if (!accu.result()) {
-          return stdx::make_unexpected(accu.result().error());
+          return stdx::unexpected(accu.result().error());
         }
 
         return time_field_size_res->value();
@@ -1873,7 +1871,7 @@ class Codec<borrowable::message::client::Query<Borrowed>>
         return 1;
     }
 
-    return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+    return stdx::unexpected(make_error_code(codec_errc::invalid_input));
   }
 
  public:
@@ -1903,25 +1901,25 @@ class Codec<borrowable::message::client::Query<Borrowed>>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     std::vector<typename value_type::Param> params;
     if (caps.test(capabilities::pos::query_attributes)) {
       //
       auto param_count_res = accu.template step<bw::VarInt>();
-      if (!param_count_res) return param_count_res.get_unexpected();
+      if (!param_count_res) return stdx::unexpected(param_count_res.error());
 
       // currently always 1.
       auto param_set_count_res = accu.template step<bw::VarInt>();
-      if (!param_set_count_res) return param_set_count_res.get_unexpected();
+      if (!param_set_count_res)
+        return stdx::unexpected(param_set_count_res.error());
 
       if (param_set_count_res->value() != 1) {
-        return stdx::make_unexpected(
-            make_error_code(codec_errc::invalid_input));
+        return stdx::unexpected(make_error_code(codec_errc::invalid_input));
       }
 
       const auto param_count = param_count_res->value();
@@ -1929,19 +1927,18 @@ class Codec<borrowable::message::client::Query<Borrowed>>
         // bit-map
         const auto nullbits_res = accu.template step<bw::String<Borrowed>>(
             bytes_per_bits(param_count));
-        if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+        if (!accu.result()) return stdx::unexpected(accu.result().error());
 
         const auto nullbits = nullbits_res->value();
 
         // always 1
         auto new_params_bound_res = accu.template step<bw::FixedInt<1>>();
-        if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+        if (!accu.result()) return stdx::unexpected(accu.result().error());
 
         auto new_params_bound = new_params_bound_res->value();
         if (new_params_bound != 1) {
           // Always 1, malformed packet error of not 1
-          return stdx::make_unexpected(
-              make_error_code(codec_errc::invalid_input));
+          return stdx::unexpected(make_error_code(codec_errc::invalid_input));
         }
 
         // redundant, but protocol-docs says:
@@ -1953,11 +1950,11 @@ class Codec<borrowable::message::client::Query<Borrowed>>
           for (long n{}; n < param_count; ++n) {
             auto param_type_res = accu.template step<bw::FixedInt<2>>();
             if (!accu.result()) {
-              return stdx::make_unexpected(accu.result().error());
+              return stdx::unexpected(accu.result().error());
             }
             auto param_name_res = accu.template step<bw::VarString<Borrowed>>();
             if (!accu.result()) {
-              return stdx::make_unexpected(accu.result().error());
+              return stdx::unexpected(accu.result().error());
             }
 
             params.emplace_back(param_type_res->value(),
@@ -1979,13 +1976,13 @@ class Codec<borrowable::message::client::Query<Borrowed>>
             auto field_size_res =
                 decode_field_size(accu, param.type_and_flags & 0xff);
             if (!field_size_res) {
-              return stdx::make_unexpected(field_size_res.error());
+              return stdx::unexpected(field_size_res.error());
             }
 
             auto param_value_res = accu.template step<bw::String<Borrowed>>(
                 field_size_res.value());
             if (!accu.result()) {
-              return stdx::make_unexpected(accu.result().error());
+              return stdx::unexpected(accu.result().error());
             }
 
             param.value = param_value_res->value();
@@ -1996,7 +1993,7 @@ class Codec<borrowable::message::client::Query<Borrowed>>
 
     auto statement_res = accu.template step<bw::String<Borrowed>>();
 
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(
         accu.result().value(),
@@ -2050,7 +2047,7 @@ class Codec<borrowable::message::client::SendFile<Borrowed>>
     namespace bw = borrowable::wire;
 
     auto payload_res = accu.template step<bw::String<Borrowed>>();
-    if (!accu.result()) return accu.result().get_unexpected();
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(accu.result().value(),
                           value_type(payload_res->value()));
@@ -2104,15 +2101,15 @@ class Codec<borrowable::message::client::ListFields<Borrowed>>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     auto table_name_res = accu.template step<bw::NulTermString<Borrowed>>();
     auto wildcard_res = accu.template step<bw::String<Borrowed>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(
         accu.result().value(),
@@ -2165,14 +2162,14 @@ class Codec<borrowable::message::client::Reload>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     auto cmds_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(accu.result().value(), value_type(cmds_res->value()));
   }
@@ -2228,14 +2225,14 @@ class Codec<borrowable::message::client::Kill>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     auto connection_id_res = accu.template step<bw::FixedInt<4>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(accu.result().value(),
                           value_type(connection_id_res->value()));
@@ -2288,14 +2285,14 @@ class Codec<borrowable::message::client::StmtPrepare<Borrowed>>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     auto statement_res = accu.template step<bw::String<Borrowed>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(accu.result().value(),
                           value_type(statement_res->value()));
@@ -2471,7 +2468,7 @@ class Codec<borrowable::message::client::StmtExecute<Borrowed>>
    *     if (found) {
    *       return {};
    *     } else {
-   *       return stdx::make_unexpected(make_error_code(
+   *       return stdx::unexpected(make_error_code(
    *         codec_errc::statement_id_not_found));
    *     }
    *   });
@@ -2486,17 +2483,17 @@ class Codec<borrowable::message::client::StmtExecute<Borrowed>>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     auto statement_id_res = accu.template step<bw::FixedInt<4>>();
     auto flags_res = accu.template step<bw::FixedInt<1>>();
     auto iteration_count_res = accu.template step<bw::FixedInt<4>>();
 
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     const auto param_count_available{1 << cursor::pos::param_count_available};
 
@@ -2506,7 +2503,7 @@ class Codec<borrowable::message::client::StmtExecute<Borrowed>>
     stdx::expected<std::vector<typename value_type::ParamDef>, std::error_code>
         metadata_res = metadata_lookup(statement_id_res->value());
     if (!metadata_res) {
-      return stdx::make_unexpected(
+      return stdx::unexpected(
           make_error_code(codec_errc::statement_id_not_found));
     }
 
@@ -2516,13 +2513,12 @@ class Codec<borrowable::message::client::StmtExecute<Borrowed>>
         (flags_res->value() & param_count_available) != 0) {
       auto param_count_res = accu.template step<bw::VarInt>();
       if (!accu.result()) {
-        return stdx::make_unexpected(accu.result().error());
+        return stdx::unexpected(accu.result().error());
       }
 
       if (static_cast<uint64_t>(param_count_res->value()) < param_count) {
         // can the param-count shrink?
-        return stdx::make_unexpected(
-            make_error_code(codec_errc::invalid_input));
+        return stdx::unexpected(make_error_code(codec_errc::invalid_input));
       }
 
       param_count = param_count_res->value();
@@ -2537,10 +2533,10 @@ class Codec<borrowable::message::client::StmtExecute<Borrowed>>
 
     auto nullbits_res =
         accu.template step<bw::String<Borrowed>>(bytes_per_bits(param_count));
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     auto new_params_bound_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     std::vector<typename value_type::ParamDef> types;
 
@@ -2552,20 +2548,19 @@ class Codec<borrowable::message::client::StmtExecute<Borrowed>>
       // check that there is at least enough data for the types (a FixedInt<2>)
       // before reserving memory.
       if (param_count >= buffer.size() / 2) {
-        return stdx::make_unexpected(
-            make_error_code(codec_errc::invalid_input));
+        return stdx::unexpected(make_error_code(codec_errc::invalid_input));
       }
 
       types.reserve(param_count);
 
       for (size_t n{}; n < param_count; ++n) {
         auto type_res = accu.template step<bw::FixedInt<2>>();
-        if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+        if (!accu.result()) return stdx::unexpected(accu.result().error());
 
         if (supports_query_attributes) {
           auto name_res = accu.template step<bw::VarString<Borrowed>>();
           if (!accu.result()) {
-            return stdx::make_unexpected(accu.result().error());
+            return stdx::unexpected(accu.result().error());
           }
           types.emplace_back(type_res->value(), name_res->value());
         } else {
@@ -2573,12 +2568,12 @@ class Codec<borrowable::message::client::StmtExecute<Borrowed>>
         }
       }
     } else {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     if (param_count != types.size()) {
       // param-count and available types doesn't match.
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     std::vector<std::optional<typename value_type::string_type>> values;
@@ -2601,8 +2596,7 @@ class Codec<borrowable::message::client::StmtExecute<Borrowed>>
         values.emplace_back("");  // empty
       } else if (!(nullbits[byte_pos] & (1 << bit_pos))) {
         stdx::expected<size_t, std::error_code> field_size_res(
-            stdx::make_unexpected(
-                make_error_code(std::errc::invalid_argument)));
+            stdx::unexpected(make_error_code(std::errc::invalid_argument)));
         switch (types[n].type_and_flags & 0xff) {
           case field_type::Bit:
           case field_type::Blob:
@@ -2619,7 +2613,7 @@ class Codec<borrowable::message::client::StmtExecute<Borrowed>>
           case field_type::Geometry: {
             auto string_field_size_res = accu.template step<bw::VarInt>();
             if (!accu.result()) {
-              return stdx::make_unexpected(accu.result().error());
+              return stdx::unexpected(accu.result().error());
             }
 
             field_size_res = string_field_size_res->value();
@@ -2630,7 +2624,7 @@ class Codec<borrowable::message::client::StmtExecute<Borrowed>>
           case field_type::Time: {
             auto time_field_size_res = accu.template step<bw::FixedInt<1>>();
             if (!accu.result()) {
-              return stdx::make_unexpected(accu.result().error());
+              return stdx::unexpected(accu.result().error());
             }
 
             field_size_res = time_field_size_res->value();
@@ -2654,14 +2648,14 @@ class Codec<borrowable::message::client::StmtExecute<Borrowed>>
         }
 
         if (!field_size_res) {
-          return stdx::make_unexpected(
+          return stdx::unexpected(
               make_error_code(codec_errc::field_type_unknown));
         }
 
         auto value_res =
             accu.template step<bw::String<Borrowed>>(field_size_res.value());
         if (!accu.result()) {
-          return stdx::make_unexpected(accu.result().error());
+          return stdx::unexpected(accu.result().error());
         }
 
         values.push_back(value_res->value());
@@ -2671,7 +2665,7 @@ class Codec<borrowable::message::client::StmtExecute<Borrowed>>
       }
     }
 
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(
         accu.result().value(),
@@ -2729,16 +2723,16 @@ class Codec<borrowable::message::client::StmtParamAppendData<Borrowed>>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     auto statement_id_res = accu.template step<bw::FixedInt<4>>();
     auto param_id_res = accu.template step<bw::FixedInt<2>>();
     auto data_res = accu.template step<bw::String<Borrowed>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(accu.result().value(),
                           value_type(statement_id_res->value(),
@@ -2791,14 +2785,14 @@ class Codec<borrowable::message::client::StmtClose>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     auto statement_id_res = accu.template step<bw::FixedInt<4>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(accu.result().value(),
                           value_type(statement_id_res->value()));
@@ -2850,14 +2844,14 @@ class Codec<borrowable::message::client::StmtReset>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     auto statement_id_res = accu.template step<bw::FixedInt<4>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(accu.result().value(),
                           value_type(statement_id_res->value()));
@@ -2909,14 +2903,14 @@ class Codec<borrowable::message::client::SetOption>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     auto option_res = accu.template step<bw::FixedInt<2>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(accu.result().value(),
                           value_type(option_res->value()));
@@ -2969,15 +2963,15 @@ class Codec<borrowable::message::client::StmtFetch>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
 
     auto statement_id_res = accu.template step<bw::FixedInt<4>>();
     auto row_count_res = accu.template step<bw::FixedInt<4>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(
         accu.result().value(),
@@ -3126,7 +3120,7 @@ class Codec<borrowable::message::client::Greeting<Borrowed>>
 
     auto capabilities_lo_res = accu.template step<bw::FixedInt<2>>();
     if (!capabilities_lo_res)
-      return stdx::make_unexpected(capabilities_lo_res.error());
+      return stdx::unexpected(capabilities_lo_res.error());
 
     auto client_capabilities = classic_protocol::capabilities::value_type(
         capabilities_lo_res->value());
@@ -3140,7 +3134,7 @@ class Codec<borrowable::message::client::Greeting<Borrowed>>
       // of capabilities
       auto capabilities_hi_res = accu.template step<bw::FixedInt<2>>();
       if (!capabilities_hi_res)
-        return stdx::make_unexpected(capabilities_hi_res.error());
+        return stdx::unexpected(capabilities_hi_res.error());
 
       client_capabilities |= classic_protocol::capabilities::value_type(
           capabilities_hi_res->value() << 16);
@@ -3166,7 +3160,7 @@ class Codec<borrowable::message::client::Greeting<Borrowed>>
                          collation_res->value(), {}, {}, {}, {}, {}));
         }
 
-        return stdx::make_unexpected(accu.result().error());
+        return stdx::unexpected(accu.result().error());
       }
 
       // auth-method-data is either
@@ -3179,24 +3173,24 @@ class Codec<borrowable::message::client::Greeting<Borrowed>>
       if (shared_capabilities[classic_protocol::capabilities::pos::
                                   client_auth_method_data_varint]) {
         auto res = accu.template step<bw::VarString<Borrowed>>();
-        if (!res) return stdx::make_unexpected(res.error());
+        if (!res) return stdx::unexpected(res.error());
 
         auth_method_data_res = bw::String<Borrowed>(res->value());
       } else if (shared_capabilities
                      [classic_protocol::capabilities::pos::secure_connection]) {
         auto auth_method_data_len_res = accu.template step<bw::FixedInt<1>>();
         if (!auth_method_data_len_res)
-          return stdx::make_unexpected(auth_method_data_len_res.error());
+          return stdx::unexpected(auth_method_data_len_res.error());
         auto auth_method_data_len = auth_method_data_len_res->value();
 
         auto res =
             accu.template step<bw::String<Borrowed>>(auth_method_data_len);
-        if (!res) return stdx::make_unexpected(res.error());
+        if (!res) return stdx::unexpected(res.error());
 
         auth_method_data_res = bw::String<Borrowed>(res->value());
       } else {
         auto res = accu.template step<bw::NulTermString<Borrowed>>();
-        if (!res) return stdx::make_unexpected(res.error());
+        if (!res) return stdx::unexpected(res.error());
 
         auth_method_data_res = bw::String<Borrowed>(res->value());
       }
@@ -3206,7 +3200,7 @@ class Codec<borrowable::message::client::Greeting<Borrowed>>
               [classic_protocol::capabilities::pos::connect_with_schema]) {
         schema_res = accu.template step<bw::NulTermString<Borrowed>>();
       }
-      if (!schema_res) return stdx::make_unexpected(schema_res.error());
+      if (!schema_res) return stdx::unexpected(schema_res.error());
 
       stdx::expected<bw::NulTermString<Borrowed>, std::error_code>
           auth_method_res;
@@ -3220,8 +3214,7 @@ class Codec<borrowable::message::client::Greeting<Borrowed>>
           auth_method_res = accu.template step<bw::NulTermString<Borrowed>>();
         }
       }
-      if (!auth_method_res)
-        return stdx::make_unexpected(auth_method_res.error());
+      if (!auth_method_res) return stdx::unexpected(auth_method_res.error());
 
       stdx::expected<bw::VarString<Borrowed>, std::error_code> attributes_res;
       if (shared_capabilities
@@ -3229,7 +3222,7 @@ class Codec<borrowable::message::client::Greeting<Borrowed>>
         attributes_res = accu.template step<bw::VarString<Borrowed>>();
       }
 
-      if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+      if (!accu.result()) return stdx::unexpected(accu.result().error());
 
       return std::make_pair(
           accu.result().value(),
@@ -3250,7 +3243,7 @@ class Codec<borrowable::message::client::Greeting<Borrowed>>
       if (shared_capabilities
               [classic_protocol::capabilities::pos::connect_with_schema]) {
         auto res = accu.template step<bw::NulTermString<Borrowed>>();
-        if (!res) return stdx::make_unexpected(res.error());
+        if (!res) return stdx::unexpected(res.error());
 
         // auth_method_data is a wire::String, move it over
         auth_method_data_res = bw::String<Borrowed>(res->value());
@@ -3260,7 +3253,7 @@ class Codec<borrowable::message::client::Greeting<Borrowed>>
         auth_method_data_res = accu.template step<bw::String<Borrowed>>();
       }
 
-      if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+      if (!accu.result()) return stdx::unexpected(accu.result().error());
 
       // idea: benchmark in-place constructor where all parameters are passed
       // down to the lowest level.
@@ -3336,7 +3329,7 @@ class Codec<borrowable::message::client::AuthMethodData<Borrowed>>
 
     auto auth_method_data_res = accu.template step<bw::String<Borrowed>>();
 
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(accu.result().value(),
                           value_type(auth_method_data_res->value()));
@@ -3423,10 +3416,10 @@ class Codec<borrowable::message::client::ChangeUser<Borrowed>>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
     auto username_res = accu.template step<bw::NulTermString<Borrowed>>();
 
@@ -3438,23 +3431,23 @@ class Codec<borrowable::message::client::ChangeUser<Borrowed>>
     if (caps[classic_protocol::capabilities::pos::secure_connection]) {
       auto auth_method_data_len_res = accu.template step<bw::FixedInt<1>>();
       if (!auth_method_data_len_res)
-        return stdx::make_unexpected(auth_method_data_len_res.error());
+        return stdx::unexpected(auth_method_data_len_res.error());
       auto auth_method_data_len = auth_method_data_len_res->value();
 
       auto res = accu.template step<bw::String<Borrowed>>(auth_method_data_len);
-      if (!res) return stdx::make_unexpected(res.error());
+      if (!res) return stdx::unexpected(res.error());
 
       auth_method_data_res = bw::String<Borrowed>(res->value());
     } else {
       auto res = accu.template step<bw::NulTermString<Borrowed>>();
-      if (!res) return stdx::make_unexpected(res.error());
+      if (!res) return stdx::unexpected(res.error());
 
       auth_method_data_res = bw::String<Borrowed>(res->value());
     }
 
     auto schema_res = accu.template step<bw::NulTermString<Borrowed>>();
 
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     // 3.23.x-4.0 don't send more.
     if (buffer_size(buffer) <= accu.result().value()) {
@@ -3478,7 +3471,7 @@ class Codec<borrowable::message::client::ChangeUser<Borrowed>>
       attributes_res = accu.template step<bw::VarString<Borrowed>>();
     }
 
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(
         accu.result().value(),
@@ -3567,10 +3560,10 @@ class Codec<borrowable::message::client::BinlogDump<Borrowed>>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
     auto position_res = accu.template step<bw::FixedInt<4>>();
     auto flags_res = accu.template step<bw::FixedInt<2>>();
@@ -3578,7 +3571,7 @@ class Codec<borrowable::message::client::BinlogDump<Borrowed>>
 
     auto filename_res = accu.template step<bw::String<Borrowed>>();
 
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     stdx::flags<typename value_type::Flags> flags;
     flags.underlying_value(flags_res->value());
@@ -3648,26 +3641,26 @@ class Codec<borrowable::message::client::RegisterReplica<Borrowed>>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
     auto server_id_res = accu.template step<bw::FixedInt<4>>();
     auto hostname_len_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     auto hostname_res =
         accu.template step<bw::String<Borrowed>>(hostname_len_res->value());
 
     auto username_len_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     auto username_res =
         accu.template step<bw::String<Borrowed>>(username_len_res->value());
 
     auto password_len_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     auto password_res =
         accu.template step<bw::String<Borrowed>>(password_len_res->value());
@@ -3676,7 +3669,7 @@ class Codec<borrowable::message::client::RegisterReplica<Borrowed>>
     auto replication_rank_res = accu.template step<bw::FixedInt<4>>();
     auto master_id_res = accu.template step<bw::FixedInt<4>>();
 
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(
         accu.result().value(),
@@ -3746,15 +3739,15 @@ class Codec<borrowable::message::client::BinlogDumpGtid<Borrowed>>
     namespace bw = borrowable::wire;
 
     auto cmd_byte_res = accu.template step<bw::FixedInt<1>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     if (cmd_byte_res->value() != cmd_byte()) {
-      return stdx::make_unexpected(make_error_code(codec_errc::invalid_input));
+      return stdx::unexpected(make_error_code(codec_errc::invalid_input));
     }
     auto flags_res = accu.template step<bw::FixedInt<2>>();
     auto server_id_res = accu.template step<bw::FixedInt<4>>();
     auto filename_len_res = accu.template step<bw::FixedInt<4>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     auto filename_res =
         accu.template step<bw::String<Borrowed>>(filename_len_res->value());
@@ -3764,7 +3757,7 @@ class Codec<borrowable::message::client::BinlogDumpGtid<Borrowed>>
     flags.underlying_value(flags_res->value());
 
     if (!(flags & value_type::Flags::through_gtid)) {
-      if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+      if (!accu.result()) return stdx::unexpected(accu.result().error());
 
       return std::make_pair(
           accu.result().value(),
@@ -3773,12 +3766,12 @@ class Codec<borrowable::message::client::BinlogDumpGtid<Borrowed>>
     }
 
     auto sids_len_res = accu.template step<bw::FixedInt<4>>();
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     auto sids_res =
         accu.template step<bw::String<Borrowed>>(sids_len_res->value());
 
-    if (!accu.result()) return stdx::make_unexpected(accu.result().error());
+    if (!accu.result()) return stdx::unexpected(accu.result().error());
 
     return std::make_pair(
         accu.result().value(),

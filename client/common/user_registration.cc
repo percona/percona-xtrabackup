@@ -1,16 +1,17 @@
 /*
-Copyright (c) 2021, 2023, Oracle and/or its affiliates.
+Copyright (c) 2021, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
 as published by the Free Software Foundation.
 
-This program is also distributed with certain software (including
+This program is designed to work with certain software (including
 but not limited to OpenSSL) that is licensed under separate terms,
 as designated in a particular file or component or in included license
 documentation.  The authors of MySQL hereby grant you an additional
 permission to link the program and your derivative works with the
-separately licensed software that they have included with MySQL.
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -26,7 +27,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #include <sstream>
 #include <vector>
 
-#include "user_registration.h"
+#include "client/include/user_registration.h"
 
 #include "my_hostname.h"
 #include "my_inttypes.h"
@@ -40,7 +41,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #define CAPABILITY_BIT_LENGTH 1
 
 /**
-  This helper method parses --register-factor/--fido-register-factor
+  This helper method parses --register-factor
   option values, and inserts the parsed values in list.
 
   @param [in]  what_factor      Comma separated list of values, which specifies
@@ -75,7 +76,7 @@ bool parse_register_option(const char *what_factor,
   This helper method is used to perform device registration against a user
   account.
 
-  Please refer @ref sect_fido_info for more information.
+  Please refer @ref sect_webauthn_info for more information.
 
   @param [in]  mysql_handle       mysql connection handle
   @param [in]  register_option    Comma separated list of values, which
@@ -95,7 +96,7 @@ bool user_device_registration(MYSQL *mysql_handle, char *register_option,
   ulong *lengths;
   uchar *server_challenge = nullptr;
   uchar *server_challenge_response = nullptr;
-  std::string client_plugin_name{"authentication_fido_client"};
+  std::string client_plugin_name;
   struct st_mysql_client_plugin *plugin_handler = nullptr;
   std::stringstream err{};
 
@@ -112,7 +113,7 @@ bool user_device_registration(MYSQL *mysql_handle, char *register_option,
   std::vector<unsigned int> factors;
   if (parse_register_option(register_option, factors)) {
     err << "Incorrect value specified for "
-           "--register-factor/--fido-register-factor option. "
+           "--register-factor option. "
            "Correct values can be '2', '3', '2,3' or '3,2'.";
     print_error(false);
     return true;

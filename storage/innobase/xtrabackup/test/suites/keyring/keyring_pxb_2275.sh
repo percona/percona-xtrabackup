@@ -1,5 +1,11 @@
 . inc/common.sh
+KEYRING_TYPE="component"
+. inc/keyring_common.sh
 . inc/keyring_file.sh
+MYSQLD_EXTRA_MY_CNF_OPTS="
+innodb-log-file-size=80M
+"
+configure_server_with_component
 
 if ! $XB_BIN --help 2>&1 | grep -q debug-sync; then
     skip_test "Requires --debug-sync support"
@@ -10,7 +16,6 @@ then
     skip_test "Requires server version 5.7"
 fi
 
-start_server --innodb-log-file-size=80M
 load_dbase_schema sakila
 load_dbase_data sakila
 mkdir $topdir/backup
@@ -79,8 +84,8 @@ $MYSQL $MYSQL_ARGS -Ns -e "DROP TABLE tmp1" sakila
 innodb_wait_for_flush_all
 
 
-run_cmd $XB_BIN $XB_ARGS --innodb-log-file-size=80M --xtrabackup-plugin-dir=${plugin_dir} --lock-ddl=false --backup \
---target-dir=$topdir/backup --debug-sync="xtrabackup_pause_after_redo_catchup" &
+run_cmd $XB_BIN $XB_ARGS --innodb-log-file-size=80M --lock-ddl=false --backup \
+--target-dir=$topdir/backup --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} --debug-sync="xtrabackup_pause_after_redo_catchup" &
 
 job_pid=$!
 
@@ -108,15 +113,17 @@ kill -SIGCONT $xb_pid
 run_cmd wait $job_pid
 
 # prepare backup
-run_cmd $XB_BIN $XB_ARGS --xtrabackup-plugin-dir=${plugin_dir} --prepare \
---target-dir=$topdir/backup ${keyring_args}
+run_cmd $XB_BIN $XB_ARGS  --prepare \
+--target-dir=$topdir/backup --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
 # restore
 stop_server
 rm -rf $mysql_datadir
 
-
 xtrabackup --copy-back --target-dir=$topdir/backup
+
+cp ${instance_local_manifest}  $mysql_datadir
+cp ${keyring_component_cnf} $mysql_datadir
 
 start_server --innodb-log-file-size=80M
 run_cmd $MYSQL $MYSQL_ARGS -Ns -e "SELECT * FROM tmp2;" sakila

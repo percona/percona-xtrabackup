@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2023, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -83,7 +84,7 @@ class GRStateTest : public RouterComponentMetadataTest {
 
   std::string get_rw_split_routing_section(uint16_t accepting_port) {
     return get_metadata_cache_routing_section(
-        accepting_port, "PRIMARY_AND_SECONDARY", "round-robin", "", "rwsplit",
+        accepting_port, "PRIMARY_AND_SECONDARY", "round-robin", "rwsplit",
         "classic", {{"connection_sharing", "1"}, {"access_mode", "auto"}});
   }
 };
@@ -143,10 +144,10 @@ TEST_P(MetadataServerInvalidGRState, InvalidGRState) {
       get_metadata_cache_section(GetParam().cluster_type, "0.1");
   const auto router_rw_port = port_pool_.get_next_available();
   const std::string routing_rw_section = get_metadata_cache_routing_section(
-      router_rw_port, "PRIMARY", "first-available", "", "rw");
+      router_rw_port, "PRIMARY", "first-available", "rw");
   const auto router_ro_port = port_pool_.get_next_available();
   const std::string routing_ro_section = get_metadata_cache_routing_section(
-      router_ro_port, "SECONDARY", "round-robin", "", "ro");
+      router_ro_port, "SECONDARY", "round-robin", "ro");
   auto &router = launch_router(metadata_cache_section,
                                routing_rw_section + routing_ro_section,
                                md_servers_classic_ports, EXIT_SUCCESS,
@@ -205,9 +206,7 @@ TEST_P(MetadataServerInvalidGRState, InvalidGRState) {
 INSTANTIATE_TEST_SUITE_P(
     InvalidGRState, MetadataServerInvalidGRState,
     ::testing::Values(GRStateTestParams("metadata_dynamic_nodes_v2_gr.js",
-                                        "GR_V2", ClusterType::GR_V2),
-                      GRStateTestParams("metadata_dynamic_nodes.js", "GR_V1",
-                                        ClusterType::GR_V1)),
+                                        "GR_V2", ClusterType::GR_V2)),
     get_test_description);
 
 class MetadataServerNoQuorum
@@ -244,10 +243,10 @@ TEST_P(MetadataServerNoQuorum, NoQuorum) {
       get_metadata_cache_section(GetParam().cluster_type, "0.1");
   const auto router_rw_port = port_pool_.get_next_available();
   const std::string routing_rw_section = get_metadata_cache_routing_section(
-      router_rw_port, "PRIMARY", "first-available", "", "rw");
+      router_rw_port, "PRIMARY", "first-available", "rw");
   const auto router_ro_port = port_pool_.get_next_available();
   const std::string routing_ro_section = get_metadata_cache_routing_section(
-      router_ro_port, "SECONDARY", "round-robin", "", "ro");
+      router_ro_port, "SECONDARY", "round-robin", "ro");
   auto &router = launch_router(metadata_cache_section,
                                routing_rw_section + routing_ro_section,
                                md_servers_classic_ports, EXIT_SUCCESS,
@@ -310,9 +309,7 @@ TEST_P(MetadataServerNoQuorum, NoQuorum) {
 INSTANTIATE_TEST_SUITE_P(
     NoQuorum, MetadataServerNoQuorum,
     ::testing::Values(GRStateTestParams("metadata_dynamic_nodes_v2_gr.js",
-                                        "GR_V2", ClusterType::GR_V2),
-                      GRStateTestParams("metadata_dynamic_nodes.js", "GR_V1",
-                                        ClusterType::GR_V1)),
+                                        "GR_V2", ClusterType::GR_V2)),
     get_test_description);
 
 class MetadataServerGRErrorStates
@@ -342,7 +339,7 @@ TEST_P(MetadataServerGRErrorStates, GRErrorStates) {
       get_metadata_cache_section(ClusterType::GR_V2, "0.1");
   const auto router_rw_port = port_pool_.get_next_available();
   const std::string routing_rw_section = get_metadata_cache_routing_section(
-      router_rw_port, "PRIMARY", "first-available", "", "rw");
+      router_rw_port, "PRIMARY", "first-available", "rw");
   auto &router = launch_router(metadata_cache_section, routing_rw_section,
                                {md_servers_classic_port}, EXIT_SUCCESS,
                                /*wait_for_notify_ready=*/-1s);
@@ -435,9 +432,9 @@ TEST_P(QuorumTest, Verify) {
   const std::string metadata_cache_section =
       get_metadata_cache_section(ClusterType::GR_V2, "0.2");
   const std::string routing_rw = get_metadata_cache_routing_section(
-      router_rw_port, "PRIMARY", "first-available", "", "rw");
+      router_rw_port, "PRIMARY", "first-available", "rw");
   const std::string routing_ro = get_metadata_cache_routing_section(
-      router_ro_port, "SECONDARY", "round-robin-with-fallback", "", "ro");
+      router_ro_port, "SECONDARY", "round-robin-with-fallback", "ro");
 
   const auto sync_point = (expect_rw_ok || expect_ro_ok)
                               ? ProcessManager::Spawner::SyncPoint::READY
@@ -781,9 +778,9 @@ TEST_P(AccessToPartitionWithNoQuorum, Spec) {
   const std::string metadata_cache_section =
       get_metadata_cache_section(ClusterType::GR_V2, "0.2");
   const std::string routing_rw = get_metadata_cache_routing_section(
-      router_rw_port, "PRIMARY", "first-available", "", "rw");
+      router_rw_port, "PRIMARY", "first-available", "rw");
   const std::string routing_ro = get_metadata_cache_routing_section(
-      router_ro_port, "SECONDARY", "round-robin-with-fallback", "", "ro");
+      router_ro_port, "SECONDARY", "round-robin-with-fallback", "ro");
   const std::string routing_rw_split =
       get_rw_split_routing_section(router_rw_split_port);
 
@@ -944,9 +941,9 @@ TEST_P(AccessToBothPartitions, Spec) {
   const std::string metadata_cache_section =
       get_metadata_cache_section(ClusterType::GR_V2, "0.2");
   const std::string routing_rw = get_metadata_cache_routing_section(
-      router_rw_port, "PRIMARY", "first-available", "", "rw");
+      router_rw_port, "PRIMARY", "first-available", "rw");
   const std::string routing_ro = get_metadata_cache_routing_section(
-      router_ro_port, "SECONDARY", "round-robin-with-fallback", "", "ro");
+      router_ro_port, "SECONDARY", "round-robin-with-fallback", "ro");
   const std::string routing_rw_split =
       get_rw_split_routing_section(router_rw_split_port);
 
@@ -1096,29 +1093,31 @@ TEST_P(ClusterSetAccessToPartitionWithNoQuorum, Spec) {
   RecordProperty("Description", GetParam().test_description);
 
   const std::vector<size_t> gr_nodes_per_cluster{3, 3};
-  create_clusterset(/*view_id*/ 0, target_cluster_id, /*primary_cluster_id*/ 0,
-                    "metadata_clusterset.js", router_options, ".*", false,
-                    false, gr_nodes_per_cluster);
+
+  ClusterSetOptions cs_options;
+  cs_options.target_cluster_id = target_cluster_id;
+  cs_options.tracefile = "metadata_clusterset.js";
+  cs_options.router_options = router_options;
+  cs_options.gr_nodes_number = gr_nodes_per_cluster;
+  create_clusterset(cs_options);
 
   for (size_t i = 1; i <= 2; ++i) {
-    clusterset_data_.clusters[target_cluster_id].gr_nodes[i].member_status =
+    cs_options.topology.clusters[target_cluster_id].gr_nodes[i].member_status =
         "UNREACHABLE";
-    clusterset_data_.clusters[target_cluster_id].nodes[i].process->kill();
+    cs_options.topology.clusters[target_cluster_id].nodes[i].process->kill();
   }
 
   for (size_t i = 1; i <= 2; ++i) {
-    clusterset_data_.clusters[target_cluster_id]
+    cs_options.topology.clusters[target_cluster_id]
         .nodes[i]
         .process->wait_for_exit();
   }
 
   const auto http_port =
-      clusterset_data_.clusters[target_cluster_id].nodes[0].http_port;
-  set_mock_clusterset_metadata(/*view_id*/ 0,
+      cs_options.topology.clusters[target_cluster_id].nodes[0].http_port;
+  set_mock_clusterset_metadata(http_port,
                                /* this_cluster_id*/ target_cluster_id,
-                               /*this_node_id*/ 0,
-                               /*target_cluster_id*/ target_cluster_id,
-                               http_port, clusterset_data_, router_options);
+                               /*this_node_id*/ 0, cs_options);
 
   const auto router_ro_port = port_pool_.get_next_available();
   const auto router_rw_port = port_pool_.get_next_available();
@@ -1126,14 +1125,14 @@ TEST_P(ClusterSetAccessToPartitionWithNoQuorum, Spec) {
   const std::string metadata_cache_section =
       get_metadata_cache_section(ClusterType::GR_V2, "0.2");
   const std::string routing_rw = get_metadata_cache_routing_section(
-      router_rw_port, "PRIMARY", "first-available", "", "rw");
+      router_rw_port, "PRIMARY", "first-available", "rw");
   const std::string routing_ro = get_metadata_cache_routing_section(
-      router_ro_port, "SECONDARY", "round-robin-with-fallback", "", "ro");
+      router_ro_port, "SECONDARY", "round-robin-with-fallback", "ro");
   const std::string routing_rw_split =
       get_rw_split_routing_section(router_rw_split_port);
 
   const auto metadata_server_ports =
-      clusterset_data_.get_md_servers_classic_ports();
+      cs_options.topology.get_md_servers_classic_ports();
 
   const auto sync_point = (GetParam().expect_rw_connection_ok ||
                            GetParam().expect_ro_connection_ok ||
@@ -1157,7 +1156,7 @@ TEST_P(ClusterSetAccessToPartitionWithNoQuorum, Spec) {
   if (GetParam().expect_rw_connection_ok) {
     make_new_connection_ok(
         router_rw_port,
-        clusterset_data_.clusters[target_cluster_id].nodes[0].classic_port);
+        cs_options.topology.clusters[target_cluster_id].nodes[0].classic_port);
   } else {
     verify_new_connection_fails(router_rw_port);
   }
@@ -1165,7 +1164,7 @@ TEST_P(ClusterSetAccessToPartitionWithNoQuorum, Spec) {
   if (GetParam().expect_ro_connection_ok) {
     make_new_connection_ok(
         router_ro_port,
-        clusterset_data_.clusters[target_cluster_id].nodes[0].classic_port);
+        cs_options.topology.clusters[target_cluster_id].nodes[0].classic_port);
 
   } else {
     verify_new_connection_fails(router_ro_port);
@@ -1174,7 +1173,7 @@ TEST_P(ClusterSetAccessToPartitionWithNoQuorum, Spec) {
   if (GetParam().expect_rw_split_connection_ok) {
     make_new_connection_ok(
         router_rw_split_port,
-        clusterset_data_.clusters[target_cluster_id].nodes[0].classic_port);
+        cs_options.topology.clusters[target_cluster_id].nodes[0].classic_port);
 
   } else {
     verify_new_connection_fails(router_rw_split_port);

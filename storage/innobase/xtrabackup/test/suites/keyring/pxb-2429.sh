@@ -3,8 +3,10 @@ if ! is_debug_server  ; then
 	skip_test "Require debug server version"
 fi
 
+KEYRING_TYPE="component"
+. inc/keyring_common.sh
 . inc/keyring_file.sh
-start_server
+configure_server_with_component
 
 mysql -e "create tablespace ts add datafile 'ts.ibd' encryption='y'" test 2>/dev/null >/dev/null
 innodb_wait_for_flush_all
@@ -20,11 +22,14 @@ xtrabackup --backup --target-dir=$topdir/backup
 
 stop_server
 
-xtrabackup --prepare --target-dir=$topdir/backup
+xtrabackup --prepare --target-dir=$topdir/backup --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
 rm -rf $mysql_datadir
 
 xtrabackup --copy-back --target-dir=$topdir/backup
+
+cp ${instance_local_manifest}  $mysql_datadir
+cp ${keyring_component_cnf} $mysql_datadir
 
 start_server
 

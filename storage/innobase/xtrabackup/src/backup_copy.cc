@@ -1533,7 +1533,7 @@ bool backup_finish(Backup_context &context) {
 
   if (opt_safe_slave_backup && sql_thread_started) {
     xb::info() << "Starting slave SQL thread";
-    xb_mysql_query(mysql_connection, "START SLAVE SQL_THREAD", false);
+    xb_mysql_query(mysql_connection, "START REPLICA SQL_THREAD", false);
   }
 
   /* Copy buffer pool dump or LRU dump */

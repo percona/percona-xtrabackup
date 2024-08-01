@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2022, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2022, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -97,6 +98,18 @@ enum {
   SIGN_SSH_OPENSSL = 2,
   SIGN_CO_PROCESS = 3
 } signing_method = SIGN_LOCAL;
+
+static inline bool signing_over_ssh() {
+  switch (signing_method) {
+    case SIGN_SSH_SIGN_KEYS:
+    case SIGN_SSH_OPENSSL:
+      return true;
+    case SIGN_LOCAL:
+    case SIGN_CO_PROCESS:
+      return false;
+  }
+  return false;
+}
 
 short exp_schedule[6] = {0, 0, 0, 0, 0, 0};
 
@@ -267,10 +280,10 @@ bool check_options() {
   /* Check opt_remote_path */
   if (opt_remote_path) {
     const char *exe = ndb_basename(opt_remote_path);
-    if (!(strcmp(exe, "ndb_sign_keys") == 0) ||
-        (strcmp(exe, "ndb_sign_keys.exe") == 0) ||
-        (strcmp(exe, "openssl") == 0) || (strcmp(exe, "openssl.exe") == 0))
-      return message("Error: invalid remote signing utility");
+    if (!((strcmp(exe, "ndb_sign_keys") == 0) ||
+          (strcmp(exe, "ndb_sign_keys.exe") == 0) ||
+          (strcmp(exe, "openssl") == 0) || (strcmp(exe, "openssl.exe") == 0)))
+      return message("Error: invalid remote signing utility\n");
   }
 
   /* Print operation mode */
@@ -357,7 +370,7 @@ struct {
 
   void print() {
     if (nodes)
-      fprintf(stderr, "Read %d node%s from custer configuration.\n", nodes,
+      fprintf(stderr, "Read %d node%s from cluster configuration.\n", nodes,
               plural(nodes));
     if (matched) {
       fprintf(stderr, "Found %d node%s configured to run on this host", matched,
@@ -952,7 +965,10 @@ int main(int argc, char **argv) {
   if (opt_create_ca) return fatal(create_CA(CA_path));
 
   /* (2) Obtain CA credentials */
-  if (opt_sign) {
+  if (opt_rs_openssl)
+    ca_certs =
+        sk_X509_new_null();  // CA cert will be fetched from remote server
+  else if (opt_sign) {
     if (!opt_stdio) {
       ClusterCredentialFiles::get_passphrase();
       rs = ClusterCredentialFiles::read_CA_key(CA_path, ca_key, ca_key_file);
@@ -1093,26 +1109,24 @@ int main(int argc, char **argv) {
   if (stats.nodes && !stats.matched)
     return fatal_error(110, "No configured nodes matched filters.\n");
 
+  if (ca_certs) Certificate::free(ca_certs);
+
   return 0;
 }
 
 /* Key signing
    remote_signing_method() returns a non-zero protocol number,
-   or 0 if invalid. At present there is only one protocol.
+   or 0 if invalid.
 */
 int remote_signing_method(BaseString &cmd, NdbProcess::Args &args,
                           const SigningRequest *csr, EVP_PKEY *key) {
-  NodeCertificate *nc = nullptr;
-  uint64_t serialno;
-  ASN1_STRING *serial = SerialNumber::random(8);
-  ASN1_INTEGER_get_uint64(&serialno, serial);
-  ASN1_STRING_free(serial);
+  ASN1_STRING *serial = SerialNumber::random();
+  SerialNumber::HexString hexSerial(serial);
+  SerialNumber::free(serial);
 
   switch (signing_method) {
     case SIGN_SSH_SIGN_KEYS:  // 1: Run ndb_sign_keys on remote CA host via ssh
-      cmd.assign("ssh");
-      args.add(opt_ca_host);
-      args.add(opt_remote_path ? opt_remote_path : "ndb_sign_keys");
+      cmd.assign(opt_remote_path ? opt_remote_path : "ndb_sign_keys");
       args.add("--stdio");
       args.add("--duration=", csr->duration());
       if (opt_ca_cert != ClusterCertAuthority::CertFile)
@@ -1122,18 +1136,14 @@ int remote_signing_method(BaseString &cmd, NdbProcess::Args &args,
       if (remote_ca_path) args.add("--ndb-tls-search-path=", remote_ca_path);
       return 1;
     case SIGN_SSH_OPENSSL:  // 2: Run openssl on remote CA host over ssh
-      nc = new NodeCertificate(*csr, key);
-      nc->self_sign();
-      cmd.assign("ssh");
-      args.add(opt_ca_host);
-      args.add(opt_remote_path ? opt_remote_path : "openssl");
+      cmd.assign(opt_remote_path ? opt_remote_path : "openssl");
       args.add("x509");
-      args.add("-CA ", opt_ca_cert);
-      args.add("-CAkey ", opt_ca_key);
-      args.add("-preserve_dates");
-      args.add("-set_serial ");
-      args.add(serialno);
-      return 1;
+      args.add("-req");
+      args.add2("-CA", opt_ca_cert);    // full pathname on remote server
+      args.add2("-CAkey", opt_ca_key);  // full pathname on remote server
+      args.add2("-days", csr->duration() / CertLifetime::SecondsPerDay);
+      args.add2("-set_serial", hexSerial.c_str());
+      return 2;
     case SIGN_CO_PROCESS:  // 3: Run the signing utility co-process
       cmd.assign(opt_ca_tool);
       args.add("--duration=", csr->duration());
@@ -1153,11 +1163,38 @@ int remote_signing_method(BaseString &cmd, NdbProcess::Args &args,
   }
 }
 
+/* The return values for fetch_CA_cert_from_remote_openssl() follow
+   remote_key_signing() */
+int fetch_CA_cert_from_remote_openssl(stack_st_X509 *CA_certs) {
+  if (sk_X509_num(CA_certs) > 0) return 0;  // already fetched
+
+  NdbProcess::Args args;
+  NdbProcess::Pipes pipes;
+
+  BaseString cmd(opt_remote_path ? opt_remote_path : "openssl");
+  args.add("x509");
+  args.add2("-in", opt_ca_cert);
+
+  auto proc = NdbProcess::create_via_ssh("OpensslFetchCA", opt_ca_host, cmd,
+                                         nullptr, args, &pipes);
+  if (!proc) return 133;
+
+  FILE *rfp = pipes.open(pipes.parentRead(), "r");
+  if (!rfp) return 134;
+
+  bool ok = Certificate::read(CA_certs, rfp);
+  fclose(rfp);
+
+  int r1 = 137;
+  proc->wait(r1, 10000);
+  return ok ? r1 : 138;
+}
+
 /* remote_key_signing() returns an internal error code between 130 and 140,
    or the exit code of the remote signing process.
 */
 int remote_key_signing(const SigningRequest *csr, EVP_PKEY *key,
-                       stack_st_X509 *local_certs, stack_st_X509 *all_certs) {
+                       stack_st_X509 *ca_certs, stack_st_X509 *all_certs) {
   BaseString cmd;
   NdbProcess::Args args;
   NdbProcess::Pipes pipes;
@@ -1174,11 +1211,25 @@ int remote_key_signing(const SigningRequest *csr, EVP_PKEY *key,
 
   ClusterCredentialFiles::get_passphrase();
 
-  /* Create process */
+  int r1;
   int protocol = remote_signing_method(cmd, args, csr, key);
+
   if (protocol == 0) return 132;
-  std::unique_ptr<NdbProcess> proc =
-      NdbProcess::create("RemoteKeySigning", cmd, nullptr, args, &pipes);
+  if (protocol == 2) {
+    r1 = fetch_CA_cert_from_remote_openssl(ca_certs);
+    if (r1 != 0) {
+      fprintf(stderr, "Error reading CA cert via openssl: %d.\n", r1);
+      return r1;
+    }
+  }
+
+  /* Create process */
+  std::unique_ptr<NdbProcess> proc;
+  if (signing_over_ssh())
+    proc = NdbProcess::create_via_ssh("RemoteKeySigning", opt_ca_host, cmd,
+                                      nullptr, args, &pipes);
+  else
+    proc = NdbProcess::create("RemoteKeySigning", cmd, nullptr, args, &pipes);
   if (!proc) return fatal_error(133, "Failed to create process.\n");
 
   /* Write CSR and passphrase to coprocess */
@@ -1201,7 +1252,7 @@ int remote_key_signing(const SigningRequest *csr, EVP_PKEY *key,
 
   /* Wait up to 10 seconds for coprocess to exit.
      Return value 137 will indicate that wait() has failed. */
-  int r1 = 137;
+  r1 = 137;
   proc->wait(r1, 10000);
 
   /* Check if any failure when certs were read */
@@ -1212,9 +1263,13 @@ int remote_key_signing(const SigningRequest *csr, EVP_PKEY *key,
   if (ncerts == 0) return 136;
 
   /* If the signer did not return CA certs, attach them */
-  if (ncerts == 1)
-    for (int i = 0; i < sk_X509_num(local_certs); i++)
-      sk_X509_push(all_certs, sk_X509_value(local_certs, i));
+  if (ncerts == 1) {
+    for (int i = 0; i < sk_X509_num(ca_certs); i++) {
+      X509 *x = sk_X509_value(ca_certs, i);
+      X509_up_ref(x);
+      sk_X509_push(all_certs, x);
+    }
+  }
 
   return r1;
 }

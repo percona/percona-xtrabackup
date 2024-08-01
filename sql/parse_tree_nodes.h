@@ -1,15 +1,16 @@
-/* Copyright (c) 2013, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -68,6 +69,7 @@
 #include "sql/sql_tablespace.h"      // Tablespace_options
 #include "sql/sql_truncate.h"        // Sql_cmd_truncate_table
 #include "sql/table.h"               // Common_table_expr
+#include "sql/tablesample.h"
 #include "sql/window_lex.h"
 #include "string_with_len.h"
 #include "thr_lock.h"
@@ -473,17 +475,20 @@ class PT_table_factor_table_ident : public PT_table_reference {
   List<String> *opt_use_partition;
   const char *const opt_table_alias;
   List<Index_hint> *opt_key_definition;
+  PT_tablesample *opt_tablesample{nullptr};
 
  public:
   PT_table_factor_table_ident(const POS &pos, Table_ident *table_ident_arg,
                               List<String> *opt_use_partition_arg,
                               const LEX_CSTRING &opt_table_alias_arg,
-                              List<Index_hint> *opt_key_definition_arg)
+                              List<Index_hint> *opt_key_definition_arg,
+                              PT_tablesample *opt_tablesample_arg)
       : super(pos),
         table_ident(table_ident_arg),
         opt_use_partition(opt_use_partition_arg),
         opt_table_alias(opt_table_alias_arg.str),
-        opt_key_definition(opt_key_definition_arg) {}
+        opt_key_definition(opt_key_definition_arg),
+        opt_tablesample(opt_tablesample_arg) {}
 
  protected:
   bool do_contextualize(Parse_context *pc) override;
@@ -677,6 +682,25 @@ class PT_joined_table_using : public PT_joined_table {
 
  protected:
   void add_json_info(Json_object *obj) override;
+};
+
+/*
+  PT_tablesample - parse tree node
+
+  Information contained in TABLESAMPLE clause is here.
+*/
+class PT_tablesample : public Parse_tree_node {
+  typedef Parse_tree_node super;
+
+ public:
+  tablesample_type m_sampling_type;
+  Item *m_sample_percentage{nullptr};
+
+  PT_tablesample(const POS &pos, tablesample_type tablesample_type_arg,
+                 Item *sample_percentage)
+      : super(pos),
+        m_sampling_type(tablesample_type_arg),
+        m_sample_percentage(sample_percentage) {}
 };
 
 class PT_group : public Parse_tree_node {
@@ -3708,7 +3732,7 @@ class PT_show_keys final : public PT_show_table_base {
 class PT_show_binary_log_status final : public PT_show_base {
  public:
   PT_show_binary_log_status(const POS &pos)
-      : PT_show_base(pos, SQLCOM_SHOW_MASTER_STAT) {}
+      : PT_show_base(pos, SQLCOM_SHOW_BINLOG_STATUS) {}
 
   Sql_cmd *make_cmd(THD *thd) override;
 
@@ -3853,8 +3877,7 @@ class PT_show_relaylog_events final : public PT_show_base {
 
 class PT_show_replicas final : public PT_show_base {
  public:
-  PT_show_replicas(const POS &pos)
-      : PT_show_base(pos, SQLCOM_SHOW_SLAVE_HOSTS) {}
+  PT_show_replicas(const POS &pos) : PT_show_base(pos, SQLCOM_SHOW_REPLICAS) {}
 
   Sql_cmd *make_cmd(THD *thd) override;
 
@@ -3867,7 +3890,7 @@ class PT_show_replicas final : public PT_show_base {
 class PT_show_replica_status final : public PT_show_base {
  public:
   PT_show_replica_status(const POS &pos, LEX_CSTRING opt_channel_name = {})
-      : PT_show_base(pos, SQLCOM_SHOW_SLAVE_STAT),
+      : PT_show_base(pos, SQLCOM_SHOW_REPLICA_STATUS),
         m_opt_channel_name(opt_channel_name) {}
 
   Sql_cmd *make_cmd(THD *thd) override;
@@ -4749,11 +4772,18 @@ class PT_alter_table_secondary_load final
     : public PT_alter_table_standalone_action {
   using super = PT_alter_table_standalone_action;
 
+  const List<String> *opt_use_partition = nullptr;
+
  public:
-  explicit PT_alter_table_secondary_load(const POS &pos)
-      : super(pos, Alter_info::ALTER_SECONDARY_LOAD) {}
+  explicit PT_alter_table_secondary_load(
+      const POS &pos, const List<String> *opt_use_partition = nullptr)
+      : super(pos, Alter_info::ALTER_SECONDARY_LOAD),
+        opt_use_partition{opt_use_partition} {}
 
   Sql_cmd *make_cmd(Table_ddl_parse_context *pc) override {
+    if (opt_use_partition != nullptr)
+      pc->alter_info->partition_names = *opt_use_partition;
+
     return new (pc->mem_root) Sql_cmd_secondary_load_unload(pc->alter_info);
   }
 };
@@ -4762,11 +4792,18 @@ class PT_alter_table_secondary_unload final
     : public PT_alter_table_standalone_action {
   using super = PT_alter_table_standalone_action;
 
+  const List<String> *opt_use_partition = nullptr;
+
  public:
-  explicit PT_alter_table_secondary_unload(const POS &pos)
-      : super(pos, Alter_info::ALTER_SECONDARY_UNLOAD) {}
+  explicit PT_alter_table_secondary_unload(
+      const POS &pos, const List<String> *opt_use_partition = nullptr)
+      : super(pos, Alter_info::ALTER_SECONDARY_UNLOAD),
+        opt_use_partition{opt_use_partition} {}
 
   Sql_cmd *make_cmd(Table_ddl_parse_context *pc) override {
+    if (opt_use_partition != nullptr)
+      pc->alter_info->partition_names = *opt_use_partition;
+
     return new (pc->mem_root) Sql_cmd_secondary_load_unload(pc->alter_info);
   }
 };
@@ -4907,14 +4944,16 @@ class PT_analyze_table_stmt final : public PT_table_ddl_stmt_base {
                         bool no_write_to_binlog,
                         Mem_root_array<Table_ident *> *table_list,
                         Sql_cmd_analyze_table::Histogram_command command,
-                        int num_buckets, List<String> *columns, LEX_STRING data)
+                        int num_buckets, List<String> *columns, LEX_STRING data,
+                        bool auto_update)
       : PT_table_ddl_stmt_base(pos, mem_root),
         m_no_write_to_binlog(no_write_to_binlog),
         m_table_list(table_list),
         m_command(command),
         m_num_buckets(num_buckets),
         m_columns(columns),
-        m_data{data} {}
+        m_data{data},
+        m_auto_update(auto_update) {}
 
   Sql_cmd *make_cmd(THD *thd) override;
 
@@ -4925,6 +4964,7 @@ class PT_analyze_table_stmt final : public PT_table_ddl_stmt_base {
   const int m_num_buckets;
   List<String> *m_columns;
   const LEX_STRING m_data;
+  const bool m_auto_update;
 };
 
 class PT_check_table_stmt final : public PT_table_ddl_stmt_base {
@@ -5451,6 +5491,7 @@ class PT_load_table final : public Parse_tree_root {
                 const LEX_STRING filename, ulong file_count, bool in_key_order,
                 On_duplicate on_duplicate, Table_ident *table,
                 List<String> *opt_partitions, const CHARSET_INFO *opt_charset,
+                LEX_CSTRING compression_algorithm,
                 String *opt_xml_rows_identified_by,
                 const Field_separators &opt_field_separators,
                 const Line_separators &opt_line_separators,
@@ -5461,8 +5502,8 @@ class PT_load_table final : public Parse_tree_root {
       : Parse_tree_root(pos),
         m_cmd(filetype, is_local_file, source_type, filename, file_count,
               in_key_order, on_duplicate, table, opt_partitions, opt_charset,
-              opt_xml_rows_identified_by, opt_field_separators,
-              opt_line_separators, opt_ignore_lines,
+              compression_algorithm, opt_xml_rows_identified_by,
+              opt_field_separators, opt_line_separators, opt_ignore_lines,
               opt_fields_or_vars ? &opt_fields_or_vars->value : nullptr,
               opt_set_fields ? &opt_set_fields->value : nullptr,
               opt_set_exprs ? &opt_set_exprs->value : nullptr,

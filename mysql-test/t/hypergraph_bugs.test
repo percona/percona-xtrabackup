@@ -591,7 +591,7 @@ EXPLAIN ANALYZE SELECT 1 FROM t1 x1 JOIN t1 x2 ON x1.a=x2.v AND x1.b=x2.b;
 
 --replace_regex $elide_costs_and_time
 EXPLAIN ANALYZE SELECT 1 FROM t1 x1, t1 x2, t1 x3
-WHERE x1.a=x2.c AND x2.c=x3.v AND x1.b=x3.f;
+WHERE x1.a=x2.c AND x1.a=x3.v AND x1.b=x3.f;
 
 CREATE TABLE t2(x INT, y INT, z INT, KEY (x, y), KEY(y, x));
 
@@ -1094,6 +1094,69 @@ EXPLAIN FORMAT=TREE SELECT * FROM t1 WHERE t1.a IN (SELECT 5 FROM t2);
 
 DROP TABLE t1,t2;
 
+
+--echo #
+--echo # Bug#35997316 Hypergraph: Incomplete and inconvenient optimizer trace
+--echo #
+
+CREATE TABLE t1 (a INT PRIMARY KEY, b INT);
+
+INSERT INTO t1 WITH RECURSIVE qn(n) AS
+(SELECT 0 UNION ALL SELECT n+1 FROM qn WHERE n+1<30) SELECT n, n%10 FROM qn;
+
+ANALYZE TABLE t1 UPDATE HISTOGRAM ON b;
+ANALYZE TABLE t1;
+
+SET SESSION OPTIMIZER_TRACE='enabled=on';
+
+--replace_regex $elide_costs
+EXPLAIN FORMAT=TREE SELECT * FROM t1 x1
+  WHERE x1.a IN (SELECT x2.b FROM t1 x2);
+
+# Check that how we estimate the number of distinct values for x2.b are
+# logged in the optimizer trace.
+SELECT REGEXP_SUBSTR(
+  trace, "distinct values for field 'b' from histogram[^,]*",1,1,'n')
+  FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+
+SET SESSION OPTIMIZER_TRACE='enabled=off';
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#36125903 Hypergraph: Inconsistent numeric precision for
+--echo # AccessPath in optimizer trace
+--echo #
+
+CREATE TABLE t1 (
+  a INT PRIMARY KEY,
+  b INT
+);
+
+INSERT INTO t1 WITH RECURSIVE qn(n) AS
+(SELECT 0 UNION ALL SELECT n+1 FROM qn WHERE n<100) SELECT n, n FROM qn;
+
+ANALYZE TABLE t1 UPDATE HISTOGRAM ON b;
+ANALYZE TABLE t1;
+
+SET SESSION OPTIMIZER_TRACE="enabled=on";
+
+--replace_regex $elide_costs
+EXPLAIN FORMAT=TREE SELECT * FROM t1 x1, t1 x2, t1 x3, t1 x4;
+
+SELECT REGEXP_SUBSTR(trace, " - \\{NESTED_LOOP_JOIN[^\n]*keeping",1,1,'n')
+  FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+
+--replace_regex $elide_costs
+EXPLAIN FORMAT=TREE SELECT * FROM t1 WHERE a=5 AND b=5;
+
+SELECT REGEXP_SUBSTR(trace, " - \\{FILTER[^\n]*keeping",1,1,'n')
+  FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+
+SET SESSION OPTIMIZER_TRACE="enabled=off";
+
+DROP TABLE t1;
+
 --echo # Bug#5889990: Setting secondary_engine to OFF causes offload issues
 
 CREATE TABLE t(x INT, y INT);
@@ -1164,4 +1227,152 @@ EXECUTE ps;
 
 DROP TABLE t;
 
-SET optimizer_switch='hypergraph_optimizer=default';
+--echo #
+--echo # Bug #36135001: Hypergraph: Too low row estimate for index lookup
+--echo #
+
+CREATE TABLE t1(
+  a INT,
+  b INT,
+  c INT,
+  d INT,
+  PRIMARY KEY(a),
+  KEY k1(d)
+);
+
+INSERT INTO t1
+WITH RECURSIVE qn(n) AS
+(SELECT 0 UNION ALL SELECT n+1 FROM qn WHERE n<19)
+SELECT n, n%10, n%10, n%10 FROM qn;
+
+ANALYZE TABLE t1 UPDATE HISTOGRAM ON b,c;
+ANALYZE TABLE t1;
+
+# Do a lookup on the primary key, so that we can verify that the row estimate
+# is 1.
+--replace_regex $elide_costs
+EXPLAIN FORMAT=TREE SELECT * FROM t1 x1, t1 x2, t1 x3
+  WHERE x1.b=x2.a AND x2.b=x3.a AND (x1.c < 5 OR x3.c=7);
+
+# Do a lookup on non-unique key k1, where the row estimate should be 2.
+# 'ORDER BY' ensures that we get a nested loop join, where the lookup is
+# present.
+--replace_regex $elide_costs
+EXPLAIN FORMAT=TREE SELECT * FROM t1 x1, t1 x2, t1 x3
+  WHERE x1.b=x2.d AND x2.b=x3.d AND (x1.c < 5 OR x3.c=7) ORDER BY x3.d;
+
+# Check that we handle two identical conditions correctly.
+--replace_regex $elide_costs
+EXPLAIN FORMAT=TREE SELECT * FROM t1 x1 LEFT JOIN t1 x2
+  ON x1.a <=> x2.a AND  x1.a <=> x2.a;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#35855573 Assertion `false && "Inconsistent row counts for
+--echo # different AccessPath objects."'
+--echo #
+
+CREATE TABLE t(pk INT PRIMARY KEY AUTO_INCREMENT, x INT);
+INSERT INTO t VALUES (), (), (), (), (), (), (), (), (), (), (), ();
+ANALYZE TABLE t;
+
+# Since t1.pk = t2.x and pk is the primary key, there is a functional
+# dependency t2.x->t1.x. Therefore, some candidate plans group on {t2.x, t1.x}
+# and others on {t1.x}, which are both valid. But EstimateDistinctRows() will
+# give different row estimates for these two sets of fields, as it does not take
+# functional depdenencies into account. This triggered the assert.
+--replace_regex $elide_costs
+EXPLAIN FORMAT=TREE SELECT DISTINCT t1.x, t2.x FROM t AS t1, t AS t2
+  WHERE t1.pk = t2.x ORDER BY t2.x;
+
+--replace_regex $elide_costs
+EXPLAIN FORMAT=TREE SELECT DISTINCT t1.x, t1.pk FROM t AS t1, t AS t2
+  WHERE t1.pk = t2.x ORDER BY t1.x;
+
+--replace_regex $elide_costs
+EXPLAIN FORMAT=TREE SELECT DISTINCT t1.pk, t2.x FROM t AS t1, t AS t2
+  WHERE t1.pk = t2.x ORDER BY t2.x;
+
+DROP TABLE t;
+
+--echo #
+--echo # Bug#35991881 Hypergraph: Wrong init_cost for nested loop join
+--echo #
+
+CREATE TABLE t1 (
+  a INT PRIMARY KEY,
+  b INT,
+  c INT
+);
+
+INSERT INTO t1 WITH RECURSIVE qn(n) AS
+  (SELECT 0 UNION ALL SELECT n+1 FROM qn WHERE n+1<20)
+  SELECT n, n%10, n%10 FROM qn;
+
+ANALYZE TABLE t1 UPDATE HISTOGRAM ON b, c;
+ANALYZE TABLE t1;
+
+# This query should produce a plan with a NLJ between x1 and d1, since we
+# order on an indexed column (x1.a) and have LIMIT.
+# The relatively high first-row cost for d1 should be included in the
+# first-row cost of that NLJ.
+EXPLAIN FORMAT=TREE SELECT * FROM t1 x1 JOIN
+  (SELECT MAX(x2.c) k FROM t1 x2 JOIN t1 x3 ON x2.c < x3.b GROUP BY x3.c) d1
+  ON x1.b=d1.k ORDER BY x1.a LIMIT 1;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#36032958: Assertion `IsEmpty(child.delayed_predicates)' failed
+--echo #
+
+CREATE TABLE t(x INT, KEY(x));
+SELECT ROW_NUMBER() OVER () FROM t WHERE x = RAND() GROUP BY x;
+DROP TABLE t;
+
+--echo #
+--echo # Bug#36099491: Assertion secondary_engine_cost_hook != nullptr
+--echo #               failed with hypergraph_optimizer
+--echo #
+
+CREATE TABLE t (a INT, b VARCHAR(10));
+
+# Make the base tables bigger, so that it looks tempting to join the
+# smaller lateral derived table first in the queries below. The
+# optimizer needs to resist the temptation, because the lateral
+# derived table cannot be joined before the table it depends on.
+INSERT INTO t (a)
+WITH RECURSIVE 150tup(n) AS
+  (SELECT 1 UNION ALL SELECT n + 1 FROM 150tup WHERE n < 150)
+SELECT n FROM 150tup;
+
+ANALYZE TABLE t;
+
+SELECT /*+ SET_VAR(optimizer_max_subgraph_pairs = 1) */ COUNT(*)
+FROM t AS t1 LEFT JOIN t AS t2 ON TRUE
+WHERE t1.a IN (SELECT * FROM (SELECT DISTINCT t2.a) AS t3);
+
+SELECT /*+ SET_VAR(optimizer_max_subgraph_pairs = 1) */ COUNT(*)
+FROM t AS t1 LEFT JOIN t AS t2 ON TRUE,
+     LATERAL (SELECT DISTINCT t2.a FROM t) AS t3
+WHERE t1.a = t3.a;
+
+SELECT /*+ SET_VAR(optimizer_max_subgraph_pairs = 1) */ COUNT(*)
+FROM t AS t1 LEFT JOIN t AS t2 ON 1,
+     JSON_TABLE(t2.b, '$[*]' COLUMNS(i INT PATH '$[0]')) AS t3
+WHERE t3.i < 10 AND t1.a = t3.i;
+
+DROP TABLE t;
+
+--echo #
+--echo # Bug#36098954: Assertion GraphSimplifier::EdgesAreNeighboring
+--echo #               failed with hypergraph_optimizer
+--echo #
+
+CREATE TABLE t(x INT);
+SELECT /*+ SET_VAR(optimizer_max_subgraph_pairs = 1) */ 1
+FROM t WHERE x IN (
+  SELECT NULL FROM t AS t1, t AS t2 STRAIGHT_JOIN t AS t3 ON t2.x = t3.x
+) OR x = 1;
+DROP TABLE t;

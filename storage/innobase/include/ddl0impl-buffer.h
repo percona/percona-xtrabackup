@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -39,14 +40,9 @@ namespace ddl {
 /** Buffer for sorting in main memory. */
 struct Key_sort_buffer : private ut::Non_copyable {
   /** Callback for writing serialized data to to disk.
-  @param[in] io_buffer          Buffer to persist.
-  @param[in,out] n              Number of bytes written is returned.
-                                Input value semantics:
-                                0  - Write up to aligned length.
-                                >0 - All data will be written and
-                                     last block will be padded with zeros.
+  @param[in] io_buffer          Buffer to persist - aligned to IO_BLOCK_SIZE.
   @return DB_SUCCES or error code. */
-  using Function = std::function<dberr_t(IO_buffer io_buffer, os_offset_t &n)>;
+  using Function = std::function<dberr_t(IO_buffer io_buffer)>;
 
   /** Constructor.
   @param[in,out] index          Sort buffer is for this index.
@@ -62,9 +58,9 @@ struct Key_sort_buffer : private ut::Non_copyable {
 
   /** Serialize the contents for storing to disk.
   @param[in] io_buffer          Buffer for serializing.
-  @param[in] f                  Function for persisting the data.
+  @param[in] persist            Function for persisting the data.
   @return DB_SUCCESS or error code. */
-  dberr_t serialize(IO_buffer io_buffer, Function &&f) noexcept;
+  dberr_t serialize(IO_buffer io_buffer, Function persist) noexcept;
 
   /** Reset the sort buffer. clear the heap and entries. */
   void clear() noexcept;

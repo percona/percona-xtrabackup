@@ -1,15 +1,16 @@
-/* Copyright (c) 2022, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -319,8 +320,7 @@ ssize_t NdbSocket::ssl_send(const char *buf, size_t len) const {
     if (NdbMutex_Trylock(mutex)) {
       return TLS_BUSY_TRY_AGAIN;
     }
-    if (unlikely(ssl == nullptr ||
-                 SSL_get_shutdown(ssl) & SSL_SENT_SHUTDOWN)) {
+    if (unlikely(ssl == nullptr || SSL_get_shutdown(ssl) & SSL_SENT_SHUTDOWN)) {
       NdbMutex_Unlock(mutex);
       return -1;
     }
@@ -409,6 +409,12 @@ class Timer {
   }
 };
 }  // namespace
+
+bool NdbSocket::ssl_has_pending() const {
+  Guard guard(mutex);
+  if (unlikely(ssl == nullptr)) return false;
+  return SSL_pending(ssl);
+}
 
 /* Read with timeout
  */

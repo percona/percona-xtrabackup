@@ -21,7 +21,7 @@
 --echo #
 
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
+--source include/connection.inc
 
 # create a user for replication that requires ssl encryption
 SET SESSION sql_log_bin=0;
@@ -34,9 +34,9 @@ SET SESSION sql_log_bin=1;
 SET @tls_version_saved= @@GLOBAL.tls_version;
 SET GLOBAL tls_version='TLSv1.3';
 SET @tls_ciphersuites_saved= @@GLOBAL.tls_ciphersuites;
-SET GLOBAL tls_ciphersuites='TLS_AES_128_CCM_8_SHA256';
+SET GLOBAL tls_ciphersuites='TLS_CHACHA20_POLY1305_SHA256';
 SET @group_replication_recovery_tls_ciphersuites_saved= @@GLOBAL.group_replication_recovery_tls_ciphersuites;
-SET GLOBAL group_replication_recovery_tls_ciphersuites='TLS_AES_128_CCM_8_SHA256';
+SET GLOBAL group_replication_recovery_tls_ciphersuites='TLS_CHACHA20_POLY1305_SHA256';
 
 SET @conf_rec_ssl_mode= @@GLOBAL.group_replication_ssl_mode;
 SET GLOBAL group_replication_ssl_mode= REQUIRED;
@@ -57,7 +57,7 @@ INSERT INTO t1 VALUES (1);
 --echo #
 
 --let $rpl_connection_name= server2
---source include/rpl_connection.inc
+--source include/connection.inc
 
 SET SESSION sql_log_bin=0;
 CREATE USER 'rec_ssl_user'@'%' REQUIRE SSL;
@@ -70,7 +70,7 @@ SET SESSION sql_log_bin=1;
 SET @tls_version_saved= @@GLOBAL.tls_version;
 SET GLOBAL tls_version='TLSv1.3';
 SET @tls_ciphersuites_saved= @@GLOBAL.tls_ciphersuites;
-SET GLOBAL tls_ciphersuites='TLS_AES_128_CCM_8_SHA256';
+SET GLOBAL tls_ciphersuites='TLS_CHACHA20_POLY1305_SHA256';
 
 SET @conf_rec_ssl_mode= @@GLOBAL.group_replication_ssl_mode;
 SET GLOBAL group_replication_ssl_mode= REQUIRED;
@@ -84,7 +84,7 @@ CHANGE REPLICATION SOURCE TO SOURCE_USER="rec_ssl_user" FOR CHANNEL "group_repli
 SET @group_replication_recovery_use_ssl_saved= @@GLOBAL.group_replication_recovery_use_ssl;
 SET GLOBAL group_replication_recovery_use_ssl=1;
 SET @group_replication_recovery_tls_ciphersuites_saved= @@GLOBAL.group_replication_recovery_tls_ciphersuites;
-SET GLOBAL group_replication_recovery_tls_ciphersuites='TLS_AES_128_CCM_8_SHA256';
+SET GLOBAL group_replication_recovery_tls_ciphersuites='TLS_CHACHA20_POLY1305_SHA256';
 
 --source include/start_group_replication.inc
 
@@ -100,7 +100,7 @@ SET GLOBAL group_replication_recovery_tls_ciphersuites='TLS_AES_128_CCM_8_SHA256
 --echo # Clean up
 --echo #
 --let $rpl_connection_name= server2
---source include/rpl_connection.inc
+--source include/connection.inc
 SET @@GLOBAL.tls_version= @tls_version_saved;
 SET @@GLOBAL.tls_ciphersuites= @tls_ciphersuites_saved;
 ALTER INSTANCE RELOAD TLS;
@@ -108,7 +108,7 @@ SET @@GLOBAL.group_replication_recovery_use_ssl= @group_replication_recovery_use
 SET @@GLOBAL.group_replication_recovery_tls_ciphersuites= @group_replication_recovery_tls_ciphersuites_saved;
 
 --let $rpl_connection_name= server1
---source include/rpl_connection.inc
+--source include/connection.inc
 SET @@GLOBAL.tls_version= @tls_version_saved;
 SET @@GLOBAL.tls_ciphersuites= @tls_ciphersuites_saved;
 SET @@GLOBAL.group_replication_recovery_tls_ciphersuites= @group_replication_recovery_tls_ciphersuites_saved;
@@ -125,7 +125,7 @@ SET SESSION sql_log_bin=1;
 DROP TABLE t1;
 
 --let $rpl_connection_name= server2
---source include/rpl_connection.inc
+--source include/connection.inc
 
 SET SESSION sql_log_bin=0;
 DROP USER 'rec_ssl_user';

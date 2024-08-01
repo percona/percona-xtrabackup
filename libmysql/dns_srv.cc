@@ -1,15 +1,16 @@
-/* Copyright (c) 2020, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    Without limiting anything contained in the foregoing, this file,
    which is part of C Driver for MySQL (Connector/C), is also subject to the
@@ -40,16 +41,24 @@
 // POSIX version
 
 static bool get_dns_srv(Dns_srv_data &data, const char *dnsname, int &error) {
+#ifdef LINUX_ALPINE
+  res_init();
+#else
   struct __res_state state {};
   res_ninit(&state);
+#endif
   unsigned char query_buffer[NS_PACKETSZ];
   bool ret = true;
 
   data.clear();
 
+#ifdef LINUX_ALPINE
+  int res = res_search(dnsname, ns_c_in, ns_t_srv, query_buffer,
+                       sizeof(query_buffer));
+#else
   int res = res_nsearch(&state, dnsname, ns_c_in, ns_t_srv, query_buffer,
                         sizeof(query_buffer));
-
+#endif
   if (res >= 0) {
     ns_msg msg;
     ns_initparse(query_buffer, res, &msg);
@@ -84,7 +93,11 @@ static bool get_dns_srv(Dns_srv_data &data, const char *dnsname, int &error) {
     error = h_errno;
   }
 
+#ifdef LINUX_ALPINE
+  // nothing
+#else
   res_nclose(&state);
+#endif
   return ret;
 }
 

@@ -1,16 +1,17 @@
 /*
-  Copyright (c) 2015, 2023, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -177,11 +178,11 @@ class HARNESS_EXPORT ConfigSection {
    */
   void update(const ConfigSection &other);  // throws bad_section
 
-  std::string get(const std::string &option) const;
+  std::string get(std::string_view option) const;
   void set(const std::string &option,
            const std::string &value);  // throws bad_option
   void add(const std::string &option, const std::string &value);
-  bool has(const std::string &option) const;
+  bool has(std::string_view option) const;
 
   /**
    * Range for options in section.
@@ -209,7 +210,7 @@ class HARNESS_EXPORT ConfigSection {
    * @option option The name of the option
    * @return The name of the ConfigSection which option is specified.
    */
-  std::string get_section_name(const std::string &option) const;
+  std::string get_section_name(std::string_view option) const;
 
   /*
    * Returns name of the section.
@@ -232,7 +233,7 @@ class HARNESS_EXPORT ConfigSection {
   const int kMaxInterpolationDepth = 10;
 
   std::pair<OptionMap::const_iterator, bool> do_locate(
-      const std::string &option) const noexcept;
+      std::string_view option) const noexcept;
 
   const std::shared_ptr<const ConfigSection> defaults_;
   OptionMap options_;
@@ -476,12 +477,12 @@ class HARNESS_EXPORT Config {
   /**
    * @return True if a section exists, no matter what the key is.
    */
-  bool has_any(const std::string &section) const;
+  bool has_any(std::string_view section) const;
 
   // all 3 below throw bad_option (std::runtime_error) on illegal option name
   // (one that contains illegal characters) */
-  std::string get_default(const std::string &option) const;
-  bool has_default(const std::string &option) const;
+  std::string get_default(std::string_view option) const;
+  bool has_default(std::string_view option) const;
   void set_default(const std::string &option, const std::string &value);
 
   bool is_reserved(const std::string &word) const;

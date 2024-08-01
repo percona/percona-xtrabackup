@@ -1,15 +1,16 @@
-/* Copyright (c) 2021, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
 as published by the Free Software Foundation.
 
-This program is also distributed with certain software (including
+This program is designed to work with certain software (including
 but not limited to OpenSSL) that is licensed under separate terms,
 as designated in a particular file or component or in included license
 documentation.  The authors of MySQL hereby grant you an additional
 permission to link the program and your derivative works with the
-separately licensed software that they have included with MySQL.
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -64,10 +65,15 @@ bool init_keys_metadata_iterator_template(
     Component_callbacks &callbacks) {
   try {
     if (callbacks.keyring_initialized() == false) {
+      LogComponentErr(INFORMATION_LEVEL,
+                      ER_NOTE_KEYRING_COMPONENT_NOT_INITIALIZED);
       return true;
     }
 
     if (keyring_operations.init_forward_iterator(it, false) == true) {
+      LogComponentErr(
+          INFORMATION_LEVEL,
+          ER_NOTE_KEYRING_COMPONENT_KEYS_METADATA_ITERATOR_INIT_FAILED);
       return true;
     }
 
@@ -98,6 +104,8 @@ bool deinit_keys_metadata_iterator_template(
     Component_callbacks &callbacks) {
   try {
     if (callbacks.keyring_initialized() == false) {
+      LogComponentErr(INFORMATION_LEVEL,
+                      ER_NOTE_KEYRING_COMPONENT_NOT_INITIALIZED);
       return true;
     }
     keyring_operations.deinit_forward_iterator(it);
@@ -127,7 +135,11 @@ bool keys_metadata_iterator_is_valid(
     Keyring_operations<Backend, Data_extension> &keyring_operations,
     Component_callbacks &callbacks) {
   try {
-    if (callbacks.keyring_initialized() == false) return false;
+    if (callbacks.keyring_initialized() == false) {
+      LogComponentErr(INFORMATION_LEVEL,
+                      ER_NOTE_KEYRING_COMPONENT_NOT_INITIALIZED);
+      return false;
+    }
     return keyring_operations.is_valid(it);
   } catch (...) {
     LogComponentErr(ERROR_LEVEL, ER_KEYRING_COMPONENT_EXCEPTION, "is_valid",
@@ -155,6 +167,8 @@ bool keys_metadata_iterator_next(
     Component_callbacks &callbacks) {
   try {
     if (callbacks.keyring_initialized() == false) {
+      LogComponentErr(INFORMATION_LEVEL,
+                      ER_NOTE_KEYRING_COMPONENT_NOT_INITIALIZED);
       return true;
     }
     if (keyring_operations.next(it) == true) {
@@ -190,6 +204,8 @@ bool keys_metadata_get_length_template(
     Component_callbacks &callbacks) {
   try {
     if (callbacks.keyring_initialized() == false) {
+      LogComponentErr(INFORMATION_LEVEL,
+                      ER_NOTE_KEYRING_COMPONENT_NOT_INITIALIZED);
       return true;
     }
 
@@ -235,6 +251,8 @@ bool keys_metadata_get_template(
     Component_callbacks &callbacks) {
   try {
     if (callbacks.keyring_initialized() == false) {
+      LogComponentErr(INFORMATION_LEVEL,
+                      ER_NOTE_KEYRING_COMPONENT_NOT_INITIALIZED);
       return true;
     }
 

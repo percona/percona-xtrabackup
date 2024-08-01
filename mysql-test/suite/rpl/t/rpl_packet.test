@@ -14,7 +14,7 @@
 --source include/not_group_replication_plugin.inc
 source include/have_binlog_format_row.inc;
 
-source include/master-slave.inc;
+source include/rpl/init_source_replica.inc;
 
 call mtr.add_suppression("Replica I/O for channel '': Got a packet bigger than 'replica_max_allowed_packet' bytes, Error_code: MY-013125");
 call mtr.add_suppression("Log entry on source is longer than replica_max_allowed_packet");
@@ -32,11 +32,11 @@ let $old_replica_max_allowed_packet_temp= `SELECT @@global.replica_max_allowed_p
 SET @@global.max_allowed_packet=10240;
 SET @@global.net_buffer_length=1024;
 
---source include/sync_slave_sql_with_master.inc
-# Restart slave for setting to take effect
+--source include/rpl/sync_to_replica.inc
+# Restart replica for setting to take effect
 call mtr.add_suppression(".*The replica coordinator and worker threads are stopped, possibly leaving data in inconsistent state.*");
-source include/stop_slave.inc;
-source include/start_slave.inc;
+source include/rpl/stop_replica.inc;
+source include/rpl/start_replica.inc;
 
 # Reconnect to master for new setting to take effect
 disconnect master;
@@ -50,18 +50,18 @@ select @@net_buffer_length, @@max_allowed_packet;
 create table `t1` (`f1` LONGTEXT);
 
 INSERT INTO `t1`(`f1`) VALUES ('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2048');
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 
 eval select count(*) from `$db`.`t1` /* must be 1 */;
 
 --disable_warnings
-select ras.SERVICE_STATE as Slave_SQL_Running, rcs.SERVICE_STATE as Slave_IO_Running 
+select ras.SERVICE_STATE as Replica_SQL_Running, rcs.SERVICE_STATE as Replica_IO_Running 
 from performance_schema.replication_applier_status ras, 
 performance_schema.replication_connection_status rcs;
 --enable_warnings
 connection master;
 eval drop database $db;
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 
 #
 # Bug #23755: Replicated event larger that max_allowed_packet infinitely re-transmits
@@ -89,10 +89,10 @@ connection master;
 SET @@global.max_allowed_packet=4096 + (floor(64 * 3 * 254 / 1024) + 1) * 1024;
 SET @@global.net_buffer_length=@@global.max_allowed_packet;
 
-# Restart slave for new setting to take effect
+# Restart replica for new setting to take effect
 connection slave;
-source include/stop_slave.inc;
-source include/start_slave.inc;
+source include/rpl/stop_replica.inc;
+source include/rpl/start_replica.inc;
 
 # Reconnect to master for new setting to take effect
 disconnect master;
@@ -101,8 +101,8 @@ connection master;
 
 CREATE TABLE `t1` (`f1` LONGTEXT);
 
---source include/sync_slave_sql_with_master.inc
---source include/stop_slave_sql.inc
+--source include/rpl/sync_to_replica.inc
+--source include/rpl/stop_applier.inc
 
 connection master;
 
@@ -119,7 +119,7 @@ connection slave;
 # 13125 = ER_SERVER_NET_PACKET_TOO_LARGE
 --let $slave_io_errno= 13125
 --let $show_slave_io_error= 1
---source include/wait_for_slave_io_error.inc
+--source include/rpl/wait_for_receiver_error.inc
 
 #
 # Bug#42914: On the master, if a binary log event is larger than
@@ -129,15 +129,15 @@ connection slave;
 #
 
 --let $rpl_only_running_threads= 1
---source include/rpl_reset.inc
+--source include/rpl/reset.inc
 --connection master
 DROP TABLE t1;
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 
 
 connection master;
 CREATE TABLE t1 (f1 int PRIMARY KEY, f2 LONGTEXT, f3 LONGTEXT) ENGINE=MyISAM;
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 
 connection master;
 INSERT INTO t1(f1, f2, f3) VALUES(1, REPEAT('a', @@global.max_allowed_packet), REPEAT('b', @@global.max_allowed_packet));
@@ -147,11 +147,11 @@ connection slave;
 # 13125 = ER_SERVER_NET_PACKET_TOO_LARGE
 --let $slave_io_errno= 13125
 --let $show_slave_io_error= 1
---source include/wait_for_slave_io_error.inc
+--source include/rpl/wait_for_receiver_error.inc
 
 # Remove the bad binlog and clear error status on slave.
-STOP SLAVE;
-RESET SLAVE;
+STOP REPLICA;
+RESET REPLICA;
 RESET BINARY LOGS AND GTIDS;
 --connection master
 RESET BINARY LOGS AND GTIDS;
@@ -176,7 +176,7 @@ SET @max_allowed_packet_2= @@session.max_allowed_packet;
 if (`SELECT NOT(@max_allowed_packet_0 = @max_allowed_packet_1 AND @max_allowed_packet_1 = @max_allowed_packet_2)`)
 {
   --echo ERROR: max_allowed_packet changed after executing SHOW BINLOG EVENTS
-  --source include/show_rpl_debug_info.inc
+  --source include/rpl/debug/show_debug_info.inc
   SELECT @max_allowed_packet_0, @max_allowed_packet_1, @max_allowed_packet_2;
   --die @max_allowed_packet changed after executing SHOW BINLOG EVENTS
 }
@@ -192,20 +192,20 @@ if (`SELECT NOT(@max_allowed_packet_0 = @max_allowed_packet_1 AND @max_allowed_p
 
 connection slave;
 
-START SLAVE;
---source include/wait_for_slave_to_start.inc
+START REPLICA;
+--source include/rpl/wait_for_replica_to_start.inc
 
 connection master;
 DROP TABLE t1;
 select @@global.max_allowed_packet;
 select @@global.net_buffer_length;
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 select @@global.max_allowed_packet;
 select @@global.net_buffer_length;
 
 --connection master
 CREATE TABLE t1 (a TEXT) ENGINE=MyISAM;
---source include/sync_slave_sql_with_master.inc
+--source include/rpl/sync_to_replica.inc
 
 # Create big row event.
 --connection master
@@ -216,20 +216,20 @@ INSERT INTO t1 VALUES (REPEAT('a', @@global.max_allowed_packet));
 --echo # 13125 = ER_SERVER_NET_PACKET_TOO_LARGE
 --let $slave_io_errno= 13125
 --let $show_slave_io_error= 1
---source include/wait_for_slave_io_error.inc
+--source include/rpl/wait_for_receiver_error.inc
 
---echo # Record Read_Master_Log_Pos for the Table_map_log_event
---let $table_map_log_pos= query_get_value("SHOW SLAVE STATUS", Read_Master_Log_Pos, 1)
+--echo # Record Read_Source_Log_Pos for the Table_map_log_event
+--let $table_map_log_pos= query_get_value("SHOW REPLICA STATUS", Read_Source_Log_Pos, 1)
 
 --let $MYSQLD_DATADIR= `SELECT @@datadir`
---let $start_pos= query_get_value("SHOW SLAVE STATUS", Relay_Log_Pos, 1)
---let $relay_log_file= query_get_value(SHOW SLAVE STATUS, Relay_Log_File, 1)
+--let $start_pos= query_get_value("SHOW REPLICA STATUS", Relay_Log_Pos, 1)
+--let $relay_log_file= query_get_value(SHOW REPLICA STATUS, Relay_Log_File, 1)
 --let $outfile= $MYSQLTEST_VARDIR/tmp/b55790-mysqlbinlog
 --let $i= 2
 
 --let $old_replica_max_allowed_packet= `SELECT @@global.max_allowed_packet`
 SET @@global.max_allowed_packet=1048576;
-# Restart slave session for new settings to take effect.
+# Restart replica session for new settings to take effect.
 --connect (slave2,127.0.0.1,root,,test,$SLAVE_MYPORT,)
 --connection slave2
 
@@ -296,8 +296,8 @@ DROP TABLE t1;
 # Clear Last_IO_Error
 
 STOP REPLICA;
-RESET SLAVE;
+RESET REPLICA;
 
 --let $rpl_only_running_threads=1
---source include/rpl_end.inc
+--source include/rpl/deinit.inc
 # End of tests

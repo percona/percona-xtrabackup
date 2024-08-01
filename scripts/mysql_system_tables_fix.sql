@@ -1,15 +1,16 @@
--- Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+-- Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 --
 -- This program is free software; you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License, version 2.0,
 -- as published by the Free Software Foundation.
 --
--- This program is also distributed with certain software (including
+-- This program is designed to work with certain software (including
 -- but not limited to OpenSSL) that is licensed under separate terms,
 -- as designated in a particular file or component or in included license
 -- documentation.  The authors of MySQL hereby grant you an additional
 -- permission to link the program and your derivative works with the
--- separately licensed software that they have included with MySQL.
+-- separately licensed software that they have either included with
+-- the program or referenced in the documentation.
 --
 -- This program is distributed in the hope that it will be useful,
 -- but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1597,6 +1598,12 @@ INSERT INTO global_grants SELECT user, host, 'ALLOW_NONEXISTENT_DEFINER',
 IF (WITH_GRANT_OPTION = 'Y', 'Y', 'N') FROM global_grants WHERE priv = 'SET_USER_ID' AND @hadAllowNonexistentDefinerPriv = 0;
 COMMIT;
 
+--  Add the privilege OPTIMIZE_LOCAL_TABLE for every user who has SYSTEM_USER privilege
+SET @hadOptimizeLocalTable = (SELECT COUNT(*) FROM global_grants WHERE priv = 'OPTIMIZE_LOCAL_TABLE');
+INSERT INTO global_grants SELECT user, host, 'OPTIMIZE_LOCAL_TABLE',
+IF (WITH_GRANT_OPTION = 'Y', 'Y', 'N') FROM global_grants WHERE priv = 'SYSTEM_USER' AND @hadOptimizeLocalTable = 0;
+COMMIT;
+
 SET @@session.sql_mode = @old_sql_mode;
 
 ALTER TABLE gtid_executed
@@ -1609,3 +1616,13 @@ SET @hadTransactionGtidTagPriv = (SELECT COUNT(*) FROM global_grants WHERE priv 
 INSERT INTO global_grants SELECT user, host, 'TRANSACTION_GTID_TAG',
 IF (WITH_GRANT_OPTION = 'Y', 'Y', 'N') FROM global_grants WHERE priv = 'BINLOG_ADMIN' AND @hadTransactionGtidTagPriv = 0;
 COMMIT;
+
+-- Add the privilege FLUSH_PRIVILEGES for every user who has the
+-- privilege RELOAD, provided that there is not a user who already has
+-- privilege FLUSH_PRIVILEGES
+SET @hadFlushPrivilegesPriv = (SELECT COUNT(*) FROM global_grants WHERE priv = 'FLUSH_PRIVILEGES');
+INSERT INTO global_grants SELECT user, host, 'FLUSH_PRIVILEGES', IF(grant_priv = 'Y', 'Y', 'N')
+FROM mysql.user WHERE Reload_priv = 'Y' AND @hadFlushPrivilegesPriv = 0;
+
+-- SET_USER_ID is removed dynamic privilege, revoke all grants of it.
+DELETE FROM global_grants WHERE PRIV = 'SET_USER_ID';
