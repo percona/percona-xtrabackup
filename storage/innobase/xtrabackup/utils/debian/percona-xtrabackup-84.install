@@ -9,3 +9,4 @@
 /usr/lib/private/libprotobuf.so.*
 /usr/lib/private/icudt73l/unames.icu
 /usr/lib/private/icudt73l/brkitr/*
+/usr/lib/private/libabsl_*
