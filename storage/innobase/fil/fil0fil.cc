@@ -520,7 +520,7 @@ class Tablespace_dirs {
 
   /** Discover tablespaces by reading the header from .ibd files.
   @return DB_SUCCESS if all goes well */
-  [[nodiscard]] dberr_t scan(bool populate_fil_cache);
+  [[nodiscard]] dberr_t scan(bool populate_fil_cache, bool is_prep_handle_ddls);
 
   /** Clear all the tablespace file data but leave the list of
   scanned directories in place. */
@@ -679,7 +679,7 @@ class Tablespace_dirs {
   @param[in]  thread_id Thread ID
   @param[out] result false in case of failure */
   void open_ibd(const Const_iter &start, const Const_iter &end,
-                size_t thread_id, bool &result);
+                size_t thread_id, bool &result, bool is_prep_handle_ddls);
 
  private:
   /** Directories scanned and the files discovered under them. */
@@ -1644,6 +1644,8 @@ class Fil_system {
   @return DB_SUCCESS if the open was successful */
   [[nodiscard]] dberr_t open_for_recovery(space_id_t space_id);
 
+  [[nodiscard]] dberr_t open_for_prepare(const std::string &path);
+
   /** This function should be called after recovery has completed.
   Check for tablespace files for which we did not see any
   MLOG_FILE_DELETE or MLOG_FILE_RENAME record. These could not
@@ -1700,8 +1702,8 @@ class Fil_system {
 
   /** Scan the directories to build the tablespace ID to file name
   mapping table. */
-  dberr_t scan(bool populate_fil_cache) {
-    return (m_dirs.scan(populate_fil_cache));
+  dberr_t scan(bool populate_fil_cache, bool is_prep_handle_ddls) {
+    return (m_dirs.scan(populate_fil_cache, is_prep_handle_ddls));
   }
 
   /** Open all known tablespaces. */
@@ -1826,7 +1828,6 @@ class Fil_system {
   void meb_name_process(char *name, space_id_t space_id, bool deleted);
 
 #endif /* UNIV_HOTBACKUP */
-
  private:
   /** Open an ibd tablespace and add it to the InnoDB data structures.
   This is similar to fil_ibd_open() except that it is used while
@@ -3379,6 +3380,10 @@ bool fil_space_free(space_id_t space_id, bool x_latched) {
   ut_a(space == nullptr);
 
   return true;
+}
+
+space_id_t fil_get_tablespace_id(const std::string &filename) {
+  return Fil_system::get_tablespace_id(filename);
 }
 
 #ifdef UNIV_HOTBACKUP
@@ -10187,6 +10192,22 @@ dberr_t fil_tablespace_open_for_recovery(space_id_t space_id) {
   return fil_system->open_for_recovery(space_id);
 }
 
+dberr_t Fil_system::open_for_prepare(const std::string &path) {
+  space_id_t space_id = get_tablespace_id(path);
+  fil_space_t *space;
+
+  auto status = ibd_open_for_recovery(space_id, path, space);
+
+  if (status == FIL_LOAD_DBWLR_CORRUPTION) {
+    return DB_CORRUPTION;
+  }
+  return DB_SUCCESS;
+}
+
+dberr_t fil_open_for_prepare(const std::string &path) {
+  return fil_system->open_for_prepare(path);
+}
+
 Fil_state fil_tablespace_path_equals(space_id_t space_id,
                                      const char *space_name, ulint fsp_flags,
                                      std::string old_path,
@@ -11586,7 +11607,8 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
 @param[in]  thread_id Thread ID
 @param[in,out]  result  result of the open */
 void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
-                               size_t thread_id, bool &result) {
+                               size_t thread_id, bool &result,
+                               bool is_prep_handle_ddls) {
   if (!result) return;
 
   for (auto it = start; it != end; ++it) {
@@ -11598,28 +11620,37 @@ void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
       continue;
     }
 
-    /* cannot use auto [err, space_id] = fil_open_for_xtrabackup() as space_id
-    is unused here and we get unused variable error during compilation */
-    dberr_t err;
-    std::tie(err, std::ignore) = fil_open_for_xtrabackup(
-        phy_filename, filename.substr(0, filename.length() - 4));
-
-    /* Allow deleted tables between disovery and file open when
-     LOCK_DDL_REDUCED, they will be handled by ddl_tracker */
-    if (err == DB_CANNOT_OPEN_FILE && opt_lock_ddl == LOCK_DDL_REDUCED) {
-      ddl_tracker->add_missing_table(phy_filename);
-    } else if (err == DB_TABLESPACE_EXISTS &&
-               opt_lock_ddl == LOCK_DDL_REDUCED) {
-      /* table was renamed during scan. Since original table was loaded to cache
-      and rename ddl will be handled by ddl_tracker we skip loading
-      duplicate tablespace */
-      continue;
-    } else
-      /* PXB-2275 - Allow DB_INVALID_ENCRYPTION_META as we will test it in
-      the end of the backup */
-      if (err != DB_SUCCESS && err != DB_INVALID_ENCRYPTION_META) {
+    /* when processing ddl files on prepare phase we should load data files
+    without first page validation */
+    if (is_prep_handle_ddls) {
+      dberr_t err = fil_open_for_prepare(phy_filename);
+      if (err != DB_SUCCESS) {
         result = false;
       }
+    } else {
+      /* cannot use auto [err, space_id] = fil_open_for_xtrabackup() as space_id
+      is unused here and we get unused variable error during compilation */
+      dberr_t err;
+      std::tie(err, std::ignore) = fil_open_for_xtrabackup(
+          phy_filename, filename.substr(0, filename.length() - 4));
+
+      /* Allow deleted tables between disovery and file open when
+      LOCK_DDL_REDUCED, they will be handled by ddl_tracker */
+      if (err == DB_CANNOT_OPEN_FILE && opt_lock_ddl == LOCK_DDL_REDUCED) {
+        ddl_tracker->add_missing_table(phy_filename);
+      } else if (err == DB_TABLESPACE_EXISTS &&
+                 opt_lock_ddl == LOCK_DDL_REDUCED) {
+        /* table was renamed during scan. Since original table was loaded to
+        cache and rename ddl will be handled by ddl_tracker we skip loading
+        duplicate tablespace */
+        continue;
+      } else
+        /* PXB-2275 - Allow DB_INVALID_ENCRYPTION_META as we will test it in
+        the end of the backup */
+        if (err != DB_SUCCESS && err != DB_INVALID_ENCRYPTION_META) {
+          result = false;
+        }
+    }
   }
 }
 
@@ -11890,7 +11921,8 @@ void Tablespace_dirs::set_scan_dirs(const std::string &in_directories) {
 /** Discover tablespaces by reading the header from .ibd files.
 @param[in]      in_directories  Directories to scan
 @return DB_SUCCESS if all goes well */
-dberr_t Tablespace_dirs::scan(bool populate_fil_cache) {
+dberr_t Tablespace_dirs::scan(bool populate_fil_cache,
+                              bool is_prep_handle_ddls) {
   Scanned_files ibd_files;
   Scanned_files undo_files;
   uint16_t count = 0;
@@ -12006,10 +12038,12 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache) {
 
   if (err == DB_SUCCESS && populate_fil_cache) {
     bool result = true;
-    std::function<void(const Const_iter &, const Const_iter &, size_t, bool &)>
-        open = std::bind(&Tablespace_dirs::open_ibd, this, _1, _2, _3, _4);
+    std::function<void(const Const_iter &, const Const_iter &, size_t, bool &,
+                       bool)>
+        open = std::bind(&Tablespace_dirs::open_ibd, this, _1, _2, _3, _4, _5);
 
-    par_for(PFS_NOT_INSTRUMENTED, ibd_files, n_threads, open, result);
+    par_for(PFS_NOT_INSTRUMENTED, ibd_files, n_threads, open, result,
+            is_prep_handle_ddls);
 
     if (!result) err = DB_FAIL;
   }
@@ -12028,8 +12062,9 @@ void fil_set_scan_dirs(const std::string &directories) {
 /** Discover tablespaces by reading the header from .ibd files.
 @param[in]  populate_fil_cache Whether to load tablespaces into fil cache
 @return DB_SUCCESS if all goes well */
-dberr_t fil_scan_for_tablespaces(bool populate_fil_cache) {
-  return (fil_system->scan(populate_fil_cache));
+dberr_t fil_scan_for_tablespaces(bool populate_fil_cache,
+                                 bool is_prep_handle_ddls) {
+  return (fil_system->scan(populate_fil_cache, is_prep_handle_ddls));
 }
 
 /** Open all known tablespaces. */

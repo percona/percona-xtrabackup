@@ -664,7 +664,9 @@ bool Encryption::decode_encryption_info(space_id_t space_id,
     encryption info maybe hasn't written into datafile when
     the table is newly created. For clone encryption information
     should have been already correct. */
-    return (recv_recovery_is_on() ? true : false);
+    bool prep_lock_ddl_reduced =
+        !srv_backup_mode && opt_lock_ddl == LOCK_DDL_REDUCED;
+    return (recv_recovery_is_on() || prep_lock_ddl_reduced ? true : false);
   } else {
     ib::error(ER_IB_MSG_837) << "Failed to decrypt encryption information,"
                              << " found unexpected version of it!";
