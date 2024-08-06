@@ -10513,11 +10513,16 @@ static void fil_make_abs_file_path(const char *file_name, ulint flags,
 @param[in]      page_id         Tablespace Id and first page in file
 @param[in]      parsed_bytes    Number of bytes parsed so far
 @param[in]      parse_only      Don't apply, parse only
+@param[in]      start_lsn       LSN of the redo record
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
 const byte *fil_tablespace_redo_create(const byte *ptr, const byte *end,
-                                       const page_id_t &page_id,
-                                       ulint parsed_bytes, bool parse_only) {
+                                       const page_id_t &page_id, ulint parsed_bytes,
+                                       bool parse_only IF_XB(, lsn_t start_lsn)) {
+#ifdef XTRABACKUP
+  const byte *start_ptr = ptr;
+#endif /* XTRABACKUP */
+
   ut_a(page_id.page_no() == 0);
 
   /* We never recreate the system tablespace. */
@@ -10548,6 +10553,12 @@ const byte *fil_tablespace_redo_create(const byte *ptr, const byte *end,
     }
     return nullptr;
   }
+
+#ifdef XTRABACKUP
+  if (ddl_tracker && redo_catchup_completed)
+    ddl_tracker->backup_file_op(page_id.space(), MLOG_FILE_CREATE, start_ptr,
+                                static_cast<ulint>(end - start_ptr), start_lsn);
+#endif /* XTRABACKUP */
 
   if (parse_only) {
     return ptr;
@@ -10634,7 +10645,12 @@ const byte *fil_tablespace_redo_create(const byte *ptr, const byte *end,
 const byte *fil_tablespace_redo_rename(const byte *ptr, const byte *end,
                                        const page_id_t &page_id,
                                        ulint parsed_bytes,
-                                       bool parse_only [[maybe_unused]]) {
+                                       bool parse_only [[maybe_unused]]
+                                       IF_XB(, lsn_t start_lsn)) {
+#ifdef XTRABACKUP
+  const byte *start_ptr = ptr;
+#endif /* XTRABACKUP */
+
   ut_a(page_id.page_no() == 0);
 
   /* We never recreate the system tablespace. */
@@ -10661,6 +10677,12 @@ const byte *fil_tablespace_redo_rename(const byte *ptr, const byte *end,
     }
     return nullptr;
   }
+
+#ifdef XTRABACKUP
+  if (ddl_tracker && redo_catchup_completed)
+    ddl_tracker->backup_file_op(page_id.space(), MLOG_FILE_RENAME, start_ptr,
+                                static_cast<ulint>(end - start_ptr), start_lsn);
+#endif /* XTRABACKUP */
 
 #ifdef XTRABACKUP
   if (parse_only) {
@@ -10895,12 +10917,17 @@ const byte *fil_tablespace_redo_extend(const byte *ptr, const byte *end,
 @param[in]      page_id         Tablespace Id and first page in file
 @param[in]      parsed_bytes    Number of bytes parsed so far
 @param[in]      parse_only      Don't apply, parse only
+@param[in]      start_lsn       LSN of the redo record
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
 const byte *fil_tablespace_redo_delete(const byte *ptr, const byte *end,
                                        const page_id_t &page_id,
-                                       ulint parsed_bytes, bool parse_only) {
+                                       ulint parsed_bytes,
+                                       bool parse_only IF_XB(, lsn_t start_lsn)) {
   ut_a(page_id.page_no() == 0);
+#ifdef XTRABACKUP
+  const byte *start_ptr = ptr;
+#endif /* XTRABACKUP */
 
   /* We never recreate the system tablespace. */
   ut_a(page_id.space() != TRX_SYS_SPACE);
@@ -10923,6 +10950,12 @@ const byte *fil_tablespace_redo_delete(const byte *ptr, const byte *end,
 
   recv_sys->deleted.insert(page_id.space());
   recv_sys->missing_ids.erase(page_id.space());
+
+#ifdef XTRABACKUP
+  if (ddl_tracker && redo_catchup_completed)
+    ddl_tracker->backup_file_op(page_id.space(), MLOG_FILE_DELETE, start_ptr,
+                                static_cast<ulint>(end - start_ptr), start_lsn);
+#endif /* XTRABACKUP */
 
   if (parse_only) {
     return ptr;
