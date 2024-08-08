@@ -18,6 +18,7 @@ endif
 builddir = release
 builddirdebug = debug
 rpath='$$ORIGIN/../lib/private'
+originrpath='$$ORIGIN'
 
 override_dh_auto_configure:
 
@@ -65,6 +66,7 @@ override_dh_install:
 	mkdir -p debian/percona-xtrabackup-84/usr/bin/
 	cp ./$(builddir)/library_output_directory/libprotobuf-lite.so* debian/percona-xtrabackup-84/usr/lib/private/
 	cp ./$(builddirdebug)/runtime_output_directory/xtrabackup debian/percona-xtrabackup-84/usr/bin/xtrabackup-debug
+	patchelf --debug --set-rpath $(originrpath) debian/percona-xtrabackup-84/usr/lib/private/libprotobuf-lite.so*
 	patchelf --debug --set-rpath $(rpath) debian/percona-xtrabackup-84/usr/bin/xtrabackup-debug
 	@echo "RULES.$@"
 
