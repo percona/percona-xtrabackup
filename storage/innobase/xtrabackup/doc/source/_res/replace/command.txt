@@ -1,8 +1,0 @@
-.. Commands formatted with *command* role
-
-.. |cmd.docker|        replace:: :command:`docker`
-.. |cmd.apt|           replace:: :command:`apt`
-.. |cmd.yum|           replace:: :command:`yum`
-.. |cmd.docker-create| replace:: :command:`docker create`
-.. |cmd.docker-run|    replace:: :command:`docker run`
-
