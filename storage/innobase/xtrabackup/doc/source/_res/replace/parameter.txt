@@ -1,5 +1,0 @@
-.. Parameters, options, and configuration variables
-
-.. |param.name| replace:: ``--name``
-.. |param.volumes-from| replace:: ``--volumes-from``
-
