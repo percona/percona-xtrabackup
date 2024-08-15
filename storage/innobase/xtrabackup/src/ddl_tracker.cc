@@ -20,7 +20,14 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "ddl_tracker.h"
 #include <fil0fil.h>
 #include <os0thread-create.h>  // os_thread_create
+#include <iostream>
+#include <set>
+#include <sstream>
+#include <string>
 #include <univ.i>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 #include "backup_copy.h"
 #include "file_utils.h"
 #include "fsp0fsp.h"               // fsp_is_undo_tablespace
@@ -297,6 +304,61 @@ std::string ddl_tracker_t::convert_file_name(space_id_t space_id,
   return file_name.substr(0, sep_pos + 1) + std::to_string(space_id) + ext;
 }
 
+// Helper to convert single values to strings
+template <typename T>
+std::string to_string(const T &value) {
+  std::ostringstream oss;
+  oss << value;
+  return oss.str();
+}
+
+// Specialization for std::pair
+template <typename T1, typename T2>
+std::string to_string(const std::pair<T1, T2> &p) {
+  std::ostringstream oss;
+  oss << "{" << to_string(p.first) << ", " << to_string(p.second) << "}";
+  return oss.str();
+}
+
+// Specialization for std::unordered_map
+template <typename K, typename V>
+std::string to_string(const std::unordered_map<K, V> &umap) {
+  std::ostringstream oss;
+  oss << "{\n";
+  for (auto it = umap.begin(); it != umap.end(); ++it) {
+    oss << to_string(it->first) << ": " << to_string(it->second) << "\n";
+  }
+  oss << "}";
+  return oss.str();
+}
+
+// Specialization for std::vector
+template <typename T>
+std::string to_string(const std::vector<T> &vec) {
+  std::ostringstream oss;
+  oss << "[";
+  for (size_t i = 0; i < vec.size(); ++i) {
+    if (i > 0) {
+      oss << ", ";
+    }
+    oss << to_string(vec[i]);
+  }
+  oss << "]";
+  return oss.str();
+}
+
+// Specialization for std::unordered_set
+template <typename T>
+std::string to_string(const std::unordered_set<T> &uset) {
+  std::ostringstream oss;
+  oss << "{\n";
+  for (auto it = uset.begin(); it != uset.end(); ++it) {
+    oss << to_string(*it) << " ";
+  }
+  oss << "\n}";
+  return oss.str();
+}
+
 // Helper function to print the contents of a vector of pairs
 void printVector(const std::string &operation, const filevec &vec) {
   for (const auto &element : vec) {
@@ -350,6 +412,11 @@ std::tuple<filevec, filevec> ddl_tracker_t::handle_undo_ddls() {
   // Generates the after_lock_undo list
   srv_undo_tablespaces_init(false, true);
 
+  std::ostringstream str;
+  str << "Before UNDO files" << to_string(before_lock_undo) << "\n"
+      << "After UNDO files" << to_string(after_lock_undo) << "\n";
+  fprintf(stderr, "%s\n", str.str().c_str());
+
   auto [newfiles, deletedOrChangedFiles] =
       findChanges(before_lock_undo, after_lock_undo);
 
@@ -379,6 +446,17 @@ void ddl_tracker_t::handle_ddl_operations() {
         << "DDL tracking : Finished handling DDL operations - No changes";
     return;
   }
+
+  std::ostringstream str;
+  str << "Tables_copied: " << to_string(tables_in_backup) << "\n"
+      << "New_tables: " << to_string(new_tables) << "\n"
+      << "Renames: " << to_string(renames) << "\n"
+      << "Drops: " << to_string(drops) << "\n"
+      << "Recopy_tables: " << to_string(recopy_tables) << "\n"
+      << "Corrupted_tablespaces: " << to_string(corrupted_tablespaces) << "\n"
+      << "Missing tables: " << to_string(missing_tables) << "\n"
+      << "Renamed_during_scan: " << to_string(renamed_during_scan) << "\n";
+  fprintf(stderr, "%s\n", str.str().c_str());
 
   dberr_t err;
 
