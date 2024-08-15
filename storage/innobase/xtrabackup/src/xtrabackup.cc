@@ -1711,7 +1711,7 @@ static void sigusr1_handler(int sig __attribute__((unused))) {
   debug_sync_file_content.erase(
       std::remove(debug_sync_file_content.begin(),
                   debug_sync_file_content.end(), '\n'),
-      debug_sync_file_content.cend());
+      debug_sync_file_content.end());
   *const_cast<const char **>(&xtrabackup_debug_sync_thread) =
       debug_sync_file_content.c_str();
 
