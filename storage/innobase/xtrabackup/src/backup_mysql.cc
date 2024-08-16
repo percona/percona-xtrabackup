@@ -143,6 +143,16 @@ static int original_innodb_buffer_pool_dump_pct;
 static bool innodb_buffer_pool_dump;
 static bool innodb_buffer_pool_dump_pct;
 
+/* This could be either LOCK TABLES FOR BACKUP or LOCK INSTANCE */
+static xtrabackup::utils::time backup_lock_start_time =
+    xtrabackup::utils::INVALID_TIME;
+static xtrabackup::utils::time backup_lock_end_time =
+    xtrabackup::utils::INVALID_TIME;
+
+static xtrabackup::utils::time ftwrl_start_time =
+    xtrabackup::utils::INVALID_TIME;
+static xtrabackup::utils::time ftwrl_end_time = xtrabackup::utils::INVALID_TIME;
+
 MYSQL *xb_mysql_connect() {
   MYSQL *connection = mysql_init(NULL);
   char mysql_port_str[std::numeric_limits<int>::digits10 + 3];
@@ -1060,6 +1070,10 @@ static bool execute_query_with_timeout(MYSQL *mysql, const char *query,
  @returns true if lock acquired */
 bool lock_tables_for_backup(MYSQL *connection, int timeout, int retry_count) {
   if (have_backup_locks) {
+    /* We cannot take lock twice from a backup. If this fails, did we take
+     * backup lock twice? */
+    ut_ad(backup_lock_start_time == xtrabackup::utils::INVALID_TIME);
+    backup_lock_start_time = std::chrono::high_resolution_clock::now();
     execute_query_with_timeout(connection, "LOCK TABLES FOR BACKUP", timeout,
                                retry_count);
     tables_locked = true;
@@ -1067,6 +1081,11 @@ bool lock_tables_for_backup(MYSQL *connection, int timeout, int retry_count) {
     return (true);
   }
 
+  /* We cannot take lock twice from a backup. If this fails, did we take backup
+   * lock twice? */
+  ut_ad(backup_lock_start_time == xtrabackup::utils::INVALID_TIME);
+
+  backup_lock_start_time = std::chrono::high_resolution_clock::now();
   execute_query_with_timeout(connection, "LOCK INSTANCE FOR BACKUP", timeout,
                              retry_count);
   instance_locked = true;
@@ -1122,6 +1141,12 @@ bool lock_tables_ftwrl(MYSQL *connection) {
     stop_query_killer();
   }
 
+  /* We cannot take FTWRL twice from a backup. If this fails, did we take FTWRL
+  twice? */
+  ut_ad(ftwrl_start_time == xtrabackup::utils::INVALID_TIME);
+
+  ftwrl_start_time = std::chrono::high_resolution_clock::now();
+
   tables_locked = true;
 
   return (true);
@@ -1153,10 +1178,39 @@ bool lock_tables_maybe(MYSQL *connection, int timeout, int retry_count) {
   return lock_tables_ftwrl(connection);
 }
 
+static void print_lock_time_info() {
+  if (backup_lock_end_time != xtrabackup::utils::INVALID_TIME &&
+      backup_lock_start_time != xtrabackup::utils::INVALID_TIME) {
+    const std::string lock_sql = have_backup_locks ? "LOCK TABLES FOR BACKUP"
+                                                   : "LOCK INSTANCE FOR BACKUP";
+    xb::info() << "Total time Server is locked by " << lock_sql << " is: "
+               << xtrabackup::utils::formatElapsedTime(backup_lock_end_time -
+                                                       backup_lock_start_time);
+  }
+
+  if (ftwrl_end_time != xtrabackup::utils::INVALID_TIME &&
+      ftwrl_start_time != xtrabackup::utils::INVALID_TIME) {
+    xb::info()
+        << "Total time Server is locked by FLUSH TABLES WITH READLOCK is: "
+        << xtrabackup::utils::formatElapsedTime(ftwrl_end_time -
+                                                ftwrl_start_time);
+  }
+}
+
 /*********************************************************************/ /**
  Releases the lock acquired with FTWRL/LOCK TABLES FOR BACKUP, depending on
  the locking strategy being used */
 void unlock_all(MYSQL *connection) {
+  if ((tables_locked && have_backup_locks) || instance_locked) {
+    ut_ad(backup_lock_end_time == xtrabackup::utils::INVALID_TIME);
+    backup_lock_end_time = std::chrono::high_resolution_clock::now();
+  }
+
+  if (tables_locked && !have_backup_locks) {
+    ut_ad(ftwrl_end_time == xtrabackup::utils::INVALID_TIME);
+    ftwrl_end_time = std::chrono::high_resolution_clock::now();
+  }
+
   if (instance_locked) {
     xb::info() << "Executing UNLOCK INSTANCE";
     xb_mysql_query(connection, "UNLOCK INSTANCE", false);
@@ -1169,6 +1223,7 @@ void unlock_all(MYSQL *connection) {
   }
 
   xb::info() << "All tables unlocked";
+  print_lock_time_info();
 }
 
 static int get_open_temp_tables(MYSQL *connection) {

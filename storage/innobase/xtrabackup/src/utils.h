@@ -19,6 +19,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #ifndef XTRABACKUP_UTILS_H
 #define XTRABACKUP_UTILS_H
 #include <my_getopt.h>
+#include <chrono>
+
 namespace xtrabackup {
 namespace utils {
 
@@ -60,6 +62,14 @@ unsigned long host_free_memory();
 /** Generates uuid
 @return uuid string */
 std::string generate_uuid();
+
+using time = std::chrono::time_point<std::chrono::high_resolution_clock>;
+using HighResTimePoint =
+    std::chrono::time_point<std::chrono::high_resolution_clock>;
+constexpr HighResTimePoint INVALID_TIME = HighResTimePoint::min();
+
+std::string formatElapsedTime(std::chrono::nanoseconds elapsed);
+
 }  // namespace utils
 }  // namespace xtrabackup
 #endif  // XTRABACKUP_UTILS_H
