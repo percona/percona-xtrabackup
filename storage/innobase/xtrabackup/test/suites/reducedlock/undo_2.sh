@@ -28,7 +28,7 @@ echo "backup pid is $job_pid"
 UNDO_2_BI_SPACE_ID=$($MYSQL $MYSQL_ARGS -BN -e "select space  from information_schema.innodb_tablespaces where name = 'UNDO_3'")
 mysql -e "ALTER UNDO TABLESPACE UNDO_2 SET INACTIVE"
 mysql -e "SET GLOBAL innodb_purge_rseg_truncate_frequency=1"
-sleep 1
+sleep 2
 UNDO_2_BI_SPACE_ID=$($MYSQL $MYSQL_ARGS -BN -e "select space  from information_schema.innodb_tablespaces where name = 'UNDO_3'")
 mysql -e "DROP UNDO TABLESPACE UNDO_2"
 
