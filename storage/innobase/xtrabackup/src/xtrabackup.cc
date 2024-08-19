@@ -112,6 +112,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "keyring_plugins.h"
 #include "read_filt.h"
 #include "redo_log.h"
+#include "scope_guard.h"
 #include "space_map.h"
 #include "utils.h"
 #include "write_filt.h"
@@ -5689,15 +5690,22 @@ static bool prepare_handle_ren_files(
 
   if (fil_space != NULL) {
     char tmpname[FN_REFLEN];
-    char *oldpath, *space_name;
+    char *oldpath = nullptr, *space_name = nullptr;
     bool res =
         fil_space_read_name_and_filepath(fil_space->id, &space_name, &oldpath);
+
+    auto guard = create_scope_guard([&]() {
+      if (space_name != nullptr) {
+        ut::free(space_name);
+      }
+      if (oldpath != nullptr) {
+        ut::free(oldpath);
+      }
+    });
 
     if (!res || !os_file_exists(oldpath)) {
       xb::error() << "prepare_handle_ren_files: Tablespace " << fil_space->name
                   << " not found.";
-      ut::free(oldpath);
-      ut::free(space_name);
       return false;
     }
 
@@ -5709,8 +5717,6 @@ static bool prepare_handle_ren_files(
     if (!fil_rename_tablespace(fil_space->id, oldpath, tmpname, NULL)) {
       xb::error() << "prepare_handle_ren_files: Cannot rename "
                   << fil_space->name << " to " << dest_space_name;
-      ut::free(oldpath);
-      ut::free(space_name);
       return false;
     }
   }
@@ -5800,15 +5806,22 @@ static bool prepare_handle_del_files(
   space_id = atoi(del_file_name.substr(0, del_file_name.length() - 8).c_str());
   fil_space_t *fil_space = fil_space_get(space_id);
   if (fil_space != NULL) {
-    char *path, *space_name;
+    char *path = nullptr, *space_name = nullptr;
     bool res =
         fil_space_read_name_and_filepath(fil_space->id, &space_name, &path);
+
+    auto guard = create_scope_guard([&]() {
+      if (space_name != nullptr) {
+        ut::free(space_name);
+      }
+      if (path != nullptr) {
+        ut::free(path);
+      }
+    });
 
     if (!res || !os_file_exists(path)) {
       xb::error() << "prepare_handle_del_files: Tablespace " << fil_space->name
                   << " not found.";
-      ut::free(path);
-      ut::free(space_name);
       return false;
     }
 
@@ -5818,8 +5831,6 @@ static bool prepare_handle_del_files(
     if (err != DB_SUCCESS) {
       xb::error() << "prepare_handle_del_files: Cannot delete "
                   << fil_space->name;
-      ut::free(path);
-      ut::free(space_name);
       return false;
     }
   }
