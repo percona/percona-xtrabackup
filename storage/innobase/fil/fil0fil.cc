@@ -1843,6 +1843,7 @@ class Fil_system {
   void meb_name_process(char *name, space_id_t space_id, bool deleted);
 
 #endif /* UNIV_HOTBACKUP */
+
  private:
   /** Open an ibd tablespace and add it to the InnoDB data structures.
   This is similar to fil_ibd_open() except that it is used while
@@ -10977,12 +10978,6 @@ const byte *fil_tablespace_redo_delete(const byte *ptr, const byte *end,
     return nullptr;
   }
 
-  const auto result =
-      fil_system->get_scanned_filename_by_space_id(page_id.space());
-
-  recv_sys->deleted.insert(page_id.space());
-  recv_sys->missing_ids.erase(page_id.space());
-
 #ifdef XTRABACKUP
   if (ddl_tracker && redo_catchup_completed)
     ddl_tracker->backup_file_op(page_id.space(), MLOG_FILE_DELETE, start_ptr,
@@ -10990,8 +10985,19 @@ const byte *fil_tablespace_redo_delete(const byte *ptr, const byte *end,
 #endif /* XTRABACKUP */
 
   if (parse_only) {
+#ifdef XTRABACKUP
+    /* With lock_ddl=LOCK_DDL_REDUCED, We never need to do actual file deletion
+    from redo log records because they are tracked during backup. We just update
+    the maps here to not complain later about missing tablespaces */
+    if (opt_lock_ddl == LOCK_DDL_REDUCED && recv_recovery_is_on()) {
+      recv_sys->deleted.insert(page_id.space());
+      recv_sys->missing_ids.erase(page_id.space());
+    }
+#endif /* XTRABACKUP */
+
     return ptr;
   }
+
 #ifdef UNIV_HOTBACKUP
 
   meb_tablespace_redo_delete(page_id, name.c_str());
@@ -11019,6 +11025,12 @@ const byte *fil_tablespace_redo_delete(const byte *ptr, const byte *end,
       ut_a(err == DB_SUCCESS);
     }
   }
+
+  const auto result =
+      fil_system->get_scanned_filename_by_space_id(page_id.space());
+
+  recv_sys->deleted.insert(page_id.space());
+  recv_sys->missing_ids.erase(page_id.space());
 
   if (result.second == nullptr) {
     /* No files map to this tablespace ID. The drop must
