@@ -30,6 +30,11 @@ append_arg_to_args () {
     args="$args "$(shell_quote_string "$1")
 }
 
+switch_to_vault_repo() {
+    sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
+    sed -i 's|#\s*baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
+}
+
 parse_arguments() {
     pick_args=
     if test "$1" = PICK-ARGS-FROM-ARGV
@@ -236,6 +241,9 @@ install_deps() {
     CURPLACE=$(pwd)
     if [ "$OS" == "rpm" ]
     then
+        if [ $RHEL = 7 ]; then
+            switch_to_vault_repo
+        fi
         yum -y install git wget yum-utils curl
         yum install -y https://repo.percona.com/yum/percona-release-latest.noarch.rpm
         if [ x"$ARCH" = "xx86_64" ]; then
@@ -261,7 +269,7 @@ install_deps() {
             else
                 if [ x"$ARCH" = "xx86_64" ]; then
                     yum-config-manager --enable powertools
-                    wget --no-check-certificate https://downloads.percona.com/downloads/TESTING/issue-CUSTO83/procps-ng-devel-3.3.15-6.el8.x86_64.rpm
+                    wget --no-check-certificate https://downloads.percona.com/downloads/packaging/procps-ng-devel-3.3.15-6.el8.x86_64.rpm
                     yum -y install ./procps-ng-devel-3.3.15-6.el8.x86_64.rpm
                     rm procps-ng-devel-3.3.15-6.el8.x86_64.rpm
                     PKGLIST+=" libarchive"
@@ -305,6 +313,9 @@ install_deps() {
                 sleep 1
                 echo "waiting"
             done
+            if [ $RHEL = 7 ]; then
+                switch_to_vault_repo
+            fi
             until yum -y makecache; do
                 yum clean all
                 sleep 1
@@ -350,6 +361,10 @@ install_deps() {
             PKGLIST+=" libproc2-dev"
         else
             PKGLIST+=" libprocps-dev"
+        fi
+        if [ "${OS_NAME}" == "noble" ]; then
+            wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+            dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
         fi
         if [ "${OS_NAME}" == "bionic" ]; then
             PKGLIST+=" gcc-8 g++-8"
@@ -539,7 +554,7 @@ build_source_deb(){
 
     echo "DEB_RELEASE=${DEB_RELEASE}" >> ${CURDIR}/percona-xtrabackup-8.0.properties
 
-    NEWTAR=${NAME}-83_${VERSION}.orig.tar.gz
+    NEWTAR=${NAME}-84_${VERSION}.orig.tar.gz
     mv ${TARFILE} ${NEWTAR}
 
     tar xzf ${NEWTAR}

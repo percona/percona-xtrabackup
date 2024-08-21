@@ -1,3 +1,8 @@
+percona-xtrabackup-84 (8.4) unstable; urgency=low
+
+  * Packaging changes for version 8.4
+
+ -- Vadim Yalovets <vadim.yalovets@percona.com>  Fri, 01 Aug 2024 19:11:21 +0300
 percona-xtrabackup-83 (8.3) unstable; urgency=low
 
   * Packaging changes for version 8.3

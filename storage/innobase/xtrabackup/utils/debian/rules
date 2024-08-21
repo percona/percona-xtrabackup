@@ -18,20 +18,21 @@ endif
 builddir = release
 builddirdebug = debug
 rpath='$$ORIGIN/../lib/private'
+originrpath='$$ORIGIN'
 
 override_dh_auto_configure:
 
 ifeq "$(DEB_DUMMY)" ""
 	( test -d $(builddirdebug) || mkdir $(builddirdebug) ) && cd $(builddirdebug) && \
 	cmake .. -DBUILD_CONFIG=xtrabackup_release -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=/usr \
-	  -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test-83 \
+	  -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test-84 \
 	  -DINSTALL_MANDIR=/usr/share/man -DWITH_MAN_PAGES=1 -DMINIMAL_RELWITHDEBINFO=OFF \
 	  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock \
 	  -DINSTALL_PLUGINDIR=lib/xtrabackup/plugin -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled && \
 	cd ..
 	( test -d $(builddir) || mkdir $(builddir) ) && cd $(builddir) && \
 	cmake .. -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=/usr \
-	  -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test-83 \
+	  -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test-84 \
 	  -DINSTALL_MANDIR=/usr/share/man -DWITH_MAN_PAGES=1 -DMINIMAL_RELWITHDEBINFO=OFF \
 	  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock \
 	  -DINSTALL_PLUGINDIR=lib/xtrabackup/plugin -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled
@@ -61,15 +62,16 @@ override_dh_auto_install:
 
 override_dh_install:
 	dh_install
-	mkdir -p debian/percona-xtrabackup-83/usr/lib/private/
-	mkdir -p debian/percona-xtrabackup-83/usr/bin/
-	cp ./$(builddir)/library_output_directory/libprotobuf-lite.so* debian/percona-xtrabackup-83/usr/lib/private/
-	cp ./$(builddirdebug)/runtime_output_directory/xtrabackup debian/percona-xtrabackup-83/usr/bin/xtrabackup-debug
-	patchelf --debug --set-rpath $(rpath) debian/percona-xtrabackup-83/usr/bin/xtrabackup-debug
+	mkdir -p debian/percona-xtrabackup-84/usr/lib/private/
+	mkdir -p debian/percona-xtrabackup-84/usr/bin/
+	cp ./$(builddir)/library_output_directory/libprotobuf-lite.so* debian/percona-xtrabackup-84/usr/lib/private/
+	cp ./$(builddirdebug)/runtime_output_directory/xtrabackup debian/percona-xtrabackup-84/usr/bin/xtrabackup-debug
+	patchelf --debug --set-rpath $(originrpath) debian/percona-xtrabackup-84/usr/lib/private/libprotobuf-lite.so*
+	patchelf --debug --set-rpath $(rpath) debian/percona-xtrabackup-84/usr/bin/xtrabackup-debug
 	@echo "RULES.$@"
 
 override_dh_strip:
-	dh_strip --dbg-package=percona-xtrabackup-dbg-83
+	dh_strip --dbg-package=percona-xtrabackup-dbg-84
 	dh_strip -Xlibprotobuf-lite
 
 %:
