@@ -2722,8 +2722,10 @@ dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
   /* space_id mismatch can happen for truncation of tablespaces. Regular and
    * Undo */
   if (space_id != space->id) {
-    if (srv_backup_mode && opt_lock_ddl == LOCK_DDL_REDUCED)
-      return DB_CANNOT_OPEN_FILE;
+    if (srv_backup_mode && opt_lock_ddl == LOCK_DDL_REDUCED) {
+      ut::aligned_free(page);
+      return (DB_CANNOT_OPEN_FILE);
+    }
 
     ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_270)
         << "Tablespace id is " << space->id
