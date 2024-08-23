@@ -36,6 +36,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "xb0xb.h"       // check_if_skip_table
 #include "xtrabackup.h"  // datafiles_iter_t
 
+static std::string EXT_DEL = ".del";
+static std::string EXT_REN = ".ren";
+static std::string EXT_NEW = ".new";
+
 void ddl_tracker_t::backup_file_op(uint32_t space_id, mlog_id_t type,
                                    const byte *buf, ulint len,
                                    lsn_t start_lsn) {
@@ -125,7 +129,7 @@ void ddl_tracker_t::add_to_recopy_tables(space_id_t space_id, lsn_t start_lsn,
 void ddl_tracker_t::add_missing_table(std::string path) {
   Fil_path::normalize(path);
   if (Fil_path::has_prefix(path, Fil_path::DOT_SLASH)) {
-    path.erase(0, 2);
+    path.erase(0, strlen(Fil_path::DOT_SLASH));
   }
 
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
@@ -219,10 +223,7 @@ void ddl_tracker_t::add_drop_table_from_redo(const space_id_t space_id,
 }
 
 bool ddl_tracker_t::is_missing_table(const std::string &name) {
-  if (missing_tables.count(name)) {
-    return true;
-  }
-  return false;
+  return missing_tables.count(name) != 0;
 }
 
 void ddl_tracker_t::add_renamed_table(const space_id_t &space_id,
@@ -279,7 +280,7 @@ static void data_copy_thread_func(copy_thread_ctxt_t *ctxt) {
       continue;
     }
     std::string dest_name = node->name;
-    dest_name.append(".new");
+    dest_name.append(EXT_NEW);
     if (xtrabackup_copy_datafile(node, num, dest_name.c_str())) {
       xb::error() << "failed to copy datafile " << node->name;
       *(ctxt->error) = true;
@@ -294,8 +295,11 @@ static void data_copy_thread_func(copy_thread_ctxt_t *ctxt) {
   my_thread_end();
 }
 
-/* returns .del or .ren file name starting with space_id
-  like schema/spaceid.ibd.del
+/**
+  @param space_id The space id of the current file
+  @param file_name File name that we will modify
+  @param ext Extension that we will modify to
+  @returns .del or .ren file name starting with space_id e.g schema/spaceid.del
 */
 std::string ddl_tracker_t::convert_file_name(space_id_t space_id,
                                              std::string file_name,
@@ -471,8 +475,9 @@ void ddl_tracker_t::handle_ddl_operations() {
    * redo_mgr.start and xb_load_tablespaces. This causes we ending up with two
    * tablespaces with the same spaceID. Remove them from new tables */
   for (auto &table : tables_in_backup) {
-    if (new_tables.find(table.first) != new_tables.end()) {
-      new_tables.erase(table.first);
+    space_id_t space_id = table.first;
+    if (new_tables.find(space_id) != new_tables.end()) {
+      new_tables.erase(space_id);
     }
   }
 
@@ -489,7 +494,7 @@ void ddl_tracker_t::handle_ddl_operations() {
         // We never create .del for ibdata*
         ut_ad(!fsp_is_system_tablespace(table));
         backup_file_printf(
-            convert_file_name(table, renames[table].first, ".ibd.del").c_str(),
+            convert_file_name(table, renames[table].first, EXT_DEL).c_str(),
             "%s", "");
       }
       string name = tables_in_backup[table];
@@ -498,35 +503,41 @@ void ddl_tracker_t::handle_ddl_operations() {
   }
 
   for (auto &table : drops) {
-    if (check_if_skip_table(table.second.c_str())) {
+    space_id_t space_id = table.first;
+    std::string table_name = table.second;
+
+    if (check_if_skip_table(table_name.c_str())) {
       continue;
     }
     /* Remove from rename */
-    renames.erase(table.first);
+    renames.erase(space_id);
 
     /* Remove from new tables and skip drop*/
-    if (new_tables.find(table.first) != new_tables.end()) {
-      new_tables.erase(table.first);
+    if (new_tables.find(space_id) != new_tables.end()) {
+      new_tables.erase(space_id);
       continue;
     }
 
     /* Table not in the backup, nothing to drop, skip drop*/
-    if (tables_in_backup.find(table.first) == tables_in_backup.end()) {
+    if (tables_in_backup.find(space_id) == tables_in_backup.end()) {
       continue;
     }
 
     // We never create .del for ibdata*
-    ut_ad(!fsp_is_system_tablespace(table.first));
-    backup_file_printf(
-        convert_file_name(table.first, table.second, ".ibd.del").c_str(), "%s",
-        "");
+    ut_ad(!fsp_is_system_tablespace(space_id));
+    backup_file_printf(convert_file_name(space_id, table_name, EXT_DEL).c_str(),
+                       "%s", "");
   }
 
   for (auto &table : renames) {
-    if (check_if_skip_table(table.second.second.c_str())) {
+    space_id_t space_id = table.first;
+    std::string old_table_name = table.second.first;
+    std::string new_table_name = table.second.second;
+
+    if (check_if_skip_table(new_table_name.c_str())) {
       continue;
     }
-    if (check_if_skip_table(table.second.first.c_str())) {
+    if (check_if_skip_table(old_table_name.c_str())) {
       continue;
     }
     /* renamed new table. update new table entry to renamed table name
@@ -537,20 +548,20 @@ void ddl_tracker_t::handle_ddl_operations() {
                    4. t1.ibd is missing now
       so we should add t2.ibd to new_tables and skip .ren file so that we don't
       try to rename t1.ibd to t2.idb where t1.ibd is missing   */
-    if (new_tables.find(table.first) != new_tables.end() ||
-        is_missing_table(table.second.first)) {
-      new_tables[table.first] = table.second.second;
+    if (new_tables.find(space_id) != new_tables.end() ||
+        is_missing_table(old_table_name)) {
+      new_tables[space_id] = new_table_name;
       continue;
     }
 
     /* Table not in the backup, nothing to rename, skip rename*/
-    if (tables_in_backup.find(table.first) == tables_in_backup.end()) {
+    if (tables_in_backup.find(space_id) == tables_in_backup.end()) {
       continue;
     }
 
     backup_file_printf(
-        convert_file_name(table.first, table.second.first, ".ibd.ren").c_str(),
-        "%s", table.second.second.c_str());
+        convert_file_name(space_id, old_table_name, EXT_REN).c_str(), "%s",
+        new_table_name.c_str());
   }
 
   for (auto table = new_tables.begin(); table != new_tables.end();) {
@@ -613,8 +624,7 @@ void ddl_tracker_t::handle_ddl_operations() {
   // Create .del files for deleted undo tablespaces
   for (auto &elem : deleted_undo_files) {
     backup_file_printf(
-        convert_file_name(elem.second, elem.first, ".ibu.del").c_str(), "%s",
-        "");
+        convert_file_name(elem.second, elem.first, EXT_DEL).c_str(), "%s", "");
   }
 
   // Add new undo files to be recopied

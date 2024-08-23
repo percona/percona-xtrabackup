@@ -520,6 +520,15 @@ extern struct rand_struct sql_rand;
 extern mysql_mutex_t LOCK_sql_rand;
 bool xb_generated_redo = false;
 ddl_tracker_t *ddl_tracker = nullptr;
+static std::string EXT_DEL = ".del";
+static std::string EXT_REN = ".ren";
+static std::string EXT_NEW = ".new";
+static std::string EXT_IBD = ".ibd";
+static std::string EXT_IBU = ".ibu";
+static std::string EXT_META = ".meta";
+static std::string EXT_NEW_META = ".new.meta";
+static std::string EXT_DELTA = ".delta";
+static std::string EXT_NEW_DELTA = ".new.delta";
 
 static void check_all_privileges();
 static bool validate_options(const char *file, int argc, char **argv);
@@ -4877,7 +4886,7 @@ static bool get_meta_path(
 {
   size_t len = strlen(delta_path);
 
-  if (len <= 6 || strcmp(delta_path + len - 6, ".delta")) {
+  if (len <= 6 || strcmp(delta_path + len - 6, EXT_DELTA.c_str())) {
     return false;
   }
   memcpy(meta_path, delta_path, len - 6);
@@ -5144,7 +5153,7 @@ static pfs_os_file_t xb_delta_open_matching_space(
   }
   Fil_path::normalize(real_name);
   /* Truncate ".ibd" */
-  dest_space_name[strlen(dest_space_name) - 4] = '\0';
+  dest_space_name[strlen(dest_space_name) - EXT_IBD.length()] = '\0';
 
   /* Create the database directory if it doesn't exist yet */
   if (!os_file_create_directory(dest_dir, false)) {
@@ -5195,7 +5204,7 @@ static pfs_os_file_t xb_delta_open_matching_space(
             fil_space_read_name_and_filepath(f_space_id, &space_name, &oldpath);
         ut_a(res);
         xb::info() << "Renaming " << dest_space_name << " to " << tmpname
-                   << ".ibu";
+                   << EXT_IBU;
 
         ut_a(os_file_status(oldpath, &exists, &type));
 
@@ -5250,7 +5259,7 @@ static pfs_os_file_t xb_delta_open_matching_space(
       ut_a(res);
 
       xb::info() << "Renaming " << dest_space_name << " to " << tmpname
-                 << ".ibd";
+                 << EXT_IBU;
 
       ut_a(os_file_status(oldpath, &exists, &type));
 
@@ -5345,8 +5354,9 @@ exit:
 }
 
 /************************************************************************
-Applies a given .delta file to the corresponding data file.
-@return true on success */
+ * Applies a given .delta file to the corresponding data file.
+ * @return true on success
+ */
 static bool xtrabackup_apply_delta(
     const datadir_entry_t &entry, /*!<in: datadir entry */
     void * /*data*/) {
@@ -5558,10 +5568,11 @@ static bool ends_with(const string &full_string, const string &ext) {
 }
 
 /************************************************************************
-Scan .meta files and build std::unordered_map<space_id, meta_path>.
-This map is later used to delete the .delta and .meta file for a dropped
-tablespace (ie. when processing the .del entries in reduced lock)
-@return true on success */
+ * Scan .meta files and build std::unordered_map<space_id, meta_path>.
+ * This map is later used to delete the .delta and .meta file for a dropped
+ * tablespace (ie. when processing the .del entries in reduced lock)
+ * @return true on success
+ */
 static bool xtrabackup_scan_meta(
     const datadir_entry_t &entry, /*!<in: datadir entry */
     void * /*data*/) {
@@ -5579,7 +5590,7 @@ static bool xtrabackup_scan_meta(
 
   // We dont want to add .new.meta to meta_map, as they are meant to be replace
   // the old version of the file.
-  if (ends_with(entry.file_name, ".new.meta")) {
+  if (ends_with(entry.file_name, EXT_NEW_META)) {
     return true;
   }
 
@@ -5634,7 +5645,7 @@ static bool prepare_handle_new_files(
   std::string src_path = entry.path;
   std::string dest_path = src_path;
   xb::info() << "prepare_handle_new_files: " << src_path;
-  size_t index = dest_path.find(".new");
+  size_t index = dest_path.find(EXT_NEW);
 #ifdef UNIV_DEBUG
   assert(index != std::string::npos);
 #endif  // UNIV_DEBUG
@@ -5657,10 +5668,12 @@ static std::string read_file_as_string(const std::string file) {
 }
 
 /**
-Handle DDL for renamed files
-example input: test/10.ibd.ren file with content = test/new_name.ibd ;
-      -> tablespace with space_id = 10 will be renamed to test/new_name.ibd
-@return true on success */
+ * Handle DDL for renamed files
+ * example input: test/10.ren file with content = test/new_name.ibd ;
+ *        result: tablespace with space_id=10 will be renamed to
+ * test/new_name.ibd
+ * @return true on success
+ */
 static bool prepare_handle_ren_files(
     const datadir_entry_t &entry, /*!<in: datadir entry */
     void * /*data*/) {
@@ -5675,7 +5688,8 @@ static bool prepare_handle_ren_files(
   Fil_path::normalize(ren_path);
   // trim .ibd.ren
   source_space_id =
-      atoi(ren_file_name.substr(0, ren_file_name.length() - 8).c_str());
+      atoi(ren_file_name.substr(0, ren_file_name.length() - EXT_REN.length())
+               .c_str());
   ren_file_content = read_file_as_string(ren_path);
 
   if (ren_file_content.empty()) {
@@ -5683,8 +5697,10 @@ static bool prepare_handle_ren_files(
     return false;
   }
   // trim .ibd
-  snprintf(dest_space_name, FN_REFLEN, "%s",
-           ren_file_content.substr(0, ren_file_content.length() - 4).c_str());
+  snprintf(
+      dest_space_name, FN_REFLEN, "%s",
+      ren_file_content.substr(0, ren_file_content.length() - EXT_IBD.length())
+          .c_str());
 
   fil_space_t *fil_space = fil_space_get(source_space_id);
 
@@ -5729,15 +5745,16 @@ static bool prepare_handle_ren_files(
 
       // create .delta path from .meta
       std::string delta_file =
-          meta_file.substr(0, strlen(meta_file.c_str()) - strlen(".meta")) +
-          ".delta";
+          meta_file.substr(
+              0, strlen(meta_file.c_str()) - strlen(EXT_META.c_str())) +
+          EXT_DELTA;
 
-      std::string to_delta(to_path + ".delta");
+      std::string to_delta(to_path + EXT_DELTA);
       xb::info() << "Renaming incremental delta file from: " << delta_file
                  << " to: " << to_delta;
       rename_force(delta_file, to_delta);
 
-      std::string to_meta(to_path + ".meta");
+      std::string to_meta(to_path + EXT_META);
       xb::info() << "Renaming incremental meta file from: " << meta_file
                  << " to: " << to_meta;
       rename_force(meta_file, to_meta);
@@ -5755,8 +5772,10 @@ static bool prepare_handle_ren_files(
   return true;
 }
 
-/** Handle .corrupt files. These files should be removed before we do *.ibd scan
-@return true on success */
+/**
+ * Handle .corrupt files. These files should be removed before we do *.ibd scan
+ * @return true on success
+ * */
 static bool prepare_handle_corrupt_files(
     const datadir_entry_t &entry, /*!<in: datadir entry */
     void * /*data*/) {
@@ -5770,11 +5789,11 @@ static bool prepare_handle_corrupt_files(
       corrupt_path.substr(0, corrupt_path.length() - ext.length());
 
   if (xtrabackup_incremental) {
-    std::string delta_file = source_path + ".delta";
+    std::string delta_file = source_path + EXT_DELTA;
     xb::info() << "prepare_handle_corrupt_files: deleting  " << delta_file;
     os_file_delete_if_exists_func(delta_file.c_str(), nullptr);
 
-    std::string meta_file = source_path + ".meta";
+    std::string meta_file = source_path + EXT_META;
     xb::info() << "prepare_handle_corrupt_files: deleting  " << meta_file;
     os_file_delete_if_exists_func(meta_file.c_str(), nullptr);
   } else {
@@ -5789,10 +5808,11 @@ static bool prepare_handle_corrupt_files(
 }
 
 /**
-Handle DDL for deleted files
-example input: test/10.ibd.del file
-        -> tablespace with space_id = 10 will be deleted
-@return true on success */
+ * Handle DDL for deleted files
+ * example input: test/10.del file
+ *        result: tablespace with space_id=10 will be deleted
+ * @return true on success
+ */
 static bool prepare_handle_del_files(
     const datadir_entry_t &entry, /*!<in: datadir entry */
     void *arg __attribute__((unused))) {
@@ -5803,7 +5823,9 @@ static bool prepare_handle_del_files(
   space_id_t space_id;
 
   // trim .ibd.del
-  space_id = atoi(del_file_name.substr(0, del_file_name.length() - 8).c_str());
+  space_id =
+      atoi(del_file_name.substr(0, del_file_name.length() - EXT_DEL.length())
+               .c_str());
   fil_space_t *fil_space = fil_space_get(space_id);
   if (fil_space != NULL) {
     char *path = nullptr, *space_name = nullptr;
@@ -5840,8 +5862,9 @@ static bool prepare_handle_del_files(
     if (exists) {
       // create .delta path from .meta
       std::string delta_file =
-          meta_file.substr(0, strlen(meta_file.c_str()) - strlen(".meta")) +
-          ".delta";
+          meta_file.substr(
+              0, strlen(meta_file.c_str()) - strlen(EXT_META.c_str())) +
+          EXT_DELTA;
       xb::info() << "Deleting incremental meta file: " << meta_file;
       delete_force(meta_file);
       xb::info() << "Deleting incremental delta file: " << delta_file;
@@ -5855,9 +5878,9 @@ static bool prepare_handle_del_files(
 }
 
 /************************************************************************
-Callback to handle datadir entry. Deletes entry if it has no matching
-fil_space in fil_system directory.
-@return false if delete attempt was unsuccessful */
+ * Callback to handle datadir entry. Deletes entry if it has no matching
+ * fil_space in fil_system directory.
+ * @return false if delete attempt was unsuccessful */
 static bool rm_if_not_found(
     const datadir_entry_t &entry, /*!<in: datadir entry */
     void *arg __attribute__((unused))) {
@@ -5876,7 +5899,7 @@ static bool rm_if_not_found(
   }
 
   /* Truncate ".ibd" */
-  name[strlen(name) - 4] = '\0';
+  name[strlen(name) - EXT_IBD.length()] = '\0';
 
   HASH_SEARCH(name_hash, inc_dir_tables_hash, ut::hash_string(name),
               xb_filter_entry_t *, table, (void)0, !strcmp(table->name, name));
@@ -5896,8 +5919,8 @@ static bool rm_if_not_found(
 }
 
 /** Make sure that we have a read access to the given datadir entry
-@param[in]	statinfo	entry stat info
-@param[out]	name		entry name */
+ * @param[in]	statinfo	entry stat info
+ * @param[out]	name		entry name */
 static void check_datadir_enctry_access(const char *name,
                                         const struct stat *statinfo) {
   const char *entry_type = S_ISDIR(statinfo->st_mode) ? "directory" : "file";
@@ -6012,7 +6035,7 @@ bool xb_process_datadir(const char *path,   /*!<in: datadir path */
 Applies all .delta files from incremental_dir to the full backup.
 @return true on success. */
 static bool xtrabackup_apply_deltas() {
-  return xb_process_datadir(xtrabackup_incremental_dir, ".delta",
+  return xb_process_datadir(xtrabackup_incremental_dir, EXT_DELTA.c_str(),
                             xtrabackup_apply_delta, NULL);
 }
 
@@ -7031,7 +7054,7 @@ skip_check:
       // Build meta map
       if (!xb_process_datadir(
               xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".",
-              ".meta", xtrabackup_scan_meta, NULL)) {
+              EXT_META.c_str(), xtrabackup_scan_meta, NULL)) {
         xb_data_files_close();
         goto error_cleanup;
       }
@@ -7042,7 +7065,7 @@ skip_check:
     // should be processed before renames.
     if (!xb_process_datadir(
             xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".",
-            ".del", prepare_handle_del_files, NULL)) {
+            EXT_DEL.c_str(), prepare_handle_del_files, NULL)) {
       xb_data_files_close();
       goto error_cleanup;
     }
@@ -7050,7 +7073,7 @@ skip_check:
     // This should be done after processing .meta and .del
     if (!xb_process_datadir(
             xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".",
-            ".ren", prepare_handle_ren_files, NULL)) {
+            EXT_REN.c_str(), prepare_handle_ren_files, NULL)) {
       xb_data_files_close();
       goto error_cleanup;
     }
@@ -7065,14 +7088,14 @@ skip_check:
       /** This is the new file, this might be less than the original .ibd
        * because we are copying the file while there are still dirty pages in
        * the BP. Those changes will later be conciliated via redo log*/
-      xb_process_datadir(xtrabackup_incremental_dir, ".new.meta",
+      xb_process_datadir(xtrabackup_incremental_dir, EXT_NEW_META.c_str(),
                          prepare_handle_new_files, NULL);
-      xb_process_datadir(xtrabackup_incremental_dir, ".new.delta",
+      xb_process_datadir(xtrabackup_incremental_dir, EXT_NEW_DELTA.c_str(),
                          prepare_handle_new_files, NULL);
-      xb_process_datadir(xtrabackup_incremental_dir, ".new",
+      xb_process_datadir(xtrabackup_incremental_dir, EXT_NEW.c_str(),
                          prepare_handle_new_files, NULL);
     } else {
-      xb_process_datadir(".", ".new", prepare_handle_new_files, NULL);
+      xb_process_datadir(".", EXT_NEW.c_str(), prepare_handle_new_files, NULL);
     }
 
     if (innodb_init_param()) {
@@ -7101,8 +7124,8 @@ skip_check:
     /* Cleanup datadir from tablespaces deleted between full and
     incremental backups */
 
-    xb_process_datadir("./", ".ibd", rm_if_not_found, NULL);
-    xb_process_datadir("./", ".ibu", rm_if_not_found, NULL);
+    xb_process_datadir("./", EXT_IBD.c_str(), rm_if_not_found, NULL);
+    xb_process_datadir("./", EXT_IBU.c_str(), rm_if_not_found, NULL);
 
     xb_filter_hash_free(inc_dir_tables_hash);
   }
