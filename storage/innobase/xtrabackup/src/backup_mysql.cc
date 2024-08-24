@@ -1808,6 +1808,9 @@ bool write_xtrabackup_info(MYSQL *connection) {
   const char *uuid = NULL;
   char *server_version = NULL;
   char *xtrabackup_info_data = NULL;
+  char *schema_exists = NULL;
+  char *table_exists = NULL;
+  char *column_is_changed = NULL;
   int idx;
   bool null = true;
 
@@ -1837,37 +1840,62 @@ bool write_xtrabackup_info(MYSQL *connection) {
   uuid = get_backup_uuid(connection);
   server_version = read_mysql_one_value(connection, "SELECT VERSION()");
 
-  xb_mysql_query(connection, "CREATE DATABASE IF NOT EXISTS PERCONA_SCHEMA",
-                 false);
-  xb_mysql_query(connection,
-                 "CREATE TABLE IF NOT EXISTS PERCONA_SCHEMA.xtrabackup_history("
-                 "uuid VARCHAR(40) NOT NULL PRIMARY KEY,"
-                 "name VARCHAR(255) DEFAULT NULL,"
-                 "tool_name VARCHAR(255) DEFAULT NULL,"
-                 "tool_command TEXT DEFAULT NULL,"
-                 "tool_version VARCHAR(255) DEFAULT NULL,"
-                 "ibbackup_version VARCHAR(255) DEFAULT NULL,"
-                 "server_version VARCHAR(255) DEFAULT NULL,"
-                 "start_time TIMESTAMP NULL DEFAULT NULL,"
-                 "end_time TIMESTAMP NULL DEFAULT NULL,"
-                 "lock_time BIGINT UNSIGNED DEFAULT NULL,"
-                 "binlog_pos TEXT DEFAULT NULL,"
-                 "innodb_from_lsn BIGINT UNSIGNED DEFAULT NULL,"
-                 "innodb_to_lsn BIGINT UNSIGNED DEFAULT NULL,"
-                 "partial ENUM('Y', 'N') DEFAULT NULL,"
-                 "incremental ENUM('Y', 'N') DEFAULT NULL,"
-                 "format ENUM('file', 'tar', 'xbstream') DEFAULT NULL,"
-                 "compact ENUM('Y', 'N') DEFAULT NULL,"
-                 "compressed ENUM('Y', 'N') DEFAULT NULL,"
-                 "encrypted ENUM('Y', 'N') DEFAULT NULL"
-                 ") CHARACTER SET utf8 ENGINE=innodb",
-                 false);
+  schema_exists = read_mysql_one_value(connection, "SELECT COUNT(*) "
+                                        "FROM INFORMATION_SCHEMA.SCHEMATA "
+                                        "WHERE SCHEMA_NAME = 'PERCONA_SCHEMA'");
+  if (strcmp(schema_exists, "0") == 0) {
+    // Only create the schema if it doesn't exist to avoid requesting a metadata lock
+    xb_mysql_query(connection, "CREATE DATABASE IF NOT EXISTS PERCONA_SCHEMA",
+                    false);
 
-  /* Upgrade from previous versions */
-  xb_mysql_query(connection,
-                 "ALTER TABLE PERCONA_SCHEMA.xtrabackup_history MODIFY COLUMN "
-                 "binlog_pos TEXT DEFAULT NULL",
-                 false);
+    table_exists = read_mysql_one_value(connection, "SELECT COUNT(*) "
+                                        "FROM INFORMATION_SCHEMA.TABLES "
+                                        "WHERE TABLE_SCHEMA = 'PERCONA_SCHEMA' "
+                                        "AND TABLE_NAME = 'xtrabackup_history'");
+    if (strcmp(table_exists, "0") == 0)
+    {
+      // Only create the table if it doesn't exist to avoid requesting a metadata lock
+      xb_mysql_query(connection,
+                    "CREATE TABLE IF NOT EXISTS PERCONA_SCHEMA.xtrabackup_history("
+                    "uuid VARCHAR(40) NOT NULL PRIMARY KEY,"
+                    "name VARCHAR(255) DEFAULT NULL,"
+                    "tool_name VARCHAR(255) DEFAULT NULL,"
+                    "tool_command TEXT DEFAULT NULL,"
+                    "tool_version VARCHAR(255) DEFAULT NULL,"
+                    "ibbackup_version VARCHAR(255) DEFAULT NULL,"
+                    "server_version VARCHAR(255) DEFAULT NULL,"
+                    "start_time TIMESTAMP NULL DEFAULT NULL,"
+                    "end_time TIMESTAMP NULL DEFAULT NULL,"
+                    "lock_time BIGINT UNSIGNED DEFAULT NULL,"
+                    "binlog_pos TEXT DEFAULT NULL,"
+                    "innodb_from_lsn BIGINT UNSIGNED DEFAULT NULL,"
+                    "innodb_to_lsn BIGINT UNSIGNED DEFAULT NULL,"
+                    "partial ENUM('Y', 'N') DEFAULT NULL,"
+                    "incremental ENUM('Y', 'N') DEFAULT NULL,"
+                    "format ENUM('file', 'tar', 'xbstream') DEFAULT NULL,"
+                    "compact ENUM('Y', 'N') DEFAULT NULL,"
+                    "compressed ENUM('Y', 'N') DEFAULT NULL,"
+                    "encrypted ENUM('Y', 'N') DEFAULT NULL"
+                    ") CHARACTER SET utf8 ENGINE=innodb",
+                    false);
+    }
+  }
+
+  column_is_changed = read_mysql_one_value(connection, "SELECT COUNT(*) "
+                                            "FROM INFORMATION_SCHEMA.COLUMNS "
+                                            "WHERE TABLE_SCHEMA = 'PERCONA_SCHEMA' "
+                                            "AND TABLE_NAME  = 'xtrabackup_history' "
+                                            "AND COLUMN_NAME = 'binlog_pos' "
+                                            "AND DATA_TYPE = 'TEXT'");
+
+  if (strcmp(column_is_changed, "0") == 0) {
+    // Only alter table if it's required to avoid requesting metadata lock
+    /* Upgrade from previous versions */
+    xb_mysql_query(connection,
+                  "ALTER TABLE PERCONA_SCHEMA.xtrabackup_history MODIFY COLUMN "
+                  "binlog_pos TEXT DEFAULT NULL",
+                  false);                    
+  }
 
   stmt = mysql_stmt_init(connection);
 
@@ -2012,6 +2040,9 @@ cleanup:
 
   free(xtrabackup_info_data);
   free(server_version);
+  free(schema_exists);
+  free(table_exists);
+  free(column_is_changed);
 
   return (true);
 }
