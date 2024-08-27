@@ -26,8 +26,18 @@ typedef std::unordered_map<space_id_t, std::string> space_id_to_name_t;
 typedef std::unordered_map<std::string, space_id_t> name_to_space_id_t;
 typedef std::unordered_map<space_id_t, std::string> meta_map_t;
 using filevec = std::vector<std::pair<std::string, space_id_t>>;
-
+struct datadir_entry_t;
 extern meta_map_t meta_map;
+
+inline const std::string EXT_DEL = ".del";
+inline const std::string EXT_REN = ".ren";
+inline const std::string EXT_NEW = ".new";
+inline const std::string EXT_IBD = ".ibd";
+inline const std::string EXT_IBU = ".ibu";
+inline const std::string EXT_META = ".meta";
+inline const std::string EXT_NEW_META = ".new.meta";
+inline const std::string EXT_DELTA = ".delta";
+inline const std::string EXT_NEW_DELTA = ".new.delta";
 
 class ddl_tracker_t {
   /** List of all tables in the backup */
@@ -138,5 +148,47 @@ void insert_into_meta_map(space_id_t space_id, const std::string &meta_path);
 @return <true, path> if a meta file exists for a given space_id,
 else return <false, ""> if it doesnt exist */
 std::tuple<bool, std::string> is_in_meta_map(space_id_t space_id);
+
+/**
+ * Handle DDL for renamed files
+ * example input: test/10.ren file with content = test/new_name.ibd ;
+ *        result: tablespace with space_id=10 will be renamed to
+ * test/new_name.ibd
+ * @return true on success
+ */
+bool prepare_handle_ren_files(
+    const datadir_entry_t &entry, /*!<in: datadir entry */
+    void * /*data*/);
+
+/**
+ * Handle .corrupt files. These files should be removed before we do *.ibd scan
+ * @return true on success
+ * */
+bool prepare_handle_corrupt_files(
+    const datadir_entry_t &entry, /*!<in: datadir entry */
+    void * /*data*/);
+
+/**
+ * Handle DDL for deleted files
+ * example input: test/10.del file
+ *        result: tablespace with space_id=10 will be deleted
+ * @return true on success
+ */
+bool prepare_handle_del_files(
+    const datadir_entry_t &entry, /*!<in: datadir entry */
+    void *arg __attribute__((unused)));
+
+/************************************************************************
+ * Scan .meta files and build std::unordered_map<space_id, meta_path>.
+ * This map is later used to delete the .delta and .meta file for a dropped
+ * tablespace (ie. when processing the .del entries in reduced lock)
+ * @return true on success
+ */
+bool xtrabackup_scan_meta(const datadir_entry_t &entry, /*!<in: datadir entry */
+                          void * /*data*/);
+
+bool prepare_handle_new_files(
+    const datadir_entry_t &entry, /*!<in: datadir entry */
+    void *arg __attribute__((unused)));
 
 #endif  // DDL_TRACKER_H

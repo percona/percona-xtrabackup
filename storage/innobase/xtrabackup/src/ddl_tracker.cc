@@ -30,15 +30,14 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <vector>
 #include "backup_copy.h"
 #include "file_utils.h"
-#include "fsp0fsp.h"               // fsp_is_undo_tablespace
+#include "fsp0fsp.h"  // fsp_is_undo_tablespace
+#include "scope_guard.h"
 #include "sql_thd_internal_api.h"  // create_thd, destroy_thd
 #include "srv0start.h"
 #include "xb0xb.h"       // check_if_skip_table
 #include "xtrabackup.h"  // datafiles_iter_t
 
-static std::string EXT_DEL = ".del";
-static std::string EXT_REN = ".ren";
-static std::string EXT_NEW = ".new";
+extern bool xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info);
 
 void ddl_tracker_t::backup_file_op(uint32_t space_id, mlog_id_t type,
                                    const byte *buf, ulint len,
@@ -700,4 +699,325 @@ std::tuple<bool, std::string> is_in_meta_map(space_id_t space_id) {
   auto it = meta_map.find(space_id);
   bool exists = it != meta_map.end();
   return {exists, exists ? it->second : ""};
+}
+
+/** Read file content into STL string */
+static std::string read_file_as_string(const std::string file) {
+  char content[FN_REFLEN];
+  FILE *f = fopen(file.c_str(), "r");
+  if (!f) {
+    return "";
+  }
+  size_t len = fread(content, 1, FN_REFLEN, f);
+  fclose(f);
+  return std::string(content, len);
+}
+
+static void delete_force(const std::string &path) {
+  if (access(path.c_str(), R_OK) == 0) {
+    if (my_delete(path.c_str(), MYF(MY_WME))) {
+      exit(EXIT_FAILURE);
+    }
+  }
+}
+
+static void rename_file(const std::string &from, const std::string &to) {
+  if (my_rename(from.c_str(), to.c_str(), MY_WME)) {
+    xb::error() << "Can't rename " << from << " to " << to << " errno "
+                << errno;
+    exit(EXIT_FAILURE);
+  }
+}
+
+static void rename_force(const std::string &from, const std::string &to) {
+  MY_STAT stat_info;
+  /* check if dest folder exists */
+  std::string dest_dir = to.substr(0, to.find_last_of("/"));
+  /* create target dir if not exist */
+  if (!my_stat(dest_dir.c_str(), &stat_info, MYF(0)) &&
+      (my_mkdir(dest_dir.c_str(), 0750, MYF(0)) < 0)) {
+    xb::error() << "cannot mkdir: " << my_errno() << " " << dest_dir;
+    exit(EXIT_FAILURE);
+  }
+  rename_file(from, to);
+}
+
+/**
+ * Handle DDL for renamed files
+ * example input: test/10.ren file with content = test/new_name.ibd ;
+ *        result: tablespace with space_id=10 will be renamed to
+ * test/new_name.ibd
+ * @return true on success
+ */
+bool prepare_handle_ren_files(
+    const datadir_entry_t &entry, /*!<in: datadir entry */
+    void * /*data*/) {
+  if (entry.is_empty_dir) return true;
+
+  char dest_space_name[FN_REFLEN];
+  space_id_t source_space_id;
+  std::string ren_file_content;
+  std::string ren_file_name = entry.file_name;
+  std::string ren_path = entry.path;
+
+  Fil_path::normalize(ren_path);
+  // trim .ibd.ren
+  source_space_id =
+      atoi(ren_file_name.substr(0, ren_file_name.length() - EXT_REN.length())
+               .c_str());
+  ren_file_content = read_file_as_string(ren_path);
+
+  if (ren_file_content.empty()) {
+    xb::error() << "prepare_handle_ren_files: " << ren_path << " is empty.";
+    return false;
+  }
+  // trim .ibd
+  snprintf(
+      dest_space_name, FN_REFLEN, "%s",
+      ren_file_content.substr(0, ren_file_content.length() - EXT_IBD.length())
+          .c_str());
+
+  fil_space_t *fil_space = fil_space_get(source_space_id);
+
+  if (fil_space != NULL) {
+    char tmpname[FN_REFLEN];
+    char *oldpath = nullptr, *space_name = nullptr;
+    bool res =
+        fil_space_read_name_and_filepath(fil_space->id, &space_name, &oldpath);
+
+    auto guard = create_scope_guard([&]() {
+      if (space_name != nullptr) {
+        ut::free(space_name);
+      }
+      if (oldpath != nullptr) {
+        ut::free(oldpath);
+      }
+    });
+
+    if (!res || !os_file_exists(oldpath)) {
+      xb::error() << "prepare_handle_ren_files: Tablespace " << fil_space->name
+                  << " not found.";
+      return false;
+    }
+
+    strncpy(tmpname, dest_space_name, sizeof(tmpname) - 1);
+
+    xb::info() << "prepare_handle_ren_files: renaming " << fil_space->name
+               << " to " << dest_space_name;
+
+    if (!fil_rename_tablespace(fil_space->id, oldpath, tmpname, NULL)) {
+      xb::error() << "prepare_handle_ren_files: Cannot rename "
+                  << fil_space->name << " to " << dest_space_name;
+      return false;
+    }
+  }
+
+  // rename .delta .meta files as well
+  if (xtrabackup_incremental) {
+    auto [exists, meta_file] = is_in_meta_map(source_space_id);
+    if (exists) {
+      std::string to_path = entry.datadir + ren_file_content;
+
+      // create .delta path from .meta
+      std::string delta_file =
+          meta_file.substr(
+              0, strlen(meta_file.c_str()) - strlen(EXT_META.c_str())) +
+          EXT_DELTA;
+
+      std::string to_delta(to_path + EXT_DELTA);
+      xb::info() << "Renaming incremental delta file from: " << delta_file
+                 << " to: " << to_delta;
+      rename_force(delta_file, to_delta);
+
+      std::string to_meta(to_path + EXT_META);
+      xb::info() << "Renaming incremental meta file from: " << meta_file
+                 << " to: " << to_meta;
+      rename_force(meta_file, to_meta);
+    } else if (fil_space == nullptr) {
+      // This means the tablespace is neither found in the fullbackup dir
+      // nor in the inc backup directory as .meta and .delta
+      xb::error() << "prepare_handle_ren_files(): failed to handle "
+                  << ren_path;
+      return false;
+    }
+  }
+
+  // delete the .ren file, we don't need it anymore
+  os_file_delete(0, ren_path.c_str());
+  return true;
+}
+
+/**
+ * Handle .corrupt files. These files should be removed before we do *.ibd scan
+ * @return true on success
+ * */
+bool prepare_handle_corrupt_files(
+    const datadir_entry_t &entry, /*!<in: datadir entry */
+    void * /*data*/) {
+  if (entry.is_empty_dir) return true;
+
+  std::string corrupt_path = entry.path;
+  Fil_path::normalize(corrupt_path);
+  // trim .corrupt
+  std::string ext = ".corrupt";
+  std::string source_path =
+      corrupt_path.substr(0, corrupt_path.length() - ext.length());
+
+  if (xtrabackup_incremental) {
+    std::string delta_file = source_path + EXT_DELTA;
+    xb::info() << "prepare_handle_corrupt_files: deleting  " << delta_file;
+    os_file_delete_if_exists_func(delta_file.c_str(), nullptr);
+
+    std::string meta_file = source_path + EXT_META;
+    xb::info() << "prepare_handle_corrupt_files: deleting  " << meta_file;
+    os_file_delete_if_exists_func(meta_file.c_str(), nullptr);
+  } else {
+    xb::info() << "prepare_handle_corrupt_files: deleting  " << source_path;
+    os_file_delete_if_exists_func(source_path.c_str(), nullptr);
+  }
+
+  // delete the .corrupt file, we don't need it anymore
+  os_file_delete_if_exists_func(corrupt_path.c_str(), nullptr);
+
+  return true;
+}
+
+/**
+ * Handle DDL for deleted files
+ * example input: test/10.del file
+ *        result: tablespace with space_id=10 will be deleted
+ * @return true on success
+ */
+bool prepare_handle_del_files(
+    const datadir_entry_t &entry, /*!<in: datadir entry */
+    void *arg __attribute__((unused))) {
+  if (entry.is_empty_dir) return true;
+
+  std::string del_file_name = entry.file_name;
+  std::string del_file = entry.path;
+  space_id_t space_id;
+
+  // trim .ibd.del
+  space_id =
+      atoi(del_file_name.substr(0, del_file_name.length() - EXT_DEL.length())
+               .c_str());
+  fil_space_t *fil_space = fil_space_get(space_id);
+  if (fil_space != NULL) {
+    char *path = nullptr, *space_name = nullptr;
+    bool res =
+        fil_space_read_name_and_filepath(fil_space->id, &space_name, &path);
+
+    auto guard = create_scope_guard([&]() {
+      if (space_name != nullptr) {
+        ut::free(space_name);
+      }
+      if (path != nullptr) {
+        ut::free(path);
+      }
+    });
+
+    if (!res || !os_file_exists(path)) {
+      xb::error() << "prepare_handle_del_files: Tablespace " << fil_space->name
+                  << " not found.";
+      return false;
+    }
+
+    xb::info() << "prepare_handle_del_files: deleting " << fil_space->name;
+
+    dberr_t err = fil_delete_tablespace(fil_space->id, BUF_REMOVE_NONE);
+    if (err != DB_SUCCESS) {
+      xb::error() << "prepare_handle_del_files: Cannot delete "
+                  << fil_space->name;
+      return false;
+    }
+  }
+
+  if (xtrabackup_incremental) {
+    auto [exists, meta_file] = is_in_meta_map(space_id);
+    if (exists) {
+      // create .delta path from .meta
+      std::string delta_file =
+          meta_file.substr(
+              0, strlen(meta_file.c_str()) - strlen(EXT_META.c_str())) +
+          EXT_DELTA;
+      xb::info() << "Deleting incremental meta file: " << meta_file;
+      delete_force(meta_file);
+      xb::info() << "Deleting incremental delta file: " << delta_file;
+      delete_force(delta_file);
+    }
+  }
+
+  xb::info() << "prepare_handle_del_files: deleting " << del_file.c_str();
+  os_file_delete(0, del_file.c_str());
+  return true;
+}
+
+// Function to check if a string ends with another string
+static bool ends_with(const string &full_string, const string &ext) {
+  // Check if the ending string is longer than the full
+  // string
+  if (ext.size() > full_string.size()) return false;
+
+  // Compare the ending of the full string with the target
+  // ending
+  return full_string.compare(full_string.size() - ext.size(), ext.size(),
+                             ext) == 0;
+}
+
+/************************************************************************
+ * Scan .meta files and build std::unordered_map<space_id, meta_path>.
+ * This map is later used to delete the .delta and .meta file for a dropped
+ * tablespace (ie. when processing the .del entries in reduced lock)
+ * @return true on success
+ */
+bool xtrabackup_scan_meta(const datadir_entry_t &entry, /*!<in: datadir entry */
+                          void * /*data*/) {
+  const std::string &meta_path = entry.path;
+  xb_delta_info_t info;
+
+  if (entry.is_empty_dir) {
+    return true;
+  }
+
+  IORequest read_request(IORequest::READ);
+  IORequest write_request(IORequest::WRITE | IORequest::PUNCH_HOLE);
+
+  ut_a(xtrabackup_incremental);
+
+  // We dont want to add .new.meta to meta_map, as they are meant to be replace
+  // the old version of the file.
+  if (ends_with(entry.file_name, EXT_NEW_META)) {
+    return true;
+  }
+
+  if (!xb_read_delta_metadata(meta_path.c_str(), &info)) {
+    goto error;
+  }
+
+  insert_into_meta_map(info.space_id, meta_path);
+
+  return true;
+
+error:
+  xb::error() << "xtrabackup_scan_meta(): failed to read .meta file "
+              << entry.path;
+  return false;
+}
+
+/* Handle DDL for new files */
+bool prepare_handle_new_files(
+    const datadir_entry_t &entry, /*!<in: datadir entry */
+    void *arg __attribute__((unused))) {
+  if (entry.is_empty_dir) return true;
+  std::string src_path = entry.path;
+  std::string dest_path = src_path;
+  xb::info() << "prepare_handle_new_files: " << src_path;
+  size_t index = dest_path.find(EXT_NEW);
+#ifdef UNIV_DEBUG
+  assert(index != std::string::npos);
+#endif  // UNIV_DEBUG
+  dest_path.erase(index, 4);
+  rename_force(src_path, dest_path);
+
+  return true;
 }
