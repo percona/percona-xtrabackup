@@ -255,7 +255,7 @@ bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n,
 /************************************************************************
 Initialize the tablespace memory cache and populate it by scanning for and
 opening data files */
-ulint xb_data_files_init(bool is_prep_handle_ddls);
+ulint xb_data_files_init();
 
 /************************************************************************
 Destroy the tablespace memory cache. */
@@ -343,5 +343,5 @@ bool xb_process_datadir(const char *path,   /*!<in: datadir path */
 @param[in]	lsn		lsn to update */
 void update_log_temp_checkpoint(byte *buf, lsn_t lsn);
 
-void xb_scan_for_tablespaces(bool is_prep_handle_ddls, bool only_undo);
+void xb_scan_for_tablespaces(bool only_undo);
 #endif /* XB_XTRABACKUP_H */

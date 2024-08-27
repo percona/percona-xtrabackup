@@ -27,6 +27,7 @@ extern bool innodb_checksum_algorithm_specified;
 
 extern bool opt_lock_ddl_per_table;
 extern bool redo_catchup_completed;
+extern bool xtrabackup_prepare;
 extern bool opt_page_tracking;
 extern char *xtrabackup_incremental;
 extern lsn_t incremental_start_checkpoint_lsn;

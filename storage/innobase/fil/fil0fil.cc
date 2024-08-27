@@ -526,8 +526,7 @@ class Tablespace_dirs {
   @param[in] only_undo            if true, only the undo tablespaces are
                                   discovered
   @return DB_SUCCESS if all goes well */
-  [[nodiscard]] dberr_t scan(bool populate_fil_cache, bool is_prep_handle_ddls,
-                             bool only_undo);
+  [[nodiscard]] dberr_t scan(bool populate_fil_cache, bool only_undo);
 
   /** Clear all the tablespace file data but leave the list of
   scanned directories in place. */
@@ -686,7 +685,7 @@ class Tablespace_dirs {
   @param[in]  thread_id Thread ID
   @param[out] result false in case of failure */
   void open_ibd(const Const_iter &start, const Const_iter &end,
-                size_t thread_id, bool &result, bool is_prep_handle_ddls);
+                size_t thread_id, bool &result);
 
  private:
   /** Directories scanned and the files discovered under them. */
@@ -1716,9 +1715,8 @@ class Fil_system {
   @param[in] only_undo            if true, only the undo tablespaces are
                                   discovered
   @return DB_SUCCESS on success, other codes on errors */
-  dberr_t scan(bool populate_fil_cache, bool is_prep_handle_ddls,
-               bool only_undo) {
-    return (m_dirs.scan(populate_fil_cache, is_prep_handle_ddls, only_undo));
+  dberr_t scan(bool populate_fil_cache, bool only_undo) {
+    return (m_dirs.scan(populate_fil_cache, only_undo));
   }
 
   /** Open all known tablespaces. */
@@ -11636,8 +11634,7 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
 @param[in]  thread_id Thread ID
 @param[in,out]  result  result of the open */
 void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
-                               size_t thread_id, bool &result,
-                               bool is_prep_handle_ddls) {
+                               size_t thread_id, bool &result) {
   if (!result) return;
 
   for (auto it = start; it != end; ++it) {
@@ -11649,9 +11646,10 @@ void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
       continue;
     }
 
-    /* when processing ddl files on prepare phase we should load data files
-    without first page validation */
-    if (is_prep_handle_ddls) {
+    /* when LOCK_DDL_REDUCED while processing ddl files on prepare phase
+    we should load data files without first page validation */
+    if (xtrabackup_prepare && opt_lock_ddl == LOCK_DDL_REDUCED &&
+        !xtrabackup_incremental) {
       dberr_t err = fil_open_for_prepare(phy_filename);
       if (err != DB_SUCCESS) {
         result = false;
@@ -11954,8 +11952,7 @@ void Tablespace_dirs::set_scan_dirs(const std::string &in_directories) {
 @param[in] only_undo            if true, only the undo tablespaces are
 discovered
 @return DB_SUCCESS if all goes well */
-dberr_t Tablespace_dirs::scan(bool populate_fil_cache, bool is_prep_handle_ddls,
-                              bool only_undo) {
+dberr_t Tablespace_dirs::scan(bool populate_fil_cache, bool only_undo) {
   Scanned_files ibd_files;
   Scanned_files undo_files;
   uint16_t count = 0;
@@ -12073,12 +12070,10 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache, bool is_prep_handle_ddls,
 
   if (err == DB_SUCCESS && populate_fil_cache && !only_undo) {
     bool result = true;
-    std::function<void(const Const_iter &, const Const_iter &, size_t, bool &,
-                       bool)>
-        open = std::bind(&Tablespace_dirs::open_ibd, this, _1, _2, _3, _4, _5);
+    std::function<void(const Const_iter &, const Const_iter &, size_t, bool &)>
+        open = std::bind(&Tablespace_dirs::open_ibd, this, _1, _2, _3, _4);
 
-    par_for(PFS_NOT_INSTRUMENTED, ibd_files, n_threads, open, result,
-            is_prep_handle_ddls);
+    par_for(PFS_NOT_INSTRUMENTED, ibd_files, n_threads, open, result);
 
     if (!result) err = DB_FAIL;
   }
@@ -12101,9 +12096,8 @@ void fil_set_scan_dirs(const std::string &directories) {
 @param[in] only_undo            if true, only the undo tablespaces are
                                 discovered
 @return DB_SUCCESS if all goes well */
-dberr_t fil_scan_for_tablespaces(bool populate_fil_cache,
-                                 bool is_prep_handle_ddls, bool only_undo) {
-  return (fil_system->scan(populate_fil_cache, is_prep_handle_ddls, only_undo));
+dberr_t fil_scan_for_tablespaces(bool populate_fil_cache, bool only_undo) {
+  return (fil_system->scan(populate_fil_cache, only_undo));
 }
 
 /** Open all known tablespaces. */

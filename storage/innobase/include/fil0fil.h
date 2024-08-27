@@ -2253,12 +2253,9 @@ void fil_set_scan_dirs(const std::string &directories);
 
 /** Discover tablespaces by reading the header from .ibd files.
 @param[in] populate_fil_cache  Whether to load tablespaces into fil cache
-@param[in] is_prep_handle_ddls Whether loading tablespaces on prepare phase
-                               to handle the ddls
 @param[in] only_undo           if true, only the undo tablespaces are discovered
 @return DB_SUCCESS if all goes well */
-dberr_t fil_scan_for_tablespaces(bool populate_fil_cache,
-                                 bool is_prep_handle_ddls, bool only_undo);
+dberr_t fil_scan_for_tablespaces(bool populate_fil_cache, bool only_undo);
 
 /** Open the tablespace and also get the tablespace filenames, space_id must
 already be known.

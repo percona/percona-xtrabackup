@@ -411,7 +411,7 @@ std::tuple<filevec, filevec> ddl_tracker_t::handle_undo_ddls() {
 
   undo_spaces_deinit();
   undo_spaces_init();
-  xb_scan_for_tablespaces(false, true);
+  xb_scan_for_tablespaces(true);
 
   // Generates the after_lock_undo list
   srv_undo_tablespaces_init(false, true);
