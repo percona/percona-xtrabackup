@@ -2113,12 +2113,9 @@ inline fil_space_t *fil_space_get_sys_space() {
 @param[in]      start_lsn       LSN of the redo record
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
-[[nodiscard]] const byte *fil_tablespace_redo_create(const byte *ptr,
-                                                     const byte *end,
-                                                     const page_id_t &page_id,
-                                                     ulint parsed_bytes,
-                                                     bool parse_only
-                                                     IF_XB(, lsn_t start_lsn));
+[[nodiscard]] const byte *fil_tablespace_redo_create(
+    const byte *ptr, const byte *end, const page_id_t &page_id,
+    ulint parsed_bytes, bool parse_only IF_XB(, lsn_t start_lsn));
 
 /** Redo a tablespace delete.
 @param[in]      ptr             redo log record
@@ -2129,12 +2126,9 @@ inline fil_space_t *fil_space_get_sys_space() {
 @param[in]      start_lsn       LSN of the redo record
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
-[[nodiscard]] const byte *fil_tablespace_redo_delete(const byte *ptr,
-                                                     const byte *end,
-                                                     const page_id_t &page_id,
-                                                     ulint parsed_bytes,
-                                                     bool parse_only
-                                                     IF_XB(, lsn_t start_lsn));
+[[nodiscard]] const byte *fil_tablespace_redo_delete(
+    const byte *ptr, const byte *end, const page_id_t &page_id,
+    ulint parsed_bytes, bool parse_only IF_XB(, lsn_t start_lsn));
 
 /** Redo a tablespace rename.
 This function doesn't do anything, simply parses the redo log record.
@@ -2146,12 +2140,9 @@ This function doesn't do anything, simply parses the redo log record.
 @param[in]      start_lsn       LSN of the redo record
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
-[[nodiscard]] const byte *fil_tablespace_redo_rename(const byte *ptr,
-                                                     const byte *end,
-                                                     const page_id_t &page_id,
-                                                     ulint parsed_bytes,
-                                                     bool parse_only
-                                                     IF_XB(, lsn_t start_lsn));
+[[nodiscard]] const byte *fil_tablespace_redo_rename(
+    const byte *ptr, const byte *end, const page_id_t &page_id,
+    ulint parsed_bytes, bool parse_only IF_XB(, lsn_t start_lsn));
 
 /** Redo a tablespace extend
 @param[in]      ptr             redo log record
@@ -2263,7 +2254,7 @@ already be known.
 @return DB_SUCCESS if open was successful */
 [[nodiscard]] dberr_t fil_tablespace_open_for_recovery(space_id_t space_id);
 
-dberr_t fil_open_for_prepare(const std::string &path);
+dberr_t fil_open_for_reduced(const std::string &path);
 
 /** Replay a file rename operation for ddl replay.
 @param[in]      page_id         Space ID and first page number in the file

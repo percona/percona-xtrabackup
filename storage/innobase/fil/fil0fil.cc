@@ -1650,7 +1650,7 @@ class Fil_system {
   @return DB_SUCCESS if the open was successful */
   [[nodiscard]] dberr_t open_for_recovery(space_id_t space_id);
 
-  [[nodiscard]] dberr_t open_for_prepare(const std::string &path);
+  [[nodiscard]] dberr_t open_for_reduced(const std::string &path);
 
   /** This function should be called after recovery has completed.
   Check for tablespace files for which we did not see any
@@ -10208,7 +10208,7 @@ dberr_t fil_tablespace_open_for_recovery(space_id_t space_id) {
   return fil_system->open_for_recovery(space_id);
 }
 
-dberr_t Fil_system::open_for_prepare(const std::string &path) {
+dberr_t Fil_system::open_for_reduced(const std::string &path) {
   space_id_t space_id = get_tablespace_id(path);
   fil_space_t *space;
 
@@ -10220,8 +10220,8 @@ dberr_t Fil_system::open_for_prepare(const std::string &path) {
   return DB_SUCCESS;
 }
 
-dberr_t fil_open_for_prepare(const std::string &path) {
-  return fil_system->open_for_prepare(path);
+dberr_t fil_open_for_reduced(const std::string &path) {
+  return fil_system->open_for_reduced(path);
 }
 
 Fil_state fil_tablespace_path_equals(space_id_t space_id,
@@ -10549,9 +10549,9 @@ static void fil_make_abs_file_path(const char *file_name, ulint flags,
 @param[in]      start_lsn       LSN of the redo record
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
-const byte *fil_tablespace_redo_create(const byte *ptr, const byte *end,
-                                       const page_id_t &page_id, ulint parsed_bytes,
-                                       bool parse_only IF_XB(, lsn_t start_lsn)) {
+const byte *fil_tablespace_redo_create(
+    const byte *ptr, const byte *end, const page_id_t &page_id,
+    ulint parsed_bytes, bool parse_only IF_XB(, lsn_t start_lsn)) {
 #ifdef XTRABACKUP
   const byte *start_ptr = ptr;
 #endif /* XTRABACKUP */
@@ -10675,11 +10675,10 @@ const byte *fil_tablespace_redo_create(const byte *ptr, const byte *end,
   return ptr;
 }
 
-const byte *fil_tablespace_redo_rename(const byte *ptr, const byte *end,
-                                       const page_id_t &page_id,
-                                       ulint parsed_bytes,
-                                       bool parse_only [[maybe_unused]]
-                                       IF_XB(, lsn_t start_lsn)) {
+const byte *fil_tablespace_redo_rename(
+    const byte *ptr, const byte *end, const page_id_t &page_id,
+    ulint parsed_bytes,
+    bool parse_only [[maybe_unused]] IF_XB(, lsn_t start_lsn)) {
 #ifdef XTRABACKUP
   const byte *start_ptr = ptr;
 #endif /* XTRABACKUP */
@@ -10953,10 +10952,9 @@ const byte *fil_tablespace_redo_extend(const byte *ptr, const byte *end,
 @param[in]      start_lsn       LSN of the redo record
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
-const byte *fil_tablespace_redo_delete(const byte *ptr, const byte *end,
-                                       const page_id_t &page_id,
-                                       ulint parsed_bytes,
-                                       bool parse_only IF_XB(, lsn_t start_lsn)) {
+const byte *fil_tablespace_redo_delete(
+    const byte *ptr, const byte *end, const page_id_t &page_id,
+    ulint parsed_bytes, bool parse_only IF_XB(, lsn_t start_lsn)) {
   ut_a(page_id.page_no() == 0);
 #ifdef XTRABACKUP
   const byte *start_ptr = ptr;
@@ -11650,7 +11648,7 @@ void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
     we should load data files without first page validation */
     if (xtrabackup_prepare && opt_lock_ddl == LOCK_DDL_REDUCED &&
         !xtrabackup_incremental) {
-      dberr_t err = fil_open_for_prepare(phy_filename);
+      dberr_t err = fil_open_for_reduced(phy_filename);
       if (err != DB_SUCCESS) {
         result = false;
       }

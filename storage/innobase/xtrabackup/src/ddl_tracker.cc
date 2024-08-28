@@ -742,6 +742,21 @@ static void rename_force(const std::string &from, const std::string &to) {
   rename_file(from, to);
 }
 
+/** Check if the file has the the specified suffix and truncate
+  @param[in]            suffix     suffix to look for
+  @param[in,out]        path    Filename to check
+  @return true if the suffix is found and truncated. */
+static bool truncate_suffix(std::string suffix, std::string &path) {
+  size_t len = suffix.length();
+
+  if (path.size() < len || path.compare(path.size() - len, len, suffix) != 0) {
+    return (false);
+  }
+
+  path.resize(path.size() - len);
+  return (true);
+}
+
 /**
  * Handle DDL for renamed files
  * example input: test/10.ren file with content = test/new_name.ibd ;
@@ -754,62 +769,68 @@ bool prepare_handle_ren_files(
     void * /*data*/) {
   if (entry.is_empty_dir) return true;
 
-  char dest_space_name[FN_REFLEN];
-  space_id_t source_space_id;
-  std::string ren_file_content;
   std::string ren_file_name = entry.file_name;
   std::string ren_path = entry.path;
 
   Fil_path::normalize(ren_path);
-  // trim .ibd.ren
-  source_space_id =
-      atoi(ren_file_name.substr(0, ren_file_name.length() - EXT_REN.length())
-               .c_str());
-  ren_file_content = read_file_as_string(ren_path);
+  // trim .ren
+  truncate_suffix(EXT_REN, ren_file_name);
+  space_id_t source_space_id = std::stoi(ren_file_name);
+
+  std::string ren_file_content = read_file_as_string(ren_path);
 
   if (ren_file_content.empty()) {
     xb::error() << "prepare_handle_ren_files: " << ren_path << " is empty.";
     return false;
   }
   // trim .ibd
-  snprintf(
-      dest_space_name, FN_REFLEN, "%s",
-      ren_file_content.substr(0, ren_file_content.length() - EXT_IBD.length())
-          .c_str());
+  std::string dest_space_name = ren_file_content;
+  truncate_suffix(EXT_IBD, dest_space_name);
+  char *dest_path = Fil_path::make_ibd_from_table_name(dest_space_name);
 
   fil_space_t *fil_space = fil_space_get(source_space_id);
 
   if (fil_space != NULL) {
-    char tmpname[FN_REFLEN];
-    char *oldpath = nullptr, *space_name = nullptr;
-    bool res =
-        fil_space_read_name_and_filepath(fil_space->id, &space_name, &oldpath);
+    char *source_path = nullptr, *source_space_name = nullptr;
+    bool res = fil_space_read_name_and_filepath(
+        fil_space->id, &source_space_name, &source_path);
 
     auto guard = create_scope_guard([&]() {
-      if (space_name != nullptr) {
-        ut::free(space_name);
+      if (source_space_name != nullptr) {
+        ut::free(source_space_name);
       }
-      if (oldpath != nullptr) {
-        ut::free(oldpath);
+      if (source_path != nullptr) {
+        ut::free(source_path);
       }
     });
 
-    if (!res || !os_file_exists(oldpath)) {
+    if (!res || !os_file_exists(source_path)) {
       xb::error() << "prepare_handle_ren_files: Tablespace " << fil_space->name
                   << " not found.";
       return false;
     }
 
-    strncpy(tmpname, dest_space_name, sizeof(tmpname) - 1);
+    ut_ad(!os_file_exists(dest_path));
 
     xb::info() << "prepare_handle_ren_files: renaming " << fil_space->name
                << " to " << dest_space_name;
 
-    if (!fil_rename_tablespace(fil_space->id, oldpath, tmpname, NULL)) {
+    if (!fil_rename_tablespace(fil_space->id, source_path,
+                               dest_space_name.c_str(), NULL)) {
       xb::error() << "prepare_handle_ren_files: Cannot rename "
                   << fil_space->name << " to " << dest_space_name;
       return false;
     }
+  } else {
+    // In case source file doesn't exist we check if destination file is already
+    // there and if destination file DO NOT exist with desired name we throw
+    // error
+    if (!os_file_exists(dest_path)) {
+      xb::error() << "prepare_handle_ren_files: Tablespace " << fil_space->name
+                  << " not found.";
+      return false;
+    }
+    ut::free(dest_path);
   }
 
   // rename .delta .meta files as well
@@ -819,10 +840,9 @@ bool prepare_handle_ren_files(
       std::string to_path = entry.datadir + ren_file_content;
 
       // create .delta path from .meta
-      std::string delta_file =
-          meta_file.substr(
-              0, strlen(meta_file.c_str()) - strlen(EXT_META.c_str())) +
-          EXT_DELTA;
+      std::string delta_file = meta_file;
+      truncate_suffix(EXT_META, delta_file);
+      delta_file.append(EXT_DELTA);
 
       std::string to_delta(to_path + EXT_DELTA);
       xb::info() << "Renaming incremental delta file from: " << delta_file
@@ -860,8 +880,8 @@ bool prepare_handle_corrupt_files(
   Fil_path::normalize(corrupt_path);
   // trim .corrupt
   std::string ext = ".corrupt";
-  std::string source_path =
-      corrupt_path.substr(0, corrupt_path.length() - ext.length());
+  std::string source_path = corrupt_path;
+  truncate_suffix(ext, source_path);
 
   if (xtrabackup_incremental) {
     std::string delta_file = source_path + EXT_DELTA;
@@ -895,12 +915,11 @@ bool prepare_handle_del_files(
 
   std::string del_file_name = entry.file_name;
   std::string del_file = entry.path;
-  space_id_t space_id;
 
-  // trim .ibd.del
-  space_id =
-      atoi(del_file_name.substr(0, del_file_name.length() - EXT_DEL.length())
-               .c_str());
+  // trim .del
+  truncate_suffix(EXT_DEL, del_file_name);
+  space_id_t space_id = atoi(del_file_name.c_str());
+
   fil_space_t *fil_space = fil_space_get(space_id);
   if (fil_space != NULL) {
     char *path = nullptr, *space_name = nullptr;
@@ -936,10 +955,9 @@ bool prepare_handle_del_files(
     auto [exists, meta_file] = is_in_meta_map(space_id);
     if (exists) {
       // create .delta path from .meta
-      std::string delta_file =
-          meta_file.substr(
-              0, strlen(meta_file.c_str()) - strlen(EXT_META.c_str())) +
-          EXT_DELTA;
+      std::string delta_file = meta_file;
+      truncate_suffix(EXT_META, delta_file);
+      delta_file.append(EXT_DELTA);
       xb::info() << "Deleting incremental meta file: " << meta_file;
       delete_force(meta_file);
       xb::info() << "Deleting incremental delta file: " << delta_file;
