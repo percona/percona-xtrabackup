@@ -1,7 +1,7 @@
 
 ## Percona XtraBackup
 
-![PXB logo](storage/innobase/xtrabackup/percona-xtrabackup-logo.jpg)
+![PXB logo](storage/innobase/xtrabackup/doc/source/percona-xtrabackup-logo.jpg)
 
 Percona XtraBackup is an open-source hot backup utility for MySQL - based servers that doesn’t lock your database during the backup.
 

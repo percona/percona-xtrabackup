@@ -1,0 +1,40 @@
+.. _8.0.25-17:
+
+
+================================================================================
+*Percona XtraBackup* 8.0.25-17.0
+================================================================================
+
+:Date: June 3, 2021
+:Installation: `Installing Percona XtraBackup <https://www.percona.com/doc/percona-xtrabackup/8.0/installation.html>`_
+
+Percona XtraBackup enables MySQL backups without blocking user queries, making it ideal
+for companies with large data sets and mission-critical applications that cannot tolerate
+long periods of downtime. Offered free as an open source solution, it drives down backup
+costs while providing unique features for MySQL backups.
+
+Bugs Fixed
+================================================================================
+
+* :jirabug:`PXB-2442` : Backup cannot be decompressed using the AppArmor profile
+
+* :jirabug:`PXB-2444` : The xbcloud binary fails to upload backup with enforcing SELinux mode
+
+* :jirabug:`PXB-2443` : Version check fails with AppArmor profile
+
+* :jirabug:`PXB-2445` : Initializing the libgcrypt in xbcloud
+
+* :jirabug:`PXB-2455` : XtraBackup prepare fails if the checkpoint LSN is greater than the last LSN
+
+* :jirabug:`PXB-2473` : SELinux errors in audit logs
+
+* :jirabug:`PXB-1462` : Long gtid_executed breaks —history functionality
+
+* :jirabug:`PXB-2369` : Issues with "Installing" page in XtraBackup documentation
+
+* :jirabug:`PXB-2457` : Incorrect binlog names if binlog name contains periods
+
+* :jirabug:`PXB-2106` : Copy-back creates wrong binlog.index
+
+
+
