@@ -1,0 +1,54 @@
+.. _rn.8-0-4:
+
+================================================================================
+*Percona XtraBackup* 8.0.4
+================================================================================
+
+*Percona* is glad to announce the release of *Percona XtraBackup* 8.0.4 on December 10, 2018.
+Downloads are available from our `download site
+<http://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-8.0.4/>`_ and
+from :ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+*Percona XtraBackup* enables MySQL backups without blocking user queries, making
+it ideal for companies with large data sets and mission-critical applications
+that cannot tolerate long periods of downtime. Offered free as an open source
+solution, it drives down backup costs while providing unique features for
+*MySQL* backups.
+
+This release of Percona Xtrabackup is a **General Availability** release ready
+for use in a production environment.
+
+.. rubric:: Please note the following about this release:
+
+- The deprecated innobackupex has been removed. Use the xtrabackup command to
+  back up your instances: ``$ xtrabackup --backup --target-dir=/data/backup``
+- When migrating from earlier database server versions, `backup and restore and
+  using Percona XtraBackup 2.4
+  <https://www.percona.com/doc/percona-xtrabackup/2.4/how-tos.html#recipes-for-xtrabackup>`_
+  and then use ``mysql_upgrade`` from *MySQL* 8.0.x
+- If using ``yum`` or ``apt`` repositories to install *Percona XtraBackup* 8.0.4, ensure
+  that you have enabled the new `tools` repository. You can do this with the
+  :program:`percona-release enable tools release` command and then install the
+  `percona-xtrabackup-80` package.
+
+All Percona software is open-source and free. We are grateful to the community
+for the invaluable contributions to *Percona XtraBackup*. We would especially
+like to highlight the input of *Alexey Kopytov* who has been actively offering
+improvements and submitting bug reports for *Percona XtraBackup*.
+
+
+New Features
+================================================================================
+
+- *Percona XtraBackup* 8.0.4 is based on *MySQL* 8.0.13 and fully supports
+  Percona Server for *MySQL* 8.0 series and *MySQL* 8.0 series.
+
+Bugs Fixed
+================================================================================
+
+- :jirabug:`PXB-1699`: `xtrabackup --prepare` could fail on backups of MySQL 8.0.13 databases
+- :jirabug:`PXB-1704`: `xtrabackup --prepare` could hang while performing insert buffer merge
+- :jirabug:`PXB-1668`: When the `--throttle` option was used, the applied value was different from the one specified by the user (off by one error)
+- :jirabug:`PXB-1679`: PXB could crash when ``ALTER TABLE ... TRUNCATE PARTITION`` command was run during a backup without locking DDL
+
+

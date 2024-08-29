@@ -1,0 +1,63 @@
+.. _rn.8-0-7:
+
+================================================================================
+*Percona XtraBackup* 8.0.7
+================================================================================
+
+*Percona* is glad to announce the release of *Percona XtraBackup*  8.0.7 on August 7, 2019.
+Downloads are available from our `download site
+<https://www.percona.com/downloads/Percona-XtraBackup-LATEST/>`_ and from
+:ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+*Percona XtraBackup* enables MySQL backups without blocking user queries, making it ideal
+for companies with large data sets and mission-critical applications that cannot
+tolerate long periods of downtime. Offered free as an open source solution, it
+drives down backup costs while providing unique features for *MySQL* backups.
+
+In release 8.0.7, *Percona XtraBackup* enables making backups of databases
+that contain the `encrypted system tablespace
+<https://www.percona.com/doc/percona-server/8.0/security/data-at-rest-encryption.html#data-at-rest-encryption>`_.
+Encrypted `mysql` tablespace is now also supported.
+
+*Percona XtraBackup* 8.0.7 implements the support of the ``lz4`` compression algorithm
+so that you could make compressed backups using `lz4`
+(`--compress=lz4`) in addition to the default `quicklz` method.
+
+All *Percona* software is open-source and free.
+
+New Features and Improvements
+================================================================================
+
+- Add support of the system tablespace encryption. More information in
+  :jirabug:`PXB-1649`.
+- Implemented the support of the `lz4` compression algorithm. More information
+  in :jirabug:`PXB-1857`.
+
+Bugs Fixed
+================================================================================
+
+- When the *encrypted tablespaces* feature was enabled, encrypted and compressed
+  tables were not usable on the joiner node (Percona XtraDB Cluster) via SST
+  (State Snapshot Transfer) with the `xtrabackup-v2` method. Bug fixed
+  :jirabug:`PXB-1867`.
+- ``xbcloud`` did not update date related fields of the HTTP header when
+  retrying a request. Bug fixed :jirabug:`PXB-1874`.
+- ``xbcloud`` did not retry to send the request after receiving the HTTP 408
+  error (request timeout). Bug fixed :jirabug:`PXB-1875`.
+- ``xtrabackup`` did not accept decimal fractions as values of the
+  ``innodb_max_dirty_pages_pct`` option. Bug fixed :jirabug:`PXB-1807`.
+- If the user tried to merge an already prepared incremental backup, a
+  misleading error was produced without informing that incremental backups may
+  not be used twice. Bug fixed :jirabug:`PXB-1862`.
+
+**Other bugs fixed:**
+:jirabug:`PXB-1493`,
+:jirabug:`PXB-1557`,
+:jirabug:`PXB-1887`,
+:jirabug:`PXB-1870`,
+:jirabug:`PXB-1879`,
+:jirabug:`PXB-1901`.
+
+.. *Percona* replace:: Percona
+.. *Percona XtraBackup* replace:: Percona XtraBackup
+

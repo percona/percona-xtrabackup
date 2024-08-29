@@ -1,0 +1,56 @@
+.. _rn.8-0-8:
+
+================================================================================
+Percona XtraBackup 8.0.8
+================================================================================
+
+*Percona* is glad to announce the release of Percona XtraBackup 8.0.8 on November 21, 2019.
+Downloads are available from our `download site
+<https://www.percona.com/downloads/Percona-XtraBackup-LATEST/>`_ and from
+:ref:`apt <apt_repo>` and :ref:`yum <yum_repo>` repositories.
+
+Percona XtraBackup enables MySQL backups without blocking user queries, making it ideal
+for companies with large data sets and mission-critical applications that cannot
+tolerate long periods of downtime. Offered free as an open source solution, it
+drives down backup costs while providing unique features for *MySQL* backups.
+
+All *Percona* software is open-source and free.
+
+New Features and Improvements
+================================================================================
+
+- Support log archiving feature in PXB 8.0. More information in
+  :jirabug:`PXB-1912` and in the `Redo Log section of MySQL documentation
+  <https://dev.mysql.com/doc/refman/8.0/en/innodb-redo-log.html>`_
+- For the MyRocks storage engine, support the creation of renewable checkpoints
+  (controlled via :option:`--rocksdb-checkpoint-max-age` and
+  :option:`--rocksdb-checkpoint-max-count`) to minimize the amount of binary
+  logs to apply after the backup was completed. Using renewable checkpoints,
+  Percona XtraBackup only copies the SST files that were created after the previous
+  checkpoint. More information in :jirabug:`PXB-1915`.
+- Two options (`–-backup-lock-timeout` and `-–backup-lock-retry-count`) were
+  added to enable the configuring of the timeout for acquiring metadata locks in
+  ``FLUSH TABLES WITH READ LOCK``, ``LOCK TABLE FOR BACKUP``, and ``LOCK BINLOG
+  FOR BACKUP`` statements. More information in :jirabug:`PXB-1914`
+
+Bugs Fixed
+================================================================================
+
+- An encrypted table could not be restored when ``ADD INDEX`` or ``DROP INDEX``
+  commands had been run on the table. Bug fixed :jirabug:`PXB-1905`
+- In some cases ``xtrabackup --prepare`` could fail to decrypt a table but
+  reported that the operation completed ok. Bug fixed :jirabug:`PXB-1936`
+- ``xtrabackup --move-back`` did not complete successfully when the encrypted
+  binlog file. Bug fixed :jirabug:`PXB-1937`.
+-  Percona XtraBackup could crash during the prepare stage when making an incremental
+  backup when a multi valued index was being added or dropped for JSON
+  data. Bug fixed :jirabug:`PXB-1913`.
+
+**Other bugs fixed:**
+:jirabug:`PXB-1928`,
+:jirabug:`PXB-1938`,
+:jirabug:`PXB-1951`,
+:jirabug:`PXB-1953`,
+:jirabug:`PXB-1954`.
+
+
