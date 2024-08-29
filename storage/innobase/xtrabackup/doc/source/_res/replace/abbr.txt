@@ -1,4 +1,0 @@
-.. Abbreviations formatted with the *abbr* role
-
-.. |abbr.yum| replace:: :abbr:`YUM (Yellowdog Updater, Modified)`
-.. |abbr.apt| replace:: :abbr:`APT (Advanced Package Tool)`
