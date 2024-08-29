@@ -1,0 +1,19 @@
+{# Import the theme's layout. #}
+{% extends "!layout.html" %}
+
+{# Adds Google Analytics events on button click. #}
+{%- block extrahead %}
+<script>
+var _gaq = _gaq || [];
+_gaq.push(['_setAccount', 'UA-343802-3']);
+_gaq.push(['_trackPageview']);
+</script>
+{{ super() }}
+{%- endblock %}
+
+
+{%- block relbar2 %}
+{% include "relbar2.html" %}
+{%- endblock %}
+
+

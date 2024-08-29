@@ -1,0 +1,59 @@
+{#
+MkDocs template for Netlify builds to customize docs layout 
+by adding marketing-requested elements
+#}
+
+{# Import the theme's layout. #}
+{% extends "base.html" %}
+
+{%- macro relbar2 () %}
+<div class="md-relbar2__inner md-grid">
+<div class="md-content">
+  <article class="md-content__inner md-typeset" role="main">    
+    <h4>Contact Us </h4>
+       <p>For free technical help, visit the Percona <a class="reference external" href="https://forums.percona.com/c/mysql-mariadb/percona-xtrabackup/10?utm_campaign=Doc%20pages" target="_blank">Community Forum</a>.<br>
+        <p>To report bugs or submit feature requests, open a <a class="reference external" href="https://jira.percona.com/projects/PXB/issues/" target="_blank">JIRA</a> ticket.<br>
+         <p>For paid <a class="reference external" href="https://www.percona.com/services/support"> support </a> and <a class="reference external" href="https://www.percona.com/services/managed-services"> managed </a> or <a class="reference external" href="https://www.percona.com/services/consulting">consulting services </a>, contact <a class="reference external" href="https://www.percona.com/about-percona/contact" target="_blank">Percona Sales</a>.</p>
+ </article>
+</div>
+</div>
+{%- endmacro %}
+
+              {% block content %}
+
+                <!-- Edit button -->
+                {% if page.edit_url %}
+                  <a
+                    href="{{ page.edit_url }}"
+                    title="{{ lang.t('edit.link.title') }}"
+                    class="md-content__button md-icon"
+                  >
+                    {% include ".icons/material/pencil.svg" %}
+                  </a>
+                {% endif %}
+
+                <!--
+                  Hack: check whether the content contains a h1 headline. If it
+                  doesn't, the page title (or respectively site name) is used
+                  as the main headline.
+                -->
+                {% if not "\x3ch1" in page.content %}
+                  <h1>{{ page.title | d(config.site_name, true)}}</h1>
+                {% endif %}
+
+                <!-- Markdown content -->
+                {{ page.content }}
+
+                {{ relbar2() }}
+
+                <!-- Last update of source file -->
+                {% if page and page.meta %}
+                  {% if page.meta.git_revision_date_localized or
+                        page.meta.revision_date
+                  %}
+                    {% include "partials/source-file.html" %}
+                  {% endif %}
+                {% endif %}
+              {% endblock %}
+
+
