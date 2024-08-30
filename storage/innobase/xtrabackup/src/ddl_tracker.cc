@@ -20,9 +20,12 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "ddl_tracker.h"
 #include <fil0fil.h>
 #include <os0thread-create.h>  // os_thread_create
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <univ.i>
 #include <unordered_map>
@@ -83,7 +86,7 @@ void ddl_tracker_t::add_table_from_ibd_scan(const space_id_t space_id,
                                             std::string name) {
   Fil_path::normalize(name);
   if (Fil_path::has_prefix(name, Fil_path::DOT_SLASH)) {
-    name.erase(0, 2);
+    name.erase(0, strlen(Fil_path::DOT_SLASH));
   }
 
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
@@ -112,9 +115,9 @@ void ddl_tracker_t::add_corrupted_tablespace(const space_id_t space_id,
 
 void ddl_tracker_t::add_to_recopy_tables(space_id_t space_id, lsn_t start_lsn,
                                          const std::string operation) {
-  // There should never be MLOG_INDEX_LOAD. However MLOG_WRITE_STRING on
-  // new undo tabelsapce creation is possible. But we ignore this as the UNDOs
-  // are tracked separately
+  // There should never be MLOG_INDEX_LOAD on undo tablespaces. However
+  // MLOG_WRITE_STRING on new undo tabelsapce creation is possible. But we
+  // ignore this as the UNDOs are tracked separately
   if (fsp_is_undo_tablespace(space_id)) {
     return;
   }
@@ -132,7 +135,7 @@ void ddl_tracker_t::add_missing_table(std::string path) {
   }
 
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
-  missing_tables.insert(path);
+  missing_after_discovery.insert(path);
 }
 
 void ddl_tracker_t::add_create_table_from_redo(const space_id_t space_id,
@@ -152,7 +155,7 @@ void ddl_tracker_t::add_create_table_from_redo(const space_id_t space_id,
   std::string new_space_name = name;
   Fil_path::normalize(new_space_name);
   if (Fil_path::has_prefix(new_space_name, Fil_path::DOT_SLASH)) {
-    new_space_name.erase(0, 2);
+    new_space_name.erase(0, strlen(Fil_path::DOT_SLASH));
   }
 
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
@@ -180,7 +183,7 @@ void ddl_tracker_t::add_rename_table_from_redo(const space_id_t space_id,
     old_space_name.erase(0, 2);
   }
   if (Fil_path::has_prefix(new_space_name, Fil_path::DOT_SLASH)) {
-    new_space_name.erase(0, 2);
+    new_space_name.erase(0, strlen(Fil_path::DOT_SLASH));
   }
 
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
@@ -211,7 +214,7 @@ void ddl_tracker_t::add_drop_table_from_redo(const space_id_t space_id,
   std::string new_space_name{name};
   Fil_path::normalize(new_space_name);
   if (Fil_path::has_prefix(new_space_name, Fil_path::DOT_SLASH)) {
-    new_space_name.erase(0, 2);
+    new_space_name.erase(0, strlen(Fil_path::DOT_SLASH));
   }
 
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
@@ -222,7 +225,7 @@ void ddl_tracker_t::add_drop_table_from_redo(const space_id_t space_id,
 }
 
 bool ddl_tracker_t::is_missing_table(const std::string &name) {
-  return missing_tables.count(name) != 0;
+  return missing_after_discovery.count(name) != 0;
 }
 
 void ddl_tracker_t::add_renamed_table(const space_id_t &space_id,
@@ -260,7 +263,7 @@ typedef struct {
   space_id_to_name_t *new_tables;
 } copy_thread_ctxt_t;
 
-static void data_copy_thread_func(copy_thread_ctxt_t *ctxt) {
+static void copy_for_reduced(copy_thread_ctxt_t *ctxt) {
   uint num = ctxt->num;
   fil_node_t *node;
 
@@ -272,7 +275,7 @@ static void data_copy_thread_func(copy_thread_ctxt_t *ctxt) {
 
   /* create THD to get thread number in the error log */
   THD *thd = create_thd(false, false, true, 0, 0);
-  debug_sync_point("data_copy_thread_func");
+  debug_sync_point("copy_for_reduced");
 
   while ((node = datafiles_iter_next(ctxt->it)) != NULL && !*(ctxt->error)) {
     if (ctxt->new_tables->find(node->space->id) == ctxt->new_tables->end()) {
@@ -280,7 +283,7 @@ static void data_copy_thread_func(copy_thread_ctxt_t *ctxt) {
     }
     std::string dest_name = node->name;
     dest_name.append(EXT_NEW);
-    if (xtrabackup_copy_datafile(node, num, dest_name.c_str())) {
+    if (xtrabackup_copy_datafile_func(node, num, dest_name.c_str())) {
       xb::error() << "failed to copy datafile " << node->name;
       *(ctxt->error) = true;
     }
@@ -295,6 +298,9 @@ static void data_copy_thread_func(copy_thread_ctxt_t *ctxt) {
 }
 
 /**
+ * Converts filename from `schema/filename.ibd` format to `schema/spaceid.ext`
+ format
+ * by replacing the `filename` to `spaceid` and appending the extension
   @param space_id The space id of the current file
   @param file_name File name that we will modify
   @param ext Extension that we will modify to
@@ -416,6 +422,8 @@ std::tuple<filevec, filevec> ddl_tracker_t::handle_undo_ddls() {
   srv_undo_tablespaces_init(false, true);
 
   std::ostringstream str;
+  // xb::info() is not used intentionally, as there is a loss
+  // of newlines characters from the stream/string
   str << "Before UNDO files" << to_string(before_lock_undo) << "\n"
       << "After UNDO files" << to_string(after_lock_undo) << "\n";
   fprintf(stderr, "%s\n", str.str().c_str());
@@ -451,22 +459,24 @@ void ddl_tracker_t::handle_ddl_operations() {
   }
 
   std::ostringstream str;
+  // xb::info() is not used intentionally, as there is a loss
+  // of newlines characters from the stream/string
   str << "Tables_copied: " << to_string(tables_in_backup) << "\n"
       << "New_tables: " << to_string(new_tables) << "\n"
       << "Renames: " << to_string(renames) << "\n"
       << "Drops: " << to_string(drops) << "\n"
       << "Recopy_tables: " << to_string(recopy_tables) << "\n"
       << "Corrupted_tablespaces: " << to_string(corrupted_tablespaces) << "\n"
-      << "Missing tables: " << to_string(missing_tables) << "\n"
+      << "Missing tables: " << to_string(missing_after_discovery) << "\n"
       << "Renamed_during_scan: " << to_string(renamed_during_scan) << "\n";
   fprintf(stderr, "%s\n", str.str().c_str());
 
   dberr_t err;
 
   for (auto &tablespace : corrupted_tablespaces) {
-    /* Create .corrupt file extension with the filename. Prepare should delete
+    /* Create .crpt file extension with the filename. Prepare should delete
     the corresponding .ibd, before doing *.ibd scan */
-    std::string &path = tablespace.second.append(".corrupt");
+    std::string &path = tablespace.second.append(EXT_CRPT);
     backup_file_printf(path.c_str(), "%s", "");
   }
 
@@ -615,7 +625,8 @@ void ddl_tracker_t::handle_ddl_operations() {
 
     } else {
       std::tie(err, std::ignore) = fil_open_for_xtrabackup(
-          table->second, table->second.substr(0, table->second.length() - 4));
+          table->second,
+          table->second.substr(0, table->second.length() - EXT_REN.length()));
     }
     table++;
   }
@@ -631,7 +642,10 @@ void ddl_tracker_t::handle_ddl_operations() {
     new_tables[elem.second] = elem.first;
   }
 
-  if (new_tables.empty()) return;
+  if (new_tables.empty()) {
+    xb::info() << "DDL tracking : no new files are being copied.";
+    return;
+  }
 
   /* Create data copying threads */
   copy_thread_ctxt_t *data_threads = (copy_thread_ctxt_t *)ut::malloc_withkey(
@@ -649,13 +663,16 @@ void ddl_tracker_t::handle_ddl_operations() {
     data_threads[i].count_mutex = &count_mutex;
     data_threads[i].error = &data_copying_error;
     data_threads[i].new_tables = &new_tables;
-    os_thread_create(PFS_NOT_INSTRUMENTED, i, data_copy_thread_func,
+    os_thread_create(PFS_NOT_INSTRUMENTED, i, copy_for_reduced,
                      data_threads + i)
         .start();
   }
 
   /* Wait for threads to exit */
   while (1) {
+    xb::info() << "Sleeping for 1 second, waiting for the recopy of tables to "
+                  "be finished."
+               << "Expecting count be 0, current count is " << count;
     std::this_thread::sleep_for(std::chrono::seconds(1));
     mutex_enter(&count_mutex);
     if (count == 0) {
@@ -666,6 +683,7 @@ void ddl_tracker_t::handle_ddl_operations() {
   }
 
   if (data_copying_error) {
+    xb::error() << "DDL tracking : could not recopy tablespaces.";
     exit(EXIT_FAILURE);
   }
 
@@ -702,20 +720,44 @@ std::tuple<bool, std::string> is_in_meta_map(space_id_t space_id) {
 }
 
 /** Read file content into STL string */
-static std::string read_file_as_string(const std::string file) {
-  char content[FN_REFLEN];
-  FILE *f = fopen(file.c_str(), "r");
-  if (!f) {
+static std::string read_file_as_string(const std::string &file) {
+  try {
+    // Check if the file exists using std::filesystem
+    if (!std::filesystem::exists(file)) {
+      return "";
+    }
+
+    std::ifstream f(file, std::ios::in | std::ios::binary);
+    if (!f) {
+      return "";
+    }
+
+    // Read entire file into a string
+    std::string content((std::istreambuf_iterator<char>(f)),
+                        std::istreambuf_iterator<char>());
+
+    return content;
+  } catch (const std::filesystem::filesystem_error &e) {
+    // Handle filesystem-related exceptions
+    // (e.g., file doesn't exist, permissions issues)
+    xb::error() << "Filesystem error: " << e.what() << '\n';
+    return "";
+  } catch (const std::ifstream::failure &e) {
+    // Handle ifstream-related exceptions
+    // (e.g., file couldn't be opened, read errors)
+    xb::error() << "File read error: " << e.what() << '\n';
+    return "";
+  } catch (const std::exception &e) {
+    // Catch all other standard exceptions
+    xb::error() << "Error: " << e.what() << '\n';
     return "";
   }
-  size_t len = fread(content, 1, FN_REFLEN, f);
-  fclose(f);
-  return std::string(content, len);
 }
 
 static void delete_force(const std::string &path) {
   if (access(path.c_str(), R_OK) == 0) {
     if (my_delete(path.c_str(), MYF(MY_WME))) {
+      xb::error() << "Can not delete file " << path << "; errno " << errno;
       exit(EXIT_FAILURE);
     }
   }
@@ -758,15 +800,15 @@ static bool truncate_suffix(std::string suffix, std::string &path) {
 }
 
 /**
- * Handle DDL for renamed files
- * example input: test/10.ren file with content = test/new_name.ibd ;
+ * Handles RENAME DDL that happened during the backup taken in reduced mode
+ * by processing the file with `.ren` extension.
+ * example input: `schema/10.ren` file with file content = `schema/new_name.ibd`
  *        result: tablespace with space_id=10 will be renamed to
- * test/new_name.ibd
+ * `schema/new_name.ibd`.
+ * @param[in] entry		datadir entry
  * @return true on success
  */
-bool prepare_handle_ren_files(
-    const datadir_entry_t &entry, /*!<in: datadir entry */
-    void * /*data*/) {
+bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
   if (entry.is_empty_dir) return true;
 
   std::string ren_file_name = entry.file_name;
@@ -868,49 +910,63 @@ bool prepare_handle_ren_files(
 }
 
 /**
- * Handle .corrupt files. These files should be removed before we do *.ibd scan
+ * Handles corrupted files during the backup taken in reduced mode
+ * by processing the file with `.crpt` extension.
+ * These files should be removed before we do *.ibd scan
+ * @param[in] entry		datadir entry
  * @return true on success
  * */
-bool prepare_handle_corrupt_files(
-    const datadir_entry_t &entry, /*!<in: datadir entry */
-    void * /*data*/) {
+bool prepare_handle_corrupt_files(const datadir_entry_t &entry, void *) {
   if (entry.is_empty_dir) return true;
 
   std::string corrupt_path = entry.path;
   Fil_path::normalize(corrupt_path);
-  // trim .corrupt
-  std::string ext = ".corrupt";
+  // trim .crpt
   std::string source_path = corrupt_path;
-  truncate_suffix(ext, source_path);
+  truncate_suffix(EXT_CRPT, source_path);
 
   if (xtrabackup_incremental) {
     std::string delta_file = source_path + EXT_DELTA;
     xb::info() << "prepare_handle_corrupt_files: deleting  " << delta_file;
-    os_file_delete_if_exists_func(delta_file.c_str(), nullptr);
+    if (!os_file_delete_if_exists_func(delta_file.c_str(), nullptr)) {
+      xb::error() << "prepare_handle_corrupt_files: Can not delete "
+                  << delta_file;
+    }
 
     std::string meta_file = source_path + EXT_META;
     xb::info() << "prepare_handle_corrupt_files: deleting  " << meta_file;
-    os_file_delete_if_exists_func(meta_file.c_str(), nullptr);
+    if (!os_file_delete_if_exists_func(meta_file.c_str(), nullptr)) {
+      xb::error() << "prepare_handle_corrupt_files: Can not delete "
+                  << meta_file;
+    }
   } else {
     xb::info() << "prepare_handle_corrupt_files: deleting  " << source_path;
-    os_file_delete_if_exists_func(source_path.c_str(), nullptr);
+    if (!os_file_delete_if_exists_func(source_path.c_str(), nullptr)) {
+      xb::error() << "prepare_handle_corrupt_files: Can not delete "
+                  << source_path;
+    }
   }
 
-  // delete the .corrupt file, we don't need it anymore
-  os_file_delete_if_exists_func(corrupt_path.c_str(), nullptr);
+  // delete the .crpt file, we don't need it anymore
+  if (!os_file_delete_if_exists_func(corrupt_path.c_str(), nullptr)) {
+    xb::error() << "prepare_handle_corrupt_files: Can not delete "
+                << corrupt_path;
+  }
 
   return true;
 }
 
 /**
- * Handle DDL for deleted files
- * example input: test/10.del file
- *        result: tablespace with space_id=10 will be deleted
+ * Handles DELETE DDL that happened during the backup taken in reduced mode
+ * by processing the file with `.del` extension.
+ * example input: `schema/10.del` file
+ *         result: tablespace with space_id=10 will be deleted.
+ * @param[in] entry		datadir entry
+ * @param[in] arg		unused
  * @return true on success
  */
-bool prepare_handle_del_files(
-    const datadir_entry_t &entry, /*!<in: datadir entry */
-    void *arg __attribute__((unused))) {
+bool prepare_handle_del_files(const datadir_entry_t &entry,
+                              void *arg __attribute__((unused))) {
   if (entry.is_empty_dir) return true;
 
   std::string del_file_name = entry.file_name;
@@ -986,10 +1042,10 @@ static bool ends_with(const string &full_string, const string &ext) {
  * Scan .meta files and build std::unordered_map<space_id, meta_path>.
  * This map is later used to delete the .delta and .meta file for a dropped
  * tablespace (ie. when processing the .del entries in reduced lock)
+ * @param[in] entry		datadir entry
  * @return true on success
  */
-bool xtrabackup_scan_meta(const datadir_entry_t &entry, /*!<in: datadir entry */
-                          void * /*data*/) {
+bool xtrabackup_scan_meta(const datadir_entry_t &entry, void *) {
   const std::string &meta_path = entry.path;
   xb_delta_info_t info;
 
@@ -1022,10 +1078,19 @@ error:
   return false;
 }
 
-/* Handle DDL for new files */
-bool prepare_handle_new_files(
-    const datadir_entry_t &entry, /*!<in: datadir entry */
-    void *arg __attribute__((unused))) {
+/**
+* Handles CREATE DDL that happened during the backup taken in reduced mode
+* by processing the file with `.new` extension.
+* example input: `schema/filename.ibd.new` file
+*       result: file `schema/filename.ibd.new` will be renamed to
+`schema/filename.ibd`
+
+* @param[in] entry		datadir entry
+* @param[in] arg		unused
+* @return true on success
+*/
+bool prepare_handle_new_files(const datadir_entry_t &entry,
+                              void *arg __attribute__((unused))) {
   if (entry.is_empty_dir) return true;
   std::string src_path = entry.path;
   std::string dest_path = src_path;

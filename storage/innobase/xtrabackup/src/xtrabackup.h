@@ -249,8 +249,8 @@ datafiles_iter_t *datafiles_iter_new(
 fil_node_t *datafiles_iter_next(datafiles_iter_t *it);
 void datafiles_iter_free(datafiles_iter_t *it);
 
-bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n,
-                              const char *dest_name);
+bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
+                                   const char *dest_name);
 
 /************************************************************************
 Initialize the tablespace memory cache and populate it by scanning for and

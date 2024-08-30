@@ -143,6 +143,7 @@ static int original_innodb_buffer_pool_dump_pct;
 static bool innodb_buffer_pool_dump;
 static bool innodb_buffer_pool_dump_pct;
 
+#ifdef XTRABACKUP
 /* This could be either LOCK TABLES FOR BACKUP or LOCK INSTANCE */
 static xtrabackup::utils::time backup_lock_start_time =
     xtrabackup::utils::INVALID_TIME;
@@ -152,6 +153,7 @@ static xtrabackup::utils::time backup_lock_end_time =
 static xtrabackup::utils::time ftwrl_start_time =
     xtrabackup::utils::INVALID_TIME;
 static xtrabackup::utils::time ftwrl_end_time = xtrabackup::utils::INVALID_TIME;
+#endif /* XTRABACKUP */
 
 MYSQL *xb_mysql_connect() {
   MYSQL *connection = mysql_init(NULL);

@@ -38,6 +38,7 @@ inline const std::string EXT_META = ".meta";
 inline const std::string EXT_NEW_META = ".new.meta";
 inline const std::string EXT_DELTA = ".delta";
 inline const std::string EXT_NEW_DELTA = ".new.delta";
+inline const std::string EXT_CRPT = ".crpt";
 
 class ddl_tracker_t {
   /** List of all tables in the backup */
@@ -53,7 +54,7 @@ class ddl_tracker_t {
   /* For DDL operation found in redo log,  */
   std::unordered_map<space_id_t, std::pair<std::string, std::string>> renames;
   /** Tables that have been deleted between discovery and file open */
-  std::unordered_set<std::string> missing_tables;
+  std::unordered_set<std::string> missing_after_discovery;
   /** Tables that have been renamed during scan. Tablespace_id and new table
    *  name */
   space_id_to_name_t renamed_during_scan;
@@ -100,7 +101,7 @@ class ddl_tracker_t {
                                 const char *name);
 
   /** Add a table to the corrupted tablespace list. The list is later
-  converted to  tablespacename.ibd.corrupt files on disk
+  converted to  tablespacename.ibd.crpt files on disk
   @param[in] space_id  Tablespace id
   @param[in] path      Tablespace path */
   void add_corrupted_tablespace(const space_id_t space_id,
@@ -161,7 +162,7 @@ bool prepare_handle_ren_files(
     void * /*data*/);
 
 /**
- * Handle .corrupt files. These files should be removed before we do *.ibd scan
+ * Handle .crpt files. These files should be removed before we do *.ibd scan
  * @return true on success
  * */
 bool prepare_handle_corrupt_files(

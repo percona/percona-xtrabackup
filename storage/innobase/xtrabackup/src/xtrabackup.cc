@@ -1577,7 +1577,7 @@ Disable with --skip-innodb-checksums.",
      (G_PTR *)&xtrabackup_debug_sync, (G_PTR *)&xtrabackup_debug_sync, 0,
      GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
-#ifdef UNIV_DEBUG
+#ifndef NDEBUG
     {"debug-sync-thread", OPT_XTRA_DEBUG_SYNC_THREAD,
      "Thread sleeps at sync point and creates a filename with the "
      "sync_point_name_<thread_number>. There can be multiple threads and so "
@@ -1586,7 +1586,7 @@ Disable with --skip-innodb-checksums.",
      (G_PTR *)&xtrabackup_debug_sync_thread,
      (G_PTR *)&xtrabackup_debug_sync_thread, 0, GET_STR, REQUIRED_ARG, 0, 0, 0,
      0, 0, 0},
-#endif /* UNIV_DEBUG */
+#endif /* !NDEBUG */
 
 #endif
 
@@ -2904,9 +2904,9 @@ std::string ddl_lock_type_to_str(lock_ddl_type_t type) {
 }
 
 lock_ddl_type_t ddl_lock_type_from_str(std::string type) {
-  if (type == "ON") {
+  if (type == "ON" || type == "TRUE") {
     return LOCK_DDL_ON;
-  } else if (type == "OFF") {
+  } else if (type == "OFF" || type == "FALSE") {
     return LOCK_DDL_OFF;
   } else if (type == "REDUCED") {
     return LOCK_DDL_REDUCED;
@@ -3160,11 +3160,11 @@ const char *xb_get_copy_action(const char *dflt) {
 /* TODO: We may tune the behavior (e.g. by fil_aio)*/
 
 static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
-  return xtrabackup_copy_datafile(node, thread_n, nullptr);
+  return xtrabackup_copy_datafile_func(node, thread_n, nullptr);
 }
 
-bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n,
-                              const char *dest_name) {
+bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
+                                   const char *dest_name) {
   char dst_name[FN_REFLEN];
   ds_file_t *dstfile = NULL;
   xb_fil_cur_t cursor;
@@ -3296,7 +3296,7 @@ error:
     write_filter->deinit(&write_filt_ctxt);
     ;
   }
-  xb::error() << "xtrabackup_copy_datafile() failed";
+  xb::error() << "xtrabackup_copy_datafile_func() failed";
   return (true); /*ERROR*/
 
 skip:
@@ -4875,11 +4875,12 @@ static bool get_meta_path(
 {
   size_t len = strlen(delta_path);
 
-  if (len <= 6 || strcmp(delta_path + len - 6, EXT_DELTA.c_str())) {
+  if (len <= 6 ||
+      strcmp(delta_path + len - EXT_DELTA.length(), EXT_DELTA.c_str())) {
     return false;
   }
-  memcpy(meta_path, delta_path, len - 6);
-  strcpy(meta_path + len - 6, XB_DELTA_INFO_SUFFIX);
+  memcpy(meta_path, delta_path, len - EXT_DELTA.length());
+  strcpy(meta_path + len - EXT_DELTA.length(), XB_DELTA_INFO_SUFFIX);
 
   return true;
 }
@@ -5248,7 +5249,7 @@ static pfs_os_file_t xb_delta_open_matching_space(
       ut_a(res);
 
       xb::info() << "Renaming " << dest_space_name << " to " << tmpname
-                 << EXT_IBU;
+                 << EXT_IBD;
 
       ut_a(os_file_status(oldpath, &exists, &type));
 
@@ -5390,10 +5391,10 @@ static bool xtrabackup_apply_delta(
     snprintf(dst_path, sizeof(dst_path), "%s/%s", xtrabackup_real_target_dir,
              entry.file_name.c_str());
   }
-  dst_path[strlen(dst_path) - 6] = '\0';
+  dst_path[strlen(dst_path) - EXT_DELTA.length()] = '\0';
 
   strncpy(space_name, entry.file_name.c_str(), FN_REFLEN - 1);
-  space_name[strlen(space_name) - 6] = 0;
+  space_name[strlen(space_name) - EXT_DELTA.length()] = 0;
 
   if (!get_meta_path(src_path, meta_path)) {
     goto error;
@@ -6363,9 +6364,10 @@ static bool xb_export_cfg_write(
   char file_path[FN_REFLEN];
   FILE *file;
   bool success;
+  std::string EXT_CFG = ".cfg";
 
   strcpy(file_path, node->name);
-  strcpy(file_path + strlen(file_path) - 4, ".cfg");
+  strcpy(file_path + strlen(file_path) - EXT_CFG.length(), EXT_CFG.c_str());
 
   file = fopen(file_path, "w+b");
 
@@ -6701,7 +6703,7 @@ skip_check:
   if (opt_lock_ddl == LOCK_DDL_REDUCED) {
     if (!xb_process_datadir(
             xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".",
-            ".corrupt", prepare_handle_corrupt_files, NULL)) {
+            EXT_CRPT.c_str(), prepare_handle_corrupt_files, NULL)) {
       xb_data_files_close();
       goto error_cleanup;
     }
