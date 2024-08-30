@@ -9,6 +9,8 @@ NCPU=$(shell grep -c processor /proc/cpuinfo)
 # from having to guess our platform (since we know it already)
 DEB_HOST_GNU_TYPE   ?= $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
 DEB_BUILD_GNU_TYPE  ?= $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
+DEB_HOST_ARCH := $(shell dpkg-architecture -qDEB_HOST_ARCH)
+DEB_BUILD_ARCH := $(shell dpkg-architecture -qDEB_BUILD_ARCH)
 ifneq ($(DEB_HOST_GNU_TYPE),$(DEB_BUILD_GNU_TYPE))
 CROSS= --build $(DEB_BUILD_GNU_TYPE) --host $(DEB_HOST_GNU_TYPE)
 else
@@ -22,19 +24,35 @@ rpath='$$ORIGIN/../lib/private'
 override_dh_auto_configure:
 
 ifeq "$(DEB_DUMMY)" ""
-	( test -d $(builddirdebug) || mkdir $(builddirdebug) ) && cd $(builddirdebug) && \
-	cmake .. -DBUILD_CONFIG=xtrabackup_release -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=/usr \
-	  -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test-80 \
-	  -DINSTALL_MANDIR=/usr/share/man -DWITH_MAN_PAGES=1 -DMINIMAL_RELWITHDEBINFO=OFF \
-	  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock -DOPENSSL_ROOT_DIR=/usr/lib/x86_64-linux-gnu \
-	  -DINSTALL_PLUGINDIR=lib/xtrabackup/plugin -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled && \
-	cd ..
-	( test -d $(builddir) || mkdir $(builddir) ) && cd $(builddir) && \
-	cmake .. -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=/usr \
-	  -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test-80 \
-	  -DINSTALL_MANDIR=/usr/share/man -DWITH_MAN_PAGES=1 -DMINIMAL_RELWITHDEBINFO=OFF \
-	  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock -DOPENSSL_ROOT_DIR=/usr/lib/x86_64-linux-gnu \
-	  -DINSTALL_PLUGINDIR=lib/xtrabackup/plugin -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled
+	ifeq ($(DEB_BUILD_ARCH), arm64)
+		( test -d $(builddirdebug) || mkdir $(builddirdebug) ) && cd $(builddirdebug) && \
+		cmake .. -DBUILD_CONFIG=xtrabackup_release -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=/usr \
+		-DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test-80 \
+		-DINSTALL_MANDIR=/usr/share/man -DWITH_MAN_PAGES=1 -DMINIMAL_RELWITHDEBINFO=OFF \
+		-DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock -DOPENSSL_ROOT_DIR=/usr/lib/aarch64-linux-gnu \
+		-DINSTALL_PLUGINDIR=lib/xtrabackup/plugin -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled && \
+		cd ..
+		( test -d $(builddir) || mkdir $(builddir) ) && cd $(builddir) && \
+		cmake .. -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=/usr \
+		-DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test-80 \
+		-DINSTALL_MANDIR=/usr/share/man -DWITH_MAN_PAGES=1 -DMINIMAL_RELWITHDEBINFO=OFF \
+		-DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock -DOPENSSL_ROOT_DIR=/usr/lib/aarch64-linux-gnu \
+		-DINSTALL_PLUGINDIR=lib/xtrabackup/plugin -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled
+	else
+		( test -d $(builddirdebug) || mkdir $(builddirdebug) ) && cd $(builddirdebug) && \
+		cmake .. -DBUILD_CONFIG=xtrabackup_release -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=/usr \
+		-DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test-80 \
+		-DINSTALL_MANDIR=/usr/share/man -DWITH_MAN_PAGES=1 -DMINIMAL_RELWITHDEBINFO=OFF \
+		-DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock -DOPENSSL_ROOT_DIR=/usr/lib/x86_64-linux-gnu \
+		-DINSTALL_PLUGINDIR=lib/xtrabackup/plugin -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled && \
+		cd ..
+		( test -d $(builddir) || mkdir $(builddir) ) && cd $(builddir) && \
+		cmake .. -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=/usr \
+		-DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test-80 \
+		-DINSTALL_MANDIR=/usr/share/man -DWITH_MAN_PAGES=1 -DMINIMAL_RELWITHDEBINFO=OFF \
+		-DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock -DOPENSSL_ROOT_DIR=/usr/lib/x86_64-linux-gnu \
+		-DINSTALL_PLUGINDIR=lib/xtrabackup/plugin -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled
+	endif
 else
 	# Dummy binaries that avoid compilation
 	echo 'main() { return 300; }' | gcc -x c - -o xtrabackup
