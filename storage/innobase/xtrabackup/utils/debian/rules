@@ -24,7 +24,7 @@ rpath='$$ORIGIN/../lib/private'
 override_dh_auto_configure:
 
 ifeq "$(DEB_DUMMY)" ""
-	ifeq ($(DEB_BUILD_ARCH), arm64)
+	ifeq "$(DEB_BUILD_ARCH)" "arm64"
 		( test -d $(builddirdebug) || mkdir $(builddirdebug) ) && cd $(builddirdebug) && \
 		cmake .. -DBUILD_CONFIG=xtrabackup_release -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=/usr \
 		-DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test-80 \
