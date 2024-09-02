@@ -71,6 +71,11 @@ class ddl_tracker_t {
   std::tuple<filevec, filevec> handle_undo_ddls();
 
  public:
+  /* Track undo tablespaces. This function is called twice. Once before lock,
+  at startup and then again after lock. The contents of two maps are used
+  to discover deleted, truncated and new undo tablespaces.
+  @param[in] space_id undo tablespace id
+  @param[in] name     undo tablespace name */
   void add_undo_tablespace(const space_id_t space_id, std::string name);
 
   /** Add a new table in the DDL tracker table list.
@@ -122,11 +127,15 @@ class ddl_tracker_t {
   @param[in] start_lsn  lsn for REDO record */
   void backup_file_op(uint32_t space_id, mlog_id_t type, const byte *buf,
                       ulint len, lsn_t start_lsn);
-  /** Function responsible to generate files based on DDL operations */
-  void handle_ddl_operations();
+
+  /** Handle DDL operations that happenned in reduced lock mode
+  @return DB_SUCCESS for success, others for errors */
+  dberr_t handle_ddl_operations();
+
   /** Note that a table has been deleted between disovery and file open
   @param[in]  path  missing table name with path. */
   void add_missing_table(std::string path);
+
   /** Check if table is in missing list
   @param[in]  name  tablespace name */
   bool is_missing_table(const std::string &name);

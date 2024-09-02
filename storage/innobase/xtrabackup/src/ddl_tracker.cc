@@ -441,7 +441,7 @@ std::tuple<filevec, filevec> ddl_tracker_t::handle_undo_ddls() {
   return {newfiles, deletedOrChangedFiles};
 }
 
-void ddl_tracker_t::handle_ddl_operations() {
+dberr_t ddl_tracker_t::handle_ddl_operations() {
   fil_close_all_files();
   fil_close();
   fil_init(LONG_MAX);
@@ -455,7 +455,7 @@ void ddl_tracker_t::handle_ddl_operations() {
       new_undo_files.empty() && deleted_undo_files.empty()) {
     xb::info()
         << "DDL tracking : Finished handling DDL operations - No changes";
-    return;
+    return DB_SUCCESS;
   }
 
   std::ostringstream str;
@@ -598,7 +598,7 @@ void ddl_tracker_t::handle_ddl_operations() {
                                       xtrabackup_prepare)) {
         xb::error() << "Cannot parse system tablespace params";
         ut_ad(0);
-        return;
+        return DB_ERROR;
       }
       dberr_t err;
       page_no_t sum_of_new_sizes;
@@ -609,9 +609,10 @@ void ddl_tracker_t::handle_ddl_operations() {
       err = srv_sys_space.check_file_spec(false, 0);
 
       if (err != DB_SUCCESS) {
-        xb::error() << "could not find data files at the specified datadir";
+        xb::error() << "In reduced mode, recopy could not find system "
+                       "tablespace files at the specified datadir";
         ut_ad(0);
-        return;
+        return DB_ERROR;
       }
 
       err = srv_sys_space.open_or_create(false, false, &sum_of_new_sizes,
@@ -620,13 +621,24 @@ void ddl_tracker_t::handle_ddl_operations() {
       if (err != DB_SUCCESS) {
         xb::error() << "could not reopen system tablespace";
         ut_ad(0);
-        return;
+        return DB_ERROR;
       }
 
     } else {
       std::tie(err, std::ignore) = fil_open_for_xtrabackup(
           table->second,
           table->second.substr(0, table->second.length() - EXT_REN.length()));
+
+      // Under lock, we should be able to open tablespace
+      if (err != DB_SUCCESS) {
+        xb::error() << "Tablespace opening under reduced lock reopen failed: "
+                    << table->second << " err: " << err;
+
+        // Currently we are aware of ALTER INSTANCE ROTATE MASTER KEY can cause
+        // the failure.
+        ut_ad(err == DB_SUCCESS || err == DB_INVALID_ENCRYPTION_META);
+        return err;
+      }
     }
     table++;
   }
@@ -644,7 +656,7 @@ void ddl_tracker_t::handle_ddl_operations() {
 
   if (new_tables.empty()) {
     xb::info() << "DDL tracking : no new files are being copied.";
-    return;
+    return DB_SUCCESS;
   }
 
   /* Create data copying threads */
@@ -684,13 +696,14 @@ void ddl_tracker_t::handle_ddl_operations() {
 
   if (data_copying_error) {
     xb::error() << "DDL tracking : could not recopy tablespaces.";
-    exit(EXIT_FAILURE);
+    return DB_ERROR;
   }
 
   mutex_free(&count_mutex);
   ut::free(data_threads);
   datafiles_iter_free(it);
   xb::info() << "DDL tracking :  Finished handling DDL operations";
+  return DB_SUCCESS;
 }
 
 /** This map is required during incremental backup prepare becuase the
@@ -828,16 +841,22 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
   // trim .ibd
   std::string dest_space_name = ren_file_content;
   truncate_suffix(EXT_IBD, dest_space_name);
+
   char *dest_path = Fil_path::make_ibd_from_table_name(dest_space_name);
+  auto dest_path_free_guard = create_scope_guard([&]() {
+    if (dest_path != nullptr) {
+      ut::free(dest_path);
+    }
+  });
 
   fil_space_t *fil_space = fil_space_get(source_space_id);
 
-  if (fil_space != NULL) {
+  if (fil_space != nullptr) {
     char *source_path = nullptr, *source_space_name = nullptr;
     bool res = fil_space_read_name_and_filepath(
         fil_space->id, &source_space_name, &source_path);
 
-    auto guard = create_scope_guard([&]() {
+    auto source_path_free_guard = create_scope_guard([&]() {
       if (source_space_name != nullptr) {
         ut::free(source_space_name);
       }
@@ -867,12 +886,17 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
     // In case source file doesn't exist we check if destination file is already
     // there and if destination file DO NOT exist with desired name we throw
     // error
-    if (!os_file_exists(dest_path)) {
-      xb::error() << "prepare_handle_ren_files: Tablespace " << fil_space->name
-                  << " not found.";
+    // in case of incrementals, the original file might be present as .delta
+    // So ignore the debug check for incrementals.
+    if (!os_file_exists(dest_path) && !xtrabackup_incremental) {
+      xb::error() << "prepare_handle_ren_files: Tablespace with space_id "
+                  << source_space_id << " is not found."
+                  << " Destination path " << dest_path << " is also not found ";
+      xb::error() << "The incremental meta map is ";
+      fprintf(stderr, "%s", to_string(meta_map).c_str());
+      ut_ad(0);
       return false;
     }
-    ut::free(dest_path);
   }
 
   // rename .delta .meta files as well
@@ -898,8 +922,12 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
     } else if (fil_space == nullptr) {
       // This means the tablespace is neither found in the fullbackup dir
       // nor in the inc backup directory as .meta and .delta
-      xb::error() << "prepare_handle_ren_files(): failed to handle "
-                  << ren_path;
+      xb::error() << "prepare_handle_ren_files(): failed to handle " << ren_path
+                  << " ren_file content: " << ren_file_content;
+      xb::error() << "The incremental meta map is ";
+      fprintf(stderr, "%s", to_string(meta_map).c_str());
+
+      ut_ad(0);
       return false;
     }
   }
@@ -931,6 +959,7 @@ bool prepare_handle_corrupt_files(const datadir_entry_t &entry, void *) {
     if (!os_file_delete_if_exists_func(delta_file.c_str(), nullptr)) {
       xb::error() << "prepare_handle_corrupt_files: Can not delete "
                   << delta_file;
+      return false;
     }
 
     std::string meta_file = source_path + EXT_META;
@@ -938,12 +967,14 @@ bool prepare_handle_corrupt_files(const datadir_entry_t &entry, void *) {
     if (!os_file_delete_if_exists_func(meta_file.c_str(), nullptr)) {
       xb::error() << "prepare_handle_corrupt_files: Can not delete "
                   << meta_file;
+      return false;
     }
   } else {
     xb::info() << "prepare_handle_corrupt_files: deleting  " << source_path;
     if (!os_file_delete_if_exists_func(source_path.c_str(), nullptr)) {
       xb::error() << "prepare_handle_corrupt_files: Can not delete "
                   << source_path;
+      return false;
     }
   }
 
@@ -951,6 +982,7 @@ bool prepare_handle_corrupt_files(const datadir_entry_t &entry, void *) {
   if (!os_file_delete_if_exists_func(corrupt_path.c_str(), nullptr)) {
     xb::error() << "prepare_handle_corrupt_files: Can not delete "
                 << corrupt_path;
+    return false;
   }
 
   return true;
@@ -977,7 +1009,7 @@ bool prepare_handle_del_files(const datadir_entry_t &entry,
   space_id_t space_id = atoi(del_file_name.c_str());
 
   fil_space_t *fil_space = fil_space_get(space_id);
-  if (fil_space != NULL) {
+  if (fil_space != nullptr) {
     char *path = nullptr, *space_name = nullptr;
     bool res =
         fil_space_read_name_and_filepath(fil_space->id, &space_name, &path);
@@ -1058,37 +1090,31 @@ bool xtrabackup_scan_meta(const datadir_entry_t &entry, void *) {
 
   ut_a(xtrabackup_incremental);
 
-  // We dont want to add .new.meta to meta_map, as they are meant to be replace
-  // the old version of the file.
+  // We shouldn't add .new.meta to meta_map, as they are meant to be replaced
+  // with the old version of the file.
   if (ends_with(entry.file_name, EXT_NEW_META)) {
     return true;
   }
 
   if (!xb_read_delta_metadata(meta_path.c_str(), &info)) {
-    goto error;
+    xb::error() << "xtrabackup_scan_meta(): failed to read .meta file "
+                << entry.path;
+    return false;
   }
 
   insert_into_meta_map(info.space_id, meta_path);
 
   return true;
-
-error:
-  xb::error() << "xtrabackup_scan_meta(): failed to read .meta file "
-              << entry.path;
-  return false;
 }
 
-/**
-* Handles CREATE DDL that happened during the backup taken in reduced mode
-* by processing the file with `.new` extension.
-* example input: `schema/filename.ibd.new` file
-*       result: file `schema/filename.ibd.new` will be renamed to
-`schema/filename.ibd`
+/** Handles CREATE DDL that happened during the backup taken in reduced mode
+by processing the file with `.new` extension.
+example input: `schema/filename.ibd.new` file
+result: file `schema/filename.ibd.new` will be renamed to `schema/filename.ibd`
+@param[in] entry  datadir entry
+@param[in] arg    unused
+@return true on success */
 
-* @param[in] entry		datadir entry
-* @param[in] arg		unused
-* @return true on success
-*/
 bool prepare_handle_new_files(const datadir_entry_t &entry,
                               void *arg __attribute__((unused))) {
   if (entry.is_empty_dir) return true;

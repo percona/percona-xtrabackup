@@ -1492,7 +1492,12 @@ bool backup_start(Backup_context &context) {
       std::this_thread::sleep_for(
           std::chrono::milliseconds(context.redo_mgr->get_copy_interval()));
     }
-    ddl_tracker->handle_ddl_operations();
+    dberr_t err = ddl_tracker->handle_ddl_operations();
+    if (err != DB_SUCCESS) {
+      xb::error() << "handle_ddl_operations failed with InnoDB DB_ error code: "
+                  << err;
+      return false;
+    }
   }
 
   xb::info() << "Executing FLUSH NO_WRITE_TO_BINLOG BINARY LOGS";

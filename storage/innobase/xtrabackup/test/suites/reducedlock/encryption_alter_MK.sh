@@ -27,7 +27,7 @@ vlog "Resuming xtrabackup"
 kill -SIGCONT $xb_pid
 run_cmd_expect_failure wait $job_pid
 
-if ! egrep -q 'Space ID [0-9]* is missing encryption information' $topdir/backup_alter_MK.log ; then
+if ! egrep -q "Encryption information in datafile: test/enc_table.ibd can't be decrypted, please confirm that keyring is loaded" $topdir/backup_alter_MK.log ; then
     die "xtrabackup did not failed due to missing encryption information"
 fi
 
