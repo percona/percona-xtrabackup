@@ -1886,7 +1886,7 @@ bool write_xtrabackup_info(MYSQL *connection) {
                                             "WHERE TABLE_SCHEMA = 'PERCONA_SCHEMA' "
                                             "AND TABLE_NAME  = 'xtrabackup_history' "
                                             "AND COLUMN_NAME = 'binlog_pos' "
-                                            "AND DATA_TYPE = 'TEXT'");
+                                            "AND DATA_TYPE = 'text'");
 
   if (strcmp(column_is_changed, "0") == 0) {
     // Only alter table if it's required to avoid requesting metadata lock
