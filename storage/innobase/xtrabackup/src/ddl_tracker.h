@@ -70,6 +70,12 @@ class ddl_tracker_t {
 
   std::tuple<filevec, filevec> handle_undo_ddls();
 
+#ifdef UNIV_DEBUG
+  /** Set to true when we do handle_ddl_operations. Used to assert that no
+  more ddls are allowed to change the different DDL handling structures */
+  bool handle_ddl_ops;
+#endif /* UNIV_DEBUG */
+
  public:
   /* Track undo tablespaces. This function is called twice. Once before lock,
   at startup and then again after lock. The contents of two maps are used

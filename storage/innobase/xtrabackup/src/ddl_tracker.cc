@@ -37,6 +37,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "scope_guard.h"
 #include "sql_thd_internal_api.h"  // create_thd, destroy_thd
 #include "srv0start.h"
+#include "utils.h"
 #include "xb0xb.h"       // check_if_skip_table
 #include "xtrabackup.h"  // datafiles_iter_t
 
@@ -45,6 +46,8 @@ extern bool xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info);
 void ddl_tracker_t::backup_file_op(uint32_t space_id, mlog_id_t type,
                                    const byte *buf, ulint len,
                                    lsn_t start_lsn) {
+  ut_ad(!handle_ddl_ops);
+
   byte *ptr = (byte *)buf;
   switch (type) {
     case MLOG_FILE_CREATE: {
@@ -84,6 +87,11 @@ void ddl_tracker_t::backup_file_op(uint32_t space_id, mlog_id_t type,
 
 void ddl_tracker_t::add_table_from_ibd_scan(const space_id_t space_id,
                                             std::string name) {
+  // After lock is taken, the scans shouldn't modify the DDL tracker
+  // by the time, we are at handle_ddl_operations, we are consolidating
+  // and no more changes are allowed
+  ut_ad(!handle_ddl_ops);
+
   Fil_path::normalize(name);
   if (Fil_path::has_prefix(name, Fil_path::DOT_SLASH)) {
     name.erase(0, strlen(Fil_path::DOT_SLASH));
@@ -108,6 +116,8 @@ void ddl_tracker_t::add_undo_tablespace(const space_id_t space_id,
 
 void ddl_tracker_t::add_corrupted_tablespace(const space_id_t space_id,
                                              const std::string &path) {
+  ut_ad(!handle_ddl_ops);
+
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
 
   corrupted_tablespaces[space_id] = path;
@@ -122,6 +132,8 @@ void ddl_tracker_t::add_to_recopy_tables(space_id_t space_id, lsn_t start_lsn,
     return;
   }
 
+  ut_ad(!handle_ddl_ops);
+
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
   recopy_tables.insert(space_id);
   xb::info() << "DDL tracking : LSN: " << start_lsn << " " << operation
@@ -129,6 +141,8 @@ void ddl_tracker_t::add_to_recopy_tables(space_id_t space_id, lsn_t start_lsn,
 }
 
 void ddl_tracker_t::add_missing_table(std::string path) {
+  ut_ad(!handle_ddl_ops);
+
   Fil_path::normalize(path);
   if (Fil_path::has_prefix(path, Fil_path::DOT_SLASH)) {
     path.erase(0, strlen(Fil_path::DOT_SLASH));
@@ -152,6 +166,8 @@ void ddl_tracker_t::add_create_table_from_redo(const space_id_t space_id,
     return;
   }
 
+  ut_ad(!handle_ddl_ops);
+
   std::string new_space_name = name;
   Fil_path::normalize(new_space_name);
   if (Fil_path::has_prefix(new_space_name, Fil_path::DOT_SLASH)) {
@@ -173,6 +189,8 @@ void ddl_tracker_t::add_rename_table_from_redo(const space_id_t space_id,
   if (fsp_is_system_tablespace(space_id)) {
     return;
   }
+
+  ut_ad(!handle_ddl_ops);
 
   std::string old_space_name{old_name};
   std::string new_space_name{new_name};
@@ -211,6 +229,8 @@ void ddl_tracker_t::add_drop_table_from_redo(const space_id_t space_id,
     return;
   }
 
+  ut_ad(!handle_ddl_ops);
+
   std::string new_space_name{name};
   Fil_path::normalize(new_space_name);
   if (Fil_path::has_prefix(new_space_name, Fil_path::DOT_SLASH)) {
@@ -242,6 +262,8 @@ void ddl_tracker_t::add_renamed_table(const space_id_t &space_id,
   if (fsp_is_system_tablespace(space_id)) {
     return;
   }
+
+  ut_ad(!handle_ddl_ops);
 
   Fil_path::normalize(new_name);
   if (Fil_path::has_prefix(new_name, Fil_path::DOT_SLASH)) {
@@ -313,61 +335,6 @@ std::string ddl_tracker_t::convert_file_name(space_id_t space_id,
   return file_name.substr(0, sep_pos + 1) + std::to_string(space_id) + ext;
 }
 
-// Helper to convert single values to strings
-template <typename T>
-std::string to_string(const T &value) {
-  std::ostringstream oss;
-  oss << value;
-  return oss.str();
-}
-
-// Specialization for std::pair
-template <typename T1, typename T2>
-std::string to_string(const std::pair<T1, T2> &p) {
-  std::ostringstream oss;
-  oss << "{" << to_string(p.first) << ", " << to_string(p.second) << "}";
-  return oss.str();
-}
-
-// Specialization for std::unordered_map
-template <typename K, typename V>
-std::string to_string(const std::unordered_map<K, V> &umap) {
-  std::ostringstream oss;
-  oss << "{\n";
-  for (auto it = umap.begin(); it != umap.end(); ++it) {
-    oss << to_string(it->first) << ": " << to_string(it->second) << "\n";
-  }
-  oss << "}";
-  return oss.str();
-}
-
-// Specialization for std::vector
-template <typename T>
-std::string to_string(const std::vector<T> &vec) {
-  std::ostringstream oss;
-  oss << "[";
-  for (size_t i = 0; i < vec.size(); ++i) {
-    if (i > 0) {
-      oss << ", ";
-    }
-    oss << to_string(vec[i]);
-  }
-  oss << "]";
-  return oss.str();
-}
-
-// Specialization for std::unordered_set
-template <typename T>
-std::string to_string(const std::unordered_set<T> &uset) {
-  std::ostringstream oss;
-  oss << "{\n";
-  for (auto it = uset.begin(); it != uset.end(); ++it) {
-    oss << to_string(*it) << " ";
-  }
-  oss << "\n}";
-  return oss.str();
-}
-
 // Helper function to print the contents of a vector of pairs
 void printVector(const std::string &operation, const filevec &vec) {
   for (const auto &element : vec) {
@@ -424,8 +391,10 @@ std::tuple<filevec, filevec> ddl_tracker_t::handle_undo_ddls() {
   std::ostringstream str;
   // xb::info() is not used intentionally, as there is a loss
   // of newlines characters from the stream/string
-  str << "Before UNDO files" << to_string(before_lock_undo) << "\n"
-      << "After UNDO files" << to_string(after_lock_undo) << "\n";
+  str << "Before UNDO files" << xtrabackup::utils::to_string(before_lock_undo)
+      << "\n"
+      << "After UNDO files" << xtrabackup::utils::to_string(after_lock_undo)
+      << "\n";
   fprintf(stderr, "%s\n", str.str().c_str());
 
   auto [newfiles, deletedOrChangedFiles] =
@@ -458,17 +427,24 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     return DB_SUCCESS;
   }
 
+  ut_d(handle_ddl_ops = true;);
+
   std::ostringstream str;
   // xb::info() is not used intentionally, as there is a loss
   // of newlines characters from the stream/string
-  str << "Tables_copied: " << to_string(tables_in_backup) << "\n"
-      << "New_tables: " << to_string(new_tables) << "\n"
-      << "Renames: " << to_string(renames) << "\n"
-      << "Drops: " << to_string(drops) << "\n"
-      << "Recopy_tables: " << to_string(recopy_tables) << "\n"
-      << "Corrupted_tablespaces: " << to_string(corrupted_tablespaces) << "\n"
-      << "Missing tables: " << to_string(missing_after_discovery) << "\n"
-      << "Renamed_during_scan: " << to_string(renamed_during_scan) << "\n";
+  str << "Tables_copied: " << xtrabackup::utils::to_string(tables_in_backup)
+      << "\n"
+      << "New_tables: " << xtrabackup::utils::to_string(new_tables) << "\n"
+      << "Renames: " << xtrabackup::utils::to_string(renames) << "\n"
+      << "Drops: " << xtrabackup::utils::to_string(drops) << "\n"
+      << "Recopy_tables: " << xtrabackup::utils::to_string(recopy_tables)
+      << "\n"
+      << "Corrupted_tablespaces: "
+      << xtrabackup::utils::to_string(corrupted_tablespaces) << "\n"
+      << "Missing tables: "
+      << xtrabackup::utils::to_string(missing_after_discovery) << "\n"
+      << "Renamed_during_scan: "
+      << xtrabackup::utils::to_string(renamed_during_scan) << "\n";
   fprintf(stderr, "%s\n", str.str().c_str());
 
   dberr_t err;
@@ -893,7 +869,7 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
                   << source_space_id << " is not found."
                   << " Destination path " << dest_path << " is also not found ";
       xb::error() << "The incremental meta map is ";
-      fprintf(stderr, "%s", to_string(meta_map).c_str());
+      fprintf(stderr, "%s", xtrabackup::utils::to_string(meta_map).c_str());
       ut_ad(0);
       return false;
     }
@@ -925,7 +901,7 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
       xb::error() << "prepare_handle_ren_files(): failed to handle " << ren_path
                   << " ren_file content: " << ren_file_content;
       xb::error() << "The incremental meta map is ";
-      fprintf(stderr, "%s", to_string(meta_map).c_str());
+      fprintf(stderr, "%s", xtrabackup::utils::to_string(meta_map).c_str());
 
       ut_ad(0);
       return false;

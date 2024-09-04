@@ -931,7 +931,7 @@ dberr_t SysTablespace::open_or_create(bool is_temp, bool create_new_db,
 
   // Add system tablespace for tracking purpose. We might have
   // to recopy it
-  if (ddl_tracker && opt_lock_ddl == LOCK_DDL_REDUCED) {
+  if (ddl_tracker && opt_lock_ddl == LOCK_DDL_REDUCED && !is_server_locked()) {
     ddl_tracker->add_table_from_ibd_scan(space->id, space->name);
   }
 

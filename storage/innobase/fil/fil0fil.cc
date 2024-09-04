@@ -11635,7 +11635,9 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
     xb::error() << "Failed to open tablespace " << space->name;
   } else if (ddl_tracker) {
     /* Note that we have opened and loaded the table to cache for copying */
-    ddl_tracker->add_table_from_ibd_scan(space_id, path);
+    if (!is_server_locked()) {
+      ddl_tracker->add_table_from_ibd_scan(space_id, path);
+    }
   }
 
   if (!srv_backup_mode || srv_close_files) {
