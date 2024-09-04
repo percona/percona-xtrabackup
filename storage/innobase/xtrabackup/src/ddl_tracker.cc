@@ -45,7 +45,7 @@ extern bool xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info);
 
 void ddl_tracker_t::backup_file_op(uint32_t space_id, mlog_id_t type,
                                    const byte *buf, ulint len,
-                                   lsn_t start_lsn) {
+                                   lsn_t record_lsn) {
   ut_ad(!handle_ddl_ops);
 
   byte *ptr = (byte *)buf;
@@ -55,7 +55,7 @@ void ddl_tracker_t::backup_file_op(uint32_t space_id, mlog_id_t type,
       ptr += 4;  // flags
       ptr += 2;  // len
       const char *name = reinterpret_cast<char *>(ptr);
-      add_create_table_from_redo(space_id, start_lsn, name);
+      add_create_table_from_redo(space_id, record_lsn, name);
     } break;
     case MLOG_FILE_RENAME: {
       ulint name_len = mach_read_from_2(ptr);
@@ -64,18 +64,18 @@ void ddl_tracker_t::backup_file_op(uint32_t space_id, mlog_id_t type,
       ptr += name_len;  // from name
       ptr += 2;         // to len
       const char *new_name = reinterpret_cast<char *>(ptr);
-      add_rename_table_from_redo(space_id, start_lsn, old_name, new_name);
+      add_rename_table_from_redo(space_id, record_lsn, old_name, new_name);
     } break;
     case MLOG_FILE_DELETE: {
       ptr += 2;  // len
       const char *name = reinterpret_cast<char *>(ptr);
-      add_drop_table_from_redo(space_id, start_lsn, name);
+      add_drop_table_from_redo(space_id, record_lsn, name);
     } break;
     case MLOG_INDEX_LOAD:
-      add_to_recopy_tables(space_id, start_lsn, "add index");
+      add_to_recopy_tables(space_id, record_lsn, "add index");
       break;
     case MLOG_WRITE_STRING:
-      add_to_recopy_tables(space_id, start_lsn, "encryption");
+      add_to_recopy_tables(space_id, record_lsn, "encryption");
       break;
     default:
 #ifdef UNIV_DEBUG
@@ -123,7 +123,7 @@ void ddl_tracker_t::add_corrupted_tablespace(const space_id_t space_id,
   corrupted_tablespaces[space_id] = path;
 }
 
-void ddl_tracker_t::add_to_recopy_tables(space_id_t space_id, lsn_t start_lsn,
+void ddl_tracker_t::add_to_recopy_tables(space_id_t space_id, lsn_t record_lsn,
                                          const std::string operation) {
   // There should never be MLOG_INDEX_LOAD on undo tablespaces. However
   // MLOG_WRITE_STRING on new undo tabelsapce creation is possible. But we
@@ -136,11 +136,11 @@ void ddl_tracker_t::add_to_recopy_tables(space_id_t space_id, lsn_t start_lsn,
 
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
   recopy_tables.insert(space_id);
-  xb::info() << "DDL tracking : LSN: " << start_lsn << " " << operation
+  xb::info() << "DDL tracking : LSN: " << record_lsn << " " << operation
              << " on space ID: " << space_id;
 }
 
-void ddl_tracker_t::add_missing_table(std::string path) {
+void ddl_tracker_t::add_missing_after_discovery(std::string path) {
   ut_ad(!handle_ddl_ops);
 
   Fil_path::normalize(path);
@@ -153,7 +153,7 @@ void ddl_tracker_t::add_missing_table(std::string path) {
 }
 
 void ddl_tracker_t::add_create_table_from_redo(const space_id_t space_id,
-                                               lsn_t start_lsn,
+                                               lsn_t record_lsn,
                                                const char *name) {
   // undo tablespaces are tracked separately.
   if (fsp_is_undo_tablespace(space_id)) {
@@ -176,12 +176,12 @@ void ddl_tracker_t::add_create_table_from_redo(const space_id_t space_id,
 
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
   new_tables[space_id] = new_space_name;
-  xb::info() << "DDL tracking : LSN: " << start_lsn
+  xb::info() << "DDL tracking : LSN: " << record_lsn
              << " create space ID: " << space_id << " Name: " << new_space_name;
 }
 
 void ddl_tracker_t::add_rename_table_from_redo(const space_id_t space_id,
-                                               lsn_t start_lsn,
+                                               lsn_t record_lsn,
                                                const char *old_name,
                                                const char *new_name) {
   // Rename of tables in system tablespace is only rename in DD. this is
@@ -210,13 +210,13 @@ void ddl_tracker_t::add_rename_table_from_redo(const space_id_t space_id,
   } else {
     renames[space_id] = std::make_pair(old_space_name, new_space_name);
   }
-  xb::info() << "DDL tracking : LSN: " << start_lsn
+  xb::info() << "DDL tracking : LSN: " << record_lsn
              << " rename space ID: " << space_id << " From: " << old_space_name
              << " To: " << new_space_name;
 }
 
 void ddl_tracker_t::add_drop_table_from_redo(const space_id_t space_id,
-                                             lsn_t start_lsn,
+                                             lsn_t record_lsn,
                                              const char *name) {
   // undo tablespaces are tracked separately.
   if (fsp_is_undo_tablespace(space_id)) {
@@ -240,16 +240,16 @@ void ddl_tracker_t::add_drop_table_from_redo(const space_id_t space_id,
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
   drops[space_id] = new_space_name;
 
-  xb::info() << "DDL tracking : LSN: " << start_lsn
+  xb::info() << "DDL tracking : LSN: " << record_lsn
              << " delete space ID: " << space_id << " Name: " << new_space_name;
 }
 
-bool ddl_tracker_t::is_missing_table(const std::string &name) {
+bool ddl_tracker_t::is_missing_after_discovery(const std::string &name) {
   return missing_after_discovery.count(name) != 0;
 }
 
-void ddl_tracker_t::add_renamed_table(const space_id_t &space_id,
-                                      std::string new_name) {
+void ddl_tracker_t::add_rename_ibd_scan(const space_id_t &space_id,
+                                        std::string new_name) {
   // undo tablespaces are tracked separately.
   if (fsp_is_undo_tablespace(space_id)) {
     // MLOG_FILE_RENAME is never done for undo tablespace
@@ -320,17 +320,16 @@ static void copy_for_reduced(copy_thread_ctxt_t *ctxt) {
 }
 
 /**
- * Converts filename from `schema/filename.ibd` format to `schema/spaceid.ext`
- format
- * by replacing the `filename` to `spaceid` and appending the extension
-  @param space_id The space id of the current file
-  @param file_name File name that we will modify
-  @param ext Extension that we will modify to
-  @returns .del or .ren file name starting with space_id e.g schema/spaceid.del
+Converts filename from `schema/filename.ibd` format to `schema/spaceid.ext`
+format by replacing the `filename` to `spaceid` and appending the extension
+@param[in] space_id  The space id of the current file
+@param[in] file_name File name that we will modify
+@param[in] ext       Extension that we will modify to
+@returns .del or .ren file name starting with space_id e.g schema/spaceid.del
 */
-std::string ddl_tracker_t::convert_file_name(space_id_t space_id,
-                                             std::string file_name,
-                                             std::string ext) {
+static std::string convert_file_name(const space_id_t space_id,
+                                     const std::string &file_name,
+                                     const std::string &ext) {
   auto sep_pos = file_name.find_last_of(Fil_path::SEPARATOR);
   return file_name.substr(0, sep_pos + 1) + std::to_string(space_id) + ext;
 }
@@ -534,7 +533,7 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
       so we should add t2.ibd to new_tables and skip .ren file so that we don't
       try to rename t1.ibd to t2.idb where t1.ibd is missing   */
     if (new_tables.find(space_id) != new_tables.end() ||
-        is_missing_table(old_table_name)) {
+        is_missing_after_discovery(old_table_name)) {
       new_tables[space_id] = new_table_name;
       continue;
     }
@@ -658,9 +657,10 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
 
   /* Wait for threads to exit */
   while (1) {
-    xb::info() << "Sleeping for 1 second, waiting for the recopy of tables to "
-                  "be finished."
-               << "Expecting count be 0, current count is " << count;
+    xb::info() << "Sleeping for 1 second, waiting for the recopy of tables to"
+                  " be finished. Expecting count be 0, current count of"
+                  " tablespaces to be copied is "
+               << count;
     std::this_thread::sleep_for(std::chrono::seconds(1));
     mutex_enter(&count_mutex);
     if (count == 0) {

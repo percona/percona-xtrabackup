@@ -41,6 +41,7 @@ inline const std::string EXT_NEW_DELTA = ".new.delta";
 inline const std::string EXT_CRPT = ".crpt";
 
 class ddl_tracker_t {
+ private:
   /** List of all tables in the backup */
   space_id_to_name_t tables_in_backup;
   /** Tablspaces with their ID and name, as they were copied to backup.*/
@@ -59,7 +60,6 @@ class ddl_tracker_t {
    *  name */
   space_id_to_name_t renamed_during_scan;
 
- private:
   /** Tables that cannot be decrypted during backup because of encryption
   changes. Copy threads that cannot decrypt page, considers them as corrupted
   page. Can happen only on general tablespaces and mysql.ibd */
@@ -76,6 +76,10 @@ class ddl_tracker_t {
   bool handle_ddl_ops;
 #endif /* UNIV_DEBUG */
 
+  /** Check if table is in missing list
+  @param[in]  name  tablespace name */
+  bool is_missing_after_discovery(const std::string &name);
+
  public:
   /* Track undo tablespaces. This function is called twice. Once before lock,
   at startup and then again after lock. The contents of two maps are used
@@ -85,30 +89,30 @@ class ddl_tracker_t {
   void add_undo_tablespace(const space_id_t space_id, std::string name);
 
   /** Add a new table in the DDL tracker table list.
-   @param[in]	space_id	tablespace identifier
-   @param[in]	name      tablespace name */
+   @param[in] space_id  tablespace identifier
+   @param[in] name      tablespace name */
   void add_table_from_ibd_scan(const space_id_t space_id, std::string name);
 
   /** Track a new table from the MLOG_FILE_CREATE redo log record
-   @param[in]	space_id	tablespace identifier
-   @param[in]	start_lsn LSN of redo record
-   @param[in]	name      tablespace name */
-  void add_create_table_from_redo(const space_id_t space_id, lsn_t start_lsn,
+   @param[in] space_id        tablespace identifier
+   @param[in] record_lsn      LSN of redo record
+   @param[in] name            tablespace name */
+  void add_create_table_from_redo(const space_id_t space_id, lsn_t record_lsn,
                                   const char *name);
 
   /** Track tables from the MLOG_FILE_RENAME redo log record
-   @param[in]	space_id	tablespace identifier
-   @param[in]	start_lsn LSN of redo record
-   @param[in]	old_name  RENAME from name
-   @param[in]	new_name  RENAME to name */
-  void add_rename_table_from_redo(const space_id_t space_id, lsn_t start_lsn,
+   @param[in]  space_id        tablespace identifier
+   @param[in]  record_lsn      LSN of redo record
+   @param[in]  old_name        RENAME from name
+   @param[in]  new_name        RENAME to name */
+  void add_rename_table_from_redo(const space_id_t space_id, lsn_t record_lsn,
                                   const char *old_name, const char *new_name);
 
   /** Track tables from the MLOG_FILE_DELTE redo log record
-   @param[in]	space_id	tablespace identifier
-   @param[in]	start_lsn LSN of redo record
-   @param[in]	name      RENAME to name */
-  void add_drop_table_from_redo(const space_id_t space_id, lsn_t start_lsn,
+   @param[in]  space_id        tablespace identifier
+   @param[in]  record_lsn      LSN of redo record
+   @param[in]  name            RENAME to name */
+  void add_drop_table_from_redo(const space_id_t space_id, lsn_t record_lsn,
                                 const char *name);
 
   /** Add a table to the corrupted tablespace list. The list is later
@@ -121,18 +125,20 @@ class ddl_tracker_t {
   /** Add a table to the recopy list. These tables are
   1. had ADD INDEX while the backup is in progress
   2. tablespace encryption change from 'y' to 'n' or viceversa
-  @param[in] space_id Tablespace id  */
-  void add_to_recopy_tables(space_id_t space_id, lsn_t start_lsn,
+  @param[in]    space_id    Tablespace id
+  @param[in]    record_lsn  LSN of redo record
+  @param[in]    operation   Wheter is "add index" or "encryption" */
+  void add_to_recopy_tables(space_id_t space_id, lsn_t record_lsn,
                             const std::string operation);
 
   /** Report an operation to create, delete, or rename a file during backup.
-  @param[in]	space_id	tablespace identifier
-  @param[in]	type		redo log file operation type
-  @param[in]	buf		redo log buffer
-  @param[in]	len		length of redo entry, in bytes
-  @param[in] start_lsn  lsn for REDO record */
+  @param[in] space_id   tablespace identifier
+  @param[in] type       redo log file operation type
+  @param[in] buf        redo log buffer
+  @param[in] len        length of redo entry, in bytes
+  @param[in] record_lsn lsn for REDO record */
   void backup_file_op(uint32_t space_id, mlog_id_t type, const byte *buf,
-                      ulint len, lsn_t start_lsn);
+                      ulint len, lsn_t record_lsn);
 
   /** Handle DDL operations that happenned in reduced lock mode
   @return DB_SUCCESS for success, others for errors */
@@ -140,17 +146,12 @@ class ddl_tracker_t {
 
   /** Note that a table has been deleted between disovery and file open
   @param[in]  path  missing table name with path. */
-  void add_missing_table(std::string path);
+  void add_missing_after_discovery(std::string path);
 
-  /** Check if table is in missing list
-  @param[in]  name  tablespace name */
-  bool is_missing_table(const std::string &name);
-  std::string convert_file_name(space_id_t space_id, std::string file_name,
-                                std::string ext);
   /** Note that a table was renamed during scan.
-   @param[in]	space_id	tablespace identifier
-   @param[in]	new_name  tablespace new name */
-  void add_renamed_table(const space_id_t &space_id, std::string new_name);
+  @param[in]	space_id  tablespace identifier
+  @param[in]	new_name  tablespace new name */
+  void add_rename_ibd_scan(const space_id_t &space_id, std::string new_name);
 };
 
 /** Insert into meta files map. This map is later used to delete the right

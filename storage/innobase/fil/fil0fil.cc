@@ -520,9 +520,6 @@ class Tablespace_dirs {
 
   /** Discover tablespaces by reading the header from .ibd files.
   @param[in] populate_fil_cache   if true, tabelspace are loaded to cache
-  @param[in] is_prep_handled_ddls if true, xtrabackup uses
-                                  ibd_open_for_recovery instead of
-                                  fil_open_for_xtrabackup()
   @param[in] only_undo            if true, only the undo tablespaces are
                                   discovered
   @return DB_SUCCESS if all goes well */
@@ -1650,7 +1647,10 @@ class Fil_system {
   @return DB_SUCCESS if the open was successful */
   [[nodiscard]] dberr_t open_for_recovery(space_id_t space_id);
 
-  /** Open a tablespace when LOCK_DDL_REDUCED is on.
+  /** Open a tablespace when LOCK_DDL_REDUCED is on. Used on --prepare.
+  We cannot use fil_open_for_xtrabackup() as we will open before recovery and we
+  have to tolerate encryption errors. All we need at this point is
+  space_id -> path mapping
   @param[in]  path    File path
   @return DB_SUCCESS if the open was successful */
   [[nodiscard]] dberr_t open_for_reduced(const std::string &path);
@@ -1712,9 +1712,6 @@ class Fil_system {
   /** Scan the directories to build the tablespace ID to file name
   mapping table
   @param[in] populate_fil_cache   if true, tabelspace are loaded to cache
-  @param[in] is_prep_handled_ddls if true, xtrabackup uses
-                                  ibd_open_for_recovery instead of
-                                  fil_open_for_xtrabackup()
   @param[in] only_undo            if true, only the undo tablespaces are
                                   discovered
   @return DB_SUCCESS on success, other codes on errors */
@@ -2720,8 +2717,8 @@ dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
     }
   }
 
-  /* space_id mismatch can happen for truncation of tablespaces. Regular and
-   * Undo */
+  /* space_id mismatch can happen for truncation of undo and normal IBD
+  tablespaces */
   if (space_id != space->id) {
     if (srv_backup_mode && opt_lock_ddl == LOCK_DDL_REDUCED) {
       ut::aligned_free(page);
@@ -11570,7 +11567,7 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
   opening renamed table since original table was loaded to cache
   and copy/rename will be handled by ddl_tracker */
   if (ddl_tracker && err == DB_TABLESPACE_EXISTS) {
-    ddl_tracker->add_renamed_table(space_id, path);
+    ddl_tracker->add_rename_ibd_scan(space_id, path);
   }
 
   if (err == DB_PAGE_IS_BLANK) {
@@ -11683,7 +11680,7 @@ void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
       /* Allow deleted tables between disovery and file open when
       LOCK_DDL_REDUCED, they will be handled by ddl_tracker */
       if (err == DB_CANNOT_OPEN_FILE && opt_lock_ddl == LOCK_DDL_REDUCED) {
-        ddl_tracker->add_missing_table(phy_filename);
+        ddl_tracker->add_missing_after_discovery(phy_filename);
       } else if (err == DB_TABLESPACE_EXISTS &&
                  opt_lock_ddl == LOCK_DDL_REDUCED) {
         /* table was renamed during scan. Since original table was loaded to
@@ -11967,8 +11964,6 @@ void Tablespace_dirs::set_scan_dirs(const std::string &in_directories) {
 
 /** Discover tablespaces by reading the header from .ibd files.
 @param[in] populate_fil_cache   if true, tabelspace are loaded to cache
-@param[in] is_prep_handled_ddls if true, xtrabackup uses ibd_open_for_recovery
-                                instead of fil_open_for_xtrabackup()
 @param[in] only_undo            if true, only the undo tablespaces are
 discovered
 @return DB_SUCCESS if all goes well */
@@ -12111,8 +12106,6 @@ void fil_set_scan_dirs(const std::string &directories) {
 
 /** Discover tablespaces by reading the header from .ibd files.
 @param[in] populate_fil_cache   Whether to load tablespaces into fil cache
-@param[in] is_prep_handled_ddls if true, xtrabackup uses ibd_open_for_recovery
-                                instead of fil_open_for_xtrabackup()
 @param[in] only_undo            if true, only the undo tablespaces are
                                 discovered
 @return DB_SUCCESS if all goes well */
