@@ -12,3 +12,5 @@ mkdocs-bootstrap-tables-plugin
 mkdocs-section-index
 mkdocs-htmlproofer-plugin
 mike
+urllib3>=2.2.2
+pillow>=10.2.0
