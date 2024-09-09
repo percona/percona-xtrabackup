@@ -475,6 +475,11 @@ uint opt_backup_lock_timeout = 0;
 uint opt_backup_lock_retry_count = 0;
 
 const char *opt_history = NULL;
+char *opt_history_user = NULL;
+char *opt_history_password = NULL;
+char *opt_history_host = NULL;
+uint opt_history_port = 0;
+
 bool opt_decrypt = false;
 uint opt_read_buffer_size = 0;
 
@@ -732,6 +737,10 @@ enum options_xtrabackup {
   OPT_LOCK_WAIT_QUERY_TYPE,
   OPT_KILL_LONG_QUERY_TYPE,
   OPT_HISTORY,
+  OPT_HISTORY_HOST,
+  OPT_HISTORY_PORT,
+  OPT_HISTORY_USER,
+  OPT_HISTORY_PASSWORD,
   OPT_KILL_LONG_QUERIES_TIMEOUT,
   OPT_LOCK_WAIT_TIMEOUT,
   OPT_LOCK_WAIT_THRESHOLD,
@@ -1265,6 +1274,33 @@ struct my_option xb_client_options[] = {
      "series name may be specified that will be placed with the history "
      "record for the current backup being taken.",
      NULL, NULL, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
+
+     {"history-user", OPT_HISTORY_USER,
+     "This option specifies the MySQL username used "
+     "when connecting to the server, if that's not the current user. "
+     "The option accepts a string argument. See mysql --help for details.",
+     (uchar *)&opt_history_user, (uchar *)&opt_history_user, 0, GET_STR, OPT_ARG, 0, 0, 0,
+     0, 0, 0},
+
+    {"history-host", OPT_HISTORY_HOST,
+     "This option specifies the host to use when "
+     "saving the backup history.  The option accepts "
+     "a string argument. See mysql --help for details.",
+     (uchar *)&opt_history_host, (uchar *)&opt_history_host, 0, GET_STR, OPT_ARG, 0, 0, 0,
+     0, 0, 0},
+
+    {"history-port", OPT_HISTORY_PORT,
+     "This option specifies the port to use when "
+     "connecting to the database server with TCP/IP.  The option accepts "
+     "a string argument. See mysql --help for details.",
+     &opt_history_port, &opt_history_port, 0, GET_UINT, OPT_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"history-password", OPT_HISTORY_PASSWORD,
+     "This option specifies the password to use "
+     "when connecting to the database. It accepts a string argument.  "
+     "See mysql --help for details.",
+     (uchar *)&opt_history_password, (uchar *)&opt_history_password, 0, GET_STR, OPT_ARG, 0, 0, 0,
+     0, 0, 0},
 
     {"kill-long-queries-timeout", OPT_KILL_LONG_QUERIES_TIMEOUT,
      "This option specifies the number of seconds innobackupex waits "

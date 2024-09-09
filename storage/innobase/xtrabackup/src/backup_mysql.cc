@@ -192,6 +192,50 @@ MYSQL *xb_mysql_connect() {
   return (connection);
 }
 
+MYSQL *xb_mysql_history_connect() {
+  MYSQL *connection = mysql_init(NULL);
+  char mysql_port_str[std::numeric_limits<int>::digits10 + 3];
+  char mysql_history_port_str[std::numeric_limits<int>::digits10 + 3];
+
+  sprintf(mysql_port_str, "%d", opt_port);
+  sprintf(mysql_history_port_str, "%d", opt_history_port);
+
+  if (connection == NULL) {
+    xb::error() << "Failed to init MySQL struct: " << mysql_error(connection);
+    return (NULL);
+  }
+
+  xb::info() << "Connecting to MySQL server host for History: "
+             << (opt_history_host ? opt_history_host : (opt_host ? opt_host : "localhost"))
+             << ", user: " << (opt_history_user ? opt_history_user : (opt_user ? opt_user : "not set"))
+             << ", password: " << (opt_history_password ? opt_history_password : (opt_password ? "set" : "not set"))
+             << ", port: " << (opt_history_port ? mysql_history_port_str : (opt_port != 0 ? mysql_port_str : "not set"));
+
+  set_client_ssl_options(connection);
+
+  if (!mysql_real_connect(connection,
+                          (opt_history_host ? opt_history_host : (opt_host ? opt_host : "localhost")),
+                          (opt_history_user ? opt_history_user : opt_user),
+                          (opt_history_password ? opt_history_password : opt_password),
+                          "" /*database*/,
+                          (opt_history_port ? opt_history_port : opt_port),
+                          (opt_history_host ? "" : opt_socket), 0)) {
+    xb::error() << "Failed to connect to MySQL server: "
+                << mysql_error(connection);
+    mysql_close(connection);
+    return (NULL);
+  }
+
+  xb_mysql_query(connection, "SET SESSION wait_timeout=2147483", false, true);
+
+  xb_mysql_query(connection, "SET SESSION autocommit=1", false, true);
+
+  xb_mysql_query(connection, "SET NAMES utf8", false, true);
+
+  return (connection);
+}
+
+
 /*********************************************************************/ /**
  Execute mysql query. */
 MYSQL_RES *xb_mysql_query(MYSQL *connection, const char *query, bool use_result,
@@ -1810,6 +1854,7 @@ bool write_xtrabackup_info(MYSQL *connection) {
   char *xtrabackup_info_data = NULL;
   int idx;
   bool null = true;
+  MYSQL *conn = connection;
 
   const char *ins_query =
       "insert into PERCONA_SCHEMA.xtrabackup_history("
@@ -1837,9 +1882,17 @@ bool write_xtrabackup_info(MYSQL *connection) {
   uuid = get_backup_uuid(connection);
   server_version = read_mysql_one_value(connection, "SELECT VERSION()");
 
-  xb_mysql_query(connection, "CREATE DATABASE IF NOT EXISTS PERCONA_SCHEMA",
+  if (opt_history_host) {
+    // create a new connection to the history host
+    conn = xb_mysql_history_connect();
+    if (!conn) {
+      goto cleanup;
+    }
+  }
+
+  xb_mysql_query(conn, "CREATE DATABASE IF NOT EXISTS PERCONA_SCHEMA",
                  false);
-  xb_mysql_query(connection,
+  xb_mysql_query(conn,
                  "CREATE TABLE IF NOT EXISTS PERCONA_SCHEMA.xtrabackup_history("
                  "uuid VARCHAR(40) NOT NULL PRIMARY KEY,"
                  "name VARCHAR(255) DEFAULT NULL,"
@@ -1864,12 +1917,12 @@ bool write_xtrabackup_info(MYSQL *connection) {
                  false);
 
   /* Upgrade from previous versions */
-  xb_mysql_query(connection,
+  xb_mysql_query(conn,
                  "ALTER TABLE PERCONA_SCHEMA.xtrabackup_history MODIFY COLUMN "
                  "binlog_pos TEXT DEFAULT NULL",
                  false);
 
-  stmt = mysql_stmt_init(connection);
+  stmt = mysql_stmt_init(conn);
 
   mysql_stmt_prepare(stmt, ins_query, strlen(ins_query));
 
@@ -2007,6 +2060,10 @@ bool write_xtrabackup_info(MYSQL *connection) {
 
   mysql_stmt_execute(stmt);
   mysql_stmt_close(stmt);
+
+  if (opt_history_host) {
+    mysql_close(conn);
+  }
 
 cleanup:
 
