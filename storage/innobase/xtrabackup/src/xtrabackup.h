@@ -240,8 +240,12 @@ enum binlog_info_enum {
 void xtrabackup_io_throttling(void);
 bool xb_write_delta_metadata(const char *filename, const xb_delta_info_t *info);
 
+/** @return lock-ddl enum option as string
+@param[in] type  lock-ddl enum value */
 std::string ddl_lock_type_to_str(lock_ddl_type_t type);
 
+/** @return lock-ddl string as an enum option
+@param[in] type  lock-ddl string value */
 lock_ddl_type_t ddl_lock_type_from_str(std::string type);
 
 datafiles_iter_t *datafiles_iter_new(
@@ -249,6 +253,12 @@ datafiles_iter_t *datafiles_iter_new(
 fil_node_t *datafiles_iter_next(datafiles_iter_t *it);
 void datafiles_iter_free(datafiles_iter_t *it);
 
+/* Copy a file from server datadir to backup directory.
+@param[in]   node      The tablespace to be copied
+@param[in]   thread_n  The thread number that copies the tablespace
+@param[in]   dest_name Name that tablespace is copied as. In reduced mode
+                       we might copy with a .new extension
+return false on success, true on ERROR */
 bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
                                    const char *dest_name);
 
@@ -343,5 +353,8 @@ bool xb_process_datadir(const char *path,   /*!<in: datadir path */
 @param[in]	lsn		lsn to update */
 void update_log_temp_checkpoint(byte *buf, lsn_t lsn);
 
+/** Scan for IBD, Undo (IBU) tablespaces and add them to fil cache
+@param[in]      only_undo       Only undo files are discovered, used by
+                                lock-ddl=reduced mode */
 void xb_scan_for_tablespaces(bool only_undo);
 #endif /* XB_XTRABACKUP_H */

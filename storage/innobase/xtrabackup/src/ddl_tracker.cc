@@ -98,7 +98,7 @@ void ddl_tracker_t::add_table_from_ibd_scan(const space_id_t space_id,
   }
 
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
-  tables_in_backup[space_id] = name;
+  tables_copied_no_lock[space_id] = name;
 }
 
 void ddl_tracker_t::add_undo_tablespace(const space_id_t space_id,
@@ -431,8 +431,8 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
   std::ostringstream str;
   // xb::info() is not used intentionally, as there is a loss
   // of newlines characters from the stream/string
-  str << "Tables_copied: " << xtrabackup::utils::to_string(tables_in_backup)
-      << "\n"
+  str << "Tables_copied: "
+      << xtrabackup::utils::to_string(tables_copied_no_lock) << "\n"
       << "New_tables: " << xtrabackup::utils::to_string(new_tables) << "\n"
       << "Renames: " << xtrabackup::utils::to_string(renames) << "\n"
       << "Drops: " << xtrabackup::utils::to_string(drops) << "\n"
@@ -458,7 +458,7 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
   /* Some tables might get to the new list if the DDL happen in between
    * redo_mgr.start and xb_load_tablespaces. This causes we ending up with two
    * tablespaces with the same spaceID. Remove them from new tables */
-  for (auto &table : tables_in_backup) {
+  for (auto &table : tables_copied_no_lock) {
     space_id_t space_id = table.first;
     if (new_tables.find(space_id) != new_tables.end()) {
       new_tables.erase(space_id);
@@ -473,7 +473,7 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     name to be copied
   */
   for (auto &table : recopy_tables) {
-    if (tables_in_backup.find(table) != tables_in_backup.end()) {
+    if (tables_copied_no_lock.find(table) != tables_copied_no_lock.end()) {
       if (renames.find(table) != renames.end()) {
         // We never create .del for ibdata*
         ut_ad(!fsp_is_system_tablespace(table));
@@ -481,7 +481,7 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
             convert_file_name(table, renames[table].first, EXT_DEL).c_str(),
             "%s", "");
       }
-      string name = tables_in_backup[table];
+      string name = tables_copied_no_lock[table];
       new_tables[table] = name;
     }
   }
@@ -503,7 +503,7 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     }
 
     /* Table not in the backup, nothing to drop, skip drop*/
-    if (tables_in_backup.find(space_id) == tables_in_backup.end()) {
+    if (tables_copied_no_lock.find(space_id) == tables_copied_no_lock.end()) {
       continue;
     }
 
@@ -539,7 +539,7 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     }
 
     /* Table not in the backup, nothing to rename, skip rename*/
-    if (tables_in_backup.find(space_id) == tables_in_backup.end()) {
+    if (tables_copied_no_lock.find(space_id) == tables_copied_no_lock.end()) {
       continue;
     }
 

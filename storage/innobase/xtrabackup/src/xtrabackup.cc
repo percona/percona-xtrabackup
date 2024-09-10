@@ -3361,6 +3361,8 @@ static void data_copy_thread_func(data_thread_ctxt_t *ctxt) {
       xb::error() << "failed to copy datafile " << node->name;
       *(ctxt->error) = true;
     } else {
+      /* With reduced lock mode, instead of tracking undo from the startup scan,
+      we track undo tablespaces after we copy them */
       if (ddl_tracker && fsp_is_undo_tablespace(node->space->id)) {
         ddl_tracker->add_undo_tablespace(node->space->id,
                                          node->space->files.front().name);
@@ -7720,8 +7722,8 @@ int main(int argc, char **argv) {
   }
 
   if (opt_page_tracking && opt_lock_ddl == LOCK_DDL_REDUCED) {
-    xb::error() << "--page-tracking and --lock-ddl=REDUCED cannot be enabled "
-                   "together.";
+    xb::error() << "--page-tracking and --lock-ddl=REDUCED cannot be enabled"
+                << " together.";
     exit(EXIT_FAILURE);
   }
 

@@ -113,10 +113,14 @@ main () {
         innodb80)
             url="https://dev.mysql.com/get/Downloads/MySQL-8.4"
             fallback_url="https://downloads.mysql.com/archives/get/p/23/file"
+	    # Strip '-<number>' where <number> is 1-100
+            clean_version="${VERSION%-[0-9][0-9]}"
+            clean_version="${clean_version%-[0-9]}"
+
 	    if [ "${OS}" == "deb" ]; then
-                tarball="mysql-${VERSION}-linux-glibc2.28-${arch}.tar.xz"
+                tarball="mysql-${clean_version}-linux-glibc2.28-${arch}.tar.xz"
             else
-                tarball="mysql-${VERSION}-linux-glibc2.17-${arch}.tar.xz"
+                tarball="mysql-${clean_version}-linux-glibc2.17-${arch}.tar.xz"
             fi
             if ! check_url "${url}" "${tarball}"; then
                     unset url
@@ -124,20 +128,14 @@ main () {
             fi
             ;;
         xtradb80)
-            url="https://www.percona.com/downloads/Percona-Server-8.0/Percona-Server-${VERSION}/binary/tarball"
-            short_version=$(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1)
+            url="https://www.percona.com/downloads/Percona-Server-8.4/Percona-Server-${VERSION}/binary/tarball"
             if [[ ${PXB_TYPE} == "Debug" ]] || [[ ${PXB_TYPE} == "debug" ]]; then
                 SUFFIX="-debug"
               else
                 SUFFIX="-minimal"
             fi
-            if [[ ${short_version} -lt "20" ]]; then
-                tarball="Percona-Server-${VERSION}-Linux.${arch}.ssl$(ssl_version).tar.gz"
-            elif [[ ${short_version} -ge "20" && ${short_version} -lt "22" ]]; then
-                tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc2.12${SUFFIX}.tar.gz"
-            elif [[ ${short_version} -ge "22" ]]; then
-                tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc$(glibc_version)${SUFFIX}.tar.gz"
-            fi
+            tarball="Percona-Server-${VERSION}-Linux.${arch}.glibc$(glibc_version)${SUFFIX}.tar.gz"
+
             ;;
         *) 
             echo "Err: Specified unsupported ${TYPE}."
@@ -181,7 +179,7 @@ main () {
 
 TYPE="xtradb80"
 PXB_TYPE="release"
-VERSION="8.0.35-27"
+VERSION="8.4.0-1"
 DESTDIR="./server"
 parse_arguments PICK-ARGS-FROM-ARGV "$@"
 main

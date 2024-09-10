@@ -1711,7 +1711,7 @@ class Fil_system {
 
   /** Scan the directories to build the tablespace ID to file name
   mapping table
-  @param[in] populate_fil_cache   if true, tabelspace are loaded to cache
+  @param[in] populate_fil_cache   if true, tablespace are loaded to cache
   @param[in] only_undo            if true, only the undo tablespaces are
                                   discovered
   @return DB_SUCCESS on success, other codes on errors */
@@ -11662,8 +11662,11 @@ void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
       continue;
     }
 
-    /* when LOCK_DDL_REDUCED while processing ddl files on prepare phase
-    we should load data files without first page validation */
+    /* With lock-ddl=reduced, prepare on such backup directories, we open
+    tablespaces before recovery starts. This is required to process to
+    space_id.del or .ren files. Hence, we have to tolerate encryption errors
+    during first-page validation. Hence, we use a separate opening function of
+    reduced mode */
     if (xtrabackup_prepare && opt_lock_ddl == LOCK_DDL_REDUCED &&
         !xtrabackup_incremental) {
       dberr_t err = fil_open_for_reduced(phy_filename);

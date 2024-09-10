@@ -42,8 +42,8 @@ inline const std::string EXT_CRPT = ".crpt";
 
 class ddl_tracker_t {
  private:
-  /** List of all tables in the backup */
-  space_id_to_name_t tables_in_backup;
+  /** List of all tables copied without lock */
+  space_id_to_name_t tables_copied_no_lock;
   /** Tablspaces with their ID and name, as they were copied to backup.*/
   space_id_to_name_t new_tables;
   name_to_space_id_t before_lock_undo;
