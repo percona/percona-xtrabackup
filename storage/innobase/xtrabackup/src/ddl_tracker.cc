@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -40,6 +41,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "utils.h"
 #include "xb0xb.h"       // check_if_skip_table
 #include "xtrabackup.h"  // datafiles_iter_t
+
+static const int REN_FILE_VERSION = 1;
 
 extern bool xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info);
 
@@ -544,8 +547,8 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     }
 
     backup_file_printf(
-        convert_file_name(space_id, old_table_name, EXT_REN).c_str(), "%s",
-        new_table_name.c_str());
+        convert_file_name(space_id, old_table_name, EXT_REN).c_str(), "%d\n%s",
+        REN_FILE_VERSION, new_table_name.c_str());
   }
 
   for (auto table = new_tables.begin(); table != new_tables.end();) {
@@ -708,38 +711,57 @@ std::tuple<bool, std::string> is_in_meta_map(space_id_t space_id) {
   return {exists, exists ? it->second : ""};
 }
 
-/** Read file content into STL string */
-static std::string read_file_as_string(const std::string &file) {
+static std::optional<std::pair<int, std::string>> parse_ren_file(
+    const std::string &file) {
   try {
-    // Check if the file exists using std::filesystem
+    // Check if the file exists
     if (!std::filesystem::exists(file)) {
-      return "";
+      xb::error() << "File '" << file << "' does not exist.";
+      return std::nullopt;
     }
 
-    std::ifstream f(file, std::ios::in | std::ios::binary);
+    std::ifstream f(file);
     if (!f) {
-      return "";
+      xb::error() << "Unable to open file '" << file << "'.";
+      return std::nullopt;
     }
 
-    // Read entire file into a string
-    std::string content((std::istreambuf_iterator<char>(f)),
-                        std::istreambuf_iterator<char>());
+    std::string line1, line2;
 
-    return content;
+    // Read the first line (version number)
+    if (!std::getline(f, line1)) {
+      xb::error() << "File '" << file
+                  << "' is empty or failed to read the first line.";
+      return std::nullopt;
+    }
+
+    // Try to convert the first line to an integer
+    std::istringstream iss(line1);
+    int version;
+    if (!(iss >> version)) {
+      xb::error() << "First line of file '" << file
+                  << "' is not a valid integer.";
+      return std::nullopt;
+    }
+
+    // Read the second line (file name)
+    if (!std::getline(f, line2)) {
+      xb::error() << "File '" << file << "' contains only one line.";
+      return std::nullopt;
+    }
+
+    // File has been read successfully with both a version and a file name
+    return std::make_pair(version, line2);
+
   } catch (const std::filesystem::filesystem_error &e) {
-    // Handle filesystem-related exceptions
-    // (e.g., file doesn't exist, permissions issues)
-    xb::error() << "Filesystem error: " << e.what() << '\n';
-    return "";
+    xb::error() << "Filesystem error with file '" << file << "': " << e.what();
+    return std::nullopt;
   } catch (const std::ifstream::failure &e) {
-    // Handle ifstream-related exceptions
-    // (e.g., file couldn't be opened, read errors)
-    xb::error() << "File read error: " << e.what() << '\n';
-    return "";
+    xb::error() << "File read error with file '" << file << "': " << e.what();
+    return std::nullopt;
   } catch (const std::exception &e) {
-    // Catch all other standard exceptions
-    xb::error() << "Error: " << e.what() << '\n';
-    return "";
+    xb::error() << "Generic exception with file '" << file << "': " << e.what();
+    return std::nullopt;
   }
 }
 
@@ -808,12 +830,22 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
   truncate_suffix(EXT_REN, ren_file_name);
   space_id_t source_space_id = std::stoi(ren_file_name);
 
-  std::string ren_file_content = read_file_as_string(ren_path);
-
-  if (ren_file_content.empty()) {
-    xb::error() << "prepare_handle_ren_files: " << ren_path << " is empty.";
+  auto result = parse_ren_file(ren_path);
+  if (!result) {
+    xb::error() << "Error handling prepare_handle_ren_files: " << ren_path;
     return false;
   }
+
+  int version = result->first;
+  std::string ren_file_content(result->second);
+
+  if (version != REN_FILE_VERSION) {
+    xb::error() << "Unexpected ren file version in " << ren_path
+                << ". Expected version " << REN_FILE_VERSION
+                << " Got version: " << version;
+    return false;
+  }
+
   // trim .ibd
   std::string dest_space_name = ren_file_content;
   truncate_suffix(EXT_IBD, dest_space_name);
