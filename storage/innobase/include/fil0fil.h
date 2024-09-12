@@ -1386,10 +1386,15 @@ void fil_space_set_imported(space_id_t space_id);
 @param[in]      atomic_write    true if the file has atomic write enabled
 @param[in]      max_pages       maximum number of pages in file
 @return DB_SUCCESS if success, else other DB_* for errors */
-[[nodiscard]] dberr_t fil_node_create(const char *name, page_no_t size,
-                                      fil_space_t *space, bool is_raw,
-                                      bool atomic_write,
-                                      page_no_t max_pages = PAGE_NO_MAX);
+[[nodiscard]]
+#ifndef XTRABACKUP
+char *
+#else
+dberr_t
+#endif /* XTRABACKUP */
+fil_node_create(const char *name, page_no_t size, fil_space_t *space,
+                bool is_raw, bool atomic_write,
+                page_no_t max_pages = PAGE_NO_MAX);
 
 /** Create a space memory object and put it to the fil_system hash table.
 The tablespace name is independent from the tablespace file-name.
@@ -2246,7 +2251,8 @@ void fil_set_scan_dirs(const std::string &directories);
 @param[in] populate_fil_cache  Whether to load tablespaces into fil cache
 @param[in] only_undo           if true, only the undo tablespaces are discovered
 @return DB_SUCCESS if all goes well */
-dberr_t fil_scan_for_tablespaces(bool populate_fil_cache, bool only_undo);
+dberr_t fil_scan_for_tablespaces(bool populate_fil_cache IF_XB(,
+                                                               bool only_undo));
 
 /** Open the tablespace and also get the tablespace filenames, space_id must
 already be known.
@@ -2254,11 +2260,13 @@ already be known.
 @return DB_SUCCESS if open was successful */
 [[nodiscard]] dberr_t fil_tablespace_open_for_recovery(space_id_t space_id);
 
+#ifdef XTRABACKUP
 /** This function is a wrapper to fil_tablespace_open_for_recovery(), used when
  * LOCK_DDL_REDUCED is ON
 @param[in]  path  File path
 @return DB_SUCCESS if open was successful */
 dberr_t fil_open_for_reduced(const std::string &path);
+#endif /* XTRABACKUP */
 
 /** Replay a file rename operation for ddl replay.
 @param[in]      page_id         Space ID and first page number in the file
@@ -2384,6 +2392,7 @@ inline bool fil_node_t::is_offset_valid(os_offset_t byte_offset) const {
   return byte_offset < max_offset;
 }
 
+#ifdef XTRABACKUP
 /** Frees a space object from the tablespace memory cache.
 Closes a tablespaces files but does not delete them.
 There must not be any pending i/o's or flushes on the files.
@@ -2391,4 +2400,6 @@ There must not be any pending i/o's or flushes on the files.
 @param[in]      x_latched       Whether the caller holds X-mode space->latch
 @return true if success */
 bool fil_space_free(space_id_t space_id, bool x_latched);
+#endif /* XTRABACKUP */
+
 #endif /* fil0fil_h */

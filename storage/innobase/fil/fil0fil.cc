@@ -523,7 +523,7 @@ class Tablespace_dirs {
   @param[in] only_undo            if true, only the undo tablespaces are
                                   discovered
   @return DB_SUCCESS if all goes well */
-  [[nodiscard]] dberr_t scan(bool populate_fil_cache, bool only_undo);
+  [[nodiscard]] dberr_t scan(bool populate_fil_cache IF_XB(, bool only_undo));
 
   /** Clear all the tablespace file data but leave the list of
   scanned directories in place. */
@@ -1176,10 +1176,17 @@ class Fil_shard {
   @param[in]    atomic_write    true if the file has atomic write enabled
   @param[in]    max_pages       maximum number of pages in file
   @return DB_SUCCESS if success, else other DB_* for errors */
+#ifndef XTRABACKUP
+  [[nodiscard]] fil_node_t *create_node(const char *name, page_no_t size,
+                                        fil_space_t *space, bool is_raw,
+                                        bool punch_hole, bool atomic_write,
+                                        page_no_t max_pages = PAGE_NO_MAX);
+#else
   [[nodiscard]] dberr_t create_node(const char *name, page_no_t size,
                                     fil_space_t *space, bool is_raw,
                                     bool punch_hole, bool atomic_write,
                                     page_no_t max_pages = PAGE_NO_MAX);
+#endif /* !XTRABACKUP */
 
 #ifdef UNIV_DEBUG
   /** Validate a shard. */
@@ -1647,6 +1654,7 @@ class Fil_system {
   @return DB_SUCCESS if the open was successful */
   [[nodiscard]] dberr_t open_for_recovery(space_id_t space_id);
 
+#ifdef XTRABACKUP
   /** Open a tablespace when LOCK_DDL_REDUCED is on. Used on --prepare.
   We cannot use fil_open_for_xtrabackup() as we will open before recovery and we
   have to tolerate encryption errors. All we need at this point is
@@ -1654,6 +1662,7 @@ class Fil_system {
   @param[in]  path    File path
   @return DB_SUCCESS if the open was successful */
   [[nodiscard]] dberr_t open_for_reduced(const std::string &path);
+#endif /* XTRABACKUP */
 
   /** This function should be called after recovery has completed.
   Check for tablespace files for which we did not see any
@@ -1715,8 +1724,8 @@ class Fil_system {
   @param[in] only_undo            if true, only the undo tablespaces are
                                   discovered
   @return DB_SUCCESS on success, other codes on errors */
-  dberr_t scan(bool populate_fil_cache, bool only_undo) {
-    return (m_dirs.scan(populate_fil_cache, only_undo));
+  dberr_t scan(bool populate_fil_cache IF_XB(, bool only_undo)) {
+    return (m_dirs.scan(populate_fil_cache IF_XB(, only_undo)));
   }
 
   /** Open all known tablespaces. */
@@ -2513,14 +2522,26 @@ bool fil_fusionio_enable_atomic_write(pfs_os_file_t file) {
 @param[in]      atomic_write    true if the file has atomic write enabled
 @param[in]      max_pages       maximum number of pages in file
 @return DB_SUCCESS if success, else other DB_* for errors */
+#ifndef XTRABACKUP
+fil_node_t *Fil_shard::create_node(const char *name, page_no_t size,
+                                   fil_space_t *space, bool is_raw,
+                                   bool punch_hole, bool atomic_write,
+                                   page_no_t max_pages) {
+#else
 dberr_t Fil_shard::create_node(const char *name, page_no_t size,
                                fil_space_t *space, bool is_raw, bool punch_hole,
                                bool atomic_write, page_no_t max_pages) {
+#endif /* !XTRABACKUP */
+
   ut_ad(name != nullptr);
   ut_ad(fil_system != nullptr);
 
   if (space == nullptr) {
+#ifndef XTRABACKUP
+    return nullptr;
+#else
     return DB_CANNOT_OPEN_FILE;
+#endif /* !XTRABACKUP */
   }
 
   fil_node_t file{};
@@ -2547,6 +2568,7 @@ dberr_t Fil_shard::create_node(const char *name, page_no_t size,
 
   os_file_stat_t stat_info = os_file_stat_t();
 
+#ifdef XTRABACKUP
   DBUG_EXECUTE_IF(
       "shard_create_node", if (strncmp(name, "./test/drop_table.ibd",
                                        strlen("./test/drop_table.ibd")) == 0) {
@@ -2555,10 +2577,15 @@ dberr_t Fil_shard::create_node(const char *name, page_no_t size,
 
         debug_sync_point("shard_create_node");
       });
+#endif /* XTRABACKUP */
 
   dberr_t err = os_file_get_status(
       file.name, &stat_info, false,
       fsp_is_system_temporary(space->id) ? true : srv_read_only_mode);
+
+#ifndef XTRABACKUP
+  ut_ad(err == DB_SUCCESS);
+#endif /* !XTRABACKUP */
 
   file.block_size = stat_info.block_size;
 
@@ -2593,7 +2620,11 @@ dberr_t Fil_shard::create_node(const char *name, page_no_t size,
   ut_a(space->id == TRX_SYS_SPACE || space->purpose == FIL_TYPE_TEMPORARY ||
        space->files.size() == 1);
 
+#ifndef XTRABACKUP
+  return &space->files.front();
+#else
   return err;
+#endif /* !XTRABACKUP */
 }
 
 /** Attach a file to a tablespace. File must be closed.
@@ -2605,15 +2636,30 @@ dberr_t Fil_shard::create_node(const char *name, page_no_t size,
 @param[in]      atomic_write    true if the file has atomic write enabled
 @param[in]      max_pages       maximum number of pages in file
 @return DB_SUCCESS if success, else other DB_* for errors */
-dberr_t fil_node_create(const char *name, page_no_t size, fil_space_t *space,
-                        bool is_raw, bool atomic_write, page_no_t max_pages) {
+#ifndef XTRABACKUP
+char *
+#else
+dberr_t
+#endif /* !XTRABACKUP */
+
+fil_node_create(const char *name, page_no_t size, fil_space_t *space,
+                bool is_raw, bool atomic_write, page_no_t max_pages) {
   auto shard = fil_system->shard_by_id(space->id);
 
-  dberr_t err = shard->create_node(name, size, space, is_raw,
-                                   IORequest::is_punch_hole_supported(),
-                                   atomic_write, max_pages);
+#ifndef XTRABACKUP
+  fil_node_t *file =
+#else
+  dberr_t err =
+#endif /* XTRABACKUP */
 
+      shard->create_node(name, size, space, is_raw,
+                         IORequest::is_punch_hole_supported(), atomic_write,
+                         max_pages);
+#ifndef XTRABACKUP
+  return file == nullptr ? nullptr : file->name;
+#else
   return (err);
+#endif /* !XTRABACKUP */
 }
 
 dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
@@ -2625,20 +2671,33 @@ dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
     ut_a(!file->is_open);
 
     file->handle =
+#ifndef XTRABACKUP
+        os_file_create_simple_no_error_handling(
+            innodb_data_file_key, file->name, OS_FILE_OPEN, OS_FILE_READ_ONLY,
+            read_only_mode, &success);
+#else
+        os_file_create(innodb_data_file_key, file->name, OS_FILE_OPEN,
+                       OS_FILE_NORMAL, OS_DATA_FILE, read_only_mode, &success);
+#endif /* !XTRABACKUP */
+
+    file->handle =
         os_file_create(innodb_data_file_key, file->name, OS_FILE_OPEN,
                        OS_FILE_NORMAL, OS_DATA_FILE, read_only_mode, &success);
     if (!success) {
-      if (opt_lock_ddl != LOCK_DDL_REDUCED) {
-        /* The following call prints an error message */
-        os_file_get_last_error(true);
-
-        ib::warn(ER_IB_MSG_268) << "Cannot open '" << file->name
-                                << "'."
-                                   " Have you deleted .ibd files under a"
-                                   " running mysqld server?";
+#ifdef XTRABACKUP
+      if (opt_lock_ddl == LOCK_DDL_REDUCED) {
+        return DB_CANNOT_OPEN_FILE;
       }
+#endif /* XTRABACKUP */
 
-      return DB_CANNOT_OPEN_FILE;
+      /* The following call prints an error message */
+      os_file_get_last_error(true);
+
+      ib::warn(ER_IB_MSG_268) << "Cannot open '" << file->name
+                              << "'."
+                                 " Have you deleted .ibd files under a"
+                                 " running mysqld server?";
+      return DB_ERROR;
     }
 
   } while (!success);
@@ -2717,13 +2776,15 @@ dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
     }
   }
 
-  /* space_id mismatch can happen for truncation of undo and normal IBD
-  tablespaces */
   if (space_id != space->id) {
+#ifdef XTRABACKUP
+    /* space_id mismatch can happen for truncation of undo and normal IBD
+    tablespaces */
     if (srv_backup_mode && opt_lock_ddl == LOCK_DDL_REDUCED) {
       ut::aligned_free(page);
       return (DB_CANNOT_OPEN_FILE);
     }
+#endif /* XTRABACKUP */
 
     ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_270)
         << "Tablespace id is " << space->id
@@ -3145,12 +3206,14 @@ bool Fil_shard::open_file(fil_node_t *file) {
     }
   }
 
+#ifdef XTRABACKUP
   DBUG_EXECUTE_IF(
       "before_file_open_dbug",
       if (strcmp(file->name, "./test/drop_table.ibd") == 0) {
         *const_cast<const char **>(&xtrabackup_debug_sync) = "before_file_open";
         debug_sync_point("before_file_open");
       });
+#endif /* XTRABACKUP */
 
   /* Open the file for reading and writing, in Windows normally in the
   unbuffered async I/O mode, though global variables may make os_file_create()
@@ -3378,7 +3441,11 @@ There must not be any pending i/o's or flushes on the files.
 @param[in]      space_id        Tablespace ID
 @param[in]      x_latched       Whether the caller holds X-mode space->latch
 @return true if success */
-bool fil_space_free(space_id_t space_id, bool x_latched) {
+#ifndef XTRABACKUP
+static
+#endif /* XTRABACKUP */
+    bool
+    fil_space_free(space_id_t space_id, bool x_latched) {
   ut_ad(space_id != TRX_SYS_SPACE);
 
   auto shard = fil_system->shard_by_id(space_id);
@@ -6037,7 +6104,16 @@ static dberr_t fil_create_tablespace(space_id_t space_id, const char *name,
 
   auto shard = fil_system->shard_by_id(space_id);
 
-  err = shard->create_node(path, size, space, false, punch_hole, atomic_write);
+#ifndef XTRABACKUP
+  fil_node_t *file_node =
+#else
+  err =
+#endif /* XTRABACKUP */
+      shard->create_node(path, size, space, false, punch_hole, atomic_write);
+
+#ifndef XTRABACKUP
+  err = (file_node == nullptr) ? DB_ERROR : DB_SUCCESS;
+#endif /* !XTRABACKUP */
 
 #if !defined(UNIV_HOTBACKUP) && !defined(XTRABACKUP)
   /* Temporary tablespace creation need not be redo logged */
@@ -6197,13 +6273,23 @@ dberr_t fil_ibd_open(bool validate, fil_type_t purpose, space_id_t space_id,
 
   /* We do not measure the size of the file, that is why
   we pass the 0 below */
+#ifndef XTRABACKUP
+  const fil_node_t *file =
+#else
+  err =
+#endif /* !XTRABACKUP */
+      shard->create_node(df.filepath(), 0, space, false,
+                         IORequest::is_punch_hole_supported(), atomic_write);
 
-  err = shard->create_node(df.filepath(), 0, space, false,
-                           IORequest::is_punch_hole_supported(), atomic_write);
-
+#ifndef XTRABACKUP
+  if (file == nullptr) {
+    return DB_ERROR;
+  }
+#else
   if (err != DB_SUCCESS) {
     return err;
   }
+#endif /* !XTRABACKUP */
 
   /* Set encryption operation in progress */
   space->encryption_op_in_progress = df.m_encryption_op_in_progress;
@@ -6552,9 +6638,18 @@ fil_load_status Fil_shard::ibd_open_for_recovery(space_id_t space_id,
   the rounding formula for extents and pages is somewhat complex; we
   let create_node() do that task. */
 
-  err = create_node(df.filepath(), 0, space, false, true, false);
+#ifndef XTRABACKUP
+  const fil_node_t *file =
+#else
+  err =
+#endif /* !XTRABACKUP */
+      create_node(df.filepath(), 0, space, false, true, false);
 
+#ifndef XTRABACKUP
+  ut_a(file != nullptr);
+#else
   ut_a(err == DB_SUCCESS);
+#endif /* !XTRABACKUP */
 
   /* For encryption tablespace, initial encryption information. */
   if (FSP_FLAGS_GET_ENCRYPTION(space->flags) &&
@@ -10210,6 +10305,7 @@ dberr_t fil_tablespace_open_for_recovery(space_id_t space_id) {
   return fil_system->open_for_recovery(space_id);
 }
 
+#ifdef XTRABACKUP
 dberr_t Fil_system::open_for_reduced(const std::string &path) {
   space_id_t space_id = get_tablespace_id(path);
   fil_space_t *space;
@@ -10236,6 +10332,7 @@ dberr_t Fil_system::open_for_reduced(const std::string &path) {
 dberr_t fil_open_for_reduced(const std::string &path) {
   return fil_system->open_for_reduced(path);
 }
+#endif /* XTRABACKUP */
 
 Fil_state fil_tablespace_path_equals(space_id_t space_id,
                                      const char *space_name, ulint fsp_flags,
@@ -11551,7 +11648,13 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
   file.set_name(name.c_str());
   file.set_filepath(path.c_str());
 
-  dberr_t err = file.open_read_only(opt_lock_ddl != LOCK_DDL_REDUCED);
+  dberr_t err = file.open_read_only(
+#ifndef XTRABACKUP
+      true
+#else
+      opt_lock_ddl != LOCK_DDL_REDUCED
+#endif /* XTRABACKUP */
+  );
   if (err != DB_SUCCESS) {
     return {err, SPACE_UNKNOWN};
   }
@@ -11562,13 +11665,14 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
   err = file.validate_first_page(SPACE_UNKNOWN, &flush_lsn, false);
 
   space_id_t space_id = file.space_id();
-
+#ifdef XTRABACKUP
   /* Note that table has been renamed during scan, we will skip
   opening renamed table since original table was loaded to cache
   and copy/rename will be handled by ddl_tracker */
   if (ddl_tracker && err == DB_TABLESPACE_EXISTS) {
     ddl_tracker->add_rename_ibd_scan(space_id, path);
   }
+#endif /* XTRABACKUP */
 
   if (err == DB_PAGE_IS_BLANK) {
     /* allow corrupted first page for xtrabackup, it could be just
@@ -11623,18 +11727,22 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
   /* by opening the tablespace we forcing node and space objects
   in the cache to be populated with fields from space header */
   if (!fil_space_open(space->id)) {
+#ifdef XTRABACKUP
     if (srv_backup_mode && opt_lock_ddl == LOCK_DDL_REDUCED) {
       if (fil_close_tablespace(space->id) != DB_SUCCESS)
         xb::warn() << "Failed to close space_id: " << space->id;
       return {DB_CANNOT_OPEN_FILE, space_id};
     }
+#endif /* XTRABACKUP */
 
     xb::error() << "Failed to open tablespace " << space->name;
+#ifdef XTRABACKUP
   } else if (ddl_tracker) {
     /* Note that we have opened and loaded the table to cache for copying */
     if (!is_server_locked()) {
       ddl_tracker->add_table_from_ibd_scan(space_id, path);
     }
+#endif /* XTRABACKUP */
   }
 
   if (!srv_backup_mode || srv_close_files) {
@@ -11661,7 +11769,7 @@ void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
     if (check_if_skip_table(filename.c_str())) {
       continue;
     }
-
+#ifdef XTRABACKUP
     /* With lock-ddl=reduced, prepare on such backup directories, we open
     tablespaces before recovery starts. This is required to process to
     space_id.del or .ren files. Hence, we have to tolerate encryption errors
@@ -11698,6 +11806,7 @@ void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
         }
       }
     }
+#endif /* XTRABACKUP */
   }
 }
 
@@ -11970,7 +12079,7 @@ void Tablespace_dirs::set_scan_dirs(const std::string &in_directories) {
 @param[in] only_undo            if true, only the undo tablespaces are
 discovered
 @return DB_SUCCESS if all goes well */
-dberr_t Tablespace_dirs::scan(bool populate_fil_cache, bool only_undo) {
+dberr_t Tablespace_dirs::scan(bool populate_fil_cache IF_XB(, bool only_undo)) {
   Scanned_files ibd_files;
   Scanned_files undo_files;
   uint16_t count = 0;
@@ -11985,9 +12094,12 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache, bool only_undo) {
 
     ib::info(ER_IB_MSG_379) << "Scanning '" << dir.path() << "'";
 
+#ifdef XTRABACKUP
     /* Walk the sub-tree of dir. If it is undo tablespaces only discovery,
     used by xtrabackup, we dont do look into sub directories */
     bool walk_subtree = only_undo ? false : true;
+#endif /* XTRABCKUP */
+
     Dir_Walker::walk(real_path_dir, walk_subtree, [&](const std::string &path) {
       /* If it is a file and the suffix matches ".ibd"
       or the undo file name format then store it for
@@ -12060,7 +12172,7 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache, bool only_undo) {
       check = std::bind(&Tablespace_dirs::duplicate_check, this, _1, _2, _3, _4,
                         _5, _6);
 
-  if (!populate_fil_cache && ibd_files.size() > 0) {
+  if (!populate_fil_cache IF_XB(&&ibd_files.size() > 0)) {
     par_for(PFS_NOT_INSTRUMENTED, ibd_files, n_threads, check, &m, &unique,
             &duplicates);
   }
@@ -12084,9 +12196,11 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache, bool only_undo) {
     err = DB_SUCCESS;
   }
 
+#ifdef XTRABACKUP
   debug_sync_point("xtrabackup_suspend_between_file_discovery_and_open");
+#endif /* XTRABACKUP */
 
-  if (err == DB_SUCCESS && populate_fil_cache && !only_undo) {
+  if (err == DB_SUCCESS && populate_fil_cache IF_XB(&&!only_undo)) {
     bool result = true;
     std::function<void(const Const_iter &, const Const_iter &, size_t, bool &)>
         open = std::bind(&Tablespace_dirs::open_ibd, this, _1, _2, _3, _4);
@@ -12112,8 +12226,9 @@ void fil_set_scan_dirs(const std::string &directories) {
 @param[in] only_undo            if true, only the undo tablespaces are
                                 discovered
 @return DB_SUCCESS if all goes well */
-dberr_t fil_scan_for_tablespaces(bool populate_fil_cache, bool only_undo) {
-  return (fil_system->scan(populate_fil_cache, only_undo));
+dberr_t fil_scan_for_tablespaces(
+    bool populate_fil_cache IF_XB(, bool only_undo)) {
+  return (fil_system->scan(populate_fil_cache IF_XB(, only_undo)));
 }
 
 /** Open all known tablespaces. */

@@ -3155,6 +3155,7 @@ pfs_os_file_t os_file_create_func(const char *name, ulint create_mode,
   int create_flag;
   const char *mode_str = nullptr;
 
+#ifdef XTRABACKUP
   if (opt_lock_ddl == LOCK_DDL_REDUCED && !is_server_locked()) {
     on_error_no_exit = true;
     on_error_silent = true;
@@ -3162,6 +3163,8 @@ pfs_os_file_t os_file_create_func(const char *name, ulint create_mode,
     on_error_no_exit = create_mode & OS_FILE_ON_ERROR_NO_EXIT ? true : false;
     on_error_silent = create_mode & OS_FILE_ON_ERROR_SILENT ? true : false;
   }
+#endif /* XTRABACKUP */
+
   create_mode &= ~OS_FILE_ON_ERROR_NO_EXIT;
   create_mode &= ~OS_FILE_ON_ERROR_SILENT;
 
