@@ -204,6 +204,13 @@ bool prepare_handle_del_files(
 bool xtrabackup_scan_meta(const datadir_entry_t &entry, /*!<in: datadir entry */
                           void * /*data*/);
 
+/** Handles CREATE DDL that happened during the backup taken in reduced mode
+by processing the file with `.new` extension.
+example input: `schema/filename.ibd.new` file
+result: file `schema/filename.ibd.new` will be renamed to `schema/filename.ibd`
+@param[in] entry  datadir entry
+@param[in] arg    unused
+@return true on success */
 bool prepare_handle_new_files(
     const datadir_entry_t &entry, /*!<in: datadir entry */
     void *arg __attribute__((unused)));
