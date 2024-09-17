@@ -132,14 +132,15 @@ std::string base64_encode(const T &s) {
 
 template <typename T>
 std::string base64_decode(const T &s) {
-  uint64 decoded_size = ::base64_needed_decoded_length(s.size());
-  std::unique_ptr<char[]> buf(new char[decoded_size]);
+  uint64 max_decoded_size = ::base64_needed_decoded_length(s.size());
+  std::unique_ptr<char[]> buf(new char[max_decoded_size]);
 
-  if (::base64_decode(&s[0], s.size(), buf.get(), NULL, 0) == 0) {
+  auto decoded_size = ::base64_decode(&s[0], s.size(), buf.get(), NULL, 0);
+  if (decoded_size <= 0) {
     return std::string();
   }
 
-  return std::string(buf.get());
+  return std::string(buf.get(), decoded_size);
 }
 
 template <typename T>
