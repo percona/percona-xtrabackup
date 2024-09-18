@@ -879,6 +879,15 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
       return false;
     }
 
+    // space_id.ren is already with the desired name. Nothing to do.
+    if (source_path != nullptr && dest_path != nullptr &&
+        strcmp(source_path, dest_path) == 0) {
+      xb::info() << "prepare_handle_ren_files: ren_file: " << ren_path
+                 << " already has desired file name: " << dest_path
+                 << " source path is: " << source_path;
+      return true;
+    }
+
     ut_ad(!os_file_exists(dest_path));
 
     xb::info() << "prepare_handle_ren_files: renaming " << fil_space->name
