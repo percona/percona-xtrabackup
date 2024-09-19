@@ -1682,8 +1682,8 @@ static void log_status_replication_parse(const char *s,
     cs.relay_log_file = ch["relay_log_file"].GetString();
     cs.relay_log_position = ch["relay_log_position"].GetUint64();
     if (server_flavor == FLAVOR_PERCONA_SERVER) {
-      cs.relay_master_log_file = ch["relay_source_log_file"].GetString();
-      cs.exec_master_log_position = ch["exec_source_log_position"].GetUint64();
+      cs.relay_master_log_file = ch["relay_master_log_file"].GetString();
+      cs.exec_master_log_position = ch["exec_master_log_position"].GetUint64();
     }
     log_status.channels.push_back(cs);
   }
