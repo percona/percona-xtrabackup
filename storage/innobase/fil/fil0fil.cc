@@ -2680,9 +2680,6 @@ dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
                        OS_FILE_NORMAL, OS_DATA_FILE, read_only_mode, &success);
 #endif /* !XTRABACKUP */
 
-    file->handle =
-        os_file_create(innodb_data_file_key, file->name, OS_FILE_OPEN,
-                       OS_FILE_NORMAL, OS_DATA_FILE, read_only_mode, &success);
     if (!success) {
 #ifdef XTRABACKUP
       if (opt_lock_ddl == LOCK_DDL_REDUCED) {
