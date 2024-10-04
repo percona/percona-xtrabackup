@@ -4080,6 +4080,80 @@ end:
 #endif
 }
 
+/* true on success, false on failure */
+bool xb_check_and_set_open_files_limit(size_t num_files) {
+  if (opt_lock_ddl != LOCK_DDL_REDUCED) {
+    return true;
+  }
+
+#if defined(RLIMIT_NOFILE)
+  xb::info() << "xb_check_and_set_open_files_limit is verifying the open_files "
+                "limit for --lock-ddl=reduced";
+
+  struct rlimit rlimit;
+  uint old_cur;
+
+  if (getrlimit(RLIMIT_NOFILE, &rlimit)) {
+    xb::info() << "getrlimit() failed with error: " << strerror(errno);
+    return true;
+  }
+
+  old_cur = (uint)rlimit.rlim_cur;
+
+  xb::info() << "Current open file limits:";
+  xb::info() << "Desired file_handles: " << num_files;
+  xb::info() << "ulimit -Sn: " << rlimit.rlim_cur;
+  xb::info() << "ulimit -Hn: " << rlimit.rlim_max;
+  xb::info() << "--open-files-limit: " << xb_open_files_limit;
+
+  if (rlimit.rlim_cur == RLIM_INFINITY) {
+    // current open files limit is inifinity. All good. nothing do
+    return true;
+  }
+
+  if (num_files < old_cur) {
+    // all good nothing to do. Num of files we have is less than
+    // the open files limit.
+    return true;
+  }
+
+  if (xb_open_files_limit != 0) {
+    if (num_files > xb_open_files_limit) {
+      xb::error() << "Reduced lock mode needs open file handles: " << num_files
+                  << " but --open-files-limit parameter is set to "
+                  << xb_open_files_limit;
+      xb::error() << "Please retry with --open-files-limit=" << num_files;
+      return false;  // ERROR
+    }
+  }
+
+  if (num_files <= rlimit.rlim_max) {
+    // We are allowed to go up to rlimit.rlim_max. Lets try.
+    ulint result_files = xb_set_max_open_files(num_files);
+    if (result_files < num_files) {
+      xb::error() << "Reduced lock mode requested open file handles: "
+                  << num_files << " but only got " << result_files
+                  << " open file handles";
+      return false;  // ERROR
+    } else {
+      xb::info() << "Reduced lock mode successfully raised open files limit to "
+                 << result_files;
+    }
+  } else {
+    // we are below xb_open_limit but above the max allowed open files
+    xb::error() << "Reduced lock mode requires open file handles " << num_files
+                << " but the max limit (ulimit -Hn) is " << rlimit.rlim_max;
+    return false;
+  }
+
+#else
+  xb::info() << "setrlimit() is not available on this platform";
+  return true;
+#endif
+
+  return true;
+}
+
 /**************************************************************************
 Prints a warning for every table that uses unsupported engine and
 hence will not be backed up. */

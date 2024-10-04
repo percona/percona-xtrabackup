@@ -12146,6 +12146,13 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache IF_XB(, bool only_undo)) {
                             << undo_files.size() << " undo files";
   }
 
+  size_t total_files =
+      ibd_files.size() + undo_files.size() + 50 /*buffer for ibdata, redo */;
+
+  if (!xb_check_and_set_open_files_limit(total_files)) {
+    return DB_FAIL;
+  }
+
   Space_id_set unique;
   Space_id_set duplicates;
 
