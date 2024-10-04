@@ -11227,7 +11227,7 @@ const byte *fil_tablespace_redo_encryption(const byte *ptr, const byte *end,
         xb::error() << KEYRING_NOT_LOADED;
         exit(EXIT_FAILURE);
       }
-      return (ptr + len);
+      return (ptr);
     }
   } else {
     ulint master_key_id = mach_read_from_4(ptr + Encryption::MAGIC_SIZE);
@@ -11240,13 +11240,6 @@ const byte *fil_tablespace_redo_encryption(const byte *ptr, const byte *end,
 
   ut_ad(len == Encryption::INFO_SIZE);
 
-  if (space != nullptr) {
-    Encryption::set_or_generate(Encryption::AES, key, iv,
-                                space->m_encryption_metadata);
-    fsp_flags_set_encryption(space->flags);
-    return ptr;
-  }
-
   /* Space is not loaded yet. Remember this key in recv_sys and use it later
   to pupulate space encryption info once it is loaded. */
   DBUG_EXECUTE_IF("dont_update_key_found_during_REDO_scan", return ptr;);
@@ -11256,27 +11249,37 @@ const byte *fil_tablespace_redo_encryption(const byte *ptr, const byte *end,
         ut::new_withkey<recv_sys_t::Encryption_Keys>(UT_NEW_THIS_FILE_PSI_KEY);
   }
 
+  bool key_exists = false;
   /* Search if key entry already exists for this tablespace, update it. */
   for (auto &recv_key : *recv_sys->keys) {
     if (recv_key.space_id == space_id) {
       memcpy(recv_key.iv, iv, Encryption::KEY_LEN);
       memcpy(recv_key.ptr, key, Encryption::KEY_LEN);
       recv_key.lsn = lsn;
-      return ptr;
+      key_exists = true;
+      break;
     }
   }
 
-  /* No existing entry found, create new one and insert it. */
-  recv_sys_t::Encryption_Key new_key;
-  new_key.iv = static_cast<byte *>(
-      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, Encryption::KEY_LEN));
-  memcpy(new_key.iv, iv, Encryption::KEY_LEN);
-  new_key.ptr = static_cast<byte *>(
-      ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, Encryption::KEY_LEN));
-  memcpy(new_key.ptr, key, Encryption::KEY_LEN);
-  new_key.space_id = space_id;
-  new_key.lsn = lsn;
-  recv_sys->keys->push_back(new_key);
+  if (!key_exists) {
+    /* No existing entry found, create new one and insert it. */
+    recv_sys_t::Encryption_Key new_key;
+    new_key.iv = static_cast<byte *>(
+        ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, Encryption::KEY_LEN));
+    memcpy(new_key.iv, iv, Encryption::KEY_LEN);
+    new_key.ptr = static_cast<byte *>(
+        ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, Encryption::KEY_LEN));
+    memcpy(new_key.ptr, key, Encryption::KEY_LEN);
+    new_key.space_id = space_id;
+    new_key.lsn = lsn;
+    recv_sys->keys->push_back(new_key);
+  }
+
+  if (space != nullptr) {
+    Encryption::set_or_generate(Encryption::AES, key, iv,
+                                space->m_encryption_metadata);
+    fsp_flags_set_encryption(space->flags);
+  }
 
   return ptr;
 }
