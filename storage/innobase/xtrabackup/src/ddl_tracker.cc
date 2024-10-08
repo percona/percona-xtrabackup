@@ -306,9 +306,16 @@ static void copy_for_reduced(copy_thread_ctxt_t *ctxt) {
     if (ctxt->new_tables->find(node->space->id) == ctxt->new_tables->end()) {
       continue;
     }
-    std::string dest_name = node->name;
-    dest_name.append(EXT_NEW);
-    if (xtrabackup_copy_datafile_func(node, num, dest_name.c_str())) {
+    char dest_name[FN_REFLEN];
+    if (fsp_is_file_per_table(node->space->id, node->space->flags)) {
+      snprintf(dest_name, sizeof(dest_name), "%s%s%s",
+               fil_path_to_space_name(node->name), EXT_IBD.c_str(),
+               EXT_NEW.c_str());
+    } else {
+      snprintf(dest_name, sizeof(dest_name), "%s%s",
+               Fil_path::get_basename(node->name).c_str(), EXT_NEW.c_str());
+    }
+    if (xtrabackup_copy_datafile_func(node, num, dest_name)) {
       xb::error() << "failed to copy datafile " << node->name;
       *(ctxt->error) = true;
     }
@@ -331,8 +338,9 @@ format by replacing the `filename` to `spaceid` and appending the extension
 @returns .del or .ren file name starting with space_id e.g schema/spaceid.del
 */
 static std::string convert_file_name(const space_id_t space_id,
-                                     const std::string &file_name,
+                                     const std::string &file_path,
                                      const std::string &ext) {
+  std::string file_name = fil_path_to_space_name(file_path.c_str());
   auto sep_pos = file_name.find_last_of(Fil_path::SEPARATOR);
   return file_name.substr(0, sep_pos + 1) + std::to_string(space_id) + ext;
 }

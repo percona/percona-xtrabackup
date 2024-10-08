@@ -3632,14 +3632,8 @@ static dberr_t xb_load_tablespaces()
   for (auto tablespace : Tablespace_map::instance().external_files()) {
     if (tablespace.type != Tablespace_map::TABLESPACE) continue;
     /* when LOCK_DDL_REDUCED while processing ddl files on prepare phase
-    we should load data files without first page validation */
-    if (xtrabackup_prepare && opt_lock_ddl == LOCK_DDL_REDUCED &&
-        !xtrabackup_incremental) {
-      dberr_t err = fil_open_for_reduced(tablespace.file_name);
-      if (err != DB_SUCCESS) {
-        return (err);
-      }
-    } else {
+    we should not load external files */
+    if (!xtrabackup_prepare) {
       fil_open_for_xtrabackup(tablespace.file_name, tablespace.name);
     }
   }
