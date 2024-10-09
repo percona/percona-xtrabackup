@@ -19,6 +19,7 @@ $MYSQL $MYSQL_ARGS -e "CREATE TABLE t1 (a INT) ENGINE=InnoDB" test
 $MYSQL $MYSQL_ARGS -e "INSERT INTO t1 VALUES (1)" test
 mysql -e "CREATE UNDO TABLESPACE UNDO_1 ADD DATAFILE 'undo_1.ibu'"
 mysql -e "CREATE UNDO TABLESPACE UNDO_2 ADD DATAFILE 'undo_2.ibu'"
+mysql -e "CREATE UNDO TABLESPACE UNDO_003 ADD DATAFILE 'undo_003.ibu'"
 
 xtrabackup --backup --lock-ddl=REDUCED --target-dir=$topdir/backup \
 --debug-sync="ddl_tracker_before_lock_ddl" 2> >( tee $topdir/backup.log)&
@@ -30,6 +31,8 @@ xb_pid=`cat $pid_file`
 echo "backup pid is $job_pid"
 
 mysql -e "ALTER UNDO TABLESPACE UNDO_1 SET INACTIVE"
+mysql -e "ALTER UNDO TABLESPACE UNDO_003 SET INACTIVE"
+mysql -e "ALTER UNDO TABLESPACE innodb_undo_001 SET INACTIVE"
 mysql -e "SET GLOBAL innodb_purge_rseg_truncate_frequency=1"
 sleep 3s
 
@@ -39,12 +42,22 @@ kill -SIGCONT $xb_pid
 run_cmd wait $job_pid
 
 if ! egrep -q "Deleted undo file: $undo_directory_ext/undo_1.ibu : [0-9]*" $topdir/backup.log ; then
-    die "xtrabackup did not handle delete table DDL"
+    die "xtrabackup did not handle delete table DDL for undo_1.ibu"
 fi
 
-if ! egrep -q "Done: Writing file $topdir/backup/[0-9]*.del" $topdir/backup.log ; then
-    die "xtrabackup did not create .del file"
+if ! egrep -q "Deleted undo file: $undo_directory_ext/undo_003.ibu : [0-9]*" $topdir/backup.log ; then
+    die "xtrabackup did not handle delete table DDL for undo_003.ibu"
 fi
+
+if ! egrep -q "Deleted undo file: $undo_directory_ext/undo_001 : [0-9]*" $topdir/backup.log ; then
+    die "xtrabackup did not handle delete table DDL for undo_001"
+fi
+
+del_count=$(egrep -o "Done: Writing file $topdir/backup/[0-9]*.del" $topdir/backup.log | wc -l)
+
+if ["$del_count" -ne 3]; then
+    die "xtrabackup did not create .del file"
+fi 
 
 if ! egrep -q "New undo file: $undo_directory_ext/undo_1.ibu : [0-9]*" $topdir/backup.log ; then
     die "xtrabackup did not handle new table DDL"
@@ -53,6 +66,17 @@ fi
 if ! egrep -q "Done: Copying $undo_directory_ext/undo_1.ibu to $topdir/backup/undo_1.ibu.new" $topdir/backup.log ; then
     die "xtrabackup did not create undo_1.ibu.new file"
 fi
+
+if ! egrep -q "Done: Copying $undo_directory_ext/undo_003.ibu to $topdir/backup/undo_003.ibu.new" $topdir/backup.log ; then
+    die "xtrabackup did not create undo_003.ibu.new file"
+fi
+
+if ! egrep -q "Done: Copying $undo_directory_ext/undo_001 to $topdir/backup/undo_001.new" $topdir/backup.log ; then
+    die "xtrabackup did not create undo_001.new file"
+fi
+
+
+
 
 
 mysql -e "SET GLOBAL innodb_purge_rseg_truncate_frequency=default"
@@ -135,6 +159,11 @@ stop_server
 rm -rf $mysql_datadir/*
 rm -rf $data_directory_ext/*
 xtrabackup --copy-back --target-dir=$topdir/backup_new_table
+
+if [ ! -f $mysql_datadir/ibdata1 ] ; then
+	die "Data files were not copied to correct place!"
+fi
+
 start_server
 verify_db_state test
 stop_server

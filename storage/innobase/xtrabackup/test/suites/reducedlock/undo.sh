@@ -23,6 +23,7 @@ xb_pid=`cat $pid_file`
 echo "backup pid is $job_pid"
 
 mysql -e "ALTER UNDO TABLESPACE UNDO_1 SET INACTIVE"
+mysql -e "ALTER UNDO TABLESPACE innodb_undo_001 SET INACTIVE"
 mysql -e "SET GLOBAL innodb_purge_rseg_truncate_frequency=1"
 sleep 3s
 
@@ -35,9 +36,18 @@ if ! egrep -q 'Deleted undo file: ./undo_1.ibu : [0-9]*' $topdir/backup.log ; th
     die "xtrabackup did not handle delete table DDL"
 fi
 
-if ! egrep -q 'New undo file: ./undo_1.ibu : [0-9]*' $topdir/backup.log ; then
-    die "xtrabackup did not handle new table DDL"
+if ! egrep -q "Deleted undo file: ./undo_001 : [0-9]*" $topdir/backup.log ; then
+    die "xtrabackup did not handle delete table DDL for undo_001"
 fi
+
+if ! egrep -q 'New undo file: ./undo_1.ibu : [0-9]*' $topdir/backup.log ; then
+    die "xtrabackup did not handle new table DDL for undo_1.ibu"
+fi
+
+if ! egrep -q 'New undo file: ./undo_001 : [0-9]*' $topdir/backup.log ; then
+    die "xtrabackup did not handle new table DDL for undo_001"
+fi
+
 
 mysql -e "SET GLOBAL innodb_purge_rseg_truncate_frequency=default"
 xtrabackup --prepare --target-dir=$topdir/backup
