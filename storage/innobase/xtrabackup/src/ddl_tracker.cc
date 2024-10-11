@@ -288,6 +288,36 @@ typedef struct {
   space_id_to_name_t *new_tables;
 } copy_thread_ctxt_t;
 
+/**
+ * This function extracts the database name and space name from the
+ * tablepsace path. If the space is not file-per-table tablespace, it
+ * returns only the space name with appended extension. For other cases,
+ * it constructs a path in the format "database_name/space_name"
+ * with an appended extension.
+ *
+ * @param node File node of a tablespace
+ * @return A string representing the destination name
+ */
+std::string get_dest_name(fil_node_t *node) {
+  std::string path{node->name};
+  auto last_separator_pos = path.find_last_of(Fil_path::SEPARATOR);
+
+  std::string db_name = path.substr(0, last_separator_pos);
+  std::string space_name = path.substr(last_separator_pos + 1);
+
+  if (!fsp_is_file_per_table(node->space->id, node->space->flags)) {
+    return space_name + EXT_NEW;
+  }
+
+  // Extract the last part of db_name after the last separator
+  last_separator_pos = db_name.find_last_of(Fil_path::SEPARATOR);
+  if (last_separator_pos != std::string::npos) {
+    db_name = db_name.substr(last_separator_pos + 1);
+  }
+
+  return db_name + '/' + space_name + EXT_NEW;
+}
+
 static void copy_for_reduced(copy_thread_ctxt_t *ctxt) {
   uint num = ctxt->num;
   fil_node_t *node;
@@ -306,16 +336,12 @@ static void copy_for_reduced(copy_thread_ctxt_t *ctxt) {
     if (ctxt->new_tables->find(node->space->id) == ctxt->new_tables->end()) {
       continue;
     }
-    char dest_name[FN_REFLEN];
-    if (fsp_is_file_per_table(node->space->id, node->space->flags)) {
-      snprintf(dest_name, sizeof(dest_name), "%s%s%s",
-               fil_path_to_space_name(node->name), EXT_IBD.c_str(),
-               EXT_NEW.c_str());
-    } else {
-      snprintf(dest_name, sizeof(dest_name), "%s%s",
-               Fil_path::get_basename(node->name).c_str(), EXT_NEW.c_str());
-    }
-    if (xtrabackup_copy_datafile_func(node, num, dest_name)) {
+    // Get destination name for the datafile
+    std::string dest_name = get_dest_name(node);
+    char dest_name_buffer[FN_REFLEN];
+    snprintf(dest_name_buffer, FN_REFLEN, "%s", dest_name.c_str());
+
+    if (xtrabackup_copy_datafile_func(node, num, dest_name_buffer)) {
       xb::error() << "failed to copy datafile " << node->name;
       *(ctxt->error) = true;
     }
@@ -330,13 +356,17 @@ static void copy_for_reduced(copy_thread_ctxt_t *ctxt) {
 }
 
 /**
-Converts filename from `schema/filename.ibd` format to `schema/spaceid.ext`
-format by replacing the `filename` to `spaceid` and appending the extension
-@param[in] space_id  The space id of the current file
-@param[in] file_name File name that we will modify
-@param[in] ext       Extension that we will modify to
-@returns .del or .ren file name starting with space_id e.g schema/spaceid.del
-*/
+ * Converts a filename from the `schema/filename.ibd` format to the
+ * `schema/spaceid.ext` format. It replaces the `filename` with `spaceid`
+ * and appends the specified extension.
+ *
+ * @param[in] space_id  The space ID of the current file.
+ * @param[in] file_path The full path of the file to be modified.
+ * @param[in] ext       The extension to be appended to the new filename.
+ *
+ * @returns A modified filename in the format `schema/spaceid.ext`,
+ *          e.g., `schema/spaceid.del`.
+ */
 static std::string convert_file_name(const space_id_t space_id,
                                      const std::string &file_path,
                                      const std::string &ext) {
