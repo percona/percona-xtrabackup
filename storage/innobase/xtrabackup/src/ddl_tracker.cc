@@ -298,12 +298,14 @@ typedef struct {
  * @param node File node of a tablespace
  * @return A string representing the destination name
  */
-std::string get_dest_name(fil_node_t *node) {
+std::string get_dest_name(const fil_node_t *node) {
   std::string path{node->name};
   auto last_separator_pos = path.find_last_of(Fil_path::SEPARATOR);
 
   std::string db_name = path.substr(0, last_separator_pos);
   std::string space_name = path.substr(last_separator_pos + 1);
+
+  ut_ad(space_name.size() > 0);
 
   if (!fsp_is_file_per_table(node->space->id, node->space->flags)) {
     return space_name + EXT_NEW;
@@ -314,6 +316,8 @@ std::string get_dest_name(fil_node_t *node) {
   if (last_separator_pos != std::string::npos) {
     db_name = db_name.substr(last_separator_pos + 1);
   }
+
+  ut_ad(db_name.size() > 0);
 
   return db_name + '/' + space_name + EXT_NEW;
 }
@@ -338,10 +342,8 @@ static void copy_for_reduced(copy_thread_ctxt_t *ctxt) {
     }
     // Get destination name for the datafile
     std::string dest_name = get_dest_name(node);
-    char dest_name_buffer[FN_REFLEN];
-    snprintf(dest_name_buffer, FN_REFLEN, "%s", dest_name.c_str());
 
-    if (xtrabackup_copy_datafile_func(node, num, dest_name_buffer)) {
+    if (xtrabackup_copy_datafile_func(node, num, dest_name.c_str())) {
       xb::error() << "failed to copy datafile " << node->name;
       *(ctxt->error) = true;
     }
