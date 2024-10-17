@@ -2819,7 +2819,15 @@ dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
   }
 
   /* Make sure the space_flags are the same as the header page flags. */
-  if (space->flags != flags) {
+  /* xtrabackup may read undo tablespace just after reintialized but
+  encryption flags are not written yet on the page. xtrabackup can
+  detect encryption from recovery and set the in-memory space->flags
+  to be encrypted. So on-disk (flags) may not have encryption set
+  but in-memory flags have encryption set (from redo parsing). This
+  happens only with undo because it writes space flags in two separate
+  steps */
+  if ((space->flags != flags) && !(opt_lock_ddl == LOCK_DDL_REDUCED &&
+                                   fsp_is_undo_tablespace(space->id))) {
     ib::error(ER_IB_MSG_272, ulong{space->flags}, file->name, ulonglong{flags});
     ut_error;
   }

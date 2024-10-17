@@ -674,17 +674,13 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
       bool found = false;
 
       if (srv_backup_mode) {
-        mutex_enter(&recv_sys->mutex);
-        if (recv_sys->keys != nullptr) {
-          for (const auto &recv_key : *recv_sys->keys) {
-            if (recv_key.space_id == m_space_id) {
-              memcpy(m_encryption_key, recv_key.ptr, Encryption::KEY_LEN);
-              memcpy(m_encryption_iv, recv_key.iv, Encryption::KEY_LEN);
-              found = true;
-            }
-          }
+        recv_sys_t::Encryption_Key *recv_key = nullptr;
+        std::tie(found, recv_key) = recv_find_encryption_key(m_space_id);
+
+        if (found) {
+          memcpy(m_encryption_key, recv_key->ptr, Encryption::KEY_LEN);
+          memcpy(m_encryption_iv, recv_key->iv, Encryption::KEY_LEN);
         }
-        mutex_exit(&recv_sys->mutex);
       }
 
       if (!found) {

@@ -4719,4 +4719,21 @@ const char *get_mlog_string(mlog_id_t type) {
 
   return nullptr;
 }
+
+std::tuple<bool, recv_sys_t::Encryption_Key *> recv_find_encryption_key(
+    space_id_t space_id) {
+  if (recv_sys == nullptr || recv_sys->keys == nullptr) {
+    return {false, nullptr};
+  }
+
+  mutex_enter(&recv_sys->mutex);
+  for (auto &recv_key : *recv_sys->keys) {
+    if (recv_key.space_id == space_id) {
+      mutex_exit(&recv_sys->mutex);
+      return {true, &recv_key};
+    }
+  }
+  mutex_exit(&recv_sys->mutex);
+  return {false, nullptr};
+}
 #endif /* UNIV_DEBUG || UNIV_HOTBACKUP */

@@ -357,36 +357,62 @@ static dberr_t srv_undo_tablespace_read_encryption(pfs_os_file_t fh,
   offset = fsp_header_get_encryption_offset(space_page_size);
   ut_ad(offset);
 
-  /* Return if the encryption metadata is empty. */
-  if (!Encryption::is_encrypted_with_v3(first_page + offset)) {
-    ut::aligned_free(first_page);
-    return (DB_SUCCESS);
-  }
+  auto [found, recv_key] = recv_find_encryption_key(space->id);
 
-  if (!use_dumped_tablespace_keys || srv_backup_mode) {
+  bool is_enc = Encryption::is_encrypted_with_v3(first_page + offset);
+  lsn_t page_lsn = mach_read_from_8(first_page + FIL_PAGE_LSN);
+
+  // Function to set encryption using a given key and iv
+  auto set_encryption = [&](byte *key, byte *iv) -> bool {
+    fsp_flags_set_encryption(space->flags);
+    err = fil_set_encryption(space->id, Encryption::AES, key, iv);
+    ut_ad(err == DB_SUCCESS);
+    return err == DB_SUCCESS;
+  };
+
+  // Function to handle dumped encryption keys
+  auto load_key_from_dump = [&]() -> bool {
+    err = xb_set_encryption(space);
+    return err == DB_SUCCESS;
+  };
+
+  // Function to load encryption key from the page header
+  auto load_key_from_page = [&]() -> bool {
     byte key[Encryption::KEY_LEN];
     byte iv[Encryption::KEY_LEN];
     Encryption_key e_key{key, iv};
+
     if (fsp_header_get_encryption_key(space->flags, e_key, first_page)) {
-      fsp_flags_set_encryption(space->flags);
-      err = fil_set_encryption(space->id, Encryption::AES, key, iv);
-      ut_ad(err == DB_SUCCESS);
-    } else {
-      ut::aligned_free(first_page);
-      return (DB_FAIL);
+      return set_encryption(key, iv);
     }
+    return false;
+  };
+
+  bool encryption_success = false;
+
+  if (found && recv_key->lsn >= page_lsn) {
+    // Condition 1: Use key from redo if available and appropriate
+    encryption_success = use_dumped_tablespace_keys
+                             ? load_key_from_dump()
+                             : set_encryption(recv_key->ptr, recv_key->iv);
+  } else if (is_enc) {
+    // Condition 2: Page is encrypted
+    encryption_success = use_dumped_tablespace_keys ? load_key_from_dump()
+                                                    : load_key_from_page();
   } else {
-    err = xb_set_encryption(space);
-    if (err != DB_SUCCESS) {
-      ut::aligned_free(first_page);
-      return (DB_FAIL);
-    }
+    // Condition 3: If the page is not encrypted, we consider it successful
+    encryption_success = true;
   }
 
+  // Free the allocated memory and return the result
   ut::aligned_free(first_page);
-  ib::info(ER_IB_MSG_UNDO_ENCRYPTION_INFO_LOADED, space->name);
 
-  return (DB_SUCCESS);
+  if (encryption_success) {
+    ib::info(ER_IB_MSG_UNDO_ENCRYPTION_INFO_LOADED, space->name);
+    return (DB_SUCCESS);
+  } else {
+    return (DB_FAIL);
+  }
 }
 
 /** Fix up a v5.7 type undo tablespace that was being truncated.
