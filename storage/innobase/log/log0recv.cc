@@ -4719,6 +4719,7 @@ const char *get_mlog_string(mlog_id_t type) {
 
   return nullptr;
 }
+#endif /* UNIV_DEBUG || UNIV_HOTBACKUP */
 
 std::tuple<bool, recv_sys_t::Encryption_Key *> recv_find_encryption_key(
     space_id_t space_id) {
@@ -4736,4 +4737,3 @@ std::tuple<bool, recv_sys_t::Encryption_Key *> recv_find_encryption_key(
   mutex_exit(&recv_sys->mutex);
   return {false, nullptr};
 }
-#endif /* UNIV_DEBUG || UNIV_HOTBACKUP */
