@@ -2824,10 +2824,12 @@ dberr_t Fil_shard::get_file_size(fil_node_t *file, bool read_only_mode) {
   detect encryption from recovery and set the in-memory space->flags
   to be encrypted. So on-disk (flags) may not have encryption set
   but in-memory flags have encryption set (from redo parsing). This
-  happens only with undo because it writes space flags in two separate
-  steps */
+  happens undo because it writes space flags in two separate
+  steps. Also general tablespaces are affected because the encryption is
+  in-place. */
   if ((space->flags != flags) && !(opt_lock_ddl == LOCK_DDL_REDUCED &&
-                                   fsp_is_undo_tablespace(space->id))) {
+                                   (fsp_is_undo_tablespace(space->id) ||
+                                    fsp_is_shared_tablespace(space->flags)))) {
     ib::error(ER_IB_MSG_272, ulong{space->flags}, file->name, ulonglong{flags});
     ut_error;
   }
