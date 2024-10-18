@@ -1715,6 +1715,8 @@ static void sigusr1_handler(int sig __attribute__((unused))) {
   *const_cast<const char **>(&xtrabackup_debug_sync_thread) =
       debug_sync_file_content.c_str();
 
+  xb::info() << "The debug sync point read from xb_debug_sync_thread files is "
+             << debug_sync_file_content;
   xb::info() << "DEBUG_SYNC_THREAD: Deleting file" << debug_sync_file;
   os_file_delete_if_exists_func(debug_sync_file.c_str(), nullptr);
 }
@@ -3281,7 +3283,8 @@ bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
 
   if (res == XB_FIL_CUR_CORRUPTED) {
     if (ddl_tracker != nullptr) {
-      ddl_tracker->add_corrupted_tablespace(cursor.space_id, cursor.node->name);
+      ddl_tracker->add_corrupted_tablespace(cursor.space_id, cursor.node->name,
+                                            cursor.space_flags);
     }
   }
 

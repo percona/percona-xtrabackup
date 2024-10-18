@@ -118,12 +118,13 @@ void ddl_tracker_t::add_undo_tablespace(const space_id_t space_id,
 }
 
 void ddl_tracker_t::add_corrupted_tablespace(const space_id_t space_id,
-                                             const std::string &path) {
+                                             const std::string &path,
+                                             ulint space_flags) {
   ut_ad(!handle_ddl_ops);
 
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
 
-  corrupted_tablespaces[space_id] = path;
+  corrupted_tablespaces[space_id] = {path, space_flags};
 }
 
 void ddl_tracker_t::add_to_recopy_tables(space_id_t space_id, lsn_t record_lsn,
@@ -295,11 +296,28 @@ typedef struct {
  * it constructs a path in the format "database_name/space_name"
  * with an appended extension.
  *
- * @param node File node of a tablespace
+ * If tablespace is general tablespace or undo tablespace, there is no
+ * database part, it would strip the leading path and just apend the extension
+ * Currently used only for EXT_NEW and EXT_CRPRT
+ *
+ * For example if path is /var/tmp/external/ts1.ibd and extension is EXT_NEW,
+ * result is ts1.ibd.new
+ *
+ * If tablespace is ./test/t1.ibd and extension is EXT_NEW, result is
+ * test/t1.ibd.new If tablespace is /var/tmp/test/t1.ibd and extension is
+ * EXT_NEW result is test/t1.ibd.new If tablespace is ./undo_001 result is
+ * undo_001.new if tablespace is /var/tmp/undo/undo_001.ibu, result is
+ * undo_001.ibu.new
+ *
+ * @param[in] space_id    tablespace id
+ * @param[in] path        the path the tablespace/undo file
+ * @param[in] space_flags tablespace flags
+ * @param[in] extension   EXT_NEW/EXT_DEL/EXT_CRPT/ etc
  * @return A string representing the destination name
  */
-std::string get_dest_name(const fil_node_t *node) {
-  std::string path{node->name};
+static std::string get_dest_name(space_id_t space_id, const std::string &path,
+                                 ulint space_flags,
+                                 const std::string &extension) {
   auto last_separator_pos = path.find_last_of(Fil_path::SEPARATOR);
 
   std::string db_name = path.substr(0, last_separator_pos);
@@ -307,8 +325,8 @@ std::string get_dest_name(const fil_node_t *node) {
 
   ut_ad(space_name.size() > 0);
 
-  if (!fsp_is_file_per_table(node->space->id, node->space->flags)) {
-    return space_name + EXT_NEW;
+  if (!fsp_is_file_per_table(space_id, space_flags)) {
+    return space_name + extension;
   }
 
   // Extract the last part of db_name after the last separator
@@ -319,7 +337,7 @@ std::string get_dest_name(const fil_node_t *node) {
 
   ut_ad(db_name.size() > 0);
 
-  return db_name + '/' + space_name + EXT_NEW;
+  return db_name + '/' + space_name + extension;
 }
 
 static void copy_for_reduced(copy_thread_ctxt_t *ctxt) {
@@ -341,7 +359,8 @@ static void copy_for_reduced(copy_thread_ctxt_t *ctxt) {
       continue;
     }
     // Get destination name for the datafile
-    std::string dest_name = get_dest_name(node);
+    std::string dest_name =
+        get_dest_name(node->space->id, node->name, node->space->flags, EXT_NEW);
 
     if (xtrabackup_copy_datafile_func(node, num, dest_name.c_str())) {
       xb::error() << "failed to copy datafile " << node->name;
@@ -494,8 +513,12 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
   for (auto &tablespace : corrupted_tablespaces) {
     /* Create .crpt file extension with the filename. Prepare should delete
     the corresponding .ibd, before doing *.ibd scan */
-    std::string &path = tablespace.second.append(EXT_CRPT);
-    backup_file_printf(path.c_str(), "%s", "");
+    space_id_t space_id = tablespace.first;
+    const std::string &path = tablespace.second.first;
+    ulint flags = tablespace.second.second;
+
+    std::string dest_name = get_dest_name(space_id, path, flags, EXT_CRPT);
+    backup_file_printf(dest_name.c_str(), "%s", "");
   }
 
   /* Some tables might get to the new list if the DDL happen in between
