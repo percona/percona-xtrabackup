@@ -107,6 +107,12 @@ run_cmd egrep "MySQL slave binlog position: $pxb_log_slave_info_pattern" $topdir
 # PXB-3033 - Execute STOP SLAVE before copying non-InnoDB tables
 grep -A 5 'Slave is safe to backup.' $topdir/pxb.log | grep -q 'Starting to backup non-InnoDB tables and files' || die 'STOP REPLICA in wrong place'
 
+# PXB-3034 - STOP SLAVE should be executed after copying InnoDB tables if lock-ddl=reduced
+xtrabackup --backup --lock-ddl=REDUCED --target-dir=$topdir/backup_reduced --slave-info --safe-slave-backup 2>&1 | tee $topdir/pxb_reduced.log
+
+grep -A 10 'Slave is safe to backup.' $topdir/pxb_reduced.log | grep -q 'Starting to backup non-InnoDB tables and files' || die 'STOP SLAVE in wrong place'
+
+
 run_cmd egrep -q "$binlog_slave_info_pattern" \
     $topdir/backup/xtrabackup_slave_info
 
@@ -165,7 +171,7 @@ setup_slave GTID $slave2_id $master_id
 mysql -e "SET GLOBAL general_log=1; SET GLOBAL log_output='TABLE';"
 
 vlog "Full backup of the GTID with AUTO_POSITION slave server"
-xtrabackup --backup --lock-ddl=false --slave-info --target-dir=$topdir/backup
+xtrabackup --backup --lock-ddl=OFF --slave-info --target-dir=$topdir/backup
 
 grep_general_log > $topdir/log3
 

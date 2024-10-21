@@ -15,12 +15,12 @@ xtrabackup --backup --target-dir=$topdir/bak1
 
 rm -rf $topdir/bak1
 
-xtrabackup --backup --lock-ddl=false --backup-lock-retry-count=5 --backup-lock-timeout=3 \
+xtrabackup --backup --lock-ddl=OFF --backup-lock-retry-count=5 --backup-lock-timeout=3 \
 	   --target-dir=$topdir/bak1
 
 rm -rf $topdir/bak1
 
-xtrabackup --backup --lock-ddl=false --backup-lock-timeout=2 --backup-lock-retry-count=4 \
+xtrabackup --backup --lock-ddl=OFF --backup-lock-timeout=2 --backup-lock-retry-count=4 \
 	   --no-backup-locks --target-dir=$topdir/bak1
 
 rm -rf $topdir/bak1

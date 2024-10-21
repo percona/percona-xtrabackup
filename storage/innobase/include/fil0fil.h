@@ -1385,12 +1385,16 @@ void fil_space_set_imported(space_id_t space_id);
 @param[in]      is_raw          true if a raw device or a raw disk partition
 @param[in]      atomic_write    true if the file has atomic write enabled
 @param[in]      max_pages       maximum number of pages in file
-@return pointer to the file name
-@retval nullptr if error */
-[[nodiscard]] char *fil_node_create(const char *name, page_no_t size,
-                                    fil_space_t *space, bool is_raw,
-                                    bool atomic_write,
-                                    page_no_t max_pages = PAGE_NO_MAX);
+@return DB_SUCCESS if success, else other DB_* for errors */
+[[nodiscard]]
+#ifndef XTRABACKUP
+char *
+#else
+dberr_t
+#endif /* XTRABACKUP */
+fil_node_create(const char *name, page_no_t size, fil_space_t *space,
+                bool is_raw, bool atomic_write,
+                page_no_t max_pages = PAGE_NO_MAX);
 
 /** Create a space memory object and put it to the fil_system hash table.
 The tablespace name is independent from the tablespace file-name.
@@ -2111,13 +2115,12 @@ inline fil_space_t *fil_space_get_sys_space() {
 @param[in]      page_id         Tablespace Id and first page in file
 @param[in]      parsed_bytes    Number of bytes parsed so far
 @param[in]      parse_only      Don't apply, parse only
+@param[in]      record_lsn       LSN of the redo record
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
-[[nodiscard]] const byte *fil_tablespace_redo_create(const byte *ptr,
-                                                     const byte *end,
-                                                     const page_id_t &page_id,
-                                                     ulint parsed_bytes,
-                                                     bool parse_only);
+[[nodiscard]] const byte *fil_tablespace_redo_create(
+    const byte *ptr, const byte *end, const page_id_t &page_id,
+    ulint parsed_bytes, bool parse_only IF_XB(, lsn_t record_lsn));
 
 /** Redo a tablespace delete.
 @param[in]      ptr             redo log record
@@ -2125,13 +2128,12 @@ inline fil_space_t *fil_space_get_sys_space() {
 @param[in]      page_id         Tablespace Id and first page in file
 @param[in]      parsed_bytes    Number of bytes parsed so far
 @param[in]      parse_only      Don't apply, parse only
+@param[in]      record_lsn       LSN of the redo record
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
-[[nodiscard]] const byte *fil_tablespace_redo_delete(const byte *ptr,
-                                                     const byte *end,
-                                                     const page_id_t &page_id,
-                                                     ulint parsed_bytes,
-                                                     bool parse_only);
+[[nodiscard]] const byte *fil_tablespace_redo_delete(
+    const byte *ptr, const byte *end, const page_id_t &page_id,
+    ulint parsed_bytes, bool parse_only IF_XB(, lsn_t record_lsn));
 
 /** Redo a tablespace rename.
 This function doesn't do anything, simply parses the redo log record.
@@ -2140,13 +2142,12 @@ This function doesn't do anything, simply parses the redo log record.
 @param[in]      page_id         Tablespace Id and first page in file
 @param[in]      parsed_bytes    Number of bytes parsed so far
 @param[in]      parse_only      Don't apply, parse only
+@param[in]      record_lsn       LSN of the redo record
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
-[[nodiscard]] const byte *fil_tablespace_redo_rename(const byte *ptr,
-                                                     const byte *end,
-                                                     const page_id_t &page_id,
-                                                     ulint parsed_bytes,
-                                                     bool parse_only);
+[[nodiscard]] const byte *fil_tablespace_redo_rename(
+    const byte *ptr, const byte *end, const page_id_t &page_id,
+    ulint parsed_bytes, bool parse_only IF_XB(, lsn_t record_lsn));
 
 /** Redo a tablespace extend
 @param[in]      ptr             redo log record
@@ -2247,15 +2248,25 @@ void fil_set_scan_dir(const std::string &directory, bool is_undo_dir = false);
 void fil_set_scan_dirs(const std::string &directories);
 
 /** Discover tablespaces by reading the header from .ibd files.
-@param[in]  populate_fil_cache Whether to load tablespaces into fil cache
+@param[in] populate_fil_cache  Whether to load tablespaces into fil cache
+@param[in] only_undo           if true, only the undo tablespaces are discovered
 @return DB_SUCCESS if all goes well */
-dberr_t fil_scan_for_tablespaces(bool populate_fil_cache);
+dberr_t fil_scan_for_tablespaces(bool populate_fil_cache IF_XB(,
+                                                               bool only_undo));
 
 /** Open the tablespace and also get the tablespace filenames, space_id must
 already be known.
 @param[in]  space_id  Tablespace ID to lookup
 @return DB_SUCCESS if open was successful */
 [[nodiscard]] dberr_t fil_tablespace_open_for_recovery(space_id_t space_id);
+
+#ifdef XTRABACKUP
+/** This function is a wrapper to fil_tablespace_open_for_recovery(), used when
+ * LOCK_DDL_REDUCED is ON
+@param[in]  path  File path
+@return DB_SUCCESS if open was successful */
+dberr_t fil_open_for_reduced(const std::string &path);
+#endif /* XTRABACKUP */
 
 /** Replay a file rename operation for ddl replay.
 @param[in]      page_id         Space ID and first page number in the file
@@ -2362,6 +2373,12 @@ stage. This is used at rollback phase
 @param[in]	space_id	tablespace id
 @return DB_ERROR_UNSET if no error occured, else DB_* error */
 dberr_t fil_xb_get_tablespace_error(space_id_t space_id);
+
+/** Get the tablespace ID from an .ibd and/or an undo tablespace. If the ID is 0
+on the first page then try finding the ID with Datafile::find_space_id().
+@param[in]      filename        File name to check
+@return s_invalid_space_id if not found, otherwise the space ID */
+space_id_t fil_get_tablespace_id(const std::string &filename);
 #endif /* XTRABACKUP */
 
 dberr_t fil_prepare_file_for_io(space_id_t space_id, page_no_t &page_no,
@@ -2374,5 +2391,15 @@ inline bool fil_node_t::is_offset_valid(os_offset_t byte_offset) const {
   ut_ad(byte_offset < max_offset);
   return byte_offset < max_offset;
 }
+
+#ifdef XTRABACKUP
+/** Frees a space object from the tablespace memory cache.
+Closes a tablespaces files but does not delete them.
+There must not be any pending i/o's or flushes on the files.
+@param[in]      space_id        Tablespace ID
+@param[in]      x_latched       Whether the caller holds X-mode space->latch
+@return true if success */
+bool fil_space_free(space_id_t space_id, bool x_latched);
+#endif /* XTRABACKUP */
 
 #endif /* fil0fil_h */

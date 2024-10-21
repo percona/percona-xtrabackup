@@ -41,7 +41,7 @@ mysql -e "alter instance enable innodb redo_log"
 
 vlog "### case #3 check when redo log is disabled after backup is started ###"
 run_cmd_expect_failure xtrabackup  --backup \
-        --target-dir=$topdir/full --lock-ddl=false   \
+        --target-dir=$topdir/full --lock-ddl=OFF   \
 	--debug-sync="data_copy_thread_func" 2>&1 \
         | tee $topdir/full.log &
 job_pid=$!
@@ -66,7 +66,7 @@ mysql -e "alter instance enable innodb redo_log"
 
 vlog "### case #4 check redo log is disabled during incremental backup ###"
 run_cmd xtrabackup --backup --target-dir=$topdir/full
-run_cmd_expect_failure xtrabackup --backup --lock-ddl=false --target-dir=$topdir/inc \
+run_cmd_expect_failure xtrabackup --backup --lock-ddl=OFF --target-dir=$topdir/inc \
 	--incremental-basedir=$topdir/full \
 	--debug-sync="data_copy_thread_func" 2>&1 \
 	| tee $topdir/inc.log &

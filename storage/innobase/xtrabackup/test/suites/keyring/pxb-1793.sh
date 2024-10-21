@@ -15,9 +15,10 @@ innodb_temp_tablespace_encrypt=ON
 encrypt-tmp-files
 "
 
+KEYRING_TYPE="component"
+. inc/keyring_common.sh
 . inc/keyring_file.sh
-
-start_server
+configure_server_with_component
 
 # backup fails if bug is present
 xtrabackup --backup --target-dir=$topdir/backup

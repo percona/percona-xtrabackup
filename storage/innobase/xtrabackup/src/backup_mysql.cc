@@ -143,6 +143,18 @@ static int original_innodb_buffer_pool_dump_pct;
 static bool innodb_buffer_pool_dump;
 static bool innodb_buffer_pool_dump_pct;
 
+#ifdef XTRABACKUP
+/* This could be either LOCK TABLES FOR BACKUP or LOCK INSTANCE */
+static xtrabackup::utils::time backup_lock_start_time =
+    xtrabackup::utils::INVALID_TIME;
+static xtrabackup::utils::time backup_lock_end_time =
+    xtrabackup::utils::INVALID_TIME;
+
+static xtrabackup::utils::time ftwrl_start_time =
+    xtrabackup::utils::INVALID_TIME;
+static xtrabackup::utils::time ftwrl_end_time = xtrabackup::utils::INVALID_TIME;
+#endif /* XTRABACKUP */
+
 MYSQL *xb_mysql_connect() {
   MYSQL *connection = mysql_init(NULL);
   char mysql_port_str[std::numeric_limits<int>::digits10 + 3];
@@ -1060,6 +1072,10 @@ static bool execute_query_with_timeout(MYSQL *mysql, const char *query,
  @returns true if lock acquired */
 bool lock_tables_for_backup(MYSQL *connection, int timeout, int retry_count) {
   if (have_backup_locks) {
+    /* We cannot take lock twice from a backup. If this fails, did we take
+     * backup lock twice? */
+    ut_ad(backup_lock_start_time == xtrabackup::utils::INVALID_TIME);
+    backup_lock_start_time = std::chrono::high_resolution_clock::now();
     execute_query_with_timeout(connection, "LOCK TABLES FOR BACKUP", timeout,
                                retry_count);
     tables_locked = true;
@@ -1067,6 +1083,11 @@ bool lock_tables_for_backup(MYSQL *connection, int timeout, int retry_count) {
     return (true);
   }
 
+  /* We cannot take lock twice from a backup. If this fails, did we take backup
+   * lock twice? */
+  ut_ad(backup_lock_start_time == xtrabackup::utils::INVALID_TIME);
+
+  backup_lock_start_time = std::chrono::high_resolution_clock::now();
   execute_query_with_timeout(connection, "LOCK INSTANCE FOR BACKUP", timeout,
                              retry_count);
   instance_locked = true;
@@ -1122,6 +1143,12 @@ bool lock_tables_ftwrl(MYSQL *connection) {
     stop_query_killer();
   }
 
+  /* We cannot take FTWRL twice from a backup. If this fails, did we take FTWRL
+  twice? */
+  ut_ad(ftwrl_start_time == xtrabackup::utils::INVALID_TIME);
+
+  ftwrl_start_time = std::chrono::high_resolution_clock::now();
+
   tables_locked = true;
 
   return (true);
@@ -1153,10 +1180,39 @@ bool lock_tables_maybe(MYSQL *connection, int timeout, int retry_count) {
   return lock_tables_ftwrl(connection);
 }
 
+static void print_lock_time_info() {
+  if (backup_lock_end_time != xtrabackup::utils::INVALID_TIME &&
+      backup_lock_start_time != xtrabackup::utils::INVALID_TIME) {
+    const std::string lock_sql = have_backup_locks ? "LOCK TABLES FOR BACKUP"
+                                                   : "LOCK INSTANCE FOR BACKUP";
+    xb::info() << "Total time Server is locked by " << lock_sql << " is: "
+               << xtrabackup::utils::formatElapsedTime(backup_lock_end_time -
+                                                       backup_lock_start_time);
+  }
+
+  if (ftwrl_end_time != xtrabackup::utils::INVALID_TIME &&
+      ftwrl_start_time != xtrabackup::utils::INVALID_TIME) {
+    xb::info()
+        << "Total time Server is locked by FLUSH TABLES WITH READLOCK is: "
+        << xtrabackup::utils::formatElapsedTime(ftwrl_end_time -
+                                                ftwrl_start_time);
+  }
+}
+
 /*********************************************************************/ /**
  Releases the lock acquired with FTWRL/LOCK TABLES FOR BACKUP, depending on
  the locking strategy being used */
 void unlock_all(MYSQL *connection) {
+  if ((tables_locked && have_backup_locks) || instance_locked) {
+    ut_ad(backup_lock_end_time == xtrabackup::utils::INVALID_TIME);
+    backup_lock_end_time = std::chrono::high_resolution_clock::now();
+  }
+
+  if (tables_locked && !have_backup_locks) {
+    ut_ad(ftwrl_end_time == xtrabackup::utils::INVALID_TIME);
+    ftwrl_end_time = std::chrono::high_resolution_clock::now();
+  }
+
   if (instance_locked) {
     xb::info() << "Executing UNLOCK INSTANCE";
     xb_mysql_query(connection, "UNLOCK INSTANCE", false);
@@ -1169,6 +1225,7 @@ void unlock_all(MYSQL *connection) {
   }
 
   xb::info() << "All tables unlocked";
+  print_lock_time_info();
 }
 
 static int get_open_temp_tables(MYSQL *connection) {
@@ -1625,8 +1682,8 @@ static void log_status_replication_parse(const char *s,
     cs.relay_log_file = ch["relay_log_file"].GetString();
     cs.relay_log_position = ch["relay_log_position"].GetUint64();
     if (server_flavor == FLAVOR_PERCONA_SERVER) {
-      cs.relay_master_log_file = ch["relay_source_log_file"].GetString();
-      cs.exec_master_log_position = ch["exec_source_log_position"].GetUint64();
+      cs.relay_master_log_file = ch["relay_master_log_file"].GetString();
+      cs.exec_master_log_position = ch["exec_master_log_position"].GetUint64();
     }
     log_status.channels.push_back(cs);
   }
@@ -1690,10 +1747,7 @@ static void log_status_local_parse(const char *s, log_status_t &log_status) {
   }
 }
 
-/** Read binary log position, InnoDB LSN and other storage engine information
-from p_s.log_status and update global log_status variable.
-@param[in]   conn         mysql connection handle */
-void log_status_get(MYSQL *conn) {
+void log_status_get(MYSQL *conn, bool consumer_can_advance) {
   xb::info() << "Selecting LSN and binary log position from p_s.log_status";
 
   debug_sync_point("log_status_get");
@@ -1702,7 +1756,7 @@ void log_status_get(MYSQL *conn) {
         opt_no_lock || opt_lock_ddl_per_table);
 
   if (xtrabackup_register_redo_log_consumer)
-    redo_log_consumer_can_advance.store(false);
+    redo_log_consumer_can_advance.store(consumer_can_advance);
 
   const char *query =
       "SELECT server_uuid, local, replication, "
@@ -1798,52 +1852,56 @@ char *get_xtrabackup_info(MYSQL *connection) {
   ut_a(uuid);
   ut_a(server_version);
   char *result = NULL;
-  int ret = asprintf(&result,
-                     "uuid = %s\n"
-                     "name = %s\n"
-                     "tool_name = %s\n"
-                     "tool_command = %s\n"
-                     "tool_version = %s\n"
-                     "ibbackup_version = %s\n"
-                     "server_version = %s\n"
-                     "server_flavor = %s\n"
-                     "start_time = %s\n"
-                     "end_time = %s\n"
-                     "lock_time = %ld\n"
-                     "binlog_pos = %s\n"
-                     "innodb_from_lsn = " LSN_PF
-                     "\n"
-                     "innodb_to_lsn = " LSN_PF
-                     "\n"
-                     "partial = %s\n"
-                     "incremental = %s\n"
-                     "format = %s\n"
-                     "compressed = %s\n"
-                     "encrypted = %s\n",
-                     uuid,                           /* uuid */
-                     opt_history ? opt_history : "", /* name */
-                     tool_name,                      /* tool_name */
-                     tool_args,                      /* tool_command */
-                     XTRABACKUP_VERSION,             /* tool_version */
-                     XTRABACKUP_VERSION,             /* ibbackup_version */
-                     server_version,                 /* server_version */
-                     mysql_server_version_comment.c_str(), /* server_flavor */
-                     buf_start_time,                       /* start_time */
-                     buf_end_time,                         /* end_time */
-                     (long int)history_lock_time,          /* lock_time */
-                     mysql_binlog_position.c_str(),        /* binlog_pos */
-                     incremental_lsn,                      /* innodb_from_lsn */
-                     metadata_to_lsn,                      /* innodb_to_lsn */
-                     (xtrabackup_tables                    /* partial */
-                      || xtrabackup_tables_exclude || xtrabackup_tables_file ||
-                      xtrabackup_databases || xtrabackup_databases_exclude ||
-                      xtrabackup_databases_file)
-                         ? "Y"
-                         : "N",
-                     xtrabackup_incremental ? "Y" : "N", /* incremental */
-                     xb_stream_format_name[xtrabackup_stream_fmt], /* format */
-                     xtrabackup_compress ? "compressed" : "N", /* compressed */
-                     xtrabackup_encrypt ? "Y" : "N");          /* encrypted */
+  int ret =
+      asprintf(&result,
+               "uuid = %s\n"
+               "name = %s\n"
+               "tool_name = %s\n"
+               "tool_command = %s\n"
+               "tool_version = %s\n"
+               "ibbackup_version = %s\n"
+               "server_version = %s\n"
+               "server_flavor = %s\n"
+               "start_time = %s\n"
+               "end_time = %s\n"
+               "lock_time = %ld\n"
+               "binlog_pos = %s\n"
+               "innodb_from_lsn = " LSN_PF
+               "\n"
+               "innodb_to_lsn = " LSN_PF
+               "\n"
+               "partial = %s\n"
+               "incremental = %s\n"
+               "format = %s\n"
+               "compressed = %s\n"
+               "encrypted = %s\n"
+               "lock_ddl_type = %s\n",
+               uuid,                                 /* uuid */
+               opt_history ? opt_history : "",       /* name */
+               tool_name,                            /* tool_name */
+               tool_args,                            /* tool_command */
+               XTRABACKUP_VERSION,                   /* tool_version */
+               XTRABACKUP_VERSION,                   /* ibbackup_version */
+               server_version,                       /* server_version */
+               mysql_server_version_comment.c_str(), /* server_flavor */
+               buf_start_time,                       /* start_time */
+               buf_end_time,                         /* end_time */
+               (long int)history_lock_time,          /* lock_time */
+               mysql_binlog_position.c_str(),        /* binlog_pos */
+               incremental_lsn,                      /* innodb_from_lsn */
+               metadata_to_lsn,                      /* innodb_to_lsn */
+               (xtrabackup_tables                    /* partial */
+                || xtrabackup_tables_exclude || xtrabackup_tables_file ||
+                xtrabackup_databases || xtrabackup_databases_exclude ||
+                xtrabackup_databases_file)
+                   ? "Y"
+                   : "N",
+               xtrabackup_incremental ? "Y" : "N",           /* incremental */
+               xb_stream_format_name[xtrabackup_stream_fmt], /* format */
+               xtrabackup_compress ? "compressed" : "N",     /* compressed */
+               xtrabackup_encrypt ? "Y" : "N",               /* encrypted */
+               ddl_lock_type_to_str(static_cast<lock_ddl_type_t>(opt_lock_ddl))
+                   .c_str()); /* lock-ddl */
 
   ut_a(ret != 0);
 
@@ -2388,3 +2446,5 @@ void check_dump_innodb_buffer_pool(MYSQL *connection) {
     xb_mysql_query(mysql_connection, change_bp_dump_pct_query, false);
   }
 }
+
+bool is_server_locked() { return (tables_locked || instance_locked); }

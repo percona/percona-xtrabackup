@@ -374,7 +374,7 @@ read_retry:
         if (retry_count == 0) {
           xb::error() << "failed to read page after 10 retries. File "
                       << cursor->abs_path << " seems to be corrupted.";
-          ret = XB_FIL_CUR_ERROR;
+          ret = XB_FIL_CUR_CORRUPTED;
           break;
         }
         xb::info() << "Database page corruption detected at page " << page_no
