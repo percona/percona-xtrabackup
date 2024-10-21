@@ -397,8 +397,9 @@ static dberr_t srv_undo_tablespace_read_encryption(pfs_os_file_t fh,
                              : set_encryption(recv_key->ptr, recv_key->iv);
   } else if (is_enc) {
     // Condition 2: Page is encrypted
-    encryption_success = use_dumped_tablespace_keys ? load_key_from_dump()
-                                                    : load_key_from_page();
+    encryption_success = (use_dumped_tablespace_keys && !srv_backup_mode)
+                             ? load_key_from_dump()
+                             : load_key_from_page();
   } else {
     // Condition 3: If the page is not encrypted, we consider it successful
     encryption_success = true;

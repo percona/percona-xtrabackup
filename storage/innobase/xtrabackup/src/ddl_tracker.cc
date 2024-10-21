@@ -391,7 +391,12 @@ static void copy_for_reduced(copy_thread_ctxt_t *ctxt) {
 static std::string convert_file_name(const space_id_t space_id,
                                      const std::string &file_path,
                                      const std::string &ext) {
-  std::string file_name = fil_path_to_space_name(file_path.c_str());
+  char *space_name = fil_path_to_space_name(file_path.c_str());
+  auto free_guard = create_scope_guard([&]() {
+    if (space_name != nullptr) ut::free(space_name);
+  });
+
+  std::string file_name(space_name);
   auto sep_pos = file_name.find_last_of(Fil_path::SEPARATOR);
   return file_name.substr(0, sep_pos + 1) + std::to_string(space_id) + ext;
 }
