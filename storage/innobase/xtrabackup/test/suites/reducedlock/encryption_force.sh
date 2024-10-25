@@ -3,6 +3,7 @@ KEYRING_TYPE="component"
 . inc/keyring_file.sh
 
 require_debug_pxb_version
+require_pro_pxb_version
 configure_server_with_component
 
 $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE test.enc_table (id INT PRIMARY KEY AUTO_INCREMENT); INSERT INTO test.enc_table VALUES (), (), (), ();" test

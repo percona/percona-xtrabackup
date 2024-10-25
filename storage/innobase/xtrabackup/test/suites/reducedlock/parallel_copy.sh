@@ -5,6 +5,7 @@
 . inc/common.sh
 
 require_debug_pxb_version
+require_pro_pxb_version
 start_server
 
 innodb_wait_for_flush_all

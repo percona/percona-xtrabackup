@@ -1055,6 +1055,16 @@ function require_debug_pxb_version()
     fi
 }
 
+#########################################################################
+# Requires pro pxb version
+########################################################################
+function require_pro_pxb_version()
+{
+    if ! $XB_BIN --version 2>&1 | grep -q '\-pro'; then
+        skip_test "Requires pro build"
+    fi
+}
+
 ########################################################################
 # Return 0 if the server version is lower than the first argument
 #########################################################################

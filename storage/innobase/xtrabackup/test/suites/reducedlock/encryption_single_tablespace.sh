@@ -3,6 +3,7 @@ KEYRING_TYPE="component"
 . inc/keyring_file.sh
 
 require_debug_pxb_version
+require_pro_pxb_version
 
 function run_test() {
   ALL_TABLES_IN_BACKUP=$1

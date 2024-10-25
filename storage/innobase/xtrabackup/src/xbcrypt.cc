@@ -336,8 +336,14 @@ static bool get_one_option(int optid,
 }
 
 static void print_version(void) {
-  printf("%s  Ver %s for %s (%s) (revision id: %s)\n", my_progname,
-         XBCRYPT_VERSION, SYSTEM_TYPE, MACHINE_TYPE, XBCRYPT_REVISION);
+  printf("%s  Ver %s for %s (%s) (revision id: %s)%s\n", my_progname,
+         XBCRYPT_VERSION, SYSTEM_TYPE, MACHINE_TYPE, XBCRYPT_REVISION,
+#ifdef PROBUILD
+         "-pro"
+#else
+         ""
+#endif
+  );
 }
 
 static void usage(void) {

@@ -2,6 +2,7 @@
 . inc/common.sh
 
 require_debug_pxb_version
+require_pro_pxb_version
 start_server
 
 $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE t1(a INT, KEY k1(a)) TABLESPACE=innodb_system;" test

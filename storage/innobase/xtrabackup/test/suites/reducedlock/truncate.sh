@@ -1,6 +1,7 @@
-require_debug_pxb_version
 . inc/common.sh
 
+require_debug_pxb_version
+require_pro_pxb_version
 start_server
 
 $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE test.table (id INT PRIMARY KEY AUTO_INCREMENT); INSERT INTO test.table VALUES (), (), (), ();" test

@@ -1064,11 +1064,13 @@ struct my_option xb_client_options[] = {
      "ON - LTFB/LIFB is executed at the beginning of the backup to block all "
      "DDLs;"
      "OFF- LTFB/LIFB is not executed;"
+#ifdef PROBUILD
      "REDUCED - PXB does a copy of InnoDB tables without taking "
      "any lock, while keeping track of tables affected by DDL. Before starting "
      "to copy Non-InnoDB tables, LTFB/LIFB is executed and all InnoDB tables "
      "affected by DDL are handled(either recopied or a special file is placed "
      "in backup dir to handle the DDL operation during --prepare);"
+#endif /* PROBUILD */
      "Default is ON.",
      (uchar *)&xtrabackup_lock_ddl_str, (uchar *)&xtrabackup_lock_ddl_str, 0,
      GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
@@ -1816,10 +1818,17 @@ static const char *xb_server_default_groups[] = {"xtrabackup", "mysqld", 0, 0,
                                                  0};
 
 static void print_version(void) {
-  fprintf(stderr,
-          "%s version %s based on MySQL server %s %s (%s) (revision id: %s)\n",
-          my_progname, XTRABACKUP_VERSION, MYSQL_SERVER_VERSION, SYSTEM_TYPE,
-          MACHINE_TYPE, XTRABACKUP_REVISION);
+  fprintf(
+      stderr,
+      "%s version %s based on MySQL server %s %s (%s) (revision id: %s)%s\n",
+      my_progname, XTRABACKUP_VERSION, MYSQL_SERVER_VERSION, SYSTEM_TYPE,
+      MACHINE_TYPE, XTRABACKUP_REVISION,
+#ifdef PROBUILD
+      "-pro"
+#else
+      ""
+#endif
+  );
 }
 
 static void usage(void) {
@@ -2046,8 +2055,10 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
                  strcasecmp(argument, "0") == 0 ||
                  strcasecmp(argument, "false") == 0) {
         opt_lock_ddl = LOCK_DDL_OFF;
+#ifdef PROBUILD
       } else if (strcasecmp(argument, "reduced") == 0) {
         opt_lock_ddl = LOCK_DDL_REDUCED;
+#endif /* PROBUILD */
       } else {
         xb::error() << "Invalid --lock-ddl argument: " << argument;
         return 1;

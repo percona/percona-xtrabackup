@@ -2,6 +2,7 @@
 . inc/common.sh
 
 require_debug_pxb_version
+require_pro_pxb_version
 require_debug_server
 
 function run_test() {

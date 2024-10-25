@@ -256,8 +256,14 @@ static int get_options(int *argc, char ***argv) {
 }
 
 static void print_version(void) {
-  printf("%s  Ver %s for %s (%s) (revision id: %s)\n", my_progname,
-         XBSTREAM_VERSION, SYSTEM_TYPE, MACHINE_TYPE, XBSTREAM_REVISION);
+  printf("%s  Ver %s for %s (%s) (revision id: %s)%s\n", my_progname,
+         XBSTREAM_VERSION, SYSTEM_TYPE, MACHINE_TYPE, XBSTREAM_REVISION,
+#ifdef PROBUILD
+         "-pro"
+#else
+         ""
+#endif
+  );
 }
 
 static void usage(void) {

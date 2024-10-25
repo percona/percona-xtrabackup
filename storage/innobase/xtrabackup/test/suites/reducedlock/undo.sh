@@ -5,6 +5,8 @@
 . inc/common.sh
 
 require_debug_pxb_version
+require_pro_pxb_version
+
 vlog "case #1: ensure truncated  undo tablespace is recopied"
 
 start_server
