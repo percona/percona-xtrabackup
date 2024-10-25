@@ -89,7 +89,8 @@ void ddl_tracker_t::backup_file_op(uint32_t space_id, mlog_id_t type,
 }
 
 void ddl_tracker_t::add_table_from_ibd_scan(const space_id_t space_id,
-                                            std::string name) {
+                                            std::string name,
+                                            ulint space_flags) {
   // After lock is taken, the scans shouldn't modify the DDL tracker
   // by the time, we are at handle_ddl_operations, we are consolidating
   // and no more changes are allowed
@@ -101,7 +102,7 @@ void ddl_tracker_t::add_table_from_ibd_scan(const space_id_t space_id,
   }
 
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
-  tables_copied_no_lock[space_id] = name;
+  tables_copied_no_lock[space_id] = {name, space_flags};
 }
 
 void ddl_tracker_t::add_undo_tablespace(const space_id_t space_id,
@@ -377,20 +378,31 @@ static void copy_for_reduced(copy_thread_ctxt_t *ctxt) {
 }
 
 /**
- * Converts a filename from the `schema/filename.ibd` format to the
- * `schema/spaceid.ext` format. It replaces the `filename` with `spaceid`
- * and appends the specified extension.
+ * For both general tablespaces and undo tablespaces, the function transforms
+ * a filename from the `dir1/dir2/filename.ibd` format into the `spaceid.ext`
+ * format. For instance, if the path is `/var/tmp/external/ts1.ibd`, the space
+ * ID is 10, and the extension is EXT_DEL, the result will be `10.del`.
+ *
+ * In the case of file-per-table tablespaces, the function converts a filename
+ * from the `dir/schema/filename.ibd` format into the `schema/spaceid.ext`
+ * format. For example, if the path is `/var/tmp/test/t1.ibd`, the space ID is
+ * 10, and the extension is EXT_REN, the result will be `test/10.ren`.
  *
  * @param[in] space_id  The space ID of the current file.
  * @param[in] file_path The full path of the file to be modified.
+ * @param[in] space_flags tablespace flags
  * @param[in] ext       The extension to be appended to the new filename.
  *
- * @returns A modified filename in the format `schema/spaceid.ext`,
- *          e.g., `schema/spaceid.del`.
+ * @returns A modified filename
  */
 static std::string convert_file_name(const space_id_t space_id,
                                      const std::string &file_path,
+                                     ulint space_flags,
                                      const std::string &ext) {
+  if (!fsp_is_file_per_table(space_id, space_flags)) {
+    return std::to_string(space_id) + ext;
+  }
+
   char *space_name = fil_path_to_space_name(file_path.c_str());
   auto free_guard = create_scope_guard([&]() {
     if (space_name != nullptr) ut::free(space_name);
@@ -548,11 +560,13 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
       if (renames.find(table) != renames.end()) {
         // We never create .del for ibdata*
         ut_ad(!fsp_is_system_tablespace(table));
+        std::string old_table_name = renames[table].first;
+        ulint flags = tables_copied_no_lock[table].second;
         backup_file_printf(
-            convert_file_name(table, renames[table].first, EXT_DEL).c_str(),
+            convert_file_name(table, old_table_name, flags, EXT_DEL).c_str(),
             "%s", "");
       }
-      string name = tables_copied_no_lock[table];
+      string name = tables_copied_no_lock[table].first;
       new_tables[table] = name;
     }
   }
@@ -560,6 +574,7 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
   for (auto &table : drops) {
     space_id_t space_id = table.first;
     std::string table_name = table.second;
+    ulint flags = tables_copied_no_lock[space_id].second;
 
     if (check_if_skip_table(table_name.c_str())) {
       continue;
@@ -580,14 +595,16 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
 
     // We never create .del for ibdata*
     ut_ad(!fsp_is_system_tablespace(space_id));
-    backup_file_printf(convert_file_name(space_id, table_name, EXT_DEL).c_str(),
-                       "%s", "");
+    backup_file_printf(
+        convert_file_name(space_id, table_name, flags, EXT_DEL).c_str(), "%s",
+        "");
   }
 
   for (auto &table : renames) {
     space_id_t space_id = table.first;
     std::string old_table_name = table.second.first;
     std::string new_table_name = table.second.second;
+    ulint flags = tables_copied_no_lock[space_id].second;
 
     if (check_if_skip_table(new_table_name.c_str())) {
       continue;
@@ -615,8 +632,8 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     }
 
     backup_file_printf(
-        convert_file_name(space_id, old_table_name, EXT_REN).c_str(), "%d\n%s",
-        REN_FILE_VERSION, new_table_name.c_str());
+        convert_file_name(space_id, old_table_name, flags, EXT_REN).c_str(),
+        "%d\n%s", REN_FILE_VERSION, new_table_name.c_str());
   }
 
   for (auto table = new_tables.begin(); table != new_tables.end();) {
@@ -691,8 +708,10 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
 
   // Create .del files for deleted undo tablespaces
   for (auto &elem : deleted_undo_files) {
+    ulint flags = tables_copied_no_lock[elem.second].second;
     backup_file_printf(
-        convert_file_name(elem.second, elem.first, EXT_DEL).c_str(), "%s", "");
+        convert_file_name(elem.second, elem.first, flags, EXT_DEL).c_str(),
+        "%s", "");
   }
 
   // Add new undo files to be recopied

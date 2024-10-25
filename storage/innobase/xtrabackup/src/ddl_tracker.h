@@ -43,7 +43,8 @@ inline const std::string EXT_CRPT = ".crpt";
 class ddl_tracker_t {
  private:
   /** List of all tables copied without lock */
-  space_id_to_name_t tables_copied_no_lock;
+  std::unordered_map<space_id_t, std::pair<std::string, ulint>>
+      tables_copied_no_lock;
   /** Tablspaces with their ID and name, as they were copied to backup.*/
   space_id_to_name_t new_tables;
   name_to_space_id_t before_lock_undo;
@@ -93,8 +94,10 @@ class ddl_tracker_t {
 
   /** Add a new table in the DDL tracker table list.
    @param[in] space_id  tablespace identifier
-   @param[in] name      tablespace name */
-  void add_table_from_ibd_scan(const space_id_t space_id, std::string name);
+   @param[in] name      tablespace name
+   @param[in] space_flags      tablespace flags */
+  void add_table_from_ibd_scan(const space_id_t space_id, std::string name,
+                               ulint space_flags);
 
   /** Track a new table from the MLOG_FILE_CREATE redo log record
    @param[in] space_id        tablespace identifier

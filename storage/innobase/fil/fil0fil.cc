@@ -11750,7 +11750,7 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
   } else if (ddl_tracker) {
     /* Note that we have opened and loaded the table to cache for copying */
     if (!is_server_locked()) {
-      ddl_tracker->add_table_from_ibd_scan(space_id, path);
+      ddl_tracker->add_table_from_ibd_scan(space_id, path, space->flags);
     }
 #endif /* XTRABACKUP */
   }

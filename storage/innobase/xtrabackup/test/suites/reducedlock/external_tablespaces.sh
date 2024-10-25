@@ -93,7 +93,7 @@ rm -rf $undo_directory_ext
 
 
 
-vlog "case #2: ensure regular external tablespaces are handled"
+vlog "case #2: ensure external file-per-table and general tablespaces are handled"
 
 data_directory_ext=$TEST_VAR_ROOT/var1/data_dir_ext
 mkdir -p $data_directory_ext
@@ -106,6 +106,7 @@ start_server
 $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE test.DELETE_TABLE (id INT PRIMARY KEY AUTO_INCREMENT) DATA DIRECTORY = '$data_directory_ext';" test
 $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE test.ORIGINAL_TABLE (id INT PRIMARY KEY AUTO_INCREMENT) DATA DIRECTORY = '$data_directory_ext'; INSERT INTO test.ORIGINAL_TABLE VALUES(1)" test
 $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE test.OP_DDL_TABLE (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(50)) DATA DIRECTORY = '$data_directory_ext'; INSERT INTO test.OP_DDL_TABLE VALUES(1, 'test')" test
+$MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLESPACE ts1 ADD DATAFILE '$data_directory_ext/ts1.ibd'  Engine=InnoDB; CREATE TABLE test.TS1_TABLE (id INT PRIMARY KEY AUTO_INCREMENT) TABLESPACE ts1; INSERT INTO test.TS1_TABLE VALUES (), (), (), ();" test
 
 innodb_wait_for_flush_all
 
@@ -128,6 +129,10 @@ $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE test.NEW_TABLE (id INT PRIMARY KEY AUTO_
 # Bulk Index Load and generate redo
 $MYSQL $MYSQL_ARGS -Ns -e "ALTER TABLE test.OP_DDL_TABLE ADD INDEX(name); INSERT INTO test.OP_DDL_TABLE VALUES (2, 'test2');" test
 
+$MYSQL $MYSQL_ARGS -Ns -e "ALTER TABLESPACE ts1 RENAME TO ts2;" test
+$MYSQL $MYSQL_ARGS -Ns -e "DROP TABLE TS1_TABLE;" test
+$MYSQL $MYSQL_ARGS -Ns -e "DROP TABLESPACE ts2;" test
+
 # Resume the xtrabackup process
 vlog "Resuming xtrabackup"
 kill -SIGCONT $xb_pid
@@ -139,6 +144,14 @@ fi
 
 if ! egrep -q "Done: Writing file $topdir/backup_new_table/test/[0-9]*.del" $topdir/backup_with_new_table.log ; then
     die "xtrabackup did not create .del file"
+fi
+
+if ! egrep -q "DDL tracking : LSN: [0-9]* delete space ID: [0-9]* Name: $data_directory_ext/ts1.ibd" $topdir/backup_with_new_table.log ; then
+    die "xtrabackup did not handle delete tablespace DDL"
+fi
+
+if ! egrep -q "Done: Writing file $topdir/backup_new_table/[0-9]*.del" $topdir/backup_with_new_table.log ; then
+    die "xtrabackup did not create .del file for tablespace"
 fi
 
 if ! egrep -q "DDL tracking : LSN: [0-9]* create space ID: [0-9]* Name: $data_directory_ext/test/NEW_TABLE.ibd" $topdir/backup_with_new_table.log ; then
