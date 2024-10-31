@@ -21,7 +21,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-SET(GOOGLETEST_RELEASE googletest-release-1.12.0)
+SET(GOOGLETEST_RELEASE googletest-1.14.0)
 SET(GMOCK_SOURCE_DIR
   ${CMAKE_SOURCE_DIR}/extra/googletest/${GOOGLETEST_RELEASE}/googlemock)
 SET(GTEST_SOURCE_DIR
@@ -56,6 +56,13 @@ IF(MSVC AND MSVC_CPPCHECK)
 ENDIF()
 
 MY_CHECK_CXX_COMPILER_WARNING("-Wmissing-profile" HAS_MISSING_PROFILE)
+MY_CHECK_CXX_COMPILER_WARNING("-Wsuggest-override" HAS_SUGGEST_OVERRIDE)
+
+IF(HAS_SUGGEST_OVERRIDE)
+  # Google-test TYPED_TEST does not override the virtual function in derived class.
+  SET_TARGET_PROPERTIES(gmock PROPERTIES INTERFACE_COMPILE_OPTIONS
+    "-Wno-suggest-override")
+ENDIF()
 
 FOREACH(googletest_library
     gmock

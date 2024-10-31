@@ -575,6 +575,7 @@ flush privileges;
 # Bug#9404 information_schema: Weird error messages
 # with SELECT SUM() ... GROUP BY queries
 #
+--sorted_result
 SELECT table_schema, count(*) FROM information_schema.TABLES WHERE
 table_schema IN ('mysql', 'information_schema', 'test', 'mysqltest')
 AND table_name not like 'ndb%' AND table_name COLLATE utf8mb3_general_ci not like 'innodb_%'
@@ -900,6 +901,7 @@ sql security definer view v2 as select 1;
 connect (con16681,localhost,mysqltest_1,,test);
 connection con16681;
 
+--sorted_result
 select * from information_schema.views
 where table_name='v1' or table_name='v2';
 connection default;

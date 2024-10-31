@@ -243,10 +243,11 @@ class CertSubject {
 class CertLifetime {
  public:
   static constexpr const int DefaultDays = 90;
+  static constexpr const int CaDefaultDays = 365 * 4 + 1;
   static constexpr long SecondsPerHour = 60 * 60;
   static constexpr long SecondsPerDay = 24 * SecondsPerHour;
 
-  CertLifetime() { set_lifetime(DefaultDays, 0); }
+  CertLifetime(int days) { set_lifetime(days, 0); }
   CertLifetime(struct x509_st *cert) { set_lifetime(cert); }
   CertLifetime(const CertLifetime &) = default;
 
@@ -263,8 +264,8 @@ class CertLifetime {
   /* Set lifetime based on notValidBefore and notValidAfter in X509 */
   bool set_lifetime(struct x509_st *);
 
-  /* Set the lifetime in the X509 certificate */
-  void set_cert_lifetime(struct x509_st *) const;
+  /* Set the lifetime in the X509 certificate. Returns true on success. */
+  bool set_cert_lifetime(struct x509_st *) const;
 
   /* Returns the expiration time, and sets tp (if non-null) to point to it */
   time_t expire_time(struct tm **tp) const;
@@ -282,8 +283,6 @@ class CertLifetime {
   time_t replace_time(float pct) const;
 
  protected:
-  CertLifetime(int n) : m_duration(n) {}
-
   mutable struct tm m_notBefore;  // mutable because of timegm()
   mutable struct tm m_notAfter;
   time_t m_duration{0};
@@ -309,12 +308,8 @@ class SigningRequest : public CertSubject, public CertLifetime {
 
   /* Const Public Instance Methods */
   struct x509_st *create_unsigned_certificate() const;
-  struct X509_req_st *req() const {
-    return m_req;
-  }
-  struct evp_pkey_st *key() const {
-    return m_key;
-  }
+  struct X509_req_st *req() const { return m_req; }
+  struct evp_pkey_st *key() const { return m_key; }
   bool store(const char *dir) const;
   bool write(FILE *) const;
   bool verify() const;
@@ -355,6 +350,7 @@ class SerialNumber {
 class ClusterCertAuthority {
  public:
   static struct x509_st *create(struct evp_pkey_st *key,
+                                const CertLifetime &lifetime,
                                 const char *ordinal = "First",
                                 bool self_sign = true);
   static int sign(struct x509_st *ca, struct evp_pkey_st *, struct x509_st *);
@@ -378,15 +374,9 @@ class NodeCertificate : public CertSubject, public CertLifetime {
   ~NodeCertificate();
 
   /* Const Public Instance Methods */
-  struct evp_pkey_st *key() const {
-    return m_key;
-  }
-  struct x509_st *cert() const {
-    return m_x509;
-  }
-  struct stack_st_X509 *all_certs() const {
-    return m_all_certs;
-  }
+  struct evp_pkey_st *key() const { return m_key; }
+  struct x509_st *cert() const { return m_x509; }
+  struct stack_st_X509 *all_certs() const { return m_all_certs; }
 
   BaseString serial_number() const;
 

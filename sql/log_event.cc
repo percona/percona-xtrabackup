@@ -91,6 +91,7 @@
 #include "strmake.h"
 #include "strxmov.h"
 #include "template_utils.h"
+#include "vector-common/vector_constants.h"  // get_dimensions
 
 #ifndef MYSQL_SERVER
 #include "client/mysqlbinlog.h"
@@ -1772,6 +1773,7 @@ static const char *print_json_diff(IO_CACHE *out, const uchar *data,
   @param[in] col_name          Column name
   @param[in] is_partial        True if this is a JSON column that will be
                                read in partial format, false otherwise.
+  @param[in] vector_dimensionality Dimensionality of vector column
 
   @retval 0 on error
   @retval number of bytes scanned from ptr for non-NULL fields, or
@@ -1781,7 +1783,8 @@ static const char *print_json_diff(IO_CACHE *out, const uchar *data,
 static size_t log_event_print_value(IO_CACHE *file, const uchar *ptr, uint type,
                                     uint meta, char *typestr,
                                     size_t typestr_length, char *col_name,
-                                    bool is_partial) {
+                                    bool is_partial,
+                                    unsigned int vector_dimensionality) {
   uint32 length = 0;
 
   if (type == MYSQL_TYPE_STRING) {
@@ -2027,6 +2030,25 @@ static size_t log_event_print_value(IO_CACHE *file, const uchar *ptr, uint type,
       my_b_write_bit(file, ptr, (meta & 0xFF) * 8);
       return meta & 0xFF;
 
+    case MYSQL_TYPE_VECTOR: {
+      snprintf(typestr, typestr_length, "VECTOR(%u)", vector_dimensionality);
+      if (ptr == nullptr) {
+        return my_b_printf(file, "NULL");
+      }
+      length = uint4korr(ptr);
+      ptr += 4;
+      uint dims = get_dimensions(length, sizeof(float));
+      my_b_printf(file, "[");
+      const uint tmp_length = 40;
+      char tmp[tmp_length];
+      for (uint i = 0; i < dims; i++) {
+        char delimiter = (i == dims - 1) ? ']' : ',';
+        snprintf(tmp, tmp_length, "%.5e", float4get(ptr + i * sizeof(float)));
+        my_b_printf(file, "%s%c", tmp, delimiter);
+      }
+      return length + 4;
+    }
+
     case MYSQL_TYPE_BLOB:
       switch (meta) {
         case 1:
@@ -2161,6 +2183,8 @@ size_t Rows_log_event::print_verbose_one_row(
 
   my_b_printf(file, "%s", prefix);
 
+  auto vector_dimensionality_it = td->get_vector_dimensionality_begin();
+
   for (size_t i = 0; i < td->size(); i++) {
     /*
       Note: need to read partial bit before reading cols_bitmap, since
@@ -2189,11 +2213,18 @@ size_t Rows_log_event::print_verbose_one_row(
         return 0;
       }
     }
+
+    unsigned int vector_dimensionality = 0;
+    if (td->type(i) == MYSQL_TYPE_VECTOR &&
+        vector_dimensionality_it != td->get_vector_dimensionality_end()) {
+      vector_dimensionality = *vector_dimensionality_it++;
+    }
+
     char col_name[256];
     sprintf(col_name, "@%lu", (unsigned long)i + 1);
     const size_t size = log_event_print_value(
         file, is_null ? nullptr : value, td->type(i), td->field_metadata(i),
-        typestr, sizeof(typestr), col_name, is_partial);
+        typestr, sizeof(typestr), col_name, is_partial, vector_dimensionality);
     if (!size) return 0;
 
     if (!is_null) value += size;
@@ -2233,9 +2264,9 @@ void Rows_log_event::print_verbose(IO_CACHE *file,
   const enum_row_image_type row_image_type =
       get_general_type_code() == mysql::binlog::event::WRITE_ROWS_EVENT
           ? enum_row_image_type::WRITE_AI
-          : get_general_type_code() == mysql::binlog::event::DELETE_ROWS_EVENT
-                ? enum_row_image_type::DELETE_BI
-                : enum_row_image_type::UPDATE_BI;
+      : get_general_type_code() == mysql::binlog::event::DELETE_ROWS_EVENT
+          ? enum_row_image_type::DELETE_BI
+          : enum_row_image_type::UPDATE_BI;
 
   if (m_extra_row_info.have_ndb_info() ||
       DBUG_EVALUATE_IF("simulate_error_in_ndb_info_print", 1, 0)) {
@@ -2594,6 +2625,8 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
   char llbuff[22];
   Slave_committed_queue *gaq = rli->gaq;
   DBUG_TRACE;
+  bool is_after_metrics_breakpoint =
+      rli->get_applier_metrics().is_after_metrics_breakpoint();
 
   /* checking partitioning properties and perform corresponding actions */
 
@@ -2628,8 +2661,13 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
              !is_mts_db_partitioned(rli));
 
       if (is_s_event || is_any_gtid_event(this)) {
-        Slave_job_item job_item = {this, rli->get_event_relay_log_number(),
-                                   rli->get_event_start_pos()};
+        Slave_job_item job_item = {this,
+                                   rli->get_event_start_pos(),
+                                   {'\0'},
+                                   is_after_metrics_breakpoint};
+        if (rli->get_event_relay_log_name())
+          strcpy(job_item.event_relay_log_name,
+                 rli->get_event_relay_log_name());
         // B-event is appended to the Deferred Array associated with GCAP
         rli->curr_group_da.push_back(job_item);
 
@@ -2664,8 +2702,12 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
        TODO: Make GITD event as B-event that is starts_group() to
        return true.
       */
-      Slave_job_item job_item = {this, rli->get_event_relay_log_number(),
-                                 rli->get_event_relay_log_pos()};
+      Slave_job_item job_item = {this,
+                                 rli->get_event_relay_log_pos(),
+                                 {'\0'},
+                                 is_after_metrics_breakpoint};
+      if (rli->get_event_relay_log_name())
+        strcpy(job_item.event_relay_log_name, rli->get_event_relay_log_name());
 
       // B-event is appended to the Deferred Array associated with GCAP
       rli->curr_group_da.push_back(job_item);
@@ -2693,8 +2735,12 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
         rli, &rli->workers, this);
     if (ret_worker == nullptr) {
       /* get_least_occupied_worker may return NULL if the thread is killed */
-      Slave_job_item job_item = {this, rli->get_event_relay_log_number(),
-                                 rli->get_event_start_pos()};
+      Slave_job_item job_item = {this,
+                                 rli->get_event_start_pos(),
+                                 {'\0'},
+                                 is_after_metrics_breakpoint};
+      if (rli->get_event_relay_log_name())
+        strcpy(job_item.event_relay_log_name, rli->get_event_relay_log_name());
       rli->curr_group_da.push_back(job_item);
 
       assert(thd->killed);
@@ -2845,8 +2891,12 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
         Their association with relay-log physical coordinates is provided
         by the same mechanism that applies to a regular event.
       */
-      Slave_job_item job_item = {this, rli->get_event_relay_log_number(),
-                                 rli->get_event_start_pos()};
+      Slave_job_item job_item = {this,
+                                 rli->get_event_start_pos(),
+                                 {'\0'},
+                                 is_after_metrics_breakpoint};
+      if (rli->get_event_relay_log_name())
+        strcpy(job_item.event_relay_log_name, rli->get_event_relay_log_name());
       rli->curr_group_da.push_back(job_item);
 
       assert(!ret_worker);
@@ -2993,7 +3043,6 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
 
 int Log_event::apply_gtid_event(Relay_log_info *rli) {
   DBUG_TRACE;
-
   int error = 0;
   if (rli->curr_group_da.size() < 1) return 1;
 
@@ -3143,6 +3192,8 @@ int Log_event::apply_event(Relay_log_info *rli) {
               "execution.");
           return -1;
         }
+        rli->get_applier_metrics().check_metrics_breakpoint(
+            rli->get_group_relay_log_name());
         /*
           Given not in-group mark the event handler can invoke checkpoint
           update routine in the following course.
@@ -3721,7 +3772,6 @@ bool is_atomic_ddl(THD *thd, bool using_trans_arg) {
     case SQLCOM_ALTER_PROCEDURE:
     case SQLCOM_ALTER_EVENT:
     case SQLCOM_DROP_EVENT:
-    case SQLCOM_CREATE_VIEW:
     case SQLCOM_DROP_VIEW:
 
       assert(using_trans_arg || thd->slave_thread || lex->drop_if_exists);
@@ -3733,6 +3783,7 @@ bool is_atomic_ddl(THD *thd, bool using_trans_arg) {
     case SQLCOM_CREATE_SPFUNCTION:
     case SQLCOM_CREATE_FUNCTION:
     case SQLCOM_CREATE_TRIGGER:
+    case SQLCOM_CREATE_VIEW:
       /*
         trx cache is *not* used if object already exists and IF NOT EXISTS
         clause is used in the statement or if call is from the slave applier.
@@ -8013,6 +8064,13 @@ int Rows_log_event::unpack_current_row(const Relay_log_info *const rli,
             if (field->is_field_for_functional_index())  // Always exclude
                                                          // functional indexes
               return true;
+            if (!is_after_image &&
+                !bitmap_is_subset(
+                    &field->gcol_info->base_columns_map,
+                    &this->m_local_cols))  // Exclude generated columns for
+                                           // which the base columns are
+                                           // unavailable
+              return true;
             if (!is_after_image &&  // Always exclude virtual generated columns
                 field->is_virtual_gcol())  // if not processing after-image
               return true;
@@ -8441,7 +8499,8 @@ TABLE_OR_INDEX_SCAN:
 
 end:
   /* m_key_index is ready, set m_key_info now. */
-  m_key_info = m_table->key_info + m_key_index;
+  if (m_table->key_info != nullptr)
+    m_key_info = m_table->key_info + m_key_index;
   /*
     m_key_info will influence key comparison code in HASH_SCAN mode,
     so the m_distinct_keys set should still be empty.
@@ -9827,7 +9886,8 @@ int Rows_log_event::do_apply_event(Relay_log_info const *rli) {
     Applier_security_context_guard security_context{rli, thd};
     const char *privilege_missing = nullptr;
     if (!security_context.skip_priv_checks()) {
-      std::vector<std::tuple<ulong, const TABLE *, Rows_log_event *>> l;
+      std::vector<std::tuple<Access_bitmask, const TABLE *, Rows_log_event *>>
+          l;
       switch (get_general_type_code()) {
         case mysql::binlog::event::WRITE_ROWS_EVENT: {
           l.push_back(std::make_tuple(INSERT_ACL, this->m_table, this));
@@ -10899,9 +10959,17 @@ int Table_map_log_event::do_apply_event(Relay_log_info const *rli) {
       inside Relay_log_info::clear_tables_to_lock() by calling the
       table_def destructor explicitly.
     */
+    uint vector_column_count =
+        table_def::vector_column_count(m_coltype, m_colcnt);
+    std::vector<unsigned int> vector_dimensionality;
+    if (vector_column_count > 0) {
+      const Optional_metadata_fields fields(m_optional_metadata,
+                                            m_optional_metadata_len);
+      vector_dimensionality = fields.m_vector_dimensionality;
+    }
     new (&table_list->m_tabledef)
         table_def(m_coltype, m_colcnt, m_field_metadata, m_field_metadata_size,
-                  m_null_bits, m_flags);
+                  m_null_bits, m_flags, vector_dimensionality);
 
     table_list->m_tabledef_valid = true;
     table_list->m_conv_table = nullptr;
@@ -11090,6 +11158,7 @@ static inline bool is_character_type(uint type) {
     case MYSQL_TYPE_STRING:
     case MYSQL_TYPE_VAR_STRING:
     case MYSQL_TYPE_VARCHAR:
+    case MYSQL_TYPE_VECTOR:
     case MYSQL_TYPE_BLOB:
       return true;
     default:
@@ -11133,7 +11202,7 @@ void Table_map_log_event::init_metadata_fields() {
   if (init_signedness_field() ||
       init_charset_field(&is_character_field, DEFAULT_CHARSET,
                          COLUMN_CHARSET) ||
-      init_geometry_type_field()) {
+      init_geometry_type_field() || init_vector_dimensionality_field()) {
     m_metadata_buf.length(0);
     return;
   }
@@ -11351,6 +11420,20 @@ bool Table_map_log_event::init_geometry_type_field() {
   return false;
 }
 
+bool Table_map_log_event::init_vector_dimensionality_field() {
+  StringBuffer<256> buf;
+  for (auto *field : *m_column_view) {
+    if (field->real_type() == MYSQL_TYPE_VECTOR) {
+      store_compressed_length(
+          buf, down_cast<Field_vector *>(field)->get_max_dimensions());
+    }
+  }
+
+  if (buf.length() > 0)
+    return write_tlv_field(m_metadata_buf, VECTOR_DIMENSIONALITY, buf);
+  return false;
+}
+
 bool Table_map_log_event::init_primary_key_field() {
   DBUG_EXECUTE_IF("simulate_init_primary_key_field_error", return true;);
 
@@ -11484,7 +11567,8 @@ void Table_map_log_event::print(FILE *,
  */
 static void get_type_name(uint type, unsigned char **meta_ptr,
                           const CHARSET_INFO *cs, char *typestr,
-                          uint typestr_length, unsigned int geometry_type) {
+                          uint typestr_length, unsigned int geometry_type,
+                          unsigned int vector_dimensionality) {
   switch (type) {
     case MYSQL_TYPE_LONG:
       snprintf(typestr, typestr_length, "%s", "INT");
@@ -11558,6 +11642,11 @@ static void get_type_name(uint type, unsigned char **meta_ptr,
       snprintf(typestr, typestr_length, "SET");
       (*meta_ptr) += 2;
       break;
+    case MYSQL_TYPE_VECTOR: {
+      snprintf(typestr, typestr_length, "VECTOR(%u)", vector_dimensionality);
+      (*meta_ptr)++;
+      break;
+    }
     case MYSQL_TYPE_BLOB: {
       const bool is_text = (cs && cs->number != my_charset_bin.number);
       const char *names[5][2] = {{"INVALID_BLOB(%d)", "INVALID_TEXT(%d)"},
@@ -11724,6 +11813,7 @@ void Table_map_log_event::print_columns(
   uint geometry_type = 0;
   std::vector<bool>::const_iterator column_visibility_it =
       fields.m_column_visibility.begin();
+  auto vector_dimensionality_it = fields.m_vector_dimensionality.begin();
 
   my_b_printf(file, "# Columns(");
 
@@ -11759,11 +11849,17 @@ void Table_map_log_event::print_columns(
                           : 0;
     }
 
+    unsigned int vector_dimensionality = 0;
+    if (real_type == MYSQL_TYPE_VECTOR &&
+        vector_dimensionality_it != fields.m_vector_dimensionality.end()) {
+      vector_dimensionality = *vector_dimensionality_it++;
+    }
+
     // print column type
     const uint TYPE_NAME_LEN = 100;
     char type_name[TYPE_NAME_LEN];
     get_type_name(real_type, &field_metadata_ptr, cs, type_name, TYPE_NAME_LEN,
-                  geometry_type);
+                  geometry_type, vector_dimensionality);
 
     if (type_name[0] == '\0') {
       my_b_printf(file, "INVALID_TYPE(%d)", real_type);
@@ -12812,39 +12908,75 @@ void Rows_query_log_event::claim_memory_ownership(bool claim) {
 #ifdef MYSQL_SERVER
 int Rows_query_log_event::pack_info(Protocol *protocol) {
   char *buf;
-  size_t bytes;
-  size_t len = sizeof("# ") + strlen(m_rows_query);
+  size_t len = strlen("# ") + m_rows_query_length;
   if (!(buf = (char *)my_malloc(key_memory_log_event, len, MYF(MY_WME))))
     return 1;
-  bytes = snprintf(buf, len, "# %s", m_rows_query);
-  protocol->store_string(buf, bytes, &my_charset_bin);
+  memcpy(buf, "# ", 2);
+  memcpy(buf + 2, m_rows_query, m_rows_query_length);
+  protocol->store_string(buf, len, &my_charset_bin);
   my_free(buf);
   return 0;
 }
 #endif
 
 #ifndef MYSQL_SERVER
+/**
+  Print a string
+
+  @param[out] cache  IO_CACHE where the string will be printed.
+  @param[in] rows_query  the string to be printed.
+  @param[in] len  length of the string.
+*/
+static inline void pretty_print_rows_query(IO_CACHE *cache,
+                                           const char *rows_query, size_t len) {
+  /*
+    Prefix every line of a multi-line query with '#' to prevent the
+    statement from being executed when binary log will be processed
+    using 'mysqlbinlog --verbose --verbose'.
+  */
+  my_b_printf(cache, "# ");
+  for (const auto &c : std::string_view(rows_query, len)) {
+    switch ((c)) {
+      case '\n':
+        my_b_printf(cache, "\n");
+        my_b_printf(cache, "# ");
+        break;
+      case '\r':
+        my_b_printf(cache, "\\r");
+        break;
+      case '\\':
+        my_b_printf(cache, "\\\\");
+        break;
+      case '\b':
+        my_b_printf(cache, "\\b");
+        break;
+      case '\t':
+        my_b_printf(cache, "\\t");
+        break;
+      case 0:
+        my_b_printf(cache, "\\0");
+        break;
+      default:
+        my_b_printf(cache, "%c", c);
+        break;
+    }
+  }
+  my_b_printf(cache, "\n");
+}
 void Rows_query_log_event::print(FILE *,
                                  PRINT_EVENT_INFO *print_event_info) const {
   if (!print_event_info->short_form && print_event_info->verbose > 1) {
     IO_CACHE *const head = &print_event_info->head_cache;
     IO_CACHE *const body = &print_event_info->body_cache;
-    char *token = nullptr, *saveptr = nullptr;
     char *rows_query_copy = nullptr;
-    if (!(rows_query_copy =
-              my_strdup(key_memory_log_event, m_rows_query, MYF(MY_WME))))
+    if (!(rows_query_copy = my_strndup(key_memory_log_event, m_rows_query,
+                                       m_rows_query_length, MYF(MY_WME))))
       return;
 
     print_header(head, print_event_info, false);
     my_b_printf(head, "\tRows_query\n");
-    /*
-      Prefix every line of a multi-line query with '#' to prevent the
-      statement from being executed when binary log will be processed
-      using 'mysqlbinlog --verbose --verbose'.
-    */
-    for (token = my_strtok_r(rows_query_copy, "\n", &saveptr); token;
-         token = my_strtok_r(nullptr, "\n", &saveptr))
-      my_b_printf(head, "# %s\n", token);
+    pretty_print_rows_query(head, rows_query_copy, m_rows_query_length);
+
     my_free(rows_query_copy);
     print_base64(body, print_event_info, true);
   }
@@ -12855,19 +12987,26 @@ void Rows_query_log_event::print(FILE *,
 bool Rows_query_log_event::write_data_body(Basic_ostream *ostream) {
   DBUG_TRACE;
   /*
-   m_rows_query length will be stored using only one byte, but on read
-   that length will be ignored and the complete query will be read.
+    Previously we used the first byte to write length of the string but in
+    this case the length of string(m_rows_query) can be greater than 255 bytes
+    so we will not be using the first byte to store length and assign a
+    value 0 to mark that its unused.
   */
-  return write_str_at_most_255_bytes(ostream, m_rows_query,
-                                     strlen(m_rows_query));
+  uchar unused_byte[1];
+
+  unused_byte[0] = 0;
+  return (ostream->write(unused_byte, 1) ||
+          (m_rows_query_length > 0 &&
+           ostream->write(pointer_cast<const uchar *>(m_rows_query),
+                          m_rows_query_length)));
 }
 
 int Rows_query_log_event::do_apply_event(Relay_log_info const *rli) {
   DBUG_TRACE;
   assert(rli->info_thd == thd);
   /* Set query for writing Rows_query log event into binlog later.*/
-  thd->set_query(m_rows_query, strlen(m_rows_query));
-  thd->set_query_for_display(m_rows_query, strlen(m_rows_query));
+  thd->set_query(m_rows_query, m_rows_query_length);
+  thd->set_query_for_display(m_rows_query, m_rows_query_length);
 
   assert(rli->rows_query_ev == nullptr);
 
@@ -13169,6 +13308,7 @@ uint32 Gtid_log_event::write_post_header_to_memory(uchar *buffer) {
 
   assert((sequence_number == 0 && last_committed == 0) ||
          (sequence_number > last_committed));
+
   DBUG_EXECUTE_IF("set_commit_parent_100", {
     last_committed =
         max<int64>(sequence_number > 1 ? 1 : 0, sequence_number - 100);
@@ -13178,6 +13318,10 @@ uint32 Gtid_log_event::write_post_header_to_memory(uchar *buffer) {
         max<int64>(sequence_number > 1 ? 1 : 0, sequence_number - 150);
   });
   DBUG_EXECUTE_IF("feign_commit_parent", { last_committed = sequence_number; });
+  DBUG_EXECUTE_IF("feign_seq_number_3", {
+    sequence_number = 3;
+    last_committed = 2;
+  });
   int8store(ptr_buffer, last_committed);
   int8store(ptr_buffer + 8, sequence_number);
   ptr_buffer += LOGICAL_TIMESTAMP_LENGTH;
@@ -13517,6 +13661,8 @@ rpl_sidno Gtid_log_event::get_sidno(bool need_lock) {
   }
   return spec.gtid.sidno;
 }
+
+Gtid_specification Gtid_log_event::get_gtid_spec() { return spec; }
 
 Previous_gtids_log_event::Previous_gtids_log_event(
     const char *buf_arg, const Format_description_event *description_event)
@@ -14259,6 +14405,8 @@ bool Transaction_payload_log_event::apply_payload_event(
       static_cast<Query_log_event *>(ev)
           ->set_skip_temp_tables_handling_by_worker();
     res = ev->do_apply_event_worker(worker);
+
+    worker->increment_worker_metrics_for_event(*ev);
   } else {
     auto coord = const_cast<Relay_log_info *>(rli);
     ev->future_event_relay_log_pos = coord->get_future_event_relay_log_pos();
@@ -14468,6 +14616,8 @@ extract_log_event_basic_info(
   if (length < header_size) return std::make_pair(true, event_info);
 
   event_info.event_type = (Log_event_type)buf[EVENT_TYPE_OFFSET];
+  event_info.log_pos = uint4korr(buf + LOG_POS_OFFSET);
+  event_info.server_id = uint4korr(buf + SERVER_ID_OFFSET);
 
   if (mysql::binlog::event::QUERY_EVENT == event_info.event_type) {
     event_info.query_length =

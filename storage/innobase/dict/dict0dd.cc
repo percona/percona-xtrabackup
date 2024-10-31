@@ -75,8 +75,19 @@ Data dictionary interface */
 #include "query_options.h"
 #include "sql/create_field.h"
 #include "sql/mysqld.h"  // lower_case_file_system
+<<<<<<< HEAD
 #include "storage/innobase/xtrabackup/src/xb_dict.h"
 #endif /* !UNIV_HOTBACKUP */
+||||||| dc86e412f18
+#include "sql_base.h"
+#include "sql_table.h"
+#endif /* !UNIV_HOTBACKUP */
+=======
+#include "sql_base.h"
+#include "sql_table.h"
+#include "univ.i"  // Using OS_PATH_SEPARATOR
+#endif             /* !UNIV_HOTBACKUP */
+>>>>>>> mysql-9.1.0
 
 const char *DD_instant_col_val_coder::encode(const byte *stream, size_t in_len,
                                              size_t *out_len) {
@@ -2302,6 +2313,126 @@ static void replace_space_name_in_file_name(dd::Tablespace_file *dd_file,
   dd_file->set_filename(old_file_name);
 }
 
+/** Convert string to lower case.
+@param[in,out]  name    name to convert */
+static void to_lower(std::string &name) { innobase_casedn_str(name.data()); }
+
+dberr_t dd_update_table_and_partitions_after_dir_change(dd::Object_id object_id,
+                                                        std::string path) {
+  THD *thd = current_thd;
+  dd::cache::Dictionary_client *client = dd::get_dd_client(thd);
+  dd::cache::Dictionary_client::Auto_releaser releaser(client);
+
+  dd::Tablespace *dd_space;
+  dd::Table *dd_table;
+
+  /* Get the dd tablespace */
+  if (client->acquire_uncached_uncommitted<dd::Tablespace>(object_id,
+                                                           &dd_space) ||
+      dd_space == nullptr) {
+    ut_d(ut_error);
+    ut_o(return DB_ERROR);
+  }
+
+  const dd::Properties &space_properties = dd_space->se_private_data();
+  uint32_t flags = 0;
+  space_properties.get(dd_space_key_strings[DD_SPACE_FLAGS], &flags);
+
+  if (fsp_is_shared_tablespace(flags)) {
+    /* This is a shared tablespace, dd_table is empty */
+    return DB_SUCCESS;
+  }
+
+  const auto components = dict_name::parse_tablespace_path(path);
+  if (!components.has_value()) return DB_ERROR;
+  const auto table_info = components.value();
+
+  MDL_ticket *tab_ticket = nullptr;
+  if (dd::acquire_exclusive_table_mdl(thd, table_info.schema_name.c_str(),
+                                      table_info.table_name.c_str(), false,
+                                      &tab_ticket)) {
+    ut_d(ut_error);
+    ut_o(return DB_ERROR);
+  }
+
+  /* Acquire the new dd table for modification */
+  if (client->acquire_for_modification<dd::Table>(
+          table_info.schema_name.c_str(), table_info.table_name.c_str(),
+          &dd_table)) {
+    ut_d(ut_error);
+    ut_o(return DB_ERROR);
+  }
+
+  ut_ad(dd_table != nullptr);
+  std::string dd_table_name{dd_table->table().name()};
+  Fil_path fpath{path};
+
+  std::string part_name = (!table_info.subpartition.empty())
+                              ? table_info.subpartition
+                              : table_info.partition;
+  to_lower(part_name);
+
+  /* This function may be hit by those tables which are marked as
+  Fil_state::MOVED_PREV_OR_HAS_DATADIR which includes tables that are moved
+  before 8.0.38/8.4.1/9.0.0 and tables that are created using data directory
+  clause. We want to set the flag for tables moved before 8.0.38/8.4.1/9.0.0
+  only and ignore those tables which are created using data directory clause
+  as the dd_table data dir flag is already set for them. Additionally, we
+  explicitly remove the flag if moved from external to default data dir. We
+  do this because dd_table data dir flag should not exist if the ibd file is
+  located in default dir */
+  if (part_name.empty()) {
+    /* The table is non-partitioned table */
+    bool dd_flag = dd_table->se_private_data().exists(
+        dd_table_key_strings[DD_TABLE_DATA_DIRECTORY]);
+    bool set_true = !(MySQL_datadir_path.is_same_as(fpath) ||
+                      MySQL_datadir_path.is_ancestor(fpath)) &&
+                    !dd_flag;
+    bool set_false = MySQL_datadir_path.is_same_as(fpath) ||
+                     MySQL_datadir_path.is_ancestor(fpath);
+    if (set_true) {
+      dd_table->se_private_data().set(
+          dd_table_key_strings[DD_TABLE_DATA_DIRECTORY], set_true);
+    }
+    if (set_false) {
+      dd_table->se_private_data().remove(
+          dd_table_key_strings[DD_TABLE_DATA_DIRECTORY]);
+    }
+  } else {
+    /* The table is partitioned table */
+    for (dd::Partition *part_obj : *dd_table->leaf_partitions()) {
+      std::string part_obj_name{part_obj->name()};
+      to_lower(part_obj_name);
+      if (part_obj_name == part_name) {
+        dd::Properties &part_options = part_obj->options();
+        bool dd_flag = part_obj->se_private_data().exists(
+            dd_table_key_strings[DD_TABLE_DATA_DIRECTORY]);
+        bool set_true = !(MySQL_datadir_path.is_same_as(fpath) ||
+                          MySQL_datadir_path.is_ancestor(fpath)) &&
+                        !dd_flag;
+        bool set_false = MySQL_datadir_path.is_same_as(fpath) ||
+                         MySQL_datadir_path.is_ancestor(fpath);
+        if (set_true) {
+          part_obj->se_private_data().set(
+              dd_table_key_strings[DD_TABLE_DATA_DIRECTORY], set_true);
+          /* Update data_file_name for dd::partition as we do not set data
+          directory for whole partitioned table. We acquire dd::partition later
+          and read from it*/
+          part_options.set(data_file_name_key, table_info.directory.c_str());
+        }
+        if (set_false) {
+          part_obj->se_private_data().remove(
+              dd_table_key_strings[DD_TABLE_DATA_DIRECTORY]);
+          part_options.remove(data_file_name_key);
+        }
+      }
+    }
+  }
+
+  bool fail = client->update(dd_table);
+  return fail ? DB_ERROR : DB_SUCCESS;
+}
+
 dberr_t dd_tablespace_rename(dd::Object_id dd_space_id, bool is_system_cs,
                              const char *new_space_name, const char *new_path) {
   THD *thd = current_thd;
@@ -2404,9 +2535,9 @@ static bool format_validate(THD *thd, const TABLE *form, row_type real_type,
   const ulint zip_ssize_max =
       std::min((ulint)UNIV_PAGE_SSIZE_MAX, (ulint)PAGE_ZIP_SSIZE_MAX);
   const char *zip_refused = zip_allowed ? nullptr
-                                        : srv_page_size <= UNIV_ZIP_SIZE_MAX
-                                              ? "innodb_file_per_table=OFF"
-                                              : "innodb_page_size>16k";
+                            : srv_page_size <= UNIV_ZIP_SIZE_MAX
+                                ? "innodb_file_per_table=OFF"
+                                : "innodb_page_size>16k";
   bool invalid = false;
 
   if (real_type == ROW_TYPE_NOT_USED) {
@@ -2701,7 +2832,7 @@ void dd_copy_autoinc(const dd::Properties &src, dd::Properties &dest) {
       src.get(dd_table_key_strings[DD_TABLE_VERSION],
               reinterpret_cast<uint64_t *>(&version))) {
     ut_d(ut_error);
-    ut_o(return );
+    ut_o(return);
   }
 
   dest.set(dd_table_key_strings[DD_TABLE_VERSION], version);
@@ -3028,6 +3159,23 @@ bool dd_instant_columns_consistent(const dd::Table &dd_table) {
   return (exp && exp2);
 }
 #endif /* UNIV_DEBUG */
+
+void dd_visit_keys_with_too_long_parts(
+    const TABLE *table, const size_t max_part_len,
+    std::function<void(const KEY &)> visitor) {
+  for (uint key_num = 0; key_num < table->s->keys; key_num++) {
+    const KEY &key = table->key_info[key_num];
+    if (!(key.flags & (HA_SPATIAL | HA_FULLTEXT))) {
+      for (unsigned i = 0; i < key.user_defined_key_parts; i++) {
+        const KEY_PART_INFO *key_part = &key.key_part[i];
+        if (max_part_len < key_part->length) {
+          visitor(key);
+          continue;
+        }
+      }
+    }
+  }
+}
 
 static void instant_update_table_cols_count(dict_table_t *dict_table,
                                             uint32_t n_added_column,
@@ -3892,6 +4040,8 @@ void dd_add_fts_doc_id_index(dd::Table &new_table, const dd::Table &old_table) {
   return;
 }
 
+MY_COMPILER_DIAGNOSTIC_PUSH()
+MY_COMPILER_CLANG_WORKAROUND_TPARAM_DOCBUG()
 /** Find the specified dd::Index or dd::Partition_index in an InnoDB table
 @tparam         Index                   dd::Index or dd::Partition_index
 @param[in]      table                   InnoDB table object
@@ -3931,6 +4081,35 @@ const dict_index_t *dd_find_index(const dict_table_t *table, Index *dd_index) {
 
   return index;
 }
+MY_COMPILER_DIAGNOSTIC_POP()
+
+/** Return the prefix length of the key.
+@param[in]    key                Key information.
+@param[in]    key_part           Key part information.
+@return       Key prefix length or 0 if whole column is indexed.
+*/
+static inline uint16_t get_index_prefix_len(const KEY &key,
+                                            const KEY_PART_INFO *key_part) {
+  if (key.flags & (HA_SPATIAL | HA_FULLTEXT)) {
+    return 0;
+  }
+
+  if (key_part->key_part_flag & HA_PART_KEY_SEG) {
+    ut_ad(key_part->length > 0);
+    return key_part->length;
+  }
+
+#ifdef UNIV_DEBUG
+  auto field = key_part->field;
+  ut_ad((!is_blob(field->real_type()) &&
+         field->real_type() != MYSQL_TYPE_GEOMETRY) ||
+        key_part->length >= (field->type() == MYSQL_TYPE_VARCHAR
+                                 ? field->key_length()
+                                 : field->pack_length()));
+#endif
+
+  return 0;
+}
 
 template const dict_index_t *dd_find_index<dd::Index>(const dict_table_t *,
                                                       dd::Index *);
@@ -3944,7 +4123,6 @@ template const dict_index_t *dd_find_index<dd::Partition_index>(
 @param[in]      key_num         key_info[] offset
 @return         error code
 @retval         0 on success
-@retval         HA_ERR_INDEX_COL_TOO_LONG if a column is too long
 @retval         HA_ERR_TOO_BIG_ROW if the record is too long */
 [[nodiscard]] static int dd_fill_one_dict_index(const dd::Index *dd_index,
                                                 dict_table_t *table,
@@ -3987,15 +4165,14 @@ template const dict_index_t *dd_find_index<dd::Partition_index>(
 
   index->n_uniq = n_uniq;
 
-  const ulint max_len = DICT_MAX_FIELD_LEN_BY_FORMAT(table);
   DBUG_EXECUTE_IF("ib_create_table_fail_at_create_index",
+                  const ulint max_len = DICT_MAX_FIELD_LEN_BY_FORMAT(table);
                   dict_mem_index_free(index);
                   my_error(ER_INDEX_COLUMN_TOO_LONG, MYF(0), max_len);
                   return HA_ERR_TOO_BIG_ROW;);
 
   for (unsigned i = 0; i < key.user_defined_key_parts; i++) {
     const KEY_PART_INFO *key_part = &key.key_part[i];
-    unsigned prefix_len = 0;
     const Field *field = key_part->field;
     ut_ad(field == form->field[key_part->fieldnr - 1]);
     ut_ad(field == form->field[field->field_index()]);
@@ -4017,32 +4194,7 @@ template const dict_index_t *dd_find_index<dd::Partition_index>(
       is_asc = false;
     }
 
-    if (key.flags & HA_SPATIAL) {
-      prefix_len = 0;
-    } else if (key.flags & HA_FULLTEXT) {
-      prefix_len = 0;
-    } else if (key_part->key_part_flag & HA_PART_KEY_SEG) {
-      /* SPATIAL and FULLTEXT index always are on
-      full columns. */
-      ut_ad(!(key.flags & (HA_SPATIAL | HA_FULLTEXT)));
-      prefix_len = key_part->length;
-      ut_ad(prefix_len > 0);
-    } else {
-      ut_ad(key.flags & (HA_SPATIAL | HA_FULLTEXT) ||
-            (!is_blob(field->real_type()) &&
-             field->real_type() != MYSQL_TYPE_GEOMETRY) ||
-            key_part->length >= (field->type() == MYSQL_TYPE_VARCHAR
-                                     ? field->key_length()
-                                     : field->pack_length()));
-      prefix_len = 0;
-    }
-
-    if ((key_part->length > max_len || prefix_len > max_len) &&
-        !(key.flags & (HA_FULLTEXT))) {
-      dict_mem_index_free(index);
-      my_error(ER_INDEX_COLUMN_TOO_LONG, MYF(0), max_len);
-      return HA_ERR_INDEX_COL_TOO_LONG;
-    }
+    const auto prefix_len = get_index_prefix_len(key, key_part);
 
     dict_col_t *col = nullptr;
 
@@ -4623,6 +4775,26 @@ void get_field_types(const dd::Table *dd_tab, const dict_table_t *m_table,
   }
 }
 
+/** Check if the individual parts of the composite index does not exceed the
+limit based on the table row format. If yes, mark the index as corrupt.
+@param[in]     m_table         InnoDB table handle
+@param[in]     table           MySQL table definition */
+static void validate_index_len(dict_table_t *m_table, const TABLE *table) {
+  const uint32_t max_part_len = DICT_MAX_FIELD_LEN_BY_FORMAT(m_table);
+  dd_visit_keys_with_too_long_parts(table, max_part_len, [&](const KEY &key) {
+    dict_index_t *index = dict_table_get_index_on_name(m_table, key.name, true);
+    if (index != nullptr) {
+      std::string schema_name;
+      std::string table_name;
+
+      dict_set_corrupted(index);
+      m_table->get_table_name(schema_name, table_name);
+      ib::error(ER_IB_INDEX_PART_TOO_LONG, key.name, schema_name.c_str(),
+                table_name.c_str(), ulong{max_part_len});
+    }
+  });
+}
+
 template <typename Table>
 static inline void fill_dict_existing_column(
     const Table *dd_tab, const TABLE *m_form, dict_table_t *m_table,
@@ -4667,7 +4839,7 @@ static inline void fill_dict_existing_column(
 
     dict_mem_table_add_col(m_table, heap, field->field_name, mtype, prtype,
                            col_len, !field->is_hidden_by_system(), phy_pos,
-                           (uint8_t)v_added, UINT8_UNDEFINED);
+                           (row_version_t)v_added, INVALID_ROW_VERSION);
   } else {
     dict_mem_table_add_v_col(m_table, heap, field->field_name, mtype, prtype,
                              col_len, pos,
@@ -6266,6 +6438,8 @@ dict_table_t *dd_open_table_one(dd::cache::Dictionary_client *client,
   } else {
     dict_table_add_to_cache(m_table, true);
 
+    validate_index_len(m_table, table);
+
     if (m_table->fts && dict_table_has_fts_index(m_table)) {
       fts_optimize_add_table(m_table);
     }
@@ -6418,6 +6592,8 @@ void dd_open_fk_tables(dict_names_t &fk_list, bool dict_locked, THD *thd) {
   }
 }
 
+MY_COMPILER_DIAGNOSTIC_PUSH()
+MY_COMPILER_CLANG_WORKAROUND_TPARAM_DOCBUG()
 /** Open or load a table definition based on a Global DD object.
 @tparam         Table           dd::Table or dd::Partition
 @param[in,out]  client          data dictionary client
@@ -6443,6 +6619,7 @@ dict_table_t *dd_open_table(dd::cache::Dictionary_client *client,
 
   return m_table;
 }
+MY_COMPILER_DIAGNOSTIC_POP()
 
 template dict_table_t *dd_open_table<dd::Table>(dd::cache::Dictionary_client *,
                                                 const TABLE *, const char *,
@@ -6620,7 +6797,7 @@ const char *dd_process_dd_tables_rec_and_mtr_commit(
   }
 
   /* Get the se_private_id field. */
-  field = (const byte *)rec_get_nth_field(
+  field = rec_get_nth_field(
       nullptr, rec, offsets,
       dd_tables->field_number("se_private_id") + DD_FIELD_OFFSET, &len);
 
@@ -6689,9 +6866,18 @@ const char *dd_process_dd_partitions_rec_and_mtr_commit(
   }
 
   /* Get the se_private_id field. */
-  field = (const byte *)rec_get_nth_field(
+  field = rec_get_nth_field(
       nullptr, rec, offsets,
+<<<<<<< HEAD
       dd_tables->field_number("se_private_id") + DD_FIELD_OFFSET, &len);
+||||||| dc86e412f18
+      dd_object_table.field_number("FIELD_SE_PRIVATE_ID") + DD_FIELD_OFFSET,
+      &len);
+=======
+      dd_object_table.field_number("FIELD_SE_PRIVATE_ID") + DD_FIELD_OFFSET,
+      &len);
+
+>>>>>>> mysql-9.1.0
   /* When table is partitioned table, the se_private_id is null. */
   if (len != 8) {
     *table = nullptr;
@@ -6753,7 +6939,7 @@ bool dd_process_dd_columns_rec(mem_heap_t *heap, const rec_t *rec,
   const dd::Object_table &dd_object_table = dd::get_dd_table<dd::Column>();
 
   /* Get the hidden attribute, and skip if it's a hidden column. */
-  field = (const byte *)rec_get_nth_field(
+  field = rec_get_nth_field(
       nullptr, rec, offsets,
       dd_object_table.field_number("FIELD_HIDDEN") + DD_FIELD_OFFSET, &len);
   hidden = static_cast<dd::Column::enum_hidden_type>(mach_read_from_1(field));
@@ -6764,24 +6950,24 @@ bool dd_process_dd_columns_rec(mem_heap_t *heap, const rec_t *rec,
   }
 
   /* Get the column name. */
-  field = (const byte *)rec_get_nth_field(
+  field = rec_get_nth_field(
       nullptr, rec, offsets,
       dd_object_table.field_number("FIELD_NAME") + DD_FIELD_OFFSET, &len);
   *col_name = mem_heap_strdupl(heap, (const char *)field, len);
 
   /* Get the position. */
-  field = (const byte *)rec_get_nth_field(
+  field = rec_get_nth_field(
       nullptr, rec, offsets,
       dd_object_table.field_number("FIELD_ORDINAL_POSITION") + DD_FIELD_OFFSET,
       &len);
   pos = mach_read_from_4(field) - 1;
 
   /* Get the is_virtual attribute. */
-  field = (const byte *)rec_get_nth_field(nullptr, rec, offsets, 21, &len);
+  field = rec_get_nth_field(nullptr, rec, offsets, 21, &len);
   is_virtual = mach_read_from_1(field) & 0x01;
 
   /* Get the se_private_data field. */
-  field = (const byte *)rec_get_nth_field(
+  field = rec_get_nth_field(
       nullptr, rec, offsets,
       dd_object_table.field_number("FIELD_SE_PRIVATE_DATA") + DD_FIELD_OFFSET,
       &len);
@@ -6907,7 +7093,7 @@ bool dd_process_dd_virtual_columns_rec(mem_heap_t *heap, const rec_t *rec,
   const dd::Object_table &dd_object_table = dd::get_dd_table<dd::Column>();
 
   /* Get the is_virtual attribute, and skip if it's not a virtual column. */
-  field = (const byte *)rec_get_nth_field(
+  field = rec_get_nth_field(
       nullptr, rec, offsets,
       dd_object_table.field_number("FIELD_IS_VIRTUAL") + DD_FIELD_OFFSET, &len);
   is_virtual = mach_read_from_1(field) & 0x01;
@@ -6917,7 +7103,7 @@ bool dd_process_dd_virtual_columns_rec(mem_heap_t *heap, const rec_t *rec,
   }
 
   /* Get the hidden attribute, and skip if it's a hidden column. */
-  field = (const byte *)rec_get_nth_field(
+  field = rec_get_nth_field(
       nullptr, rec, offsets,
       dd_object_table.field_number("FIELD_HIDDEN") + DD_FIELD_OFFSET, &len);
   hidden = static_cast<dd::Column::enum_hidden_type>(mach_read_from_1(field));
@@ -6927,14 +7113,14 @@ bool dd_process_dd_virtual_columns_rec(mem_heap_t *heap, const rec_t *rec,
   }
 
   /* Get the position. */
-  field = (const byte *)rec_get_nth_field(
+  field = rec_get_nth_field(
       nullptr, rec, offsets,
       dd_object_table.field_number("FIELD_ORDINAL_POSITION") + DD_FIELD_OFFSET,
       &len);
   origin_pos = mach_read_from_4(field) - 1;
 
   /* Get the se_private_data field. */
-  field = (const byte *)rec_get_nth_field(
+  field = rec_get_nth_field(
       nullptr, rec, offsets,
       dd_object_table.field_number("FIELD_SE_PRIVATE_DATA") + DD_FIELD_OFFSET,
       &len);
@@ -7041,7 +7227,7 @@ bool dd_process_dd_indexes_rec(mem_heap_t *heap, const rec_t *rec,
   }
 
   /* Get the se_private_data field. */
-  field = (const byte *)rec_get_nth_field(
+  field = rec_get_nth_field(
       nullptr, rec, offsets,
       dd_object_table.field_number("FIELD_SE_PRIVATE_DATA") + DD_FIELD_OFFSET,
       &len);
@@ -7191,7 +7377,7 @@ bool dd_process_dd_indexes_rec_simple(mem_heap_t *heap, const rec_t *rec,
   }
 
   /* Get the se_private_data field. */
-  field = (const byte *)rec_get_nth_field(
+  field = rec_get_nth_field(
       nullptr, rec, offsets,
       dd_object_table.field_number("FIELD_SE_PRIVATE_DATA") + DD_FIELD_OFFSET,
       &len);
@@ -7265,7 +7451,7 @@ bool dd_process_dd_tablespaces_rec(mem_heap_t *heap, const rec_t *rec,
   memcpy(*name, field, len);
 
   /* Get the options string. */
-  field = (const byte *)rec_get_nth_field(
+  field = rec_get_nth_field(
       nullptr, rec, offsets,
       dd_object_table.field_number("FIELD_OPTIONS") + DD_FIELD_OFFSET, &len);
 
@@ -7309,7 +7495,7 @@ bool dd_process_dd_tablespaces_rec(mem_heap_t *heap, const rec_t *rec,
   delete o;
 
   /* Get the se_private_data field. */
-  field = (const byte *)rec_get_nth_field(
+  field = rec_get_nth_field(
       nullptr, rec, offsets,
       dd_object_table.field_number("FIELD_SE_PRIVATE_DATA") + DD_FIELD_OFFSET,
       &len);
@@ -8578,6 +8764,68 @@ void get_table(const std::string &dict_name, bool convert, std::string &schema,
   }
 }
 
+std::optional<table_name_components> parse_tablespace_path(std::string path) {
+  // Initialize variables
+  table_name_components table_info;
+
+  // Find the last '/'
+  const size_t last_slash = path.find_last_of(OS_PATH_SEPARATOR);
+  if (!last_slash || last_slash == std::string::npos ||
+      last_slash == path.size() - 1) {
+    return {};
+  }
+  const size_t second_last_slash =
+      path.find_last_of(OS_PATH_SEPARATOR, last_slash - 1);
+  if (!second_last_slash || second_last_slash == std::string::npos) return {};
+
+  // Extract directory
+  table_info.directory = path.substr(0, second_last_slash);
+
+  // Extract schema name
+  table_info.schema_name =
+      path.substr(second_last_slash + 1, last_slash - second_last_slash - 1);
+  file_to_table(table_info.schema_name, false);
+
+  // Extract table name
+  std::string temp_table = path.substr(last_slash + 1);
+  size_t hash_pos = temp_table.find_first_of("#.");
+  table_info.table_name = temp_table.substr(0, hash_pos);
+  file_to_table(table_info.table_name, false);
+
+  // Check for partitions and subpartitions
+  bool has_partitions = temp_table.find(PART_SEPARATOR) != std::string::npos;
+  bool has_subpartitions =
+      temp_table.find(SUB_PART_SEPARATOR) != std::string::npos;
+
+  if (has_partitions) {
+    // Extract partition name
+    size_t part_start =
+        temp_table.find(PART_SEPARATOR) + std::string(PART_SEPARATOR).length();
+    size_t part_end = has_subpartitions ? temp_table.find(SUB_PART_SEPARATOR)
+                                        : temp_table.find('.');
+
+    ut_ad(part_end != std::string::npos);
+    std::string temp_partition =
+        temp_table.substr(part_start, part_end - part_start);
+    file_to_table(temp_partition, false);
+    table_info.partition = temp_partition;
+  }
+
+  if (has_subpartitions) {
+    // Extract subpartition name
+    size_t sub_part_start = temp_table.find(SUB_PART_SEPARATOR) +
+                            std::string(SUB_PART_SEPARATOR).length();
+    size_t sub_part_end = temp_table.find('.');
+    ut_ad(sub_part_end != std::string::npos);
+    std::string temp_subpartition =
+        temp_table.substr(sub_part_start, sub_part_end - sub_part_start);
+    file_to_table(temp_subpartition, false);
+    table_info.subpartition = temp_subpartition;
+  }
+
+  return table_info;
+}
+
 void get_partition(const std::string &partition, bool convert,
                    std::string &part, std::string &sub_part) {
   ut_ad(is_partition(partition));
@@ -8666,7 +8914,7 @@ static void build_partition_low(const std::string part,
 
   if (part.empty()) {
     ut_d(ut_error);
-    ut_o(return );
+    ut_o(return);
   }
 
   /* Get partition separator strings */
@@ -8696,22 +8944,6 @@ static void build_partition_low(const std::string part,
     conv(conv_str);
   }
   partition.append(conv_str);
-}
-
-/** Convert string to lower case.
-@param[in,out]  name    name to convert */
-static void to_lower(std::string &name) {
-  /* Skip empty string. */
-  if (name.empty()) {
-    return;
-  }
-  ut_ad(name.length() < FN_REFLEN);
-  char conv_name[FN_REFLEN];
-  auto len = name.copy(&conv_name[0], FN_REFLEN - 1);
-  conv_name[len] = '\0';
-
-  innobase_casedn_str(&conv_name[0]);
-  name.assign(&conv_name[0]);
 }
 
 /** Get partition and sub-partition name from DD. We convert the names to

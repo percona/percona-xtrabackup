@@ -1155,9 +1155,9 @@ Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`filler` AS `filler` from `test`.`t1` where ((`test`.`t1`.`a` = 'a') or (`test`.`t1`.`a` = 'a '))
 explain select * from t2 where a between 'a' and 'A';
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t2	NULL	ref	a	a	43	const	#	100.00	Using where
+1	SIMPLE	t2	NULL	ref	a	a	43	const	#	100.00	NULL
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a`,`test`.`t2`.`filler` AS `filler` from `test`.`t2` where (`test`.`t2`.`a` between 'a' and 'A')
+Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a`,`test`.`t2`.`filler` AS `filler` from `test`.`t2` where (`test`.`t2`.`a` = 'a')
 explain select * from t2 where a = 'a' or a='A';
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t2	NULL	ref	a	a	43	const	#	100.00	NULL
@@ -1998,7 +1998,7 @@ EXPLAIN
     -> Filter: (t1.i4 is not null)  (cost=0.55 rows=3)
         -> Covering index scan on t1 using i4_uq  (cost=0.55 rows=3)
     -> Filter: (t2.pk between t1.i4 and t1.i4)  (cost=0.283 rows=1)
-        -> Single-row index lookup on t2 using PRIMARY (pk=t1.i4)  (cost=0.283 rows=1)
+        -> Single-row index lookup on t2 using PRIMARY (pk = t1.i4)  (cost=0.283 rows=1)
 
 SELECT * FROM t1, t1 as t2 WHERE t2.pk BETWEEN t1.i4 AND t1.i4;
 pk	i4	pk	i4
@@ -2276,7 +2276,7 @@ EXPLAIN
     -> Filter: (t1.col_int is not null)  (cost=0.45 rows=2)
         -> Table scan on t1  (cost=0.45 rows=2)
     -> Filter: (t2.pk < t1.pk)  (cost=0.267 rows=0.333)
-        -> Index lookup on t2 using col_int_key (col_int_key=t1.col_int)  (cost=0.267 rows=1)
+        -> Index lookup on t2 using col_int_key (col_int_key = t1.col_int)  (cost=0.267 rows=1)
 
 SELECT t1.*,t2.* FROM t1 straight_join t2
 ON t2.col_int_key = t1.col_int WHERE t2.pk < t1.pk;
@@ -4419,7 +4419,7 @@ EXPLAIN
 -> Nested loop left join  (rows=4)
     -> Covering index scan on t1 using f1  (rows=4)
     -> Nested loop left join  (rows=1)
-        -> Covering index lookup on t2 using f1 (f1=t1.f1)  (rows=1)
+        -> Covering index lookup on t2 using f1 (f1 = t1.f1)  (rows=1)
         -> Filter: (t3.f1 < NULL)  (rows=1)
             -> Covering index scan on t3 using f1  (rows=4)
 
@@ -4441,7 +4441,7 @@ EXPLAIN
     -> Nested loop left join  (rows=8)
         -> Covering index scan on t1 using f1  (rows=4)
         -> Nested loop left join  (rows=2)
-            -> Covering index lookup on t2 using f1 (f1=t1.f1)  (rows=1)
+            -> Covering index lookup on t2 using f1 (f1 = t1.f1)  (rows=1)
             -> Filter: (t3.f1 between 2 and 3)  (rows=2)
                 -> Covering index range scan on t3 using f1 over (2 <= f1 <= 3)  (rows=2)
 
@@ -4453,7 +4453,7 @@ EXPLAIN
 -> Nested loop left join  (rows=4)
     -> Covering index scan on t1 using f1  (rows=4)
     -> Nested loop left join  (rows=1)
-        -> Covering index lookup on t2 using f1 (f1=t1.f1)  (rows=1)
+        -> Covering index lookup on t2 using f1 (f1 = t1.f1)  (rows=1)
         -> Filter: (t3.f1 < NULL)  (rows=1)
             -> Covering index scan on t3 using f1  (rows=4)
 
@@ -4476,7 +4476,7 @@ EXPLAIN
     -> Nested loop left join  (rows=8)
         -> Covering index scan on t1 using f1  (rows=4)
         -> Nested loop left join  (rows=2)
-            -> Covering index lookup on t2 using f1 (f1=t1.f1)  (rows=1)
+            -> Covering index lookup on t2 using f1 (f1 = t1.f1)  (rows=1)
             -> Filter: (t3.f1 between 2 and 3)  (rows=2)
                 -> Covering index range scan on t3 using f1 over (2 <= f1 <= 3)  (rows=2)
 
@@ -4496,7 +4496,7 @@ EXPLAIN
     -> Select #2 (subquery in condition; dependent)
         -> Limit: 1 row(s)
             -> Filter: (t.f1 between 2 and 3)
-                -> Covering index lookup on t using f1 (f1=<cache>(t.f2))  (rows=1)
+                -> Covering index lookup on t using f1 (f1 = <cache>(t.f2))  (rows=1)
 
 explain format=tree SELECT 1
 FROM t
@@ -4520,7 +4520,7 @@ EXPLAIN
     -> Select #2 (subquery in condition; dependent)
         -> Limit: 1 row(s)
             -> Filter: (t.f1 between 2 and 3)
-                -> Covering index lookup on t using f1 (f1=<cache>(t.f2))  (rows=1)
+                -> Covering index lookup on t using f1 (f1 = <cache>(t.f2))  (rows=1)
 
 explain format=tree SELECT 1
 FROM t
@@ -4560,7 +4560,7 @@ EXPLAIN
                 -> Covering index scan on t3 using f1  (rows=4)
                 -> Hash
                     -> Filter: (t2.f1 between 2 and 3)  (rows=1)
-                        -> Covering index lookup on t2 using f1 (f1=<cache>(t.f2))  (rows=1)
+                        -> Covering index lookup on t2 using f1 (f1 = <cache>(t.f2))  (rows=1)
 
 explain format=tree SELECT 1
 FROM t
@@ -4574,7 +4574,7 @@ EXPLAIN
                 -> Filter: (t3.f1 between 2 and 3)  (rows=2)
                     -> Covering index range scan on t3 using f1 over (2 <= f1 <= 3)  (rows=2)
                 -> Hash
-                    -> Covering index lookup on t2 using f1 (f1=<cache>(t.f2))  (rows=1)
+                    -> Covering index lookup on t2 using f1 (f1 = <cache>(t.f2))  (rows=1)
 
 explain format=tree SELECT 1
 FROM t
@@ -4630,7 +4630,7 @@ EXPLAIN
                 -> Covering index scan on t3 using f1  (rows=4)
                 -> Hash
                     -> Filter: (t2.f1 between 2 and 3)  (rows=1)
-                        -> Covering index lookup on t2 using f1 (f1=<cache>(t.f2))  (rows=1)
+                        -> Covering index lookup on t2 using f1 (f1 = <cache>(t.f2))  (rows=1)
 
 explain format=tree SELECT 1
 FROM t
@@ -4648,7 +4648,7 @@ EXPLAIN
                 -> Filter: (t3.f1 between 2 and 3)  (rows=2)
                     -> Covering index range scan on t3 using f1 over (2 <= f1 <= 3)  (rows=2)
                 -> Hash
-                    -> Covering index lookup on t2 using f1 (f1=<cache>(t.f2))  (rows=1)
+                    -> Covering index lookup on t2 using f1 (f1 = <cache>(t.f2))  (rows=1)
 
 explain format=tree SELECT 1
 FROM t AS t1
@@ -4680,7 +4680,7 @@ EXPLAIN
     -> Select #2 (subquery in condition; dependent)
         -> Limit: 1 row(s)  (rows=1)
             -> Filter: (t2.f1 between 2 and 3)  (rows=1)
-                -> Covering index lookup on t2 using f1 (f1=t1.f1)  (rows=1)
+                -> Covering index lookup on t2 using f1 (f1 = t1.f1)  (rows=1)
 
 Warnings:
 Note	1276	Field or reference 'test.t1.f1' of SELECT #2 was resolved in SELECT #1
@@ -4722,7 +4722,7 @@ EXPLAIN
     -> Select #2 (subquery in condition; dependent)
         -> Limit: 1 row(s)  (rows=1)
             -> Filter: (t2.f1 between 2 and 3)  (rows=1)
-                -> Covering index lookup on t2 using f1 (f1=t1.f1)  (rows=1)
+                -> Covering index lookup on t2 using f1 (f1 = t1.f1)  (rows=1)
 
 Warnings:
 Note	1276	Field or reference 'test.t1.f1' of SELECT #2 was resolved in SELECT #1
@@ -4786,7 +4786,7 @@ EXPLAIN
                 -> Covering index scan on t3 using f1  (rows=4)
                 -> Hash
                     -> Filter: (t2.f1 between 2 and 3)  (rows=1)
-                        -> Covering index lookup on t2 using f1 (f1=t1.f1)  (rows=1)
+                        -> Covering index lookup on t2 using f1 (f1 = t1.f1)  (rows=1)
 
 Warnings:
 Note	1276	Field or reference 'test.t1.f1' of SELECT #2 was resolved in SELECT #1
@@ -4804,7 +4804,7 @@ EXPLAIN
                 -> Filter: (t3.f1 between 2 and 3)  (rows=2)
                     -> Covering index range scan on t3 using f1 over (2 <= f1 <= 3)  (rows=2)
                 -> Hash
-                    -> Covering index lookup on t2 using f1 (f1=t1.f1)  (rows=1)
+                    -> Covering index lookup on t2 using f1 (f1 = t1.f1)  (rows=1)
 
 Warnings:
 Note	1276	Field or reference 'test.t1.f1' of SELECT #2 was resolved in SELECT #1
@@ -4879,7 +4879,7 @@ EXPLAIN
                 -> Covering index scan on t3 using f1  (rows=4)
                 -> Hash
                     -> Filter: (t2.f1 between 2 and 3)  (rows=1)
-                        -> Covering index lookup on t2 using f1 (f1=t1.f1)  (rows=1)
+                        -> Covering index lookup on t2 using f1 (f1 = t1.f1)  (rows=1)
 
 Warnings:
 Note	1276	Field or reference 'test.t1.f1' of SELECT #2 was resolved in SELECT #1
@@ -4900,9 +4900,53 @@ EXPLAIN
                 -> Filter: (t3.f1 between 2 and 3)  (rows=2)
                     -> Covering index range scan on t3 using f1 over (2 <= f1 <= 3)  (rows=2)
                 -> Hash
-                    -> Covering index lookup on t2 using f1 (f1=t1.f1)  (rows=1)
+                    -> Covering index lookup on t2 using f1 (f1 = t1.f1)  (rows=1)
 
 Warnings:
 Note	1276	Field or reference 'test.t1.f1' of SELECT #2 was resolved in SELECT #1
 DROP TABLE t;
+#
+# Bug#36705030: prepared statement encounter performance degradation
+#               compared with normal select
+#
+CREATE TABLE tt(
+id INT PRIMARY KEY,
+p_id VARCHAR(36),
+o_id VARCHAR(36),
+tag INT,
+status INT,
+update_time DATETIME,
+KEY idx_1 (o_id, status, update_time),
+KEY idx_2 (o_id, p_id, tag, status));
+SET optimizer_switch='index_condition_pushdown=off';
+EXPLAIN
+SELECT id, p_id, tag, status, update_time
+FROM tt
+WHERE o_id = '054a579e5ea7415ab3afd2eeb14038c1' AND
+status = 0 AND
+update_time BETWEEN '2024-02-15 00:00:00' AND '2024-02-21 23:59:59'
+ORDER BY update_time, id
+LIMIT 0, 100;
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	tt	NULL	range	idx_1,idx_2	idx_1	158	NULL	1	100.00	Using where
+Warnings:
+Note	1003	/* select#1 */ select `test`.`tt`.`id` AS `id`,`test`.`tt`.`p_id` AS `p_id`,`test`.`tt`.`tag` AS `tag`,`test`.`tt`.`status` AS `status`,`test`.`tt`.`update_time` AS `update_time` from `test`.`tt` where ((`test`.`tt`.`status` = 0) and (`test`.`tt`.`o_id` = '054a579e5ea7415ab3afd2eeb14038c1') and (`test`.`tt`.`update_time` between '2024-02-15 00:00:00' and '2024-02-21 23:59:59')) order by `test`.`tt`.`update_time`,`test`.`tt`.`id` limit 0,100
+PREPARE stmt1 FROM '
+EXPLAIN
+SELECT id, p_id, tag, status, update_time
+FROM tt
+WHERE o_id = ? AND status = ? AND update_time BETWEEN ? AND ?
+ORDER BY update_time, id
+LIMIT 0, 100';
+SET @v1 = '054a579e5ea7415ab3afd2eeb14038c1';
+SET @v2 = 0;
+SET @v3 = '2024-02-15 00:00:00';
+SET @v4 = '2024-02-21 23:59:59';
+EXECUTE stmt1 USING @v1,@v2,@v3,@v4;
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	tt	NULL	range	idx_1,idx_2	idx_1	158	NULL	1	100.00	Using where
+Warnings:
+Note	1003	/* select#1 */ select `test`.`tt`.`id` AS `id`,`test`.`tt`.`p_id` AS `p_id`,`test`.`tt`.`tag` AS `tag`,`test`.`tt`.`status` AS `status`,`test`.`tt`.`update_time` AS `update_time` from `test`.`tt` where ((`test`.`tt`.`status` = 0) and (`test`.`tt`.`o_id` = '054a579e5ea7415ab3afd2eeb14038c1') and (`test`.`tt`.`update_time` between '2024-02-15 00:00:00' and '2024-02-21 23:59:59')) order by `test`.`tt`.`update_time`,`test`.`tt`.`id` limit 0,100
+SET optimizer_switch=default;
+DROP TABLE tt;
 set optimizer_switch=default;

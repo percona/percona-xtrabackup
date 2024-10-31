@@ -877,14 +877,14 @@ ERROR 22012: Division by 0
 UPDATE t1 SET col2= MOD(col2,0) WHERE col2 > 0;
 ERROR 22012: Division by 0
 INSERT INTO t1 (col1) VALUES ('');
-ERROR 01000: Data truncated for column 'col1' at row 1
+ERROR HY000: Incorrect FLOAT value: '' for column 'col1' at row 1
 INSERT INTO t1 (col1) VALUES ('a59b');
-ERROR 01000: Data truncated for column 'col1' at row 1
+ERROR HY000: Incorrect FLOAT value: 'a59b' for column 'col1' at row 1
 INSERT INTO t1 (col1) VALUES ('1a');
-ERROR 01000: Data truncated for column 'col1' at row 1
+ERROR HY000: Incorrect FLOAT value: '1a' for column 'col1' at row 1
 INSERT IGNORE INTO t1 (col1) VALUES ('2a');
 Warnings:
-Warning	1265	Data truncated for column 'col1' at row 1
+Warning	1366	Incorrect FLOAT value: '2a' for column 'col1' at row 1
 INSERT IGNORE INTO t1 (col1) VALUES (1/0);
 Warnings:
 Warning	1365	Division by 0
@@ -929,14 +929,14 @@ ERROR 22012: Division by 0
 UPDATE t1 SET col2= MOD(col2,0) WHERE col2 > 0;
 ERROR 22012: Division by 0
 INSERT INTO t1 (col1) VALUES ('');
-ERROR 01000: Data truncated for column 'col1' at row 1
+ERROR HY000: Incorrect DOUBLE value: '' for column 'col1' at row 1
 INSERT INTO t1 (col1) VALUES ('a59b');
-ERROR 01000: Data truncated for column 'col1' at row 1
+ERROR HY000: Incorrect DOUBLE value: 'a59b' for column 'col1' at row 1
 INSERT INTO t1 (col1) VALUES ('1a');
-ERROR 01000: Data truncated for column 'col1' at row 1
+ERROR HY000: Incorrect DOUBLE value: '1a' for column 'col1' at row 1
 INSERT IGNORE INTO t1 (col1) VALUES ('2a');
 Warnings:
-Warning	1265	Data truncated for column 'col1' at row 1
+Warning	1366	Incorrect DOUBLE value: '2a' for column 'col1' at row 1
 INSERT IGNORE INTO t1 (col1) values (1/0);
 Warnings:
 Warning	1365	Division by 0
@@ -1407,7 +1407,7 @@ i int comment
  123456789*123456789*123456789*123456789*
  123456789*123456789*123456789*123456789*
  123456789*123456789*123456789*123456789*');
-ERROR HY000: Comment for field 'i' is too long (max = 1024)
+ERROR HY000: The maximum supported character limit for the field, 'i', has been exceeded (max = 1024)
 set @@sql_mode= @org_mode;
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 create table t1
@@ -1440,7 +1440,7 @@ create table t1
   123456789*123456789*123456789*123456789*
   123456789*123456789*123456789*123456789*');
 Warnings:
-Warning	1629	Comment for field 'i' is too long (max = 1024)
+Warning	1629	The maximum supported character limit for the field, 'i', has been exceeded (max = 1024)
 SET sql_mode = default;
 select column_name, column_comment from information_schema.columns where
 table_schema = 'test' and table_name = 't1';

@@ -135,6 +135,7 @@
 #include "sql/sql_show_processlist.h"  // pfs_processlist_enabled
 #include "sql/sql_tmp_table.h"         // internal_tmp_mem_storage_engine_names
 #include "sql/ssl_acceptor_context_operator.h"
+#include "sql/statement/statement.h"  // STMT_HANDLE_PSI_STATEMENT_INFO_COUNT
 #include "sql/system_variables.h"
 #include "sql/table_cache.h"  // Table_cache_manager
 #include "sql/transaction.h"  // trans_commit_stmt
@@ -539,6 +540,20 @@ static Sys_var_charptr Sys_pfs_instrument(
     CMD_LINE(OPT_ARG, OPT_PFS_INSTRUMENT), IN_FS_CHARSET, DEFAULT(""),
     PFS_TRAILING_PROPERTIES);
 
+static Sys_var_charptr Sys_pfs_meter(
+    "performance_schema_meter",
+    "Default startup value for a performance schema meter.",
+    READ_ONLY NOT_VISIBLE GLOBAL_VAR(pfs_param.m_pfs_meter),
+    CMD_LINE(OPT_ARG, OPT_PFS_METER), IN_FS_CHARSET, DEFAULT(""),
+    PFS_TRAILING_PROPERTIES);
+
+static Sys_var_charptr Sys_pfs_logger(
+    "performance_schema_logger",
+    "Default startup value for a performance schema logger.",
+    READ_ONLY NOT_VISIBLE GLOBAL_VAR(pfs_param.m_pfs_logger),
+    CMD_LINE(OPT_ARG, OPT_PFS_LOGGER), IN_FS_CHARSET, DEFAULT(""),
+    PFS_TRAILING_PROPERTIES);
+
 /**
   Update the performance_schema_show_processlist.
   Warn that the use of information_schema processlist is deprecated.
@@ -914,6 +929,7 @@ static Sys_var_long Sys_pfs_events_stages_history_size(
   - CLONE_PSI_STATEMENT_COUNT for "statement/clone/...".
   - 1 for "statement/rpl/relay_log", for replicated statements.
   - 1 for "statement/scheduler/event", for scheduled events.
+  - STMT_HANDLE_PSI_STATEMENT_INFO_COUNT for "statement/stmt_handle/...".
 */
 static Sys_var_ulong Sys_pfs_max_statement_classes(
     "performance_schema_max_statement_classes",
@@ -921,7 +937,8 @@ static Sys_var_ulong Sys_pfs_max_statement_classes(
     READ_ONLY GLOBAL_VAR(pfs_param.m_statement_class_sizing),
     CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 256),
     DEFAULT((ulong)SQLCOM_END + (ulong)COM_END + 5 +
-            SP_PSI_STATEMENT_INFO_COUNT + CLONE_PSI_STATEMENT_COUNT),
+            SP_PSI_STATEMENT_INFO_COUNT + CLONE_PSI_STATEMENT_COUNT +
+            STMT_HANDLE_PSI_STATEMENT_INFO_COUNT),
     BLOCK_SIZE(1), PFS_TRAILING_PROPERTIES);
 
 static Sys_var_long Sys_pfs_events_statements_history_long_size(
@@ -967,6 +984,13 @@ static Sys_var_ulong Sys_pfs_max_metric_classes(
     READ_ONLY GLOBAL_VAR(pfs_param.m_metric_class_sizing),
     CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 11000),
     DEFAULT(PFS_MAX_METRIC_CLASS), BLOCK_SIZE(1), PFS_TRAILING_PROPERTIES);
+
+static Sys_var_ulong Sys_pfs_max_logger_classes(
+    "performance_schema_max_logger_classes",
+    "Maximum number of logger source instruments.",
+    READ_ONLY GLOBAL_VAR(pfs_param.m_logger_class_sizing),
+    CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 200), DEFAULT(PFS_MAX_LOGGER_CLASS),
+    BLOCK_SIZE(1), PFS_TRAILING_PROPERTIES);
 
 static Sys_var_long Sys_pfs_digest_size(
     "performance_schema_digests_size",
@@ -2372,18 +2396,6 @@ static Sys_var_bool Sys_check_proxy_users(
     "GRANT PROXY privilege definition.",
     GLOBAL_VAR(check_proxy_users), CMD_LINE(OPT_ARG), DEFAULT(false));
 
-static Sys_var_bool Sys_mysql_native_password_proxy_users(
-    "mysql_native_password_proxy_users",
-    "If set to FALSE (the default), then the mysql_native_password "
-    "plugin will not signal for authenticated users to be checked for "
-    "mapping "
-    "to proxy users.  When set to TRUE, the plugin will flag associated "
-    "authenticated accounts to be mapped to proxy users when the server "
-    "option "
-    "check_proxy_users is enabled.",
-    GLOBAL_VAR(mysql_native_password_proxy_users), CMD_LINE(OPT_ARG),
-    DEFAULT(false));
-
 static Sys_var_bool Sys_sha256_password_proxy_users(
     "sha256_password_proxy_users",
     "If set to FALSE (the default), then the sha256_password authentication "
@@ -3208,32 +3220,19 @@ void update_optimizer_switch() {
 }
 
 static bool check_optimizer_switch(sys_var *, THD *thd [[maybe_unused]],
-                                   set_var *var) {
+                                   set_var *var [[maybe_unused]]) {
+#ifndef WITH_HYPERGRAPH_OPTIMIZER
   const bool current_hypergraph_optimizer =
       thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER);
   const bool want_hypergraph_optimizer =
       var->save_result.ulonglong_value & OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER;
 
-  if (current_hypergraph_optimizer && !want_hypergraph_optimizer) {
-    // Don't turn off the hypergraph optimizer on set optimizer_switch=DEFAULT.
-    // This is so that mtr --hypergraph should not be easily cancelled in the
-    // middle of a test, unless the test explicitly meant it.
-    if (var->value == nullptr) {
-      var->save_result.ulonglong_value |= OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER;
-    }
-  } else if (!current_hypergraph_optimizer && want_hypergraph_optimizer) {
-#ifdef WITH_HYPERGRAPH_OPTIMIZER
-    // Allow, with a warning.
-    push_warning(thd, Sql_condition::SL_WARNING, ER_WARN_DEPRECATED_SYNTAX,
-                 ER_THD(thd, ER_WARN_HYPERGRAPH_EXPERIMENTAL));
-    return false;
-#else
-    // Disallow; the hypergraph optimizer is not ready for production yet.
+  if (!current_hypergraph_optimizer && want_hypergraph_optimizer) {
     my_error(ER_HYPERGRAPH_NOT_SUPPORTED_YET, MYF(0),
              "use in non-debug builds");
     return true;
-#endif
   }
+#endif
   return false;
 }
 
@@ -3298,6 +3297,30 @@ static Sys_var_ulonglong Sys_global_connection_memory_limit(
     VALID_RANGE(1, max_mem_sz), DEFAULT(max_mem_sz),
 #else
     VALID_RANGE(1024 * 1024 * 16, max_mem_sz), DEFAULT(max_mem_sz),
+#endif
+    BLOCK_SIZE(1), &PLock_global_conn_mem_limit, NOT_IN_BINLOG,
+    ON_CHECK(nullptr), ON_UPDATE(nullptr));
+
+static Sys_var_ulonglong Sys_global_connection_memory_status_limit(
+    "global_connection_memory_status_limit",
+    "Global connection memory usage threshold for triggering status update",
+    GLOBAL_VAR(global_conn_memory_status_limit), CMD_LINE(REQUIRED_ARG),
+#ifndef NDEBUG
+    VALID_RANGE(1, max_mem_sz), DEFAULT(max_mem_sz),
+#else
+    VALID_RANGE(1024 * 1024 * 16, max_mem_sz), DEFAULT(max_mem_sz),
+#endif
+    BLOCK_SIZE(1), &PLock_global_conn_mem_limit, NOT_IN_BINLOG,
+    ON_CHECK(nullptr), ON_UPDATE(nullptr));
+
+static Sys_var_ulonglong Sys_connection_memory_status_limit(
+    "connection_memory_status_limit",
+    "Maximum amount of memory connection can consume before status update",
+    GLOBAL_VAR(conn_memory_status_limit), CMD_LINE(REQUIRED_ARG),
+#ifndef NDEBUG
+    VALID_RANGE(1, max_mem_sz), DEFAULT(max_mem_sz),
+#else
+    VALID_RANGE(1024 * 1024 * 2, max_mem_sz), DEFAULT(max_mem_sz),
 #endif
     BLOCK_SIZE(1), &PLock_global_conn_mem_limit, NOT_IN_BINLOG,
     ON_CHECK(nullptr), ON_UPDATE(nullptr));
@@ -4889,6 +4912,29 @@ static Sys_var_ulong Sys_table_cache_instances(
       Is is better to keep these options together, to avoid confusing
       handle_options() with partial name matches.
     */
+    sys_var::PARSE_EARLY);
+
+static bool fix_table_cache_triggers(sys_var *, THD *, enum_var_type) {
+  /*
+    Similarly to the table_open_cache parameter, table_open_cache_triggers
+    needs to be divided by the number of table cache instances in order to
+    get the per-instance soft limit on the number of TABLE objects with
+    fully loaded triggers within a table cache.
+  */
+  table_cache_triggers_per_instance =
+      table_cache_triggers / table_cache_instances;
+  return false;
+}
+
+static Sys_var_ulong Sys_table_cache_triggers(
+    "table_open_cache_triggers",
+    "The number of cached open tables with fully loaded triggers",
+    GLOBAL_VAR(table_cache_triggers), CMD_LINE(REQUIRED_ARG),
+    /* Use 1 as lower bound to be consistent with table_open_cache variable. */
+    VALID_RANGE(1, 512 * 1024), DEFAULT(512 * 1024), BLOCK_SIZE(1),
+    NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(nullptr),
+    ON_UPDATE(fix_table_cache_triggers), nullptr,
+    /* See explanation for Sys_table_cache_instances. */
     sys_var::PARSE_EARLY);
 
 /**

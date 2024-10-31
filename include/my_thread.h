@@ -54,7 +54,7 @@
 // clang with DEBUG and UBSAN -O0 -fno-inline
 #define DEFAULT_THREAD_STACK (1024UL * 1024UL)
 
-static inline int is_timeout(int e) {
+static inline bool is_timeout(int e) {
 #if ETIMEDOUT == ETIME
   return e == ETIMEDOUT;
 #else
@@ -177,5 +177,6 @@ extern void my_thread_global_end();
 
 extern bool my_thread_init();
 extern void my_thread_end();
+extern bool my_thread_is_inited();
 
 #endif /* MY_THREAD_INCLUDED */

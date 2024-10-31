@@ -1137,7 +1137,7 @@ int ha_innopart::open(const char *name, int mode [[maybe_unused]],
     return HA_ERR_OUT_OF_MEM;
   }
 
-  m_sql_stat_start_parts.init(m_bitset, UT_BITS_IN_BYTES(m_tot_parts));
+  m_sql_stat_start_parts = {m_bitset, UT_BITS_IN_BYTES(m_tot_parts)};
   m_reuse_mysql_template = false;
 
   info(HA_STATUS_NO_LOCK | HA_STATUS_VARIABLE | HA_STATUS_CONST);
@@ -1274,7 +1274,7 @@ void ha_innopart::set_partition(uint part_id) {
 
   if (part_id >= m_tot_parts) {
     ut_d(ut_error);
-    ut_o(return );
+    ut_o(return);
   }
   if (m_pcur_parts != nullptr) {
     m_prebuilt->pcur = &m_pcur_parts[m_pcur_map[part_id]];
@@ -1322,7 +1322,7 @@ void ha_innopart::update_partition(uint part_id) {
 
   if (part_id >= m_tot_parts) {
     ut_d(ut_error);
-    ut_o(return );
+    ut_o(return);
   }
 
   /* Update all m_parts[part_id] fields with corresponding m_prebuilt's fields,
@@ -3189,10 +3189,9 @@ int ha_innopart::records(ha_rows *num_rows) {
 
   n_threads = Parallel_reader::available_threads(n_threads, false);
 
-  if (n_threads > 0 && trx->isolation_level > TRX_ISO_READ_UNCOMMITTED &&
+  if (n_threads > 1 && trx->isolation_level > TRX_ISO_READ_UNCOMMITTED &&
       m_prebuilt->select_lock_type == LOCK_NONE &&
-      trx->mysql_n_tables_locked == 0 && !m_prebuilt->ins_sel_stmt &&
-      n_threads > 1) {
+      trx->mysql_n_tables_locked == 0 && !m_prebuilt->ins_sel_stmt) {
     trx_start_if_not_started_xa(trx, false, UT_LOCATION_HERE);
     trx_assign_read_view(trx);
 
@@ -3207,6 +3206,11 @@ int ha_innopart::records(ha_rows *num_rows) {
       if (dict_table_is_discarded(m_prebuilt->table)) {
         ib_senderrf(ha_thd(), IB_LOG_LEVEL_ERROR, ER_TABLESPACE_DISCARDED,
                     m_prebuilt->table->name.m_name);
+
+        /* Restore the parallel read thread count if parallel read is not
+        executed */
+        Parallel_reader::release_threads(n_threads);
+
         *num_rows = HA_POS_ERROR;
         return (HA_ERR_NO_SUCH_TABLE);
       }
@@ -3218,6 +3222,8 @@ int ha_innopart::records(ha_rows *num_rows) {
 
     ulint n_rows{};
 
+    /* There is no need to restore the parallel read thread count after this
+    method call as it takes the ownership of n_threads. */
     auto err =
         row_mysql_parallel_select_count_star(trx, indexes, n_threads, &n_rows);
 
@@ -3236,6 +3242,10 @@ int ha_innopart::records(ha_rows *num_rows) {
     /* The index scan is probably so expensive, so the overhead
     of the rest of the function is neglectable for each partition.
     So no current reason for optimizing this further. */
+
+    /* Restore the parallel read thread count if parallel read is not
+    executed */
+    Parallel_reader::release_threads(n_threads);
 
     for (uint i = m_part_info->get_first_used_partition(); i < m_tot_parts;
          i = m_part_info->get_next_used_partition(i)) {
@@ -3906,7 +3916,7 @@ int ha_innopart::repair(THD *thd, HA_CHECK_OPT *repair_opt) {
   push_warning_printf(thd, Sql_condition::SL_WARNING, ER_ILLEGAL_HA,
                       "Only moving rows from wrong partition to correct"
                       " partition is supported,"
-                      " repairing InnoDB indexes is not yet supported!");
+                      " repairing InnoDB indexes is not supported!");
 #endif
 
   /* Only repair partitions for MEDIUM or EXTENDED options. */
@@ -4098,7 +4108,7 @@ void ha_innopart::get_auto_increment(ulonglong, ulonglong increment,
     /* Only first key part allowed as autoinc for InnoDB tables! */
     *first_value = ULLONG_MAX;
     ut_d(ut_error);
-    ut_o(return );
+    ut_o(return);
   }
   get_auto_increment_first_field(increment, nb_desired_values, first_value,
                                  nb_reserved_values);

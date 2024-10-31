@@ -21,19 +21,19 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#ifndef MYSQL_GTID_GTID_SET_H
-#define MYSQL_GTID_GTID_SET_H
+#ifndef MYSQL_GTID_GTIDSET_H
+#define MYSQL_GTID_GTIDSET_H
 
 #include <cstddef>
 #include <map>
 #include <set>
 #include <sstream>
 
-#include "mysql/binlog/event/nodiscard.h"
 #include "mysql/gtid/global.h"
 #include "mysql/gtid/gtid.h"
 #include "mysql/gtid/tag.h"
 #include "mysql/gtid/tsid.h"
+#include "mysql/utils/nodiscard.h"
 
 /// @addtogroup GroupLibsMysqlGtid
 /// @{
@@ -405,4 +405,4 @@ class Gtid_set {
 
 /// @}
 
-#endif  // MYSQL_GTID_GTID_SET_H
+#endif  // MYSQL_GTID_GTIDSET_H

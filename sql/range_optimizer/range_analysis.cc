@@ -773,15 +773,15 @@ static SEL_TREE *get_full_func_mm_tree(THD *thd, RANGE_OPT_PARAM *param,
     Item_field *item_field = static_cast<Item_field *>(predicand);
     Field *field = item_field->field;
 
-    if (!((ref_tables | item_field->table_ref->map()) & param_comp))
+    if (!((ref_tables | item_field->m_table_ref->map()) & param_comp))
       ftree = get_func_mm_tree(thd, param, prev_tables, read_tables,
                                remove_jump_scans, predicand, op, value, inv);
-    Item_equal *item_equal = item_field->multi_equality();
+    Item_multi_eq *item_equal = item_field->multi_equality();
     if (item_equal != nullptr) {
       for (Item_field &item : item_equal->get_fields()) {
         Field *f = item.field;
         if (!field->eq(f) &&
-            !((ref_tables | item.table_ref->map()) & param_comp)) {
+            !((ref_tables | item.m_table_ref->map()) & param_comp)) {
           tree = get_func_mm_tree(thd, param, prev_tables, read_tables,
                                   remove_jump_scans, &item, op, value, inv);
           ftree = !ftree ? tree : tree_and(param, ftree, tree);
@@ -969,15 +969,15 @@ SEL_TREE *get_mm_tree(THD *thd, RANGE_OPT_PARAM *param, table_map prev_tables,
       break;
     }  // end case Item_func::IN_FUNC
 
-    case Item_func::MULT_EQUAL_FUNC: {
-      Item_equal *item_equal = down_cast<Item_equal *>(cond);
+    case Item_func::MULTI_EQ_FUNC: {
+      Item_multi_eq *item_equal = down_cast<Item_multi_eq *>(cond);
       Item *value = item_equal->const_arg();
       if (value == nullptr) return nullptr;
       table_map ref_tables = value->used_tables();
       for (Item_field &field_item : item_equal->get_fields()) {
         Field *field = field_item.field;
         table_map param_comp = ~(prev_tables | read_tables | current_table);
-        if (!((ref_tables | field_item.table_ref->map()) & param_comp)) {
+        if (!((ref_tables | field_item.m_table_ref->map()) & param_comp)) {
           SEL_TREE *tree =
               get_mm_parts(thd, param, prev_tables, read_tables, item_equal,
                            field, Item_func::EQ_FUNC, value);
@@ -987,7 +987,7 @@ SEL_TREE *get_mm_tree(THD *thd, RANGE_OPT_PARAM *param, table_map prev_tables,
 
       dbug_print_tree("tree_returned", ftree, param);
       return ftree;
-    }  // end case Item_func::MULT_EQUAL_FUNC
+    }  // end case Item_func::MULTI_EQ_FUNC
 
     default: {
       Item *const arg_left = cond_func->arguments()[0];

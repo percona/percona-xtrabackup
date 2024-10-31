@@ -45,6 +45,7 @@
 #include "mysql/components/services/bits/mysql_mutex_bits.h"
 #include "mysql/components/services/bits/psi_table_bits.h"
 #include "mysql/strings/m_ctype.h"
+#include "sql/auth/auth_acls.h"        // Access_bitmask
 #include "sql/dd/types/foreign_key.h"  // dd::Foreign_key::enum_rule
 #include "sql/enum_query_type.h"       // enum_query_type
 #include "sql/key.h"
@@ -74,7 +75,6 @@ class Histogram;
 
 class ACL_internal_schema_access;
 class ACL_internal_table_access;
-class COND_EQUAL;
 class Field_json;
 /* Structs that defines the TABLE */
 class File_parser;
@@ -83,10 +83,12 @@ class GRANT_TABLE;
 class Handler_share;
 class Index_hint;
 class Item;
+class Item_ident;
 class Item_field;
 class Json_diff_vector;
 class Json_seekable_path;
 class Json_wrapper;
+class MaterializedPathCache;
 class Opt_hints_qb;
 class Opt_hints_table;
 class Query_result_union;
@@ -102,12 +104,14 @@ class Table_histograms_collection;
 class Table_ref;
 class Table_trigger_dispatcher;
 class Temp_table_param;
+class Trigger;
 class handler;
 class partition_info;
 enum enum_stats_auto_recalc : int;
 enum Value_generator_source : short;
 enum row_type : int;
 struct AccessPath;
+struct COND_EQUAL;
 struct HA_CREATE_INFO;
 struct LEX;
 struct NESTED_JOIN;
@@ -401,7 +405,7 @@ struct GRANT_INFO {
 
      The set is implemented as a bitmap, with the bits defined in sql_acl.h.
    */
-  ulong privilege{0};
+  Access_bitmask privilege{0};
   /** The grant state for internal tables. */
   GRANT_INTERNAL_INFO m_internal;
 };
@@ -913,7 +917,8 @@ struct TABLE_SHARE {
   */
   uint db_options_in_use{0};
   uint rowid_field_offset{0}; /* Field_nr +1 to rowid field */
-  /* Primary key index number, used in TABLE::key_info[] */
+  // Primary key index number, used in TABLE::key_info[]. See
+  // is_missing_primary_key() for more details.
   uint primary_key{0};
   uint next_number_index{0};      /* autoincrement key number */
   uint next_number_key_offset{0}; /* autoinc keypart offset in a key */
@@ -1038,6 +1043,17 @@ struct TABLE_SHARE {
 
   // List of check constraint share instances.
   Sql_check_constraint_share_list *check_constraint_share_list{nullptr};
+
+  /**
+    List of trigger descriptions for the table loaded from the data-dictionary.
+    Is nullptr if the table doesn't have triggers.
+
+    @note The purpose of the Trigger objects in this list is to serve as
+          template for per-TABLE-object Trigger objects as well as to
+          store static metadata that may be shared between Trigger instances.
+          The triggers in this list can't be executed directly.
+  */
+  List<Trigger> *triggers{nullptr};
 
   /**
     Schema's read only mode - ON (true) or OFF (false). This is filled in
@@ -1423,6 +1439,18 @@ struct TABLE {
   */
   friend class Table_cache_element;
 
+  /**
+    Links for the LRU list of unused TABLE objects with fully loaded triggers
+    in the specific instance of Table_cache.
+  */
+  TABLE *triggers_lru_next{nullptr}, **triggers_lru_prev{nullptr};
+
+  /*
+    Give Table_cache access to the above two members to allow using them
+    for linking TABLE objects in a list.
+  */
+  friend class Table_cache;
+
  public:
   // Pointer to the histograms available on the table.
   // Protected in the same way as the pointer to the share.
@@ -1458,8 +1486,14 @@ struct TABLE {
   Record_buffer m_record_buffer{0, 0, nullptr};
 
   /*
-    Map of keys that can be used to retrieve all data from this table
-    needed by the query without reading the row.
+    Map of keys that can be used to retrieve all data from this table needed by
+    the query without reading the row.
+
+    Note that the primary clustered key is treated as any other key, so for a
+    table t with a primary key column p and a second column c, the primary key
+    will be marked as covering for the query "SELECT p FROM t", but will not be
+    marked as covering for the query "SELECT p, c FROM t" (even though we can in
+    some sense retrieve the data from the index).
   */
   Key_map covering_keys;
   Key_map quick_keys;
@@ -1557,6 +1591,9 @@ struct TABLE {
   bool m_deduplicate_with_hash_map{false};
 
  public:
+  /// True if character set conversions are always strict
+  bool m_charset_conversion_is_strict{false};
+
   enum Set_operator_type {
     SOT_NONE,
     SOT_UNION_ALL,
@@ -1615,9 +1652,9 @@ struct TABLE {
     m_set_counter = set_counter;
     m_last_operation_is_distinct = distinct;
     assert(m_set_op_type == SOT_NONE);
-    m_set_op_type = except
-                        ? (distinct ? SOT_EXCEPT_DISTINCT : SOT_EXCEPT_ALL)
-                        : distinct ? SOT_INTERSECT_DISTINCT : SOT_INTERSECT_ALL;
+    m_set_op_type = except ? (distinct ? SOT_EXCEPT_DISTINCT : SOT_EXCEPT_ALL)
+                    : distinct ? SOT_INTERSECT_DISTINCT
+                               : SOT_INTERSECT_ALL;
   }
 
   Field_longlong *set_counter() { return m_set_counter; }
@@ -2600,7 +2637,7 @@ class Natural_join_column {
   Natural_join_column(Field_translator *field_param, Table_ref *tab);
   Natural_join_column(Item_field *field_param, Table_ref *tab);
   const char *name();
-  Item *create_item(THD *thd);
+  Item_ident *create_item(THD *thd);
   Field *field();
   const char *table_name();
   const char *db_name();
@@ -3428,7 +3465,7 @@ class Table_ref {
   int fetch_number_of_rows(
       ha_rows fallback_estimate = PLACEHOLDER_TABLE_ROW_ESTIMATE);
   bool update_derived_keys(THD *, Field *, Item **, uint, bool *);
-  bool generate_keys();
+  bool generate_keys(THD *thd);
 
   /// Setup a derived table to use materialization
   bool setup_materialized_derived(THD *thd);
@@ -3541,7 +3578,9 @@ class Table_ref {
 
     @param privilege   Privileges granted for this table.
   */
-  void set_privileges(ulong privilege) { grant.privilege |= privilege; }
+  void set_privileges(Access_bitmask privilege) {
+    grant.privilege |= privilege;
+  }
 
   bool save_properties();
   void restore_properties();
@@ -3657,15 +3696,24 @@ class Table_ref {
   */
   Table_function *table_function{nullptr};
 
-  /**
-    If we've previously made an access path for “derived”, it is cached here.
-    This is useful if we need to plan the query block twice (the hypergraph
-    optimizer can do so, with and without in2exists predicates), both saving
-    work and avoiding issues when we try to throw away the old items_to_copy
-    for a new (identical) one.
-   */
-  AccessPath *access_path_for_derived{nullptr};
   Item *sampling_percentage{nullptr};
+
+  /**
+     For a view or derived table: Add materialize_path and table_path to
+     m_materialized_path_cache.
+  */
+  void AddMaterializedPathToCache(THD *thd, AccessPath *materialize_path,
+                                  const AccessPath *table_path);
+
+  /**
+     Search m_materialized_path_cache for a materialization path for
+     'table_path'. Return that  materialization path, or nullptr if none
+     is found.
+  */
+  AccessPath *GetCachedMaterializedPath(const AccessPath *table_path);
+
+  /// Empty m_materialized_path_cache.
+  void ClearMaterializedPathCache() { m_materialized_path_cache = nullptr; }
 
  private:
   /// Sampling information.
@@ -3695,6 +3743,15 @@ class Table_ref {
     then this points to the list of column names. NULL otherwise.
   */
   const Create_col_name_list *m_derived_column_names{nullptr};
+
+  /**
+    If we've previously made an access path for “derived”, it is cached here.
+    This is useful if we need to plan the query block twice (the hypergraph
+    optimizer can do so, with and without in2exists predicates), both saving
+    work and avoiding issues when we try to throw away the old items_to_copy
+    for a new (identical) one.
+   */
+  MaterializedPathCache *m_materialized_path_cache{nullptr};
 
  public:
   ST_SCHEMA_TABLE *schema_table{nullptr}; /* Information_schema table */
@@ -4056,7 +4113,7 @@ class Field_iterator {
   virtual void next() = 0;
   virtual bool end_of_fields() = 0; /* Return 1 at end of list */
   virtual const char *name() = 0;
-  virtual Item *create_item(THD *) = 0;
+  virtual Item_ident *create_item(THD *) = 0;
   virtual Field *field() = 0;
 };
 
@@ -4075,7 +4132,7 @@ class Field_iterator_table : public Field_iterator {
   void next() override { ptr++; }
   bool end_of_fields() override { return *ptr == nullptr; }
   const char *name() override;
-  Item *create_item(THD *thd) override;
+  Item_ident *create_item(THD *thd) override;
   Field *field() override { return *ptr; }
 };
 
@@ -4093,7 +4150,7 @@ class Field_iterator_view : public Field_iterator {
   void next() override { ptr++; }
   bool end_of_fields() override { return ptr == array_end; }
   const char *name() override;
-  Item *create_item(THD *thd) override;
+  Item_ident *create_item(THD *thd) override;
   Item **item_ptr() { return &ptr->item; }
   Field *field() override { return nullptr; }
   inline Item *item() { return ptr->item; }
@@ -4116,7 +4173,7 @@ class Field_iterator_natural_join : public Field_iterator {
   void next() override;
   bool end_of_fields() override { return !cur_column_ref; }
   const char *name() override { return cur_column_ref->name(); }
-  Item *create_item(THD *thd) override {
+  Item_ident *create_item(THD *thd) override {
     return cur_column_ref->create_item(thd);
   }
   Field *field() override { return cur_column_ref->field(); }
@@ -4156,7 +4213,9 @@ class Field_iterator_table_ref : public Field_iterator {
   const char *get_table_name();
   const char *get_db_name();
   GRANT_INFO *grant();
-  Item *create_item(THD *thd) override { return field_it->create_item(thd); }
+  Item_ident *create_item(THD *thd) override {
+    return field_it->create_item(thd);
+  }
   Field *field() override { return field_it->field(); }
   Natural_join_column *get_or_create_column_ref(THD *thd,
                                                 Table_ref *parent_table_ref);
@@ -4462,11 +4521,12 @@ class Common_table_expr {
    References are returned as TABLE*.
 */
 class Derived_refs_iterator {
-  Table_ref *const start;  ///< The reference provided in construction.
+  const Table_ref *start;  ///< The reference provided in construction.
   size_t ref_idx{0};       ///< Current index in cte->tmp_tables
   bool m_is_first{true};   ///< True when at first reference in list
  public:
-  explicit Derived_refs_iterator(Table_ref *start_arg) : start(start_arg) {}
+  explicit Derived_refs_iterator(const Table_ref *start_arg)
+      : start(start_arg) {}
   TABLE *get_next() {
     const Common_table_expr *cte = start->common_table_expr();
     m_is_first = ref_idx == 0;

@@ -52,7 +52,7 @@ PSI_thread *thd_get_psi(THD *) { return nullptr; }  // dummy
 
 class Keyring_encryption_test_setup {
  public:
-  Keyring_encryption_test_setup(char *progname) {
+  explicit Keyring_encryption_test_setup(char *progname) {
     MY_INIT(progname);
     init_components_subsystem();
   }
@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
   Keyring_encryption_test_setup keyring_encryption_test_setup(argv[0]);
   DBUG_TRACE;
   DBUG_PROCESS(argv[0]);
-  int exit_status = EXIT_FAILURE;
+  constexpr int exit_status = EXIT_FAILURE;
 
   int exit_code;
   if (process_options(&argc, &argv, exit_code) == false) {

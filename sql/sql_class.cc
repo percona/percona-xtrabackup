@@ -188,6 +188,16 @@ void Thd_mem_cnt::alloc_cnt(size_t size) {
   }
 #endif
 
+  ulonglong conn_mem_status_limit_save = conn_memory_status_limit;
+  if (!m_thd->lex->is_crossed_connection_memory_status_limit() &&
+      (mem_counter - size) <= conn_mem_status_limit_save &&
+      mem_counter > conn_mem_status_limit_save) {
+    // update status variables
+    // count_hit_query_past_connection_memory_status_limit
+    atomic_count_hit_query_past_conn_mem_status_limit++;
+    m_thd->lex->set_crossed_connection_memory_status_limit();
+  }
+
   if (mem_counter > m_thd->variables.conn_mem_limit) {
 #ifndef NDEBUG
     // Used for testing the entering to idle state
@@ -208,14 +218,27 @@ void Thd_mem_cnt::alloc_cnt(size_t size) {
     const ulonglong delta = curr_mem - glob_mem_counter;
     ulonglong global_conn_mem_counter_save;
     ulonglong global_conn_mem_limit_save;
+    ulonglong global_conn_mem_status_limit_save;
     {
       MUTEX_LOCK(lock, &LOCK_global_conn_mem_limit);
       global_conn_mem_counter += delta;
       global_conn_mem_counter_save = global_conn_mem_counter;
       global_conn_mem_limit_save = global_conn_mem_limit;
+      global_conn_mem_status_limit_save = global_conn_memory_status_limit;
     }
     glob_mem_counter = curr_mem;
     max_conn_mem = std::max(max_conn_mem, glob_mem_counter);
+
+    if (!m_thd->lex->is_crossed_global_connection_memory_status_limit() &&
+        (global_conn_mem_counter_save - delta) <=
+            global_conn_mem_status_limit_save &&
+        global_conn_mem_counter_save > global_conn_mem_status_limit_save) {
+      // update status variables
+      // count_hit_query_past_global_connection_memory_status_limit
+      atomic_count_hit_query_past_global_conn_mem_status_limit++;
+      m_thd->lex->set_crossed_global_connection_memory_status_limit();
+    }
+
     if (global_conn_mem_counter_save > global_conn_mem_limit_save) {
 #ifndef NDEBUG
       // Used for testing the entering to idle state
@@ -256,6 +279,7 @@ int Thd_mem_cnt::reset() {
     ulonglong delta;
     ulonglong global_conn_mem_counter_save;
     ulonglong global_conn_mem_limit_save;
+    ulonglong global_conn_mem_status_limit_save;
     if (glob_mem_counter > mem_counter) {
       delta = glob_mem_counter - mem_counter;
       MUTEX_LOCK(lock, &LOCK_global_conn_mem_limit);
@@ -263,22 +287,43 @@ int Thd_mem_cnt::reset() {
       global_conn_mem_counter -= delta;
       global_conn_mem_counter_save = global_conn_mem_counter;
       global_conn_mem_limit_save = global_conn_mem_limit;
+      global_conn_mem_status_limit_save = global_conn_memory_status_limit;
     } else {
       delta = mem_counter - glob_mem_counter;
       MUTEX_LOCK(lock, &LOCK_global_conn_mem_limit);
       global_conn_mem_counter += delta;
       global_conn_mem_counter_save = global_conn_mem_counter;
       global_conn_mem_limit_save = global_conn_mem_limit;
+      global_conn_mem_status_limit_save = global_conn_memory_status_limit;
     }
     glob_mem_counter = mem_counter;
-    if (is_connection_stage &&
-        (global_conn_mem_counter_save > global_conn_mem_limit_save))
-      return generate_error(ER_DA_GLOBAL_CONN_LIMIT, global_conn_mem_limit_save,
-                            global_conn_mem_counter_save);
+    if (is_connection_stage) {
+      if (!m_thd->lex->is_crossed_global_connection_memory_status_limit() &&
+          global_conn_mem_counter_save > global_conn_mem_status_limit_save) {
+        // update status variables
+        // count_hit_query_past_global_connection_memory_status_limit
+        atomic_count_hit_query_past_global_conn_mem_status_limit++;
+        m_thd->lex->set_crossed_global_connection_memory_status_limit();
+      }
+
+      if (global_conn_mem_counter_save > global_conn_mem_limit_save)
+        return generate_error(ER_DA_GLOBAL_CONN_LIMIT,
+                              global_conn_mem_limit_save,
+                              global_conn_mem_counter_save);
+    }
   }
-  if (is_connection_stage && (mem_counter > m_thd->variables.conn_mem_limit))
-    return generate_error(ER_DA_CONN_LIMIT, m_thd->variables.conn_mem_limit,
-                          mem_counter);
+  if (is_connection_stage) {
+    if (!m_thd->lex->is_crossed_connection_memory_status_limit() &&
+        mem_counter > conn_memory_status_limit) {
+      // update status variables
+      // count_hit_query_past_connection_memory_status_limit
+      atomic_count_hit_query_past_conn_mem_status_limit++;
+      m_thd->lex->set_crossed_connection_memory_status_limit();
+    }
+    if (mem_counter > m_thd->variables.conn_mem_limit)
+      return generate_error(ER_DA_CONN_LIMIT, m_thd->variables.conn_mem_limit,
+                            mem_counter);
+  }
   is_connection_stage = false;
   return 0;
 }
@@ -1372,6 +1417,7 @@ void THD::release_resources() {
   if (is_classic_protocol() && get_protocol_classic()->get_vio()) {
     vio_delete(get_protocol_classic()->get_vio());
     get_protocol_classic()->end_net();
+    m_cached_is_connection_alive.store(m_protocol->connection_alive());
   }
 
   /* modification plan for UPDATE/DELETE should be freed. */
@@ -2419,6 +2465,11 @@ void THD::inc_status_created_tmp_tables() {
 #endif
 }
 
+void THD::inc_status_count_hit_tmp_table_size() {
+  assert(!status_var_aggregated);
+  status_var.count_hit_tmp_table_size++;
+}
+
 void THD::inc_status_select_full_join() {
   assert(!status_var_aggregated);
   status_var.select_full_join_count++;
@@ -3161,8 +3212,19 @@ void THD::cleanup_after_parse_error() {
 
   if (sp) {
     sp->m_parser_data.finish_parsing_sp_body(this);
-    //  Do not delete sp_head if is invoked in the context of sp execution.
-    if (sp_runtime_ctx == nullptr) {
+    // Do not delete sp_head if is invoked in the context of sp execution,
+    // unless the parsing happens as part of preparing.
+    // If parsing of a prepared statement fails, thd->lex can be left
+    // referencing a LEX created on the sp_head mem_root, (currently the
+    // only preparable statements which create an sp_head are CREATE
+    // and ALTER EVENT).
+    // It is important to clean up the lex objects belonging to the sp_head
+    // mem_root before returning to Prepared_statement::prepare().
+    // Otherwise, such a LEX will be swapped into m_lex by
+    // stmt_backup.restore_thd(). This would lead to reads of freed memory in
+    // ~Prepared_statement() (when m_lex was accessed after calling
+    // sp_head::destroy() there).
+    if (sp_runtime_ctx == nullptr || m_parser_state->m_lip.stmt_prepare_mode) {
       sp_head::destroy(sp);
       lex->sphead = nullptr;
     }

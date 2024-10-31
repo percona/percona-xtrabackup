@@ -30,7 +30,7 @@
 #  Other values will be ignored, and we fall back to "bundled"
 #
 
-# Bundled version is currently 3.19.4
+# Bundled version is currently 4.24.4
 # Lowest checked system version is 3.5.0 on Oracle Linux 8.
 # Older versions may generate code which breaks the -Werror build.
 SET(MIN_PROTOBUF_VERSION_REQUIRED "3.5.0")
@@ -76,6 +76,8 @@ MACRO(COULD_NOT_FIND_PROTOBUF)
     )
 ENDMACRO()
 
+SET(BUNDLED_GRPC_SRCDIR
+  "${CMAKE_SOURCE_DIR}/internal/extra/grpc/grpc-1.60.0")
 SET(BUNDLED_PROTO_SRCDIR ${CMAKE_SOURCE_DIR}/extra/protobuf/protobuf-24.4/src)
 SET(BUNDLED_ABSEIL_SRCDIR ${CMAKE_SOURCE_DIR}/extra/abseil/abseil-cpp-20230802.1)
 
@@ -121,6 +123,13 @@ MACRO(MYSQL_CHECK_PROTOBUF)
   IF(WITH_PROTOBUF STREQUAL "bundled")
     MYSQL_USE_BUNDLED_PROTOBUF()
   ELSE()
+    # In case we want grpc, it must be loaded *before* Protobuf,
+    # otherwise we get
+    # CMake Error at ..../cmake/protobuf/protobuf-targets.cmake:42 (message):
+    #   "some (but not all) targets in this export set were already defined".
+    IF(WITH_INTERNAL)
+      FIND_PACKAGE(gRPC QUIET)
+    ENDIF()
     FIND_PACKAGE(Protobuf)
   ENDIF()
 
@@ -155,23 +164,41 @@ MACRO(MYSQL_CHECK_PROTOBUF)
     # set_property(TARGET protobuf::libprotobuf APPEND PROPERTY
     #              INTERFACE_COMPILE_FEATURES cxx_std_11
     #             )
+    # INTERFACE_LINK_LIBRARIES will be needed once this is built
+    # with protobuf 22 and above (lots of abseil libs).
     ADD_LIBRARY(ext::libprotobuf UNKNOWN IMPORTED)
     SET_TARGET_PROPERTIES(ext::libprotobuf PROPERTIES
       INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${Protobuf_INCLUDE_DIR}")
     SET_TARGET_PROPERTIES(ext::libprotobuf PROPERTIES
       IMPORTED_LOCATION "${PROTOBUF_LIBRARY}")
+    IF(LINUX)
+      FIND_LIBRARY_DEPENDENCIES("${PROTOBUF_LIBRARY}" protobuf_dependencies)
+      SET_TARGET_PROPERTIES(ext::libprotobuf PROPERTIES
+        INTERFACE_LINK_LIBRARIES "${protobuf_dependencies}")
+    ENDIF()
 
     ADD_LIBRARY(ext::libprotobuf-lite UNKNOWN IMPORTED)
     SET_TARGET_PROPERTIES(ext::libprotobuf-lite PROPERTIES
       INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${Protobuf_INCLUDE_DIR}")
     SET_TARGET_PROPERTIES(ext::libprotobuf-lite PROPERTIES
       IMPORTED_LOCATION "${PROTOBUF_LITE_LIBRARY}")
+    IF(LINUX)
+      FIND_LIBRARY_DEPENDENCIES("${PROTOBUF_LITE_LIBRARY}" lite_dependencies)
+      SET_TARGET_PROPERTIES(ext::libprotobuf-lite PROPERTIES
+        INTERFACE_LINK_LIBRARIES "${lite_dependencies}")
+    ENDIF()
 
     ADD_LIBRARY(ext::libprotoc UNKNOWN IMPORTED)
     SET_TARGET_PROPERTIES(ext::libprotoc PROPERTIES
       INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${Protobuf_INCLUDE_DIR}")
     SET_TARGET_PROPERTIES(ext::libprotoc PROPERTIES
       IMPORTED_LOCATION "${Protobuf_PROTOC_LIBRARY}")
+    IF(LINUX)
+      FIND_LIBRARY_DEPENDENCIES(
+        "${Protobuf_PROTOC_LIBRARY}" protoc_dependencies)
+      SET_TARGET_PROPERTIES(ext::libprotoc PROPERTIES
+        INTERFACE_LINK_LIBRARIES "${protoc_dependencies}")
+    ENDIF()
   ENDIF()
 
   FIND_PROTOBUF_VERSION()

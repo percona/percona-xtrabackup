@@ -39,6 +39,13 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "my_dbug.h"
 
+#define WLOG(x)                                                        \
+  {                                                                    \
+    std::cout << "[BULK] thread=" << std::this_thread::get_id() << ":" \
+              << __func__ << ":" << strrchr(__FILE__, '/') + 1 << ":"  \
+              << __LINE__ << ": " << x << std::endl;                   \
+  }
+// ----------------------------------------------------------------------------
 namespace lob {
 
 /** A BLOB field reference has all the bits set to zero, except the "being
@@ -662,7 +669,6 @@ byte *btr_rec_copy_externally_stored_field_func(
   const byte *field_ref = data + local_len - BTR_EXTERN_FIELD_REF_SIZE;
 
   lob::ref_t ref(const_cast<byte *>(field_ref));
-
   ut_a(local_len >= BTR_EXTERN_FIELD_REF_SIZE);
 
   /* Verify if the LOB reference is sane. */
@@ -1287,7 +1293,7 @@ bool rec_check_lobref_space_id(dict_index_t *index, const rec_t *rec,
       continue;
     }
 
-    byte *data = rec_get_nth_field(index, rec, offsets, i, &len);
+    const byte *data = rec_get_nth_field(index, rec, offsets, i, &len);
 
     if (len == UNIV_SQL_NULL) {
       continue;
@@ -1297,9 +1303,8 @@ bool rec_check_lobref_space_id(dict_index_t *index, const rec_t *rec,
       ulint local_len = len - BTR_EXTERN_FIELD_REF_SIZE;
       ut_ad(len >= BTR_EXTERN_FIELD_REF_SIZE);
 
-      byte *field_ref = data + local_len;
-      ref_t ref(field_ref);
-      if (!ref.check_space_id(index)) {
+      const byte *field_ref = data + local_len;
+      if (!ref_t{const_cast<byte *>(field_ref)}.check_space_id(index)) {
         return (false);
       }
     }

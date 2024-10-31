@@ -254,6 +254,25 @@ static void parse_geometry_type(std::vector<unsigned int> &vec,
 }
 
 /**
+   Parses VECTOR_DIMENSIONALITY field.
+
+   @param[out] vec        stores vector columns's dimensionality extracted from
+   field.
+   @param[in]  reader_obj the Event_reader object containing the serialized
+                          field.
+   @param[in]  length     length of the field
+ */
+static void parse_vector_dimensionality(std::vector<unsigned int> &vec,
+                                        Event_reader &reader_obj,
+                                        unsigned int length) {
+  const char *field = reader_obj.ptr();
+  while (reader_obj.ptr() < field + length) {
+    vec.push_back(reader_obj.net_field_length_ll());
+    if (reader_obj.has_error()) return;
+  }
+}
+
+/**
    Parses SIMPLE_PRIMARY_KEY field.
 
    @param[out] vec        stores primary key's column information extracted from
@@ -372,6 +391,9 @@ Table_map_event::Optional_metadata_fields::Optional_metadata_fields(
         break;
       case COLUMN_VISIBILITY:
         parse_column_visibility(&m_column_visibility, reader_obj, len);
+        break;
+      case VECTOR_DIMENSIONALITY:
+        parse_vector_dimensionality(m_vector_dimensionality, reader_obj, len);
         break;
       default:
         BAPI_ASSERT(0);
@@ -528,7 +550,6 @@ Rows_query_event::Rows_query_event(const char *buf,
   BAPI_ENTER("Rows_query_event::Rows_query_event(const char*, ...)");
   READER_TRY_INITIALIZATION;
   READER_ASSERT_POSITION(fde->common_header_len);
-  unsigned int len = 0;
   uint8_t const post_header_len =
       fde->post_header_len[ROWS_QUERY_LOG_EVENT - 1];
 
@@ -539,9 +560,10 @@ Rows_query_event::Rows_query_event(const char *buf,
    length is ignored and the complete query is read.
   */
   READER_TRY_CALL(forward, post_header_len + 1);
-  len = READER_CALL(available_to_read);
-  READER_TRY_CALL(alloc_and_strncpy, &m_rows_query, len, 16);
-
+  m_rows_query_length = READER_CALL(available_to_read);
+  READER_TRY_CALL(alloc_and_memcpy,
+                  reinterpret_cast<unsigned char **>(&m_rows_query),
+                  m_rows_query_length, 16);
   READER_CATCH_ERROR;
   BAPI_VOID_RETURN;
 }

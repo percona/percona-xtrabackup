@@ -45,7 +45,8 @@ costmodel_planchange.test
 have_met_timezone.inc
 # Checks if server is started with Moscow leap timezone. Including the below inc file until Bug#25188986 is fixed.
 have_moscow_leap_timezone.inc
-
+# Skip filesystems which do not support O_DIRECT mode, e.g. when using --mem option on Linux
+have_odirect.inc
 
 # 2.0 Binlog formats
 # Below files are included because rpl suite runs each test with 3 different
@@ -159,6 +160,7 @@ no_cursor_protocol.inc
 have_valgrind.inc
 not_valgrind.inc
 not_ubsan.inc
+have_asan.inc
 not_asan.inc
 
 # 7.0 Few skipped test-cases
@@ -319,10 +321,11 @@ have_webauthn_plugin.inc
 
 # 34.0 Tests skipped due to conflicting use of ./mtr --defaults-extra-file
 
-# 34.1 ./mtr-defaults-extra-file=source/ndb/encrypted_filesystem.cnf (and ndb/secure.cnf)
+# 34.1 ./mtr-defaults-extra-file=suite/ndb/encrypted_filesystem.cnf (and ndb/secure.cnf)
+ndb_redo_log_reader.test
 ndb_secretsfile1.test
 
-# 34.2 ./mtr-defaults-extra-file=source/ndb/tls.cnf (and ndb/secure.cnf)
+# 34.2 ./mtr-defaults-extra-file=suite/ndb/tls.cnf (and ndb/secure.cnf)
 api_require_trp.test
 clusterj.test
 no_path.test

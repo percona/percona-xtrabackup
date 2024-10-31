@@ -42,6 +42,7 @@
 #include <cstring>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include "field_types.h"
@@ -137,7 +138,6 @@ static store_key *get_store_key(THD *thd, Item *val, table_map used_tables,
                                 table_map const_tables,
                                 const KEY_PART_INFO *key_part, uchar *key_buff,
                                 uint maybe_null);
-static bool retry_with_secondary_engine(THD *thd);
 
 using Global_tables_iterator =
     IntrusiveListIterator<Table_ref, &Table_ref::next_global>;
@@ -284,16 +284,19 @@ bool reads_not_secondary_columns(const LEX *lex) {
   return false;
 }
 
-static bool has_secondary_engine_defined(const LEX *lex) {
+namespace {
+bool has_secondary_engine_defined(const LEX *lex, const Table_ref **tref) {
   for (const Table_ref *tl = lex->query_tables; tl != nullptr;
        tl = tl->next_global) {
     if (tl == nullptr || tl->table == nullptr || tl->table->s == nullptr ||
         !tl->table->s->has_secondary_engine()) {
+      *tref = tl;
       return false;
     }
   }
   return (lex->table_count > 0);
 }
+}  // namespace
 
 // Compare two engine names using the system collation.
 static bool equal_engines(const LEX_CSTRING &engine1,
@@ -403,8 +406,7 @@ static bool set_secondary_engine_fail_reason(const LEX *lex,
   if (hton != nullptr &&
       hton->set_secondary_engine_offload_fail_reason != nullptr &&
       lex->thd->is_secondary_engine_forced()) {
-    hton->set_secondary_engine_offload_fail_reason(lex->thd, reason);
-    return true;
+    return hton->set_secondary_engine_offload_fail_reason(lex->thd, reason);
   }
   return false;
 }
@@ -426,25 +428,45 @@ void set_fail_reason_and_raise_error(const LEX *lex, std::string_view reason) {
 void find_and_set_offload_fail_reason(const LEX *lex) {
   // If we are unable to gather secondary-engine-specific error message,
   // check known unsupported features and raise a specific offload error.
-  std::string_view err_msg{};
+  std::string err_msg{};
+  const Table_ref *tref = nullptr;
   if (lex->uses_stored_routines() ||
       (lex->m_sql_cmd != nullptr && lex->m_sql_cmd->is_part_of_sp()) ||
       lex->thd->sp_runtime_ctx != nullptr) {
     // We don't support secondary storage engine execution,
     // if the query has statements that call stored routines.
     err_msg =
-        "Queries part of stored functions or calling stored functions are not "
-        "supported in secondary engines";
-  } else if (!has_secondary_engine_defined(lex)) {
+        "Statements that reference stored functions are not supported in "
+        "secondary engines.";
+  } else if ((lex->thd->get_transaction() != nullptr &&
+              lex->thd->get_transaction()->is_active(
+                  Transaction_ctx::SESSION)) ||
+             lex->thd->in_active_multi_stmt_transaction()) {
+    // We don't support secondary storage engine execution,
+    // if the query is part of a multi-statement transaction
+    err_msg =
+        "Query is part of a multi-statement transaction, which is not "
+        "supported in secondary engines.";
+  } else if (!has_secondary_engine_defined(lex, &tref)) {
     // We don't support secondary storage engine execution,
     // if at least one of the query tables have no secondary engine defined.
     err_msg =
-        "No secondary engine defined for at least one of the query tables";
+        "You have not defined the secondary engine for at least one of the "
+        "query tables";
+    if (tref != nullptr && strlen(tref->get_db_name()) > 0 &&
+        strlen(tref->get_table_name()) > 0) {
+      err_msg.append(" [");
+      err_msg.append(tref->get_db_name());
+      err_msg.append(".");
+      err_msg.append(tref->get_table_name());
+      err_msg.append("]");
+    }
+    err_msg.append(".");
   } else {
     err_msg = find_secondary_engine_fail_reason(lex);
   }
   assert(!err_msg.empty());
-  set_fail_reason_and_raise_error(lex, err_msg);
+  set_fail_reason_and_raise_error(lex, std::string_view{err_msg});
 }
 
 bool validate_use_secondary_engine(const LEX *lex) {
@@ -660,19 +682,6 @@ bool Sql_cmd_select::prepare_inner(THD *thd) {
   return false;
 }
 
-bool has_external_table(const LEX *lex) {
-  if (lex->m_sql_cmd == nullptr) {
-    return false;
-  }
-  for (Table_ref *ref = lex->query_tables; ref != nullptr;
-       ref = ref->next_global) {
-    if (ref->is_external()) {
-      return true;
-    }
-  }
-  return false;
-}
-
 bool Sql_cmd_dml::execute(THD *thd) {
   DBUG_TRACE;
 
@@ -753,6 +762,7 @@ bool Sql_cmd_dml::execute(THD *thd) {
   if (validate_use_secondary_engine(lex)) goto err;
 
   lex->set_exec_started();
+  lex->reset_crossed_memory_status_limit();
 
   DBUG_EXECUTE_IF("use_attachable_trx",
                   thd->begin_attachable_ro_transaction(););
@@ -824,6 +834,18 @@ bool Sql_cmd_dml::execute(THD *thd) {
 err:
   assert(thd->is_error() || thd->killed);
   DBUG_PRINT("info", ("report_error: %d", thd->is_error()));
+
+  if (thd->variables.use_secondary_engine == SECONDARY_ENGINE_FORCED &&
+      thd->secondary_engine_optimization() ==
+          Secondary_engine_optimization::SECONDARY &&
+      thd->is_secondary_engine_forced()) {
+    std::string_view offloadfail_reason = get_secondary_engine_fail_reason(lex);
+    if (!offloadfail_reason.empty()) {
+      thd->clear_error();
+      my_error(ER_SECONDARY_ENGINE, MYF(0), std::data(offloadfail_reason));
+    }
+  }
+
   THD_STAGE_INFO(thd, stage_end);
 
   lex->cleanup(false);
@@ -850,31 +872,56 @@ err:
   return thd->is_error();
 }
 
+namespace {
+
+/**
+  Calculates the cost of executing a statement, including all its
+  subqueries and stores it in thd->m_current_query_cost.
+
+  @param lex the statement
+*/
 void accumulate_statement_cost(const LEX *lex) {
   Opt_trace_context *trace = &lex->thd->opt_trace;
-  const Opt_trace_disable_I_S disable_trace(trace, true);
+  Opt_trace_object trace_parent{trace};
+  Opt_trace_object trace_cost{trace, "current_query_cost"};
+  Opt_trace_array trace_query_blocks{trace, "query_blocks"};
 
   double total_cost = 0.0;
   for (const Query_block *query_block = lex->all_query_blocks_list;
        query_block != nullptr;
        query_block = query_block->next_select_in_list()) {
+    Opt_trace_object trace_query_block{trace};
+    trace_query_block.add_select_number(query_block->select_number);
+
     if (query_block->join == nullptr) continue;
 
     // Get the cost of this query block.
     double query_block_cost = query_block->join->best_read;
+    trace_query_block.add("query_block_cost", query_block_cost);
 
     // If it is a non-cacheable subquery, estimate how many times it
     // needs to be executed, and adjust the cost accordingly.
     const Item_subselect *item = query_block->master_query_expression()->item;
-    if (item != nullptr && !query_block->is_cacheable())
-      query_block_cost *= calculate_subquery_executions(item, trace);
+    if (item != nullptr) {
+      trace_query_block.add("cacheable", query_block->is_cacheable());
+      if (!query_block->is_cacheable()) {
+        const double executions =
+            std::max(1.0, calculate_subquery_executions(item, trace));
+        trace_query_block.add("executions", executions);
+        query_block_cost *= executions;
+        trace_query_block.add("total_query_block_cost", query_block_cost);
+      }
+    }
 
     total_cost += query_block_cost;
   }
+
+  trace_query_blocks.end();
+  trace_cost.add("query_cost", total_cost);
+
   lex->thd->m_current_query_cost = total_cost;
 }
 
-namespace {
 /**
    Gets the secondary storage engine pre prepare hook function, if any. If no
    hook is found, this function returns false. If hook function is found, it
@@ -899,22 +946,22 @@ bool SecondaryEngineCallPrePrepareHook(THD *thd,
   }
   return false;
 }
-}  // namespace
 
 /**
-  Checks if a query should be retried using a secondary storage engine.
+  Checks if the current query is a candidate for being retried in the secondary
+  engine.
 
-  @param thd      the current session
+  @param thd The current session.
 
-  @retval true   if the statement should be retried in a secondary engine
-  @retval false  if the statement should not be retried
+  @return The name of the secondary engine in which the current query can be
+  retried, or an empty value if it should not be retried.
 */
-static bool retry_with_secondary_engine(THD *thd) {
+std::optional<LEX_CSTRING> retry_with_secondary_engine(THD *thd) {
   // Only retry if the current statement is being tentatively
   // optimized for the primary engine.
   if (thd->secondary_engine_optimization() !=
       Secondary_engine_optimization::PRIMARY_TENTATIVELY)
-    return false;
+    return {};
 
   Sql_cmd *const sql_cmd = thd->lex->m_sql_cmd;
   assert(!sql_cmd->using_secondary_storage_engine());
@@ -926,32 +973,45 @@ static bool retry_with_secondary_engine(THD *thd) {
 
   if (secondary_engine == nullptr) {
     sql_cmd->disable_secondary_storage_engine();
-    return false;
+    return {};
   }
 
   // Don't retry if it's already determined that the statement should not be
   // executed by a secondary engine.
   if (sql_cmd->secondary_storage_engine_disabled()) {
-    return false;
+    return {};
   }
 
   // Don't retry if there is a property of the environment that prevents use of
   // secondary engines.
   if (!thd->is_secondary_storage_engine_eligible()) {
-    return false;
+    return {};
   }
 
-  // If the query cannot be executed in the PRIMARY engine, always attempt to
-  // execute it in the secondary engine whenever possible.
-  if (thd->lex->can_execute_only_in_secondary_engine()) {
-    return true;
-  }
-
-  return SecondaryEngineCallPrePrepareHook(thd, *secondary_engine);
+  return *secondary_engine;
 }
 
+}  // namespace
+
 bool optimize_secondary_engine(THD *thd) {
-  if (retry_with_secondary_engine(thd)) {
+  const std::optional<LEX_CSTRING> retry_engine =
+      retry_with_secondary_engine(thd);
+
+  // Calculate the current statement cost. If the statement can be retried in a
+  // secondary engine, it is used as input to the decision on whether or not to
+  // retry the query in a secondary engine. It may be useful to know exactly how
+  // the cost was found when debugging why a statement was not offloaded to the
+  // secondary engine, so add this information to the optimizer trace if the
+  // query may be offloaded. Otherwise, don't write this to the trace.
+  {
+    const Opt_trace_disable_I_S disable_trace{&thd->opt_trace,
+                                              !retry_engine.has_value()};
+    accumulate_statement_cost(thd->lex);
+  }
+
+  if (retry_engine.has_value() &&
+      (thd->lex->can_execute_only_in_secondary_engine() ||
+       SecondaryEngineCallPrePrepareHook(thd, *retry_engine))) {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     DBUG_EXECUTE_IF("emulate_user_query_kill", {
       thd->get_stmt_da()->set_error_status(thd, ER_QUERY_INTERRUPTED);
@@ -1032,14 +1092,16 @@ bool Sql_cmd_dml::execute_inner(THD *thd) {
   Query_expression *unit = lex->unit;
 
   if (unit->optimize(thd, /*materialize_destination=*/nullptr,
-                     /*create_iterators=*/true, /*finalize_access_paths=*/true))
+                     /*finalize_access_paths=*/true))
     return true;
 
-  // Calculate the current statement cost.
-  accumulate_statement_cost(lex);
+  DBUG_EXECUTE_IF("ast", { unit->DebugPrintQueryPlan(thd, "ast"); });
 
   // Perform secondary engine optimizations, if needed.
   if (optimize_secondary_engine(thd)) return true;
+
+  // Create iterators for the chosen query plan before execution.
+  if (unit->create_iterators(thd)) return true;
 
   // We know by now that execution will complete (successful or with error)
   lex->set_exec_completed();
@@ -1110,8 +1172,9 @@ static bool check_locking_clause_access(THD *thd, Global_tables_list tables) {
         If either of these privileges is present along with SELECT, access is
         granted.
       */
-      for (uint allowed_priv : {UPDATE_ACL, DELETE_ACL, LOCK_TABLES_ACL}) {
-        ulong priv = SELECT_ACL | allowed_priv;
+      for (Access_bitmask allowed_priv :
+           {UPDATE_ACL, DELETE_ACL, LOCK_TABLES_ACL}) {
+        Access_bitmask priv = SELECT_ACL | allowed_priv;
         if (!check_table_access(thd, priv, table_ref, false, 1, true)) {
           access_is_granted = true;
           // No need to check for other privileges for this table.
@@ -1213,7 +1276,7 @@ bool Sql_cmd_dml::check_all_table_privileges(THD *thd) {
     if (tr->is_internal())  // No privilege check required for internal tables
       continue;
     // Calculated wanted privilege based on how table/view is used:
-    ulong want_privilege = 0;
+    Access_bitmask want_privilege = 0;
     if (tr->is_inserted()) {
       want_privilege |= INSERT_ACL;
     }
@@ -2053,7 +2116,6 @@ bool Query_block::optimize(THD *thd, bool finalize_access_paths) {
     // Derived tables and const subqueries are already optimized
     if (!query_expression->is_optimized() &&
         query_expression->optimize(thd, /*materialize_destination=*/nullptr,
-                                   /*create_iterators=*/false,
                                    /*finalize_access_paths=*/true))
       return true;
   }
@@ -2158,7 +2220,7 @@ bool check_privileges_for_join(THD *thd, mem_root_deque<Table_ref *> *tables) {
   @returns false if success, true if error (insufficient privileges)
 */
 bool check_privileges_for_list(THD *thd, const mem_root_deque<Item *> &items,
-                               ulong privileges) {
+                               Access_bitmask privileges) {
   thd->want_privilege = privileges;
   for (Item *item : items) {
     if (item->walk(&Item::check_column_privileges, enum_walk::PREFIX,
@@ -2302,7 +2364,7 @@ void calc_length_and_keyparts(Key_use *keyuse, JOIN_TAB *tab, const uint key,
                               table_map used_tables, Key_use **chosen_keyuses,
                               uint *length_out, uint *keyparts_out,
                               table_map *dep_map, bool *maybe_null) {
-  assert(!dep_map || maybe_null);
+  assert(dep_map == nullptr || maybe_null != nullptr);
   uint keyparts = 0, length = 0;
   uint found_part_ref_or_null = 0;
   KEY *const keyinfo = tab->table()->key_info + key;
@@ -2324,8 +2386,8 @@ void calc_length_and_keyparts(Key_use *keyuse, JOIN_TAB *tab, const uint key,
       keyparts++;
       length += keyinfo->key_part[keyuse->keypart].store_length;
       found_part_ref_or_null |= keyuse->optimize;
-      if (dep_map) {
-        *dep_map |= keyuse->val->used_tables();
+      if (dep_map != nullptr) {
+        *dep_map |= (keyuse->val->used_tables() & ~INNER_TABLE_BIT);
         *maybe_null |= keyinfo->key_part[keyuse->keypart].null_bit &&
                        (keyuse->optimize & KEY_OPTIMIZE_REF_OR_NULL);
       }
@@ -3311,7 +3373,6 @@ void QEP_TAB::init_join_cache(JOIN_TAB *join_tab) {
 */
 
 bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
-  const bool statistics = !join->thd->lex->is_explain();
   const bool prep_for_pos = join->need_tmp_before_win ||
                             join->select_distinct ||
                             !join->group_list.empty() || !join->order.empty() ||
@@ -3362,7 +3423,6 @@ bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
                                    &trace_refine_table);
         break;
       case JT_ALL:
-        join->thd->set_status_no_index_used();
         qep_tab->using_dynamic_range = (tab->use_quick == QS_DYNAMIC_RANGE);
         [[fallthrough]];
       case JT_INDEX_SCAN:
@@ -3389,27 +3449,10 @@ bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
                   rows_w_const_cond / tab->position()->rows_fetched);
           }
         }
-        if (qep_tab->using_dynamic_range) {
-          join->thd->set_status_no_good_index_used();
-          if (statistics) join->thd->inc_status_select_range_check();
-        } else {
-          if (statistics) {
-            if (i == join->const_tables)
-              join->thd->inc_status_select_scan();
-            else
-              join->thd->inc_status_select_full_join();
-          }
-        }
         break;
       case JT_RANGE:
       case JT_INDEX_MERGE:
         qep_tab->using_dynamic_range = (tab->use_quick == QS_DYNAMIC_RANGE);
-        if (statistics) {
-          if (i == join->const_tables)
-            join->thd->inc_status_select_range();
-          else
-            join->thd->inc_status_select_full_range_join();
-        }
         if (!table->no_keyread && qep_tab->type() == JT_RANGE) {
           if (table->covering_keys.is_set(used_index(qep_tab->range_scan()))) {
             assert(used_index(qep_tab->range_scan()) != MAX_KEY);
@@ -3448,6 +3491,14 @@ bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
 
     if (tab->position()->filter_effect <= COND_FILTER_STALE) {
       /*
+        Cost and rows produced needs to be updated to match the logic
+        in test_if_skip_sort_order().
+      */
+      bool need_cost_update =
+          join->primary_tables == 1 &&
+          tab->position()->filter_effect == COND_FILTER_STALE_NO_CONST &&
+          table->s->has_secondary_engine();
+      /*
         Give a proper value for EXPLAIN.
         For performance reasons, we do not recalculate the filter for
         non-EXPLAIN queries; thus, EXPLAIN CONNECTION may show 100%
@@ -3459,7 +3510,7 @@ bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
         applied.
       */
       tab->position()->filter_effect =
-          (join->thd->lex->is_explain() ||
+          (join->thd->lex->is_explain() || need_cost_update ||
            (join->m_select_limit != HA_POS_ERROR &&
             !Overlaps(join->thd->variables.option_bits, OPTION_BIG_SELECTS)))
               ? calculate_condition_filter(
@@ -3469,6 +3520,12 @@ bool make_join_readinfo(JOIN *join, uint no_jbuf_after) {
                     tab->position()->rows_fetched, false, false,
                     trace_refine_table)
               : COND_FILTER_ALLPASS;
+      /*
+        Update the cost/rows data accordingly for single table queries. Updating
+        Multi-table queries here can lead to inconsistencies.
+      */
+      if (need_cost_update)
+        tab->position()->set_prefix_join_cost(tab->idx(), join->cost_model());
     }
 
     assert(!table_ref->is_recursive_reference() || qep_tab->type() == JT_ALL);
@@ -3755,6 +3812,7 @@ void JOIN::cleanup() {
   } else if (thd->lex->using_hypergraph_optimizer()) {
     for (Table_ref *tl = query_block->leaf_tables; tl; tl = tl->next_leaf) {
       cleanup_table(tl->table);
+      tl->derived_key_list.clear();
     }
     for (JOIN::TemporaryTableToCleanup cleanup : temp_tables) {
       cleanup_table(cleanup.table);
@@ -3846,7 +3904,7 @@ static bool equal(const Item *i1, const Item *i2, const Field *f2) {
   assert((i2 == nullptr) ^ (f2 == nullptr));
 
   if (i2 != nullptr)
-    return i1->eq(i2, true);
+    return i1->eq(i2);
   else if (i1->type() == Item::FIELD_ITEM)
     return f2->eq(down_cast<const Item_field *>(i1)->field);
   else
@@ -3894,13 +3952,13 @@ bool check_field_is_const(Item *cond, const Item *order_item,
   Item *right = comp->arguments()[1];
   if (equal(left, order_item, order_field)) {
     if (equality_determines_uniqueness(comp, left, right)) {
-      if (*const_item != nullptr) return right->eq(*const_item, true);
+      if (*const_item != nullptr) return right->eq(*const_item);
       *const_item = right;
       return true;
     }
   } else if (equal(right, order_item, order_field)) {
     if (equality_determines_uniqueness(comp, right, left)) {
-      if (*const_item != nullptr) return left->eq(*const_item, true);
+      if (*const_item != nullptr) return left->eq(*const_item);
       *const_item = left;
       return true;
     }
@@ -3993,7 +4051,7 @@ bool test_if_subpart(ORDER *a, ORDER *b) {
   ORDER *first = a;
   ORDER *second = b;
   for (; first && second; first = first->next, second = second->next) {
-    if ((*first->item)->eq(*second->item, true))
+    if ((*first->item)->eq(*second->item))
       continue;
     else
       return false;
@@ -4009,9 +4067,12 @@ bool test_if_subpart(ORDER *a, ORDER *b) {
   calc how big buffer we need for comparing group entries.
 */
 
-void calc_group_buffer(JOIN *join, ORDER *group) {
+void calc_group_buffer(JOIN *join, ORDER *group,
+                       Temp_table_param *tmp_table_param) {
   DBUG_TRACE;
   uint key_length = 0, parts = 0, null_parts = 0;
+
+  if (tmp_table_param == nullptr) tmp_table_param = &join->tmp_table_param;
 
   if (group) join->grouped = true;
   for (; group; group = group->next) {
@@ -4070,9 +4131,9 @@ void calc_group_buffer(JOIN *join, ORDER *group) {
     parts++;
     if (group_item->is_nullable()) null_parts++;
   }
-  join->tmp_table_param.group_length = key_length + null_parts;
-  join->tmp_table_param.group_parts = parts;
-  join->tmp_table_param.group_null_parts = null_parts;
+  tmp_table_param->group_length = key_length + null_parts;
+  tmp_table_param->group_parts = parts;
+  tmp_table_param->group_null_parts = null_parts;
 }
 
 /**
@@ -4310,9 +4371,9 @@ bool CreateFramebufferTable(
                   fb_fields.end());
   count_field_types(&query_block, par, fb_fields, false, false);
 
-  TABLE *table =
-      create_tmp_table(thd, par, fb_fields, nullptr, false, false,
-                       query_block.active_options(), HA_POS_ERROR, "");
+  TABLE *table = create_tmp_table(thd, par, fb_fields, nullptr, false, false,
+                                  query_block.active_options(), HA_POS_ERROR,
+                                  "window frame buffer");
   if (table == nullptr) return true;
 
   window->set_frame_buffer_param(par);
@@ -4328,7 +4389,8 @@ bool CreateFramebufferTable(
     if (ptr.func()->has_wf()) {
       ReplaceMaterializedItems(thd, ptr.func(),
                                *mapping_from_source_to_window_output,
-                               /*need_exact_match=*/false);
+                               /*need_exact_match=*/false,
+                               /*window_frame_buffer*/ true);
     }
   }
   return false;
@@ -4849,8 +4911,8 @@ bool JOIN::make_tmp_tables_info() {
             .add("adding_tmp_table_in_plan_at_position", curr_tmp_table)
             .add_alnum("cause", "output_for_window_functions")
             .add("with_buffer", m_windows[wno]->needs_buffering());
-
-        if (create_intermediate_table(tab, *curr_fields, dummy, false))
+        if (create_intermediate_table(tab, *curr_fields, dummy, false,
+                                      "window output buffer"))
           return true;
 
         if (alloc_ref_item_slice(thd, widx)) return true;
@@ -4942,32 +5004,32 @@ bool JOIN::make_tmp_tables_info() {
     etc).
   */
   assert(!query_block->is_recursive() || !tmp_tables);
-  cleanup_tmp_tables_on_error.commit();
+  cleanup_tmp_tables_on_error.release();
   return false;
 }
 
 void JOIN::refresh_base_slice() {
   const unsigned num_hidden_fields = CountHiddenFields(*fields);
-  const size_t num_select_elements = fields->size() - num_hidden_fields;
-  const size_t orig_num_select_elements =
-      num_select_elements - query_block->m_added_non_hidden_fields;
 
   for (unsigned i = 0; i < fields->size(); ++i) {
     Item *item = (*fields)[i];
-    size_t pos;
-    // See change_to_use_tmp_fields_except_sums for an explanation of how
-    // the visible fields, hidden fields and additional fields added by
-    // transformations are organized in fields and ref_item_array.
-    if (i < num_hidden_fields) {
-      pos = fields->size() - i - 1 - query_block->m_added_non_hidden_fields;
-    } else {
-      pos = i - num_hidden_fields;
-      if (pos >= orig_num_select_elements) pos += num_hidden_fields;
-    }
+    const size_t pos = compute_ria_idx(
+        *fields, i, query_block->m_added_non_hidden_fields, num_hidden_fields);
     query_block->base_ref_items[pos] = item;
-    if (!ref_items[REF_SLICE_SAVED_BASE].is_null()) {
+    if (!ref_items[REF_SLICE_SAVED_BASE].is_null())
       ref_items[REF_SLICE_SAVED_BASE][pos] = item;
-    }
+  }
+}
+
+void JOIN::assign_fields_to_slice(int sliceno) {
+  const unsigned num_hidden_fields = CountHiddenFields(*fields);
+
+  for (unsigned i = 0; i < fields->size(); ++i) {
+    Item *item = (*fields)[i];
+    const size_t pos = compute_ria_idx(
+        *fields, i, query_block->m_added_non_hidden_fields, num_hidden_fields);
+    assert(!ref_items[sliceno].is_null());
+    ref_items[sliceno][pos] = item;
   }
 }
 
@@ -5081,6 +5143,9 @@ bool JOIN::add_sorting_to_table(uint idx, ORDER_with_src *sort_order,
   @param [out]  saved_best_key_parts  NULL by default, otherwise preserve the
                                       value for further use in
                                       ReverseIndexRangeScanIterator
+  @param [out]    new_read_time       NULL by default, otherwise return the
+                                      cost of access using new_key if success
+                                      or undefined if the function fails
 
   @note
     This function takes into account table->quick_condition_rows statistic
@@ -5098,7 +5163,8 @@ bool test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER_with_src *order,
                               ha_rows select_limit, int *new_key,
                               int *new_key_direction, ha_rows *new_select_limit,
                               uint *new_used_key_parts,
-                              uint *saved_best_key_parts) {
+                              uint *saved_best_key_parts,
+                              double *new_read_time) {
   DBUG_TRACE;
   /*
     Check whether there is an index compatible with the given order
@@ -5113,6 +5179,7 @@ bool test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER_with_src *order,
   uint best_key_parts = 0;
   int best_key_direction = 0;
   ha_rows best_records = 0;
+  double best_read_time = 0;
   double read_time;
   int best_key = -1;
   bool is_best_covering = false;
@@ -5292,6 +5359,7 @@ bool test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER_with_src *order,
             best_key = nr;
             best_key_parts = keyinfo->user_defined_key_parts;
             if (saved_best_key_parts) *saved_best_key_parts = used_key_parts;
+            best_read_time = index_scan_time;
             best_records = quick_records;
             is_best_covering = is_covering;
             best_key_direction = direction;
@@ -5308,6 +5376,7 @@ bool test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER_with_src *order,
   *new_key_direction = best_key_direction;
   *new_select_limit = has_limit ? best_select_limit : table_records;
   if (new_used_key_parts != nullptr) *new_used_key_parts = best_key_parts;
+  if (new_read_time) *new_read_time = best_read_time;
 
   return true;
 }

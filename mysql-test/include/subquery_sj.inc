@@ -484,12 +484,14 @@ select * from t3 where a in (select kp1 from t1 where kp1<20) and a<20;
 create table t4 (pk int primary key);
 insert into t4 select a from t3;
 ANALYZE TABLE t4;
+--replace_regex $elide_costs
 explain select * from t3 where a in
           (select t1.kp1 from t1,t4 where kp1<20 and t4.pk=t1.c);
 
 # In subquery_sj_loosescan_bka_nobnl (ie., with loose scan), demonstrates
 # how NestedLoopSemiJoinWithDuplicateRemovalIterator is used.
 --skip_if_hypergraph  # Depends on query plan.
+--replace_regex $elide_costs
 explain format=tree select * from t3 where a in
           (select t1.kp1 from t1,t4 where kp1<20 and t4.pk=t1.c);
 --sorted_result
@@ -659,6 +661,7 @@ INSERT INTO t3 VALUES (22,'come','h'),
  (24,'lpjdzvkp','ababa'),
  (25,'d','GGDD');
 
+--sorted_result
 SELECT * FROM t1 WHERE (field1, field2) IN (
   SELECT table1.col_varchar_255_utf8_key AS field1,
          table1.col_varchar_255_utf8_key AS field2
@@ -1398,6 +1401,7 @@ FROM ot1 JOIN ot2 ON ot1.a=ot2.a AND ot1.a IN (SELECT a FROM it3)
 let $query=
 SELECT *
 FROM ot1 LEFT JOIN ot2 ON ot1.a=ot2.a AND ot1.a IN (SELECT a FROM it3);
+--replace_regex $elide_costs
 eval explain $query;
 --sorted_result
 eval $query;
@@ -1469,6 +1473,7 @@ FROM ot1 LEFT JOIN ot2 ON ot1.a=ot2.a+0 AND
 # outer joins and first matches are rejected by the join optimizer and cannot
 # exist (DBUG_ASSERTs in FindSubstructure verify it).
 --skip_if_hypergraph  # Depends on query plan.
+--replace_regex $elide_costs
 EXPLAIN FORMAT=tree SELECT *
 FROM ot1 LEFT JOIN ot2 ON ot1.a=ot2.a AND ot1.a IN (SELECT a FROM it3)
          LEFT JOIN ot3 ON ot2.a=ot3.a AND ot3.a IN (SELECT a FROM it3);
@@ -2901,6 +2906,7 @@ INSERT INTO t1 VALUES(10),(20);
 create table t2 select * from t1;
 create table t3 select * from t1;
 
+--sorted_result
 SELECT *
 FROM t1
 WHERE 1 IN(SELECT 1
@@ -4186,6 +4192,7 @@ SELECT * FROM t2
 WHERE f2 IN (SELECT t1.f1
              FROM t1 LEFT OUTER JOIN (t2 AS b1 JOIN t2 AS b2 ON TRUE) ON TRUE);
 eval EXPLAIN $query;
+--sorted_result
 eval $query;
 
 DROP TABLE t1, t2;
@@ -4332,7 +4339,14 @@ WHERE col_varchar_10_latin1_key IN (
     WHERE alias1.pk AND alias1.pk < 3 OR alias1.pk AND alias3.pk);
 ANALYZE TABLE t1, t2, t3;
 eval EXPLAIN $query;
+if ($HYPERGRAPH_TEST) {
+  # Different warnings with hypergraph than with old optimizer.
+  --disable_warnings
+}
 eval $query;
+if ($HYPERGRAPH_TEST) {
+  --enable_warnings
+}
 
 DROP TABLE t1, t2, t3;
 
@@ -5125,6 +5139,7 @@ eval $query;
 ALTER TABLE t1 ENGINE=Innodb;
 ALTER TABLE t2 ENGINE=Innodb;
 
+--sorted_result
 eval $query;
 
 DROP TABLE t1, t2;
@@ -7137,6 +7152,7 @@ WHERE field1 IN (
   FROM v1 AS tv1 LEFT JOIN v1 AS tv2 ON tv1.var_10_latin1=tv2.var_10_utf8);
 --replace_column 10 6
 eval EXPLAIN $query;
+--sorted_result
 eval $query;
 
 DROP VIEW v1;

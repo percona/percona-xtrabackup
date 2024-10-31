@@ -43,6 +43,7 @@
 #include "router_component_testutils.h"
 #include "router_config.h"
 #include "router_test_helpers.h"
+#include "stdx_expected_no_error.h"
 
 using mysqlrouter::ClusterType;
 using mysqlrouter::MetadataSchemaVersion;
@@ -50,6 +51,12 @@ using mysqlrouter::MySQLSession;
 using ::testing::PrintToString;
 using namespace std::chrono_literals;
 using namespace std::string_literals;
+
+namespace mysqlrouter {
+std::ostream &operator<<(std::ostream &os, const MysqlError &e) {
+  return os << e.sql_state() << " code: " << e.value() << ": " << e.message();
+}
+}  // namespace mysqlrouter
 
 class RouterComponenClustertMetadataTest : public RouterComponentMetadataTest {
 };
@@ -95,8 +102,6 @@ TEST_P(RouterComponenClustertMetadataTestInstanceListUnordered,
   std::vector<ProcessWrapper *> nodes;
   std::vector<uint16_t> node_classic_ports;
   std::vector<uint16_t> node_http_ports;
-  const std::string json_metadata =
-      get_data_dir().join(GetParam().tracefile).str();
 
   using ClusterNode = ::ClusterNode;
   std::vector<GRNode> gr_nodes;
@@ -106,8 +111,11 @@ TEST_P(RouterComponenClustertMetadataTestInstanceListUnordered,
     node_http_ports.push_back(port_pool_.get_next_available());
 
     nodes.push_back(
-        &launch_mysql_server_mock(json_metadata, node_classic_ports[i],
-                                  EXIT_SUCCESS, false, node_http_ports[i]));
+        &mock_server_spawner().spawn(mock_server_cmdline(GetParam().tracefile)
+                                         .port(node_classic_ports[i])
+                                         .http_port(node_http_ports[i])
+                                         .args()));
+
     const std::string role = (i == 0) ? "PRIMARY" : "SECONDARY";
     gr_nodes.emplace_back(node_classic_ports[i],
                           "uuid-" + std::to_string(i + 1), "ONLINE", role);
@@ -170,16 +178,16 @@ class RouterComponenClustertMetadataTestInvalidMysqlXPort
  * to be discarded for the classic protocol connections (Bug#30617645)
  */
 TEST_P(RouterComponenClustertMetadataTestInvalidMysqlXPort, InvalidMysqlXPort) {
-  const std::string json_metadata =
-      get_data_dir().join(GetParam().tracefile).str();
-
   SCOPED_TRACE("// single node cluster is fine for this test");
   const uint16_t node_classic_port{port_pool_.get_next_available()};
   const uint16_t node_http_port{port_pool_.get_next_available()};
   const uint32_t kInvalidPort{76000};
 
-  /*auto &cluster_node = */ launch_mysql_server_mock(
-      json_metadata, node_classic_port, EXIT_SUCCESS, false, node_http_port);
+  /*auto &cluster_node = */ mock_server_spawner().spawn(
+      mock_server_cmdline(GetParam().tracefile)
+          .port(node_classic_port)
+          .http_port(node_http_port)
+          .args());
 
   SCOPED_TRACE(
       "// let the metadata for our single node report invalid mysqlx port");
@@ -236,11 +244,12 @@ TEST_P(CheckRouterInfoUpdatesTest, CheckRouterInfoUpdates) {
       "node)");
   auto md_server_port = port_pool_.get_next_available();
   auto md_server_http_port = port_pool_.get_next_available();
-  const std::string json_metadata =
-      get_data_dir().join(GetParam().tracefile).str();
 
-  /*auto &metadata_server = */ launch_mysql_server_mock(
-      json_metadata, md_server_port, EXIT_SUCCESS, false, md_server_http_port);
+  /*auto &metadata_server = */ mock_server_spawner().spawn(
+      mock_server_cmdline(GetParam().tracefile)
+          .port(md_server_port)
+          .http_port(md_server_http_port)
+          .args());
 
   auto globals = mock_GR_metadata_as_json(
       "uuid", classic_ports_to_gr_nodes({md_server_port}), 0,
@@ -375,13 +384,12 @@ TEST_F(RouterComponenClustertMetadataTest,
       "node)");
   auto md_server_port = port_pool_.get_next_available();
   auto md_server_http_port = port_pool_.get_next_available();
-  const std::string json_metadata =
-      get_data_dir()
-          .join("metadata_dynamic_nodes_version_update_v2_gr.js")
-          .str();
 
-  /*auto &metadata_server = */ launch_mysql_server_mock(
-      json_metadata, md_server_port, EXIT_SUCCESS, false, md_server_http_port);
+  /*auto &metadata_server = */ mock_server_spawner().spawn(
+      mock_server_cmdline("metadata_dynamic_nodes_version_update_v2_gr.js")
+          .port(md_server_port)
+          .http_port(md_server_http_port)
+          .args());
 
   SCOPED_TRACE(
       "// let's tell the mock which attributes it should expect so that it "
@@ -455,9 +463,11 @@ TEST_F(RouterComponenClustertMetadataTest,
   for (size_t i = 0; i < cluster_nodes_ports.size(); ++i) {
     const auto classic_port = cluster_nodes_ports[i];
     const auto http_port = cluster_nodes_http_ports[i];
-    launch_mysql_server_mock(
-        get_data_dir().join("metadata_dynamic_nodes.js").str(), classic_port,
-        EXIT_SUCCESS, false, http_port);
+
+    mock_server_spawner().spawn(mock_server_cmdline("metadata_dynamic_nodes.js")
+                                    .port(classic_port)
+                                    .http_port(http_port)
+                                    .args());
 
     EXPECT_TRUE(MockServerRestClient(http_port).wait_for_rest_endpoint_ready());
     set_mock_metadata(http_port, "uuid",
@@ -501,11 +511,12 @@ TEST_P(PermissionErrorOnVersionUpdateTest, PermissionErrorOnAttributesUpdate) {
       "node)");
   auto md_server_port = port_pool_.get_next_available();
   auto md_server_http_port = port_pool_.get_next_available();
-  const std::string json_metadata =
-      get_data_dir().join(GetParam().tracefile).str();
 
-  /*auto &metadata_server =*/launch_mysql_server_mock(
-      json_metadata, md_server_port, EXIT_SUCCESS, false, md_server_http_port);
+  /*auto &metadata_server = */ mock_server_spawner().spawn(
+      mock_server_cmdline(GetParam().tracefile)
+          .port(md_server_port)
+          .http_port(md_server_http_port)
+          .args());
 
   SCOPED_TRACE(
       "// let's tell the mock which attributes it should expect so that it "
@@ -588,11 +599,13 @@ TEST_P(UpgradeInProgressTest, UpgradeInProgress) {
       "node)");
   auto md_server_port = port_pool_.get_next_available();
   auto md_server_http_port = port_pool_.get_next_available();
-  const std::string json_metadata =
-      get_data_dir().join(GetParam().tracefile).str();
 
-  /*auto &metadata_server = */ launch_mysql_server_mock(
-      json_metadata, md_server_port, EXIT_SUCCESS, false, md_server_http_port);
+  /*auto &metadata_server = */ mock_server_spawner().spawn(
+      mock_server_cmdline(GetParam().tracefile)
+          .port(md_server_port)
+          .http_port(md_server_http_port)
+          .args());
+
   set_mock_metadata(md_server_http_port, "uuid",
                     classic_ports_to_gr_nodes({md_server_port}), 0,
                     classic_ports_to_cluster_nodes({md_server_port}));
@@ -610,7 +623,11 @@ TEST_P(UpgradeInProgressTest, UpgradeInProgress) {
   EXPECT_TRUE(wait_for_port_used(router_port));
 
   SCOPED_TRACE("// let us make some user connection via the router port");
-  auto client = make_new_connection_ok(router_port, md_server_port);
+  auto client_res = make_new_connection(router_port);
+  ASSERT_NO_ERROR(client_res);
+  ASSERT_NO_FATAL_FAILURE(verify_port(client_res->get(), md_server_port));
+
+  auto client = std::move(*client_res);
 
   SCOPED_TRACE("// let's mimmic start of the metadata update now");
   auto globals = mock_GR_metadata_as_json(
@@ -685,17 +702,18 @@ TEST_P(NodeRemovedTest, NodeRemoved) {
   std::vector<ProcessWrapper *> cluster_nodes;
 
   SCOPED_TRACE("// launch cluster with 2 nodes");
-  const std::string json_metadata =
-      get_data_dir().join(GetParam().tracefile).str();
-
   for (size_t i = 0; i < NUM_NODES; ++i) {
     node_ports.push_back(port_pool_.get_next_available());
     node_http_ports.push_back(port_pool_.get_next_available());
   }
 
   for (size_t i = 0; i < NUM_NODES; ++i) {
-    cluster_nodes.push_back(&launch_mysql_server_mock(
-        json_metadata, node_ports[i], EXIT_SUCCESS, false, node_http_ports[i]));
+    cluster_nodes.push_back(&mock_server_spawner().spawn(  //
+        mock_server_cmdline(GetParam().tracefile)
+            .port(node_ports[i])
+            .http_port(node_http_ports[i])
+            .args()));
+
     set_mock_metadata(node_http_ports[i], "uuid",
                       classic_ports_to_gr_nodes(node_ports), i,
                       classic_ports_to_cluster_nodes(node_ports));
@@ -716,8 +734,10 @@ TEST_P(NodeRemovedTest, NodeRemoved) {
   EXPECT_TRUE(wait_for_transaction_count_increase(node_http_ports[0], 2));
   SCOPED_TRACE(
       "// Make a connection to the primary, it should be the first node");
-  { /*auto client =*/
-    make_new_connection_ok(router_port, node_ports[0]);
+  {
+    auto conn_res = make_new_connection(router_port);
+    ASSERT_NO_ERROR(conn_res);
+    ASSERT_NO_FATAL_FAILURE(verify_port(conn_res->get(), node_ports[0]));
   }
 
   SCOPED_TRACE(
@@ -744,7 +764,11 @@ TEST_P(NodeRemovedTest, NodeRemoved) {
   EXPECT_TRUE(wait_for_transaction_count_increase(node_http_ports[1], 2));
 
   SCOPED_TRACE("// let us make some user connection via the router port");
-  /*auto client =*/make_new_connection_ok(router_port, node_ports[1]);
+  {
+    auto conn_res = make_new_connection(router_port);
+    ASSERT_NO_ERROR(conn_res);
+    ASSERT_NO_FATAL_FAILURE(verify_port(conn_res->get(), node_ports[1]));
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -771,10 +795,12 @@ TEST_P(MetadataCacheMetadataServersOrder, MetadataServersOrder) {
   for (size_t i = 0; i < kClusterNodes; ++i) {
     const auto classic_port = port_pool_.get_next_available();
     const auto http_port = port_pool_.get_next_available();
-    const std::string tracefile =
-        get_data_dir().join(GetParam().tracefile).str();
-    cluster_nodes.push_back(&launch_mysql_server_mock(
-        tracefile, classic_port, EXIT_SUCCESS, false, http_port));
+
+    cluster_nodes.push_back(&mock_server_spawner().spawn(  //
+        mock_server_cmdline(GetParam().tracefile)
+            .port(classic_port)
+            .http_port(http_port)
+            .args()));
 
     md_servers_classic_ports.push_back(classic_port);
     md_servers_http_ports.push_back(http_port);
@@ -883,10 +909,12 @@ TEST_P(MetadataCacheChangeClusterName, ChangeClusterName) {
   for (size_t i = 0; i < kClusterNodes; ++i) {
     const auto classic_port = port_pool_.get_next_available();
     const auto http_port = port_pool_.get_next_available();
-    const std::string tracefile =
-        get_data_dir().join(GetParam().tracefile).str();
-    cluster_nodes.push_back(&launch_mysql_server_mock(
-        tracefile, classic_port, EXIT_SUCCESS, false, http_port));
+
+    cluster_nodes.push_back(&mock_server_spawner().spawn(  //
+        mock_server_cmdline(GetParam().tracefile)
+            .port(classic_port)
+            .http_port(http_port)
+            .args()));
 
     md_servers_classic_ports.push_back(classic_port);
     md_servers_http_ports.push_back(http_port);
@@ -928,8 +956,19 @@ TEST_P(MetadataCacheChangeClusterName, ChangeClusterName) {
                                /*wait_for_notify_ready=*/30s);
 
   // make sure that Router works
-  make_new_connection_ok(router_rw_port, md_servers_classic_ports[0]);
-  make_new_connection_ok(router_ro_port, md_servers_classic_ports[1]);
+  {
+    auto conn_res = make_new_connection(router_rw_port);
+    ASSERT_NO_ERROR(conn_res);
+    ASSERT_NO_FATAL_FAILURE(
+        verify_port(conn_res->get(), md_servers_classic_ports[0]));
+  }
+
+  {
+    auto conn_res = make_new_connection(router_ro_port);
+    ASSERT_NO_ERROR(conn_res);
+    ASSERT_NO_FATAL_FAILURE(
+        verify_port(conn_res->get(), md_servers_classic_ports[1]));
+  }
 
   // now change the cluster name in the metadata
   for (const auto [i, http_port] :
@@ -941,8 +980,19 @@ TEST_P(MetadataCacheChangeClusterName, ChangeClusterName) {
       wait_for_transaction_count_increase(md_servers_http_ports[0], 2, 5s));
 
   // the Router should still work
-  make_new_connection_ok(router_rw_port, md_servers_classic_ports[0]);
-  make_new_connection_ok(router_ro_port, md_servers_classic_ports[1]);
+  {
+    auto conn_res = make_new_connection(router_rw_port);
+    ASSERT_NO_ERROR(conn_res);
+    ASSERT_NO_FATAL_FAILURE(
+        verify_port(conn_res->get(), md_servers_classic_ports[0]));
+  }
+
+  {
+    auto conn_res = make_new_connection(router_ro_port);
+    ASSERT_NO_ERROR(conn_res);
+    ASSERT_NO_FATAL_FAILURE(
+        verify_port(conn_res->get(), md_servers_classic_ports[1]));
+  }
 
   // now stop the Router and start it again, this is to make sure that not only
   // change of the ClusterName while the Router is running works but also when
@@ -955,8 +1005,19 @@ TEST_P(MetadataCacheChangeClusterName, ChangeClusterName) {
                                      md_servers_classic_ports, EXIT_SUCCESS,
                                      /*wait_for_notify_ready=*/30s);
 
-  make_new_connection_ok(router_rw_port, md_servers_classic_ports[0]);
-  make_new_connection_ok(router_ro_port, md_servers_classic_ports[1]);
+  {
+    auto conn_res = make_new_connection(router_rw_port);
+    ASSERT_NO_ERROR(conn_res);
+    ASSERT_NO_FATAL_FAILURE(
+        verify_port(conn_res->get(), md_servers_classic_ports[0]));
+  }
+
+  {
+    auto conn_res = make_new_connection(router_ro_port);
+    ASSERT_NO_ERROR(conn_res);
+    ASSERT_NO_FATAL_FAILURE(
+        verify_port(conn_res->get(), md_servers_classic_ports[1]));
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -992,13 +1053,15 @@ TEST_P(SessionReuseTest, SessionReuse) {
     classic_ports.push_back(port_pool_.get_next_available());
     http_ports.push_back(port_pool_.get_next_available());
   }
-  const std::string json_metadata =
-      get_data_dir().join("metadata_dynamic_nodes_v2_gr.js").str();
 
   for (size_t i = 0; i < kClusterNodes; ++i) {
-    cluster_nodes.push_back(&launch_mysql_server_mock(
-        json_metadata, classic_ports[i], EXIT_SUCCESS, false, http_ports[i], 0,
-        "", "127.0.0.1", 30s, /*enable_ssl*/ test_params.server_ssl_enabled));
+    cluster_nodes.push_back(&mock_server_spawner().spawn(  //
+        mock_server_cmdline("metadata_dynamic_nodes_v2_gr.js")
+            .port(classic_ports[i])
+            .http_port(http_ports[i])
+            .enable_ssl(test_params.server_ssl_enabled)
+            .args()));
+
     set_mock_metadata(http_ports[i], "uuid",
                       classic_ports_to_gr_nodes(classic_ports), 0,
                       classic_ports_to_cluster_nodes(classic_ports));
@@ -1108,17 +1171,18 @@ TEST_P(StatsUpdatesFrequencyTest, Verify) {
     primary_node_http_port = cs_options.topology.clusters[0].nodes[0].http_port;
     metadata_server_ports = cs_options.topology.get_md_servers_classic_ports();
   } else {
-    const std::string tracefile =
-        GetParam().cluster_type == ClusterType::GR_V2
-            ? get_data_dir().join("metadata_dynamic_nodes_v2_gr.js").str()
-            : get_data_dir().join("metadata_dynamic_nodes_v2_ar.js").str();
+    const std::string tracefile = GetParam().cluster_type == ClusterType::GR_V2
+                                      ? "metadata_dynamic_nodes_v2_gr.js"
+                                      : "metadata_dynamic_nodes_v2_ar.js";
 
     const auto md_server_port = port_pool_.get_next_available();
     primary_node_http_port = port_pool_.get_next_available();
     metadata_server_ports.push_back(md_server_port);
 
-    launch_mysql_server_mock(tracefile, md_server_port, EXIT_SUCCESS, false,
-                             primary_node_http_port);
+    mock_server_spawner().spawn(mock_server_cmdline(tracefile)
+                                    .port(md_server_port)
+                                    .http_port(primary_node_http_port)
+                                    .args());
 
     set_mock_metadata(primary_node_http_port, "uuid",
                       classic_ports_to_gr_nodes({md_server_port}), 0,

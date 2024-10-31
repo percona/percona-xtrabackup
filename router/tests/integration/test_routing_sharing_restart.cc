@@ -42,8 +42,6 @@
 #include <gtest/gtest-param-test.h>
 #include <gtest/gtest.h>
 
-#define RAPIDJSON_HAS_STDSTRING 1
-
 #include "my_rapidjson_size_t.h"
 
 #include <rapidjson/pointer.h>
@@ -573,8 +571,16 @@ class TestEnv : public ::testing::Environment {
         if (s->mysqld_failed_to_start()) {
           GTEST_SKIP() << "mysql-server failed to start.";
         }
-        s->setup_mysqld_accounts();
-        s->install_plugins();
+        auto cli_res = s->admin_cli();
+        ASSERT_NO_ERROR(cli_res);
+
+        auto cli = std::move(*cli_res);
+
+        // install plugin that will be used later with setup_mysqld_accounts.
+        ASSERT_NO_ERROR(
+            SharedServer::local_install_plugin(cli, "clone", "mysql_clone"));
+
+        SharedServer::setup_mysqld_accounts(cli);
       }
     }
 
@@ -1087,7 +1093,7 @@ TEST_P(ShareConnectionTestWithRestartedServer,
   for (auto [ndx, cli] : stdx::views::enumerate(clis)) {
     SCOPED_TRACE("// connecting for cmd " + std::to_string(ndx));
 
-    auto account = SharedServer::native_empty_password_account();
+    auto account = SharedServer::caching_sha2_empty_password_account();
 
     cli.username(account.username);
     cli.password(account.password);
@@ -1223,9 +1229,8 @@ TEST_P(ShareConnectionTestWithRestartedServer,
           break;
         case cmd_byte<classic_protocol::message::client::ListFields>():  // 4
 
-          EXPECT_THAT(msg.error_code(), AnyOf(1047,   // unknown command in 9.0
-                                              1835))  // malformed packet in 8.4
-              << msg.message();
+          // malformed packet
+          EXPECT_THAT(msg.error_code(), 1835) << msg.message();
           break;
         case cmd_byte<classic_protocol::message::client::StmtPrepare>():  // 22
 

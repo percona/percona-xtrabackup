@@ -145,6 +145,7 @@
 #include <cassert>
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 /*
   This file is part of our public interface for the 'json_binary' library.
@@ -170,6 +171,25 @@ class String;
 #endif
 
 namespace json_binary {
+
+inline constexpr char JSONB_TYPE_SMALL_OBJECT = 0x0;
+inline constexpr char JSONB_TYPE_LARGE_OBJECT = 0x1;
+inline constexpr char JSONB_TYPE_SMALL_ARRAY = 0x2;
+inline constexpr char JSONB_TYPE_LARGE_ARRAY = 0x3;
+inline constexpr char JSONB_TYPE_LITERAL = 0x4;
+inline constexpr char JSONB_TYPE_INT16 = 0x5;
+inline constexpr char JSONB_TYPE_UINT16 = 0x6;
+inline constexpr char JSONB_TYPE_INT32 = 0x7;
+inline constexpr char JSONB_TYPE_UINT32 = 0x8;
+inline constexpr char JSONB_TYPE_INT64 = 0x9;
+inline constexpr char JSONB_TYPE_UINT64 = 0xA;
+inline constexpr char JSONB_TYPE_DOUBLE = 0xB;
+inline constexpr char JSONB_TYPE_STRING = 0xC;
+inline constexpr char JSONB_TYPE_OPAQUE = 0xF;
+
+inline constexpr char JSONB_NULL_LITERAL = 0x0;
+inline constexpr char JSONB_TRUE_LITERAL = 0x1;
+inline constexpr char JSONB_FALSE_LITERAL = 0x2;
 
 void write_offset_or_size(char *dest, size_t offset_or_size, bool large);
 
@@ -326,20 +346,10 @@ class Value {
   Value key(size_t pos) const;
 
   EXPORT_JSON_FUNCTION
-  Value lookup(const char *key, size_t length) const;
+  Value lookup(std::string_view key) const;
 
   EXPORT_JSON_FUNCTION
-  Value lookup(const std::string &key) const {
-    return lookup(key.c_str(), key.length());
-  }
-
-  EXPORT_JSON_FUNCTION
-  size_t lookup_index(const char *key, size_t length) const;
-
-  EXPORT_JSON_FUNCTION
-  size_t lookup_index(const std::string &key) const {
-    return lookup_index(key.c_str(), key.length());
-  }
+  size_t lookup_index(std::string_view key) const;
 
   EXPORT_JSON_FUNCTION
   bool is_backed_by(const String *str) const;

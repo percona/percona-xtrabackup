@@ -131,6 +131,9 @@ ENDIF()
 OPTION(WITH_DEBUG "Use dbug/safemutex" OFF)
 OPTION(CHECK_ERRMSG_FORMAT "Check printf format for English error messages" OFF)
 
+OPTION(DISABLE_ALL_PSI "DISABLE all calls to the PSI interface" OFF)
+MARK_AS_ADVANCED(DISABLE_ALL_PSI)
+
 # Use a default manufacturer if no manufacturer was identified.
 SET(MANUFACTURER_DOCSTRING
   "Set the entity that appears as the manufacturer of packages that support a manufacturer field.")
@@ -234,8 +237,8 @@ IF(APPLE)
 ENDIF()
 
 # Add all policies *after* CMAKE_MINIMUM_REQUIRED
-# Repeating CMAKE_MINIMUM_REQUIRED here will load defaults for 3.5.1
-CMAKE_MINIMUM_REQUIRED(VERSION 3.5.1)
+# Repeating CMAKE_MINIMUM_REQUIRED here will load defaults for 3.14.6
+CMAKE_MINIMUM_REQUIRED(VERSION 3.14.6)
 INCLUDE(cmake_policies NO_POLICY_SCOPE)
 
 MACRO(STRING_APPEND STRING_VAR INPUT)
@@ -324,7 +327,7 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
           SET(ALTERNATIVE_PATHS "/opt/rh/devtoolset-11")
         ENDIF()
       ELSEIF(LINUX_RHEL8 OR LINUX_RHEL9)
-        SET(ALTERNATIVE_PATHS "/opt/rh/gcc-toolset-12")
+        SET(ALTERNATIVE_PATHS "/opt/rh/gcc-toolset-13")
       ENDIF()
 
       FOREACH(OPT_PATH ${ALTERNATIVE_PATHS})
@@ -386,9 +389,9 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
           ENDIF()
         ELSEIF(LINUX_RHEL8 OR LINUX_RHEL9)
           SET(DEV_PACKAGES
-            "gcc-toolset-12-gcc gcc-toolset-12-gcc-c++ gcc-toolset-12-binutils")
-          STRING_APPEND(DEV_PACKAGES " gcc-toolset-12-annobin-annocheck")
-          STRING_APPEND(DEV_PACKAGES " gcc-toolset-12-annobin-plugin-gcc")
+            "gcc-toolset-13-gcc gcc-toolset-13-gcc-c++ gcc-toolset-13-binutils")
+          STRING_APPEND(DEV_PACKAGES " gcc-toolset-13-annobin-annocheck")
+          STRING_APPEND(DEV_PACKAGES " gcc-toolset-13-annobin-plugin-gcc")
         ENDIF()
         MESSAGE(WARNING
           "Could not find devtoolset compiler/linker in ${ALTERNATIVE_PATHS}")
@@ -401,16 +404,16 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
     ELSEIF(LINUX_SUSE_15)
       MESSAGE(STATUS "We need to look for a newer GCC on SUSE Linux.")
       IF(LINUX_SUSE_15)
-        FIND_PROGRAM(ALTERNATIVE_GCC gcc-12
+        FIND_PROGRAM(ALTERNATIVE_GCC gcc-13
           NO_DEFAULT_PATH
           PATHS "/usr/bin")
-        FIND_PROGRAM(ALTERNATIVE_GPP g++-12
+        FIND_PROGRAM(ALTERNATIVE_GPP g++-13
           NO_DEFAULT_PATH
           PATHS "/usr/bin")
-        FIND_PROGRAM(GCC_AR_EXECUTABLE gcc-ar-12
+        FIND_PROGRAM(GCC_AR_EXECUTABLE gcc-ar-13
           NO_DEFAULT_PATH
           PATHS "/usr/bin")
-        FIND_PROGRAM(GCC_RANLIB_EXECUTABLE gcc-ranlib-12
+        FIND_PROGRAM(GCC_RANLIB_EXECUTABLE gcc-ranlib-13
           NO_DEFAULT_PATH
           PATHS "/usr/bin")
       ENDIF()
@@ -429,7 +432,7 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
         MESSAGE(STATUS "Using ${ALTERNATIVE_GPP}")
       ELSE()
         MESSAGE(WARNING "Could not find newer gcc.")
-        MESSAGE(FATAL_ERROR "Please do zypper install gcc12 gcc12-c++\n"
+        MESSAGE(FATAL_ERROR "Please do zypper install gcc13 gcc13-c++\n"
           "or set CMAKE_C_COMPILER and CMAKE_CXX_COMPILER explicitly.")
       ENDIF()
     ELSEIF(SOLARIS)
@@ -516,6 +519,31 @@ MESSAGE(STATUS "CMAKE_MODULE_PATH is ${CMAKE_MODULE_PATH}")
 INCLUDE(mysql_version)
 PROJECT(${MYSQL_PROJECT_NAME}
   VERSION ${MAJOR_VERSION}.${MINOR_VERSION}.${PATCH_VERSION})
+
+# Various 3rd party libraries have this option.
+# Some have it ON, other OFF, by default.
+# https://cmake.org/cmake/help/latest/variable/BUILD_SHARED_LIBS.html:
+# "the top level project must also call option(BUILD_SHARED_LIBS ...)
+#  before bringing in its dependencies."
+# We want all libraries to be explicitly STATIC or SHARED.
+OPTION(BUILD_SHARED_LIBS "Build shared libraries by default" OFF)
+IF(BUILD_SHARED_LIBS)
+  MESSAGE(WARNING "Do not set BUILD_SHARED_LIBS to ON/TRUE")
+  SET(BUILD_SHARED_LIBS OFF)
+  SET(BUILD_SHARED_LIBS OFF CACHE INTERNAL "" FORCE)
+ENDIF()
+
+# https://cmake.org/cmake/help/latest/variable/CMAKE_SKIP_INSTALL_ALL_DEPENDENCY.html
+OPTION(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY
+  "Target 'install' does not depend on 'all'" OFF)
+IF(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY)
+  MESSAGE(WARNING "Do not set CMAKE_SKIP_INSTALL_ALL_DEPENDENCY to ON/TRUE")
+  SET(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY OFF)
+  SET(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY OFF CACHE INTERNAL "" FORCE)
+ENDIF()
+
+# Ninja only: List of available pools.
+SET_PROPERTY(GLOBAL PROPERTY JOB_POOLS one_job=1)
 
 GET_FILENAME_COMPONENT(REALPATH_CMAKE_SOURCE_DIR ${CMAKE_SOURCE_DIR} REALPATH)
 GET_FILENAME_COMPONENT(REALPATH_CMAKE_BINARY_DIR ${CMAKE_BINARY_DIR} REALPATH)
@@ -752,7 +780,6 @@ ENDIF()
 INCLUDE(add_custom_target)
 INCLUDE(pkg-config)
 INCLUDE(character_sets)
-INCLUDE(link_options)
 INCLUDE(malloc_utils)
 INCLUDE(cpu_info)
 INCLUDE(fileutils)
@@ -831,7 +858,7 @@ IF(WIN32)
   OPTION(WITH_MSCRT_DEBUG "MS Visual Studio Debug CRT instrumentation" OFF)
 ENDIF()
 IF(NOT WITHOUT_SERVER)
-  IF(FPROFILE_GENERATE OR FPROFILE_USE)
+  IF(FPROFILE_GENERATE)
     # Do not use data from unit testing when optimizing.
     OPTION(WITH_UNIT_TESTS "Compile MySQL with unit tests" OFF)
   ELSE()
@@ -1236,7 +1263,7 @@ IF(LINUX AND NOT ALTERNATIVE_LD AND NOT FPROFILE_GENERATE AND NOT FPROFILE_USE)
   ENDIF()
 ENDIF()
 
-IF(LINUX_STANDALONE)
+IF(LINUX_STANDALONE OR SOLARIS)
   # ON by default in pushbuild, but only for standalone builds.
   # The comression does not play well with some RPM/DEB packaging.
   # Developers can set default in environment.
@@ -1271,12 +1298,16 @@ ENDIF()
 IF(UNIX AND MY_COMPILER_IS_GNU_OR_CLANG)
   # By default, do this for STANDALONE and tarball builds.
   # Off by default for sanitizer or valgrind builds.
+  # Off by default in pushbuild.
   # Off by default for Apple Clang.
-  IF((INSTALL_LAYOUT MATCHES "STANDALONE" OR
-        INSTALL_LAYOUT MATCHES "TARGZ" OR
-        INSTALL_LAYOUT MATCHES "SVR4"
+  # ON by default for SOLARIS (also in PB2), to reduce package sizes.
+  IF(SOLARIS)
+    SET(MINIMAL_RELWITHDEBINFO_DEFAULT ON)
+  ELSEIF((INSTALL_LAYOUT MATCHES "STANDALONE" OR
+          INSTALL_LAYOUT MATCHES "TARGZ"
         )
       AND NOT CMAKE_COMPILER_FLAG_WITH_SANITIZE AND NOT WITH_VALGRIND
+      AND NOT DEFINED ENV{PB2WORKDIR}
       AND NOT APPLE)
     SET(MINIMAL_RELWITHDEBINFO_DEFAULT ON)
   ELSE()
@@ -1365,9 +1396,9 @@ IF(CMAKE_C_LINK_FLAGS MATCHES "-fuse-ld=gold" OR
     "-fuse-ld=gold" "" CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
 ENDIF()
 
-# Fedora 34, RHEL9: undefined reference to symbol 'crc32_z@@ZLIB_1.2.9'
-IF(LINUX_FEDORA_34 OR LINUX_RHEL9)
-  IF(NOT USING_LD_LLD)
+# RHEL9: undefined reference to symbol 'crc32_z@@ZLIB_1.2.9'
+IF(LINUX_RHEL9)
+  IF(NOT USING_LD_LLD AND NOT USING_LD_MOLD)
     STRING_APPEND(CMAKE_CXX_LINK_FLAGS " -Wl,--copy-dt-needed-entries")
   ENDIF()
 ENDIF()
@@ -1560,7 +1591,6 @@ ENDIF()
 INCLUDE(configure.cmake)
 
 # Common defines and includes
-ADD_DEFINITIONS(-DHAVE_CONFIG_H)
 ADD_DEFINITIONS(-D__STDC_LIMIT_MACROS)     # Enable C99 limit macros
 ADD_DEFINITIONS(-D__STDC_FORMAT_MACROS)    # Enable C99 printf format macros
 ADD_DEFINITIONS(-D_USE_MATH_DEFINES)       # Get access to M_PI, M_E, etc. in math.h
@@ -1568,17 +1598,6 @@ ADD_DEFINITIONS(-DLZ4_DISABLE_DEPRECATE_WARNINGS) # C++14 deprecation warnings i
 IF(APPLE)
   ADD_DEFINITIONS(-D__STDC_WANT_LIB_EXT1__=1) # Get access to memset_s
 ENDIF()
-
-# Force the same macro definition MYSQL_PROJECT for all source files being
-# compiled as a part of the MySQL server, client tools, libraries etc.
-# The MYSQL_PROJECT macro helps to distinguish when e.g. some C++ header file
-# is included by the MySQL project source file or by the external project
-# source file.
-# For example, MYSQL_PROJECT helps to detect when include/mysql/strings/api.h
-# is used to a) build a static library, or b) build a Windows DLL, or
-# c) reference the server strings API from plugins (DLLs) loaded by the
-# MySQL server, or d) reference the libstrings DLL from external executables.
-ADD_DEFINITIONS(-DMYSQL_PROJECT)
 
 OPTION(ENABLE_EXPERIMENT_SYSVARS "Expose ussually hidden system variables to allow experiments" OFF)
 IF(ENABLE_EXPERIMENT_SYSVARS)
@@ -1678,6 +1697,21 @@ IF(APPLE)
   OPTION(WITH_DEVELOPER_ENTITLEMENTS "Add developer entitlements" OFF)
 ENDIF()
 
+# Utility target to build every executable tagged with ADD_TEST.
+ADD_CUSTOM_TARGET(unittest_all)
+
+# Utility target to build every target added with MYSQL_ADD_PLUGIN.
+ADD_CUSTOM_TARGET(plugin_all)
+
+# Utility target to build every target added with MYSQL_ADD_COMPONENT.
+ADD_CUSTOM_TARGET(component_all)
+
+# Utility target to generate all sources from .proto files.
+ADD_CUSTOM_TARGET(protobuf_generated_all)
+
+# Utility target to generate everything created by MYSQL_ADD_EXECUTABLE().
+ADD_CUSTOM_TARGET(executable_all)
+
 # Explicit list of all -DWITH_XXX=system possibilities
 # *except* boost, which requires one specific version to be downloaded.
 # RapidJSON is also excluded, since the latest released version does not
@@ -1709,6 +1743,8 @@ IF(APPLE)
   ELSE()
     SET(HOMEBREW_HOME "/usr/local/opt")
   ENDIF()
+  # The Xcode version is 1.2.12 which is too old
+  LIST(REMOVE_ITEM SYSTEM_LIBRARIES ZLIB)
 ENDIF()
 
 SET(WITH_SYSTEM_LIBS_DEFAULT OFF)
@@ -1725,6 +1761,10 @@ IF(LINUX_UBUNTU)
   # Ubuntu 22.04 has 1.2.11 which is too old.
   IF(LINUX_UBUNTU_VERSION_ID VERSION_LESS "23.04")
     LIST(REMOVE_ITEM SYSTEM_LIBRARIES ZLIB)
+  ENDIF()
+  # Ubuntu 22.04 has too old grpc
+  IF(WITH_INTERNAL AND LINUX_UBUNTU_VERSION_ID VERSION_LESS "24.04")
+    LIST(REMOVE_ITEM SYSTEM_LIBRARIES PROTOBUF)
   ENDIF()
 ENDIF()
 # Do not change it back to "system"
@@ -2029,13 +2069,18 @@ IF(LINUX)
   HAVE_PTHREAD_SETNAME_NP)
 ENDIF()
 
+# The bundled version must be set up after all the configure stuff above.
+IF(LINUX AND WITH_TCMALLOC STREQUAL "bundled")
+  ADD_SUBDIRECTORY(${CMAKE_SOURCE_DIR}/extra/gperftools)
+  SET(MALLOC_LIBRARY "${CMAKE_BINARY_DIR}/lib/libtcmalloc.so")
+ENDIF()
+
 # Cannot use system tirpc with custom OpenSSL
 IF((WITH_SSL_PATH OR ALTERNATIVE_SYSTEM_SSL) AND (LINUX_RHEL8 OR LINUX_RHEL9))
   SET(WITH_TIRPC "bundled")
 ENDIF()
-
-IF(WITH_TIRPC STREQUAL "bundled")
-  ADD_SUBDIRECTORY(extra/tirpc)
+IF(LINUX)
+  MYSQL_CHECK_RPC()
 ENDIF()
 
 IF(HAVE_ASAN AND MY_COMPILER_IS_CLANG AND WITH_PROTOBUF STREQUAL "bundled")
@@ -2079,8 +2124,8 @@ IF(WITH_PROTOBUF STREQUAL "bundled" OR WITH_FIDO STREQUAL "bundled")
       # Silence warning about CMP0075
       CMAKE_PUSH_CHECK_STATE()
       SET(CMAKE_REQUIRED_LIBRARIES)
-      ADD_SUBDIRECTORY(${CMAKE_SOURCE_DIR}/${CBOR_BUNDLE_SRC_PATH})
-      ADD_SUBDIRECTORY(${CMAKE_SOURCE_DIR}/${FIDO_BUNDLE_SRC_PATH})
+      ADD_SUBDIRECTORY(${CMAKE_SOURCE_DIR}/extra/libcbor)
+      ADD_SUBDIRECTORY(${CMAKE_SOURCE_DIR}/extra/libfido2)
       CMAKE_POP_CHECK_STATE()
     ENDIF()
   ENDIF()
@@ -2114,7 +2159,32 @@ INCLUDE(maintainer)
 INCLUDE(msvc_cppcheck)
 DO_MSVC_CPPCHECK()
 
+<<<<<<< HEAD
 IF(WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
+||||||| dc86e412f18
+IF(WITH_UNIT_TESTS)
+=======
+# Silence some warnings for unused performance schema stuff.
+IF(DISABLE_ALL_PSI AND MY_COMPILER_IS_GNU_OR_CLANG)
+  STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-unused-parameter")
+  STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-unused-variable")
+  MY_CHECK_CXX_COMPILER_WARNING("-Wunused-but-set-variable" HAS_WARN_FLAG)
+  IF(HAS_WARN_FLAG)
+    STRING_APPEND(CMAKE_CXX_FLAGS " ${HAS_WARN_FLAG}")
+  ENDIF()
+  MY_CHECK_CXX_COMPILER_WARNING("-Wdocumentation" HAS_WARN_FLAG)
+  IF(HAS_WARN_FLAG)
+    STRING_APPEND(CMAKE_CXX_FLAGS " ${HAS_WARN_FLAG}")
+  ENDIF()
+ENDIF()
+
+# We know that 3.12 generates extra-semi, and that 3.19 does not:
+IF(WITH_PROTOBUF STREQUAL "system" AND "${PROTOBUF_VERSION}" VERSION_LESS 3.19)
+  STRING(REPLACE "-Wextra-semi" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+ENDIF()
+
+IF(WITH_UNIT_TESTS)
+>>>>>>> mysql-9.1.0
   ENABLE_TESTING()
   INCLUDE(googletest)
 ELSE()
@@ -2144,40 +2214,26 @@ ENDIF()
 
 # The hypergraph optimizer is default on only for debug builds.
 IF(CMAKE_BUILD_TYPE_UPPER STREQUAL "DEBUG" OR WITH_DEBUG)
-  SET(WITH_HYPERGRAPH_OPTIMIZER_DEFAULT ON)
+  OPTION(WITH_HYPERGRAPH_OPTIMIZER
+    "Allow use of the hypergraph join optimizer" ON)
+ELSEIF(BUILD_IS_SINGLE_CONFIG)
+  OPTION(WITH_HYPERGRAPH_OPTIMIZER
+    "Allow use of the hypergraph join optimizer" OFF)
 ELSE()
-  SET(WITH_HYPERGRAPH_OPTIMIZER_DEFAULT OFF)
+  # Do not initialize the option, set it ON for $<CONFIG:Debug>
+  SET(WITH_HYPERGRAPH_OPTIMIZER_DEFAULT "default")
 ENDIF()
-OPTION(WITH_HYPERGRAPH_OPTIMIZER
-  "Allow use of the hypergraph join optimizer"
-  ${WITH_HYPERGRAPH_OPTIMIZER_DEFAULT}
-  )
 
 # Allow SHOW PARSE_TREE on debug build by default.
 IF(CMAKE_BUILD_TYPE_UPPER STREQUAL "DEBUG" OR WITH_DEBUG)
-  SET(WITH_SHOW_PARSE_TREE_DEFAULT ON)
+  OPTION(WITH_SHOW_PARSE_TREE "Allow showing the parse tree" ON)
+ELSEIF(BUILD_IS_SINGLE_CONFIG)
+  OPTION(WITH_SHOW_PARSE_TREE "Allow showing the parse tree" OFF)
 ELSE()
-  SET(WITH_SHOW_PARSE_TREE_DEFAULT OFF)
+  SET(WITH_SHOW_PARSE_TREE_DEFAULT "default")
+  # Do not initialize the option, set it ON for $<CONFIG:Debug>
+  SET(WITH_HYPERGRAPH_OPTIMIZER_DEFAULT "default")
 ENDIF()
-OPTION(WITH_SHOW_PARSE_TREE
-  "Allow showing the parse tree"
-  ${WITH_SHOW_PARSE_TREE_DEFAULT}
-  )
-
-# Utility target to build every executable tagged with ADD_TEST.
-ADD_CUSTOM_TARGET(unittest_all)
-
-# Utility target to build every target added with MYSQL_ADD_PLUGIN.
-ADD_CUSTOM_TARGET(plugin_all)
-
-# Utility target to build every target added with MYSQL_ADD_COMPONENT.
-ADD_CUSTOM_TARGET(component_all)
-
-# Utility target to generate all sources from .proto files.
-ADD_CUSTOM_TARGET(protobuf_generated_all)
-
-# Utility target to generate everything created by MYSQL_ADD_EXECUTABLE().
-ADD_CUSTOM_TARGET(executable_all)
 
 # We may run clang-tidy on individual .h files. Tell clang to treat them as C++.
 # To generate entries for header files in compile_commands.json:
@@ -2225,6 +2281,10 @@ ADD_SUBDIRECTORY(sql-common/oci)
 IF(NOT WITHOUT_SERVER)
   IF(WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
     IF(WIN32)
+      # static thread_local objects are not allowed in a .dll
+      SET(WITH_SHARED_UNITTEST_LIBRARY_DEFAULT OFF)
+    ELSEIF(APPLE AND WITH_SOME_SANITIZER)
+      # several down_cast<Json_something> will assert()
       SET(WITH_SHARED_UNITTEST_LIBRARY_DEFAULT OFF)
     ELSE()
       SET(WITH_SHARED_UNITTEST_LIBRARY_DEFAULT ON)
@@ -2300,16 +2360,16 @@ IF(NOT WITHOUT_SERVER AND WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
       # and several other boost files.
       MY_CHECK_CXX_COMPILER_WARNING("error=maybe-uninitialized" HAS_WARN_FLAG)
       IF(HAS_WARN_FLAG)
-        MY_TARGET_LINK_OPTIONS(server_unittest_library "${HAS_WARN_FLAG}")
+        TARGET_LINK_OPTIONS(server_unittest_library PRIVATE ${HAS_WARN_FLAG})
       ENDIF()
       # The mold linker and RelWithDebInfo build complains about
       # the new expression in Rpl_info_values::init()
+      # We get stringop warnings in functions generated by protobuf.
       IF(MY_COMPILER_IS_GNU)
-        MY_TARGET_LINK_OPTIONS(server_unittest_library
-          "-Wno-alloc-size-larger-than")
-        # In functions generated by protobuf:
-        MY_TARGET_LINK_OPTIONS(server_unittest_library
-          "-Wno-stringop-overflow")
+        TARGET_LINK_OPTIONS(server_unittest_library PRIVATE
+          -Wno-alloc-size-larger-than
+          -Wno-stringop-overflow
+          )
       ENDIF()
     ENDIF()
   ELSE()
@@ -2348,7 +2408,6 @@ INCLUDE(cmake/abi_check.cmake)
 INCLUDE(cmake/tags.cmake)
 
 CONFIGURE_FILE(config.h.cmake   ${CMAKE_BINARY_DIR}/include/my_config.h)
-CONFIGURE_FILE(config.h.cmake   ${CMAKE_BINARY_DIR}/include/config.h)
 CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/include/mysql_version.h.in
                ${CMAKE_BINARY_DIR}/include/mysql_version.h )
 CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/sql/sql_builtin.cc.in
@@ -2660,6 +2719,7 @@ ENDIF(DOXYGEN_FOUND)
 
 MYSQL_ADD_EXECUTABLE(stack_direction
   ${CMAKE_SOURCE_DIR}/cmake/stack_direction.c
+  EXCLUDE_FROM_PGO
   SKIP_INSTALL
   )
 

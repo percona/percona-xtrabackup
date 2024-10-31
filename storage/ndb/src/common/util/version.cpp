@@ -69,6 +69,10 @@ struct NdbUpGradeCompatible {
 };
 
 struct NdbUpGradeCompatible ndbCompatibleTable_full[] = {
+    {MAKE_VERSION(9, 1, NDB_VERSION_BUILD), MAKE_VERSION(7, 0, 0),
+     UG_Range}, /* 7.0 <-> 9.1 */
+    {MAKE_VERSION(9, 0, NDB_VERSION_BUILD), MAKE_VERSION(7, 0, 0),
+     UG_Range}, /* 7.0 <-> 9.0 */
     {MAKE_VERSION(8, 4, NDB_VERSION_BUILD), MAKE_VERSION(7, 0, 0),
      UG_Range}, /* 7.0 <-> 8.4 */
     {MAKE_VERSION(8, 3, NDB_VERSION_BUILD), MAKE_VERSION(7, 0, 0),

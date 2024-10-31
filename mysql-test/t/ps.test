@@ -2603,9 +2603,7 @@ delimiter ;|
 select func_1(), func_1(), func_1() from dual;
 --error ER_SP_DOES_NOT_EXIST
 drop function func_1;
---error ER_UNSUPPORTED_PS
 prepare abc from "create event xyz on schedule at now() do select 123";
---error ER_UNKNOWN_STMT_HANDLER
 deallocate prepare abc;
 
 
@@ -2627,9 +2625,7 @@ delimiter |;
 --error ER_COMMIT_NOT_ALLOWED_IN_SF_OR_TRG
 create function func_1() returns int begin alter event xyz comment 'xyz'; return 1; end|
 delimiter ;|
---error ER_UNSUPPORTED_PS
 prepare abc from "alter event xyz comment 'xyz'";
---error ER_UNKNOWN_STMT_HANDLER
 deallocate prepare abc;
 
 
@@ -2648,9 +2644,7 @@ delimiter |;
 --error ER_COMMIT_NOT_ALLOWED_IN_SF_OR_TRG
 create function func_1() returns int begin drop event xyz; return 1; end|
 delimiter ;|
---error ER_UNSUPPORTED_PS
 prepare abc from "drop event xyz";
---error ER_UNKNOWN_STMT_HANDLER
 deallocate prepare abc;
 
 
@@ -3562,36 +3556,36 @@ SET @fltvalx = '  1e38  ';
 INSERT INTO ints VALUES ('');
 --error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 INSERT INTO deci VALUES ('');
---error 1265
+--error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 INSERT INTO dbls VALUES ('');
---error 1265
+--error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 INSERT INTO flts VALUES ('');
 
 --error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 INSERT INTO ints VALUES ('   ');
 --error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 INSERT INTO deci VALUES ('   ');
---error 1265
+--error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 INSERT INTO dbls VALUES ('   ');
---error 1265
+--error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 INSERT INTO flts VALUES ('   ');
 
 --error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 INSERT INTO ints VALUES (@empty);
 --error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 INSERT INTO deci VALUES (@empty);
---error 1265
+--error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 INSERT INTO dbls VALUES (@empty);
---error 1265
+--error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 INSERT INTO flts VALUES (@empty);
 
 --error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 INSERT INTO ints VALUES (@spaces);
 --error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 INSERT INTO deci VALUES (@spaces);
---error 1265
+--error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 INSERT INTO dbls VALUES (@spaces);
---error 1265
+--error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 INSERT INTO flts VALUES (@spaces);
 
 INSERT INTO ints VALUES ('666');
@@ -3623,18 +3617,18 @@ PREPARE ps4 FROM 'INSERT INTO flts VALUES (?)';
 EXECUTE ps1 USING @empty;
 --error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 EXECUTE ps2 USING @empty;
---error 1265
+--error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 EXECUTE ps3 USING @empty;
---error 1265
+--error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 EXECUTE ps4 USING @empty;
 
 --error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 EXECUTE ps1 USING @spaces;
 --error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 EXECUTE ps2 USING @spaces;
---error 1265
+--error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 EXECUTE ps3 USING @spaces;
---error 1265
+--error ER_TRUNCATED_WRONG_VALUE_FOR_FIELD
 EXECUTE ps4 USING @spaces;
 
 EXECUTE ps1 USING @intval;

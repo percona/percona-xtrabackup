@@ -473,6 +473,7 @@ Field *create_tmp_field(THD *thd, TABLE *table, Item *item, Item::Type type,
     case Item::NULL_ITEM:
     case Item::HEX_BIN_ITEM:
     case Item::PARAM_ITEM:
+    case Item::NAME_CONST_ITEM:
     case Item::ROUTINE_FIELD_ITEM:
     case Item::SUM_FUNC_ITEM:
       if (type == Item::SUM_FUNC_ITEM && !is_wf) {
@@ -893,14 +894,18 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
 
   if (group != nullptr) distinct = false;  // Can't use distinct
 
-  for (ORDER *tmp = group; tmp; tmp = tmp->next) {
+  // It's best to skip this if caller has forced a hash strategy. Apart from
+  // being unnecessary, another reason to skip this is: possibly the caller has
+  // forced hash to avoid this very thing of converting bit to long.
+  if (!param->force_hash_field_for_unique) {
     /*
       marker == MARKER_BIT means two things:
       - store NULLs in the key, and
       - convert BIT fields to 64-bit long, needed because MEMORY tables
         can't index BIT fields.
     */
-    (*tmp->item)->marker = Item::MARKER_BIT;
+    for (ORDER *tmp = group; tmp; tmp = tmp->next)
+      (*tmp->item)->marker = Item::MARKER_BIT;
   }
 
   /**
@@ -912,6 +917,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
     (4) we have INTERSECT or EXCEPT, i.e. not UNION.
   */
   bool unique_constraint_via_hash_field =
+      param->force_hash_field_for_unique ||
       param->m_operation != Temp_table_param::TTP_UNION_OR_TABLE;
 
   /*
@@ -974,6 +980,9 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
     close_tmp_table(table);
     free_tmp_table(table);
   });
+
+  // All character set conversions into temporary tables are strict:
+  table->m_charset_conversion_is_strict = true;
 
   /*
     We will use TABLE_SHARE's MEM_ROOT for all allocations, so TABLE's
@@ -1661,7 +1670,7 @@ TABLE *create_tmp_table(THD *thd, Temp_table_param *param,
 
   DEBUG_SYNC(thd, "tmp_table_created");
 
-  free_tmp_table_guard.commit();
+  free_tmp_table_guard.release();
 
   return table;
 }
@@ -2972,9 +2981,10 @@ static int FindCopyBitmap(Item *item) {
   return bits;
 }
 
-Func_ptr::Func_ptr(Item *item, Field *result_field)
+Func_ptr::Func_ptr(Item *item, Field *result_field, Item *result_item)
     : m_func(item),
       m_result_field(result_field),
+      m_result_item(result_item),
       m_func_bits(FindCopyBitmap(item)) {}
 
 void Func_ptr::set_func(Item *func) {
@@ -2982,9 +2992,14 @@ void Func_ptr::set_func(Item *func) {
   m_func_bits = FindCopyBitmap(func);
 }
 
-Item_field *Func_ptr::result_item() const {
+Item *Func_ptr::result_item() const {
   if (m_result_item == nullptr) {
     m_result_item = new Item_field(m_result_field);
+    if (func()->type() == Item::FIELD_ITEM) {
+      // Improves explain precision
+      down_cast<Item_field *>(m_result_item)->table_name =
+          down_cast<Item_field *>(func())->table_name;
+    }
   }
   return m_result_item;
 }

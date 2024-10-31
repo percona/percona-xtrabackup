@@ -98,6 +98,7 @@
 #include "../suma/Suma.hpp"
 #include "DblqhCommon.hpp"
 #include "portlib/mt-asm.h"
+#include "portlib/ndb_file.h"
 
 #include "../backup/Backup.hpp"
 #include "../dbtux/Dbtux.hpp"
@@ -111,32 +112,32 @@
 #include <EventLogger.hpp>
 
 #if (defined(VM_TRACE) || defined(ERROR_INSERT))
-//#define DEBUG_COPY_ACTIVE 1
-//#define DEBUG_LOCAL_LCP 1
-//#define DEBUG_EMPTY_LCP 1
-//#define DEBUG_LAST_LCP 1
-//#define DEBUG_NEWEST_GCI 1
-//#define ABORT_TRACE 1
-//#define DO_TRANSIENT_POOL_STAT 1
-//#define DEBUG_EXTRA_LCP 1
-//#define DEBUG_LCP 1
-//#define DEBUG_LCP_RESTORE
-//#define DEBUG_COPY 1
-//#define DEBUG_GCP 1
-//#define DEBUG_CUT_REDO 1
-//#define DEBUG_LOCAL_LCP_EXTRA 1
-//#define DEBUG_REDO_FLAG 1
-//#define DEBUG_TRANSACTION_TIMEOUT 1
-//#define DEBUG_SCHEMA_VERSION 1
-//#define DEBUG_EARLY_LCP 1
-//#define DEBUG_NODE_STATUS 1
-//#define DEBUG_INDEX_BUILD 1
-//#define DEBUG_RESTART_SYNCH 1
-//#define DEBUG_START_PHASE9 1
-//#define DEBUG_COMMITTED_WORDS 1
-//#define DEBUG_RESTORE 1
-//#define NDB_DEBUG_REDO_EXEC 1
-//#define NDB_DEBUG_REDO_REC 1
+// #define DEBUG_COPY_ACTIVE 1
+// #define DEBUG_LOCAL_LCP 1
+// #define DEBUG_EMPTY_LCP 1
+// #define DEBUG_LAST_LCP 1
+// #define DEBUG_NEWEST_GCI 1
+// #define ABORT_TRACE 1
+// #define DO_TRANSIENT_POOL_STAT 1
+// #define DEBUG_EXTRA_LCP 1
+// #define DEBUG_LCP 1
+// #define DEBUG_LCP_RESTORE
+// #define DEBUG_COPY 1
+// #define DEBUG_GCP 1
+// #define DEBUG_CUT_REDO 1
+// #define DEBUG_LOCAL_LCP_EXTRA 1
+// #define DEBUG_REDO_FLAG 1
+// #define DEBUG_TRANSACTION_TIMEOUT 1
+// #define DEBUG_SCHEMA_VERSION 1
+// #define DEBUG_EARLY_LCP 1
+// #define DEBUG_NODE_STATUS 1
+// #define DEBUG_INDEX_BUILD 1
+// #define DEBUG_RESTART_SYNCH 1
+// #define DEBUG_START_PHASE9 1
+// #define DEBUG_COMMITTED_WORDS 1
+// #define DEBUG_RESTORE 1
+// #define NDB_DEBUG_REDO_EXEC 1
+// #define NDB_DEBUG_REDO_REC 1
 #endif
 
 #ifdef DEBUG_NEWEST_GCI
@@ -372,7 +373,7 @@
 
 // Use LQH_DEBUG to print messages that should be
 // seen only when we debug the product
-//#define USE_LQH_DEBUG
+// #define USE_LQH_DEBUG
 #ifdef USE_LQH_DEBUG
 #define LQH_DEBUG(x) ndbout << "DBLQH: " << x << endl;
 static NdbOut &operator<<(NdbOut &out,
@@ -444,8 +445,8 @@ static NdbOut &operator<<(NdbOut &out, Operation_t op) {
 #define LQH_DEBUG(x)
 #endif
 
-//#define MARKER_TRACE 0
-//#define TRACE_SCAN_TAKEOVER 1
+// #define MARKER_TRACE 0
+// #define TRACE_SCAN_TAKEOVER 1
 
 #ifdef NDB_DEBUG_REDO_REC
 static int DEBUG_REDO_REC = 1;
@@ -2107,6 +2108,8 @@ void Dblqh::execREAD_CONFIG_REQ(Signal *signal) {
   ndbrequire(!ndb_mgm_get_int_parameter(p, CFG_DB_DISCLESS, &c_diskless));
   c_o_direct = true;
   ndb_mgm_get_int_parameter(p, CFG_DB_O_DIRECT, &c_o_direct);
+  if (!ndb_file::have_direct_io_support())
+    c_o_direct = 0;  // Message in NDBFS::execREAD_CONFIG
 
   Uint32 encrypted_filesystem = 0;
   ndb_mgm_get_int_parameter(p, CFG_DB_ENCRYPTED_FILE_SYSTEM,
@@ -6510,7 +6513,7 @@ static inline Uint32 getProgramWordCount(SegmentedSectionPtr attrInfo) {
  * DEBUG_MUTEX_STATS do we print it unconditionally, otherwise it is
  * printed only if activating debug printouts from command line.
  */
-//#define DEBUG_MUTEX_STATS 1
+// #define DEBUG_MUTEX_STATS 1
 #ifdef DEBUG_MUTEX_STATS
 #define DEB_PRINT_MUTEX_STATS(arglist) \
   do {                                 \
@@ -7777,17 +7780,13 @@ void Dblqh::execLQHKEYREQ(Signal *signal) {
   regTcPtr->m_dealloc_data.m_dealloc_ref_count = RNIL;
   {
     regTcPtr->operation = (Operation_t)op == ZREAD_EX ? ZREAD : (Operation_t)op;
-    regTcPtr->lockType =
-        op == ZREAD_EX
-            ? ZUPDATE
-            : (Operation_t)op == ZWRITE
-                  ? ZINSERT
-                  : (Operation_t)op == ZREFRESH
-                        ? ZINSERT
-                        : (Operation_t)op == ZUNLOCK
-                              ? ZREAD
-                              :  // lockType not relevant for unlock req
-                              (Operation_t)op;
+    regTcPtr->lockType = op == ZREAD_EX                ? ZUPDATE
+                         : (Operation_t)op == ZWRITE   ? ZINSERT
+                         : (Operation_t)op == ZREFRESH ? ZINSERT
+                         : (Operation_t)op == ZUNLOCK
+                             ? ZREAD
+                             :  // lockType not relevant for unlock req
+                             (Operation_t)op;
   }
   if (LqhKeyReq::getNoWaitFlag(Treqinfo)) {
     /* Check sender version before processing - older versions sent junk */
@@ -8063,8 +8062,8 @@ void Dblqh::execLQHKEYREQ(Signal *signal) {
     ndbassert(refToMain(senderRef) == getDBLQH());
     ndbassert(LqhKeyReq::getRowidFlag(Treqinfo));
     if (!(fragptr.p->fragStatus == Fragrecord::ACTIVE_CREATION)) {
+      /* Unexpected fragment state */
       g_eventLogger->info("fragptr.p->fragStatus: %d", fragptr.p->fragStatus);
-      CRASH_INSERTION(5046);
     }
     /**
      * We discover start of Node recovery phase in starting node
@@ -12907,8 +12906,9 @@ void Dblqh::ndbdFailBlockCleanupCallback(Signal *signal, Uint32 failedNodeId,
   nfCompRep->blockNo = m_is_query_block ? DBQLQH : DBLQH;
   nfCompRep->nodeId = cownNodeid;
   nfCompRep->failedNodeId = failedNodeId;
-  BlockReference dihRef =
-      !isNdbMtLqh() ? DBDIH_REF : m_is_query_block ? DBQLQH_REF : DBLQH_REF;
+  BlockReference dihRef = !isNdbMtLqh()      ? DBDIH_REF
+                          : m_is_query_block ? DBQLQH_REF
+                                             : DBLQH_REF;
   sendSignal(dihRef, GSN_NF_COMPLETEREP, signal, NFCompleteRep::SignalLength,
              JBB);
 }
@@ -13024,62 +13024,62 @@ void Dblqh::lqhTransNextLab(Signal *signal, TcNodeFailRecordPtr tcNodeFailPtr) {
   TcConnectionrecPtr tcConnectptr;
   tcConnectptr.i = tcNodeFailPtr.p->tcRecNow;
   for (Uint32 i = 0; i < 100; i++) {
-    bool found = getNextTcConRec(tcNodeFailPtr.p->tcRecNow, tcConnectptr, 10);
-    if (tcNodeFailPtr.p->tcRecNow != RNIL && !found) {
-      /**
-       * We scanned without finding any records for a long
-       * time, thus we will treat this as looping 10 times
-       * in this loop.
-       */
-      jam();
-      i += 10;
-      continue;
-    } else if (tcNodeFailPtr.p->tcRecNow == RNIL) {
-      jam();
-      /**
-       * Finished with scanning operation record
-       *
-       * now scan markers
-       */
+    if (!getNextTcConRec(tcNodeFailPtr.p->tcRecNow, tcConnectptr, 10)) {
+      if (tcNodeFailPtr.p->tcRecNow != RNIL) {
+        /**
+         * We scanned without finding any records for a long
+         * time, thus we will treat this as looping 10 times
+         * in this loop.
+         */
+        jam();
+        i += 10;
+        continue;
+      } else {
+        jam();
+        /**
+         * Finished with scanning operation record
+         *
+         * now scan markers
+         */
 #ifdef ERROR_INSERT
-      if (ERROR_INSERTED(5061)) {
-        CLEAR_ERROR_INSERT_VALUE;
-        for (Uint32 i = 0; i < cnoOfNodes; i++) {
-          Uint32 node = cnodeData[i];
-          if (node != getOwnNodeId() && cnodeStatus[i] == ZNODE_UP) {
-            g_eventLogger->info("clearing ERROR_INSERT in LQH:%u", node);
-            signal->theData[0] = 0;
-            sendSignal(numberToRef(getDBLQH(), node), GSN_NDB_TAMPER, signal, 1,
-                       JBB);
+        if (ERROR_INSERTED(5061)) {
+          for (Uint32 i = 0; i < cnoOfNodes; i++) {
+            Uint32 node = cnodeData[i];
+            if (cnodeStatus[i] == ZNODE_UP) {
+              g_eventLogger->info("clearing ERROR_INSERT in LQH:%u", node);
+              CLEAR_ERROR_INSERT_VALUE3(signal, node, getDBLQH());
+            }
           }
+
+          signal->theData[0] = ZSCAN_MARKERS;
+          signal->theData[1] = tcNodeFailPtr.i;
+          signal->theData[2] = 0;
+          sendSignalWithDelay(cownref, GSN_CONTINUEB, signal, 5000, 3);
+          return;
         }
 
-        signal->theData[0] = ZSCAN_MARKERS;
-        signal->theData[1] = tcNodeFailPtr.i;
-        signal->theData[2] = 0;
-        sendSignalWithDelay(cownref, GSN_CONTINUEB, signal, 5000, 3);
-        return;
-      }
+        if (ERROR_INSERTED(5050)) {
+          g_eventLogger->info(
+              "send ZSCAN_MARKERS with 5s delay and killing master: %u",
+              c_master_node_id);
+          CLEAR_ERROR_INSERT_VALUE;
+          signal->theData[0] = ZSCAN_MARKERS;
+          signal->theData[1] = tcNodeFailPtr.i;
+          signal->theData[2] = 0;
+          sendSignalWithDelay(cownref, GSN_CONTINUEB, signal, 5000, 3);
 
-      if (ERROR_INSERTED(5050)) {
-        g_eventLogger->info(
-            "send ZSCAN_MARKERS with 5s delay and killing master: %u",
-            c_master_node_id);
-        CLEAR_ERROR_INSERT_VALUE;
-        signal->theData[0] = ZSCAN_MARKERS;
-        signal->theData[1] = tcNodeFailPtr.i;
-        signal->theData[2] = 0;
-        sendSignalWithDelay(cownref, GSN_CONTINUEB, signal, 5000, 3);
-
-        signal->theData[0] = 9999;
-        sendSignal(numberToRef(CMVMI, c_error_insert_extra), GSN_NDB_TAMPER,
-                   signal, 1, JBB);
-        return;
-      }
+          signal->theData[0] = 9999;
+          sendSignal(numberToRef(CMVMI, c_error_insert_extra), GSN_NDB_TAMPER,
+                     signal, 1, JBB);
+          return;
+        }
 #endif
-      scanMarkers(signal, tcNodeFailPtr.i, 0);
-      return;
-    }  // if
+        scanMarkers(signal, tcNodeFailPtr.i, 0);
+        return;
+      }  // if
+    }    // if (!getNextTcConRec())
+
+    /* Found an operation record */
     if (tcConnectptr.p->transactionState != TcConnectionrec::IDLE) {
       if (tcConnectptr.p->transactionState !=
           TcConnectionrec::TC_NOT_CONNECTED) {
@@ -16482,11 +16482,10 @@ Uint32 Dblqh::initScanrec(const ScanFragReq *scanFragReq, Uint32 aiLen,
        * Put on queue
        */
       scanPtr->scanState = ScanRecord::IN_QUEUE;
-      Local_ScanRecord_fifo queue(
-          c_scanRecordPool, rangeScan != 0
-                                ? fragptr.p->m_queuedScans
-                                : tupScan != 0 ? fragptr.p->m_queuedTupScans
-                                               : fragptr.p->m_queuedAccScans);
+      Local_ScanRecord_fifo queue(c_scanRecordPool,
+                                  rangeScan != 0 ? fragptr.p->m_queuedScans
+                                  : tupScan != 0 ? fragptr.p->m_queuedTupScans
+                                                 : fragptr.p->m_queuedAccScans);
       queue.addLast(scanptr);
       fragptr.p->m_useStat.m_queuedScanCount++;
       return ZOK;
@@ -16595,11 +16594,10 @@ bool Dblqh::finishScanrec(Signal *signal, ScanRecordPtr &restart_scan,
 
   if (scanPtr->scanState == ScanRecord::IN_QUEUE) {
     ndbassert(!m_is_query_block);
-    Local_ScanRecord_fifo queue(
-        c_scanRecordPool, rangeScan != 0
-                              ? fragptr.p->m_queuedScans
-                              : tupScan != 0 ? fragptr.p->m_queuedTupScans
-                                             : fragptr.p->m_queuedAccScans);
+    Local_ScanRecord_fifo queue(c_scanRecordPool,
+                                rangeScan != 0 ? fragptr.p->m_queuedScans
+                                : tupScan != 0 ? fragptr.p->m_queuedTupScans
+                                               : fragptr.p->m_queuedAccScans);
     jam();
     ndbrequire(reserved == 0);
     queue.remove(scanptr);
@@ -16655,11 +16653,10 @@ bool Dblqh::finishScanrec(Signal *signal, ScanRecordPtr &restart_scan,
   ScanRecordPtr restart;
 
   {
-    Local_ScanRecord_fifo queue(
-        c_scanRecordPool, rangeScan != 0
-                              ? fragptr.p->m_queuedScans
-                              : tupScan != 0 ? fragptr.p->m_queuedTupScans
-                                             : fragptr.p->m_queuedAccScans);
+    Local_ScanRecord_fifo queue(c_scanRecordPool,
+                                rangeScan != 0 ? fragptr.p->m_queuedScans
+                                : tupScan != 0 ? fragptr.p->m_queuedTupScans
+                                               : fragptr.p->m_queuedAccScans);
     /**
      * Start of queued scans
      */
@@ -19197,15 +19194,18 @@ void Dblqh::scanTcConnectLab(Signal *signal, Uint32 tstartTcConnect,
   TcConnectionrecPtr tcConnectptr;
   Uint32 next = tstartTcConnect;
   for (Uint32 i = 0; i < 200; i++) {
-    bool found = getNextTcConRec(next, tcConnectptr, 10);
-    if (next != RNIL && !found) {
-      jam();
-      i += 10;
-      continue;
-    } else if (next == RNIL) {
-      jam();
-      break;
+    if (!getNextTcConRec(next, tcConnectptr, 10)) {
+      if (next != RNIL) {
+        jam();
+        i += 10;
+        continue;
+      } else {
+        /* Scan done */
+        jam();
+        break;
+      }
     }
+    /* Examine next record */
     if (tcConnectptr.p->transactionState != TcConnectionrec::IDLE) {
       switch (tcConnectptr.p->logWriteState) {
         case TcConnectionrec::NOT_WRITTEN:
@@ -23124,7 +23124,7 @@ void Dblqh::initLogfile(LogFileRecordPtr logFilePtr, Uint32 partNo,
   logFilePtr.p->fileName[0] = (UintR)-1;
   logFilePtr.p->fileName[1] = (UintR)-1; /* = H'FFFFFFFF = -1 */
   logFilePtr.p->fileName[2] = fileNo;    /* Sfile_no */
-  tilTmp = 1;                            /* VERSION 1 OF FILE NAME */
+  tilTmp = FsOpenReq::V_BLOCK;           /* VERSION 1 OF FILE NAME */
   tilTmp = (tilTmp << 8) + 1; /* FRAGMENT LOG => .FRAGLOG AS EXTENSION */
   tilTmp = (tilTmp << 8) + (8 + partNo); /* DIRECTORY = D(8+Part)/DBLQH */
   tilTmp = (tilTmp << 8) + 255;          /* IGNORE Pxx PART OF FILE NAME */
@@ -23230,7 +23230,7 @@ void Dblqh::openFileRw(Signal *signal, LogFileRecordPtr olfLogFilePtr,
     LinearSectionPtr lsptr[3];
 
     // Use a dummy file name
-    ndbrequire(FsOpenReq::getVersion(req->fileNumber) != 4);
+    ndbrequire(FsOpenReq::getVersion(req->fileNumber) != FsOpenReq::V_FILENAME);
     lsptr[FsOpenReq::FILENAME].p = nullptr;
     lsptr[FsOpenReq::FILENAME].sz = 0;
 
@@ -23295,7 +23295,7 @@ void Dblqh::openLogfileInit(Signal *signal, LogFileRecordPtr logFilePtr) {
     LinearSectionPtr lsptr[3];
 
     // Use a dummy file name
-    ndbrequire(FsOpenReq::getVersion(req->fileNumber) != 4);
+    ndbrequire(FsOpenReq::getVersion(req->fileNumber) != FsOpenReq::V_FILENAME);
     lsptr[FsOpenReq::FILENAME].p = nullptr;
     lsptr[FsOpenReq::FILENAME].sz = 0;
 
@@ -23442,7 +23442,8 @@ void Dblqh::openNextLogfile(Signal *signal, LogFileRecord *logFilePtrP,
       LinearSectionPtr lsptr[3];
 
       // Use a dummy file name
-      ndbrequire(FsOpenReq::getVersion(req->fileNumber) != 4);
+      ndbrequire(FsOpenReq::getVersion(req->fileNumber) !=
+                 FsOpenReq::V_FILENAME);
       lsptr[FsOpenReq::FILENAME].p = nullptr;
       lsptr[FsOpenReq::FILENAME].sz = 0;
 
@@ -27543,14 +27544,11 @@ error:
   tmp.appfmt(
       "You have found a bug!"
       " Failed op (%s) during REDO table: %d fragment: %d err: %d",
-      tcConnectptr.p->operation == ZINSERT
-          ? "INSERT"
-          : tcConnectptr.p->operation == ZUPDATE
-                ? "UPDATE"
-                : tcConnectptr.p->operation == ZDELETE
-                      ? "DELETE"
-                      : tcConnectptr.p->operation == ZWRITE ? "WRITE"
-                                                            : "<unknown>",
+      tcConnectptr.p->operation == ZINSERT   ? "INSERT"
+      : tcConnectptr.p->operation == ZUPDATE ? "UPDATE"
+      : tcConnectptr.p->operation == ZDELETE ? "DELETE"
+      : tcConnectptr.p->operation == ZWRITE  ? "WRITE"
+                                             : "<unknown>",
       tcConnectptr.p->tableref, tcConnectptr.p->fragmentid, terrorCode);
   progError(__LINE__, NDBD_EXIT_SYSTEM_ERROR, tmp.c_str());
 }  // Dblqh::logLqhkeyrefLab()

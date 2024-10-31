@@ -1,31 +1,30 @@
 /* Copyright (c) 2007, 2024, Oracle and/or its affiliates.
 
-   This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License, version 2.0, as published by the Free Software Foundation.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License, version 2.0,
+   as published by the Free Software Foundation.
 
-   This library is designed to work with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
-   permission to link the library and your derivative works with the
+   permission to link the program and your derivative works with the
    separately licensed software that they have either included with
-   the library or referenced in the documentation.
+   the program or referenced in the documentation.
 
    Without limiting anything contained in the foregoing, this file,
    which is part of C Driver for MySQL (Connector/C), is also subject to the
    Universal FOSS Exception, version 1.0, a copy of which can be found at
    http://oss.oracle.com/licenses/universal-foss-exception.
 
-   This library is distributed in the hope that it will be useful,
+   This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   Library General Public License, version 2.0, for more details.
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License, version 2.0, for more details.
 
-   You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
-   MA 02110-1301  USA */
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /****************************************************************
 
@@ -204,6 +203,13 @@ size_t my_fcvt(double x, int precision, char *to, bool *error) {
   return my_fcvt_internal(x, precision, false, to, error);
 }
 
+/// Identical to my_fcvt, except that trailing zeros after the decimal point
+/// will be removed.
+size_t my_fcvt_no_trailing_zero(double x, int precision, char *to,
+                                bool *error) {
+  return my_fcvt_internal(x, precision, true, to, error);
+}
+
 /**
    @brief
    Converts a given floating point number to a zero-terminated string
@@ -342,9 +348,9 @@ size_t my_gcvt(double x, my_gcvt_arg_type type, int width, char *to,
      2. 0 < decpt < len, i.e. we have "NNN.NNN" => F = len + 1
      3. len <= decpt, i.e. we have "NNN00" => F = decpt
   */
-  have_space =
-      (decpt <= 0 ? len - decpt + 2
-                  : decpt > 0 && decpt < len ? len + 1 : decpt) <= width;
+  have_space = (decpt <= 0                 ? len - decpt + 2
+                : decpt > 0 && decpt < len ? len + 1
+                                           : decpt) <= width;
   /*
     The following is true when no significant digits can be placed with the
     specified field width using the 'f' format, and the 'e' format
@@ -825,8 +831,7 @@ static Bigint *s2b(const char *s, int nd0, int nd, uint32_t y9,
   i = 9;
   if (9 < nd0) {
     s += 9;
-    do
-      b = multadd(b, 10, *s++ - '0', alloc);
+    do b = multadd(b, 10, *s++ - '0', alloc);
     while (++i < nd0);
     s++; /* skip '.' */
   } else
@@ -1049,8 +1054,7 @@ static Bigint *lshift(Bigint *b, int k, Stack_alloc *alloc) {
     } while (x < xe);
     if ((*x1 = z)) ++n1;
   } else
-    do
-      *x1++ = *x++;
+    do *x1++ = *x++;
     while (x < xe);
   b1->wds = n1 - 1;
   Bfree(b, alloc);

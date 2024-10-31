@@ -121,6 +121,8 @@ IF(NOT WITHOUT_SERVER)
     plugin/ndb_replica.cc
     plugin/ndb_binlog_index_rows.cc
     plugin/ndb_rpl_filter.cc
+    plugin/ndb_replica_status_table.cc
+    plugin/ndb_binlog_purger.cc
   )
 
   # Include directories used when building ha_ndbcluster
@@ -130,7 +132,9 @@ IF(NOT WITHOUT_SERVER)
   # unless it is explicitly disabled on the command line.
   MYSQL_ADD_PLUGIN(ndbcluster ${NDBCLUSTER_SOURCES} STORAGE_ENGINE
     DEFAULT STATIC_ONLY
-    LINK_LIBRARIES ndbclient_static extra::rapidjson)
+    LINK_LIBRARIES ndbclient_static extra::rapidjson
+    SYSTEM_INCLUDE_DIRECTORIES 
+    ${CMAKE_SOURCE_DIR}/extra/unordered_dense/unordered_dense-4.4.0/include)
 
   SET_PROPERTY(SOURCE plugin/ha_ndbcluster.cc
                PROPERTY COMPILE_DEFINITIONS
@@ -326,22 +330,6 @@ ENDIF()
 IF(WITH_NDB_JAVA)
   ADD_SUBDIRECTORY(clusterj)
 ENDIF()
-
-SET(WITH_NDB_NODEJS_DEFAULT ON)
-
-# Check if the default for WITH_NDB_NODEJS should be overriden
-# by environment variable
-IF(DEFINED ENV{WITH_NDB_NODEJS_DEFAULT})
-  SET(WITH_NDB_NODEJS_DEFAULT $ENV{WITH_NDB_NODEJS_DEFAULT})
-  MESSAGE(STATUS
-    "Default value for WITH_NDB_NODEJS set to ${WITH_NDB_NODEJS_DEFAULT}")
-ENDIF(DEFINED ENV{WITH_NDB_NODEJS_DEFAULT})
-
-OPTION(WITH_NDB_NODEJS
-  "Include NDB Cluster node.js components" ${WITH_NDB_NODEJS_DEFAULT})
-IF(WITH_NDB_NODEJS)
-  ADD_SUBDIRECTORY(nodejs)
-ENDIF(WITH_NDB_NODEJS)
 
 OPTION(WITH_NDBAPI_EXAMPLES
   "Build the NdbApi example programs" ${WITH_NDBAPI_EXAMPLES_DEFAULT})

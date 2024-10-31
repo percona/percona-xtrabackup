@@ -22,6 +22,7 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <components/keyrings/keyring_file/keyring_file.h> /* Globals */
+#include "option_usage.h"
 
 #include <components/keyrings/common/component_helpers/include/keyring_generator_service_definition.h>
 #include <components/keyrings/common/component_helpers/include/keyring_generator_service_impl_template.h>
@@ -39,6 +40,7 @@ namespace service_definition {
 DEFINE_BOOL_METHOD(Keyring_generator_service_impl::generate,
                    (const char *data_id, const char *auth_id,
                     const char *data_type, size_t data_size)) {
+  keyring_file_component_option_usage_set();
   return generate_template<Keyring_file_backend>(
       data_id, auth_id, data_type, data_size, *g_keyring_operations,
       *g_component_callbacks);

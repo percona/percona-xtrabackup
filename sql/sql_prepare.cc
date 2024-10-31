@@ -96,18 +96,20 @@ When one supplies long data for a placeholder:
 #include "my_config.h"
 
 #include <limits.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <unordered_map>
 #include <utility>
 
 #include "decimal.h"
+#include "event_parse_data.h"
 #include "field_types.h"
 #include "map_helpers.h"
+#include "mem_root_deque.h"
 #include "my_alloc.h"
 #include "my_byteorder.h"
 #include "my_command.h"
@@ -118,9 +120,10 @@ When one supplies long data for a placeholder:
 #include "my_time.h"
 #include "mysql/com_data.h"
 #include "mysql/components/services/log_shared.h"
-#include "mysql/plugin_audit.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_ps.h"  // MYSQL_EXECUTE_PS
+#include "mysql/psi/mysql_statement.h"
+#include "mysql/psi/mysql_thread.h"
 #include "mysql/strings/dtoa.h"
 #include "mysql/strings/int2str.h"
 #include "mysql/strings/m_ctype.h"
@@ -130,11 +133,15 @@ When one supplies long data for a placeholder:
 #include "mysqld_error.h"
 #include "nulls.h"
 #include "scope_guard.h"
+#include "sp_head.h"
 #include "sql-common/my_decimal.h"
+#include "sql/aggregated_stats.h"
+#include "sql/aggregated_stats_buffer.h"
 #include "sql/auth/auth_acls.h"
 #include "sql/auth/auth_common.h"  // check_table_access
 #include "sql/auth/sql_security_ctx.h"
 #include "sql/binlog.h"
+#include "sql/current_thd.h"
 #include "sql/debug_sync.h"
 #include "sql/derror.h"  // ER_THD
 #include "sql/handler.h"
@@ -142,7 +149,8 @@ When one supplies long data for a placeholder:
 #include "sql/item_func.h"  // user_var_entry
 #include "sql/log.h"        // query_logger
 #include "sql/mdl.h"
-#include "sql/mysqld.h"     // opt_general_log
+#include "sql/mysqld.h"  // opt_general_log
+#include "sql/opt_hints.h"
 #include "sql/opt_trace.h"  // Opt_trace_array
 #include "sql/protocol.h"
 #include "sql/protocol_classic.h"
@@ -159,13 +167,17 @@ When one supplies long data for a placeholder:
 #include "sql/sql_class.h"
 #include "sql/sql_cmd.h"
 #include "sql/sql_cmd_ddl_table.h"
+#include "sql/sql_cmd_dml.h"
 #include "sql/sql_const.h"
 #include "sql/sql_cursor.h"  // Server_side_cursor
 #include "sql/sql_db.h"      // mysql_change_db
+#include "sql/sql_digest.h"
 #include "sql/sql_digest_stream.h"
+#include "sql/sql_error.h"
 #include "sql/sql_handler.h"  // mysql_ha_rm_tables
 #include "sql/sql_insert.h"   // Query_result_create
 #include "sql/sql_lex.h"
+#include "sql/sql_list.h"
 #include "sql/sql_parse.h"  // sql_command_flags
 #include "sql/sql_profile.h"
 #include "sql/sql_query_rewrite.h"
@@ -175,12 +187,10 @@ When one supplies long data for a placeholder:
 #include "sql/system_variables.h"
 #include "sql/table.h"
 #include "sql/thd_raii.h"
-#include "sql/thr_malloc.h"
 #include "sql/transaction.h"  // trans_rollback_implicit
-#include "sql/window.h"
 #include "sql_string.h"
 #include "string_with_len.h"
-#include "violite.h"
+#include "template_utils.h"
 
 namespace resourcegroups {
 class Resource_group;
@@ -217,8 +227,7 @@ class Query_fetch_protocol_binary final : public Query_result_send {
 ******************************************************************************/
 
 /**
-  Rewrite the current query (to obfuscate passwords etc.) if needed
-  (i.e. only if we'll be writing the query to any of our logs).
+  Rewrite the current query (to obfuscate passwords etc.).
 
   Side-effect: thd->rewritten_query() may be populated with a rewritten
                query.  If the query is not of a rewritable type,
@@ -226,24 +235,18 @@ class Query_fetch_protocol_binary final : public Query_result_send {
 
   @param thd                thread handle
 */
-void rewrite_query_if_needed(THD *thd) {
-  bool general =
-      (opt_general_log && !(opt_general_log_raw || thd->slave_thread));
-
-  if ((thd->sp_runtime_ctx == nullptr) &&
-      (general || opt_slow_log || opt_bin_log)) {
-    /*
-      thd->m_rewritten_query may already contain "PREPARE stmt FROM ..."
-      at this point, so we reset it here so mysql_rewrite_query()
-      won't complain.
-    */
-    thd->reset_rewritten_query();
-    /*
-      Now replace the "PREPARE ..." with the obfuscated version of the
-      actual query were prepare.
-    */
-    mysql_rewrite_query(thd);
-  }
+void rewrite_query(THD *thd) {
+  /*
+    thd->m_rewritten_query may already contain "PREPARE stmt FROM ..."
+    at this point, so we reset it here so mysql_rewrite_query()
+    won't complain.
+  */
+  thd->reset_rewritten_query();
+  /*
+    Now replace the "PREPARE ..." with the obfuscated version of the
+    actual query were prepare.
+  */
+  mysql_rewrite_query(thd);
 }
 
 /**
@@ -394,7 +397,8 @@ static void set_parameter_type(Item_param *param, enum enum_field_types type,
     case MYSQL_TYPE_TINY_BLOB:
     case MYSQL_TYPE_MEDIUM_BLOB:
     case MYSQL_TYPE_LONG_BLOB:
-    case MYSQL_TYPE_BLOB: {
+    case MYSQL_TYPE_BLOB:
+    case MYSQL_TYPE_VECTOR: {
       param->set_collation_source(&my_charset_bin);
       break;
     }
@@ -570,7 +574,8 @@ static bool set_parameter_value(
     case MYSQL_TYPE_TINY_BLOB:
     case MYSQL_TYPE_MEDIUM_BLOB:
     case MYSQL_TYPE_LONG_BLOB:
-    case MYSQL_TYPE_BLOB: {
+    case MYSQL_TYPE_BLOB:
+    case MYSQL_TYPE_VECTOR: {
       param->set_str((const char *)*pos, len);
 
       break;
@@ -686,11 +691,10 @@ bool Prepared_statement::insert_parameters(
       param->set_data_type_actual(MYSQL_TYPE_VARCHAR);
       // see Item_param::set_str() for explanation
       param->set_collation_actual(
-          param->collation_source() == &my_charset_bin
-              ? &my_charset_bin
-              : param->collation.collation != &my_charset_bin
-                    ? param->collation.collation
-                    : current_thd->variables.collation_connection);
+          param->collation_source() == &my_charset_bin ? &my_charset_bin
+          : param->collation.collation != &my_charset_bin
+              ? param->collation.collation
+              : current_thd->variables.collation_connection);
 
     } else if (parameters[i].null_bit) {
       param->set_null();
@@ -953,6 +957,7 @@ static bool send_statement(THD *thd, const Prepared_statement *stmt,
       param_list.push_back(&item);
     }
     rc |= thd->send_result_metadata(param_list, Protocol::SEND_EOF);
+    assert(CountVisibleFields(param_list) == stmt->m_param_count);
   }
   if (rc) return true; /* purecov: inspected */
 
@@ -1224,7 +1229,12 @@ bool Prepared_statement::prepare_query(THD *thd) {
   const Opt_trace_array trace_command_steps(&thd->opt_trace, "steps");
 
   if ((m_lex->keep_diagnostics == DA_KEEP_COUNTS) ||
-      (m_lex->keep_diagnostics == DA_KEEP_DIAGNOSTICS)) {
+      (m_lex->keep_diagnostics == DA_KEEP_DIAGNOSTICS &&
+       // keep_diagnostics can be set if DECLARE EXIT HANDLER is
+       // used in the event body. But this is ok since the body is
+       // not prepared.
+       sql_command != SQLCOM_CREATE_EVENT &&
+       sql_command != SQLCOM_ALTER_EVENT)) {
     my_error(ER_UNSUPPORTED_PS, MYF(0));
     return true;
   }
@@ -1312,6 +1322,9 @@ bool Prepared_statement::prepare_query(THD *thd) {
       [[fallthrough]];
 #endif
 #endif
+    case SQLCOM_CREATE_EVENT:
+    case SQLCOM_ALTER_EVENT:
+    case SQLCOM_DROP_EVENT:
     case SQLCOM_SELECT:
     case SQLCOM_DO:
     case SQLCOM_DELETE:
@@ -2253,6 +2266,12 @@ Prepared_statement::~Prepared_statement() {
   m_arena.free_items();
   if (m_lex != nullptr) {
     assert(m_lex->sphead == nullptr);
+
+    // Prepared CREATE/ALTER EVENT keep the sp_head for the event body inside
+    // the command object, so that it is not destroyed when lex_end() is
+    // called, and can be referenced when the ps is executed. So
+    // event_parse_data_end() must be called here.
+    cleanup_event_parse_data(m_lex);
     lex_end(m_lex);
     m_lex->destroy();
     delete pointer_cast<st_lex_local *>(m_lex);  // TRASH memory
@@ -2418,9 +2437,16 @@ bool Prepared_statement::prepare(THD *thd, const char *query_str,
   error |= thd->is_error();
   if (!error) {  // We've just created the statement maybe there is a rewrite
     invoke_post_parse_rewrite_plugins(thd, true);
+    error |= thd->is_error();
+  }
+  if (!error && m_lex->param_list.elements > 0 && m_lex->m_sql_cmd != nullptr &&
+      !m_lex->m_sql_cmd->are_dynamic_parameters_allowed()) {
+    my_error(ER_NON_DML_DYNAMIC_PARAMETERS, MYF(0));
+    error = true;
+  }
+  if (!error) {
     error = init_param_array(thd, this);
   }
-  error |= thd->is_error();
 
   // Bind Sql command object with this prepared statement
   if (m_lex->m_sql_cmd != nullptr) m_lex->m_sql_cmd->set_owner(this);
@@ -2479,11 +2505,15 @@ bool Prepared_statement::prepare(THD *thd, const char *query_str,
   assert(error || !thd->is_error());
 
   /*
-    Currently CREATE PROCEDURE/TRIGGER/EVENT are prohibited in prepared
+    Currently CREATE PROCEDURE/TRIGGER are prohibited in prepared
     statements: ensure we have no memory leak here if by someone tries
     to PREPARE stmt FROM "CREATE PROCEDURE ..."
   */
-  assert(m_lex->sphead == nullptr || error != 0);
+
+  assert(m_lex->sphead == nullptr || error != 0 ||
+         m_lex->sql_command == SQLCOM_CREATE_EVENT ||
+         m_lex->sql_command == SQLCOM_ALTER_EVENT);
+
   /* The order is important */
   m_lex->cleanup(true);
 
@@ -2508,17 +2538,22 @@ bool Prepared_statement::prepare(THD *thd, const char *query_str,
 
   lex_end(m_lex);
 
-  rewrite_query_if_needed(thd);
+  rewrite_query(thd);
+
+  const char *display_query_string;
+  int display_query_length;
 
   if (thd->rewritten_query().length()) {
-    thd->set_query_for_display(thd->rewritten_query().ptr(),
-                               thd->rewritten_query().length());
-    MYSQL_SET_PS_TEXT(m_prepared_stmt, thd->rewritten_query().ptr(),
-                      thd->rewritten_query().length());
+    display_query_string = thd->rewritten_query().ptr();
+    display_query_length = thd->rewritten_query().length();
   } else {
-    thd->set_query_for_display(thd->query().str, thd->query().length);
-    MYSQL_SET_PS_TEXT(m_prepared_stmt, thd->query().str, thd->query().length);
+    display_query_string = thd->query().str;
+    display_query_length = thd->query().length;
   }
+
+  thd->set_query_for_display(display_query_string, display_query_length);
+  MYSQL_SET_PS_TEXT(m_prepared_stmt, display_query_string,
+                    display_query_length);
 
   cleanup_stmt(thd);
   stmt_backup.restore_thd(thd, this);
@@ -2621,22 +2656,6 @@ bool Prepared_statement::set_parameters(THD *thd, String *expanded_query) {
     return true;
   }
   return false;
-}
-
-/**
-  Disables the general log for the current session by setting the OPTION_LOG_OFF
-  bit in thd->variables.option_bits.
-
-  @param thd the session
-  @return whether the setting was changed
-  @retval false if the general log was already disabled for this session
-  @retval true if the general log was enabled for the session and is now
-  disabled
-*/
-static bool disable_general_log(THD *thd) {
-  if ((thd->variables.option_bits & OPTION_LOG_OFF) != 0) return false;
-  thd->variables.option_bits |= OPTION_LOG_OFF;
-  return true;
 }
 
 /**
@@ -2807,6 +2826,7 @@ bool Prepared_statement::check_parameter_types() {
       case MYSQL_TYPE_TINY_BLOB:
       case MYSQL_TYPE_MEDIUM_BLOB:
       case MYSQL_TYPE_BLOB:
+      case MYSQL_TYPE_VECTOR:
       case MYSQL_TYPE_LONG_BLOB:
         if (item->data_type_actual() == MYSQL_TYPE_LONGLONG ||
             item->data_type_actual() == MYSQL_TYPE_NEWDECIMAL ||
@@ -2857,11 +2877,10 @@ bool Prepared_statement::check_parameter_types() {
 bool Prepared_statement::execute_loop(THD *thd, String *expanded_query,
                                       bool open_cursor) {
   Reprepare_observer reprepare_observer;
-  bool error;
   bool reprepared_for_types [[maybe_unused]] = false;
 
-  auto scope_guard = create_scope_guard(
-      [thd] { thd->set_secondary_engine_statement_context(nullptr); });
+  // Keep track of operation status
+  bool error = false;
 
   /* Check if we got an error when sending long data */
   if (m_arena.get_state() == Query_arena::STMT_ERROR) {
@@ -2886,9 +2905,12 @@ bool Prepared_statement::execute_loop(THD *thd, String *expanded_query,
   // statement for a secondary engine.
   bool general_log_temporarily_disabled = false;
 
+  // Track whether the statement needs to be reprepared:
+  bool need_reprepare = false;
+
   // Reprepare statement unconditionally if it contains UDF references
-  if (m_lex->has_udf() && reprepare(thd)) {
-    return true;
+  if (m_lex->has_udf()) {
+    need_reprepare = true;
   }
 
   // Reprepare statement if protocol has changed.
@@ -2896,58 +2918,104 @@ bool Prepared_statement::execute_loop(THD *thd, String *expanded_query,
   if (m_active_protocol != nullptr &&
       m_active_protocol != thd->get_protocol()) {
     assert(false);
-    if (reprepare(thd)) return true;
+    need_reprepare = true;
   }
 
-reexecute:
-  /*
-    If the item_list is not empty, we'll wrongly free some externally
-    allocated items when cleaning up after validation of the prepared
-    statement.
-  */
-  assert(thd->item_list() == nullptr);
-
-  if (!check_parameter_types()) {
-    // Only one reprepare is required in case of parameter mismatch
-    assert(!reprepared_for_types);
-    reprepared_for_types = true;
-    if (reprepare(thd)) return true;
-    goto reexecute;
+  // Some SQL commands need re-preparation, such as Sql_cmd_create_table
+  // when the keys involve an expression.
+  if (!m_first_execution && m_lex->m_sql_cmd &&
+      m_lex->m_sql_cmd->reprepare_on_execute_required()) {
+    need_reprepare = true;
   }
 
-  reprepared_for_types = false;
-  /*
-    Install the metadata observer. If some metadata version is
-    different from prepare time and an observer is installed,
-    the observer method will be invoked to push an error into
-    the error stack.
-  */
-  Reprepare_observer *stmt_reprepare_observer = nullptr;
+  while (true) {
+    if (need_reprepare) {
+      error = reprepare(thd);
+      DEBUG_SYNC(thd, "after_statement_reprepare");
+    }
+    if (error) {
+      if (m_lex->m_sql_cmd == nullptr ||
+          thd->secondary_engine_optimization() !=
+              Secondary_engine_optimization::SECONDARY ||
+          thd->is_secondary_engine_forced()) {
+        break;
+      }
+      /*
+        Some error occurred during resolving in the secondary engine, and
+        secondary engine execution is not forced.
+        Retry execution of the statement in the primary engine.
+      */
+      thd->set_secondary_engine_optimization(
+          Secondary_engine_optimization::PRIMARY_ONLY);
+      need_reprepare = true;
+      // Clear diagnostics area before re-preparation
+      thd->clear_error();
+      continue;
+    }
+    /*
+      If the item_list is not empty, we'll wrongly free some externally
+      allocated items when cleaning up after validation of the prepared
+      statement.
+    */
+    assert(thd->item_list() == nullptr);
 
-  if (sql_command_flags[m_lex->sql_command] & CF_REEXECUTION_FRAGILE) {
-    reprepare_observer.reset_reprepare_observer();
-    stmt_reprepare_observer = &reprepare_observer;
-  }
+    if (!check_parameter_types()) {
+      // Only one reprepare is required in case of parameter mismatch
+      assert(!reprepared_for_types);
+      reprepared_for_types = true;
+      need_reprepare = true;
+      continue;
+    }
+    reprepared_for_types = false;
+    /*
+      Install the metadata observer. If some metadata version is
+      different from prepare time and an observer is installed,
+      the observer method will be invoked to push an error into
+      the error stack.
+    */
+    Reprepare_observer *stmt_reprepare_observer = nullptr;
 
-  thd->push_reprepare_observer(stmt_reprepare_observer);
+    if (sql_command_flags[m_lex->sql_command] & CF_REEXECUTION_FRAGILE) {
+      reprepare_observer.reset_reprepare_observer();
+      stmt_reprepare_observer = &reprepare_observer;
+    }
 
-  error = execute(thd, expanded_query, open_cursor) || thd->is_error();
+    thd->push_reprepare_observer(stmt_reprepare_observer);
 
-  thd->pop_reprepare_observer();
+    DEBUG_SYNC(thd, "before_statement_execute");
+    error = execute(thd, expanded_query, open_cursor);
 
-  // Check if we have a non-fatal error and the statement allows reexecution.
-  if ((sql_command_flags[m_lex->sql_command] & CF_REEXECUTION_FRAGILE) &&
-      error && !thd->is_fatal_error() && !thd->is_killed()) {
-    // If we have an error due to a metadata change, reprepare the
-    // statement and execute it again.
-    if (reprepare_observer.is_invalidated()) {
-      assert(thd->get_stmt_da()->mysql_errno() == ER_NEED_REPREPARE);
+    assert(error == thd->is_error());
 
-      if (reprepare_observer.can_retry()) {
-        thd->clear_error();
-        error = reprepare(thd);
-        DEBUG_SYNC(thd, "after_statement_reprepare");
-      } else {
+    thd->pop_reprepare_observer();
+    /*
+      Re-enable the general log if it was temporarily disabled while repreparing
+      and executing a statement for a secondary engine.
+    */
+    if (general_log_temporarily_disabled) {
+      thd->variables.option_bits &= ~OPTION_LOG_OFF;
+      general_log_temporarily_disabled = false;
+    }
+
+    // Exit immediately if execution is successful
+    if (!error) {
+      break;
+    }
+    // Exit if a fatal error has occurred or statement execution was killed.
+    if (thd->is_fatal_error() || thd->is_killed()) {
+      break;
+    }
+    const int my_errno = thd->get_stmt_da()->mysql_errno();
+
+    if (my_errno == ER_NEED_REPREPARE) {
+      /*
+        Reprepare_observer ensures that the statement is retried
+        a maximum number of times, to avoid an endless loop.
+        NOTE: When executing a statement that is a procedure call, this error
+        code may be reported without having an invalidated reprepare observer.
+      */
+      if (!stmt_reprepare_observer->is_invalidated() ||
+          !stmt_reprepare_observer->can_retry()) {
         /*
           Reprepare_observer sets error status in DA but Sql_condition is not
           added. Please check Reprepare_observer::report_error(). Pushing
@@ -2956,63 +3024,76 @@ reexecute:
         Diagnostics_area *da = thd->get_stmt_da();
         da->push_warning(thd, da->mysql_errno(), da->returned_sqlstate(),
                          Sql_condition::SL_ERROR, da->message_text());
+        assert(thd->is_error());
+        break;
+      }
+    } else if (my_errno == ER_PREPARE_FOR_PRIMARY_ENGINE ||
+               my_errno == ER_PREPARE_FOR_SECONDARY_ENGINE) {
+      assert(thd->secondary_engine_optimization() ==
+             Secondary_engine_optimization::PRIMARY_TENTATIVELY);
+      assert(!m_lex->unit->is_executed());
+      if (my_errno == ER_PREPARE_FOR_SECONDARY_ENGINE) {
+        thd->set_secondary_engine_optimization(
+            Secondary_engine_optimization::SECONDARY);
+      } else {
+        thd->set_secondary_engine_optimization(
+            Secondary_engine_optimization::PRIMARY_ONLY);
       }
     } else {
-      // Otherwise, if repreparation was requested, try again in the primary
-      // or secondary engine, depending on cause.
-      const uint err_seen = thd->get_stmt_da()->mysql_errno();
-      if (err_seen == ER_PREPARE_FOR_PRIMARY_ENGINE ||
-          err_seen == ER_PREPARE_FOR_SECONDARY_ENGINE) {
-        assert(thd->secondary_engine_optimization() ==
-               Secondary_engine_optimization::PRIMARY_TENTATIVELY);
-        assert(!m_lex->unit->is_executed());
-        thd->clear_error();
-        if (err_seen == ER_PREPARE_FOR_SECONDARY_ENGINE) {
-          thd->set_secondary_engine_optimization(
-              Secondary_engine_optimization::SECONDARY);
-          MYSQL_SET_PS_SECONDARY_ENGINE(m_prepared_stmt, true);
-        } else {
-          thd->set_secondary_engine_optimization(
-              Secondary_engine_optimization::PRIMARY_ONLY);
-          MYSQL_SET_PS_SECONDARY_ENGINE(m_prepared_stmt, false);
-        }
-        // Disable the general log. The query was written to the general log in
-        // the first attempt to execute it. No need to write it twice.
-        general_log_temporarily_disabled |= disable_general_log(thd);
-        error = reprepare(thd);
+      if (m_lex->m_sql_cmd == nullptr ||
+          thd->secondary_engine_optimization() !=
+              Secondary_engine_optimization::SECONDARY ||
+          m_lex->unit->is_executed() || thd->is_secondary_engine_forced()) {
+        break;
       }
-
-      // If (re-?)preparation or optimization failed and it was for
-      // a secondary storage engine, disable the secondary storage
-      // engine and try again without it.
-      if (error && m_lex->m_sql_cmd != nullptr &&
-          thd->secondary_engine_optimization() ==
-              Secondary_engine_optimization::SECONDARY &&
-          !m_lex->unit->is_executed()) {
-        if (!thd->is_secondary_engine_forced()) {
-          thd->clear_error();
-          thd->set_secondary_engine_optimization(
-              Secondary_engine_optimization::PRIMARY_ONLY);
-          MYSQL_SET_PS_SECONDARY_ENGINE(m_prepared_stmt, false);
-          error = reprepare(thd);
-          if (!error) {
-            // The reprepared statement should not use a secondary engine.
-            assert(!m_lex->m_sql_cmd->using_secondary_storage_engine());
-            m_lex->m_sql_cmd->disable_secondary_storage_engine();
-          }
-        }
-      }
+      /*
+        Some error occurred during resolving or optimization in
+        the secondary engine, and secondary engine execution is not forced.
+        Retry execution of the statement in the primary engine.
+      */
+      thd->set_secondary_engine_optimization(
+          Secondary_engine_optimization::PRIMARY_ONLY);
     }
-
-    if (!error) /* Success */
-      goto reexecute;
+    /*
+      Disable the general log. The query was written to the general log in
+      the first attempt to execute it. No need to write it twice.
+    */
+    if ((thd->variables.option_bits & OPTION_LOG_OFF) == 0) {
+      thd->variables.option_bits |= OPTION_LOG_OFF;
+      general_log_temporarily_disabled = true;
+    }
+    /*
+      Prepare for re-prepare and re-optimization:
+      - Clear the current diagnostics area.
+      - Clean up the statement's LEX, including release of plugins.
+      - Clean up and free items, both permanent in stmt. and transient in THD.
+    */
+    thd->clear_error();
+    error = false;
+    lex_end(m_lex);
+    cleanup_items(thd->item_list());
+    thd->free_items();
+    cleanup_items(m_arena.item_list());
+    need_reprepare = true;
   }
+
   reset_stmt_parameters(this);
 
   // Re-enable the general log if it was temporarily disabled while repreparing
   // and executing a statement for a secondary engine.
-  if (general_log_temporarily_disabled)
+  if (general_log_temporarily_disabled) {
     thd->variables.option_bits &= ~OPTION_LOG_OFF;
+    general_log_temporarily_disabled = false;
+  }
+
+  // Record in performance schema whether a secondary engine was used.
+  const bool used_secondary = thd->secondary_engine_optimization() ==
+                              Secondary_engine_optimization::SECONDARY;
+  MYSQL_SET_PS_SECONDARY_ENGINE(m_prepared_stmt, used_secondary);
+  mysql_thread_set_secondary_engine(used_secondary);
+  mysql_statement_set_secondary_engine(thd->m_statement_psi, used_secondary);
+  thd->set_secondary_engine_statement_context(nullptr);
+  m_first_execution = false;
 
   return error;
 }
@@ -3145,7 +3226,7 @@ bool Prepared_statement::reprepare(THD *thd) {
   */
   thd->get_stmt_da()->reset_condition_info(thd);
 
-  copy_guard.commit();
+  copy_guard.release();
 
   return false;
 }
@@ -3511,12 +3592,25 @@ bool Prepared_statement::execute(THD *thd, String *expanded_query,
     - Any passwords in the "Execute" line should be substituted with
       their hashes, or a notice.
 
-    Rewrite first (if needed); execution might replace passwords
+    Rewrite first, execution might replace passwords
     with hashes in situ without flagging it, and then we'd make
     a hash of that hash.
   */
-  rewrite_query_if_needed(thd);
+  rewrite_query(thd);
   log_execute_line(thd);
+
+  const char *display_query_string;
+  int display_query_length;
+
+  if (thd->rewritten_query().length()) {
+    display_query_string = thd->rewritten_query().ptr();
+    display_query_length = thd->rewritten_query().length();
+  } else {
+    display_query_string = thd->query().str;
+    display_query_length = thd->query().length;
+  }
+
+  mysql_thread_set_info(display_query_string, display_query_length);
 
   thd->binlog_need_explicit_defaults_ts =
       m_lex->binlog_need_explicit_defaults_ts;

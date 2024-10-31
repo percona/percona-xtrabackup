@@ -41,7 +41,7 @@
 #include <condition_variable>
 #include <cstdarg>
 #include <cstdlib>
-#include <cstring>
+#include <cstring>  // strcmp
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -356,7 +356,7 @@ void execute_exit_strategy(const std::string &func,
 #define LIFECYCLE_API
 #endif
 
-static std::array<const char *, 2> requires_plugins = {
+static constexpr std::array requires_plugins{
     "routertestplugin_magic (>>1.0)",
     "routertestplugin_lifecycle3",
 };

@@ -253,7 +253,7 @@ END_SERVICE_DEFINITION(mysql_stmt_bind)
  A service that provides the API to manage and get info about a result set including fetch row(s)
  from a result set, get next result set. A result set contains the result of an execution.
  It is a list of rows, each row is a list of values where each value corresponds to a column.
- 
+
  Usage example:
     // Iterate over the rows in a result set for result set with data (num_fields != 0)
     // For in-depth example, check test_execute_prepared_statement.cc and test_execute_regular_statement.cc
@@ -312,7 +312,7 @@ END_SERVICE_DEFINITION(mysql_stmt_result)
 
  A service that provides the API to get the errors and warnings including
  fetching the warning, getting error/warning number, error/warning level,
- error/warning message, SQL state. In addition, for INSERT/UPDATE/DELETE, 
+ error/warning message, SQL state. In addition, for INSERT/UPDATE/DELETE,
  the service provides the API to get the number of affected rows and
  last insert ID.
 
@@ -555,7 +555,7 @@ DECLARE_BOOL_METHOD(param_count,
 // clang-format off
 
 /**
-  @brief Get the metadata of a parameter in a prepared statement. The metadata specifies 
+  @brief Get the metadata of a parameter in a prepared statement. The metadata specifies
   whether the parameter can be null, the type of the parameter, whether the value is signed.
 
   For example, in this query, "SELECT * FROM table WHERE col = ?", we need to know the parameter
@@ -574,6 +574,10 @@ DECLARE_BOOL_METHOD(param_count,
   if (SERVICE_PLACEHOLDER(mysql_stmt_metadata)
           ->param_metadata(statement, index, "is_unsigned", &is_unsigned))
     return {};
+  auto charset = static_cast<char const *>(nullptr);
+  if (SERVICE_PLACEHOLDER(mysql_stmt_metadata)
+          ->param_metadata(statement, index, "charset", &charset))
+    return {};
 
   @note Calling this on regular statements would fail.
 
@@ -586,6 +590,8 @@ DECLARE_BOOL_METHOD(param_count,
   - Parameter is null ("null_bit" of the returned bool type)
   - Parameter type ("type" of the returned uint64_t type)
   - Parameter is unsigned ("is_unsigned" of the returned bool type)
+  - Parameter charset ("charset" of the returned const char* type)
+  - Parameter max_byte_length ("max_byte_length" of the returned size_t type)
 
   @param [out] data The data argument is the value for the member
   @return Status of the performed operation
@@ -603,7 +609,7 @@ END_SERVICE_DEFINITION(mysql_stmt_metadata)
 /**
  @ingroup group_components_services_inventory
 
- A service that provides the API to get information about a field or column in a result 
+ A service that provides the API to get information about a field or column in a result
  set including get the number of fields, fetch a field and get information of a field.
  More info: https://dev.mysql.com/doc/c-api/8.0/en/mysql-stmt-field-count.html
 
@@ -672,6 +678,7 @@ DECLARE_BOOL_METHOD(field_count,
   - Collation name ("collation_name" of the returned const char* type)
   - Field flags ("flags" of the returned uint type)
   - Field decimals ("decimals" of the returned uint type)
+  - Field length ("length" of the returned ulong type)
   - Whether the field is unsigned ("is_unsigned" of the returned bool type)
   - Whether the field is zerofill ("is_zerofill" of the returned bool type)
 

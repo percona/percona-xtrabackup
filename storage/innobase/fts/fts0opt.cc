@@ -291,6 +291,12 @@ static const char *fts_end_delete_sql =
     "DELETE FROM $being_deleted;\n"
     "DELETE FROM $being_deleted_cache;\n";
 
+/** Set fts_zip_t::word to empty string. */
+static void fts_zip_clear_word(fts_zip_t &zip) {
+  zip.word.f_len = 0;
+  memset(zip.word.f_str, 0, FTS_MAX_WORD_LEN);
+}
+
 /** Initialize fts_zip_t. */
 static void fts_zip_initialize(
     fts_zip_t *zip) /*!< out: zip instance to initialize */
@@ -302,8 +308,7 @@ static void fts_zip_initialize(
 
   zip->last_big_block = 0;
 
-  zip->word.f_len = 0;
-  memset(zip->word.f_str, 0, FTS_MAX_WORD_LEN);
+  fts_zip_clear_word(*zip);
 
   ib_vector_reset(zip->blocks);
 
@@ -560,23 +565,16 @@ dberr_t fts_index_fetch_nodes(
   return (error);
 }
 
-/** Read a word */
-static bool fts_zip_read_word(fts_zip_t *zip,     /*!< in: Zip state + data */
-                              fts_string_t *word) /*!< out: uncompressed word */
+/** Extract a given number of bytes into a buffer */
+static bool fts_zip_extract_bytes(fts_zip_t *zip, /*!< in: Zip state + data */
+                                  byte *buf, /*!< out: buffer to be filled */
+                                  unsigned int size) /*!< in: size of buffer */
 {
-  short len = 0;
+  bool complete = false;
+  zip->zp->next_out = buf;
+  zip->zp->avail_out = size;
   void *null = nullptr;
-  byte *ptr = word->f_str;
   int flush = Z_NO_FLUSH;
-
-  /* Either there was an error or we are at the Z_STREAM_END. */
-  if (zip->status != Z_OK) {
-    return false;
-  }
-
-  zip->zp->next_out = reinterpret_cast<byte *>(&len);
-  zip->zp->avail_out = sizeof(len);
-
   while (zip->status == Z_OK && zip->zp->avail_out > 0) {
     /* Finished decompressing block. */
     if (zip->zp->avail_in == 0) {
@@ -584,7 +582,7 @@ static bool fts_zip_read_word(fts_zip_t *zip,     /*!< in: Zip state + data */
       if (zip->pos > 0) {
         ulint prev = zip->pos - 1;
 
-        ut_a(zip->pos < ib_vector_size(zip->blocks));
+        ut_a_lt(zip->pos, ib_vector_size(zip->blocks));
 
         ut::free(ib_vector_getp(zip->blocks, prev));
         ib_vector_set(zip->blocks, prev, &null);
@@ -609,21 +607,26 @@ static bool fts_zip_read_word(fts_zip_t *zip,     /*!< in: Zip state + data */
 
     switch (zip->status = inflate(zip->zp, flush)) {
       case Z_OK:
-        if (zip->zp->avail_out == 0 && len > 0) {
-          ut_a(len <= FTS_MAX_WORD_LEN);
-          ptr[len] = 0;
-
-          zip->zp->next_out = ptr;
-          zip->zp->avail_out = len;
-
-          word->f_len = len;
-          len = 0;
+        if (zip->zp->avail_out == 0) {
+          complete = true;
         }
         break;
 
-      case Z_BUF_ERROR: /* No progress possible. */
       case Z_STREAM_END:
+        if (zip->zp->avail_out == 0) {
+          complete = true;
+        }
+
+        [[fallthrough]];
+      case Z_BUF_ERROR: /* No progress possible. */
         inflateEnd(zip->zp);
+        /* All blocks must be freed at end of inflate. */
+        for (ulint i = 0; i < ib_vector_size(zip->blocks); ++i) {
+          if (ib_vector_getp(zip->blocks, i)) {
+            ut::free(ib_vector_getp(zip->blocks, i));
+            ib_vector_set(zip->blocks, i, &null);
+          }
+        }
         break;
 
       case Z_STREAM_ERROR:
@@ -632,22 +635,37 @@ static bool fts_zip_read_word(fts_zip_t *zip,     /*!< in: Zip state + data */
     }
   }
 
-  /* All blocks must be freed at end of inflate. */
-  if (zip->status != Z_OK) {
-    for (ulint i = 0; i < ib_vector_size(zip->blocks); ++i) {
-      if (ib_vector_getp(zip->blocks, i)) {
-        ut::free(ib_vector_getp(zip->blocks, i));
-        ib_vector_set(zip->blocks, i, &null);
-      }
-    }
-  }
+  return complete;
+}
 
-  if (zip->status == Z_OK || zip->status == Z_STREAM_END) {
-    ut_ad(word->f_len == strlen((char *)ptr));
-    return true;
-  } else {
+/** Read a word */
+static bool fts_zip_read_word(fts_zip_t *zip,     /*!< in: Zip state + data */
+                              fts_string_t *word) /*!< out: uncompressed word */
+{
+  /* Either there was an error or we are at the Z_STREAM_END. */
+  if (zip->status != Z_OK) {
     return false;
   }
+
+  ushort len = 0;
+
+  const bool have_len =
+      fts_zip_extract_bytes(zip, reinterpret_cast<byte *>(&len), sizeof(len));
+
+  if (!have_len) {
+    return false;
+  }
+
+  ut_a_le(len, FTS_MAX_WORD_LEN);
+
+  word->f_len = len;
+  const bool have_word = fts_zip_extract_bytes(zip, word->f_str, len);
+  ut_ad(have_word);
+
+  word->f_str[len] = 0;
+  ut_ad_eq(word->f_len, strlen((char *)word->f_str));
+
+  return have_word;
 }
 
 /** Callback function to fetch and compress the word in an FTS
@@ -655,19 +673,36 @@ static bool fts_zip_read_word(fts_zip_t *zip,     /*!< in: Zip state + data */
  @return false on EOF */
 static bool fts_fetch_index_words(
     void *row,      /*!< in: sel_node_t* */
-    void *user_arg) /*!< in: pointer to ib_vector_t */
+    void *user_arg) /*!< in: pointer to fts_optimize_t */
 {
-  sel_node_t *sel_node = static_cast<sel_node_t *>(row);
-  fts_zip_t *zip = static_cast<fts_zip_t *>(user_arg);
-  que_node_t *exp = sel_node->select_list;
-  dfield_t *dfield = que_node_get_val(exp);
+  const auto *const sel_node = static_cast<sel_node_t *>(row);
+  const auto optim = static_cast<fts_optimize_t *>(user_arg);
+  fts_zip_t *const zip = optim->zip;
+  que_node_t *const exp = sel_node->select_list;
+  const CHARSET_INFO *const charset = optim->fts_index_table.charset;
+  const dfield_t *const dfield = que_node_get_val(exp);
   ushort len = static_cast<ushort>(dfield_get_len(dfield));
-  void *data = dfield_get_data(dfield);
+  void *const data = dfield_get_data(dfield);
 
-  /* Skip the duplicate words. */
-  if (zip->word.f_len == static_cast<ulint>(len) &&
-      !memcmp(zip->word.f_str, data, len)) {
-    return true;
+  /* Ensure each class of collation-equal tokens is compressed only once. */
+  {
+    /* Compare current word with previous using collation. */
+    auto comp = my_strnncoll(charset, static_cast<uint8_t *>(data), len,
+                             zip->word.f_str, zip->word.f_len);
+    /* Duplicate detection is guaranteed by callback invocations being
+    grouped into sequences (corresponding to aux tables), where all
+    collation-equal words are in the same sequence; between these
+    sequences zip->word is reset to an empty string (every non-empty
+    word is assumed to be later in sort order than the empty string).
+    Within each sequence words are sorted (using collation) in ascending
+    order, guaranteeing all collation-equal words are passed to the
+    callback in consecutive calls, which allows us to eliminate
+    duplicates by comparing each word only with the one preceding it. */
+    ut_ad(comp >= 0);
+    /* Skip the duplicate words. */
+    if (comp == 0) {
+      return true;
+    }
   }
 
   ut_a(len <= FTS_MAX_WORD_LEN);
@@ -807,9 +842,30 @@ static void fts_zip_deflate_end(
 
     optim->fts_index_table.suffix = fts_get_suffix(selected_aux_idx);
 
+    /* The list of words to be processed may not have any duplicates -
+    meaning here words that are equal in collation order. Elimination
+    of duplicates is performed inside the fts_fetch_index_words callback
+    using optim->zip->word as the previous word processed. It relies on
+    all collation-equal words being passed to the callback in consecutive
+    calls. This property holds because:
+    1. All words equal by collation order are indexed in the same aux
+       table,
+    2. Words from a given aux table are processed by collation
+       (ascending) order.
+    (1) is ensured by the way words are assigned to aux table number -
+    see fts_select_index function. (2) is guaranteed by 'ORDER BY word'
+    clause in the query below.
+
+    optim->zip->word is cleared out when moving from one aux table to
+    another; it is not needed, as there can be no duplicates between
+    tables, but doing so allows the callback to assert ordering within
+    the table. */
+
+    fts_zip_clear_word(*optim->zip);
+
     info = pars_info_create();
 
-    pars_info_bind_function(info, "my_func", fts_fetch_index_words, optim->zip);
+    pars_info_bind_function(info, "my_func", fts_fetch_index_words, optim);
 
     pars_info_bind_varchar_literal(info, "word", word->f_str, word->f_len);
 
@@ -977,7 +1033,7 @@ dberr_t fts_table_fetch_doc_ids(
   if (error == DB_SUCCESS) {
     fts_sql_commit(trx);
 
-    ib_vector_sort(doc_ids->doc_ids, fts_update_doc_id_cmp);
+    ib_vector_sort(doc_ids->doc_ids, fts_doc_id_field_cmp<fts_update_t>);
   } else {
     fts_sql_rollback(trx);
   }
@@ -1668,6 +1724,7 @@ static void fts_optimize_words(
 
     /* Read the index records to optimize. */
     fetch.total_memory = 0;
+
     error = fts_index_fetch_nodes(trx, &graph, &optim->fts_index_table, word,
                                   &fetch);
     ut_ad(fetch.total_memory < fts_result_cache_limit);

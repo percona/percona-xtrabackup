@@ -55,6 +55,9 @@
 #include "storage/perfschema/pfs_timer.h"
 #include "storage/perfschema/terminology_use_previous.h"
 
+#include <mysql/components/services/mysql_server_telemetry_logs_service.h>
+extern std::atomic<log_delivery_callback_t> g_telemetry_log;
+
 /**
   @defgroup performance_schema_buffers Performance Schema Buffers
   @ingroup performance_schema_implementation
@@ -88,6 +91,20 @@ static void init_instr_class(PFS_instr_class *klass, const char *name,
                              PFS_class_type class_type);
 
 /**
+  PFS_METER option settings array
+ */
+Pfs_meter_config_array *pfs_meter_config_array = nullptr;
+
+static void configure_meter_class(PFS_meter_class *entry);
+
+/**
+  PFS_LOGGER option settings array
+ */
+Pfs_logger_config_array *pfs_logger_config_array = nullptr;
+
+static void configure_logger_class(PFS_logger_class *entry);
+
+/**
   Current number of elements in mutex_class_array.
   This global variable is written to during:
   - the performance schema initialization
@@ -103,6 +120,8 @@ static std::atomic<uint32> meter_class_dirty_count{0};
 static std::atomic<uint32> meter_class_allocated_count{0};
 static std::atomic<uint32> metric_class_dirty_count{0};
 static std::atomic<uint32> metric_class_allocated_count{0};
+static std::atomic<uint32> logger_class_dirty_count{0};
+static std::atomic<uint32> logger_class_allocated_count{0};
 
 /** Size of the mutex class array. @sa mutex_class_array */
 ulong mutex_class_max = 0;
@@ -148,6 +167,10 @@ ulong meter_class_lost = 0;
 ulong metric_class_max = 0;
 /** Number of metric class lost. @sa metric_class_array */
 ulong metric_class_lost = 0;
+/** Size of the logger class array. @sa logger_class_array */
+ulong logger_class_max = 0;
+/** Number of logger class lost. @sa logger_class_array */
+ulong logger_class_lost = 0;
 
 /**
   Number of transaction classes. Although there is only one transaction class,
@@ -168,6 +191,7 @@ PFS_rwlock_class *rwlock_class_array = nullptr;
 PFS_cond_class *cond_class_array = nullptr;
 PFS_meter_class *meter_class_array = nullptr;
 PFS_metric_class *metric_class_array = nullptr;
+PFS_logger_class *logger_class_array = nullptr;
 
 /**
   Current number or elements in thread_class_array.
@@ -194,6 +218,7 @@ PFS_ALIGNED PFS_error_class global_error_class;
 PFS_ALIGNED PFS_transaction_class global_transaction_class;
 PFS_ALIGNED PFS_meter_class global_meter_class;
 PFS_ALIGNED PFS_metric_class global_metric_class;
+PFS_ALIGNED PFS_logger_class global_logger_class;
 
 /**
   Hash index for instrumented table shares.
@@ -283,7 +308,7 @@ void PFS_instr_name::set(PFS_class_type class_type, const char *name,
 
   // Check if there is an alternative name to use when
   // @@terminology_use_previous is enabled.
-  auto compatible_name =
+  const auto compatible_name =
       terminology_use_previous::lookup(class_type, std::string{name, length});
   m_private_old_name = compatible_name.old_name;
   m_private_old_name_length =
@@ -471,10 +496,8 @@ int init_thread_class(uint thread_class_sizing) {
 
 /** Cleanup the thread class buffers. */
 void cleanup_thread_class() {
-  unsigned int i;
-
   if (thread_class_array != nullptr) {
-    for (i = 0; i < thread_class_max; i++) {
+    for (unsigned int i = 0; i < thread_class_max; i++) {
       my_free(thread_class_array[i].m_documentation);
     }
   }
@@ -527,10 +550,8 @@ int init_meter_class(uint meter_class_sizing) {
 
 /** Cleanup the meter class buffers. */
 void cleanup_meter_class() {
-  unsigned int i;
-
   if (meter_class_array != nullptr) {
-    for (i = 0; i < meter_class_max; i++) {
+    for (unsigned int i = 0; i < meter_class_max; i++) {
       my_free(meter_class_array[i].m_documentation);
       PFS_FREE_ARRAY(&builtin_memory_meter_class, metric_class_max,
                      sizeof(PFS_metric_key), meter_class_array[i].m_metrics);
@@ -574,10 +595,8 @@ int init_metric_class(uint metric_class_sizing) {
 
 /** Cleanup the metric class buffers. */
 void cleanup_metric_class() {
-  unsigned int i;
-
   if (metric_class_array != nullptr) {
-    for (i = 0; i < metric_class_max; i++) {
+    for (unsigned int i = 0; i < metric_class_max; i++) {
       my_free(metric_class_array[i].m_documentation);
     }
   }
@@ -587,6 +606,41 @@ void cleanup_metric_class() {
   metric_class_array = nullptr;
   metric_class_dirty_count = metric_class_allocated_count = 0;
   metric_class_max = 0;
+}
+
+/**
+  Initialize the logger class buffer.
+  @param logger_class_sizing          max number of logger class
+  @return 0 on success
+*/
+int init_logger_class(uint logger_class_sizing) {
+  int result = 0;
+  logger_class_dirty_count = logger_class_allocated_count = 0;
+  logger_class_max = logger_class_sizing;
+  logger_class_lost = 0;
+
+  if (logger_class_max > 0) {
+    logger_class_array = PFS_MALLOC_ARRAY(
+        &builtin_memory_logger_class, logger_class_max,
+        sizeof(PFS_logger_class), PFS_logger_class, MYF(MY_ZEROFILL));
+    if (unlikely(logger_class_array == nullptr)) {
+      logger_class_max = 0;
+      result = 1;
+    }
+  } else {
+    logger_class_array = nullptr;
+  }
+
+  return result;
+}
+
+/** Cleanup the logger class buffers. */
+void cleanup_logger_class() {
+  PFS_FREE_ARRAY(&builtin_memory_logger_class, logger_class_max,
+                 sizeof(PFS_logger_class), logger_class_array);
+  logger_class_array = nullptr;
+  logger_class_dirty_count = logger_class_allocated_count = 0;
+  logger_class_max = 0;
 }
 
 /** Cleanup the table share buffers. */
@@ -722,7 +776,7 @@ static void set_table_share_key(PFS_table_share_key *key, bool temporary,
   @return a table share lock.
 */
 PFS_table_share_lock *PFS_table_share::find_lock_stat() const {
-  auto *that = const_cast<PFS_table_share *>(this);
+  const auto *that = const_cast<PFS_table_share *>(this);
   return that->m_race_lock_stat.load();
 }
 
@@ -846,11 +900,11 @@ int init_table_share_lock_stat(uint table_stat_sizing) {
   @return table share lock instrumentation, or NULL
 */
 PFS_table_share_lock *create_table_share_lock_stat() {
-  PFS_table_share_lock *pfs = nullptr;
   pfs_dirty_state dirty_state;
 
   /* Create a new record in table stat array. */
-  pfs = global_table_share_lock_container.allocate(&dirty_state);
+  PFS_table_share_lock *pfs =
+      global_table_share_lock_container.allocate(&dirty_state);
   if (pfs != nullptr) {
     /* Reset the stats. */
     pfs->m_stat.reset();
@@ -894,16 +948,16 @@ PFS_table_share_index *create_table_share_index_stat(
     const TABLE_SHARE *server_share, uint server_index) {
   assert((server_share != nullptr) || (server_index == MAX_INDEXES));
 
-  PFS_table_share_index *pfs = nullptr;
   pfs_dirty_state dirty_state;
 
   /* Create a new record in index stat array. */
-  pfs = global_table_share_index_container.allocate(&dirty_state);
+  PFS_table_share_index *pfs =
+      global_table_share_index_container.allocate(&dirty_state);
   if (pfs != nullptr) {
     if (server_index == MAX_INDEXES) {
       pfs->m_key.m_name_length = 0;
     } else {
-      KEY *key_info = server_share->key_info + server_index;
+      const KEY *key_info = server_share->key_info + server_index;
       const size_t len = strlen(key_info->name);
 
       memcpy(pfs->m_key.m_name, key_info->name, len);
@@ -958,10 +1012,8 @@ int init_file_class(uint file_class_sizing) {
 
 /** Cleanup the file class buffers. */
 void cleanup_file_class() {
-  unsigned int i;
-
   if (file_class_array != nullptr) {
-    for (i = 0; i < file_class_max; i++) {
+    for (unsigned int i = 0; i < file_class_max; i++) {
       my_free(file_class_array[i].m_documentation);
     }
   }
@@ -1000,10 +1052,8 @@ int init_stage_class(uint stage_class_sizing) {
 
 /** Cleanup the stage class buffers. */
 void cleanup_stage_class() {
-  unsigned int i;
-
   if (stage_class_array != nullptr) {
-    for (i = 0; i < stage_class_max; i++) {
+    for (unsigned int i = 0; i < stage_class_max; i++) {
       my_free(stage_class_array[i].m_documentation);
     }
   }
@@ -1042,10 +1092,8 @@ int init_statement_class(uint statement_class_sizing) {
 
 /** Cleanup the statement class buffers. */
 void cleanup_statement_class() {
-  unsigned int i;
-
   if (statement_class_array != nullptr) {
-    for (i = 0; i < statement_class_max; i++) {
+    for (unsigned int i = 0; i < statement_class_max; i++) {
       my_free(statement_class_array[i].m_documentation);
     }
   }
@@ -1084,10 +1132,8 @@ int init_socket_class(uint socket_class_sizing) {
 
 /** Cleanup the socket class buffers. */
 void cleanup_socket_class() {
-  unsigned int i;
-
   if (socket_class_array != nullptr) {
-    for (i = 0; i < socket_class_max; i++) {
+    for (unsigned int i = 0; i < socket_class_max; i++) {
       my_free(socket_class_array[i].m_documentation);
     }
   }
@@ -1126,10 +1172,8 @@ int init_memory_class(uint memory_class_sizing) {
 
 /** Cleanup the memory class buffers. */
 void cleanup_memory_class() {
-  unsigned int i;
-
   if (memory_class_array.load() != nullptr) {
-    for (i = 0; i < memory_class_max; i++) {
+    for (unsigned int i = 0; i < memory_class_max; i++) {
       my_free(memory_class_array[i].m_documentation);
     }
   }
@@ -1188,7 +1232,7 @@ static void configure_instr_class(PFS_instr_class *entry) {
   }
   Pfs_instr_config_array::iterator it = pfs_instr_config_array->begin();
   for (; it != pfs_instr_config_array->end(); ++it) {
-    PFS_instr_config *e = *it;
+    const PFS_instr_config *e = *it;
 
     /**
       Compare class name to all configuration entries. In case of multiple
@@ -1204,6 +1248,95 @@ static void configure_instr_class(PFS_instr_class *entry) {
       if (e->m_name_length >= match_length) {
         entry->m_enabled = e->m_enabled;
         entry->m_timed = e->m_timed;
+        match_length = std::max(e->m_name_length, match_length);
+      }
+    }
+  }
+}
+
+/**
+  Set user-defined configuration values for a meter instrument.
+*/
+static void configure_meter_class(PFS_meter_class *entry) {
+  /* separate length of matching pattern for each property */
+  uint match_length_enabled = 0;
+  uint match_length_frequency = 0;
+
+  // May be NULL in unit tests
+  if (pfs_meter_config_array == nullptr) {
+    return;
+  }
+  Pfs_meter_config_array::iterator it = pfs_meter_config_array->begin();
+  for (; it != pfs_meter_config_array->end(); ++it) {
+    const PFS_meter_config *e = *it;
+
+    /**
+      Compare class name to all configuration entries. In case of multiple
+      matches, the longer specification wins. For example, the pattern
+      'ABC/DEF/GHI=ON' has precedence over 'ABC/DEF/%=OFF' regardless of
+      position within the configuration file or command line.
+
+      Consecutive wildcards affect the count.
+    */
+
+    // input pattern and P_S.setup_meter 'name' field do not contain instrument
+    // prefix
+    const size_t pfx_len = strlen("meter/");
+    const char *entry_str = entry->m_name.str() + pfx_len;
+    const size_t entry_len = entry->m_name.length() - pfx_len;
+
+    if (!my_wildcmp(&my_charset_latin1, entry_str, entry_str + entry_len,
+                    e->m_name, e->m_name + e->m_name_length, '\\', '?', '%')) {
+      if (e->m_enabled_set) {
+        if (e->m_name_length >= match_length_enabled) {
+          entry->m_enabled = e->m_enabled;
+          match_length_enabled =
+              std::max(e->m_name_length, match_length_enabled);
+        }
+      }
+
+      if (e->m_frequency_set) {
+        if (e->m_name_length >= match_length_frequency) {
+          entry->m_frequency = e->m_frequency;
+          match_length_frequency =
+              std::max(e->m_name_length, match_length_frequency);
+        }
+      }
+    }
+  }
+}
+
+/**
+  Set user-defined configuration values for a logger instrument.
+*/
+static void configure_logger_class(PFS_logger_class *entry) {
+  uint match_length = 0; /* length of matching pattern */
+
+  // May be NULL in unit tests
+  if (pfs_logger_config_array == nullptr) {
+    return;
+  }
+  Pfs_logger_config_array::iterator it = pfs_logger_config_array->begin();
+  for (; it != pfs_logger_config_array->end(); ++it) {
+    const PFS_logger_config *e = *it;
+
+    /**
+      Compare class name to all configuration entries. In case of multiple
+      matches, the longer specification wins. For example, the pattern
+      'ABC/DEF/GHI=level:INFO' has precedence over 'ABC/DEF/%=level:INFO'
+      regardless of position within the configuration file or command line.
+
+      Consecutive wildcards affect the count.
+    */
+    if (!my_wildcmp(&my_charset_latin1, entry->m_name.str(),
+                    entry->m_name.str() + entry->m_name.length(), e->m_name,
+                    e->m_name + e->m_name_length, '\\', '?', '%')) {
+      if (e->m_name_length >= match_length) {
+        entry->m_level = e->m_level;
+        if (g_telemetry_log == nullptr)
+          entry->m_effective_level = TLOG_NONE;
+        else
+          entry->m_effective_level = e->m_level;
         match_length = std::max(e->m_name_length, match_length);
       }
     }
@@ -1499,6 +1632,15 @@ PFS_metric_class *find_metric_class(PSI_metric_key key) {
 PFS_metric_class *sanitize_metric_class(PFS_metric_class *unsafe) {
   SANITIZE_ARRAY_BODY(PFS_metric_class, metric_class_array, metric_class_max,
                       unsafe);
+}
+
+/**
+  Find a logger instrumentation class by key.
+  @param key                          the instrument key
+  @return the instrument class, or NULL
+*/
+PFS_logger_class *find_logger_class(PSI_logger_key key) {
+  FIND_CLASS_BODY_V2(key, logger_class_max, logger_class_array);
 }
 
 /**
@@ -1963,10 +2105,10 @@ PFS_meter_key register_meter_class(const char *name, uint name_length,
     entry->enforce_valid_flags(PSI_FLAG_MUTABLE);
 
     /* Set user-defined configuration options for this instrument */
-    configure_instr_class(entry);
+    configure_meter_class(entry);
     ++meter_class_allocated_count;
 
-    if (index == meter_class_dirty_count) meter_class_dirty_count++;
+    if (index == meter_class_dirty_count) ++meter_class_dirty_count;
 
     return key;
   }
@@ -2078,7 +2220,7 @@ PFS_metric_key register_metric_class(const char *name, uint name_length,
     configure_instr_class(entry);
     ++metric_class_allocated_count;
 
-    if (index == metric_class_dirty_count) metric_class_dirty_count++;
+    if (index == metric_class_dirty_count) ++metric_class_dirty_count;
 
     return key;
   }
@@ -2108,6 +2250,115 @@ void unregister_metric_class(PSI_metric_info_v1 *info) {
 }
 
 uint32 metric_class_count() { return metric_class_allocated_count; }
+
+/**
+  Register a logger instrumentation metadata.
+  @param name                   the instrumented name
+  @param name_length            length in bytes of name
+  @param info                   the instrumentation properties
+  @return a logger instrumentation key, 0 on error, UINT_MAX on duplicate
+*/
+PFS_logger_key register_logger_class(const char *name, uint name_length,
+                                     PSI_logger_info_v1 *info) {
+  /* See comments in register_mutex_class */
+  uint32 index;
+  PFS_logger_class *entry;
+
+  REGISTER_CLASS_BODY_PART_V2(index, logger_class_array, logger_class_max, name,
+                              name_length)
+
+  // search free slot
+  if (logger_class_dirty_count < logger_class_max &&
+      logger_class_array[logger_class_dirty_count].m_key == 0) {
+    // fast path
+    index = logger_class_dirty_count;
+  } else {
+    index = logger_class_max;
+    for (uint32 i = 0; i < logger_class_max; i++) {
+      if (logger_class_array[i].m_key == 0) {
+        index = i;
+        break;
+      }
+    }
+  }
+
+  if (index < logger_class_max) {
+    const PFS_logger_key key = index + 1;
+
+    entry = &logger_class_array[index];
+
+    // init entry lock
+    pfs_dirty_state dirty_state;
+    if (!entry->m_lock.free_to_dirty(&dirty_state)) {
+      if (pfs_enabled) {
+        logger_class_lost++;
+      }
+      return 0;
+    }
+    entry->m_lock.dirty_to_allocated(&dirty_state);
+
+    init_instr_class(entry, name, name_length, 0,
+                     0, /* statements have no volatility */
+                     PSI_DOCUMENT_ME, PFS_CLASS_LOGGER);
+    entry->m_event_name_index = index;
+    entry->m_enabled = true; /* enabled by default */
+    entry->m_timed = true;
+
+    // copy logger source info
+    entry->m_logger_name_length =
+        (info->m_logger_name == nullptr) ? 0 : strlen(info->m_logger_name);
+    if (entry->m_logger_name_length > 0)
+      memcpy(entry->m_logger_name, info->m_logger_name,
+             entry->m_logger_name_length);
+    entry->m_description_length =
+        (info->m_description == nullptr) ? 0 : strlen(info->m_description);
+    if (entry->m_description_length > 0)
+      memcpy(entry->m_description, info->m_description,
+             entry->m_description_length);
+    entry->m_key = key;
+    entry->m_level =
+        OTELLogLevel::TLOG_INFO;  // default level (be conservative)
+    if (g_telemetry_log == nullptr)
+      entry->m_effective_level = TLOG_NONE;
+    else
+      entry->m_effective_level = entry->m_level;
+
+    entry->enforce_valid_flags(0);
+
+    /* Set user-defined configuration options for this instrument */
+    configure_logger_class(entry);
+    ++logger_class_allocated_count;
+
+    if (index == logger_class_dirty_count) ++logger_class_dirty_count;
+
+    return key;
+  }
+
+  if (pfs_enabled) {
+    logger_class_lost++;
+  }
+  return 0;
+}
+
+void unregister_logger_class(PSI_logger_info_v1 *info) {
+  assert(info != nullptr);
+
+  if (info->m_key == nullptr || *(info->m_key) == 0) return;
+
+  const uint32 index = *(info->m_key) - 1;
+  PFS_logger_class *entry = &logger_class_array[index];
+
+  // unregister
+  entry->m_key = 0;
+  *(info->m_key) = 0;
+
+  entry->m_lock.allocated_to_free();
+
+  --logger_class_allocated_count;
+  logger_class_dirty_count = 0;
+}
+
+uint32 logger_class_count() { return logger_class_allocated_count; }
 
 PFS_instr_class *find_table_class(uint index) {
   if (index == 1) {
@@ -2189,16 +2440,14 @@ static int compare_keys(PFS_table_share *pfs, const TABLE_SHARE *share) {
     return 1;
   }
 
-  size_t len;
   uint index = 0;
   const uint key_count = share->keys;
   KEY *key_info = share->key_info;
-  PFS_table_share_index *index_stat;
 
   for (; index < key_count; key_info++, index++) {
-    index_stat = pfs->find_index_stat(index);
+    const PFS_table_share_index *index_stat = pfs->find_index_stat(index);
     if (index_stat != nullptr) {
-      len = strlen(key_info->name);
+      const size_t len = strlen(key_info->name);
 
       if (len != index_stat->m_key.m_name_length) {
         return 1;
@@ -2241,7 +2490,7 @@ PFS_table_share *find_or_create_table_share(PFS_thread *thread, bool temporary,
 
   PFS_table_share **entry;
   uint retry_count = 0;
-  const uint retry_max = 3;
+  constexpr uint retry_max = 3;
   bool enabled = true;
   bool timed = true;
   PFS_table_share *pfs;
@@ -2457,7 +2706,7 @@ void reset_events_waits_by_class() {
 /** Reset the I/O statistics per file class. */
 void reset_file_class_io() {
   PFS_file_class *pfs = file_class_array;
-  PFS_file_class *pfs_last = file_class_array + file_class_max;
+  const PFS_file_class *pfs_last = file_class_array + file_class_max;
 
   for (; pfs < pfs_last; pfs++) {
     pfs->m_file_stat.m_io_stat.reset();
@@ -2467,7 +2716,7 @@ void reset_file_class_io() {
 /** Reset the I/O statistics per socket class. */
 void reset_socket_class_io() {
   PFS_socket_class *pfs = socket_class_array;
-  PFS_socket_class *pfs_last = socket_class_array + socket_class_max;
+  const PFS_socket_class *pfs_last = socket_class_array + socket_class_max;
 
   for (; pfs < pfs_last; pfs++) {
     pfs->m_socket_stat.m_io_stat.reset();

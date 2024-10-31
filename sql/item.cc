@@ -52,6 +52,7 @@
 #include "mysql/strings/m_ctype.h"
 #include "mysql/strings/my_strtoll10.h"
 #include "mysql_time.h"
+#include "mysqld_error.h"
 #include "nulls.h"
 #include "sql-common/json_dom.h"  // Json_wrapper
 #include "sql/aggregate_check.h"  // Distinct_check
@@ -79,7 +80,7 @@
 #include "sql/select_lex_visitor.h"
 #include "sql/sp.h"           // sp_prepare_func_item
 #include "sql/sp_rcontext.h"  // sp_rcontext
-#include "sql/sql_base.h"     // view_ref_found
+#include "sql/sql_base.h"     // find_field_in_tables
 #include "sql/sql_bitmap.h"
 #include "sql/sql_class.h"    // THD
 #include "sql/sql_derived.h"  // Condition_pushdown
@@ -118,6 +119,9 @@ static inline bool select_alias_referencable(enum_parsing_context place) {
   return (place == CTX_SELECT_LIST || place == CTX_GROUP_BY ||
           place == CTX_HAVING || place == CTX_QUALIFY || place == CTX_ORDER_BY);
 }
+
+static uint32 aggregate_char_width(DTCollation *coll, Item **items,
+                                   uint nitems);
 
 Type_properties::Type_properties(Item &item)
     : m_type(item.data_type()),
@@ -576,6 +580,13 @@ type_conversion_status Item::save_str_value_in_field(Field *field,
 }
 
 /**
+  Returns a string for a mysql field type.
+  @param type the type of the field.
+*/
+
+const char *fieldtype2str(enum enum_field_types type);
+
+/**
   Aggregates data types from array of items into current item
 
   @param name   name of function that performs type aggregation
@@ -595,6 +606,10 @@ type_conversion_status Item::save_str_value_in_field(Field *field,
   - functions CASE, COALESCE, IF, IFNULL and NULLIF.
   - functions LEAST and GREATEST.
   - LEAD and LAG.
+
+  NOTE: "this" may be part of "items" array, thus it is important that the
+        type properties are not updated until after all items in the array
+        have been processed.
 */
 
 bool Item::aggregate_type(const char *name, Item **items, uint count) {
@@ -620,7 +635,14 @@ bool Item::aggregate_type(const char *name, Item **items, uint count) {
     // Do not aggregate items with NULL type
     if (items[itemno]->data_type() == MYSQL_TYPE_NULL) continue;
     assert(items[itemno]->result_type() != ROW_RESULT);
-    new_type = Field::field_type_merge(new_type, real_data_type(items[itemno]));
+    auto left_type = new_type;
+    auto right_type = real_data_type(items[itemno]);
+    new_type = Field::field_type_merge(left_type, right_type);
+    if (new_type == MYSQL_TYPE_INVALID) {
+      my_error(ER_INCOMPATIBLE_TYPE_AGG, MYF(0), fieldtype2str(left_type),
+               fieldtype2str(right_type));
+      return true;
+    }
     mixed_signs |= (new_unsigned != items[itemno]->unsigned_flag);
     new_length = max<uint32>(new_length, items[itemno]->max_length);
   }
@@ -691,7 +713,9 @@ bool Item::aggregate_type(const char *name, Item **items, uint count) {
     case MYSQL_TYPE_TIME: {
       uint8 fsp = 0;
       for (uint i = 0; i < count; i++) {
-        fsp = max(fsp, items[i]->decimals);
+        if (real_data_type(items[i]) != MYSQL_TYPE_NULL) {
+          fsp = max(fsp, items[i]->decimals);
+        }
       }
       set_data_type_time(fsp);
       break;
@@ -699,7 +723,9 @@ bool Item::aggregate_type(const char *name, Item **items, uint count) {
     case MYSQL_TYPE_DATETIME: {
       uint8 fsp = 0;
       for (uint i = 0; i < count; i++) {
-        fsp = max(fsp, items[i]->decimals);
+        if (real_data_type(items[i]) != MYSQL_TYPE_NULL) {
+          fsp = max(fsp, items[i]->decimals);
+        }
       }
       set_data_type_datetime(fsp);
       break;
@@ -707,7 +733,9 @@ bool Item::aggregate_type(const char *name, Item **items, uint count) {
     case MYSQL_TYPE_TIMESTAMP: {
       uint8 fsp = 0;
       for (uint i = 0; i < count; i++) {
-        fsp = max(fsp, items[i]->decimals);
+        if (real_data_type(items[i]) != MYSQL_TYPE_NULL) {
+          fsp = max(fsp, items[i]->decimals);
+        }
       }
       set_data_type_timestamp(fsp);
       break;
@@ -729,6 +757,7 @@ bool Item::aggregate_type(const char *name, Item **items, uint count) {
       set_data_type_json();
       break;
 
+    case MYSQL_TYPE_VECTOR:
     case MYSQL_TYPE_STRING:
     case MYSQL_TYPE_VARCHAR:
     case MYSQL_TYPE_TINY_BLOB:
@@ -862,20 +891,19 @@ void Item::print_item_w_name(const THD *thd, String *str,
 void Item::print_for_order(const THD *thd, String *str,
                            enum_query_type query_type,
                            const char *used_alias) const {
-  if ((query_type & QT_NORMALIZED_FORMAT) != 0)
+  if ((query_type & QT_NORMALIZED_FORMAT) != 0) {
     str->append("?");
-  else if (used_alias != nullptr) {
+  } else if (used_alias != nullptr) {
     // In the clause, user has referenced expression using an alias; we use it
     append_identifier(thd, str, used_alias, strlen(used_alias));
+  } else if (type() == Item::INT_ITEM) {
+    /*
+      "ORDER BY N" means "order by the N-th element". To avoid such
+      interpretation we write "ORDER BY ''", which is equivalent.
+    */
+    str->append("''");
   } else {
-    if (type() == Item::INT_ITEM && basic_const_item()) {
-      /*
-        "ORDER BY N" means "order by the N-th element". To avoid such
-        interpretation we write "ORDER BY ''", which is equivalent.
-      */
-      str->append("''");
-    } else
-      print(thd, str, query_type);
+    print(thd, str, query_type);
   }
 }
 
@@ -954,9 +982,26 @@ bool Item_field::collect_item_field_processor(uchar *arg) {
   mem_root_deque<Item_field *> *item_list =
       reinterpret_cast<mem_root_deque<Item_field *> *>(arg);
   for (Item_field *curr_item : *item_list) {
-    if (curr_item->eq(this, true)) return false; /* Already in the set. */
+    if (curr_item->eq(this)) return false; /* Already in the set. */
   }
   item_list->push_back(this);
+  return false;
+}
+
+bool Item_field::collect_outer_field_processor(uchar *arg) {
+  if (!is_outer_reference()) return false;
+
+  // Check that the outer reference belongs to the current query block
+  if (depended_from != current_thd->lex->current_query_block()) return false;
+
+  Mem_root_array<Item_field *> *item_list =
+      reinterpret_cast<Mem_root_array<Item_field *> *>(arg);
+
+  for (Item_field *curr_item : *item_list) {
+    if (curr_item->eq(this)) return false; /* Already in the set. */
+  }
+
+  if (item_list->push_back(this)) return true;
   return false;
 }
 
@@ -985,7 +1030,7 @@ bool Item_field::collect_item_field_or_ref_processor(uchar *arg) {
     if (is_outer_reference()) {
       if (already_collected == this) return false;
     } else {
-      if (already_collected->eq(this, true)) return false;
+      if (already_collected->eq(this)) return false;
     }
   }
   return info->m_items->push_back(this);
@@ -998,7 +1043,7 @@ bool Item_field::collect_item_field_or_view_ref_processor(uchar *arg) {
   List_iterator<Item> item_list_it(*info->m_item_fields_or_view_refs);
   Item *curr_item;
   while ((curr_item = item_list_it++)) {
-    if (curr_item->eq(this, true)) {
+    if (curr_item->eq(this)) {
       // We have this field already, so don't insert.  All occurrences must be
       // protected by ANY_VALUE for us to also protect it: one occurrence that
       // is not protected might give ER_MIX_OF_GROUP_FUNC_AND_FIELDS_V2 in
@@ -1017,7 +1062,7 @@ bool Item_field::add_field_to_set_processor(uchar *arg) {
   DBUG_TRACE;
   DBUG_PRINT("info", ("%s", field->field_name ? field->field_name : "noname"));
   TABLE *table = (TABLE *)arg;
-  if (table_ref->table == table)
+  if (m_table_ref->table == table)
     bitmap_set_bit(&table->tmp_set, field->field_index());
   return false;
 }
@@ -1066,7 +1111,7 @@ bool Item_field::is_valid_for_pushdown(uchar *arg) {
   Condition_pushdown::Derived_table_info *dti =
       pointer_cast<Condition_pushdown::Derived_table_info *>(arg);
   Table_ref *derived_table = dti->m_derived_table;
-  if (table_ref == derived_table) {
+  if (m_table_ref == derived_table) {
     assert(field->table == derived_table->table);
     // For set operations, if there is result type mismatch for this
     // expression across query blocks, we do not do condition pushdown
@@ -1168,7 +1213,7 @@ bool Item_field::check_column_in_window_functions(uchar *arg) {
     ret = true;
     for (ORDER *o = w->first_partition_by(); o != nullptr; o = o->next) {
       Item *expr = *(o->item);
-      if (expr == item || item->eq(expr, false)) {
+      if (expr == item || item->eq(expr)) {
         ret = false;
         break;
       }
@@ -1198,7 +1243,7 @@ bool Item_field::check_column_in_group_by(uchar *arg) {
   Item *item = query_block->get_derived_expr(field->field_index());
   for (ORDER *group = query_block->group_list.first; group;
        group = group->next) {
-    if (*group->item == item || item->eq(*group->item, false)) return false;
+    if (*group->item == item || item->eq(*group->item)) return false;
   }
   return true;
 }
@@ -1213,7 +1258,7 @@ Item *Item_field::replace_with_derived_expr(uchar *arg) {
   // there was an earlier reference to the same column in the condition that
   // is being pushed down). There is no need to do anything in such a case.
   Table_ref *derived_table = dti->m_derived_table;
-  if (derived_table != table_ref) return this;
+  if (derived_table != m_table_ref) return this;
   Query_block *query_block = dti->m_derived_query_block;
   return query_block->clone_expression(
       current_thd, query_block->get_derived_expr(field->field_index()),
@@ -1230,7 +1275,7 @@ Item *Item_field::replace_with_derived_expr_ref(uchar *arg) {
   // there was an earlier reference to the same column in the condition that
   // is being pushed down). There is no need to do anything in such a case.
   Table_ref *derived_table = dti->m_derived_table;
-  if (derived_table != table_ref) return this;
+  if (derived_table != m_table_ref) return this;
   Query_block *query_block = dti->m_derived_query_block;
 
   // Get the expression in the derived table and find the right ref item to
@@ -1266,6 +1311,21 @@ bool Item_field::check_function_as_value_generator(uchar *checker_args) {
     return false;
   }
 
+  if (field->real_type() == MYSQL_TYPE_VECTOR) {
+    /* Vector typed column cannot be used in generated column expression */
+    if (func_args->source == VGS_DEFAULT_EXPRESSION) {
+      my_error(ER_INCORRECT_TYPE, MYF(0), field->field_name,
+               "DEFAULT EXPRESSION"); /* LCOV_EXCL_LINE */
+    } else if (func_args->source == VGS_CHECK_CONSTRAINT) {
+      my_error(ER_INCORRECT_TYPE, MYF(0), field->field_name,
+               "CHECK CONSTRAINT");
+    } else {
+      my_error(ER_INCORRECT_TYPE, MYF(0), field->field_name,
+               "GENERATED COLUMN");
+    }
+    return true;
+  }
+
   const int fld_idx = func_args->col_index;
   assert(fld_idx > -1);
 
@@ -1294,9 +1354,9 @@ bool Item_field::check_function_as_value_generator(uchar *checker_args) {
     func_args->err_code =
         (func_args->source == VGS_GENERATED_COLUMN)
             ? ER_GENERATED_COLUMN_REF_AUTO_INC
-            : (func_args->source == VGS_DEFAULT_EXPRESSION)
-                  ? ER_DEFAULT_VAL_GENERATED_REF_AUTO_INC
-                  : ER_CHECK_CONSTRAINT_REFERS_AUTO_INCREMENT_COLUMN;
+        : (func_args->source == VGS_DEFAULT_EXPRESSION)
+            ? ER_DEFAULT_VAL_GENERATED_REF_AUTO_INC
+            : ER_CHECK_CONSTRAINT_REFERS_AUTO_INCREMENT_COLUMN;
     return true;
   }
 
@@ -1312,7 +1372,7 @@ bool Item_field::check_column_privileges(uchar *arg) {
 
   Internal_error_handler_holder<View_error_handler, Table_ref> view_handler(
       thd, context->view_error_handler, context->view_error_handler_arg);
-  if (check_column_grant_in_table_ref(thd, table_ref, field_name,
+  if (check_column_grant_in_table_ref(thd, m_table_ref, field_name,
                                       strlen(field_name),
                                       thd->want_privilege)) {
     return true;
@@ -1332,15 +1392,15 @@ bool Item_field::check_column_privileges(uchar *arg) {
 bool Item_view_ref::check_column_privileges(uchar *arg) {
   THD *thd = (THD *)arg;
 
-  if (cached_table->is_derived())  // Rely on checking underlying tables
+  if (m_table_ref->is_derived())  // Rely on checking underlying tables
     return false;
 
   Internal_error_handler_holder<View_error_handler, Table_ref> view_handler(
       thd, context->view_error_handler, context->view_error_handler_arg);
 
-  assert(strlen(cached_table->get_table_name()) > 0);
+  assert(strlen(m_table_ref->get_table_name()) > 0);
 
-  if (check_column_grant_in_table_ref(thd, cached_table, field_name,
+  if (check_column_grant_in_table_ref(thd, m_table_ref, field_name,
                                       strlen(field_name), thd->want_privilege))
     return true;
 
@@ -1416,10 +1476,10 @@ void Item_name_string::copy(const char *str_arg, size_t length_arg,
   This function is called when:
   - Comparing items in the WHERE clause (when doing where optimization)
   - When trying to find an ORDER BY/GROUP BY item in the SELECT part
-  - When matching fields in multiple equality objects (Item_equal)
+  - When matching fields in multiple equality objects (Item_multi_eq)
 */
 
-bool Item::eq(const Item *item, bool) const {
+bool Item::eq(const Item *item) const {
   if (this == item) return true;
   /*
     Note, that this is never true if item is a Item_param:
@@ -1429,169 +1489,69 @@ bool Item::eq(const Item *item, bool) const {
   return type() == item->type() && item_name.eq_safe(item->item_name);
 }
 
-Item *Item::safe_charset_converter(THD *thd, const CHARSET_INFO *tocs) {
-  Item_func_conv_charset *conv =
-      new Item_func_conv_charset(thd, this, tocs, true);
-  return conv && conv->m_safe ? conv : nullptr;
-}
-
 /**
-  @details
-  Created mostly for mysql_prepare_table(). Important
-  when a string ENUM/SET column is described with a numeric default value:
-
-  CREATE TABLE t1(a SET('a') DEFAULT 1);
-
-  We cannot use generic Item::safe_charset_converter(), because
-  the latter returns a non-fixed Item, so val_str() crashes afterwards.
-  Override Item_num method, to return a fixed item.
+  Unwrap an Item argument so that Item::eq() can see the "real" item, and not
+  just the wrapper. It unwraps Item_ref using real_item(), and also cache items
+  and rollup group wrappers, since these may not have been added consistently to
+  both sides compared by Item::eq().
 */
-Item *Item_num::safe_charset_converter(THD *thd, const CHARSET_INFO *tocs) {
-  /*
-    Item_num returns pure ASCII result,
-    so conversion is needed only in case of "tricky" character
-    sets like UCS2. If tocs is not "tricky", return the item itself.
-  */
-  if (my_charset_is_ascii_based(tocs)) return this;
+const Item *Item::unwrap_for_eq() const {
+  const Item *item = this;
+  const Item *prev_item;
+  do {
+    prev_item = item;
+    item = item->real_item();
 
-  uint conv_errors;
-  char buf[64], buf2[64];
-  String tmp(buf, sizeof(buf), &my_charset_bin);
-  String cstr(buf2, sizeof(buf2), &my_charset_bin);
-  String *ostr = val_str(&tmp);
-  cstr.copy(ostr->ptr(), ostr->length(), ostr->charset(), tocs, &conv_errors);
-  if (conv_errors > 0) {
-    /*
-      Safe conversion is not possible.
-      We could not convert a string into the requested character set
-      without data loss. The target charset does not cover all the
-      characters from the string. Operation cannot be done correctly.
-    */
-    return nullptr;
-  }
-
-  char *ptr = thd->strmake(cstr.ptr(), cstr.length());
-  if (ptr == nullptr) return nullptr;
-  auto conv =
-      new Item_string(ptr, cstr.length(), cstr.charset(), collation.derivation);
-  if (conv == nullptr) return nullptr;
-
-  /* Ensure that no one is going to change the result string */
-  conv->mark_result_as_const();
-  conv->fix_char_length(max_char_length());
-  return conv;
-}
-
-Item *Item_func_pi::safe_charset_converter(THD *thd, const CHARSET_INFO *) {
-  char buf[64];
-  String tmp(buf, sizeof(buf), &my_charset_bin);
-  String *s = val_str(&tmp);
-  char *ptr = thd->strmake(s->ptr(), s->length());
-  if (ptr == nullptr) return nullptr;
-  auto conv =
-      new Item_static_string_func(func_name, ptr, s->length(), s->charset());
-  if (conv == nullptr) return nullptr;
-  conv->mark_result_as_const();
-  return conv;
-}
-
-Item *Item_string::safe_charset_converter(THD *thd, const CHARSET_INFO *tocs) {
-  return charset_converter(thd, tocs, true);
-}
-
-/**
-  Convert a string item into the requested character set.
-
-  @param thd        Thread handle.
-  @param tocs       Character set to to convert the string to.
-  @param lossless   Whether data loss is acceptable.
-
-  @return A new item representing the converted string.
-*/
-Item *Item_string::charset_converter(THD *thd, const CHARSET_INFO *tocs,
-                                     bool lossless) {
-  uint conv_errors;
-  String tmp, cstr, *ostr = val_str(&tmp);
-  cstr.copy(ostr->ptr(), ostr->length(), ostr->charset(), tocs, &conv_errors);
-  if (lossless && conv_errors > 0) {
-    /*
-      Safe conversion is not possible.
-      We could not convert a string into the requested character set
-      without data loss. The target charset does not cover all the
-      characters from the string. Operation cannot be done correctly.
-    */
-    return nullptr;
-  }
-
-  char *ptr = thd->strmake(cstr.ptr(), cstr.length());
-  if (ptr == nullptr) return nullptr;
-  auto conv =
-      new Item_string(ptr, cstr.length(), cstr.charset(), collation.derivation);
-  if (conv == nullptr) return nullptr;
-  /* Ensure that no one is going to change the result string */
-  conv->mark_result_as_const();
-  return conv;
-}
-
-Item *Item_param::safe_charset_converter(THD *thd, const CHARSET_INFO *tocs) {
-  if (may_evaluate_const(thd)) {
-    String tmp, cstr, *ostr = val_str(&tmp);
-
-    if (null_value) {
-      auto cnvitem = new Item_null();
-      if (cnvitem == nullptr) return nullptr;
-      cnvitem->collation.set(tocs);
-      return cnvitem;
-    } else {
-      uint conv_errors;
-      cstr.copy(ostr->ptr(), ostr->length(), ostr->charset(), tocs,
-                &conv_errors);
-
-      if (conv_errors > 0) return nullptr;
-
-      char *ptr = thd->strmake(cstr.ptr(), cstr.length());
-      if (ptr == nullptr) return nullptr;
-      auto cnvitem = new Item_string(ptr, cstr.length(), cstr.charset(),
-                                     collation.derivation);
-      if (cnvitem == nullptr) return nullptr;
-      cnvitem->mark_result_as_const();
-      return cnvitem;
+    if (item->type() == Item::CACHE_ITEM) {
+      item = down_cast<const Item_cache *>(item)->get_example();
     }
-  }
-  return Item::safe_charset_converter(thd, tocs);
+
+    if (is_rollup_group_wrapper(item)) {
+      item = down_cast<const Item_rollup_group_item *>(item)->inner_item();
+    }
+  } while (item != prev_item);  // Keep trying till no wrapper is found.
+  return item;
 }
 
-Item *Item_static_string_func::safe_charset_converter(
-    THD *thd, const CHARSET_INFO *tocs) {
-  uint conv_errors;
-  String tmp, cstr, *ostr = val_str(&tmp);
-  cstr.copy(ostr->ptr(), ostr->length(), ostr->charset(), tocs, &conv_errors);
-  if (conv_errors > 0) {
-    /*
-      Safe conversion is not possible.
-      We could not convert a string into the requested character set
-      without data loss. The target charset does not cover all the
-      characters from the string. Operation cannot be done correctly.
-    */
-    return nullptr;
-  }
+Item *Item::convert_charset(THD *thd, const CHARSET_INFO *tocs,
+                            bool ignore_errors) {
+  // Function is only applicable to a const value
+  assert(const_item() ||
+         (const_for_execution() && thd->lex->is_exec_started()));
+  String tmp;
+  String *ostr = val_str(&tmp);
+  if (thd->is_error()) return nullptr;
 
-  char *ptr = thd->strmake(cstr.ptr(), cstr.length());
-  if (ptr == nullptr) return nullptr;
-  auto conv = new Item_static_string_func(func_name, ptr, cstr.length(),
-                                          cstr.charset(), collation.derivation);
-  if (conv == nullptr) return nullptr;
-  /* Ensure that no one is going to change the result string */
-  conv->mark_result_as_const();
-  return conv;
+  if (null_value) {
+    Item_null *const null_item = new Item_null();
+    if (null_item == nullptr) return nullptr;
+    null_item->collation.set(tocs);
+    return null_item;
+  } else {
+    uint conv_errors;
+    StringBuffer<STRING_BUFFER_USUAL_SIZE> cstr;
+    cstr.copy(ostr->ptr(), ostr->length(), ostr->charset(), tocs, &conv_errors);
+    if (!ignore_errors && conv_errors != 0) {
+      report_conversion_error(ostr->charset(), ostr->ptr(), ostr->length(),
+                              tocs);
+      return nullptr;
+    }
+    char *ptr = thd->strmake(cstr.ptr(), cstr.length());
+    if (ptr == nullptr) return nullptr;
+    Item_string *const string_item = new (thd->mem_root)
+        Item_string(ptr, cstr.length(), cstr.charset(), collation.derivation);
+    if (string_item == nullptr) return nullptr;
+    string_item->mark_result_as_const();
+    string_item->fix_char_length(max_char_length());
+
+    return string_item;
+  }
 }
 
-bool Item_string::eq(const Item *item, bool binary_cmp) const {
-  if (type() == item->type() && item->basic_const_item()) {
-    // Should be OK for a basic constant.
+bool Item_string::eq(const Item *item) const {
+  if (type() == item->type()) {
     Item *arg = const_cast<Item *>(item);
     String str;
-    if (binary_cmp) return !stringcmp(&str_value, arg->val_str(&str));
     return (collation.collation == arg->collation.collation &&
             !sortcmp(&str_value, arg->val_str(&str), collation.collation));
   }
@@ -1841,7 +1801,8 @@ bool Item::is_blob_field() const {
   assert(fixed);
 
   const enum_field_types type = data_type();
-  return (type == MYSQL_TYPE_BLOB || type == MYSQL_TYPE_GEOMETRY ||
+  return (type == MYSQL_TYPE_BLOB || type == MYSQL_TYPE_VECTOR ||
+          type == MYSQL_TYPE_GEOMETRY ||
           // Char length, not the byte one, should be taken into account
           max_length / collation.collation->mbmaxlen >
               CONVERT_IF_BIGGER_TO_BLOB);
@@ -2004,7 +1965,7 @@ void Item_splocal::print(const THD *thd, String *str, enum_query_type) const {
 }
 
 bool Item_splocal::set_value(THD *thd, sp_rcontext *ctx, Item **it) {
-  return ctx->set_variable(thd, get_var_idx(), it);
+  return ctx->set_variable(thd, false, get_var_idx(), it);
 }
 
 /*****************************************************************************
@@ -2101,32 +2062,31 @@ bool Item_name_const::do_itemize(Parse_context *pc, Item **res) {
 
     Apart from plain literals, some extra logic are needed to support a
     collation specifier and to handle negative constant values.
-  */
-  valid_args = false;
 
-  if (name_item->basic_const_item()) {
-    Item_func *func = dynamic_cast<Item_func *>(value_item);
+    Notice especially that functions that describe literals, such as TIME'01',
+    are not accepted, since they are not generated by subst_spvars() and
+    sp_get_item_value() for use in the binary log.
+  */
+  valid_args = name_item->basic_const_item();
+
+  if (value_item->type() == Item::FUNC_ITEM) {
+    Item_func *func = down_cast<Item_func *>(value_item);
     Item *possible_const = value_item;
 
-    if (func && (func->functype() == Item_func::COLLATE_FUNC ||
-                 func->functype() == Item_func::NEG_FUNC)) {
+    if (func->functype() == Item_func::COLLATE_FUNC ||
+        func->functype() == Item_func::NEG_FUNC) {
       /*
         The value is not a literal constant. Accept it if it's a
         COLLATE_FUNC or a NEG_FUNC wrapping a literal constant.
       */
       possible_const = func->key_item();
+    } else {
+      valid_args = false;
     }
-
-    /*
-      There should now be no constant items which are functions left,
-      (e.g. like TIME '1'), since none such are generated by subst_spvars() and
-      sp_get_item_value(), which is where NAME_CONST calls are generated
-      internally for the binary log: hence the second predicate below.  If user
-      applications try to use such constructs, or any non-constant contents for
-      NAME_CONST's value argument (#2), we generate an error.
-    */
-    valid_args = (possible_const->basic_const_item() &&
-                  possible_const->type() != FUNC_ITEM);
+    valid_args &= possible_const->basic_const_item();
+  } else if (!value_item->basic_const_item()) {
+    // Not a valid argument
+    valid_args = false;
   }
 
   if (!valid_args) {
@@ -2137,63 +2097,29 @@ bool Item_name_const::do_itemize(Parse_context *pc, Item **res) {
   return false;
 }
 
-Item::Type Item_name_const::type() const {
-  /*
-    As
-    1. one can try to create the Item_name_const passing non-constant
-    arguments, although it's incorrect and
-    2. the type() method can be called before the fix_fields() to get
-    type information for a further type cast, e.g.
-    if (item->type() == FIELD_ITEM)
-      ((Item_field *) item)->...
-    we return NULL_ITEM in the case to avoid wrong casting.
-
-    valid_args guarantees value_item->basic_const_item(); if type is
-    FUNC_ITEM, then we have a fudged item_func_neg() on our hands
-    and return the underlying type.
-    For Item_func_set_collation()
-    e.g. NAME_CONST('name', 'value' COLLATE collation) we return its
-    'value' argument type.
-  */
-  if (!valid_args) return NULL_ITEM;
-  const Item::Type value_type = value_item->type();
-  if (value_type == FUNC_ITEM) {
-    /*
-      The second argument of NAME_CONST('name', 'value') must be
-      a simple constant item or a NEG_FUNC/COLLATE_FUNC.
-    */
-    Item_func *func = down_cast<Item_func *>(value_item);
-    assert(func->functype() == Item_func::NEG_FUNC ||
-           func->functype() == Item_func::COLLATE_FUNC);
-    return func->key_item()->type();
-  }
-  return value_type;
-}
-
 bool Item_name_const::fix_fields(THD *thd, Item **) {
   char buf[128];
   String *tmp;
   String s(buf, sizeof(buf), &my_charset_bin);
   s.length(0);
 
-  if (value_item->fix_fields(thd, &value_item) ||
-      name_item->fix_fields(thd, &name_item) || !value_item->const_item() ||
-      !name_item->const_item() ||
-      !(tmp = name_item->val_str(&s)))  // Can't have a NULL name
-  {
+  if (value_item->fix_fields(thd, &value_item)) {
+    return true;
+  }
+  if (name_item->fix_fields(thd, &name_item)) {
+    return true;
+  }
+  if (!value_item->const_item() || !name_item->const_item() ||
+      (tmp = name_item->val_str(&s)) == nullptr) {  // Can't have a NULL name
     my_error(ER_RESERVED_SYNTAX, MYF(0), "NAME_CONST");
     return true;
   }
   if (item_name.is_autogenerated()) {
     item_name.copy(tmp->ptr(), (uint)tmp->length(), system_charset_info);
   }
-  collation.set(value_item->collation.collation,
-                value_item->collation.derivation,
-                value_item->collation.repertoire);
-  set_data_type(value_item->data_type());
-  max_length = value_item->max_length;
-  decimals = value_item->decimals;
+  set_data_type_from_item(value_item);
   fixed = true;
+
   return false;
 }
 
@@ -2243,6 +2169,47 @@ class Item_aggregate_ref : public Item_ref {
     return false;
   }
 };
+
+// Determine if a subquery can be evaluated before any window function in its
+// containing expression and, if it contains a window function, determine
+// whether it contains outer references also.
+static bool subquery_split(THD *thd, Item *item, bool *outer_refs_wf) {
+  assert(item->type() == Item::SUBQUERY_ITEM);
+
+  // This code is only relevant if we are splitting in an expression containing
+  // window functions.
+  if (!thd->lex->splitting_window_expression()) return false;
+
+  Item_subselect *subq = down_cast<Item_subselect *>(item);
+  switch (subq->subquery_type()) {
+    case Item_subselect::SCALAR_SUBQUERY:
+      // A single column scalar subquery can always be evaluated early
+      if (subq->is_single_column_scalar_subquery()) return true;
+      // Row subquery: its result can't be put into a single column so must be
+      // evaluated late in conjunction with windowing
+      // If a correlated row subquery is part of an expression containing
+      // a window function which can potentially use frame buffering, we need
+      // to handle items for any outer references during windowing
+      *outer_refs_wf = subq->contains_outer_references();
+      break;
+    case Item_subselect::EXISTS_SUBQUERY:
+      // Can safely always be evaluated before any window function; it has empty
+      // left_expr.
+      return true;
+    case Item_subselect::IN_SUBQUERY:
+    case Item_subselect::ANY_SUBQUERY:
+    case Item_subselect::ALL_SUBQUERY: {
+      Item_in_subselect *iis = down_cast<Item_in_subselect *>(subq);
+      *outer_refs_wf =
+          iis->left_expr->has_wf() && iis->contains_outer_references();
+      break;
+    }
+    default:
+      assert(false);
+  }
+
+  return false;
+}
 
 /**
   1. Replace set function and window function items with a reference.
@@ -2365,6 +2332,10 @@ bool Item::split_sum_func2(THD *thd, Ref_item_array ref_item_array,
                               Item_func::ROLLUP_GROUP_ITEM_FUNC)) {
     return false;
   }
+
+  // We need to handle outer references in subqueries in presence of wf with
+  // frame buffering
+  bool outer_refs_wf = false;
   /*
     For an expressions that is not itself an aggregate function, a
     grouping function or a window function but contain underlying
@@ -2384,15 +2355,12 @@ bool Item::split_sum_func2(THD *thd, Ref_item_array ref_item_array,
     if (split_sum_func(thd, ref_item_array, fields)) {
       return true;
     }
-  } else if (!const_for_execution() &&                                // (1)
-             (type() != REF_ITEM ||                                   // (2)
-              down_cast<Item_ref *>(this)->ref_type() ==              //
-                  Item_ref::VIEW_REF) &&                              //
-             (type() != SUBQUERY_ITEM ||                              // (3)
-              (down_cast<Item_subselect *>(this)->subquery_type() ==  //
-                   Item_subselect::SCALAR_SUBQUERY &&
-               down_cast<Item_subselect *>(this)
-                   ->is_single_column_scalar_subquery()))) {
+  } else if (!const_for_execution() &&                       // (1)
+             (type() != REF_ITEM ||                          // (2)
+              down_cast<Item_ref *>(this)->ref_type() ==     //
+                  Item_ref::VIEW_REF) &&                     //
+             (type() != SUBQUERY_ITEM ||                     //
+              subquery_split(thd, this, &outer_refs_wf))) {  // (3)
     /*
       (1) Replace non-constant item with a reference so that we can easily
       calculate it (in case of aggregate functions, grouping functions or
@@ -2402,15 +2370,12 @@ bool Item::split_sum_func2(THD *thd, Ref_item_array ref_item_array,
       Item_ref to allow fields from view being stored in tmp table.
 
       (3) In order to handle queries like:
-        SELECT FIRST_VALUE((SELECT .. FROM .. LIMIT 1)) OVER (..) FROM ...;
-      we need to move scalar subqueries to hidden fields too. But since window
-      functions accept only scalar and row subqueries, other types are excluded.
-      Indeed, a subquery of another type is wrapped in Item_in_optimizer at this
-      stage, so when splitting Item_in_optimizer, if we added the underlying
-      Item_subselect to "fields" below it would be later evaluated by
-      copy_funcs() (in tmp table processing), which would be incorrect as the
-      Item_subselect cannot be evaluated - as it must always be evaluated
-      through its parent Item_in_optimizer.
+           SELECT FIRST_VALUE((SELECT .. FROM .. LIMIT 1)) OVER (..) FROM ...;
+      If subquery_split returns false, we must evaluate the subquery after the
+      window functions. If so, we need to know whether there are any outer
+      references, since those will need to be carried forward with the windowing
+      temporary tables and references re-written to point to the windowing
+      buffers, cf. outer_refs_wf and code below.
     */
     DBUG_PRINT("info", ("replacing %s with reference", item_name.ptr()));
 
@@ -2452,6 +2417,7 @@ bool Item::split_sum_func2(THD *thd, Ref_item_array ref_item_array,
         &base_query_block->context, &ref_item_array[el], nullptr, nullptr,
         item_name.ptr(), depended_from);
     if (item_ref == nullptr) return true; /* purecov: inspected */
+    item_ref->increment_ref_count();
     item_ref->hidden = old_hidden;
     if (ref == nullptr) {
       assert(is_aggr_func);
@@ -2461,8 +2427,6 @@ bool Item::split_sum_func2(THD *thd, Ref_item_array ref_item_array,
       ref = down_cast<Item_sum *>(this)->referenced_by[0];
       assert(ref != nullptr);
     }
-    // WL#6570 remove-after-qa
-    assert(thd->stmt_arena->is_regular() || !thd->lex->is_exec_started());
     *ref = item_ref;
 
     /*
@@ -2471,6 +2435,32 @@ bool Item::split_sum_func2(THD *thd, Ref_item_array ref_item_array,
     */
     if (m_is_window_function && split_sum_func(thd, ref_item_array, fields)) {
       return true;
+    }
+  } else if (outer_refs_wf) {
+    // Make sure outer referenced fields are added to tmp table fields, so we
+    // can replace such fields with corresponding outer fields in windowing tmp
+    // table in presence of windowing frame buffers.
+    // See also possibly_outerize_replacement called (indirectly via
+    // ReplaceMaterializedItems) from CreateFramebufferTable.
+    auto *iis = down_cast<Item_subselect *>(this);
+    Mem_root_array<Item_field *> outer_flds(thd->mem_root);
+    if (iis->walk(&Item::collect_outer_field_processor,
+                  enum_walk::SUBQUERY_PREFIX,
+                  pointer_cast<uchar *>(&outer_flds)))
+      return true;
+    for (auto of : outer_flds) {
+      // Add referenced field as a hidden field if not already present
+      if (std::find_if((*fields).begin(), (*fields).end(),
+                       [of](Item *f) -> bool {
+                         return f->type() == FIELD_ITEM &&
+                                down_cast<Item_field *>(f)->field == of->field;
+                       }) == (*fields).end()) {
+        Item_field *new_field = new (thd->mem_root) Item_field(of->field);
+        if (new_field == nullptr) return true;
+        new_field->hidden = true;
+        ref_item_array[fields->size()] = new_field;
+        if (fields->push_front(new_field)) return true;
+      }
     }
   }
   return false;
@@ -2708,34 +2698,30 @@ bool agg_item_collations_for_comparison(DTCollation &c, const char *fname,
                               flags | MY_COLL_DISALLOW_NONE, 1));
 }
 
-bool agg_item_set_converter(DTCollation &coll, const char *fname, Item **args,
-                            uint nargs, uint, int item_sep, bool only_consts) {
-  Item *safe_args[2] = {nullptr, nullptr};
-
-  /*
-    For better error reporting: save the first and the second argument.
-    We need this only if the the number of args is 3 or 2:
-    - for a longer argument list, "Illegal mix of collations"
-      doesn't display each argument's characteristics.
-    - if nargs is 1, then this error cannot happen.
-  */
-  if (nargs >= 2 && nargs <= 3) {
-    safe_args[0] = args[0];
-    safe_args[1] = args[item_sep];
-  }
-
+bool convert_const_strings(DTCollation &coll, Item **args, uint nargs,
+                           int item_sep) {
   THD *thd = current_thd;
 
   uint i;
   Item **arg;
   for (i = 0, arg = args; i < nargs; i++, arg += item_sep) {
     size_t dummy_offset;
-    // If told so (from comparison code), only add converter for const values.
-    if (only_consts && !(*arg)->const_item()) continue;
     if (!String::needs_conversion(1, (*arg)->collation.collation,
-                                  coll.collation, &dummy_offset))
+                                  coll.collation, &dummy_offset)) {
+      /*
+        Update the collation for the underlying item, but notice that this is
+        only required, and safe, for a literal string value.
+      */
+      if ((*arg)->type() == Item::STRING_ITEM &&
+          coll.collation != (*arg)->collation.collation &&
+          (my_charset_same(coll.collation, (*arg)->collation.collation) ||
+           coll.collation == &my_charset_bin)) {
+        Item_string *string = down_cast<Item_string *>(*arg);
+        string->collation.set(coll.collation);
+        string->set_value_collation();
+      }
       continue;
-
+    }
     /*
       No needs to add converter if an "arg" is NUMERIC or DATETIME
       value (which is pure ASCII) and at the same time target DTCollation
@@ -2754,32 +2740,22 @@ bool agg_item_set_converter(DTCollation &coll, const char *fname, Item **args,
         my_charset_is_ascii_based(coll.collation))
       continue;
 
-    Item *conv = (*arg)->safe_charset_converter(thd, coll.collation);
-    // @todo - check why the constructors may return error
-    if (thd->is_error()) return true;
-    if (conv == nullptr &&
-        ((*arg)->collation.repertoire == MY_REPERTOIRE_ASCII))
-      conv = new Item_func_conv_charset(thd, *arg, coll.collation, true);
-
-    if (conv == nullptr) {
-      if (nargs >= 2 && nargs <= 3) {
-        /* restore the original arguments for better error message */
-        args[0] = safe_args[0];
-        args[item_sep] = safe_args[1];
-      }
-      my_coll_agg_error(args, nargs, fname, item_sep);
-      return true;
+    // Non-const values are converted at runtime
+    if (!(*arg)->may_evaluate_const(thd)) {
+      continue;
     }
+    Item *conv = (*arg)->convert_charset(thd, coll.collation);
+    if (conv == nullptr) return true;
+
+    assert(conv->fixed);
+
+    conv->disable_constant_propagation(nullptr);
 
     // Update the Item pointer in-place
     if (thd->lex->is_exec_started())
       thd->change_item_tree(arg, conv);
     else
       *arg = conv;
-
-    (*arg)->disable_constant_propagation(nullptr);
-
-    if (conv->fix_fields(thd, arg)) return true;
   }
 
   return false;
@@ -2815,11 +2791,10 @@ bool agg_item_set_converter(DTCollation &coll, const char *fname, Item **args,
 */
 
 bool agg_item_charsets(DTCollation &coll, const char *fname, Item **args,
-                       uint nargs, uint flags, int item_sep, bool only_consts) {
+                       uint nargs, uint flags, int item_sep) {
   if (agg_item_collations(coll, fname, args, nargs, flags, item_sep))
     return true;
-  return agg_item_set_converter(coll, fname, args, nargs, flags, item_sep,
-                                only_consts);
+  return convert_const_strings(coll, args, nargs, item_sep);
 }
 
 void Item_ident_for_show::make_field(Send_field *tmp_field) {
@@ -2856,15 +2831,13 @@ bool Item_ident_for_show::fix_fields(THD *, Item **) {
 
   @param thd         thread context
   @param context_arg Name resolution context for this field
-  @param tr          Table reference, provides table and schema name
-  @param f         Field reference, provides field name and original table name
+  @param f         Field reference, provides field name and original table name,
+                     as well as table reference with table and schema name.
 */
 
-Item_field::Item_field(THD *thd, Name_resolution_context *context_arg,
-                       Table_ref *tr, Field *f)
+Item_field::Item_field(THD *thd, Name_resolution_context *context_arg, Field *f)
     : Item_ident(context_arg, f->table->s->db.str, *f->table_name,
-                 f->field_name),
-      table_ref(tr) {
+                 f->field_name) {
   set_field(f);
 
   // Possibly override original names that were assigned from table reference:
@@ -2931,7 +2904,6 @@ bool Item_field::do_itemize(Parse_context *pc, Item **res) {
 
 Item_field::Item_field(THD *thd, Item_field *item)
     : Item_ident(thd, item),
-      table_ref(item->table_ref),
       field(item->field),
       result_field(item->result_field),
       m_multi_equality(item->m_multi_equality),
@@ -2939,6 +2911,7 @@ Item_field::Item_field(THD *thd, Item_field *item)
       no_constant_propagation(item->no_constant_propagation),
       have_privileges(item->have_privileges),
       any_privileges(item->any_privileges) {
+  m_table_ref = item->m_table_ref;
   collation.set(DERIVATION_IMPLICIT);
   if (item->m_orig_table_name != nullptr)
     m_orig_table_name = item->m_orig_table_name;
@@ -3016,20 +2989,20 @@ inline static uint32 adjust_max_effective_column_length(Field *field_par,
 }
 
 void Item_field::set_field(Field *field_par) {
-  table_ref = field_par->table->pos_in_table_list;
-  assert(table_ref == nullptr || table_ref->table == field_par->table);
+  m_table_ref = field_par->table->pos_in_table_list;
+  assert(m_table_ref == nullptr || m_table_ref->table == field_par->table);
   assert(field_par->field_index() != NO_FIELD_INDEX);
   field_index = field_par->field_index();
 
   field = result_field = field_par;  // for easy coding with fields
   set_nullable(field->is_nullable() || field->is_tmp_nullable() ||
                field->table->is_nullable());
-  if (table_ref != nullptr) {
-    table_name = table_ref->alias;
-    m_orig_db_name = table_ref->db;
+  if (m_table_ref != nullptr) {
+    table_name = m_table_ref->alias;
+    m_orig_db_name = m_table_ref->db;
     db_name = m_orig_db_name;
-    m_orig_table_name = table_ref->table_name;
-    if (table_ref->is_derived()) {
+    m_orig_table_name = m_table_ref->table_name;
+    if (m_table_ref->is_derived()) {
       // Show underlying field's information
       m_orig_db_name = field_par->orig_db_name;
       m_orig_table_name = field_par->orig_table_name;
@@ -3076,9 +3049,9 @@ const char *Item_ident::full_name() const {
       m_orig_field_name != nullptr ? m_orig_field_name : field_name;
   char *tmp;
   if (table_name == nullptr || f_name == nullptr)
-    return f_name != nullptr
-               ? f_name
-               : item_name.is_set() ? item_name.ptr() : "tmp_field";
+    return f_name != nullptr    ? f_name
+           : item_name.is_set() ? item_name.ptr()
+                                : "tmp_field";
   if (db_name && db_name[0]) {
     tmp = pointer_cast<char *>(
         (*THR_MALLOC)
@@ -3107,22 +3080,22 @@ void Item_ident::print(const THD *thd, String *str, enum_query_type query_type,
   if (lower_case_table_names == 1 ||
       // mode '2' does not apply to aliases:
       (lower_case_table_names == 2 && !alias_name_used())) {
-    if (table_name_arg && table_name_arg[0]) {
+    if (!(query_type & QT_NO_TABLE) && table_name_arg && table_name_arg[0]) {
       my_stpcpy(t_name_buff, table_name_arg);
       my_casedn_str(files_charset_info, t_name_buff);
       t_name = t_name_buff;
     }
-    if (db_name_arg && db_name_arg[0]) {
+    if (!(query_type & QT_NO_DB) && db_name_arg && db_name_arg[0]) {
       my_stpcpy(d_name_buff, db_name_arg);
       my_casedn_str(files_charset_info, d_name_buff);
       d_name = d_name_buff;
     }
   }
 
-  if (table_name_arg == nullptr || f_name == nullptr || !f_name[0]) {
-    const char *nm = (f_name != nullptr && f_name[0])
-                         ? f_name
-                         : item_name.is_set() ? item_name.ptr() : "tmp_field";
+  if (table_name_arg == nullptr || f_name == nullptr || f_name[0] == '\0') {
+    const char *nm = (f_name != nullptr && f_name[0] != '\0') ? f_name
+                     : item_name.is_set()                     ? item_name.ptr()
+                                                              : "tmp_field";
     append_identifier(thd, str, nm, strlen(nm));
     return;
   }
@@ -3226,7 +3199,7 @@ bool Item_field::get_timeval(my_timeval *tm, int *warnings) {
   return false;
 }
 
-bool Item_field::eq(const Item *item, bool) const {
+bool Item_field::eq(const Item *item) const {
   const Item *real_item = item->real_item();
   if (real_item->type() != FIELD_ITEM) return false;
 
@@ -3242,8 +3215,10 @@ bool Item_field::eq(const Item *item, bool) const {
     where the semijoin-merged 'a' and the top query's 'a' are both named t1.a
     and coexist in the top query.
   */
-  if (fixed && item_field->fixed)
-    return base_item_field()->field == item_field->base_item_field()->field;
+  if (fixed && item_field->fixed) {
+    return base_item_field()->field == item_field->base_item_field()->field &&
+           collation.collation == item->collation.collation;
+  }
   /*
     We may come here when we are trying to find a function in a GROUP BY
     clause from the select list.
@@ -3263,9 +3238,9 @@ bool Item_field::eq(const Item *item, bool) const {
 }
 
 table_map Item_field::used_tables() const {
-  if (!table_ref) return 1;  // Temporary table; always table 0
-  if (table_ref->table->const_table) return 0;  // const item
-  return depended_from ? OUTER_REF_TABLE_BIT : table_ref->map();
+  if (m_table_ref == nullptr) return 1;  // Temporary table; always table 0
+  if (m_table_ref->table->const_table) return 0;  // const item
+  return depended_from != nullptr ? OUTER_REF_TABLE_BIT : m_table_ref->map();
 }
 
 bool Item_field::used_tables_for_level(uchar *arg) {
@@ -3274,8 +3249,8 @@ bool Item_field::used_tables_for_level(uchar *arg) {
   assert(!tr->table->const_table);
   Used_tables *const ut = pointer_cast<Used_tables *>(arg);
   /*
-    When the qualifying query for the field (table_ref->query_block) is the same
-    level as the requested level, add the table's map.
+    When the qualifying query for the field (m_table_ref->query_block) is
+    the same level as the requested level, add the table's map.
     When the qualifying query for the field is outer relative to the
     requested level, add an outer reference.
   */
@@ -3356,10 +3331,10 @@ void Item_ident::fix_after_pullout(Query_block *parent_query_block,
 Item *Item_field::get_tmp_table_item(THD *thd) {
   DBUG_TRACE;
   Item_field *new_item = new Item_field(thd, this);
-  if (!new_item) return nullptr; /* purecov: inspected */
+  if (new_item == nullptr) return nullptr; /* purecov: inspected */
 
   new_item->field = new_item->result_field;
-  new_item->table_ref = nullptr;  // Internal temporary table has no table_ref
+  new_item->m_table_ref = nullptr;  // Internal temporary table has no table ref
 
   return new_item;
 }
@@ -3521,8 +3496,8 @@ void Item_decimal::print(const THD *, String *str,
   str->append(tmp);
 }
 
-bool Item_decimal::eq(const Item *item, bool) const {
-  if (type() == item->type() && item->basic_const_item()) {
+bool Item_decimal::eq(const Item *item) const {
+  if (type() == item->type()) {
     /*
       We need to cast off const to call val_decimal(). This should
       be OK for a basic constant. Additionally, we can pass nullptr as
@@ -3713,9 +3688,7 @@ my_decimal *Item_string::val_decimal(my_decimal *decimal_value) {
   return val_decimal_from_string(decimal_value);
 }
 
-bool Item_null::eq(const Item *item, bool) const {
-  return item->type() == type();
-}
+bool Item_null::eq(const Item *item) const { return item->type() == type(); }
 
 double Item_null::val_real() {
   // following assert is redundant, because fixed=1 assigned in constructor
@@ -3742,11 +3715,6 @@ my_decimal *Item_null::val_decimal(my_decimal *) { return nullptr; }
 bool Item_null::val_json(Json_wrapper *) {
   null_value = true;
   return false;
-}
-
-Item *Item_null::safe_charset_converter(THD *, const CHARSET_INFO *tocs) {
-  collation.set(tocs);
-  return this;
 }
 
 /*********************** Item_param related ******************************/
@@ -3915,6 +3883,10 @@ bool Item_param::propagate_type(THD *, const Type_properties &type) {
       break;
     case MYSQL_TYPE_JSON:
       set_data_type_json();
+      break;
+    case MYSQL_TYPE_VECTOR:
+      set_data_type_vector(
+          Field_vector::dimension_bytes(Field_vector::max_dimensions));
       break;
     case MYSQL_TYPE_TINY_BLOB:
     case MYSQL_TYPE_MEDIUM_BLOB:
@@ -4101,11 +4073,10 @@ bool Item_param::set_str(const char *str, size_t length) {
     - when the source string is a binary string, keep it as-is and perform
       no conversion.
   */
-  set_collation_actual(collation_source() == &my_charset_bin
-                           ? &my_charset_bin
-                           : collation.collation != &my_charset_bin
-                                 ? collation.collation
-                                 : current_thd->variables.collation_connection);
+  set_collation_actual(collation_source() == &my_charset_bin ? &my_charset_bin
+                       : collation.collation != &my_charset_bin
+                           ? collation.collation
+                           : current_thd->variables.collation_connection);
 
   m_param_state = STRING_VALUE;
   return false;
@@ -4883,7 +4854,7 @@ Item *Item_param::clone_item() const {
   return nullptr;
 }
 
-bool Item_param::eq(const Item *arg, bool) const { return this == arg; }
+bool Item_param::eq(const Item *arg) const { return this == arg; }
 
 /* End of Item_param related */
 
@@ -5254,7 +5225,7 @@ static Item **find_field_in_group_list(Item *find_item, ORDER *group_list) {
         found_match_degree = cur_match_degree;
         found_group = cur_group;
       } else if (found_group && (cur_match_degree == found_match_degree) &&
-                 !(*(found_group->item))->eq(cur_field, false)) {
+                 !(*(found_group->item))->eq(cur_field)) {
         /*
           If the current resolve candidate matches equally well as the current
           best match, they must reference the same column, otherwise the field
@@ -5345,7 +5316,7 @@ static bool resolve_ref_in_select_and_group(THD *thd, Item_ident *ref,
 
     /* Check if the fields found in SELECT and GROUP BY are the same field. */
     if (group_by_ref != nullptr && select_ref != nullptr &&
-        !((*group_by_ref)->eq(*select_ref, false))) {
+        !((*group_by_ref)->eq(*select_ref))) {
       push_warning_printf(thd, Sql_condition::SL_WARNING, ER_NON_UNIQ_ERROR,
                           ER_THD(thd, ER_NON_UNIQ_ERROR), ref->full_name(),
                           thd->where);
@@ -5392,21 +5363,20 @@ static bool resolve_ref_in_select_and_group(THD *thd, Item_ident *ref,
 }
 
 /**
-  Resolve the name of an outer select column reference.
+  Resolve the name of a column that may be an outer reference.
 
-  The method resolves the column reference represented by 'this' as a column
-  present in outer selects that contain current select.
+  The function resolves the column reference represented by 'this' as a column
+  present in outer query blocks (which contain the current query block).
 
-  In prepared statements, because of cache, find_field_in_tables()
-  can resolve fields even if they don't belong to current context.
-  In this case this method only finds appropriate context and marks
-  current select as dependent. The found reference of field should be
-  provided in 'from_field'.
+  @param thd              current thread
+  @param[out] base_field  found field reference
+  @param[out] ref_field   Indirect reference to field, typically a view column
+  @param[out] complete    If true, resolving is complete, otherwise caller
+                          must continue. TODO: SPECIFY BETTER!!!
 
-  @param[in] thd             current thread
-  @param[in,out] from_field  found field reference or (Field*)not_found_field
-  @param[in,out] reference   view column if this item was resolved to a
-    view column
+  @returns false if resolving successful, true otherwise
+           if successful, a found field is returned in base_field,
+           or a reference to a field (Item_ref) is returned in ref_field.
 
   @note
     This is the inner loop of Item_field::fix_fields:
@@ -5421,28 +5391,22 @@ static bool resolve_ref_in_select_and_group(THD *thd, Item_ident *ref,
             [in table T_j] in the SELECT and GROUP clauses of Q_k.
         }
   @endcode
-
-  @retval
-    1   column succefully resolved and fix_fields() should continue.
-  @retval
-    0   column fully fixed and fix_fields() should return false
-  @retval
-    -1  error occurred
 */
 
-int Item_field::fix_outer_field(THD *thd, Field **from_field,
-                                Item **reference) {
-  const bool field_found =
-      (*from_field != nullptr) && (*from_field != not_found_field);
-  bool upward_lookup = false;
+bool Item_field::fix_outer_field(THD *thd, Field **base_field,
+                                 Item_ident **ref_field, bool *complete) {
+  *complete = false;
+
+  assert(*base_field == nullptr && *ref_field == nullptr);
+  bool has_outer_context = context->outer_context != nullptr;
 
   /*
-    If there are outer contexts (outer selects, but current select is
+    If there are outer contexts (outer query blocks, but current query block is
     not derived table or view) try to resolve this reference in the
     outer contexts.
 
-    We treat each subselect as a separate namespace, so that different
-    subselects may contain columns with the same names. The subselects
+    Each (sub)query is treated as a separate namespace, so that different
+    query blocks may contain columns with the same names. The query blocks
     are searched starting from the innermost.
   */
   Name_resolution_context *last_checked_context = context;
@@ -5452,11 +5416,12 @@ int Item_field::fix_outer_field(THD *thd, Field **from_field,
   Query_expression *cur_query_expression = nullptr;
   enum_parsing_context place = CTX_NONE;
   Query_block *cur_query_block = context->query_block;
+  Find_field_result result = FIELD_NOT_FOUND;
+
   for (; outer_context; outer_context = outer_context->outer_context) {
     select = outer_context->query_block;
 
     last_checked_context = outer_context;
-    upward_lookup = true;
 
     /*
       We want to locate the qualifying query of our Item_field 'this'.
@@ -5495,7 +5460,7 @@ int Item_field::fix_outer_field(THD *thd, Field **from_field,
       the walk currently is.
     */
     while (true) {
-      if (!cur_query_block) goto loop;
+      if (cur_query_block == nullptr) goto loop;
       DBUG_PRINT("outer_field",
                  ("in loop, in ctx of SL#%d", cur_query_block->select_number));
       assert(cur_query_block != select);
@@ -5521,128 +5486,102 @@ int Item_field::fix_outer_field(THD *thd, Field **from_field,
     // A non-lateral derived table cannot see tables of its owning query
     if (place == CTX_DERIVED && select->end_lateral_table == nullptr) continue;
 
-    /*
-      If field was already found by first call
-      to find_field_in_tables(), we only need to find appropriate context.
-    */
-    if (field_found &&
-        outer_context->query_block != cached_table->query_block) {
-      DBUG_PRINT("outer_field", ("but cached is of SL#%d, continue",
-                                 cached_table->query_block->select_number));
-      continue;
+    if (find_field_in_tables(
+            thd, this, outer_context->first_name_resolution_table,
+            outer_context->last_name_resolution_table, REPORT_NON_UNIQUE,
+            thd->want_privilege, &result, base_field, ref_field)) {
+      return true;
     }
+    if (result == BASE_FIELD_FOUND) {  // base_field is the resolved field
+      assert(*base_field != nullptr);
+      cur_query_expression->accumulate_used_tables(
+          (*base_field)->table->pos_in_table_list->map());
+      set_field(*base_field);
 
-    /*
-      In case of a view, find_field_in_tables() writes the pointer to
-      the found view field into '*reference', in other words, it
-      substitutes this Item_field with the found expression.
-    */
-    if (field_found ||
-        (*from_field = find_field_in_tables(
-             thd, this, outer_context->first_name_resolution_table,
-             outer_context->last_name_resolution_table, reference,
-             IGNORE_EXCEPT_NON_UNIQUE, thd->want_privilege, true)) !=
-            not_found_field) {
-      if (*from_field) {
-        if (*from_field != view_ref_found) {
-          cur_query_expression->accumulate_used_tables(
-              (*from_field)->table->pos_in_table_list->map());
-          set_field(*from_field);
-
-          if (!last_checked_context->query_block->having_fix_field &&
-              select->group_list.elements &&
-              (place == CTX_SELECT_LIST || place == CTX_HAVING)) {
-            Item_outer_ref *rf;
-            /*
-              If an outer field is resolved in a grouping select then it
-              is replaced for an Item_outer_ref object. Otherwise an
-              Item_field object is used.
-            */
-            if (!(rf = new Item_outer_ref(context, this, select))) return -1;
-            rf->in_sum_func = thd->lex->in_sum_func;
-            *reference = rf;
-            // WL#6570 remove-after-qa
-            assert(thd->stmt_arena->is_regular() ||
-                   !thd->lex->is_exec_started());
-            if (rf->fix_fields(thd, nullptr)) return -1;
-          }
-          /*
-            A reference is resolved to a nest level that's outer or the same as
-            the nest level of the enclosing set function : adjust the value of
-            max_aggr_level for the function if it's needed.
-          */
-          if (thd->lex->in_sum_func &&
-              thd->lex->in_sum_func->base_query_block->nest_level >=
-                  select->nest_level) {
-            const Item::Type ref_type = (*reference)->type();
-            thd->lex->in_sum_func->max_aggr_level =
-                max(thd->lex->in_sum_func->max_aggr_level,
-                    int8(select->nest_level));
-            set_field(*from_field);
-            fixed = true;
-            mark_as_dependent(thd, last_checked_context->query_block,
-                              context->query_block, this,
-                              ((ref_type == REF_ITEM || ref_type == FIELD_ITEM)
-                                   ? (Item_ident *)(*reference)
-                                   : nullptr));
-            return 0;
-          }
-        } else {
-          const Item::Type ref_type = (*reference)->type();
-          Used_tables ut(select);
-          (void)(*reference)
-              ->walk(&Item::used_tables_for_level, enum_walk::SUBQUERY_POSTFIX,
-                     pointer_cast<uchar *>(&ut));
-          cur_query_expression->accumulate_used_tables(ut.used_tables);
-
-          if (select->group_list.elements &&
-              (place == CTX_HAVING || place == CTX_QUALIFY)) {
-            /*
-              If an outer field is resolved in a grouping query block then it
-              is replaced with an Item_outer_ref object. Otherwise an
-              Item_field object is used.
-            */
-            Item_outer_ref *const rf = new Item_outer_ref(
-                context, down_cast<Item_ident *>(*reference), select);
-            if (rf == nullptr) return -1;
-            rf->in_sum_func = thd->lex->in_sum_func;
-            *reference = rf;
-            // WL#6570 remove-after-qa
-            assert(thd->stmt_arena->is_regular() ||
-                   !thd->lex->is_exec_started());
-            if (rf->fix_fields(thd, nullptr)) return -1;
-          }
-
-          if (thd->lex->in_sum_func &&
-              thd->lex->in_sum_func->base_query_block->nest_level >=
-                  select->nest_level)
-            thd->lex->in_sum_func->max_aggr_level =
-                max(thd->lex->in_sum_func->max_aggr_level,
-                    int8(select->nest_level));
-
-          if ((*reference)->used_tables() != 0)
-            mark_as_dependent(thd, last_checked_context->query_block,
-                              context->query_block, this,
-                              ref_type == REF_ITEM || ref_type == FIELD_ITEM
-                                  ? down_cast<Item_ident *>(*reference)
-                                  : nullptr);
-          /*
-            A reference to a view field had been found and we
-            substituted it instead of this Item (find_field_in_tables
-            does it by assigning the new value to *reference), so now
-            we can return from this function.
-          */
-          return 0;
+      if (!last_checked_context->query_block->having_fix_field &&
+          select->is_explicitly_grouped() &&
+          (place == CTX_SELECT_LIST || place == CTX_HAVING)) {
+        /*
+          If a field is resolved in an outer grouping query block then it
+          is replaced with an Item_outer_ref object. Otherwise, the
+          Item_field object is used.
+        */
+        Item_outer_ref *rf = new Item_outer_ref(context, this, select);
+        if (rf == nullptr) return true;
+        rf->in_sum_func = thd->lex->in_sum_func;
+        *ref_field = rf;
+        if (rf->fix_fields(thd, nullptr)) return true;
+      }
+      /*
+        A column reference is resolved to a nest level that is outer or
+        the same as the nest level of the enclosing set function :
+        adjust the value of max_aggr_level for the function if needed.
+      */
+      if (thd->lex->in_sum_func != nullptr &&
+          thd->lex->in_sum_func->base_query_block->nest_level >=
+              select->nest_level) {
+        thd->lex->in_sum_func->max_aggr_level = max(
+            thd->lex->in_sum_func->max_aggr_level, int8(select->nest_level));
+        set_field(*base_field);
+        fixed = true;
+        mark_as_dependent(thd, last_checked_context->query_block,
+                          context->query_block, this, *ref_field);
+        *complete = true;
+        if (*ref_field != nullptr) {
+          *base_field = nullptr;
         }
+        return false;
+      }
+      if (*ref_field != nullptr) {
+        *base_field = nullptr;
       }
       break;
+    } else if (result == VIEW_FIELD_FOUND) {
+      assert(*ref_field != nullptr);
+      Used_tables ut(select);
+      (void)(*ref_field)
+          ->walk(&Item::used_tables_for_level, enum_walk::SUBQUERY_POSTFIX,
+                 pointer_cast<uchar *>(&ut));
+      cur_query_expression->accumulate_used_tables(ut.used_tables);
+
+      if (select->is_explicitly_grouped() &&
+          (place == CTX_HAVING || place == CTX_QUALIFY)) {
+        /*
+          If an outer field is resolved in a grouping query block then it
+          is replaced with an Item_outer_ref object. Otherwise an
+          Item_field object is used.
+        */
+        Item_outer_ref *const rf =
+            new Item_outer_ref(context, *ref_field, select);
+        if (rf == nullptr) return true;
+        rf->in_sum_func = thd->lex->in_sum_func;
+        *ref_field = rf;
+        if (rf->fix_fields(thd, nullptr)) return true;
+      }
+
+      if (thd->lex->in_sum_func != nullptr &&
+          thd->lex->in_sum_func->base_query_block->nest_level >=
+              select->nest_level)
+        thd->lex->in_sum_func->max_aggr_level = max(
+            thd->lex->in_sum_func->max_aggr_level, int8(select->nest_level));
+
+      if ((*ref_field)->used_tables() != 0) {
+        mark_as_dependent(thd, last_checked_context->query_block,
+                          context->query_block, this, *ref_field);
+      }
+      /*
+        A reference to a view field had been found and returned in ref_field,
+        so resolving is now complete.
+      */
+      *complete = true;
+      return false;
     }
 
-    /* Search in SELECT and GROUP lists of the outer select. */
-    if (select_alias_referencable(place) &&
+    // Search in SELECT and GROUP lists of this outer query block.
+    if (select_alias_referencable(place) && table_name == nullptr &&
         outer_context->resolve_in_select_list) {
       if (resolve_ref_in_select_and_group(thd, this, select, &ref)) {
-        return -1; /* Some error occurred (e.g. ambiguous names). */
+        return true; /* Some error occurred (e.g. ambiguous names). */
       }
       if (ref != nullptr) {
         // The item which we found is already fixed
@@ -5653,9 +5592,9 @@ int Item_field::fix_outer_field(THD *thd, Field **from_field,
     }
 
     /*
-      Reference is not found in this select => this subquery depend on
-      outer select (or we just trying to find wrong identifier, in this
-      case it does not matter which used tables bits we set)
+      Reference is not found in this query block => this subquery depend on
+      outer query block (or we just trying to find wrong identifier, in this
+      case it does not matter which used tables bits we set) TODO - FIX COMMENT
     */
     DBUG_PRINT("outer_field",
                ("out of loop, reached end of big block, continue"));
@@ -5663,19 +5602,20 @@ int Item_field::fix_outer_field(THD *thd, Field **from_field,
   loop:;
   }
 
-  if (!*from_field) return -1;
-  if (ref == nullptr && *from_field == not_found_field) {
-    if (upward_lookup) {
+  if (ref == nullptr && result == FIELD_NOT_FOUND) {
+    if (has_outer_context) {
       // We can't say exactly what absent table or field
       my_error(ER_BAD_FIELD_ERROR, MYF(0), full_name(), thd->where);
     } else {
-      /* Call find_field_in_tables only to report the error */
-      find_field_in_tables(thd, this, context->first_name_resolution_table,
-                           context->last_name_resolution_table, reference,
-                           REPORT_ALL_ERRORS,
-                           any_privileges ? 0 : thd->want_privilege, true);
+      // Call find_field_in_tables to report error based on original context.
+      if (find_field_in_tables(thd, this, context->first_name_resolution_table,
+                               context->last_name_resolution_table,
+                               REPORT_ALL_ERRORS,
+                               any_privileges ? 0 : thd->want_privilege,
+                               &result, &field, ref_field))
+        return true;
     }
-    return -1;
+    return true;
   } else if (ref != nullptr) {
     Item *save;
     Item_ref *rf;
@@ -5697,47 +5637,39 @@ int Item_field::fix_outer_field(THD *thd, Field **from_field,
              : new Item_outer_ref(context, ref, db_name, table_name, field_name,
                                   m_alias_of_expr, select);
     *ref = save;
-    if (!rf) return -1;
+    if (rf == nullptr) return true;
 
     if (!use_plain_ref)
       ((Item_outer_ref *)rf)->in_sum_func = thd->lex->in_sum_func;
 
-    *reference = rf;
-    // WL#6570 remove-after-qa
-    assert(thd->stmt_arena->is_regular() || !thd->lex->is_exec_started());
+    *ref_field = rf;
     /*
       rf is Item_ref => never substitute other items (in this case)
       during fix_fields() => we can use rf after fix_fields()
     */
     assert(!rf->fixed);  // Assured by Item_ref()
-    if (rf->fix_fields(thd, reference) || rf->check_cols(1)) return -1;
+    if (rf->fix_fields(thd, pointer_cast<Item **>(ref_field)) ||
+        rf->check_cols(1)) {
+      return true;
+    }
     if (rf->used_tables() != 0)
       mark_as_dependent(thd, last_checked_context->query_block,
                         context->query_block, this, rf);
-    return 0;
+    *complete = true;
   } else {
     mark_as_dependent(thd, last_checked_context->query_block,
-                      context->query_block, this, (Item_ident *)*reference);
+                      context->query_block, this, *ref_field);
     if (last_checked_context->query_block->having_fix_field) {
-      Item_ref *rf = new Item_ref(
-          context, cached_table->db[0] ? cached_table->db : nullptr,
-          cached_table->alias, field_name);
-      if (rf == nullptr) return -1;
-      *reference = rf;
-      // WL#6570 remove-after-qa
-      assert(thd->stmt_arena->is_regular() || !thd->lex->is_exec_started());
-      /*
-        rf is Item_ref => never substitute other items (in this case)
-        during fix_fields() => we can use rf after fix_fields()
-      */
-      assert(!rf->fixed);  // Assured by Item_ref()
-      if (rf->fix_fields(thd, reference) || (*reference)->check_cols(1)) {
-        return -1;
-      }
-      return 0;
+      Item **pitem = last_checked_context->query_block->add_hidden_item(this);
+
+      Item_ref *rf = new Item_ref(context, pitem, field_name);
+      if (rf == nullptr) return true;
+      *ref_field = rf;
+      *base_field = nullptr;
+      *complete = true;
     }
   }
-  return 1;
+  return false;
 }
 
 /**
@@ -5859,9 +5791,8 @@ bool is_null_on_empty_table(THD *thd, Item_field *i) {
   For the case where a table reference is already set for the field,
   we just need to make a call to set_field(). This is true for a cloned
   field used during condition pushdown to derived tables. A cloned field
-  inherits table reference, depended_from, cached_table, context and field
-  from the original field. set_field() ensures all other members are set
-  correctly.
+  inherits table reference, depended_from, context and field from the original
+  field. set_field() ensures all other members are set correctly.
 
   @param[in]     thd        current thread
   @param[in,out] reference  view column if this item was resolved to a
@@ -5872,43 +5803,40 @@ bool is_null_on_empty_table(THD *thd, Item_field *i) {
 
 bool Item_field::fix_fields(THD *thd, Item **reference) {
   assert(!fixed);
-  Field *from_field = not_found_field;
-  bool outer_fixed = false;
+  Field *base_field = nullptr;
+  Item_ident *ref_field = nullptr;
+
   Query_block *qb = thd->lex->current_query_block();
 
   Internal_error_handler_holder<View_error_handler, Table_ref> view_handler(
       thd, context->view_error_handler, context->view_error_handler_arg);
 
-  if (table_ref != nullptr) {
+  if (m_table_ref != nullptr) {
     // This is a cloned field (used during condition pushdown to derived
     // tables). It has table reference and the field too. Make a call to
     // set_field() to ensure everything else gets set correctly.
-    Table_ref *orig_table_ref = table_ref;
+    Table_ref *orig_table_ref = m_table_ref;
     set_field(field);
-    // Note that the call to set_field() above would have set the "table_ref"
+    // Note that the call to set_field() above would have set the "m_table_ref"
     // derived from field's table which in most cases is same as the already
-    // set "table_ref". However, in case of update statements, while setting
+    // set "m_table_ref". However, in case of update statements, while setting
     // up update_tables, table references are changed. Since condition pushdown
     // happens after this setup, we must make sure we set the original table
     // reference for the field.
-    table_ref = orig_table_ref;
+    m_table_ref = orig_table_ref;
     return false;
   }
   assert(field == nullptr);
-  /*
-    In case of view, find_field_in_tables() write pointer to view field
-    expression to 'reference', i.e. it substitute that expression instead
-    of this Item_field
-  */
-  from_field = find_field_in_tables(
-      thd, this, context->first_name_resolution_table,
-      context->last_name_resolution_table, reference,
-      thd->lex->use_only_table_context ? REPORT_ALL_ERRORS
-                                       : IGNORE_EXCEPT_NON_UNIQUE,
-      any_privileges ? 0 : thd->want_privilege, true);
-  if (thd->is_error()) return true;
-  if (from_field == not_found_field || from_field == nullptr) {
-    int ret;
+
+  Find_field_result result;
+  int report_error =
+      thd->lex->use_only_table_context ? REPORT_ALL_ERRORS : REPORT_NON_UNIQUE;
+  if (find_field_in_tables(thd, this, context->first_name_resolution_table,
+                           context->last_name_resolution_table, report_error,
+                           any_privileges ? 0 : thd->want_privilege, &result,
+                           &base_field, &ref_field))
+    return true;
+  if (result == FIELD_NOT_FOUND) {
     // Check current query block's item_list for aliased fields
     if (qb->is_item_list_lookup) {
       uint counter;
@@ -5928,19 +5856,12 @@ bool Item_field::fix_fields(THD *thd, Item **reference) {
             the Item_field instance in place.
           */
 
-          Item_field *const item_field = (Item_field *)(*res);
+          Item_field *const item_field = down_cast<Item_field *>(*res);
           Field *const new_field = item_field->field;
 
-          if (new_field == nullptr) {
-            /* The column to which we link isn't valid. */
-            my_error(ER_BAD_FIELD_ERROR, MYF(0), item_field->item_name.ptr(),
-                     thd->where);
-            return true;
-          }
+          assert(new_field != nullptr);
 
           set_field(new_field);
-
-          cached_table = table_ref;
 
           // The found column may be an outer reference
           if (item_field->depended_from)
@@ -5975,50 +5896,33 @@ bool Item_field::fix_fields(THD *thd, Item **reference) {
                            resolution == RESOLVED_AGAINST_ALIAS);
           if (rf == nullptr) return true;
 
-          if (!rf->fixed) {
-            // No need for recursive resolving of aliases.
-            const bool group_fix_field = qb->group_fix_field;
-            qb->group_fix_field = false;
-            if (rf->fix_fields(thd, (Item **)&rf) || rf->check_cols(1))
-              return true;
-            qb->group_fix_field = group_fix_field;
-          }
+          assert(rf->fixed);
+
           *reference = rf;
-          // WL#6570 remove-after-qa
-          assert(thd->stmt_arena->is_regular() || !thd->lex->is_exec_started());
 
           return false;
         }
       }
     }
-    if ((ret = fix_outer_field(thd, &from_field, reference)) < 0) return true;
-    outer_fixed = true;
-    if (!ret) return false;
+    bool complete;
+    if (fix_outer_field(thd, &base_field, &ref_field, &complete)) {
+      return true;
+    }
+    assert(!(base_field != nullptr && ref_field != nullptr));
+    if (complete) {  // TODO verify full semantics of "complete"
+      if (ref_field != nullptr) {
+        *reference = ref_field;
+      }
+      return false;
+    }
   }
-  /*
-    We should resolve this as an outer field reference if
-    1. we haven't done it before, and
-    2. the query_block of the table that contains this field is
-       different from the query_block of the current name resolution
-       context.
-   */
-  if (!outer_fixed &&                                                       // 1
-      cached_table && cached_table->query_block && context->query_block &&  // 2
-      cached_table->query_block != context->query_block) {
-    int ret;
-    if ((ret = fix_outer_field(thd, &from_field, reference)) < 0) return true;
-    outer_fixed = true;
-    if (!ret) return false;
-  }
-
+  assert(base_field != nullptr ||
+         context->query_block == ref_field->context->query_block);
   /*
     If inside an aggregation function, set the correct aggregation level.
     Even if a view reference is found, the level is still the query block
     associated with the context of the current item:
   */
-  assert(from_field != view_ref_found ||
-         context->query_block ==
-             dynamic_cast<Item_ident *>(*reference)->context->query_block);
   if (thd->lex->in_sum_func &&
       thd->lex->in_sum_func->base_query_block->nest_level ==
           context->query_block->nest_level)
@@ -6026,43 +5930,46 @@ bool Item_field::fix_fields(THD *thd, Item **reference) {
         max(thd->lex->in_sum_func->max_aggr_level,
             int8(context->query_block->nest_level));
 
-  // If view column reference, Item in *reference is completely resolved:
-  if (from_field == view_ref_found) {
+  // If this is a view column reference, returned item is completely resolved:
+  if (ref_field != nullptr) {
     if (is_null_on_empty_table(thd, this)) {
-      (*reference)->set_nullable(true);
-      if ((*reference)->real_item()->type() == Item::FIELD_ITEM) {
+      ref_field->set_nullable(true);
+      if (ref_field->real_item()->type() == Item::FIELD_ITEM) {
         // See below for explanation.
         TABLE *table =
-            down_cast<Item_field *>((*reference)->real_item())->field->table;
+            down_cast<Item_field *>(ref_field->real_item())->field->table;
         table->set_nullable();
       }
     }
+    *reference = ref_field;
+
     return false;
   }
 
-  if (from_field->is_hidden_by_system()) {
+  if (base_field->is_hidden_by_system()) {
     /*
       This field is either hidden by the storage engine or SQL layer. In
       either case, report column "not found" error.
     */
-    my_error(ER_BAD_FIELD_ERROR, MYF(0), from_field->field_name, thd->where);
+    my_error(ER_BAD_FIELD_ERROR, MYF(0), base_field->field_name, thd->where);
     return true;
   }
 
   // Not view reference, not outer reference; need to set properties:
-  set_field(from_field);
+  set_field(base_field);
 
   if (any_privileges) {
-    const char *db, *tab;
-    db = cached_table->get_db_name();
-    tab = cached_table->get_table_name();
-    assert(field->table == table_ref->table);
-    if (!(have_privileges =
-              (get_column_grant(thd, &table_ref->grant, db, tab, field_name) &
-               VIEW_ANY_ACL))) {
+    const char *db_name = m_table_ref->get_db_name();
+    const char *table_name = m_table_ref->get_table_name();
+    assert(field->table == m_table_ref->table);
+    have_privileges = get_column_grant(thd, &m_table_ref->grant, db_name,
+                                       table_name, field_name) &
+                      VIEW_ANY_ACL;
+    if (!have_privileges) {
       my_error(ER_COLUMNACCESS_DENIED_ERROR, MYF(0), "ANY",
                thd->security_context()->priv_user().str,
-               thd->security_context()->host_or_ip().str, field_name, tab);
+               thd->security_context()->host_or_ip().str, field_name,
+               table_name);
       return true;
     }
   }
@@ -6085,33 +5992,28 @@ void Item_field::bind_fields() {
   assert(field_index != NO_FIELD_INDEX);
   /*
     Check consistency of Item_field objects:
-    - If we have no table_ref, then field must be a valid pointer.
+    - If we have no m_table_ref, then field must be a valid pointer.
       (Applicable for expressions of generated columns).
     - Some temporary tables used for materialization (derived tables)
-      have permanent metadata, hence both table_ref and field are valid.
-    - All other tables that have a valid table_ref do not have a valid
+      have permanent metadata, hence both m_table_ref and field are valid.
+    - All other tables that have a valid m_table_ref do not have a valid
       field reference at this point.
   */
-  assert((table_ref == nullptr && field != nullptr) ||
-         (table_ref != nullptr &&
-          (table_ref->is_view_or_derived() ||
-           table_ref->is_recursive_reference()) &&
+  assert((m_table_ref == nullptr && field != nullptr) ||
+         (m_table_ref != nullptr &&
+          (m_table_ref->is_view_or_derived() ||
+           m_table_ref->is_recursive_reference()) &&
           field != nullptr) ||
-         (table_ref != nullptr &&
-          !(table_ref->is_view_or_derived() ||
-            table_ref->is_recursive_reference()) &&
+         (m_table_ref != nullptr &&
+          !(m_table_ref->is_view_or_derived() ||
+            m_table_ref->is_recursive_reference()) &&
           field == nullptr));
-  if (table_ref != nullptr && table_ref->table == nullptr) return;
+  if (m_table_ref != nullptr && m_table_ref->table == nullptr) return;
   if (field == nullptr) {
-    field = result_field = table_ref->table->field[field_index];
+    field = result_field = m_table_ref->table->field[field_index];
     m_orig_field_name = field->field_name;
   }
   if (table_name == nullptr) table_name = *field->table_name;
-}
-
-Item *Item_field::safe_charset_converter(THD *thd, const CHARSET_INFO *tocs) {
-  no_constant_propagation = true;
-  return Item::safe_charset_converter(thd, tocs);
 }
 
 void Item_field::cleanup() {
@@ -6125,8 +6027,8 @@ void Item_field::cleanup() {
     Also invalidate the original field name, since it is usually determined
     from the field name in the Field object.
   */
-  if (table_ref != nullptr && !table_ref->is_view_or_derived() &&
-      !table_ref->is_recursive_reference()) {
+  if (m_table_ref != nullptr && !m_table_ref->is_view_or_derived() &&
+      !m_table_ref->is_recursive_reference()) {
     field = nullptr;
     m_orig_field_name = nullptr;
   }
@@ -6135,10 +6037,10 @@ void Item_field::cleanup() {
   result_field = field;
 
   /*
-    When table_ref is NULL, table_name must be reassigned together with
+    When m_table_ref is NULL, table_name must be reassigned together with
     table pointer.
   */
-  if (table_ref == nullptr) table_name = nullptr;
+  if (m_table_ref == nullptr) table_name = nullptr;
 
   // Reset field before next optimization (multiple equality analysis)
   m_multi_equality = nullptr;
@@ -6152,7 +6054,7 @@ void Item_field::cleanup() {
   @todo refactor CREATE TABLE so this is no longer needed.
 */
 void Item_field::reset_field() {
-  assert(table_ref == nullptr);
+  assert(m_table_ref == nullptr);
   fixed = false;
   context = nullptr;
   db_name = m_orig_db_name;
@@ -6166,7 +6068,7 @@ void Item_field::reset_field() {
 
   The function first searches the field among multiple equalities
   of the current level (in the cond_equal->current_level list).
-  If it fails, it continues searching in upper levels accessed
+  If it fails, it continues searching in outer levels accessed
   through a pointer cond_equal->upper_levels.
   The search terminates as soon as a multiple equality containing
   the field is found.
@@ -6175,14 +6077,14 @@ void Item_field::reset_field() {
                       the field (this object) is to be looked for
 
   @return
-    - First Item_equal containing the field, if success
+    - First Item_multi_eq containing the field, if success
     - nullptr, otherwise
 */
 
-Item_equal *Item_field::find_item_equal(COND_EQUAL *cond_equal) const {
-  while (cond_equal) {
-    for (Item_equal &item : cond_equal->current_level) {
-      if (item.contains(field)) return &item;
+Item_multi_eq *Item_field::find_multi_equality(COND_EQUAL *cond_equal) const {
+  while (cond_equal != nullptr) {
+    for (Item_multi_eq &item : cond_equal->current_level) {
+      if (item.contains(this)) return &item;
     }
     /*
       The field is not found in any of the multiple equalities
@@ -6282,7 +6184,7 @@ static void convert_zerofill_number_to_string(Item **item,
 
 Item *Item_field::equal_fields_propagator(uchar *arg) {
   if (no_constant_propagation) return this;
-  m_multi_equality = find_item_equal((COND_EQUAL *)arg);
+  m_multi_equality = find_multi_equality(pointer_cast<COND_EQUAL *>(arg));
   if (m_multi_equality == nullptr) return this;
   Item *item = m_multi_equality->const_arg();
   if (item == nullptr) return this;
@@ -6334,11 +6236,16 @@ Item *Item_field::replace_item_field(uchar *arg) {
 
     // The field is an outer reference, so we cannot reuse transformed query
     // block's Item_field; make a new one for this query block
+    if (info->m_outer_field != nullptr)  // have made one already, reuse it
+      return info->m_outer_field;
+
     THD *const thd = current_thd;
     Item_field *outer_field = new (thd->mem_root) Item_field(thd, info->m_item);
     if (outer_field == nullptr) return nullptr; /* purecov: inspected */
     outer_field->depended_from = info->m_trans_block;
     outer_field->context = &info->m_curr_block->context;
+    outer_field->hidden = hidden;
+    info->m_outer_field = outer_field;  // for reuse
     return outer_field;
   }
 
@@ -6353,7 +6260,7 @@ bool Item_default_value::collect_item_field_or_view_ref_processor(uchar *argp) {
   List_iterator<Item> item_list_it(*info->m_item_fields_or_view_refs);
   Item *curr_item;
   while ((curr_item = item_list_it++)) {
-    if (this->eq(curr_item, true)) return false; /* Already in the set. */
+    if (this->eq(curr_item)) return false; /* Already in the set. */
   }
   info->m_item_fields_or_view_refs->push_back(this);
   return false;
@@ -6402,7 +6309,7 @@ Item *Item_default_value::replace_item_field(uchar *argp) {
   object refers to (belongs to) unless item_equal contains  a constant
   item. In this case the function returns this constant item,
   (if the substitution does not require conversion).
-  If the Item_field object does not refer any Item_equal object
+  If the Item_field object does not refer any Item_multi_eq object
   'this' is returned .
 
   @note
@@ -6430,9 +6337,9 @@ Item *Item_field::replace_equal_field(uchar *arg) {
     }
     Item_field *subst = m_multi_equality->get_subst_item(this);
     assert(subst);
-    assert(table_ref == subst->table_ref ||
-           table_ref->table != subst->table_ref->table);
-    if (table_ref != subst->table_ref && !field->eq(subst->field)) {
+    assert(m_table_ref == subst->m_table_ref ||
+           m_table_ref->table != subst->m_table_ref->table);
+    if (m_table_ref != subst->m_table_ref && !field->eq(subst->field)) {
       if (!has_compatible_context(subst) ||
           !func->allow_replacement(this, subst)) {
         return this;
@@ -6528,29 +6435,23 @@ String *Item::check_well_formed_result(String *str, bool send_error,
   return str;
 }
 
-/*
+/**
   Compare two items using a given collation
 
-  SYNOPSIS
-    eq_by_collation()
-    item               item to compare with
-    binary_cmp         true <-> compare as binaries
-    cs                 collation to use when comparing strings
+  @param item               item to compare with
+  @param cs                 collation to use when comparing strings
 
-  DESCRIPTION
-    This method works exactly as Item::eq if the collation cs coincides with
-    the collation of the compared objects. Otherwise, first the collations that
-    differ from cs are replaced for cs and then the items are compared by
-    Item::eq. After the comparison the original collations of items are
-    restored.
+  @returns true if both items are equal according to collation, false otherwise.
 
-  RETURN
-    1    compared items has been detected as equal
-    0    otherwise
+  This function works exactly as Item::eq() if the collation cs coincides with
+  the collation of the compared objects. Otherwise, first the collations that
+  differ from cs are replaced for cs and then the items are compared by
+  Item::eq. After the comparison the original collations of items are restored.
+
+  For items that do not return strings, function behaves exactly like Item::eq.
 */
 
-bool Item::eq_by_collation(Item *item, bool binary_cmp,
-                           const CHARSET_INFO *cs) {
+bool Item::eq_by_collation(Item *item, const CHARSET_INFO *cs) {
   const CHARSET_INFO *save_cs = nullptr;
   const CHARSET_INFO *save_item_cs = nullptr;
   if (collation.collation != cs) {
@@ -6561,7 +6462,7 @@ bool Item::eq_by_collation(Item *item, bool binary_cmp,
     save_item_cs = item->collation.collation;
     item->collation.collation = cs;
   }
-  const bool res = eq(item, binary_cmp);
+  const bool res = eq(item);
   if (save_cs) collation.collation = save_cs;
   if (save_item_cs) item->collation.collation = save_item_cs;
   return res;
@@ -6698,6 +6599,10 @@ Field *Item::tmp_table_field_from_field_type(TABLE *table,
     case MYSQL_TYPE_VAR_STRING:
     case MYSQL_TYPE_VARCHAR:
       return make_string_field(table);
+    case MYSQL_TYPE_VECTOR:
+      field = new (*THR_MALLOC) Field_vector(
+          max_length, m_nullable, item_name.ptr(), collation.collation);
+      break;
     case MYSQL_TYPE_TINY_BLOB:
     case MYSQL_TYPE_MEDIUM_BLOB:
     case MYSQL_TYPE_LONG_BLOB:
@@ -7060,9 +6965,9 @@ type_conversion_status Item_decimal::save_in_field_inner(Field *field, bool) {
   return field->store_decimal(&decimal_value);
 }
 
-bool Item_int::eq(const Item *arg, bool) const {
+bool Item_int::eq(const Item *arg) const {
   // No need to check for null value as integer constant can't be NULL
-  if (arg->basic_const_item() && arg->type() == type()) {
+  if (arg->type() == type()) {
     /*
       We need to cast off const to call val_int(). This should be OK for
       a basic constant.
@@ -7211,8 +7116,8 @@ void Item_float::print(const THD *, String *str,
   In number context this is a longlong value.
 */
 
-bool Item_float::eq(const Item *arg, bool) const {
-  if (arg->basic_const_item() && arg->type() == type()) {
+bool Item_float::eq(const Item *arg) const {
+  if (arg->type() == type()) {
     /*
       We need to cast off const to call val_int(). This should be OK for
       a basic constant.
@@ -7224,9 +7129,9 @@ bool Item_float::eq(const Item *arg, bool) const {
 }
 
 static inline uint char_val(char X) {
-  return (uint)(X >= '0' && X <= '9'
-                    ? X - '0'
-                    : X >= 'A' && X <= 'Z' ? X - 'A' + 10 : X - 'a' + 10);
+  return (uint)(X >= '0' && X <= '9'   ? X - '0'
+                : X >= 'A' && X <= 'Z' ? X - 'A' + 10
+                                       : X - 'a' + 10);
 }
 
 Item_hex_string::Item_hex_string() { hex_string_init("", 0); }
@@ -7399,24 +7304,13 @@ void Item_hex_string::print(const THD *, String *str,
   }
 }
 
-bool Item_hex_string::eq(const Item *item, bool binary_cmp) const {
-  if (item->basic_const_item() && item->type() == type()) {
-    // Should be OK for a basic constant.
+bool Item_hex_string::eq(const Item *item) const {
+  if (item->type() == type()) {
     Item *arg = const_cast<Item *>(item);
     String str;
-    if (binary_cmp) return !stringcmp(&str_value, arg->val_str(&str));
     return !sortcmp(&str_value, arg->val_str(&str), collation.collation);
   }
   return false;
-}
-
-Item *Item_hex_string::safe_charset_converter(THD *, const CHARSET_INFO *tocs) {
-  String tmp, *str = val_str(&tmp);
-
-  auto conv = new Item_string(str->ptr(), str->length(), tocs);
-  if (conv == nullptr) return nullptr;
-  conv->mark_result_as_const();
-  return conv;
 }
 
 /*
@@ -7553,6 +7447,7 @@ bool Item::send(Protocol *protocol, String *buffer) {
     case MYSQL_TYPE_MEDIUM_BLOB:
     case MYSQL_TYPE_LONG_BLOB:
     case MYSQL_TYPE_BLOB:
+    case MYSQL_TYPE_VECTOR:
     case MYSQL_TYPE_GEOMETRY:
     case MYSQL_TYPE_STRING:
     case MYSQL_TYPE_VAR_STRING:
@@ -7602,6 +7497,7 @@ bool Item::send(Protocol *protocol, String *buffer) {
     case MYSQL_TYPE_DATE: {
       MYSQL_TIME tm;
       get_date(&tm, TIME_FUZZY_DATE);
+      if (current_thd->is_error()) return true;
       if (!null_value) return protocol->store_date(tm);
       break;
     }
@@ -7609,12 +7505,14 @@ bool Item::send(Protocol *protocol, String *buffer) {
     case MYSQL_TYPE_TIMESTAMP: {
       MYSQL_TIME tm;
       get_date(&tm, TIME_FUZZY_DATE);
+      if (current_thd->is_error()) return true;
       if (!null_value) return protocol->store_datetime(tm, decimals);
       break;
     }
     case MYSQL_TYPE_TIME: {
       MYSQL_TIME tm;
       get_time(&tm);
+      if (current_thd->is_error()) return true;
       if (!null_value) return protocol->store_time(tm, decimals);
       break;
     }
@@ -7661,6 +7559,7 @@ bool Item::evaluate(THD *thd, String *buffer) {
     case MYSQL_TYPE_MEDIUM_BLOB:
     case MYSQL_TYPE_LONG_BLOB:
     case MYSQL_TYPE_BLOB:
+    case MYSQL_TYPE_VECTOR:
     case MYSQL_TYPE_GEOMETRY:
     case MYSQL_TYPE_STRING:
     case MYSQL_TYPE_VAR_STRING:
@@ -7793,6 +7692,7 @@ bool Item::clean_up_after_removal(uchar *arg) {
 
   if (reference_count() > 1) {
     (void)decrement_ref_count();
+    ctx->stop_at(this);
   }
   return false;
 }
@@ -7816,20 +7716,23 @@ bool Item::can_be_substituted_for_gc(bool array) const {
 /**
   Calculate the maximum number of characters required by any of the items.
 
+  @param coll    Collation for the unified type of all items
   @param items   arguments to calculate max width for
-  @param nitems   number of arguments
+  @param nitems  number of arguments
 
   @returns max width in number of characters
 */
-uint32 Item::aggregate_char_width(Item **items, uint nitems) {
+static uint32 aggregate_char_width(DTCollation *const coll, Item **items,
+                                   uint nitems) {
   uint32 char_length = 0;
   /*
-    To account for character sets with different number of bytes per character,
-    set char_length equal to max_length if the aggregated character set is
-    binary to prevent truncation of data as some characters require more than
-    one byte.
+    When converting from a non-binary character set to the binary character set,
+    each multi-byte character is kept as-is. Thus, the character width
+    resulting from such non-binary character set is the max. number of bytes
+    per character multiplied by the number of characters.
+    For all other string conversions, the number of characters is preserved.
   */
-  const bool bin_charset = collation.collation == &my_charset_bin;
+  const bool bin_charset = coll->collation == &my_charset_bin;
   for (uint i = 0; i < nitems; i++)
     char_length = max(char_length, bin_charset ? items[i]->max_length
                                                : items[i]->max_char_length());
@@ -7956,20 +7859,24 @@ void Item::aggregate_temporal_properties(enum_field_types type, Item **items,
 */
 bool Item::aggregate_string_properties(enum_field_types type, const char *name,
                                        Item **items, uint nitems) {
-  if (agg_item_charsets_for_string_result(collation, name, items, nitems, 1))
+  // Calculate aggregated collation, but do not update item yet:
+  DTCollation coll;
+  if (agg_item_charsets_for_string_result(coll, name, items, nitems, 1)) {
     return true;
-
+  }
   // Calculate maximum width in number of characters
-  uint32 char_width = aggregate_char_width(items, nitems);
+  uint32 char_width = aggregate_char_width(&coll, items, nitems);
 
+  // Set collation after width is calculated:
+  collation = coll;
   /*
     If the resulting data type is a fixed length character or binary string
     and the result maximum length in characters is longer than the MySQL
     maximum CHAR/BINARY size, convert to a variable-sized type.
   */
-  if (type == MYSQL_TYPE_STRING && char_width > MAX_FIELD_CHARLENGTH)
+  if (type == MYSQL_TYPE_STRING && char_width > MAX_FIELD_CHARLENGTH) {
     type = MYSQL_TYPE_VARCHAR;
-
+  }
   switch (type) {
     case MYSQL_TYPE_STRING:
       set_data_type_char(char_width);
@@ -7989,6 +7896,9 @@ bool Item::aggregate_string_properties(enum_field_types type, const char *name,
       set_data_type(type);
       decimals = DECIMAL_NOT_SPECIFIED;
       fix_char_length(char_width);
+      break;
+    case MYSQL_TYPE_VECTOR:
+      set_data_type_vector(char_width);
       break;
 
     default:
@@ -8107,7 +8017,7 @@ Item *Item_field::update_value_transformer(uchar *select_arg) {
   Query_block *select = pointer_cast<Query_block *>(select_arg);
   assert(fixed);
 
-  assert((table_ref == select->context.table_list) ==
+  assert((m_table_ref == select->context.table_list) ==
          (field->table == select->context.table_list->table));
   if (field->table != select->context.table_list->table &&
       type() != Item::TRIGGER_FIELD_ITEM) {
@@ -8307,31 +8217,39 @@ bool Item_ref::fix_fields(THD *thd, Item **reference) {
     }
     if (m_ref_item == nullptr &&
         qb->resolve_place == Query_block::RESOLVE_QUALIFY) {
-      Field *from_field = find_field_in_tables(
-          thd, this, context->first_name_resolution_table,
-          context->last_name_resolution_table, reference,
-          thd->lex->use_only_table_context ? REPORT_ALL_ERRORS
-                                           : IGNORE_EXCEPT_NON_UNIQUE,
-          thd->want_privilege, true);
-      if (thd->is_error()) return true;
-      if (from_field != nullptr && from_field != not_found_field) {
-        // This field is not resolved against an expression that is
-        // already present in the select list. So it needs to be
-        // added to the select list as hidden item.
-        if (from_field == view_ref_found) {
-          // When an expression is resolved against a field from a merged
-          // derived table, the newly created view reference is
-          // assigned to "reference" object passed to find_field_in_tables().
-          // Add the view reference to the select expression list as hidden
-          // item.
-          m_ref_item = qb->add_hidden_item(*reference);
-          *reference = this;
-        } else {
-          Item_field *fld = new Item_field(
-              thd, context, from_field->table->pos_in_table_list, from_field);
-          if (fld == nullptr) return true;
-          m_ref_item = qb->add_hidden_item(fld);
-        }
+      Field *base_field = nullptr;
+      Item_ident *ref_field = nullptr;
+      Find_field_result result;
+      const int report_error = thd->lex->use_only_table_context
+                                   ? REPORT_ALL_ERRORS
+                                   : REPORT_NON_UNIQUE;
+
+      if (find_field_in_tables(thd, this, context->first_name_resolution_table,
+                               context->last_name_resolution_table,
+                               report_error, thd->want_privilege, &result,
+                               &base_field, &ref_field)) {
+        return true;
+      }
+      /*
+        If found, this field is not resolved against an expression that is
+        already present in the select list. So it needs to be added to
+        the select list as hidden item.
+      */
+      if (result == VIEW_FIELD_FOUND) {
+        // When an expression is resolved against a field from a merged
+        // derived table, the newly created view reference is assigned to
+        // ref_field.
+        // Add the view reference to the select expression list as hidden item.
+        m_ref_item = qb->add_hidden_item(ref_field);
+        // Increment the reference count as the expression is now part
+        // of the select list. The call to link_referenced_item()
+        // later will account for the reference from this Item_ref object.
+        ref_field->increment_ref_count();
+      } else if (result == BASE_FIELD_FOUND) {
+        Item_field *fld = new Item_field(thd, context, base_field);
+        if (fld == nullptr) return true;
+        m_ref_item = qb->add_hidden_item(fld);
+        fld->increment_ref_count();
       }
     }
 
@@ -8352,7 +8270,7 @@ bool Item_ref::fix_fields(THD *thd, Item **reference) {
         subselects may contain columns with the same names. The subselects are
         searched starting from the innermost.
       */
-      Field *from_field = not_found_field;
+      Field *base_field = nullptr;
 
       Query_block *cur_query_block = context->query_block;
 
@@ -8377,8 +8295,8 @@ bool Item_ref::fix_fields(THD *thd, Item **reference) {
         if (place == CTX_DERIVED && select->end_lateral_table == nullptr)
           goto loop;
 
-        /* Search in the SELECT and GROUP lists of the outer select. */
-        if (select_alias_referencable(place) &&
+        // Search in the SELECT and GROUP lists of this outer query block
+        if (select_alias_referencable(place) && table_name == nullptr &&
             outer_context->resolve_in_select_list) {
           if (resolve_ref_in_select_and_group(thd, this, select, &m_ref_item)) {
             return true;  // Some error occurred (e.g. ambiguous names).
@@ -8413,80 +8331,45 @@ bool Item_ref::fix_fields(THD *thd, Item **reference) {
         if (place != CTX_HAVING ||
             (!select->with_sum_func && select->group_list.elements == 0 &&
              !select->is_distinct())) {
-          /*
-            In case of view, find_field_in_tables() writes pointer to view
-            field expression to 'reference', i.e. it substitutes that
-            expression instead of this Item_ref
-          */
-          from_field = find_field_in_tables(
-              thd, this, outer_context->first_name_resolution_table,
-              outer_context->last_name_resolution_table, reference,
-              IGNORE_EXCEPT_NON_UNIQUE, thd->want_privilege, true);
-          if (from_field == nullptr) return true;
-          if (from_field == view_ref_found) {
-            const Item::Type refer_type = (*reference)->type();
+          Find_field_result result;
+          Item_ident *ref_field = nullptr;
+          if (find_field_in_tables(
+                  thd, this, outer_context->first_name_resolution_table,
+                  outer_context->last_name_resolution_table, REPORT_NON_UNIQUE,
+                  thd->want_privilege, &result, &base_field, &ref_field))
+            return true;
+          if (result == VIEW_FIELD_FOUND) {
+            assert(ref_field != nullptr);
             cur_query_expression->accumulate_used_tables(
-                (*reference)->used_tables());
-            assert((*reference)->type() == REF_ITEM);
-            mark_as_dependent(
-                thd, last_checked_context->query_block, context->query_block,
-                this,
-                ((refer_type == REF_ITEM || refer_type == FIELD_ITEM)
-                     ? (Item_ident *)(*reference)
-                     : nullptr));
-            /*
-              view reference found, we substituted it instead of this
-              Item, so can quit
-            */
+                ref_field->used_tables());
+            mark_as_dependent(thd, last_checked_context->query_block,
+                              context->query_block, this, ref_field);
+
+            // View reference found, substitute it for "this" Item and quit:
+            *reference = ref_field;
             return false;
           }
-          if (from_field != not_found_field) {
-            if (cached_table && cached_table->query_block &&
-                outer_context->query_block &&
-                cached_table->query_block != outer_context->query_block) {
-              /*
-                Due to cache, find_field_in_tables() can return field which
-                doesn't belong to provided outer_context. In this case we have
-                to find proper field context in order to fix field correctly.
-              */
-              do {
-                outer_context = outer_context->outer_context;
-                select = outer_context->query_block;
-                cur_query_expression = last_checked_context->query_block
-                                           ->master_query_expression();
-                last_checked_context = outer_context;
-              } while (outer_context && outer_context->query_block &&
-                       cached_table->query_block != outer_context->query_block);
-              place = cur_query_expression->place();
-            }
+          if (result == BASE_FIELD_FOUND) {
+            assert(base_field != nullptr);
             cur_query_expression->accumulate_used_tables(
-                from_field->table->pos_in_table_list->map());
+                base_field->table->pos_in_table_list->map());
             break;
           }
+          assert(result == FIELD_NOT_FOUND);
         }
-        assert(from_field == not_found_field);
 
         /* Reference is not found => depend on outer (or just error). */
         cur_query_expression->accumulate_used_tables(OUTER_REF_TABLE_BIT);
 
       loop:
         outer_context = outer_context->outer_context;
-      } while (outer_context);
+      } while (outer_context != nullptr);
 
-      assert(from_field != nullptr && from_field != view_ref_found);
-      if (from_field != not_found_field) {
-        Item_field *fld;
-
-        {
-          const Prepared_stmt_arena_holder ps_arena_holder(thd);
-          fld = new Item_field(
-              thd, context, from_field->table->pos_in_table_list, from_field);
-          if (fld == nullptr) return true;
-        }
+      if (base_field != nullptr) {
+        Item_field *fld = new Item_field(thd, context, base_field);
+        if (fld == nullptr) return true;
 
         *reference = fld;
-        // WL#6570 remove-after-qa
-        assert(thd->stmt_arena->is_regular() || !thd->lex->is_exec_started());
         mark_as_dependent(thd, last_checked_context->query_block,
                           context->query_block, this, fld);
         /*
@@ -8828,9 +8711,9 @@ bool Item_view_ref::fix_fields(THD *thd, Item **reference) {
   }
   if (super::fix_fields(thd, reference)) return true;
 
-  if (cached_table->is_inner_table_of_outer_join()) {
+  if (m_table_ref->is_inner_table_of_outer_join()) {
     set_nullable(true);
-    first_inner_table = cached_table->any_outer_leaf_table();
+    first_inner_table = m_table_ref->any_outer_leaf_table();
   }
   return false;
 }
@@ -8939,16 +8822,9 @@ void Item_ref::fix_after_pullout(Query_block *parent_query_block,
   reference if the second one is a view column and if both column
   references resolve to the same item. It is assumed that both
   items are of the same type.
-
-  @param item        item to compare with
-
-  @retval
-    true    Referenced item is equal to given item
-  @retval
-    false   otherwise
 */
 
-bool Item_view_ref::eq(const Item *item, bool) const {
+bool Item_view_ref::eq(const Item *item) const {
   if (item->type() == REF_ITEM) {
     const Item_ref *item_ref = down_cast<const Item_ref *>(item);
     if (item_ref->ref_type() == VIEW_REF) {
@@ -9122,9 +8998,9 @@ bool Item_default_value::do_itemize(Parse_context *pc, Item **res) {
   return false;
 }
 
-bool Item_default_value::eq(const Item *item, bool binary_cmp) const {
+bool Item_default_value::eq(const Item *item) const {
   return item->type() == DEFAULT_VALUE_ITEM &&
-         down_cast<const Item_default_value *>(item)->arg->eq(arg, binary_cmp);
+         down_cast<const Item_default_value *>(item)->arg->eq(arg);
 }
 
 bool Item_default_value::fix_fields(THD *thd, Item **) {
@@ -9166,9 +9042,6 @@ bool Item_default_value::fix_fields(THD *thd, Item **) {
 
   // Assign the cloned field as the one to use hereafter
   set_field(def_field);
-
-  // Needs cached_table for some Item traversal functions:
-  cached_table = table_ref;
 
   // Use same field name as the underlying field:
   assert(field_name == nullptr);
@@ -9214,7 +9087,7 @@ type_conversion_status Item_default_value::save_in_field_inner(
       }
 
       if (context->view_error_handler) {
-        Table_ref *view = cached_table->top_table();
+        Table_ref *view = m_table_ref->top_table();
         push_warning_printf(thd, Sql_condition::SL_WARNING,
                             ER_NO_DEFAULT_FOR_VIEW_FIELD,
                             ER_THD(thd, ER_NO_DEFAULT_FOR_VIEW_FIELD), view->db,
@@ -9258,9 +9131,9 @@ Item *Item_default_value::transform(Item_transformer transformer, uchar *args) {
   return (this->*transformer)(args);
 }
 
-bool Item_insert_value::eq(const Item *item, bool binary_cmp) const {
+bool Item_insert_value::eq(const Item *item) const {
   return item->type() == INSERT_VALUE_ITEM &&
-         (down_cast<const Item_insert_value *>(item))->arg->eq(arg, binary_cmp);
+         (down_cast<const Item_insert_value *>(item))->arg->eq(arg);
 }
 
 bool Item_insert_value::fix_fields(THD *thd, Item **reference) {
@@ -9300,6 +9173,7 @@ bool Item_insert_value::fix_fields(THD *thd, Item **reference) {
       are internally stored are BLOB only. Same applies to geometry type.
     */
     if ((def_field->type() == MYSQL_TYPE_BLOB ||
+         def_field->type() == MYSQL_TYPE_VECTOR ||
          def_field->type() == MYSQL_TYPE_GEOMETRY)) {
       try {
         thd->lex->insert_values_map(field_arg, def_field);
@@ -9349,17 +9223,17 @@ void Item_insert_value::bind_fields() {
   if (arg == nullptr) return;
   if (!fixed) return;
 
-  assert(table_ref->table->insert_values);
+  assert(m_table_ref->table->insert_values);
 
   // Bind field to the current TABLE object
-  field->table = table_ref->table;
+  field->table = m_table_ref->table;
 
   field->move_field_offset(
       (ptrdiff_t)(field->table->insert_values - m_rowbuffer_saved));
   m_rowbuffer_saved = field->table->insert_values;
 
   Item_field *field_arg = down_cast<Item_field *>(arg->real_item());
-  if ((field->type() == MYSQL_TYPE_BLOB ||
+  if ((field->type() == MYSQL_TYPE_BLOB || field->type() == MYSQL_TYPE_VECTOR ||
        field->type() == MYSQL_TYPE_GEOMETRY)) {
     current_thd->lex->insert_values_map(field_arg, field);
   }
@@ -9414,7 +9288,7 @@ void Item_trigger_field::setup_field(
   table_grants = table_grant_info;
 }
 
-bool Item_trigger_field::eq(const Item *item, bool) const {
+bool Item_trigger_field::eq(const Item *item) const {
   return item->type() == TRIGGER_FIELD_ITEM &&
          trigger_var_type ==
              down_cast<const Item_trigger_field *>(item)->trigger_var_type &&
@@ -9423,8 +9297,8 @@ bool Item_trigger_field::eq(const Item *item, bool) const {
              down_cast<const Item_trigger_field *>(item)->field_name);
 }
 
-bool Item_trigger_field::set_value(THD *thd, sp_rcontext * /*ctx*/, Item **it) {
-  Item *item = sp_prepare_func_item(thd, it);
+bool Item_trigger_field::set_value(THD *thd, sp_rcontext *, Item **it) {
+  Item *item = sp_prepare_func_item(thd, true, it);
   if (item == nullptr) return true;
 
   if (!fixed) {
@@ -9530,7 +9404,7 @@ void Item_trigger_field::cleanup() {
     A trigger is bound to a TABLE, so the Table_ref may vary between
     executions
   */
-  table_ref = nullptr;
+  m_table_ref = nullptr;
 
   Item::cleanup();
 }
@@ -10103,7 +9977,7 @@ longlong Item_cache_datetime::val_int() { return val_int_from_decimal(); }
 
 Item_cache_json::Item_cache_json()
     : Item_cache(MYSQL_TYPE_JSON),
-      m_value(new (*THR_MALLOC) Json_wrapper()),
+      m_value(new(*THR_MALLOC) Json_wrapper()),
       m_is_sorted(false) {}
 
 Item_cache_json::~Item_cache_json() {
@@ -10576,73 +10450,39 @@ static enum_field_types real_data_type(Item *item) {
 }
 
 /**
-  Find field type which can carry current Item_aggregate_type type and
-  type of given Item.
+  Unify type from given item with the type in the current item.
 
   @param thd     the thread/connection descriptor
   @param item    given item to join its parameters with this item ones
 
-  @retval
-    true   error - types are incompatible
-  @retval
-    false  OK
+  @returns false if success, true if error (types are incompatible)
 */
 
-bool Item_aggregate_type::join_types(THD *thd, Item *item) {
+bool Item_aggregate_type::unify_types(THD *thd [[maybe_unused]], Item *item) {
   DBUG_TRACE;
   DBUG_PRINT("info:",
              ("was type %d len %d, dec %d name %s", data_type(), max_length,
               decimals, (item_name.is_set() ? item_name.ptr() : "<NULL>")));
   DBUG_PRINT("info:", ("in type %d len %d, dec %d", real_data_type(item),
                        item->max_length, item->decimals));
-  /*
-    aggregate_type() will modify the data type of this item. Create a copy of
-    this item containing the original data type and other properties to ensure
-    correct conversion from existing item types to aggregated type.
-  */
-  Item *item_copy = new Item_metadata_copy(this);
+  assert(!thd->lex->is_exec_started());
 
-  /*
-    Down the call stack when calling aggregate_string_properties(), we might
-    end up in THD::change_item_tree() if we for instance need to convert the
-    character set on one side of a union:
-
-      SELECT "foo" UNION SELECT CONVERT("foo" USING utf8mb3);
-    might be converted into:
-      SELECT CONVERT("foo" USING utf8mb3) UNION
-      SELECT CONVERT("foo" USING utf8mb3);
-
-    If we are in a prepared statement or a stored routine (any non-conventional
-    query that needs rollback of any item tree modifications), we need to
-    remember what Item we changed ("foo" in this case) and where that Item is
-    located (in the "args" array in this case) so we can roll back the changes
-    done to the Item tree when the execution is done. When we enter the rollback
-    code (THD::rollback_item_tree_changes()), the location of the Item need to
-    be accessible, so that is why the "args" array must be allocated on a
-    MEM_ROOT and not on the stack. Note that THD::change_item_tree() isn't
-    necessary, since the Item array we are modifying isn't a part of the
-    original Item tree.
-  */
-  Item **args = new (thd->mem_root) Item *[2] { item_copy, item };
+  Item *args[2] = {this, item};
   if (aggregate_type("UNION", args, 2)) return true;
-
-  Item_result merge_type = Field::result_merge_type(data_type());
-  if (merge_type == STRING_RESULT) {
-    /*
-      For geometry columns, we must also merge subtypes. If the
-      subtypes are different, use GEOMETRY.
-    */
-    if (data_type() == MYSQL_TYPE_GEOMETRY &&
-        (item->data_type() != MYSQL_TYPE_GEOMETRY ||
-         geometry_type != item->get_geometry_type()))
-      geometry_type = Field::GEOM_GEOMETRY;
+  /*
+    For geometry columns, we must also unify subtypes. If the
+    subtypes are different, use GEOMETRY.
+  */
+  if (data_type() == MYSQL_TYPE_GEOMETRY &&
+      (item->data_type() != MYSQL_TYPE_GEOMETRY ||
+       geometry_type != item->get_geometry_type())) {
+    geometry_type = Field::GEOM_GEOMETRY;
   }
 
-  // Note: when called to join the types of a set operation's select list, the
+  // Note: when called to unify the types of a set operation's select list, the
   // below line is correct only if we have no INTERSECT or EXCEPT in the query
-  // tree. We will recompute this value correctly during prepare_query_term. We
-  // cannot do it correctly here while traversing the leaf query block due to
-  // the recursive nature of the problem.
+  // tree. We will recompute this value correctly during
+  // Query_term::prepare_query_term.
   set_nullable(is_nullable() || item->is_nullable());
 
   set_typelib(item);
@@ -10681,6 +10521,7 @@ uint32 Item_aggregate_type::display_length(Item *item) {
     case MYSQL_TYPE_MEDIUM_BLOB:
     case MYSQL_TYPE_LONG_BLOB:
     case MYSQL_TYPE_BLOB:
+    case MYSQL_TYPE_VECTOR:
     case MYSQL_TYPE_VAR_STRING:
     case MYSQL_TYPE_STRING:
     case MYSQL_TYPE_GEOMETRY:
@@ -10833,7 +10674,7 @@ Item_values_column::Item_values_column(THD *thd, Item *ref) : super(thd, ref) {
   fixed = true;
 }
 
-bool Item_values_column::eq(const Item *item, bool) const {
+bool Item_values_column::eq(const Item *item) const {
   return item->type() == VALUES_COLUMN_ITEM && item_name.eq(item->item_name);
 }
 
@@ -11106,16 +10947,57 @@ bool Item_field::strip_db_table_name_processor(uchar *) {
   return false;
 }
 
-string ItemToString(const Item *item) {
+string ItemToString(const Item *item, enum_query_type q_type) {
   if (item == nullptr) return "(none)";
   String str;
   const ulonglong save_bits = current_thd->variables.option_bits;
   current_thd->variables.option_bits &= ~OPTION_QUOTE_SHOW_CREATE;
-  item->print(
-      current_thd, &str,
-      enum_query_type(QT_NO_DEFAULT_DB | QT_SUBSELECT_AS_ONLY_SELECT_NUMBER));
+  item->print(current_thd, &str, q_type);
   current_thd->variables.option_bits = save_bits;
   return to_string(str);
+}
+
+string ItemToString(const Item *item) {
+  return ItemToString(
+      item,
+      enum_query_type(QT_NO_DEFAULT_DB | QT_SUBSELECT_AS_ONLY_SELECT_NUMBER));
+}
+
+std::string ItemToQuerySubstrNoCharLimit(const Item *item, const LEX *lex) {
+  if (item == nullptr) return "INVALID";
+  /* item_name is the most concise representation of Item, hence checking it
+   * first */
+  if (item->item_name.length() > 0) {
+    std::string item_str(item->item_name.ptr(), item->item_name.length());
+    if (!item_str.starts_with('<') && !item_str.ends_with('>') &&
+        item_str.find("!hidden!") == std::string::npos)
+      return item_str;
+  }
+  // workaround for Bug#36344673 and Bug#36347508 to skip looking up LEX parser
+  // strings for stored procedures and functions
+  if (lex == nullptr ||
+      (!lex->uses_stored_routines() &&
+       (lex->m_sql_cmd == nullptr || !lex->m_sql_cmd->is_part_of_sp()) &&
+       (lex->thd == nullptr || lex->thd->sp_runtime_ctx == nullptr))) {
+    if (item->m_pos.raw.length() > 0)
+      return std::string(item->m_pos.raw.start, item->m_pos.raw.length());
+    if (item->m_pos.cpp.length() > 0)
+      return std::string(item->m_pos.cpp.start, item->m_pos.cpp.length());
+    if (item->orig_name.length() > 0)
+      return std::string(item->orig_name.ptr(), item->orig_name.length());
+  }
+  return ItemToString(item, enum_query_type(QT_NO_DEFAULT_DB));
+}
+
+std::string ItemToQuerySubstr(const Item *item, const LEX *lex,
+                              uint32 char_limit) {
+  std::string item_str_no_char_limit(ItemToQuerySubstrNoCharLimit(item, lex));
+  if (item_str_no_char_limit.length() > char_limit) {
+    std::string item_str_with_char_limit(item_str_no_char_limit, 0, char_limit);
+    item_str_with_char_limit.append("...");
+    return item_str_with_char_limit;
+  }
+  return item_str_no_char_limit;
 }
 
 Item_field *FindEqualField(Item_field *item_field, table_map reachable_tables,
@@ -11167,37 +11049,14 @@ bool Item_asterisk::do_itemize(Parse_context *pc, Item **res) {
   return false;
 }
 
-/**
-  Unwrap an Item argument so that Item::eq() can see the "real" item, and not
-  just the wrapper. It unwraps Item_ref using real_item(), and also cache items
-  and rollup group wrappers, since these may not have been added consistently to
-  both sides compared by Item::eq().
- */
-static const Item *UnwrapArgForEq(const Item *item) {
-  const Item *prev_item;
-  do {
-    prev_item = item;
-    item = item->real_item();
-
-    if (item->type() == Item::CACHE_ITEM) {
-      item = down_cast<const Item_cache *>(item)->get_example();
-    }
-
-    if (is_rollup_group_wrapper(item)) {
-      item = down_cast<const Item_rollup_group_item *>(item)->inner_item();
-    }
-  } while (item != prev_item);  // Keep trying till no wrapper is found.
-  return item;
+bool ItemsAreEqual(const Item *a, const Item *b) {
+  return a->unwrap_for_eq()->eq(b->unwrap_for_eq());
 }
 
-bool ItemsAreEqual(const Item *a, const Item *b, bool binary_cmp) {
-  return UnwrapArgForEq(a)->eq(UnwrapArgForEq(b), binary_cmp);
-}
-
-bool AllItemsAreEqual(const Item *const *a, const Item *const *b, int num_items,
-                      bool binary_cmp) {
+bool AllItemsAreEqual(const Item *const *a, const Item *const *b,
+                      int num_items) {
   for (int i = 0; i < num_items; ++i) {
-    if (!ItemsAreEqual(a[i], b[i], binary_cmp)) {
+    if (!ItemsAreEqual(a[i], b[i])) {
       return false;
     }
   }

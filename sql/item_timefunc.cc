@@ -69,6 +69,7 @@
 #include "sql/system_variables.h"
 #include "sql/table.h"
 #include "sql/tztime.h"  // Time_zone
+#include "sql_string.h"  // stringcmp
 #include "string_with_len.h"
 #include "strmake.h"
 #include "template_utils.h"
@@ -484,8 +485,7 @@ static bool extract_date_time(const Date_time_format *format, const char *val,
   assert(l_time->year <= 9999);
   if (data_type == MYSQL_TYPE_TIME) flags &= ~TIME_NO_ZERO_DATE;
   int warnings;
-  if (l_time->month > 12 || l_time->hour > 23 || l_time->minute > 59 ||
-      l_time->second > 59 ||
+  if (check_datetime_range(*l_time) ||
       check_date(*l_time, non_zero_date(*l_time), flags, &warnings))
     goto err;
 
@@ -867,9 +867,9 @@ my_decimal *Item_temporal_hybrid_func::val_decimal(my_decimal *decimal_value) {
 
     val_datetime(&ltime, flags);
     return null_value ? nullptr
-                      : ltime.time_type == MYSQL_TIMESTAMP_TIME
-                            ? time2my_decimal(&ltime, decimal_value)
-                            : date2my_decimal(&ltime, decimal_value);
+           : ltime.time_type == MYSQL_TIMESTAMP_TIME
+               ? time2my_decimal(&ltime, decimal_value)
+               : date2my_decimal(&ltime, decimal_value);
   }
 }
 
@@ -944,12 +944,9 @@ longlong Item_datetime_func::val_date_temporal() {
              : TIME_to_longlong_datetime_packed(ltime);
 }
 
-bool Item_date_literal::eq(const Item *item, bool) const {
-  return item->basic_const_item() && type() == item->type() &&
-         strcmp(func_name(), down_cast<const Item_func *>(item)->func_name()) ==
-             0 &&
-         cached_time.eq(
-             down_cast<const Item_date_literal *>(item)->cached_time);
+bool Item_date_literal::eq_specific(const Item *item) const {
+  return cached_time.eq(
+      down_cast<const Item_date_literal *>(item)->cached_time);
 }
 
 void Item_date_literal::print(const THD *, String *str, enum_query_type) const {
@@ -958,12 +955,9 @@ void Item_date_literal::print(const THD *, String *str, enum_query_type) const {
   str->append('\'');
 }
 
-bool Item_datetime_literal::eq(const Item *item, bool) const {
-  return item->basic_const_item() && type() == item->type() &&
-         strcmp(func_name(), down_cast<const Item_func *>(item)->func_name()) ==
-             0 &&
-         cached_time.eq(
-             down_cast<const Item_datetime_literal *>(item)->cached_time);
+bool Item_datetime_literal::eq_specific(const Item *item) const {
+  return cached_time.eq(
+      down_cast<const Item_datetime_literal *>(item)->cached_time);
 }
 
 void Item_datetime_literal::print(const THD *, String *str,
@@ -973,12 +967,9 @@ void Item_datetime_literal::print(const THD *, String *str,
   str->append('\'');
 }
 
-bool Item_time_literal::eq(const Item *item, bool) const {
-  return item->basic_const_item() && type() == item->type() &&
-         strcmp(func_name(), down_cast<const Item_func *>(item)->func_name()) ==
-             0 &&
-         cached_time.eq(
-             down_cast<const Item_time_literal *>(item)->cached_time);
+bool Item_time_literal::eq_specific(const Item *item) const {
+  return cached_time.eq(
+      down_cast<const Item_time_literal *>(item)->cached_time);
 }
 
 void Item_time_literal::print(const THD *, String *str, enum_query_type) const {
@@ -997,6 +988,12 @@ bool Item_func_at_time_zone::resolve_type(THD *thd) {
   }
 
   return set_time_zone(thd);
+}
+
+void Item_func_at_time_zone::print(const THD *thd, String *str,
+                                   enum_query_type query_type) const {
+  args[0]->print(thd, str, query_type);
+  str->append(" AT TIME ZONE '+00:00'");
 }
 
 bool Item_func_at_time_zone::set_time_zone(THD *thd) {
@@ -1050,6 +1047,7 @@ bool Item_func_at_time_zone::check_type() const {
 }
 
 bool Item_func_period_add::resolve_type(THD *thd) {
+  if (reject_vector_args()) return true;
   return param_type_is_default(thd, 0, -1, MYSQL_TYPE_LONGLONG);
 }
 
@@ -1068,6 +1066,7 @@ longlong Item_func_period_add::val_int() {
 }
 
 bool Item_func_period_diff::resolve_type(THD *thd) {
+  if (reject_vector_args()) return true;
   return param_type_is_default(thd, 0, -1, MYSQL_TYPE_LONGLONG);
 }
 
@@ -1088,6 +1087,7 @@ longlong Item_func_period_diff::val_int() {
 
 bool Item_func_to_days::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_DATETIME)) return true;
+  if (reject_vector_args()) return true;
   // The maximum string length returned by TO_DAYS is 7, as its range is
   // [0000-01-01, 9999-12-31] -> [0, 3652424]. Set the maximum length to one
   // higher, to account for the sign, even though the function never returns
@@ -1131,6 +1131,7 @@ longlong Item_func_to_seconds::val_int_endpoint(bool, bool *) {
 
 bool Item_func_to_seconds::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_DATETIME)) return true;
+  if (reject_vector_args()) return true;
   set_nullable(true);
   return false;
 }
@@ -1231,6 +1232,7 @@ longlong Item_func_to_days::val_int_endpoint(bool left_endp, bool *incl_endp) {
 
 bool Item_func_dayofyear::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_DATETIME)) return true;
+  if (reject_vector_args()) return true;
   // Returns a value in the range [1, 366], so max three digits. Add one to the
   // character length for the sign.
   fix_char_length(4);
@@ -1249,6 +1251,7 @@ longlong Item_func_dayofyear::val_int() {
 
 bool Item_func_dayofmonth::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_DATETIME)) return true;
+  if (reject_vector_args()) return true;
   // Returns a value in the range [0, 31], so max two digits. Add one to the
   // character length for the sign.
   fix_char_length(3);
@@ -1265,6 +1268,7 @@ longlong Item_func_dayofmonth::val_int() {
 
 bool Item_func_month::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, -1, MYSQL_TYPE_DATETIME)) return true;
+  if (reject_vector_args()) return true;
   // Returns a value in the range [1, 12], so max two digits. Add one to the
   // character length for the sign.
   fix_char_length(3);
@@ -1281,6 +1285,7 @@ longlong Item_func_month::val_int() {
 
 bool Item_func_monthname::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, -1, MYSQL_TYPE_DATETIME)) return true;
+  if (reject_vector_args()) return true;
   const CHARSET_INFO *cs = thd->variables.collation_connection;
   const uint32 repertoire = my_charset_repertoire(cs);
   locale = thd->variables.lc_time_names;
@@ -1307,6 +1312,7 @@ String *Item_func_monthname::val_str(String *str) {
 
 bool Item_func_quarter::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, -1, MYSQL_TYPE_DATETIME)) return true;
+  if (reject_vector_args()) return true;
   // Always one digit [1, 4]. Add one character for the sign.
   fix_char_length(2);
   assert(decimal_precision() == 1);
@@ -1327,6 +1333,7 @@ longlong Item_func_quarter::val_int() {
 
 bool Item_func_hour::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_DATETIME)) return true;
+  if (reject_vector_args()) return true;
   // Can have up to three digits (TIME_MAX_HOUR == 838). Add one for the sign.
   fix_char_length(4);
   assert(decimal_precision() == 3);
@@ -1342,6 +1349,7 @@ longlong Item_func_hour::val_int() {
 
 bool Item_func_minute::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, -1, MYSQL_TYPE_DATETIME)) return true;
+  if (reject_vector_args()) return true;
   // Can have up to two digits [0, 59]. Add one for the sign.
   fix_char_length(3);
   assert(decimal_precision() == 2);
@@ -1357,6 +1365,7 @@ longlong Item_func_minute::val_int() {
 
 bool Item_func_second::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_DATETIME)) return true;
+  if (reject_vector_args()) return true;
   // Can have up to two digits [0, 59]. Add one for the sign.
   fix_char_length(3);
   assert(decimal_precision() == 2);
@@ -1393,6 +1402,7 @@ bool Item_func_week::do_itemize(Parse_context *pc, Item **res) {
 bool Item_func_week::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_DATETIME)) return true;
   if (param_type_is_default(thd, 1, 2, MYSQL_TYPE_LONGLONG)) return true;
+  if (reject_vector_args()) return true;
   // Can have up to two digits [0, 53] (0 when using WEEK_YEAR, otherwise [1,
   // 53]). Add one for the sign.
   fix_char_length(3);
@@ -1443,6 +1453,7 @@ longlong Item_func_week::val_int() {
 bool Item_func_yearweek::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_DATETIME)) return true;
   if (param_type_is_default(thd, 1, 2, MYSQL_TYPE_LONGLONG)) return true;
+  if (reject_vector_args()) return true;
   // Returns six digits (YYYYWW). Add one character for the sign.
   fix_char_length(7);
   assert(decimal_precision() == 6);
@@ -1462,6 +1473,7 @@ longlong Item_func_yearweek::val_int() {
 
 bool Item_func_weekday::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_DATETIME)) return true;
+  if (reject_vector_args()) return true;
   // Always one digit (either [0, 6] or [1, 7], depending on whether it's called
   // as WEEKDAY or DAYOFWEEK). Add one character for the sign.
   fix_char_length(2);
@@ -1482,6 +1494,7 @@ longlong Item_func_weekday::val_int() {
 
 bool Item_func_dayname::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_DATETIME)) return true;
+  if (reject_vector_args()) return true;
   const CHARSET_INFO *cs = thd->variables.collation_connection;
   const uint32 repertoire = my_charset_repertoire(cs);
   locale = thd->variables.lc_time_names;
@@ -1507,6 +1520,7 @@ String *Item_func_dayname::val_str(String *str) {
 
 bool Item_func_year::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_DATETIME)) return true;
+  if (reject_vector_args()) return true;
   set_data_type_year();
   set_nullable(true);
   return false;
@@ -1519,7 +1533,8 @@ longlong Item_func_year::val_int() {
 }
 
 bool Item_typecast_year::resolve_type(THD *thd) {
-  if (reject_geometry_args(arg_count, args, this)) return true;
+  if (reject_geometry_args()) return true;
+  if (reject_vector_args()) return true;
   if (args[0]->propagate_type(thd, MYSQL_TYPE_YEAR, false, true)) return true;
   assert(decimal_precision() == 4);
   set_nullable(true);
@@ -1719,6 +1734,7 @@ longlong Item_func_unix_timestamp::val_int_endpoint(bool, bool *) {
 
 bool Item_func_time_to_sec::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_TIME)) return true;
+  if (reject_vector_args()) return true;
   fix_char_length(10);
   set_nullable(true);
   return false;
@@ -2198,6 +2214,7 @@ bool Item_func_sec_to_time::get_time(MYSQL_TIME *ltime) {
 bool Item_func_date_format::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_DATETIME)) return true;
   if (param_type_is_default(thd, 1, 2)) return true;
+  if (reject_vector_args()) return true;
   /*
     Must use this_item() in case it's a local SP variable
     (for ->max_length and ->str_value)
@@ -2223,22 +2240,23 @@ bool Item_func_date_format::resolve_type(THD *thd) {
   return false;
 }
 
-bool Item_func_date_format::eq(const Item *item, bool binary_cmp) const {
-  if (item->type() != FUNC_ITEM) return false;
-  if (strcmp(func_name(), down_cast<const Item_func *>(item)->func_name()) != 0)
-    return false;
-  if (this == item) return true;
+bool Item_func_date_format::eq_specific(const Item *item) const {
   const Item_func_date_format *item_func =
       down_cast<const Item_func_date_format *>(item);
-  if (!ItemsAreEqual(args[0], item_func->args[0], binary_cmp)) return false;
   /*
-    We must compare format string case sensitive.
-    This needed because format modifiers with different case,
-    for example %m and %M, have different meaning.
+    Arguments have already been compared for equality with regular collation.
+    However, the format string must be compared case sensitive, because
+    format modifiers with different case, for example %m and %M,
+    have different meanings.
   */
-  if (!ItemsAreEqual(args[1], item_func->args[1], /*binary_tmp=*/true))
-    return false;
-  return true;
+  if (args[1]->type() != STRING_ITEM ||
+      item_func->args[1]->type() != STRING_ITEM) {
+    return true;
+  }
+  const Item_string *str1 = down_cast<Item_string *>(args[1]);
+  const Item_string *str2 = down_cast<Item_string *>(item_func->args[1]);
+
+  return str1->eq_binary(str2);
 }
 
 uint Item_func_date_format::format_length(const String *format) {
@@ -2355,6 +2373,7 @@ null_date:
 
 bool Item_func_from_unixtime::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_NEWDECIMAL)) return true;
+  if (reject_vector_args()) return true;
   set_data_type_datetime(min(args[0]->decimals, uint8{DATETIME_MAX_DECIMALS}));
   set_nullable(true);
   thd->time_zone_used = true;
@@ -2417,6 +2436,7 @@ bool Item_func_from_unixtime::get_date(MYSQL_TIME *ltime,
 bool Item_func_convert_tz::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_DATETIME)) return true;
   if (param_type_is_default(thd, 1, -1)) return true;
+  if (reject_vector_args()) return true;
   set_data_type_datetime(args[0]->datetime_precision());
   set_nullable(true);
   return false;
@@ -2467,6 +2487,8 @@ void Item_func_convert_tz::cleanup() {
 }
 
 bool Item_date_add_interval::resolve_type(THD *thd) {
+  if (reject_geometry_args()) return true;
+  if (reject_vector_args()) return true;
   set_nullable(true);
 
   /*
@@ -2651,8 +2673,7 @@ bool Item_date_add_interval::val_datetime(MYSQL_TIME *ltime,
   return get_time_internal(ltime);
 }
 
-bool Item_date_add_interval::eq(const Item *item, bool binary_cmp) const {
-  if (!Item_func::eq(item, binary_cmp)) return false;
+bool Item_date_add_interval::eq_specific(const Item *item) const {
   const Item_date_add_interval *other =
       down_cast<const Item_date_add_interval *>(item);
   return m_interval_type == other->m_interval_type &&
@@ -2714,6 +2735,7 @@ void Item_extract::print(const THD *thd, String *str,
 
 bool Item_extract::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_DATETIME)) return true;
+  if (reject_vector_args()) return true;
   set_nullable(true);  // If wrong date
   switch (int_type) {
     case INTERVAL_YEAR:
@@ -2881,16 +2903,9 @@ longlong Item_extract::val_int() {
   return 0;  // Impossible
 }
 
-bool Item_extract::eq(const Item *item, bool binary_cmp) const {
-  if (this == item) return true;
-  if (item->type() != FUNC_ITEM ||
-      functype() != down_cast<const Item_func *>(item)->functype())
-    return false;
-
+bool Item_extract::eq_specific(const Item *item) const {
   const Item_extract *ie = down_cast<const Item_extract *>(item);
   if (ie->int_type != int_type) return false;
-
-  if (!args[0]->eq(ie->args[0], binary_cmp)) return false;
   return true;
 }
 
@@ -3034,6 +3049,7 @@ bool Item_func_add_time::resolve_type(THD *thd) {
                             m_datetime ? MYSQL_TYPE_DATETIME : MYSQL_TYPE_TIME))
     return true;
   if (param_type_is_default(thd, 1, 2, MYSQL_TYPE_TIME)) return true;
+  if (reject_vector_args()) return true;
 
   /*
     The field type for the result of an Item_func_add_time function is defined
@@ -3307,6 +3323,7 @@ longlong Item_func_microsecond::val_int() {
 
 bool Item_func_microsecond::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, -1, MYSQL_TYPE_DATETIME)) return true;
+  if (reject_vector_args()) return true;
   set_nullable(true);
   return false;
 }
@@ -3567,6 +3584,7 @@ void Item_func_str_to_date::fix_from_format(const char *format, size_t length) {
 
 bool Item_func_str_to_date::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 2)) return true;
+  if (reject_vector_args()) return true;
   set_nullable(true);
   cached_timestamp_type = MYSQL_TIMESTAMP_DATETIME;
   set_data_type_datetime(DATETIME_MAX_DECIMALS);

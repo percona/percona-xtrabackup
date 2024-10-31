@@ -160,11 +160,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
    @diafile storage/innobase/log/recent_written_buffer.dia "Example of links in the recent written buffer"
 
-   @note The log buffer has no holes up to the _log.buf_ready_for_write_lsn_
+   @note The log buffer has no holes up to the
+   _log_buffer_ready_for_write_lsn()_
    (all concurrent writes for smaller lsn have been finished).
 
-   If there were no links to traverse, _log.buf_ready_for_write_lsn_ was not
-   advanced and the log writer thread needs to wait. In such case it first
+   If there were no links to traverse, _log_buffer_ready_for_write_lsn()_ was
+   not advanced and the log writer thread needs to wait. In such case it first
    uses spin delay and afterwards switches to wait on the _writer_event_.
 
 
@@ -226,7 +227,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
    for setting the field. User thread which has written exactly up to the end
    of log block, is considered ending at lsn after the header of the next log
    block. That's because after such write, the log writer is allowed to write
-   the next empty log block (_buf_ready_for_write_lsn_ points then to such lsn).
+   the next empty log block (_log_buffer_ready_for_write_lsn()_ points then to
+   such lsn).
    The _first_rec_group_ field is updated before the link is added to the log
    recent written buffer.
 
@@ -240,7 +242,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
      - If we were trying to write more than size of single write-ahead
        region, we limit the write to completed write-ahead sized regions,
        and postpone writing the last fragment for later (retrying with the
-       first step and updating the _buf_ready_for_write_lsn_).
+       first step and updating the _log_buffer_ready_for_write_lsn()_).
 
        @note If we needed to write complete regions of write-ahead bytes,
        they are ready in the log buffer and could be written directly from
@@ -412,15 +414,15 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  The log checkpointer thread updates log.available_for_checkpoint_lsn,
  which is calculated as:
 
-         min(log.buf_dirty_pages_added_up_to_lsn, max(0, oldest_lsn - L))
+         min(buf_flush_list_added->smallest_not_added_lsn(), max(0, oldest_lsn - L))
 
  where:
    - oldest_lsn = min(oldest modification of the earliest page from each
                       flush list),
-   - L is a number of slots in the log recent closed buffer.
+   - L is buf_flush_list_added->order_lag().
 
  The special case is when there is no dirty page in flush lists - then it's
- basically set to the _log.buf_dirty_pages_added_up_to_lsn_.
+ basically set to the _Buf_flush_list_added_lsns::order_lag()_.
 
  @note Note that previously, all user threads were trying to calculate this
  lsn concurrently, causing contention on flush_list mutex, which is required
@@ -428,8 +430,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  is updated in single thread.
 
 
- @section sect_redo_log_waiting_for_writer Waiting until log has been written to
- disk
+ @section sect_redo_log_waiting_for_writer Waiting until log has been written to disk
 
  User has to wait until the [log writer thread](@ref sect_redo_log_writer)
  has written data from the log buffer to disk for lsn >= _end_lsn_ of log range
@@ -459,8 +460,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  is used.
 
 
- @section sect_redo_log_waiting_for_flusher Waiting until log has been flushed
- to disk
+ @section sect_redo_log_waiting_for_flusher Waiting until log has been flushed to disk
 
  If a user need to assure the log persistence in case of crash (e.g. on COMMIT
  of a transaction), he has to wait until [log flusher](@ref
@@ -781,7 +781,9 @@ static inline size_t log_compute_wait_event_slot(lsn_t lsn, size_t events_n) {
   waking up those in lsn/512. Note that this scenario (lsn % 512 == 0) happens
   often because our strategy is to prefer writes of full log blocks only,
   leaving the incomplete last block for next write (unless there are no full
-  blocks). */
+  blocks).
+  Note: if you ever change the way this is computed, update the logic in
+  notify_about_advanced_write_lsn as it depends on OS_FILE_LOG_BLOCK_SIZE. */
   return ((lsn - 1) / OS_FILE_LOG_BLOCK_SIZE) & (events_n - 1);
 }
 
@@ -954,43 +956,10 @@ static Wait_stats log_self_write_up_to(log_t &log, lsn_t end_lsn,
                                        bool flush_to_disk, bool *interrupted) {
   ut_ad(!mutex_own(&(log.writer_mutex)));
 
-  uint32_t waits = 0;
   *interrupted = false;
-
-  lsn_t ready_lsn = log_buffer_ready_for_write_lsn(log);
-  ulong i = 0;
-  /* must wait for (ready_lsn >= end_lsn) at first */
-  while (i < srv_n_spin_wait_rounds && ready_lsn < end_lsn) {
-    if (srv_spin_wait_delay) {
-      ut_delay(ut::random_from_interval_fast(0, srv_spin_wait_delay));
-    }
-    i++;
-    ready_lsn = log_buffer_ready_for_write_lsn(log);
-  }
-  if (ready_lsn < end_lsn) {
-    log.recent_written.advance_tail();
-    ready_lsn = log_buffer_ready_for_write_lsn(log);
-  }
-  if (ready_lsn < end_lsn) {
-    std::this_thread::yield();
-    ready_lsn = log_buffer_ready_for_write_lsn(log);
-  }
-  while (ready_lsn < end_lsn) {
-    /* wait using event */
-    log_closer_mutex_enter(log);
-    if (log.current_ready_waiting_lsn == 0 &&
-        os_event_is_set(log.closer_event)) {
-      log.current_ready_waiting_lsn = end_lsn;
-      log.current_ready_waiting_sig_count = os_event_reset(log.closer_event);
-    }
-    const auto sig_count = log.current_ready_waiting_sig_count;
-    log_closer_mutex_exit(log);
-    ++waits;
-    os_event_wait_time_low(log.closer_event, std::chrono::milliseconds{100},
-                           sig_count);
-    log.recent_written.advance_tail();
-    ready_lsn = log_buffer_ready_for_write_lsn(log);
-  }
+  uint32_t waits;
+  lsn_t ready_lsn =
+      log_buffer_wait_for_ready_for_write_lsn(log, end_lsn, &waits);
 
   /* NOTE: Currently doesn't do dirty read for (flush_to_disk == true) case,
   because the mutex contention also works as the arbitrator for write-IO
@@ -1017,7 +986,7 @@ static Wait_stats log_self_write_up_to(log_t &log, lsn_t end_lsn,
   lsn_t write_lsn = log.write_lsn.load(std::memory_order_relaxed);
   for (uint64_t step = 0; write_lsn < ready_lsn; ++step) {
     if (step % 1024 == 0) {
-      /* The first loop or just after std::this_thread::sleep_for(0) */
+      /* The first loop or just after std::this_thread::yield() */
       const lsn_t limit_lsn =
           flush_to_disk
               ? log.flushed_to_disk_lsn.load(std::memory_order_acquire)
@@ -1033,7 +1002,7 @@ static Wait_stats log_self_write_up_to(log_t &log, lsn_t end_lsn,
     if ((step + 1) % 1024 == 0) {
       /* approximate per srv_log_write_ahead_size * 1024 written. */
       log_writer_mutex_exit(log);
-      std::this_thread::sleep_for(std::chrono::seconds(0));
+      std::this_thread::yield();
       log_writer_mutex_enter(log);
     }
 
@@ -1599,13 +1568,36 @@ static inline void notify_about_advanced_write_lsn(log_t &log,
     if (srv_flush_log_at_trx_commit == 1) {
       os_event_set(log.flusher_event);
     }
-
+    /* For performance reasons, we rely on the help from notifier thread only if
+    there is more than one event to set, and set it ourselves otherwise. The
+    notifier thread will eventually set events related to each written lsn
+    anyway, but instead of paying the cost of os_event_set() to hurry it up, we
+    spend it on waking up the actually interested threads, eliminating one hop.
+    If we decide to do it ourselves, and thus set just one event, then it is
+    crucial for correctness that indeed log_compute_write_event_slot(log,x) has
+    same value for all x in the range old_write_lsn < x <= new_write_lsn. For
+    performance, we would like the inverse implication: whenever all x are in
+    the same slot, do it ourselves. To check this condition in constant time, we
+    rely on the following property of log_compute_write_event_slot(..,x):
+    For all a<b<c:
+    log_compute_write_event_slot(..,a) == log_compute_write_event_slot(..,c) &&
+    log_compute_write_event_slot(..,a) != log_compute_write_event_slot(..,b)
+    implies that (c-a) > OS_FILE_LOG_BLOCK_SIZE.
+    This property let us check if all x in a range are mapped to same slot, by
+    checking the end points of the range, and the length of the range only.
+    This property is a consequence of the current implementation assigning same
+    slot it assigned to log_compute_write_event_slot(..,b) to a range of length
+    at least OS_FILE_LOG_BLOCK_SIZE around b. This in turn holds, because we
+    simply use (b-1) div OS_FILE_LOG_BLOCK_SIZE to assign the slot. If the
+    implementation of log_compute_write_event_slot(..) changes in future, we
+    should check which of these assumptions still hold, and adjust the logic */
     const auto first_slot =
         log_compute_write_event_slot(log, old_write_lsn + 1);
 
     const auto last_slot = log_compute_write_event_slot(log, new_write_lsn);
 
-    if (first_slot == last_slot) {
+    if (first_slot == last_slot &&
+        (new_write_lsn - old_write_lsn) <= OS_FILE_LOG_BLOCK_SIZE) {
       log_sync_point("log_write_before_users_notify");
       os_event_set(log.write_events[first_slot]);
     } else {
@@ -2315,7 +2307,7 @@ void log_writer(log_t *log_ptr) {
 
         log_writer_mutex_exit(log);
 
-        std::this_thread::sleep_for(std::chrono::seconds(0));
+        std::this_thread::yield();
 
         log_writer_mutex_enter(log);
       }
@@ -2554,7 +2546,7 @@ void log_flusher(log_t *log_ptr) {
         if (step % 1024 == 0) {
           log_flusher_mutex_exit(log);
 
-          std::this_thread::sleep_for(std::chrono::seconds(0));
+          std::this_thread::yield();
 
           log_flusher_mutex_enter(log);
         }
@@ -2744,7 +2736,7 @@ void log_write_notifier(log_t *log_ptr) {
     if (step % 1024 == 0) {
       log_write_notifier_mutex_exit(log);
 
-      std::this_thread::sleep_for(std::chrono::seconds(0));
+      std::this_thread::yield();
 
       log_write_notifier_mutex_enter(log);
     }
@@ -2866,7 +2858,7 @@ void log_flush_notifier(log_t *log_ptr) {
     if (step % 1024 == 0) {
       log_flush_notifier_mutex_exit(log);
 
-      std::this_thread::sleep_for(std::chrono::seconds(0));
+      std::this_thread::yield();
 
       log_flush_notifier_mutex_enter(log);
     }

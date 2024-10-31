@@ -23,7 +23,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
-//#define DBTC_MAIN
+// #define DBTC_MAIN
 #define DBTC_C
 
 #include <NdbSpin.h>
@@ -114,18 +114,18 @@
 #define JAM_FILE_ID 353
 
 #if defined(VM_TRACE) || defined(ERROR_INSERT)
-//#define DO_TRANSIENT_POOL_STAT
-//#define ABORT_TRACE 1
-//#define DEBUG_NODE_FAILURE 1
-//#define DEBUG_RR_INIT 1
-//#define DEBUG_EXEC_WRITE_COUNT 1
+// #define DO_TRANSIENT_POOL_STAT
+// #define ABORT_TRACE 1
+// #define DEBUG_NODE_FAILURE 1
+// #define DEBUG_RR_INIT 1
+// #define DEBUG_EXEC_WRITE_COUNT 1
 #endif
 
 #define TC_TIME_SIGNAL_DELAY 50
 
 // Use DEBUG to print messages that should be
 // seen only when we debug the product
-//#define USE_TC_DEBUG
+// #define USE_TC_DEBUG
 #ifdef USE_TC_DEBUG
 #define DEBUG(x) ndbout << "DBTC: " << x << endl;
 #else
@@ -331,10 +331,6 @@ void Dbtc::execCONTINUEB(Signal *signal) {
   UintR Tdata1 = signal->theData[2];
   UintR Tdata2 = signal->theData[3];
   UintR Tdata3 = signal->theData[4];
-#ifdef ERROR_INSERT
-  UintR Tdata4 = signal->theData[5];
-  UintR Tdata5 = signal->theData[6];
-#endif
   switch (tcase) {
     case TcContinueB::ZSCAN_FOR_READ_BACKUP:
       jam();
@@ -539,50 +535,6 @@ void Dbtc::execCONTINUEB(Signal *signal) {
       sendFragScansLab(signal, scanptr, apiConnectptr);
       return;
     }
-#ifdef ERROR_INSERT
-    case TcContinueB::ZDEBUG_DELAYED_ABORT: {
-      char buf[128];
-      BaseString::snprintf(buf, sizeof(buf),
-                           "Received CONTINUEB:ZDEBUG_DELAYED_ABORT");
-      warningEvent("%s", buf);
-
-      jam();
-      ApiConnectRecordPtr apiConnectptr;
-      apiConnectptr.i = Tdata0;
-      c_apiConnectRecordPool.getPtr(apiConnectptr);
-      apiConnectptr.p->returncode = Tdata3;
-      apiConnectptr.p->returnsignal = (Dbtc::ReturnSignal)Tdata4;
-      SET_ERROR_INSERT_VALUE(Tdata5);
-      abort010Lab(signal, apiConnectptr);
-      break;
-    }
-    case TcContinueB::ZDEBUG_DELAY_TCROLLBACKREP: {
-      char buf[128];
-      BaseString::snprintf(buf, sizeof(buf),
-                           "Received CONTINUEB:ZDEBUG_DELAY_TCROLLBACKREP");
-      warningEvent("%s", buf);
-
-      jam();
-      if (ERROR_INSERTED(8101)) {
-        jam();
-        sendSignalWithDelay(reference(), GSN_CONTINUEB, signal, 100,
-                            signal->getLength());
-      } else {
-        TcRollbackRep *const tcRollbackRep =
-            (TcRollbackRep *)signal->getDataPtr();
-        Uint32 blockRef = Tdata5;
-
-        tcRollbackRep->connectPtr = Tdata0;
-        tcRollbackRep->transId[0] = Tdata1;
-        tcRollbackRep->transId[1] = Tdata2;
-        tcRollbackRep->returnCode = Tdata3;
-        tcRollbackRep->errorData = Tdata4;
-        sendSignal(blockRef, GSN_TCROLLBACKREP, signal,
-                   TcRollbackRep::SignalLength, JBB);
-      }
-      break;
-    }
-#endif
 #ifdef DO_TRANSIENT_POOL_STAT
 #if defined(VM_TRACE) || defined(ERROR_INSERT)
     case TcContinueB::ZTRANSIENT_POOL_STAT: {
@@ -13263,10 +13215,11 @@ bool Dbtc::sendDihGetNodeReq(Signal *signal, ScanRecordPtr scanptr,
    * theData[0] is always '0' in a DiGetNodesCONF,
    * else it is a REF, with errorCode in theData[1]
    */
-  const Uint32 errorCode =
-      (signal->theData[0] != 0) ? signal->theData[1] :         // DIH error
-          (ERROR_INSERTED_CLEAR(8095)) ? ZGET_DATAREC_ERROR :  // Fake error
-              0;
+  const Uint32 errorCode = (signal->theData[0] != 0) ? signal->theData[1]
+                                                     :  // DIH error
+                               (ERROR_INSERTED_CLEAR(8095)) ? ZGET_DATAREC_ERROR
+                                                            :  // Fake error
+                               0;
 
   if (errorCode != 0) {
     scanError(signal, scanptr, errorCode);
@@ -15105,26 +15058,6 @@ void Dbtc::releaseAbortResources(Signal *signal,
       case RS_TCROLLBACKREP: {
         jam();
         ok = true;
-#ifdef ERROR_INSERT
-        if (ERROR_INSERTED(8101)) {
-          char buf[128];
-          BaseString::snprintf(buf, sizeof(buf),
-                               "Sending CONTINUEB:ZDEBUG_DELAY_TCROLLBACKREP");
-          warningEvent("%s", buf);
-
-          jam();
-          signal->theData[0] = TcContinueB::ZDEBUG_DELAY_TCROLLBACKREP;
-          signal->theData[1] = apiConnectptr.p->ndbapiConnect;
-          signal->theData[2] = apiConnectptr.p->transid[0];
-          signal->theData[3] = apiConnectptr.p->transid[1];
-          signal->theData[4] = apiConnectptr.p->returncode;
-          signal->theData[5] = apiConnectptr.p->errorData;
-          signal->theData[6] = blockRef;
-
-          sendSignalWithDelay(reference(), GSN_CONTINUEB, signal, 100, 7);
-          break;
-        }
-#endif
         TcRollbackRep *const tcRollbackRep =
             (TcRollbackRep *)signal->getDataPtr();
 
@@ -17469,68 +17402,6 @@ void Dbtc::execTCINDXREQ(Signal *signal) {
   ApiConnectRecord *const regApiPtr = transPtr.p;
   // Seize index operation
   TcIndexOperationPtr indexOpPtr;
-
-#ifdef ERROR_INSERT
-  if (ERROR_INSERTED(8100)) {
-    char buf[128];
-    BaseString::snprintf(
-        buf, sizeof(buf),
-        "Inserted 8100, startFlag %u, regApiPtr->apiConnectstate %u, "
-        "regApiPtr->abortState %u",
-        startFlag, regApiPtr->apiConnectstate, regApiPtr->abortState);
-    warningEvent("%s", buf);
-
-    if (startFlag == 1) {
-      jam();
-      /*
-        Phase 1:
-        Abort the transaction by simulating a fake node failure.
-        Don't send any TCROLLBACKREP until in next TCINDXREQ call
-        to simulate a slow signal still in the air.
-      */
-      Signal s = *signal;
-      signal->theData[0] = TcContinueB::ZDEBUG_DELAYED_ABORT;
-      signal->theData[1] = transPtr.i;
-      signal->theData[2] = regApiPtr->transid[0];
-      signal->theData[3] = regApiPtr->transid[1];
-      signal->theData[4] = ZNODEFAIL_BEFORE_COMMIT;
-      signal->theData[5] = RS_TCROLLBACKREP;
-      signal->theData[6] = 8101;
-      sendSignalWithDelay(reference(), GSN_CONTINUEB, signal, 100, 7);
-      *signal = s;
-    }
-  } else if (ERROR_INSERTED(8101)) {
-    char buf[128];
-    BaseString::snprintf(
-        buf, sizeof(buf),
-        "Inserted 8101, startFlag %u, regApiPtr->apiConnectstate %u, "
-        "regApiPtr->abortState %u",
-        startFlag, regApiPtr->apiConnectstate, regApiPtr->abortState);
-    warningEvent("%s", buf);
-
-    jam();
-    /*
-      Phase 2:
-      Transaction has been aborted by a fake node failure,
-      but the API hasn't been informed yet. Force the state
-      into waiting for pending signals.
-    */
-    if (regApiPtr->returncode != ZNODEFAIL_BEFORE_COMMIT ||
-        regApiPtr->apiConnectstate != CS_ABORTING ||
-        regApiPtr->abortState != AS_IDLE) {
-      /*
-        We are waiting for abort to complete, but have not reached
-        the transaction state we want to test. Try again.
-      */
-      jam();
-      sendSignalWithDelay(reference(), GSN_TCINDXREQ, signal, 100,
-                          TcKeyReq::StaticLength, &handle);
-      return;
-    }
-    CLEAR_ERROR_INSERT_VALUE;
-  }
-#endif
-
   ConnectionState conState = regApiPtr->apiConnectstate;
   if (startFlag == 1 &&
       (conState == CS_CONNECTED ||

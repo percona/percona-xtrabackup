@@ -21,6 +21,10 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+IF(NOT TARGET mysql_server_mock)
+  RETURN()
+ENDIF()
+
 ADD_HARNESS_PLUGIN(routertestplugin_logger NO_INSTALL
   DESTINATION harness
   SOURCES logger_testplugin.cc)
@@ -94,20 +98,17 @@ FOREACH(test_file
 add_test_file(${CMAKE_CURRENT_SOURCE_DIR}/${test_file}
   MODULE "component"
   INCLUDE_DIRS
-    ${PROJECT_SOURCE_DIR}/src/harness/shared/include/
-    ${PROJECT_SOURCE_DIR}/src/http/include/
     ${PROJECT_SOURCE_DIR}/src/mock_server/include/mysqlrouter/
-    ${CMAKE_SOURCE_DIR}/plugin/x/client
   SYSTEM_INCLUDE_DIRS ${GMOCK_INCLUDE_DIRS}
-                      ${PROTOBUF_INCLUDE_DIR} ${MYSQLX_GENERATE_DIR}
+                      ${PROTOBUF_INCLUDE_DIR}
   LIB_DEPENDS
   http_client
   http_common
   mock_server_rest_client
   mysql_protocol
-  mysqlxclient_lite
-  mysqlxmessages_lite
-  ext::libprotobuf-lite
+  router_mysqlxclient
+  router_mysqlxmessages
+  router_cluster
 
   DEPENDS
   http_auth_backend
@@ -123,12 +124,12 @@ add_test_file(${CMAKE_CURRENT_SOURCE_DIR}/${test_file}
   rest_metadata_cache
   rest_router
   rest_routing
-  router_openssl
-  router_protobuf
   routing
   routertestplugin_logger
   signal_me
   )
+  ROUTERTEST_GET_TARGET(ttt ${test_file} "component")
+  DOWNGRADE_STRINGOP_WARNINGS(${ttt})
 ENDFOREACH()
 
 FOREACH(test_file
@@ -138,15 +139,14 @@ FOREACH(test_file
 add_router_test_file(${CMAKE_CURRENT_SOURCE_DIR}/${test_file}
   MODULE "component"
   SYSTEM_INCLUDE_DIRS ${GMOCK_INCLUDE_DIRS}
-                      ${PROTOBUF_INCLUDE_DIR} ${MYSQLX_GENERATE_DIR}
+                      ${PROTOBUF_INCLUDE_DIR}
   INCLUDE_DIRS
   ${CMAKE_SOURCE_DIR}/plugin/x/client/
   $<TARGET_PROPERTY:routing_connections,INCLUDE_DIRECTORIES>
 
   LIB_DEPENDS
-  mysqlxclient_lite
-  mysqlxmessages_lite
-  ext::libprotobuf-lite
+  router_mysqlxclient
+  router_mysqlxmessages
 
   DEPENDS
   http_auth_backend
@@ -166,6 +166,16 @@ add_router_test_file(${CMAKE_CURRENT_SOURCE_DIR}/${test_file}
   routing
   )
 ENDFOREACH()
+
+# the mock-server test needs the mysql_native_password client plugin,
+# if it built (depends on WITH_AUTHENTICATION_CLIENT_PLUGINS)
+IF(TARGET mysql_native_password)
+  ADD_DEPENDENCIES(routertest_component_mock_server
+    mysql_native_password)
+ELSE()
+  ADD_DEFINITIONS(-DSKIP_MYSQL_NATIVE_PASSWORD_TESTS)
+ENDIF()
+
 
 # When system deployment bootstrap is executed, files are
 # created in locations specified by deployment layout.

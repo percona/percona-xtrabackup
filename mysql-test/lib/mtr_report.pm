@@ -508,7 +508,11 @@ sub mtr_generate_xml_report($) {
       $tinfo->{'comment'} =~ s/</&gt;/g;
       print $xml_report_file "<testcase name=\"$tname\"$combination " .
         "status=\"$not_run_status\" " . "time=\"$test_time\" " .
-        "suitename=\"$tsuite\" " . "comment=\"$tinfo->{'comment'}\" />\n";
+        "suitename=\"$tsuite\">\n";
+          print $xml_report_file " " x 7;
+      print $xml_report_file "<$not_run_status message=\"$tinfo->{'comment'}\" />\n";
+      print $xml_report_file " " x 4;
+      print $xml_report_file "</testcase>\n";
     } elsif ($tinfo->{'result'} eq 'MTR_RES_PASSED') {
       print $xml_report_file " " x 4;
       print $xml_report_file "<testcase name=\"$tname\"$combination " .
@@ -674,6 +678,7 @@ sub mtr_report_stats ($$;$) {
     # Hashes to keep track of reported failures
     my %seen          = ();
     my %seen_unstable = ();
+    my %seen_timeout  = ();
 
     foreach my $tinfo (@$tests) {
       my $tname = $tinfo->{'name'};
@@ -694,6 +699,10 @@ sub mtr_report_stats ($$;$) {
           $seen{$tname} = 1;
         }
       }
+
+      if ($tinfo->{'timeout'}) {
+        $seen_timeout{$tname} = 1;
+      }
     }
 
     # Print the list of tests that failed in a format that can be copy
@@ -707,6 +716,11 @@ sub mtr_report_stats ($$;$) {
       summary_print("Unstable test(s)(failures/attempts): " .
                 join(" ", map { $_ . $seen_unstable{$_} } sort keys %seen_unstable) .
                 "\n\n");
+    }
+
+    # Print the list of tests that have timed out, if any.
+    if (%seen_timeout) {
+      summary_print("Timed out test(s): " . join(" ", sort keys %seen_timeout) . "\n\n");
     }
 
     # Print info about reporting the error

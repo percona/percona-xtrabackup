@@ -55,7 +55,7 @@ INSERT INTO t2 VALUES (5,'name','pass','mail','Y','v','n','adr','1','1','1');
 ANALYZE TABLE t1,t2;
 
 # Tests printing of TemptableAggregateIterator.
---skip_if_hypergraph  # TemptableAggregateIterator not supported.
+--skip_if_hypergraph  # Uses streaming aggregation instead of temp table aggregation.
 EXPLAIN FORMAT=tree SELECT t2.userid, MIN(t1.score) FROM t1, t2 WHERE t1.userID=t2.userID GROUP BY t2.userid;
 
 --sorted_result
@@ -849,7 +849,7 @@ SELECT 1 FROM t1 as t1_outer GROUP BY a
 --error ER_WRONG_FIELD_WITH_GROUP 
 SELECT (SELECT t1_outer.a FROM t1 AS t1_inner LIMIT 1) 
   FROM t1 AS t1_outer GROUP BY t1_outer.b;
---error ER_BAD_FIELD_ERROR 
+--error ER_WRONG_FIELD_WITH_GROUP
 SELECT 1 FROM t1 as t1_outer GROUP BY a 
   HAVING (SELECT t1_outer.b FROM t1 AS t1_inner LIMIT 1);
 SELECT (SELECT SUM(t1_inner.a) FROM t1 AS t1_inner LIMIT 1) 
@@ -889,10 +889,16 @@ SELECT 1 FROM t1 GROUP BY b HAVING a = 2;
 --error ER_INVALID_GROUP_FUNC_USE
 SELECT 1 FROM t1 GROUP BY SUM(b);
 # I deleted pk from table, as it was making query below become valid.
---error ER_WRONG_FIELD_WITH_GROUP 
-SELECT b FROM t1 AS t1_outer GROUP BY a HAVING t1_outer.a IN 
-  (SELECT SUM(t1_inner.b)+t1_outer.b FROM t1 AS t1_inner GROUP BY t1_inner.a
-   HAVING SUM(t1_inner.b)+t1_outer.b > 5);
+--error ER_BAD_FIELD_ERROR
+SELECT b
+FROM t1 AS t1_outer
+GROUP BY a
+HAVING t1_outer.a IN
+  (SELECT SUM(t1_inner.b) + t1_outer.b
+   FROM t1 AS t1_inner
+   GROUP BY t1_inner.a
+   HAVING SUM(t1_inner.b) + t1_outer.b > 5
+  );
 DROP TABLE t1;
 SET SQL_MODE = '';
 #
@@ -1116,7 +1122,6 @@ FLUSH STATUS;
 --disable_result_log
 --eval $query
 --enable_result_log
---skip_if_hypergraph  # Does not support this hint yet.
 SHOW SESSION STATUS LIKE 'Sort_scan%';
 --let $query=SELECT a FROM t1 IGNORE INDEX FOR ORDER BY (PRIMARY,i2) ORDER BY a
 --eval EXPLAIN $query
@@ -1124,7 +1129,6 @@ FLUSH STATUS;
 --disable_result_log
 --eval $query
 --enable_result_log
---skip_if_hypergraph  # Does not support this hint yet.
 SHOW SESSION STATUS LIKE 'Sort_scan%';
 SELECT a FROM t1 IGNORE INDEX FOR ORDER BY (PRIMARY,i2) ORDER BY a;
 EXPLAIN SELECT a FROM t1 IGNORE INDEX FOR ORDER BY (PRIMARY)
@@ -2902,6 +2906,7 @@ ANALYZE TABLE t1;
 # plan to make sure it doesn't change in a way that would mask the bug.
 #
 --skip_if_hypergraph   # Chooses a different query plan.
+--replace_regex $elide_costs
 EXPLAIN FORMAT=tree SELECT f1, f1 + 1, COUNT(DISTINCT f2) AS x FROM t1 GROUP BY f1 ORDER BY x;
 SELECT f1, f1 + 1, COUNT(DISTINCT f2) AS x FROM t1 GROUP BY f1 ORDER BY x;
 
@@ -3484,6 +3489,7 @@ SELECT b, COUNT(*) FROM t1 LEFT JOIN t2 USING (b) LEFT JOIN t3 USING (b)
 GROUP BY b;
 
 --replace_regex $elide_costs
+--skip_if_hypergraph   # Chooses a different query plan.
 --eval EXPLAIN FORMAT=TREE $query
 
 FLUSH STATUS;
@@ -3492,6 +3498,7 @@ FLUSH STATUS;
 
 --echo # Expect around 500 index reads. 250 from t2 and 250 from t3.
 --echo # It used to be around 16000 index reads.
+--skip_if_hypergraph   # Chooses a different query plan.
 SHOW STATUS LIKE 'Handler_read_key';
 
 DROP TABLE t1, t2, t3;
@@ -3625,3 +3632,37 @@ FROM ( SELECT ANY_VALUE(value)
 
 DROP PROCEDURE BatchInsert;
 DROP TABLE product;
+
+--echo # Bug#36556725: failure in Group_check::do_ident_check
+
+CREATE TABLE t1(f1 INTEGER);
+SELECT (SELECT f1) FROM t1 GROUP BY f1 HAVING f1 < 1;
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#36625752 View with ORDER BY misses a row
+--echo #
+CREATE TABLE t1(c0 INT PRIMARY KEY);
+let $query =
+SELECT 1 FROM t1 ORDER BY COUNT(*) OVER (PARTITION BY MIN(t1.c0));
+--echo # returns one row as expected
+eval $query;
+eval CREATE VIEW v AS $query;
+--echo # used to return zero rows
+SELECT 1 AS one FROM v;
+SHOW CREATE VIEW v;
+DROP VIEW v;
+
+let $query=
+(SELECT 1 AS one FROM t1 ORDER BY COUNT(*) OVER (PARTITION BY MIN(t1.c0)))
+UNION ALL
+(SELECT 1        FROM t1 ORDER BY COUNT(*) OVER (PARTITION BY MIN(t1.c0)));
+--echo # returns two rows as expected
+eval $query;
+eval CREATE VIEW v AS $query;
+--echo # used to return zero rows
+SELECT v.one AS one FROM v;
+SHOW CREATE VIEW v;
+DROP VIEW v;
+
+DROP TABLE t1;

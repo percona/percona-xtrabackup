@@ -805,8 +805,11 @@ eval create table t1 (n int(10), d int(10)) engine=$engine_type;
 eval create table t2 (n int(10), d int(10)) engine=$engine_type;
 insert into t1 values(1,1),(1,2);
 insert into t2 values(1,10),(2,20);
+--skip_if_hypergraph  # Depends on plan.
 UPDATE t1,t2 SET t1.d=t2.d,t2.d=30 WHERE t1.n=t2.n;
+--skip_if_hypergraph  # Depends on plan.
 select * from t1;
+--skip_if_hypergraph  # Depends on plan.
 select * from t2;
 drop table t1,t2;
 
@@ -954,6 +957,7 @@ SELECT * FROM t1;
 drop table  t1,t2;
 eval create table t1  ( pk         int primary key,    parent     int not null,    child      int not null,       index (parent)  ) engine = $engine_type;
 insert into t1 values   (1,0,4),  (2,1,3),  (3,2,1),  (4,1,2);
+--partially_sorted_result 1
 select distinct  parent,child   from t1   order by parent;
 drop table t1;
 

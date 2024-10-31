@@ -23,8 +23,7 @@
 
 #include "sql/rpl_injector.h"
 
-#include "sql/binlog.h"     // mysql_bin_log
-#include "sql/log_event.h"  // Incident_log_event
+#include "sql/binlog.h"  // mysql_bin_log
 #include "sql/mdl.h"
 #include "sql/rpl_write_set_handler.h"  // add_pke
 #include "sql/sql_base.h"               // close_thread_tables
@@ -40,7 +39,7 @@ injector::transaction::transaction(THD *thd, bool calc_writeset_hash)
       m_thd(thd),
       m_calc_writeset_hash(calc_writeset_hash) {
   // Remember position where transaction started
-  LOG_INFO log_info;
+  Log_info log_info;
   mysql_bin_log.get_current_log(&log_info);
   strmake(m_start_name_buf, log_info.log_file_name,
           sizeof(m_start_name_buf) - 1);
@@ -260,10 +259,6 @@ void injector::free_instance() {
   }
 }
 
-int injector::record_incident(
-    THD *thd, mysql::binlog::event::Incident_event::enum_incident incident,
-    const LEX_CSTRING &message) {
-  Incident_log_event ev(thd, incident, message);
-  return mysql_bin_log.write_incident(&ev, thd, true /*need_lock_log=true*/,
-                                      message.str);
+int injector::record_incident(THD *thd, std::string_view message) {
+  return mysql_bin_log.write_incident_commit(thd, message);
 }

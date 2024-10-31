@@ -92,6 +92,10 @@
 
 static bool filter_inited = false;
 static ulong filter_rule_uuid = 0;
+// The number of built-in rules in the log_filter_builtin_rules ruleset. This
+// counter should be incremented for each built-in rule we add in
+// log_builtins_filter_set_defaults().
+static uint32 builtin_count = 0;
 
 log_filter_ruleset *log_filter_builtin_rules = nullptr;
 log_filter_tag rule_tag_builtin = {"log_filter_builtin", nullptr};
@@ -289,11 +293,12 @@ static void log_builtins_filter_ruleset_free(log_filter_ruleset **ruleset) {
 }
 
 /**
-  Defaults for when the configuration engine isn't loaded;
-  aim for 5.7 compatibility.
+  Defaults for when the configuration engine isn't loaded; aim for 5.7
+  compatibility.
 */
 static void log_builtins_filter_set_defaults(log_filter_ruleset *ruleset) {
   log_filter_rule *r;
+  builtin_count = 0;
 
   assert(ruleset != nullptr);
 
@@ -308,6 +313,7 @@ static void log_builtins_filter_set_defaults(log_filter_ruleset *ruleset) {
   r->verb = LOG_FILTER_RETURN;
 
   ruleset->count++;
+  builtin_count++;
 
   // sys_var: log_error_verbosity
   r = log_builtins_filter_rule_init(ruleset);
@@ -318,6 +324,7 @@ static void log_builtins_filter_set_defaults(log_filter_ruleset *ruleset) {
   r->verb = LOG_FILTER_DROP;
 
   ruleset->count++;
+  builtin_count++;
 
   // example: remove all source-line log items
   // these are not desirable by default, only while debugging.
@@ -328,6 +335,33 @@ static void log_builtins_filter_set_defaults(log_filter_ruleset *ruleset) {
   // aux optional
 
   ruleset->count++;
+  builtin_count++;
+
+  // Log throttle lambda: Emit <err_code> max <per_minute> times per minute.
+  auto throttle_per_minute = [&](const int err_code, const int per_minute) {
+    log_filter_rule *tr = log_builtins_filter_rule_init(ruleset);
+    tr->verb = LOG_FILTER_THROTTLE;
+    tr->cond = LOG_FILTER_COND_EQ;
+    log_item_set(&tr->match, LOG_ITEM_SQL_ERRCODE)->data_integer = err_code;
+    log_item_set(&tr->aux, LOG_ITEM_GEN_INTEGER)->data_integer = per_minute;
+    ruleset->count++;
+    builtin_count++;
+  };
+
+  // Throttle background histogram update errors: Once per minute.
+  throttle_per_minute(ER_BACKGROUND_HISTOGRAM_UPDATE, 1);
+
+  // Throttle thread pool errors: Ten times every minute.
+  throttle_per_minute(ER_THREAD_POOL_ALLOC_FAILED, 10);
+  throttle_per_minute(ER_THREAD_POOL_SOCKETPAIR_FAILED, 10);
+  throttle_per_minute(ER_THREAD_POOL_LOW_LEVEL_INIT_FAILED, 10);
+  throttle_per_minute(ER_THREAD_POOL_LOW_LEVEL_ARM_FAILED, 10);
+  throttle_per_minute(ER_THREAD_POOL_LOW_LEVEL_ARM_FAILED_WITH_ERRNO, 10);
+  throttle_per_minute(ER_THREAD_POOL_CREATE_THREAD_FAILED, 10);
+  throttle_per_minute(ER_THREAD_POOL_LOW_LEVEL_INIT_ALLOC_FAILED, 10);
+  throttle_per_minute(ER_THREAD_POOL_CREATE_EPOLL_FAILED, 10);
+  throttle_per_minute(ER_THREAD_POOL_EPOLL_WAIT_ERROR, 10);
+  throttle_per_minute(ER_THREAD_POOL_POLL_WAIT_ERROR, 10);
 }
 
 /**
@@ -404,8 +438,9 @@ static log_filter_apply log_filter_try_apply(log_line *ll, int ln,
 
     case LOG_FILTER_THROTTLE: {
       const ulonglong now = my_micro_time();
-      const ulong rate = (ulong)(
-          (r->aux.data.data_integer < 0) ? 0 : r->aux.data.data_integer);
+      const ulong rate =
+          (ulong)((r->aux.data.data_integer < 0) ? 0
+                                                 : r->aux.data.data_integer);
       ulong suppressed = 0;
       ulong matches;
 
@@ -970,15 +1005,15 @@ int log_builtins_filter_parse_suppression_list(char *list, bool update) {
     }
 
     /*
-      During check-phase, make sure the requested number of error-codes
-      (and therefore, the requested number of DROP rules) will fit into
-      the built-in rule-set.  Reserve one rule for --log-error-verbosity
-      and one for our "ERROR and SYSTEM always pass" shortcut.
-      Without this check, we'd still catch the (attempted) overflow during
-      assignment, but if we do it during the check phase, we protect the
+      During check-phase, make sure the requested number of error-codes (and
+      therefore, the requested number of DROP rules) will fit into the built-in
+      rule-set. Without this check, we'd still catch the (attempted) overflow
+      during assignment, but if we do it during the check phase, we protect the
       integrity of both the current rule-set and the variable's value.
     */
-    else if (++list_len >= (log_filter_builtin_rules->alloc - 2))
+    else if (uint32_t max_user_rules_in_list =
+                 log_filter_builtin_rules->alloc - builtin_count;
+             ++list_len > max_user_rules_in_list)
       goto fail;
 
     start = end;

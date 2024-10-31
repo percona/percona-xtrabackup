@@ -248,7 +248,7 @@ bool Sql_cmd_show_schema_base::check_privileges(THD *thd) {
   assert(dst_db_name != nullptr);
 
   // Get user's global and db-level privileges.
-  ulong global_db_privs;
+  Access_bitmask global_db_privs;
   if (check_access(thd, SELECT_ACL, dst_db_name, &global_db_privs, nullptr,
                    false, false))
     return true;
@@ -410,7 +410,8 @@ bool Sql_cmd_show_create_table::execute_inner(THD *thd) {
       access is granted. We need to check if first_table->grant.privilege
       contains any table-specific privilege.
     */
-    DBUG_PRINT("debug", ("tbl->grant.privilege: %lx", tbl->grant.privilege));
+    DBUG_PRINT("debug",
+               ("tbl->grant.privilege: %" PRIx32, tbl->grant.privilege));
     if (check_some_access(thd, TABLE_OP_ACLS, tbl) ||
         (tbl->grant.privilege & TABLE_OP_ACLS) == 0) {
       my_error(ER_TABLEACCESS_DENIED_ERROR, MYF(0), "SHOW",
@@ -2874,9 +2875,9 @@ class List_process_list : public Do_THD_Impl {
         thd_info->host = host;
       } else
         thd_info->host = m_client_thd->mem_strdup(
-            inspect_sctx_host_or_ip.str[0]
-                ? inspect_sctx_host_or_ip.str
-                : inspect_sctx_host.length ? inspect_sctx_host.str : "");
+            inspect_sctx_host_or_ip.str[0] ? inspect_sctx_host_or_ip.str
+            : inspect_sctx_host.length     ? inspect_sctx_host.str
+                                           : "");
     }  // We've copied the security context, so release the lock.
 
     DBUG_EXECUTE_IF("processlist_acquiring_dump_threads_LOCK_thd_data", {
@@ -4079,11 +4080,10 @@ static int get_schema_tmp_table_columns_record(THD *thd, Table_ref *tables,
 
     // COLUMN_KEY
     pos = pointer_cast<const uchar *>(
-        field->is_flag_set(PRI_KEY_FLAG)
-            ? "PRI"
-            : field->is_flag_set(UNIQUE_KEY_FLAG)
-                  ? "UNI"
-                  : field->is_flag_set(MULTIPLE_KEY_FLAG) ? "MUL" : "");
+        field->is_flag_set(PRI_KEY_FLAG)        ? "PRI"
+        : field->is_flag_set(UNIQUE_KEY_FLAG)   ? "UNI"
+        : field->is_flag_set(MULTIPLE_KEY_FLAG) ? "MUL"
+                                                : "");
     table->field[TMP_TABLE_COLUMNS_COLUMN_KEY]->store(
         (const char *)pos, strlen((const char *)pos), cs);
 
@@ -4397,7 +4397,7 @@ static int get_schema_tmp_table_keys_record(THD *thd, Table_ref *tables,
       // Expression for functional key parts
       if (key_part->field != nullptr &&
           key_part->field->is_field_for_functional_index()) {
-        Value_generator *gcol = key_info->key_part->field->gcol_info;
+        Value_generator *gcol = key_part->field->gcol_info;
 
         table->field[TMP_TABLE_KEYS_EXPRESSION]->store(
             gcol->expr_str.str, gcol->expr_str.length, cs);
@@ -4629,6 +4629,7 @@ static TABLE *create_schema_table(THD *thd, Table_ref *table_list) {
       case MYSQL_TYPE_MEDIUM_BLOB:
       case MYSQL_TYPE_LONG_BLOB:
       case MYSQL_TYPE_BLOB:
+      case MYSQL_TYPE_VECTOR:
         if (!(item = new Item_blob(fields_info->field_name,
                                    fields_info->field_length))) {
           return nullptr;
@@ -4772,7 +4773,7 @@ bool mysql_schema_table(THD *thd, LEX *lex, Table_ref *table_list) {
     Query_block *sel = lex->current_query_block();
     Field_translator *transl;
 
-    const ulonglong want_privilege_saved = thd->want_privilege;
+    const Access_bitmask want_privilege_saved = thd->want_privilege;
     thd->want_privilege = SELECT_ACL;
     const enum enum_mark_columns save_mark_used_columns =
         thd->mark_used_columns;
@@ -4964,7 +4965,7 @@ ST_FIELD_INFO tmp_table_keys_fields_info[] = {
     {"INDEX_SCHEMA", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 0, nullptr, 0},
     {"INDEX_NAME", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 0, "Key_name", 0},
     {"SEQ_IN_INDEX", 2, MYSQL_TYPE_LONGLONG, 0, 0, "Seq_in_index", 0},
-    {"COLUMN_NAME", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 0, "Column_name", 0},
+    {"COLUMN_NAME", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 1, "Column_name", 0},
     {"COLLATION", 1, MYSQL_TYPE_STRING, 0, 1, "Collation", 0},
     {"CARDINALITY", MY_INT64_NUM_DECIMAL_DIGITS, MYSQL_TYPE_LONGLONG, 0, 1,
      "Cardinality", 0},
@@ -5360,6 +5361,32 @@ static bool acquire_mdl_for_table(THD *thd, const char *db_name,
 }
 
 /**
+  Helper to look up a Trigger object in a TABLE_SHARE by trigger name.
+
+  @param share TABLE_SHARE in whose list of Trigger objects the lookup
+               is to be performed.
+  @param name  Name of trigger to find.
+
+  @return Pointer to Trigger object, or nullptr if no trigger with the
+          provided name was found.
+*/
+
+static Trigger *find_trigger_in_share(TABLE_SHARE *share,
+                                      const LEX_STRING &name) {
+  Trigger *t;
+  List_iterator_fast<Trigger> it(*(share->triggers));
+
+  while ((t = it++) != nullptr) {
+    if (!my_strnncoll(dd::Trigger::name_collation(),
+                      pointer_cast<const uchar *>(t->get_trigger_name().str),
+                      t->get_trigger_name().length,
+                      pointer_cast<const uchar *>(name.str), name.length))
+      return t;
+  }
+  return nullptr;
+}
+
+/**
   SHOW CREATE TRIGGER high-level implementation.
 
   @param thd      Thread context.
@@ -5412,12 +5439,12 @@ bool show_create_trigger(THD *thd, const sp_name *trg_name) {
     /* Perform closing actions and return error status. */
   }
 
-  if (!lst->table->triggers) {
+  if (!lst->table->s->triggers) {
     my_error(ER_TRG_DOES_NOT_EXIST, MYF(0));
     goto exit;
   }
 
-  trigger = lst->table->triggers->find_trigger(trg_name->m_name);
+  trigger = find_trigger_in_share(lst->table->s, trg_name->m_name);
 
   if (!trigger) {
     my_error(ER_TRG_CORRUPTED_FILE, MYF(0), trg_name->m_db.str,
@@ -5547,11 +5574,13 @@ static void get_cs_converted_string_value(THD *thd, String *input_str,
   @param str      String to print to
   @param field_cs field's charset. When given [var]char length is printed in
                   characters, otherwise - in bytes
+  @param vector_dimensionality The dimensionality of a vector field
 
 */
 
 void show_sql_type(enum_field_types type, bool is_array, uint metadata,
-                   String *str, const CHARSET_INFO *field_cs) {
+                   String *str, const CHARSET_INFO *field_cs,
+                   unsigned int vector_dimensionality) {
   DBUG_TRACE;
   DBUG_PRINT("enter", ("type: %d, metadata: 0x%x", type, metadata));
 
@@ -5682,6 +5711,14 @@ void show_sql_type(enum_field_types type, bool is_array, uint metadata,
       else
         str->set_ascii(STRING_WITH_LEN("longtext"));
       break;
+
+    case MYSQL_TYPE_VECTOR: {
+      const CHARSET_INFO *cs = str->charset();
+      size_t length = cs->cset->snprintf(cs, str->ptr(), str->alloced_length(),
+                                         "vector(%u)", vector_dimensionality);
+      str->length(length);
+      break;
+    }
 
     case MYSQL_TYPE_BLOB:
       /*

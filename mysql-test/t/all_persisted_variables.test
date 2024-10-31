@@ -29,6 +29,11 @@
 # added, it is the responsibility of the Dev to edit $total_persistent_vars.
 ################################################################################
 
+# When running with --hypergraph, mysqltest sets hypergraph_optimizer
+# in each session. The expected number of variables with
+# variable_source='PERSISTED' will therefore be different.
+--source include/not_hypergraph.inc
+
 --echo ***********************************************************************
 --echo * Run only on debug build,non-windows as few server variables are not
 --echo * available on all platforms.
@@ -50,7 +55,8 @@ let $total_global_vars=`SELECT COUNT(*)
    WHERE variable_name NOT LIKE 'ndb_%'
    AND variable_name NOT LIKE 'debug_%'
    AND variable_name NOT LIKE '%telemetry%'`;
-let $total_persistent_vars=441;
+
+let $total_persistent_vars=443;
 
 --echo ***************************************************************
 --echo * 0. Verify that variables present in performance_schema.global

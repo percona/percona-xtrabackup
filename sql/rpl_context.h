@@ -29,7 +29,7 @@
 
 #include "my_inttypes.h"                                // IWYU pragma: keep
 #include "mysql/binlog/event/compression/compressor.h"  // mysql::binlog::event::compression::Compressor
-#include "mysql/binlog/event/nodiscard.h"
+#include "mysql/utils/nodiscard.h"
 
 #include "mysql/binlog/event/compression/factory.h"
 #include "sql/binlog/group_commit/bgc_ticket.h"
@@ -261,14 +261,13 @@ class Last_used_gtid_tracker_ctx {
 
 class Transaction_compression_ctx {
   using Compressor_t = mysql::binlog::event::compression::Compressor;
-  using Grow_calculator_t =
-      mysql::binlog::event::compression::buffer::Grow_calculator;
+  using Grow_calculator_t = mysql::containers::buffers::Grow_calculator;
   using Factory_t = mysql::binlog::event::compression::Factory;
 
  public:
   using Compressor_ptr_t = std::shared_ptr<Compressor_t>;
   using Managed_buffer_sequence_t = Compressor_t::Managed_buffer_sequence_t;
-  using Memory_resource_t = mysql::binlog::event::resource::Memory_resource;
+  using Memory_resource_t = mysql::allocators::Memory_resource;
 
   explicit Transaction_compression_ctx(PSI_memory_key key);
 
@@ -374,6 +373,31 @@ class Binlog_group_commit_ctx {
   binlog::BgcTicket m_session_ticket{0};
   /** Whether or not the session already waited on the ticket. */
   bool m_has_waited{false};
+
+ public:
+  /// Set whether binlog max size was exceeded.
+  /// The max size exceeded condition must be checked with LOCK_log held and
+  /// thus its done early during flush stage although not used until end of BGC.
+  /// This is an optimization which avoids taking LOCK_log at end of BGC when no
+  /// session has seen that the threshold has been exceeded.
+  void set_max_size_exceeded(bool value) { m_max_size_exceeded = value; }
+
+  /// Turn on forced rotate at end of BGC. Thus performing a rotate although
+  /// the max size has not been reached.
+  void set_force_rotate() { m_force_rotate = true; }
+
+  /// Aggregate the rotate requests over all sessions in queue
+  ///
+  /// @return The first element states whether any session
+  /// detected max binlog size exceeded and the second whether any session
+  /// requested forced binlog rotate.
+  static std::pair<bool, bool> aggregate_rotate_settings(THD *queue);
+
+ private:
+  /// Whether session detected that binlog max size was exceeded.
+  bool m_max_size_exceeded{false};
+  /// Whether session requests forced rotate
+  bool m_force_rotate{false};
 };
 
 /*

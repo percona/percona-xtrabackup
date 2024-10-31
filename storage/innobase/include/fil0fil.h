@@ -140,6 +140,10 @@ enum class Fil_state {
   /** Space ID matches but the paths don't match. */
   MOVED,
 
+  /** Space ID and paths match but dd_table data dir flag doesn't
+  exist or tablespace is created outside default data dir */
+  MOVED_PREV_OR_HAS_DATADIR,
+
   /** Tablespace and/or filename was renamed. The DDL log will handle
   this case. */
   RENAMED
@@ -222,9 +226,6 @@ struct fil_node_t {
 
   /** block size to use for punching holes */
   size_t block_size;
-
-  /** whether atomic write is enabled for this file */
-  bool atomic_write;
 
   /** FIL_NODE_MAGIC_N */
   size_t magic_n;
@@ -697,6 +698,14 @@ class Fil_path {
   @param[in]  other  directory path to compare to
   @return true if this path is the same as the other path */
   [[nodiscard]] bool is_same_as(const std::string &other) const;
+
+  /** Get the absolute directory of this path */
+  [[nodiscard]] Fil_path get_abs_directory() const;
+
+  /** Check if the directory to path is same as directory as the other path.
+  @param[in]  other  directory path to compare to
+  @return true if this path directory is the same as the other path directory */
+  [[nodiscard]] bool is_dir_same_as(const Fil_path &other) const;
 
   /** Check if two path strings are equal. Put them into Fil_path objects
   so that they can be compared correctly.
@@ -1383,13 +1392,11 @@ void fil_space_set_imported(space_id_t space_id);
                                 downwards to an integer
 @param[in,out]  space           space where to append
 @param[in]      is_raw          true if a raw device or a raw disk partition
-@param[in]      atomic_write    true if the file has atomic write enabled
 @param[in]      max_pages       maximum number of pages in file
 @return pointer to the file name
 @retval nullptr if error */
 [[nodiscard]] char *fil_node_create(const char *name, page_no_t size,
                                     fil_space_t *space, bool is_raw,
-                                    bool atomic_write,
                                     page_no_t max_pages = PAGE_NO_MAX);
 
 /** Create a space memory object and put it to the fil_system hash table.
@@ -2083,14 +2090,6 @@ inline void fil_space_open_if_needed(fil_space_t *space) {
   }
 }
 
-#ifdef UNIV_LINUX
-/**
-Try and enable FusionIO atomic writes.
-@param[in] file         OS file handle
-@return true if successful */
-[[nodiscard]] bool fil_fusionio_enable_atomic_write(pfs_os_file_t file);
-#endif /* UNIV_LINUX */
-
 /** Note that the file system where the file resides doesn't support PUNCH HOLE.
 Called from AIO handlers when IO returns DB_IO_NO_PUNCH_HOLE
 @param[in,out]  file            file to set */
@@ -2195,23 +2194,26 @@ bool fil_update_partition_name(space_id_t space_id, uint32_t fsp_flags,
                                std::string &dd_path);
 
 /** Add tablespace to the set of tablespaces to be updated in DD.
-@param[in]      dd_object_id    Server DD tablespace ID
-@param[in]      space_id        Innodb tablespace ID
-@param[in]      space_name      New tablespace name
-@param[in]      old_path        Old Path in the data dictionary
-@param[in]      new_path        New path to be update in dictionary */
+@param[in]    dd_object_id                   Server DD tablespace ID
+@param[in]    space_id                       InnoDB tablespace ID
+@param[in]    space_name                     Tablespace name
+@param[in]    old_path                       Old Path in the data dictionary
+@param[in]    new_path                       New path to be update in dictionary
+@param[in]    moved_prev_or_has_datadir      The move has happened before
+                                             8.0.38/8.4.1/9.0.0 or table is
+                                             created with data dir clause.*/
 void fil_add_moved_space(dd::Object_id dd_object_id, space_id_t space_id,
                          const char *space_name, const std::string &old_path,
-                         const std::string &new_path);
-
+                         const std::string &new_path,
+                         bool moved_prev_or_has_datadir);
 /** Lookup the tablespace ID and return the path to the file. The filename
 is ignored when testing for equality. Only the path up to the file name is
 considered for matching: e.g. ./test/a.ibd == ./test/b.ibd.
-@param[in]  space_id      tablespace ID to lookup
-@param[in]  space_name    tablespace name
-@param[in]  fsp_flags     tablespace flags
-@param[in]  old_path      the path found in dd:Tablespace_files
-@param[out] new_path      the scanned path for this space_id
+@param[in]  space_id                tablespace ID to lookup
+@param[in]  space_name              tablespace name
+@param[in]  fsp_flags               tablespace flags
+@param[in]  old_path                the path found in dd:Tablespace_files
+@param[out] new_path                the scanned path for this space_id
 @return status of the match. */
 [[nodiscard]] Fil_state fil_tablespace_path_equals(space_id_t space_id,
                                                    const char *space_name,
@@ -2299,13 +2301,12 @@ one of the four path settings scanned at startup for file discovery.
 @param[in]      encrypt_info    encryption key information
 @param[in]      space_id        tablespace ID
 @param[in,out]  space_flags     tablespace flags
-@param[out]     atomic_write    if atomic write is used
 @param[out]     punch_hole      if punch hole is used
 @return DB_SUCCESS on success */
 [[nodiscard]] dberr_t fil_write_initial_pages(
     pfs_os_file_t file, const char *path, fil_type_t type, page_no_t size,
     const byte *encrypt_info, space_id_t space_id, uint32_t &space_flags,
-    bool &atomic_write, bool &punch_hole);
+    bool &punch_hole);
 
 /** Free the data structures required for recovery. */
 void fil_free_scanned_files();

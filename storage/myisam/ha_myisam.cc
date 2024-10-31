@@ -309,6 +309,7 @@ int table2myisam(TABLE *table_arg, MI_KEYDEF **keydef_out,
         keydef[i].seg[j].null_pos = 0;
       }
       if (field->type() == MYSQL_TYPE_BLOB ||
+          field->type() == MYSQL_TYPE_VECTOR ||
           field->type() == MYSQL_TYPE_GEOMETRY) {
         keydef[i].seg[j].flag |= HA_BLOB_PART;
         /* save number of bytes used to pack length */
@@ -368,10 +369,10 @@ int table2myisam(TABLE *table_arg, MI_KEYDEF **keydef_out,
       recinfo_pos->type =
           (int)((length <= 3 || (found->is_flag_set(ZEROFILL_FLAG)))
                     ? FIELD_NORMAL
-                    : found->type() == MYSQL_TYPE_STRING ||
-                              found->type() == MYSQL_TYPE_VAR_STRING
-                          ? FIELD_SKIP_ENDSPACE
-                          : FIELD_SKIP_PRESPACE);
+                : found->type() == MYSQL_TYPE_STRING ||
+                        found->type() == MYSQL_TYPE_VAR_STRING
+                    ? FIELD_SKIP_ENDSPACE
+                    : FIELD_SKIP_PRESPACE);
     if (found->is_nullable()) {
       recinfo_pos->null_bit = found->null_bit;
       recinfo_pos->null_pos = found->null_offset();
@@ -1128,8 +1129,9 @@ int ha_myisam::repair(THD *thd, MI_CHECK &param, bool do_optimize) {
   }
   thd_proc_info(thd, old_proc_info);
   if (!has_old_locks) mi_lock_database(file, F_UNLCK);
-  return error ? HA_ADMIN_FAILED
-               : !optimize_done ? HA_ADMIN_ALREADY_DONE : HA_ADMIN_OK;
+  return error            ? HA_ADMIN_FAILED
+         : !optimize_done ? HA_ADMIN_ALREADY_DONE
+                          : HA_ADMIN_OK;
 }
 
 /*
@@ -2023,11 +2025,10 @@ int ha_myisam::multi_range_read_next(char **range_info) {
   return ds_mrr.dsmrr_next(range_info);
 }
 
-ha_rows ha_myisam::multi_range_read_info_const(uint keyno, RANGE_SEQ_IF *seq,
-                                               void *seq_init_param,
-                                               uint n_ranges, uint *bufsz,
-                                               uint *flags,
-                                               Cost_estimate *cost) {
+ha_rows ha_myisam::multi_range_read_info_const(
+    uint keyno, RANGE_SEQ_IF *seq, void *seq_init_param, uint n_ranges,
+    uint *bufsz, uint *flags, bool *force_default_mrr [[maybe_unused]],
+    Cost_estimate *cost) {
   /*
     This call is here because there is no location where this->table would
     already be known.

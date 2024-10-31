@@ -1,11 +1,15 @@
-drop table if exists t1,t2,t3;
-select * from (select 2 from DUAL) b;
+select * from (select 2 from DUAL) AS b;
 2
 2
-SELECT 1 as a FROM (SELECT 1 UNION SELECT a) b;
+SELECT 1 as a FROM (SELECT 1 UNION SELECT a) AS b;
 ERROR 42S22: Unknown column 'a' in 'field list'
-SELECT 1 as a FROM (SELECT a UNION SELECT 1) b;
+SELECT 1 as a FROM (SELECT a UNION SELECT 1) AS b;
 ERROR 42S22: Unknown column 'a' in 'field list'
+select dt.a from (select 1 as a) as dt;
+a
+1
+select test.dt.a from (select 1 as a) as dt;
+ERROR 42S22: Unknown column 'test.dt.a' in 'field list'
 CREATE TABLE t1 (a int not null, b char (10) not null);
 insert into t1 values(1,'a'),(2,'b'),(3,'c'),(3,'c');
 CREATE TABLE t2 (a int not null, b char (10) not null);
@@ -590,9 +594,9 @@ ON table3 .`i1`  = table2 .o1
 ) ON table3 .`i2`  = table2 .o1
 ;
 EXPLAIN
--> Covering index lookup on table3 using <auto_key0> (i1='m', i2='m')  (cost=1.25..1.25 rows=1)
-    -> Materialize  (cost=0.902..0.902 rows=2)
-        -> Table scan on cc  (cost=0.702 rows=2)
+-> Covering index lookup on table3 using <auto_key0> (i1 = 'm', i2 = 'm')  (rows=1)
+    -> Materialize  (rows=2)
+        -> Table scan on cc  (rows=2)
 
 SET @@optimizer_switch=@optimizer_switch_saved;
 DROP TABLE cc;
@@ -4734,3 +4738,86 @@ Cat2	5
 Cat2	7
 NULL	NULL
 DROP TABLE t1;
+# Bug#36557029: Recent failure in check_column_grant_in_table_ref
+CREATE TABLE t (
+a INTEGER GENERATED ALWAYS AS (1) VIRTUAL,
+KEY (a)
+) ENGINE = InnoDB;
+WITH cte1 AS (
+SELECT (SELECT a) AS a
+FROM t AS r
+WHERE a > 0
+GROUP BY r.a, r.a
+)
+SELECT a, a FROM cte1 WHERE cte1.a <= r.a;
+ERROR 42S22: Unknown column 'r.a' in 'where clause'
+DROP TABLE t;
+#
+# Bug#34646522: Literal value with different character set from derived
+#               table causes error
+#
+CREATE TABLE t
+(a VARCHAR(10) CHARACTER SET ascii,
+b VARCHAR(10) CHARACTER SET latin1,
+c VARCHAR(10) CHARACTER SET latin2,
+d VARCHAR(10) CHARACTER SET utf16
+);
+SELECT _utf8mb4 'a' AS a UNION SELECT a FROM t;
+a
+a
+SELECT * FROM (SELECT _utf8mb4 'a' AS a) AS dt UNION SELECT a FROM t;
+a
+a
+SELECT _utf8mb4 'Â±' AS a UNION SELECT a FROM t;
+ERROR HY000: Cannot convert string '\xC3\x82\xC2\xB1' from utf8mb4 to ascii
+SELECT * FROM (SELECT _utf8mb4 'Â±' AS a) AS dt UNION SELECT a FROM t;
+ERROR HY000: Cannot convert string '\xC3\x82\xC2\xB1' from utf8mb4 to ascii
+SELECT _utf8mb4 'a' AS a UNION SELECT b FROM t;
+a
+a
+SELECT * FROM (SELECT _utf8mb4 'a' AS a) AS dt UNION SELECT b FROM t;
+a
+a
+SELECT _utf8mb4 'Â±' AS a UNION SELECT b FROM t;
+a
+Â±
+SELECT * FROM (SELECT _utf8mb4 'Â±' AS a) AS dt UNION SELECT b FROM t;
+a
+Â±
+SELECT _utf8mb4 'a' AS a UNION SELECT c FROM t;
+a
+a
+SELECT * FROM (SELECT _utf8mb4 'a' AS a) AS dt UNION SELECT c FROM t;
+a
+a
+SELECT _utf8mb4 'Â±' AS a UNION SELECT c FROM t;
+ERROR HY000: Cannot convert string '\xC2\xB1' from utf8mb4 to latin2
+SELECT * FROM (SELECT _utf8mb4 'Â±' AS a) AS dt UNION SELECT c FROM t;
+ERROR HY000: Cannot convert string '\xC2\xB1' from utf8mb4 to latin2
+SELECT _utf8mb4 'a' AS a UNION SELECT d FROM t;
+a
+a
+SELECT * FROM (SELECT _utf8mb4 'a' AS a) AS dt UNION SELECT d FROM t;
+a
+a
+SELECT _latin1 'a' AS a UNION SELECT a FROM t;
+a
+a
+SELECT * FROM (SELECT _latin1 'a' AS a) AS dt UNION SELECT a FROM t;
+a
+a
+SELECT _latin1 'Ã¥' AS a UNION SELECT a FROM t;
+ERROR HY000: Cannot convert string '\xC3\x83\xC2\xA5' from latin1 to ascii
+SELECT * FROM (SELECT _latin1 'Ã¥' AS a) AS dt UNION SELECT a FROM t;
+ERROR HY000: Cannot convert string '\xC3\x83\xC2\xA5' from latin1 to ascii
+SELECT _latin1 'a' AS a UNION SELECT c FROM t;
+a
+a
+SELECT * FROM (SELECT _latin1 'a' AS a) AS dt UNION SELECT c FROM t;
+a
+a
+SELECT _latin1 'Ã¥' AS a UNION SELECT c FROM t;
+ERROR HY000: Cannot convert string '\xC3\x83\xC2\xA5' from latin1 to latin2
+SELECT * FROM (SELECT _latin1 'Ã¥' AS a) AS dt UNION SELECT c FROM t;
+ERROR HY000: Cannot convert string '\xC3\x83\xC2\xA5' from latin1 to latin2
+DROP TABLE t;

@@ -3236,8 +3236,8 @@ already_dropped:
  it. Also, if there are running foreign key checks on the table, we drop the
  table lazily.
  @return true if the table was not yet in the drop list, and was added there */
-static bool row_add_table_to_background_drop_list(const char *name [
-    [maybe_unused]]) /*!< in: table name */
+static bool row_add_table_to_background_drop_list(
+    const char *name [[maybe_unused]]) /*!< in: table name */
 {
   /* WL6049, remove after WL6049. */
   ut_d(ut_error);
@@ -4598,6 +4598,8 @@ dberr_t row_scan_index_for_mysql(row_prebuilt_t *prebuilt, dict_index_t *index,
 #ifdef UNIV_DEBUG
 skip_parallel_read:
 #endif /* UNIV_DEBUG */
+
+  DBUG_EXECUTE_IF("ib_die_if_not_parallel_read", ut_error;);
 
   bool contains_null;
   rec_t *rec = nullptr;

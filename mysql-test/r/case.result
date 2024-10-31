@@ -503,3 +503,42 @@ point(12677,16556)))),
 benchmark(2, version() >> (NOT json_objectagg('{"ab":2}',
 '[{"a":"3"},{"a":2},{"b":1},{"a":0},{"a":[1,2]}]'))));
 ERROR HY000: Incorrect arguments to multipolygon
+#
+# Bug#36421511 Assertion `digits >= count_digits(number)' failed.
+#
+CREATE TABLE t (
+c3 DATETIME(6) NOT NULL,
+c4 DATE NOT NULL
+);
+INSERT INTO t VALUES ('2024-08-17 22:27:27.000000','2024-11-27');
+SELECT
+CASE(c3->'')
+WHEN(FROM_UNIXTIME(36))
+THEN(c4)
+ELSE(c3)
+END
+FROM t;
+ERROR 22032: Invalid data type for JSON data in argument 1 to function json_extract; a JSON string or JSON type is required.
+DROP TABLE t;
+# Bug#36570439: Assertion failed: other_type != enum_json_type::J_ERROR
+#               Json_wrapper::compare()
+CREATE TABLE t (a INT, b JSON, c VARCHAR(1));
+INSERT INTO t VALUES (0, '{}', NULL);
+SELECT b
+FROM t
+WHERE (CASE
+WHEN a THEN NOW(2)
+WHEN b->'w' THEN a < b
+ELSE b <= 1
+END
+) <=> c;
+ERROR 42000: Invalid JSON path expression. The error is around character position 1.
+DROP TABLE t;
+#
+# Bug#36844420: Assertion failed: tmp >= tmp_value.ptr() in
+#               Item_func_reverse::val_str()
+#
+SELECT REVERSE(IFNULL(DENSE_RANK() OVER(),
+CONVERT('abc' USING utf32))) AS c;
+c
+1

@@ -41,6 +41,8 @@
 #include <memory>
 #include <mutex>
 #include <new>
+#include <string>
+#include <string_view>
 
 #include "my_config.h"
 
@@ -73,8 +75,6 @@
       using charset name, collation name or collation ID
     - Setting server default character set
 */
-
-extern CHARSET_INFO my_charset_cp932_japanese_ci;
 
 namespace {
 
@@ -250,6 +250,16 @@ CHARSET_INFO *get_charset(uint cs_number, myf flags) {
   return cs;
 }
 
+namespace {
+
+template <size_t N>
+bool starts_with(std::string_view name, const char (&prefix)[N]) {
+  size_t len = N - 1;
+  return name.size() >= len && memcmp(name.data(), prefix, len) == 0;
+}
+
+}  // namespace
+
 /**
   Find collation by name: extended version of get_charset_by_name()
   to return error messages to the caller.
@@ -264,9 +274,16 @@ CHARSET_INFO *my_collation_get_by_name(const char *collation_name, myf flags,
                                        MY_CHARSET_ERRMSG *errmsg) {
   std::call_once(charsets_initialized, init_available_charsets);
 
+  std::string collation_name_string(collation_name);
+  if (starts_with(collation_name_string, "utf8_")) {
+    // insert "mb3" to get "utf8mb3_xxxx"
+    collation_name_string.insert(4, "mb3");
+    collation_name = collation_name_string.c_str();
+  }
+
   mysql::collation::Name name{collation_name};
   CHARSET_INFO *cs = entry()->find_by_name(name, flags, errmsg);
-  if (!cs && (flags & MY_WME)) {
+  if (cs == nullptr && (flags & MY_WME)) {
     char index_file[FN_REFLEN + sizeof(MY_CHARSET_INDEX)];
     my_stpcpy(get_charsets_dir(index_file), MY_CHARSET_INDEX);
     my_error(EE_UNKNOWN_COLLATION, MYF(0), name().c_str(), index_file);
@@ -274,9 +291,9 @@ CHARSET_INFO *my_collation_get_by_name(const char *collation_name, myf flags,
   return cs;
 }
 
-CHARSET_INFO *get_charset_by_name(const char *cs_name, myf flags) {
+CHARSET_INFO *get_charset_by_name(const char *collation_name, myf flags) {
   MY_CHARSET_ERRMSG dummy;
-  return my_collation_get_by_name(cs_name, flags, &dummy);
+  return my_collation_get_by_name(collation_name, flags, &dummy);
 }
 
 /**
@@ -301,15 +318,15 @@ CHARSET_INFO *my_charset_get_by_name(const char *cs_name, uint cs_flags,
   if (cs_flags & MY_CS_PRIMARY) {
     cs = entry()->find_primary(name, flags, errmsg);
     if (cs == nullptr && name() == "utf8") {
-      // Dictionary bootstrap still uses "utf8".
+      // The parser does get_charset_by_csname().
       // Also needed for e.g. SET character_set_client= 'utf8'.
+      // Also needed by the lexer for: "select _utf8 0xD0B0D0B1D0B2;"
       cs = entry()->find_primary(mysql::collation::Name("utf8mb3"), flags,
                                  errmsg);
     }
   } else if (cs_flags & MY_CS_BINSORT) {
     cs = entry()->find_default_binary(name, flags, errmsg);
     if (cs == nullptr && name() == "utf8") {
-      assert(false);  // TODO(tdidriks) no longer needed?
       cs = entry()->find_default_binary(mysql::collation::Name("utf8mb3"),
                                         flags, errmsg);
     }
@@ -365,9 +382,9 @@ bool resolve_charset(const char *cs_name, const CHARSET_INFO *default_cs,
   and false is returned. If there is no such collation, "default_cl" is
   assigned to the "cl" and true is returned.
 
-  @param[out] cl        Variable to store collation.
   @param[in] cl_name    Collation name.
   @param[in] default_cl Default collation.
+  @param[out] cl        Variable to store collation.
 
   @return false if collation was resolved successfully; true if there is no
   collation with given name.
@@ -385,123 +402,23 @@ bool resolve_collation(const char *cl_name, const CHARSET_INFO *default_cl,
   return false;
 }
 
-/*
-  Escape string with backslashes (\)
-
-  SYNOPSIS
-    escape_string_for_mysql()
-    charset_info        Charset of the strings
-    to                  Buffer for escaped string
-    to_length           Length of destination buffer, or 0
-    from                The string to escape
-    length              The length of the string to escape
-
-  DESCRIPTION
-    This escapes the contents of a string by adding backslashes before special
-    characters, and turning others into specific escape sequences, such as
-    turning newlines into \n and null bytes into \0.
-
-  NOTE
-    To maintain compatibility with the old C API, to_length may be 0 to mean
-    "big enough"
-
-  RETURN VALUES
-    (size_t) -1 The escaped string did not fit in the to buffer
-    #           The length of the escaped string
-*/
-
-size_t escape_string_for_mysql(const CHARSET_INFO *charset_info, char *to,
-                               size_t to_length, const char *from,
-                               size_t length) {
-  const char *to_start = to;
-  const char *end = nullptr;
-  const char *to_end = to_start + (to_length ? to_length - 1 : 2 * length);
-  bool overflow = false;
-  const bool use_mb_flag = use_mb(charset_info);
-  for (end = from + length; from < end; from++) {
-    char escape = 0;
-    int tmp_length = 0;
-    if (use_mb_flag && (tmp_length = my_ismbchar(charset_info, from, end))) {
-      if (to + tmp_length > to_end) {
-        overflow = true;
-        break;
-      }
-      while (tmp_length--) *to++ = *from++;
-      from--;
-      continue;
-    }
-    /*
-     If the next character appears to begin a multi-byte character, we
-     escape that first byte of that apparent multi-byte character. (The
-     character just looks like a multi-byte character -- if it were actually
-     a multi-byte character, it would have been passed through in the test
-     above.)
-
-     Without this check, we can create a problem by converting an invalid
-     multi-byte character into a valid one. For example, 0xbf27 is not
-     a valid GBK character, but 0xbf5c is. (0x27 = ', 0x5c = \)
-    */
-    tmp_length = use_mb_flag ? my_mbcharlen_ptr(charset_info, from, end) : 0;
-    if (tmp_length > 1)
-      escape = *from;
-    else
-      switch (*from) {
-        case 0: /* Must be escaped for 'mysql' */
-          escape = '0';
-          break;
-        case '\n': /* Must be escaped for logs */
-          escape = 'n';
-          break;
-        case '\r':
-          escape = 'r';
-          break;
-        case '\\':
-          escape = '\\';
-          break;
-        case '\'':
-          escape = '\'';
-          break;
-        case '"': /* Better safe than sorry */
-          escape = '"';
-          break;
-        case '\032': /* This gives problems on Win32 */
-          escape = 'Z';
-          break;
-      }
-    if (escape) {
-      if (to + 2 > to_end) {
-        overflow = true;
-        break;
-      }
-      *to++ = '\\';
-      *to++ = escape;
-    } else {
-      if (to + 1 > to_end) {
-        overflow = true;
-        break;
-      }
-      *to++ = *from;
-    }
-  }
-  *to = 0;
-  return overflow ? (size_t)-1 : (size_t)(to - to_start);
-}
-
 #ifdef _WIN32
+extern CHARSET_INFO my_charset_cp932_japanese_ci;
+
 static CHARSET_INFO *fs_cset_cache = nullptr;
 
 CHARSET_INFO *fs_character_set() {
-  if (!fs_cset_cache) {
+  if (fs_cset_cache == nullptr) {
     char buf[10] = "cp";
     GetLocaleInfo(LOCALE_SYSTEM_DEFAULT, LOCALE_IDEFAULTANSICODEPAGE, buf + 2,
                   sizeof(buf) - 3);
     /*
-      We cannot call get_charset_by_name here
-      because fs_character_set() is executed before
-      LOCK_THD_charset mutex initialization, which
-      is used inside get_charset_by_name.
-      As we're now interested in cp932 only,
-      let's just detect it using strcmp().
+      We cannot call get_charset_by_name here,
+      we will end up in a deadlock (in std::call_once) because of recursion:
+        init-avaliable-charsets ->
+        get_charsets_dir ->
+        convert_dirname ->
+        fs_character_set
     */
     fs_cset_cache =
         !strcmp(buf, "cp932") ? &my_charset_cp932_japanese_ci : &my_charset_bin;
@@ -509,75 +426,6 @@ CHARSET_INFO *fs_character_set() {
   return fs_cset_cache;
 }
 #endif
-
-/*
-  Escape apostrophes by doubling them up
-
-  SYNOPSIS
-    escape_quotes_for_mysql()
-    charset_info        Charset of the strings
-    to                  Buffer for escaped string
-    to_length           Length of destination buffer, or 0
-    from                The string to escape
-    length              The length of the string to escape
-    quote               The quote the buffer will be escaped against
-
-  DESCRIPTION
-    This escapes the contents of a string by doubling up any character
-    specified by the quote parameter. This is used when the
-    NO_BACKSLASH_ESCAPES SQL_MODE is in effect on the server.
-
-  NOTE
-    To be consistent with escape_string_for_mysql(), to_length may be 0 to
-    mean "big enough"
-
-  RETURN VALUES
-    ~0          The escaped string did not fit in the to buffer
-    >=0         The length of the escaped string
-*/
-
-size_t escape_quotes_for_mysql(CHARSET_INFO *charset_info, char *to,
-                               size_t to_length, const char *from,
-                               size_t length, char quote) {
-  const char *to_start = to;
-  const char *end = nullptr;
-  const char *to_end = to_start + (to_length ? to_length - 1 : 2 * length);
-  bool overflow = false;
-  const bool use_mb_flag = use_mb(charset_info);
-  for (end = from + length; from < end; from++) {
-    int tmp_length = 0;
-    if (use_mb_flag && (tmp_length = my_ismbchar(charset_info, from, end))) {
-      if (to + tmp_length > to_end) {
-        overflow = true;
-        break;
-      }
-      while (tmp_length--) *to++ = *from++;
-      from--;
-      continue;
-    }
-    /*
-      We don't have the same issue here with a non-multi-byte character being
-      turned into a multi-byte character by the addition of an escaping
-      character, because we are only escaping the ' character with itself.
-     */
-    if (*from == quote) {
-      if (to + 2 > to_end) {
-        overflow = true;
-        break;
-      }
-      *to++ = quote;
-      *to++ = quote;
-    } else {
-      if (to + 1 > to_end) {
-        overflow = true;
-        break;
-      }
-      *to++ = *from;
-    }
-  }
-  *to = 0;
-  return overflow ? (ulong)~0 : (ulong)(to - to_start);
-}
 
 void charset_uninit() {
   mysql::collation::shutdown();

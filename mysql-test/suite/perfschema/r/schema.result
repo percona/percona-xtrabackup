@@ -59,6 +59,7 @@ file_instances
 file_summary_by_event_name
 file_summary_by_instance
 global_status
+global_variable_attributes
 global_variables
 host_cache
 hosts
@@ -98,6 +99,7 @@ session_variables
 setup_actors
 setup_consumers
 setup_instruments
+setup_loggers
 setup_meters
 setup_metrics
 setup_objects
@@ -120,6 +122,7 @@ user_variables_by_thread
 users
 variables_by_thread
 variables_info
+variables_metadata
 show create table accounts;
 Table	Create Table
 accounts	CREATE TABLE `accounts` (
@@ -1245,6 +1248,7 @@ data_lock_waits	CREATE TABLE `data_lock_waits` (
   `BLOCKING_THREAD_ID` bigint unsigned DEFAULT NULL,
   `BLOCKING_EVENT_ID` bigint unsigned DEFAULT NULL,
   `BLOCKING_OBJECT_INSTANCE_BEGIN` bigint unsigned NOT NULL,
+  PRIMARY KEY (`REQUESTING_ENGINE_LOCK_ID`,`BLOCKING_ENGINE_LOCK_ID`,`ENGINE`),
   KEY `REQUESTING_ENGINE_LOCK_ID` (`REQUESTING_ENGINE_LOCK_ID`,`ENGINE`),
   KEY `BLOCKING_ENGINE_LOCK_ID` (`BLOCKING_ENGINE_LOCK_ID`,`ENGINE`),
   KEY `REQUESTING_ENGINE_TRANSACTION_ID` (`REQUESTING_ENGINE_TRANSACTION_ID`,`ENGINE`),

@@ -24,6 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <memory>
 
 #include <components/keyrings/keyring_file/keyring_file.h> /* Globals */
+#include "option_usage.h"
 
 #include <components/keyrings/common/component_helpers/include/keyring_keys_metadata_iterator_service_definition.h>
 #include <components/keyrings/common/component_helpers/include/keyring_keys_metadata_iterator_service_impl_template.h>
@@ -32,7 +33,7 @@ using keyring_file::g_component_callbacks;
 using keyring_file::g_keyring_operations;
 using keyring_file::backend::Keyring_file_backend;
 
-namespace keyring_common {
+namespace keyring_common::service_definition {
 
 using service_implementation::deinit_keys_metadata_iterator_template;
 using service_implementation::init_keys_metadata_iterator_template;
@@ -41,14 +42,14 @@ using service_implementation::keys_metadata_get_template;
 using service_implementation::keys_metadata_iterator_is_valid;
 using service_implementation::keys_metadata_iterator_next;
 
-namespace service_definition {
 DEFINE_BOOL_METHOD(Keyring_keys_metadata_iterator_service_impl::init,
                    (my_h_keyring_keys_metadata_iterator * forward_iterator)) {
+  keyring_file_component_option_usage_set();
   std::unique_ptr<Iterator<Data>> it;
   const bool retval =
       init_keys_metadata_iterator_template<Keyring_file_backend>(
           it, *g_keyring_operations, *g_component_callbacks);
-  if (retval == false)
+  if (!retval)
     *forward_iterator =
         reinterpret_cast<my_h_keyring_keys_metadata_iterator>(it.release());
   return retval;
@@ -101,6 +102,7 @@ DEFINE_BOOL_METHOD(Keyring_keys_metadata_iterator_service_impl::get,
                    (my_h_keyring_keys_metadata_iterator forward_iterator,
                     char *data_id, size_t data_id_length, char *auth_id,
                     size_t auth_id_length)) {
+  keyring_file_component_option_usage_set();
   std::unique_ptr<Iterator<Data>> it;
   it.reset(reinterpret_cast<Iterator<Data> *>(forward_iterator));
   const bool retval = keys_metadata_get_template<Keyring_file_backend>(
@@ -111,5 +113,4 @@ DEFINE_BOOL_METHOD(Keyring_keys_metadata_iterator_service_impl::get,
   return retval;
 }
 
-}  // namespace service_definition
-}  // namespace keyring_common
+}  // namespace keyring_common::service_definition

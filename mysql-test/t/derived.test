@@ -3,19 +3,20 @@
 # All tests are required to run with Myisam.
 # Hence MTR starts mysqld with MyISAM as default
 
+--source include/elide_costs.inc
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
 
-# Initialize
---disable_warnings
-drop table if exists t1,t2,t3;
---enable_warnings
+select * from (select 2 from DUAL) AS b;
+-- error ER_BAD_FIELD_ERROR
+SELECT 1 as a FROM (SELECT 1 UNION SELECT a) AS b;
+-- error ER_BAD_FIELD_ERROR
+SELECT 1 as a FROM (SELECT a UNION SELECT 1) AS b;
 
-select * from (select 2 from DUAL) b;
--- error 1054
-SELECT 1 as a FROM (SELECT 1 UNION SELECT a) b;
--- error 1054
-SELECT 1 as a FROM (SELECT a UNION SELECT 1) b;
+select dt.a from (select 1 as a) as dt;
+-- error ER_BAD_FIELD_ERROR
+select test.dt.a from (select 1 as a) as dt;
+
 CREATE TABLE t1 (a int not null, b char (10) not null);
 insert into t1 values(1,'a'),(2,'b'),(3,'c'),(3,'c');
 CREATE TABLE t2 (a int not null, b char (10) not null);
@@ -456,6 +457,7 @@ FROM C table1
 
 # Test EXPLAIN on MaterializeIterator.
 --skip_if_hypergraph  # Depends on the query plan.
+--replace_regex $elide_costs
 EXPLAIN FORMAT=tree SELECT table1 . o1
 FROM C table1
   JOIN ( C table2
@@ -602,6 +604,7 @@ EXPLAIN
 --skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'Handler_read%';
 FLUSH STATUS;
+--sorted_result
 SELECT * FROM t1 JOIN (SELECT * FROM t2 GROUP BY f2) tt ON f1=f2;
 --skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'Handler_read%';
@@ -629,6 +632,7 @@ EXPLAIN SELECT * FROM t1 JOIN v2 ON f1=f2;
 --skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'Handler_read%';
 FLUSH STATUS;
+--sorted_result
 SELECT * FROM t1 JOIN v2 ON f1=f2;
 --skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'Handler_read%';
@@ -3429,3 +3433,76 @@ FROM (SELECT a, b, count1, count2
       ORDER BY count1 desc, a, count2 desc, b) AS dt6;
 
 DROP TABLE t1;
+
+--echo # Bug#36557029: Recent failure in check_column_grant_in_table_ref
+
+CREATE TABLE t (
+  a INTEGER GENERATED ALWAYS AS (1) VIRTUAL,
+  KEY (a)
+) ENGINE = InnoDB;
+
+--error ER_BAD_FIELD_ERROR
+WITH cte1 AS (
+  SELECT (SELECT a) AS a
+  FROM t AS r
+  WHERE a > 0
+  GROUP BY r.a, r.a
+)
+SELECT a, a FROM cte1 WHERE cte1.a <= r.a;
+
+DROP TABLE t;
+
+--echo #
+--echo # Bug#34646522: Literal value with different character set from derived
+--echo #               table causes error
+--echo #
+
+CREATE TABLE t
+(a VARCHAR(10) CHARACTER SET ascii,
+ b VARCHAR(10) CHARACTER SET latin1,
+ c VARCHAR(10) CHARACTER SET latin2,
+ d VARCHAR(10) CHARACTER SET utf16
+);
+
+SELECT _utf8mb4 'a' AS a UNION SELECT a FROM t;
+SELECT * FROM (SELECT _utf8mb4 'a' AS a) AS dt UNION SELECT a FROM t;
+
+--error ER_CANNOT_CONVERT_STRING
+SELECT _utf8mb4 'Â±' AS a UNION SELECT a FROM t;
+--error ER_CANNOT_CONVERT_STRING
+SELECT * FROM (SELECT _utf8mb4 'Â±' AS a) AS dt UNION SELECT a FROM t;
+
+SELECT _utf8mb4 'a' AS a UNION SELECT b FROM t;
+SELECT * FROM (SELECT _utf8mb4 'a' AS a) AS dt UNION SELECT b FROM t;
+
+SELECT _utf8mb4 'Â±' AS a UNION SELECT b FROM t;
+SELECT * FROM (SELECT _utf8mb4 'Â±' AS a) AS dt UNION SELECT b FROM t;
+
+SELECT _utf8mb4 'a' AS a UNION SELECT c FROM t;
+SELECT * FROM (SELECT _utf8mb4 'a' AS a) AS dt UNION SELECT c FROM t;
+
+--error ER_CANNOT_CONVERT_STRING
+SELECT _utf8mb4 'Â±' AS a UNION SELECT c FROM t;
+--error ER_CANNOT_CONVERT_STRING
+SELECT * FROM (SELECT _utf8mb4 'Â±' AS a) AS dt UNION SELECT c FROM t;
+
+SELECT _utf8mb4 'a' AS a UNION SELECT d FROM t;
+SELECT * FROM (SELECT _utf8mb4 'a' AS a) AS dt UNION SELECT d FROM t;
+
+SELECT _latin1 'a' AS a UNION SELECT a FROM t;
+SELECT * FROM (SELECT _latin1 'a' AS a) AS dt UNION SELECT a FROM t;
+
+--error ER_CANNOT_CONVERT_STRING
+SELECT _latin1 'Ã¥' AS a UNION SELECT a FROM t;
+--error ER_CANNOT_CONVERT_STRING
+SELECT * FROM (SELECT _latin1 'Ã¥' AS a) AS dt UNION SELECT a FROM t;
+
+SELECT _latin1 'a' AS a UNION SELECT c FROM t;
+SELECT * FROM (SELECT _latin1 'a' AS a) AS dt UNION SELECT c FROM t;
+
+--error ER_CANNOT_CONVERT_STRING
+SELECT _latin1 'Ã¥' AS a UNION SELECT c FROM t;
+--error ER_CANNOT_CONVERT_STRING
+SELECT * FROM (SELECT _latin1 'Ã¥' AS a) AS dt UNION SELECT c FROM t;
+
+DROP TABLE t;

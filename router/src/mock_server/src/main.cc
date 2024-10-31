@@ -25,7 +25,8 @@
 
 #include <array>
 #include <csignal>
-#include <iostream>
+#include <iostream>  // cerr
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <system_error>
@@ -38,13 +39,12 @@
 #include "mysql/harness/arg_handler.h"
 #include "mysql/harness/loader.h"
 #include "mysql/harness/loader_config.h"
+#include "mysql/harness/logging/logger.h"
 #include "mysql/harness/logging/registry.h"
 #include "mysql/harness/process_state_component.h"
 #include "mysql/harness/signal_handler.h"
 #include "mysql/harness/stdx/filesystem.h"
 #include "router_config.h"  // MYSQL_ROUTER_VERSION
-
-IMPORT_LOG_FUNCTIONS()
 
 constexpr unsigned kHelpScreenWidth = 72;
 constexpr unsigned kHelpScreenIndent = 8;
@@ -73,16 +73,10 @@ struct MysqlServerMockConfig {
 };
 
 static void init_DIM() {
-  mysql_harness::DIM &dim = mysql_harness::DIM::instance();
+  static mysql_harness::logging::Registry static_registry;
 
   // logging facility
-  dim.set_LoggingRegistry(
-      []() {
-        static mysql_harness::logging::Registry registry;
-        return &registry;
-      },
-      [](mysql_harness::logging::Registry *) {}  // don't delete our static!
-  );
+  mysql_harness::DIM::instance().set_static_LoggingRegistry(&static_registry);
 }
 
 class MysqlServerMockFrontend {
@@ -122,10 +116,11 @@ class MysqlServerMockFrontend {
 
   void run() {
     init_DIM();
-    std::unique_ptr<mysql_harness::LoaderConfig> loader_config(
-        new mysql_harness::LoaderConfig(mysql_harness::Config::allow_keys));
+    auto loader_config = std::make_unique<mysql_harness::LoaderConfig>(
+        mysql_harness::Config::allow_keys);
 
     mysql_harness::DIM &dim = mysql_harness::DIM::instance();
+
     mysql_harness::logging::Registry &registry = dim.get_LoggingRegistry();
 
     const auto log_level = config_.verbose
@@ -239,20 +234,19 @@ class MysqlServerMockFrontend {
       mock_x_server_config.set("ssl_crlpath", config_.ssl_crlpath);
     }
 
-    mysql_harness::DIM::instance().set_Config(
-        [&]() { return loader_config.release(); },
-        std::default_delete<mysql_harness::LoaderConfig>());
+    dim.set_Config(loader_config.release(),
+                   std::default_delete<mysql_harness::LoaderConfig>());
 
     std::unique_ptr<mysql_harness::Loader> loader_;
     try {
       loader_ = std::make_unique<mysql_harness::Loader>("server-mock",
-                                                        *loader_config);
+                                                        dim.get_Config());
     } catch (const std::runtime_error &err) {
       throw std::runtime_error(std::string("init-loader failed: ") +
                                err.what());
     }
 
-    log_debug("Starting");
+    logger_.debug("Starting");
 
 #if !defined(_WIN32)
     //
@@ -420,6 +414,8 @@ class MysqlServerMockFrontend {
   mysql_harness::Path origin_dir_;
 
   mysql_harness::SignalHandler signal_handler_;
+
+  mysql_harness::logging::DomainLogger logger_;
 };
 
 int main(int argc, char *argv[]) {

@@ -338,11 +338,12 @@ TEST_P(BootstrapTlsEndpointWithoutCertGeneration, succeeds) {
   cmdline_args.emplace_back(server_key_pem);
 
   ASSERT_NO_FATAL_FAILURE(bootstrap_failover(
-      {
-          Config{"127.0.0.1", port_pool_.get_next_available(),
-                 port_pool_.get_next_available(),
-                 get_data_dir().join("bootstrap_gr.js").str()},
-      },
+      {Config{
+          "127.0.0.1",
+          port_pool_.get_next_available(),
+          port_pool_.get_next_available(),
+          "bootstrap_gr.js",
+      }},
       mysqlrouter::ClusterType::GR_V2, {}, EXIT_SUCCESS,
       {"# MySQL Router configured"}, 5s, {2, 0, 3}, cmdline_args));
 
@@ -678,13 +679,16 @@ TEST_P(BootstrapTlsEndpoint, succeeds) {
 
   ASSERT_NO_FATAL_FAILURE(bootstrap_failover(
       {
-          Config{"127.0.0.1", port_pool_.get_next_available(),
-                 port_pool_.get_next_available(),
-                 get_data_dir().join("bootstrap_gr.js").str()},
+          Config{
+              "127.0.0.1",
+              port_pool_.get_next_available(),
+              port_pool_.get_next_available(),
+              "bootstrap_gr.js",
+          },
       },
       mysqlrouter::ClusterType::GR_V2, {}, EXIT_SUCCESS,
       {"# MySQL Router configured"},
-      10s,  // 10 seconds as cert-generation may take a while on slow machines
+      20s,  // 20 seconds as cert-generation may take a while on slow machines
       {2, 0, 3}, cmdline_args));
 
   ASSERT_NE(config_file.size(), 0);
@@ -721,13 +725,16 @@ TEST_P(BootstrapTlsEndpoint, existing_config) {
 
   ASSERT_NO_FATAL_FAILURE(bootstrap_failover(
       {
-          Config{"127.0.0.1", port_pool_.get_next_available(),
-                 port_pool_.get_next_available(),
-                 get_data_dir().join("bootstrap_gr.js").str()},
+          Config{
+              "127.0.0.1",
+              port_pool_.get_next_available(),
+              port_pool_.get_next_available(),
+              "bootstrap_gr.js",
+          },
       },
       mysqlrouter::ClusterType::GR_V2, {}, EXIT_SUCCESS,
       {"# MySQL Router configured"},
-      10s,  // 10 seconds as cert-generation may take a while on slow machines
+      20s,  // 20 seconds as cert-generation may take a while on slow machines
       {2, 0, 3}, cmdline_args));
 
   ASSERT_NE(config_file.size(), 0);
@@ -771,13 +778,16 @@ TEST_P(BootstrapTlsEndpoint, existing_config_with_client_ssl_cert) {
 
   ASSERT_NO_FATAL_FAILURE(bootstrap_failover(
       {
-          Config{"127.0.0.1", port_pool_.get_next_available(),
-                 port_pool_.get_next_available(),
-                 get_data_dir().join("bootstrap_gr.js").str()},
+          Config{
+              "127.0.0.1",
+              port_pool_.get_next_available(),
+              port_pool_.get_next_available(),
+              "bootstrap_gr.js",
+          },
       },
       mysqlrouter::ClusterType::GR_V2, {}, EXIT_SUCCESS,
       {"# MySQL Router configured"},
-      10s,  // 10 seconds as cert-generation may take a while on slow machines
+      20s,  // 20 seconds as cert-generation may take a while on slow machines
       {2, 0, 3}, cmdline_args));
 
   ASSERT_NE(config_file.size(), 0);
@@ -821,13 +831,16 @@ TEST_P(BootstrapTlsEndpoint, existing_config_with_client_ssl_key) {
 
   ASSERT_NO_FATAL_FAILURE(bootstrap_failover(
       {
-          Config{"127.0.0.1", port_pool_.get_next_available(),
-                 port_pool_.get_next_available(),
-                 get_data_dir().join("bootstrap_gr.js").str()},
+          Config{
+              "127.0.0.1",
+              port_pool_.get_next_available(),
+              port_pool_.get_next_available(),
+              "bootstrap_gr.js",
+          },
       },
       mysqlrouter::ClusterType::GR_V2, {}, EXIT_SUCCESS,
       {"# MySQL Router configured"},
-      10s,  // 10 seconds as cert-generation may take a while on slow machines
+      20s,  // 20 seconds as cert-generation may take a while on slow machines
       {2, 0, 3}, cmdline_args));
 
   ASSERT_NE(config_file.size(), 0);
@@ -873,13 +886,16 @@ TEST_P(BootstrapTlsEndpoint, existing_config_with_client_ssl_cert_and_key) {
 
   ASSERT_NO_FATAL_FAILURE(bootstrap_failover(
       {
-          Config{"127.0.0.1", port_pool_.get_next_available(),
-                 port_pool_.get_next_available(),
-                 get_data_dir().join("bootstrap_gr.js").str()},
+          Config{
+              "127.0.0.1",
+              port_pool_.get_next_available(),
+              port_pool_.get_next_available(),
+              "bootstrap_gr.js",
+          },
       },
       mysqlrouter::ClusterType::GR_V2, {}, EXIT_SUCCESS,
       {"# MySQL Router configured"},
-      10s,  // 10 seconds as cert-generation may take a while on slow machines
+      20s,  // 20 seconds as cert-generation may take a while on slow machines
       {2, 0, 3}, cmdline_args));
 
   ASSERT_NE(config_file.size(), 0);
@@ -1155,9 +1171,12 @@ class BootstrapTlsEndpointFailMock
 TEST_P(BootstrapTlsEndpointFailMock, fails) {
   bootstrap_failover(
       {
-          Config{"127.0.0.1", port_pool_.get_next_available(),
-                 port_pool_.get_next_available(),
-                 get_data_dir().join("bootstrap_gr.js").str()},
+          Config{
+              "127.0.0.1",
+              port_pool_.get_next_available(),
+              port_pool_.get_next_available(),
+              "bootstrap_gr.js",
+          },
       },
       mysqlrouter::ClusterType::GR_V2, {}, EXIT_FAILURE,
       GetParam().expected_output_lines, 1s, {2, 0, 3}, GetParam().cmdline_args);

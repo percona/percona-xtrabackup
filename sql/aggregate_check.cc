@@ -291,7 +291,7 @@ bool Group_check::check_expression(THD *thd, Item *expr, bool in_select_list) {
   expr = unwrap_rollup_group(expr);
 
   for (ORDER *grp = select->group_list.first; grp; grp = grp->next) {
-    if ((*grp->item)->eq(expr, false))
+    if ((*grp->item)->eq(expr))
       return false;  // Expression is in GROUP BY so is ok
   }
 
@@ -360,7 +360,7 @@ bool Group_check::is_fd_on_source(Item *item) {
         It's just an optimization.
       */
       for (ORDER *grp = select->group_list.first; grp; grp = grp->next) {
-        if ((*grp->item)->eq(item, false)) return true;
+        if ((*grp->item)->eq(item)) return true;
       }
       // It didn't suffice. Let's start the search for FDs: build E1.
       for (ORDER *grp = select->group_list.first; grp; grp = grp->next) {
@@ -399,7 +399,7 @@ bool Group_check::is_fd_on_source(Item *item) {
 
       Item_field *const item_field = down_cast<Item_field *>(item2);
       /**
-        @todo make table_ref non-NULL for gcols, then use it for 'tl'.
+        @todo make m_table_ref non-NULL for gcols, then use it for 'tl'.
         Do the same in Item_field::used_tables_for_level().
       */
       Table_ref *const tl = item_field->field->table->pos_in_table_list;
@@ -570,7 +570,7 @@ void Group_check::find_group_in_fd(Item *item) {
         Item *grp_item = *grp->item;
         if ((local_column(grp_item) &&
              (grp_item->used_tables() & ~whole_tables_fd) == 0) ||
-            (item && grp_item->eq(item, false)))
+            (item != nullptr && grp_item->eq(item)))
           group_in_fd |= (1ULL << j);
         else
           missing = true;
@@ -712,7 +712,7 @@ bool Group_check::is_in_fd(Item *item) {
   }
   for (uint j = 0; j < fd.size(); j++) {
     Item *const item2 = fd.at(j);
-    if (item2->eq(item, false)) return true;
+    if (item2->eq(item)) return true;
     /*
       Say that we have view:
       create view v1 as select i, 2*i as z from t1; and we do:
@@ -726,7 +726,7 @@ bool Group_check::is_in_fd(Item *item) {
       reach to real_item() of v1.i.
     */
     Item *const real_it2 = item2->real_item();
-    if (real_it2 != item2 && real_it2->eq(item, false)) return true;
+    if (real_it2 != item2 && real_it2->eq(item)) return true;
   }
   if (!search_in_underlying) return false;
   return is_in_fd_of_underlying(down_cast<Item_ident *>(item));
@@ -767,11 +767,7 @@ bool Group_check::is_in_fd_of_underlying(Item_ident *item) {
     Used_tables ut(select);
     (void)item->walk(&Item::used_tables_for_level, enum_walk::POSTFIX,
                      pointer_cast<uchar *>(&ut));
-    /*
-      todo When we eliminate all uses of cached_table, we can probably add a
-      derived_table_ref field to Item_view_ref objects and use it here.
-    */
-    Table_ref *const tl = item->cached_table;
+    Table_ref *const tl = item->m_table_ref;
     assert(tl->is_view_or_derived());
     /*
       We might find expression-based FDs in the result of the view's query
@@ -801,7 +797,7 @@ bool Group_check::is_in_fd_of_underlying(Item_ident *item) {
   else if (item->type() == Item::FIELD_ITEM) {
     Item_field *const item_field = down_cast<Item_field *>(item);
     /**
-      @todo make table_ref non-NULL for gcols, then use it for 'tl'.
+      @todo make m_table_ref non-NULL for gcols, then use it for 'tl'.
       Do the same in Item_field::used_tables_for_level().
     */
     Table_ref *const tl = item_field->field->table->pos_in_table_list;
@@ -877,9 +873,9 @@ bool Group_check::is_in_fd_of_underlying(Item_ident *item) {
 Item *Group_check::get_fd_equal(Item *item) {
   for (uint j = 0; j < fd.size(); j++) {
     Item *const item2 = fd.at(j);
-    if (item2->eq(item, false)) return item2;
+    if (item2->eq(item)) return item2;
     Item *const real_it2 = item2->real_item();
-    if (real_it2 != item2 && real_it2->eq(item, false)) return item2;
+    if (real_it2 != item2 && real_it2->eq(item)) return item2;
   }
   return nullptr;
 }
@@ -1216,7 +1212,7 @@ bool Group_check::do_ident_check(Item_ident *i, table_map tm,
   switch (type) {
     case CHECK_GROUP:
       if (i->type() == Item::FIELD_ITEM &&
-          down_cast<Item_field *>(i)->table_ref->m_was_scalar_subquery) {
+          down_cast<Item_field *>(i)->m_table_ref->m_was_scalar_subquery) {
         // The table has exactly one row, thus this column is FD
         return false;
       }

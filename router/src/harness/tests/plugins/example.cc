@@ -26,8 +26,8 @@
 #include "mysql/harness/logging/logging.h"
 #include "mysql/harness/plugin.h"
 
+#include <array>
 #include <cstdlib>
-#include <iostream>
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -36,7 +36,6 @@
 #endif
 
 using mysql_harness::ARCHITECTURE_DESCRIPTOR;
-using mysql_harness::ConfigSection;
 using mysql_harness::Plugin;
 using mysql_harness::PLUGIN_ABI_VERSION;
 using mysql_harness::PluginFuncEnv;
@@ -59,7 +58,7 @@ extern void EXAMPLE_IMPORT do_magic();
 #define EXAMPLE_API
 #endif
 
-static const char *requires_plugins[] = {
+static constexpr std::array required{
     "routertestplugin_magic (>>1.0)",
 };
 
@@ -73,8 +72,8 @@ Plugin EXAMPLE_API harness_plugin_routertestplugin_example = {
     ARCHITECTURE_DESCRIPTOR,
     "An example plugin",
     VERSION_NUMBER(1, 0, 0),
-    sizeof(requires_plugins) / sizeof(*requires_plugins),
-    requires_plugins,
+    required.size(),
+    required.data(),
     0,
     nullptr,  // conflicts
     init,     // init

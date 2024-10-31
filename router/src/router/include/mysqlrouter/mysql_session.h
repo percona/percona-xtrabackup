@@ -26,7 +26,8 @@
 #ifndef _ROUTER_MYSQL_SESSION_H_
 #define _ROUTER_MYSQL_SESSION_H_
 
-#include "mysqlrouter/router_export.h"
+#include "mysql/harness/logging/logger.h"
+#include "mysqlrouter/router_mysql_export.h"
 
 #include <functional>
 #include <memory>
@@ -150,7 +151,7 @@ class Option<Opt, std::nullptr_t> {
 
 // mysql_options() may be used with MYSQL * == nullptr to get global values.
 
-class ROUTER_LIB_EXPORT MySQLSession {
+class ROUTER_MYSQL_EXPORT MySQLSession {
  public:
   static constexpr int kDefaultConnectTimeout = 5;
   static constexpr int kDefaultReadTimeout = 30;
@@ -295,30 +296,7 @@ class ROUTER_LIB_EXPORT MySQLSession {
     Row row_;
   };
 
-  struct ROUTER_LIB_EXPORT LoggingStrategy {
-    LoggingStrategy() = default;
-
-    LoggingStrategy(const LoggingStrategy &) = default;
-    LoggingStrategy(LoggingStrategy &&) = default;
-
-    LoggingStrategy &operator=(const LoggingStrategy &) = default;
-    LoggingStrategy &operator=(LoggingStrategy &&) = default;
-
-    virtual ~LoggingStrategy() = default;
-
-    virtual void log(const std::string &msg) = 0;
-  };
-
-  struct ROUTER_LIB_EXPORT LoggingStrategyNone : public LoggingStrategy {
-    virtual void log(const std::string & /*msg*/) override {}
-  };
-
-  struct ROUTER_LIB_EXPORT LoggingStrategyDebugLogger : public LoggingStrategy {
-    virtual void log(const std::string &msg) override;
-  };
-
-  MySQLSession(std::unique_ptr<LoggingStrategy> logging_strategy =
-                   std::make_unique<LoggingStrategyNone>());
+  MySQLSession();
   virtual ~MySQLSession();
 
   static mysql_ssl_mode parse_ssl_mode(
@@ -448,9 +426,6 @@ class ROUTER_LIB_EXPORT MySQLSession {
 
   virtual unsigned long server_version();
 
- protected:
-  std::unique_ptr<LoggingStrategy> logging_strategy_;
-
  private:
   // stores selected parameters that were passed to the last successful call to
   // connect()
@@ -494,6 +469,9 @@ class ROUTER_LIB_EXPORT MySQLSession {
    */
   stdx::expected<mysql_result_type, MysqlError> logged_real_query(
       const std::string &q);
+
+  // if query be timed and sent to the sql-log.
+  mysql_harness::logging::DomainLogger logger_{"sql"};
 };
 
 }  // namespace mysqlrouter

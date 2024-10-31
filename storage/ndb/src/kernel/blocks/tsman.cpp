@@ -49,10 +49,10 @@ static bool g_use_old_format = false;
 #define UNCOMMITTED_SHIFT 2
 
 #if (defined(VM_TRACE) || defined(ERROR_INSERT))
-//#define DEBUG_TSMAN 1
-//#define DEBUG_TSMAN_NUM_EXTENTS 1
-//#define DEBUG_TSMAN_RESTART 1
-//#define DEBUG_TSMAN_IO 1
+// #define DEBUG_TSMAN 1
+// #define DEBUG_TSMAN_NUM_EXTENTS 1
+// #define DEBUG_TSMAN_RESTART 1
+// #define DEBUG_TSMAN_IO 1
 #endif
 
 #ifdef DEBUG_TSMAN
@@ -904,7 +904,7 @@ int Tsman::open_file(Signal *signal, Ptr<Tablespace> ts_ptr, Ptr<Datafile> ptr,
   req->userPointer = ptr.i;
 
   memset(req->fileNumber, 0, sizeof(req->fileNumber));
-  FsOpenReq::setVersion(req->fileNumber, 4);  // Version 4 = specified filename
+  FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_FILENAME);
   FsOpenReq::v4_setBasePath(req->fileNumber, FsOpenReq::BP_DD_DF);
 
   req->fileFlags = 0;

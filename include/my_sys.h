@@ -72,6 +72,7 @@
 #include "mysql/components/services/bits/psi_memory_bits.h"
 #include "mysql/components/services/bits/psi_metric_bits.h"
 #include "mysql/components/services/bits/psi_stage_bits.h"
+#include "mysql/components/services/bits/server_telemetry_logs_client_bits.h"
 #include "sql/stream_cipher.h"
 #include "string_with_len.h"
 
@@ -85,6 +86,7 @@ struct PSI_data_lock_bootstrap;
 struct PSI_error_bootstrap;
 struct PSI_file_bootstrap;
 struct PSI_idle_bootstrap;
+struct PSI_logs_client_bootstrap;
 struct PSI_mdl_bootstrap;
 struct PSI_memory_bootstrap;
 struct PSI_metric_bootstrap;
@@ -205,14 +207,8 @@ extern DebugSyncCallbackFp debug_sync_C_callback_ptr;
     if (debug_sync_C_callback_ptr != NULL)                              \
       (*debug_sync_C_callback_ptr)(STRING_WITH_LEN(_sync_point_name_)); \
   } while (0)
-#define DEBUG_SYNC_C_IF_THD(thd, _sync_point_name_)                     \
-  do {                                                                  \
-    if (debug_sync_C_callback_ptr != NULL && thd)                       \
-      (*debug_sync_C_callback_ptr)(STRING_WITH_LEN(_sync_point_name_)); \
-  } while (0)
 #else
 #define DEBUG_SYNC_C(_sync_point_name_)
-#define DEBUG_SYNC_C_IF_THD(thd, _sync_point_name_)
 #endif /* defined(ENABLED_DEBUG_SYNC) */
 
 #ifdef HAVE_LINUX_LARGE_PAGES
@@ -303,14 +299,6 @@ enum flush_type {
     is strictly equivalent to FLUSH_KEEP
   */
   FLUSH_FORCE_WRITE
-};
-
-struct DYNAMIC_ARRAY {
-  uchar *buffer{nullptr};
-  uint elements{0}, max_element{0};
-  uint alloc_increment{0};
-  uint size_of_element{0};
-  PSI_memory_key m_psi_key{PSI_NOT_INSTRUMENTED};
 };
 
 struct MY_TMPDIR {
@@ -569,6 +557,10 @@ struct USED_MEM {
 
 /* Prototypes for mysys and my_func functions */
 
+extern size_t escape_string_for_mysql(const CHARSET_INFO *charset_info,
+                                      char *to, size_t to_length,
+                                      const char *from, size_t length);
+
 extern int my_copy(const char *from, const char *to, myf MyFlags);
 extern int my_delete(const char *name, myf MyFlags);
 extern int my_getwd(char *buf, size_t size, myf MyFlags);
@@ -585,6 +577,9 @@ extern int my_close(File fd, myf MyFlags);
 extern int my_mkdir(const char *dir, int Flags, myf MyFlags);
 extern int my_readlink(char *to, const char *filename, myf MyFlags);
 extern int my_is_symlink(const char *filename, ST_FILE_ID *file_id);
+extern bool my_rm_dir_w_symlink(const char *directory_path, bool send_error,
+                                bool send_intermediate_errors,
+                                bool &directory_deletion_failed);
 extern int my_realpath(char *to, const char *filename, myf MyFlags);
 extern int my_is_same_file(File file, const ST_FILE_ID *file_id);
 extern File my_create_with_symlink(const char *linkname, const char *filename,
@@ -714,7 +709,9 @@ extern void free_tmpdir(MY_TMPDIR *tmpdir);
 
 extern size_t dirname_part(char *to, const char *name, size_t *to_res_length);
 extern size_t dirname_length(const char *name);
-#define base_name(A) (A + dirname_length(A))
+ALWAYS_INLINE const char *base_name(const char *A) {
+  return A + dirname_length(A);
+}
 extern int test_if_hard_path(const char *dir_name);
 extern bool has_path(const char *name);
 extern char *convert_dirname(char *to, const char *from, const char *from_end);
@@ -790,20 +787,6 @@ const size_t MY_MAX_TEMP_FILENAME_LEN = 19;
 #endif
 File create_temp_file(char *to, const char *dir, const char *pfx, int mode,
                       UnlinkOrKeepFile unlink_or_keep, myf MyFlags);
-
-// Use Prealloced_array or std::vector or something similar in C++
-extern bool my_init_dynamic_array(DYNAMIC_ARRAY *array, PSI_memory_key key,
-                                  uint element_size, void *init_buffer,
-                                  uint init_alloc, uint alloc_increment);
-/* init_dynamic_array() function is deprecated */
-
-#define dynamic_element(array, array_index, type) \
-  ((type)((array)->buffer) + (array_index))
-
-/* Some functions are still in use in C++, because HASH uses DYNAMIC_ARRAY */
-extern bool insert_dynamic(DYNAMIC_ARRAY *array, const void *element);
-extern void *alloc_dynamic(DYNAMIC_ARRAY *array);
-extern void delete_dynamic(DYNAMIC_ARRAY *array);
 
 extern bool init_dynamic_string(DYNAMIC_STRING *str, const char *init_str,
                                 size_t init_alloc);
@@ -889,7 +872,7 @@ extern uint get_collation_number(const char *name);
 extern const char *get_collation_name(uint charset_number);
 
 extern CHARSET_INFO *get_charset(uint cs_number, myf flags);
-extern CHARSET_INFO *get_charset_by_name(const char *cs_name, myf flags);
+extern CHARSET_INFO *get_charset_by_name(const char *collation_name, myf flags);
 extern CHARSET_INFO *my_collation_get_by_name(const char *collation_name,
                                               myf flags, MY_CHARSET_ERRMSG *);
 extern CHARSET_INFO *get_charset_by_csname(const char *cs_name, uint cs_flags,
@@ -903,18 +886,11 @@ extern bool resolve_collation(const char *cl_name,
                               const CHARSET_INFO **cl);
 extern char *get_charsets_dir(char *buf);
 
-extern size_t escape_string_for_mysql(const CHARSET_INFO *charset_info,
-                                      char *to, size_t to_length,
-                                      const char *from, size_t length);
 extern void charset_uninit();
 #ifdef _WIN32
 /* File system character set */
 extern CHARSET_INFO *fs_character_set(void);
-#endif
-extern size_t escape_quotes_for_mysql(CHARSET_INFO *charset_info, char *to,
-                                      size_t to_length, const char *from,
-                                      size_t length, char quote);
-#ifdef _WIN32
+
 extern bool have_tcpip; /* Is set if tcpip is used */
 
 /* implemented in my_windac.c */
@@ -958,6 +934,8 @@ extern void set_psi_memory_service(void *psi);
 extern MYSQL_PLUGIN_IMPORT PSI_mutex_bootstrap *psi_mutex_hook;
 extern void set_psi_metric_service(void *psi);
 extern MYSQL_PLUGIN_IMPORT PSI_metric_bootstrap *psi_metric_hook;
+extern void set_psi_logs_client_service(void *psi);
+extern MYSQL_PLUGIN_IMPORT PSI_logs_client_bootstrap *psi_logs_client_hook;
 extern void set_psi_mutex_service(void *psi);
 extern MYSQL_PLUGIN_IMPORT PSI_rwlock_bootstrap *psi_rwlock_hook;
 extern void set_psi_rwlock_service(void *psi);
@@ -981,6 +959,10 @@ extern void set_psi_tls_channel_service(void *psi);
 
 /* Total physical memory available */
 [[nodiscard]] extern unsigned long long my_physical_memory();
+
+/* Compares versions and determine if clone is allowed */
+[[nodiscard]] extern bool are_versions_clone_compatible(std::string ver1,
+                                                        std::string ver2);
 
 /**
   @} (end of group MYSYS)

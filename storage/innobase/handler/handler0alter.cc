@@ -4349,39 +4349,16 @@ static void dd_commit_inplace_no_change(const Alter_inplace_info *ha_alter_info,
   }
 }
 
-/** Check if a new table's index will exceed the index limit for the table
-row format
+/** Check if the key parts of the indexes of new table will exceed the
+index limit based on the table row format
 @param[in]      form            MySQL table that is being altered
-@param[in]      max_len         max index length allowed
+@param[in]      max_part_len    max index part length allowed
 @return true if within limits false otherwise */
-static bool innobase_check_index_len(const TABLE *form, ulint max_len) {
-  for (uint key_num = 0; key_num < form->s->keys; key_num++) {
-    const KEY &key = form->key_info[key_num];
-
-    for (unsigned i = 0; i < key.user_defined_key_parts; i++) {
-      const KEY_PART_INFO *key_part = &key.key_part[i];
-      unsigned prefix_len = 0;
-
-      if (key.flags & HA_SPATIAL) {
-        prefix_len = 0;
-      } else if (key.flags & HA_FULLTEXT) {
-        prefix_len = 0;
-      } else if (key_part->key_part_flag & HA_PART_KEY_SEG) {
-        /* SPATIAL and FULLTEXT index always are on
-        full columns. */
-        ut_ad(!(key.flags & (HA_SPATIAL | HA_FULLTEXT)));
-        prefix_len = key_part->length;
-        ut_ad(prefix_len > 0);
-      } else {
-        prefix_len = 0;
-      }
-
-      if (key_part->length > max_len || prefix_len > max_len) {
-        return (false);
-      }
-    }
-  }
-  return (true);
+static bool innobase_check_index_len(const TABLE *form, ulint max_part_len) {
+  bool valid = true;
+  dd_visit_keys_with_too_long_parts(form, max_part_len,
+                                    [&valid](auto) { valid = false; });
+  return valid;
 }
 
 /** Update internal structures with concurrent writes blocked,
@@ -4755,8 +4732,8 @@ template <typename Table>
         dict_mem_table_add_col(
             ctx->new_table, ctx->heap, field->field_name, col_type,
             dtype_form_prtype(field_type, charset_no), col_len,
-            !field->is_hidden_by_system(), UINT32_UNDEFINED, UINT8_UNDEFINED,
-            UINT8_UNDEFINED);
+            !field->is_hidden_by_system(), UINT32_UNDEFINED,
+            INVALID_ROW_VERSION, INVALID_ROW_VERSION);
       }
     }
 
@@ -7216,11 +7193,16 @@ after a successful commit_try_norebuild() call.
   of the column to 0. Here the columns are collected first. */
   get_col_list_to_be_dropped(ctx, drop_list, v_drop_list);
 
+  bool adding_fts_index{false};
+
   for (ulint i = 0; i < ctx->num_to_add_index; i++) {
     dict_index_t *index = ctx->add_index[i];
     assert(dict_index_get_online_status(index) == ONLINE_INDEX_COMPLETE);
     assert(!index->is_committed());
     index->set_committed(true);
+    if (index->type & DICT_FTS) {
+      adding_fts_index = true;
+    }
   }
 
   if (ctx->num_to_drop_index) {
@@ -7248,7 +7230,8 @@ after a successful commit_try_norebuild() call.
         assert(index->type == DICT_FTS || index->is_corrupted());
         assert(index->table->fts);
         ctx->fts_drop_aux_vec = new aux_name_vec_t;
-        fts_drop_index(index->table, index, trx, ctx->fts_drop_aux_vec);
+        fts_drop_index(index->table, index, trx, ctx->fts_drop_aux_vec,
+                       adding_fts_index);
       }
 
       /* It is a single table tablespace and the .ibd file is
@@ -7856,9 +7839,6 @@ rollback_trx:
 
       if (index->type & DICT_FTS) {
         assert(index->type == DICT_FTS);
-        /* We reset DICT_TF2_FTS here because the bit
-        is left unset when a drop proceeds the add. */
-        DICT_TF2_FLAG_SET(ctx->new_table, DICT_TF2_FTS);
         fts_add_index(index, ctx->new_table);
         add_fts = true;
       }
@@ -8102,7 +8082,7 @@ class Altered_partitions {
     m_ins_nodes[new_part_id] = prebuilt->ins_node;
     m_trx_ids[new_part_id] = prebuilt->trx_id;
     if (!prebuilt->sql_stat_start) {
-      m_sql_stat_start.set(new_part_id, false);
+      m_sql_stat_start.reset(new_part_id);
     }
   }
 
@@ -8189,7 +8169,7 @@ bool Altered_partitions::initialize() {
     return (true);
   }
 
-  m_sql_stat_start.init(m_bitset, UT_BITS_IN_BYTES(m_num_new_parts));
+  m_sql_stat_start = {m_bitset, UT_BITS_IN_BYTES(m_num_new_parts)};
 
   return (false);
 }
@@ -10222,9 +10202,8 @@ enum_alter_inplace_result ha_innopart::check_if_supported_inplace_alter(
         }
         /* INSTANT can't be done any more. Fall back to INPLACE. */
         break;
-      } else if (!is_valid_row_version(m_prebuilt->table->current_row_version +
-                                       1)) {
-        ut_ad(is_valid_row_version(m_prebuilt->table->current_row_version));
+      } else if (std::cmp_equal(m_prebuilt->table->current_row_version,
+                                MAX_ROW_VERSION)) {
         if (ha_alter_info->alter_info->requested_algorithm ==
             Alter_info::ALTER_TABLE_ALGORITHM_INSTANT) {
           my_error(ER_INNODB_MAX_ROW_VERSION, MYF(0),
@@ -11213,6 +11192,37 @@ int ha_innobase::bulk_load_execute(THD *thd, void *load_ctx, size_t thread_idx,
   later in main thread when bulk_load_end() is called. Any non zero error
   code is fine here. */
   return (db_err == DB_SUCCESS) ? 0 : HA_ERR_GENERIC;
+}
+
+int ha_innobase::open_blob(THD *thd [[maybe_unused]], void *load_ctx,
+                           size_t thread_idx, Blob_context &blob_ctx,
+                           unsigned char *blobref) {
+  lob::ref_t ref(blobref);
+
+  auto loader = static_cast<ddl_bulk::Loader *>(load_ctx);
+  dberr_t err = loader->open_blob(thread_idx, blob_ctx, ref);
+  return (err == DB_SUCCESS) ? 0 : HA_ERR_GENERIC;
+}
+
+int ha_innobase::write_blob(THD *thd [[maybe_unused]], void *load_ctx,
+                            size_t thread_idx, Blob_context blob_ctx,
+                            byte *blobref, const unsigned char *data,
+                            size_t data_len) {
+  lob::ref_t ref(blobref);
+
+  auto loader = static_cast<ddl_bulk::Loader *>(load_ctx);
+  dberr_t err = loader->write_blob(thread_idx, blob_ctx, ref, data, data_len);
+  return (err == DB_SUCCESS) ? 0 : HA_ERR_GENERIC;
+}
+
+int ha_innobase::close_blob(THD *thd [[maybe_unused]], void *load_ctx,
+                            size_t thread_idx, Blob_context blob_ctx,
+                            byte *blobref) {
+  lob::ref_t ref(blobref);
+
+  auto loader = static_cast<ddl_bulk::Loader *>(load_ctx);
+  dberr_t err = loader->close_blob(thread_idx, blob_ctx, ref);
+  return (err == DB_SUCCESS) ? 0 : HA_ERR_GENERIC;
 }
 
 int ha_innobase::bulk_load_end(THD *thd, void *load_ctx, bool is_error) {

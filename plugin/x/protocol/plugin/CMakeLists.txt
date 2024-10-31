@@ -25,10 +25,6 @@ DISABLE_MISSING_PROFILE_WARNING()
 
 INCLUDE(source_files.cmake)
 
-INCLUDE_DIRECTORIES(
-  ${MYSQLX_GENERATE_DIR}
-)
-
 ADD_COMPILE_FLAGS(${PROTOC_PLUGIN_SRC}
   COMPILE_FLAGS "${MYSQLX_PROTOCOL_FLAGS}"
 )
@@ -38,6 +34,7 @@ MYSQL_ADD_EXECUTABLE(
   ${PROTOC_PLUGIN_SRC}
   SKIP_INSTALL
 )
+DOWNGRADE_STRINGOP_WARNINGS(xprotocol_plugin)
 
 TARGET_LINK_LIBRARIES(
   xprotocol_plugin
@@ -59,7 +56,7 @@ TARGET_LINK_LIBRARIES(
 # It can be observed with gcc+gold and gcc+lld.
 #
 IF(MY_COMPILER_IS_GNU)
-  MY_TARGET_LINK_OPTIONS(xprotocol_plugin "-Wl,--no-as-needed -lpthread")
+  TARGET_LINK_OPTIONS(xprotocol_plugin PRIVATE -Wl,--no-as-needed -lpthread)
 ENDIF()
 
 ADD_CUSTOM_COMMAND(

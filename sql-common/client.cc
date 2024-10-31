@@ -44,6 +44,7 @@
   server.
 */
 
+#include <openssl/opensslv.h>
 #include <stdarg.h>
 #include <sys/types.h>
 
@@ -69,12 +70,12 @@
 #include "base64.h"
 #include "client_async_authentication.h"
 #include "compression.h"  // validate_compression_attributes
-#include "config.h"
 #include "errmsg.h"
 #include "lex_string.h"
 #include "map_helpers.h"
 #include "my_byteorder.h"
 #include "my_compiler.h"
+#include "my_config.h"
 #include "my_dbug.h"
 #include "my_default.h"
 #include "my_inttypes.h"
@@ -90,7 +91,6 @@
 #include "mysql/psi/mysql_memory.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysql/strings/int2str.h"
-#include "mysql_native_authentication_client.h"
 #include "mysql_version.h"
 #include "mysqld_error.h"
 #include "strmake.h"
@@ -201,11 +201,6 @@ static PSI_memory_info all_client_memory[] = {
     {&key_memory_MYSQL_ssl_session_data, "MYSQL_SSL_session", 0, 0,
      "Saved SSL sessions"}};
 
-/* SSL_SESSION_is_resumable is openssl 1.1.1+ */
-#if OPENSSL_VERSION_NUMBER < 0x10101000L
-#define SSL_SESSION_is_resumable(x) true
-#endif
-
 void init_client_psi_keys(void) {
   const char *category = "client";
   int count;
@@ -215,6 +210,11 @@ void init_client_psi_keys(void) {
 }
 
 #endif /* HAVE_PSI_INTERFACE */
+
+/* SSL_SESSION_is_resumable is openssl 1.1.1+ */
+#if OPENSSL_VERSION_NUMBER < 0x10101000L
+#define SSL_SESSION_is_resumable(x) true
+#endif
 
 uint mysql_port = 0;
 char *mysql_unix_port = nullptr;
@@ -4069,10 +4069,6 @@ extern auth_plugin_t test_trace_plugin;
 #endif
 
 struct st_mysql_client_plugin *mysql_client_builtins[] = {
-#if !defined(WITHOUT_MYSQL_NATIVE_PASSWORD) || \
-    WITHOUT_MYSQL_NATIVE_PASSWORD == 0
-    (struct st_mysql_client_plugin *)&native_password_client_plugin,
-#endif
     (struct st_mysql_client_plugin *)&clear_password_client_plugin,
     (struct st_mysql_client_plugin *)&sha256_password_client_plugin,
     (struct st_mysql_client_plugin *)&caching_sha2_password_client_plugin,
@@ -5516,6 +5512,7 @@ void mpvio_info(Vio *vio, MYSQL_PLUGIN_VIO_INFO *info) {
       info->socket = (int)vio_fd(vio);
       return;
     case VIO_TYPE_SSL: {
+      info->is_tls_established = true;
       struct sockaddr addr;
       socklen_t addrlen = sizeof(addr);
       if (getsockname(vio_fd(vio), &addr, &addrlen)) return;
@@ -5751,13 +5748,34 @@ static mysql_state_machine_status authsm_begin_plugin_auth(
       ctx->auth_plugin = client_plugin;
     } else {
       /*
-        If everything else fail we use the built in plugin: caching sha if the
-        server is new enough or native if not.
-      */
-      ctx->auth_plugin = (mysql->server_capabilities & CLIENT_PLUGIN_AUTH)
-                             ? &caching_sha2_password_client_plugin
-                             : &native_password_client_plugin;
-      ctx->auth_plugin_name = ctx->auth_plugin->name;
+       * before we go here, the following happens:
+       * a. in csm_parse_handshake(),
+       *    if server has CLIENT_PLUGIN_AUTH,
+       *    ctx->scramble_plugin is taken from Server Greetings
+       *    otherwise it is set to "mysql_native_password"
+       * b. ctx->scramble_plugin is passed as data_plugin arg
+       *    into run_plugin_auth()
+       * c. run_plugin_auth() assigns data_plugin arg to ctx->data_plugin
+       *
+       * and we have to find/load the plugin indicated
+       */
+      if (mysql->server_capabilities & CLIENT_PLUGIN_AUTH) {
+        // what is a scenario we could get here ?
+        // maybe new plugin (not existing now) which is a default
+        // on server and it is unknown to client
+        ctx->auth_plugin = &caching_sha2_password_client_plugin;
+        ctx->auth_plugin_name = ctx->auth_plugin->name;
+      } else if (ctx->data_plugin &&
+                 (client_plugin = (auth_plugin_t *)mysql_client_find_plugin(
+                      mysql, ctx->data_plugin,
+                      MYSQL_CLIENT_AUTHENTICATION_PLUGIN))) {
+        ctx->auth_plugin_name = ctx->data_plugin;
+        ctx->auth_plugin = client_plugin;
+      } else {
+        // some abnormal case, we should not get here
+        assert(ctx->auth_plugin_name);
+        assert(ctx->auth_plugin);
+      }
     }
   }
 
@@ -5842,14 +5860,12 @@ static mysql_state_machine_status authsm_handle_first_authenticate_user(
     mysql_async_auth *ctx) {
   DBUG_TRACE;
   MYSQL *mysql = ctx->mysql;
-  DBUG_PRINT("info",
-             ("authenticate_user returned %s",
-              ctx->res == CR_OK
-                  ? "CR_OK"
-                  : ctx->res == CR_ERROR ? "CR_ERROR"
-                                         : ctx->res == CR_OK_HANDSHAKE_COMPLETE
-                                               ? "CR_OK_HANDSHAKE_COMPLETE"
-                                               : "error"));
+  DBUG_PRINT("info", ("authenticate_user returned %s",
+                      ctx->res == CR_OK      ? "CR_OK"
+                      : ctx->res == CR_ERROR ? "CR_ERROR"
+                      : ctx->res == CR_OK_HANDSHAKE_COMPLETE
+                          ? "CR_OK_HANDSHAKE_COMPLETE"
+                          : "error"));
 
   static_assert(CR_OK == -1, "");
   static_assert(CR_ERROR == 0, "");
@@ -5990,14 +6006,12 @@ static mysql_state_machine_status authsm_handle_second_authenticate_user(
     mysql_async_auth *ctx) {
   DBUG_TRACE;
   MYSQL *mysql = ctx->mysql;
-  DBUG_PRINT("info",
-             ("second authenticate_user returned %s",
-              ctx->res == CR_OK
-                  ? "CR_OK"
-                  : ctx->res == CR_ERROR ? "CR_ERROR"
-                                         : ctx->res == CR_OK_HANDSHAKE_COMPLETE
-                                               ? "CR_OK_HANDSHAKE_COMPLETE"
-                                               : "error"));
+  DBUG_PRINT("info", ("second authenticate_user returned %s",
+                      ctx->res == CR_OK      ? "CR_OK"
+                      : ctx->res == CR_ERROR ? "CR_ERROR"
+                      : ctx->res == CR_OK_HANDSHAKE_COMPLETE
+                          ? "CR_OK_HANDSHAKE_COMPLETE"
+                          : "error"));
   if (ctx->res > CR_OK) {
     if (ctx->res > CR_ERROR)
       set_mysql_error(mysql, ctx->res, unknown_sqlstate);
@@ -6245,6 +6259,10 @@ MYSQL *STDCALL mysql_real_connect(MYSQL *mysql, const char *host,
   DBUG_TRACE;
   mysql_async_connect ctx;
   memset(&ctx, 0, sizeof(ctx));
+
+  // Reset multipacket processing state
+  NET_ASYNC *net_async = NET_ASYNC_DATA(&mysql->net);
+  if (net_async) net_async->mp_state.reset();
 
   ctx.mysql = mysql;
   ctx.host = host;
@@ -6996,6 +7014,9 @@ static mysql_state_machine_status csm_parse_handshake(
         ctx->scramble_plugin = const_cast<char *>("");
       }
     } else {
+      /**
+        old server with no CLIENT_PLUGIN_AUTH support, so assume native auth
+      */
       ctx->scramble_data_len = (int)(pkt_end - ctx->scramble_data);
       ctx->scramble_plugin = MYSQL_NATIVE_PASSWORD_PLUGIN_NAME;
     }
@@ -9530,9 +9551,7 @@ const char *STDCALL mysql_sqlstate(MYSQL *mysql) {
   </li>
   <li>
   Client side requires nothing from the server. But the server generates
-  and sends a 20-byte
-  @ref page_protocol_connection_phase_authentication_methods_native_password_authentication
-  compatible scramble.
+  and sends a 20-byte mysql_native_password compatible scramble.
   </li>
   <li>
   Client side sends the password in clear text to the server
@@ -9550,8 +9569,7 @@ const char *STDCALL mysql_sqlstate(MYSQL *mysql) {
   sending @ref page_protocol_connection_phase_packets_protocol_handshake
   and that one has a placeholder for authentication plugin dependent data the
   server does fill that space with a scramble should it come to pass that
-  it will back down to
-  @ref page_protocol_connection_phase_authentication_methods_native_password_authentication.
+  it will back down to mysql_native_password.
   This is also why it's OK no to specifically read this in
   @ref clear_password_auth_client since it's already read as a part of
   the initial exchange.
@@ -9582,6 +9600,8 @@ const char *fieldtype2str(enum enum_field_types type) {
       return "BIT";
     case MYSQL_TYPE_BLOB:
       return "BLOB";
+    case MYSQL_TYPE_VECTOR:
+      return "VECTOR";
     case MYSQL_TYPE_BOOL:
       return "BOOLEAN";
     case MYSQL_TYPE_DATE:

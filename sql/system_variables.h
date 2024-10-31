@@ -526,6 +526,7 @@ struct System_status_var {
   /* IMPORTANT! See first_system_status_var definition below. */
   ulonglong created_tmp_disk_tables;
   ulonglong created_tmp_tables;
+  ulonglong count_hit_tmp_table_size;
   ulonglong ha_commit_count;
   ulonglong ha_delete_count;
   ulonglong ha_read_first_count;
@@ -554,6 +555,9 @@ struct System_status_var {
   ulonglong table_open_cache_hits;
   ulonglong table_open_cache_misses;
   ulonglong table_open_cache_overflows;
+  ulonglong table_open_cache_triggers_hits;
+  ulonglong table_open_cache_triggers_misses;
+  ulonglong table_open_cache_triggers_overflows;
   ulonglong select_full_join_count;
   ulonglong select_full_range_join_count;
   ulonglong select_range_count;

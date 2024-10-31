@@ -2307,7 +2307,7 @@ class Dbdict : public SimulatedBlock {
     bool m_flush_complete;
     bool m_flush_end;
     bool m_wait_gcp_on_commit;
-    bool m_abort_on_node_fail;
+    bool m_abort_on_node_fail_pre_commit;
 
     // magic is on when record is seized
     enum { DICT_MAGIC = ~RT_DBDICT_SCHEMA_TRANSACTION };
@@ -2333,7 +2333,7 @@ class Dbdict : public SimulatedBlock {
       m_flush_complete = false;
       m_flush_end = false;
       m_wait_gcp_on_commit = true;
-      m_abort_on_node_fail = false;
+      m_abort_on_node_fail_pre_commit = false;
     }
 
     SchemaTrans(Uint32 the_trans_key) { trans_key = the_trans_key; }
@@ -4502,6 +4502,10 @@ class Dbdict : public SimulatedBlock {
   void masterRestart_checkSchemaStatusComplete(Signal *, Uint32, Uint32);
 
   void sendSchemaComplete(Signal *, Uint32 callbackData, Uint32);
+
+  void get_fk_index_column_orders(ForeignKeyRecPtr fk_ptr,
+                                  Uint32 *parent_to_child,
+                                  Uint32 *child_to_parent) const;
 
  public:
   void send_drop_file(Signal *, Uint32, Uint32, DropFileImplReq::RequestInfo);

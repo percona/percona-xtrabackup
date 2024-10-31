@@ -44,6 +44,9 @@ this program; if not, write to the Free Software Foundation, Inc.,
 /* os_offset_t, OS_FILE_LOG_BLOCK_SIZE */
 #include "os0file.h"
 
+/* UINT32_MAX */
+#include <cstdint>
+
 /** Align the log buffer (log_t::buf) to this size. This is to preserve the
 compatibility with older MySQL versions which also aligned the log buffer
 to OS_FILE_LOG_BLOCK_SIZE. Note, that each write from the log buffer starts
@@ -492,7 +495,7 @@ constexpr ulong INNODB_LOG_BUFFER_SIZE_DEFAULT = 64 * 1024 * 1024UL;
 constexpr ulong INNODB_LOG_BUFFER_SIZE_MIN = 256 * 1024UL;
 
 /** Maximum allowed value of innodb_log_buffer_size. */
-constexpr ulong INNODB_LOG_BUFFER_SIZE_MAX = ULONG_MAX;
+constexpr ulong INNODB_LOG_BUFFER_SIZE_MAX = UINT32_MAX;
 
 /** Default value of innodb_log_recent_written_size (in bytes). */
 constexpr ulong INNODB_LOG_RECENT_WRITTEN_SIZE_DEFAULT = 1024 * 1024;
@@ -503,14 +506,14 @@ constexpr ulong INNODB_LOG_RECENT_WRITTEN_SIZE_MIN = OS_FILE_LOG_BLOCK_SIZE;
 /** Maximum allowed value of innodb_log_recent_written_size. */
 constexpr ulong INNODB_LOG_RECENT_WRITTEN_SIZE_MAX = 1024 * 1024 * 1024UL;
 
-/** Default value of innodb_log_recent_closed_size (in bytes). */
-constexpr ulong INNODB_LOG_RECENT_CLOSED_SIZE_DEFAULT = 2 * 1024 * 1024;
+/** Default value of innodb_buf_flush_list_added_size (in bytes). */
+constexpr ulong INNODB_BUF_FLUSH_LIST_ADDED_SIZE_DEFAULT = 2 * 1024 * 1024;
 
-/** Minimum allowed value of innodb_log_recent_closed_size. */
-constexpr ulong INNODB_LOG_RECENT_CLOSED_SIZE_MIN = OS_FILE_LOG_BLOCK_SIZE;
+/** Minimum allowed value of innodb_buf_flush_list_added_size. */
+constexpr ulong INNODB_BUF_FLUSH_LIST_ADDED_SIZE_MIN = OS_FILE_LOG_BLOCK_SIZE;
 
-/** Maximum allowed value of innodb_log_recent_closed_size. */
-constexpr ulong INNODB_LOG_RECENT_CLOSED_SIZE_MAX = 1024 * 1024 * 1024UL;
+/** Maximum allowed value of innodb_buf_flush_list_added_size. */
+constexpr ulong INNODB_BUF_FLUSH_LIST_ADDED_SIZE_MAX = 1024 * 1024 * 1024UL;
 
 /** Default value of innodb_log_events (number of events). */
 constexpr ulong INNODB_LOG_EVENTS_DEFAULT = 2048;

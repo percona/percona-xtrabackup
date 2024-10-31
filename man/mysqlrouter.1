@@ -2,12 +2,12 @@
 .\"     Title: mysqlrouter
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 03/11/2024
+.\"      Date: 09/12/2024
 .\"    Manual: MySQL Router
-.\"    Source: MySQL 8.4
+.\"    Source: MySQL 9.0
 .\"  Language: English
 .\"
-.TH "MYSQLROUTER" "1" "03/11/2024" "MySQL 8\&.4" "MySQL Router"
+.TH "MYSQLROUTER" "1" "09/12/2024" "MySQL 9\&.0" "MySQL Router"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -96,7 +96,7 @@ Displays the version number and related information of the application, and exit
 .\}
 .nf
 $> \fBmysqlrouter \-\-version\fR
-MySQL Router v8\&.4\&.0 on Linux (64\-bit) (GPL community edition)
+MySQL Router v9\&.0\&.0 on Linux (64\-bit) (GPL community edition)
 .fi
 .if n \{\
 .RE
@@ -1075,6 +1075,7 @@ This option is not available on Windows\&.
 .TS
 allbox tab(:);
 lB l
+lB l
 lB l.
 T{
 Command-Line Format
@@ -1085,6 +1086,11 @@ T{
 Type
 T}:T{
 Integer
+T}
+T{
+Default Value
+T}:T{
+0
 T}
 .TE
 .sp 1
@@ -1454,11 +1460,9 @@ T}
 .sp 1
 Specifies the number of times MySQL Router should attempt to generate a password when creating user account with the password validation rules\&. The default value is 20\&. The valid range is 1 to 10000\&.
 .sp
-The most likely reason for failure is due to custom validate_password settings with unusual requirements such as a 50 character minimum\&. In that fail scenario, either
+The most likely reason for failure is due to custom validate_password settings with unusual requirements such as a 50 character minimum\&. In that fail scenario, it is likely that
 \fB\-\-force\-password\-validation\fR
-is set to true and/or the
-mysql_native_password
-MySQL Server plugin is disabled (this plugin allows bypassing validation)\&.
+is set to true\&.
 .RE
 .sp
 .RS 4
@@ -3041,12 +3045,12 @@ You should have received a copy of the GNU General Public License along with the
 .IP " 1." 4
 Connecting Using URI-Like Connection Strings
 .RS 4
-\%https://dev.mysql.com/doc/refman/8.4/en/connecting-using-uri-or-key-value-pairs.html#connecting-using-uri
+\%https://dev.mysql.com/doc/refman/9.0/en/connecting-using-uri-or-key-value-pairs.html#connecting-using-uri
 .RE
 .IP " 2." 4
 ClusterSet
 .RS 4
-\%https://dev.mysql.com/doc/mysql-shell/8.4/en/innodb-clusterset.html
+\%https://dev.mysql.com/doc/mysql-shell/9.0/en/innodb-clusterset.html
 .RE
 .SH AUTHOR
 Oracle Corporation (http://dev.mysql.com/).

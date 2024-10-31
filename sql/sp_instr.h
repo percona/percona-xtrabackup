@@ -292,15 +292,14 @@ class sp_lex_instr : public sp_instr {
   bool execute_expression(THD *thd, uint *nextp);
 
   /**
-    (Re-)parse the query corresponding to this instruction and return a new
-    LEX-object.
+    Parse statement corresponding to this instruction and return a new LEX.
 
     @param thd  Thread context.
     @param sp   The stored program.
 
     @return new LEX-object or NULL in case of failure.
   */
-  LEX *parse_expr(THD *thd, sp_head *sp);
+  LEX *parse_statement(THD *thd, sp_head *sp);
 
   /**
      Set LEX-object.
@@ -693,6 +692,11 @@ class sp_instr_freturn : public sp_lex_instr {
   }
 
   LEX_CSTRING get_expr_query() const override { return m_expr_query; }
+
+  void adjust_sql_command(LEX *lex) override {
+    assert(lex->sql_command == SQLCOM_SELECT);
+    lex->sql_command = SQLCOM_END;
+  }
 
  private:
   /// RETURN-expression item.

@@ -7,9 +7,11 @@
 
 eval create table t1 (a int not null auto_increment,b int, primary key (a)) engine=$engine_type2 auto_increment=3;
 insert into t1 values (NULL,1),(NULL,2),(NULL,3);
+--sorted_result
 select * from t1;
 
 --source include/rpl/sync_to_replica.inc
+--sorted_result
 select * from t1;
 connection master;
 drop table t1;
@@ -18,9 +20,11 @@ eval create table t1 (a int not null auto_increment,b int, primary key (a)) engi
 insert into t1 values (1,1),(NULL,2),(3,3),(NULL,4);
 delete from t1 where b=4;
 insert into t1 values (NULL,5),(NULL,6);
+--sorted_result
 select * from t1;
 
 --source include/rpl/sync_to_replica.inc
+--sorted_result
 select * from t1;
 connection master;
 
@@ -33,13 +37,16 @@ eval create table t1 (a int not null auto_increment, primary key (a)) engine=$en
 # Insert with 2 insert statements to get better testing of logging
 insert into t1 values (NULL),(5),(NULL);
 insert into t1 values (250),(NULL);
+--sorted_result
 select * from t1;
 insert into t1 values (1000);
 set @@insert_id=400;
 insert into t1 values(NULL),(NULL);
+--sorted_result
 select * from t1;
 
 --source include/rpl/sync_to_replica.inc
+--sorted_result
 select * from t1;
 connection master;
 drop table t1;
@@ -49,15 +56,18 @@ eval create table t1 (a int not null auto_increment, primary key (a)) engine=$en
 # Insert with 2 insert statements to get better testing of logging
 insert into t1 values (NULL),(5),(NULL),(NULL);
 insert into t1 values (500),(NULL),(502),(NULL),(NULL);
+--sorted_result
 select * from t1;
 set @@insert_id=600;
 --error ER_DUP_ENTRY
 insert into t1 values(600),(NULL),(NULL);
 set @@insert_id=600;
 insert ignore into t1 values(600),(NULL),(NULL),(610),(NULL);
+--sorted_result
 select * from t1;
 
 --source include/rpl/sync_to_replica.inc
+--sorted_result
 select * from t1;
 connection master;
 drop table t1;
@@ -75,9 +85,11 @@ connection master;
 
 insert into t1 values (NULL),(NULL);
 insert into t1 values (3),(NULL),(NULL);
+--sorted_result
 select * from t1;
 
 --source include/rpl/sync_to_replica.inc
+--sorted_result
 select * from t1;
 
 # Test for BUG#20524 "auto_increment_* not observed when inserting
@@ -140,19 +152,23 @@ eval CREATE TABLE t2 (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY) ENGINE=$engine
 SET SQL_MODE='';
 # Value of the id will be 1;
 INSERT INTO t2 VALUES(NULL);
+--sorted_result
 SELECT * FROM t2;
 # Value of the id will be 2;
 INSERT INTO t2 VALUES();
+--sorted_result
 SELECT * FROM t2;
 # Value of the id will be 3. The master treats 0 as NULL or empty because
 # NO_AUTO_VALUE_ON_ZERO is not assign to SQL_MODE.
 INSERT INTO t2 VALUES(0);
+--sorted_result
 SELECT * FROM t2;
 
 SET SQL_MODE=NO_AUTO_VALUE_ON_ZERO;
 # Value of the id will be 0. The master does not treat 0 as NULL or empty
 # because NO_AUTO_VALUE_ON_ZERO has assigned to SQL_MODE.
 INSERT INTO t2 VALUES(0);
+--sorted_result
 SELECT * FROM t2;
 
 INSERT INTO t2 VALUES(4);

@@ -6289,7 +6289,7 @@ ER_TOO_LONG_TABLE_COMMENT
   por "Comentário para a tabela '%-.64s' é longo demais (max = %lu)"
   ger "Kommentar für Tabelle '%-.64s' ist zu lang (max = %lu)"
 ER_TOO_LONG_FIELD_COMMENT
-  eng "Comment for field '%-.64s' is too long (max = %lu)"
+  eng "The maximum supported character limit for the field, '%-.64s', has been exceeded (max = %lu)"
   por "Comentário para o campo '%-.64s' é longo demais (max = %lu)"
   ger "Kommentar für Feld '%-.64s' ist zu lang (max = %lu)"
 ER_FUNC_INEXISTENT_NAME_COLLISION 42000
@@ -6884,7 +6884,7 @@ ER_TABLESPACE_EXISTS
   eng "Tablespace '%-.192s' exists."
 
 ER_TABLESPACE_DISCARDED
-  eng "Tablespace has been discarded for table '%-.192s'"
+  eng "Tablespace is discarded for table, '%-.192s'"
 
 ER_INTERNAL_ERROR
   eng "Internal error: %s"
@@ -9126,7 +9126,7 @@ ER_SECONDARY_ENGINE
   eng "Secondary engine operation failed. %s."
 
 ER_SECONDARY_ENGINE_DDL
-  eng "DDLs on a table with a secondary engine defined are not allowed."
+  eng "You cannot perform DDLs on a table that has a secondary engine defined."
 
 ER_INCORRECT_CURRENT_PASSWORD
   eng "Incorrect current password. Specify the correct password which has to be replaced."
@@ -9464,7 +9464,7 @@ ER_INVALID_CAST
 ER_HYPERGRAPH_NOT_SUPPORTED_YET 42000
   eng "The hypergraph optimizer does not yet support '%s'"
 
-ER_WARN_HYPERGRAPH_EXPERIMENTAL
+OBSOLETE_ER_WARN_HYPERGRAPH_EXPERIMENTAL
   eng "The hypergraph optimizer is highly experimental and is meant for testing only. Do not enable it unless you are a MySQL developer."
 
 ER_DA_NO_ERROR_LOG_PARSER_CONFIGURED
@@ -10021,7 +10021,7 @@ ER_LANGUAGE_COMPONENT_CANNOT_UNINSTALL
 ER_SP_NO_ALTER_LANGUAGE
   eng "Altering the language of an existing routine is not possible."
 
-ER_EXPLAIN_INTO_ANALYZE_NOT_SUPPORTED 0A000
+OBSOLETE_ER_EXPLAIN_INTO_ANALYZE_NOT_SUPPORTED 0A000
   eng "EXPLAIN ANALYZE does not support the INTO clause."
 
 ER_EXPLAIN_INTO_IMPLICIT_FORMAT_NOT_SUPPORTED 0A000
@@ -10176,7 +10176,7 @@ ER_LH_OUT_OF_RANGE
   eng "Column %d of %s : %s value is out of range."
 
 ER_LH_DATETIME_FORMAT
-  eng "Column %d of %s : Error while applying %s format."
+  eng "Column %d of %s : Error while applying %s."
 
 ER_LH_WARN_TRUNCATED
   eng "Column %d of %s : %s value was truncated."
@@ -10424,12 +10424,110 @@ ER_EXCEEDS_VECTOR_MAX_DIMENSIONS
 ER_TO_VECTOR_CONVERSION
   eng "Data cannot be converted to a valid vector: '%.*s'"
 
-ER_EXTERNAL_UNSUPPORTED_INDEX_ALGORITHM
+OBSOLETE_ER_EXTERNAL_UNSUPPORTED_INDEX_ALGORITHM
   eng "This storage engine ignores the %s index algorithm."
 
+ER_TP_CANNOT_DISABLE_MTL_WITH_DL
+  eng "The variable thread_pool_max_transactions_limit cannot be set to 0 when thread_pool_dedicated_listernes is ON."
+
 #
-#  End of 8.1+ error messages (server-to-client).
-#  Do NOT add messages intended for the error log above!
+# End of 8.1+ (server-to-client) error messages.
+#
+
+
+################################################################################
+# Error numbers starting at 6400: server-to-client messages 9.x
+################################################################################
+
+# Do NOT add messages intended for the error log here;
+# they belong in a separate file, messages_to_error_log.txt.
+#
+# Do NOT add messages to clients for server versions < 9 here;
+# they have their own sections above.
+#
+# See the FAQ at the end of the file for more information.
+
+start-error-number 6400
+
+ER_SERVER_OFFLINE_MODE_REASON
+  eng "The server is currently in offline mode since %s, reason: %s"
+
+ER_SERVER_OFFLINE_MODE_USER
+  eng "The server is currently in offline mode since %s, set by user %s"
+
+ER_LH_UNSTRUCTURED_NO_DATA_FOUND
+  eng "No data was extracted from provided files."
+
+ER_LH_UNSTRUCTURED_FILE_PARSE_ERR
+  eng "File: %.*s Could not be parsed."
+
+ER_LH_UNSTRUCTURED_ENCODING_ERR
+  eng "Segments %d to %d in file: %.*s Could not be encoded."
+
+ER_LH_UNSTRUCTURED_FILE_TYPE_MISMATCH_ERR
+  eng "File: %.*s is not a supported file type."
+
+ER_LH_UNSTRUCTURED_SCHEMA_ERR
+  eng "Defined schema does not match expected for column: %s."
+
+ER_LH_COLUMN_ENGINE_ATTR_ERR
+  eng "Invalid column engine attribute: %s."
+
+ER_LH_UNSTRUCTURED_OBJ_READ_ERR
+  eng "File: %.*s Could not be read."
+
+ER_LH_NO_SEGMENTS_GENERATED
+  eng "File: %.*s did not result in segments."
+
+ER_LH_UNSTRUCTURED_FILE_TOO_LARGE
+  eng "File: %s is too large."
+
+ER_EXCEEDED_MAX_REGULAR_STATEMENT_HANDLE_LIMIT
+  eng "Exceeded limit of %u regular SQL statement handles per session."
+
+ER_EXPLAIN_ANALYZE_JSON_FORMAT_VERSION_NOT_SUPPORTED 0A000
+  eng "EXPLAIN ANALYZE does not support FORMAT=JSON with explain_json_format_version=1."
+
+ER_NON_DML_DYNAMIC_PARAMETERS
+  eng "Dynamic parameters can only be used in DML statements."
+
+ER_DEPRECATE_NON_COMPOSABLE_MULTIPLE_ENGINE
+  eng "Combining the storage engines %.64s and %.64s is deprecated, but the statement or transaction updates both the %.64s table %.64s.%.64s and the %.64s table %.64s.%.64s."
+
+ER_BULK_JSON_INVALID
+  eng "Bulk load reports invalid JSON: error='%s', table='%s', field='%s'"
+
+ER_BULK_BLOB_TOO_BIG
+  eng "Column data bigger than %zu bytes for column='%s' of table='%s'"
+
+ER_NO_QUERY_PLAN_FOUND
+  eng "No query execution plan was found for the statement."
+
+ER_LH_CP_TOO_MANY_CHANGES
+  eng "More than %llu changes detected. Certain changes are ignored."
+
+ER_LH_CP_NOT_ENABLED
+  eng "Lakehouse Incremental Load is not enabled."
+
+ER_LH_CP_NO_VECTOR_STORE
+  eng "Lakehouse Incremental Load is not supported for vector store tables."
+
+ER_LH_CP_NO_VALIDATION_MODE
+  eng "Lakehouse Incremental Load is not supported with validation mode."
+
+ER_LH_CP_MISSING_FILES_MODE
+  eng "Lakehouse Incremental Load is not supported with allow_missing_files disabled."
+
+ER_LH_CP_COMMIT_FAILED
+  eng "Lakehouse Incremental Load commit operation failed."
+
+ER_LH_UNSTRUCTURED_INVALID_LANGUAGE
+  eng "Invalid language code. %s."
+
+ER_LH_VECTOR_TOO_MANY_ENTRIES
+  eng "Column %d in %s: Vector has more entries than its dimension: %s"
+#
+#  End of 9.x error messages (server-to-client).
 #
 
 ################################################################################

@@ -416,8 +416,7 @@ static void CollectOrderingsFromSpatialIndex(
             item_func->arg_count == 2) {
           Item *const item_func_arg1 = item_func->arguments()[0];
           Item *const item_func_arg2 = item_func->arguments()[1];
-          if (item->eq(item_func_arg1, /*binary_cmp=*/true) ||
-              item->eq(item_func_arg2, /*binary_cmp=*/true)) {
+          if (item->eq(item_func_arg1) || item->eq(item_func_arg2)) {
             SpatialDistanceScanInfo index_info;
             index_info.table = table;
             index_info.key_idx = key_idx;
@@ -472,7 +471,7 @@ void BuildInterestingOrders(
   }
 
   // Collect grouping from GROUP BY.
-  if (query_block->is_explicitly_grouped()) {
+  if (!join->group_list.empty()) {
     Ordering::Elements elements =
         CollectInterestingOrder(thd, join->group_list.order,
                                 /*unwrap_rollup=*/true, orderings);
@@ -624,7 +623,9 @@ void BuildInterestingOrders(
     for (unsigned key_idx = 0; key_idx < table->s->keys; ++key_idx) {
       // NOTE: visible_index claims to contain “visible and enabled” indexes,
       // but we still need to check keys_in_use to ignore disabled indexes.
-      if (!table->keys_in_use_for_query.is_set(key_idx)) {
+      if (!table->keys_in_use_for_query.is_set(key_idx) &&
+          !table->keys_in_use_for_order_by.is_set(key_idx) &&
+          !table->keys_in_use_for_group_by.is_set(key_idx)) {
         continue;
       }
       if (Overlaps(table->key_info[key_idx].flags, HA_SPATIAL)) {
@@ -792,7 +793,7 @@ void BuildInterestingOrders(
 
   // Collect the GROUP BY expression, which will be used by
   // AddFDsFromAggregateItems() later.
-  if (query_block->is_explicitly_grouped()) {
+  if (!join->group_list.empty()) {
     auto head = Bounds_checked_array<ItemHandle>::Alloc(
         thd->mem_root, CountOrderElements(join->group_list.order));
     int idx = 0;
@@ -825,6 +826,19 @@ void BuildInterestingOrders(
   if (*group_by_ordering_idx != -1) {
     *group_by_ordering_idx =
         orderings->RemapOrderingIndex(*group_by_ordering_idx);
+
+    // Store a copy of the already-reduced group element list into the
+    // group_list. Not applicable for ROLLUP; even a constant or a duplicate
+    // rollup item yields additional rows.
+    if (join->rollup_state == JOIN::RollupState::NONE) {
+      join->group_list = ORDER_with_src(
+          BuildSortAheadOrdering(thd, orderings,
+                                 orderings->ordering(*group_by_ordering_idx)),
+          join->order.src,
+          /*const_optimized_arg=*/true);
+      // Indicate if group-by is completely pruned away.
+      if (join->group_list.empty()) join->group_optimized_away = true;
+    }
   }
   if (*distinct_ordering_idx != -1) {
     *distinct_ordering_idx =
@@ -897,8 +911,7 @@ void BuildInterestingOrders(
           sort_ahead_only ||
           std::none_of(join->fields->cbegin(), join->fields->cend(),
                        [real_item](const Item *field) {
-                         return real_item->eq(field->real_item(),
-                                              /*binary_cmp=*/true);
+                         return real_item->eq(field->real_item());
                        });
     }
     NodeMap required_nodes = GetNodeMapFromTableMap(

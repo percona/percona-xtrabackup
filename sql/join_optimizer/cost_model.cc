@@ -31,6 +31,7 @@
 
 #include "mem_root_deque.h"
 #include "my_base.h"
+#include "my_bitmap.h"  // bitmap_bits_set
 #include "sql/handler.h"
 #include "sql/item_func.h"
 #include "sql/item_subselect.h"
@@ -60,37 +61,9 @@ using std::min;
 using std::popcount;
 using std::string;
 
-double EstimateCostForRefAccess(THD *thd, TABLE *table, unsigned key_idx,
-                                double num_output_rows) {
-  // When asking the cost model for costs, the API takes in a double,
-  // but truncates it to an unsigned integer. This means that if we
-  // expect an index lookup to give e.g. 0.9 rows on average, the cost
-  // model will assume we get back 0 -- and even worse, InnoDB's
-  // cost model gives a cost of exactly zero for this case, ignoring
-  // entirely the startup cost! Obviously, a cost of zero would make
-  // it very attractive to line up a bunch of such lookups in a nestloop
-  // and nestloop-join against them, crowding out pretty much any other
-  // way to do a join, so to counteract both of these issues, we
-  // explicitly round up here. This can be removed if InnoDB's
-  // cost model is tuned better for this case.
-  const double hacked_num_output_rows = ceil(num_output_rows);
-
-  // We call find_cost_for_ref(), which is the same cost model used
-  // in the old join optimizer, but without the “worst_seek” cap,
-  // which gives ref access with high row counts an artificially low cost.
-  // Removing this cap hurts us a bit if the buffer pool gets filled
-  // with useful data _while running this query_, but it is just a really
-  // bad idea overall, that makes the join optimizer prefer such plans
-  // by a mile. The original comment says that it's there to prevent
-  // choosing table scan too often, but table scans are not a problem
-  // if we hash join on them. (They can be dangerous with nested-loop
-  // joins, though!)
-  //
-  // TODO(sgunders): This is still a very primitive, and rather odd,
-  // cost model. In particular, why don't we ask the storage engine for
-  // the cost of scanning non-covering secondary indexes?
-  return find_cost_for_ref(thd, table, key_idx, hacked_num_output_rows,
-                           /*worst_seeks=*/DBL_MAX);
+namespace {
+double EstimateAggregateRows(THD *thd, const AccessPath *child,
+                             const Query_block *query_block, bool rollup);
 }
 
 void EstimateSortCost(THD *thd, AccessPath *path, double distinct_rows) {
@@ -133,9 +106,9 @@ void EstimateSortCost(THD *thd, AccessPath *path, double distinct_rows) {
     // than the number of input rows), O(n + k log k) is the same as
     // O(n + n log n), which is equivalent to O(n log n) because n < n log n for
     // large values of n. So we always calculate it as n + k log k:
-    sort_cost = kSortOneRowCost *
-                (num_input_rows +
-                 sort_result_rows * std::max(log2(sort_result_rows), 1.0));
+    sort_cost = kSortOneRowCost * num_input_rows +
+                kSortComparisonCost * sort_result_rows *
+                    std::max(log2(sort_result_rows), 1.0);
   }
 
   path->set_cost(sort.child->cost() + sort_cost);
@@ -204,24 +177,48 @@ FilterCost EstimateFilterCost(THD *thd, double num_rows, Item *condition,
   return cost;
 }
 
-// Very rudimentary (assuming no deduplication; it's better to overestimate
-// than to understimate), so that we get something that isn't “unknown”.
+// Very rudimentary (it's better to overestimate than to understimate), so that
+// we get something that isn't “unknown”.
 void EstimateMaterializeCost(THD *thd, AccessPath *path) {
   AccessPath *table_path = path->materialize().table_path;
   double &subquery_cost = path->materialize().subquery_cost;
-
-  path->set_num_output_rows(0);
+  const bool is_distinct_or_group_by =
+      path->materialize().param->deduplication_reason !=
+      MaterializePathParameters::NO_DEDUP;
   double cost_for_cacheable = 0.0;
   bool left_operand = true;
+
+  // There are three different strategies for estimating the row count. If it's
+  // for DISTINCT, it's always preset. If it's for GROUP BY, it can be preset,
+  // but we have to calculate it if it's not. For everything else, calculate it
+  // afresh.
+  if (!is_distinct_or_group_by) {
+    path->set_num_output_rows(0);  // Reset any possibly set output rows.
+  } else if (path->num_output_rows() == kUnknownRowCount) {
+    // For DISTINCT, num_output_rows is always preset, so it has to be GROUP BY.
+    assert(path->materialize().param->deduplication_reason ==
+           MaterializePathParameters::DEDUP_FOR_GROUP_BY);
+
+    // Calculate estimate of output rows, which is same as number of groups.
+    path->set_num_output_rows(EstimateAggregateRows(
+        thd, path->materialize().param->m_operands.at(0).subquery_path,
+        path->materialize().param->m_operands.at(0).join->query_block,
+        /*rollup=*/false));  // We anyway don't temp table support with ROLLUP.
+  }
+
   subquery_cost = 0.0;
+
   for (const MaterializePathParameters::Operand &operand :
        path->materialize().param->m_operands) {
     if (operand.subquery_path->num_output_rows() >= 0.0) {
+      if (is_distinct_or_group_by) {
+        // Output rows for deduplication is separately handled above.
+      }
       // For INTERSECT and EXCEPT we can never get more rows than we have in
       // the left block, so do not add unless we are looking at left block or
       // we have a UNION.
-      if (left_operand || path->materialize().param->table == nullptr ||
-          path->materialize().param->table->is_union_or_table()) {
+      else if (left_operand || path->materialize().param->table == nullptr ||
+               path->materialize().param->table->is_union_or_table()) {
         path->set_num_output_rows(path->num_output_rows() +
                                   operand.subquery_path->num_output_rows());
       } else if (!left_operand &&
@@ -243,12 +240,15 @@ void EstimateMaterializeCost(THD *thd, AccessPath *path) {
     }
     left_operand = false;
   }
+  path->materialize().subquery_rows = path->num_output_rows();
+  path->num_output_rows_before_filter = path->num_output_rows();
 
   if (table_path->type == AccessPath::TABLE_SCAN) {
     path->set_cost(0.0);
     path->set_init_cost(0.0);
     path->set_init_once_cost(0.0);
     table_path->set_num_output_rows(path->num_output_rows());
+    table_path->num_output_rows_before_filter = path->num_output_rows();
     table_path->set_init_cost(subquery_cost);
     table_path->set_init_once_cost(cost_for_cacheable);
 
@@ -970,6 +970,74 @@ void EstimateLimitOffsetCost(AccessPath *path) {
                         fraction_start_read *
                             (child->cost() - child->init_cost()));
   }
+}
+
+void EstimateTemptableAggregateCost(THD *thd, AccessPath *path,
+                                    const Query_block *query_block) {
+  AccessPath *child = path->temptable_aggregate().subquery_path;
+  AccessPath *table_path = path->temptable_aggregate().table_path;
+  double init_cost = 0.0;
+  double num_output_rows = 0;
+
+  // Calculate estimate of output rows, which is same as the number of rows
+  // after aggregation.
+  if (path->num_output_rows() == kUnknownRowCount) {
+    path->set_num_output_rows(
+        EstimateAggregateRows(thd, child, query_block, /*rollup=*/false));
+  }
+  num_output_rows = path->num_output_rows();
+
+  const uint rowlen =
+      get_tmp_table_rec_length(*query_block->join->fields,
+                               /*include_hidden=*/true, /*can_skip_aggs=*/true);
+
+  const Cost_model_server *cost_model = query_block->join->cost_model();
+
+  Cost_model_server::enum_tmptable_type tmp_table_type;
+  if (rowlen * num_output_rows < thd->variables.max_heap_table_size)
+    tmp_table_type = Cost_model_server::MEMORY_TMPTABLE;
+  else
+    tmp_table_type = Cost_model_server::DISK_TMPTABLE;
+
+  // Add temp table creation cost.
+  init_cost += cost_model->tmptable_create_cost(tmp_table_type);
+
+  // Add temp table population cost....
+
+  init_cost += child->cost();
+
+  // Add key lookup cost, which is used for finding the group. Give some
+  // weightage to the number of groups. As the number of groups
+  // increases, it is found that the lookup cost increases slightly. The below
+  // formula approximately matches the rate at which the lookup time has
+  // shown to increase during testing.
+  init_cost += kTempTableAggLookupCost *
+               (1 + pow(log10(std::max(num_output_rows, 1.0)), 2) / 100) *
+               child->num_output_rows();
+
+  // Add Aggregation cost.
+  init_cost += kAggregateOneRowCost * child->num_output_rows();
+
+  // Add cost of inserting/updating the record into tmp table. We don't
+  // differentiate between update and insert.
+  init_cost += cost_model->tmptable_readwrite_cost(tmp_table_type,
+                                                   child->num_output_rows(), 0);
+
+  path->set_init_cost(init_cost);
+  path->set_cost(init_cost + cost_model->tmptable_readwrite_cost(
+                                 tmp_table_type, 0,
+                                 /*read_rows=*/num_output_rows));
+  path->set_init_once_cost(init_cost);
+  path->num_output_rows_before_filter = num_output_rows;
+  path->set_cost_before_filter(path->cost());
+
+  // Since the table access path is more of a placeholder in the EXPLAIN
+  // output, we keep the table access cost and the temp table materialization
+  // path cost the same. This way EXPLAIN won't have to adjust the cost figures
+  // the way it currently does for Materialization path.
+  table_path->set_num_output_rows(num_output_rows);
+  table_path->set_init_cost(init_cost);
+  table_path->set_cost(path->cost());
 }
 
 void EstimateWindowCost(AccessPath *path) {

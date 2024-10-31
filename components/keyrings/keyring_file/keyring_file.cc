@@ -25,6 +25,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <memory>
 
 #include "keyring_file.h"
+#include "option_usage.h"
 
 /* Keyring_encryption_service_impl */
 #include <components/keyrings/common/component_helpers/include/keyring_encryption_service_definition.h>
@@ -134,6 +135,10 @@ using keyring_file::config::g_instance_path;
 /** Dependencies */
 REQUIRES_SERVICE_PLACEHOLDER(log_builtins);
 REQUIRES_SERVICE_PLACEHOLDER(log_builtins_string);
+REQUIRES_SERVICE_PLACEHOLDER(registry_registration);
+REQUIRES_SERVICE_PLACEHOLDER_AS(registry, mysql_service_registry_no_lock);
+REQUIRES_SERVICE_PLACEHOLDER_AS(registry_registration,
+                                mysql_service_registration_no_lock);
 
 SERVICE_TYPE(log_builtins) * log_bi;
 SERVICE_TYPE(log_builtins_string) * log_bs;
@@ -195,16 +200,15 @@ bool init_or_reinit_keyring(std::string &err) {
 
   /* Initialize backend handler */
   std::unique_ptr<Keyring_file_backend> new_backend =
-      std::make_unique<Keyring_file_backend>(
-          new_config_pod.get()->config_file_path_,
-          new_config_pod.get()->read_only_);
-  if (!new_backend || !new_backend.get()->valid()) {
+      std::make_unique<Keyring_file_backend>(new_config_pod->config_file_path_,
+                                             new_config_pod->read_only_);
+  if (!new_backend || !new_backend->valid()) {
     err = "Failed to initialize keyring backend";
     return true;
   }
 
   /* Create new operations class */
-  Keyring_operations<Keyring_file_backend> *new_operations = new (std::nothrow)
+  auto *new_operations = new (std::nothrow)
       Keyring_operations<Keyring_file_backend>(true, new_backend.release());
   if (new_operations == nullptr) {
     err = "Failed to allocate memory for keyring operations";
@@ -218,10 +222,10 @@ bool init_or_reinit_keyring(std::string &err) {
   }
 
   std::swap(g_keyring_operations, new_operations);
-  Config_pod *current = g_config_pod;
+  const Config_pod *current = g_config_pod;
   g_config_pod = new_config_pod.release();
-  if (current != nullptr) delete current;
-  if (new_operations != nullptr) delete new_operations;
+  delete current;
+  delete new_operations;
   return false;
 }
 
@@ -231,7 +235,7 @@ bool init_or_reinit_keyring(std::string &err) {
 static mysql_service_status_t keyring_file_init() {
   log_bi = mysql_service_log_builtins;
   log_bs = mysql_service_log_builtins_string;
-
+  if (keyring_file_component_option_usage_init()) return true;
   g_component_callbacks = new (std::nothrow)
       keyring_common::service_implementation::Component_callbacks();
 
@@ -242,19 +246,20 @@ static mysql_service_status_t keyring_file_init() {
   De-initialization function for component - Used when unloading the component
 */
 static mysql_service_status_t keyring_file_deinit() {
+  if (keyring_file_component_option_usage_deinit()) return true;
   g_keyring_file_inited = false;
   if (g_component_path) free(g_component_path);
   g_component_path = nullptr;
   if (g_instance_path) free(g_instance_path);
   g_instance_path = nullptr;
 
-  if (g_keyring_operations != nullptr) delete g_keyring_operations;
+  delete g_keyring_operations;
   g_keyring_operations = nullptr;
 
-  if (g_config_pod) delete g_config_pod;
+  delete g_config_pod;
   g_config_pod = nullptr;
 
-  if (g_component_callbacks) delete g_component_callbacks;
+  delete g_component_callbacks;
   g_component_callbacks = nullptr;
 
   return false;
@@ -297,9 +302,23 @@ REQUIRES_SERVICE_PLACEHOLDER(psi_memory_v2);
 
 /** List of dependencies */
 BEGIN_COMPONENT_REQUIRES(component_keyring_file)
+<<<<<<< HEAD
 REQUIRES_SERVICE(registry), REQUIRES_SERVICE(log_builtins),
     REQUIRES_SERVICE(log_builtins_string), REQUIRES_PSI_MEMORY_SERVICE,
     END_COMPONENT_REQUIRES();
+||||||| dc86e412f18
+REQUIRES_SERVICE(registry), REQUIRES_SERVICE(log_builtins),
+    REQUIRES_SERVICE(log_builtins_string), END_COMPONENT_REQUIRES();
+=======
+REQUIRES_SERVICE(log_builtins), REQUIRES_SERVICE(log_builtins_string),
+    REQUIRES_SERVICE(registry_registration),
+    REQUIRES_SERVICE_IMPLEMENTATION_AS(registry_registration,
+                                       mysql_minimal_chassis_no_lock,
+                                       mysql_service_registration_no_lock),
+    REQUIRES_SERVICE_IMPLEMENTATION_AS(registry, mysql_minimal_chassis_no_lock,
+                                       mysql_service_registry_no_lock),
+    END_COMPONENT_REQUIRES();
+>>>>>>> mysql-9.1.0
 
 /** Component description */
 BEGIN_COMPONENT_METADATA(component_keyring_file)

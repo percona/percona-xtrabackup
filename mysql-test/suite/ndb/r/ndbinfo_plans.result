@@ -63,7 +63,7 @@ ndb$acc_operations	15	64
 ndb$backup_id	1	20
 ndb$blocks	29	20
 ndb$certificates	34	44
-ndb$columns	560	44
+ndb$columns	561	44
 ndb$config_nodes	34	28
 ndb$counters	200	24
 ndb$dblqh_tcconnect_state	19	52
@@ -106,7 +106,7 @@ ndb$threadblocks	124	16
 ndb$threads	26	40
 ndb$threadstat	22	144
 ndb$transactions	5	44
-ndb$transporter_details	32	108
+ndb$transporter_details	32	112
 ndb$transporters	32	68
 
 CALL populate_sizes();
@@ -278,7 +278,7 @@ select param_name from ndb$config_params where param_number = 40000;
 explain format=tree select * from counters;
 EXPLAIN	-> Nested loop left join  (rows=200)
     -> Table scan on c  (rows=200)
-    -> Single-row index lookup on b using PRIMARY (block_number=c.block_number)  (rows=1)
+    -> Single-row index lookup on b using PRIMARY (block_number = c.block_number)  (rows=1)
 
 
 ## The plan for memory_per_fragment
@@ -290,7 +290,7 @@ EXPLAIN	-> Left hash join (parent_name.`type` = `name`.parent_obj_type), (parent
             -> Nested loop inner join  (rows=14.3)
                 -> Filter: ((`name`.`type` <= 6) and (`name`.`type` is not null))  (rows=14.3)
                     -> Table scan on name  (rows=43)
-                -> Single-row index lookup on types using PRIMARY (type_id=`name`.`type`)  (rows=1)
+                -> Single-row index lookup on types using PRIMARY (type_id = `name`.`type`)  (rows=1)
     -> Hash
         -> Table scan on parent_name  (rows=43)
 
@@ -354,7 +354,7 @@ EXPLAIN	-> Inner hash join (space.table_id = `name`.id)  (rows=1150)
             -> Nested loop inner join  (rows=4.67)
                 -> Filter: ((`name`.`type` <= 6) and (`name`.`type` is not null))  (rows=4.67)
                     -> Table scan on name  (rows=14)
-                -> Single-row index lookup on types using PRIMARY (type_id=`name`.`type`)  (rows=1)
+                -> Single-row index lookup on types using PRIMARY (type_id = `name`.`type`)  (rows=1)
             -> Hash
                 -> Table scan on parent_name  (rows=14)
 

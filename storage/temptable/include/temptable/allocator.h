@@ -28,6 +28,7 @@ TempTable custom allocator. */
 #define TEMPTABLE_ALLOCATOR_H
 
 #include <algorithm>  // std::max
+#include <atomic>     // std::atomic
 #include <cstddef>    // size_t
 #include <limits>     // std::numeric_limits
 #include <memory>     // std::shared_ptr
@@ -36,13 +37,16 @@ TempTable custom allocator. */
 
 #include "my_dbug.h"
 #include "my_sys.h"
-#include "sql/mysqld.h"  // temptable_max_ram, temptable_max_mmap
+#include "sql/current_thd.h"  // current_thd
+#include "sql/mysqld.h"       // temptable_max_ram, temptable_max_mmap
+#include "sql/sql_class.h"    // current_thd
 #include "storage/temptable/include/temptable/block.h"
 #include "storage/temptable/include/temptable/chunk.h"
 #include "storage/temptable/include/temptable/constants.h"
 #include "storage/temptable/include/temptable/memutils.h"
 
 namespace temptable {
+extern std::atomic_uint64_t count_hit_max_ram;
 
 /* Thin abstraction which enables logging of memory operations.
  *
@@ -223,6 +227,12 @@ struct Prefer_RAM_over_MMAP_policy {
         MemoryMonitor::RAM::decrease(block_size);
       }
     }
+
+    /* Track through the global status variable,
+     * if table exceeded the specified memory limit
+     */
+    ++count_hit_max_ram;
+
     if (MemoryMonitor::MMAP::consumption() < MemoryMonitor::MMAP::threshold()) {
       if (MemoryMonitor::MMAP::increase(block_size) <=
           MemoryMonitor::MMAP::threshold()) {
@@ -514,7 +524,7 @@ class Allocator {
       /** [in] Memory where to create the object. */
       U *mem,
       /** Arguments to pass to U's constructor. */
-      Args &&... args);
+      Args &&...args);
 
   /** Destroy an object of type `U`. The memory is not returned to the OS, this
    * is the counterpart of `construct()`. */
@@ -626,6 +636,12 @@ inline T *Allocator<T, AllocationScheme>::allocate(size_t n_elements) {
    */
   if (m_table_resource_monitor.consumption() + n_bytes_requested >
       m_table_resource_monitor.threshold()) {
+    if (current_thd) {
+      /* Track through the status variable, if table
+       * size exceeded the tmp_table_size in user session
+       */
+      current_thd->inc_status_count_hit_tmp_table_size();
+    }
     throw Result::RECORD_FILE_FULL;
   }
   m_table_resource_monitor.increase(n_bytes_requested);
@@ -662,7 +678,7 @@ inline void Allocator<T, AllocationScheme>::deallocate(T *chunk_data,
 
 template <class T, class AllocationScheme>
 template <class U, class... Args>
-inline void Allocator<T, AllocationScheme>::construct(U *mem, Args &&... args) {
+inline void Allocator<T, AllocationScheme>::construct(U *mem, Args &&...args) {
   new (mem) U(std::forward<Args>(args)...);
 }
 

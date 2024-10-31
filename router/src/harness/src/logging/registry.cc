@@ -46,8 +46,6 @@
 #include "dim.h"
 #include "harness_assert.h"
 
-using mysql_harness::Path;
-using mysql_harness::serial_comma;
 using mysql_harness::logging::Logger;
 using mysql_harness::logging::LogLevel;
 using mysql_harness::logging::Record;
@@ -57,8 +55,8 @@ namespace {
 using mysql_harness::logging::LogLevel;
 using mysql_harness::logging::LogTimestampPrecision;
 
-constexpr const std::array<std::pair<std::string_view, LogLevel>, 7> kLogLevels{
-    {
+constexpr auto kLogLevels =
+    std::to_array<std::pair<std::string_view, LogLevel>>({
         {"fatal", LogLevel::kFatal},
         {"system", LogLevel::kSystem},
         {"error", LogLevel::kError},
@@ -66,11 +64,10 @@ constexpr const std::array<std::pair<std::string_view, LogLevel>, 7> kLogLevels{
         {"info", LogLevel::kInfo},
         {"note", LogLevel::kNote},
         {"debug", LogLevel::kDebug},
-    }};
+    });
 
-constexpr const std::array<std::pair<std::string_view, LogTimestampPrecision>,
-                           12>
-    kLogTimestampPrecisions{{
+constexpr auto kLogTimestampPrecisions =
+    std::to_array<std::pair<std::string_view, LogTimestampPrecision>>({
         {"second", LogTimestampPrecision::kSec},
         {"sec", LogTimestampPrecision::kSec},
         {"s", LogTimestampPrecision::kSec},
@@ -83,7 +80,7 @@ constexpr const std::array<std::pair<std::string_view, LogTimestampPrecision>,
         {"nanosecond", LogTimestampPrecision::kNanoSec},
         {"nsec", LogTimestampPrecision::kNanoSec},
         {"ns", LogTimestampPrecision::kNanoSec},
-    }};
+    });
 }  // namespace
 
 namespace mysql_harness {
@@ -98,7 +95,7 @@ namespace logging {
 
 // throws std::logic_error
 void Registry::create_logger(const std::string &name, LogLevel level) {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::unique_lock lock(mtx_);
   auto result = loggers_.emplace(name, Logger(*this, level));
   if (result.second == false)
     throw std::logic_error("Duplicate logger '" + name + "'");
@@ -106,14 +103,14 @@ void Registry::create_logger(const std::string &name, LogLevel level) {
 
 // throws std::logic_error
 void Registry::remove_logger(const std::string &name) {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::unique_lock lock(mtx_);
   if (loggers_.erase(name) == 0)
     throw std::logic_error("Removing non-existant logger '" + name + "'");
 }
 
 // throws std::logic_error
 Logger Registry::get_logger(const std::string &name) const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::shared_lock lock(mtx_);
 
   auto it = loggers_.find(name);
   if (it == loggers_.end())
@@ -124,7 +121,7 @@ Logger Registry::get_logger(const std::string &name) const {
 
 Logger Registry::get_logger_or_default(const std::string &name,
                                        const std::string &default_name) const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::shared_lock lock(mtx_);
 
   auto it = loggers_.find(name);
   if (it != loggers_.end()) return it->second;
@@ -140,7 +137,7 @@ void Registry::update_logger(const std::string &name, const Logger &logger) {
   // this internally locks mtx_, so we call it before we lock it for good here
   const std::set<std::string> handlers_in_registry = get_handler_names();
 
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::unique_lock lock(mtx_);
 
   // verify logger exists
   auto it = loggers_.find(name);
@@ -158,14 +155,17 @@ void Registry::update_logger(const std::string &name, const Logger &logger) {
 }
 
 std::set<std::string> Registry::get_logger_names() const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::shared_lock lock(mtx_);
+
   std::set<std::string> result;
   for (const auto &pair : loggers_) result.emplace(pair.first);
+
   return result;
 }
 
-void Registry::flush_all_loggers(const std::string dst) {
-  std::lock_guard<std::mutex> lock(mtx_);
+void Registry::flush_all_loggers(const std::string &dst) {
+  std::unique_lock lock(mtx_);
+
   for (const auto &handler : handlers_) {
     handler.second->reopen(dst);
   }
@@ -179,7 +179,7 @@ void Registry::flush_all_loggers(const std::string dst) {
 
 // throws std::logic_error
 void Registry::add_handler(std::string name, std::shared_ptr<Handler> handler) {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::unique_lock lock(mtx_);
 
   auto result = handlers_.emplace(name, handler);
   if (!result.second)
@@ -188,7 +188,7 @@ void Registry::add_handler(std::string name, std::shared_ptr<Handler> handler) {
 
 // throws std::logic_error
 void Registry::remove_handler(std::string name) {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::unique_lock lock(mtx_);
 
   auto it = handlers_.find(name);
   if (it == handlers_.end())
@@ -202,7 +202,7 @@ void Registry::remove_handler(std::string name) {
 
 // throws std::logic_error
 std::shared_ptr<Handler> Registry::get_handler(const std::string &name) const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::shared_lock lock(mtx_);
 
   auto it = handlers_.find(name);
   if (it == handlers_.end())
@@ -212,14 +212,16 @@ std::shared_ptr<Handler> Registry::get_handler(const std::string &name) const {
 }
 
 std::set<std::string> Registry::get_handler_names() const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::shared_lock lock(mtx_);
+
   std::set<std::string> result;
   for (const auto &pair : handlers_) result.emplace(pair.first);
+
   return result;
 }
 
 bool Registry::is_handled(LogLevel level) const {
-  std::lock_guard<std::mutex> lock(mtx_);
+  std::shared_lock lock(mtx_);
 
   for (const auto &handler_pair : handlers_) {
     if (level <= handler_pair.second->get_level()) return true;
@@ -235,6 +237,10 @@ bool Registry::is_handled(LogLevel level) const {
 ////////////////////////////////////////////////////////////////////////////////
 
 static std::string g_main_app_log_domain;
+
+Logger Registry::get_logger_or_default(const std::string &name) const {
+  return get_logger_or_default(name, g_main_app_log_domain);
+}
 
 void attach_handler_to_all_loggers(Registry &registry,
                                    std::string handler_name) {
@@ -383,8 +389,7 @@ LogLevel get_default_log_level(const Config &config, bool raw_mode) {
   constexpr const char kNone[] = "";
 
   // aliases with shorter names
-  constexpr const char *kLogLevel =
-      mysql_harness::logging::kConfigOptionLogLevel;
+  constexpr const char *kLogLevel = mysql_harness::logging::options::kLevel;
   constexpr const char *kLogger = mysql_harness::logging::kConfigSectionLogger;
 
   std::string level_name;
@@ -404,7 +409,7 @@ std::string get_default_log_filename(const Config &config) {
 
   // aliases with shorter names
   constexpr const char *kLogFilename =
-      mysql_harness::logging::kConfigOptionLogFilename;
+      mysql_harness::logging::options::kFilename;
   constexpr const char *kLogger = mysql_harness::logging::kConfigSectionLogger;
 
   std::string log_filename;
@@ -456,7 +461,7 @@ LogTimestampPrecision get_default_timestamp_precision(const Config &config) {
 
   // aliases with shorter names
   constexpr const char *kLogTimestampPrecision =
-      mysql_harness::logging::kConfigOptionLogTimestampPrecision;
+      mysql_harness::logging::options::kTimestampPrecision;
   constexpr const char *kLogger = mysql_harness::logging::kConfigSectionLogger;
 
   std::string precision;

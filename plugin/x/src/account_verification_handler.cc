@@ -25,6 +25,8 @@
 
 #include "plugin/x/src/account_verification_handler.h"
 
+#include <mysql/components/my_service.h>
+#include <mysql/components/services/mysql_global_variable_attributes_service.h>
 #include "my_sys.h"  // NOLINT(build/include_subdir)
 
 #include "plugin/x/src/client.h"
@@ -36,22 +38,39 @@
 
 namespace xpl {
 
+bool Account_verification_handler::parse_sasl_message(
+    const std::string &sasl_message,
+    iface::Authentication_info *out_authenication_info, std::string *out_schema,
+    std::string *out_account, std::string *out_passwd) {
+  std::size_t message_position = 0;
+
+  *out_schema = "";
+  *out_account = "";
+  *out_passwd = "";
+
+  if (sasl_message.empty() ||
+      !extract_sub_message(sasl_message, message_position, *out_schema) ||
+      !extract_sub_message(sasl_message, message_position, *out_account) ||
+      !extract_last_sub_message(sasl_message, message_position, *out_passwd))
+    return false;
+
+  out_authenication_info->m_tried_account_name = *out_account;
+  out_authenication_info->m_was_using_password = !out_passwd->empty();
+
+  return true;
+}
+
 ngs::Error_code Account_verification_handler::authenticate(
     const iface::Authentication &account_verificator,
-    iface::Authentication_info *authenication_info,
+    iface::Authentication_info *authentication_info,
     const std::string &sasl_message) const {
-  std::size_t message_position = 0;
   std::string schema = "";
   std::string account = "";
   std::string passwd = "";
-  if (sasl_message.empty() ||
-      !extract_sub_message(sasl_message, message_position, schema) ||
-      !extract_sub_message(sasl_message, message_position, account) ||
-      !extract_last_sub_message(sasl_message, message_position, passwd))
-    return ngs::SQLError_access_denied();
 
-  authenication_info->m_tried_account_name = account;
-  authenication_info->m_was_using_password = !passwd.empty();
+  if (!parse_sasl_message(sasl_message, authentication_info, &schema, &account,
+                          &passwd))
+    return ngs::SQLError_access_denied();
 
   if (account.empty()) return ngs::SQLError_access_denied();
 
@@ -71,7 +90,7 @@ ngs::Error_code Account_verification_handler::authenticate(
 
 bool Account_verification_handler::extract_last_sub_message(
     const std::string &message, std::size_t &element_position,
-    std::string &sub_message) const {
+    std::string &sub_message) {
   if (element_position >= message.size()) return true;
 
   sub_message = message.substr(element_position);
@@ -82,7 +101,7 @@ bool Account_verification_handler::extract_last_sub_message(
 
 bool Account_verification_handler::extract_sub_message(
     const std::string &message, std::size_t &element_position,
-    std::string &sub_message) const {
+    std::string &sub_message) {
   if (element_position >= message.size()) return true;
 
   if (message[element_position] == '\0') {
@@ -155,7 +174,7 @@ ngs::Error_code Account_verification_handler::verify_account(
   }
 
   if (record.is_offline_mode_and_not_super_user)
-    return ngs::SQLError(ER_SERVER_OFFLINE_MODE);
+    return get_offline_mode_error();
 
   // password expiration check must come last, because password expiration
   // is not a fatal error, a client that supports expired password state,
@@ -203,6 +222,40 @@ ngs::Error_code Account_verification_handler::get_account_record(
   return ngs::Success();
 } catch (const ngs::Error_code &e) {
   return e;
+}
+
+ngs::Error_code Account_verification_handler::get_offline_mode_error() const {
+  char attr_value[1024] = "";
+  size_t len_attr = sizeof(attr_value);
+
+  char user_value[USERNAME_CHAR_LENGTH + 1] = "";
+  size_t len_user = sizeof(user_value);
+
+  char time_value[30] = "";
+  size_t len_time = sizeof(time_value);
+
+  SERVICE_TYPE(registry) *plugin_registry = mysql_plugin_registry_acquire();
+  // protection needed for plugin unit tests
+  if (plugin_registry != nullptr) {
+    my_service<SERVICE_TYPE(mysql_global_variable_attributes)> service{
+        "mysql_global_variable_attributes", plugin_registry};
+    if (service.is_valid()) {
+      service->get(nullptr, "offline_mode", "reason", attr_value, &len_attr);
+      service->get_time(nullptr, "offline_mode", time_value, &len_time);
+      service->get_user(nullptr, "offline_mode", user_value, &len_user);
+    }
+    mysql_plugin_registry_release(plugin_registry);
+  }
+
+  if (attr_value[0] != '\0') {
+    return ngs::SQLError(ER_SERVER_OFFLINE_MODE_REASON, time_value, attr_value);
+  }
+
+  if (user_value[0] != '\0') {
+    return ngs::SQLError(ER_SERVER_OFFLINE_MODE_USER, time_value, user_value);
+  }
+
+  return ngs::SQLError(ER_SERVER_OFFLINE_MODE);
 }
 
 ngs::PFS_string Account_verification_handler::get_sql(

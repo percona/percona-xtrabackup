@@ -37,6 +37,7 @@
 #include "mysql/gtid/global.h"
 #include "mysql/gtid/gtid.h"
 #include "mysql/gtid/tsid.h"
+#include "mysql/gtid/tsid_plain.h"
 #include "mysql/gtid/uuid.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_rwlock.h"  // mysql_rwlock_t
@@ -1592,6 +1593,14 @@ class Gtid_set {
  public:
   /// Destroy this Gtid_set.
   ~Gtid_set();
+
+  /**
+    Claim ownership of memory.
+
+    @param claim  claim ownership of memory.
+  */
+  void claim_memory_ownership(bool claim);
+
   /**
     Removes all gtids from this Gtid_set.
 
@@ -1850,6 +1859,19 @@ class Gtid_set {
       ivit.next();
     }
     return ret;
+  }
+
+  /// @brief Returns the number of GTIDs
+  /// @returns the number of GTIDs on this set
+  std::size_t get_count() const {
+    if (tsid_lock != nullptr) tsid_lock->assert_some_wrlock();
+    rpl_sidno max_sidno = get_max_sidno();
+    std::size_t count{0};
+
+    for (rpl_sidno sidno = 1; sidno <= max_sidno; sidno++) {
+      count += get_gtid_count(sidno);
+    }
+    return count;
   }
 
   /**

@@ -61,13 +61,8 @@ static void dump_metadata_dict_table(const dict_table_t *table) {
 }
 #endif /* !UNIV_NO_ERR_MSGS */
 
-/** Validates offset and field number.
-@param[in]      index   record descriptor
-@param[in]      offsets array returned by rec_get_offsets()
-@param[in]      n       nth field
-@param[in]      L       Line number of calling satement*/
-static void validate_rec_offset(const dict_index_t *index, const ulint *offsets,
-                                ulint n, ut::Location L) {
+void validate_rec_offset(const dict_index_t *index, const ulint *offsets,
+                         ulint n, ut::Location L) {
   ut_ad(rec_offs_validate(nullptr, nullptr, offsets));
   if (n >= rec_offs_n_fields(offsets)) {
 #ifndef UNIV_NO_ERR_MSGS
@@ -76,13 +71,6 @@ static void validate_rec_offset(const dict_index_t *index, const ulint *offsets,
     ib::fatal(L, ER_IB_DICT_INVALID_COLUMN_POSITION, ulonglong{n}, num_fields);
 #endif /* !UNIV_NO_ERR_MSGS */
   }
-}
-
-byte *rec_get_nth_field(const dict_index_t *index, const rec_t *rec,
-                        const ulint *offsets, ulint n, ulint *len) {
-  byte *field =
-      const_cast<byte *>(rec) + rec_get_nth_field_offs(index, offsets, n, len);
-  return (field);
 }
 
 const byte *rec_get_nth_field_old(const dict_index_t *index, const rec_t *rec,
@@ -96,7 +84,7 @@ ulint rec_get_nth_field_size(const dict_index_t *index, const rec_t *rec,
   if (index) {
     ut_ad(!dict_table_is_comp(index->table));
     if (index->has_row_versions()) {
-      uint8_t version = UINT8_UNDEFINED;
+      row_version_t version = INVALID_ROW_VERSION;
       if (rec_old_is_versioned(rec)) {
         version = rec_get_instant_row_version_old(rec);
       }
@@ -108,21 +96,12 @@ ulint rec_get_nth_field_size(const dict_index_t *index, const rec_t *rec,
   return rec_get_nth_field_size_low(rec, n);
 }
 
-ulint rec_get_nth_field_offs(const dict_index_t *index, const ulint *offsets,
-                             ulint n, ulint *len) {
-  if (index && index->has_row_versions()) {
-    n = index->get_field_off_pos(n);
-  }
-
-  return rec_get_nth_field_offs_low(offsets, n, len);
-}
-
 ulint rec_get_nth_field_offs_old(const dict_index_t *index, const rec_t *rec,
                                  ulint n, ulint *len) {
   if (index) {
     ut_ad(!dict_table_is_comp(index->table));
     if (index->has_row_versions()) {
-      uint8_t version = UINT8_UNDEFINED;
+      row_version_t version = INVALID_ROW_VERSION;
       if (rec_old_is_versioned(rec)) {
         version = rec_get_instant_row_version_old(rec);
       }
@@ -132,16 +111,6 @@ ulint rec_get_nth_field_offs_old(const dict_index_t *index, const rec_t *rec,
   }
 
   return rec_get_nth_field_offs_old_low(rec, n, len);
-}
-
-ulint rec_offs_nth_extern(const dict_index_t *index, const ulint *offsets,
-                          ulint n) {
-  if (index && index->has_row_versions()) {
-    n = index->get_field_off_pos(n);
-  }
-
-  validate_rec_offset(index, offsets, n, UT_LOCATION_HERE);
-  return (rec_offs_nth_extern_low(offsets, n));
 }
 
 void rec_offs_make_nth_extern(dict_index_t *index, ulint *offsets, ulint n) {
@@ -197,7 +166,7 @@ ulint rec_2_is_field_extern(const dict_index_t *index, const rec_t *rec,
   if (index) {
     ut_ad(!dict_table_is_comp(index->table));
     if (index->has_row_versions()) {
-      uint8_t version = UINT8_UNDEFINED;
+      row_version_t version = INVALID_ROW_VERSION;
       if (rec_old_is_versioned(rec)) {
         version = rec_get_instant_row_version_old(rec);
       }

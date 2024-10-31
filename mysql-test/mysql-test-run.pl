@@ -118,6 +118,7 @@ my $opt_platform_exclude;
 my $opt_ps_protocol;
 my $opt_report_features;
 my $opt_skip_core;
+my $opt_skip_suite;
 my $opt_skip_test_list;
 my $opt_sp_protocol;
 my $opt_start;
@@ -187,6 +188,7 @@ my $build_thread       = 0;
 my $daemonize_mysqld   = 0;
 my $debug_d            = "d";
 my $exe_ndbmtd_counter = 0;
+my $tmpdir_path_updated= 0;
 my $source_dist        = 0;
 my $shutdown_report    = 0;
 my $valgrind_reports   = 0;
@@ -203,6 +205,7 @@ our $opt_client_ddd;
 our $opt_client_debugger;
 our $opt_client_gdb;
 our $opt_client_lldb;
+our $opt_ctest_filter;
 our $opt_ctest_report;
 our $opt_dbx;
 our $opt_ddd;
@@ -331,6 +334,7 @@ our $exe_libtool;
 our $exe_mysql;
 our $exe_mysql_migrate_keyring;
 our $exe_mysql_keyring_encryption_test;
+our $exe_mysql_test_jwt_generator;
 our $exe_mysqladmin;
 our $exe_mysqltest;
 our $exe_mysql_test_event_tracking;
@@ -592,6 +596,19 @@ sub main {
     $opt_suites =~ s/,$//;
   }
 
+  # Skip suites which match the --skip-suite filter
+  if ($opt_skip_suite) {
+    my $opt_skip_suite_reg = init_pattern($opt_skip_suite, "--skip-suite");
+    for my $suite (split(",", $opt_suites)) {
+      if ($opt_skip_suite_reg and $suite =~ /$opt_skip_suite_reg/) {
+        remove_suite_from_list($suite);
+      }
+    }
+
+    # Removing ',' at the end of $opt_suites if exists
+    $opt_suites =~ s/,$//;
+  }
+
   if ($opt_skip_sys_schema) {
     remove_suite_from_list("sysschema");
   }
@@ -685,6 +702,22 @@ sub main {
     exit(0);
   }
 
+  if ($secondary_engine_support) {
+    # Enable mTLS in Heatwave-AutoML by setting up certificates and keys.
+    # - Paths are pre-set in the environment for accurate server initialization.
+    # - Certificates and keys are generated after the Python virtual environment
+    #   setup.
+    my $oci_instance_id    = $ENV{'OCI_INSTANCE_ID'} || "";
+    # Configuration for ml
+    # 20240613: temporary disabled for MTR until find a solution for SSL3
+    my $ml_encryption_enabled = 0; # Replace with $oci_instance_id?1:0 to enable
+    $ml_encryption_enabled?mtr_report("ML encryption enabled"):mtr_report("ML encryption disabled");
+    if ($ml_encryption_enabled) {
+      $ENV{'ML_CERTIFICATES'} = "$::opt_vardir/" . "hwaml_cert_files/";
+      $ENV{'ML_ENABLE_ENCRYPTION'} = "1";
+    }
+  }
+
   initialize_servers();
 
   # Run unit tests in parallel with the same number of workers as
@@ -742,6 +775,23 @@ sub main {
     secondary_engine_offload_count_report_init();
     # Create virtual environment
     find_ml_driver($bindir);
+
+    # Generate mTLS certificates & keys for Heatwave-AutoML post Python
+    # virtual environment setup and path pre-setting (referenced earlier).
+    my $oci_instance_id    = $ENV{'OCI_INSTANCE_ID'} || "";
+    my $aws_key_store      = $ENV{'OLRAPID_KEYSTORE'} || "";
+    my $ml_encryption_enabled = $ENV{'ML_ENABLE_ENCRYPTION'} || "";
+    if ($ml_encryption_enabled) {
+      if($aws_key_store)
+      {
+        extract_certs_from_pfx($aws_key_store, $ENV{'ML_CERTIFICATES'});
+      }
+      else
+      {
+        create_cert_keys($ENV{'ML_CERTIFICATES'});
+      }
+    }
+    
     reserve_secondary_ports();
   }
 
@@ -797,6 +847,7 @@ sub main {
       if ($opt_parallel > 1) {
         set_vardir("$opt_vardir/$child_num");
         $opt_tmpdir = "$opt_tmpdir/$child_num";
+        $tmpdir_path_updated = 1;
       }
 
       init_timers();
@@ -1672,6 +1723,7 @@ sub command_line_setup {
     'skip-im'                            => \&ignore_option,
     'skip-ndbcluster|skip-ndb'           => \$opt_skip_ndbcluster,
     'skip-rpl'                           => \&collect_option,
+    'skip-suite=s'                       => \$opt_skip_suite,
     'skip-sys-schema'                    => \$opt_skip_sys_schema,
     'skip-test=s'                        => \&collect_option,
     'start-from=s'                       => \&collect_option,
@@ -1750,18 +1802,6 @@ sub command_line_setup {
     'valgrind-path=s'           => \$opt_valgrind_path,
     'valgrind-secondary-engine' => \$opt_valgrind_secondary_engine,
     'valgrind|valgrind-all'     => \$opt_valgrind,
-    'valgrind-options=s'        => sub {
-      my ($opt, $value) = @_;
-      # Deprecated option unless it's what we know pushbuild uses
-      if (option_equals($value, "--gen-suppressions=all --show-reachable=yes"))
-      {
-        push(@valgrind_args, $_) for (split(' ', $value));
-        return;
-      }
-      die("--valgrind-options=s is deprecated. Use ",
-          "--valgrind-option=s, to be specified several",
-          " times if necessary");
-    },
 
     # Directories
     'clean-vardir'    => \$opt_clean_vardir,
@@ -1807,6 +1847,7 @@ sub command_line_setup {
     'timer!'                => \&report_option,
     'timestamp'             => \&report_option,
     'unit-tests!'           => \$opt_ctest,
+    'unit-tests-filter=s'    => \$opt_ctest_filter,
     'unit-tests-report!'    => \$opt_ctest_report,
     'user-args'             => \$opt_user_args,
     'user=s'                => \$opt_user,
@@ -2085,7 +2126,7 @@ sub command_line_setup {
     $opt_tmpdir = "$opt_vardir/tmp" unless $opt_tmpdir;
 
     my $res =
-      check_socket_path_length("$opt_tmpdir/mysqld.NN.sock", $opt_parallel);
+      check_socket_path_length("$opt_tmpdir/mysqld.NN.sock", $opt_parallel, $tmpdir_path_updated);
 
     if ($res) {
       mtr_report("Too long tmpdir path '$opt_tmpdir'",
@@ -2177,8 +2218,8 @@ sub command_line_setup {
 
   # Set default values for opt_ctest (--unit-tests)
   if ($opt_ctest == -1) {
-    if (defined $opt_ctest_report && $opt_ctest_report) {
-      # Turn on --unit-tests by default if --unit-tests-report is used
+    if ((defined $opt_ctest_report && $opt_ctest_report) || defined $opt_ctest_filter) {
+      # Turn on --unit-tests by default if --unit-tests-report or --unit-tests-filter is used
       $opt_ctest = 1;
     } elsif ($opt_suites || @opt_cases) {
       # Don't run ctest if tests or suites named
@@ -2420,8 +2461,10 @@ sub create_manifest_file {
   my $exe_mysqld = find_mysqld($basedir);
   my ($exename, $path, $suffix) = fileparse($exe_mysqld, qr/\.[^.]*/);
   my $manifest_file_path = $path.$exename.$manifest_file_ext;
-  open(my $mh, "> $manifest_file_path") or die;
-  print $mh $config_content or die;
+  open(my $mh, "> $manifest_file_path") or
+    die "Could not create manifest file $manifest_file_path";
+  print $mh $config_content or
+    die "Could not write manifest file $manifest_file_path";
   close($mh);
 }
 
@@ -2443,8 +2486,10 @@ sub create_one_config($$) {
   my $config_content = "{ \"read_local_config\": true }";
   my $config_file_ext = ".cnf";
   my $config_file_path = $location."\/".$component.$config_file_ext;
-  open(my $mh, "> $config_file_path") or die;
-  print $mh $config_content or die;
+  open(my $mh, "> $config_file_path") or
+    die "Could not create config file $config_file_path";
+  print $mh $config_content or
+    die "Could not write config file $config_file_path";
   close($mh);
 }
 
@@ -2761,7 +2806,7 @@ sub executable_setup () {
     mtr_exe_exists("$path_client_bindir/mysql_migrate_keyring");
   $exe_mysql_keyring_encryption_test =
     mtr_exe_exists("$path_client_bindir/mysql_keyring_encryption_test");
-
+  $exe_mysql_test_jwt_generator = mtr_exe_maybe_exists("$path_client_bindir/mysql_test_jwt_generator");
   # Look for mysql_test_event_tracking binary
   $exe_mysql_test_event_tracking = my_find_bin($bindir,
                 [ "runtime_output_directory", "bin" ],
@@ -2940,10 +2985,11 @@ sub mysqldump_arguments ($) {
   return mtr_args2str($exe, @$args);
 }
 
-sub mysql_client_test_arguments() {
+sub mysql_client_test_arguments($) {
+  my ($client_name) = @_;
   my $exe;
   # mysql_client_test executable may _not_ exist
-  $exe = mtr_exe_maybe_exists("$path_client_bindir/mysql_client_test");
+  $exe = mtr_exe_maybe_exists("$path_client_bindir/$client_name");
   return "" unless $exe;
 
   my $args;
@@ -3295,7 +3341,8 @@ sub environment_setup {
   $ENV{'MYSQL_OPTIONS'}       = substr($mysql_cmd, index($mysql_cmd, " "));
   $ENV{'MYSQL_BINLOG'}        = client_arguments("mysqlbinlog");
   $ENV{'MYSQL_CHECK'}         = client_arguments("mysqlcheck");
-  $ENV{'MYSQL_CLIENT_TEST'}   = mysql_client_test_arguments();
+  $ENV{'MYSQL_CLIENT_TEST'}   = mysql_client_test_arguments("mysql_client_test");
+  $ENV{'I_MYSQL_CLIENT_TEST'} = mysql_client_test_arguments("i_mysql_client_test");
   $ENV{'MYSQL_DUMP'}          = mysqldump_arguments(".1");
   $ENV{'MYSQL_DUMP_SLAVE'}    = mysqldump_arguments(".2");
   $ENV{'MYSQL_IMPORT'}        = client_arguments("mysqlimport");
@@ -3316,7 +3363,7 @@ sub environment_setup {
   $ENV{'MYSQL_SECURE_INSTALLATION'} =
     "$path_client_bindir/mysql_secure_installation";
   $ENV{'OPENSSL_EXECUTABLE'} = $exe_openssl;
-
+  $ENV{'MYSQL_TEST_JWT_GENERATOR'} = $exe_mysql_test_jwt_generator;
   my $exe_mysqld = find_mysqld($basedir);
   $ENV{'MYSQLD'} = $exe_mysqld;
 
@@ -3595,7 +3642,7 @@ sub setup_vardir() {
   # UNIX domain socket's path far below PATH_MAX. Don't allow that
   # to happen.
   my $res =
-    check_socket_path_length("$opt_tmpdir/mysqld.NN.sock", $opt_parallel);
+    check_socket_path_length("$opt_tmpdir/mysqld.NN.sock", $opt_parallel, $tmpdir_path_updated);
   if ($res) {
     mtr_error("Socket path '$opt_tmpdir' too long, it would be ",
               "truncated and thus not possible to use for connection to ",
@@ -6026,17 +6073,24 @@ sub check_expected_crash_and_restart($$) {
           delete $mysqld->{'restart_opts'};
         }
 
-        # Attempt to remove the .expect file. If it fails in
-        # windows, retry removal after a sleep.
-        my $retry = 1;
-        while (
-          unlink($expect_file) == 0 &&
-          $! == 13 &&    # Error = 13, Permission denied
-          IS_WINDOWS && $retry-- >= 0
-          ) {
-          # Permission denied to unlink.
-          # Race condition seen on windows. Wait and retry.
-          mtr_milli_sleep(1000);
+        # Attempt to remove the .expect file. It was observed that on Windows
+        # 439 are sometimes not enough, while 440th attempt succeeded. The exact
+        # cause of the problem is unknown, as trying to list the processes with
+        # open handle using sysinternal tool named Handle, caused the tool
+        # itself to crash. We make only 30 iterations here, as a trade-off,
+        # which seems to be enough in most cases, but waitng longer seems to
+        # risk timing out the whole test suite. Not removing a file might impact
+        # the next test case, thus we emit a warning in such case.
+        my $attempts = 0;
+        while (unlink($expect_file) == 0) {
+          if ($! == 13 && IS_WINDOWS && ++$attempts < 30){
+            # Permission denied to unlink.
+            # Race condition seen on windows. Wait and retry.
+            mtr_milli_sleep(1000);
+          } else {
+            mtr_warning("attempt#$attempts to unlink($expect_file) failed: $!");
+            last;
+          }
         }
 
         # Instruct an implicit wait in case the restart is intended
@@ -6571,6 +6625,10 @@ sub mysqld_start ($$$$) {
 
   # Remember data dir for gmon.out files if using gprof
   $gprof_dirs{ $mysqld->value('datadir') } = 1 if $opt_gprof;
+
+  # Set $AWS_SHARED_CREDENTIALS_FILE required by some AWS tests
+  push(@opt_mysqld_envs,
+       "AWS_SHARED_CREDENTIALS_FILE=$opt_vardir/tmp/credentials");
 
   if (defined $exe) {
     $mysqld->{'proc'} =
@@ -7154,6 +7212,10 @@ sub start_check_testcase ($$$) {
   mtr_add_arg($args, "--test-file=%s",   "include/check-testcase.test");
   mtr_add_arg($args, "--verbose");
   mtr_add_arg($args, "--logdir=%s/tmp",  $opt_vardir);
+
+  if ($opt_hypergraph) {
+    mtr_add_arg($args, "--hypergraph");
+  }
 
   if (IS_WINDOWS) {
     mtr_add_arg($args, "--protocol=pipe");
@@ -7781,7 +7843,14 @@ sub run_ctest() {
     # Skip tests with label NDB
     $ctest_opts .= "-LE " . ((IS_WINDOWS) ? "^^NDB\$" : "^NDB\\\$");
   }
-  my $ctest_out = `ctest $ctest_opts --test-timeout $opt_ctest_timeout $ctest_vs 2>&1`;
+  my $ctest_out = "";
+  if (defined $opt_ctest_filter) {
+    $ctest_out =
+      `ctest -R $opt_ctest_filter $ctest_opts --test-timeout $opt_ctest_timeout $ctest_vs 2>&1`;
+  } else {
+    $ctest_out =
+      `ctest $ctest_opts --test-timeout $opt_ctest_timeout $ctest_vs 2>&1`;
+  }
   if ($? == $no_ctest && ($opt_ctest == -1 || defined $ENV{PB2WORKDIR})) {
     chdir($olddir);
     return;
@@ -8076,7 +8145,6 @@ Options for valgrind
                         with valgrind.
   valgrind-option=ARGS  Option to give valgrind, replaces default option(s), can
                         be specified more then once.
-  valgrind-options=ARGS Deprecated, use --valgrind-option.
   valgrind-path=<EXE>   Path to the valgrind executable.
 
 Misc options
@@ -8162,6 +8230,8 @@ Misc options
   timer                 Show test case execution time.
   timestamp             Print timestamp before each test report line.
   unit-tests            Run unit tests even if they would otherwise not be run.
+  unit-tests-filter=    Execute only a specific subset of unit tests that matches
+                        a given regular expression.
   unit-tests-report     Include report of every test included in unit tests.
   user-args             In combination with start* and no test name, drops
                         arguments to mysqld except those specified with

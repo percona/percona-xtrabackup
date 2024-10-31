@@ -46,7 +46,8 @@
 #include "sql/conn_handler/connection_handler_manager.h"
 #include "sql/current_thd.h"  // current_thd
 #include "sql/handler.h"
-#include "sql/mysqld.h"  // key_thread_one_connection
+#include "sql/mysqld.h"              // key_thread_one_connection
+#include "sql/mysqld_thd_manager.h"  // Global_THD_manager
 #include "sql/protocol_classic.h"
 #include "sql/query_options.h"
 #include "sql/resourcegroups/platform/thread_attrs_api.h"  // num_vcpus
@@ -278,6 +279,17 @@ my_socket thd_get_fd(THD *thd) {
 }
 
 /**
+  Get MYSQL_SOCKET struct for this connection
+
+  @param thd            THD object
+
+  @retval               MYSQL_SOCKET struct of the connection
+*/
+MYSQL_SOCKET thd_get_mysql_socket(THD *thd) {
+  return thd->get_protocol_classic()->get_vio()->mysql_socket;
+}
+
+/**
   Set thread specific environment required for thd cleanup in thread pool.
 
   @param thd            THD object
@@ -300,6 +312,14 @@ my_thread_attr_t *get_connection_attrib() { return &connection_attrib; }
 */
 
 ulong get_max_connections() { return max_connections; }
+
+longlong get_incoming_connects() {
+  return Connection_handler_manager::get_incoming_connects();
+}
+
+longlong get_aborted_connects() {
+  return Connection_handler_manager::get_instance()->aborted_connects();
+}
 
 //////////////////////////////////////////////////////////
 //

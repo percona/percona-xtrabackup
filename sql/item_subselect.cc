@@ -706,7 +706,6 @@ bool Item_subselect::exec(THD *thd) {
   // have iterators, so make sure to create them if they're missing.
   if (!query_expr()->is_optimized()) {
     if (query_expr()->optimize(thd, /*materialize_destination=*/nullptr,
-                               /*create_iterators=*/false,
                                /*finalize_access_paths=*/false))
       return true;
 
@@ -2967,7 +2966,7 @@ bool Item_singlerow_subselect::collect_scalar_subqueries(uchar *arg) {
    */
   for (auto &e : info->m_list) {
     if (e.item == this) {
-      e.m_location |= info->m_location;
+      e.m_locations |= info->m_location;
       return false;
     }
   }
@@ -3017,9 +3016,9 @@ static Item **find_subquery_in_select_list(Query_block *select,
 Item *Item_singlerow_subselect::replace_scalar_subquery(uchar *arg) {
   auto *const info = pointer_cast<Scalar_subquery_replacement *>(arg);
   if (info->m_target != this) return this;
+  MEM_ROOT *const mem_root = current_thd->mem_root;
 
-  auto *const scalar_item =
-      new (current_thd->mem_root) Item_field(info->m_field);
+  auto *const scalar_item = new (mem_root) Item_field(info->m_field);
   if (scalar_item == nullptr) return nullptr;
 
   Item **ref = find_subquery_in_select_list(info->m_outer_query_block, this);
@@ -3032,8 +3031,8 @@ Item *Item_singlerow_subselect::replace_scalar_subquery(uchar *arg) {
     ref = info->m_outer_query_block->add_hidden_item(scalar_item);
   }
   Item *result;
-  if (query_expr()->place() == CTX_HAVING) {
-    result = new (current_thd->mem_root)
+  if (place() == CTX_HAVING) {
+    result = new (mem_root)
         Item_ref(&info->m_outer_query_block->context, ref, scalar_item->db_name,
                  scalar_item->table_name, scalar_item->field_name);
     if (result == nullptr) return nullptr;
@@ -3042,11 +3041,30 @@ Item *Item_singlerow_subselect::replace_scalar_subquery(uchar *arg) {
   }
 
   if (info->m_add_coalesce) {
-    Item_int *zero = new (current_thd->mem_root) Item_int_0();
-    if (zero == nullptr) return nullptr;
-    Item *coa = new (current_thd->mem_root) Item_func_coalesce(result, zero);
+    //
+    // COALESCE(query_result, 0)
+    //
+    Item *zero_or_if = new (mem_root) Item_int_0();
+    if (zero_or_if == nullptr) return nullptr;
+    if (info->m_add_having_compensation) {
+      //
+      // COALESCE(query_result, IF(derived.having-expr IS NOT NULL, 0, NULL))
+      //
+      Field *field_in_derived = info->m_derived->field[info->m_having_idx];
+      auto *having_i = new (mem_root) Item_field(field_in_derived);
+      if (having_i == nullptr) return nullptr;
+      auto *inn = new (mem_root) Item_func_isnotnull(having_i);
+      if (inn == nullptr) return nullptr;
+      auto *null_i = new (mem_root) Item_null();
+      if (null_i == nullptr) return nullptr;
+      Item_func_if *ifi = new (mem_root) Item_func_if(inn, zero_or_if, null_i);
+      if (ifi == nullptr) return nullptr;
+      zero_or_if = ifi;
+    }
+    Item *coa = new (mem_root) Item_func_coalesce(result, zero_or_if);
     if (coa == nullptr) return nullptr;
     if (coa->fix_fields(current_thd, &coa)) return nullptr;
+    coa->hidden = result->hidden;
     result = coa;
   }
   return result;
@@ -3082,7 +3100,11 @@ bool Query_expression::replace_items(Item_transformer t, uchar *arg) {
   auto replace_and_update = [t, arg](Item *expr, Item **ref) {
     Item *new_expr = expr->transform(t, arg);
     if (new_expr == nullptr) return true;
-    if (new_expr != expr) current_thd->change_item_tree(ref, new_expr);
+    if (new_expr != expr) {
+      assert(!current_thd->lex->is_exec_started());
+      // We are in prepare phase, no need for change_item_tree
+      *ref = new_expr;
+    }
     new_expr->update_used_tables();
     return false;
   };
@@ -3211,6 +3233,13 @@ bool ExecuteExistsQuery(THD *thd, Query_expression *qe, RowIterator *iterator,
   auto restore_query_block = create_scope_guard([thd, saved_query_block]() {
     thd->lex->set_current_query_block(saved_query_block);
   });
+
+  // Collect information about the chosen plan for the subquery on the first
+  // execution.
+  if (!qe->is_executed()) {
+    const JOIN *const join = qe->first_query_block()->join;
+    CollectStatusVariables(thd, join, *join->root_access_path());
+  }
 
   Opt_trace_context *const trace = &thd->opt_trace;
   const Opt_trace_object trace_wrapper(trace);
@@ -3452,9 +3481,8 @@ bool subselect_hash_sj_engine::setup(
     const bool nullable = field->is_nullable();
     ref.items[part_no] = item->left_expr->element_index(part_no);
 
-    if (!(right_col_item =
-              new Item_field(thd, &tmp_table_ref->query_block->context,
-                             tmp_table_ref, field)) ||
+    if (!(right_col_item = new Item_field(
+              thd, &tmp_table_ref->query_block->context, field)) ||
         !(eq_cond = new Item_func_eq(ref.items[part_no], right_col_item)) ||
         down_cast<Item_cond_and *>(m_cond)->add(eq_cond)) {
       delete m_cond;

@@ -19,6 +19,9 @@
 ########################################################################
 #
 
+# Fails when the hypergraph optimizer is used.
+--source include/not_hypergraph.inc
+
 --echo ==============================================
 --echo     CRUD UPDATE SCENARIOS
 --echo ==============================================
@@ -39,7 +42,7 @@ grant all on *.* to updatecruduser@localhost;
 --write_file $MYSQL_TMP_DIR/mysqlx-update_crud_safemode_1.xpl
 -->sql
  DROP SCHEMA if EXISTS mysqlxplugin;
- CREATE SCHEMA mysqlxplugin DEFAULT CHARSET='utf8';
+ CREATE SCHEMA mysqlxplugin DEFAULT CHARSET='utf8mb3';
  USE mysqlxplugin;
 
  CREATE TABLE categories (

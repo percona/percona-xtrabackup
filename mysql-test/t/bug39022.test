@@ -1,4 +1,7 @@
 -- source include/have_log_bin.inc
+# Hypergraph chooses a different plan, takes different locks, and
+# times out instead of deadlocking.
+-- source include/not_hypergraph.inc
 -- source include/rpl/deprecated/not_binlog_format_row.inc
 
 --echo #

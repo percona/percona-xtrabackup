@@ -157,8 +157,6 @@
     }                                                                     \
   }
 
-extern CHARSET_INFO my_charset_utf16le_bin;
-
 // List of error codes specified with 'error' command.
 Expected_errors *expected_errors = new Expected_errors();
 
@@ -2881,7 +2879,7 @@ static void var_set_escape(struct st_command *command, VAR *dst) {
     - the second string,
     - a bool that is false if the parsing succeeded; true if it failed.
   */
-  auto parse_args = [&]() -> auto {
+  auto parse_args = [&]() -> auto{
     // command->first_argument contains '(characters,text)'
     char *p = command->first_argument;
     // Find (
@@ -3279,13 +3277,15 @@ static FILE *my_popen(DYNAMIC_STRING *ds_cmd, const char *mode,
     wchar_t wmode[10];
     uint dummy_errors;
     size_t len;
-    len = my_convert((char *)wcmd, sizeof(wcmd) - sizeof(wcmd[0]),
-                     &my_charset_utf16le_bin, ds_cmd->str,
-                     std::strlen(ds_cmd->str), charset_info, &dummy_errors);
+    const CHARSET_INFO *utf16le_bin =
+        get_charset_by_name("utf16le_bin", MYF(0));
+    len = my_convert((char *)wcmd, sizeof(wcmd) - sizeof(wcmd[0]), utf16le_bin,
+                     ds_cmd->str, std::strlen(ds_cmd->str), charset_info,
+                     &dummy_errors);
     wcmd[len / sizeof(wchar_t)] = 0;
-    len = my_convert((char *)wmode, sizeof(wmode) - sizeof(wmode[0]),
-                     &my_charset_utf16le_bin, mode, std::strlen(mode),
-                     charset_info, &dummy_errors);
+    len =
+        my_convert((char *)wmode, sizeof(wmode) - sizeof(wmode[0]), utf16le_bin,
+                   mode, std::strlen(mode), charset_info, &dummy_errors);
     wmode[len / sizeof(wchar_t)] = 0;
     return _wpopen(wcmd, wmode);
   }
@@ -3557,7 +3557,7 @@ static void free_dynamic_strings(T *val) {
 ///              the function, through recursion, end up being
 ///              freed by dynstr_free().
 template <typename T1, typename... T2>
-static void free_dynamic_strings(T1 *first, T2 *... rest) {
+static void free_dynamic_strings(T1 *first, T2 *...rest) {
   free_dynamic_strings(first);
   free_dynamic_strings(rest...);
 }
@@ -4840,6 +4840,9 @@ static void do_change_user(struct st_command *command) {
     if (cur_con->stmt) mysql_stmt_close(cur_con->stmt);
     cur_con->stmt = nullptr;
     mysql_reconnect(&cur_con->mysql);
+    /* mysql_reconnect changes this setting to true. We really want it to be
+    false at all times. */
+    cur_con->mysql.reconnect = false;
   }
 
   dynstr_free(&ds_user);
@@ -6620,6 +6623,19 @@ static int connect_n_handle_errors(struct st_command *command, MYSQL *con,
   return 1; /* Connected */
 }
 
+/**
+   Enable the hypergraph optimizer in a connection. Set it as a session variable
+   in order to take effect in the current session, but also as a global variable
+   so that a test case can do "SET optimizer_switch = DEFAULT;" without
+   switching to the old optimizer for the rest of the session.
+*/
+static bool enable_hypergraph_optimizer(st_connection *con) {
+  const char *set_stmt =
+      "SET @@session.optimizer_switch='hypergraph_optimizer=on', "
+      "@@global.optimizer_switch='hypergraph_optimizer=on';";
+  return mysql_query_wrapper(&con->mysql, set_stmt) != 0;
+}
+
 /*
   Open a new connection to MySQL Server with the parameters
   specified. Make the new connection the current connection.
@@ -6728,7 +6744,13 @@ static void do_connect(struct st_command *command) {
       revert_properties();
       if (ds_connection_name.length) set_current_connection(con_slot);
       assert(con_slot != next_con);
+      if (opt_hypergraph) {
+        enable_hypergraph_optimizer(con_slot);
+      }
     }
+    /* mysql_reconnect changes this setting to true. We really want it to be
+    false at all times. */
+    con_slot->mysql.reconnect = false;
     goto free_options;
   }
 
@@ -8296,6 +8318,30 @@ static void append_field(DYNAMIC_STRING *ds, uint col_idx, MYSQL_FIELD *field,
   }
 #endif
 
+  const size_t temp_val_max_width = (1 << 14);
+  char temp_val[temp_val_max_width];
+  DYNAMIC_STRING ds_temp = {.str = nullptr, .length = 0, .max_length = 0};
+  if (field->type == MYSQL_TYPE_VECTOR && !is_null) {
+    /* Do a binary to hex conversion for vector type */
+    size_t orig_len = len;
+    len = 2 + orig_len * 2;
+    char *destination = temp_val;
+    if (len > temp_val_max_width) {
+      init_dynamic_string(&ds_temp, "", len + 1);
+      destination = ds_temp.str;
+    }
+    const char *ptr = val;
+    const char *end = ptr + orig_len;
+    val = destination;
+    int written = sprintf(destination, "0x");
+    destination += written;
+    for (; ptr < end; ptr++, destination += written) {
+      written = sprintf(
+          destination, "%02X",
+          *(static_cast<const uchar *>(static_cast<const void *>(ptr))));
+    }
+  }
+
   if (!display_result_vertically) {
     if (col_idx) dynstr_append_mem(ds, "\t", 1);
     replace_dynstr_append_mem(ds, val, len);
@@ -8304,6 +8350,10 @@ static void append_field(DYNAMIC_STRING *ds, uint col_idx, MYSQL_FIELD *field,
     dynstr_append_mem(ds, "\t", 1);
     replace_dynstr_append_mem(ds, val, len);
     dynstr_append_mem(ds, "\n", 1);
+  }
+
+  if (ds_temp.str != nullptr) {
+    dynstr_free(&ds_temp);
   }
 }
 
@@ -9718,9 +9768,7 @@ int main(int argc, char **argv) {
   set_current_connection(con);
 
   if (opt_hypergraph) {
-    const int error = mysql_query_wrapper(
-        &con->mysql, "SET optimizer_switch='hypergraph_optimizer=on';");
-    if (error != 0) {
+    if (enable_hypergraph_optimizer(con)) {
       die("--hypergraph was given, but the server does not support the "
           "hypergraph optimizer. (errno=%d)",
           my_errno());

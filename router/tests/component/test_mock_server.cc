@@ -32,6 +32,7 @@
 #include "mysqlxclient.h"
 #include "mysqlxclient/xerror.h"
 #include "mysqlxclient/xrow.h"
+#include "process_wrapper.h"
 #include "router/src/routing/tests/mysql_client.h"
 #include "router_component_test.h"
 #include "router_config.h"
@@ -98,8 +99,10 @@ class MockServerCLITest
 
 TEST_P(MockServerCLITest, check) {
   SCOPED_TRACE("// start binary");
-  auto &cmd = launch_mysql_server_mock(GetParam().cmdline_args, 0 /* = port */,
-                                       GetParam().expected_exit_code, -1s);
+  auto &cmd = mock_server_spawner()
+                  .expected_exit_code(GetParam().expected_exit_code)
+                  .wait_for_sync_point(Spawner::SyncPoint::NONE)
+                  .spawn(GetParam().cmdline_args);
 
   SCOPED_TRACE("// wait for exit");
   check_exit_code(cmd, GetParam().expected_exit_code, 5s);
@@ -243,26 +246,11 @@ INSTANTIATE_TEST_SUITE_P(Spec, MockServerCLITest,
 class MockServerCLITestBase : public RouterComponentTest {};
 
 TEST_F(MockServerCLITestBase, classic_many_connections) {
-  auto mysql_server_mock_path = get_mysqlserver_mock_exec().str();
   auto bind_port = port_pool_.get_next_available();
-  ASSERT_THAT(mysql_server_mock_path, ::testing::StrNe(""));
 
-  std::map<std::string, std::string> config{
-      {"--module-prefix", get_data_dir().str()},
-      {"--filename", get_data_dir().join("my_port.js").str()},
-      {"--bind-address", "127.0.0.1"},
-      {"--port", std::to_string(bind_port)},
-  };
-
-  std::vector<std::string> cmdline_args;
-
-  for (const auto &arg : config) {
-    cmdline_args.push_back(arg.first);
-    cmdline_args.push_back(arg.second);
-  }
-
-  SCOPED_TRACE("// start " + mysql_server_mock_path);
-  spawner(mysql_server_mock_path).with_core_dump(true).spawn(cmdline_args);
+  SCOPED_TRACE("// start mock-server");
+  mock_server_spawner().spawn(
+      mock_server_cmdline("my_port.js").port(bind_port).args());
 
   // Opening a new connection takes ~12ms on a dev-machine.
   //
@@ -413,7 +401,7 @@ TEST_P(MockServerConnectOkTest, classic_protocol) {
   cmdline_args.push_back(std::to_string(bind_port));
 
   SCOPED_TRACE("// start binary");
-  launch_mysql_server_mock(cmdline_args, bind_port);
+  mock_server_spawner().spawn(cmdline_args);
 
   SCOPED_TRACE("// checking "s + GetParam().test_name);
   classic_protocol_connect_ok(config.at("hostname"), bind_port);
@@ -453,7 +441,7 @@ TEST_P(MockServerConnectOkTest, x_protocol) {
   cmdline_args.push_back(std::to_string(bind_port));
 
   SCOPED_TRACE("// start binary");
-  launch_mysql_server_mock(cmdline_args, other_bind_port);
+  mock_server_spawner().spawn(cmdline_args);
 
   SCOPED_TRACE("// checking "s + GetParam().test_name);
   x_protocol_connect_ok(config.at("hostname"), bind_port);
@@ -597,6 +585,7 @@ TEST_P(MockServerConnectTest, check) {
       {"datadir", get_data_dir().str()},
       {"certdir", SSL_TEST_DATA_DIR},
       {"hostname", "127.0.0.1"},
+      {"plugin_dir", plugin_output_directory()},
   };
 
   std::vector<std::string> cmdline_args{"--logging-folder",
@@ -611,7 +600,7 @@ TEST_P(MockServerConnectTest, check) {
   }
 
   SCOPED_TRACE("// start binary");
-  launch_mysql_server_mock(cmdline_args, classic_port);
+  mock_server_spawner().spawn(cmdline_args);
 
   SCOPED_TRACE("// checking "s + GetParam().test_name);
   GetParam().checker(config);
@@ -643,6 +632,9 @@ const MockServerConnectTestParam mock_server_connect_test_param[] = {
        // if auth-method-name is invalid, the connect will fail.
        ASSERT_TRUE(opt_res) << opt_res.error().message();
 
+       sess.set_option(mysqlrouter::MySQLSession::PluginDir(
+           config.at("plugin_dir").c_str()));
+
        try {
          sess.connect(host, port,
                       username,  // user
@@ -650,6 +642,11 @@ const MockServerConnectTestParam mock_server_connect_test_param[] = {
                       "",        // socket
                       ""         // schema
          );
+       } catch (const mysqlrouter::MySQLSession::Error &e) {
+         // Authentication plugin 'mysql_native_password' cannot be loaded: ...
+         // (2059)
+
+         ASSERT_EQ(e.code(), 2059) << e.what();
        } catch (const std::exception &e) {
          FAIL() << e.what();
        }
@@ -1195,29 +1192,23 @@ class MockServerCommandTest
       public ::testing::WithParamInterface<MockServerCommandTestParam> {};
 
 TEST_P(MockServerCommandTest, check) {
-  auto mysql_server_mock_path = get_mysqlserver_mock_exec().str();
-
-  ASSERT_THAT(mysql_server_mock_path, ::testing::StrNe(""));
-
   auto port = port_pool_.get_next_available();
   auto xport = port_pool_.get_next_available();
 
   SCOPED_TRACE("// start mock-server");
-  spawner(mysql_server_mock_path)
-      .with_core_dump(true)
-      .spawn({
-          "--logging-folder",
-          get_test_temp_dir_name(),
-          "--module-prefix",
-          get_data_dir().str(),
-          "--bind-address=127.0.0.1",
-          "--port",
-          std::to_string(port),
-          "--xport",
-          std::to_string(xport),
-          "--filename",
-          get_data_dir().join("session_tracker.js").str(),
-      });
+  mock_server_spawner().spawn({
+      "--logging-folder",
+      get_test_temp_dir_name(),
+      "--module-prefix",
+      get_data_dir().str(),
+      "--bind-address=127.0.0.1",
+      "--port",
+      std::to_string(port),
+      "--xport",
+      std::to_string(xport),
+      "--filename",
+      get_data_dir().join("session_tracker.js").str(),
+  });
 
   MysqlClient cli;
   ASSERT_NO_ERROR(cli.connect("127.0.0.1", port));

@@ -36,7 +36,6 @@
 
 #include <array>
 #include <chrono>
-#include <iostream>
 #include <thread>
 
 // Harness interface include files
@@ -96,7 +95,10 @@ static void start(mysql_harness::PluginFuncEnv *env) {
 #define DLLEXPORT
 #endif
 
-static std::array<const char *, 3> supported_options{"interval", "runs"};
+static constexpr std::array supported_options{
+    "interval",
+    "runs",
+};
 
 extern "C" {
 mysql_harness::Plugin DLLEXPORT harness_plugin_keepalive = {

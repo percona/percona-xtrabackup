@@ -168,7 +168,6 @@ struct MY_UNI_IDX {
 };
 
 struct my_match_t {
-  unsigned beg;
   unsigned end;
   unsigned mb_len;
 };
@@ -248,8 +247,8 @@ struct MY_COLLATION_HANDLER {
   bool (*init)(CHARSET_INFO *, MY_CHARSET_LOADER *, MY_CHARSET_ERRMSG *);
   void (*uninit)(CHARSET_INFO *, MY_CHARSET_LOADER *);
   /* Collation routines */
-  int (*strnncoll)(const CHARSET_INFO *, const uint8_t *, size_t,
-                   const uint8_t *, size_t, bool);
+  int (*strnncoll)(const CHARSET_INFO *, const uint8_t *s, size_t slen,
+                   const uint8_t *t, size_t tlen, bool t_is_prefix);
   /**
     Compare the two strings under the pad rules given by the collation.
 
@@ -310,9 +309,8 @@ struct MY_COLLATION_HANDLER {
 
   int (*strcasecmp)(const CHARSET_INFO *, const char *, const char *);
 
-  unsigned (*strstr)(const CHARSET_INFO *, const char *b, size_t b_length,
-                     const char *s, size_t s_length, my_match_t *match,
-                     unsigned nmatch);
+  bool (*strstr)(const CHARSET_INFO *, const char *b, size_t b_length,
+                 const char *s, size_t s_length, my_match_t *match);
 
   /**
     Compute a sort hash for the given key. This hash must preserve equality
@@ -468,7 +466,7 @@ struct CHARSET_INFO {
 /*
   NOTE: You cannot use a CHARSET_INFO without it having been initialized first.
   In particular, they are not initialized when a unit test starts; do not use
-  these globals indiscriminately from there, and do not add more. Instead,
+  these globals indiscriminately from here, and do not add more. Instead,
   initialize them using my_collation_get_by_name().
 */
 

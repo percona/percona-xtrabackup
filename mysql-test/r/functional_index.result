@@ -158,13 +158,13 @@ DROP TABLE t1;
 CREATE TABLE t1 (col1 INT, INDEX ((ABS(col1))));
 DROP TABLE t1;
 # Print out functional indexes on a temporary table. Note that
-# "Column_name" should be empty (NULL), and Expression should contain the
+# "Column_name" should be NULL, and Expression should contain the
 # expression for the functional index.
 CREATE TEMPORARY TABLE t1(a INT);
 CREATE INDEX idx ON t1 ((ABS(a)));
 SHOW KEYS FROM t1;
 Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
-t1	1	idx	1		A	0	NULL	NULL	YES	BTREE			YES	abs(`a`)
+t1	1	idx	1	NULL	A	0	NULL	NULL	YES	BTREE			YES	abs(`a`)
 DROP TABLE t1;
 CREATE TABLE t1 (col1 INT, INDEX ((CONCAT(''))));
 ERROR HY000: The used storage engine cannot index the expression 'concat(_utf8mb4'')'.
@@ -707,3 +707,100 @@ id	val	tid
 3	3	2
 4	4	NULL
 DROP TABLE t, t2;
+#
+# Bug#35352161: Mysql dies when a functional index on FIND_IN_SET is added
+#
+
+# Create the table without INDEXes first.
+CREATE TABLE t1 (
+id          INT NOT NULL AUTO_INCREMENT,
+roles       SET('Admin', 'Moderator', 'Editor') NOT NULL,
+PRIMARY KEY (id)
+);
+
+# Fill the table.
+INSERT INTO t1 VALUES (NULL, "Admin");
+INSERT INTO t1 VALUES (NULL, "Moderator");
+INSERT INTO t1 VALUES (NULL, "Editor");
+INSERT INTO t1 VALUES (NULL, "Editor,Admin");
+INSERT INTO t1 (roles) SELECT '' FROM t1;
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+
+# Show operation without index.
+SHOW INDEXES FROM t1 WHERE key_name="i1";
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+EXPLAIN FORMAT=tree SELECT id FROM t1 WHERE FIND_IN_SET('Admin', roles)>0;
+EXPLAIN
+-> Filter: (find_in_set('Admin',t1.roles) > 0)  (rows=8)
+    -> Table scan on t1  (rows=8)
+
+SELECT id FROM t1 WHERE FIND_IN_SET('Admin', roles)>0;
+id
+1
+4
+
+# ADD function INDEX: If Bug#35352161 is present, this will fail.
+ALTER TABLE t1 ADD INDEX i1 ((FIND_IN_SET('Admin', roles)));
+
+# Show operation using functional index i1.
+# (Prove index exists, we're using it, and it gives correct results.)
+SHOW INDEXES FROM t1 WHERE key_name="i1";
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t1	1	i1	1	NULL	A	2	NULL	NULL		BTREE			YES	find_in_set(_utf8mb4\'Admin\',`roles`)
+SET explain_json_format_version = 2;
+EXPLAIN FORMAT=JSON INTO @explain
+SELECT id FROM t1 FORCE INDEX (i1) WHERE FIND_IN_SET('Admin', roles)>0;
+SET explain_json_format_version = DEFAULT;
+SELECT COALESCE(JSON_EXTRACT(@explain, '$.inputs[0].operation'),
+JSON_EXTRACT(@explain, '$.operation')) AS scan;
+scan
+"Index range scan on t1 using i1 over (0 < find_in_set(_utf8mb4'Admin',`roles`))"
+SELECT id FROM t1 WHERE FIND_IN_SET('Admin', roles)>0;
+id
+1
+4
+
+# Clean up.
+DROP TABLE t1;
+
+# Create table including index.
+# If Bug#35352161 is present, the INDEX part will fail.
+CREATE TABLE t1 (
+id    INT NOT NULL AUTO_INCREMENT,
+roles SET('Admin', 'Moderator', 'Editor') NOT NULL,
+PRIMARY KEY (id),
+INDEX i1((FIND_IN_SET('Admin', roles)))
+);
+
+# Clean up.
+DROP TABLE t1;
+
+#
+# Bug#35497623: SHOW INDEXES with generated column may access wrong key-part
+#
+
+# SHOW INDEXES on regular table:
+CREATE TABLE t1 (c1 INT);
+CREATE TABLE t2
+(UNIQUE i3 TYPE BTREE (c1, (c1 REGEXP c1))) TABLE t1;
+SHOW INDEXES IN t2;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t2	0	i3	1	c1	A	0	NULL	NULL	YES	BTREE			YES	NULL
+t2	0	i3	2	NULL	A	0	NULL	NULL	YES	BTREE			YES	regexp_like(`c1`,`c1`)
+/* regular table */
+DROP TABLE t2;
+DROP TABLE t1;
+
+# SHOW INDEXES on temporary table (different code path!):
+CREATE TABLE t1 (c1 INT);
+CREATE TEMPORARY TABLE t2
+(UNIQUE i3 TYPE BTREE (c1, (c1 REGEXP c1))) TABLE t1;
+SHOW INDEXES IN t2;
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
+t2	0	i3	1	c1	A	0	NULL	NULL	YES	BTREE			YES	NULL
+t2	0	i3	2	NULL	A	0	NULL	NULL	YES	BTREE			YES	regexp_like(`c1`,`c1`)
+/* temporary table */
+DROP TABLE t2;
+DROP TABLE t1;

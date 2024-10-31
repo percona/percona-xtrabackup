@@ -1661,6 +1661,11 @@ static const std::pair<const char *, Create_func *> func_array[] = {
     {"TO_BASE64", SQL_FN(Item_func_to_base64, 1)},
     {"TO_DAYS", SQL_FN(Item_func_to_days, 1)},
     {"TO_SECONDS", SQL_FN(Item_func_to_seconds, 1)},
+    {"TO_VECTOR", SQL_FN(Item_func_to_vector, 1)},
+    {"STRING_TO_VECTOR", SQL_FN(Item_func_to_vector, 1)},
+    {"FROM_VECTOR", SQL_FN(Item_func_from_vector, 1)},
+    {"VECTOR_TO_STRING", SQL_FN(Item_func_from_vector, 1)},
+    {"VECTOR_DIM", SQL_FN(Item_func_vector_dim, 1)},
     {"UCASE", SQL_FN(Item_func_upper, 1)},
     {"UNCOMPRESS", SQL_FN(Item_func_uncompress, 1)},
     {"UNCOMPRESSED_LENGTH", SQL_FN(Item_func_uncompressed_length, 1)},
@@ -2229,9 +2234,9 @@ Item *create_temporal_literal(THD *thd, const char *str, size_t length,
   if (item) return item;
 
   if (send_error) {
-    const char *typestr = (type == MYSQL_TYPE_DATE)
-                              ? "DATE"
-                              : (type == MYSQL_TYPE_TIME) ? "TIME" : "DATETIME";
+    const char *typestr = (type == MYSQL_TYPE_DATE)   ? "DATE"
+                          : (type == MYSQL_TYPE_TIME) ? "TIME"
+                                                      : "DATETIME";
     const ErrConvString err(str, length, thd->variables.character_set_client);
     my_error(ER_WRONG_VALUE, MYF(0), typestr, err.ptr());
   }

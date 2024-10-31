@@ -1288,10 +1288,10 @@ ER_RPL_WORKER_ID_IS
   eng "Choosing worker id %lu, the following is going to be %lu"
 
 ER_RPL_INCONSISTENT_TIMESTAMPS_IN_TRX
-  eng "Transaction is tagged with inconsistent logical timestamps: sequence_number (%lld) <= last_committed (%lld)"
+  eng "Transaction %s in file %s is tagged with inconsistent logical timestamps: sequence_number (%lld) <= last_committed (%lld). There may be a bug in how these timestamps were generated. Transaction will be applied in isolation"
 
 ER_RPL_INCONSISTENT_SEQUENCE_NO_IN_TRX
-  eng "Transaction's sequence number is inconsistent with that of a preceding one: sequence_number (%lld) <= previous sequence_number (%lld)"
+  eng "Transaction %s sequence number in file %s is inconsistent with that of a preceding one: sequence_number (%lld) <= previous sequence_number (%lld). There may be a bug in how these timestamps were generated. Transaction will be applied in isolation"
 
 OBSOLETE_ER_RPL_CHANNELS_REQUIRE_TABLES_AS_INFO_REPOSITORIES
   eng "For the creation of replication channels the connection metadata and applier metadata repositories must be set to TABLE"
@@ -3393,7 +3393,7 @@ ER_THREAD_POOL_FAILED_PROCESS_CONNECT_EVENT
 ER_THREAD_POOL_FAILED_TO_CREATE_POOL
   eng "Can't create pool thread (error %d, errno: %d)."
 
-ER_THREAD_POOL_RATE_LIMITED_ERROR_MSGS
+OBSOLETE_ER_THREAD_POOL_RATE_LIMITED_ERROR_MSGS
   eng "%.*s."
 
 ER_TRHEAD_POOL_LOW_LEVEL_INIT_FAILED
@@ -5325,7 +5325,7 @@ ER_LDAP_AUTH_SETTING_USERNAME
 ER_LDAP_AUTH_USER_AUTH_DATA
   eng "User authentication data: %s size: %lu"
 
-ER_LDAP_AUTH_INFO_FOR_USER
+OBSOLETE_ER_LDAP_AUTH_INFO_FOR_USER
   eng "User is authenticated as: %s external user: %s"
 
 ER_LDAP_AUTH_USER_GROUP_SEARCH_INFO
@@ -7629,8 +7629,8 @@ ER_IB_MSG_697
 ER_IB_MSG_LOG_CORRUPT
   eng "The redo log file may have been corrupt and it is possible that the log scan did not proceed far enough in recovery! Please run CHECK TABLE on your InnoDB tables to check that they are ok! If mysqld crashes after this recovery; %s"
 
-ER_IB_MSG_699
-  eng "%llu pages with log records were left unprocessed!"
+ER_IB_MSG_UNPROCESSED_REDO_LOG_RECORDS
+  eng "%zu pages with log records were left unprocessed!"
 
 ER_IB_MSG_LOG_FORMAT_OLD_AND_LOG_CORRUPTED
   eng "Upgrade after a crash is not supported. This redo log was created with %s, and it appears corrupted. Please follow the instructions at %s"
@@ -7932,7 +7932,7 @@ ER_IB_MSG_798
 ER_IB_MSG_799
   eng "%s"
 
-ER_IB_MSG_800
+OBSOLETE_ER_IB_MSG_800
   eng "%s"
 
 ER_IB_MSG_801
@@ -8022,7 +8022,7 @@ ER_IB_MSG_828
 ER_IB_MSG_829
   eng "%s"
 
-ER_IB_MSG_830
+OBSOLETE_ER_IB_MSG_830
   eng "%s"
 
 ER_IB_MSG_831
@@ -9496,7 +9496,7 @@ ER_SERVER_REPLICA_INIT_QUERY_FAILED
   eng "Replica SQL thread aborted. Can't execute init_replica query, MY-%06d - '%s'"
 
 ER_SERVER_REPLICA_CONVERSION_FAILED
-  eng "Column %d of table '%-.192s.%-.192s' cannot be converted from type '%-.32s' to type '%-.32s'"
+  eng "Column %d (counting the first column as number 1) of table '%-.192s.%-.192s' cannot be converted from type '%-.32s' to type '%-.32s'"
 
 ER_SERVER_REPLICA_IGNORED_TABLE
   eng "Replica SQL thread ignored the query because of replicate-*-table rules"
@@ -10360,7 +10360,7 @@ ER_AUDIT_LOG_KEYRING_ID_TIMESTAMP_VALUE_IS_INVALID
   eng "Keyring ID timestamp value is invalid: '%s'"
 
 ER_AUDIT_LOG_FILE_NAME_TIMESTAMP_VALUE_IS_MISSING_OR_INVALID
-  eng "Cannot process audit log file. File name timestamp value is missing or invalid: '%s'"
+  eng "File name timestamp value is missing or invalid: '%s'"
 
 ER_AUDIT_LOG_FILE_NAME_DOES_NOT_HAVE_REQUIRED_FORMAT
   eng "Cannot process audit log file. File name does not have required format: '%s'"
@@ -12229,7 +12229,7 @@ ER_CONN_INIT_CONNECT_IGNORED_MFA
 ER_SECONDARY_ENGINE_DDL_FAILED
   eng "Execution of alter table %s %s failed because %s."
 
-ER_THREAD_POOL_CONNECTION_REPORT
+OBSOLETE_ER_THREAD_POOL_CONNECTION_REPORT
    eng "TP conn (port: managed(delta), active, opened, closed, added, dropped): %s"
 
 ER_WARN_SCHEDULED_TASK_RUN_FAILED
@@ -12294,6 +12294,9 @@ ER_WAITING_FOR_NO_CONNECTIONS
 
 ER_WAITING_FOR_NO_THDS
   eng "Waiting for THDs in partition %u to be closed, %u still left. %u THDs left in total for all partitions."
+
+ER_IB_INDEX_PART_TOO_LONG
+  eng "Index %s of %s.%s exceeds limit of %lu bytes per column."
 
 #
 # End of 8.0 error messages intended to be written to the server error log.
@@ -12582,7 +12585,7 @@ ER_IB_ERR_CORRUPT_TABLESPACE_UNRECOVERABLE
   eng "Tablespace '%u' mentioned in the redo log is corrupted in a way it is unrecoverable by double-write buffer, so further redo log recovery is not possible!"
 
 ER_IB_BULK_LOAD_STATS_WARN
-  eng "%s: Failed to save statistics for table=%s err=%zu"
+  eng "%s: Failed to save statistics for table=%s err=%zu trx_err=%zu"
 
 ER_COMPONENT_MASKING_INVALID_FLUSH_INTERVAL_VALUE
    eng "Invalid flush interval specified: %lu. Valid values are 0 (off) or greater than or equal to %d. Adjusting to %d."
@@ -12731,6 +12734,60 @@ ER_SECONDARY_ENGINE_DDL_TRACK_PROGRESS
 ER_IB_MSG_INNODB_FLUSH_METHOD
   eng "Using innodb_flush_method=%s"
 
+ER_BULK_SCANNER_INFO
+  eng "Bulk Scanner: %s"
+
+ER_LOG_DEPRECATE_NON_COMPOSABLE_MULTIPLE_ENGINE
+  eng "Combining the storage engines %.64s and %.64s is deprecated, but the statement or transaction updates both the %.64s table %.64s.%.64s and the %.64s table %.64s.%.64s."
+
+ER_DD_UPDATE_DATADIR_FLAG_FAIL
+  eng "Failed to update data directory flag for dd table with tablespace id '%llu' when ibd file for '%s' is moved to new location '%s' during server shutdown"
+
+ER_IB_MSG_FIL_STATE_MOVED_PREV_OR_HAS_DATADIR
+  eng "%s DD ID: %llu - Tablespace %u, name '%s', found at '%s' outside default data directory. It is either moved or is created with 'DATA DIRECTORY'"
+
+ER_LOAD_BULK_JSON_ERROR
+  eng "Bulk CSV parser reports JSON error: %s at %zu"
+
+ER_IB_BULK_LOAD_STATS_INFO
+  eng "%s: %s: Saving statistics for table=%s err=%zu trx_err=%zu"
+
+ER_AUTHENTICATION_OPENID_INVALID_TOKEN
+  eng "Invalid identity token provided by '%s' for '%s'@'%s': %s."
+
+ER_AUTHENTICATION_OPENID_ISSUER_MISMATCH
+  eng "Issuer (%s) found in identity token provided by '%s' for '%s'@'%s' does not match the issuer in the configuration."
+
+ER_AUTHENTICATION_OPENID_USER_MISMATCH
+  eng "Unknown subject (%s) found in identity token provided by '%s' for '%s'@'%s'."
+
+ER_AUTHENTICATION_OPENID_INVALID_CONFIGURATION
+  eng "The configuration for authentication_openid_connect is invalid. %s."
+
+ER_AUTHENTICATION_OPENID_TOKEN_NOT_VERIFIED
+  eng "Verification failed for identity token provided by '%s' for '%s'@'%s' : %s."
+
+ER_AUTHENTICATION_OPENID_INSECURE_CONNECTION
+  eng "The Client-Server connection is not secure. Please make sure either a TLS, socket or shared memory connection is established between the client and the server."
+
+ER_AUTHENTICATION_OPENID_READ_PACKET
+  eng "An error occurred during the client server handshake."
+
+ER_AUTHENTICATION_OPENID_INVALID_TOKEN_SIZE
+  eng "The ID token is not acceptable. Token size should be less than 10k."
+
+ER_AUTHENTICATION_OPENID_INVALID_IDENTITY_PROVIDER
+  eng "The provided identity provider in the auth string is not supported."
+
+ER_AUTHENTICATION_OPENID_CONFIGURATION_NOT_SET
+  eng "The configuration for the plugin is not set. Please set authentication_openid_connect_configuration before a login attempt or user creation."
+
+ER_AUTHENTICATION_OPENID_FAILED_TO_UPDATE_CONFIGURATION
+  eng "Failed to update authentication_openid_connect_configuration to a new value and the old value is lost too. Please set it to avoid unexpected results."
+
+ER_SIMPLE_ERROR_LOG_COMPONENT_STATUS
+  eng "%s"
+
 # DO NOT add server-to-client messages here;
 # they go in messages_to_clients.txt
 # in the same directory as this file.
@@ -12762,6 +12819,119 @@ ER_KEYRING_COMPONENT_KMS_ERROR
 #
 # End of Percona Server 8.0 server error log messages
 #
+
+#
+# Start of 9.0 error messages intended to be written to the server error log.
+# Append 8.x error log messages to the end of the _previous_ section.
+# Messages intended to be sent to _clients_ go in messages_to_clients.txt!
+#
+
+start-error-number 15500
+
+ER_INVALID_METER
+  eng "Invalid meter name or value for performance_schema_meter '%s'."
+
+ER_INVALID_LOGGER
+  eng "Invalid logger name or value for performance_schema_logger '%s'."
+
+ER_IB_DELETE_SCHEMA_DIR
+  eng "deleted the schema directory: %s"
+
+ER_IB_INSERT_DELETE_SCHEMA_DIRECTORY_DDL_LOG
+  eng "%s"
+
+ER_IMDS_OCI_INFO
+  eng "%s"
+
+ER_IMDS_OCI_WARNING
+  eng "%s"
+
+ER_IMDS_OCI_ERROR
+  eng "%s"
+
+ER_THREAD_POOL_CONNECTION_INIT_REPORT
+   eng "TP conn (init: in, queue, auth, err, ok. port: managed(delta), active, opened, closed, added, dropped): %s"
+
+ER_THREAD_POOL_ALLOC_FAILED
+   eng "Thread pool failed to allocate %s."
+
+ER_THREAD_POOL_SOCKETPAIR_FAILED
+   eng "socketpair() failed with errno: %d"
+
+ER_THREAD_POOL_LOW_LEVEL_INIT_FAILED
+   eng "tp_client_low_level_init() failed"
+
+ER_THREAD_POOL_LOW_LEVEL_ARM_FAILED
+   eng "tp_client_low_level_arm() failed"
+
+ER_THREAD_POOL_LOW_LEVEL_ARM_FAILED_WITH_ERRNO
+   eng "tp_client_low_level_arm() failed with %d"
+
+ER_THREAD_POOL_CREATE_THREAD_FAILED
+   eng "Can't create pool thread (error %d, errno: %d)"
+
+ER_THREAD_POOL_LOW_LEVEL_INIT_ALLOC_FAILED
+   eng "tp_client_low_level_init() for wait context failed to allocate memory"
+
+ER_THREAD_POOL_CREATE_EPOLL_FAILED
+   eng "epoll_create() failed with %d"
+
+ER_THREAD_POOL_EPOLL_WAIT_ERROR
+   eng "Thread pool epoll_wait() error: errno=%d."
+
+ER_THREAD_POOL_POLL_WAIT_ERROR
+   eng "Thread pool poll_wait() error: errno=%d."
+
+ER_KEYRING_COMPONENT_AWS_FILE_PATH_EMPTY
+  eng "Keyring data file path is empty in configuration file."
+
+ER_KEYRING_COMPONENT_AWS_FILE_OPEN_FAILED
+  eng "Failed to open keyring data file: %s."
+
+ER_KEYRING_COMPONENT_AWS_FILE_READ_FAILED
+  eng "Failed to read data from keyring data file: %s."
+
+ER_KEYRING_COMPONENT_AWS_FILE_WRITE_FAILED
+  eng "Failed to write data to keyring data file: %s."
+
+ER_KEYRING_COMPONENT_AWS_FILE_PARSE_FAILED
+   eng "The keyring file content is not in a valid JSON format."
+
+ER_KEYRING_COMPONENT_AWS_KEY_EXTRACT_FAILED
+   eng "Failed to extract %d. element from keyring file content."
+
+ER_KEYRING_COMPONENT_AWS_CLIENT_CREATE_FAILED
+  eng "Failed to create AWS KMS client."
+
+ER_KEYRING_COMPONENT_AWS_CLIENT_OPERATION_FAILED
+  eng "Failed AWS KMS operation %s: %s."
+
+ER_KEYRING_COMPONENT_AWS_GENERATE_KEY_INVALID_PARAMETER
+  eng "Invalid key generate parameter: %s = %s, must be %s."
+
+ER_KEYRING_COMPONENT_AWS_BACKEND_OPERATION_FAILED
+  eng "Failed operation %s on key %s owned by %s."
+
+ER_KEYRING_COMPONENT_AWS_CACHE_OPERATION_FAILED
+  eng "Failed keyring cache operation %s."
+
+ER_KEYRING_COMPONENT_AWS_ADD_TO_DOC_FAILED
+  eng "Failed to add key %s for %s to JSON document."
+
+ER_KEYRING_COMPONENT_AWS_WRITE_AFTER_REENCRYPTION_FAILED
+  eng "Failed to write the data after reencryption."
+
+ER_KEYRING_COMPONENT_AWS_READ_ONLY_LIMIT
+  eng "Cannot %s, the keyring is read only."
+
+ER_KEYRING_COMPONENT_AWS_CANNOT_ENCRYPT_READ_ONLY
+  eng "CMK was changed and the keyring must be re-encrypted, but the keyring is read only. Set the read_only config parameter to false for re-encryption and reload the component."
+
+ER_AUTHENTICATION_OPENID_OPTION_REGISTER
+  eng "Option registration failed."
+
+ER_AUTHENTICATION_OPENID_OPTION_DEREGISTER
+  eng "Option deregistration failed."
 
 ################################################################################
 # Error numbers 50000 to 51999 are reserved. Please do not use them for

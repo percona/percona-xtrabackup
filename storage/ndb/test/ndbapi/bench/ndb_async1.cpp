@@ -1,6 +1,5 @@
 /*
    Copyright (c) 2005, 2024, Oracle and/or its affiliates.
-    Use is subject to license terms.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +23,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
-//#define DEBUG_ON
+// #define DEBUG_ON
 
 #include "userInterface.h"
 

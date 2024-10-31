@@ -432,6 +432,7 @@ int send_proto(connection_descriptor *con, xcom_proto x_proto,
 #define XDRFUNC xdrfunc
 #endif
 
+// This function is annotated with SUPPRESS_UBSAN, see header file declaration.
 int apply_xdr(void *buff, uint32_t bufflen, xdrproc_t xdrfunc, void *xdrdata,
               enum xdr_op op) {
   XDR xdr;

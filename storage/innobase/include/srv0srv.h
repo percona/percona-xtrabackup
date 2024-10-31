@@ -64,6 +64,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "trx0types.h"
 #include "ut0counter.h"
 
+#include <cstdint>
 #include <future>
 
 /* Global counters used inside InnoDB. */
@@ -477,10 +478,10 @@ writes to log buffer. The slots are addressed by LSN values modulo number
 of the slots. */
 extern ulong srv_log_recent_written_size;
 
-/** Number of slots in a small buffer, which is used to break requirement
+/** Number of slots in a small link buffer, which is used to break requirement
 for total order of dirty pages, when they are added to flush lists.
 The slots are addressed by LSN values modulo number of the slots. */
-extern ulong srv_log_recent_closed_size;
+extern ulong srv_buf_flush_list_added_size;
 
 /** Whether to activate/pause the log writer threads. */
 extern bool srv_log_writer_threads;
@@ -629,8 +630,8 @@ extern ulong srv_io_capacity;
 
 /* We use this dummy default value at startup for max_io_capacity.
 The real value is set based on the value of io_capacity. */
-constexpr uint32_t SRV_MAX_IO_CAPACITY_DUMMY_DEFAULT = ~0U;
-constexpr uint32_t SRV_MAX_IO_CAPACITY_LIMIT = ~0U;
+constexpr uint32_t SRV_MAX_IO_CAPACITY_DUMMY_DEFAULT = UINT32_MAX;
+constexpr uint32_t SRV_MAX_IO_CAPACITY_LIMIT = UINT32_MAX;
 extern ulong srv_max_io_capacity;
 /* Returns the number of IO operations that is X percent of the
 capacity. PCT_IO(5) -> returns the number of IO operations that

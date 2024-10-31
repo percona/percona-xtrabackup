@@ -327,8 +327,7 @@ void GRClusterMetadata::update_cluster_status_from_gr(
       gr_member_connection = connection;
     } else {
       try {
-        gr_member_connection = std::make_shared<MySQLSession>(
-            std::make_unique<MySQLSession::LoggingStrategyDebugLogger>());
+        gr_member_connection = std::make_shared<MySQLSession>();
       } catch (const std::logic_error &e) {
         // defensive programming, shouldn't really happen. If it does, there's
         // nothing we can do really, we give up
@@ -1276,7 +1275,7 @@ std::optional<metadata_cache::metadata_server_t>
 GRClusterSetMetadataBackend::find_rw_server() {
   if (cluster_topology_) {
     for (auto &cluster : (*cluster_topology_).clusters_data) {
-      if (!cluster.is_primary) continue;
+      if (!cluster.is_primary || cluster.is_invalidated) continue;
 
       log_debug("Updating the status of cluster '%s' to find the writable node",
                 cluster.name.c_str());
@@ -1285,7 +1284,9 @@ GRClusterSetMetadataBackend::find_rw_server() {
       // figure out the current Primary node
       metadata_->update_cluster_status_from_gr(false, cluster);
 
-      return metadata_->find_rw_server(cluster.members);
+      if (cluster.has_quorum) {
+        return metadata_->find_rw_server(cluster.members);
+      }
     }
   }
 

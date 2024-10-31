@@ -35,6 +35,7 @@
 
 #include "my_inttypes.h"
 #include "mysql/components/services/bits/psi_metric_bits.h"
+#include "mysql/components/services/bits/server_telemetry_logs_client_bits.h"
 #include "mysql_com.h" /* NAME_LEN */
 #include "mysqld_error.h"
 #include "prealloced_array.h"
@@ -109,6 +110,8 @@ typedef unsigned int PFS_memory_key;
 typedef unsigned int PFS_meter_key;
 /** Key, naming a metric instrument. */
 typedef unsigned int PFS_metric_key;
+/** Key, naming a logger instrument. */
+typedef unsigned int PFS_logger_key;
 
 enum PFS_class_type {
   PFS_CLASS_NONE = 0,
@@ -130,7 +133,8 @@ enum PFS_class_type {
   PFS_CLASS_THREAD = 16,
   PFS_CLASS_METRIC = 17,
   PFS_CLASS_METER = 18,
-  PFS_CLASS_LAST = PFS_CLASS_METER,
+  PFS_CLASS_LOGGER = 19,
+  PFS_CLASS_LAST = PFS_CLASS_LOGGER,
   PFS_CLASS_MAX = PFS_CLASS_LAST + 1
 };
 
@@ -148,6 +152,38 @@ struct PFS_instr_config {
 
 typedef Prealloced_array<PFS_instr_config *, 10> Pfs_instr_config_array;
 extern Pfs_instr_config_array *pfs_instr_config_array;
+
+/** User-defined meter configuration. */
+struct PFS_meter_config {
+  /* Instrument name. */
+  char *m_name;
+  /* Name length. */
+  uint m_name_length;
+  /** Enabled flag. */
+  bool m_enabled;
+  /** Was enabled flag modified. */
+  bool m_enabled_set;
+  /** Frequency value. */
+  uint m_frequency;
+  /** Was frequency property modified. */
+  bool m_frequency_set;
+};
+
+typedef Prealloced_array<PFS_meter_config *, 10> Pfs_meter_config_array;
+extern Pfs_meter_config_array *pfs_meter_config_array;
+
+/** User-defined logger configuration. */
+struct PFS_logger_config {
+  /* Instrument name. */
+  char *m_name;
+  /* Name length. */
+  uint m_name_length;
+  /** Log level. */
+  OTELLogLevel m_level;
+};
+
+typedef Prealloced_array<PFS_logger_config *, 10> Pfs_logger_config_array;
+extern Pfs_logger_config_array *pfs_logger_config_array;
 
 struct PFS_thread;
 
@@ -175,7 +211,7 @@ class PFS_instr_name {
     we keep the data members public, with an underscore prefix, and
     this warning text.
   */
- public /*private*/:
+  public /*private*/:
   /** Instrument name. */
   char m_private_name[max_length + 1];
   /** Length in bytes of @c m_name. */
@@ -293,10 +329,8 @@ struct PFS_instr_class {
     switch (m_type) {
       case PFS_CLASS_SOCKET:
         return true;
-        break;
       default:
         return false;
-        break;
     };
   }
 
@@ -373,22 +407,22 @@ struct PFS_ALIGNED PFS_metric_class : public PFS_instr_class {
   pfs_lock m_lock;
 
   /** Metric name with length. */
-  const char *m_metric;
-  uint m_metric_length;
+  const char *m_metric{nullptr};
+  uint m_metric_length{0};
   /** Metric group with length. */
-  const char *m_group;
-  uint m_group_length;
+  const char *m_group{nullptr};
+  uint m_group_length{0};
   /** Metric unit with length. */
-  const char *m_unit;
-  uint m_unit_length;
+  const char *m_unit{nullptr};
+  uint m_unit_length{0};
   /** Metric description with length. */
-  const char *m_description;
-  uint m_description_length;
-  MetricNumType m_num_type;
-  MetricOTELType m_metric_type;
-  PSI_metric_key m_key;
+  const char *m_description{nullptr};
+  uint m_description_length{0};
+  MetricNumType m_num_type{MetricNumType::METRIC_INTEGER};
+  MetricOTELType m_metric_type{MetricOTELType::ASYNC_COUNTER};
+  PSI_metric_key m_key{0};
   measurement_callback_t m_measurement_callback;
-  void *m_measurement_context;
+  void *m_measurement_context{nullptr};
 };
 
 /** Instrumentation metadata for a meter. */
@@ -396,18 +430,39 @@ struct PFS_ALIGNED PFS_meter_class : public PFS_instr_class {
   pfs_lock m_lock;
 
   /** Meter name with length. */
-  const char *m_meter;
-  uint m_meter_length;
+  const char *m_meter{nullptr};
+  uint m_meter_length{0};
   /** Meter export frequency in seconds. */
-  uint m_frequency;
+  uint m_frequency{0};
   /** Meter description with length. */
-  const char *m_description;
-  uint m_description_length;
-  PSI_meter_key m_key;
+  const char *m_description{nullptr};
+  uint m_description_length{0};
+  PSI_meter_key m_key{0};
 
   /** Metrics belonging to this meter. */
-  PSI_metric_key *m_metrics;
-  uint m_metrics_size;
+  PSI_metric_key *m_metrics{nullptr};
+  uint m_metrics_size{0};
+};
+
+/** Instrumentation metadata for a telemetry logger. */
+struct PFS_ALIGNED PFS_logger_class : public PFS_instr_class {
+  pfs_lock m_lock;
+
+  /** Logger name with length. */
+  char m_logger_name[64];
+  uint m_logger_name_length{0};
+
+  /** Logger description with length. */
+  char m_description[1024];
+  uint m_description_length{0};
+
+  /** Logging level for this logger */
+  OTELLogLevel m_level;
+
+  /** Logging level for this logger with backend availability accounted for */
+  std::atomic<OTELLogLevel> m_effective_level;
+
+  PSI_logger_key m_key{0};
 };
 
 /** Key identifying a table share. */
@@ -665,6 +720,8 @@ int init_metric_class(uint metric_class_sizing);
 void cleanup_metric_class();
 int init_meter_class(uint meter_class_sizing);
 void cleanup_meter_class();
+int init_logger_class(uint logger_class_sizing);
+void cleanup_logger_class();
 
 PFS_sync_key register_mutex_class(const char *name, uint name_length,
                                   PSI_mutex_info *info);
@@ -702,6 +759,10 @@ PFS_metric_key register_metric_class(const char *name, uint name_length,
                                      const char *meter);
 void unregister_metric_class(PSI_metric_info_v1 *info);
 uint32 metric_class_count();
+PFS_logger_key register_logger_class(const char *name, uint name_length,
+                                     PSI_logger_info_v1 *info);
+void unregister_logger_class(PSI_logger_info_v1 *info);
+uint32 logger_class_count();
 
 PFS_mutex_class *find_mutex_class(PSI_mutex_key key);
 PFS_mutex_class *sanitize_mutex_class(PFS_mutex_class *unsafe);
@@ -736,6 +797,7 @@ PFS_meter_class *find_meter_class(PSI_meter_key key);
 PFS_meter_class *sanitize_meter_class(PFS_meter_class *unsafe);
 PFS_metric_class *find_metric_class(PSI_metric_key key);
 PFS_metric_class *sanitize_metric_class(PFS_metric_class *unsafe);
+PFS_logger_class *find_logger_class(PSI_logger_key key);
 
 PFS_table_share *find_or_create_table_share(PFS_thread *thread, bool temporary,
                                             const TABLE_SHARE *share);
@@ -769,6 +831,8 @@ extern ulong meter_class_max;
 extern ulong meter_class_lost;
 extern ulong metric_class_max;
 extern ulong metric_class_lost;
+extern ulong logger_class_max;
+extern ulong logger_class_lost;
 extern ulong error_class_max;
 
 /* Exposing the data directly, for iterators. */
@@ -779,6 +843,7 @@ extern PFS_cond_class *cond_class_array;
 extern PFS_file_class *file_class_array;
 extern PFS_meter_class *meter_class_array;
 extern PFS_metric_class *metric_class_array;
+extern PFS_logger_class *logger_class_array;
 
 void reset_events_waits_by_class();
 void reset_file_class_io();

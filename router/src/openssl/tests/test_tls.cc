@@ -26,7 +26,8 @@
 #include <gmock/gmock.h>
 
 #include <csignal>
-#include <ctime>  // time_t
+#include <cstring>  // memset
+#include <ctime>    // time_t
 #include <fstream>
 #include <functional>
 #include <memory>
@@ -57,7 +58,7 @@ static VectorOfBytes generate_vector(const size_t size) {
   VectorOfBytes source_data(size, '\0');
   std::uniform_int_distribution<int> distribution(0, 255);
   std::generate(
-      source_data.begin(), source_data.end(), [&distribution]() -> auto {
+      source_data.begin(), source_data.end(), [&distribution]() -> auto{
         return distribution(*g_rengin);
       });
 
@@ -543,7 +544,7 @@ int main(int argc, char *argv[]) {
   struct sigaction sigact;
   memset(&sigact, 0, sizeof(sigact));
   sigact.sa_handler = SIG_IGN;
-  sigaction(SIGPIPE, &sigact, NULL);
+  sigaction(SIGPIPE, &sigact, nullptr);
 #endif
 
   g_data_dir = get_tests_data_dir(Path(argv[0]).dirname().str());

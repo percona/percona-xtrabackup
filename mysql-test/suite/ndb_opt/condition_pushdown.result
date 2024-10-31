@@ -2534,9 +2534,9 @@ select b from mytab where a like -1 having `b` like 1;
 b
 1
 drop table mytab;
-create table t(a bigint unsigned not null primary key auto_increment, b varchar(100)) character set utf8 engine ndb;
+create table t(a bigint unsigned not null primary key auto_increment, b varchar(100)) character set utf8mb3 engine ndb;
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 insert into t (b) values('abc'),('aaa'),('bbb'),('ccc');
 select * from t where b like 'a%';
 a	b
@@ -2568,10 +2568,10 @@ select * from escapetest where emailaddress like "test|_%" escape '|';
 emailaddress	id
 test_data@test.org	1
 drop table escapetest;
-create table a(a varchar(7)) engine=ndb charset=utf8
+create table a(a varchar(7)) engine=ndb charset=utf8mb3
 comment="NDB_TABLE=PARTITION_BALANCE=FOR_RP_BY_LDM";
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 insert into a values ('abcdefg');
 select * from a;
 a
@@ -3600,24 +3600,24 @@ EXPLAIN
 explain format=tree
 select * from t1 where a > 2;
 EXPLAIN
--> Index range scan on t1 using PRIMARY over (2 < a), with pushed condition: (t1.a > 2)  (cost=2.61 rows=3)
+-> Index range scan (Multi-Range Read) on t1 using PRIMARY over (2 < a), with pushed condition: (t1.a > 2)  (cost=2.61 rows=3)
 
 explain format=tree
 select * from t1 where a > 2 order by b;
 EXPLAIN
 -> Sort: t1.b  (cost=2.61 rows=3)
-    -> Index range scan on t1 using PRIMARY over (2 < a), with pushed condition: (t1.a > 2)  (cost=2.61 rows=3)
+    -> Index range scan (Multi-Range Read) on t1 using PRIMARY over (2 < a), with pushed condition: (t1.a > 2)  (cost=2.61 rows=3)
 
 explain format=tree
 select * from t1 where a = 2 and c > 0;
 EXPLAIN
--> Index lookup on t1 using PRIMARY (a=2), with pushed condition: (t1.c > 0)  (cost=2.1 rows=1)
+-> Index lookup on t1 using PRIMARY (a = 2), with pushed condition: (t1.c > 0)  (cost=2.1 rows=1)
 
 explain format=tree
 select * from t1 where a = 2 and c > 0 order by d;
 EXPLAIN
 -> Sort: t1.d  (cost=2.1 rows=3)
-    -> Index lookup on t1 using PRIMARY (a=2), with pushed condition: (t1.c > 0)  (cost=2.1 rows=3)
+    -> Index lookup on t1 using PRIMARY (a = 2), with pushed condition: (t1.c > 0)  (cost=2.1 rows=3)
 
 explain format=tree
 select * from t1 where b > 0 order by a;
@@ -3634,7 +3634,7 @@ select * from t1 join t1 as t2 on t2.a = t1.b and t2.c > 3;
 EXPLAIN
 -> Nested loop inner join  (cost=4011 rows=5.33)
     -> Table scan on t1, activating pushed join of 2 tables  (cost=4002 rows=16)
-    -> Index lookup on t2 using PRIMARY (a=t1.b), child of t1 in pushed join, with pushed condition: (t2.c > 3)  (cost=0.502 rows=0.333)
+    -> Index lookup on t2 using PRIMARY (a = t1.b), child of t1 in pushed join, with pushed condition: (t2.c > 3)  (cost=0.502 rows=0.333)
 
 drop table t1;
 #
@@ -3661,7 +3661,7 @@ FROM t1 WHERE t1.col_int_unique <> 8
 ORDER BY field1;
 EXPLAIN
 -> Sort: t1.col_varchar_256  (cost=5.21 rows=6)
-    -> Index range scan on t1 using ix1 over (NULL < col_int_unique < 8) OR (8 < col_int_unique), with pushed condition: (t1.col_int_unique <> 8)  (cost=5.21 rows=6)
+    -> Index range scan (Multi-Range Read) on t1 using ix1 over (NULL < col_int_unique < 8) OR (8 < col_int_unique), with pushed condition: (t1.col_int_unique <> 8)  (cost=5.21 rows=6)
 
 DROP TABLE t1;
 #

@@ -29,8 +29,7 @@
 
 #include <mysql/components/services/log_builtins.h>
 
-namespace keyring_common {
-namespace service_definition {
+namespace keyring_common::service_definition {
 
 class Log_builtins_keyring {
  public:
@@ -77,9 +76,7 @@ class Log_builtins_keyring {
   static DEFINE_METHOD(log_item_iter *, line_item_iter_acquire, (log_line *)) {
     return nullptr;
   }
-  static DEFINE_METHOD(void, line_item_iter_release, (log_item_iter *)) {
-    return;
-  }
+  static DEFINE_METHOD(void, line_item_iter_release, (log_item_iter *)) {}
   static DEFINE_METHOD(log_item *, line_item_iter_first, (log_item_iter *)) {
     return nullptr;
   }
@@ -112,6 +109,9 @@ class Log_builtins_keyring {
     return LOG_SERVICE_NOTHING_DONE;
   }
   static DEFINE_METHOD(int, message, (int, ...)) { return 0; }
+  static DEFINE_METHOD(void, line_set_flag,
+                       (log_line *, log_line_flags_mask, log_line_flags_mask)) {
+  }
 
   /* log_builtins_string */
   static DEFINE_METHOD(char *, find_first, (const char *, int)) {
@@ -161,8 +161,7 @@ class Log_builtins_keyring {
       MY_ATTRIBUTE((format(printf, 3, 0)));
 };
 
-}  // namespace service_definition
-}  // namespace keyring_common
+}  // namespace keyring_common::service_definition
 
 #define KEYRING_LOG_BUILTINS_IMPLEMENTOR(component_name)                       \
   BEGIN_SERVICE_IMPLEMENTATION(component_name, log_builtins)                   \
@@ -188,6 +187,7 @@ class Log_builtins_keyring {
           item_set_lexstring,                                                  \
       keyring_common::service_definition::Log_builtins_keyring::               \
           item_set_cstring,                                                    \
+      keyring_common::service_definition::Log_builtins_keyring::line_set_flag, \
       keyring_common::service_definition::Log_builtins_keyring::               \
           item_set_with_key,                                                   \
       keyring_common::service_definition::Log_builtins_keyring::item_set,      \

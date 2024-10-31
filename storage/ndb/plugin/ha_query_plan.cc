@@ -883,7 +883,8 @@ void pushed_table::compute_type_and_index() {
         // Align possible 'EXPLAIN_NO_PUSH' with explain format being used.
         // MRR is explained as a 'Multi range' with iterator-based formats
         // else 'Batched..'
-        if (m_table->in_use->lex->explain_format->is_iterator_based()) {
+        if (m_table->in_use->lex->explain_format->is_iterator_based(
+                m_table->in_use, m_table->in_use)) {
           m_other_access_reason = "Multi-range";
         } else {
           m_other_access_reason = "Batched-key";
@@ -1173,13 +1174,14 @@ const KEY_PART_INFO *pushed_table::get_key_part_info(uint field_no) const {
   return &key->key_part[field_no];
 }
 
-/** Get the Item_equal's set relevant for the specified 'Item_field' */
-Item_equal *pushed_table::get_item_equal(const Item_field *item_field) const {
+/** Get the Item_multi_eq's set relevant for the specified 'Item_field' */
+Item_multi_eq *pushed_table::get_item_equal(
+    const Item_field *item_field) const {
   assert(item_field->type() == Item::FIELD_ITEM);
   const Table_ref *const table_ref = m_table->pos_in_table_list;
   COND_EQUAL *const cond_equal = table_ref->query_block->join->cond_equal;
   if (cond_equal != nullptr) {
-    return item_field->find_item_equal(cond_equal);
+    return item_field->find_multi_equality(cond_equal);
   }
   return nullptr;
 }

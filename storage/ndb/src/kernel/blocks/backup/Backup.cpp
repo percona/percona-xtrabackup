@@ -90,20 +90,20 @@ static const Uint32 WaitScanTempErrorRetryMillis = 10;
 static NDB_TICKS startTime;
 
 #if (defined(VM_TRACE) || defined(ERROR_INSERT))
-//#define DEBUG_EMPTY_LCP 1
-//#define DEBUG_END_LCP 1
-//#define DEBUG_LCP_DEL_FILES 1
-//#define DEBUG_LCP 1
-//#define DEBUG_EMPTY_LCP 1
-//#define DEBUG_UNDO_LCP 1
-//#define DEBUG_LCP_ROW 1
-//#define DEBUG_LCP_DEL 1
-//#define DEBUG_EXTRA_LCP 1
-//#define DEBUG_REDO_CONTROL 1
-//#define DEBUG_REDO_CONTROL_DETAIL 1
-//#define DEBUG_LCP_DD 1
-//#define DEBUG_LCP_STAT 1
-//#define DEBUG_LCP_LAG 1
+// #define DEBUG_EMPTY_LCP 1
+// #define DEBUG_END_LCP 1
+// #define DEBUG_LCP_DEL_FILES 1
+// #define DEBUG_LCP 1
+// #define DEBUG_EMPTY_LCP 1
+// #define DEBUG_UNDO_LCP 1
+// #define DEBUG_LCP_ROW 1
+// #define DEBUG_LCP_DEL 1
+// #define DEBUG_EXTRA_LCP 1
+// #define DEBUG_REDO_CONTROL 1
+// #define DEBUG_REDO_CONTROL_DETAIL 1
+// #define DEBUG_LCP_DD 1
+// #define DEBUG_LCP_STAT 1
+// #define DEBUG_LCP_LAG 1
 #endif
 
 #ifdef DEBUG_END_LCP
@@ -244,8 +244,8 @@ static NDB_TICKS startTime;
 #define DEBUG_OUT(x)
 #endif
 
-//#define DEBUG_ABORT
-//#define dbg globalSignalLoggers.log
+// #define DEBUG_ABORT
+// #define dbg globalSignalLoggers.log
 
 static Uint32 g_TypeOfStart = NodeState::ST_ILLEGAL_TYPE;
 
@@ -415,8 +415,9 @@ void Backup::sendSTTORRY(Signal *signal) {
     signal->theData[6] = 255;  // No more start phases from missra
     sig_len = 7;
   }
-  BlockReference cntrRef =
-      !isNdbMtLqh() ? NDBCNTR_REF : m_is_query_block ? QBACKUP_REF : BACKUP_REF;
+  BlockReference cntrRef = !isNdbMtLqh()      ? NDBCNTR_REF
+                           : m_is_query_block ? QBACKUP_REF
+                                              : BACKUP_REF;
   sendSignal(cntrRef, GSN_STTORRY, signal, sig_len, JBB);
 }
 
@@ -2614,7 +2615,7 @@ void Backup::execDUMP_STATE_ORD(Signal *signal) {
     req->userPointer = 23;
     req->directory = 1;
     req->ownDirectory = 1;
-    FsOpenReq::setVersion(req->fileNumber, 2);
+    FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_BACKUP);
     FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_CTL);
     FsOpenReq::v2_setSequence(req->fileNumber, seq);
     FsOpenReq::v2_setNodeId(req->fileNumber, getOwnNodeId());
@@ -6330,7 +6331,7 @@ void Backup::openFiles(Signal *signal, BackupRecordPtr ptr) {
   filePtr.p->m_flags |= BackupFile::BF_OPENING;
 
   req->userPointer = filePtr.i;
-  FsOpenReq::setVersion(req->fileNumber, 2);
+  FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_BACKUP);
   FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_CTL);
   FsOpenReq::v2_setSequence(req->fileNumber, ptr.p->backupId);
   FsOpenReq::v2_setNodeId(req->fileNumber, getOwnNodeId());
@@ -6384,7 +6385,7 @@ void Backup::openFiles(Signal *signal, BackupRecordPtr ptr) {
     LinearSectionPtr lsptr[3];
 
     // Use a dummy file name
-    ndbrequire(FsOpenReq::getVersion(req->fileNumber) != 4);
+    ndbrequire(FsOpenReq::getVersion(req->fileNumber) != FsOpenReq::V_FILENAME);
     lsptr[FsOpenReq::FILENAME].p = nullptr;
     lsptr[FsOpenReq::FILENAME].sz = 0;
 
@@ -6412,7 +6413,7 @@ void Backup::openFiles(Signal *signal, BackupRecordPtr ptr) {
     req->fileFlags &= ~FsOpenReq::OM_GZ;
 
   req->userPointer = filePtr.i;
-  FsOpenReq::setVersion(req->fileNumber, 2);
+  FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_BACKUP);
   FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_LOG);
   FsOpenReq::v2_setSequence(req->fileNumber, ptr.p->backupId);
   FsOpenReq::v2_setNodeId(req->fileNumber, getOwnNodeId());
@@ -6427,7 +6428,7 @@ void Backup::openFiles(Signal *signal, BackupRecordPtr ptr) {
     LinearSectionPtr lsptr[3];
 
     // Use a dummy file name
-    ndbrequire(FsOpenReq::getVersion(req->fileNumber) != 4);
+    ndbrequire(FsOpenReq::getVersion(req->fileNumber) != FsOpenReq::V_FILENAME);
     lsptr[FsOpenReq::FILENAME].p = nullptr;
     lsptr[FsOpenReq::FILENAME].sz = 0;
 
@@ -6457,7 +6458,7 @@ void Backup::openFiles(Signal *signal, BackupRecordPtr ptr) {
     ndbrequire(!c_defaults.m_encryption_required);
   }
   req->userPointer = filePtr.i;
-  FsOpenReq::setVersion(req->fileNumber, 2);
+  FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_BACKUP);
   FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_DATA);
   FsOpenReq::v2_setSequence(req->fileNumber, ptr.p->backupId);
   FsOpenReq::v2_setNodeId(req->fileNumber, getOwnNodeId());
@@ -6473,7 +6474,7 @@ void Backup::openFiles(Signal *signal, BackupRecordPtr ptr) {
     LinearSectionPtr lsptr[3];
 
     // Use a dummy file name
-    ndbrequire(FsOpenReq::getVersion(req->fileNumber) != 4);
+    ndbrequire(FsOpenReq::getVersion(req->fileNumber) != FsOpenReq::V_FILENAME);
     lsptr[FsOpenReq::FILENAME].p = nullptr;
     lsptr[FsOpenReq::FILENAME].sz = 0;
 
@@ -10670,7 +10671,7 @@ void Backup::removeBackup(Signal *signal, BackupRecordPtr ptr) {
   req->userPointer = ptr.i;
   req->directory = 1;
   req->ownDirectory = 1;
-  FsOpenReq::setVersion(req->fileNumber, 2);
+  FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_BACKUP);
   FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_CTL);
   FsOpenReq::v2_setSequence(req->fileNumber, ptr.p->backupId);
   FsOpenReq::v2_setNodeId(req->fileNumber, getOwnNodeId());
@@ -12374,7 +12375,7 @@ void Backup::lcp_open_ctl_file(Signal *signal, BackupRecordPtr ptr,
   filePtr.p->m_flags |= BackupFile::BF_HEADER_FILE;
   filePtr.p->tableId = RNIL;  // Will force init
   req->userPointer = filePtr.i;
-  FsOpenReq::setVersion(req->fileNumber, 5);
+  FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_LCP);
   FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_CTL);
   FsOpenReq::v5_setLcpNo(req->fileNumber, lcpNo);
   FsOpenReq::v5_setTableId(req->fileNumber, tabPtr.p->tableId);
@@ -13108,7 +13109,7 @@ void Backup::lcp_open_data_file(Signal *signal, BackupRecordPtr ptr) {
   filePtr.p->m_flags |= BackupFile::BF_OPENING;
   filePtr.p->tableId = RNIL;  // Will force init
   req->userPointer = filePtr.i;
-  FsOpenReq::setVersion(req->fileNumber, 5);
+  FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_LCP);
   FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_DATA);
   FsOpenReq::v5_setLcpNo(req->fileNumber, dataFileNumber);
   FsOpenReq::v5_setTableId(req->fileNumber, tabPtr.p->tableId);
@@ -13117,7 +13118,7 @@ void Backup::lcp_open_data_file(Signal *signal, BackupRecordPtr ptr) {
     LinearSectionPtr lsptr[3];
 
     // Use a dummy file name
-    ndbrequire(FsOpenReq::getVersion(req->fileNumber) != 4);
+    ndbrequire(FsOpenReq::getVersion(req->fileNumber) != FsOpenReq::V_FILENAME);
     lsptr[FsOpenReq::FILENAME].p = nullptr;
     lsptr[FsOpenReq::FILENAME].sz = 0;
 
@@ -13177,7 +13178,7 @@ void Backup::lcp_open_data_file_late(Signal *signal, BackupRecordPtr ptr,
   ndbrequire(filePtr.p->m_flags == 0);
   filePtr.p->m_flags |= BackupFile::BF_OPENING;
   req->userPointer = filePtr.i;
-  FsOpenReq::setVersion(req->fileNumber, 5);
+  FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_LCP);
   FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_DATA);
   FsOpenReq::v5_setLcpNo(req->fileNumber, dataFileNumber);
   FsOpenReq::v5_setTableId(req->fileNumber, tabPtr.p->tableId);
@@ -13186,7 +13187,7 @@ void Backup::lcp_open_data_file_late(Signal *signal, BackupRecordPtr ptr,
     LinearSectionPtr lsptr[3];
 
     // Use a dummy file name
-    ndbrequire(FsOpenReq::getVersion(req->fileNumber) != 4);
+    ndbrequire(FsOpenReq::getVersion(req->fileNumber) != FsOpenReq::V_FILENAME);
     lsptr[FsOpenReq::FILENAME].p = nullptr;
     lsptr[FsOpenReq::FILENAME].sz = 0;
 
@@ -15113,7 +15114,7 @@ void Backup::lcp_open_ctl_file_for_rewrite(Signal *signal,
   Uint32 lcpNo = (deleteLcpFilePtr.p->lcpCtlFileNumber == 0) ? 1 : 0;
 
   FsOpenReq::v2_setCount(req->fileNumber, 0xFFFFFFFF);
-  FsOpenReq::setVersion(req->fileNumber, 5);
+  FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_LCP);
   FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_CTL);
   FsOpenReq::v5_setLcpNo(req->fileNumber, lcpNo);
   FsOpenReq::v5_setTableId(req->fileNumber, tableId);
@@ -15235,7 +15236,7 @@ void Backup::lcp_remove_file(Signal *signal, BackupRecordPtr ptr,
 
   filePtr.p->m_flags |= BackupFile::BF_REMOVING;
 
-  FsOpenReq::setVersion(req->fileNumber, 5);
+  FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_LCP);
   if (ptr.p->m_delete_data_file_ongoing) {
     jam();
     FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_DATA);

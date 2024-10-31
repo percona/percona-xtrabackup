@@ -60,6 +60,7 @@
 #include "sql/table.h"
 #include "sql_string.h"  // String
 #include "template_utils.h"
+#include "vector-common/vector_constants.h"  // max_dimensions
 
 class Create_field;
 class CostOfItem;
@@ -149,6 +150,7 @@ Field (abstract)
 |  |     +--Field_geom
 |  |     +--Field_json
 |  |        +--Field_typed_array
+|  |     +--Field_vector
 |  |
 |  +--Field_null
 |  +--Field_enum
@@ -776,6 +778,15 @@ class Field {
 
    */
   bool is_created_from_null_item;
+  /**
+    If true, it's a Create_field_wrapper (a sub-class of Field used during
+    CREATE/ALTER that we mustn't cast to other sub-classes of Field that
+    aren't on a direct path of inheritance, e.g. Field_enum).
+
+    @see Create_field_wrapper::is_wrapper_field
+  */
+  virtual bool is_wrapper_field() const { return false; }
+
   /**
      True if this field belongs to some index (unlike part_of_key, the index
      might have only a prefix).
@@ -1934,6 +1945,7 @@ class Create_field_wrapper final : public Field {
   Field *clone(MEM_ROOT *mem_root) const final {
     return new (mem_root) Create_field_wrapper(*this);
   }
+  bool is_wrapper_field() const final { return true; }
   /* purecov: end */
 };
 
@@ -2042,7 +2054,7 @@ class Field_longstr : public Field_str {
   type_conversion_status check_string_copy_error(
       const char *well_formed_error_pos, const char *cannot_convert_error_pos,
       const char *from_end_pos, const char *end, bool count_spaces,
-      const CHARSET_INFO *cs);
+      const CHARSET_INFO *from_cs, const CHARSET_INFO *to_cs);
 
  public:
   Field_longstr(uchar *ptr_arg, uint32 len_arg, uchar *null_ptr_arg,
@@ -3692,9 +3704,10 @@ class Field_blob : public Field_longstr {
         m_keep_old_value(false) {
     set_flag(BLOB_FLAG);
     if (set_packlength) {
-      packlength = len_arg <= 255
-                       ? 1
-                       : len_arg <= 65535 ? 2 : len_arg <= 16777215 ? 3 : 4;
+      packlength = len_arg <= 255        ? 1
+                   : len_arg <= 65535    ? 2
+                   : len_arg <= 16777215 ? 3
+                                         : 4;
     }
   }
 
@@ -3755,7 +3768,7 @@ class Field_blob : public Field_longstr {
   */
   uint32 pack_length_no_ptr() const { return (uint32)(packlength); }
   uint row_pack_length() const final { return pack_length_no_ptr(); }
-  uint32 max_data_length() const final {
+  uint32 max_data_length() const override {
     return (uint32)(((ulonglong)1 << (packlength * 8)) - 1);
   }
   size_t get_field_buffer_size() { return value.alloced_length(); }
@@ -3928,6 +3941,64 @@ class Field_blob : public Field_longstr {
 
  private:
   int do_save_field_metadata(uchar *first_byte) const override;
+};
+
+class Field_vector : public Field_blob {
+ public:
+  static const uint32 max_dimensions = vector_constants::max_dimensions;
+  static const uint32 precision = sizeof(float);
+  static uint32 dimension_bytes(uint32 dimensions) {
+    return precision * dimensions;
+  }
+  uint32 get_max_dimensions() const {
+    return get_dimensions(field_length, precision);
+  }
+
+  Field_vector(uchar *ptr_arg, uint32 len_arg, uchar *null_ptr_arg,
+               uchar null_bit_arg, uchar auto_flags_arg,
+               const char *field_name_arg, TABLE_SHARE *share,
+               uint blob_pack_length, const CHARSET_INFO *cs)
+      : Field_blob(ptr_arg, null_ptr_arg, null_bit_arg, auto_flags_arg,
+                   field_name_arg, share, blob_pack_length, cs) {
+    set_field_length(len_arg);
+    assert(packlength == 4);
+  }
+
+  Field_vector(uint32 len_arg, bool is_nullable_arg, const char *field_name_arg,
+               const CHARSET_INFO *cs)
+      : Field_blob(len_arg, is_nullable_arg, field_name_arg, cs, false) {
+    set_field_length(len_arg);
+    assert(packlength == 4);
+  }
+
+  Field_vector(const Field_vector &field) : Field_blob(field) {
+    assert(packlength == 4);
+  }
+
+  void sql_type(String &res) const override {
+    const CHARSET_INFO *cs = res.charset();
+    size_t length =
+        cs->cset->snprintf(cs, res.ptr(), res.alloced_length(), "%s(%u)",
+                           "vector", get_max_dimensions());
+    res.length(length);
+  }
+  Field_vector *clone(MEM_ROOT *mem_root) const override {
+    assert(type() == MYSQL_TYPE_VECTOR);
+    return new (mem_root) Field_vector(*this);
+  }
+  uint32 max_data_length() const override { return field_length; }
+  uint32 char_length() const override { return field_length; }
+  enum_field_types type() const final { return MYSQL_TYPE_VECTOR; }
+  enum_field_types real_type() const final { return MYSQL_TYPE_VECTOR; }
+  void make_send_field(Send_field *field) const override;
+  using Field_blob::store;
+  type_conversion_status store(double nr) final;
+  type_conversion_status store(longlong nr, bool unsigned_val) final;
+  type_conversion_status store_decimal(const my_decimal *) final;
+  type_conversion_status store(const char *from, size_t length,
+                               const CHARSET_INFO *cs) final;
+  uint is_equal(const Create_field *new_field) const override;
+  String *val_str(String *, String *) const override;
 };
 
 class Field_geom final : public Field_blob {
@@ -4236,21 +4307,23 @@ class Field_typed_array final : public Field_json {
   int key_cmp(const uchar *, const uchar *) const override { return -1; }
   /**
    * @brief This function will behave similarly to MEMBER OF json operation,
-   *        unlike regular key_cmp. The key value will be checked against
-   *        members of the array and the presence of the key will be considered
-   *        as the record matching the given key. This particular definition is
-   *        used in descending ref index scans. Descending index scan uses
-   *        handler::ha_index_prev() function to read from the storage engine
-   *        which does not compare the index key with the search key [unlike
-   *        handler::ha_index_next_same()]. Hence each retrieved record needs
-   *        to be validated to find a stop point. Refer key_cmp_if_same() and
-   *        RefIterator<true>::Read() for more details.
+   *        unlike regular key_cmp. Since scans on multi-valued indexes always
+   *        go in the ascending direction, and always start on the first entry
+   *        that is not less than the key, a record not matching the MEMBER OF
+   *        condition is assumed to be greater than the key, so the function
+   *        always returns 1, indicating greater than, for not found.
+   *        This definition is used in descending ref index scans.
+   *        Descending index scan uses handler::ha_index_prev() function to read
+   *        from the storage engine which does not compare the index key with
+   *        the search key [unlike handler::ha_index_next_same()]. Hence each
+   *        retrieved record needs to be validated to find a stop point. Refer
+   *        key_cmp_if_same() and RefIterator<true>::Read() for more details.
    *
    * @param   key_ptr         Pointer to the key
    * @param   key_length      Key length
    * @return
    *      0   Key found in the record
-   *      -1  Key not found in the record
+   *      1   Key not found in the record
    */
   int key_cmp(const uchar *key_ptr, uint key_length) const override;
   /**

@@ -248,7 +248,7 @@ static dberr_t srv_undo_tablespace_create(undo::Tablespace &undo_space) {
   fh = os_file_create(innodb_data_file_key, file_name,
                       (srv_read_only_mode ? OS_FILE_OPEN : OS_FILE_CREATE) |
                           OS_FILE_ON_ERROR_NO_EXIT,
-                      OS_FILE_NORMAL, OS_DATA_FILE, srv_read_only_mode, &ret);
+                      OS_DATA_FILE, srv_read_only_mode, &ret);
 
   if (ret == false) {
     std::ostringstream stmt;
@@ -562,7 +562,6 @@ dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space) {
   pfs_os_file_t fh;
   bool success;
   uint32_t flags;
-  bool atomic_write;
   dberr_t err = DB_ERROR;
   space_id_t space_id = undo_space.id();
   char *undo_name = undo_space.space_name();
@@ -589,21 +588,10 @@ dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space) {
   fh = os_file_create(
       innodb_data_file_key, file_name,
       OS_FILE_OPEN_RETRY | OS_FILE_ON_ERROR_NO_EXIT | OS_FILE_ON_ERROR_SILENT,
-      OS_FILE_NORMAL, OS_DATA_FILE, srv_read_only_mode, &success);
+      OS_DATA_FILE, srv_read_only_mode, &success);
   if (!success) {
     return (DB_CANNOT_OPEN_FILE);
   }
-
-  /* Check if this file supports atomic write. */
-#ifdef UNIV_LINUX
-  if (!dblwr::is_enabled()) {
-    atomic_write = fil_fusionio_enable_atomic_write(fh);
-  } else {
-    atomic_write = false;
-  }
-#else
-  atomic_write = false;
-#endif /* UNIV_LINUX */
 
   if (space == nullptr) {
     /* Load the tablespace into InnoDB's internal data structures.
@@ -617,19 +605,13 @@ dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space) {
     ut_a(size != (os_offset_t)-1);
     page_no_t n_pages = static_cast<page_no_t>(size / UNIV_PAGE_SIZE);
 
-    if (fil_node_create(file_name, n_pages, space, false, atomic_write) ==
-        nullptr) {
+    if (fil_node_create(file_name, n_pages, space, false) == nullptr) {
       os_file_close(fh);
 
       ib::error(ER_IB_MSG_1082, undo_name);
 
       return (DB_ERROR);
     }
-
-  } else {
-    auto &file = space->files.front();
-
-    file.atomic_write = atomic_write;
   }
 
   /* Read the encryption metadata in this undo tablespace.
@@ -2960,7 +2942,7 @@ static lsn_t srv_shutdown_log() {
 
   /* No redo log might be generated since now. */
   log_background_threads_inactive_validate();
-  buf_must_be_all_freed();
+  buf_assert_all_are_replaceable();
 
   const lsn_t lsn = log_get_lsn(*log_sys);
 
@@ -2986,7 +2968,7 @@ static lsn_t srv_shutdown_log() {
     ut_a(err == DB_SUCCESS);
   }
 
-  buf_must_be_all_freed();
+  buf_assert_all_are_replaceable();
   ut_a(lsn == log_get_lsn(*log_sys));
 
   if (srv_downgrade_logs) {

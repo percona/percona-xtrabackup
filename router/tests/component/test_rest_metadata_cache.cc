@@ -358,9 +358,11 @@ TEST_P(RestMetadataCacheApiTest, ensure_openapi) {
   const std::string http_hostname = "127.0.0.1";
   const std::string http_uri = GetParam().uri;
 
-  /*auto &md_server =*/ProcessManager::launch_mysql_server_mock(
-      get_data_dir().join("metadata_1_node_repeat_v2_gr.js").str(),
-      metadata_server_port_, EXIT_SUCCESS, false, metadata_server_http_port_);
+  mock_server_spawner().spawn(
+      mock_server_cmdline("metadata_1_node_repeat_v2_gr.js")
+          .port(metadata_server_port_)
+          .http_port(metadata_server_http_port_)
+          .args());
 
   const std::string userfile = create_password_file();
 
@@ -855,8 +857,10 @@ TEST_F(RestMetadataCacheApiTest, metadata_cache_api_no_auth) {
 
   const std::string conf_file{create_config_file(
       conf_dir_.name(), mysql_harness::join(config_sections, "\n"))};
-  auto &router =
-      launch_router({"-c", conf_file}, EXIT_FAILURE, true, false, -1s);
+  auto &router = router_spawner()
+                     .wait_for_sync_point(Spawner::SyncPoint::NONE)
+                     .expected_exit_code(EXIT_FAILURE)
+                     .spawn({"-c", conf_file});
 
   check_exit_code(router, EXIT_FAILURE, 10s);
 
@@ -880,8 +884,10 @@ TEST_F(RestMetadataCacheApiTest, invalid_realm) {
 
   const std::string conf_file{create_config_file(
       conf_dir_.name(), mysql_harness::join(config_sections, "\n"))};
-  auto &router =
-      launch_router({"-c", conf_file}, EXIT_FAILURE, true, false, -1s);
+  auto &router = router_spawner()
+                     .wait_for_sync_point(Spawner::SyncPoint::NONE)
+                     .expected_exit_code(EXIT_FAILURE)
+                     .spawn({"-c", conf_file});
 
   check_exit_code(router, EXIT_FAILURE, 10s);
 
@@ -951,8 +957,10 @@ TEST_F(RestMetadataCacheApiTest, rest_metadata_cache_section_twice) {
 
   const std::string conf_file{create_config_file(
       conf_dir_.name(), mysql_harness::join(config_sections, ""))};
-  auto &router =
-      launch_router({"-c", conf_file}, EXIT_FAILURE, true, false, -1s);
+  auto &router = router_spawner()
+                     .wait_for_sync_point(Spawner::SyncPoint::NONE)
+                     .expected_exit_code(EXIT_FAILURE)
+                     .spawn({"-c", conf_file});
 
   check_exit_code(router, EXIT_FAILURE, 10s);
 
@@ -977,8 +985,10 @@ TEST_F(RestMetadataCacheApiTest, rest_metadata_cache_section_has_key) {
 
   const std::string conf_file{create_config_file(
       conf_dir_.name(), mysql_harness::join(config_sections, "\n"))};
-  auto &router =
-      launch_router({"-c", conf_file}, EXIT_FAILURE, true, false, -1s);
+  auto &router = router_spawner()
+                     .wait_for_sync_point(Spawner::SyncPoint::NONE)
+                     .expected_exit_code(EXIT_FAILURE)
+                     .spawn({"-c", conf_file});
 
   check_exit_code(router, EXIT_FAILURE, 10s);
 

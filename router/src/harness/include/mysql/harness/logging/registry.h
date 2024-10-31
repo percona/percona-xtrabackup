@@ -34,7 +34,7 @@
 
 #include <atomic>
 #include <map>
-#include <mutex>
+#include <shared_mutex>
 #include <stdexcept>
 #include <string>
 
@@ -101,6 +101,18 @@ class HARNESS_EXPORT Registry {
    */
   Logger get_logger_or_default(const std::string &name,
                                const std::string &default_name) const;
+
+  /**
+   * Return logger for particular module.
+   *
+   * if it doesn't exist, get the default logger.
+   *
+   * @param name Logger id (log domain it services)
+   *
+   * @throws std::logic_error if neither logger is registered for given module
+   * name
+   */
+  Logger get_logger_or_default(const std::string &name) const;
 
   /**
    * Update logger for particular module
@@ -190,10 +202,10 @@ class HARNESS_EXPORT Registry {
    * old logger file to dst.
    * @param dst destination filename for old log
    */
-  void flush_all_loggers(const std::string dst = "");
+  void flush_all_loggers(const std::string &dst = "");
 
  private:
-  mutable std::mutex mtx_;
+  mutable std::shared_mutex mtx_;
   std::map<std::string, Logger> loggers_;  // key = log domain
   std::map<std::string, std::shared_ptr<Handler>>
       handlers_;  // key = handler id

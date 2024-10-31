@@ -17,6 +17,8 @@
 ##
 ## =============================================
 
+--let $xplugin_disable_ssl_for_x_at_client_side=1
+--let $xplugin_cache_x_root=1
 --source include/xplugin_preamble.inc
 --source include/xplugin_create_user.inc
 
@@ -25,7 +27,7 @@
 --write_file $MYSQL_TMP_DIR/mysqlx-delete_sql.xpl
 -->sql
  DROP SCHEMA if EXISTS dbmysqlxplugintest;
- CREATE SCHEMA dbmysqlxplugintest DEFAULT CHARSET='utf8';
+ CREATE SCHEMA dbmysqlxplugintest DEFAULT CHARSET='utf8mb3';
  USE dbmysqlxplugintest;
 
  CREATE TABLE Categories (

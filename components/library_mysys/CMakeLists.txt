@@ -26,4 +26,20 @@ DISABLE_MISSING_PROFILE_WARNING()
 ADD_LIBRARY(library_mysys STATIC
   my_memory.cc
   my_hex_tools.cc
+  my_base64_encode.cc
+  option_usage_data.cc
 )
+
+IF(UNIX)
+TARGET_COMPILE_OPTIONS(library_mysys PRIVATE "-fvisibility=hidden")
+ENDIF()
+
+# Workaround to avoid "cannot allocate memory in static TLS block" error
+STRING(REPLACE "-ftls-model=initial-exec" "-ftls-model=global-dynamic"
+  CMAKE_C_FLAGS "${CMAKE_C_FLAGS}"
+  )
+STRING(REPLACE "-ftls-model=initial-exec" "-ftls-model=global-dynamic"
+  CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}"
+  )
+
+TARGET_LINK_LIBRARIES(library_mysys rapidjson)

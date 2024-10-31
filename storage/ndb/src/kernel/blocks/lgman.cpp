@@ -50,10 +50,10 @@
 #define JAM_FILE_ID 441
 
 #if (defined(VM_TRACE) || defined(ERROR_INSERT))
-//#define DEBUG_LGMAN 1
-//#define DEBUG_DROP_LG 1
-//#define DEBUG_LGMAN_LCP 1
-//#define DEBUG_UNDO_SPACE 1
+// #define DEBUG_LGMAN 1
+// #define DEBUG_DROP_LG 1
+// #define DEBUG_LGMAN_LCP 1
+// #define DEBUG_UNDO_SPACE 1
 #endif
 
 #ifdef DEBUG_LGMAN
@@ -1503,7 +1503,7 @@ void Lgman::open_file(Signal *signal, Ptr<Undofile> file_ptr,
   req->userPointer = file_ptr.i;
 
   memset(req->fileNumber, 0, sizeof(req->fileNumber));
-  FsOpenReq::setVersion(req->fileNumber, 4);  // Version 4 = specified filename
+  FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_FILENAME);
   FsOpenReq::v4_setBasePath(req->fileNumber, FsOpenReq::BP_DD_UF);
 
   req->fileFlags = 0;

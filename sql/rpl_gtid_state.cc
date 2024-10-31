@@ -721,8 +721,7 @@ int Gtid_state::save_gtids_of_last_binlog_into_table() {
   if (!ret) {
     logged_gtids_last_binlog.remove_gtid_set(&previous_gtids_logged);
     logged_gtids_last_binlog.remove_gtid_set(&gtids_only_in_table);
-    if (!logged_gtids_last_binlog.is_empty() ||
-        mysql_bin_log.is_rotating_caused_by_incident) {
+    if (!logged_gtids_last_binlog.is_empty()) {
       /* Prepare previous_gtids_logged for next binlog always. Need it
       even during shutdown to synchronize with innodb GTID persister. */
       if (previous_gtids_logged.add_gtid_set(&logged_gtids_last_binlog))
@@ -925,8 +924,6 @@ void Gtid_state::update_gtids_impl_own_anonymous(THD *thd, bool *more_trx) {
     See comment for the update_gtids_impl_begin function.
   */
   if (opt_bin_log) {
-    // Needed before is_binlog_cache_empty.
-    thd->binlog_setup_trx_data();
     if (!thd->is_binlog_cache_empty(true)) {
       *more_trx = true;
       DBUG_PRINT("info", ("Transaction cache is non-empty: setting "

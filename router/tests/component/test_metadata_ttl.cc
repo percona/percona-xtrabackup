@@ -40,6 +40,7 @@
 #include "router_component_testutils.h"
 #include "router_config.h"
 #include "router_test_helpers.h"
+#include "stdx_expected_no_error.h"
 
 using mysqlrouter::ClusterType;
 using mysqlrouter::MetadataSchemaVersion;
@@ -47,6 +48,12 @@ using mysqlrouter::MySQLSession;
 using ::testing::PrintToString;
 using namespace std::chrono_literals;
 using namespace std::string_literals;
+
+namespace mysqlrouter {
+std::ostream &operator<<(std::ostream &os, const MysqlError &e) {
+  return os << e.sql_state() << " code: " << e.value() << ": " << e.message();
+}
+}  // namespace mysqlrouter
 
 class MetadataChacheTTLTest : public RouterComponentMetadataTest {};
 
@@ -113,12 +120,13 @@ TEST_F(MetadataChacheTTLTest, Quarantine) {
     classic_ports.push_back(port_pool_.get_next_available());
     http_ports.push_back(port_pool_.get_next_available());
   }
-  const std::string json_metadata =
-      get_data_dir().join("metadata_dynamic_nodes_v2_gr.js").str();
 
   for (size_t i = 0; i < kClusterNodes; ++i) {
-    cluster_nodes.push_back(&launch_mysql_server_mock(
-        json_metadata, classic_ports[i], EXIT_SUCCESS, false, http_ports[i]));
+    cluster_nodes.push_back(&mock_server_spawner().spawn(
+        mock_server_cmdline("metadata_dynamic_nodes_v2_gr.js")
+            .port(classic_ports[i])
+            .http_port(http_ports[i])
+            .args()));
     set_mock_metadata(http_ports[i], "uuid",
                       classic_ports_to_gr_nodes(classic_ports), 0,
                       classic_ports_to_cluster_nodes(classic_ports));
@@ -137,7 +145,13 @@ TEST_F(MetadataChacheTTLTest, Quarantine) {
                                classic_ports, EXIT_SUCCESS,
                                /*wait_for_notify_ready=*/30s);
   EXPECT_TRUE(wait_for_transaction_count_increase(http_ports[0], 2));
-  make_new_connection_ok(router_ro_port, classic_ports[1]);
+  {
+    auto conn_res = make_new_connection(router_ro_port);
+    ASSERT_NO_ERROR(conn_res);
+    auto port_res = select_port(conn_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, classic_ports[1]);
+  }
 
   SCOPED_TRACE(
       "// kill the cluster RO node and wait for it to be added to quarantine");
@@ -153,8 +167,11 @@ TEST_F(MetadataChacheTTLTest, Quarantine) {
       1s));
 
   SCOPED_TRACE("// bring back the cluster node");
-  cluster_nodes[1] = &launch_mysql_server_mock(
-      json_metadata, classic_ports[1], EXIT_SUCCESS, false, http_ports[1]);
+  cluster_nodes[1] = &mock_server_spawner().spawn(
+      mock_server_cmdline("metadata_dynamic_nodes_v2_gr.js")
+          .port(classic_ports[1])
+          .http_port(http_ports[1])
+          .args());
   set_mock_metadata(http_ports[1], "uuid",
                     classic_ports_to_gr_nodes(classic_ports), 0,
                     classic_ports_to_cluster_nodes(classic_ports));
@@ -185,11 +202,12 @@ TEST_P(MetadataChacheTTLTestParam, CheckTTLValid) {
       "node)");
   auto md_server_port = port_pool_.get_next_available();
   auto md_server_http_port = port_pool_.get_next_available();
-  const std::string json_metadata =
-      get_data_dir().join(test_params.tracefile).str();
 
-  /*auto &metadata_server = */ launch_mysql_server_mock(
-      json_metadata, md_server_port, EXIT_SUCCESS, false, md_server_http_port);
+  /*auto &metadata_server = */ mock_server_spawner().spawn(
+      mock_server_cmdline(test_params.tracefile)
+          .port(md_server_port)
+          .http_port(md_server_http_port)
+          .args());
 
   SCOPED_TRACE("// launch the router with metadata-cache configuration");
   const auto router_port = port_pool_.get_next_available();
@@ -272,11 +290,12 @@ TEST_P(MetadataChacheTTLTestParamInvalid, CheckTTLInvalid) {
   // launch the server mock (it's our metadata server and single cluster node)
   auto md_server_port = port_pool_.get_next_available();
   auto md_server_http_port = port_pool_.get_next_available();
-  const std::string json_metadata =
-      get_data_dir().join(GetParam().tracefile).str();
 
-  /*auto &metadata_server =*/launch_mysql_server_mock(
-      json_metadata, md_server_port, false, md_server_http_port);
+  /*auto &metadata_server =*/mock_server_spawner().spawn(
+      mock_server_cmdline(GetParam().tracefile)
+          .port(md_server_port)
+          .http_port(md_server_http_port)
+          .args());
 
   // launch the router with metadata-cache configuration
   const auto router_port = port_pool_.get_next_available();
@@ -330,11 +349,12 @@ TEST_F(MetadataChacheTTLTest, CheckMetadataUpgradeBetweenTTLs) {
       "node)");
   auto md_server_port = port_pool_.get_next_available();
   auto md_server_http_port = port_pool_.get_next_available();
-  const std::string json_metadata =
-      get_data_dir().join("metadata_1_node_repeat_metadatada_upgrade.js").str();
 
-  /*auto &metadata_server = */ launch_mysql_server_mock(
-      json_metadata, md_server_port, EXIT_SUCCESS, false, md_server_http_port);
+  /*auto &metadata_server =*/mock_server_spawner().spawn(
+      mock_server_cmdline("metadata_1_node_repeat_metadatada_upgrade.js")
+          .port(md_server_port)
+          .http_port(md_server_http_port)
+          .args());
 
   SCOPED_TRACE("// launch the router with metadata-cache configuration");
   const auto router_port = port_pool_.get_next_available();
@@ -373,8 +393,13 @@ TEST_F(MetadataChacheTTLTest, CheckMetadataUpgradeBetweenTTLs) {
   EXPECT_EQ(1, count_str_occurences(log_content, needle));
 
   // the Router should start handling connections
-  make_new_connection_ok(router_port, md_server_port);
-
+  {
+    auto conn_res = make_new_connection(router_port);
+    ASSERT_NO_ERROR(conn_res);
+    auto port_res = select_port(conn_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, md_server_port);
+  }
   // router should exit noramlly
   ASSERT_THAT(router.kill(), testing::Eq(0));
 }

@@ -1,3 +1,5 @@
+--source include/elide_costs.inc
+
 #
 # Find string "NOTE NOTE NOTE" in order to find some 'unsure' tests
 #
@@ -1373,6 +1375,7 @@ select distinct substring(fld3,1,3) from t2 where fld3 like "A%";
 select distinct substring(fld3,1,3) as a from t2 having a like "A%" order by a limit 10;
 --replace_result abr Abr
 select distinct substring(fld3,1,3) from t2 where fld3 like "A%" limit 10;
+--skip_if_hypergraph # LIMIT without ORDER BY is non-deterministic.
 --replace_result abr Abr
 select distinct substring(fld3,1,3) as a from t2 having a like "A%" limit 10;
 
@@ -1687,6 +1690,7 @@ select name,count(*) from t3 where name='cloakroom' group by name;
 select name,count(*) from t3 where name='cloakroom' and price>10 group by name;
 select count(*) from t3 where name='cloakroom' and price2=823742;
 select name,count(*) from t3 where name='cloakroom' and price2=823742 group by name;
+--sorted_result
 select name,count(*) from t3 where name >= "extramarital" and price <= 39654943 group by name;
 
 # We see the functional dependency implied by WHERE!
@@ -1803,6 +1807,7 @@ explain select min(fld1),max(fld1),count(*) from t2;
 explain format=tree select min(fld1),max(fld1),count(*) from t2;  # Should be computed at optimize time.
 ANALYZE TABLE t2;
 --skip_if_hypergraph  # Depends on query plan.
+--replace_regex $elide_costs
 explain format=tree select min(fld1),max(fld1),count(*) from t2 where rand() > 0.5;  # Should _not_ be computed at optimize time.
 # PS does correct pre-zero here. MySQL can't do it as it returns a number.
 --disable_ps_protocol
@@ -4215,6 +4220,7 @@ SELECT table4 . `time_nokey` AS field1 FROM
             table1 . `int_nokey` != 'f')
   GROUP BY field1  ORDER BY field1 , field1;
 
+--sorted_result
 SELECT table1 .`time_key` field2  FROM B table1  LEFT JOIN  BB JOIN A table5 ON table5 .`date_nokey`  ON table5 .`int_nokey` GROUP  BY field2;
 --enable_warnings
 

@@ -26,6 +26,7 @@
 #define MYSQL_ROUTER_LOG_DOMAIN "logger"
 #include "mysql/harness/logging/logger_plugin.h"
 
+#include <iostream>  // cout
 #include <sstream>
 #include <vector>
 
@@ -37,6 +38,7 @@
 #include "mysql/harness/plugin_config.h"
 #include "mysql/harness/section_config_exposer.h"
 #include "mysql/harness/string_utils.h"
+#include "mysql/harness/supported_config_options.h"
 #include "mysql/harness/utility/string.h"  // join
 
 #ifdef _WIN32
@@ -183,7 +185,8 @@ class LoggingPluginConfig : public mysql_harness::BasePluginConfig {
     }
 
     if (sink_name == kFilelogPluginName) {
-      logging_folder = config.get_default("logging_folder");
+      logging_folder =
+          config.get_default(mysql_harness::loader::options::kLoggingFolder);
 
       if (logging_folder.empty()) {
         throw std::runtime_error(
@@ -214,13 +217,13 @@ class LoggingPluginConfig : public mysql_harness::BasePluginConfig {
   bool is_required(std::string_view /*option*/) const override { return false; }
 
   static constexpr const char *kLogLevel =
-      mysql_harness::logging::kConfigOptionLogLevel;
+      mysql_harness::logging::options::kLevel;
   static constexpr const char *kLogTimestampPrecision =
-      mysql_harness::logging::kConfigOptionLogTimestampPrecision;
+      mysql_harness::logging::options::kTimestampPrecision;
   static constexpr const char *kLogFilename =
-      mysql_harness::logging::kConfigOptionLogFilename;
+      mysql_harness::logging::options::kFilename;
   static constexpr const char *kDestination =
-      mysql_harness::logging::kConfigOptionLogDestination;
+      mysql_harness::logging::options::kDestination;
 };
 
 HandlerPtr create_logging_sink(const LoggingPluginConfig &config) {
@@ -459,9 +462,8 @@ static void switch_to_loggers_in_config(
   // nothing threw - we're good. Now let's replace the new registry with the
   // old one
   DIM::instance().set_LoggingRegistry(
-      [&registry]() { return registry.release(); },
+      registry.release(),
       std::default_delete<mysql_harness::logging::Registry>());
-  DIM::instance().reset_LoggingRegistry();
 
   // set timestamp precision
   auto precision =

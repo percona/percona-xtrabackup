@@ -22,7 +22,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
-  @file rows_event.h
+  @file
 
   @brief Contains the classes representing events which are used for row based
   replication. In row-based replication, the master writes events to the binary
@@ -567,8 +567,9 @@ class Table_map_event : public Binary_log_event {
                                      columns, optimized to minimize
                                      space when many columns have the
                                      same charset. */
-    COLUMN_VISIBILITY             /* Flag to indicate column visibility
+    COLUMN_VISIBILITY,            /* Flag to indicate column visibility
                                      attribute. */
+    VECTOR_DIMENSIONALITY         /* Vector column dimensionality */
   };
 
   /**
@@ -605,6 +606,7 @@ class Table_map_event : public Binary_log_event {
     std::vector<str_vector> m_enum_str_value;
     std::vector<str_vector> m_set_str_value;
     std::vector<unsigned int> m_geometry_type;
+    std::vector<unsigned int> m_vector_dimensionality;
     /*
       The uint_pair means <column index, prefix length>.  Prefix length is 0 if
       whole column value is used.
@@ -1165,6 +1167,11 @@ class Delete_rows_event : public virtual Rows_event {
     <td>char array</td>
     <td>Records the original query executed in RBR </td>
   </tr>
+  <tr>
+    <td>m_rows_query_length</td>
+    <td>integer</td>
+    <td>Stores the original query length executed in RBR </td>
+  </tr>
   </table>
 */
 class Rows_query_event : public virtual Ignorable_event {
@@ -1190,12 +1197,15 @@ class Rows_query_event : public virtual Ignorable_event {
     ROWS_QUERY_LOG_EVENT in the header object in Binary_log_event.
   */
   Rows_query_event()
-      : Ignorable_event(ROWS_QUERY_LOG_EVENT), m_rows_query(nullptr) {}
+      : Ignorable_event(ROWS_QUERY_LOG_EVENT),
+        m_rows_query(nullptr),
+        m_rows_query_length(0) {}
 
   ~Rows_query_event() override;
 
  protected:
   char *m_rows_query;
+  size_t m_rows_query_length;
 };
 }  // namespace mysql::binlog::event
 

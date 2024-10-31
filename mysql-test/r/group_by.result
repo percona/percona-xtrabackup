@@ -49,7 +49,7 @@ EXPLAIN
         -> Nested loop inner join  (cost=2.05 rows=4)
             -> Filter: (t1.userID is not null)  (cost=0.65 rows=4)
                 -> Table scan on t1  (cost=0.65 rows=4)
-            -> Single-row covering index lookup on t2 using PRIMARY (userID=t1.userID)  (cost=0.275 rows=1)
+            -> Single-row covering index lookup on t2 using PRIMARY (userID = t1.userID)  (cost=0.275 rows=1)
 
 SELECT t2.userid, MIN(t1.score) FROM t1, t2 WHERE t1.userID=t2.userID GROUP BY t2.userid;
 userid	MIN(t1.score)
@@ -1191,7 +1191,7 @@ FROM t1 AS t1_outer GROUP BY t1_outer.b;
 ERROR 42000: Expression #1 of SELECT list is not in GROUP BY clause and contains nonaggregated column 'test.t1_outer.a' which is not functionally dependent on columns in GROUP BY clause; this is incompatible with sql_mode=only_full_group_by
 SELECT 1 FROM t1 as t1_outer GROUP BY a 
 HAVING (SELECT t1_outer.b FROM t1 AS t1_inner LIMIT 1);
-ERROR 42S22: Unknown column 'test.t1_outer.b' in 'field list'
+ERROR 42000: Expression #1 of HAVING clause is not in GROUP BY clause and contains nonaggregated column 'test.t1_outer.b' which is not functionally dependent on columns in GROUP BY clause; this is incompatible with sql_mode=only_full_group_by
 SELECT (SELECT SUM(t1_inner.a) FROM t1 AS t1_inner LIMIT 1) 
 FROM t1 AS t1_outer GROUP BY t1_outer.b;
 (SELECT SUM(t1_inner.a) FROM t1 AS t1_inner LIMIT 1)
@@ -1257,10 +1257,16 @@ SELECT 1 FROM t1 GROUP BY b HAVING a = 2;
 ERROR 42S22: Unknown column 'a' in 'having clause'
 SELECT 1 FROM t1 GROUP BY SUM(b);
 ERROR HY000: Invalid use of group function
-SELECT b FROM t1 AS t1_outer GROUP BY a HAVING t1_outer.a IN 
-(SELECT SUM(t1_inner.b)+t1_outer.b FROM t1 AS t1_inner GROUP BY t1_inner.a
-HAVING SUM(t1_inner.b)+t1_outer.b > 5);
-ERROR 42000: Expression #1 of SELECT list is not in GROUP BY clause and contains nonaggregated column 'test.t1_outer.b' which is not functionally dependent on columns in GROUP BY clause; this is incompatible with sql_mode=only_full_group_by
+SELECT b
+FROM t1 AS t1_outer
+GROUP BY a
+HAVING t1_outer.a IN
+(SELECT SUM(t1_inner.b) + t1_outer.b
+FROM t1 AS t1_inner
+GROUP BY t1_inner.a
+HAVING SUM(t1_inner.b) + t1_outer.b > 5
+);
+ERROR 42S22: Unknown column 't1_outer.b' in 'having clause'
 DROP TABLE t1;
 SET SQL_MODE = '';
 SET SQL_MODE = 'ONLY_FULL_GROUP_BY';
@@ -3956,9 +3962,9 @@ test.t1	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT f1, f1 + 1, COUNT(DISTINCT f2) AS x FROM t1 GROUP BY f1 ORDER BY x;
 EXPLAIN
 -> Sort: x
-    -> Stream results  (cost=1.45 rows=2.45)
-        -> Group aggregate: count(distinct t1.f2)  (cost=1.45 rows=2.45)
-            -> Index scan on t1 using k1  (cost=0.85 rows=6)
+    -> Stream results  (rows=2.45)
+        -> Group aggregate: count(distinct t1.f2)  (rows=2.45)
+            -> Index scan on t1 using k1  (rows=6)
 
 SELECT f1, f1 + 1, COUNT(DISTINCT f2) AS x FROM t1 GROUP BY f1 ORDER BY x;
 f1	f1 + 1	x
@@ -4002,6 +4008,7 @@ f3 integer
 );
 SELECT * FROM t1 GROUP BY f3,f2,f1 WITH ROLLUP;
 f1	f2	f3
+NULL	NULL	NULL
 DROP TABLE t1;
 # Bug#23599127 Unexpected unknown column error without ONLY_FULL_GROUP_BY
 SET SQL_MODE = '';
@@ -4515,8 +4522,8 @@ EXPLAIN
     -> Nested loop left join  (rows=8000)
         -> Nested loop left join  (rows=8000)
             -> Covering index scan on t1 using b  (rows=8000)
-            -> Single-row covering index lookup on t2 using PRIMARY (b=t1.b)  (rows=1)
-        -> Single-row covering index lookup on t3 using PRIMARY (b=t1.b)  (rows=1)
+            -> Single-row covering index lookup on t2 using PRIMARY (b = t1.b)  (rows=1)
+        -> Single-row covering index lookup on t3 using PRIMARY (b = t1.b)  (rows=1)
 
 FLUSH STATUS;
 SELECT b, COUNT(*) FROM t1 LEFT JOIN t2 USING (b) LEFT JOIN t3 USING (b)
@@ -4807,7 +4814,7 @@ EXPLAIN
                         -> Filter: (t2.x is not null)  (rows=3)
                             -> Table scan on t2  (rows=3)
                     -> Filter: ((t2.y + t3.y) < t1.y)  (rows=1)
-                        -> Single-row index lookup on t3 using PRIMARY (id=t2.x)  (rows=1)
+                        -> Single-row index lookup on t3 using PRIMARY (id = t2.x)  (rows=1)
 
 Warnings:
 Note	1276	Field or reference 'test.t1.y' of SELECT #2 was resolved in SELECT #1
@@ -4842,7 +4849,7 @@ EXPLAIN
     -> Nested loop left join  (rows=3)
         -> Index scan on t1 using PRIMARY  (rows=3)
         -> Filter: (t1.a <> 2)  (rows=1)
-            -> Single-row index lookup on t2 using PRIMARY (a=t1.b)  (rows=1)
+            -> Single-row index lookup on t2 using PRIMARY (a = t1.b)  (rows=1)
 
 SELECT t1.a, MAX(t2.b) FROM t1 LEFT JOIN t2 ON t1.b = t2.a AND t1.a <> 2
 GROUP BY t1.a;
@@ -4950,3 +4957,47 @@ COUNT(*)
 200
 DROP PROCEDURE BatchInsert;
 DROP TABLE product;
+# Bug#36556725: failure in Group_check::do_ident_check
+CREATE TABLE t1(f1 INTEGER);
+SELECT (SELECT f1) FROM t1 GROUP BY f1 HAVING f1 < 1;
+(SELECT f1)
+Warnings:
+Warning	1052	Column 'f1' in group statement is ambiguous
+DROP TABLE t1;
+#
+# Bug#36625752 View with ORDER BY misses a row
+#
+CREATE TABLE t1(c0 INT PRIMARY KEY);
+# returns one row as expected
+SELECT 1 FROM t1 ORDER BY COUNT(*) OVER (PARTITION BY MIN(t1.c0));
+1
+1
+CREATE VIEW v AS SELECT 1 FROM t1 ORDER BY COUNT(*) OVER (PARTITION BY MIN(t1.c0));
+# used to return zero rows
+SELECT 1 AS one FROM v;
+one
+1
+SHOW CREATE VIEW v;
+View	Create View	character_set_client	collation_connection
+v	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v` AS select 1 AS `1` from `t1` order by count(0) OVER (PARTITION BY min(`t1`.`c0`) ) 	utf8mb4	utf8mb4_0900_ai_ci
+DROP VIEW v;
+# returns two rows as expected
+(SELECT 1 AS one FROM t1 ORDER BY COUNT(*) OVER (PARTITION BY MIN(t1.c0)))
+UNION ALL
+(SELECT 1        FROM t1 ORDER BY COUNT(*) OVER (PARTITION BY MIN(t1.c0)));
+one
+1
+1
+CREATE VIEW v AS (SELECT 1 AS one FROM t1 ORDER BY COUNT(*) OVER (PARTITION BY MIN(t1.c0)))
+UNION ALL
+(SELECT 1        FROM t1 ORDER BY COUNT(*) OVER (PARTITION BY MIN(t1.c0)));
+# used to return zero rows
+SELECT v.one AS one FROM v;
+one
+1
+1
+SHOW CREATE VIEW v;
+View	Create View	character_set_client	collation_connection
+v	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v` AS (select 1 AS `one` from `t1` order by count(0) OVER (PARTITION BY min(`t1`.`c0`) ) ) union all (select 1 AS `1` from `t1` order by count(0) OVER (PARTITION BY min(`t1`.`c0`) ) )	utf8mb4	utf8mb4_0900_ai_ci
+DROP VIEW v;
+DROP TABLE t1;

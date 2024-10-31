@@ -1,6 +1,5 @@
 /*
    Copyright (c) 2003, 2024, Oracle and/or its affiliates.
-    Use is subject to license terms.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,10 +24,13 @@
 */
 
 #include <ndb_global.h>
+#include <stdlib.h>
+#include <time.h>
 #include <CpcClient.hpp>
 #include <NdbOut.hpp>
 #include <Vector.hpp>
 #include "NDBT_Find.hpp"
+#include "portlib/NdbHost.h"
 
 SimpleCpcClient g_client("localhost", 1234);
 Vector<SimpleCpcClient::Process> g_procs;
@@ -104,12 +106,13 @@ void define() {
   m_proc.m_owner = "atrt";
   m_proc.m_group = "group";
   m_proc.m_ulimit = "c:unlimited";
+  auto pid = NdbHost_GetProcessId();
   if ((rand() & 15) >= 0) {
-    m_proc.m_name.assfmt("%d-%d-%s", getpid(), name++, "sleep");
+    m_proc.m_name.assfmt("%d-%d-%s", pid, name++, "sleep");
     m_proc.m_path.assign("/bin/sleep");
     m_proc.m_args = "600";
   } else {
-    m_proc.m_name.assfmt("%d-%d-%s", getpid(), name++, "test.sh");
+    m_proc.m_name.assfmt("%d-%d-%s", pid, name++, "test.sh");
     m_proc.m_path.assign(g_exe);
     m_proc.m_args = "600";
   }

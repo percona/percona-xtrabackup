@@ -190,7 +190,7 @@ proc_param).
 
   - #Table_trigger_dispatcher::create_trigger()
 
-  - #Table_trigger_dispatcher::check_n_load()
+  - #dd::load_triggers()
 
   See the C++ class #Table_trigger_dispatcher in general.
 
@@ -2018,6 +2018,10 @@ bool sp_head::execute(THD *thd, bool merge_da_on_success) {
   Diagnostics_area *caller_da = thd->get_stmt_da();
   Diagnostics_area sp_da(false);
 
+  assert(thd->secondary_engine_optimization() !=
+         Secondary_engine_optimization::SECONDARY);
+  thd->set_secondary_engine_optimization(
+      Secondary_engine_optimization::PRIMARY_ONLY);
   /*
     Just reporting a stack overrun error
     (@sa check_stack_overrun()) requires stack memory for error
@@ -2411,6 +2415,10 @@ done:
               m_recursion_level + 1));
   m_first_instance->m_first_free_instance = this;
 
+  // CALL statement or similar can only be executed in primary engine:
+  thd->set_secondary_engine_optimization(
+      Secondary_engine_optimization::PRIMARY_ONLY);
+
   return err_status;
 }
 
@@ -2420,7 +2428,7 @@ bool sp_head::execute_external_routine_core(THD *thd) {
   my_service<SERVICE_TYPE(external_program_execution)> service(
       "external_program_execution", srv_registry);
 
-  if ((err_status = init_external_routine(service))) return err_status;
+  if ((err_status = init_external_routine(&service))) return err_status;
 
   Diagnostics_area *caller_da = thd->get_stmt_da();
   Diagnostics_area sp_da(false);
@@ -2705,23 +2713,23 @@ bool sp_head::set_external_program_handle(external_program_handle sp) {
 }
 
 bool sp_head::init_external_routine(
-    my_service<SERVICE_TYPE(external_program_execution)> &service) {
+    my_service<SERVICE_TYPE(external_program_execution)> *service) {
   assert(!is_sql());
 
-  if (!service.is_valid()) {
+  if (!service->is_valid()) {
     my_error(ER_LANGUAGE_COMPONENT_NOT_AVAILABLE, MYF(0));
     return true;
   }
 
   if (m_language_stored_program == nullptr) {
-    if (service->init(reinterpret_cast<stored_program_handle>(this), nullptr,
-                      &m_language_stored_program)) {
+    if ((*service)->init(reinterpret_cast<stored_program_handle>(this), nullptr,
+                         &m_language_stored_program)) {
       my_error(ER_LANGUAGE_COMPONENT_UNSUPPORTED_LANGUAGE, MYF(0),
                m_chistics->language.str);
       m_language_stored_program = nullptr;
       return true;
     }
-    if (service->parse(m_language_stored_program, nullptr)) return true;
+    if ((*service)->parse(m_language_stored_program, nullptr)) return true;
   }
   return false;
 }
@@ -2791,8 +2799,8 @@ bool sp_head::execute_function(THD *thd, Item **argp, uint argcount,
     /* Arguments must be fixed in Item_func_sp::fix_fields */
     assert(argp[arg_no]->fixed);
 
-    err_status = func_runtime_ctx->set_variable(thd, arg_no, &(argp[arg_no]));
-
+    err_status =
+        func_runtime_ctx->set_variable(thd, false, arg_no, &(argp[arg_no]));
     if (err_status) goto err_with_cleanup;
   }
 
@@ -2975,11 +2983,12 @@ bool sp_head::execute_procedure(THD *thd, mem_root_deque<Item *> *args) {
   sp_rcontext *proc_runtime_ctx =
       sp_rcontext::create(thd, m_root_parsing_ctx, nullptr);
 
-  if (!proc_runtime_ctx) {
+  if (proc_runtime_ctx == nullptr) {
     thd->sp_runtime_ctx = sp_runtime_ctx_saved;
 
-    if (sp_runtime_ctx_saved != nullptr) ::destroy_at(parent_sp_runtime_ctx);
-
+    if (sp_runtime_ctx_saved != nullptr) {
+      ::destroy_at(parent_sp_runtime_ctx);
+    }
     return true;
   }
 
@@ -2992,17 +3001,15 @@ bool sp_head::execute_procedure(THD *thd, mem_root_deque<Item *> *args) {
 
     for (uint i = 0; i < params; ++i, ++it_args) {
       Item *arg_item = *it_args;
-      if (!arg_item) break;
+      if (arg_item == nullptr) break;
 
       sp_variable *spvar = m_root_parsing_ctx->find_variable(i);
-
-      if (!spvar) continue;
+      if (spvar == nullptr) continue;
 
       if (spvar->mode != sp_variable::MODE_IN) {
         Settable_routine_parameter *srp =
             arg_item->get_settable_routine_parameter();
-
-        if (!srp) {
+        if (srp == nullptr) {
           my_error(ER_SP_NOT_VAR_ARG, MYF(0), i + 1, m_qname.str);
           err_status = true;
           break;
@@ -3010,15 +3017,17 @@ bool sp_head::execute_procedure(THD *thd, mem_root_deque<Item *> *args) {
       }
 
       if (spvar->mode == sp_variable::MODE_OUT) {
-        Item_null *null_item = new Item_null();
-
-        if (!null_item ||
-            proc_runtime_ctx->set_variable(thd, i, (Item **)&null_item)) {
+        Item *null_item = new Item_null();
+        if (null_item == nullptr) {
+          err_status = true;
+          break;
+        }
+        if (proc_runtime_ctx->set_variable(thd, false, i, &null_item)) {
           err_status = true;
           break;
         }
       } else {
-        if (proc_runtime_ctx->set_variable(thd, i, &*it_args)) {
+        if (proc_runtime_ctx->set_variable(thd, false, i, &*it_args)) {
           err_status = true;
           break;
         }

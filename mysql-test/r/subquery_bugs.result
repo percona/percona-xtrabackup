@@ -169,7 +169,6 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 2	DEPENDENT SUBQUERY	t2	NULL	eq_ref	PRIMARY	PRIMARY	42	func	1	100.00	Using where; Using index
 Warnings:
 Note	1276	Field or reference 'test.t1.k' of SELECT #2 was resolved in SELECT #1
-Note	1276	Field or reference 'test.t1.k' of SELECT #2 was resolved in SELECT #1
 Note	1003	/* select#1 */ select sum(`test`.`t1`.`k`) AS `SUM(k)`,`test`.`t1`.`k` AS `k` from `test`.`t1` having ((/* select#2 */ select 'X' from `test`.`t2` where (`test`.`t2`.`k` = concat(`test`.`t1`.`k`,'X'))) = 'XXX')
 SELECT SUM(k), k
 FROM t1
@@ -276,7 +275,6 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 1	PRIMARY	t1	NULL	index	NULL	PRIMARY	42	NULL	1	100.00	Using index
 2	DEPENDENT SUBQUERY	t2	NULL	eq_ref	PRIMARY	PRIMARY	42	func	1	100.00	Using where; Using index
 Warnings:
-Note	1276	Field or reference 'test.t1.k' of SELECT #2 was resolved in SELECT #1
 Note	1276	Field or reference 'test.t1.k' of SELECT #2 was resolved in SELECT #1
 Note	1003	/* select#1 */ select sum(`test`.`t1`.`k`) AS `SUM(k)`,`test`.`t1`.`k` AS `k` from `test`.`t1` having ((/* select#2 */ select 'X' from `test`.`t2` where (`test`.`t2`.`k` = concat(`test`.`t1`.`k`,'X'))) = 'XXX')
 SELECT SUM(k), k
@@ -511,11 +509,11 @@ FROM t1 AS alias1 RIGHT JOIN t1 AS alias2
 ON alias1.cv = alias2.cv
 );
 cv
-h
-Q
 I
-q
+Q
 W
+h
+q
 DROP TABLE t1;
 # Bug#28970261: Sig6 in decorrelate_equality()
 CREATE TABLE t1 (col_varchar_key varchar(1) DEFAULT NULL);
@@ -599,14 +597,14 @@ test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1 WHERE pk IN ( SELECT pk FROM t1 LEFT JOIN v2 USING (pk) WHERE f1 >= 'o' );
 EXPLAIN
--> Nested loop inner join  (cost=3.77 rows=1)
-    -> Table scan on <subquery2>  (cost=3.42..3.42 rows=1)
-        -> Materialize with deduplication  (cost=0.91..0.91 rows=1)
-            -> Nested loop left join  (cost=0.81 rows=1)
-                -> Filter: (t1.f1 >= 'o')  (cost=0.46 rows=1)
-                    -> Covering index range scan on t1 using k1 over ('o' <= f1)  (cost=0.46 rows=1)
-                -> Single-row covering index lookup on t2 using PRIMARY (pk=t1.pk)  (cost=0.35 rows=1)
-    -> Single-row index lookup on t1 using PRIMARY (pk=`<subquery2>`.pk)  (cost=0.35 rows=1)
+-> Nested loop inner join  (rows=1)
+    -> Table scan on <subquery2>  (rows=1)
+        -> Materialize with deduplication  (rows=1)
+            -> Nested loop left join  (rows=1)
+                -> Filter: (t1.f1 >= 'o')  (rows=1)
+                    -> Covering index range scan on t1 using k1 over ('o' <= f1)  (rows=1)
+                -> Single-row covering index lookup on t2 using PRIMARY (pk = t1.pk)  (rows=1)
+    -> Single-row index lookup on t1 using PRIMARY (pk = `<subquery2>`.pk)  (rows=1)
 
 DROP TABLE t1, t2;
 DROP VIEW v2;
@@ -644,14 +642,14 @@ EXPLAIN FORMAT=tree SELECT * FROM t1 LEFT JOIN t1 AS t3 ON t1.pk = t3.pk AND t1.
 WHERE EXISTS ( SELECT * FROM t1 AS t4, t2 AS t5 ) AND t1.f1 = 80 AND t1.pk > t1.f1;
 EXPLAIN
 -> Nested loop left join  (cost=0.91 rows=1)
-    -> Nested loop semijoin  (cost=0.685 rows=1)
+    -> Nested loop semijoin (FirstMatch)  (cost=0.685 rows=1)
         -> Filter: ((t1.f1 = 80) and (t1.pk > 80))  (cost=0.46 rows=0.5)
             -> Index range scan on t1 using PRIMARY over (80 < pk)  (cost=0.46 rows=1)
         -> Nested loop inner join  (cost=0.775 rows=2)
             -> Table scan on t5  (cost=0.45 rows=1)
             -> Covering index scan on t4 using PRIMARY  (cost=1.3 rows=2)
-    -> Nested loop semijoin  (cost=0.8 rows=1)
-        -> Single-row index lookup on t3 using PRIMARY (pk=t1.pk)  (cost=0.45 rows=1)
+    -> Nested loop semijoin (FirstMatch)  (cost=0.8 rows=1)
+        -> Single-row index lookup on t3 using PRIMARY (pk = t1.pk)  (cost=0.45 rows=1)
         -> Filter: (t2.f2 = t1.f2)  (cost=0.7 rows=1)
             -> Table scan on t2  (cost=0.7 rows=1)
 
@@ -779,14 +777,14 @@ EXPLAIN
 -> Nested loop inner join  (cost=0.95 rows=5)
     -> Filter: (t1.pk is not null)  (cost=0.35 rows=1)
         -> Table scan on t1  (cost=0.35 rows=1)
-    -> Single-row index lookup on <subquery2> using <auto_distinct_key> (pk=t1.pk)  (cost=1.64..1.64 rows=1)
-        -> Materialize with deduplication  (cost=1.6..1.6 rows=5)
+    -> Single-row index lookup on <subquery2> using <auto_distinct_key> (pk = t1.pk)  (cost=2.29..2.29 rows=1)
+        -> Materialize with deduplication  (cost=2.25..2.25 rows=5)
             -> Nested loop left join  (cost=1.1 rows=5)
                 -> Covering index scan on t2 using PRIMARY  (cost=0.35 rows=1)
                 -> Nested loop left join  (cost=2.5 rows=5)
                     -> Filter: (t3.col_int_key <> t2.pk)  (cost=0.75 rows=5)
                         -> Table scan on t3  (cost=0.75 rows=5)
-                    -> Covering index lookup on t4 using ix2 (col_int_key=t3.pk)  (cost=0.27 rows=1)
+                    -> Covering index lookup on t4 using ix2 (col_int_key = t3.pk)  (cost=0.27 rows=1)
 
 SELECT * FROM t1 WHERE pk IN (
 SELECT t2.pk FROM
@@ -809,17 +807,17 @@ test.t1	analyze	status	OK
 EXPLAIN FORMAT=TREE SELECT d0.f1, d0.pk, t1.pk, t1.f1 FROM ( SELECT DISTINCT * FROM t1 ) AS d0 LEFT JOIN t1 ON d0.pk IN ( SELECT 1 FROM t1 ) ORDER BY d0.f1;
 EXPLAIN
 -> Sort: d0.f1
-    -> Stream results  (cost=6.95 rows=8)
-        -> Nested loop left join  (cost=6.95 rows=8)
-            -> Table scan on d0  (cost=4.64..5.9 rows=2)
-                -> Materialize  (cost=3.38..3.38 rows=2)
-                    -> Table scan on <temporary>  (cost=1.91..3.18 rows=2)
-                        -> Temporary table with deduplication  (cost=0.65..0.65 rows=2)
-                            -> Table scan on t1  (cost=0.45 rows=2)
-            -> Nested loop semijoin  (cost=0.875 rows=4)
-                -> Filter: (d0.pk = 1)  (cost=0.225 rows=2)
-                    -> Table scan on t1  (cost=0.225 rows=2)
-                -> Table scan on t1  (cost=0.225 rows=2)
+    -> Stream results  (rows=8)
+        -> Nested loop left join  (rows=8)
+            -> Table scan on d0  (rows=2)
+                -> Materialize  (rows=2)
+                    -> Table scan on <temporary>  (rows=2)
+                        -> Temporary table with deduplication  (rows=2)
+                            -> Table scan on t1  (rows=2)
+            -> Nested loop semijoin (FirstMatch)  (rows=4)
+                -> Filter: (d0.pk = 1)  (rows=2)
+                    -> Table scan on t1  (rows=2)
+                -> Table scan on t1  (rows=2)
 
 SELECT d0.f1, d0.pk, t1.pk, t1.f1 FROM ( SELECT DISTINCT * FROM t1 ) AS d0 LEFT JOIN t1 ON d0.pk IN ( SELECT 1 FROM t1 ) ORDER BY d0.f1;
 f1	pk	pk	f1
@@ -918,7 +916,7 @@ EXPLAIN
             -> Covering index scan on t1 using f2_idx  (cost=0.35 rows=1)
             -> Filter: (cast(t2.f1 as double) > cast(table1.f2 as double))  (cost=0.35 rows=1)
                 -> Index range scan on t2 (re-planned for each iteration)  (cost=0.35 rows=1)
-        -> Covering index lookup on t3 using f2_idx (f2=t2.f2)  (cost=0.35 rows=1)
+        -> Covering index lookup on t3 using f2_idx (f2 = t2.f2)  (cost=0.35 rows=1)
 
 Warnings:
 Note	1276	Field or reference 'test.table1.f2' of SELECT #2 was resolved in SELECT #1
@@ -1128,8 +1126,8 @@ EXPLAIN
                             -> Filter: (table_city.id = `<subquery4>`.city)  (rows=5)
                                 -> Table scan on <subquery4>  (rows=5.25)
                                     -> Materialize with deduplication  (rows=5.25)
-                                        -> Index lookup on table_city_user using city (city=table_city.id)  (rows=5.25)
-                            -> Single-row covering index lookup on table_user using PRIMARY (id=`<subquery4>`.`user`)  (rows=1)
+                                        -> Index lookup on table_city_user using city (city = table_city.id)  (rows=5.25)
+                            -> Single-row covering index lookup on table_user using PRIMARY (id = `<subquery4>`.`user`)  (rows=1)
 
 Warnings:
 Note	1276	Field or reference 'test.table_city.id' of SELECT #4 was resolved in SELECT #1
@@ -1175,22 +1173,22 @@ EXISTS ( SELECT c FROM c AS c_inner_inner )
 ) ORDER BY d.c;
 EXPLAIN
 -> Sort: d.c
-    -> Stream results  (cost=1.55 rows=4)
-        -> Inner hash join (no condition)  (cost=1.55 rows=4)
-            -> Covering index scan on c using idx_c  (cost=0.45 rows=2)
+    -> Stream results  (rows=4)
+        -> Inner hash join (no condition)  (rows=4)
+            -> Covering index scan on c using idx_c  (rows=2)
             -> Hash
-                -> Nested loop inner join  (cost=0.9 rows=2)
-                    -> Filter: (`<subquery2>`.c is not null)  (cost=1.2..0.2 rows=2)
-                        -> Table scan on <subquery2>  (cost=2.84..4.75 rows=4)
-                            -> Materialize with deduplication  (cost=2.2..2.2 rows=4)
-                                -> Filter: (b.c is not null)  (cost=1.8 rows=4)
-                                    -> Inner hash join (no condition)  (cost=1.8 rows=4)
-                                        -> Covering index scan on c_inner_inner using idx_c  (cost=0.225 rows=2)
+                -> Nested loop inner join  (rows=2)
+                    -> Filter: (`<subquery2>`.c is not null)  (rows=2)
+                        -> Table scan on <subquery2>  (rows=4)
+                            -> Materialize with deduplication  (rows=4)
+                                -> Filter: (b.c is not null)  (rows=4)
+                                    -> Inner hash join (no condition)  (rows=4)
+                                        -> Covering index scan on c_inner_inner using idx_c  (rows=2)
                                         -> Hash
-                                            -> Nested loop left join  (cost=1.15 rows=2)
-                                                -> Covering index scan on b using idx_b  (cost=0.45 rows=2)
-                                                -> Covering index lookup on c_inner using idx_c (c=b.c)  (cost=0.3 rows=1)
-                    -> Covering index lookup on d using idx_d (c=`<subquery2>`.c)  (cost=0.6 rows=1)
+                                            -> Nested loop left join  (rows=2)
+                                                -> Covering index scan on b using idx_b  (rows=2)
+                                                -> Covering index lookup on c_inner using idx_c (c = b.c)  (rows=1)
+                    -> Covering index lookup on d using idx_d (c = `<subquery2>`.c)  (rows=1)
 
 SELECT /*+ JOIN_ORDER(b, c_inner, c_inner_inner, d, c) */ d.c
 FROM d JOIN c
@@ -1225,7 +1223,7 @@ EXPLAIN FORMAT=TREE SELECT /*+ JOIN_ORDER(t3,t1) */ *
 FROM
 t1 WHERE 3 IN (SELECT t3.col_int_nokey FROM t1 AS t3);
 EXPLAIN
--> Inner hash join (no condition)  (cost=0.7 rows=1)
+-> Inner hash join (FirstMatch)  (cost=0.7 rows=1)
     -> Table scan on t1  (cost=0.35 rows=1)
     -> Hash
         -> Limit: 1 row(s)  (cost=0.35 rows=1)
@@ -1377,19 +1375,19 @@ JOIN t2 ON t1.pk = t2.pk
 JOIN t3 ON t2.pk = t3.pk
 WHERE (t1.col_int + t2.pk) IN ( SELECT col_int FROM t4 );
 EXPLAIN
--> Nested loop inner join  (cost=5.51 rows=3)
-    -> Inner hash join (t1.pk = t3.pk), ((t1.col_int + t1.pk) = `<subquery2>`.col_int)  (cost=4.96 rows=3)
-        -> Table scan on t1  (cost=0.117 rows=4)
+-> Nested loop inner join  (rows=3)
+    -> Inner hash join (t1.pk = t3.pk), ((t1.col_int + t1.pk) = `<subquery2>`.col_int)  (rows=3)
+        -> Table scan on t1  (rows=4)
         -> Hash
-            -> Inner hash join (no condition)  (cost=3.51 rows=3)
-                -> Filter: (t3.pk is not null)  (cost=0.55 rows=3)
-                    -> Table scan on t3  (cost=0.55 rows=3)
+            -> Inner hash join (no condition)  (rows=3)
+                -> Filter: (t3.pk is not null)  (rows=3)
+                    -> Table scan on t3  (rows=3)
                 -> Hash
-                    -> Table scan on <subquery2>  (cost=2.96..2.96 rows=1)
-                        -> Materialize with deduplication  (cost=0.45..0.45 rows=1)
-                            -> Filter: (t4.col_int is not null)  (cost=0.35 rows=1)
-                                -> Table scan on t4  (cost=0.35 rows=1)
-    -> Single-row covering index lookup on t2 using pk (pk=t3.pk)  (cost=0.117 rows=1)
+                    -> Table scan on <subquery2>  (rows=1)
+                        -> Materialize with deduplication  (rows=1)
+                            -> Filter: (t4.col_int is not null)  (rows=1)
+                                -> Table scan on t4  (rows=1)
+    -> Single-row covering index lookup on t2 using pk (pk = t3.pk)  (rows=1)
 
 DROP TABLE t1, t2, t3, t4;
 CREATE TABLE t1 (
@@ -1428,7 +1426,7 @@ EXPLAIN
                     -> Filter: ((t3.col2 between 2 and 9) and (t3.col1 is not null))  (cost=0.35 rows=1)
                         -> Table scan on t3  (cost=0.35 rows=1)
                     -> Filter: (t2.col2 = t3.col2)  (cost=0.35 rows=1)
-                        -> Single-row index lookup on t2 using ix1 (col1=t3.col1)  (cost=0.35 rows=1)
+                        -> Single-row index lookup on t2 using ix1 (col1 = t3.col1)  (cost=0.35 rows=1)
 
 Warnings:
 Note	1276	Field or reference 'test.t1.col1' of SELECT #2 was resolved in SELECT #1
@@ -1463,14 +1461,14 @@ EXPLAIN
         -> Filter: (t1.col_int_key is not null)  (rows=1)
             -> Table scan on t1  (rows=1)
         -> Filter: <in_optimizer>((t3.pk + 6),(t3.pk + 6) in (select #2) is false)  (rows=1)
-            -> Single-row covering index lookup on t3 using PRIMARY (pk=t1.col_int_key)  (rows=1)
+            -> Single-row covering index lookup on t3 using PRIMARY (pk = t1.col_int_key)  (rows=1)
             -> Select #2 (subquery in condition; run only once)
                 -> Filter: (((t3.pk + 6) = `<materialized_subquery>`.field4))  (rows=1)
                     -> Limit: 1 row(s)  (rows=1)
-                        -> Index lookup on <materialized_subquery> using <auto_distinct_key> (field4=(t3.pk + 6))
+                        -> Index lookup on <materialized_subquery> using <auto_distinct_key> (field4 = (t3.pk + 6))
                             -> Materialize with deduplication  (rows=16)
                                 -> Covering index scan on table1s using col_int_unique  (rows=16)
-    -> Index lookup on t2 using col_int_key (col_int_key=t1.col_int_key)  (rows=1.14)
+    -> Index lookup on t2 using col_int_key (col_int_key = t1.col_int_key)  (rows=1.14)
 
 SELECT *
 FROM t1
@@ -1828,7 +1826,7 @@ c2
 explain format=tree SELECT a.c2 FROM  t1 AS a WHERE
 EXISTS (SELECT 1 FROM  t1 AS b WHERE b.c2 = a.c2 LIMIT 0,1);
 EXPLAIN
--> Hash semijoin (b.c2 = a.c2)  (cost=0.825 rows=2)
+-> Hash semijoin (FirstMatch) (b.c2 = a.c2)  (cost=0.825 rows=2)
     -> Table scan on a  (cost=0.45 rows=2)
     -> Hash
         -> Table scan on b  (cost=0.175 rows=2)
@@ -2239,7 +2237,7 @@ EXPLAIN
     -> Select #2 (subquery in condition; run only once)
         -> Filter: ((t1.a = `<materialized_subquery>`.`COUNT(*)`))  (rows=1)
             -> Limit: 1 row(s)  (rows=1)
-                -> Index lookup on <materialized_subquery> using <auto_distinct_key> (COUNT(*)=t1.a)
+                -> Index lookup on <materialized_subquery> using <auto_distinct_key> (COUNT(*) = t1.a)
                     -> Materialize with deduplication  (rows=1)
                         -> Aggregate: count(0)  (rows=1)
                             -> Remove duplicate (t2, t3) rows using temporary table (weedout)  (rows=1)
@@ -2249,7 +2247,7 @@ EXPLAIN
                                     -> Nested loop inner join  (rows=1)
                                         -> Nested loop inner join  (rows=1)
                                             -> Table scan on t2_a  (rows=1)
-                                            -> Covering index lookup on t3 using a (a=t2_a.a)  (rows=1)
+                                            -> Covering index lookup on t3 using a (a = t2_a.a)  (rows=1)
                                         -> Table scan on t2_b  (rows=1)
 
 DROP TABLE t1, t2, t3;
@@ -2360,14 +2358,14 @@ EXPLAIN
     -> Select #2 (subquery in condition; run only once)
         -> Filter: ((x0.c = `<materialized_subquery>`.`MAX(x2.c)`))  (rows=1)
             -> Limit: 1 row(s)  (rows=1)
-                -> Index lookup on <materialized_subquery> using <auto_distinct_key> (MAX(x2.c)=x0.c)
+                -> Index lookup on <materialized_subquery> using <auto_distinct_key> (MAX(x2.c) = x0.c)
                     -> Materialize with deduplication  (rows=1)
                         -> Aggregate: max(x2.c)  (rows=1)
                             -> Batched key access inner join
                                 -> Batch input rows
                                     -> Filter: (x1.b is not null)  (rows=100)
                                         -> Table scan on x1  (rows=100)
-                                -> Multi-range index lookup on x2 using a (a=x1.b)  (rows=1)
+                                -> Multi-range index lookup on x2 using a (a = x1.b)  (rows=1)
 
 DROP TABLE num, t1;
 SET @@optimizer_switch=@old_opt_switch;
@@ -2401,3 +2399,63 @@ x
 1
 NULL
 DROP TABLE t;
+# Bug#36262779: MySQL fails to execute query if a subquery refer to
+#               a column of parent table
+CREATE TABLE t1 (
+a int DEFAULT NULL,
+b int DEFAULT NULL
+);
+CREATE TABLE t2 (
+id int DEFAULT NULL
+);
+CREATE TABLE t3 (
+a int DEFAULT NULL
+);
+EXPLAIN SELECT ref_0.b AS c0
+from t1 AS ref_0
+WHERE EXISTS (SELECT ref_0.b AS c10
+FROM (SELECT (SELECT ref_2.a AS c0
+FROM (SELECT ref_4.id AS c0, ref_0.a AS c1
+FROM t2 AS ref_4
+) AS subq_0
+) AS c0,
+ref_0.a AS c2
+FROM t3 AS ref_2
+) AS subq_1
+);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	PRIMARY	ref_0	NULL	ALL	NULL	NULL	NULL	NULL	1	100.00	Rematerialize (<derived3>)
+1	PRIMARY	<derived3>	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	FirstMatch(ref_0)
+3	DEPENDENT DERIVED	ref_2	NULL	ALL	NULL	NULL	NULL	NULL	1	100.00	NULL
+4	DEPENDENT SUBQUERY	ref_4	NULL	ALL	NULL	NULL	NULL	NULL	1	100.00	NULL
+Warnings:
+Note	1276	Field or reference 'test.ref_0.a' of SELECT #5 was resolved in SELECT #1
+Note	1276	Field or reference 'test.ref_2.a' of SELECT #4 was resolved in SELECT #3
+Note	1276	Field or reference 'test.ref_0.a' of SELECT #3 was resolved in SELECT #1
+Note	1276	Field or reference 'test.ref_0.b' of SELECT #2 was resolved in SELECT #1
+Note	1003	/* select#1 */ select `test`.`ref_0`.`b` AS `c0` from `test`.`t1` `ref_0` semi join (lateral (/* select#3 */ select (/* select#4 */ select `test`.`ref_2`.`a` AS `c0` from `test`.`t2` `ref_4`) AS `c0`,`test`.`ref_0`.`a` AS `c2` from `test`.`t3` `ref_2`) `subq_1`) where true
+SELECT ref_0.b AS c0
+from t1 AS ref_0
+WHERE EXISTS (SELECT ref_0.b AS c10
+FROM (SELECT (SELECT ref_2.a AS c0
+FROM (SELECT ref_4.id AS c0, ref_0.a AS c1
+FROM t2 AS ref_4
+) AS subq_0
+) AS c0,
+ref_0.a AS c2
+FROM t3 AS ref_2
+) AS subq_1
+);
+c0
+DROP TABLE t1, t2, t3;
+#
+# Bug#35877063: Subquery refcount assertion error
+#
+SELECT 1 AS col
+FROM (SELECT 1) AS y(y) JOIN (SELECT 1) AS z(z)
+ON (SELECT 1
+FROM (SELECT 1) AS x(x)
+HAVING 1 IN (SELECT min(x.x) FROM (SELECT 1) AS w(w))
+)
+WHERE 1 = 2;
+col

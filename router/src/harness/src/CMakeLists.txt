@@ -26,53 +26,198 @@ INCLUDE(Plugin)
 
 
 # Generate dynamic_state_schema.cc and configuration_update_schema.cc
-# With *one* common custom command, generating dynamic_state_schema.[cc|h]
-# we had spurious build failures on Windows:
-# CustomBuild: Failed to open output file 'dynamic_state_schema.cc':
-# Permission denied
-# Seems like Visual Studio wants to generate dynamic_state_schema.cc
-# at least twice, once for the static library, once for the dynamic one.
-# If both generation jobs run simultaneously, one of them may fail.
-# The solution is to have separate commands, for the STATIC and SHARED targets.
-FUNCTION(ADD_SCHEMA_COMMAND SHARED_OR_STATIC SCHEMA_NAME CLASS_NAME)
-  SET(SUBDIR src_${SHARED_OR_STATIC})
-  SET(GENERATED_SOURCES_${SHARED_OR_STATIC}
-    ${CMAKE_CURRENT_BINARY_DIR}/${SUBDIR}/${SCHEMA_NAME}.cc
-    ${CMAKE_CURRENT_BINARY_DIR}/${SUBDIR}/${SCHEMA_NAME}.h
+FUNCTION(ADD_SCHEMA_COMMAND SCHEMA_NAME CLASS_NAME)
+  SET(GENERATED_SOURCES
+    ${CMAKE_CURRENT_BINARY_DIR}/${SCHEMA_NAME}.cc
+    ${CMAKE_CURRENT_BINARY_DIR}/${SCHEMA_NAME}.h
     )
-  SET(GENERATED_SOURCES_${SHARED_OR_STATIC}
-    ${GENERATED_SOURCES_${SHARED_OR_STATIC}} PARENT_SCOPE)
-  SET_SOURCE_FILES_PROPERTIES(${GENERATED_SOURCES_${SHARED_OR_STATIC}}
+  SET(GENERATED_SOURCES
+    ${GENERATED_SOURCES} PARENT_SCOPE)
+  SET_SOURCE_FILES_PROPERTIES(${GENERATED_SOURCES}
     PROPERTIES GENERATED TRUE)
-  FILE(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${SUBDIR})
 
   ADD_CUSTOM_COMMAND(
-    OUTPUT ${GENERATED_SOURCES_${SHARED_OR_STATIC}}
+    OUTPUT ${GENERATED_SOURCES}
     COMMAND json_schema_embedder
     ${CMAKE_CURRENT_SOURCE_DIR}/${SCHEMA_NAME}.json
     ${SCHEMA_NAME}.cc
     ${SCHEMA_NAME}.h
     ${CLASS_NAME}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${SUBDIR}
-    COMMENT "Generating sources for ${SHARED_OR_STATIC} harness library"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    COMMENT "Generating sources for harness library"
     DEPENDS ${SCHEMA_NAME}.json
     )
 
-  ADD_CUSTOM_TARGET(json_schema_target_${SCHEMA_NAME}_${SHARED_OR_STATIC}
-    DEPENDS ${GENERATED_SOURCES_${SHARED_OR_STATIC}}
+  ADD_CUSTOM_TARGET(json_schema_target_${SCHEMA_NAME}
+    DEPENDS ${GENERATED_SOURCES}
     )
   ADD_DEPENDENCIES(clang_tidy_prerequisites
-    json_schema_target_${SCHEMA_NAME}_${SHARED_OR_STATIC}
+    json_schema_target_${SCHEMA_NAME}
     )
 ENDFUNCTION(ADD_SCHEMA_COMMAND)
 
-ADD_SCHEMA_COMMAND(SHARED dynamic_state_schema StateFileJsonSchema)
-ADD_SCHEMA_COMMAND(STATIC dynamic_state_schema StateFileJsonSchema)
+ADD_SCHEMA_COMMAND(dynamic_state_schema StateFileJsonSchema)
 
-ADD_SCHEMA_COMMAND(SHARED configuration_update_schema
-                   ConfigurationUpdateJsonSchema)
-ADD_SCHEMA_COMMAND(STATIC configuration_update_schema
-                   ConfigurationUpdateJsonSchema)
+ADD_SCHEMA_COMMAND(
+  configuration_update_schema
+  ConfigurationUpdateJsonSchema
+)
+
+SET(ROUTER_MYSQLCLIENT_EXPORTS)
+LIST(APPEND ROUTER_MYSQLCLIENT_EXPORTS
+  ${CLIENT_API_FUNCTIONS}
+  ${CLIENT_API_NONBLOCKING_FUNCTIONS}
+)
+
+# mysqlclient symbols
+IF(WIN32)
+  LIST(APPEND ROUTER_MYSQLCLIENT_EXPORTS
+    ?client_errors@@3PAPEBDA
+  )
+ENDIF()
+
+# vio (for mysqlxclient)
+IF(MSVC)
+  LIST(APPEND ROUTER_MYSQLCLIENT_EXPORTS
+    vio_new
+    vio_fd
+    vio_timeout
+    vio_socket_connect
+    new_VioSSLConnectorFd
+    process_tls_version
+    sslconnect
+    free_vio_ssl_acceptor_fd
+    sslGetErrString
+  )
+ENDIF()
+
+IF(WIN32_CLANG)
+  LIST(APPEND ROUTER_MYSQLCLIENT_EXPORTS
+    ?psi_socket_service@@3PEAUPSI_socket_service_v1@@EA
+  )
+ELSE()
+  LIST(APPEND ROUTER_MYSQLCLIENT_EXPORTS
+    psi_socket_service
+  )
+ENDIF()
+
+
+# dbug.c is part of mysys, export it for mysqlxclient
+# if mysys doesn't have dbug.c (-DNDEBUG) then
+# router_mysqlclient_shim will provide it.
+IF(MSVC)
+  LIST(APPEND ROUTER_MYSQLCLIENT_EXPORTS
+    _db_doprnt_
+    _db_dump_
+    _db_enabled_
+    _db_enter_
+    _db_keyword_
+    _db_pargs_
+    _db_return_
+    _db_set_
+  )
+ENDIF()
+
+# for harness
+IF(MSVC)
+  LIST(APPEND ROUTER_MYSQLCLIENT_EXPORTS
+    my_print_stacktrace
+    my_write_core
+    my_thread_self_setname
+
+    build_version
+  )
+ELSE()
+  LIST(APPEND ROUTER_MYSQLCLIENT_EXPORTS
+    build_version
+  )
+ENDIF()
+
+IF(WIN32)
+  # only used my my_write_core on windows
+  LIST(APPEND ROUTER_MYSQLCLIENT_EXPORTS
+    my_set_exception_pointers
+  )
+ENDIF()
+
+IF(MSVC)
+  LIST(APPEND ROUTER_MYSQLCLIENT_EXPORTS
+    ?s_dummy_target@MEM_ROOT@@0DA
+    ?AllocSlow@MEM_ROOT@@AEAAPEAX_K@Z
+    ?Clear@MEM_ROOT@@QEAAXXZ
+    my_safe_printf_stderr
+  )
+ELSE()
+  LIST(APPEND ROUTER_MYSQLCLIENT_EXPORTS
+    _Z21my_safe_printf_stderrPKcz
+  )
+ENDIF()
+
+# charset stuff for SqlLexer.cc
+IF(WIN32)
+  LIST(APPEND ROUTER_MYSQLCLIENT_EXPORTS
+    my_fcvt
+    my_gcvt
+
+    get_collation_number
+    get_charset_by_csname
+    get_charset_by_name
+    get_charset
+    strmake_root
+    my_init
+    my_free
+
+    set_fips_mode
+  )
+ENDIF()
+
+ADD_CONVENIENCE_LIBRARY(
+  router_mysqlclient_shim
+
+  router_mysqlclient_exports.cc
+)
+
+# remove the libraries that need to be merged
+# into the 'router_mysqlclient' from the shared libmysql(client)
+GET_TARGET_PROPERTY(ROUTER_MYSQLCLIENT_LINK_LIBS
+  libmysql LINK_LIBRARIES)
+LIST(REMOVE_ITEM ROUTER_MYSQLCLIENT_LINK_LIBS
+  mysys
+  clientlib
+  mytime
+  strings
+  vio
+)
+
+IF(WIN32)
+  SET(ROUTER_MYSQLCLIENT_INSTALL_DIR ${ROUTER_INSTALL_BINDIR})
+ELSE()
+  SET(ROUTER_MYSQLCLIENT_INSTALL_DIR ${ROUTER_INSTALL_LIBDIR})
+ENDIF()
+
+MERGE_LIBRARIES_SHARED(router_mysqlclient
+  # mytime
+  clientlib
+  # strings
+  vio
+  mysys
+  router_mysqlclient_shim
+
+  COMPONENT Router
+
+  EXPORTS "${ROUTER_MYSQLCLIENT_EXPORTS}"
+
+  NAMELINK_SKIP
+  SOVERSION 1
+
+  OUTPUT_NAME "mysqlrouter_mysqlclient"
+
+  LINK_LIBRARIES
+  ${ROUTER_MYSQLCLIENT_LINK_LIBS}
+  ${LIBRT}
+
+  DESTINATION ${ROUTER_MYSQLCLIENT_INSTALL_DIR}
+)
 
 SET(harness_source
   access_rights.cc
@@ -168,34 +313,26 @@ SET(MYSQL_HARNESS_ARCH_RUNTIME "*")
 CONFIGURE_FILE(plugin.h.in ${MySQLRouter_BINARY_DIR}/${INSTALL_INCLUDE_DIR}/plugin.h
   ESCAPE_QUOTES @ONLY)
 
-# create harness library - static version
-ADD_LIBRARY(harness-archive STATIC
-  ${harness_source} ${GENERATED_SOURCES_STATIC})
-ADD_DEPENDENCIES(harness-archive json_schema_target_dynamic_state_schema_STATIC)
-ADD_DEPENDENCIES(harness-archive json_schema_target_configuration_update_schema_STATIC)
-ADD_DEPENDENCIES(mysqlrouter_all harness-archive)
-
-TARGET_LINK_LIBRARIES(harness-archive {common_libraries} extra::rapidjson)
-TARGET_INCLUDE_DIRECTORIES(harness-archive PUBLIC
-  ../include ${CMAKE_CURRENT_BINARY_DIR}/src_STATIC)
-IF(WIN32)
-  SET_TARGET_PROPERTIES(harness-archive PROPERTIES
-    COMPILE_FLAGS -DHARNESS_STATIC_DEFINE)
-ENDIF()
-
 # create harness library - dynamic version
-ADD_LIBRARY(harness-library SHARED
-  ${harness_source} ${GENERATED_SOURCES_SHARED})
-ADD_DEPENDENCIES(harness-library json_schema_target_dynamic_state_schema_SHARED)
-ADD_DEPENDENCIES(harness-library 
-  json_schema_target_configuration_update_schema_SHARED)
-ADD_DEPENDENCIES(mysqlrouter_all harness-library)
+ROUTER_ADD_SHARED_LIBRARY(harness-library
+  ${harness_source} ${GENERATED_SOURCES}
+  DEPENDENCIES
+  json_schema_target_dynamic_state_schema
+  json_schema_target_configuration_update_schema
 
-# mysys is need for my_print_stacktrace
-TARGET_LINK_LIBRARIES(harness-library
-  ${common_libraries} mysys extra::rapidjson)
+  NO_EXPORT_HEADER  # custom include-path
+
+  OUTPUT_NAME "mysqlharness"
+
+  LINK_LIBRARIES
+  ${common_libraries}
+  router_mysqlclient
+  extra::rapidjson
+  )
+
 TARGET_INCLUDE_DIRECTORIES(harness-library PUBLIC
-  ../include ${CMAKE_CURRENT_BINARY_DIR}/src_SHARED)
+  ../include
+  ${CMAKE_CURRENT_BINARY_DIR})
 
 generate_export_header(harness-library
   BASE_NAME HARNESS
@@ -203,53 +340,17 @@ generate_export_header(harness-library
 
 IF(SOLARIS)
   TARGET_LINK_LIBRARIES(harness-library -lnsl -lsocket)
-  TARGET_LINK_LIBRARIES(harness-archive -lnsl -lsocket)
 ENDIF()
 
-IF(WIN32)
-  SET_TARGET_PROPERTIES(harness-archive PROPERTIES
-    OUTPUT_NAME "mysqlharness_a"
-    PREFIX "lib"
-    SOVERSION 1)
-ELSE()
-  SET_TARGET_PROPERTIES(harness-archive harness-library PROPERTIES
-    OUTPUT_NAME "mysqlharness"
-    PREFIX "lib"
-    SOVERSION 1)
-ENDIF()
-
-SET_TARGET_PROPERTIES(harness-library PROPERTIES
-  LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/library_output_directory
-  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/library_output_directory)
-
-IF(WIN32)
-  ADD_CUSTOM_COMMAND(TARGET harness-library POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    "${CMAKE_BINARY_DIR}/library_output_directory/${CMAKE_CFG_INTDIR}/harness-library.dll"
-    "${CMAKE_BINARY_DIR}/runtime_output_directory/${CMAKE_CFG_INTDIR}/harness-library.dll"
-   )
-ENDIF()
-
-ADD_INSTALL_RPATH_FOR_OPENSSL(harness-library)
-SET_PATH_TO_CUSTOM_SSL_FOR_APPLE(harness-library)
-
-IF(WIN32)
-  INSTALL(TARGETS harness-library
-    RUNTIME DESTINATION "${ROUTER_INSTALL_BINDIR}"
-    COMPONENT Router)
-ELSE()
-  INSTALL(TARGETS harness-library
-    LIBRARY
-    DESTINATION ${ROUTER_INSTALL_LIBDIR} COMPONENT Router
-    NAMELINK_SKIP
-    )
-ENDIF()
-
-ADD_LIBRARY(harness_stdx SHARED
+ROUTER_ADD_SHARED_LIBRARY(harness_stdx
   stdx/filesystem.cc
   stdx/io/file_handle.cc
+
+  NO_EXPORT_HEADER
+
+  OUTPUT_NAME "mysqlharness_stdx"
 )
-ADD_DEPENDENCIES(mysqlrouter_all harness_stdx)
+
 TARGET_SOURCES(harness_stdx
   INTERFACE
   ${CMAKE_CURRENT_SOURCE_DIR}/../include/mysql/harness/stdx/bit.h
@@ -264,35 +365,24 @@ TARGET_INCLUDE_DIRECTORIES(harness_stdx
 GENERATE_EXPORT_HEADER(harness_stdx
   EXPORT_FILE_NAME ${CMAKE_CURRENT_BINARY_DIR}/../include/mysql/harness/stdx_export.h)
 
-SET_TARGET_PROPERTIES(harness_stdx PROPERTIES
-  OUTPUT_NAME "mysqlharness_stdx"
-  SOVERSION 1
-  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/runtime_output_directory
-  LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/library_output_directory)
-INSTALL(TARGETS harness_stdx
-  RUNTIME DESTINATION ${ROUTER_INSTALL_BINDIR} COMPONENT Router
-  ARCHIVE DESTINATION ${ROUTER_INSTALL_LIBDIR} COMPONENT Router
-  LIBRARY DESTINATION ${ROUTER_INSTALL_LIBDIR} COMPONENT Router
-  NAMELINK_SKIP
-  )
-
 ## harness_tls
 
-ADD_LIBRARY(harness_tls SHARED
+ROUTER_ADD_SHARED_LIBRARY(harness_tls
   tls_client_context.cc
   tls_context.cc
   tls_error.cc
   tls_server_context.cc
+
+  NO_EXPORT_HEADER  # custom include-path
+  OUTPUT_NAME "mysqlharness_tls"
+
+  LINK_LIBRARIES
+  PUBLIC OpenSSL::SSL OpenSSL::Crypto
   )
-ADD_DEPENDENCIES(mysqlrouter_all harness_tls)
 
 IF(TARGET copy_openssl_dlls)
   ADD_DEPENDENCIES(harness_tls copy_openssl_dlls)
 ENDIF()
-
-## the rpath for the bundled openssl
-ADD_INSTALL_RPATH_FOR_OPENSSL(harness_tls)
-SET_PATH_TO_CUSTOM_SSL_FOR_APPLE(harness_tls)
 
 GENERATE_EXPORT_HEADER(harness_tls
   EXPORT_FILE_NAME ${CMAKE_CURRENT_BINARY_DIR}/../include/mysql/harness/tls_export.h)
@@ -301,19 +391,4 @@ TARGET_INCLUDE_DIRECTORIES(harness_tls
   PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/../include/
   ${CMAKE_CURRENT_BINARY_DIR}/../include/
-  )
-TARGET_LINK_LIBRARIES(harness_tls
-  PUBLIC OpenSSL::SSL OpenSSL::Crypto
-  )
-SET_TARGET_PROPERTIES(harness_tls PROPERTIES
-  OUTPUT_NAME "mysqlharness_tls"
-  SOVERSION 1
-  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/runtime_output_directory
-  LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/library_output_directory
-  )
-INSTALL(TARGETS harness_tls
-  RUNTIME DESTINATION ${ROUTER_INSTALL_BINDIR} COMPONENT Router
-  ARCHIVE DESTINATION ${ROUTER_INSTALL_LIBDIR} COMPONENT Router
-  LIBRARY DESTINATION ${ROUTER_INSTALL_LIBDIR} COMPONENT Router
-  NAMELINK_SKIP
   )

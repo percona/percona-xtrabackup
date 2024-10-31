@@ -37,12 +37,6 @@ Section: debug
 Depends: mysql-${DEB_PRODUCTNAME}-management-server (=\${binary:Version}), \${misc:Depends}
 Description: Debugging symbols for management server
 
-Package: mysql-${DEB_PRODUCTNAME}-nodejs-dbgsym
-Architecture: any
-Section: debug
-Depends: mysql-${DEB_PRODUCTNAME}-nodejs (=\${binary:Version}), \${misc:Depends}
-Description: Debugging symbols for nodejs
-
 Package: ndbclient-dbgsym
 Architecture: any
 Section: debug
@@ -53,7 +47,6 @@ SET (DEB_NDB_RULES_STRIP
 "
 	dh_strip -pmysql-${DEB_PRODUCTNAME}-data-node --dbg-package=mysql-${DEB_PRODUCTNAME}-data-node-dbgsym
 	dh_strip -pmysql-${DEB_PRODUCTNAME}-management-server --dbg-package=mysql-${DEB_PRODUCTNAME}-management-server-dbgsym
-	dh_strip -pmysql-${DEB_PRODUCTNAME}-nodejs --dbg-package=mysql-${DEB_PRODUCTNAME}-nodejs-dbgsym
 	dh_strip -pndbclient --dbg-package=ndbclient-dbgsym
 ")
 SET(DEB_NDB_CONTROL_EXTRAS
@@ -95,24 +88,12 @@ Architecture: any
 Depends: \${shlibs:Depends}, \${misc:Depends}
 Description: Java connector
  This package contains MySQL Cluster Connector for Java, which includes
- ClusterJ and ClusterJPA, a plugin for use with OpenJPA.
+ ClusterJ.
  .
  ClusterJ is a high level database API that is similar in style and
  concept to object-relational mapping persistence frameworks such as
  Hibernate and JPA.
- .
- ClusterJPA is an OpenJPA implementation for MySQL Cluster that
- attempts to offer the best possible performance by leveraging the
- strengths of both ClusterJ and JDBC
 
-Package: mysql-${DEB_PRODUCTNAME}-nodejs
-Architecture: any
-Depends: \${shlibs:Depends}, \${misc:Depends}
-Description: nodejs
- This package contains MySQL NoSQL Connector for JavaScript, a set of
- Node.js adapters for MySQL Cluster and MySQL Server, which make it
- possible to write JavaScript applications for Node.js using MySQL
- data.
 ")
 
   SET (DEB_NDB_CLIENT_EXTRA
@@ -171,6 +152,7 @@ Description: nodejs
 /usr/share/man/man1/ndb_select_all.1*
 /usr/share/man/man1/ndb_select_count.1*
 /usr/share/man/man1/ndb_show_tables.1*
+/usr/share/man/man1/ndb_sign_keys.1*
 /usr/share/man/man1/ndb_size.pl.1*
 /usr/share/man/man1/ndb_top.1*
 /usr/share/man/man1/ndb_waiter.1*

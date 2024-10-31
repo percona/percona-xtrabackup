@@ -52,7 +52,7 @@
 #include <signaldata/TcKeyConf.hpp>
 #include <signaldata/TcKeyReq.hpp>
 #include <signaldata/WaitGCP.hpp>
-#include "config.h"  // WORDS_BIGENDIAN
+#include "my_config.h"  // WORDS_BIGENDIAN
 
 #include <signaldata/FsRemoveReq.hpp>
 #include <signaldata/ReadConfig.hpp>
@@ -91,12 +91,12 @@
 #define JAM_FILE_ID 458
 
 #if (defined(VM_TRACE) || defined(ERROR_INSERT))
-//#define DEBUG_NODE_STOP 1
-//#define DEBUG_LOCAL_SYSFILE 1
-//#define DEBUG_UNDO 1
-//#define DEBUG_REDO_CONTROL 1
-//#define DEBUG_NODE_GROUP_START 1
-//#define DEBUG_LCP 1
+// #define DEBUG_NODE_STOP 1
+// #define DEBUG_LOCAL_SYSFILE 1
+// #define DEBUG_UNDO 1
+// #define DEBUG_REDO_CONTROL 1
+// #define DEBUG_NODE_GROUP_START 1
+// #define DEBUG_LCP 1
 #endif
 
 #ifdef DEBUG_NODE_GROUP_START
@@ -3099,7 +3099,7 @@ void Ndbcntr::ph5ALab(Signal *signal) {
       req->masterNodeId = cmasterNodeId;
 
       g_eventLogger->info("Start NDB start phase 5 (only to DBDIH)");
-      //#define TRACE_STTOR
+      // #define TRACE_STTOR
 #ifdef TRACE_STTOR
       g_eventLogger->info("sending NDB_STTOR(%d) to DIH", cinternalStartphase);
 #endif
@@ -4108,7 +4108,7 @@ void Ndbcntr::sendNdbSttor(Signal *signal) {
     req->config[i] = 0x88776655;
   }
 
-  //#define MAX_STARTPHASE 2
+  // #define MAX_STARTPHASE 2
 #ifdef TRACE_STTOR
   g_eventLogger->info("sending NDB_STTOR(%d) to %s", cinternalStartphase,
                       getBlockName(refToBlock(ndbBlocksPtr.p->blockref)));
@@ -4946,21 +4946,21 @@ void Ndbcntr::clearFilesystem(Signal *signal) {
   const Uint32 DD = CLEAR_DX + CLEAR_LCP + CLEAR_DD;
 
   if (c_fsRemoveCount < DX) {
-    FsOpenReq::setVersion(req->fileNumber, 3);
+    FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_DISK);
     FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_CTL);  // Can by any...
     FsOpenReq::v1_setDisk(req->fileNumber, c_fsRemoveCount);
   } else if (c_fsRemoveCount < LCP) {
-    FsOpenReq::setVersion(req->fileNumber, 5);
+    FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_LCP);
     FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_DATA);
     FsOpenReq::v5_setLcpNo(req->fileNumber, c_fsRemoveCount - CLEAR_DX);
     FsOpenReq::v5_setTableId(req->fileNumber, 0);
     FsOpenReq::v5_setFragmentId(req->fileNumber, 0);
   } else if (c_fsRemoveCount < DD) {
     req->ownDirectory = 0;
-    FsOpenReq::setVersion(req->fileNumber, 6);
+    FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_BASEPATH);
     FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_DATA);
-    FsOpenReq::v5_setLcpNo(req->fileNumber,
-                           FsOpenReq::BP_DD_DF + c_fsRemoveCount - LCP);
+    FsOpenReq::v6_setBasePath(req->fileNumber,
+                              FsOpenReq::BP_DD_DF + c_fsRemoveCount - LCP);
   } else {
     ndbabort();
   }
@@ -5618,7 +5618,7 @@ void Ndbcntr::open_secretsfile(Signal *signal, Uint32 secretsfile_num,
   req->userReference = reference();
   req->userPointer = SecretsFileOperationRecord::FILE_ID;
 
-  FsOpenReq::setVersion(req->fileNumber, 1);
+  FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_BLOCK);
   FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_SYSFILE);
   FsOpenReq::v1_setDisk(req->fileNumber, 1);
   FsOpenReq::v1_setTable(req->fileNumber, -1);
@@ -5661,7 +5661,7 @@ void Ndbcntr::open_secretsfile(Signal *signal, Uint32 secretsfile_num,
   req->fileFlags |= FsOpenReq::OM_ENCRYPT_PASSWORD;
 
   LinearSectionPtr lsptr[3];
-  ndbrequire(FsOpenReq::getVersion(req->fileNumber) != 4);
+  ndbrequire(FsOpenReq::getVersion(req->fileNumber) != FsOpenReq::V_FILENAME);
   lsptr[FsOpenReq::FILENAME].p = nullptr;
   lsptr[FsOpenReq::FILENAME].sz = 0;
 

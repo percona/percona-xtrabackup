@@ -321,6 +321,13 @@ class Master_info : public Rpl_info {
 
   ulonglong last_heartbeat;
 
+  /// The decompressed size of the transaction that is currently in progress of
+  /// being queued, if any. This is private to the reciever.
+  int64_t m_queueing_transaction_size{0};
+  /// The size of the gtid event for the  transaction that is currently in
+  /// progress of being queued. This is private to the receiver.
+  int64_t m_queueing_transaction_gtid_event_size{0};
+
   Server_ids *ignore_server_ids;
 
   ulong master_id;
@@ -388,11 +395,27 @@ class Master_info : public Rpl_info {
   }
 
   /**
-    When the receiver thread finishes queueing a transaction, that timestamp
-    is recorded and the information is copied to last_queued_trx and cleared
-    from queueing_trx.
+    Track statistics after the receiver has finished queueing a transaction.
+
+    In gtid_monitoring_info, the transaction timestamp is recorded and the
+    information is copied to last_queued_trx and cleared from queueing_trx.
+
+    In applier_metrics, the size/count of received transactions are incremented.
   */
-  void finished_queueing() { gtid_monitoring_info->finish(); }
+  void finished_queueing() {
+    gtid_monitoring_info->finish();
+
+    auto &applier_metrics = rli->get_applier_metrics();
+    // Transactions before the metrics breakpoint count their sizes at commit
+    // time. Transactions after the metrics breakpoint count their sizes here,
+    // at the time they are fully received. See
+    // Applier_metrics_interface::is_after_metrics_breakpoint for details.
+    if (rli->get_applier_metrics().is_after_metrics_breakpoint()) {
+      applier_metrics.inc_transactions_received_size_sum(
+          m_queueing_transaction_size);
+      applier_metrics.inc_transactions_received_count(1);
+    }
+  }
 
   /**
     @return True if there is a transaction currently being queued
@@ -451,7 +474,7 @@ class Master_info : public Rpl_info {
   bool is_rotate_requested();
 
  protected:
-  char master_log_name[FN_REFLEN];
+  char master_log_name[FN_REFLEN]{};
   my_off_t master_log_pos;
 
  public:
@@ -764,7 +787,7 @@ class Master_info : public Rpl_info {
     @param [out] linfo Where the relay log coordinates shall be stored.
   */
 
-  void get_flushed_relay_log_info(LOG_INFO *linfo);
+  void get_flushed_relay_log_info(Log_info *linfo);
 
   /**
     Marks the receiver position information (master_log_name, master_log_pos)
@@ -802,7 +825,7 @@ class Master_info : public Rpl_info {
     Holds the relay log coordinates (file name and position) of the last master
     coordinates flushed into Master_info repository.
   */
-  LOG_INFO flushed_relay_log_info;
+  Log_info flushed_relay_log_info;
 
   /**
     Is the replica working in GTID only mode, meaning it does not
@@ -827,6 +850,21 @@ class Master_info : public Rpl_info {
     Port of the server where master_uuid was last read.
   */
   uint m_uuid_from_port{0};
+
+ private:
+  /// Is the collection of metrics enabled?
+  bool m_is_metric_collection_enabled{false};
+
+ public:
+  /// @brief Enable or disable metric collection
+  /// @param value true to enable, false to disable
+  void set_applier_metric_collection_status(bool value) {
+    m_is_metric_collection_enabled = value;
+  }
+
+  /// @brief Returns if metric collection is enabled on this channel
+  /// @return True if yes, false if no
+  bool is_metric_collection_enabled() { return m_is_metric_collection_enabled; }
 };
 
 #endif /* RPL_MI_H */

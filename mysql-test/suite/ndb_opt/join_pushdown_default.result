@@ -1951,12 +1951,12 @@ group by t1.b
 order by t1.b, cnt;
 EXPLAIN
 -> Sort: t1.b, cnt
-    -> Stream results  (cost=4013 rows=4)
-        -> Group aggregate: count(distinct t2.b)  (cost=4013 rows=4)
+    -> Stream results  (cost=4015 rows=4)
+        -> Group aggregate: count(distinct t2.b)  (cost=4015 rows=4)
             -> Nested loop inner join  (cost=4011 rows=16)
                 -> Sort: t1.b  (cost=4002 rows=16)
                     -> Table scan on t1  (cost=4002 rows=16)
-                -> Index lookup on t2 using PRIMARY (a=t1.c)  (cost=0.506 rows=1)
+                -> Index lookup on t2 using PRIMARY (a = t1.c)  (cost=0.506 rows=1)
 
 Warnings:
 Note	1003	Can't push table 't2' as child of 't1', it is in a sorted-branch which can't be referred.
@@ -4217,7 +4217,7 @@ explain
 select * from t3 x, t3 y where x.a3=0x2f and y.a3=x.d3 and y.b3='Dole';
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	x	p0,p1,p2,p3,p4,p5,p6,p7	ref	PRIMARY	PRIMARY	4	const	3	100.00	Parent of 2 pushed join@1
-1	SIMPLE	y	p0,p1,p2,p3,p4,p5,p6,p7	eq_ref	PRIMARY	PRIMARY	22	test.x.d3,const	1	100.00	Child of 'x' in pushed join@1; Using where
+1	SIMPLE	y	p0,p1,p2,p3,p4,p5,p6,p7	eq_ref	PRIMARY	PRIMARY	22	test.x.d3,const	1	100.00	Child of 'x' in pushed join@1; Using pushed condition (`test`.`y`.`b3` = 'Dole')
 Warnings:
 Note	1003	/* select#1 */ select `test`.`x`.`a3` AS `a3`,`test`.`x`.`b3` AS `b3`,`test`.`x`.`c3` AS `c3`,`test`.`x`.`d3` AS `d3`,`test`.`y`.`a3` AS `a3`,`test`.`y`.`b3` AS `b3`,`test`.`y`.`c3` AS `c3`,`test`.`y`.`d3` AS `d3` from `test`.`t3` `x` join `test`.`t3` `y` where ((`test`.`y`.`b3` = 'Dole') and (`test`.`y`.`a3` = `test`.`x`.`d3`) and (`test`.`x`.`a3` = 0x2f))
 select * from t3 x, t3 y where x.a3=0x2f and y.a3=x.d3 and y.b3='Dole';
@@ -4726,7 +4726,7 @@ select count(*)
 from t1 join t1 as t2 on t2.a = t1.b
 where t1.a = '\0123456789';
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	p0,p1,p2,p3,p4,p5,p6,p7	eq_ref	PRIMARY	PRIMARY	10	const	1	100.00	Parent of 2 pushed join@1; Using where
+1	SIMPLE	t1	p0,p1,p2,p3,p4,p5,p6,p7	eq_ref	PRIMARY	PRIMARY	10	const	1	100.00	Parent of 2 pushed join@1; Using pushed condition (`test`.`t1`.`a` = '\0123456789')
 1	SIMPLE	t2	p0,p1,p2,p3,p4,p5,p6,p7	eq_ref	PRIMARY	PRIMARY	10	test.t1.b	1	100.00	Child of 't1' in pushed join@1
 Warnings:
 Note	1003	/* select#1 */ select count(0) AS `count(*)` from `test`.`t1` join `test`.`t1` `t2` where ((`test`.`t2`.`a` = `test`.`t1`.`b`) and (`test`.`t1`.`a` = '\0123456789'))
@@ -6180,11 +6180,11 @@ EXPLAIN
         -> Filter: ((x2.c is null) or (x4.d = x0.d))
             -> Nested loop left join
                 -> Nested loop inner join
-                    -> Index lookup on x1 using PRIMARY (a=x0.d)
+                    -> Index lookup on x1 using PRIMARY (a = x0.d)
                     -> Table scan on x2, activating pushed join of 3 tables
                 -> Nested loop inner join
-                    -> Index lookup on x3 using PRIMARY (a=x2.d), child of x2 in pushed join
-                    -> Index lookup on x4 using PRIMARY (a=x3.d), child of x3 in pushed join
+                    -> Index lookup on x3 using PRIMARY (a = x2.d), child of x2 in pushed join
+                    -> Index lookup on x4 using PRIMARY (a = x3.d), child of x3 in pushed join
 
 Warnings:
 Note	1003	Can't push outer joined table 'x1' as child of 'x0', join-nest containing the table has FILTER conditions
@@ -6328,11 +6328,11 @@ i int,
 name varchar(32),
 key (name)
 )
-default charset = utf8
+default charset = utf8mb3
 engine = ndb
 comment="NDB_TABLE=PARTITION_BALANCE=FOR_RP_BY_LDM";
 Warnings:
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 insert into t1 values (1, 1, 'Ole');
 insert into t1 values (2, 2, 'Dole');
 insert into t1 values (3, 3, 'Doffen');
@@ -6884,8 +6884,8 @@ EXPLAIN
             -> Table scan on <subquery2>
                 -> Materialize with deduplication
                     -> Table scan on t3
-            -> Index lookup on t1 using c (c=`<subquery2>`.c), activating pushed join of 2 tables
-        -> Index lookup on t2 using PRIMARY (a=t1.b), child of t1 in pushed join
+            -> Index lookup on t1 using c (c = `<subquery2>`.c), activating pushed join of 2 tables
+        -> Index lookup on t2 using PRIMARY (a = t1.b), child of t1 in pushed join
 
 Warnings:
 Note	1003	Can't push table 't1' as child of 't3', it is in a materialized-branch which can't be referred.
@@ -6907,8 +6907,8 @@ EXPLAIN
             -> Table scan on <subquery2>
                 -> Materialize with deduplication
                     -> Table scan on t3
-            -> Index lookup on t1 using c (c=`<subquery2>`.c), activating pushed join of 2 tables
-        -> Single-row index lookup on t2 using PRIMARY (a=t1.b, b=`<subquery2>`.c), child of t1 in pushed join
+            -> Index lookup on t1 using c (c = `<subquery2>`.c), activating pushed join of 2 tables
+        -> Single-row index lookup on t2 using PRIMARY (a = t1.b, b = `<subquery2>`.c), child of t1 in pushed join
 
 Warnings:
 Note	1003	Can't push table 't1' as child of 't3', it is in a materialized-branch which can't be referred.
@@ -6929,8 +6929,8 @@ EXPLAIN
             -> Table scan on <subquery3>
                 -> Materialize with deduplication
                     -> Table scan on t3
-            -> Index lookup on t1 using c (c=`<subquery3>`.c), activating pushed join of 2 tables
-        -> Single-row index lookup on t2 using PRIMARY (a=t1.b, b=`<subquery3>`.c), child of t1 in pushed join
+            -> Index lookup on t1 using c (c = `<subquery3>`.c), activating pushed join of 2 tables
+        -> Single-row index lookup on t2 using PRIMARY (a = t1.b, b = `<subquery3>`.c), child of t1 in pushed join
 
 Warnings:
 Note	1003	Can't push table 't1' as child of 't3', it is in a materialized-branch which can't be referred.
@@ -6952,10 +6952,10 @@ EXPLAIN
                 -> Table scan on <subquery3>
                     -> Materialize with deduplication
                         -> Table scan on t3
-                -> Index lookup on t1 using c (c=`<subquery3>`.c), activating pushed join of 2 tables
-            -> Single-row index lookup on t2 using PRIMARY (a=t1.b, b=`<subquery3>`.c), child of t1 in pushed join
+                -> Index lookup on t1 using c (c = `<subquery3>`.c), activating pushed join of 2 tables
+            -> Single-row index lookup on t2 using PRIMARY (a = t1.b, b = `<subquery3>`.c), child of t1 in pushed join
         -> Filter: (`<subquery4>`.c = `<subquery3>`.c)
-            -> Single-row index lookup on <subquery4> using <auto_distinct_key> (c=t1.c)
+            -> Single-row index lookup on <subquery4> using <auto_distinct_key> (c = t1.c)
                 -> Materialize with deduplication
                     -> Table scan on t4
 
@@ -6983,8 +6983,8 @@ EXPLAIN
                 -> Materialize with deduplication
                     -> Nested loop inner join
                         -> Table scan on t3s, activating pushed join of 2 tables
-                        -> Index lookup on t4s using PRIMARY (a=t3s.b), child of t3s in pushed join
-        -> Index lookup on t2 using c (c=`<subquery2>`.c)
+                        -> Index lookup on t4s using PRIMARY (a = t3s.b), child of t3s in pushed join
+        -> Index lookup on t2 using c (c = `<subquery2>`.c)
 
 Warnings:
 Note	1003	Can't push table 't3s' as child, 'type' must be a 'ref' access
@@ -7159,9 +7159,9 @@ EXPLAIN
                 -> Materialize with deduplication
                     -> Nested loop inner join
                         -> Table scan on t3s, activating pushed join of 2 tables
-                        -> Index lookup on t4s using PRIMARY (a=t3s.b), child of t3s in pushed join
-            -> Index lookup on t1 using c (c=`<subquery2>`.c), activating pushed join of 2 tables
-        -> Index lookup on t2 using PRIMARY (a=t1.b), child of t1 in pushed join
+                        -> Index lookup on t4s using PRIMARY (a = t3s.b), child of t3s in pushed join
+            -> Index lookup on t1 using c (c = `<subquery2>`.c), activating pushed join of 2 tables
+        -> Index lookup on t2 using PRIMARY (a = t1.b), child of t1 in pushed join
 
 Warnings:
 Note	1003	Can't push table 't1' as child of 't3s', it is in a materialized-branch which can't be referred.
@@ -7194,14 +7194,14 @@ EXPLAIN
                     -> Materialize with deduplication
                         -> Nested loop inner join
                             -> Table scan on t3s1, activating pushed join of 2 tables
-                            -> Index lookup on t4s1 using PRIMARY (a=t3s1.b), child of t3s1 in pushed join
-                -> Index lookup on t1 using c (c=`<subquery2>`.c), activating pushed join of 2 tables
-            -> Index lookup on t2 using PRIMARY (a=t1.b), child of t1 in pushed join
-        -> Single-row index lookup on <subquery3> using <auto_distinct_key> (c=t1.d)
+                            -> Index lookup on t4s1 using PRIMARY (a = t3s1.b), child of t3s1 in pushed join
+                -> Index lookup on t1 using c (c = `<subquery2>`.c), activating pushed join of 2 tables
+            -> Index lookup on t2 using PRIMARY (a = t1.b), child of t1 in pushed join
+        -> Single-row index lookup on <subquery3> using <auto_distinct_key> (c = t1.d)
             -> Materialize with deduplication
                 -> Nested loop inner join
                     -> Table scan on t3s2, activating pushed join of 2 tables
-                    -> Index lookup on t4s2 using PRIMARY (a=t3s2.b), child of t3s2 in pushed join
+                    -> Index lookup on t4s2 using PRIMARY (a = t3s2.b), child of t3s2 in pushed join
 
 Warnings:
 Note	1003	Can't push table 't1' as child of 't3s1', it is in a materialized-branch which can't be referred.
@@ -7346,22 +7346,22 @@ node_id int(10) unsigned NOT NULL,
 user_id int(10) unsigned NOT NULL,
 sort_number int(10) unsigned NOT NULL,
 KEY node_id (node_id,sort_number)
-) ENGINE=ndbcluster DEFAULT CHARSET=utf8
+) ENGINE=ndbcluster DEFAULT CHARSET=utf8mb3
 comment="NDB_TABLE=PARTITION_BALANCE=FOR_RP_BY_LDM";
 Warnings:
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 CREATE TABLE ndb_user_test (
 user_id int(10) unsigned NOT NULL AUTO_INCREMENT,
 name varchar(20) NOT NULL,
 PRIMARY KEY (user_id)
-) ENGINE=ndbcluster DEFAULT CHARSET=utf8 AUTO_INCREMENT=2
+) ENGINE=ndbcluster DEFAULT CHARSET=utf8mb3 AUTO_INCREMENT=2
 comment="NDB_TABLE=PARTITION_BALANCE=FOR_RP_BY_LDM";
 Warnings:
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
-Warning	3719	'utf8' is currently an alias for the character set UTF8MB3, but will be an alias for UTF8MB4 in a future release. Please consider using UTF8MB4 in order to be unambiguous.
+Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 INSERT INTO ndb_order_test (node_id, user_id, sort_number) VALUES
 (68, 1, 1398029),
 (68, 1, 549053);
@@ -7565,17 +7565,17 @@ EXPLAIN
     -> Stream results
         -> Nested loop inner join
             -> Nested loop inner join
-                -> Index lookup on t1 using PRIMARY (a=1), activating pushed join of 2 tables, with pushed condition: (t1.d = 1)
+                -> Index lookup on t1 using PRIMARY (a = 1), activating pushed join of 2 tables, with pushed condition: (t1.d = 1)
                 -> Filter: (t2.a = (t1.b + 0))
-                    -> Single-row index lookup on t2 using PRIMARY (a=(t1.b + 0), b=t1.c)
-            -> Single-row index lookup on t3 using PRIMARY (a=t1.b, b=t1.c), child of t1 in pushed join
+                    -> Single-row index lookup on t2 using PRIMARY (a = (t1.b + 0), b = t1.c)
+            -> Single-row index lookup on t3 using PRIMARY (a = t1.b, b = t1.c), child of t1 in pushed join
     -> Stream results
         -> Nested loop inner join
             -> Nested loop inner join
-                -> Index lookup on t1 using PRIMARY (a=1), activating pushed join of 2 tables, with pushed condition: (t1.d = 1)
+                -> Index lookup on t1 using PRIMARY (a = 1), activating pushed join of 2 tables, with pushed condition: (t1.d = 1)
                 -> Filter: (t2.a = (t1.b + 0))
-                    -> Single-row index lookup on t2 using PRIMARY (a=(t1.b + 0), b=t1.c)
-            -> Single-row index lookup on t3 using PRIMARY (a=t1.b, b=t1.c), child of t1 in pushed join
+                    -> Single-row index lookup on t2 using PRIMARY (a = (t1.b + 0), b = t1.c)
+            -> Single-row index lookup on t3 using PRIMARY (a = t1.b, b = t1.c), child of t1 in pushed join
 
 Warnings:
 Note	1003	Can't push table 't2' as child, column 'a' does neither 'ref' a column nor a constant
@@ -7606,16 +7606,16 @@ EXPLAIN
     -> Union materialize with deduplication
         -> Nested loop inner join
             -> Nested loop inner join
-                -> Index lookup on t1 using PRIMARY (a=1), activating pushed join of 2 tables, with pushed condition: (t1.d = 1)
+                -> Index lookup on t1 using PRIMARY (a = 1), activating pushed join of 2 tables, with pushed condition: (t1.d = 1)
                 -> Filter: (t2.a = (t1.b + 0))
-                    -> Single-row index lookup on t2 using PRIMARY (a=(t1.b + 0), b=t1.c)
-            -> Single-row index lookup on t3 using PRIMARY (a=t1.b, b=t1.c), child of t1 in pushed join
+                    -> Single-row index lookup on t2 using PRIMARY (a = (t1.b + 0), b = t1.c)
+            -> Single-row index lookup on t3 using PRIMARY (a = t1.b, b = t1.c), child of t1 in pushed join
         -> Nested loop inner join
             -> Nested loop inner join
-                -> Index lookup on t1 using PRIMARY (a=1), activating pushed join of 2 tables, with pushed condition: (t1.d = 1)
+                -> Index lookup on t1 using PRIMARY (a = 1), activating pushed join of 2 tables, with pushed condition: (t1.d = 1)
                 -> Filter: (t2.a = (t1.b + 0))
-                    -> Single-row index lookup on t2 using PRIMARY (a=(t1.b + 0), b=t1.c)
-            -> Single-row index lookup on t3 using PRIMARY (a=t1.b, b=t1.c), child of t1 in pushed join
+                    -> Single-row index lookup on t2 using PRIMARY (a = (t1.b + 0), b = t1.c)
+            -> Single-row index lookup on t3 using PRIMARY (a = t1.b, b = t1.c), child of t1 in pushed join
 
 Warnings:
 Note	1003	Can't push table 't2' as child, column 'a' does neither 'ref' a column nor a constant
@@ -7676,11 +7676,11 @@ EXPLAIN
     -> Nested loop left join
         -> Table scan on t1, activating pushed join of 5 tables
         -> Nested loop inner join
-            -> Single-row index lookup on t2 using PRIMARY (pk=t1.a), child of t1 in pushed join
-            -> Single-row index lookup on t3 using PRIMARY (pk=t2.b), child of t2 in pushed join
+            -> Single-row index lookup on t2 using PRIMARY (pk = t1.a), child of t1 in pushed join
+            -> Single-row index lookup on t3 using PRIMARY (pk = t2.b), child of t2 in pushed join
     -> Nested loop inner join
-        -> Single-row index lookup on t4 using PRIMARY (pk=t1.c), child of t3 in pushed join
-        -> Single-row index lookup on t5 using PRIMARY (pk=t3.d), child of t3 in pushed join
+        -> Single-row index lookup on t4 using PRIMARY (pk = t1.c), child of t3 in pushed join
+        -> Single-row index lookup on t5 using PRIMARY (pk = t3.d), child of t3 in pushed join
 
 select t1.pk, t2.pk, t3.pk, t4.pk, t5.pk
 from t as t1
@@ -7733,7 +7733,7 @@ EXPLAIN
     -> Table scan on table1
     -> Nested loop inner join
         -> Zero rows (Impossible filter)
-        -> Index lookup on table2 using col_int_key (col_int_key=table1.col_int_key), with pushed condition: (table2.col_int = table1.col_int)
+        -> Index lookup on table2 using col_int_key (col_int_key = table1.col_int_key), with pushed condition: (table2.col_int = table1.col_int)
 
 Warnings:
 Note	1003	Can't push outer joined table 'table2' as child of 'table1', a table in its dependant join-nest(s) is not part of the pushed join
@@ -7782,8 +7782,8 @@ EXPLAIN
 -> Nested loop inner join
     -> Nested loop inner join
         -> Table scan on t10, with pushed condition: (t10.i is not null)
-        -> Index lookup on t1000 using i (i=t10.i), activating pushed join of 2 tables
-    -> Single-row index lookup on t100 using PRIMARY (k=t1000.k), child of t1000 in pushed join
+        -> Index lookup on t1000 using i (i = t10.i), activating pushed join of 2 tables
+    -> Single-row index lookup on t100 using PRIMARY (k = t1000.k), child of t1000 in pushed join
 
 Warnings:
 Note	1003	Didn't push table 't10' as root, too few rows to enable full parallelism
@@ -7795,8 +7795,8 @@ EXPLAIN
 -> Nested loop inner join
     -> Nested loop inner join
         -> Table scan on t10, activating pushed join of 3 tables, with pushed condition: (t10.i is not null)
-        -> Index lookup on t1000 using i (i=t10.i), child of t10 in pushed join
-    -> Single-row index lookup on t100 using PRIMARY (k=t10.k), child of t10 in pushed join
+        -> Index lookup on t1000 using i (i = t10.i), child of t10 in pushed join
+    -> Single-row index lookup on t100 using PRIMARY (k = t10.k), child of t10 in pushed join
 
 drop table t10,t100,t1000;
 ##################
@@ -7823,8 +7823,8 @@ EXPLAIN
 -> Nested loop inner join
     -> Nested loop inner join
         -> Table scan on t1, activating pushed join of 3 tables, with pushed condition: (t1.k is not null)
-        -> Index lookup on t2 using ix2 (a=t1.k), child of t1 in pushed join
-    -> Index lookup on t3 using ix1 (k=t1.k), child of t1 in pushed join
+        -> Index lookup on t2 using ix2 (a = t1.k), child of t1 in pushed join
+    -> Index lookup on t3 using ix1 (k = t1.k), child of t1 in pushed join
 
 select straight_join *
 from t as t1
@@ -7846,8 +7846,8 @@ EXPLAIN
 -> Nested loop left join
     -> Nested loop inner join
         -> Table scan on t1, activating pushed join of 3 tables, with pushed condition: (t1.k is not null)
-        -> Index lookup on t2 using ix2 (a=t1.k), child of t1 in pushed join
-    -> Index lookup on t3 using ix1 (k=t1.k), child of t1 in pushed join
+        -> Index lookup on t2 using ix2 (a = t1.k), child of t1 in pushed join
+    -> Index lookup on t3 using ix1 (k = t1.k), child of t1 in pushed join
 
 select straight_join *
 from t as t1
@@ -7869,8 +7869,8 @@ EXPLAIN
 -> Nested loop inner join
     -> Nested loop left join
         -> Table scan on t1, activating pushed join of 3 tables, with pushed condition: (t1.k is not null)
-        -> Index lookup on t2 using ix2 (a=t1.k), child of t1 in pushed join
-    -> Index lookup on t3 using ix1 (k=t1.k), child of t1 in pushed join
+        -> Index lookup on t2 using ix2 (a = t1.k), child of t1 in pushed join
+    -> Index lookup on t3 using ix1 (k = t1.k), child of t1 in pushed join
 
 select straight_join *
 from t as t1

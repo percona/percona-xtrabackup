@@ -81,6 +81,7 @@
 #include "sql/join_optimizer/join_optimizer.h"
 #include "sql/join_optimizer/materialize_path_parameters.h"
 #include "sql/join_optimizer/relational_expression.h"
+#include "sql/join_optimizer/replace_item.h"
 #include "sql/join_optimizer/walk_access_paths.h"
 #include "sql/join_type.h"
 #include "sql/key.h"  // key_cmp
@@ -125,8 +126,43 @@ using std::vector;
 static int read_system(TABLE *table);
 static bool alloc_group_fields(JOIN *join, ORDER *group);
 
-/// Maximum amount of space (in bytes) to allocate for a Record_buffer.
+/// The minimum size of the record buffer allocated by set_record_buffer().
+/// If all the rows (estimated) can be accomodated with a smaller
+/// buffer than the minimum size, we allocate only the required size.
+/// Else, set_record_buffer() adjusts the size to the minimum size for
+/// smaller ranges. This value shouldn't be too high, as benchmarks
+/// have shown that a too big buffer can hurt performance in some
+/// high-concurrency scenarios.
+static constexpr size_t MIN_RECORD_BUFFER_SIZE = 4 * 1024;  // 4KB
+
+/// The maximum size of the record buffer allocated by set_record_buffer().
+/// Having a bigger buffer than this does not seem to give noticeably better
+/// performance, and having a too big buffer has been seen to hurt performance
+/// in high-concurrency scenarios.
 static constexpr size_t MAX_RECORD_BUFFER_SIZE = 128 * 1024;  // 128KB
+
+/// How big a fraction of the estimated number of returned rows to make room
+/// for in the record buffer allocated by set_record_buffer(). The actual
+/// size of the buffer will be adjusted to a value between
+/// MIN_RECORD_BUFFER_SIZE and MAX_RECORD_BUFFER_SIZE if it falls outside of
+/// this range. If all rows can be accomodated with a much smaller buffer
+/// size than MIN_RECORD_BUFFER_SIZE, we only allocate the required size.
+///
+/// The idea behind using a fraction of the estimated number of rows, and not
+/// just allocate a buffer big enough to hold all returned rows if they fit
+/// within the maximum size, is that using big record buffers for small ranges
+/// have been seen to hurt performance in high-concurrency scenarios. So we want
+/// to pull the buffer size towards the minimum buffer size if the range is not
+/// that large, while still pulling the buffer size towards the maximum buffer
+/// size for large ranges and table scans.
+///
+/// The actual number is the result of an attempt to find the balance between
+/// the advantages of big buffers in scenarios with low concurrency and/or large
+/// ranges, and the disadvantages of big buffers in scenarios with high
+/// concurrency. Increasing it could improve the performance of some queries
+/// when the concurrency is low and hurt the performance if the concurrency is
+/// high, and reducing it could have the opposite effect.
+static constexpr double RECORD_BUFFER_FRACTION = 0.1f;
 
 string RefToString(const Index_lookup &ref, const KEY &key,
                    bool include_nulls) {
@@ -135,7 +171,7 @@ string RefToString(const Index_lookup &ref, const KEY &key,
   if (ref.keypart_hash != nullptr) {
     assert(!include_nulls);
     ret = key.key_part[0].field->field_name;
-    ret += "=hash(";
+    ret += " = hash(";
     for (unsigned key_part_idx = 0; key_part_idx < ref.key_parts;
          ++key_part_idx) {
       if (key_part_idx != 0) {
@@ -163,7 +199,7 @@ string RefToString(const Index_lookup &ref, const KEY &key,
       assert(!field->is_hidden_by_system());
       ret += field->field_name;
     }
-    ret += "=";
+    ret += " = ";
     ret += ItemToString(ref.items[key_part_idx]);
 
     // If we have ref_or_null access, find out if this keypart is the one that
@@ -176,9 +212,36 @@ string RefToString(const Index_lookup &ref, const KEY &key,
   return ret;
 }
 
+#ifndef NDEBUG
+[[maybe_unused]] static const char *cft_name(Copy_func_type type) {
+  switch (type) {
+    case CFT_ALL:
+      return "CFT_ALL";
+    case CFT_WF_FRAMING:
+      return "CFT_WF_FRAMING";
+    case CFT_WF_NON_FRAMING:
+      return "CFT_WF_NON_FRAMING";
+    case CFT_WF_NEEDS_PARTITION_CARDINALITY:
+      return "CFT_WF_NEEDS_PARTITION_CARDINALITY";
+    case CFT_WF_USES_ONLY_ONE_ROW:
+      return "CFT_WF_USES_ONLY_ONE_ROW";
+    case CFT_HAS_NO_WF:
+      return "CFT_HAS_NO_WF";
+    case CFT_HAS_WF:
+      return "CFT_HAS_WF";
+    case CFT_WF:
+      return "CFT_WF";
+    case CFT_FIELDS:
+      return "CFT_FIELDS";
+    default:
+      assert(false);
+  }
+}
+#endif
+
 bool JOIN::create_intermediate_table(
     QEP_TAB *const tab, const mem_root_deque<Item *> &tmp_table_fields,
-    ORDER_with_src &tmp_table_group, bool save_sum_fields) {
+    ORDER_with_src &tmp_table_group, bool save_sum_fields, const char *alias) {
   DBUG_TRACE;
   THD_STAGE_INFO(thd, stage_creating_tmp_table);
   const bool windowing = m_windows.elements > 0;
@@ -205,10 +268,10 @@ bool JOIN::create_intermediate_table(
       (!windowing || (tab->tmp_table_param->m_window &&
                       tab->tmp_table_param->m_window->is_last()));
 
-  TABLE *table =
-      create_tmp_table(thd, tab->tmp_table_param, tmp_table_fields,
-                       tmp_table_group.order, distinct_arg, save_sum_fields,
-                       query_block->active_options(), tmp_rows_limit, "");
+  TABLE *table = create_tmp_table(
+      thd, tab->tmp_table_param, tmp_table_fields, tmp_table_group.order,
+      distinct_arg, save_sum_fields, query_block->active_options(),
+      tmp_rows_limit, (alias != nullptr ? alias : ""));
   if (!table) return true;
   tmp_table_param.using_outer_summary_function =
       tab->tmp_table_param->using_outer_summary_function;
@@ -472,8 +535,8 @@ static bool update_const_equal_items(THD *thd, Item *cond, JOIN_TAB *tab) {
     }
   } else if (cond->type() == Item::FUNC_ITEM &&
              down_cast<Item_func *>(cond)->functype() ==
-                 Item_func::MULT_EQUAL_FUNC) {
-    Item_equal *item_equal = (Item_equal *)cond;
+                 Item_func::MULTI_EQ_FUNC) {
+    Item_multi_eq *item_equal = down_cast<Item_multi_eq *>(cond);
     const bool contained_const = item_equal->const_arg() != nullptr;
     if (item_equal->update_const(thd)) return true;
     if (!contained_const && item_equal->const_arg()) {
@@ -494,7 +557,7 @@ static bool update_const_equal_items(THD *thd, Item *cond, JOIN_TAB *tab) {
         if (!possible_keys.is_clear_all()) {
           TABLE *const table = field->table;
           for (Key_use *use = stat->keyuse();
-               use && use->table_ref == item_field.table_ref; use++) {
+               use && use->table_ref == item_field.m_table_ref; use++) {
             if (possible_keys.is_set(use->key) &&
                 table->key_info[use->key].key_part[use->keypart].field == field)
               table->const_key_parts[use->key] |= use->keypart_map;
@@ -677,8 +740,9 @@ bool set_record_buffer(TABLE *table, double expected_rows_to_fetch) {
     return false;
   }
 
-  ha_rows rows_in_buffer =
+  ha_rows expected_rows =
       static_cast<ha_rows>(std::ceil(expected_rows_to_fetch));
+  ha_rows rows_in_buffer = expected_rows;
 
   /*
     How much space do we need to allocate for each record? Enough to
@@ -688,13 +752,28 @@ bool set_record_buffer(TABLE *table, double expected_rows_to_fetch) {
   */
   const size_t record_size = record_prefix_size(table);
 
-  // Do not allocate a buffer whose total size exceeds MAX_RECORD_BUFFER_SIZE.
-  if (record_size > 0)
-    rows_in_buffer =
-        std::min<ha_rows>(MAX_RECORD_BUFFER_SIZE / record_size, rows_in_buffer);
+  if (record_size > 0) {
+    const ha_rows min_rows =
+        std::ceil(double{MIN_RECORD_BUFFER_SIZE} / record_size);
+    // If the expected rows to fetch can be accomodated with a
+    // lesser buffer size than MIN_RECORD_BUFFER_SIZE, we allocate
+    // only the required size.
+    if (expected_rows < min_rows) {
+      rows_in_buffer = expected_rows;
+    } else {
+      rows_in_buffer = std::ceil(rows_in_buffer * RECORD_BUFFER_FRACTION);
+      // Adjust the number of rows, if necessary, to fit within the
+      // minimum and maximum buffer size range.
+      const ha_rows local_max_rows = (MAX_RECORD_BUFFER_SIZE / record_size);
+      rows_in_buffer = std::clamp(rows_in_buffer, min_rows, local_max_rows);
+    }
+  }
 
-  // Do not allocate space for more rows than the handler asked for.
-  rows_in_buffer = std::min(rows_in_buffer, max_rows);
+  // After adjustments made above, we still need a minimum of 2 rows to
+  // use a record buffer.
+  if (rows_in_buffer <= 1) {
+    return false;
+  }
 
   const auto bufsize = Record_buffer::buffer_size(rows_in_buffer, record_size);
   const auto ptr = pointer_cast<uchar *>(current_thd->alloc(bufsize));
@@ -859,7 +938,7 @@ AccessPath *CreateBKAAccessPath(THD *thd, JOIN *join, AccessPath *outer_path,
       }
     } else if (item->type() == Item::FIELD_ITEM) {
       bool dummy;
-      Item_equal *item_eq = find_item_equal(
+      Item_multi_eq *item_eq = find_item_equal(
           table_list->cond_equal, down_cast<Item_field *>(item), &dummy);
       if (item_eq == nullptr) {
         // Didn't come from a multi-equality.
@@ -1642,113 +1721,167 @@ AccessPath *MoveCompositeIteratorsFromTablePath(
   return path;
 }
 
+/**
+   Find the bottom of 'table_path', i.e. the path that actually accesses the
+   materialized table.
+*/
+static AccessPath *GetTablePathBottom(AccessPath *table_path) {
+  AccessPath *bottom{nullptr};
+
+  const auto find_bottom{[&](AccessPath *path, const JOIN *) {
+    switch (path->type) {
+      case AccessPath::TABLE_SCAN:
+        assert(path->table_scan().table->pos_in_table_list == nullptr ||
+               path->table_scan()
+                   .table->pos_in_table_list->uses_materialization());
+        bottom = path;
+        return true;
+
+      case AccessPath::REF:
+        assert(path->ref().table->pos_in_table_list == nullptr ||
+               path->ref().table->pos_in_table_list->uses_materialization());
+        bottom = path;
+        return true;
+
+      default:
+        return false;
+    }
+  }};
+
+  WalkAccessPaths(table_path, /*join=*/nullptr,
+                  WalkAccessPathPolicy::STOP_AT_MATERIALIZATION, find_bottom);
+
+  assert(bottom != nullptr);
+  return bottom;
+}
+
 AccessPath *GetAccessPathForDerivedTable(
     THD *thd, Table_ref *table_ref, TABLE *table, bool rematerialize,
     Mem_root_array<const AccessPath *> *invalidators, bool need_rowid,
     AccessPath *table_path) {
-  if (table_ref->access_path_for_derived != nullptr) {
-    return table_ref->access_path_for_derived;
-  }
+  // Make a new path if none is cached.
+  const auto make_path{[&]() {
+    Query_expression *query_expression = table_ref->derived_query_expression();
+    JOIN *subjoin = nullptr;
+    Temp_table_param *tmp_table_param;
+    int select_number;
 
-  Query_expression *query_expression = table_ref->derived_query_expression();
-  JOIN *subjoin = nullptr;
-  Temp_table_param *tmp_table_param;
-  int select_number;
-
-  // If we have a single query block at the end of the QEP_TAB array,
-  // it may contain aggregation that have already set up fields and items
-  // to copy, and we need to pass those to MaterializeIterator, so reuse its
-  // tmp_table_param. If not, make a new object, so that we don't
-  // disturb the materialization going on inside our own query block.
-  if (query_expression->is_simple()) {
-    subjoin = query_expression->first_query_block()->join;
-    select_number = query_expression->first_query_block()->select_number;
-    tmp_table_param = &subjoin->tmp_table_param;
-  } else if (query_expression->set_operation()->m_is_materialized) {
-    // NOTE: subjoin here is never used, as ConvertItemsToCopy only uses it
-    // for ROLLUP, and simple table can't have ROLLUP.
-    Query_block *const qb = query_expression->set_operation()->query_block();
-    subjoin = qb->join;
-    tmp_table_param = &subjoin->tmp_table_param;
-    select_number = qb->select_number;
-  } else {
-    tmp_table_param = new (thd->mem_root) Temp_table_param;
-    select_number = query_expression->first_query_block()->select_number;
-  }
-  ConvertItemsToCopy(*query_expression->get_field_list(),
-                     table->visible_field_ptr(), tmp_table_param);
-
-  AccessPath *path;
-
-  if (query_expression->unfinished_materialization()) {
-    // The query expression is a UNION capable of materializing directly into
-    // our result table. This saves us from doing double materialization (first
-    // into a UNION result table, then from there into our own).
-    //
-    // We will already have set up a unique index on the table if
-    // required; see Table_ref::setup_materialized_derived_tmp_table().
-    path = NewMaterializeAccessPath(
-        thd, query_expression->release_query_blocks_to_materialize(),
-        invalidators, table, table_path, table_ref->common_table_expr(),
-        query_expression,
-        /*ref_slice=*/-1, rematerialize, query_expression->select_limit_cnt,
-        query_expression->offset_limit_cnt == 0
-            ? query_expression->m_reject_multiple_rows
-            : false);
-    EstimateMaterializeCost(thd, path);
-    path = MoveCompositeIteratorsFromTablePath(
-        thd, path, *query_expression->outer_query_block());
-    if (query_expression->offset_limit_cnt != 0) {
-      // LIMIT is handled inside MaterializeIterator, but OFFSET is not.
-      // SQL_CALC_FOUND_ROWS cannot occur in a derived table's definition.
-      path = NewLimitOffsetAccessPath(
-          thd, path, query_expression->select_limit_cnt,
-          query_expression->offset_limit_cnt,
-          /*count_all_rows=*/false, query_expression->m_reject_multiple_rows,
-          /*send_records_override=*/nullptr);
+    // If we have a single query block at the end of the QEP_TAB array,
+    // it may contain aggregation that have already set up fields and items
+    // to copy, and we need to pass those to MaterializeIterator, so reuse its
+    // tmp_table_param. If not, make a new object, so that we don't
+    // disturb the materialization going on inside our own query block.
+    if (query_expression->is_simple()) {
+      subjoin = query_expression->first_query_block()->join;
+      select_number = query_expression->first_query_block()->select_number;
+      tmp_table_param = &subjoin->tmp_table_param;
+      tmp_table_param->items_to_copy = nullptr;
+    } else if (query_expression->set_operation()->is_materialized()) {
+      // NOTE: subjoin here is never used, as ConvertItemsToCopy only uses it
+      // for ROLLUP, and simple table can't have ROLLUP.
+      Query_block *const qb = query_expression->set_operation()->query_block();
+      subjoin = qb->join;
+      tmp_table_param = &subjoin->tmp_table_param;
+      select_number = qb->select_number;
+    } else {
+      tmp_table_param = new (thd->mem_root) Temp_table_param;
+      select_number = query_expression->first_query_block()->select_number;
     }
-  } else if (table_ref->common_table_expr() == nullptr && rematerialize &&
-             IsTableScan(table_path) && !need_rowid) {
-    // We don't actually need the materialization for anything (we would
-    // just be reading the rows straight out from the table, never to be used
-    // again), so we can just stream records directly over to the next
-    // iterator. This saves both CPU time and memory (for the temporary
-    // table).
-    //
-    // NOTE: Currently, rematerialize is true only for JSON_TABLE. (In the
-    // hypergraph optimizer, it is also true for lateral derived tables.)
-    // We could extend this to other situations, such as the leftmost
-    // table of the join (assuming nested loop only). The test for CTEs is
-    // also conservative; if the CTE is defined within this join and used
-    // only once, we could still stream without losing performance.
-    path = NewStreamingAccessPath(thd, query_expression->root_access_path(),
-                                  subjoin, &subjoin->tmp_table_param, table,
-                                  /*ref_slice=*/-1);
-    CopyBasicProperties(*query_expression->root_access_path(), path);
-    path->ordering_state = 0;  // Different query block, so ordering is reset.
+    ConvertItemsToCopy(*query_expression->get_field_list(),
+                       table->visible_field_ptr(), tmp_table_param);
+
+    AccessPath *path;
+
+    if (query_expression->unfinished_materialization()) {
+      // The query expression is a UNION capable of materializing directly into
+      // our result table. This saves us from doing double materialization
+      // (first into a UNION result table, then from there into our own).
+      //
+      // We will already have set up a unique index on the table if
+      // required; see Table_ref::setup_materialized_derived_tmp_table().
+      path = NewMaterializeAccessPath(
+          thd, query_expression->release_query_blocks_to_materialize(),
+          invalidators, table, table_path, table_ref->common_table_expr(),
+          query_expression,
+          /*ref_slice=*/-1, rematerialize, query_expression->select_limit_cnt,
+          query_expression->offset_limit_cnt == 0
+              ? query_expression->m_reject_multiple_rows
+              : false);
+      EstimateMaterializeCost(thd, path);
+      path = MoveCompositeIteratorsFromTablePath(
+          thd, path, *query_expression->outer_query_block());
+      if (query_expression->offset_limit_cnt != 0) {
+        // LIMIT is handled inside MaterializeIterator, but OFFSET is not.
+        // SQL_CALC_FOUND_ROWS cannot occur in a derived table's definition.
+        path = NewLimitOffsetAccessPath(
+            thd, path, query_expression->select_limit_cnt,
+            query_expression->offset_limit_cnt,
+            /*count_all_rows=*/false, query_expression->m_reject_multiple_rows,
+            /*send_records_override=*/nullptr);
+      }
+    } else if (table_ref->common_table_expr() == nullptr && rematerialize &&
+               IsTableScan(table_path) && !need_rowid) {
+      // We don't actually need the materialization for anything (we would
+      // just be reading the rows straight out from the table, never to be used
+      // again), so we can just stream records directly over to the next
+      // iterator. This saves both CPU time and memory (for the temporary
+      // table).
+      //
+      // NOTE: Currently, rematerialize is true only for JSON_TABLE. (In the
+      // hypergraph optimizer, it is also true for lateral derived tables.)
+      // We could extend this to other situations, such as the leftmost
+      // table of the join (assuming nested loop only). The test for CTEs is
+      // also conservative; if the CTE is defined within this join and used
+      // only once, we could still stream without losing performance.
+      path = NewStreamingAccessPath(thd, query_expression->root_access_path(),
+                                    subjoin, &subjoin->tmp_table_param, table,
+                                    /*ref_slice=*/-1);
+      CopyBasicProperties(*query_expression->root_access_path(), path);
+      path->ordering_state = 0;  // Different query block, so ordering is reset.
+    } else {
+      JOIN *join = query_expression->is_set_operation()
+                       ? nullptr
+                       : query_expression->first_query_block()->join;
+      path = NewMaterializeAccessPath(
+          thd,
+          SingleMaterializeQueryBlock(thd, query_expression->root_access_path(),
+                                      select_number, join,
+                                      /*copy_items=*/true, tmp_table_param),
+          invalidators, table, table_path, table_ref->common_table_expr(),
+          query_expression,
+          /*ref_slice=*/-1, rematerialize, tmp_table_param->end_write_records,
+          query_expression->m_reject_multiple_rows);
+      EstimateMaterializeCost(thd, path);
+      path = MoveCompositeIteratorsFromTablePath(
+          thd, path, *query_expression->outer_query_block());
+    }
+
+    path->set_cost_before_filter(path->cost());
+    path->num_output_rows_before_filter = path->num_output_rows();
+    return path;
+  }};
+
+  if (thd->lex->using_hypergraph_optimizer()) {
+    // For the Hypergraph optimizer there may be several alternative table paths
+    // cached.
+    AccessPath *const table_path_bottom{GetTablePathBottom(table_path)};
+    AccessPath *const cached_path{
+        table_ref->GetCachedMaterializedPath(table_path_bottom)};
+
+    if (cached_path == nullptr) {
+      AccessPath *const new_path{make_path()};
+      table_ref->AddMaterializedPathToCache(thd, new_path, table_path_bottom);
+      return new_path;
+    } else {
+      if (cached_path->type == AccessPath::MATERIALIZE) {
+        cached_path->materialize().table_path->set_num_output_rows(
+            cached_path->num_output_rows());
+      }
+      return cached_path;
+    }
   } else {
-    JOIN *join = query_expression->is_set_operation()
-                     ? nullptr
-                     : query_expression->first_query_block()->join;
-    path = NewMaterializeAccessPath(
-        thd,
-        SingleMaterializeQueryBlock(thd, query_expression->root_access_path(),
-                                    select_number, join,
-                                    /*copy_items=*/true, tmp_table_param),
-        invalidators, table, table_path, table_ref->common_table_expr(),
-        query_expression,
-        /*ref_slice=*/-1, rematerialize, tmp_table_param->end_write_records,
-        query_expression->m_reject_multiple_rows);
-    EstimateMaterializeCost(thd, path);
-    path = MoveCompositeIteratorsFromTablePath(
-        thd, path, *query_expression->outer_query_block());
+    return make_path();
   }
-
-  path->set_cost_before_filter(path->cost());
-  path->num_output_rows_before_filter = path->num_output_rows();
-
-  table_ref->access_path_for_derived = path;
-  return path;
 }
 
 /**
@@ -1891,6 +2024,7 @@ void SetCostOnTableAccessPath(const Cost_model_server &cost_model,
     // measured costs.
     path->set_cost(cost * num_rows_after_filtering / pos->prefix_rowcount);
   }
+  path->set_init_cost(kUnknownCost);
 }
 
 void SetCostOnNestedLoopAccessPath(const Cost_model_server &cost_model,
@@ -3251,8 +3385,8 @@ AccessPath *JOIN::create_root_access_path_for_join() {
       }
     } else if (qep_tab->op_type == QEP_TAB::OT_AGGREGATE_INTO_TMP_TABLE) {
       path = NewTemptableAggregateAccessPath(
-          thd, path, qep_tab->tmp_table_param, qep_tab->table(), table_path,
-          qep_tab->ref_item_slice);
+          thd, path, /*join=*/this, qep_tab->tmp_table_param, qep_tab->table(),
+          table_path, qep_tab->ref_item_slice);
       if (qep_tab->having != nullptr) {
         path = NewFilterAccessPath(thd, path, qep_tab->having);
       }
@@ -3366,14 +3500,29 @@ AccessPath *JOIN::attach_access_paths_for_having_and_limit(
     path = add_filter_access_path(thd, path, having_cond, query_block);
   }
 
+  Query_expression *const qe = query_expression();
+
+  // For IN/EXISTS subqueries, it's ok to optimize by adding LIMIT 1 for top
+  // level of a set operation in the presence of EXCEPT ALL, but not in nested
+  // set operands, lest we lose rows significant to the result of the EXCEPT
+  // ALL.
+  const bool skip_limit =
+      (qe->m_contains_except_all &&
+       // check that qe inside subquery: no user given
+       // limit/offset can interfere,
+       // cf. ER_NOT_SUPPORTED_YET("LIMIT & IN/ALL/ANY/SOME
+       // subquery"), so safe to assume the limit is the
+       // optimization we want to suppress
+       qe->item != nullptr && qe->query_term()->query_block() != query_block);
+
   // Note: For select_count, LIMIT 0 is handled in JOIN::optimize() for the
   // common case, but not for CALC_FOUND_ROWS. OFFSET also isn't handled there.
-  if (query_expression()->select_limit_cnt != HA_POS_ERROR ||
-      query_expression()->offset_limit_cnt != 0) {
-    path = NewLimitOffsetAccessPath(
-        thd, path, query_expression()->select_limit_cnt,
-        query_expression()->offset_limit_cnt, calc_found_rows, false,
-        /*send_records_override=*/nullptr);
+  if ((qe->select_limit_cnt != HA_POS_ERROR && !skip_limit) ||
+      qe->offset_limit_cnt != 0) {
+    path =
+        NewLimitOffsetAccessPath(thd, path, qe->select_limit_cnt,
+                                 qe->offset_limit_cnt, calc_found_rows, false,
+                                 /*send_records_override=*/nullptr);
   }
 
   return path;
@@ -3586,7 +3735,7 @@ int join_read_const_table(JOIN_TAB *tab, POSITION *pos) {
     if (thd->is_error()) return 1;
   }
 
-  /* Check appearance of new constant items in Item_equal objects */
+  /* Check appearance of new constant items in Item_multi_eq objects */
   JOIN *const join = tab->join();
   if (join->where_cond && update_const_equal_items(thd, join->where_cond, tab))
     return 1;
@@ -4196,8 +4345,8 @@ int update_item_cache_if_changed(List<Cached_item> &list) {
 
 /// Compute the position mapping from fields to ref_item_array, cf.
 /// detailed explanation in change_to_use_tmp_fields_except_sums
-static size_t compute_ria_idx(const mem_root_deque<Item *> &fields, size_t i,
-                              size_t added_non_hidden_fields, size_t border) {
+size_t compute_ria_idx(const mem_root_deque<Item *> &fields, size_t i,
+                       size_t added_non_hidden_fields, size_t border) {
   const size_t num_select_elements = fields.size() - border;
   const size_t orig_num_select_elements =
       num_select_elements - added_non_hidden_fields;
@@ -4260,13 +4409,19 @@ static bool replace_embedded_rollup_references_with_tmp_fields(
       return {ReplaceResult::KEEP_TRAVERSING, nullptr};
     }
     for (Item *other_item : *fields) {
-      if (other_item->eq(sub_item, false)) {
+      if (other_item->eq(sub_item)) {
         Field *field = other_item->get_tmp_table_field();
         Item *item_field = new (thd->mem_root) Item_field(field);
         if (item_field == nullptr) return {ReplaceResult::ERROR, nullptr};
         item_field->item_name = item->item_name;
         return {ReplaceResult::REPLACE, item_field};
       }
+    }
+    // A const item that is part of group by and not found in
+    // select list will not be found in "fields" (It's not added
+    // as a hidden item).
+    if (unwrap_rollup_group(sub_item)->const_for_execution()) {
+      return {ReplaceResult::REPLACE, sub_item};
     }
     assert(false);
     return {ReplaceResult::ERROR, nullptr};
@@ -4320,22 +4475,13 @@ bool change_to_use_tmp_fields(mem_root_deque<Item *> *fields, THD *thd,
       field = item->get_tmp_table_field();
       if (field != nullptr) {
         /*
-          Replace "@:=<expression>" with "@:=<tmp table column>". Otherwise, we
-          would re-evaluate <expression>, and if expression were a subquery,
-          this would access already-unlocked tables.
+          Replace "@:=<expr>" with "@:=<tmp_table_column>" rather than
+          "<tmp_table_column>".
           We do not perform the special handling for tmp tables used for
           windowing, though.
-          TODO: remove this code cf. deprecated setting of variable in
-          expressions when it is finally disallowed.
         */
-        Item_func_set_user_var *suv =
-            new Item_func_set_user_var(thd, (Item_func_set_user_var *)item);
-        Item_field *new_field = new Item_field(field);
-        if (!suv || !new_field) return true;  // Fatal error
-        mem_root_deque<Item *> list(thd->mem_root);
-        if (list.push_back(new_field)) return true;
-        if (suv->set_arguments(&list, true)) return true;
-        new_item = suv;
+        new_item = ReplaceSetVarItem(thd, item, new Item_field(field));
+        if (new_item == nullptr) return true;
       } else
         new_item = item;
     } else if ((field = item->get_tmp_table_field())) {
@@ -4382,7 +4528,7 @@ static Item_rollup_group_item *find_rollup_item_in_group_list(
     // (E.g. GROUP BY f1,f1,f2), rollup_item is set only for
     // the first field.
     if (rollup_item != nullptr) {
-      if (item->eq(rollup_item, /*binary_cmp=*/false)) {
+      if (item->eq(rollup_item)) {
         return rollup_item;
       }
     }
@@ -4721,8 +4867,7 @@ bool MaterializeIsDoingDeduplication(TABLE *table) {
   @param path     Access path (A range scan)
   @param count_examined_rows See AccessPath::count_examined_rows.
 */
-static void set_count_examined_rows(AccessPath *path,
-                                    const bool count_examined_rows) {
+void set_count_examined_rows(AccessPath *path, bool count_examined_rows) {
   path->count_examined_rows = count_examined_rows;
   switch (path->type) {
     case AccessPath::INDEX_MERGE:

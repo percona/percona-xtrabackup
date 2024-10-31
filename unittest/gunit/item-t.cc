@@ -227,8 +227,8 @@ TEST_F(ItemTest, ItemInt) {
   EXPECT_EQ(TYPE_OK, item_int->save_in_field(&field_val, true));
 
   Item *clone = item_int->clone_item();
-  EXPECT_TRUE(item_int->eq(clone, true));
-  EXPECT_TRUE(item_int->eq(item_int, true));
+  EXPECT_TRUE(item_int->eq(clone));
+  EXPECT_TRUE(item_int->eq(item_int));
 
   String print_val;
   item_int->print(thd(), &print_val, QT_ORDINARY);
@@ -376,9 +376,9 @@ TEST_F(ItemTest, ItemEqual) {
       "0123456789012345678901234567890123456789"
       "0123456789012345678901234567890123456789"
       "0123456789012345678901234567890123456789";
-  Item_equal *item_equal =
-      new Item_equal(new Item_string(STRING_WITH_LEN(foo), &my_charset_bin),
-                     new Item_field(&mft));
+  Item_multi_eq *item_equal =
+      new Item_multi_eq(new Item_string(STRING_WITH_LEN(foo), &my_charset_bin),
+                        new Item_field(&mft));
 
   EXPECT_FALSE(item_equal->fix_fields(thd(), nullptr));
   EXPECT_EQ(1, item_equal->val_int());
@@ -430,10 +430,10 @@ TEST_F(ItemTest, ItemRollupSwitcher) {
   List<Item> li2;
   li2.push_back(agg2);
   Item_rollup_sum_switcher *sw2 = new Item_rollup_sum_switcher(&li2);
-  EXPECT_TRUE(agg1->eq(agg2, false));
-  EXPECT_TRUE(agg1->eq(sw2, false));
-  EXPECT_TRUE(sw1->eq(sw2, false));
-  EXPECT_TRUE(sw1->eq(agg2, false));
+  EXPECT_TRUE(agg1->eq(agg2));
+  EXPECT_TRUE(agg1->eq(sw2));
+  EXPECT_TRUE(sw1->eq(sw2));
+  EXPECT_TRUE(sw1->eq(agg2));
 
   EXPECT_FALSE(agg1->is_rollup_sum_wrapper());
   EXPECT_TRUE(sw1->is_rollup_sum_wrapper());
@@ -445,14 +445,14 @@ TEST_F(ItemTest, ItemEqualEq) {
   Mock_field_timestamp field2;
   field2.field_name = "field2";
 
-  Item_equal *item_equal1 =
-      new Item_equal(new Item_field(&field1), new Item_field(&field2));
-  Item_equal *item_equal2 =
-      new Item_equal(new Item_field(&field2), new Item_field(&field1));
-  Item_equal *item_equal3 =
-      new Item_equal(new Item_int(123), new Item_field(&field1));
-  Item_equal *item_equal4 =
-      new Item_equal(new Item_int(123), new Item_field(&field1));
+  Item_multi_eq *item_equal1 =
+      new Item_multi_eq(new Item_field(&field1), new Item_field(&field2));
+  Item_multi_eq *item_equal2 =
+      new Item_multi_eq(new Item_field(&field2), new Item_field(&field1));
+  Item_multi_eq *item_equal3 =
+      new Item_multi_eq(new Item_int(123), new Item_field(&field1));
+  Item_multi_eq *item_equal4 =
+      new Item_multi_eq(new Item_int(123), new Item_field(&field1));
   item_equal4->add(new Item_field(&field2));
 
   Item_func_equal *spaceship =
@@ -471,8 +471,7 @@ TEST_F(ItemTest, ItemEqualEq) {
   for (bool binary_cmp : {true, false}) {
     for (pair<int, Item *> it1 : items) {
       for (pair<int, Item *> it2 : items) {
-        EXPECT_EQ(it1.first == it2.first,
-                  it1.second->eq(it2.second, binary_cmp))
+        EXPECT_EQ(it1.first == it2.first, it1.second->eq(it2.second))
             << "Item 1: " << ItemToString(it1.second)
             << ", Item 2: " << ItemToString(it2.second)
             << ", binary_cmp = " << binary_cmp;
@@ -941,7 +940,7 @@ TEST_F(ItemTest, NormalizedPrint) {
 TEST_F(ItemTest, CompareEmptyStrings) {
   Item *item1 = new Item_string(nullptr, 0, &my_charset_bin);
   Item *item2 = new Item_string(nullptr, 0, &my_charset_bin);
-  Item_result_field *owner = new Item_func_le(item1, item2);
+  Item_func *owner = new Item_func_le(item1, item2);
   EXPECT_FALSE(item1->fix_fields(thd(), nullptr));
   EXPECT_FALSE(item2->fix_fields(thd(), nullptr));
 
@@ -980,7 +979,7 @@ TEST_F(ItemTest, ItemJson) {
 
   Item *clone = item->clone_item();
   EXPECT_NE(item, clone);
-  EXPECT_TRUE(item->eq(clone, true));
+  EXPECT_TRUE(item->eq(clone));
   EXPECT_FALSE(clone->val_json(&wr));
   EXPECT_NE(&jstr, wr.get_dom());
   EXPECT_EQ(0, wr.compare(Json_wrapper(&jstr, true)));

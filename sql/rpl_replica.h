@@ -48,12 +48,7 @@ struct mysql_cond_t;
 struct mysql_mutex_t;
 class Rpl_channel_filters;
 
-/*
-  Statistics go to the error log every # of seconds when
-  --log_error_verbosity > 2
-*/
 const long mts_online_stat_period = 60 * 2;
-const long mts_online_stat_count = 1024;
 
 typedef struct struct_replica_connection LEX_REPLICA_CONNECTION;
 
@@ -364,6 +359,7 @@ extern bool opt_skip_replica_start;
 extern bool opt_log_replica_updates;
 extern char *opt_replica_skip_errors;
 extern ulonglong relay_log_space_limit;
+extern bool opt_collect_replica_applier_metrics;
 
 extern const char *relay_log_index;
 extern const char *relay_log_basename;
@@ -591,6 +587,21 @@ void end_slave();                 /* release slave threads */
 void delete_slave_info_objects(); /* clean up slave threads data */
 void set_slave_thread_options(THD *thd);
 void set_slave_thread_default_charset(THD *thd, Relay_log_info const *rli);
+
+/// @brief Rotates the relay log
+/// @details Locking order:
+/// a) log_lock, log_space_lock
+/// b) log_lock, end_pos_lock
+/// @param mi Pointer to connection metadata object
+/// @param log_master_fd Information on whether rotate came from:
+/// - true - the origin is replica, this function will insert a source FDE
+/// - false - the origin is the source, we don't need to insert FDE as it
+///   will be send by the source
+/// @param need_lock When true, we acquire relay log lock,
+/// otherwise the caller must hold it
+/// @param need_log_space_lock When true, we acquire the log protecting
+/// data structures responsible for handling the relay_log_space_limit,
+/// otherwise the caller must hold it
 int rotate_relay_log(Master_info *mi, bool log_master_fd = true,
                      bool need_lock = true, bool need_log_space_lock = true);
 typedef enum {
@@ -666,6 +677,14 @@ bool sql_slave_killed(THD *thd, Relay_log_info *rli);
 bool is_network_error(uint errorno);
 
 int init_replica_thread(THD *thd, SLAVE_THD_TYPE thd_type);
+
+/// @brief Enables metric collection for replication structures
+/// It affects new and already created and running channels
+void enable_applier_metric_collection();
+
+/// @brief Disables metric collection for replication structures
+/// It affects new and already created and running channels
+void disable_applier_metric_collection();
 
 /**
   @} (end of group Replication)

@@ -1066,6 +1066,77 @@ ulong STDCALL mysql_real_escape_string(MYSQL *mysql, char *to, const char *from,
   return (uint)mysql_real_escape_string_quote(mysql, to, from, length, '\'');
 }
 
+namespace {
+/*
+  Escape apostrophes by doubling them up
+
+  SYNOPSIS
+    escape_quotes_for_mysql()
+    charset_info        Charset of the strings
+    to                  Buffer for escaped string
+    to_length           Length of destination buffer, or 0
+    from                The string to escape
+    length              The length of the string to escape
+    quote               The quote the buffer will be escaped against
+
+  DESCRIPTION
+    This escapes the contents of a string by doubling up any character
+    specified by the quote parameter. This is used when the
+    NO_BACKSLASH_ESCAPES SQL_MODE is in effect on the server.
+
+  NOTE
+    To be consistent with escape_string_for_mysql(), to_length may be 0 to
+    mean "big enough"
+
+  RETURN VALUES
+    ~0          The escaped string did not fit in the to buffer
+    >=0         The length of the escaped string
+*/
+
+size_t escape_quotes_for_mysql(CHARSET_INFO *charset_info, char *to,
+                               size_t to_length, const char *from,
+                               size_t length, char quote) {
+  const char *to_start = to;
+  const char *end = nullptr;
+  const char *to_end = to_start + (to_length ? to_length - 1 : 2 * length);
+  bool overflow = false;
+  const bool use_mb_flag = use_mb(charset_info);
+  for (end = from + length; from < end; from++) {
+    int tmp_length = 0;
+    if (use_mb_flag && (tmp_length = my_ismbchar(charset_info, from, end))) {
+      if (to + tmp_length > to_end) {
+        overflow = true;
+        break;
+      }
+      while (tmp_length--) *to++ = *from++;
+      from--;
+      continue;
+    }
+    /*
+      We don't have the same issue here with a non-multi-byte character being
+      turned into a multi-byte character by the addition of an escaping
+      character, because we are only escaping the ' character with itself.
+     */
+    if (*from == quote) {
+      if (to + 2 > to_end) {
+        overflow = true;
+        break;
+      }
+      *to++ = quote;
+      *to++ = quote;
+    } else {
+      if (to + 1 > to_end) {
+        overflow = true;
+        break;
+      }
+      *to++ = *from;
+    }
+  }
+  *to = 0;
+  return overflow ? (ulong)~0 : (ulong)(to - to_start);
+}
+}  // namespace
+
 /**
   Escapes special characters in a string for use in an SQL statement.
 
@@ -2915,6 +2986,7 @@ static void fetch_string_with_conversion(MYSQL_BIND *param, char *value,
     case MYSQL_TYPE_MEDIUM_BLOB:
     case MYSQL_TYPE_LONG_BLOB:
     case MYSQL_TYPE_BLOB:
+    case MYSQL_TYPE_VECTOR:
     case MYSQL_TYPE_DECIMAL:
     case MYSQL_TYPE_NEWDECIMAL:
     default: {
@@ -3524,10 +3596,10 @@ static bool is_binary_compatible(enum enum_field_types type1,
       range2[] = {MYSQL_TYPE_INT24, MYSQL_TYPE_LONG, MYSQL_TYPE_NULL},
       range3[] = {MYSQL_TYPE_DATETIME, MYSQL_TYPE_TIMESTAMP, MYSQL_TYPE_NULL},
       range4[] = {
-          MYSQL_TYPE_ENUM,        MYSQL_TYPE_SET,       MYSQL_TYPE_TINY_BLOB,
-          MYSQL_TYPE_MEDIUM_BLOB, MYSQL_TYPE_LONG_BLOB, MYSQL_TYPE_BLOB,
-          MYSQL_TYPE_VAR_STRING,  MYSQL_TYPE_STRING,    MYSQL_TYPE_GEOMETRY,
-          MYSQL_TYPE_DECIMAL,     MYSQL_TYPE_NULL};
+          MYSQL_TYPE_ENUM,        MYSQL_TYPE_SET,        MYSQL_TYPE_TINY_BLOB,
+          MYSQL_TYPE_MEDIUM_BLOB, MYSQL_TYPE_LONG_BLOB,  MYSQL_TYPE_BLOB,
+          MYSQL_TYPE_VECTOR,      MYSQL_TYPE_VAR_STRING, MYSQL_TYPE_STRING,
+          MYSQL_TYPE_GEOMETRY,    MYSQL_TYPE_DECIMAL,    MYSQL_TYPE_NULL};
   static const enum enum_field_types *range_list[] = {range1, range2, range3,
                                                       range4},
                                      **range_list_end =
@@ -3628,6 +3700,7 @@ static bool setup_one_fetch_function(MYSQL_BIND *param, MYSQL_FIELD *field) {
     case MYSQL_TYPE_MEDIUM_BLOB:
     case MYSQL_TYPE_LONG_BLOB:
     case MYSQL_TYPE_BLOB:
+    case MYSQL_TYPE_VECTOR:
     case MYSQL_TYPE_BIT:
       assert(param->buffer_length != 0);
       param->fetch_result = fetch_result_bin;
@@ -3707,6 +3780,7 @@ static bool setup_one_fetch_function(MYSQL_BIND *param, MYSQL_FIELD *field) {
     case MYSQL_TYPE_MEDIUM_BLOB:
     case MYSQL_TYPE_LONG_BLOB:
     case MYSQL_TYPE_BLOB:
+    case MYSQL_TYPE_VECTOR:
     case MYSQL_TYPE_VAR_STRING:
     case MYSQL_TYPE_STRING:
     case MYSQL_TYPE_BIT:

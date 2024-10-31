@@ -88,7 +88,8 @@ using std::vector;
 namespace {
 
 RelationalExpression *MakeRelationalExpressionFromJoinList(
-    THD *thd, const mem_root_deque<Table_ref *> &join_list);
+    THD *thd, const Query_block *query_block,
+    const mem_root_deque<Table_ref *> &join_list, bool toplevel = false);
 bool EarlyNormalizeConditions(THD *thd, const RelationalExpression *join,
                               Mem_root_array<Item *> *conditions,
                               bool *always_false);
@@ -96,11 +97,11 @@ bool EarlyNormalizeConditions(THD *thd, const RelationalExpression *join,
 inline bool IsMultipleEquals(const Item *cond) {
   return cond->type() == Item::FUNC_ITEM &&
          down_cast<const Item_func *>(cond)->functype() ==
-             Item_func::MULT_EQUAL_FUNC;
+             Item_func::MULTI_EQ_FUNC;
 }
 
 Item_func_eq *MakeEqItem(Item *a, Item *b,
-                         Item_equal *source_multiple_equality) {
+                         Item_multi_eq *source_multiple_equality) {
   Item_func_eq *eq_item = new Item_func_eq(a, b);
   eq_item->set_cmp_func();
   eq_item->update_used_tables();
@@ -124,7 +125,7 @@ int CountTablesInEquiJoinCondition(const Item *cond) {
       down_cast<const Item_func *>(cond)->contains_only_equi_join_condition());
   if (IsMultipleEquals(cond)) {
     // It's not a join condition if it has a constant argument.
-    assert(down_cast<const Item_equal *>(cond)->const_arg() == nullptr);
+    assert(down_cast<const Item_multi_eq *>(cond)->const_arg() == nullptr);
     return 2;
   } else {
     return popcount(cond->used_tables());
@@ -176,7 +177,7 @@ void ReorderConditions(Mem_root_array<Item *> *condition_parts) {
 
   std::stable_partition(
       condition_parts->begin(), condition_parts->end(),
-      [](const Item *item) { return item->cost().IsExpensive(); });
+      [](const Item *item) { return !item->cost().IsExpensive(); });
 }
 
 /**
@@ -186,7 +187,7 @@ void ReorderConditions(Mem_root_array<Item *> *condition_parts) {
   stages can ignore such duplicates, and also that we can push these parts
   independently of the multiple equality as a whole.
  */
-void ExpandSameTableFromMultipleEquals(Item_equal *equal,
+void ExpandSameTableFromMultipleEquals(Item_multi_eq *equal,
                                        table_map tables_in_subtree,
                                        List<Item> *eq_items) {
   // Look for pairs of items that touch the same table.
@@ -228,14 +229,14 @@ Item *EarlyExpandMultipleEquals(Item *condition, table_map tables_in_subtree) {
         if (!IsMultipleEquals(item)) {
           return item;
         }
-        Item_equal *equal = down_cast<Item_equal *>(item);
+        Item_multi_eq *equal = down_cast<Item_multi_eq *>(item);
 
         List<Item> eq_items;
         // If this condition is a constant, do the evaluation
         // and add a "false" condition if needed.
         // This cannot be skipped as optimize_cond() expects
-        // the value stored in "cond_false" to be checked for
-        // Item_equal before creating equalities from it.
+        // the value stored in "m_always_false" to be checked for
+        // Item_multi_eq before creating equalities from it.
         // We do not need to check for the const item evaluating
         // to be "true", as that could happen only when const table
         // optimization is used (It is currently not done for
@@ -300,7 +301,9 @@ Item *EarlyExpandMultipleEquals(Item *condition, table_map tables_in_subtree) {
       });
 }
 
-RelationalExpression *MakeRelationalExpression(THD *thd, const Table_ref *tl) {
+RelationalExpression *MakeRelationalExpression(THD *thd,
+                                               const Query_block *query_block,
+                                               const Table_ref *tl) {
   if (tl == nullptr) {
     // No tables.
     return nullptr;
@@ -313,39 +316,72 @@ RelationalExpression *MakeRelationalExpression(THD *thd, const Table_ref *tl) {
     return ret;
   } else {
     // A join or multijoin.
-    return MakeRelationalExpressionFromJoinList(thd, tl->nested_join->m_tables);
+    return MakeRelationalExpressionFromJoinList(thd, query_block,
+                                                tl->nested_join->m_tables);
   }
 }
 
 /**
   Convert the Query_block's join lists into a RelationalExpression,
-  ie., a join tree with tables at the leaves.
- */
+  ie., a join tree with tables at the leaves. If join order hints are
+  specified, use the join order specified in the join order hints.
+
+  @param thd           Current thread
+  @param query_block   Current query block
+  @param join_list_arg List of tables in this join
+  @param toplevel      False for subqueries, true otherwise
+
+  @return              RelationalExpression for all tables in join
+*/
 RelationalExpression *MakeRelationalExpressionFromJoinList(
-    THD *thd, const mem_root_deque<Table_ref *> &join_list) {
-  assert(!join_list.empty());
+    THD *thd, const Query_block *query_block,
+    const mem_root_deque<Table_ref *> &join_list_arg, bool toplevel) {
+  assert(!join_list_arg.empty());
+  bool join_order_hinted = false;
+  const mem_root_deque<Table_ref *> *join_list = &join_list_arg;
+
+  if (query_block->opt_hints_qb &&
+      query_block->opt_hints_qb->has_join_order_hints()) {
+    join_order_hinted = true;
+    join_list = query_block->opt_hints_qb->sort_tables_in_join_order(
+        thd, join_list_arg, toplevel);
+  }
+
   RelationalExpression *ret = nullptr;
-  for (auto it = join_list.rbegin(); it != join_list.rend();
+  for (auto it = join_list->rbegin(); it != join_list->rend();
        ++it) {  // The list goes backwards.
     const Table_ref *tl = *it;
     if (ret == nullptr) {
       // The first table in the list.
-      ret = MakeRelationalExpression(thd, tl);
+      ret = MakeRelationalExpression(thd, query_block, tl);
       continue;
     }
 
     RelationalExpression *join = new (thd->mem_root) RelationalExpression(thd);
     join->left = ret;
     if (tl->is_sj_or_aj_nest()) {
-      join->right =
-          MakeRelationalExpressionFromJoinList(thd, tl->nested_join->m_tables);
+      join->right = MakeRelationalExpressionFromJoinList(
+          thd, query_block, tl->nested_join->m_tables);
       join->type = tl->is_sj_nest() ? RelationalExpression::SEMIJOIN
                                     : RelationalExpression::ANTIJOIN;
+      if (tl->is_sj_nest()) {
+        join->enable_semijoin_strategies(tl);
+      }
     } else {
-      join->right = MakeRelationalExpression(thd, tl);
+      join->right = MakeRelationalExpression(thd, query_block, tl);
       if (tl->outer_join) {
         join->type = RelationalExpression::LEFT_JOIN;
-      } else if (tl->straight) {
+      } else if (tl->straight || Overlaps(query_block->active_options(),
+                                          SELECT_STRAIGHT_JOIN)) {
+        join->type = RelationalExpression::STRAIGHT_INNER_JOIN;
+      } else if (join_order_hinted &&
+                 query_block->opt_hints_qb->check_join_order_hints(
+                     join->left, join->right, join_list)) {
+        join->type = RelationalExpression::STRAIGHT_INNER_JOIN;
+      } else if (join_order_hinted &&
+                 query_block->opt_hints_qb->check_join_order_hints(
+                     join->right, join->left, join_list)) {
+        std::swap(join->left, join->right);
         join->type = RelationalExpression::STRAIGHT_INNER_JOIN;
       } else {
         join->type = RelationalExpression::INNER_JOIN;
@@ -732,9 +768,7 @@ bool OperatorsAreAssociative(const RelationalExpression &a,
 
   // Secondary engine does not want us to treat STRAIGHT_JOINs as
   // associative.
-  if ((current_thd->secondary_engine_optimization() ==
-       Secondary_engine_optimization::SECONDARY) &&
-      (a.type == RelationalExpression::STRAIGHT_INNER_JOIN ||
+  if ((a.type == RelationalExpression::STRAIGHT_INNER_JOIN ||
        b.type == RelationalExpression::STRAIGHT_INNER_JOIN)) {
     return false;
   }
@@ -902,13 +936,13 @@ bool IsCandidateForCycle(RelationalExpression *expr, Item *cond,
          nullptr;
 }
 
-bool ComesFromMultipleEquality(Item *item, Item_equal *equal) {
+bool ComesFromMultipleEquality(Item *item, Item_multi_eq *equal) {
   return is_function_of_type(item, Item_func::EQ_FUNC) &&
          down_cast<Item_func_eq *>(item)->source_multiple_equality == equal;
 }
 
 int FindSourceMultipleEquality(Item *item,
-                               const Mem_root_array<Item_equal *> &equals) {
+                               const Mem_root_array<Item_multi_eq *> &equals) {
   if (!is_function_of_type(item, Item_func::EQ_FUNC)) {
     return -1;
   }
@@ -921,7 +955,7 @@ int FindSourceMultipleEquality(Item *item,
   return -1;
 }
 
-bool MultipleEqualityAlreadyExistsOnJoin(Item_equal *equal,
+bool MultipleEqualityAlreadyExistsOnJoin(Item_multi_eq *equal,
                                          const RelationalExpression &expr) {
   // Could be called both before and after MakeHashJoinConditions(),
   // so check for join_conditions and equijoin_conditions.
@@ -941,9 +975,8 @@ bool MultipleEqualityAlreadyExistsOnJoin(Item_equal *equal,
 bool AlreadyExistsOnJoin(Item *cond, const RelationalExpression &expr) {
   assert(expr.equijoin_conditions
              .empty());  // MakeHashJoinConditions() has not run yet.
-  constexpr bool binary_cmp = true;
   for (Item *item : expr.join_conditions) {
-    if (cond->eq(item, binary_cmp)) {
+    if (cond->eq(item)) {
       return true;
     }
   }
@@ -968,7 +1001,7 @@ bool AlreadyExistsOnJoin(Item *cond, const RelationalExpression &expr) {
   // This means we only need to check if the join condition already has another
   // equality that comes from the same multiple equality.
   if (is_function_of_type(cond, Item_func::EQ_FUNC)) {
-    if (Item_equal *equal =
+    if (Item_multi_eq *equal =
             down_cast<Item_func_eq *>(cond)->source_multiple_equality;
         equal != nullptr && MultipleEqualityAlreadyExistsOnJoin(equal, expr)) {
       return true;
@@ -1030,7 +1063,7 @@ bool IsBadJoinForCondition(const RelationalExpression &expr, Item *cond) {
     //
     // See the unit test MultipleEqualityIsNotPushedMultipleTimes for an example
     // that goes horribly wrong without this.
-    if (MultipleEqualityAlreadyExistsOnJoin(down_cast<Item_equal *>(cond),
+    if (MultipleEqualityAlreadyExistsOnJoin(down_cast<Item_multi_eq *>(cond),
                                             expr)) {
       return true;
     }
@@ -1111,7 +1144,7 @@ void RotateLeft(RelationalExpression *op) {
   and given the multi-equality (A.x,B.x,D.x), it may pick A.x = D.x
   or B.x = D.x (but never A.x = B.x).
  */
-Item_func_eq *ConcretizeMultipleEquals(Item_equal *cond,
+Item_func_eq *ConcretizeMultipleEquals(Item_multi_eq *cond,
                                        const RelationalExpression &expr) {
   const table_map already_used_tables = CertainlyUsedTablesForCondition(expr);
 
@@ -1176,7 +1209,7 @@ Item_func_eq *ConcretizeMultipleEquals(Item_equal *cond,
   The given container must support push_back(Item_func_eq *).
  */
 template <class T>
-static void FullyConcretizeMultipleEquals(Item_equal *cond,
+static void FullyConcretizeMultipleEquals(Item_multi_eq *cond,
                                           table_map allowed_tables, T *result) {
   Item_field *last_field = nullptr;
   table_map seen_tables = 0;
@@ -1219,7 +1252,7 @@ Item *CanonicalizeCondition(Item *condition, table_map visible_tables,
         if (!IsMultipleEquals(item)) {
           return item;
         }
-        Item_equal *equal = down_cast<Item_equal *>(item);
+        Item_multi_eq *equal = down_cast<Item_multi_eq *>(item);
         assert(equal->const_arg() == nullptr);
         List<Item> eq_items;
         FullyConcretizeMultipleEquals(equal, visible_tables, &eq_items);
@@ -1260,7 +1293,7 @@ bool CanonicalizeConditions(THD *thd, table_map visible_tables,
       return true;
     }
     if (IsAnd(condition)) {
-      // Canonicalization converted something (probably an Item_equal) to a
+      // Canonicalization converted something (probably an Item_multi_eq) to a
       // conjunction, which we need to split back to new conditions again.
       need_resplit = true;
     }
@@ -1311,7 +1344,7 @@ bool AddJoinConditionPossiblyWithRewrite(THD *thd, RelationalExpression *expr,
   // PushDownCondition()), we also disallow making join conditions on semijoins.
   if (!IsBadJoinForCondition(*expr, cond) && IsInnerJoin(expr->type)) {
     if (IsMultipleEquals(cond)) {
-      cond = ConcretizeMultipleEquals(down_cast<Item_equal *>(cond), *expr);
+      cond = ConcretizeMultipleEquals(down_cast<Item_multi_eq *>(cond), *expr);
     }
 
     expr->join_conditions.push_back(cond);
@@ -1449,7 +1482,7 @@ bool AddJoinConditionPossiblyWithRewrite(THD *thd, RelationalExpression *expr,
   ===================
 
   Pushing down multiple equalities is somewhat tricky. To recap, a multiple
-  equality (Item_equal) is a set of N fields (a,b,c,...) that are all assumed
+  equality (Item_multi_eq) is a set of N fields (a,b,c,...) that are all assumed
   to be equal to each other. As part of pushdown, we concretize these into
   (N-1) regular equalities (where every field is referred to at least once);
   this is enough for query correctness, and the remaining options will be added
@@ -1723,7 +1756,7 @@ void PushDownCondition(THD *thd, Item *cond, RelationalExpression *expr,
               ItemToString(cond).c_str());
         }
         Mem_root_array<Item *> possible_cycle_edges(current_thd->mem_root);
-        FullyConcretizeMultipleEquals(down_cast<Item_equal *>(cond),
+        FullyConcretizeMultipleEquals(down_cast<Item_multi_eq *>(cond),
                                       expr->tables_in_subtree,
                                       &possible_cycle_edges);
         for (Item *sub_cond : possible_cycle_edges) {
@@ -1753,10 +1786,11 @@ void PushDownCondition(THD *thd, Item *cond, RelationalExpression *expr,
           ItemToString(cond).c_str());
     }
 
-    if (IsMultipleEquals(cond) && !MultipleEqualityAlreadyExistsOnJoin(
-                                      down_cast<Item_equal *>(cond), *expr)) {
+    if (IsMultipleEquals(cond) &&
+        !MultipleEqualityAlreadyExistsOnJoin(down_cast<Item_multi_eq *>(cond),
+                                             *expr)) {
       expr->join_conditions.push_back(
-          ConcretizeMultipleEquals(down_cast<Item_equal *>(cond), *expr));
+          ConcretizeMultipleEquals(down_cast<Item_multi_eq *>(cond), *expr));
     } else if (IsSubset(used_tables, expr->tables_in_subtree)) {
       expr->join_conditions.push_back(cond);
     } else {
@@ -1982,7 +2016,7 @@ void LateConcretizeMultipleEqualities(THD *thd, RelationalExpression *expr) {
     if (IsMultipleEquals(item) &&
         Overlaps(item->used_tables(), expr->left->tables_in_subtree) &&
         Overlaps(item->used_tables(), expr->right->tables_in_subtree)) {
-      item = ConcretizeMultipleEquals(down_cast<Item_equal *>(item), *expr);
+      item = ConcretizeMultipleEquals(down_cast<Item_multi_eq *>(item), *expr);
     }
   }
   LateConcretizeMultipleEqualities(thd, expr->left);
@@ -2058,7 +2092,7 @@ void ClearImpossibleJoinConditions(RelationalExpression *expr) {
   could have created a mesh of the three first ones, but we don't currently.
  */
 bool ShouldCompleteMeshForCondition(
-    Item_equal *item_equal,
+    Item_multi_eq *item_equal,
     const CompanionSetCollection &companion_collection) {
   if (companion_collection.Find(item_equal->used_tables()) == nullptr) {
     return false;
@@ -2074,7 +2108,7 @@ bool ShouldCompleteMeshForCondition(
 void ExtractCycleMultipleEqualities(
     const Mem_root_array<Item *> &conditions,
     const CompanionSetCollection &companion_collection,
-    Mem_root_array<Item_equal *> *multiple_equalities) {
+    Mem_root_array<Item_multi_eq *> *multiple_equalities) {
   for (Item *item : conditions) {
     assert(!IsMultipleEquals(item));  // Should have been canonicalized earlier.
     if (is_function_of_type(item, Item_func::EQ_FUNC)) {
@@ -2093,7 +2127,7 @@ void ExtractCycleMultipleEqualities(
 void ExtractCycleMultipleEqualitiesFromJoinConditions(
     const RelationalExpression *expr,
     const CompanionSetCollection &companion_collection,
-    Mem_root_array<Item_equal *> *multiple_equalities) {
+    Mem_root_array<Item_multi_eq *> *multiple_equalities) {
   if (expr->type == RelationalExpression::TABLE) {
     return;
   }
@@ -2224,7 +2258,7 @@ void CSEConditions(THD *thd, Mem_root_array<Item *> *conditions) {
 /// Find (via a multiple equality) and return a constant that should replace
 /// "item". If no such constant is found, return "item".
 Item *GetSubstitutionConst(Item_field *item, Item_func *parent_func) {
-  Item_equal *equal = item->multi_equality();
+  Item_multi_eq *equal = item->multi_equality();
   if (equal == nullptr) return item;
   Item *const_item = equal->const_arg();
   if (const_item == nullptr || !item->has_compatible_context(const_item) ||
@@ -2272,7 +2306,7 @@ Item *PropagateConstants(Item *cond) {
 /// @return The field to replace "item" with, or "item".
 Item_field *GetSubstitutionField(Item_field *item, Item_func *parent,
                                  table_map allowed_tables) {
-  Item_equal *item_equal = item->multi_equality();
+  Item_multi_eq *item_equal = item->multi_equality();
   if (item_equal == nullptr || item_equal->const_arg() != nullptr) {
     return item;
   }
@@ -2363,7 +2397,7 @@ bool EarlyNormalizeConditions(THD *thd, const RelationalExpression *join,
         popcount((*it)->used_tables() & ~PSEUDO_TABLE_BITS) < 2;
     if (is_filter) {
       *it = PropagateConstants(*it);
-    } else if (!is_function_of_type(*it, Item_func::MULT_EQUAL_FUNC)) {
+    } else if (!is_function_of_type(*it, Item_func::MULTI_EQ_FUNC)) {
       *it = PropagateEqualities(*it, join);
     }
 
@@ -3115,7 +3149,7 @@ void AddCycleEdges(THD *thd, const Mem_root_array<Item *> &cycle_inducing_edges,
       // happen with multiple equalities in particular).
       bool dup = false;
       for (Item *other_cond : expr->equijoin_conditions) {
-        if (other_cond->eq(cond, /*binary_cmp=*/true)) {
+        if (other_cond->eq(cond)) {
           dup = true;
           break;
         }
@@ -3124,7 +3158,7 @@ void AddCycleEdges(THD *thd, const Mem_root_array<Item *> &cycle_inducing_edges,
         continue;
       }
       for (Item *other_cond : expr->join_conditions) {
-        if (other_cond->eq(cond, /*binary_cmp=*/true)) {
+        if (other_cond->eq(cond)) {
           dup = true;
           break;
         }
@@ -3175,7 +3209,7 @@ void AddCycleEdges(THD *thd, const Mem_root_array<Item *> &cycle_inducing_edges,
  */
 void PromoteCycleJoinPredicates(
     THD *thd, const RelationalExpression *root,
-    const Mem_root_array<Item_equal *> &multiple_equalities,
+    const Mem_root_array<Item_multi_eq *> &multiple_equalities,
     const CompanionSetCollection &companion_collection, JoinHypergraph *graph) {
   for (size_t edge_idx = 0; edge_idx < graph->graph.edges.size();
        edge_idx += 2) {
@@ -3311,7 +3345,7 @@ namespace {
 
 void AddMultipleEqualityPredicate(THD *thd,
                                   CompanionSetCollection &companion_collection,
-                                  Item_equal *item_equal,
+                                  Item_multi_eq *item_equal,
                                   Item_field *left_field, int left_table_idx,
                                   Item_field *right_field, int right_table_idx,
                                   double selectivity, JoinHypergraph *graph) {
@@ -3383,18 +3417,16 @@ void AddMultipleEqualityPredicate(THD *thd,
   trivial conditions have been removed.
  */
 void CompleteFullMeshForMultipleEqualities(
-    THD *thd, const Mem_root_array<Item_equal *> &multiple_equalities,
+    THD *thd, const Mem_root_array<Item_multi_eq *> &multiple_equalities,
     CompanionSetCollection &companion_collection, JoinHypergraph *graph) {
-  for (Item_equal *item_equal : multiple_equalities) {
+  for (Item_multi_eq *item_equal : multiple_equalities) {
     double selectivity = EstimateSelectivity(
         thd, item_equal, *companion_collection.Find(item_equal->used_tables()));
 
     for (Item_field &left_field : item_equal->get_fields()) {
-      const int left_table_idx =
-          left_field.field->table->pos_in_table_list->tableno();
+      const int left_table_idx = left_field.m_table_ref->tableno();
       for (Item_field &right_field : item_equal->get_fields()) {
-        const int right_table_idx =
-            right_field.field->table->pos_in_table_list->tableno();
+        const int right_table_idx = right_field.m_table_ref->tableno();
         if (right_table_idx <= left_table_idx) {
           continue;
         }
@@ -3441,7 +3473,7 @@ table_map GetTablesInnerToOuterJoinOrAntiJoin(
   multiple equalities that do not have an already known value, as such
   equalities should be eliminated by constant folding instead of being expanded.
  */
-bool ExpandMultipleEqualsForSingleTable(Item_equal *equal,
+bool ExpandMultipleEqualsForSingleTable(Item_multi_eq *equal,
                                         Mem_root_array<Item *> *conditions) {
   assert(!equal->const_item());
   assert(has_single_bit(equal->used_tables() & ~PSEUDO_TABLE_BITS));
@@ -3478,7 +3510,7 @@ bool ExtractWhereConditionsForSingleTable(THD *thd, Item *condition,
   bool need_normalization = false;
   if (WalkConjunction(condition, [conditions, &need_normalization](Item *cond) {
         if (IsMultipleEquals(cond)) {
-          Item_equal *equal = down_cast<Item_equal *>(cond);
+          Item_multi_eq *equal = down_cast<Item_multi_eq *>(cond);
           if (equal->const_item()) {
             // This equality is known to evaluate to a constant value. Don't
             // expand it, but rather let constant folding remove it. Flag that
@@ -3526,7 +3558,7 @@ bool MakeSingleTableHypergraph(THD *thd, const Query_block *query_block,
       table_ref->table->file->print_error(error, MYF(0));
       return true;
     }
-    root = MakeRelationalExpression(thd, table_ref);
+    root = MakeRelationalExpression(thd, query_block, table_ref);
     MakeJoinGraphFromRelationalExpression(thd, root, graph);
   }
 
@@ -3601,8 +3633,8 @@ bool MakeJoinHypergraph(THD *thd, JoinHypergraph *graph,
                                      where_is_always_false);
   }
 
-  RelationalExpression *root =
-      MakeRelationalExpressionFromJoinList(thd, query_block->m_table_nest);
+  RelationalExpression *root = MakeRelationalExpressionFromJoinList(
+      thd, query_block, query_block->m_table_nest, /*toplevel=*/true);
 
   CompanionSetCollection companion_collection(thd, root);
   FlattenInnerJoins(root);
@@ -3754,7 +3786,7 @@ bool MakeJoinHypergraph(THD *thd, JoinHypergraph *graph,
   // conditions extracted, go ahead and extract all the multiple
   // equalities that are in actual use, and present as part of the base
   // conjunctions (ie., not OR-ed with anything).
-  Mem_root_array<Item_equal *> multiple_equalities(thd->mem_root);
+  Mem_root_array<Item_multi_eq *> multiple_equalities(thd->mem_root);
   ExtractCycleMultipleEqualitiesFromJoinConditions(root, companion_collection,
                                                    &multiple_equalities);
   ExtractCycleMultipleEqualities(where_conditions, companion_collection,

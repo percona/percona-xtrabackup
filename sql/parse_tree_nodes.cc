@@ -1773,6 +1773,7 @@ bool PT_set_operation::contextualize_setop(Parse_context *pc,
   if (setop == nullptr) return true;
 
   merge_descendants(pc, setop, ql);
+  setop->label_children();
 
   Query_expression *qe = pc->select->master_query_expression();
   if (setop->set_block(qe->create_post_processing_block(setop))) return true;
@@ -1951,9 +1952,10 @@ bool PT_foreign_key_definition::do_contextualize(Table_ddl_parse_context *pc) {
     is used. If both are missing name of generated supporting index is
     automatically produced.
   */
-  const LEX_CSTRING key_name = to_lex_cstring(
-      m_constraint_name.str ? m_constraint_name
-                            : m_key_name.str ? m_key_name : NULL_STR);
+  const LEX_CSTRING key_name =
+      to_lex_cstring(m_constraint_name.str ? m_constraint_name
+                     : m_key_name.str      ? m_key_name
+                                           : NULL_STR);
 
   if (key_name.str && check_string_char_length(key_name, "", NAME_CHAR_LEN,
                                                system_charset_info, true)) {
@@ -1962,11 +1964,22 @@ bool PT_foreign_key_definition::do_contextualize(Table_ddl_parse_context *pc) {
   }
 
   List<Key_part_spec> cols;
-  for (PT_key_part_specification &kp : *m_columns) {
-    if (kp.contextualize(pc)) return true;
+  if (m_columns != nullptr) {
+    // Foreign key specified at the table level.
+    for (PT_key_part_specification &kp : *m_columns) {
+      if (kp.contextualize(pc)) return true;
 
-    Key_part_spec *spec = new (pc->mem_root) Key_part_spec(
-        kp.get_column_name(), kp.get_prefix_length(), kp.get_order());
+      Key_part_spec *spec = new (pc->mem_root) Key_part_spec(
+          kp.get_column_name(), kp.get_prefix_length(), kp.get_order());
+      if (spec == nullptr || cols.push_back(spec)) {
+        return true; /* purecov: deadcode */
+      }
+    }
+  } else {
+    // Foreign key specified at the column level.
+    assert(m_column_name.str != nullptr);
+    Key_part_spec *spec = new (pc->mem_root)
+        Key_part_spec(to_lex_cstring(m_column_name), 0, ORDER_ASC);
     if (spec == nullptr || cols.push_back(spec)) {
       return true; /* purecov: deadcode */
     }
@@ -2288,9 +2301,18 @@ bool PT_column_def::do_contextualize(Table_ddl_parse_context *pc) {
     pc->alter_info->cf_appliers = decltype(pc->alter_info->cf_appliers)();
   });
 
-  if (super::do_contextualize(pc) || field_def->contextualize(pc) ||
-      contextualize_safe(pc, opt_column_constraint))
-    return true;
+  if (super::do_contextualize(pc) || field_def->contextualize(pc)) return true;
+
+  if (opt_column_constraint) {
+    // FK specification at column level is supported from 9.0 version onwards.
+    // If source node version is lesser than 9.0, then ignore FK specification.
+    if (!is_rpl_source_older(pc->thd, 90000)) {
+      PT_foreign_key_definition *fk_def =
+          pointer_cast<PT_foreign_key_definition *>(opt_column_constraint);
+      fk_def->set_column_name(field_ident);
+      if (contextualize_safe(pc, opt_column_constraint)) return true;
+    }
+  }
 
   pc->alter_info->flags |= field_def->alter_info_flags;
   dd::Column::enum_hidden_type field_hidden_type =
@@ -3642,12 +3664,8 @@ Sql_cmd *PT_explain::make_cmd(THD *thd) {
       }
       break;
     case Explain_format_type::JSON: {
-      lex->explain_format = new (thd->mem_root) Explain_format_JSON(
-          thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER) ||
-                  thd->variables.explain_json_format_version == 2
-              ? Explain_format_JSON::FormatVersion::kIteratorBased
-              : Explain_format_JSON::FormatVersion::kLinear,
-          m_explain_into_variable_name);
+      lex->explain_format =
+          new (thd->mem_root) Explain_format_JSON(m_explain_into_variable_name);
       break;
     }
     case Explain_format_type::TREE:
@@ -4682,6 +4700,12 @@ Sql_cmd *PT_show_grants::make_cmd(THD *thd) {
 Sql_cmd *PT_show_parse_tree::make_cmd(THD *thd) {
   LEX *lex = thd->lex;
 
+  // Several of the 'simple_statement:' do $$= nullptr;
+  if (m_parse_tree_stmt == nullptr) {
+    // my_error(ER_NOT_SUPPORTED_YET ....)
+    Parse_tree_root::get_printable_parse_tree(thd);
+    return nullptr;
+  }
   std::string parse_tree_str = m_parse_tree_stmt->get_printable_parse_tree(thd);
 
   if (parse_tree_str.empty()) return nullptr;
