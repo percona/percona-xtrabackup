@@ -18,6 +18,13 @@ INCLUDE(procps)
 
 OPTION(WITH_VERSION_CHECK "Build with version check" ON)
 
+OPTION(PROBUILD "Build Percona XtraBackup Pro variant" OFF)
+IF (PROBUILD)
+ SET(XTRABACKUP_SUFFIX "-pro")
+ ADD_DEFINITIONS(-DPROBUILD)
+ENDIF()
+
+
 INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
 
 FIND_GCRYPT()
@@ -83,6 +90,7 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   xtrabackup.cc
   changed_page_tracking.cc
   datasink.cc
+  ddl_tracker.cc
   ds_buffer.cc
   ds_compress.cc
   ds_compress_lz4.cc
