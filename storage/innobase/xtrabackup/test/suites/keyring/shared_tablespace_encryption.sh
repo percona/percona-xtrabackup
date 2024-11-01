@@ -10,9 +10,10 @@ innodb-sys-tablespace-encrypt
 loose-innodb-default-encryption=on
 "
 
+KEYRING_TYPE="component"
+. inc/keyring_common.sh
 . inc/keyring_file.sh
-
-start_server
+configure_server_with_component
 
 mysql -e "CREATE TABLE t (a INT PRIMARY KEY, b TEXT)" test
 mysql -e "INSERT INTO t (a, b) VALUES (1, 'a')" test
@@ -26,7 +27,11 @@ stop_server
 
 rm -rf $mysql_datadir
 
-xtrabackup --copy-back --transition-key=1234 --generate-new-master-key --target-dir=$topdir/backup
+xtrabackup --copy-back --transition-key=1234 --generate-new-master-key --target-dir=$topdir/backup \
+               --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
+
+cp ${instance_local_manifest}  $mysql_datadir
+cp ${keyring_component_cnf} $mysql_datadir
 
 start_server
 
@@ -43,7 +48,10 @@ stop_server
 
 rm -rf $mysql_datadir
 
-xtrabackup --copy-back --target-dir=$topdir/backup
+xtrabackup --copy-back --target-dir=$topdir/backup --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
+
+cp ${instance_local_manifest}  $mysql_datadir
+cp ${keyring_component_cnf} $mysql_datadir
 
 start_server
 
