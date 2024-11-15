@@ -121,6 +121,13 @@ class Redo_Log_Parser {
   @param[in] start_lsn          start lsn
   @return false if error. */
   bool parse_log(const byte *buf, size_t len, lsn_t start_lsn);
+
+  /** Get last parsed LSN. */
+  lsn_t get_last_parsed_lsn() const;
+
+ private:
+  /** last parsed LSN */
+  std::atomic<lsn_t> last_parsed_lsn{0};
 };
 
 /** Redo log writer. */
@@ -302,11 +309,20 @@ class Redo_Log_Data_Manager {
   /** Get last scanned lsn. */
   lsn_t get_scanned_lsn() const;
 
+  /** Get last parsed lsn. */
+  lsn_t get_parsed_lsn() const;
+
+  /** Get copy interval. */
+  ulint get_copy_interval() const;
+
   /** Set copy interval. */
   void set_copy_interval(ulint interval);
 
   /** Whether there was an error. */
   bool is_error() const;
+
+  /** whether we have parsed up to LSN */
+  bool has_parsed_lsn(lsn_t lsn) const;
 
   ~Redo_Log_Data_Manager();
 
