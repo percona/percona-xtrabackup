@@ -46,7 +46,7 @@ INSERT INTO test.t2_3 VALUES (1100), (1200), (1300);
 EOF
 
 xtrabackup --backup --target-dir=$topdir/inc \
-	   --incremental-basedir=$topdir/full --lock-ddl=false \
+	   --incremental-basedir=$topdir/full --lock-ddl=OFF \
 	   --debug-sync="data_copy_thread_func" &
 
 job_pid=$!
