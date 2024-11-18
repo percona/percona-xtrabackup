@@ -796,6 +796,9 @@ bool recv_sys_resize_buf();
 hash table to wait merging to file pages. */
 void recv_parse_log_recs();
 
+std::tuple<bool, recv_sys_t::Encryption_Key *> recv_find_encryption_key(
+    space_id_t space_id);
+
 #include "log0recv.ic"
 
 #endif
