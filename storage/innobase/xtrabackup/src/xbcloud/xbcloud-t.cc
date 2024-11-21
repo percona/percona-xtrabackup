@@ -558,15 +558,15 @@ TEST(azure_signer, basicDNS) {
   req.append_payload("test", 4);
   Azure_signer signer(
       "my-storage-account",
-      "zUfvsKXc6+2RMJCwvnElnG/"
-      "Kk7wxQ8V4TPXIuZ53qFwJNtpLUEjYdBe9iGTkMgwUGFHVfFgn2qkgoqDP/b3OAg==",
+      "zUfvsKXcAO2RMJCwvnElnG/"
+      "Kk7wxQ8V4TPXIuZ53qFwJNtpLUEjYdBe9iGTkMgwUGFHVfFgn2qkgoqDP/i3ODQ==",
       0);
   signer.sign_request("mycontainer", "myblob", req, 1555892546);
 
   ASSERT_STREQ(
       req.headers().at("Authorization").c_str(),
       "SharedKey "
-      "my-storage-account:uZABJWDbfXO/SuDZbxrJnd00kCDV61cevqi423k21A4=");
+      "my-storage-account:3RNUoT7aggagRnzDebBh1JDGhJocV0e2MKb9ChNvAcM=");
 }
 
 TEST(azure_signer, storageClass) {
@@ -579,13 +579,13 @@ TEST(azure_signer, storageClass) {
   req.append_payload("test", 4);
   Azure_signer signer(
       "my-storage-account",
-      "zUfvsKXc6+2RMJCwvnElnG/"
-      "Kk7wxQ8V4TPXIuZ53qFwJNtpLUEjYdBe9iGTkMgwUGFHVfFgn2qkgoqDP/i3OAg==",
+      "zUfvsKXcAO2RMJCwvnElnG/"
+      "Kk7wxQ8V4TPXIuZ53qFwJNtpLUEjYdBe9iGTkMgwUGFHVfFgn2qkgoqDP/i3ODQ==",
       0, "storage_class");
   signer.sign_request("mycontainer", "myblob", req, 1555892546);
 
   ASSERT_STREQ(
       req.headers().at("Authorization").c_str(),
       "SharedKey "
-      "my-storage-account:vq5FiJaSj9mrTxeEyp3RRfptEFug4PEozawQG5A+ZHs=");
+      "my-storage-account:b/lbriWK8eQ9uMx97nP0vR894wm+oYsq99Sz0JoH/9k=");
 }
