@@ -1039,10 +1039,16 @@ cleanup:
 @return true in case of success or false otherwise */
 bool chunk_name_to_file_name(const std::string &chunk_name,
                              std::string &file_name, my_off_t &idx) {
-  if (chunk_name.size() < 22 && chunk_name[chunk_name.size() - 21] != '.') {
+  if (chunk_name.size() < 22 || chunk_name[chunk_name.size() - 21] != '.') {
     /* chunk name is invalid */
     return false;
   }
+  auto slash_pos = chunk_name.find('/');
+  if (slash_pos && chunk_name.size() - slash_pos < 22) {
+    /* '/' must be placed left side from '.' */
+    return false;
+  }
+
   file_name = chunk_name.substr(0, chunk_name.size() - 21);
   idx = atoll(&chunk_name.c_str()[chunk_name.size() - 20]);
   return true;
