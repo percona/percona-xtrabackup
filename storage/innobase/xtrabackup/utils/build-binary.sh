@@ -12,6 +12,9 @@
 # Bail out on errors, be strict
 set -ue
 
+# Enable Pro build
+FIPSMODE=0
+
 # Examine parameters
 TARGET="$(uname -m)"
 TARGET_CFLAGS=''
@@ -99,13 +102,21 @@ if [ -f /etc/redhat-release ]; then
 fi
 
 # Create a temporary working directory
-PRODUCT_FULL="percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER"
+if [[ "x${FIPSMODE}" == "x1" ]]; then
+    PRODUCT_FULL="percona-xtrabackup-pro-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER"
+else
+    PRODUCT_FULL="percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER"
+fi
 BASEINSTALLDIR="$(cd "$WORKDIR" && TMPDIR="$WORKDIR_ABS" mktemp -d xtrabackup-build.XXXXXX)"
 INSTALLDIR="$WORKDIR_ABS/$BASEINSTALLDIR/$PRODUCT_FULL"   # Make it absolute
 
 mkdir "$INSTALLDIR"
 
 # Build
+    BUILD_PARAMETER=""
+    if [[ "x${FIPSMODE}" == "x1" ]]; then
+        BUILD_PARAMETER="-DCMAKE_CXX_FLAGS=-DPROBUILD -DCMAKE_C_FLAGS=-DPROBUILD"
+    fi
 (
     cd "$WORKDIR"
 
@@ -118,7 +129,7 @@ mkdir "$INSTALLDIR"
         $CMAKE_BIN -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX="$INSTALLDIR" \
           -DINSTALL_MYSQLTESTDIR=percona-xtrabackup-${XB_VERSION_MAJOR}.${XB_VERSION_MINOR}-test -DINSTALL_MANDIR=${INSTALLDIR}/man \
           -DDOWNLOAD_BOOST=1 -DWITH_BOOST=${WORKDIR_ABS}/libboost \
-          -DMINIMAL_RELWITHDEBINFO=OFF \
+          -DMINIMAL_RELWITHDEBINFO=OFF ${BUILD_PARAMETER}\
           -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled .
         make $MAKE_JFLAG
         make install
@@ -244,13 +255,23 @@ mkdir "$INSTALLDIR"
         link
 
         cd "$WORKDIR"
-        $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER.tar.gz" \
-                --owner=0 --group=0 -C "$INSTALLDIR/../" \
-                "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER"
+        if [[ "x${FIPSMODE}" == "x1" ]]; then
+            $TAR czf "percona-xtrabackup-pro-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER.tar.gz" \
+                    --owner=0 --group=0 -C "$INSTALLDIR/../" \
+                    "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER"
 
-        $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER-minimal.tar.gz" \
-            --owner=0 --group=0 -C "$INSTALLDIR/../minimal/" \
-            "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER-minimal"
+            $TAR czf "percona-xtrabackup-pro-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER-minimal.tar.gz" \
+                    --owner=0 --group=0 -C "$INSTALLDIR/../minimal/" \
+                    "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER-minimal"
+        else
+            $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER.tar.gz" \
+                    --owner=0 --group=0 -C "$INSTALLDIR/../" \
+                    "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER"
+
+            $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER-minimal.tar.gz" \
+                    --owner=0 --group=0 -C "$INSTALLDIR/../minimal/" \
+                    "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER-minimal"
+        fi
     fi
 
     # Clean up build dir

@@ -27,9 +27,17 @@ Homepage: http://www.percona.com/software/percona-xtrabackup
 
 Package: percona-xtrabackup-84
 Architecture: any
-Depends: libdbd-mysql-perl, libcurl4-openssl-dev, rsync, zstd, ${misc:Depends}, ${shlibs:Depends}
+Depends: libdbd-mysql-perl, libcurl4-openssl-dev, rsync, zstd, lz4, ${misc:Depends}, ${shlibs:Depends}
 Provides: xtrabackup
-Conflicts: percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup, percona-xtrabackup-24, percona-xtrabackup-80, percona-xtrabackup-81, percona-xtrabackup-82, percona-xtrabackup-83
+Conflicts: percona-xtrabackup-21,
+           percona-xtrabackup-22,
+           percona-xtrabackup,
+           percona-xtrabackup-24,
+           percona-xtrabackup-80,
+           percona-xtrabackup-81,
+           percona-xtrabackup-82,
+           percona-xtrabackup-83,
+           percona-xtrabackup-pro-84
 Breaks: xtrabackup (<< 2.0.0~)
 Replaces: xtrabackup (<< 2.0.0~)
 Enhances: mysql-server
@@ -43,13 +51,15 @@ Package: percona-xtrabackup-dbg-84
 Section: debug
 Architecture: any
 Depends: percona-xtrabackup-84 (= ${binary:Version}), ${misc:Depends}
+Conflicts: percona-xtrabackup-pro-dbg-84
 Description: Debug symbols for Percona XtraBackup
  Debug symbols for the binaries in percona-xtrabackup. Install this
  package if you need to run any of those with gdb.
 
 Package: percona-xtrabackup-test-84
 Architecture: any
-Depends: mysql-client, percona-xtrabackup-84, ${misc:Depends}
+Depends: percona-xtrabackup-84, mysql-client, ${misc:Depends}
+Conflicts: percona-xtrabackup-test-pro-84
 Description: Test suite for Percona XtraBackup
  Test suite for Percona XtraBackup. Install this package if you intend
  to run XtraBackup's test suite.

@@ -3,6 +3,7 @@
 
 #export DH_VERBOSE=1
 
+export FIPSFLAGS=
 NCPU=$(shell grep -c processor /proc/cpuinfo)
 
 # These are used for cross-compiling and for saving the configure script
@@ -28,14 +29,14 @@ ifeq "$(DEB_DUMMY)" ""
 	  -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test-84 \
 	  -DINSTALL_MANDIR=/usr/share/man -DWITH_MAN_PAGES=1 -DMINIMAL_RELWITHDEBINFO=OFF \
 	  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock \
-	  -DINSTALL_PLUGINDIR=lib/xtrabackup/plugin -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled && \
+	  -DINSTALL_PLUGINDIR=lib/xtrabackup/plugin -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled $(FIPSFLAGS) && \
 	cd ..
 	( test -d $(builddir) || mkdir $(builddir) ) && cd $(builddir) && \
 	cmake .. -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX=/usr \
 	  -DWITH_SSL=system -DINSTALL_MYSQLTESTDIR=/usr/share/percona-xtrabackup-test-84 \
 	  -DINSTALL_MANDIR=/usr/share/man -DWITH_MAN_PAGES=1 -DMINIMAL_RELWITHDEBINFO=OFF \
 	  -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock \
-	  -DINSTALL_PLUGINDIR=lib/xtrabackup/plugin -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled
+	  -DINSTALL_PLUGINDIR=lib/xtrabackup/plugin -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled $(FIPSFLAGS)
 else
 	# Dummy binaries that avoid compilation
 	echo 'main() { return 300; }' | gcc -x c - -o xtrabackup
