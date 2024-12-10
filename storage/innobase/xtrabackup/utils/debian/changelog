@@ -13,7 +13,7 @@ percona-xtrabackup-82 (8.2) unstable; urgency=low
 
   * Packaging changes for version 8.2
 
- -- Vadim Yalovets <vadim.yalovets@percona.com>  Fri, 11 Dec 202r3 09:01:20 +0300
+ -- Vadim Yalovets <vadim.yalovets@percona.com>  Fri, 11 Dec 2023 09:01:20 +0300
 
 percona-xtrabackup-81 (8.1) unstable; urgency=low
 
