@@ -18,6 +18,7 @@ Usage: $0 [OPTIONS]
         --install_deps      Install build dependencies(root previlages are required)
         --branch            Branch for build
         --repo              Repo for build
+        --enable_fipsmode   Build gated PXB
         --rpm_release       RPM version( default = 1)
         --deb_release       DEB version( default = 1)
         --help) usage ;;
@@ -57,6 +58,7 @@ parse_arguments() {
             --install_deps=*) INSTALL="$val" ;;
             --branch=*) BRANCH="$val" ;;
             --repo=*) REPO="$val" ;;
+            --enable_fipsmode=*) FIPSMODE="$val" ;;
             --rpm_release=*) RPM_RELEASE="$val" ;;
             --deb_release=*) DEB_RELEASE="$val" ;;
             --help) usage ;;
@@ -252,7 +254,7 @@ install_deps() {
                 yum-config-manager --enable ol9_codeready_builder
                 yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
             else
-                add_percona_yum_repo
+                # add_percona_yum_repo
                 percona-release enable tools testing
             fi
         else
@@ -464,13 +466,26 @@ build_srpm(){
     sed -i "/^%changelog/a - Release ${VERSION}-${RELEASE}" percona-xtrabackup.spec
     sed -i "/^%changelog/a * $(date "+%a") $(date "+%b") $(date "+%d") $(date "+%Y") Percona Development Team <info@percona.com> - ${VERSION}-${RELEASE}" percona-xtrabackup.spec
     #
+    if [[ "x${FIPSMODE}" == "x1" ]]; then
+        sed -i -e "s:Name\:           percona-xtrabackup-%:Name\:           percona-xtrabackup-pro-%:g" \
+        -e "s:Requires\:       percona-xtrabackup-%:Requires\:       percona-xtrabackup-pro-%:g" \
+        -e "s:percona-xtrabackup-test-%:percona-xtrabackup-test-pro-%:g" \
+        -e "s:Conflicts\:      percona-xtrabackup-pro-%:Conflicts\:      percona-xtrabackup-%:g" \
+        -e "s:Conflicts\:      percona-xtrabackup-test-pro-%:Conflicts\:      percona-xtrabackup-test-%:g" \
+        percona-xtrabackup.spec
+    fi
+    #
     cd $WORKDIR
     #
     mv -fv $TARFILE $WORKDIR/rpmbuild/SOURCES
     #
     enable_venv
 
-    rpmbuild -bs --define "_topdir $WORKDIR/rpmbuild" --define "dist .generic" rpmbuild/SPECS/percona-xtrabackup.spec
+    if [[ "x${FIPSMODE}" == "x1" ]]; then
+        rpmbuild -bs --define "_topdir $WORKDIR/rpmbuild" --define "dist .generic" --define "enable_fipsmode 1" rpmbuild/SPECS/percona-xtrabackup.spec
+    else
+        rpmbuild -bs --define "_topdir $WORKDIR/rpmbuild" --define "dist .generic" rpmbuild/SPECS/percona-xtrabackup.spec
+    fi
 
     mkdir -p ${WORKDIR}/srpm
     mkdir -p ${CURDIR}/srpm
@@ -520,8 +535,11 @@ build_rpm(){
     SRCRPM=$(basename $(find . -name '*.src.rpm' | sort | tail -n1))
 
     enable_venv
-
-    rpmbuild --define "_topdir ${WORKDIR}/rpmbuild" --define "dist .el${RHEL}" --rebuild rpmbuild/SRPMS/${SRCRPM}
+    if [[ "x${FIPSMODE}" == "x1" ]]; then
+        rpmbuild --define "_topdir ${WORKDIR}/rpmbuild" --define "dist .el${RHEL}" --define "enable_fipsmode 1" --rebuild rpmbuild/SRPMS/${SRCRPM}
+    else
+        rpmbuild --define "_topdir ${WORKDIR}/rpmbuild" --define "dist .el${RHEL}" --rebuild rpmbuild/SRPMS/${SRCRPM}
+    fi
     return_code=$?
     if [ $return_code != 0 ]; then
         exit $return_code
@@ -554,12 +572,36 @@ build_source_deb(){
 
     echo "DEB_RELEASE=${DEB_RELEASE}" >> ${CURDIR}/percona-xtrabackup-8.0.properties
 
-    NEWTAR=${NAME}-84_${VERSION}.orig.tar.gz
+    if [[ "x${FIPSMODE}" == "x1" ]]; then
+        NEWTAR=${NAME}-pro-84_${VERSION}.orig.tar.gz
+    else
+        NEWTAR=${NAME}-84_${VERSION}.orig.tar.gz
+    fi
     mv ${TARFILE} ${NEWTAR}
 
     tar xzf ${NEWTAR}
     cd percona-xtrabackup-$VERSION
     cp -av storage/innobase/xtrabackup/utils/debian .
+    if [ x"${FIPSMODE}" == x1 ]; then
+        sed -i "s:FIPSFLAGS=:FIPSFLAGS=-DPROBUILD=1:g" debian/rules
+        sed -i "s:percona-xtrabackup-dbg-:percona-xtrabackup-pro-dbg-:g" debian/rules
+        sed -i "s:percona-xtrabackup-test-:percona-xtrabackup-test-pro-:g" debian/rules
+        sed -i "s:percona-xtrabackup-:percona-xtrabackup-pro-:g" debian/changelog
+        sed -i "s:Source\: percona-xtrabackup:Source\: percona-xtrabackup-pro:g" debian/control
+        sed -i "s:Package\: percona-xtrabackup-84:Package\: percona-xtrabackup-pro-84:g" debian/control
+        sed -i "s:  percona-xtrabackup-pro:  percona-xtrabackup:g" debian/control
+        sed -i "s:Package\: percona-xtrabackup-dbg:Package\: percona-xtrabackup-pro-dbg:g" debian/control
+        sed -i "s:Depends\: percona-xtrabackup:Depends\: percona-xtrabackup-pro:g" debian/control
+        sed -i "s:Conflicts\: percona-xtrabackup-pro-dbg:Conflicts\: percona-xtrabackup-dbg:g" debian/control
+        sed -i "s:Package\: percona-xtrabackup-test:Package\: percona-xtrabackup-test-pro:g" debian/control
+        sed -i "s:Conflicts\: percona-xtrabackup-test-pro:Conflicts\: percona-xtrabackup-test:g" debian/control
+        cp debian/percona-xtrabackup-84.docs debian/percona-xtrabackup-pro-84.docs
+        cp debian/percona-xtrabackup-84.install debian/percona-xtrabackup-pro-84.install
+        cp debian/percona-xtrabackup-84.lintian-overrides debian/percona-xtrabackup-pro-84.lintian-overrides
+        cp debian/percona-xtrabackup-test-84.install debian/percona-xtrabackup-test-pro-84.install
+        cp debian/percona-xtrabackup-test-84.lintian-overrides debian/percona-xtrabackup-test-pro-84.lintian-overrides
+        sed -i "s:percona-xtrabackup-test:percona-xtrabackup-test-pro:g" debian/percona-xtrabackup-test-pro-84.install
+    fi
     dch -D unstable --force-distribution -v "${VERSION}-${DEB_RELEASE}" "Update to new upstream release Percona XtraBackup ${VERSION}"
     dpkg-buildpackage -S
 
@@ -598,8 +640,13 @@ build_deb(){
 
 
     DSC=$(basename $(find . -name '*.dsc' | sort | tail -n 1))
-    DIRNAME=$(echo $DSC | sed -e 's:_:-:g' | awk -F'-' '{print $1"-"$2"-"$3"-"$4"-"$5}')
-    VERSION=$(echo $DSC | sed -e 's:_:-:g' | awk -F'-' '{print $4"-"$5}')
+    if [[ "x${FIPSMODE}" == "x1" ]]; then
+        DIRNAME=$(echo $DSC | sed -e 's:_:-:g' | awk -F'-' '{print $1"-"$2"-"$3"-"$4"-"$5"-"$6}')
+        VERSION=$(echo $DSC | sed -e 's:_:-:g' | awk -F'-' '{print $5"-"$6}')
+    else
+        DIRNAME=$(echo $DSC | sed -e 's:_:-:g' | awk -F'-' '{print $1"-"$2"-"$3"-"$4"-"$5}')
+        VERSION=$(echo $DSC | sed -e 's:_:-:g' | awk -F'-' '{print $4"-"$5}')
+    fi
     #
     echo "DEB_RELEASE=${DEB_RELEASE}" >> ${CURDIR}/percona-xtrabackup-8.0.properties
     echo "DEBIAN_VERSION=${OS_NAME}" >> ${CURDIR}/percona-xtrabackup-8.0.properties
@@ -640,6 +687,9 @@ build_tarball(){
     tar xzf ${TARFILE}
     cd ${TARFILE%.tar.gz}
     #
+    if [[ "x${FIPSMODE}" == "x1" ]]; then
+        sed -i "s/FIPSMODE=0/FIPSMODE=1/g" ./storage/innobase/xtrabackup/utils/build-binary.sh
+    fi
     bash -x ./storage/innobase/xtrabackup/utils/build-binary.sh ${WORKDIR}/TARGET
 
     mkdir -p ${WORKDIR}/tarball
