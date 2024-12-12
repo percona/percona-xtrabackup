@@ -27,7 +27,7 @@ Homepage: http://www.percona.com/software/percona-xtrabackup
 
 Package: percona-xtrabackup-80
 Architecture: any
-Depends: libdbd-mysql-perl, libcurl4-openssl-dev, rsync, zstd, ${misc:Depends}, ${shlibs:Depends}
+Depends: libdbd-mysql-perl, libcurl4-openssl-dev, rsync, zstd, lz4, ${misc:Depends}, ${shlibs:Depends}
 Provides: xtrabackup
 Conflicts: percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup, percona-xtrabackup-24
 Breaks: xtrabackup (<< 2.0.0~)
