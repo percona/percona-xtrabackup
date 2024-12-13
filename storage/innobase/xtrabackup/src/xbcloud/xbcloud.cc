@@ -1039,7 +1039,7 @@ cleanup:
 @return true in case of success or false otherwise */
 bool chunk_name_to_file_name(const std::string &chunk_name,
                              std::string &file_name, my_off_t &idx) {
-  if (chunk_name.size() < 22 && chunk_name[chunk_name.size() - 21] != '.') {
+  if (chunk_name.size() < 22 || chunk_name[chunk_name.size() - 21] != '.') {
     /* chunk name is invalid */
     return false;
   }
