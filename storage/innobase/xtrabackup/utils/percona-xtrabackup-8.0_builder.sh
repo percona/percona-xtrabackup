@@ -475,6 +475,19 @@ build_srpm(){
         percona-xtrabackup.spec
     fi
     #
+    cd ${WORKDIR}/rpmbuild/SOURCES
+    wget https://raw.githubusercontent.com/Percona-Lab/telemetry-agent/phase-0/call-home.sh
+    cd ${WORKDIR}/rpmbuild/SPECS
+    line_number=$(grep -n SOURCE999 percona-xtrabackup.spec | awk -F ':' '{print $1}')
+    cp ../SOURCES/call-home.sh ./
+    awk -v n=$line_number 'NR <= n {print > "part1.txt"} NR > n {print > "part2.txt"}' percona-xtrabackup.spec
+    head -n -1 part1.txt > temp && mv temp part1.txt
+    echo "cat <<'CALLHOME' > /tmp/call-home.sh" >> part1.txt
+    cat call-home.sh >> part1.txt
+    echo "CALLHOME" >> part1.txt
+    cat part2.txt >> part1.txt
+    rm -f call-home.sh part2.txt
+    mv part1.txt percona-xtrabackup.spec
     cd $WORKDIR
     #
     mv -fv $TARFILE $WORKDIR/rpmbuild/SOURCES
@@ -597,6 +610,7 @@ build_source_deb(){
         sed -i "s:Conflicts\: percona-xtrabackup-test-pro:Conflicts\: percona-xtrabackup-test:g" debian/control
         cp debian/percona-xtrabackup-84.docs debian/percona-xtrabackup-pro-84.docs
         cp debian/percona-xtrabackup-84.install debian/percona-xtrabackup-pro-84.install
+        cp debian/percona-xtrabackup-84.postinst debian/percona-xtrabackup-pro-84.postinst
         cp debian/percona-xtrabackup-84.lintian-overrides debian/percona-xtrabackup-pro-84.lintian-overrides
         cp debian/percona-xtrabackup-test-84.install debian/percona-xtrabackup-test-pro-84.install
         cp debian/percona-xtrabackup-test-84.lintian-overrides debian/percona-xtrabackup-test-pro-84.lintian-overrides
@@ -655,6 +669,22 @@ build_deb(){
     dpkg-source -x $DSC
     cd $DIRNAME
     dch -m -D "$OS_NAME" --force-distribution -v "$VERSION-$DEB_RELEASE.$OS_NAME" 'Update distribution'
+    postfix=""
+    if [ x"${FIPSMODE}" == x1 ]; then
+        postfix="-pro"
+    fi
+    cd debian/
+    wget https://raw.githubusercontent.com/Percona-Lab/telemetry-agent/phase-0/call-home.sh
+    sed -i 's:exit 0::' percona-xtrabackup"${postfix}"-84.postinst
+    echo "cat <<'CALLHOME' > /tmp/call-home.sh" >> percona-xtrabackup"${postfix}"-84.postinst
+    cat call-home.sh >> percona-xtrabackup"${postfix}"-84.postinst
+    echo "CALLHOME" >> percona-xtrabackup"${postfix}"-84.postinst
+    echo "bash +x /tmp/call-home.sh -f \"PRODUCT_FAMILY_PXB\" -v \"${VERSION}-${DEB_RELEASE}"${postfix}"\" -d \"PACKAGE\" &>/dev/null || :" >> percona-xtrabackup"${postfix}"-84.postinst
+    echo "rm -rf /tmp/call-home.sh" >> percona-xtrabackup"${postfix}"-84.postinst
+    echo "exit 0" >> percona-xtrabackup"${postfix}"-84.postinst
+    rm -f call-home.sh
+    cd ../
+
     dpkg-buildpackage -rfakeroot -uc -us -b
 
     cd ${WORKDIR}
