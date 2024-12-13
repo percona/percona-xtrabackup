@@ -115,7 +115,7 @@ mkdir "$INSTALLDIR"
 # Build
     BUILD_PARAMETER=""
     if [[ "x${FIPSMODE}" == "x1" ]]; then
-        BUILD_PARAMETER="-DCMAKE_CXX_FLAGS=-DPROBUILD -DCMAKE_C_FLAGS=-DPROBUILD"
+        BUILD_PARAMETER="-DPROBUILD=1"
     fi
 (
     cd "$WORKDIR"
