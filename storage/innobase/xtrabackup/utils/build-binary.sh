@@ -258,11 +258,11 @@ mkdir "$INSTALLDIR"
         if [[ "x${FIPSMODE}" == "x1" ]]; then
             $TAR czf "percona-xtrabackup-pro-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER.tar.gz" \
                     --owner=0 --group=0 -C "$INSTALLDIR/../" \
-                    "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER"
+                    "percona-xtrabackup-pro-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER"
 
             $TAR czf "percona-xtrabackup-pro-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER-minimal.tar.gz" \
                     --owner=0 --group=0 -C "$INSTALLDIR/../minimal/" \
-                    "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER-minimal"
+                    "percona-xtrabackup-pro-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER-minimal"
         else
             $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER.tar.gz" \
                     --owner=0 --group=0 -C "$INSTALLDIR/../" \
