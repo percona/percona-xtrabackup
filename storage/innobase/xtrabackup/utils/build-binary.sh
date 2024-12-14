@@ -1,4 +1,4 @@
-g#!/bin/bash
+#!/bin/bash
 #
 # Execute this tool to setup the environment and build binary releases
 # for xtrabackup starting from a fresh tree.
