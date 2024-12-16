@@ -180,6 +180,7 @@ get_sources(){
     sed -i "s:@@XB_VERSION_EXTRA@@:${EXTRAVER}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
     sed -i "s:@@XB_RPM_VERSION_EXTRA@@:${RPM_EXTRAVER}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
     sed -i "s:@@XB_REVISION@@:${REVISION}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
+    sed -i "s:@@RPM_RELEASE@@:${RPM_RELEASE}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
     #
     # create a PXB tar
     cd ${WORKDIR}/percona-xtrabackup
