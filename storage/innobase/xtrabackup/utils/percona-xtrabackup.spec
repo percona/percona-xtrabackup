@@ -4,6 +4,7 @@
 %define xb_version_extra  @@XB_VERSION_EXTRA@@
 %define xb_rpm_version_extra @@XB_RPM_VERSION_EXTRA@@
 %define xb_revision       @@XB_REVISION@@
+%define rpm_release       @@RPM_RELEASE@@
 %if 0%{?rhel} == 8
 %define cmake_bin cmake
 %else
@@ -131,9 +132,9 @@ rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/z*
 %post
 cp %SOURCE999 /tmp/ 2>/dev/null ||
 %if 0%{?enable_fipsmode}
-bash /tmp/call-home.sh -f "PRODUCT_FAMILY_PXB" -v %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}-%{xb_version_extra}-%{xb_rpm_version_extra}-pro -d "PACKAGE" &>/dev/null || :
+bash /tmp/call-home.sh -f "PRODUCT_FAMILY_PXB" -v %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}%{xb_version_extra}-%{rpm_release}-pro -d "PACKAGE" &>/dev/null || :
 %else
-bash /tmp/call-home.sh -f "PRODUCT_FAMILY_PXB" -v %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}-%{xb_version_extra}-%{xb_rpm_version_extra} -d "PACKAGE" &>/dev/null || :
+bash /tmp/call-home.sh -f "PRODUCT_FAMILY_PXB" -v %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}%{xb_version_extra}-%{rpm_release} -d "PACKAGE" &>/dev/null || :
 %endif
 rm -f /tmp/call-home.sh
 
