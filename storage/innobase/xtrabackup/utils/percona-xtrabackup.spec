@@ -4,12 +4,16 @@
 %define xb_version_extra  @@XB_VERSION_EXTRA@@
 %define xb_rpm_version_extra @@XB_RPM_VERSION_EXTRA@@
 %define xb_revision       @@XB_REVISION@@
+%define rpm_release       @@RPM_RELEASE@@
 %if 0%{?rhel} == 8
 %define cmake_bin cmake
 %else
 %define cmake_bin cmake3
 %endif
 %global mysqldatadir /var/lib/mysql
+
+# By default a build will be done in normal mode
+%{?enable_fipsmode: %global enable_fipsmode 1}
 
 %if 0%{?rhel} == 7
 %global __python %{__python3}
@@ -29,12 +33,14 @@ Group:          Applications/Databases
 License:        GPLv2
 URL:            http://www.percona.com/software/percona-xtrabackup
 Source:         percona-xtrabackup-%{version}%{xb_version_extra}.tar.gz
+Source999:      call-home.sh
 
 BuildRequires:  %{cmake_bin}, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel, libev-devel openssl-devel
 BuildRequires:  libcurl-devel
 Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup, percona-xtrabackup-24, percona-xtrabackup-80, percona-xtrabackup-81, percona-xtrabackup-82
+Conflicts:      percona-xtrabackup-pro-%{xb_version_major}%{xb_version_minor}
 Requires:       perl(DBD::mysql), rsync, zstd
-Requires:	perl(Digest::MD5)
+Requires:	perl(Digest::MD5), lz4
 BuildRoot:      %{_tmppath}/%{name}-%{version}%{xb_version_extra}-root
 
 
@@ -44,6 +50,7 @@ Percona XtraBackup is OpenSource online (non-blockable) backup solution for Inno
 %package -n percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor}
 Summary:        Test suite for Percona XtraBackup
 Group:          Applications/Databases
+Conflicts:      percona-xtrabackup-test-pro-%{xb_version_major}%{xb_version_minor}
 Requires:       percona-xtrabackup-%{xb_version_major}%{xb_version_minor} = %{version}-%{release}
 Requires:       /usr/bin/mysql
 AutoReqProv:    no
@@ -84,6 +91,9 @@ mkdir debug
   -DWITH_SSL=system -DINSTALL_MANDIR=%{_mandir} -DWITH_MAN_PAGES=1 \
   -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} \
   -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMINIMAL_RELWITHDEBINFO=OFF -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
+%if 0%{?enable_fipsmode}
+  -DPROBUILD=1 \
+%endif
   -DINSTALL_PLUGINDIR="%{_lib}/xtrabackup/plugin" -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled
   make %{?_smp_mflags}
   cd ..
@@ -94,6 +104,9 @@ mkdir debug
   -DWITH_SSL=system -DINSTALL_MANDIR=%{_mandir} -DWITH_MAN_PAGES=1 \
   -DINSTALL_MYSQLTESTDIR=%{_datadir}/percona-xtrabackup-test-%{xb_version_major}%{xb_version_minor} \
   -DDOWNLOAD_BOOST=1 -DWITH_BOOST=libboost -DMINIMAL_RELWITHDEBINFO=OFF -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
+%if 0%{?enable_fipsmode}
+  -DPROBUILD=1 \
+%endif
   -DINSTALL_PLUGINDIR="%{_lib}/xtrabackup/plugin" -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled -DWITH_PROTOBUF=bundled
 #
 make %{?_smp_mflags}
@@ -115,6 +128,15 @@ rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/i*
 rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/l*
 rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/p*
 rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/z*
+
+%post
+cp %SOURCE999 /tmp/ 2>/dev/null ||
+%if 0%{?enable_fipsmode}
+bash /tmp/call-home.sh -f "PRODUCT_FAMILY_PXB" -v %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}%{xb_version_extra}-%{rpm_release}-pro -d "PACKAGE" &>/dev/null || :
+%else
+bash /tmp/call-home.sh -f "PRODUCT_FAMILY_PXB" -v %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}%{xb_version_extra}-%{rpm_release} -d "PACKAGE" &>/dev/null || :
+%endif
+rm -f /tmp/call-home.sh
 
 %clean
 rm -rf $RPM_BUILD_ROOT
