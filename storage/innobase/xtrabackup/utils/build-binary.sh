@@ -124,6 +124,8 @@ INSTALLDIR="$WORKDIR_ABS/$BASEINSTALLDIR/$PRODUCT_FULL"   # Make it absolute
 
 if [ ${OS_NAME} == "noble" ]; then
     export ORD="-DOPENSSL_ROOT_DIR=/usr/lib/x86_64-linux-gnu"
+else
+    export ORD=""
 fi
 
 mkdir "$INSTALLDIR"
