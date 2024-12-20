@@ -12,6 +12,25 @@
 # Bail out on errors, be strict
 set -ue
 
+get_system(){
+    if [ -f /etc/redhat-release ]; then
+        GLIBC_VER_TMP="$(rpm glibc -qa --qf %{VERSION})"
+        export RHEL=$(rpm --eval %rhel)
+        export ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
+        export OS_NAME="el$RHEL"
+        export OS="rpm"
+    else
+        GLIBC_VER_TMP="$(dpkg-query -W -f='${Version}' libc6 | awk -F'-' '{print $1}')"
+        export ARCH=$(uname -m)
+        export OS_NAME="$(lsb_release -sc)"
+        export OS="deb"
+    fi
+    export GLIBC_VER=".glibc${GLIBC_VER_TMP}"
+    return
+}
+
+get_system
+
 # Examine parameters
 TARGET="$(uname -m)"
 TARGET_CFLAGS=''
@@ -103,6 +122,10 @@ PRODUCT_FULL="percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLI
 BASEINSTALLDIR="$(cd "$WORKDIR" && TMPDIR="$WORKDIR_ABS" mktemp -d xtrabackup-build.XXXXXX)"
 INSTALLDIR="$WORKDIR_ABS/$BASEINSTALLDIR/$PRODUCT_FULL"   # Make it absolute
 
+if [ ${OS_NAME} == "noble" ]; then
+    export ORD="-DOPENSSL_ROOT_DIR=/usr/lib/x86_64-linux-gnu"
+fi
+
 mkdir "$INSTALLDIR"
 
 # Build
@@ -118,7 +141,7 @@ mkdir "$INSTALLDIR"
         $CMAKE_BIN -DBUILD_CONFIG=xtrabackup_release -DCMAKE_INSTALL_PREFIX="$INSTALLDIR" \
           -DINSTALL_MYSQLTESTDIR=percona-xtrabackup-${XB_VERSION_MAJOR}.${XB_VERSION_MINOR}-test -DINSTALL_MANDIR=${INSTALLDIR}/man \
           -DDOWNLOAD_BOOST=1 -DWITH_BOOST=${WORKDIR_ABS}/libboost \
-          -DMINIMAL_RELWITHDEBINFO=OFF \
+          -DMINIMAL_RELWITHDEBINFO=OFF $ORD \
           -DMYSQL_UNIX_ADDR=/var/run/mysqld/mysqld.sock -DFORCE_INSOURCE_BUILD=1 -DWITH_ZLIB=bundled -DWITH_ZSTD=bundled .
         make $MAKE_JFLAG
         make install
