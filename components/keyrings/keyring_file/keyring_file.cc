@@ -302,14 +302,6 @@ REQUIRES_SERVICE_PLACEHOLDER(psi_memory_v2);
 
 /** List of dependencies */
 BEGIN_COMPONENT_REQUIRES(component_keyring_file)
-<<<<<<< HEAD
-REQUIRES_SERVICE(registry), REQUIRES_SERVICE(log_builtins),
-    REQUIRES_SERVICE(log_builtins_string), REQUIRES_PSI_MEMORY_SERVICE,
-    END_COMPONENT_REQUIRES();
-||||||| dc86e412f18
-REQUIRES_SERVICE(registry), REQUIRES_SERVICE(log_builtins),
-    REQUIRES_SERVICE(log_builtins_string), END_COMPONENT_REQUIRES();
-=======
 REQUIRES_SERVICE(log_builtins), REQUIRES_SERVICE(log_builtins_string),
     REQUIRES_SERVICE(registry_registration),
     REQUIRES_SERVICE_IMPLEMENTATION_AS(registry_registration,
@@ -317,8 +309,8 @@ REQUIRES_SERVICE(log_builtins), REQUIRES_SERVICE(log_builtins_string),
                                        mysql_service_registration_no_lock),
     REQUIRES_SERVICE_IMPLEMENTATION_AS(registry, mysql_minimal_chassis_no_lock,
                                        mysql_service_registry_no_lock),
+    REQUIRES_PSI_MEMORY_SERVICE,
     END_COMPONENT_REQUIRES();
->>>>>>> mysql-9.1.0
 
 /** Component description */
 BEGIN_COMPONENT_METADATA(component_keyring_file)

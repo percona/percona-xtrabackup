@@ -3164,7 +3164,7 @@ static dict_index_t *dict_index_build_internal_clust(
     new_index->create_fields_array();
   } else {
     /* Table with no row version are considered of version 0 */
-    ut_a(new_index->get_nullable_in_version(0) == new_index->n_nullable);
+   ut_a(new_index->get_nullable_in_version(0) == new_index->n_nullable);
   }
 
   ut_ad(UT_LIST_GET_LEN(table->indexes) == 0);

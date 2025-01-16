@@ -2174,7 +2174,6 @@ static bool innodb_init_param(void) {
   srv_log_flush_events = INNODB_LOG_EVENTS_DEFAULT;
   srv_log_write_events = INNODB_LOG_EVENTS_DEFAULT;
   srv_log_recent_written_size = INNODB_LOG_RECENT_WRITTEN_SIZE_DEFAULT;
-  srv_log_recent_closed_size = INNODB_LOG_RECENT_CLOSED_SIZE_DEFAULT;
   srv_log_write_max_size = INNODB_LOG_WRITE_MAX_SIZE_DEFAULT;
   log_checksum_algorithm_ptr = srv_log_checksums ? log_block_calc_checksum_crc32
                                                  : log_block_calc_checksum_none;
@@ -2504,7 +2503,7 @@ static bool xtrabackup_read_info(char *filename) {
   xb_server_version =
       xtrabackup::utils::get_version_number(mysql_server_version_str);
 
-  ut_ad(xb_server_version > 80000 && xb_server_version < 90000);
+//  ut_ad(xb_server_version > 80000 && xb_server_version < 90000);
   if (xb_server_version < 80019) {
     cfg_version = IB_EXPORT_CFG_VERSION_V3;
   } else if (xb_server_version < 80020) {
@@ -4722,7 +4721,7 @@ static bool xb_space_create_file(
 
   *file = os_file_create(
       innodb_data_file_key, path, OS_FILE_CREATE | OS_FILE_ON_ERROR_NO_EXIT,
-      OS_FILE_NORMAL, OS_DATA_FILE, srv_read_only_mode, &success);
+      OS_DATA_FILE, srv_read_only_mode, &success);
 
   if (!success) {
     /* The following call will print an error message */
@@ -4751,33 +4750,7 @@ static bool xb_space_create_file(
     return (false);
   }
 
-#if !defined(NO_FALLOCATE) && defined(UNIV_LINUX)
-  if (fil_fusionio_enable_atomic_write(*file)) {
-    /* This is required by FusionIO HW/Firmware */
-    int ret = posix_fallocate(file->m_file, 0, size * UNIV_PAGE_SIZE);
-
-    if (ret != 0) {
-      ib::error() << "posix_fallocate(): Failed to preallocate"
-                     " data for file "
-                  << path << ", desired size " << size * UNIV_PAGE_SIZE
-                  << " Operating system error number " << ret
-                  << ". Check"
-                     " that the disk is not full or a disk quota"
-                     " exceeded. Make sure the file system supports"
-                     " this function. Some operating system error"
-                     " numbers are described at " REFMAN
-                     " operating-system-error-codes.html";
-
-      success = false;
-    } else {
-      success = true;
-    }
-  } else {
-    success = os_file_set_size(path, *file, 0, size * UNIV_PAGE_SIZE, false);
-  }
-#else
   success = os_file_set_size(path, *file, 0, size * UNIV_PAGE_SIZE, false);
-#endif /* !NO_FALLOCATE && UNIV_LINUX */
 
   if (!success) {
     os_file_close(*file);
@@ -5883,13 +5856,13 @@ static bool xb_export_cfg_write_index_fields(
 
       /* version added */
       byte value =
-          col->is_instant_added() ? col->get_version_added() : UINT8_UNDEFINED;
+          col->is_instant_added() ? col->get_version_added() : INVALID_ROW_VERSION;
       mach_write_to_1(ptr, value);
       ptr++;
 
       /* version dropped */
       value = col->is_instant_dropped() ? col->get_version_dropped()
-                                        : UINT8_UNDEFINED;
+                                        : INVALID_ROW_VERSION;
       mach_write_to_1(ptr, value);
       ptr++;
 

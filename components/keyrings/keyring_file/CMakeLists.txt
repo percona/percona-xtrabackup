@@ -85,12 +85,8 @@ ENDIF()
 SET(KEYRING_FILE_LIBRARIES
   keyring_common
   OpenSSL::SSL OpenSSL::Crypto
-<<<<<<< HEAD
   ${XTRABACKUP_UNDEFINED_SYMBOLS}
-||||||| dc86e412f18
-=======
   library_mysys
->>>>>>> mysql-9.1.0
 )
 
 MYSQL_ADD_COMPONENT(keyring_file
@@ -98,14 +94,10 @@ MYSQL_ADD_COMPONENT(keyring_file
   LINK_LIBRARIES ${KEYRING_FILE_LIBRARIES}
   MODULE_ONLY
 )
-<<<<<<< HEAD
 IF(APPLE)
   SET_TARGET_PROPERTIES(component_keyring_file PROPERTIES
     LINK_FLAGS "-undefined dynamic_lookup")
 ENDIF()
 
-||||||| dc86e412f18
-=======
 
 DOWNGRADE_STRINGOP_WARNINGS(component_keyring_file)
->>>>>>> mysql-9.1.0

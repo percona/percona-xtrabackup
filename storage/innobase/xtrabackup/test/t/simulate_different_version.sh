@@ -51,7 +51,7 @@ fi
 
 rm $topdir/pxb.log
 
-vlog "case#5 backup should succesful with no-server-version-check and 8.4.99 version"
+vlog "case#5 backup should succesful with no-server-version-check and 9.1.99 version"
 xtrabackup --backup --debug=d,simulate_higher_version --no-server-version-check --target-dir=$topdir/backup
 xtrabackup --prepare --debug=d,simulate_higher_version --no-server-version-check --target-dir=$topdir/backup
 rm -r $topdir/backup

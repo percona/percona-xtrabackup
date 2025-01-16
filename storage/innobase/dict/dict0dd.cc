@@ -75,19 +75,9 @@ Data dictionary interface */
 #include "query_options.h"
 #include "sql/create_field.h"
 #include "sql/mysqld.h"  // lower_case_file_system
-<<<<<<< HEAD
 #include "storage/innobase/xtrabackup/src/xb_dict.h"
-#endif /* !UNIV_HOTBACKUP */
-||||||| dc86e412f18
-#include "sql_base.h"
-#include "sql_table.h"
-#endif /* !UNIV_HOTBACKUP */
-=======
-#include "sql_base.h"
-#include "sql_table.h"
 #include "univ.i"  // Using OS_PATH_SEPARATOR
 #endif             /* !UNIV_HOTBACKUP */
->>>>>>> mysql-9.1.0
 
 const char *DD_instant_col_val_coder::encode(const byte *stream, size_t in_len,
                                              size_t *out_len) {
@@ -874,8 +864,8 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
       }
 
       dict_mem_table_add_col(table, heap, dd_col->name().c_str(), mtype, prtype,
-                             col_len, true, phy_pos, (uint8_t)v_added,
-                             UINT8_UNDEFINED);
+                             col_len, true, phy_pos, (row_version_t)v_added,
+                             INVALID_ROW_VERSION);
     } else {
       dict_mem_table_add_v_col(table, heap, dd_col->name().c_str(), mtype,
                                prtype, col_len, i, 0, true);
@@ -6868,16 +6858,7 @@ const char *dd_process_dd_partitions_rec_and_mtr_commit(
   /* Get the se_private_id field. */
   field = rec_get_nth_field(
       nullptr, rec, offsets,
-<<<<<<< HEAD
       dd_tables->field_number("se_private_id") + DD_FIELD_OFFSET, &len);
-||||||| dc86e412f18
-      dd_object_table.field_number("FIELD_SE_PRIVATE_ID") + DD_FIELD_OFFSET,
-      &len);
-=======
-      dd_object_table.field_number("FIELD_SE_PRIVATE_ID") + DD_FIELD_OFFSET,
-      &len);
-
->>>>>>> mysql-9.1.0
   /* When table is partitioned table, the se_private_id is null. */
   if (len != 8) {
     *table = nullptr;

@@ -34,33 +34,15 @@
 
 namespace keyring_common::config {
 
-<<<<<<< HEAD
-inline Config_reader::Config_reader(const std::string config_file_path)
-    : config_file_path_(config_file_path), data_(), valid_(false) {
-||||||| dc86e412f18
-Config_reader::Config_reader(const std::string config_file_path)
-    : config_file_path_(config_file_path), data_(), valid_(false) {
-=======
-Config_reader::Config_reader(std::string config_file_path)
+inline Config_reader::Config_reader(std::string config_file_path)
     : config_file_path_(std::move(config_file_path)), valid_(false) {
->>>>>>> mysql-9.1.0
   std::ifstream file_stream(config_file_path_);
-<<<<<<< HEAD
   if (!file_stream.is_open()) {
     LogComponentErr(ERROR_LEVEL, ER_KEYRING_COMPONENT_NO_CONFIG,
                     config_file_path_.c_str());
     return;
   }
-||||||| dc86e412f18
-  if (!file_stream.is_open()) return;
-=======
-  if (!file_stream.is_open()) {
-    err_ = "cannot read config file " + config_file_path_;
-    return;
-  }
->>>>>>> mysql-9.1.0
   rapidjson::IStreamWrapper json_fstream_reader(file_stream);
-<<<<<<< HEAD
   data_.ParseStream(json_fstream_reader);
   valid_ = !data_.HasParseError();
   if (!valid_) {
@@ -69,19 +51,8 @@ Config_reader::Config_reader(std::string config_file_path)
                     data_.GetErrorOffset());
   }
   file_stream.close();
-||||||| dc86e412f18
-  valid_ = !data_.ParseStream(json_fstream_reader).HasParseError();
-  file_stream.close();
-=======
-  if (data_.ParseStream(json_fstream_reader).HasParseError()) {
-    err_ = "config file " + config_file_path_ + " has not valid format";
-    return;
-  }
-  valid_ = true;
->>>>>>> mysql-9.1.0
 }
 
-<<<<<<< HEAD
 bool Config_reader::has_element(const std::string &element_name) {
   return !valid_ || !data_.HasMember(element_name);
 }
@@ -96,11 +67,4 @@ bool Config_reader::is_string(const std::string &element_name) {
          !data_[element_name].IsString();
 }
 
-}  // namespace config
-}  // namespace keyring_common
-||||||| dc86e412f18
-}  // namespace config
-}  // namespace keyring_common
-=======
 }  // namespace keyring_common::config
->>>>>>> mysql-9.1.0

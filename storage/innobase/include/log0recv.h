@@ -735,11 +735,6 @@ roll-forward */
 
 extern size_t recv_n_frames_for_pages_per_pool_instance;
 
-<<<<<<< HEAD
-/** A list of tablespaces for which (un)encryption process was not
-completed before crash. */
-extern std::list<space_id_t> recv_encr_ts_list;
-
 /** Check the 4-byte checksum to the trailer checksum field of a log
 block.
 @param[in]  block pointer to a log block
@@ -798,13 +793,6 @@ bool recv_sys_resize_buf();
 hash table to wait merging to file pages. */
 void recv_parse_log_recs();
 
-||||||| dc86e412f18
-/** A list of tablespaces for which (un)encryption process was not
-completed before crash. */
-extern std::list<space_id_t> recv_encr_ts_list;
-
-=======
->>>>>>> mysql-9.1.0
 #include "log0recv.ic"
 
 #endif

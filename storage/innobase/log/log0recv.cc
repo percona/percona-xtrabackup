@@ -603,17 +603,11 @@ void recv_sys_init() {
   recv_sys->spaces = ut::new_withkey<Spaces>(
       ut::make_psi_memory_key(mem_log_recv_space_hash_key));
 
-<<<<<<< HEAD
 #ifdef XTRABACKUP
   pxb_recv_sys->spaces =
       ut::new_withkey<xtrabackup::recv_sys_t::Spaces>(UT_NEW_THIS_FILE_PSI_KEY);
 #endif
-  recv_sys->n_addrs = 0;
-||||||| dc86e412f18
-  recv_sys->n_addrs = 0;
-=======
   new (&recv_sys->n_pages_to_recover) ut::Todo_counter{};
->>>>>>> mysql-9.1.0
 
   recv_sys->apply_log_recs = false;
   recv_sys->is_cloned_db = false;
@@ -2510,16 +2504,8 @@ static const byte *recv_parse_or_apply_log_rec_body(
 
 #ifndef UNIV_HOTBACKUP
       /* Reset in-mem encryption information for the tablespace here if this
-<<<<<<< HEAD
-      is "resetting encryprion info" log. */
-      if (is_encryption && !recv_sys->is_cloned_db && applying_redo) {
-||||||| dc86e412f18
-      is "resetting encryprion info" log. */
-      if (is_encryption && !recv_sys->is_cloned_db) {
-=======
       is "resetting encryption info" log. */
-      if (is_encryption && !recv_sys->is_cloned_db) {
->>>>>>> mysql-9.1.0
+      if (is_encryption && !recv_sys->is_cloned_db && applying_redo) {
         byte buf[Encryption::INFO_SIZE] = {0};
 
         if (memcmp(ptr + 4, buf, Encryption::INFO_SIZE - 4) == 0) {
@@ -3440,16 +3426,12 @@ static bool recv_single_rec(const byte *ptr, const byte *end_ptr) {
           && (space_id == TRX_SYS_SPACE ||
               fil_tablespace_lookup_for_recovery(space_id))
 #endif /* !UNIV_HOTBACKUP */
-<<<<<<< HEAD
-      } else if (xtrabackup_estimate_memory) {
-        xtrabackup::recv_calculate_hash_heap(type, space_id, page_no, body,
-                                             ptr + len, old_lsn);
-||||||| dc86e412f18
-=======
       ) {
         recv_add_to_hash_table(type, space_id, page_no, body, ptr + len,
                                old_lsn, recv_sys->recovered_lsn);
->>>>>>> mysql-9.1.0
+      } else if (xtrabackup_estimate_memory) {
+        xtrabackup::recv_calculate_hash_heap(type, space_id, page_no, body,
+                                             ptr + len, old_lsn);
       }
 
       [[fallthrough]];
@@ -3626,31 +3608,11 @@ static bool recv_multi_rec(const byte *ptr, const byte *end_ptr) {
 #endif /* !UNIV_HOTBACKUP */
         ) {
 
-<<<<<<< HEAD
-            recv_add_to_hash_table(type, space_id, page_no, body, ptr + len,
-                                   old_lsn, new_recovered_lsn);
-
-#ifndef UNIV_HOTBACKUP
-          } else {
-            recv_sys->missing_ids.insert(space_id);
-          }
-#endif /* !UNIV_HOTBACKUP */
+          recv_add_to_hash_table(type, space_id, page_no, body, ptr + len,
+                                 old_lsn, new_recovered_lsn);
         } else if (xtrabackup_estimate_memory) {
           xtrabackup::recv_calculate_hash_heap(type, space_id, page_no, body,
                                                ptr + len, old_lsn);
-||||||| dc86e412f18
-            recv_add_to_hash_table(type, space_id, page_no, body, ptr + len,
-                                   old_lsn, new_recovered_lsn);
-
-#ifndef UNIV_HOTBACKUP
-          } else {
-            recv_sys->missing_ids.insert(space_id);
-          }
-#endif /* !UNIV_HOTBACKUP */
-=======
-          recv_add_to_hash_table(type, space_id, page_no, body, ptr + len,
-                                 old_lsn, new_recovered_lsn);
->>>>>>> mysql-9.1.0
         }
     }
 
@@ -4296,6 +4258,9 @@ static void recv_init_crash_recovery() {
     srv_threads.m_recv_writer.start();
   }
 }
+#endif /* !UNIV_HOTBACKUP */
+
+#ifndef UNIV_HOTBACKUP
 
 dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
                                             lsn_t to_lsn) {

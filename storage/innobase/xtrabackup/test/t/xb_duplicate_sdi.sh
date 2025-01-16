@@ -65,7 +65,7 @@ mysql -e "ALTER TABLE pt1 EXCHANGE PARTITION p1 WITH TABLE t1" test
 innodb_wait_for_flush_all
 run_cmd backup_and_restore test
 
-# Use datadir upgraded from 8.0.23 with duplicate SDI
+# Use datadir upgraded from 8.4.0 with duplicate SDI
 # to print SDI:
 # for f in $(ls datadir/test); do echo $f; ibd2sdi $f |  jq '.[1].id'; done
 vlog "case#4 check prepare works with backup having duplicate SDI"
