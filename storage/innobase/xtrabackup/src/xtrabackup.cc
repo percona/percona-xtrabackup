@@ -103,6 +103,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "backup_mysql.h"
 #include "changed_page_tracking.h"
 #include "crc_glue.h"
+#include "ddl_tracker.h"
 #include "ds_buffer.h"
 #include "ds_encrypt.h"
 #include "ds_tmpfile.h"
@@ -365,6 +366,10 @@ it every INNOBASE_WAKE_INTERVAL'th step. */
 ulong innobase_active_counter = 0;
 
 char *xtrabackup_debug_sync = NULL;
+#ifdef UNIV_DEBUG
+char *xtrabackup_debug_sync_thread = NULL;
+#endif /* UNIV_DEBUG */
+static std::string debug_sync_file_content;
 static const char *dbug_setting = nullptr;
 
 bool xtrabackup_incremental_force_scan = false;
@@ -466,7 +471,8 @@ bool opt_dump_innodb_buffer_pool = false;
 
 bool punch_hole_supported = false;
 
-bool opt_lock_ddl = false;
+const char *xtrabackup_lock_ddl_str = NULL;
+lock_ddl_type_t opt_lock_ddl = LOCK_DDL_ON;
 bool opt_lock_ddl_per_table = false;
 uint opt_lock_ddl_timeout = 0;
 uint opt_backup_lock_timeout = 0;
@@ -512,6 +518,7 @@ bool redo_catchup_completed = false;
 extern struct rand_struct sql_rand;
 extern mysql_mutex_t LOCK_sql_rand;
 bool xb_generated_redo = false;
+ddl_tracker_t *ddl_tracker = nullptr;
 
 static void check_all_privileges();
 static bool validate_options(const char *file, int argc, char **argv);
@@ -546,8 +553,8 @@ datafiles_iter_t *datafiles_iter_new(
   Fil_iterator::for_each_file([&](fil_node_t *file) {
     auto space_id = file->space->id;
 
-    ut_ad(dd_spaces == nullptr ||
-          (dd_spaces != nullptr && srv_backup_mode && opt_lock_ddl));
+    ut_ad(dd_spaces == nullptr || (dd_spaces != nullptr && srv_backup_mode &&
+                                   opt_lock_ddl == LOCK_DDL_ON));
 
     if (dd_spaces != nullptr && fsp_is_ibd_tablespace(space_id) &&
         !fsp_is_system_or_temp_tablespace(space_id) &&
@@ -684,6 +691,9 @@ enum options_xtrabackup {
   OPT_INNODB_REDO_LOG_ENCRYPT,
   OPT_INNODB_UNDO_LOG_ENCRYPT,
   OPT_XTRA_DEBUG_SYNC,
+#ifdef UNIV_DEBUG
+  OPT_XTRA_DEBUG_SYNC_THREAD,
+#endif /* UNIV_DEBUG */
   OPT_XTRA_COMPACT,
   OPT_XTRA_REBUILD_INDEXES,
   OPT_XTRA_REBUILD_THREADS,
@@ -1048,12 +1058,24 @@ struct my_option xb_client_options[] = {
      (uchar *)&opt_no_lock, (uchar *)&opt_no_lock, 0, GET_BOOL, NO_ARG, 0, 0, 0,
      0, 0, 0},
 
+    // clang-format off
     {"lock-ddl", OPT_LOCK_DDL,
      "Issue LOCK TABLES/LOCK INSTANCE FOR BACKUP if it is "
-     "supported by server at the beginning of the backup to block all DDL "
-     "operations.",
-     (uchar *)&opt_lock_ddl, (uchar *)&opt_lock_ddl, 0, GET_BOOL, NO_ARG, 1, 0,
-     0, 0, 0, 0},
+     "supported by server. Possible options are:                "
+     "ON      - LTFB/LIFB is executed at the beginning of the   "
+     "          backup to block all DDLs                        "
+     "OFF     - LTFB/LIFB is not executed                       "
+#ifdef PROBUILD
+     "REDUCED - PXB does a copy of InnoDB tables without taking "
+     "any lock, while keeping track of tables affected by DDL. Before starting "
+     "to copy Non-InnoDB tables, LTFB/LIFB is executed and all InnoDB tables "
+     "affected by DDL are handled(either recopied or a special file is placed "
+     "in backup dir to handle the DDL operation during --prepare) "
+#endif /* PROBUILD */
+     "Default is ON.",
+     (uchar *)&xtrabackup_lock_ddl_str, (uchar *)&xtrabackup_lock_ddl_str, 0,
+     GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
+    // clang-format on
 
     {"lock-ddl-timeout", OPT_LOCK_DDL_TIMEOUT,
      "If LOCK TABLES FOR BACKUP does not return within given timeout, abort "
@@ -1558,6 +1580,18 @@ Disable with --skip-innodb-checksums.",
      "Debug sync point. This is only used by the xtrabackup test suite",
      (G_PTR *)&xtrabackup_debug_sync, (G_PTR *)&xtrabackup_debug_sync, 0,
      GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+#ifndef NDEBUG
+    {"debug-sync-thread", OPT_XTRA_DEBUG_SYNC_THREAD,
+     "Thread sleeps at sync point and creates a filename with the "
+     "sync_point_name_<thread_number>. There can be multiple threads and so "
+     "multiple sync_point_name_ files can be present. Delete the files to "
+     "resume the thread. This is only used by the xtrabackup test suite",
+     (G_PTR *)&xtrabackup_debug_sync_thread,
+     (G_PTR *)&xtrabackup_debug_sync_thread, 0, GET_STR, REQUIRED_ARG, 0, 0, 0,
+     0, 0, 0},
+#endif /* !NDEBUG */
+
 #endif
 
 #ifndef NDEBUG
@@ -1655,8 +1689,43 @@ static int debug_sync_resumed;
 static void sigcont_handler(int sig);
 
 static void sigcont_handler(int sig __attribute__((unused))) {
+  *const_cast<const char **>(&xtrabackup_debug_sync) = "";
   debug_sync_resumed = 1;
 }
+
+#ifdef UNIV_DEBUG
+static void sigusr1_handler(int sig __attribute__((unused))) {
+  xb::info() << "SIGUSR1 received. Reading debug_sync_thread point from "
+             << "xb_debug_sync_thread file in backup directory "
+             << xtrabackup_target_dir;
+
+  std::string debug_sync_file =
+      std::string(xtrabackup_target_dir) + "/xb_debug_sync_thread";
+  std::ifstream ifs(debug_sync_file);
+
+  if (ifs.fail()) {
+    xb::warn() << "SIGUSR1 signal sent but the xb_debug_sync_thread file with"
+                  "a debug sync point name in it is not present at "
+               << xtrabackup_target_dir;
+    return;
+  }
+
+  debug_sync_file_content.assign((std::istreambuf_iterator<char>(ifs)),
+                                 (std::istreambuf_iterator<char>()));
+  debug_sync_file_content.erase(
+      std::remove(debug_sync_file_content.begin(),
+                  debug_sync_file_content.end(), '\n'),
+      debug_sync_file_content.end());
+  *const_cast<const char **>(&xtrabackup_debug_sync_thread) =
+      debug_sync_file_content.c_str();
+
+  xb::info() << "The debug sync point read from xb_debug_sync_thread files is "
+             << debug_sync_file_content;
+  xb::info() << "DEBUG_SYNC_THREAD: Deleting file" << debug_sync_file;
+  os_file_delete_if_exists_func(debug_sync_file.c_str(), nullptr);
+}
+#endif /* UNIV_DEBUG */
+
 #endif
 
 void debug_sync_point(const char *name) {
@@ -1700,6 +1769,50 @@ void debug_sync_point(const char *name) {
 #endif
 }
 
+#ifdef UNIV_DEBUG
+void debug_sync_thread(const char *name) {
+#ifndef __WIN__
+  FILE *fp;
+  char pid_path[FN_REFLEN];
+
+  if (xtrabackup_debug_sync_thread == nullptr) {
+    return;
+  }
+
+  if (strcmp(xtrabackup_debug_sync_thread, name)) {
+    return;
+  }
+
+  auto thread_id = std::hash<std::thread::id>{}(std::this_thread::get_id());
+
+  snprintf(pid_path, sizeof(pid_path), "%s/%s_%lu", xtrabackup_target_dir, name,
+           thread_id);
+
+  fp = fopen(pid_path, "w");
+  if (fp == NULL) {
+    xb::error() << "Cannot open " << pid_path;
+    exit(EXIT_FAILURE);
+  }
+
+  fclose(fp);
+
+  while (1) {
+    xb::info() << "DEBUG_SYNC_THREAD: Sleeping 1sec. Resume this thread by "
+               << "deleting file " << pid_path;
+    sleep(1);
+    bool exists = os_file_exists(pid_path);
+    if (!exists) break;
+  }
+
+  xb::info() << "DEBUG_SYNC_THREAD: Thread " << thread_id
+             << " resumed from sync point: " << name;
+
+  *const_cast<const char **>(&xtrabackup_debug_sync_thread) = nullptr;
+
+#endif
+}
+#endif /* UNIV_DEBUG */
+
 static const char *xb_client_default_groups[] = {"xtrabackup", "client", 0, 0,
                                                  0};
 
@@ -1707,10 +1820,11 @@ static const char *xb_server_default_groups[] = {"xtrabackup", "mysqld", 0, 0,
                                                  0};
 
 static void print_version(void) {
-  fprintf(stderr,
-          "%s version %s based on MySQL server %s %s (%s) (revision id: %s)\n",
-          my_progname, XTRABACKUP_VERSION, MYSQL_SERVER_VERSION, SYSTEM_TYPE,
-          MACHINE_TYPE, XTRABACKUP_REVISION);
+  fprintf(
+      stderr,
+      "%s version %s%s based on MySQL server %s %s (%s) (revision id: %s)\n",
+      my_progname, XTRABACKUP_VERSION, get_suffix_str().c_str(),
+      MYSQL_SERVER_VERSION, SYSTEM_TYPE, MACHINE_TYPE, XTRABACKUP_REVISION);
 }
 
 static void usage(void) {
@@ -1927,6 +2041,23 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
         opt_history = argument;
       } else {
         opt_history = "";
+      }
+      break;
+    case OPT_LOCK_DDL:
+      if (argument == NULL || strcasecmp(argument, "on") == 0 ||
+          strcasecmp(argument, "1") == 0 || strcasecmp(argument, "true") == 0) {
+        opt_lock_ddl = LOCK_DDL_ON;
+      } else if (strcasecmp(argument, "off") == 0 ||
+                 strcasecmp(argument, "0") == 0 ||
+                 strcasecmp(argument, "false") == 0) {
+        opt_lock_ddl = LOCK_DDL_OFF;
+#ifdef PROBUILD
+      } else if (strcasecmp(argument, "reduced") == 0) {
+        opt_lock_ddl = LOCK_DDL_REDUCED;
+#endif /* PROBUILD */
+      } else {
+        xb::error() << "Invalid --lock-ddl argument: " << argument;
+        return 1;
       }
       break;
     case 'p':
@@ -2345,7 +2476,7 @@ error:
   return (true);
 }
 
-static void xb_scan_for_tablespaces() {
+void xb_scan_for_tablespaces(bool only_undo) {
   /* This is the default directory for IBD and IBU files. Put it first
   in the list of known directories. */
   fil_set_scan_dir(MySQL_datadir_path.path());
@@ -2364,7 +2495,7 @@ static void xb_scan_for_tablespaces() {
   --innodb-undo-directory also. */
   fil_set_scan_dir(Fil_path::remove_quotes(MySQL_undo_path), true);
 
-  if (fil_scan_for_tablespaces(true) != DB_SUCCESS) {
+  if (fil_scan_for_tablespaces(true, only_undo) != DB_SUCCESS) {
     exit(EXIT_FAILURE);
   }
 }
@@ -2513,6 +2644,22 @@ static bool xtrabackup_read_info(char *filename) {
   } else if (xb_server_version < 80029) {
     cfg_version = IB_EXPORT_CFG_VERSION_V6;
   }
+  /* skip start_time, end_time, lock_time, binlog_pos, innodb_from_lsn,
+   * innodb_to_lsn, partial, incremental, format, compressed, encrypt */
+  for (int i = 0; i < 12; i++) {
+    char c;
+    do {
+      c = fgetc(fp);
+    } while (c != '\n');
+  }
+
+  char lock[8];
+  if (fscanf(fp, "lock_ddl_type = %7s\n", lock) != 1) {
+    r = false;
+    goto end;
+  }
+  /* used at log0recv.cc to apply or not file operations */
+  opt_lock_ddl = ddl_lock_type_from_str(string(lock));
 end:
   fclose(fp);
   return (r);
@@ -2585,7 +2732,8 @@ static void xtrabackup_print_metadata(char *buf, size_t buf_len) {
            "redo_memory = %ld\n"
            "redo_frames = %ld\n",
            metadata_type_str, metadata_from_lsn, metadata_to_lsn,
-           metadata_last_lsn, opt_lock_ddl ? backup_redo_log_flushed_lsn : 0,
+           metadata_last_lsn,
+           opt_lock_ddl == LOCK_DDL_ON ? backup_redo_log_flushed_lsn : 0,
            redo_memory, redo_frames);
 }
 
@@ -2653,8 +2801,7 @@ static bool xtrabackup_write_metadata(const char *filepath) {
 /***********************************************************************
 Read meta info for an incremental delta.
 @return true on success, false on failure. */
-static bool xb_read_delta_metadata(const char *filepath,
-                                   xb_delta_info_t *info) {
+bool xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info) {
   FILE *fp;
   char key[51];
   char value[51];
@@ -2751,6 +2898,30 @@ static bool xtrabackup_write_info(const char *filepath) {
   return result;
 }
 
+std::string ddl_lock_type_to_str(lock_ddl_type_t type) {
+  switch (type) {
+    case LOCK_DDL_ON:
+      return "ON";
+    case LOCK_DDL_OFF:
+      return "OFF";
+    case LOCK_DDL_REDUCED:
+      return "REDUCED";
+    default:
+      ut_error;
+  }
+}
+
+lock_ddl_type_t ddl_lock_type_from_str(std::string type) {
+  if (type == "ON" || type == "TRUE") {
+    return LOCK_DDL_ON;
+  } else if (type == "OFF" || type == "FALSE") {
+    return LOCK_DDL_OFF;
+  } else if (type == "REDUCED") {
+    return LOCK_DDL_REDUCED;
+  } else {
+    ut_error;
+  }
+}
 /* ================= backup ================= */
 void xtrabackup_io_throttling(void) {
   if (xtrabackup_throttle && (--io_ticket) < 0) {
@@ -2997,6 +3168,11 @@ const char *xb_get_copy_action(const char *dflt) {
 /* TODO: We may tune the behavior (e.g. by fil_aio)*/
 
 static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
+  return xtrabackup_copy_datafile_func(node, thread_n, nullptr);
+}
+
+bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
+                                   const char *dest_name) {
   char dst_name[FN_REFLEN];
   ds_file_t *dstfile = NULL;
   xb_fil_cur_t cursor;
@@ -3038,7 +3214,9 @@ static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
     goto error;
   }
 
-  strcpy(dst_name, cursor.rel_path);
+  strncpy(dst_name, dest_name ? dest_name : cursor.rel_path,
+          sizeof dst_name - 1);
+  dst_name[sizeof(dst_name) - 1] = '\0';
 
   /* Setup the page write filter */
   if (xtrabackup_incremental) {
@@ -3082,7 +3260,9 @@ static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
     }
   }
 
-  if (res == XB_FIL_CUR_ERROR) {
+  if (res == XB_FIL_CUR_ERROR ||
+      (res == XB_FIL_CUR_CORRUPTED &&
+       (ddl_tracker == nullptr || opt_lock_ddl != LOCK_DDL_REDUCED))) {
     goto error;
   }
 
@@ -3106,6 +3286,14 @@ static bool xtrabackup_copy_datafile(fil_node_t *node, uint thread_n) {
   if (write_filter && write_filter->deinit) {
     write_filter->deinit(&write_filt_ctxt);
   }
+
+  if (res == XB_FIL_CUR_CORRUPTED) {
+    if (ddl_tracker != nullptr) {
+      ddl_tracker->add_corrupted_tablespace(cursor.space_id, cursor.node->name,
+                                            cursor.space_flags);
+    }
+  }
+
   return (rc);
 
 error:
@@ -3117,7 +3305,7 @@ error:
     write_filter->deinit(&write_filt_ctxt);
     ;
   }
-  xb::error() << "xtrabackup_copy_datafile() failed";
+  xb::error() << "xtrabackup_copy_datafile_func() failed";
   return (true); /*ERROR*/
 
 skip:
@@ -3129,7 +3317,7 @@ skip:
     write_filter->deinit(&write_filt_ctxt);
   }
 
-  if (!opt_lock_ddl) {
+  if (opt_lock_ddl != LOCK_DDL_ON) {
     xb::warn() << "We assume the "
                << "table was dropped during xtrabackup execution "
                << "and ignore the file.";
@@ -3181,6 +3369,13 @@ static void data_copy_thread_func(data_thread_ctxt_t *ctxt) {
     if (xtrabackup_copy_datafile(node, num)) {
       xb::error() << "failed to copy datafile " << node->name;
       *(ctxt->error) = true;
+    } else {
+      /* With reduced lock mode, instead of tracking undo from the startup scan,
+      we track undo tablespaces after we copy them */
+      if (ddl_tracker && fsp_is_undo_tablespace(node->space->id)) {
+        ddl_tracker->add_undo_tablespace(node->space->id,
+                                         node->space->files.front().name);
+      }
     }
   }
 
@@ -3395,7 +3590,7 @@ static bool xb_fil_io_init(void)
 /****************************************************************************
 Populates the tablespace memory cache by scanning for and opening data files.
 @returns DB_SUCCESS or error code.*/
-static dberr_t xb_load_tablespaces(void)
+static dberr_t xb_load_tablespaces()
 /*=====================*/
 {
   dberr_t err;
@@ -3434,7 +3629,7 @@ static dberr_t xb_load_tablespaces(void)
   }
 
   xb::info() << "Generating a list of tablespaces";
-  xb_scan_for_tablespaces();
+  xb_scan_for_tablespaces(false);
 
   /* Add separate undo tablespaces to fil_system */
 
@@ -3445,7 +3640,11 @@ static dberr_t xb_load_tablespaces(void)
 
   for (auto tablespace : Tablespace_map::instance().external_files()) {
     if (tablespace.type != Tablespace_map::TABLESPACE) continue;
-    fil_open_for_xtrabackup(tablespace.file_name, tablespace.name);
+    /* when LOCK_DDL_REDUCED while processing ddl files on prepare phase
+    we should not load external files */
+    if (!xtrabackup_prepare) {
+      fil_open_for_xtrabackup(tablespace.file_name, tablespace.name);
+    }
   }
 
   debug_sync_point("xtrabackup_load_tablespaces_pause");
@@ -3457,7 +3656,7 @@ static dberr_t xb_load_tablespaces(void)
 Initialize the tablespace memory cache and populate it by scanning for and
 opening data files.
 @returns DB_SUCCESS or error code.*/
-ulint xb_data_files_init(void)
+ulint xb_data_files_init()
 /*====================*/
 {
   os_create_block_cache();
@@ -3884,6 +4083,80 @@ end:
 #endif
 }
 
+/* true on success, false on failure */
+bool xb_check_and_set_open_files_limit(size_t num_files) {
+  if (opt_lock_ddl != LOCK_DDL_REDUCED) {
+    return true;
+  }
+
+#if defined(RLIMIT_NOFILE)
+  xb::info() << "xb_check_and_set_open_files_limit is verifying the open_files "
+                "limit for --lock-ddl=reduced";
+
+  struct rlimit rlimit;
+  uint old_cur;
+
+  if (getrlimit(RLIMIT_NOFILE, &rlimit)) {
+    xb::info() << "getrlimit() failed with error: " << strerror(errno);
+    return true;
+  }
+
+  old_cur = (uint)rlimit.rlim_cur;
+
+  xb::info() << "Current open file limits:";
+  xb::info() << "Desired file_handles: " << num_files;
+  xb::info() << "ulimit -Sn: " << rlimit.rlim_cur;
+  xb::info() << "ulimit -Hn: " << rlimit.rlim_max;
+  xb::info() << "--open-files-limit: " << xb_open_files_limit;
+
+  if (rlimit.rlim_cur == RLIM_INFINITY) {
+    // current open files limit is inifinity. All good. nothing do
+    return true;
+  }
+
+  if (num_files < old_cur) {
+    // all good nothing to do. Num of files we have is less than
+    // the open files limit.
+    return true;
+  }
+
+  if (xb_open_files_limit != 0) {
+    if (num_files > xb_open_files_limit) {
+      xb::error() << "Reduced lock mode needs open file handles: " << num_files
+                  << " but --open-files-limit parameter is set to "
+                  << xb_open_files_limit;
+      xb::error() << "Please retry with --open-files-limit=" << num_files;
+      return false;  // ERROR
+    }
+  }
+
+  if (num_files <= rlimit.rlim_max) {
+    // We are allowed to go up to rlimit.rlim_max. Lets try.
+    ulint result_files = xb_set_max_open_files(num_files);
+    if (result_files < num_files) {
+      xb::error() << "Reduced lock mode requested open file handles: "
+                  << num_files << " but only got " << result_files
+                  << " open file handles";
+      return false;  // ERROR
+    } else {
+      xb::info() << "Reduced lock mode successfully raised open files limit to "
+                 << result_files;
+    }
+  } else {
+    // we are below xb_open_limit but above the max allowed open files
+    xb::error() << "Reduced lock mode requires open file handles " << num_files
+                << " but the max limit (ulimit -Hn) is " << rlimit.rlim_max;
+    return false;
+  }
+
+#else
+  xb::info() << "setrlimit() is not available on this platform";
+  return true;
+#endif
+
+  return true;
+}
+
 /**************************************************************************
 Prints a warning for every table that uses unsupported engine and
 hence will not be backed up. */
@@ -4005,14 +4278,16 @@ void xtrabackup_backup_func(void) {
 
   srv_backup_mode = true;
 
-  if (opt_lock_ddl) {
+  if (opt_lock_ddl == LOCK_DDL_ON) {
     xb_dd_spaces = xb::backup::build_space_id_set(mysql_connection);
     ut_ad(xb_dd_spaces->size());
+  } else if (opt_lock_ddl == LOCK_DDL_REDUCED) {
+    ddl_tracker = new ddl_tracker_t;
   }
 
   /* We can safely close files if we don't allow DDL during the
   backup */
-  srv_close_files = xb_close_files || opt_lock_ddl;
+  srv_close_files = xb_close_files || opt_lock_ddl == LOCK_DDL_ON;
 
   if (xb_close_files)
     xb::warn()
@@ -4219,6 +4494,8 @@ void xtrabackup_backup_func(void) {
     exit(EXIT_FAILURE);
   }
 
+  debug_sync_thread("before_file_copy");
+
   /* Create data copying threads */
   data_threads = (data_thread_ctxt_t *)ut::malloc_withkey(
       UT_NEW_THIS_FILE_PSI_KEY,
@@ -4395,6 +4672,8 @@ void xtrabackup_backup_func(void) {
   xb_keyring_shutdown();
 
   cleanup_mysql_environment();
+
+  delete ddl_tracker;
 }
 
 /* ================= prepare ================= */
@@ -4675,11 +4954,12 @@ static bool get_meta_path(
 {
   size_t len = strlen(delta_path);
 
-  if (len <= 6 || strcmp(delta_path + len - 6, ".delta")) {
+  if (len <= 6 ||
+      strcmp(delta_path + len - EXT_DELTA.length(), EXT_DELTA.c_str())) {
     return false;
   }
-  memcpy(meta_path, delta_path, len - 6);
-  strcpy(meta_path + len - 6, XB_DELTA_INFO_SUFFIX);
+  memcpy(meta_path, delta_path, len - EXT_DELTA.length());
+  strcpy(meta_path + len - EXT_DELTA.length(), XB_DELTA_INFO_SUFFIX);
 
   return true;
 }
@@ -4824,7 +5104,7 @@ static bool xb_space_create_file(
     return (false);
   }
 
-  if (fil_node_create(path, size, space, false, false) == nullptr) {
+  if (fil_node_create(path, size, space, false, false) != DB_SUCCESS) {
     ib::fatal(UT_LOCATION_HERE) << "Unable to add tablespace node '" << path
                                 << "' to the tablespace cache.";
   }
@@ -4916,7 +5196,7 @@ static pfs_os_file_t xb_delta_open_matching_space(
   }
   Fil_path::normalize(real_name);
   /* Truncate ".ibd" */
-  dest_space_name[strlen(dest_space_name) - 4] = '\0';
+  dest_space_name[strlen(dest_space_name) - EXT_IBD.length()] = '\0';
 
   /* Create the database directory if it doesn't exist yet */
   if (!os_file_create_directory(dest_dir, false)) {
@@ -4967,7 +5247,7 @@ static pfs_os_file_t xb_delta_open_matching_space(
             fil_space_read_name_and_filepath(f_space_id, &space_name, &oldpath);
         ut_a(res);
         xb::info() << "Renaming " << dest_space_name << " to " << tmpname
-                   << ".ibu";
+                   << EXT_IBU;
 
         ut_a(os_file_status(oldpath, &exists, &type));
 
@@ -5022,7 +5302,7 @@ static pfs_os_file_t xb_delta_open_matching_space(
       ut_a(res);
 
       xb::info() << "Renaming " << dest_space_name << " to " << tmpname
-                 << ".ibd";
+                 << EXT_IBD;
 
       ut_a(os_file_status(oldpath, &exists, &type));
 
@@ -5117,8 +5397,9 @@ exit:
 }
 
 /************************************************************************
-Applies a given .delta file to the corresponding data file.
-@return true on success */
+ * Applies a given .delta file to the corresponding data file.
+ * @return true on success
+ */
 static bool xtrabackup_apply_delta(
     const datadir_entry_t &entry, /*!<in: datadir entry */
     void * /*data*/) {
@@ -5163,10 +5444,10 @@ static bool xtrabackup_apply_delta(
     snprintf(dst_path, sizeof(dst_path), "%s/%s", xtrabackup_real_target_dir,
              entry.file_name.c_str());
   }
-  dst_path[strlen(dst_path) - 6] = '\0';
+  dst_path[strlen(dst_path) - EXT_DELTA.length()] = '\0';
 
   strncpy(space_name, entry.file_name.c_str(), FN_REFLEN - 1);
-  space_name[strlen(space_name) - 6] = 0;
+  space_name[strlen(space_name) - EXT_DELTA.length()] = 0;
 
   if (!get_meta_path(src_path, meta_path)) {
     goto error;
@@ -5318,9 +5599,9 @@ error:
 }
 
 /************************************************************************
-Callback to handle datadir entry. Deletes entry if it has no matching
-fil_space in fil_system directory.
-@return false if delete attempt was unsuccessful */
+ * Callback to handle datadir entry. Deletes entry if it has no matching
+ * fil_space in fil_system directory.
+ * @return false if delete attempt was unsuccessful */
 static bool rm_if_not_found(
     const datadir_entry_t &entry, /*!<in: datadir entry */
     void *arg __attribute__((unused))) {
@@ -5339,7 +5620,7 @@ static bool rm_if_not_found(
   }
 
   /* Truncate ".ibd" */
-  name[strlen(name) - 4] = '\0';
+  name[strlen(name) - EXT_IBD.length()] = '\0';
 
   HASH_SEARCH(name_hash, inc_dir_tables_hash, ut::hash_string(name),
               xb_filter_entry_t *, table, (void)0, !strcmp(table->name, name));
@@ -5359,8 +5640,8 @@ static bool rm_if_not_found(
 }
 
 /** Make sure that we have a read access to the given datadir entry
-@param[in]	statinfo	entry stat info
-@param[out]	name		entry name */
+ * @param[in]	statinfo	entry stat info
+ * @param[out]	name		entry name */
 static void check_datadir_enctry_access(const char *name,
                                         const struct stat *statinfo) {
   const char *entry_type = S_ISDIR(statinfo->st_mode) ? "directory" : "file";
@@ -5475,7 +5756,7 @@ bool xb_process_datadir(const char *path,   /*!<in: datadir path */
 Applies all .delta files from incremental_dir to the full backup.
 @return true on success. */
 static bool xtrabackup_apply_deltas() {
-  return xb_process_datadir(xtrabackup_incremental_dir, ".delta",
+  return xb_process_datadir(xtrabackup_incremental_dir, EXT_DELTA.c_str(),
                             xtrabackup_apply_delta, NULL);
 }
 
@@ -6136,9 +6417,10 @@ static bool xb_export_cfg_write(
   char file_path[FN_REFLEN];
   FILE *file;
   bool success;
+  std::string EXT_CFG = ".cfg";
 
   strcpy(file_path, node->name);
-  strcpy(file_path + strlen(file_path) - 4, ".cfg");
+  strcpy(file_path + strlen(file_path) - EXT_CFG.length(), EXT_CFG.c_str());
 
   file = fopen(file_path, "w+b");
 
@@ -6471,6 +6753,78 @@ skip_check:
 
   Tablespace_map::instance().deserialize("./");
 
+  if (opt_lock_ddl == LOCK_DDL_REDUCED) {
+    if (!xb_process_datadir(
+            xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".",
+            EXT_CRPT.c_str(), prepare_handle_corrupt_files, NULL)) {
+      xb_data_files_close();
+      goto error_cleanup;
+    }
+
+    /* Handle `RENAME/DELETE` DDL files produced by DDL tracking during backup
+     */
+    err = xb_data_files_init();
+    if (err != DB_SUCCESS) {
+      xb::error() << "xb_data_files_init() failed "
+                  << "with error code " << err;
+      goto error_cleanup;
+    }
+
+    // This should be done before handling .del files. Because we have to delete
+    // the correct delta files for the corresponding .del files.
+    if (xtrabackup_incremental_dir) {
+      // Build meta map
+      if (!xb_process_datadir(
+              xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".",
+              EXT_META.c_str(), xtrabackup_scan_meta, NULL)) {
+        xb_data_files_close();
+        goto error_cleanup;
+      }
+    }
+
+    // This should be done before rename because .del files are created after
+    // consolidating or skipping intermediate operations (renames etc). So they
+    // should be processed before renames.
+    if (!xb_process_datadir(
+            xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".",
+            EXT_DEL.c_str(), prepare_handle_del_files, NULL)) {
+      xb_data_files_close();
+      goto error_cleanup;
+    }
+
+    // This should be done after processing .meta and .del
+    if (!xb_process_datadir(
+            xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".",
+            EXT_REN.c_str(), prepare_handle_ren_files, NULL)) {
+      xb_data_files_close();
+      goto error_cleanup;
+    }
+
+    xb_data_files_close();
+    fil_close();
+    innodb_free_param();
+    undo_spaces_deinit();
+
+    /* Handle `CREATE` DDL files produced by DDL tracking during backup */
+    if (xtrabackup_incremental_dir) {
+      /** This is the new file, this might be less than the original .ibd
+       * because we are copying the file while there are still dirty pages in
+       * the BP. Those changes will later be conciliated via redo log*/
+      xb_process_datadir(xtrabackup_incremental_dir, EXT_NEW_META.c_str(),
+                         prepare_handle_new_files, NULL);
+      xb_process_datadir(xtrabackup_incremental_dir, EXT_NEW_DELTA.c_str(),
+                         prepare_handle_new_files, NULL);
+      xb_process_datadir(xtrabackup_incremental_dir, EXT_NEW.c_str(),
+                         prepare_handle_new_files, NULL);
+    } else {
+      xb_process_datadir(".", EXT_NEW.c_str(), prepare_handle_new_files, NULL);
+    }
+
+    if (innodb_init_param()) {
+      goto error_cleanup;
+    }
+  }
+
   if (xtrabackup_incremental) {
     Tablespace_map::instance().deserialize(xtrabackup_incremental_dir);
     err = xb_data_files_init();
@@ -6492,8 +6846,8 @@ skip_check:
     /* Cleanup datadir from tablespaces deleted between full and
     incremental backups */
 
-    xb_process_datadir("./", ".ibd", rm_if_not_found, NULL);
-    xb_process_datadir("./", ".ibu", rm_if_not_found, NULL);
+    xb_process_datadir("./", EXT_IBD.c_str(), rm_if_not_found, NULL);
+    xb_process_datadir("./", EXT_IBU.c_str(), rm_if_not_found, NULL);
 
     xb_filter_hash_free(inc_dir_tables_hash);
   }
@@ -6778,13 +7132,13 @@ bool xb_init() {
   const char *mixed_options[4] = {NULL, NULL, NULL, NULL};
   int n_mixed_options;
 
-  if (opt_no_lock || opt_no_backup_locks) opt_lock_ddl = false;
+  if (opt_no_lock || opt_no_backup_locks) opt_lock_ddl = LOCK_DDL_OFF;
 
   /* sanity checks */
-  if (opt_lock_ddl && opt_lock_ddl_per_table) {
+  if (opt_lock_ddl != LOCK_DDL_OFF && opt_lock_ddl_per_table) {
     xb::error()
         << "--lock-ddl and --lock-ddl-per-table are mutually exclusive. "
-           "Please specify --lock-ddl=false to use --lock-ddl-per-table.";
+           "Please specify --lock-ddl=OFF to use --lock-ddl-per-table.";
     return (false);
   }
 
@@ -6868,13 +7222,13 @@ bool xb_init() {
     history_start_time = time(NULL);
 
     /* stop slave before taking backup up locks if lock-ddl=ON*/
-    if (!opt_no_lock && opt_lock_ddl && opt_safe_slave_backup) {
+    if (!opt_no_lock && opt_lock_ddl == LOCK_DDL_ON && opt_safe_slave_backup) {
       if (!wait_for_safe_slave(mysql_connection)) {
         return (false);
       }
     }
 
-    if (opt_lock_ddl &&
+    if (opt_lock_ddl == LOCK_DDL_ON &&
         !lock_tables_for_backup(mysql_connection, opt_lock_ddl_timeout, 0)) {
       return (false);
     }
@@ -7418,6 +7772,12 @@ int main(int argc, char **argv) {
     exit(EXIT_FAILURE);
   }
 
+  if (opt_page_tracking && opt_lock_ddl == LOCK_DDL_REDUCED) {
+    xb::error() << "--page-tracking and --lock-ddl=REDUCED cannot be enabled"
+                << " together.";
+    exit(EXIT_FAILURE);
+  }
+
   /* Expand target-dir, incremental-basedir, etc. */
 
   my_getwd(cwd, sizeof(cwd), MYF(0));
@@ -7577,6 +7937,9 @@ int main(int argc, char **argv) {
 
 #ifndef __WIN__
   signal(SIGCONT, sigcont_handler);
+#ifdef UNIV_DEBUG
+  signal(SIGUSR1, sigusr1_handler);
+#endif /* UNIV_DEBUG */
 #endif
 
   /* --backup */

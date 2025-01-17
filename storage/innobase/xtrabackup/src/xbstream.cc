@@ -256,8 +256,9 @@ static int get_options(int *argc, char ***argv) {
 }
 
 static void print_version(void) {
-  printf("%s  Ver %s for %s (%s) (revision id: %s)\n", my_progname,
-         XBSTREAM_VERSION, SYSTEM_TYPE, MACHINE_TYPE, XBSTREAM_REVISION);
+  printf("%s  Ver %s%s for %s (%s) (revision id: %s)\n", my_progname,
+         XBSTREAM_VERSION, get_suffix_str().c_str(), SYSTEM_TYPE, MACHINE_TYPE,
+         XBSTREAM_REVISION);
 }
 
 static void usage(void) {

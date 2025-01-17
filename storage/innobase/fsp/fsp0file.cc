@@ -121,9 +121,17 @@ dberr_t Datafile::open_read_only(bool strict) {
   }
 
   set_open_flags(OS_FILE_OPEN);
+
+#ifdef XTRABACKUP
+  m_handle = os_file_create(
+      innodb_data_file_key, m_filepath,
+      OS_FILE_OPEN | OS_FILE_ON_ERROR_SILENT | OS_FILE_ON_ERROR_NO_EXIT,
+      OS_DATA_FILE, OS_FILE_READ_ONLY, &success);
+#else
   m_handle = os_file_create_simple_no_error_handling(
       innodb_data_file_key, m_filepath, m_open_flags, OS_FILE_READ_ONLY, true,
       &success);
+#endif /* XTRABACKUP */
 
   if (success) {
     m_exists = true;
@@ -665,17 +673,13 @@ dberr_t Datafile::validate_first_page(space_id_t space_id, lsn_t *flush_lsn,
       bool found = false;
 
       if (srv_backup_mode) {
-        mutex_enter(&recv_sys->mutex);
-        if (recv_sys->keys != nullptr) {
-          for (const auto &recv_key : *recv_sys->keys) {
-            if (recv_key.space_id == m_space_id) {
-              memcpy(m_encryption_key, recv_key.ptr, Encryption::KEY_LEN);
-              memcpy(m_encryption_iv, recv_key.iv, Encryption::KEY_LEN);
-              found = true;
-            }
-          }
+        recv_sys_t::Encryption_Key *recv_key = nullptr;
+        std::tie(found, recv_key) = recv_find_encryption_key(m_space_id);
+
+        if (found) {
+          memcpy(m_encryption_key, recv_key->ptr, Encryption::KEY_LEN);
+          memcpy(m_encryption_iv, recv_key->iv, Encryption::KEY_LEN);
         }
-        mutex_exit(&recv_sys->mutex);
       }
 
       if (!found) {
