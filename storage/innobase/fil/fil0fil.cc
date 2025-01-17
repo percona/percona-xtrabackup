@@ -10242,8 +10242,10 @@ bool Fil_system::lookup_for_recovery(space_id_t space_id) {
       ut_a(recv_sys->missing_ids.count(space_id) == 0);
 
       /* Every time a space_id is marked deleted, the path
-      is also removed from m_dirs. */
-      ut_a(recv_sys->deleted.count(space_id) == 0);
+      is also removed from m_dirs. Unless with lock_ddl=LOCK_DDL_REDUCED where
+      we do not actually do file deletion from redo log records because they are 
+      tracked during backup. */
+      ut_a(recv_sys->deleted.count(space_id) == 0 || opt_lock_ddl == LOCK_DDL_REDUCED);
     } else {
       /* Should belong to exactly one of `deleted` or `missing_ids`, as whenever
       adding to deleted we remove from missing_ids, and

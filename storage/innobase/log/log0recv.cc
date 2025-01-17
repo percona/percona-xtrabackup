@@ -1179,7 +1179,7 @@ static void recv_apply_log_rec(recv_addr_t *recv_addr) {
       fil_space_get_page_size(recv_addr->space, &found);
   ut_a(found);
   ut_a(!recv_sys->missing_ids.contains(recv_addr->space));
-  ut_a(!recv_sys->deleted.contains(recv_addr->space));
+  ut_a(!recv_sys->deleted.contains(recv_addr->space) || opt_lock_ddl == LOCK_DDL_REDUCED);
   if (recv_addr->state == RECV_NOT_PROCESSED) {
     mutex_exit(&recv_sys->mutex);
     if (buf_page_peek(page_id)) {
