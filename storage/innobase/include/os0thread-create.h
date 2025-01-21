@@ -151,7 +151,9 @@ class Runnable : public MySQL_thread {
   dberr_t operator()(F &&f, Args &&...args) {
     MySQL_thread::preamble();
 
-    auto r = std::invoke(std::forward<F>(f), std::forward<Args>(args)...);
+    auto task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
+
+    auto r = task();
 
     MySQL_thread::epilogue();
 
@@ -188,7 +190,9 @@ class Detached_thread : public MySQL_thread {
 
     m_thread.set_state(IB_thread::State::STARTED);
 
-    std::invoke(std::forward<F>(f), std::forward<Args>(args)...);
+    auto task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
+
+    task();
 
     epilogue();
 

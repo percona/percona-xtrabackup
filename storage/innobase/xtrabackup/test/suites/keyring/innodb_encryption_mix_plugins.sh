@@ -7,9 +7,10 @@ require_server_version_higher_than 5.7.10
 is_xtradb || skip_test "Keyring vault requires Percona Server"
 
 vlog setup keyring_file
+KEYRING_TYPE="component"
+. inc/keyring_common.sh
 . inc/keyring_file.sh
-
-start_server
+configure_server_with_component
 
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
 CREATE TABLE t1 (c1 VARCHAR(100)) ENCRYPTION='y';

@@ -21,7 +21,7 @@ TEST_TIMEOUT=1800
 export SKIPPED_EXIT_CODE=200
 
 # Default server installation directory (-d option)
-MYSQL_BASEDIR=${MYSQL_BASEDIR:-"$PWD/server"}
+MYSQL_BASEDIR=${MYSQL_BASEDIR:-"$PWD/server/"}
 
 TEST_BASEDIR="$PWD"
 TEST_VAR_ROOT="$TEST_BASEDIR/var"

@@ -2159,11 +2159,6 @@ INCLUDE(maintainer)
 INCLUDE(msvc_cppcheck)
 DO_MSVC_CPPCHECK()
 
-<<<<<<< HEAD
-IF(WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
-||||||| dc86e412f18
-IF(WITH_UNIT_TESTS)
-=======
 # Silence some warnings for unused performance schema stuff.
 IF(DISABLE_ALL_PSI AND MY_COMPILER_IS_GNU_OR_CLANG)
   STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-unused-parameter")
@@ -2183,8 +2178,26 @@ IF(WITH_PROTOBUF STREQUAL "system" AND "${PROTOBUF_VERSION}" VERSION_LESS 3.19)
   STRING(REPLACE "-Wextra-semi" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 ENDIF()
 
-IF(WITH_UNIT_TESTS)
->>>>>>> mysql-9.1.0
+# Silence some warnings for unused performance schema stuff.
+IF(DISABLE_ALL_PSI AND MY_COMPILER_IS_GNU_OR_CLANG)
+  STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-unused-parameter")
+  STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-unused-variable")
+  MY_CHECK_CXX_COMPILER_WARNING("-Wunused-but-set-variable" HAS_WARN_FLAG)
+  IF(HAS_WARN_FLAG)
+    STRING_APPEND(CMAKE_CXX_FLAGS " ${HAS_WARN_FLAG}")
+  ENDIF()
+  MY_CHECK_CXX_COMPILER_WARNING("-Wdocumentation" HAS_WARN_FLAG)
+  IF(HAS_WARN_FLAG)
+    STRING_APPEND(CMAKE_CXX_FLAGS " ${HAS_WARN_FLAG}")
+  ENDIF()
+ENDIF()
+
+# We know that 3.12 generates extra-semi, and that 3.19 does not:
+IF(WITH_PROTOBUF STREQUAL "system" AND "${PROTOBUF_VERSION}" VERSION_LESS 3.19)
+  STRING(REPLACE "-Wextra-semi" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+ENDIF()
+
+IF(WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP)
   ENABLE_TESTING()
   INCLUDE(googletest)
 ELSE()
@@ -2408,6 +2421,7 @@ INCLUDE(cmake/abi_check.cmake)
 INCLUDE(cmake/tags.cmake)
 
 CONFIGURE_FILE(config.h.cmake   ${CMAKE_BINARY_DIR}/include/my_config.h)
+CONFIGURE_FILE(config.h.cmake   ${CMAKE_BINARY_DIR}/include/config.h)
 CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/include/mysql_version.h.in
                ${CMAKE_BINARY_DIR}/include/mysql_version.h )
 CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/sql/sql_builtin.cc.in

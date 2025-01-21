@@ -182,17 +182,9 @@ class logger {
   @param[in]    module          module that generates the event
   @param[in]    args            Variable length argument list */
   template <class... Args>
-<<<<<<< HEAD
   explicit logger(loglevel level, int err IF_XB(, const char *module),
-                  Args &&... args)
+                  Args &&...args)
       : m_err(err), m_level(level) IF_XB(, m_module(module)) {
-||||||| dc86e412f18
-  explicit logger(loglevel level, int err, Args &&... args)
-      : m_err(err), m_level(level) {
-=======
-  explicit logger(loglevel level, int err, Args &&...args)
-      : m_err(err), m_level(level) {
->>>>>>> mysql-9.1.0
     m_oss << msg(err, std::forward<Args>(args)...);
   }
 
@@ -227,16 +219,8 @@ class info : public logger {
   @param[in]    err             Error code from errmsg-*.txt.
   @param[in]    args            Variable length argument list */
   template <class... Args>
-<<<<<<< HEAD
-  explicit info(int err, Args &&... args)
-      : logger(INFORMATION_LEVEL, err, INNO, std::forward<Args>(args)...) {}
-||||||| dc86e412f18
-  explicit info(int err, Args &&... args)
-      : logger(INFORMATION_LEVEL, err, std::forward<Args>(args)...) {}
-=======
   explicit info(int err, Args &&...args)
-      : logger(INFORMATION_LEVEL, err, std::forward<Args>(args)...) {}
->>>>>>> mysql-9.1.0
+      : logger(INFORMATION_LEVEL, err, INNO, std::forward<Args>(args)...) {}
 #else
   /** Destructor */
   ~info() override;
@@ -255,16 +239,8 @@ class warn : public logger {
   @param[in]    err             Error code from errmsg-*.txt.
   @param[in]    args            Variable length argument list */
   template <class... Args>
-<<<<<<< HEAD
-  explicit warn(int err, Args &&... args)
-      : logger(WARNING_LEVEL, err, INNO, std::forward<Args>(args)...) {}
-||||||| dc86e412f18
-  explicit warn(int err, Args &&... args)
-      : logger(WARNING_LEVEL, err, std::forward<Args>(args)...) {}
-=======
   explicit warn(int err, Args &&...args)
-      : logger(WARNING_LEVEL, err, std::forward<Args>(args)...) {}
->>>>>>> mysql-9.1.0
+      : logger(WARNING_LEVEL, err, INNO, std::forward<Args>(args)...) {}
 
 #else
   /** Destructor */
@@ -284,16 +260,8 @@ class error : public logger {
   @param[in]    err             Error code from errmsg-*.txt.
   @param[in]    args            Variable length argument list */
   template <class... Args>
-<<<<<<< HEAD
-  explicit error(int err, Args &&... args)
-      : logger(ERROR_LEVEL, err, INNO, std::forward<Args>(args)...) {}
-||||||| dc86e412f18
-  explicit error(int err, Args &&... args)
-      : logger(ERROR_LEVEL, err, std::forward<Args>(args)...) {}
-=======
   explicit error(int err, Args &&...args)
-      : logger(ERROR_LEVEL, err, std::forward<Args>(args)...) {}
->>>>>>> mysql-9.1.0
+      : logger(ERROR_LEVEL, err, INNO, std::forward<Args>(args)...) {}
 
 #else
   /** Destructor */
@@ -318,16 +286,8 @@ class fatal : public logger {
   @param[in]    err             Error code from errmsg-*.txt.
   @param[in]    args            Variable length argument list */
   template <class... Args>
-<<<<<<< HEAD
-  explicit fatal(ut::Location location, int err, Args &&... args)
-      : logger(ERROR_LEVEL, err, INNO, std::forward<Args>(args)...),
-||||||| dc86e412f18
-  explicit fatal(ut::Location location, int err, Args &&... args)
-      : logger(ERROR_LEVEL, err, std::forward<Args>(args)...),
-=======
   explicit fatal(ut::Location location, int err, Args &&...args)
-      : logger(ERROR_LEVEL, err, std::forward<Args>(args)...),
->>>>>>> mysql-9.1.0
+      : logger(ERROR_LEVEL, err, INNO, std::forward<Args>(args)...),
         m_location(location) {}
 #else
   /** Constructor
@@ -359,16 +319,8 @@ class error_or_warn : public logger {
   @param[in]    err             Error code from errmsg-*.txt.
   @param[in]    args            Variable length argument list */
   template <class... Args>
-<<<<<<< HEAD
-  explicit error_or_warn(bool pred, int err, Args &&... args)
-      : logger(pred ? ERROR_LEVEL : WARNING_LEVEL, err, INNO,
-||||||| dc86e412f18
-  explicit error_or_warn(bool pred, int err, Args &&... args)
-      : logger(pred ? ERROR_LEVEL : WARNING_LEVEL, err,
-=======
   explicit error_or_warn(bool pred, int err, Args &&...args)
-      : logger(pred ? ERROR_LEVEL : WARNING_LEVEL, err,
->>>>>>> mysql-9.1.0
+      : logger(pred ? ERROR_LEVEL : WARNING_LEVEL, err, INNO,
                std::forward<Args>(args)...) {}
 
 #endif /* !UNIV_NO_ERR_MSGS */
@@ -392,16 +344,8 @@ class fatal_or_error : public logger {
   @param[in]    args            Variable length argument list */
   template <class... Args>
   explicit fatal_or_error(bool fatal, ut::Location location, int err,
-<<<<<<< HEAD
-                          Args &&... args)
-      : logger(ERROR_LEVEL, err, INNO, std::forward<Args>(args)...),
-||||||| dc86e412f18
-                          Args &&... args)
-      : logger(ERROR_LEVEL, err, std::forward<Args>(args)...),
-=======
                           Args &&...args)
-      : logger(ERROR_LEVEL, err, std::forward<Args>(args)...),
->>>>>>> mysql-9.1.0
+      : logger(ERROR_LEVEL, err, INNO, std::forward<Args>(args)...),
         m_fatal(fatal),
         m_location(location) {}
 
@@ -437,16 +381,8 @@ class trace_1 : public logger {
   @param[in]    err             Error code from errmsg-*.txt.
   @param[in]    args            Variable length argument list */
   template <class... Args>
-<<<<<<< HEAD
-  explicit trace_1(int err, Args &&... args)
-      : logger(INFORMATION_LEVEL, err, INNO, std::forward<Args>(args)...) {
-||||||| dc86e412f18
-  explicit trace_1(int err, Args &&... args)
-      : logger(INFORMATION_LEVEL, err, std::forward<Args>(args)...) {
-=======
   explicit trace_1(int err, Args &&...args)
-      : logger(INFORMATION_LEVEL, err, std::forward<Args>(args)...) {
->>>>>>> mysql-9.1.0
+      : logger(INFORMATION_LEVEL, err, INNO, std::forward<Args>(args)...) {
     m_trace_level = 1;
   }
 
@@ -468,16 +404,8 @@ class trace_2 : public logger {
   @param[in]    err             Error code from errmsg-*.txt.
   @param[in]    args            Variable length argument list */
   template <class... Args>
-<<<<<<< HEAD
-  explicit trace_2(int err, Args &&... args)
-      : logger(INFORMATION_LEVEL, err, INNO, std::forward<Args>(args)...) {
-||||||| dc86e412f18
-  explicit trace_2(int err, Args &&... args)
-      : logger(INFORMATION_LEVEL, err, std::forward<Args>(args)...) {
-=======
   explicit trace_2(int err, Args &&...args)
-      : logger(INFORMATION_LEVEL, err, std::forward<Args>(args)...) {
->>>>>>> mysql-9.1.0
+      : logger(INFORMATION_LEVEL, err, INNO, std::forward<Args>(args)...) {
     m_trace_level = 2;
   }
 #else
@@ -498,16 +426,8 @@ class trace_3 : public logger {
   @param[in]    err             Error code from errmsg-*.txt.
   @param[in]    args            Variable length argument list */
   template <class... Args>
-<<<<<<< HEAD
-  explicit trace_3(int err, Args &&... args)
-      : logger(INFORMATION_LEVEL, err, INNO, std::forward<Args>(args)...) {
-||||||| dc86e412f18
-  explicit trace_3(int err, Args &&... args)
-      : logger(INFORMATION_LEVEL, err, std::forward<Args>(args)...) {
-=======
   explicit trace_3(int err, Args &&...args)
-      : logger(INFORMATION_LEVEL, err, std::forward<Args>(args)...) {
->>>>>>> mysql-9.1.0
+      : logger(INFORMATION_LEVEL, err, INNO, std::forward<Args>(args)...) {
     m_trace_level = 3;
   }
 

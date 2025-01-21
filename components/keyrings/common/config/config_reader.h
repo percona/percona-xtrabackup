@@ -44,13 +44,7 @@ class Config_reader {
 
     @param [in] config_file_path Full path to configuration file
   */
-<<<<<<< HEAD
   inline explicit Config_reader(const std::string config_file_path);
-||||||| dc86e412f18
-  explicit Config_reader(const std::string config_file_path);
-=======
-  explicit Config_reader(std::string config_file_path);
->>>>>>> mysql-9.1.0
 
   /**
     Get an element value from parent element or top level of JSON document.
@@ -98,7 +92,26 @@ class Config_reader {
     return false;
   }
 
-<<<<<<< HEAD
+  /**
+    Get an object element value from parent element of JSON document.
+
+    @param [in]  parent parent element
+    @param [in]  element_name  Name of the element being searched
+    @param [out] element_value Object element
+
+    @returns status of search operation
+      @retval false Success. Refer to element_value
+      @retval true  Failure.
+  */
+  bool get_element(const Config_object &parent, const std::string &element_name,
+                   Config_object &element_value) {
+    if (!valid_ || parent == nullptr || !parent->IsObject()) return true;
+    auto parent_object = parent->GetObject();
+    if (!parent_object.HasMember(element_name)) return true;
+    element_value = &parent_object[element_name];
+    return false;
+  }
+
   /**
     Check if an element with the provided name exists.
 
@@ -133,28 +146,6 @@ class Config_reader {
   */
   bool is_string(const std::string &element_name);
 
-||||||| dc86e412f18
-=======
-  /**
-    Get an object element value from parent element of JSON document.
-
-    @param [in]  parent parent element
-    @param [in]  element_name  Name of the element being searched
-    @param [out] element_value Object element
-
-    @returns status of search operation
-      @retval false Success. Refer to element_value
-      @retval true  Failure.
-  */
-  bool get_element(const Config_object &parent, const std::string &element_name,
-                   Config_object &element_value) {
-    if (!valid_ || parent == nullptr || !parent->IsObject()) return true;
-    auto parent_object = parent->GetObject();
-    if (!parent_object.HasMember(element_name)) return true;
-    element_value = &parent_object[element_name];
-    return false;
-  }
-
   /**
     Check if the object is valid, in particular if there was no parse error.
 
@@ -169,7 +160,6 @@ class Config_reader {
     return valid_;
   }
 
->>>>>>> mysql-9.1.0
  private:
   /** Configuration file path */
   std::string config_file_path_;
