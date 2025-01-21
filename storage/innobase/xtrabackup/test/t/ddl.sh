@@ -45,7 +45,7 @@ start_server
 mkdir -p $topdir/backup
 
 # Backup
-xtrabackup --datadir=$mysql_datadir --lock-ddl=false --backup \
+xtrabackup --datadir=$mysql_datadir --lock-ddl=OFF --backup \
     --target-dir=$topdir/backup \
     --debug-sync="data_copy_thread_func" &
 

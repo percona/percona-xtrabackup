@@ -467,8 +467,9 @@ static struct my_option my_long_options[] = {
     {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
 
 static void print_version() {
-  printf("%s  Ver %s for %s (%s) (revision id: %s)\n", my_progname, XBCLOUD_VERSION, SYSTEM_TYPE,
-         MACHINE_TYPE, XBCLOUD_REVISION);
+  printf("%s  Ver %s%s for %s (%s) (revision id: %s)\n", my_progname,
+         XBCLOUD_VERSION, get_suffix_str().c_str(), SYSTEM_TYPE, MACHINE_TYPE,
+         XBCLOUD_REVISION);
 }
 
 static void usage() {

@@ -20,8 +20,45 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 #ifndef XB_VERSION_H
 #define XB_VERSION_H
+#include <string>
 
 #define XTRABACKUP_VERSION		"@XB_VERSION@"
 #define XTRABACKUP_REVISION		"@XB_REVISION@"
+#define XTRABACKUP_SUFFIX_DEF           "@XTRABACKUP_SUFFIX@"
+
+#ifdef XTRABACKUP_SUFFIX
+#define XTRABACKUP_SUFFIX_STR STRINGIFY_ARG(XTRABACKUP_SUFFIX)
+#else
+#define XTRABACKUP_SUFFIX_STR XTRABACKUP_SUFFIX_DEF
+#endif
+
+inline std::string get_suffix_str() {
+  std::string str(XTRABACKUP_SUFFIX_STR);
+
+#ifdef UNIV_DEBUG
+  str.append("-debug");
+#endif
+
+#ifdef HAVE_VALGRIND
+  str.append("-valgrind");
+#endif
+
+#ifdef HAVE_ASAN
+  str.append("-asan");
+#endif
+
+#ifdef HAVE_LSAN
+  str.append("-lsan");
+#endif
+
+#ifdef HAVE_UBSAN
+  str.append("-ubsan");
+#endif
+
+#ifdef HAVE_TSAN
+  str.append("-tsan");
+#endif
+  return str;
+}
 
 #endif /* XB_VERSION_H */

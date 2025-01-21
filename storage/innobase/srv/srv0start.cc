@@ -357,36 +357,63 @@ static dberr_t srv_undo_tablespace_read_encryption(pfs_os_file_t fh,
   offset = fsp_header_get_encryption_offset(space_page_size);
   ut_ad(offset);
 
-  /* Return if the encryption metadata is empty. */
-  if (!Encryption::is_encrypted_with_v3(first_page + offset)) {
-    ut::aligned_free(first_page);
-    return (DB_SUCCESS);
-  }
+  auto [found, recv_key] = recv_find_encryption_key(space->id);
 
-  if (!use_dumped_tablespace_keys || srv_backup_mode) {
+  bool is_enc = Encryption::is_encrypted_with_v3(first_page + offset);
+  lsn_t page_lsn = mach_read_from_8(first_page + FIL_PAGE_LSN);
+
+  // Function to set encryption using a given key and iv
+  auto set_encryption = [&](byte *key, byte *iv) -> bool {
+    fsp_flags_set_encryption(space->flags);
+    err = fil_set_encryption(space->id, Encryption::AES, key, iv);
+    ut_ad(err == DB_SUCCESS);
+    return err == DB_SUCCESS;
+  };
+
+  // Function to handle dumped encryption keys
+  auto load_key_from_dump = [&]() -> bool {
+    err = xb_set_encryption(space);
+    return err == DB_SUCCESS;
+  };
+
+  // Function to load encryption key from the page header
+  auto load_key_from_page = [&]() -> bool {
     byte key[Encryption::KEY_LEN];
     byte iv[Encryption::KEY_LEN];
     Encryption_key e_key{key, iv};
+
     if (fsp_header_get_encryption_key(space->flags, e_key, first_page)) {
-      fsp_flags_set_encryption(space->flags);
-      err = fil_set_encryption(space->id, Encryption::AES, key, iv);
-      ut_ad(err == DB_SUCCESS);
-    } else {
-      ut::aligned_free(first_page);
-      return (DB_FAIL);
+      return set_encryption(key, iv);
     }
+    return false;
+  };
+
+  bool encryption_success = false;
+
+  if (found && recv_key->lsn >= page_lsn) {
+    // Condition 1: Use key from redo if available and appropriate
+    encryption_success = use_dumped_tablespace_keys
+                             ? load_key_from_dump()
+                             : set_encryption(recv_key->ptr, recv_key->iv);
+  } else if (is_enc) {
+    // Condition 2: Page is encrypted
+    encryption_success = (use_dumped_tablespace_keys && !srv_backup_mode)
+                             ? load_key_from_dump()
+                             : load_key_from_page();
   } else {
-    err = xb_set_encryption(space);
-    if (err != DB_SUCCESS) {
-      ut::aligned_free(first_page);
-      return (DB_FAIL);
-    }
+    // Condition 3: If the page is not encrypted, we consider it successful
+    encryption_success = true;
   }
 
+  // Free the allocated memory and return the result
   ut::aligned_free(first_page);
-  ib::info(ER_IB_MSG_UNDO_ENCRYPTION_INFO_LOADED, space->name);
 
-  return (DB_SUCCESS);
+  if (encryption_success) {
+    ib::info(ER_IB_MSG_UNDO_ENCRYPTION_INFO_LOADED, space->name);
+    return (DB_SUCCESS);
+  } else {
+    return (DB_FAIL);
+  }
 }
 
 /** Fix up a v5.7 type undo tablespace that was being truncated.
@@ -435,18 +462,18 @@ static dberr_t srv_undo_tablespace_fixup_num(space_id_t space_num) {
   }
 #ifdef XTRABACKUP
   if (srv_backup_mode) {
-    if (opt_lock_ddl) {
-      xb::warn() << "Found _trunc.log in server dirctory. ";
-      return (DB_SUCCESS);
-    } else {
+    if (opt_lock_ddl == LOCK_DDL_OFF) {
       xb::error()
           << "Found _trunc.log file in server directory. Undo truncation might "
              "be concurrently running, Try backup after undo truncation is "
              "complete. These *_trunc.log could be left over from previous "
              "undo truncation, remove them safely to continue backup. You can "
-             "also run backup with --lock-ddl=true that blocks concurrent undo "
+             "also run backup with --lock-ddl=ON that blocks concurrent undo "
              "truncation";
       return (DB_ERROR);
+    } else {
+      xb::warn() << "Found _trunc.log in server directory. ";
+      return (DB_SUCCESS);
     }
   }
 #endif
@@ -605,12 +632,25 @@ dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space) {
     ut_a(size != (os_offset_t)-1);
     page_no_t n_pages = static_cast<page_no_t>(size / UNIV_PAGE_SIZE);
 
-    if (fil_node_create(file_name, n_pages, space, false) == nullptr) {
+#ifdef XTRABACKUP
+    DBUG_EXECUTE_IF(
+        "undo_create_node",
+        if (strncmp(file_name, "./undo_1.ibu", strlen("./undo_1.ibu")) == 0) {
+          *const_cast<const char **>(&xtrabackup_debug_sync) =
+              "undo_create_node";
+          debug_sync_point("undo_create_node");
+        });
+#endif /* XTRABACKUP */
+
+    err = fil_node_create(file_name, n_pages, space, false);
+    if (err != DB_SUCCESS) {
       os_file_close(fh);
 
-      ib::error(ER_IB_MSG_1082, undo_name);
+      fil_space_free(space_id, false);
+      if (opt_lock_ddl != LOCK_DDL_REDUCED)
+        ib::error(ER_IB_MSG_1082, undo_name);
 
-      return (DB_ERROR);
+      return (err);
     }
   }
 
@@ -624,9 +664,21 @@ dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space) {
   ut_ad(success);
 
   if (err != DB_SUCCESS) {
-    ib::error(ER_IB_MSG_1083, undo_name);
+    fil_space_free(space_id, false);
+    if (opt_lock_ddl != LOCK_DDL_REDUCED) ib::error(ER_IB_MSG_1083, undo_name);
     return (err);
   }
+
+#ifdef XTRABACKUP
+  DBUG_EXECUTE_IF(
+      "undo_space_open", if (!is_server_locked()) {
+        if (strncmp(file_name, "./undo_1.ibu", strlen("./undo_1.ibu")) == 0) {
+          *const_cast<const char **>(&xtrabackup_debug_sync) =
+              "undo_space_open";
+          debug_sync_point("undo_space_open");
+        }
+      });
+#endif /* XTRABACKUP */
 
   /* Now that space and node exist, make sure this undo tablespace
   is open so that it stays open until shutdown.
@@ -634,8 +686,20 @@ dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space) {
   header page has been written. */
   if (!undo::is_under_construction(space_id)) {
     bool success = fil_space_open(space_id);
-    ut_a(success);
+    if (!success) {
+      fil_space_free(space_id, false);
+      return DB_CANNOT_OPEN_FILE;
+    }
   }
+
+#ifdef XTRABACKUP
+  // Track undo tablespaces that are found after server is locked
+  // if lock_ddl is REDUCED, we will do one more undo scan via
+  // srv_undo_tablespaces_init()/open()
+  if (ddl_tracker && is_server_locked()) {
+    ddl_tracker->add_undo_tablespace(space_id, file_name);
+  }
+#endif /* XTRABACKUP */
 
   if (undo::is_reserved(space_id)) {
     undo::spaces->add(undo_space);
@@ -801,6 +865,7 @@ static dberr_t srv_undo_tablespaces_open(bool backup_mode) {
 
       case DB_SUCCESS:
 
+      case DB_NOT_FOUND:
       case DB_CANNOT_OPEN_FILE:
         /* Doesn't exist, keep looking */
         break;
@@ -1743,7 +1808,7 @@ dberr_t srv_start(bool create_new_db IF_XB(, lsn_t to_lsn)) {
     return (srv_init_abort(err));
   }
 
-  err = fil_scan_for_tablespaces(false);
+  err = fil_scan_for_tablespaces(false IF_XB(, false));
 
   if (err != DB_SUCCESS) {
     return (srv_init_abort(err));

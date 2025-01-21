@@ -357,6 +357,10 @@ ssize_t Redo_Log_Reader::scan_log_recs(byte *buf, bool is_last, lsn_t start_lsn,
 
 void Redo_Log_Reader::seek_logfile(lsn_t lsn) { log_scanned_lsn = lsn; }
 
+lsn_t Redo_Log_Parser::get_last_parsed_lsn() const {
+  return (last_parsed_lsn.load());
+}
+
 bool Redo_Log_Parser::parse_log(const byte *buf, size_t len, lsn_t start_lsn) {
   const byte *log_block = buf;
   lsn_t scanned_lsn = start_lsn;
@@ -452,6 +456,8 @@ bool Redo_Log_Parser::parse_log(const byte *buf, size_t len, lsn_t start_lsn) {
     /* Try to parse more log records */
 
     recv_parse_log_recs();
+    /* update parsed lsn after we have completed parsing */
+    last_parsed_lsn.store(scanned_lsn);
 
     if (recv_sys->recovered_offset > recv_sys->buf_len / 4) {
       /* Move parsing buffer data to the buffer start */
@@ -1038,13 +1044,14 @@ bool Redo_Log_Data_Manager::start() {
 
   /*
    * From this point forward, recv_parse_or_apply_log_rec_body should fail if
-   * MLOG_INDEX_LOAD event is parsed as its not safe to continue the backup
-   * in any situation (with or without --lock-ddl-per-table).
+   * MLOG_INDEX_LOAD event is parsed and lock-ddl == false as its not safe to
+   * continue the backup in any situation (with or without
+   * --lock-ddl-per-table).
    */
   redo_catchup_completed = true;
   full_scan_tables_count = full_scan_tables.size();
 
-  if (opt_lock_ddl) {
+  if (opt_lock_ddl == LOCK_DDL_ON) {
     ut_ad(reader.get_scanned_lsn() >= backup_redo_log_flushed_lsn);
   }
 
@@ -1102,6 +1109,14 @@ void Redo_Log_Data_Manager::track_archived_log(lsn_t start_lsn, const byte *buf,
   }
 }
 
+bool Redo_Log_Data_Manager::has_parsed_lsn(lsn_t lsn) const {
+  /* check if we have parsed up to desired lsn, or if we have not parsed
+   * anything (no redo) or are in the middle of last block */
+  return (parser.get_last_parsed_lsn() >= lsn ||
+          parser.get_last_parsed_lsn() == 0 ||
+          lsn - parser.get_last_parsed_lsn() < OS_FILE_LOG_BLOCK_SIZE);
+}
+
 bool Redo_Log_Data_Manager::copy_once(bool is_last, bool *finished) {
   auto start_lsn = reader.get_contiguous_lsn();
 
@@ -1125,7 +1140,7 @@ bool Redo_Log_Data_Manager::copy_once(bool is_last, bool *finished) {
         }
 
         reader.seek_logfile(archive_reader.get_contiguous_lsn());
-
+        scanned_lsn = archive_reader.get_contiguous_lsn();
         return (true);
       }
 
@@ -1154,7 +1169,7 @@ bool Redo_Log_Data_Manager::copy_once(bool is_last, bool *finished) {
   if (!writer.write_buffer(reader.get_buffer(), len)) {
     return (false);
   }
-
+  scanned_lsn = reader.get_scanned_lsn();
   return (true);
 }
 
@@ -1198,6 +1213,7 @@ void Redo_Log_Data_Manager::copy_func() {
       xb::info() << ">> log scanned up to (" << reader.get_scanned_lsn() << ")";
 
       debug_sync_point("xtrabackup_copy_logfile_pause");
+      debug_sync_thread("xtrabackup_copy_logfile_pause");
 
       os_event_reset(event);
       os_event_wait_time_low(event, std::chrono::milliseconds{copy_interval},
@@ -1225,9 +1241,15 @@ lsn_t Redo_Log_Data_Manager::get_start_checkpoint_lsn() const {
 
 lsn_t Redo_Log_Data_Manager::get_scanned_lsn() const { return (scanned_lsn); }
 
+lsn_t Redo_Log_Data_Manager::get_parsed_lsn() const {
+  return parser.get_last_parsed_lsn();
+}
+
 void Redo_Log_Data_Manager::set_copy_interval(ulint interval) {
   copy_interval = interval;
 }
+
+ulint Redo_Log_Data_Manager::get_copy_interval() const { return copy_interval; }
 
 void Redo_Log_Data_Manager::abort() {
   aborted = true;
@@ -1254,7 +1276,7 @@ bool Redo_Log_Data_Manager::stop_at(lsn_t lsn, lsn_t checkpoint_lsn) {
 
   /* to ensure redo logs are not disabled during the backup, reopen the log
   files to read HEADER. */
-  if (opt_lock_ddl == false && archived_log_state == ARCHIVED_LOG_NONE &&
+  if (opt_lock_ddl != LOCK_DDL_ON && archived_log_state == ARCHIVED_LOG_NONE &&
       !reopen_log_files(0)) {
     xb::error() << "Failed to open redo log files. ";
     return (false);

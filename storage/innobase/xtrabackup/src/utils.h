@@ -19,6 +19,12 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #ifndef XTRABACKUP_UTILS_H
 #define XTRABACKUP_UTILS_H
 #include <my_getopt.h>
+#include <chrono>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
 namespace xtrabackup {
 namespace utils {
 
@@ -60,6 +66,68 @@ unsigned long host_free_memory();
 /** Generates uuid
 @return uuid string */
 std::string generate_uuid();
+
+using time = std::chrono::time_point<std::chrono::high_resolution_clock>;
+using HighResTimePoint =
+    std::chrono::time_point<std::chrono::high_resolution_clock>;
+constexpr HighResTimePoint INVALID_TIME = HighResTimePoint::min();
+
+std::string formatElapsedTime(std::chrono::nanoseconds elapsed);
+
+// Helper to convert single values to strings
+template <typename T>
+std::string to_string(const T &value) {
+  std::ostringstream oss;
+  oss << value;
+  return oss.str();
+}
+
+// Specialization for std::pair
+template <typename T1, typename T2>
+std::string to_string(const std::pair<T1, T2> &p) {
+  std::ostringstream oss;
+  oss << "{" << to_string(p.first) << ", " << to_string(p.second) << "}";
+  return oss.str();
+}
+
+// Specialization for std::unordered_map
+template <typename K, typename V>
+std::string to_string(const std::unordered_map<K, V> &umap) {
+  std::ostringstream oss;
+  oss << "{\n";
+  for (auto it = umap.begin(); it != umap.end(); ++it) {
+    oss << to_string(it->first) << ": " << to_string(it->second) << "\n";
+  }
+  oss << "}";
+  return oss.str();
+}
+
+// Specialization for std::vector
+template <typename T>
+std::string to_string(const std::vector<T> &vec) {
+  std::ostringstream oss;
+  oss << "[";
+  for (size_t i = 0; i < vec.size(); ++i) {
+    if (i > 0) {
+      oss << ", ";
+    }
+    oss << to_string(vec[i]);
+  }
+  oss << "]";
+  return oss.str();
+}
+
+// Specialization for std::unordered_set
+template <typename T>
+std::string to_string(const std::unordered_set<T> &uset) {
+  std::ostringstream oss;
+  oss << "{\n";
+  for (auto it = uset.begin(); it != uset.end(); ++it) {
+    oss << to_string(*it) << " ";
+  }
+  oss << "\n}";
+  return oss.str();
+}
 }  // namespace utils
 }  // namespace xtrabackup
 #endif  // XTRABACKUP_UTILS_H

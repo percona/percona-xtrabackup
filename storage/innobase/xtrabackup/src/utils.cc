@@ -32,7 +32,12 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <boost/uuid/uuid.hpp>             // uuid class
 #include <boost/uuid/uuid_generators.hpp>  // generators
 #include <boost/uuid/uuid_io.hpp>          // streaming operators etc.
+#include <chrono>
+#include <iomanip>
+#include <iostream>
 #include <sstream>
+#include <string>
+#include <thread>
 #include "common.h"
 #include "msg.h"
 #include "xtrabackup.h"
@@ -193,6 +198,64 @@ std::string generate_uuid() {
   std::ostringstream uuid_ss;
   uuid_ss << uuid;
   return uuid_ss.str();
+}
+
+std::string formatElapsedTime(std::chrono::nanoseconds elapsed) {
+  using namespace std::chrono;
+
+  auto days = duration_cast<duration<int, std::ratio<86400>>>(elapsed);
+  elapsed -= days;
+  auto hours = duration_cast<std::chrono::hours>(elapsed);
+  elapsed -= hours;
+  auto minutes = duration_cast<std::chrono::minutes>(elapsed);
+  elapsed -= minutes;
+  auto seconds = duration_cast<std::chrono::seconds>(elapsed);
+  elapsed -= seconds;
+  auto milliseconds = duration_cast<std::chrono::milliseconds>(elapsed);
+  elapsed -= milliseconds;
+  auto microseconds = duration_cast<std::chrono::microseconds>(elapsed);
+  elapsed -= microseconds;
+  auto nanoseconds = elapsed;
+
+  std::ostringstream result;
+  if (days.count() > 0) {
+    result << days.count() << " days ";
+    if (hours.count() > 0) result << hours.count() << " hr ";
+    if (minutes.count() > 0) result << minutes.count() << " mins";
+  } else if (hours.count() > 0) {
+    double fractionalMinutes = minutes.count() + (seconds.count() / 60.0);
+    result << std::fixed << std::setprecision(2)
+           << hours.count() + (fractionalMinutes / 60.0) << " hours";
+  } else if (minutes.count() > 0) {
+    double fractionalSeconds =
+        seconds.count() + (milliseconds.count() / 1000.0);
+    result << std::fixed << std::setprecision(2)
+           << minutes.count() + (fractionalSeconds / 60.0) << " minutes";
+  } else if (seconds.count() > 0) {
+    double fractionalMilliseconds =
+        milliseconds.count() / 1000.0 + (microseconds.count() / 1000000.0);
+    result << std::fixed << std::setprecision(3)
+           << seconds.count() + fractionalMilliseconds << " seconds";
+  } else if (milliseconds.count() > 0) {
+    double fractionalMilliseconds = milliseconds.count() +
+                                    (microseconds.count() / 1000.0) +
+                                    (nanoseconds.count() / 1000000.0);
+    result << std::fixed << std::setprecision(3) << fractionalMilliseconds
+           << " milliseconds";
+  } else if (microseconds.count() > 0) {
+    double fractionalMicroseconds =
+        microseconds.count() + (nanoseconds.count() / 1000.0);
+    result << std::fixed << std::setprecision(3) << fractionalMicroseconds
+           << " microseconds";
+  } else if (nanoseconds.count() > 0) {
+    // Display nanoseconds as is, since this is the smallest unit
+    result << nanoseconds.count() << " nanoseconds";
+  } else {
+    // If everything is zero, return 0 nanoseconds (edge case handling)
+    result << "0 nanoseconds";
+  }
+
+  return result.str();
 }
 
 }  // namespace utils
