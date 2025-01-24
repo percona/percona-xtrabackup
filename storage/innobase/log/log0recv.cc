@@ -4277,9 +4277,6 @@ static void recv_init_crash_recovery() {
     srv_threads.m_recv_writer.start();
   }
 }
-#endif /* !UNIV_HOTBACKUP */
-
-#ifndef UNIV_HOTBACKUP
 
 dberr_t recv_recovery_from_checkpoint_start(log_t &log, lsn_t flush_lsn,
                                             lsn_t to_lsn) {

@@ -12900,6 +12900,16 @@ ER_KEYRING_COMPONENT_AWS_READ_ONLY_LIMIT
 ER_KEYRING_COMPONENT_AWS_CANNOT_ENCRYPT_READ_ONLY
   eng "CMK was changed and the keyring must be re-encrypted, but the keyring is read only. Set the read_only config parameter to false for re-encryption and reload the component."
 
+ER_KEYRING_COMPONENT_NO_CONFIG
+  eng "Keyring configuration doesn't exists: %s"
+
+ER_KEYRING_COMPONENT_CONFIG_PARSE_FAILED
+  eng "Keyring configuration JSON parse error: %s (%lu)"
+
+ER_KEYRING_COMPONENT_KMS_ERROR
+  eng "KMS communication error: %s"
+
+
 ER_AUTHENTICATION_OPENID_OPTION_REGISTER
   eng "Option registration failed."
 
@@ -12927,24 +12937,6 @@ reserved-error-section 50000 51999
 #
 # End of 8.1, 8.2, 8.3, 8.4 error messages intended to be written to the server error log.
 #
-#
-# Start of Percona Server 8.0 server error log messages
-#
-start-error-number 48000
-
-ER_KEYRING_COMPONENT_NO_CONFIG
-  eng "Keyring configuration doesn't exists: %s"
-
-ER_KEYRING_COMPONENT_CONFIG_PARSE_FAILED
-  eng "Keyring configuration JSON parse error: %s (%lu)"
-
-ER_KEYRING_COMPONENT_KMS_ERROR
-  eng "KMS communication error: %s"
-
-#
-# End of Percona Server 8.0 server error log messages
-#
-
 #
 # Start of 9.0 error messages intended to be written to the server error log.
 # Append 8.x error log messages to the end of the _previous_ section.

@@ -369,6 +369,7 @@ bool check_server_version(unsigned long version_number,
                           const char *innodb_version) {
   bool mysql51 = false;
   bool pxb24 = false;
+  bool mysql9x = false;
   std::string pxb_version;
   std::string server_version;
   DBUG_EXECUTE_IF("simulate_24_version", version_number = 50744;
@@ -417,7 +418,11 @@ bool check_server_version(unsigned long version_number,
   pxb24 = pxb24 || (version_number > 50500 && version_number < 50800);
   pxb24 = pxb24 || ((version_number > 100000 && version_number < 100300) &&
                     server_flavor == FLAVOR_MARIADB);
-  if (pxb_version != server_version) {
+  // we will use xtrabckup 9.1 for all 9.x versions
+  mysql9x = pxb_version == "9.1" &&
+            (version_number > 90000 && version_number < 100000);
+
+  if (!mysql9x && pxb_version != server_version) {
     xb::error() << "Unsupported server version: " << SQUOTE(version_string);
     xb::error()
         << "This version of Percona XtraBackup can only perform backups and "
