@@ -418,16 +418,15 @@ bool check_server_version(unsigned long version_number,
   pxb24 = pxb24 || (version_number > 50500 && version_number < 50800);
   pxb24 = pxb24 || ((version_number > 100000 && version_number < 100300) &&
                     server_flavor == FLAVOR_MARIADB);
-  // we will use xtrabckup 9.1 for all 9.x versions
+  // we will use xtrabckup 9.1 from server versions 9.1 to 9.6.
   mysql9x = pxb_version == "9.1" &&
-            (version_number > 90000 && version_number < 100000);
+            (version_number >= 90100 && version_number < 90700);
 
   if (!mysql9x && pxb_version != server_version) {
     xb::error() << "Unsupported server version: " << SQUOTE(version_string);
     xb::error()
-        << "This version of Percona XtraBackup can only perform backups and "
-           "restores against MySQL and Percona Server "
-        << SQUOTE(pxb_version);
+        << "This version of Percona XtraBackup supports backing up and "
+           "restoring MySQL and Percona Servers from versions 9.1 to 9.6.";
     if (mysql51 && innodb_version == NULL) {
       xb::error()
           << "You can use Percona XtraBackup 2.0 for MySQL 5.1 with built-in "

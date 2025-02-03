@@ -12798,6 +12798,15 @@ ER_SIMPLE_ERROR_LOG_COMPONENT_STATUS
 # same directory as this file for more
 # information.
 
+#
+# End of 8.1, 8.2, 8.3, 8.4 error messages intended to be written to the server error log.
+#
+
+#
+# Start of 9.0 error messages intended to be written to the server error log.
+# Append 8.x error log messages to the end of the _previous_ section.
+# Messages intended to be sent to _clients_ go in messages_to_clients.txt!
+#
 
 start-error-number 15500
 
@@ -12900,6 +12909,20 @@ ER_KEYRING_COMPONENT_AWS_READ_ONLY_LIMIT
 ER_KEYRING_COMPONENT_AWS_CANNOT_ENCRYPT_READ_ONLY
   eng "CMK was changed and the keyring must be re-encrypted, but the keyring is read only. Set the read_only config parameter to false for re-encryption and reload the component."
 
+ER_AUTHENTICATION_OPENID_OPTION_REGISTER
+  eng "Option registration failed."
+
+ER_AUTHENTICATION_OPENID_OPTION_DEREGISTER
+  eng "Option deregistration failed."
+
+#
+# End of 9.0 error messages intended to be written to the server error log. 
+#
+
+# Start of Percona Server 8.0 server error log messages
+#
+start-error-number 48000
+
 ER_KEYRING_COMPONENT_NO_CONFIG
   eng "Keyring configuration doesn't exists: %s"
 
@@ -12909,12 +12932,9 @@ ER_KEYRING_COMPONENT_CONFIG_PARSE_FAILED
 ER_KEYRING_COMPONENT_KMS_ERROR
   eng "KMS communication error: %s"
 
-
-ER_AUTHENTICATION_OPENID_OPTION_REGISTER
-  eng "Option registration failed."
-
-ER_AUTHENTICATION_OPENID_OPTION_DEREGISTER
-  eng "Option deregistration failed."
+#
+# End of Percona Server 8.0 server error log messages
+#  
 
 ################################################################################
 # Error numbers 50000 to 51999 are reserved. Please do not use them for
@@ -12933,12 +12953,3 @@ reserved-error-section 50000 51999
 #   Messages for different server versions go to different places.
 #   Messages that are built into the client library (libmysql/C-API)
 #   go into yet a different place.
-
-#
-# End of 8.1, 8.2, 8.3, 8.4 error messages intended to be written to the server error log.
-#
-#
-# Start of 9.0 error messages intended to be written to the server error log.
-# Append 8.x error log messages to the end of the _previous_ section.
-# Messages intended to be sent to _clients_ go in messages_to_clients.txt!
-#
