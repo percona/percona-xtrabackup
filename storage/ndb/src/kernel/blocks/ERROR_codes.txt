@@ -27,7 +27,7 @@ Next NDBFS 2002
 Next DBACC 3006
 Next DBTUP 4039
 Next DBLQH 5112
-Next DBDICT 6223
+Next DBDICT 6227
 Next DBDIH 7251
 Next DBTC 8124
 Next TRPMAN 9007
@@ -40,7 +40,7 @@ Next LGMAN 15002
 Next TSMAN 16002
 Next DBSPJ 17000
 Next TRIX 18004
-Next DBUTIL 19001
+Next DBUTIL 19002
 
 TESTING NODE FAILURE, ARBITRATION
 ---------------------------------
@@ -300,7 +300,8 @@ time-out handling. They can also be used to test multiple node failure
 handling.
 
 5045: Crash in PREPARE_COPY_FRAG_REQ
-5046: Crash if LQHKEYREQ (NrCopy) comes when frag-state is incorrect
+5046: Unused
+
 
 ERROR CODES FOR TESTING TIME-OUT HANDLING IN DBLQH
 -------------------------------------------------
@@ -486,10 +487,6 @@ DBLQH LONG SIGNAL TESTING
 
 DBTC TCINDXREQ TESTING
 ----------------------
-
-8100: Force TCINDXREQ to recycle a connection record of ongoing abort, phase 1 (set by test case). Will block TCROLLBACKREP.
-
-8101: Force TCINDXREQ to recycle a connection record of ongoing abort, phase 2 (set internally). Will release TCROLLBACKREP.
 
 8102: simulate out of memory (segments,attributes) in fk_scanFromChildTable
 8103: simulate out of memory in fk_constructAttrInfoUpdateCascade
@@ -909,3 +906,4 @@ Index stats:
 DBUTIL
 -------
 19000: fail UTIL_PREPARE_REQ with PREPARE_SEIZE_ERROR
+19001: crash in UTIL_PREPARE_REQ if preparedOperationPool or runningPrepares pool is exhausted

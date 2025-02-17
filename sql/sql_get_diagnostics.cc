@@ -35,6 +35,7 @@
 #include "sql/sp_rcontext.h"  // sp_rcontext
 #include "sql/sql_class.h"    // THD
 #include "sql/sql_error.h"    // Diagnostics_area
+#include "sql/sql_lex.h"      // LEX, Query_expression
 #include "sql/sql_list.h"     // List_iterator
 #include "sql_string.h"
 
@@ -65,6 +66,10 @@ bool Sql_cmd_get_diagnostics::execute(THD *thd) {
   Diagnostics_area *first_da = thd->get_stmt_da();
   const Diagnostics_area *second_da = thd->get_stacked_da();
   DBUG_TRACE;
+
+  // Set preparation and execution state for current statement:
+  if (!thd->lex->unit->is_prepared()) thd->lex->unit->set_prepared();
+  thd->lex->set_exec_started();
 
   /* Push new Diagnostics Area, execute statement and pop. */
   thd->push_diagnostics_area(&new_stmt_da);
@@ -278,8 +283,14 @@ Item *Condition_information_item::make_utf8_string_item(THD *thd,
   /* If a charset was not set, assume that no conversion is needed. */
   const CHARSET_INFO *from_cs = str->charset() ? str->charset() : to_cs;
   Item_string *item = new Item_string(str->ptr(), str->length(), from_cs);
-  /* If necessary, convert the string (ignoring errors), then copy it over. */
-  return item ? item->charset_converter(thd, to_cs, false) : nullptr;
+  if (item == nullptr) return nullptr;
+  if (to_cs == from_cs) return item;
+  /*
+    If necessary, convert the string and create a new object.
+    Errors are ignored, but are unlikely to appear since the target character
+    set is UTF8.
+  */
+  return item->convert_charset(thd, to_cs, true);
 }
 
 /**

@@ -61,15 +61,15 @@ static constexpr std::array supported_params{
 
 namespace {
 
-const constexpr std::array<
-    std::pair<std::string_view, DestMetadataCacheGroup::ServerRole>, 3>
-    known_roles{{
-        {"PRIMARY", DestMetadataCacheGroup::ServerRole::Primary},
-        {"SECONDARY", DestMetadataCacheGroup::ServerRole::Secondary},
-        {"PRIMARY_AND_SECONDARY",
-         DestMetadataCacheGroup::ServerRole::PrimaryAndSecondary},
-    }};
-}
+const constexpr auto known_roles = std::to_array<
+    std::pair<std::string_view, DestMetadataCacheGroup::ServerRole>>({
+    {"PRIMARY", DestMetadataCacheGroup::ServerRole::Primary},
+    {"SECONDARY", DestMetadataCacheGroup::ServerRole::Secondary},
+    {"PRIMARY_AND_SECONDARY",
+     DestMetadataCacheGroup::ServerRole::PrimaryAndSecondary},
+});
+
+}  // namespace
 
 DestMetadataCacheGroup::ServerRole get_server_role_from_uri(
     const mysqlrouter::URIQuery &uri) {
@@ -729,12 +729,12 @@ void DestMetadataCacheGroup::on_instances_change(
   auto from_instances = [this](const auto &dests) {
     std::vector<AvailableDestination> result;
 
-    for (auto &dest : dests) {
+    for (const auto &dest : dests) {
       mysql_harness::TCPAddress addr(
           dest.host,
           (protocol_ == Protocol::Type::kXProtocol) ? dest.xport : dest.port);
 
-      result.emplace_back(addr, dest.mysql_server_uuid);
+      result.emplace_back(addr, dest.mysql_server_uuid, dest.mode);
     }
 
     return result;
@@ -793,12 +793,12 @@ void DestMetadataCacheGroup::on_md_refresh(
   auto from_instances = [this](const auto &dests) {
     std::vector<AvailableDestination> result;
 
-    for (auto &dest : dests) {
+    for (const auto &dest : dests) {
       mysql_harness::TCPAddress addr(
           dest.host,
           (protocol_ == Protocol::Type::kXProtocol) ? dest.xport : dest.port);
 
-      result.emplace_back(addr, dest.mysql_server_uuid);
+      result.emplace_back(addr, dest.mysql_server_uuid, dest.mode);
     }
 
     return result;

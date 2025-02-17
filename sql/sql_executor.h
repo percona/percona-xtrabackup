@@ -229,6 +229,8 @@ int join_read_const_table(JOIN_TAB *tab, POSITION *pos);
 
 int do_sj_dups_weedout(THD *thd, SJ_TMP_TABLE *sjtbl);
 int update_item_cache_if_changed(List<Cached_item> &list);
+size_t compute_ria_idx(const mem_root_deque<Item *> &fields, size_t i,
+                       size_t added_non_hidden_fields, size_t border);
 
 // Create list for using with temporary table
 bool change_to_use_tmp_fields(mem_root_deque<Item *> *fields, THD *thd,
@@ -600,5 +602,7 @@ AccessPath *ConnectJoins(plan_idx upper_first_idx, plan_idx first_idx,
                          std::vector<PendingCondition> *pending_join_conditions,
                          qep_tab_map *unhandled_duplicates,
                          table_map *conditions_depend_on_outer_tables);
+
+void set_count_examined_rows(AccessPath *path, bool count_examined_rows);
 
 #endif /* SQL_EXECUTOR_INCLUDED */

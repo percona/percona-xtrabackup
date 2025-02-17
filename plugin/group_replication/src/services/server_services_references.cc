@@ -69,6 +69,15 @@ bool Server_services_references::initialize() {
       reinterpret_cast<SERVICE_TYPE(mysql_system_variable_update_string) *>(
           m_mysql_system_variable_update_string_handle);
 
+  if (registry_service->acquire("mysql_global_variable_attributes",
+                                &m_mysql_global_variable_attributes_handle)) {
+    error = true;
+    goto end;
+  }
+  mysql_global_variable_attributes_service =
+      reinterpret_cast<SERVICE_TYPE(mysql_global_variable_attributes) *>(
+          m_mysql_global_variable_attributes_handle);
+
   if (registry_service->acquire(
           "mysql_system_variable_update_integer",
           &m_mysql_system_variable_update_integer_handle)) {
@@ -79,14 +88,14 @@ bool Server_services_references::initialize() {
       reinterpret_cast<SERVICE_TYPE(mysql_system_variable_update_integer) *>(
           m_mysql_system_variable_update_integer_handle);
 
-  if (registry_service->acquire("component_sys_variable_register",
-                                &m_component_sys_variable_register_handle)) {
+  if (registry_service->acquire("mysql_system_variable_reader",
+                                &m_component_sys_variable_reader_handle)) {
     error = true;
     goto end;
   }
-  component_sys_variable_register_service =
-      reinterpret_cast<SERVICE_TYPE(component_sys_variable_register) *>(
-          m_component_sys_variable_register_handle);
+  component_sys_variable_reader_service =
+      reinterpret_cast<SERVICE_TYPE(mysql_system_variable_reader) *>(
+          m_component_sys_variable_reader_handle);
 
 end:
   if (error) {
@@ -99,11 +108,10 @@ end:
 bool Server_services_references::finalize() {
   int error = 0;
 
-  component_sys_variable_register_service = nullptr;
-  if (nullptr != m_component_sys_variable_register_handle) {
-    error |=
-        registry_service->release(m_component_sys_variable_register_handle);
-    m_component_sys_variable_register_handle = nullptr;
+  component_sys_variable_reader_service = nullptr;
+  if (nullptr != m_component_sys_variable_reader_handle) {
+    error |= registry_service->release(m_component_sys_variable_reader_handle);
+    m_component_sys_variable_reader_handle = nullptr;
   }
 
   mysql_system_variable_update_integer_service = nullptr;
@@ -118,6 +126,13 @@ bool Server_services_references::finalize() {
     error |=
         registry_service->release(m_mysql_system_variable_update_string_handle);
     m_mysql_system_variable_update_string_handle = nullptr;
+  }
+
+  mysql_global_variable_attributes_service = nullptr;
+  if (nullptr != m_mysql_global_variable_attributes_handle) {
+    error |=
+        registry_service->release(m_mysql_global_variable_attributes_handle);
+    m_mysql_global_variable_attributes_handle = nullptr;
   }
 
   mysql_string_charset_converter_service = nullptr;

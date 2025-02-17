@@ -36,9 +36,6 @@ SET(TESTS
   grow_calculator
   gtids
   heartbeat_codec
-  managed_buffer
-  managed_buffer_sequence
-  rw_buffer_sequence
   payload_event_buffer_istream
   transaction_compression
   transaction_payload_codec

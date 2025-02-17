@@ -26,8 +26,6 @@
 
 #include <string>
 
-#define RAPIDJSON_HAS_STDSTRING 1
-
 #include "my_rapidjson_size_t.h"
 
 #include <rapidjson/document.h>
@@ -39,21 +37,20 @@
 
 #include "json_ds.h"
 
-namespace keyring_common {
-namespace json_data {
+namespace keyring_common::json_data {
 
 class Json_writer {
  public:
-  Json_writer(const std::string data = {}, const std::string version = "1.0",
-              const std::string version_key = "version",
-              const std::string array_key = "elements");
+  Json_writer(const std::string &data = {}, const std::string &version = "1.0",
+              const std::string &version_key = "version",
+              const std::string &array_key = "elements");
 
   /** Destructor */
   virtual ~Json_writer() = default;
 
-  bool set_data(const std::string data);
+  bool set_data(const std::string &data);
 
-  const std::string to_string() const;
+  std::string to_string() const;
 
   /**
     Add an element
@@ -86,6 +83,22 @@ class Json_writer {
   /** Validity of the document */
   bool valid() const { return valid_; }
 
+ protected:
+  /**
+    Set a property in the main JSON object. It is intended to be used by derived
+    classes, so it is possible to store some specific, data file-wide
+    properties.
+
+    @param [in]  property_key  key (name) of the property
+    @param [in]  property      value of the property
+
+    @returns status
+      @retval false Success
+      @retval true  Failure
+  */
+  virtual bool set_property(const std::string &property_key,
+                            const std::string &property);
+
  private:
   /** Data in JSON DOM format */
   rapidjson::Document document_;
@@ -97,7 +110,6 @@ class Json_writer {
   bool valid_;
 };
 
-}  // namespace json_data
-}  // namespace keyring_common
+}  // namespace keyring_common::json_data
 
 #endif  // !JSON_WRITER_INCLUDED

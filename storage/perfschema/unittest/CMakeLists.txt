@@ -21,6 +21,10 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
+IF(DISABLE_ALL_PSI)
+  RETURN()
+ENDIF()
+
 DISABLE_MISSING_PROFILE_WARNING()
 ADD_DEFINITIONS(-DMYSQL_SERVER)
 
@@ -50,6 +54,7 @@ SET(tests
 )
 FOREACH(testname ${tests})
   PFS_ADD_TEST(${testname})
+  DOWNGRADE_STRINGOP_WARNINGS(${testname}-t)
 ENDFOREACH()
 
 # Add sql_builtin.cc, to force linkage of plugins below.
@@ -57,13 +62,6 @@ IF(NOT WITH_SHARED_UNITTEST_LIBRARY)
   LIST(APPEND MYSQLD_EXTRA_SOURCES ${CMAKE_BINARY_DIR}/sql/sql_builtin.cc)
 ENDIF()
 
-# We need the server libs to test the blob parser.
-MYSQL_ADD_EXECUTABLE(pfs_connect_attr-t
-  pfs_connect_attr-t.cc
-  ADD_TEST pfs_connect_attr
-)
-
-ADD_DEPENDENCIES(pfs_connect_attr-t GenServerSource)
 # For static server_unittest_library we need to explicitly link in everything
 # referenced in sql/sql_builtin.cc
 IF(WITH_SHARED_UNITTEST_LIBRARY)
@@ -72,7 +70,12 @@ ELSE()
   SET(MYSQLD_EXTRA_LIBRARIES ${MYSQLD_STATIC_PLUGIN_LIBS})
 ENDIF()
 
-TARGET_LINK_LIBRARIES(pfs_connect_attr-t
+# We need the server libs to test the blob parser.
+MYSQL_ADD_EXECUTABLE(pfs_connect_attr-t
+  pfs_connect_attr-t.cc
+  ADD_TEST pfs_connect_attr
+  DEPENDENCIES GenServerSource
+  LINK_LIBRARIES
   mytap
   server_unittest_library
   ${MYSQLD_EXTRA_LIBRARIES}

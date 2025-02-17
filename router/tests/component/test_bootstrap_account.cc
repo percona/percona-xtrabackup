@@ -453,16 +453,6 @@ class AccountReuseTestBase : public RouterComponentBootstrapTest {
   // other functions
   ////////////////////////////////////////////////////////////////////////////////
 
-  ProcessWrapper &launch_mock_server(
-      uint16_t server_port, uint16_t server_http_port,
-      const std::string &js = "bootstrap_account_tests.js") {
-    const std::string json_stmts = get_data_dir().join(js).str();
-    constexpr bool debug = true;
-    auto &server_mock = launch_mysql_server_mock(
-        json_stmts, server_port, EXIT_SUCCESS, debug, server_http_port);
-    return server_mock;
-  }
-
   ProcessWrapper &launch_bootstrap(int exp_exit_code, uint16_t server_port,
                                    const std::string &bootstrap_directory,
                                    const std::vector<std::string> &extra_args,
@@ -538,7 +528,7 @@ class AccountReuseTestBase : public RouterComponentBootstrapTest {
   }
 
   void check_bootstrap_success(
-      ProcessWrapper &router, const std::vector<std::string> exp_output,
+      ProcessWrapper &router, const std::vector<std::string> &exp_output,
       const std::vector<std::string> unexp_output = {}) {
     ASSERT_NO_THROW(router.wait_for_exit());
 
@@ -1175,6 +1165,8 @@ TEST_F(AccountReuseTest, simple) {
   // no config exists yet
   TempDirectory bootstrap_directory;
 
+  prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
   // test params
   const std::vector<std::string> args;
   const std::set<std::string>
@@ -1194,7 +1186,11 @@ TEST_F(AccountReuseTest, simple) {
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
+
   set_mock_metadata(server_http_port, "00000000-0000-0000-0000-0000000000g1",
                     classic_ports_to_gr_nodes({server_port}), 0, {server_port},
                     0, false, "127.0.0.1", "", {2, 2, 0}, "mycluster");
@@ -1223,6 +1219,8 @@ TEST_F(AccountReuseTest, no_host_patterns) {
   for (bool root_password_on_cmdline : {true, false}) {
     TempDirectory bootstrap_directory;
 
+    prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
     // extract test params
     const std::vector<std::string> args = {
         "--account",
@@ -1242,7 +1240,11 @@ TEST_F(AccountReuseTest, no_host_patterns) {
     const uint16_t server_port = port_pool_.get_next_available();
     const uint16_t server_http_port = port_pool_.get_next_available();
 
-    launch_mock_server(server_port, server_http_port);
+    mock_server_spawner().spawn(
+        mock_server_cmdline("bootstrap_account_tests.js")
+            .port(server_port)
+            .http_port(server_http_port)
+            .args());
     set_mock_server_sql_statements(server_http_port, cr.stmts);
 
     // run bootstrap
@@ -1275,6 +1277,8 @@ TEST_F(AccountReuseTest, multiple_host_patterns) {
   for (bool root_password_on_cmdline : {true, false}) {
     TempDirectory bootstrap_directory;
 
+    prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
     // extract test params
     const std::vector<std::string> args = {
         "--account",      kAccountUser,
@@ -1299,7 +1303,11 @@ TEST_F(AccountReuseTest, multiple_host_patterns) {
     const uint16_t server_port = port_pool_.get_next_available();
     const uint16_t server_http_port = port_pool_.get_next_available();
 
-    launch_mock_server(server_port, server_http_port);
+    mock_server_spawner().spawn(
+        mock_server_cmdline("bootstrap_account_tests.js")
+            .port(server_port)
+            .http_port(server_http_port)
+            .args());
     set_mock_server_sql_statements(server_http_port, cr.stmts);
 
     // run bootstrap
@@ -1762,10 +1770,12 @@ class AccountReuseCreateComboTestP
     };
   }
 };
+
 INSTANTIATE_TEST_SUITE_P(
     foo, AccountReuseCreateComboTestP,
     ::testing::ValuesIn(AccountReuseCreateComboTestP::gen_testcases()),
     [](auto p) -> std::string { return p.param.test_name; });
+
 TEST_P(AccountReuseCreateComboTestP, config_does_not_exist_yet) {
   // extract test params
   std::vector<std::string> extra_args = GetParam().extra_args;
@@ -1835,7 +1845,10 @@ TEST_P(AccountReuseCreateComboTestP, config_does_not_exist_yet) {
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
 
   // add expected creation SQL statements to JS
   set_mock_server_sql_statements(server_http_port, cr.stmts);
@@ -1850,6 +1863,9 @@ TEST_P(AccountReuseCreateComboTestP, config_does_not_exist_yet) {
 
   // run bootstrap
   TempDirectory bootstrap_directory;
+
+  // test exists empty config: no prepare_config_dir_...;
+
   ProcessWrapper &router =
       launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                        extra_args, password, username);
@@ -1893,6 +1909,8 @@ TEST_F(AccountReuseReconfigurationTest, user_exists_then_account) {
     // no config exists yet
     TempDirectory bootstrap_directory;
 
+    prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
     // test params
     const std::vector<std::string> args = {"--account", kAccountUser};
     const std::set<std::string> existing_hosts = {
@@ -1914,7 +1932,11 @@ TEST_F(AccountReuseReconfigurationTest, user_exists_then_account) {
     const uint16_t server_port = port_pool_.get_next_available();
     const uint16_t server_http_port = port_pool_.get_next_available();
 
-    launch_mock_server(server_port, server_http_port);
+    mock_server_spawner().spawn(
+        mock_server_cmdline("bootstrap_account_tests.js")
+            .port(server_port)
+            .http_port(server_http_port)
+            .args());
     set_mock_server_sql_statements(server_http_port, cr.stmts);
 
     // run bootstrap
@@ -1957,6 +1979,8 @@ TEST_F(AccountReuseReconfigurationTest,
     // no config exists yet
     TempDirectory bootstrap_directory;
 
+    prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
     // test params
     const std::vector<std::string> args = {"--account", kAccountUser,
                                            "--force"};
@@ -1981,7 +2005,11 @@ TEST_F(AccountReuseReconfigurationTest,
     const uint16_t server_port = port_pool_.get_next_available();
     const uint16_t server_http_port = port_pool_.get_next_available();
 
-    launch_mock_server(server_port, server_http_port);
+    mock_server_spawner().spawn(
+        mock_server_cmdline("bootstrap_account_tests.js")
+            .port(server_port)
+            .http_port(server_http_port)
+            .args());
     set_mock_server_sql_statements(server_http_port,
                                    cr1.stmts + "," + cr2.stmts);
 
@@ -2027,6 +2055,8 @@ TEST_F(AccountReuseReconfigurationTest,
     // no config exists yet
     TempDirectory bootstrap_directory;
 
+    prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
     // test params
     const std::vector<std::string> args = {"--account", kAccountUser};
     const std::set<std::string> existing_hosts = {
@@ -2049,7 +2079,11 @@ TEST_F(AccountReuseReconfigurationTest,
     const uint16_t server_port = port_pool_.get_next_available();
     const uint16_t server_http_port = port_pool_.get_next_available();
 
-    launch_mock_server(server_port, server_http_port);
+    mock_server_spawner().spawn(
+        mock_server_cmdline("bootstrap_account_tests.js")
+            .port(server_port)
+            .http_port(server_http_port)
+            .args());
     set_mock_server_sql_statements(server_http_port, cr.stmts);
 
     // run bootstrap
@@ -2090,6 +2124,8 @@ TEST_F(AccountReuseReconfigurationTest,
     // no config exists yet
     TempDirectory bootstrap_directory;
 
+    prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
     // test params
     const std::vector<std::string> args = {"--account", kAccountUser};
     const std::set<std::string> existing_hosts =
@@ -2111,7 +2147,11 @@ TEST_F(AccountReuseReconfigurationTest,
     const uint16_t server_port = port_pool_.get_next_available();
     const uint16_t server_http_port = port_pool_.get_next_available();
 
-    launch_mock_server(server_port, server_http_port);
+    mock_server_spawner().spawn(
+        mock_server_cmdline("bootstrap_account_tests.js")
+            .port(server_port)
+            .http_port(server_http_port)
+            .args());
     set_mock_server_sql_statements(server_http_port, cr.stmts);
 
     // run bootstrap
@@ -2147,6 +2187,9 @@ TEST_F(AccountReuseReconfigurationTest, noaccount_then_account) {
   for (bool root_password_on_cmdline : {true, false}) {
     // emulate past bootstrap without --account
     TempDirectory bootstrap_directory;
+
+    // test exists empty config: no prepare_config_dir_...;
+
     create_config(bootstrap_directory.name(), kAutoGenUser);
     create_keyring(bootstrap_directory.name(), kAutoGenUser,
                    kAutoGenUserPassword);
@@ -2171,7 +2214,11 @@ TEST_F(AccountReuseReconfigurationTest, noaccount_then_account) {
     const uint16_t server_port = port_pool_.get_next_available();
     const uint16_t server_http_port = port_pool_.get_next_available();
 
-    launch_mock_server(server_port, server_http_port);
+    mock_server_spawner().spawn(
+        mock_server_cmdline("bootstrap_account_tests.js")
+            .port(server_port)
+            .http_port(server_http_port)
+            .args());
     set_mock_server_sql_statements(server_http_port, cr.stmts);
 
     // run bootstrap
@@ -2207,6 +2254,9 @@ TEST_F(AccountReuseReconfigurationTest, account_then_noaccount) {
   for (bool root_password_on_cmdline : {true, false}) {
     // emulate past bootstrap with --account
     TempDirectory bootstrap_directory;
+
+    // test exists empty config: no prepare_config_dir_...;
+
     create_config(bootstrap_directory.name(), kAccountUser);
     create_keyring(bootstrap_directory.name(), kAccountUser,
                    kAccountUserPassword);
@@ -2233,7 +2283,11 @@ TEST_F(AccountReuseReconfigurationTest, account_then_noaccount) {
     const uint16_t server_port = port_pool_.get_next_available();
     const uint16_t server_http_port = port_pool_.get_next_available();
 
-    launch_mock_server(server_port, server_http_port);
+    mock_server_spawner().spawn(
+        mock_server_cmdline("bootstrap_account_tests.js")
+            .port(server_port)
+            .http_port(server_http_port)
+            .args());
     set_mock_server_sql_statements(server_http_port, cr.stmts);
 
     // run bootstrap
@@ -2269,6 +2323,9 @@ TEST_F(AccountReuseReconfigurationTest, noaccount_then_noaccount) {
   for (bool root_password_on_cmdline : {true, false}) {
     // emulate past bootstrap without --account
     TempDirectory bootstrap_directory;
+
+    // test exists empty config: no prepare_config_dir_...;
+
     create_config(bootstrap_directory.name(), kAutoGenUser);
     create_keyring(bootstrap_directory.name(), kAutoGenUser,
                    kAutoGenUserPassword);
@@ -2297,7 +2354,11 @@ TEST_F(AccountReuseReconfigurationTest, noaccount_then_noaccount) {
     const uint16_t server_port = port_pool_.get_next_available();
     const uint16_t server_http_port = port_pool_.get_next_available();
 
-    launch_mock_server(server_port, server_http_port);
+    mock_server_spawner().spawn(
+        mock_server_cmdline("bootstrap_account_tests.js")
+            .port(server_port)
+            .http_port(server_http_port)
+            .args());
     set_mock_server_sql_statements(server_http_port, cr.stmts);
 
     // run bootstrap
@@ -2328,6 +2389,9 @@ TEST_F(AccountReuseReconfigurationTest, noaccount_then_noaccount) {
 TEST_F(AccountReuseReconfigurationTest, account_then_noaccount___no_keyring) {
   // emulate past bootstrap with --account and deleted keyring
   TempDirectory bootstrap_directory;
+
+  // test exists empty config: no prepare_config_dir_...;
+
   create_config(bootstrap_directory.name(), kAccountUser);
 
   // test params
@@ -2347,7 +2411,10 @@ TEST_F(AccountReuseReconfigurationTest, account_then_noaccount___no_keyring) {
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
   set_mock_server_sql_statements(server_http_port, cr.stmts);
 
   // run bootstrap
@@ -2393,6 +2460,9 @@ TEST_F(AccountReuseReconfigurationTest,
 
   // emulate past bootstrap with --account and keyring without user->password
   TempDirectory bootstrap_directory;
+
+  // test exists empty config: no prepare_config_dir_...;
+
   create_config(bootstrap_directory.name(), kAccountUser);
   create_keyring(bootstrap_directory.name(), kBogusUser, kAccountUserPassword);
   check_keyring(bootstrap_directory.name(), true, kBogusUser,
@@ -2422,7 +2492,10 @@ TEST_F(AccountReuseReconfigurationTest,
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
 
   // run bootstrap
   ProcessWrapper &router =
@@ -2466,6 +2539,9 @@ TEST_F(AccountReuseReconfigurationTest,
 
   // emulate past bootstrap with --account and keyring containing bad password
   TempDirectory bootstrap_directory;
+
+  // test exists empty config: no prepare_config_dir_...;
+
   create_config(bootstrap_directory.name(), kAccountUser);
   create_keyring(bootstrap_directory.name(), kAccountUser, kIncorrectPassword);
   check_keyring(bootstrap_directory.name(), true, kAccountUser,
@@ -2506,7 +2582,10 @@ TEST_F(AccountReuseReconfigurationTest,
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
   set_mock_server_sql_statements(
       server_http_port,
       cr.stmts);  // we don't set Router account username here,
@@ -2590,7 +2669,10 @@ TEST_F(ShowWarningsProcessorTest, no_accounts_exist) {
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
 
   // add expected creation SQL statements to JS
   set_mock_server_sql_statements(server_http_port, custom_responses);
@@ -2601,6 +2683,9 @@ TEST_F(ShowWarningsProcessorTest, no_accounts_exist) {
     extra_args.push_back(h);
   }
   TempDirectory bootstrap_directory;
+
+  prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
   ProcessWrapper &router =
       launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                        extra_args, password);
@@ -2672,7 +2757,10 @@ TEST_F(ShowWarningsProcessorTest, one_account_exists) {
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
 
   // add expected creation SQL statements to JS
   set_mock_server_sql_statements(server_http_port, custom_responses);
@@ -2683,6 +2771,9 @@ TEST_F(ShowWarningsProcessorTest, one_account_exists) {
     extra_args.push_back(h);
   }
   TempDirectory bootstrap_directory;
+
+  prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
   ProcessWrapper &router =
       launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                        extra_args, password);
@@ -2754,7 +2845,10 @@ TEST_F(ShowWarningsProcessorTest, two_accounts_exist) {
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
 
   // add expected creation SQL statements to JS
   set_mock_server_sql_statements(server_http_port, custom_responses);
@@ -2765,6 +2859,9 @@ TEST_F(ShowWarningsProcessorTest, two_accounts_exist) {
     extra_args.push_back(h);
   }
   TempDirectory bootstrap_directory;
+
+  prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
   ProcessWrapper &router =
       launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                        extra_args, password);
@@ -2826,7 +2923,10 @@ TEST_F(ShowWarningsProcessorTest, all_accounts_exist) {
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
 
   // add expected creation SQL statements to JS
   set_mock_server_sql_statements(server_http_port, custom_responses);
@@ -2837,6 +2937,9 @@ TEST_F(ShowWarningsProcessorTest, all_accounts_exist) {
     extra_args.push_back(h);
   }
   TempDirectory bootstrap_directory;
+
+  prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
   ProcessWrapper &router =
       launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                        extra_args, password);
@@ -2923,7 +3026,10 @@ TEST_F(ShowWarningsProcessorTest,
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
 
   // add expected creation SQL statements to JS
   set_mock_server_sql_statements(server_http_port, custom_responses);
@@ -2934,6 +3040,9 @@ TEST_F(ShowWarningsProcessorTest,
     extra_args.push_back(h);
   }
   TempDirectory bootstrap_directory;
+
+  prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
   ProcessWrapper &router =
       launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                        extra_args, password);
@@ -3012,7 +3121,10 @@ TEST_F(ShowWarningsProcessorTest, show_warnings_returns_unrecognised_hostname) {
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
 
   // add expected creation SQL statements to JS
   set_mock_server_sql_statements(server_http_port, custom_responses);
@@ -3023,6 +3135,9 @@ TEST_F(ShowWarningsProcessorTest, show_warnings_returns_unrecognised_hostname) {
     extra_args.push_back(h);
   }
   TempDirectory bootstrap_directory;
+
+  // test exists empty config: no prepare_config_dir_...;
+
   ProcessWrapper &router =
       launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                        extra_args, password);
@@ -3111,7 +3226,10 @@ TEST_F(ShowWarningsProcessorTest,
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
 
   // add expected creation SQL statements to JS
   set_mock_server_sql_statements(server_http_port, custom_responses);
@@ -3122,6 +3240,9 @@ TEST_F(ShowWarningsProcessorTest,
     extra_args.push_back(h);
   }
   TempDirectory bootstrap_directory;
+
+  // test exists empty config: no prepare_config_dir_...;
+
   ProcessWrapper &router =
       launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                        extra_args, password);
@@ -3200,7 +3321,11 @@ TEST_F(ShowWarningsProcessorTest, show_warnings_returns_invalid_column_names) {
     const uint16_t server_port = port_pool_.get_next_available();
     const uint16_t server_http_port = port_pool_.get_next_available();
 
-    launch_mock_server(server_port, server_http_port);
+    mock_server_spawner().spawn(
+        mock_server_cmdline("bootstrap_account_tests.js")
+            .port(server_port)
+            .http_port(server_http_port)
+            .args());
 
     // add expected creation SQL statements to JS
     set_mock_server_sql_statements(server_http_port, custom_responses);
@@ -3211,6 +3336,9 @@ TEST_F(ShowWarningsProcessorTest, show_warnings_returns_invalid_column_names) {
       extra_args.push_back(h);
     }
     TempDirectory bootstrap_directory;
+
+    // test exists empty config: no prepare_config_dir_...;
+
     ProcessWrapper &router =
         launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                          extra_args, password);
@@ -3316,7 +3444,10 @@ TEST_F(ShowWarningsProcessorTest,
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
 
   // add expected creation SQL statements to JS
   set_mock_server_sql_statements(server_http_port, custom_responses);
@@ -3327,6 +3458,9 @@ TEST_F(ShowWarningsProcessorTest,
     extra_args.push_back(h);
   }
   TempDirectory bootstrap_directory;
+
+  // test exists empty config: no prepare_config_dir_...;
+
   ProcessWrapper &router =
       launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                        extra_args, password);
@@ -3396,7 +3530,10 @@ TEST_F(ShowWarningsProcessorTest, show_warnings_fails_to_execute) {
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
 
   // add expected creation SQL statements to JS
   set_mock_server_sql_statements(server_http_port, custom_responses);
@@ -3407,6 +3544,9 @@ TEST_F(ShowWarningsProcessorTest, show_warnings_fails_to_execute) {
     extra_args.push_back(h);
   }
   TempDirectory bootstrap_directory;
+
+  // test exists empty config: no prepare_config_dir_...;
+
   ProcessWrapper &router =
       launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                        extra_args, password);
@@ -3603,7 +3743,10 @@ TEST_P(UndoCreateUserTestP, grant_fails) {
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
   // add expected creation SQL statements to JS
   set_mock_server_sql_statements(server_http_port, custom_responses);
 
@@ -3613,6 +3756,9 @@ TEST_P(UndoCreateUserTestP, grant_fails) {
     extra_args.push_back(h);
   }
   TempDirectory bootstrap_directory;
+
+  // test exists empty config: no prepare_config_dir_...;
+
   ProcessWrapper &router =
       launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                        extra_args, password);
@@ -3747,7 +3893,10 @@ TEST_P(UndoCreateUserTestP, grant_fails_and_drop_user_also_fails) {
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
 
   // add expected creation SQL statements to JS
   set_mock_server_sql_statements(server_http_port, custom_responses);
@@ -3758,6 +3907,9 @@ TEST_P(UndoCreateUserTestP, grant_fails_and_drop_user_also_fails) {
     extra_args.push_back(h);
   }
   TempDirectory bootstrap_directory;
+
+  // test exists empty config: no prepare_config_dir_...;
+
   ProcessWrapper &router =
       launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                        extra_args, password);
@@ -3832,6 +3984,8 @@ TEST_F(UndoCreateUserTest, failure_after_account_creation) {
 
   TempDirectory bootstrap_directory;
 
+  prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
   // expectations: other
   int exp_exit_code = EXIT_FAILURE;
   const std::vector<std::string> exp_output = {
@@ -3847,7 +4001,10 @@ TEST_F(UndoCreateUserTest, failure_after_account_creation) {
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
 
   // add expected creation SQL statements to JS
   set_mock_server_sql_statements(server_http_port, custom_responses);
@@ -3938,6 +4095,8 @@ TEST_F(UndoCreateUserTest,
 
   TempDirectory bootstrap_directory;
 
+  prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
   // expectations: other
   int exp_exit_code = EXIT_FAILURE;
   std::vector<std::string> exp_output = undo_create_user_msg(
@@ -3957,7 +4116,10 @@ TEST_F(UndoCreateUserTest,
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
 
   // add expected creation SQL statements to JS
   set_mock_server_sql_statements(server_http_port, custom_responses);
@@ -4031,11 +4193,17 @@ TEST_F(AccountValidationTest, sunny_day_scenario) {
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
   set_mock_server_sql_statements(server_http_port, cr.stmts, kAccountUser);
 
   // run bootstrap
   TempDirectory bootstrap_directory;
+
+  prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
   ProcessWrapper &router =
       launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                        args, exp_password, exp_username);
@@ -4091,7 +4259,10 @@ TEST_F(AccountValidationTest, account_exists_wrong_password) {
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
   set_mock_server_sql_statements(
       server_http_port,
       cr.stmts);  // we omit setting kAccountUser for 2nd conn
@@ -4102,6 +4273,9 @@ TEST_F(AccountValidationTest, account_exists_wrong_password) {
 
   // run bootstrap
   TempDirectory bootstrap_directory;
+
+  // test exists empty config: no prepare_config_dir_...;
+
   ProcessWrapper &router =
       launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                        args, exp_password, exp_username);
@@ -4156,7 +4330,10 @@ TEST_F(AccountValidationTest, account_exists_wrong_password_strict) {
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
   set_mock_server_sql_statements(
       server_http_port,
       cr.stmts);  // we omit setting kAccountUser for 2nd conn
@@ -4167,6 +4344,9 @@ TEST_F(AccountValidationTest, account_exists_wrong_password_strict) {
 
   // run bootstrap
   TempDirectory bootstrap_directory;
+
+  // test exists empty config: no prepare_config_dir_...;
+
   ProcessWrapper &router =
       launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                        args, exp_password, exp_username);
@@ -4223,13 +4403,19 @@ TEST_F(AccountValidationTest, warn_on_conn_failure) {
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
   set_mock_server_sql_statements(
       server_http_port,
       cr.stmts);  // we omit setting kAccountUser for 2nd conn
 
   // run bootstrap
   TempDirectory bootstrap_directory;
+
+  prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
   ProcessWrapper &router =
       launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                        args, exp_password, exp_username);
@@ -4285,13 +4471,19 @@ TEST_F(AccountValidationTest, error_on_conn_failure) {
   const uint16_t server_port = port_pool_.get_next_available();
   const uint16_t server_http_port = port_pool_.get_next_available();
 
-  launch_mock_server(server_port, server_http_port);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_account_tests.js")
+                                  .port(server_port)
+                                  .http_port(server_http_port)
+                                  .args());
   set_mock_server_sql_statements(
       server_http_port,
       cr.stmts);  // we omit setting kAccountUser for 2nd conn
 
   // run bootstrap
   TempDirectory bootstrap_directory;
+
+  // test exists empty config: no prepare_config_dir_...;
+
   ProcessWrapper &router =
       launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                        args, exp_password, exp_username);
@@ -4351,11 +4543,18 @@ TEST_F(AccountValidationTest, warn_on_query_failure) {
     const uint16_t server_port = port_pool_.get_next_available();
     const uint16_t server_http_port = port_pool_.get_next_available();
 
-    launch_mock_server(server_port, server_http_port);
+    mock_server_spawner().spawn(
+        mock_server_cmdline("bootstrap_account_tests.js")
+            .port(server_port)
+            .http_port(server_http_port)
+            .args());
     set_mock_server_sql_statements(server_http_port, cr.stmts, kAccountUser);
 
     // run bootstrap
     TempDirectory bootstrap_directory;
+
+    prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
     ProcessWrapper &router =
         launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                          args, exp_password, exp_username);
@@ -4419,11 +4618,18 @@ TEST_F(AccountValidationTest, error_on_query_failure) {
     const uint16_t server_port = port_pool_.get_next_available();
     const uint16_t server_http_port = port_pool_.get_next_available();
 
-    launch_mock_server(server_port, server_http_port);
+    mock_server_spawner().spawn(
+        mock_server_cmdline("bootstrap_account_tests.js")
+            .port(server_port)
+            .http_port(server_http_port)
+            .args());
     set_mock_server_sql_statements(server_http_port, cr.stmts, kAccountUser);
 
     // run bootstrap
     TempDirectory bootstrap_directory;
+
+    // test exists empty config: no prepare_config_dir_...;
+
     ProcessWrapper &router =
         launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                          args, exp_password, exp_username);
@@ -4489,11 +4695,18 @@ TEST_F(AccountValidationTest, existing_user_missing_grants___no_strict) {
     const uint16_t server_port = port_pool_.get_next_available();
     const uint16_t server_http_port = port_pool_.get_next_available();
 
-    launch_mock_server(server_port, server_http_port);
+    mock_server_spawner().spawn(
+        mock_server_cmdline("bootstrap_account_tests.js")
+            .port(server_port)
+            .http_port(server_http_port)
+            .args());
     set_mock_server_sql_statements(server_http_port, cr.stmts, kAccountUser);
 
     // run bootstrap
     TempDirectory bootstrap_directory;
+
+    // test exists empty config: no prepare_config_dir_...;
+
     ProcessWrapper &router =
         launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                          args, exp_password, exp_username);
@@ -4560,11 +4773,18 @@ TEST_F(AccountValidationTest, existing_user_missing_grants___strict) {
     const uint16_t server_port = port_pool_.get_next_available();
     const uint16_t server_http_port = port_pool_.get_next_available();
 
-    launch_mock_server(server_port, server_http_port);
+    mock_server_spawner().spawn(
+        mock_server_cmdline("bootstrap_account_tests.js")
+            .port(server_port)
+            .http_port(server_http_port)
+            .args());
     set_mock_server_sql_statements(server_http_port, cr.stmts, kAccountUser);
 
     // run bootstrap
     TempDirectory bootstrap_directory;
+
+    // test exists empty config: no prepare_config_dir_...;
+
     ProcessWrapper &router =
         launch_bootstrap(exp_exit_code, server_port, bootstrap_directory.name(),
                          args, exp_password, exp_username);
@@ -4599,14 +4819,12 @@ TEST_F(RouterAccountHostTest, multiple_host_patterns) {
   const auto http_port = port_pool_.get_next_available();
 
   auto test_it = [&](const std::vector<std::string> &cmdline) -> void {
-    const std::string json_stmts =
-        get_data_dir()
-            .join("bootstrap_account_host_multiple_patterns.js")
-            .str();
-
     // launch mock server that is our metadata server for the bootstrap
-    auto &server_mock = launch_mysql_server_mock(
-        json_stmts, server_port, EXIT_SUCCESS, false, http_port);
+    auto &server_mock = mock_server_spawner().spawn(
+        mock_server_cmdline("bootstrap_account_host_multiple_patterns.js")
+            .port(server_port)
+            .http_port(http_port)
+            .args());
 
     // launch the router in bootstrap mode
     auto &router = launch_router_for_bootstrap(cmdline, EXIT_SUCCESS, true);
@@ -4632,6 +4850,9 @@ TEST_F(RouterAccountHostTest, multiple_host_patterns) {
   // --bootstrap before --account-host
   {
     TempDirectory bootstrap_directory;
+
+    prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
     test_it({"--bootstrap=127.0.0.1:" + std::to_string(server_port), "-d",
              bootstrap_directory.name(),    //
              "--account-host", "host1",     // 2nd CREATE USER
@@ -4644,6 +4865,9 @@ TEST_F(RouterAccountHostTest, multiple_host_patterns) {
   // --bootstrap after --account-host
   {
     TempDirectory bootstrap_directory;
+
+    prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
     test_it({"-d", bootstrap_directory.name(), "--account-host",
              "host1",                     // 2nd CREATE USER
              "--account-host", "%",       // 1st CREATE USER
@@ -4700,15 +4924,20 @@ TEST_F(RouterAccountHostTest, without_bootstrap_flag) {
  * handles the error
  */
 TEST_F(RouterAccountHostTest, illegal_hostname) {
-  const std::string json_stmts =
-      get_data_dir().join("bootstrap_account_host_pattern_too_long.js").str();
   TempDirectory bootstrap_directory;
+
+  prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
   const auto server_port = port_pool_.get_next_available();
   const auto http_port = port_pool_.get_next_available();
 
   // launch mock server that is our metadata server for the bootstrap
-  launch_mysql_server_mock(json_stmts, server_port, EXIT_SUCCESS, false,
-                           http_port);
+  mock_server_spawner().spawn(
+      mock_server_cmdline("bootstrap_account_host_pattern_too_long.js")
+          .port(server_port)
+          .http_port(http_port)
+          .args());
+
   set_mock_metadata(http_port, "00000000-0000-0000-0000-0000000000g1",
                     classic_ports_to_gr_nodes({server_port}), 0, {server_port},
                     0, false, "127.0.0.1", "", {2, 2, 0}, "mycluster");
@@ -4741,12 +4970,13 @@ TEST_F(RouterReportHostTest, typical_usage) {
   const auto http_port = port_pool_.get_next_available();
 
   auto test_it = [&](const std::vector<std::string> &cmdline) -> void {
-    const std::string json_stmts =
-        get_data_dir().join("bootstrap_report_host.js").str();
-
     // launch mock server that is our metadata server for the bootstrap
-    auto &server_mock = launch_mysql_server_mock(
-        json_stmts, server_port, EXIT_SUCCESS, false, http_port);
+    auto &server_mock = mock_server_spawner().spawn(
+        mock_server_cmdline("bootstrap_report_host.js")
+            .port(server_port)
+            .http_port(http_port)
+            .args());
+
     set_mock_metadata(http_port, "00000000-0000-0000-0000-0000000000g1",
                       classic_ports_to_gr_nodes({server_port}), 0,
                       {server_port}, 0, false, "127.0.0.1", "", {2, 2, 0},
@@ -4768,6 +4998,9 @@ TEST_F(RouterReportHostTest, typical_usage) {
 
   {
     TempDirectory bootstrap_directory;
+
+    prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
     // --bootstrap before --report-host
     test_it({"--bootstrap=127.0.0.1:" + std::to_string(server_port), "-d",
              bootstrap_directory.name(), "--report-host", "host.foo.bar"});
@@ -4775,6 +5008,9 @@ TEST_F(RouterReportHostTest, typical_usage) {
 
   {
     TempDirectory bootstrap_directory;
+
+    prepare_config_dir_with_default_certs(bootstrap_directory.name());
+
     // --bootstrap after --report-host
     test_it({"-d", bootstrap_directory.name(), "--report-host", "host.foo.bar",
              "--bootstrap=127.0.0.1:" + std::to_string(server_port)});

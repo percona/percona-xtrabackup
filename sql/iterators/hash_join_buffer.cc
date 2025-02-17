@@ -46,8 +46,9 @@
 using pack_rows::TableCollection;
 
 LinkedImmutableString StoreLinkedImmutableStringFromTableBuffers(
-    MEM_ROOT *mem_root, MEM_ROOT *overflow_mem_root, TableCollection tables,
-    LinkedImmutableString next_ptr, size_t row_size_upper_bound, bool *full) {
+    MEM_ROOT *mem_root, MEM_ROOT *overflow_mem_root,
+    const TableCollection &tables, LinkedImmutableString next_ptr,
+    size_t row_size_upper_bound, StoreLinkedInfo *info) {
   if (tables.has_blob_column()) {
     // The row size upper bound can have changed.
     row_size_upper_bound = ComputeRowSizeUpperBound(tables);
@@ -55,7 +56,7 @@ LinkedImmutableString StoreLinkedImmutableStringFromTableBuffers(
 
   const size_t required_value_bytes =
       LinkedImmutableString::RequiredBytesForEncode(row_size_upper_bound);
-
+  info->m_bytes_needed = required_value_bytes;
   std::pair<char *, char *> block = mem_root->Peek();
   if (static_cast<size_t>(block.second - block.first) < required_value_bytes) {
     // No room in this block; ask for a new one and try again.
@@ -74,8 +75,8 @@ LinkedImmutableString StoreLinkedImmutableStringFromTableBuffers(
       return LinkedImmutableString{nullptr};
     }
     committed = true;
-    *full = true;
-  } else if (full == nullptr) {
+    info->m_full = true;
+  } else if (info->m_dont_error) {
     // Used by set operations, we handle empty return and spill to disk
     return ret;
   } else {
@@ -85,11 +86,15 @@ LinkedImmutableString StoreLinkedImmutableStringFromTableBuffers(
   }
 
   ret = LinkedImmutableString::EncodeHeader(next_ptr, &dptr);
+
+  const char *const start_of_row [[maybe_unused]] = dptr;
   dptr = pointer_cast<char *>(
       StoreFromTableBuffersRaw(tables, pointer_cast<uchar *>(dptr)));
+  assert(dptr <= start_of_row + row_size_upper_bound);
 
+  const size_t actual_length = dptr - start_of_value;
+  assert(actual_length <= required_value_bytes);
   if (!committed) {
-    const size_t actual_length = dptr - pointer_cast<char *>(start_of_value);
     mem_root->RawCommit(actual_length);
   }
   return ret;
@@ -158,10 +163,10 @@ class HashJoinRowBuffer::HashMap
 
 LinkedImmutableString
 HashJoinRowBuffer::StoreLinkedImmutableStringFromTableBuffers(
-    LinkedImmutableString next_ptr, bool *full) {
+    LinkedImmutableString next_ptr, StoreLinkedInfo *info) {
   return ::StoreLinkedImmutableStringFromTableBuffers(
       &m_mem_root, &m_overflow_mem_root, m_tables, next_ptr,
-      m_row_size_upper_bound, full);
+      m_row_size_upper_bound, info);
 }
 
 // A convenience form of LoadIntoTableBuffers() that also verifies the end
@@ -212,7 +217,9 @@ bool HashJoinRowBuffer::Init() {
 
   // NOTE: Will be ignored and re-calculated if there are any blobs in the
   // table.
-  m_row_size_upper_bound = ComputeRowSizeUpperBound(m_tables);
+  m_row_size_upper_bound = m_tables.has_blob_column()
+                               ? 0
+                               : ComputeRowSizeUpperBoundSansBlobs(m_tables);
 
   m_hash_map.reset(new HashMap());
   if (m_hash_map == nullptr) {
@@ -226,8 +233,7 @@ bool HashJoinRowBuffer::Init() {
 
 StoreRowResult HashJoinRowBuffer::StoreRow(THD *thd,
                                            bool reject_duplicate_keys) {
-  bool full = false;
-
+  StoreLinkedInfo info;
   // Make the key from the join conditions.
   m_buffer.length(0);
   for (const HashJoinCondition &hash_join_condition : m_join_conditions) {
@@ -303,7 +309,7 @@ StoreRowResult HashJoinRowBuffer::StoreRow(THD *thd,
     if (bytes_used >= m_max_mem_available) {
       // 0 means no limit, so set the minimum possible limit.
       m_mem_root.set_max_capacity(1);
-      full = true;
+      info.m_full = true;
     } else {
       m_mem_root.set_max_capacity(m_max_mem_available - bytes_used);
     }
@@ -322,10 +328,10 @@ StoreRowResult HashJoinRowBuffer::StoreRow(THD *thd,
 
   // Save the contents of all columns marked for reading.
   m_last_row_stored = key_it_and_inserted.first->second =
-      StoreLinkedImmutableStringFromTableBuffers(next_ptr, &full);
+      StoreLinkedImmutableStringFromTableBuffers(next_ptr, &info);
   if (m_last_row_stored == nullptr) {
     return StoreRowResult::FATAL_ERROR;
-  } else if (full) {
+  } else if (info.m_full) {
     return StoreRowResult::BUFFER_FULL;
   } else {
     return StoreRowResult::ROW_STORED;

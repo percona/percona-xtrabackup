@@ -38,6 +38,7 @@
 #include <utility>
 #include <vector>
 
+#include "my_command.h"
 #include "my_config.h"
 #ifdef HAVE_LSAN_DO_RECOVERABLE_LEAK_CHECK
 #include <sanitizer/lsan_interface.h>
@@ -1586,14 +1587,7 @@ static void check_secondary_engine_statement(THD *thd,
   // query.
   thd->clear_error();
 
-  // Tell performance schema that the statement is restarted.
-  MYSQL_END_STATEMENT(thd->m_statement_psi, thd->get_stmt_da());
-
   mysql_thread_set_secondary_engine(use_secondary_engine);
-
-  thd->m_statement_psi = MYSQL_START_STATEMENT(
-      &thd->m_statement_state, com_statement_info[thd->get_command()].m_key,
-      thd->db().str, thd->db().length, thd->charset(), nullptr);
 
   mysql_statement_set_secondary_engine(thd->m_statement_psi,
                                        use_secondary_engine);
@@ -1608,16 +1602,8 @@ static void check_secondary_engine_statement(THD *thd,
   thd->set_query(query_string, query_length);
   parser_state->reset(query_string, query_length);
 
-  // Disable the general log. The query was written to the general log in the
-  // first attempt to execute it. No need to write it twice.
-  const uint64_t saved_option_bits = thd->variables.option_bits;
-  thd->variables.option_bits |= OPTION_LOG_OFF;
-
   // Restart the statement.
-  dispatch_sql_command(thd, parser_state);
-
-  // Restore the original option bits.
-  thd->variables.option_bits = saved_option_bits;
+  dispatch_sql_command(thd, parser_state, /*is_retry=*/true);
 
   // Check if the restarted statement failed, and if so, if it needs
   // another restart/fallback to the primary storage engine.
@@ -2678,7 +2664,7 @@ bool alloc_query(THD *thd, const char *packet, size_t packet_length) {
   return false;
 }
 
-static bool sp_process_definer(THD *thd) {
+bool sp_process_definer(THD *thd) {
   DBUG_TRACE;
 
   LEX *lex = thd->lex;
@@ -3883,64 +3869,10 @@ int mysql_execute_command(THD *thd, bool first_level) {
     }
     case SQLCOM_CREATE_EVENT:
     case SQLCOM_ALTER_EVENT:
-      do {
-        assert(lex->event_parse_data);
-        if (lex->table_or_sp_used()) {
-          my_error(ER_NOT_SUPPORTED_YET, MYF(0),
-                   "Usage of subqueries or stored "
-                   "function calls as part of this statement");
-          break;
-        }
-
-        // Use the hypergraph optimizer if it's enabled.
-        lex->set_using_hypergraph_optimizer(
-            thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER));
-
-        res = sp_process_definer(thd);
-        if (res) break;
-
-        switch (lex->sql_command) {
-          case SQLCOM_CREATE_EVENT: {
-            const bool if_not_exists =
-                (lex->create_info->options & HA_LEX_CREATE_IF_NOT_EXISTS);
-            res =
-                Events::create_event(thd, lex->event_parse_data, if_not_exists);
-            break;
-          }
-          case SQLCOM_ALTER_EVENT: {
-            LEX_CSTRING name_lex_str = NULL_CSTR;
-            if (lex->spname) {
-              name_lex_str.str = lex->spname->m_name.str;
-              name_lex_str.length = lex->spname->m_name.length;
-            }
-
-            res =
-                Events::update_event(thd, lex->event_parse_data,
-                                     lex->spname ? &lex->spname->m_db : nullptr,
-                                     lex->spname ? &name_lex_str : nullptr);
-            break;
-          }
-          default:
-            assert(0);
-        }
-        DBUG_PRINT("info", ("DDL error code=%d", res));
-        if (!res && !thd->killed) my_ok(thd);
-
-      } while (false);
-      /* Don't do it, if we are inside a SP */
-      if (!thd->sp_runtime_ctx) {
-        sp_head::destroy(lex->sphead);
-        lex->sphead = nullptr;
-      }
-      /* lex->cleanup() is called outside, no need to call it here */
+    case SQLCOM_DROP_EVENT:
+      res = lex->m_sql_cmd->execute(thd) ? 1 : 0;
       break;
-    case SQLCOM_DROP_EVENT: {
-      if (!(res = Events::drop_event(thd, lex->spname->m_db,
-                                     to_lex_cstring(lex->spname->m_name),
-                                     lex->drop_if_exists)))
-        my_ok(thd);
-      break;
-    }
+
     case SQLCOM_CREATE_FUNCTION:  // UDF function
     {
       if (check_access(thd, INSERT_ACL, "mysql", nullptr, nullptr, true, false))
@@ -4350,7 +4282,7 @@ int mysql_execute_command(THD *thd, bool first_level) {
               "external_program_execution", srv_registry);
           if (!sp_service.is_valid())
             push_warning(thd, ER_LANGUAGE_COMPONENT_NOT_AVAILABLE);
-          else if (lex->sphead->init_external_routine(sp_service))
+          else if (lex->sphead->init_external_routine(&sp_service))
             goto error;
         } else {
           push_warning(thd, ER_LANGUAGE_COMPONENT_NOT_AVAILABLE);
@@ -5215,7 +5147,7 @@ void THD::reset_for_next_command() {
   thd->parsing_system_view = false;
 
   // Need explicit setting, else demand all privileges to a table.
-  thd->want_privilege = ~NO_ACCESS;
+  thd->want_privilege = ALL_ACCESS;
 
   thd->reset_skip_readonly_check();
   thd->tx_commit_pending = false;
@@ -5256,9 +5188,13 @@ void statement_id_to_session(THD *thd) {
 
   @param thd          Current session.
   @param parser_state Parser state.
+  @param is_retry     True if this is a retry of the statement in a different
+                      storage engine. Some logging (general log and performance
+                      schema) should be skipped in that case, as the query was
+                      already logged in the first round.
 */
 
-void dispatch_sql_command(THD *thd, Parser_state *parser_state) {
+void dispatch_sql_command(THD *thd, Parser_state *parser_state, bool is_retry) {
   DBUG_TRACE;
   DBUG_PRINT("dispatch_sql_command", ("query: '%s'", thd->query().str));
   statement_id_to_session(thd);
@@ -5335,7 +5271,7 @@ void dispatch_sql_command(THD *thd, Parser_state *parser_state) {
       thd->set_query_for_display(thd->query().str, thd->query().length);
     }
 
-    if (!(opt_general_log_raw || thd->slave_thread)) {
+    if (!(opt_general_log_raw || thd->slave_thread || is_retry)) {
       if (thd->rewritten_query().length())
         query_logger.general_log_write(thd, COM_QUERY,
                                        thd->rewritten_query().ptr(),
@@ -5353,8 +5289,11 @@ void dispatch_sql_command(THD *thd, Parser_state *parser_state) {
   DEBUG_SYNC_C("sql_parse_after_rewrite");
 
   if (!err) {
-    thd->m_statement_psi = MYSQL_REFINE_STATEMENT(
-        thd->m_statement_psi, sql_statement_info[thd->lex->sql_command].m_key);
+    if (!is_retry) {
+      thd->m_statement_psi = MYSQL_REFINE_STATEMENT(
+          thd->m_statement_psi,
+          sql_statement_info[thd->lex->sql_command].m_key);
+    }
 
     if (mqh_used && thd->get_user_connect() &&
         check_mqh(thd, lex->sql_command)) {
@@ -5423,8 +5362,10 @@ void dispatch_sql_command(THD *thd, Parser_state *parser_state) {
     thd->set_query_for_display(thd->query().str, thd->query().length);
 
     /* Instrument this broken statement as "statement/sql/error" */
-    thd->m_statement_psi = MYSQL_REFINE_STATEMENT(
-        thd->m_statement_psi, sql_statement_info[SQLCOM_END].m_key);
+    if (!is_retry) {
+      thd->m_statement_psi = MYSQL_REFINE_STATEMENT(
+          thd->m_statement_psi, sql_statement_info[SQLCOM_END].m_key);
+    }
 
     assert(thd->is_error());
     DBUG_PRINT("info",
@@ -5711,6 +5652,10 @@ static bool reparse_common_table_expr(THD *thd, const char *text,
   // This is saved and restored by caller:
   thd->lex->reparse_common_table_expr_at = text_offset;
 
+  sp_head *const old_sp = thd->lex->sphead;
+  // To avoid premature cleanup of parser heap if we see errors during this
+  // nested parse, cf. THD::cleanup_after_parse_error
+  thd->lex->sphead = nullptr;
   /*
     As this function is called during parsing only, it can and should use the
     current Query_arena, character_set_client, etc.
@@ -5720,6 +5665,7 @@ static bool reparse_common_table_expr(THD *thd, const char *text,
   */
   const bool mysql_parse_status = thd->sql_parser();
   thd->m_parser_state = old;
+  thd->lex->sphead = old_sp;
   if (mysql_parse_status) return true; /* purecov: inspected */
 
   *node = parser_state.result;
@@ -6395,9 +6341,9 @@ void Query_block::set_lock_for_tables(thr_lock_type lock_type) {
 bool push_new_name_resolution_context(Parse_context *pc, Table_ref *left_op,
                                       Table_ref *right_op) {
   THD *thd = pc->thd;
-  Name_resolution_context *on_context;
-  if (!(on_context = new (thd->mem_root) Name_resolution_context)) return true;
-  on_context->init();
+  Name_resolution_context *on_context =
+      new (thd->mem_root) Name_resolution_context;
+  if (on_context == nullptr) return true;
   on_context->first_name_resolution_table =
       left_op->first_leaf_for_name_resolution();
   on_context->last_name_resolution_table =

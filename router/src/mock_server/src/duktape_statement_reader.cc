@@ -28,6 +28,7 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <type_traits>
 
 #ifdef _WIN32
 #include <WinSock2.h>
@@ -37,20 +38,18 @@
 #include <mysqld_error.h>
 #include <openssl/ssl.h>
 
-#include "duk_logging.h"
 #include "duk_module_shim.h"
 #include "duk_node_fs.h"
 #include "duktape.h"
 #include "duktape_statement_reader.h"
 #include "harness_assert.h"
+#include "mysql/harness/logging/logger.h"
 #include "mysql/harness/logging/logging.h"
 #include "mysql/harness/stdx/expected.h"
 #include "mysqlrouter/classic_protocol.h"
 #include "mysqlrouter/classic_protocol_constants.h"
 #include "mysqlrouter/classic_protocol_session_track.h"
 #include "statement_reader.h"
-
-IMPORT_LOG_FUNCTIONS()
 
 namespace server_mock {
 
@@ -131,7 +130,7 @@ DuktapeStatementReaderFactory::operator()() {
     return std::make_unique<DuktapeStatementReader>(filename_, module_prefixes_,
                                                     session_, global_scope_);
   } catch (const std::exception &ex) {
-    log_warning("%s", ex.what());
+    mysql_harness::logging::DomainLogger().warning(ex.what());
     return std::make_unique<FailedStatementReader>(ex.what());
   }
 }
@@ -291,7 +290,9 @@ class DukHeap {
           std::shared_ptr<MockServerGlobalScope> shared_globals)
       : heap_{duk_create_heap(nullptr, nullptr, nullptr, nullptr,
                               [](void *, const char *msg) {
-                                log_error("%s", msg);
+                                mysql_harness::logging::DomainLogger().error(
+                                    msg);
+
                                 abort();
                               })},
         shared_{std::move(shared_globals)} {
@@ -544,10 +545,11 @@ struct DuktapeStatementReader::Pimpl {
   }
 
   template <class INT_TYPE>
-  typename std::enable_if<std::is_unsigned<INT_TYPE>::value, INT_TYPE>::type
-  get_object_integer_value(duk_idx_t idx, const std::string &field,
-                           const INT_TYPE default_val = 0,
-                           bool is_required = false) {
+  INT_TYPE get_object_integer_value(duk_idx_t idx, const std::string &field,
+                                    const INT_TYPE default_val = 0,
+                                    bool is_required = false)
+    requires(std::is_unsigned_v<INT_TYPE>)
+  {
     INT_TYPE value;
 
     duk_get_prop_string(ctx, idx, field.c_str());
@@ -1006,7 +1008,7 @@ static classic_protocol::message::server::Greeting default_server_greeting() {
 
   uint16_t status_flags = 0;
   uint8_t character_set = 0;
-  std::string auth_method = MySQLNativePassword::name;
+  std::string auth_method = CachingSha2Password::name;
   std::string nonce = "01234567890123456789";
 
   return {0x0a,
@@ -1079,6 +1081,7 @@ DuktapeStatementReader::handshake(bool is_greeting) {
 
   std::optional<std::string> username;
   std::optional<std::string> password;
+  std::optional<std::string> auth_method_name;  // enforced auth-method
   bool cert_required{false};
   std::optional<std::string> cert_issuer;
   std::optional<std::string> cert_subject;
@@ -1140,6 +1143,14 @@ DuktapeStatementReader::handshake(bool is_greeting) {
       }
       duk_pop(ctx);
 
+      duk_get_prop_literal(ctx, -1, "auth_method_name");
+      if (duk_is_string(ctx, -1)) {
+        auth_method_name = std::string(duk_to_string(ctx, -1));
+      } else if (!duk_is_undefined(ctx, -1)) {
+        ec = make_error_code(std::errc::invalid_argument);
+      }
+      duk_pop(ctx);
+
       duk_get_prop_literal(ctx, -1, "certificate");
       if (duk_is_object(ctx, -1)) {
         cert_required = true;
@@ -1182,8 +1193,9 @@ DuktapeStatementReader::handshake(bool is_greeting) {
   }
 
   return handshake_data{
-      *server_greeting_res, username,    password, cert_required,
-      cert_subject,         cert_issuer, exec_time};
+      *server_greeting_res, username,     password,    auth_method_name,
+      cert_required,        cert_subject, cert_issuer, exec_time,
+  };
 }
 
 // @pre on the stack is an object

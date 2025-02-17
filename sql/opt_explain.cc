@@ -846,7 +846,7 @@ bool Explain_setop_result::explain_id() { return Explain::explain_id(); }
 bool Explain_setop_result::explain_table_name() {
   // Get the last of UNION's selects
   Query_block *last_query_block =
-      m_query_term->m_children.back()->query_block();
+      m_query_term->child(m_query_term->child_count() - 1)->query_block();
   ;
   // # characters needed to print select_number of last select
   const int last_length =
@@ -883,14 +883,14 @@ bool Explain_setop_result::explain_table_name() {
       '...,'<last_query_block->select_number>'>\0'
   */
   bool overflow = false;
-  for (auto qt : m_query_term->m_children) {
+  for (size_t idx = 0; idx < m_query_term->child_count(); ++idx) {
     if (len + lastop + op_type_len + last_length >= NAME_CHAR_LEN) {
       overflow = true;
       break;
     }
     len += lastop;
     lastop = snprintf(table_name_buffer + len, NAME_CHAR_LEN - len, "%u,",
-                      qt->query_block()->select_number);
+                      m_query_term->child(idx)->query_block()->select_number);
   }
 
   if (overflow || len + lastop >= NAME_CHAR_LEN) {
@@ -1912,7 +1912,8 @@ bool explain_single_table_modification(THD *explain_thd, const THD *query_thd,
   const bool is_explain_into =
       explain_thd->lex->explain_format->is_explain_into();
 
-  if (explain_thd->lex->explain_format->is_iterator_based()) {
+  if (explain_thd->lex->explain_format->is_iterator_based(explain_thd,
+                                                          query_thd)) {
     // These kinds of queries don't have a JOIN with an iterator tree.
     return ExplainIterator(explain_thd, query_thd, nullptr);
   }
@@ -1962,7 +1963,6 @@ bool explain_single_table_modification(THD *explain_thd, const THD *query_thd,
       // Derived tables and const subqueries are already optimized
       if (!unit->is_optimized() &&
           unit->optimize(explain_thd, /*materialize_destination=*/nullptr,
-                         /*create_iterators=*/false,
                          /*finalize_access_paths=*/true))
         return true; /* purecov: inspected */
     }
@@ -2255,7 +2255,7 @@ bool explain_query(THD *explain_thd, const THD *query_thd,
 
   const bool is_explain_into = lex->explain_format->is_explain_into();
 
-  if (lex->explain_format->is_iterator_based()) {
+  if (lex->explain_format->is_iterator_based(explain_thd, query_thd)) {
     if (lex->is_explain_analyze) {
       if (secondary_engine) {
         my_error(ER_NOT_SUPPORTED_YET, MYF(0),
@@ -2287,11 +2287,14 @@ bool explain_query(THD *explain_thd, const THD *query_thd,
   }
 
   // Non-iterator-based formats are not supported with EXPLAIN ANALYZE.
-  if (lex->is_explain_analyze)
-    my_error(ER_NOT_SUPPORTED_YET, MYF(0),
-             (lex->explain_format->is_hierarchical()
-                  ? "EXPLAIN ANALYZE with JSON format"
-                  : "EXPLAIN ANALYZE with TRADITIONAL format"));
+  if (lex->is_explain_analyze) {
+    if (lex->explain_format->is_hierarchical()) {
+      my_error(ER_EXPLAIN_ANALYZE_JSON_FORMAT_VERSION_NOT_SUPPORTED, MYF(0));
+    } else {
+      my_error(ER_NOT_SUPPORTED_YET, MYF(0),
+               "EXPLAIN ANALYZE with TRADITIONAL format");
+    }
+  }
 
   // Non-iterator-based formats are not supported with the hypergraph
   // optimizer. But we still want to be able to use EXPLAIN with no format

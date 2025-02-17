@@ -160,7 +160,9 @@ Multi_primary_migration_action::execute_action(
          !multi_primary_switch_aborted) {
     DBUG_PRINT("sleep",
                ("Waiting for transaction to be applied on the primary."));
-    mysql_cond_wait(&notification_cond, &notification_lock);
+    struct timespec abstime;
+    set_timespec(&abstime, 1);
+    mysql_cond_timedwait(&notification_cond, &notification_lock, &abstime);
   }
   mysql_mutex_unlock(&notification_lock);
 
@@ -202,7 +204,7 @@ Multi_primary_migration_action::execute_action(
               local_member_info->get_member_version(),
               group_member_mgr->get_group_lowest_online_version()) ==
           READ_COMPATIBLE) {
-        if (enable_server_read_mode()) {
+        if (enable_server_read_mode("(GR) version compatibility")) {
           /* purecov: begin inspected */
           LogPluginErr(WARNING_LEVEL, ER_GRP_RPL_ENABLE_READ_ONLY_FAILED);
           /* purecov: end */

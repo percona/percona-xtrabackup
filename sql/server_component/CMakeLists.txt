@@ -42,6 +42,7 @@ SET(MYSQL_SERVER_COMPONENT_SOURCES
   mysql_cond_service.cc
   mysql_connection_attributes_iterator_imp.cc
   mysql_current_thread_reader_imp.cc
+  mysql_global_variable_attributes_service_imp.cc
   mysql_mutex_service.cc
   mysql_psi_system_service.cc
   mysql_runtime_error.cc
@@ -62,6 +63,7 @@ SET(MYSQL_SERVER_COMPONENT_SOURCES
   mysql_query_attributes_imp.cc
   mysql_server_keyring_lockable_imp.cc
   mysql_system_variable_update_imp.cc
+  mysql_system_variable_reader_imp.cc
   mysql_thd_attributes_imp.cc
   transaction_delegate_control_imp.cc
   mysql_audit_print_service_longlong_data_source_imp.cc
@@ -82,6 +84,7 @@ SET(MYSQL_SERVER_COMPONENT_SOURCES
   mysql_simple_error_log_imp.cc
   mysql_statement_service_imp.cc
   mysql_signal_handler_imp.cc
+  applier_metrics_service_imp.cc
   )
 
 # This static library is used to build mysqld binary and in some unit test cases
@@ -92,3 +95,6 @@ TARGET_COMPILE_DEFINITIONS(mysql_server_component_services
 TARGET_LINK_LIBRARIES(mysql_server_component_services PRIVATE extra::rapidjson)
 TARGET_LINK_LIBRARIES(mysql_server_component_services PRIVATE ext::zlib)
 ADD_DEPENDENCIES(mysql_server_component_services GenError)
+
+TARGET_INCLUDE_DIRECTORIES(mysql_server_component_services SYSTEM PRIVATE 
+  ${CMAKE_SOURCE_DIR}/extra/unordered_dense/unordered_dense-4.4.0/include)

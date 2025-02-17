@@ -317,7 +317,7 @@ Returns zero if flush lists were empty, be careful in such case, because
 taking the newest lsn is probably not a good idea. If you wanted to rely
 on some lsn in such case, you would need to follow pattern:
 
-        dpa_lsn = log_buffer_dirty_pages_added_up_to_lsn(*log_sys);
+        dpa_lsn = buf_flush_list_added->smallest_not_added_lsn();
 
         lwm_lsn = buf_pool_get_oldest_modification_lwm();
 
@@ -331,7 +331,7 @@ last checkpoint lsn. It's not guaranteed that the returned value is
 the maximum possible. It's just the best effort for the low cost.
 It basically takes result of buf_pool_get_oldest_modification_approx()
 and subtracts maximum possible lag introduced by relaxed order in
-flush lists (srv_log_recent_closed_size).
+flush lists (srv_buf_flush_list_added_size).
 
 @return safe low watermark for oldest_modification of dirty pages,
         or zero if flush lists were empty; if non-zero, it is then
@@ -690,7 +690,7 @@ double buf_get_modified_ratio_pct(void);
 void buf_refresh_io_stats_all();
 
 /** Assert that all file pages in the buffer are in a replaceable state. */
-void buf_must_be_all_freed(void);
+void buf_assert_all_are_replaceable();
 
 /** Computes number of pending I/O read operations for the buffer pool.
 @return number of pending i/o reads */

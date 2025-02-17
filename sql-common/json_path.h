@@ -37,6 +37,7 @@
 #include <algorithm>
 #include <new>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "my_alloc.h"  // MEM_ROOT
@@ -44,6 +45,7 @@
 #include "prealloced_array.h"  // Prealloced_array
 
 class String;
+class Json_wrapper;
 
 /** The type of a Json_path_leg. */
 enum enum_json_path_leg_type {
@@ -216,14 +218,9 @@ class Json_path_leg final {
     Construct an object member path leg.
 
     @param member_name  the name of the object member
-    @param length the length of the member name
   */
-  Json_path_leg(const char *member_name, size_t length)
-      : m_leg_type(jpl_member), m_member_name(member_name, length) {}
-
-  /** Construct an object member path leg. */
-  Json_path_leg(const std::string &member_name)
-      : Json_path_leg(member_name.c_str(), member_name.length()) {}
+  explicit Json_path_leg(std::string_view member_name)
+      : m_leg_type(jpl_member), m_member_name(member_name) {}
 
   /** Get the type of the path leg. */
   enum_json_path_leg_type get_type() const { return m_leg_type; }
@@ -494,4 +491,26 @@ bool parse_path(size_t path_length, const char *path_expression,
 */
 bool parse_path(const String &path_value, bool forbid_wildcards,
                 Json_path *json_path);
+
+/**
+  Clone a source path to a target path, stripping out legs which are made
+  redundant by the auto-wrapping rule from the WL#7909 spec and further
+  extended in the WL#9831 spec:
+
+  "If an array cell path leg or an array range path leg is evaluated against a
+  non-array value, the result of the evaluation is the same as if the non-array
+  value had been wrapped in a single-element array."
+
+  @see Json_path_leg::is_autowrap
+
+  @param[in]      source_path The original path.
+  @param[in,out]  target_path The clone to be filled in.
+  @param[in]      doc The document to seek through.
+  @param[in]      key Instrumented memory key
+  @returns True if an error occurred. False otherwise.
+*/
+bool clone_without_autowrapping(const Json_path *source_path,
+                                Json_path_clone *target_path, Json_wrapper *doc,
+                                PSI_memory_key key);
+
 #endif /* SQL_JSON_PATH_INCLUDED */

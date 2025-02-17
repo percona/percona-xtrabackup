@@ -30,6 +30,7 @@
 #include "storage/perfschema/unittest/stub_digest.h"
 #include "storage/perfschema/unittest/stub_pfs_plugin_table.h"
 #include "storage/perfschema/unittest/stub_pfs_tls_channel.h"
+#include "storage/perfschema/unittest/stub_server_logs.h"
 #include "storage/perfschema/unittest/stub_server_telemetry.h"
 #include "storage/perfschema/unittest/stub_telemetry_metrics.h"
 #include "unittest/mytap/tap.h"
@@ -41,18 +42,20 @@ static void test_no_registration() {
   PFS_file_key file_key;
   PFS_socket_key socket_key;
   PFS_memory_key memory_key;
-  PFS_mutex_class *mutex;
-  PFS_rwlock_class *rwlock;
-  PFS_cond_class *cond;
-  PFS_thread_class *thread;
-  PFS_file_class *file;
-  PFS_socket_class *socket;
-  PFS_memory_class *memory;
-  PFS_meter_class *meter;
-  PFS_metric_class *metric;
+  const PFS_mutex_class *mutex;
+  const PFS_rwlock_class *rwlock;
+  const PFS_cond_class *cond;
+  const PFS_thread_class *thread;
+  const PFS_file_class *file;
+  const PFS_socket_class *socket;
+  const PFS_memory_class *memory;
+  const PFS_meter_class *meter;
+  const PFS_metric_class *metric;
+  const PFS_logger_class *logger;
   /* PFS_table_share *table; */
   PFS_meter_key meter_key;
   PFS_metric_key metric_key;
+  PFS_logger_key logger_key;
 
   rc = init_sync_class(0, 0, 0);
   ok(rc == 0, "zero init (sync)");
@@ -70,6 +73,8 @@ static void test_no_registration() {
   ok(rc == 0, "zero init (meter)");
   rc = init_metric_class(0);
   ok(rc == 0, "zero init (metric)");
+  rc = init_logger_class(0);
+  ok(rc == 0, "zero init (logger)");
 
   PSI_mutex_info_v1 mutex_info;
   memset(&mutex_info, 0, sizeof(mutex_info));
@@ -98,6 +103,9 @@ static void test_no_registration() {
 
   PSI_metric_info_v1 metric_info;
   memset(&metric_info, 0, sizeof(metric_info));
+
+  PSI_logger_info_v1 logger_info;
+  memset(&logger_info, 0, sizeof(logger_info));
 
   key = register_mutex_class("FOO", 3, &mutex_info);
   ok(key == 0, "no mutex registered");
@@ -161,6 +169,13 @@ static void test_no_registration() {
   ok(metric_key == 0, "no metric registered");
   metric_key = register_metric_class("FOO", 3, &metric_info, "meter");
   ok(metric_key == 0, "no metric registered");
+
+  logger_key = register_logger_class("FOO", 3, &logger_info);
+  ok(logger_key == 0, "no logger registered");
+  logger_key = register_logger_class("BAR", 3, &logger_info);
+  ok(logger_key == 0, "no logger registered");
+  logger_key = register_logger_class("FOO", 3, &logger_info);
+  ok(logger_key == 0, "no logger registered");
 
 #ifdef LATER
   PFS_thread fake_thread;
@@ -240,6 +255,13 @@ static void test_no_registration() {
   metric = find_metric_class(9999);
   ok(metric == nullptr, "no metric key 9999");
 
+  logger = find_logger_class(0);
+  ok(logger == nullptr, "no logger key 0");
+  logger = find_logger_class(1);
+  ok(logger == nullptr, "no logger key 1");
+  logger = find_logger_class(9999);
+  ok(logger == nullptr, "no logger key 9999");
+
   cleanup_sync_class();
   cleanup_thread_class();
   cleanup_file_class();
@@ -248,6 +270,7 @@ static void test_no_registration() {
   cleanup_memory_class();
   cleanup_meter_class();
   cleanup_metric_class();
+  cleanup_logger_class();
 }
 
 static void test_mutex_registration() {
@@ -521,8 +544,8 @@ static void test_socket_registration() {
 
 static void test_table_registration() {
 #ifdef LATER
-  PFS_table_share *table_share;
-  PFS_table_share *table_share_2;
+  const PFS_table_share *table_share;
+  const PFS_table_share *table_share_2;
 
   PFS_thread fake_thread;
   fake_thread.m_table_share_hash_pins = NULL;
@@ -639,7 +662,7 @@ static void test_memory_registration() {
 static void test_meter_registration() {
   int rc;
   PFS_meter_key key;
-  PFS_meter_class *meter;
+  const PFS_meter_class *meter;
   PSI_meter_info_v1 meter_info;
   memset(&meter_info, 0, sizeof(meter_info));
 
@@ -688,7 +711,7 @@ static void test_meter_registration() {
 static void test_metric_registration() {
   int rc;
   PFS_metric_key key;
-  PFS_metric_class *metric;
+  const PFS_metric_class *metric;
   PSI_metric_info_v1 metric_info;
   memset(&metric_info, 0, sizeof(metric_info));
 
@@ -731,6 +754,52 @@ static void test_metric_registration() {
   cleanup_metric_class();
 }
 
+static void test_logger_registration() {
+  int rc;
+  PFS_logger_key key;
+  const PFS_logger_class *logger;
+  PSI_logger_info_v1 logger_info;
+  memset(&logger_info, 0, sizeof(logger_info));
+
+  rc = init_logger_class(5);
+  ok(rc == 0, "room for 5 logger");
+
+  key = register_logger_class("FOO", 3, &logger_info);
+  ok(key == 1, "foo registered");
+  key = register_logger_class("BAR", 3, &logger_info);
+  ok(key == 2, "bar registered");
+  key = register_logger_class("FOO", 3, &logger_info);
+  ok(key == UINT_MAX, "foo duplicate detected");
+  key = register_logger_class("logger-3", 8, &logger_info);
+  ok(key == 3, "logger-3 registered");
+  key = register_logger_class("logger-4", 8, &logger_info);
+  ok(key == 4, "logger-4 registered");
+  key = register_logger_class("logger-5", 8, &logger_info);
+  ok(key == 5, "logger-5 registered");
+  ok(logger_class_lost == 0, "lost nothing");
+  key = register_logger_class("logger-6", 8, &logger_info);
+  ok(key == 0, "logger-6 not registered");
+  ok(logger_class_lost == 1, "lost 1 logger");
+  key = register_logger_class("logger-7", 8, &logger_info);
+  ok(key == 0, "logger-7 not registered");
+  ok(logger_class_lost == 2, "lost 2 logger");
+  key = register_logger_class("logger-3", 8, &logger_info);
+  ok(key == UINT_MAX, "logger-3 duplicate detected");
+  ok(logger_class_lost == 2, "lost 2 logger");
+  key = register_logger_class("logger-5", 8, &logger_info);
+  ok(key == UINT_MAX, "logger-5 duplicate detected");
+  ok(logger_class_lost == 2, "lost 2 logger");
+
+  logger = find_logger_class(0);
+  ok(logger == nullptr, "no key 0");
+  logger = find_logger_class(3);
+  ok(logger != nullptr, "found key 3");
+  logger = find_logger_class(9999);
+  ok(logger == nullptr, "no key 9999");
+
+  cleanup_logger_class();
+}
+
 #ifdef LATER
 void set_wait_stat(PFS_instr_class *klass) {
   PFS_single_stat *stat;
@@ -742,8 +811,8 @@ void set_wait_stat(PFS_instr_class *klass) {
   stat->m_sum = 999;
 }
 
-bool is_empty_stat(PFS_instr_class *klass) {
-  PFS_single_stat *stat;
+bool is_empty_stat(const PFS_instr_class *klass) {
+  const PFS_single_stat *stat;
   stat = &global_instr_class_waits_array[klass->m_event_name_index];
 
   if (stat->m_count != 0) return false;
@@ -759,21 +828,21 @@ static void test_instruments_reset() {
   PFS_sync_key key;
   PFS_file_key file_key;
   PFS_socket_key socket_key;
-  PFS_mutex_class *mutex_1;
-  PFS_mutex_class *mutex_2;
-  PFS_mutex_class *mutex_3;
-  PFS_rwlock_class *rwlock_1;
-  PFS_rwlock_class *rwlock_2;
-  PFS_rwlock_class *rwlock_3;
-  PFS_cond_class *cond_1;
-  PFS_cond_class *cond_2;
-  PFS_cond_class *cond_3;
-  PFS_file_class *file_1;
-  PFS_file_class *file_2;
-  PFS_file_class *file_3;
-  PFS_socket_class *socket_1;
-  PFS_socket_class *socket_2;
-  PFS_socket_class *socket_3;
+  const PFS_mutex_class *mutex_1;
+  const PFS_mutex_class *mutex_2;
+  const PFS_mutex_class *mutex_3;
+  const PFS_rwlock_class *rwlock_1;
+  const PFS_rwlock_class *rwlock_2;
+  const PFS_rwlock_class *rwlock_3;
+  const PFS_cond_class *cond_1;
+  const PFS_cond_class *cond_2;
+  const PFS_cond_class *cond_3;
+  const PFS_file_class *file_1;
+  const PFS_file_class *file_2;
+  const PFS_file_class *file_3;
+  const PFS_socket_class *socket_1;
+  const PFS_socket_class *socket_2;
+  const PFS_socket_class *socket_3;
 
   rc = init_sync_class(3, 3, 3);
   ok(rc == 0, "init (sync)");
@@ -929,11 +998,12 @@ static void do_all_tests() {
   test_memory_registration();
   test_meter_registration();
   test_metric_registration();
+  test_logger_registration();
   test_instruments_reset();
 }
 
 int main(int, char **) {
-  plan(261);
+  plan(287);
   MY_INIT("pfs_instr_info-t");
   do_all_tests();
   my_end(0);

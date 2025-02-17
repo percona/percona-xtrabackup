@@ -41,7 +41,7 @@ check table t;
 SET SESSION debug="-d,dict_set_index_corrupted";
 
 -- error ER_INDEX_CORRUPT
-select c from t;
+select c from t force index (idx1);
 
 show warnings;
 

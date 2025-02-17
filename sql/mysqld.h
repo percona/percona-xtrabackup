@@ -226,8 +226,7 @@ extern const char *opt_secure_file_priv;
 extern bool opt_log_slow_admin_statements, opt_log_slow_replica_statements;
 extern bool sp_automatic_privileges, opt_noacl;
 extern bool trust_function_creators;
-extern bool check_proxy_users, mysql_native_password_proxy_users,
-    sha256_password_proxy_users;
+extern bool check_proxy_users, sha256_password_proxy_users;
 #ifdef _WIN32
 extern const char *shared_memory_base_name;
 #endif
@@ -401,6 +400,13 @@ extern ulong opt_keyring_migration_port;
 
 extern ulonglong global_conn_mem_limit;
 extern ulonglong global_conn_mem_counter;
+
+extern ulonglong global_conn_memory_status_limit;
+extern ulonglong conn_memory_status_limit;
+extern std::atomic<long>
+    atomic_count_hit_query_past_global_conn_mem_status_limit;
+extern std::atomic<long> atomic_count_hit_query_past_conn_mem_status_limit;
+
 /**
   Variable to check if connection related options are set
   as part of keyring migration.
@@ -824,6 +830,8 @@ extern SERVICE_TYPE_NO_CONST(registry) * srv_registry_no_lock;
    mysql_server component */
 extern SERVICE_TYPE(dynamic_loader_scheme_file) * scheme_file_srv;
 extern SERVICE_TYPE(dynamic_loader) * dynamic_loader_srv;
+extern SERVICE_TYPE(registry_registration) * registry_registration;
+extern SERVICE_TYPE(registry_registration) * registry_registration_no_lock;
 
 class Deployed_components;
 extern Deployed_components *g_deployed_components;
@@ -849,4 +857,10 @@ extern int argc_cached;
 */
 extern char **argv_cached;
 
+/// Stores the last time the warning for non-composable engine is emitted
+extern std::atomic<time_t> last_mixed_non_transactional_engine_warning;
+/// The time period for which no warning for non-composable engines should
+/// be written to the error log after a similar warning was written
+
+const uint16_t mixed_non_transactional_engine_warning_period = 60 * 2;
 #endif /* MYSQLD_INCLUDED */

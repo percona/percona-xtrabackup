@@ -179,6 +179,7 @@ static Value_map_type field_type_to_value_map_type(
     case MYSQL_TYPE_JSON:
     case MYSQL_TYPE_GEOMETRY:
     case MYSQL_TYPE_NULL:
+    case MYSQL_TYPE_VECTOR:
     case MYSQL_TYPE_INVALID:
     default:
       return Value_map_type::INVALID;
@@ -1228,7 +1229,7 @@ static bool fill_value_maps(const Mem_root_array<HistogramSetting> &settings,
   if (res != HA_ERR_END_OF_FILE) return true; /* purecov: deadcode */
 
   // Close the handler
-  handler_guard.commit();
+  handler_guard.release();
   if (table->file->ha_sample_end(scan_ctx)) {
     assert(false); /* purecov: deadcode */
     return true;
@@ -1399,7 +1400,7 @@ static bool update_histogram_using_data(THD *thd, Table_ref *table,
   // Store it to persistent storage.
   if (histogram == nullptr || histogram->store_histogram(thd)) return true;
   results.emplace(column_name, Message::HISTOGRAM_CREATED);
-  error_guard.commit();
+  error_guard.release();
   return false;
 }
 
@@ -1518,7 +1519,7 @@ bool update_share_histograms(THD *thd, Table_ref *table) {
   if (!error) {
     // If the insertion succeeded ownership responsibility was passed on, so we
     // can disable the scope guard that would free the Table_histograms object.
-    table_histograms_guard.commit();
+    table_histograms_guard.release();
   }
   return error;
 }
@@ -1713,15 +1714,21 @@ static void cleanup_session_context(THD *thd) {
 
 /**
   Custom error handling for histogram updates from the background thread.
-  Downgrades MDL timeout errors to warnings.
+  Downgrades all errors to warnings. This is done for two reasons:
+
+  1) Because errors during background histogram updates are mostly ignorable,
+     i.e., it is not critical that the user does something if histogram
+     statistics fail to be updated.
+
+  2) We wish to throttle error log entries from background histogram updates,
+     and this is currently only supported for a priority level of warnings.
 */
 class Background_error_handler : public Internal_error_handler {
  public:
-  bool handle_condition(THD *, uint sql_errno, const char *,
+  bool handle_condition(THD *, uint, const char *,
                         Sql_condition::enum_severity_level *level,
                         const char *) override {
-    if (sql_errno == ER_LOCK_WAIT_TIMEOUT &&
-        *level == Sql_condition::SL_ERROR) {
+    if (*level == Sql_condition::SL_ERROR) {
       *level = Sql_condition::SL_WARNING;
     }
     return false;
@@ -1757,7 +1764,6 @@ bool auto_update_table_histograms_from_background_thread(
     thd->mdl_context.release_transactional_locks();
     write_diagnostics_area_to_error_log(thd, db_name, table_name);
     cleanup_session_context(thd);
-    DEBUG_SYNC(thd, "background_histogram_update_done");
   });
 
   // It is crucial that we release objects from the dictionary cache _before_
@@ -1775,6 +1781,20 @@ bool auto_update_table_histograms_from_background_thread(
   thd->push_internal_handler(&error_handler);
   auto error_handler_guard =
       create_scope_guard([&]() { thd->pop_internal_handler(); });
+
+  // Simulate multiple errors to test error log throttling. We should only see
+  // the first error.
+  DBUG_EXECUTE_IF("background_histogram_update_errors", {
+    my_error(ER_LOCK_WAIT_TIMEOUT, MYF(0));
+    my_error(ER_UNABLE_TO_BUILD_HISTOGRAM, MYF(0), "field", "schema", "table");
+    my_error(ER_UNABLE_TO_UPDATE_COLUMN_STATISTICS, MYF(0), "field", "schema",
+             "table");
+    my_error(ER_LOCK_WAIT_TIMEOUT, MYF(0));
+    my_error(ER_UNABLE_TO_BUILD_HISTOGRAM, MYF(0), "field", "schema", "table");
+    my_error(ER_UNABLE_TO_UPDATE_COLUMN_STATISTICS, MYF(0), "field", "schema",
+             "table");
+    return true;
+  });
 
   // Lock the table metadata so we can check whether the table has any
   // automatically updated histograms. We get the column names from the table
@@ -1844,7 +1864,7 @@ bool auto_update_table_histograms_from_background_thread(
   Table_ref table(db_name.c_str(), table_name.c_str(), thr_lock_type::TL_UNLOCK,
                   enum_mdl_type::MDL_SHARED_READ);
   if (open_and_lock_tables(thd, &table, MYSQL_OPEN_HAS_MDL_LOCK)) return true;
-  error_handler_guard.commit();
+  error_handler_guard.release();
   thd->pop_internal_handler();
 
   if (!supports_histogram_updates(thd, &table)) return false;
@@ -1868,7 +1888,7 @@ bool auto_update_table_histograms_from_background_thread(
                      false);
     return true;
   }
-  rollback_guard.commit();
+  rollback_guard.release();
 
   // The update succeeded and has been committed. Mark cached TABLE objects for
   // re-opening to ensure that they release their (stale) snapshot of the

@@ -159,10 +159,12 @@ class Latches {
 
   using Padded_mutex = ut::Cacheline_padded<Lock_mutex>;
 
+ public:
   /** Number of page shards, and also number of table shards.
   Must be a power of two */
   static constexpr size_t SHARDS_COUNT = 512;
 
+ private:
   /*
   Functions related to sharding by page (containing records to lock).
 
@@ -202,6 +204,14 @@ class Latches {
     @return The mutex responsible for the shard containing the page
     */
     Lock_mutex &get_mutex(const page_id_t &page_id);
+
+    /**
+    Returns the mutex which (together with the global latch) protects the page
+    shard which contains record locks from given cell of hash tables.
+    @param[in]    cell_id    The cell_id of the hash table
+    @return The mutex responsible for the shard containing the page
+    */
+    Lock_mutex &get_mutex(const uint64_t cell_id);
   };
 
   /*
@@ -271,23 +281,6 @@ class Latches {
   accessible through lock0priv.h.
   It is only used by lock_rec_fetch_page() as a workaround. */
   friend class Unsafe_global_latch_manipulator;
-
-  /** For some reason clang 6.0.0 and 7.0.0 (but not 8.0.0) fail at linking
-  stage if we completely omit the destructor declaration, or use
-
-  ~Latches() = default;
-
-  This might be somehow connected to one of these:
-     https://bugs.llvm.org/show_bug.cgi?id=28280
-     https://github.com/android/ndk/issues/143
-     https://reviews.llvm.org/D45898
-  So, this declaration is just to make clang 6.0.0 and 7.0.0 happy.
-  */
-#if defined(__clang__) && (__clang_major__ < 8)
-  ~Latches() {}  // NOLINT(modernize-use-equals-default)
-#else
-  ~Latches() = default;
-#endif
 
 #ifdef UNIV_DEBUG
   /**

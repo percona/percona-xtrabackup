@@ -70,14 +70,14 @@ CREATE TABLE t1 SELECT
 SHOW CREATE TABLE t1;
 DROP TABLE t1;
 
---error 1267
+--error ER_CANT_AGGREGATE_2COLLATIONS
 SELECT CASE 
   WHEN 1 
   THEN _latin1'a' COLLATE latin1_danish_ci 
   ELSE _latin1'a' COLLATE latin1_swedish_ci
   END;
 
---error 1270
+--error ER_CANT_AGGREGATE_3COLLATIONS
 SELECT CASE _latin1'a' COLLATE latin1_general_ci
   WHEN _latin1'a' COLLATE latin1_danish_ci  THEN 1
   WHEN _latin1'a' COLLATE latin1_swedish_ci THEN 2
@@ -100,9 +100,9 @@ CASE _latin1'a' WHEN _latin1'A' COLLATE latin1_bin        THEN '1' ELSE 2 END
 #
 # Check COALESCE argument types aggregation
 
---error 1267
+--error ER_CANT_AGGREGATE_2COLLATIONS
 CREATE TABLE t1 SELECT COALESCE(_latin1'a',_latin2'a');
---error 1267
+--error ER_CANT_AGGREGATE_2COLLATIONS
 CREATE TABLE t1 SELECT COALESCE('a' COLLATE latin1_swedish_ci,'b' COLLATE latin1_bin);
 CREATE TABLE t1 SELECT 
  COALESCE(1), COALESCE(1.0),COALESCE('a'),
@@ -115,7 +115,7 @@ explain SELECT
 SHOW CREATE TABLE t1;
 DROP TABLE t1;
 
---error 1267
+--error ER_CANT_AGGREGATE_2COLLATIONS
 CREATE TABLE t1 SELECT IFNULL('a' COLLATE latin1_swedish_ci, 'b' COLLATE latin1_bin);
 
 # Test for BUG#10151
@@ -394,3 +394,53 @@ DO COALESCE(multipolygon(
                                point(12677,16556)))),
             benchmark(2, version() >> (NOT json_objectagg('{"ab":2}',
                           '[{"a":"3"},{"a":2},{"b":1},{"a":0},{"a":[1,2]}]'))));
+
+--echo #
+--echo # Bug#36421511 Assertion `digits >= count_digits(number)' failed.
+--echo #
+
+CREATE TABLE t (
+  c3 DATETIME(6) NOT NULL,
+  c4 DATE NOT NULL
+);
+
+INSERT INTO t VALUES ('2024-08-17 22:27:27.000000','2024-11-27');
+
+--error ER_INVALID_TYPE_FOR_JSON
+SELECT
+  CASE(c3->'')
+  WHEN(FROM_UNIXTIME(36))
+  THEN(c4)
+  ELSE(c3)
+  END
+FROM t;
+
+DROP TABLE t;
+
+--echo # Bug#36570439: Assertion failed: other_type != enum_json_type::J_ERROR
+--echo #               Json_wrapper::compare()
+
+CREATE TABLE t (a INT, b JSON, c VARCHAR(1));
+
+INSERT INTO t VALUES (0, '{}', NULL);
+
+--error ER_INVALID_JSON_PATH
+SELECT b
+FROM t
+WHERE (CASE
+       WHEN a THEN NOW(2)
+       WHEN b->'w' THEN a < b
+       ELSE b <= 1
+       END
+      ) <=> c;
+
+DROP TABLE t;
+
+--echo #
+--echo # Bug#36844420: Assertion failed: tmp >= tmp_value.ptr() in
+--echo #               Item_func_reverse::val_str()
+--echo #
+
+SELECT REVERSE(IFNULL(DENSE_RANK() OVER(),
+                      CONVERT('abc' USING utf32))) AS c;
+

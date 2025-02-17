@@ -35,8 +35,6 @@
 #include <system_error>
 #include <variant>
 
-#define RAPIDJSON_HAS_STDSTRING 1
-
 #include "my_rapidjson_size_t.h"
 
 #include <rapidjson/document.h>
@@ -47,7 +45,6 @@
 #include "classic_lazy_connect.h"
 #include "classic_query_param.h"
 #include "classic_query_sender.h"
-#include "classic_quit_sender.h"
 #include "classic_session_tracker.h"
 #include "command_router_set.h"
 #include "harness_assert.h"
@@ -806,8 +803,8 @@ class Name_string {
     /*
      * charset of system-variables
      */
-    static const CHARSET_INFO *system_charset_info =
-        &my_charset_utf8mb3_general_ci;
+    // 33 = my_charset_utf8mb3_general_ci
+    static const CHARSET_INFO *system_charset_info = get_charset(33, 0);
 
     return 0 == my_strcasecmp(system_charset_info, name_, rhs);
   }
@@ -1898,8 +1895,7 @@ QueryForwarder::explicit_commit_connect() {
 
 stdx::expected<Processor::Result, std::error_code>
 QueryForwarder::explicit_commit_connect_done() {
-  auto &server_conn = connection()->server_conn();
-  if (!server_conn.is_open()) {
+  if (reconnect_error().error_code() != 0) {
     auto &src_conn = connection()->client_conn();
 
     discard_current_msg(src_conn);
@@ -2023,10 +2019,9 @@ QueryForwarder::classify_query() {
         src_protocol.wait_for_my_writes_timeout());
 
     auto collation_connection = connection()
-                                    ->execution_context()
+                                    ->client_protocol()
                                     .system_variables()
                                     .get("collation_connection")
-                                    .value()
                                     .value_or("utf8mb4");
 
     const CHARSET_INFO *cs_collation_connection =
@@ -2269,8 +2264,7 @@ QueryForwarder::classify_query() {
       bool some_trx_state{false};
       bool in_read_only_trx{false};
 
-      const auto &sysvars =
-          connection()->execution_context().system_variables();
+      const auto &sysvars = connection()->client_protocol().system_variables();
 
       // check the server's trx-characteristics if:
       //
@@ -2364,7 +2358,7 @@ QueryForwarder::classify_query() {
           // as it should be handled by the server.
         } else {
           // ... or an implicit transaction start.
-          auto autocommit_res = sysvars.get("autocommit").value();
+          auto autocommit_res = sysvars.get("autocommit");
 
           // if autocommit is off, there is always some transaction which should
           // be sent to the read-write server.
@@ -2375,11 +2369,8 @@ QueryForwarder::classify_query() {
       }
 
       // if autocommit is disabled, treat it as read-write transaction.
-      auto autocommit_res = connection()
-                                ->execution_context()
-                                .system_variables()
-                                .get("autocommit")
-                                .value();
+      auto autocommit_res =
+          connection()->client_protocol().system_variables().get("autocommit");
       if (autocommit_res && autocommit_res == "OFF") {
         some_trx_state = true;
       }
@@ -2405,9 +2396,17 @@ QueryForwarder::classify_query() {
         }
       } else if (access_mode) {
         // access-mode set via query-attributes.
+
+        // gcc with -fprofile-use warns:
+        //
+        // warning: ‘MEM <signed int> [(struct optional *)&access_mode]’ may be
+        // used uninitialized [-Wmaybe-uninitialized]
+        MY_COMPILER_DIAGNOSTIC_PUSH();
+        MY_COMPILER_GCC_DIAGNOSTIC_IGNORE("-Wmaybe-uninitialized");
         want_read_only_connection =
             (*access_mode ==
              ClientSideClassicProtocolState::AccessMode::ReadOnly);
+        MY_COMPILER_DIAGNOSTIC_POP();
         read_only_decider = ReadOnlyDecider::QueryAttribute;
       } else {
         // automatically detected.
@@ -2490,6 +2489,13 @@ QueryForwarder::classify_query() {
   if (connection()->connection_sharing_allowed() &&
       // only switch backends if access-mode is 'auto'
       connection()->context().access_mode() == routing::AccessMode::kAuto) {
+    if (connection()->expected_server_mode() ==
+        mysqlrouter::ServerMode::Unavailable) {
+      connection()->expected_server_mode(
+          want_read_only_connection ? mysqlrouter::ServerMode::ReadOnly
+                                    : mysqlrouter::ServerMode::ReadWrite);
+    }
+
     if ((want_read_only_connection && connection()->expected_server_mode() ==
                                           mysqlrouter::ServerMode::ReadWrite) ||
         (!want_read_only_connection && connection()->expected_server_mode() ==
@@ -2536,7 +2542,10 @@ stdx::expected<Processor::Result, std::error_code> QueryForwarder::connect() {
         std::string(connection()->expected_server_mode() ==
                             mysqlrouter::ServerMode::ReadOnly
                         ? "ro"
-                        : "rw-or-nothing")));
+                        : (connection()->expected_server_mode() ==
+                                   mysqlrouter::ServerMode::ReadWrite
+                               ? "rw-or-nothing"
+                               : "undefined"))));
   }
 
   stage(Stage::Connected);
@@ -2544,8 +2553,7 @@ stdx::expected<Processor::Result, std::error_code> QueryForwarder::connect() {
 }
 
 stdx::expected<Processor::Result, std::error_code> QueryForwarder::connected() {
-  auto &server_conn = connection()->server_conn();
-  if (!server_conn.is_open()) {
+  if (reconnect_error().error_code() != 0) {
     auto &src_conn = connection()->client_conn();
 
     // take the client::command from the connection.

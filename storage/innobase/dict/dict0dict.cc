@@ -1145,8 +1145,8 @@ void dict_table_add_system_columns(dict_table_t *table, mem_heap_t *heap) {
   for these tables. */
 
   const uint32_t phy_pos = UINT32_UNDEFINED;
-  const uint8_t v_added = 0;
-  const uint8_t v_dropped = 0;
+  const row_version_t v_added = 0;
+  const row_version_t v_dropped = 0;
 
   dict_mem_table_add_col(table, heap, "DB_ROW_ID", DATA_SYS,
                          DATA_ROW_ID | DATA_NOT_NULL, DATA_ROW_ID_LEN, false,
@@ -1556,7 +1556,12 @@ dberr_t dict_table_rename_in_cache(
 
     ut_ad(!table->is_temporary());
 
+    /* In case of explicit data dir setting or
+    table recreation(ALTER TABLE .. FORCE/ALTER TABLE .. ENGINE)
+    from a non-default path, the new table path should be same
+    as the source/old path. */
     if (DICT_TF_HAS_DATA_DIR(table->flags)) {
+      ut_ad(old_path != nullptr);
       std::string new_ibd;
 
       new_ibd = Fil_path::make_new_path(old_path, new_name, IBD);
@@ -1982,6 +1987,8 @@ void dict_partitioned_table_remove_from_cache(const char *name) {
   ut_ad(dict_sys_mutex_own());
 
   size_t name_len = strlen(name);
+  const auto name_with_separator =
+      std::string{name, name_len} + dict_name::PART_SEPARATOR;
 
   for (uint32_t i = 0; i < hash_get_n_cells(dict_sys->table_id_hash); ++i) {
     dict_table_t *table;
@@ -1999,8 +2006,10 @@ void dict_partitioned_table_remove_from_cache(const char *name) {
         continue;
       }
 
-      if ((strncmp(name, prev_table->name.m_name, name_len) == 0) &&
-          dict_table_is_partition(prev_table)) {
+      /* Find all the partitions or subpartitions of table with name */
+      if (!strncmp(name_with_separator.data(), prev_table->name.m_name,
+                   name_with_separator.size())) {
+        ut_a(dict_table_is_partition(prev_table));
         btr_drop_ahi_for_table(prev_table);
         dict_table_remove_from_cache(prev_table);
       }
@@ -2721,6 +2730,21 @@ void dict_index_remove_from_cache(dict_table_t *table, /*!< in/out: table */
                                   dict_index_t *index) /*!< in, own: index */
 {
   dict_index_remove_from_cache_low(table, index, false);
+}
+
+std::vector<table_id_t> dict_get_all_table_ids() {
+  std::vector<table_id_t> ids;
+  mutex_enter(&dict_sys->mutex);
+  ids.reserve(dict_sys->table_LRU.get_length() +
+              dict_sys->table_non_LRU.get_length());
+  for (dict_table_t *table : dict_sys->table_LRU) {
+    ids.push_back(table->id);
+  }
+  for (dict_table_t *table : dict_sys->table_non_LRU) {
+    ids.push_back(table->id);
+  }
+  mutex_exit(&dict_sys->mutex);
+  return ids;
 }
 
 /** Duplicate a virtual column information

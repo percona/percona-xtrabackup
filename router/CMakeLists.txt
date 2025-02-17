@@ -84,6 +84,12 @@ IF(WIN32)
   SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4251")
 ENDIF()
 
+IF(WIN32_CLANG)
+  # Clang complains that classes to be DLLexported need an explicit
+  # copy assignment operator.
+  STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-deprecated-copy-with-dtor")
+ENDIF()
+
 INCLUDE(${CMAKE_SOURCE_DIR}/cmake/rapidjson.cmake)
 
 SET(ROUTER_LICENSE_FILE "${CMAKE_SOURCE_DIR}/router/LICENSE.router")
@@ -108,6 +114,22 @@ INCLUDE(cmake/Plugin.cmake)
 INCLUDE(cmake/fuzzer.cmake)
 
 INCLUDE_DIRECTORIES(${PROJECT_BINARY_DIR}/include)
+
+IF(ROUTER_INSTALL_LAYOUT STREQUAL "STANDALONE")
+  IF(TARGET mysql_native_password)
+    ADD_DEFINITIONS(-DROUTER_CLIENT_PLUGINS_ARE_BUNDLED)
+    # install libmysqlclient's mysql_native_password client plugin
+    # into the Router's plugin-dir.
+
+    INSTALL(TARGETS mysql_native_password
+      RUNTIME DESTINATION ${ROUTER_INSTALL_PLUGINDIR}
+      LIBRARY DESTINATION ${ROUTER_INSTALL_PLUGINDIR}
+      COMPONENT Router
+      NAMELINK_SKIP
+      )
+  ENDIF()
+ENDIF()
+
 
 # a meta-target to allow build everything router related, but nothing that
 # it doesn't depend on

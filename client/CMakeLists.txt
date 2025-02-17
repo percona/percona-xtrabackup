@@ -59,6 +59,11 @@ MYSQL_ADD_EXECUTABLE(mysqltest
   ENABLE_EXPORTS
   LINK_LIBRARIES mysqlclient
   )
+
+IF(MY_COMPILER_IS_GNU AND (WITH_LTO OR CMAKE_COMPILER_FLAG_WITH_LTO))
+  TARGET_LINK_OPTIONS(mysqltest PRIVATE -Wno-error=stringop-overflow)
+ENDIF()
+
 MYSQL_ADD_EXECUTABLE(mysqlcheck
   check/mysqlcheck.cc
   check/mysqlcheck_core.cc
@@ -135,10 +140,11 @@ ADD_CONVENIENCE_LIBRARY(json_client_library
   ${CMAKE_SOURCE_DIR}/sql-common/json_binary.cc
   ${CMAKE_SOURCE_DIR}/sql-common/json_dom.cc
   ${CMAKE_SOURCE_DIR}/sql-common/json_path.cc
+  ${CMAKE_SOURCE_DIR}/sql-common/json_schema.cc
   ${CMAKE_SOURCE_DIR}/sql-common/json_syntax_check.cc
   ${CMAKE_SOURCE_DIR}/sql-common/sql_string.cc
 
-  LINK_LIBRARIES ext::zlib
+  LINK_LIBRARIES ext::zlib decimal
   COMPILE_DEFINITIONS
     DISABLE_PSI_MUTEX
     $<TARGET_PROPERTY:extra::rapidjson,INTERFACE_COMPILE_DEFINITIONS>
@@ -227,6 +233,16 @@ SET(MYSQLBINLOG_SOURCES
   ${CMAKE_SOURCE_DIR}/sql/rpl_log_encryption.cc
   )
 
+# The client version of log_event.cc has false positives.
+# Downgrade from error to warning:
+IF(MY_COMPILER_IS_GNU AND CMAKE_BUILD_TYPE_UPPER STREQUAL "RELWITHDEBINFO")
+  ADD_COMPILE_FLAGS(${CMAKE_SOURCE_DIR}/sql/log_event.cc
+    COMPILE_FLAGS
+    " -Wno-error=uninitialized"
+    " -Wno-error=maybe-uninitialized"
+    )
+ENDIF()
+
 # duplicate explicit instantiation of 'net_field_length_checked'
 # ignored as a Microsoft extension
 IF(WIN32_CLANG)
@@ -256,7 +272,7 @@ MYSQL_ADD_EXECUTABLE(mysqlbinlog
 IF((WITH_LTO OR CMAKE_COMPILER_FLAG_WITH_LTO) AND
     MY_COMPILER_IS_GNU AND
     CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 11)
-  MY_TARGET_LINK_OPTIONS(mysqlbinlog "-Wno-stringop-truncation")
+  TARGET_LINK_OPTIONS(mysqlbinlog PRIVATE -Wno-stringop-truncation)
 ENDIF()
 
 IF(WITH_JSON_BINLOG_LIBRARY)

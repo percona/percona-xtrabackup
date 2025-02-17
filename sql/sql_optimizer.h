@@ -54,16 +54,16 @@
 #include "sql/temp_table_param.h"
 
 enum class Subquery_strategy : int;
-class COND_EQUAL;
+class Item_multi_eq;
 class Item_subselect;
 class Item_sum;
 class Opt_trace_context;
 class THD;
 class Window;
 struct AccessPath;
+struct COND_EQUAL;
 struct MYSQL_LOCK;
 
-class Item_equal;
 template <class T>
 class mem_root_deque;
 
@@ -328,7 +328,9 @@ class JOIN {
   /**
     The cost of best complete join plan found so far during optimization,
     after optimization phase - cost of picked join order (not taking into
-    account the changes made by test_if_skip_sort_order()).
+    account the changes made by test_if_skip_sort_order(). Exception: Single
+    table query cost is updated after access change in
+    test_if_skip_sort_order()).
   */
   double best_read{0.0};
   /**
@@ -805,6 +807,11 @@ class JOIN {
   void refresh_base_slice();
 
   /**
+    Similar to refresh_base_slice(), but refreshes only the specified slice.
+   */
+  void assign_fields_to_slice(int sliceno);
+
+  /**
     Whether this query block needs finalization (see
     FinalizePlanForQueryBlock()) before it can be actually used.
     This only happens when using the hypergraph join optimizer.
@@ -849,13 +856,14 @@ class JOIN {
     @param save_sum_fields  If true, do not replace Item_sum items in
                             @c tmp_fields list with Item_field items referring
                             to fields in temporary table.
-
+    @param alias            alias name for temporary file
     @returns false on success, true on failure
   */
   bool create_intermediate_table(QEP_TAB *tab,
                                  const mem_root_deque<Item *> &tmp_table_fields,
                                  ORDER_with_src &tmp_table_group,
-                                 bool save_sum_fields);
+                                 bool save_sum_fields,
+                                 const char *alias = nullptr);
 
   /**
     Optimize distinct when used on a subset of the tables.
@@ -1098,6 +1106,8 @@ class Switch_ref_item_slice {
   ~Switch_ref_item_slice() { join->set_ref_item_slice(saved); }
 };
 
+uint get_tmp_table_rec_length(const mem_root_deque<Item *> &items,
+                              bool include_hidden, bool can_skip_aggs);
 bool uses_index_fields_only(Item *item, TABLE *tbl, uint keyno,
                             bool other_tbls_ok);
 bool remove_eq_conds(THD *thd, Item *cond, Item **retcond,
@@ -1220,11 +1230,12 @@ bool evaluate_during_optimization(const Item *item, const Query_block *select);
                              cond_equal)
 
   @return
-    - Item_equal for the found multiple equality predicate if a success;
+    - Item_multi_eq for the found multiple equality predicate if a success;
     - nullptr otherwise.
 */
-Item_equal *find_item_equal(COND_EQUAL *cond_equal,
-                            const Item_field *item_field, bool *inherited_fl);
+Item_multi_eq *find_item_equal(COND_EQUAL *cond_equal,
+                               const Item_field *item_field,
+                               bool *inherited_fl);
 
 /**
   Find an artificial cap for ref access. This is mostly a crutch to mitigate

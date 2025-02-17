@@ -24,10 +24,10 @@
 #ifndef GROUP_REPLICATION_DECOMPRESSION_INCLUDE
 #define GROUP_REPLICATION_DECOMPRESSION_INCLUDE
 
-#include "mysql/binlog/event/compression/buffer/managed_buffer.h"
 #include "mysql/binlog/event/compression/decompress_status.h"
 #include "mysql/binlog/event/compression/decompressor.h"
 #include "mysql/binlog/event/compression/factory.h"
+#include "mysql/containers/buffers/managed_buffer.h"
 #include "plugin/group_replication/include/gr_compression.h"
 
 /*
@@ -39,8 +39,6 @@ class GR_decompress {
   using Managed_buffer_t = Decompressor_t::Managed_buffer_t;
   using Decompress_status_t =
       mysql::binlog::event::compression::Decompress_status;
-  using Char_t = Decompressor_t::Char_t;
-  using String_t = std::basic_string<Char_t>;
 
   /**
     Decompression Error

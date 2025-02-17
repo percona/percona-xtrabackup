@@ -120,6 +120,7 @@
 #include "storage/perfschema/table_replication_applier_status_by_coordinator.h"
 #include "storage/perfschema/table_replication_applier_status_by_worker.h"
 /* For replication related perfschema tables. */
+#include "storage/perfschema/table_global_variable_attributes.h"
 #include "storage/perfschema/table_log_status.h"
 #include "storage/perfschema/table_replication_asynchronous_connection_failover.h"
 #include "storage/perfschema/table_replication_connection_configuration.h"
@@ -134,6 +135,7 @@
 #include "storage/perfschema/table_setup_actors.h"
 #include "storage/perfschema/table_setup_consumers.h"
 #include "storage/perfschema/table_setup_instruments.h"
+#include "storage/perfschema/table_setup_loggers.h"
 #include "storage/perfschema/table_setup_meters.h"
 #include "storage/perfschema/table_setup_metrics.h"
 #include "storage/perfschema/table_setup_objects.h"
@@ -157,6 +159,7 @@
 #include "storage/perfschema/table_uvar_by_thread.h"
 #include "storage/perfschema/table_variables_by_thread.h"
 #include "storage/perfschema/table_variables_info.h"
+#include "storage/perfschema/table_variables_metadata.h"
 #include "thr_lock.h"
 #include "thr_mutex.h"
 
@@ -505,6 +508,7 @@ static PFS_engine_table_share *all_shares[] = {
     &table_setup_actors::m_share,
     &table_setup_consumers::m_share,
     &table_setup_instruments::m_share,
+    &table_setup_loggers::m_share,
     &table_setup_meters::m_share,
     &table_setup_metrics::m_share,
     &table_setup_objects::m_share,
@@ -602,6 +606,8 @@ static PFS_engine_table_share *all_shares[] = {
     &table_global_variables::m_share,
     &table_session_variables::m_share,
     &table_variables_info::m_share,
+    &table_variables_metadata::m_share,
+    &table_global_variable_attributes::m_share,
     &table_persisted_variables::m_share,
     &table_user_defined_functions::m_share,
     &table_binary_log_transaction_compression_stats::m_share,
@@ -907,7 +913,8 @@ class PFS_internal_schema_access : public ACL_internal_schema_access {
 
   ~PFS_internal_schema_access() override = default;
 
-  ACL_internal_access_result check(ulong want_access, ulong *save_priv,
+  ACL_internal_access_result check(Access_bitmask want_access,
+                                   Access_bitmask *save_priv,
                                    bool any_combination_will_do) const override;
 
   const ACL_internal_table_access *lookup(const char *name) const override;
@@ -935,7 +942,7 @@ static bool allow_drop_schema_privilege() {
       in particular to drop unknown tables,
       see PFS_unknown_acl::check()
   */
-  THD *thd = current_thd;
+  const THD *thd = current_thd;
   if (thd == nullptr) {
     return false;
   }
@@ -947,10 +954,9 @@ static bool allow_drop_schema_privilege() {
           (thd->lex->sql_command == SQLCOM_DROP_TABLE));
 }
 
-ACL_internal_access_result PFS_internal_schema_access::check(ulong want_access,
-                                                             ulong *,
-                                                             bool) const {
-  const ulong always_forbidden =
+ACL_internal_access_result PFS_internal_schema_access::check(
+    Access_bitmask want_access, Access_bitmask *, bool) const {
+  constexpr Access_bitmask always_forbidden =
       CREATE_ACL | REFERENCES_ACL | INDEX_ACL | ALTER_ACL | CREATE_TMP_ACL |
       EXECUTE_ACL | CREATE_VIEW_ACL | SHOW_VIEW_ACL | CREATE_PROC_ACL |
       ALTER_PROC_ACL | EVENT_ACL | TRIGGER_ACL;
@@ -1018,7 +1024,7 @@ static bool allow_drop_table_privilege() {
     Here, we want to prevent DROP / ALTER  while allowing TRUNCATE.
     Note that we must also allow GRANT to transfer the truncate privilege.
   */
-  THD *thd = current_thd;
+  const THD *thd = current_thd;
   if (thd == nullptr) {
     return false;
   }
@@ -1031,18 +1037,18 @@ static bool allow_drop_table_privilege() {
 PFS_readonly_acl pfs_readonly_acl;
 
 ACL_internal_access_result PFS_readonly_acl::check(
-    ulong want_access, ulong *granted_access,
+    Access_bitmask want_access, Access_bitmask *granted_access,
     bool any_combination_will_do) const {
-  const ulong always_forbidden = INSERT_ACL | UPDATE_ACL | DELETE_ACL |
-                                 CREATE_ACL | DROP_ACL | REFERENCES_ACL |
-                                 INDEX_ACL | ALTER_ACL | CREATE_VIEW_ACL |
-                                 SHOW_VIEW_ACL | TRIGGER_ACL | LOCK_TABLES_ACL;
+  constexpr Access_bitmask always_forbidden =
+      INSERT_ACL | UPDATE_ACL | DELETE_ACL | CREATE_ACL | DROP_ACL |
+      REFERENCES_ACL | INDEX_ACL | ALTER_ACL | CREATE_VIEW_ACL | SHOW_VIEW_ACL |
+      TRIGGER_ACL | LOCK_TABLES_ACL;
 
-  const ulong can_be_allowed = TABLE_ACLS & (~always_forbidden);
+  constexpr Access_bitmask can_be_allowed = TABLE_ACLS & (~always_forbidden);
 
-  const ulong want_forbidden = want_access & always_forbidden;
+  const Access_bitmask want_forbidden = want_access & always_forbidden;
 
-  const ulong want_allowable = want_access & can_be_allowed;
+  const Access_bitmask want_allowable = want_access & can_be_allowed;
 
   if (any_combination_will_do) {
     if (want_allowable != 0) {
@@ -1063,7 +1069,8 @@ ACL_internal_access_result PFS_readonly_acl::check(
 PFS_readonly_world_acl pfs_readonly_world_acl;
 
 ACL_internal_access_result PFS_readonly_world_acl::check(
-    ulong want_access, ulong *save_priv, bool any_combination_will_do) const {
+    Access_bitmask want_access, Access_bitmask *save_priv,
+    bool any_combination_will_do) const {
   ACL_internal_access_result res =
       PFS_readonly_acl::check(want_access, save_priv, any_combination_will_do);
   if (res == ACL_INTERNAL_ACCESS_CHECK_GRANT) {
@@ -1075,7 +1082,8 @@ ACL_internal_access_result PFS_readonly_world_acl::check(
 PFS_readonly_processlist_acl pfs_readonly_processlist_acl;
 
 ACL_internal_access_result PFS_readonly_processlist_acl::check(
-    ulong want_access, ulong *save_priv, bool any_combination_will_do) const {
+    Access_bitmask want_access, Access_bitmask *save_priv,
+    bool any_combination_will_do) const {
   const ACL_internal_access_result res =
       PFS_readonly_acl::check(want_access, save_priv, any_combination_will_do);
 
@@ -1088,18 +1096,18 @@ ACL_internal_access_result PFS_readonly_processlist_acl::check(
 PFS_truncatable_acl pfs_truncatable_acl;
 
 ACL_internal_access_result PFS_truncatable_acl::check(
-    ulong want_access, ulong *granted_access,
+    Access_bitmask want_access, Access_bitmask *granted_access,
     bool any_combination_will_do) const {
-  const ulong always_forbidden = INSERT_ACL | UPDATE_ACL | DELETE_ACL |
-                                 CREATE_ACL | REFERENCES_ACL | INDEX_ACL |
-                                 ALTER_ACL | CREATE_VIEW_ACL | SHOW_VIEW_ACL |
-                                 TRIGGER_ACL | LOCK_TABLES_ACL;
+  constexpr Access_bitmask always_forbidden =
+      INSERT_ACL | UPDATE_ACL | DELETE_ACL | CREATE_ACL | REFERENCES_ACL |
+      INDEX_ACL | ALTER_ACL | CREATE_VIEW_ACL | SHOW_VIEW_ACL | TRIGGER_ACL |
+      LOCK_TABLES_ACL;
 
-  const ulong can_be_allowed = TABLE_ACLS & (~always_forbidden);
+  constexpr Access_bitmask can_be_allowed = TABLE_ACLS & (~always_forbidden);
 
-  ulong want_allowable = want_access & can_be_allowed;
+  Access_bitmask want_allowable = want_access & can_be_allowed;
 
-  ulong want_forbidden = want_access & always_forbidden;
+  Access_bitmask want_forbidden = want_access & always_forbidden;
 
   if (want_access & DROP_ACL) {
     if (!allow_drop_table_privilege()) {
@@ -1127,7 +1135,8 @@ ACL_internal_access_result PFS_truncatable_acl::check(
 PFS_truncatable_world_acl pfs_truncatable_world_acl;
 
 ACL_internal_access_result PFS_truncatable_world_acl::check(
-    ulong want_access, ulong *save_priv, bool any_combination_will_do) const {
+    Access_bitmask want_access, Access_bitmask *save_priv,
+    bool any_combination_will_do) const {
   ACL_internal_access_result res = PFS_truncatable_acl::check(
       want_access, save_priv, any_combination_will_do);
   if (res == ACL_INTERNAL_ACCESS_CHECK_GRANT) {
@@ -1139,17 +1148,17 @@ ACL_internal_access_result PFS_truncatable_world_acl::check(
 PFS_updatable_acl pfs_updatable_acl;
 
 ACL_internal_access_result PFS_updatable_acl::check(
-    ulong want_access, ulong *granted_access,
+    Access_bitmask want_access, Access_bitmask *granted_access,
     bool any_combination_will_do) const {
-  const ulong always_forbidden =
+  constexpr Access_bitmask always_forbidden =
       INSERT_ACL | DELETE_ACL | CREATE_ACL | DROP_ACL | REFERENCES_ACL |
       INDEX_ACL | ALTER_ACL | CREATE_VIEW_ACL | SHOW_VIEW_ACL | TRIGGER_ACL;
 
-  const ulong can_be_allowed = TABLE_ACLS & (~always_forbidden);
+  constexpr Access_bitmask can_be_allowed = TABLE_ACLS & (~always_forbidden);
 
-  const ulong want_forbidden = want_access & always_forbidden;
+  const Access_bitmask want_forbidden = want_access & always_forbidden;
 
-  const ulong want_allowable = want_access & can_be_allowed;
+  const Access_bitmask want_allowable = want_access & can_be_allowed;
 
   if (any_combination_will_do) {
     if (want_allowable != 0) {
@@ -1170,17 +1179,17 @@ ACL_internal_access_result PFS_updatable_acl::check(
 PFS_editable_acl pfs_editable_acl;
 
 ACL_internal_access_result PFS_editable_acl::check(
-    ulong want_access, ulong *granted_access,
+    Access_bitmask want_access, Access_bitmask *granted_access,
     bool any_combination_will_do) const {
-  const ulong always_forbidden = CREATE_ACL | REFERENCES_ACL | INDEX_ACL |
-                                 ALTER_ACL | CREATE_VIEW_ACL | SHOW_VIEW_ACL |
-                                 TRIGGER_ACL;
+  constexpr Access_bitmask always_forbidden =
+      CREATE_ACL | REFERENCES_ACL | INDEX_ACL | ALTER_ACL | CREATE_VIEW_ACL |
+      SHOW_VIEW_ACL | TRIGGER_ACL;
 
-  const ulong can_be_allowed = TABLE_ACLS & (~always_forbidden);
+  constexpr Access_bitmask can_be_allowed = TABLE_ACLS & (~always_forbidden);
 
-  ulong want_forbidden = want_access & always_forbidden;
+  Access_bitmask want_forbidden = want_access & always_forbidden;
 
-  ulong want_allowable = want_access & can_be_allowed;
+  Access_bitmask want_allowable = want_access & can_be_allowed;
 
   if (want_access & DROP_ACL) {
     if (!allow_drop_table_privilege()) {
@@ -1208,7 +1217,7 @@ ACL_internal_access_result PFS_editable_acl::check(
 PFS_unknown_acl pfs_unknown_acl;
 
 ACL_internal_access_result PFS_unknown_acl::check(
-    ulong want_access, ulong *granted_access,
+    Access_bitmask want_access, Access_bitmask *granted_access,
     bool any_combination_will_do) const {
   /*
     Only enforce ACL_INTERNAL_ACCESS_DENIED
@@ -1216,14 +1225,15 @@ ACL_internal_access_result PFS_unknown_acl::check(
     in the performance schema,
     relax error messages otherwise.
   */
-  const ulong always_forbidden = CREATE_ACL | REFERENCES_ACL | INDEX_ACL |
-                                 ALTER_ACL | CREATE_VIEW_ACL | TRIGGER_ACL;
+  constexpr Access_bitmask always_forbidden = CREATE_ACL | REFERENCES_ACL |
+                                              INDEX_ACL | ALTER_ACL |
+                                              CREATE_VIEW_ACL | TRIGGER_ACL;
 
-  const ulong can_be_allowed = TABLE_ACLS & (~always_forbidden);
+  constexpr Access_bitmask can_be_allowed = TABLE_ACLS & (~always_forbidden);
 
-  const ulong want_forbidden = want_access & always_forbidden;
+  const Access_bitmask want_forbidden = want_access & always_forbidden;
 
-  const ulong want_allowable = want_access & can_be_allowed;
+  const Access_bitmask want_allowable = want_access & can_be_allowed;
 
   if (any_combination_will_do) {
     if (want_allowable != 0) {
@@ -1404,7 +1414,7 @@ enum ha_rkey_function PFS_key_reader::read_varchar_utf8(
     memcpy(buffer, m_remaining_key + data_offset, string_len);
     *buffer_length = (uint)string_len;
 
-    auto *pos = (uchar *)buffer;
+    const auto *pos = (uchar *)buffer;
     const uchar *end = skip_trailing_space(pos, string_len);
     *buffer_length = (uint)(end - pos);
 
@@ -1452,7 +1462,7 @@ enum ha_rkey_function PFS_key_reader::read_text_utf8(
     *buffer_length = (uint)string_len;
 
     const CHARSET_INFO *cs = &my_charset_utf8mb4_bin;
-    auto *pos = (uchar *)buffer;
+    const auto *pos = (uchar *)buffer;
     if (cs->mbmaxlen > 1) {
       size_t char_length;
       char_length =
@@ -1508,6 +1518,7 @@ void PFS_engine_index::read_key(const uchar *key, uint key_len,
   }
 
   m_fields = reader.m_parts_found;
+  m_key_fetch_count = 0;
 }
 
 /** @} */

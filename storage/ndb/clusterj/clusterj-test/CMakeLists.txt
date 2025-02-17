@@ -50,8 +50,8 @@ SET(JAVA_SOURCES
   ${CLUSTERJ_TESTSUITE_PREFIX}/BulkDeleteTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/Bug17200163Test.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/CharsetTest.java
+  ${CLUSTERJ_TESTSUITE_PREFIX}/ClearSmokeTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/ConnectionPoolTest.java
-  ${CLUSTERJ_TESTSUITE_PREFIX}/CoordinatedTransactionIdVariableTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/DateAsSqlDateTypesTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/DateAsUtilDateTypesTest.java
   ${CLUSTERJ_TESTSUITE_PREFIX}/DatetimeAsSqlTimestampTypesTest.java

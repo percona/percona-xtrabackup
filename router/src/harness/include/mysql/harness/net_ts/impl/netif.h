@@ -27,6 +27,7 @@
 #define MYSQL_HARNESS_NET_TS_IMPL_NETIF_H_
 
 #include <algorithm>  // find_if
+#include <cstring>    // memcpy
 #include <forward_list>
 #include <list>
 #include <string>
@@ -112,7 +113,7 @@ class NetworkInterfaceNetworks {
    * object is created directly inplace in the container.
    */
   template <class... Args>
-  auto emplace_back(Args &&... args) {
+  auto emplace_back(Args &&...args) {
     return nets_.emplace_back(std::forward<Args>(args)...);
   }
 

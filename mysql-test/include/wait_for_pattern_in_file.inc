@@ -35,11 +35,12 @@
 
 --perl
   use strict;
+  use IO::File;
   my $file = $ENV{'_WFPIF_GREP_FILE'} or die "grep_file is not set";
   my $pattern = $ENV{'_WFPIF_GREP_PATTERN'} or die "grep_pattern is not set";
   my $wait_timeout = $ENV{'_WFPIF_WAIT_TIMEOUT'};
   my $found = 0;
-  my $timeout = $wait_timeout * 2;
+  my $timeout = $wait_timeout;
   my $line = '';
   open(my $fd, "<", $file) or die("Unable to open $file: $!\n");
 
@@ -63,7 +64,11 @@
         }
         --$timeout;
       }
-      sleep 0.5;
+      sleep 1;
+      # Clear the end-of-file condition,
+      # see https://perldoc.perl.org/functions/seek
+      # "This is also useful for applications emulating tail -f"
+      seek($fd, 0, SEEK_CUR);
     }
   }
   close($fd) or die "Error closing $file: $!";

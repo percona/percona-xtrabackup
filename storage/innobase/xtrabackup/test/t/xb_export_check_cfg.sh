@@ -30,7 +30,7 @@ CFG_VERSION=`od -j3 -N1 -t x1 -An $mysql_datadir/test/t1.cfg  | head -30 | tr -d
 CFG_VERSION_B=$(xxd -b -l4 -s0 $mysql_datadir/test/t1.cfg | awk '{print $2 $3 $4 $5}')
 CFG_VERSION=$((2#$CFG_VERSION_B))
 
-if [ "$CFG_VERSION" -le "7" ]; then
+if [ "$CFG_VERSION" -le "8" ]; then
 	vlog "version of CFG is $CFG_VERSION"
 else
 	vlog "PXB should have changed the source code to handle the new version $CFG_VERSION"

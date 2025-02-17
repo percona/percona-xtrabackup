@@ -475,14 +475,14 @@ bool Caching_sha2_password::deserialize(const std::string &serialized_string,
   }
   const std::string iteration_info =
       serialized_string.substr(delimiter + 1, ITERATION_LENGTH);
-  iterations =
-      std::min((std::stoul(iteration_info, nullptr, 16)) * ITERATION_MULTIPLIER,
-               MAX_ITERATIONS);
-  if (!iterations) {
+  unsigned long int iteration_count =
+      strtoul(iteration_info.c_str(), nullptr, 16);
+  if (!iteration_count) {
     DBUG_PRINT("info", ("Digest string is not in expected format."
                         "Invalid iteration count information."));
     return true;
   }
+  iterations = std::min(iteration_count * ITERATION_MULTIPLIER, MAX_ITERATIONS);
 
   /* Salt */
   delimiter = delimiter_2;
@@ -960,6 +960,12 @@ static int caching_sha2_password_authenticate(MYSQL_PLUGIN_VIO *vio,
     mpvio->acl_user and info will contain current data.
   */
   if ((pkt_len = vio->read_packet(vio, &pkt)) == -1) return CR_AUTH_HANDSHAKE;
+
+  DBUG_EXECUTE_IF("sha2_password_bad_reply", {
+    /* This should cause a HANDSHAKE ERROR */
+    my_error(ER_HANDSHAKE_ERROR, MYF(0));
+    return CR_AUTH_HANDSHAKE;
+  });
 
   /*
     If first packet is a 0 byte then the client isn't sending any password

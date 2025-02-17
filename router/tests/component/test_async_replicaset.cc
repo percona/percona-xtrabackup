@@ -49,6 +49,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "mysqlrouter/rest_client.h"
 #include "router_component_test.h"
 #include "router_component_testutils.h"
+#include "router_test_helpers.h"
+#include "stdx_expected_no_error.h"
 #include "tcp_port_pool.h"
 
 using mysqlrouter::ClusterType;
@@ -58,6 +60,12 @@ using namespace std::chrono_literals;
 using testing::ElementsAre;
 
 Path g_origin_path;
+
+namespace mysqlrouter {
+std::ostream &operator<<(std::ostream &os, const MysqlError &e) {
+  return os << e.sql_state() << " code: " << e.value() << ": " << e.message();
+}
+}  // namespace mysqlrouter
 
 namespace {
 // default allocator for rapidJson (MemoryPoolAllocator) is broken for
@@ -121,33 +129,32 @@ class AsyncReplicasetTest : public RouterComponentTest {
     return result;
   }
 
+  std::string create_config_with_keyring(const std::string &temp_test_dir,
+                                         const std::string &config_sections,
+                                         const std::string &state_file_path) {
+    // launch the router with metadata-cache configuration
+    auto default_section = get_DEFAULT_defaults();
+
+    init_keyring(default_section, temp_test_dir);
+
+    default_section["dynamic_state"] = state_file_path;
+
+    return create_config_file(temp_test_dir, config_sections, &default_section);
+  }
+
   auto &launch_router(const std::string &temp_test_dir,
                       const std::string &metadata_cache_section,
                       const std::string &routing_section,
                       const std::string &state_file_path,
                       const int expected_errorcode = EXIT_SUCCESS,
                       std::chrono::milliseconds wait_for_notify_ready = 30s) {
-    const std::string masterkey_file =
-        Path(temp_test_dir).join("master.key").str();
-    const std::string keyring_file = Path(temp_test_dir).join("keyring").str();
-    mysql_harness::init_keyring(keyring_file, masterkey_file, true);
-    mysql_harness::Keyring *keyring = mysql_harness::get_keyring();
-    keyring->store("mysql_router1_user", "password", "root");
-    mysql_harness::flush_keyring();
-    mysql_harness::reset_keyring();
-
-    // launch the router with metadata-cache configuration
-    auto default_section = get_DEFAULT_defaults();
-    default_section["keyring_path"] = keyring_file;
-    default_section["master_key_path"] = masterkey_file;
-    default_section["dynamic_state"] = state_file_path;
-    const std::string conf_file = create_config_file(
+    auto conf_file = create_config_with_keyring(
         temp_test_dir, metadata_cache_section + routing_section,
-        &default_section);
-    auto &router = ProcessManager::launch_router(
+        state_file_path);
+
+    return ProcessManager::launch_router(
         {"-c", conf_file}, expected_errorcode, /*catch_stderr=*/true,
         /*with_sudo=*/false, wait_for_notify_ready);
-    return router;
   }
 
   void set_mock_metadata(uint16_t http_port, const std::string &cluster_id,
@@ -214,15 +221,15 @@ TEST_F(AsyncReplicasetTest, NoChange) {
   }
 
   SCOPED_TRACE("// Launch 3 server mocks that will act as our cluster members");
-  const auto trace_file_primary =
-      get_data_dir().join("metadata_dynamic_nodes_v2_ar.js").str();
-  const auto trace_file_secondary =
-      get_data_dir().join("metadata_only_view_id_v2_ar.js").str();
+  const std::string trace_file_primary = "metadata_dynamic_nodes_v2_ar.js";
+  const std::string trace_file_secondary = "metadata_only_view_id_v2_ar.js";
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
     const auto trace_file = i == 0 ? trace_file_primary : trace_file_secondary;
-    cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
-        trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
-        cluster_http_ports[i]));
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
 
     SCOPED_TRACE(
         "// Make our metadata server to return all 3 nodes as a cluster "
@@ -273,15 +280,16 @@ TEST_F(AsyncReplicasetTest, SecondaryAdded) {
   }
 
   SCOPED_TRACE("// Launch 3 server mocks that will act as our cluster members");
-  const auto trace_file_primary =
-      get_data_dir().join("metadata_dynamic_nodes_v2_ar.js").str();
-  const auto trace_file_secondary =
-      get_data_dir().join("metadata_only_view_id_v2_ar.js").str();
+  const std::string trace_file_primary = "metadata_dynamic_nodes_v2_ar.js";
+  const std::string trace_file_secondary = "metadata_only_view_id_v2_ar.js";
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
     const auto trace_file = i == 0 ? trace_file_primary : trace_file_secondary;
-    cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
-        trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
-        cluster_http_ports[i]));
+
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
 
     SCOPED_TRACE(
         "// Make our metadata server to return all 3 nodes a s a cluster "
@@ -329,7 +337,14 @@ TEST_F(AsyncReplicasetTest, SecondaryAdded) {
                    {cluster_nodes_ports[0], cluster_nodes_ports[1]}, view_id);
 
   SCOPED_TRACE("// Make a connection to the secondary");
-  auto client1 = make_new_connection_ok(router_port_ro, cluster_nodes_ports[1]);
+  auto client1_res = make_new_connection(router_port_ro);
+  ASSERT_NO_ERROR(client1_res);
+  auto client1 = std::move(*client1_res);
+  {  // check port
+    auto port_res = select_port(client1.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[1]);
+  }
 
   SCOPED_TRACE(
       "// Now let's change the md on the PRIMARY adding 2nd SECONDARY, also "
@@ -350,10 +365,22 @@ TEST_F(AsyncReplicasetTest, SecondaryAdded) {
   verify_existing_connection_ok(client1.get());
 
   SCOPED_TRACE("// Check that newly added node is used for ro connections ");
-  /*auto client2 =*/make_new_connection_ok(router_port_ro,
-                                           cluster_nodes_ports[1]);
-  /*auto client3 =*/make_new_connection_ok(router_port_ro,
-                                           cluster_nodes_ports[2]);
+
+  {
+    auto client2_res = make_new_connection(router_port_ro);
+    ASSERT_NO_ERROR(client2_res);
+    auto port_res = select_port(client2_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[1]);
+  }
+
+  {
+    auto client3_res = make_new_connection(router_port_ro);
+    ASSERT_NO_ERROR(client3_res);
+    auto port_res = select_port(client3_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[2]);
+  }
 }
 
 /**
@@ -367,12 +394,13 @@ TEST_F(AsyncReplicasetTest, SecondaryRemovedStillReachable) {
   }
 
   SCOPED_TRACE("// Launch 3 server mocks that will act as our cluster members");
-  const auto trace_file =
-      get_data_dir().join("metadata_dynamic_nodes_v2_ar.js").str();
+  const std::string trace_file = "metadata_dynamic_nodes_v2_ar.js";
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
-    cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
-        trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
-        cluster_http_ports[i]));
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
 
     SCOPED_TRACE(
         "// Make our metadata server to return all 3 nodes as a cluster "
@@ -418,8 +446,25 @@ TEST_F(AsyncReplicasetTest, SecondaryRemovedStillReachable) {
   SCOPED_TRACE(
       "// Let's make a connection to the both secondaries, both should be "
       "successful");
-  auto client1 = make_new_connection_ok(router_port_ro, cluster_nodes_ports[1]);
-  auto client2 = make_new_connection_ok(router_port_ro, cluster_nodes_ports[2]);
+  auto client1_res = make_new_connection(router_port_ro);
+  ASSERT_NO_ERROR(client1_res);
+  auto client1 = std::move(*client1_res);
+
+  {
+    auto port_res = select_port(client1.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[1]);
+  }
+
+  auto client2_res = make_new_connection(router_port_ro);
+  ASSERT_NO_ERROR(client2_res);
+  auto client2 = std::move(*client2_res);
+
+  {
+    auto port_res = select_port(client2.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[2]);
+  }
 
   SCOPED_TRACE(
       "// Now let's change the md on the first SECONDARY removing 2nd "
@@ -457,12 +502,13 @@ TEST_F(AsyncReplicasetTest, ClusterIdChanged) {
   }
 
   SCOPED_TRACE("// Launch 3 server mocks that will act as our cluster members");
-  const auto trace_file =
-      get_data_dir().join("metadata_dynamic_nodes_v2_ar.js").str();
+  const std::string trace_file = "metadata_dynamic_nodes_v2_ar.js";
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
-    cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
-        trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
-        cluster_http_ports[i]));
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
 
     SCOPED_TRACE(
         "// Make our metadata server to return all 3 nodes as a cluster "
@@ -534,15 +580,16 @@ TEST_F(AsyncReplicasetTest, ClusterSecondaryQueryErrors) {
 
   SCOPED_TRACE("// Launch 3 server mocks that will act as our cluster members");
   // the secondaries fail on metadata query
-  const auto trace_file_ok =
-      get_data_dir().join("metadata_dynamic_nodes_v2_ar.js").str();
-  const auto trace_file_err =
-      get_data_dir().join("metadata_error_v2_ar.js").str();
+  const std::string trace_file_ok = "metadata_dynamic_nodes_v2_ar.js";
+  const std::string trace_file_err = "metadata_error_v2_ar.js";
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
-    const std::string trace_file = i == 0 ? trace_file_ok : trace_file_err;
-    cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
-        trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
-        cluster_http_ports[i]));
+    const auto trace_file = i == 0 ? trace_file_ok : trace_file_err;
+
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
 
     SCOPED_TRACE(
         "// Make our metadata server to return all 3 nodes as a cluster "
@@ -610,12 +657,13 @@ TEST_F(AsyncReplicasetTest, MetadataUnavailableDisconnectFromSecondary) {
   }
 
   SCOPED_TRACE("// Launch 2 server mocks that will act as our cluster members");
-  const auto trace_file =
-      get_data_dir().join("metadata_dynamic_nodes_v2_ar.js").str();
+  const std::string trace_file = "metadata_dynamic_nodes_v2_ar.js";
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
-    cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
-        trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
-        cluster_http_ports[i]));
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
 
     SCOPED_TRACE(
         "// Make our metadata server to return both nodes as a cluster "
@@ -658,15 +706,33 @@ TEST_F(AsyncReplicasetTest, MetadataUnavailableDisconnectFromSecondary) {
                    cluster_nodes_ports, view_id);
 
   SCOPED_TRACE("// Let's make a connection to the both servers RW and RO");
-  auto client1 = make_new_connection_ok(router_port_rw, cluster_nodes_ports[0]);
-  auto client2 = make_new_connection_ok(router_port_ro, cluster_nodes_ports[1]);
+  auto client1_res = make_new_connection(router_port_rw);
+  ASSERT_NO_ERROR(client1_res);
+  auto client1 = std::move(*client1_res);
+
+  {
+    auto port_res = select_port(client1.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[0]);
+  }
+
+  auto client2_res = make_new_connection(router_port_ro);
+  ASSERT_NO_ERROR(client2_res);
+  auto client2 = std::move(*client2_res);
+
+  {
+    auto port_res = select_port(client2.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[1]);
+  }
 
   SCOPED_TRACE(
       "// Make both members to start returning errors on metadata query now");
 
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
     set_mock_metadata(cluster_http_ports[i], cluster_id, cluster_nodes_ports, 0,
-                      view_id, /*error_on_md_query=*/true);
+                      view_id,
+                      /*error_on_md_query=*/true);
   }
 
   SCOPED_TRACE("// Wait untill the router sees this change");
@@ -695,12 +761,13 @@ TEST_F(AsyncReplicasetTest, MetadataUnavailableDisconnectFromPrimary) {
   }
 
   SCOPED_TRACE("// Launch 2 server mocks that will act as our cluster members");
-  const auto trace_file =
-      get_data_dir().join("metadata_dynamic_nodes_v2_ar.js").str();
+  const std::string trace_file = "metadata_dynamic_nodes_v2_ar.js";
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
-    cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
-        trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
-        cluster_http_ports[i]));
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
 
     SCOPED_TRACE(
         "// Make our metadata server to return both nodes as a cluster "
@@ -743,15 +810,31 @@ TEST_F(AsyncReplicasetTest, MetadataUnavailableDisconnectFromPrimary) {
                    cluster_nodes_ports, view_id);
 
   SCOPED_TRACE("// Let's make a connection to the both servers RW and RO");
-  auto client1 = make_new_connection_ok(router_port_rw, cluster_nodes_ports[0]);
-  auto client2 = make_new_connection_ok(router_port_ro, cluster_nodes_ports[1]);
+  auto client1_res = make_new_connection(router_port_rw);
+  ASSERT_NO_ERROR(client1_res);
+  auto client1 = std::move(*client1_res);
+  {
+    auto port_res = select_port(client1.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[0]);
+  }
+
+  auto client2_res = make_new_connection(router_port_ro);
+  ASSERT_NO_ERROR(client2_res);
+  auto client2 = std::move(*client2_res);
+  {
+    auto port_res = select_port(client2.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[1]);
+  }
 
   SCOPED_TRACE(
       "// Make both members to start returning errors on metadata query now");
 
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
     set_mock_metadata(cluster_http_ports[i], cluster_id, cluster_nodes_ports, 0,
-                      view_id, /*error_on_md_query=*/true);
+                      view_id,
+                      /*error_on_md_query=*/true);
   }
 
   SCOPED_TRACE("// Wait untill the router sees this change");
@@ -769,15 +852,21 @@ TEST_F(AsyncReplicasetTest, MetadataUnavailableDisconnectFromPrimary) {
       "// Make both members to STOP returning errors on metadata query now");
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
     set_mock_metadata(cluster_http_ports[i], cluster_id, cluster_nodes_ports, 0,
-                      view_id, /*error_on_md_query=*/false);
+                      view_id,
+                      /*error_on_md_query=*/false);
   }
 
   SCOPED_TRACE("// Wait untill the router sees this change");
   ASSERT_TRUE(wait_for_transaction_count_increase(cluster_http_ports[0], 2));
 
   SCOPED_TRACE("// We should be able to connect to the PRIMARY again ");
-  /*auto client3 =*/make_new_connection_ok(router_port_rw,
-                                           cluster_nodes_ports[0]);
+  {
+    auto client3_res = make_new_connection(router_port_rw);
+    ASSERT_NO_ERROR(client3_res);
+    auto port_res = select_port(client3_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[0]);
+  }
 }
 
 /**
@@ -796,12 +885,13 @@ TEST_F(AsyncReplicasetTest, MultipleChangesInTheCluster) {
   SCOPED_TRACE(
       "// Launch 4 server mocks that will act as our (current and future) "
       "cluster members");
-  const auto trace_file =
-      get_data_dir().join("metadata_dynamic_nodes_v2_ar.js").str();
+  const std::string trace_file = "metadata_dynamic_nodes_v2_ar.js";
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
-    cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
-        trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
-        cluster_http_ports[i]));
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
 
     SCOPED_TRACE(
         "// Make our metadata server to return first 3 nodes as a cluster "
@@ -874,15 +964,17 @@ TEST_F(AsyncReplicasetTest, SecondaryRemoved) {
   }
 
   SCOPED_TRACE("// Launch 3 server mocks that will act as our cluster members");
-  const auto trace_file =
-      get_data_dir().join("metadata_dynamic_nodes_v2_ar.js").str();
+  const std::string trace_file = "metadata_dynamic_nodes_v2_ar.js";
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
-    cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
-        trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
-        cluster_http_ports[i]));
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
 
     SCOPED_TRACE(
-        "// Make our metadata server initially return all 3 nodes as a cluster "
+        "// Make our metadata server initially return all 3 nodes as a "
+        "cluster "
         "members");
     set_mock_metadata(cluster_http_ports[i], cluster_id, cluster_nodes_ports, 0,
                       view_id);
@@ -919,8 +1011,23 @@ TEST_F(AsyncReplicasetTest, SecondaryRemoved) {
                    cluster_nodes_ports, view_id);
 
   SCOPED_TRACE("// Make 2 RO connections, one for each SECONDARY");
-  auto client1 = make_new_connection_ok(router_port_ro, cluster_nodes_ports[1]);
-  auto client2 = make_new_connection_ok(router_port_ro, cluster_nodes_ports[2]);
+  auto client1_res = make_new_connection(router_port_ro);
+  ASSERT_NO_ERROR(client1_res);
+  auto client1 = std::move(*client1_res);
+  {
+    auto port_res = select_port(client1.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[1]);
+  }
+
+  auto client2_res = make_new_connection(router_port_ro);
+  ASSERT_NO_ERROR(client2_res);
+  auto client2 = std::move(*client2_res);
+  {
+    auto port_res = select_port(client2.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[2]);
+  }
 
   SCOPED_TRACE("// Now let's remove the second SECONDARY from the metadata");
   std::vector<uint16_t> new_cluster_members{cluster_nodes_ports[0],
@@ -946,8 +1053,12 @@ TEST_F(AsyncReplicasetTest, SecondaryRemoved) {
   SCOPED_TRACE(
       "// Check that new RO connections are made to the first secondary");
   for (int i = 0; i < 2; i++) {
-    /*auto client =*/make_new_connection_ok(router_port_ro,
-                                            cluster_nodes_ports[1]);
+    auto client_res = make_new_connection(router_port_ro);
+    ASSERT_NO_ERROR(client_res);
+
+    auto port_res = select_port(client_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[1]);
   }
 }
 
@@ -965,12 +1076,13 @@ TEST_F(AsyncReplicasetTest, NewPrimaryOldGone) {
                                                 cluster_nodes_ports[1]};
 
   SCOPED_TRACE("// Launch 3 server mocks that will act as our cluster members");
-  const auto trace_file =
-      get_data_dir().join("metadata_dynamic_nodes_v2_ar.js").str();
+  const std::string trace_file = "metadata_dynamic_nodes_v2_ar.js";
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
-    cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
-        trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
-        cluster_http_ports[i]));
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
 
     SCOPED_TRACE("// Let us start with 2 members (PRIMARY and SECONDARY)");
     set_mock_metadata(cluster_http_ports[i], cluster_id,
@@ -1007,10 +1119,23 @@ TEST_F(AsyncReplicasetTest, NewPrimaryOldGone) {
                    initial_cluster_members, view_id);
 
   SCOPED_TRACE("// Make one RW and one RO connection");
-  auto client_rw =
-      make_new_connection_ok(router_port_rw, cluster_nodes_ports[0]);
-  auto client_ro =
-      make_new_connection_ok(router_port_ro, cluster_nodes_ports[1]);
+  auto client_rw_res = make_new_connection(router_port_rw);
+  ASSERT_NO_ERROR(client_rw_res);
+  auto client_rw = std::move(*client_rw_res);
+  {
+    auto port_res = select_port(client_rw.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[0]);
+  }
+
+  auto client_ro_res = make_new_connection(router_port_ro);
+  ASSERT_NO_ERROR(client_ro_res);
+  auto client_ro = std::move(*client_ro_res);
+  {
+    auto port_res = select_port(client_ro.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[1]);
+  }
 
   SCOPED_TRACE(
       "// Now let's remove old primary and promote a first secondary to become "
@@ -1035,8 +1160,13 @@ TEST_F(AsyncReplicasetTest, NewPrimaryOldGone) {
   verify_existing_connection_ok(client_ro.get());
 
   SCOPED_TRACE("// Check that new RW connections is made to the new PRIMARY");
-  /*auto client_rw2 =*/make_new_connection_ok(router_port_rw,
-                                              cluster_nodes_ports[1]);
+  auto client_rw2_res = make_new_connection(router_port_rw);
+  ASSERT_NO_ERROR(client_rw2_res);
+  {
+    auto port_res = select_port(client_rw2_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[1]);
+  }
 }
 
 /**
@@ -1050,12 +1180,13 @@ TEST_F(AsyncReplicasetTest, NewPrimaryOldBecomesSecondary) {
   }
 
   SCOPED_TRACE("// Launch 3 server mocks that will act as our cluster members");
-  const auto trace_file =
-      get_data_dir().join("metadata_dynamic_nodes_v2_ar.js").str();
+  const std::string trace_file = "metadata_dynamic_nodes_v2_ar.js";
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
-    cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
-        trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
-        cluster_http_ports[i]));
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
 
     SCOPED_TRACE("// Let us start with all 3 members (PRIMARY and SECONDARY)");
     set_mock_metadata(cluster_http_ports[i], cluster_id, cluster_nodes_ports,
@@ -1091,10 +1222,23 @@ TEST_F(AsyncReplicasetTest, NewPrimaryOldBecomesSecondary) {
                    cluster_nodes_ports, view_id);
 
   SCOPED_TRACE("// Make one RW and one RO connection");
-  auto client_rw =
-      make_new_connection_ok(router_port_rw, cluster_nodes_ports[0]);
-  auto client_ro =
-      make_new_connection_ok(router_port_ro, cluster_nodes_ports[1]);
+  auto client_rw_res = make_new_connection(router_port_rw);
+  ASSERT_NO_ERROR(client_rw_res);
+  auto client_rw = std::move(*client_rw_res);
+  {
+    auto port_res = select_port(client_rw.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[0]);
+  }
+
+  auto client_ro_res = make_new_connection(router_port_ro);
+  ASSERT_NO_ERROR(client_ro_res);
+  auto client_ro = std::move(*client_ro_res);
+  {
+    auto port_res = select_port(client_ro.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[1]);
+  }
 
   SCOPED_TRACE(
       "// Now let's change the primary from node[0] to node[1] and let "
@@ -1112,8 +1256,13 @@ TEST_F(AsyncReplicasetTest, NewPrimaryOldBecomesSecondary) {
   verify_existing_connection_ok(client_ro.get());
 
   SCOPED_TRACE("// Check that new RW connections is made to the new PRIMARY");
-  /*auto client_rw2 =*/make_new_connection_ok(router_port_rw,
-                                              cluster_nodes_ports[1]);
+  auto client_rw2_res = make_new_connection(router_port_rw);
+  ASSERT_NO_ERROR(client_rw2_res);
+  {
+    auto port_res = select_port(client_rw2_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[1]);
+  }
 }
 
 /**
@@ -1127,12 +1276,13 @@ TEST_F(AsyncReplicasetTest, NewPrimaryOldBecomesSecondaryDisconnectOnPromoted) {
   }
 
   SCOPED_TRACE("// Launch 3 server mocks that will act as our cluster members");
-  const auto trace_file =
-      get_data_dir().join("metadata_dynamic_nodes_v2_ar.js").str();
+  const std::string trace_file = "metadata_dynamic_nodes_v2_ar.js";
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
-    cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
-        trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
-        cluster_http_ports[i]));
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
 
     SCOPED_TRACE("// Let us start with all 3 members");
     set_mock_metadata(cluster_http_ports[i], cluster_id, cluster_nodes_ports,
@@ -1170,10 +1320,23 @@ TEST_F(AsyncReplicasetTest, NewPrimaryOldBecomesSecondaryDisconnectOnPromoted) {
                    cluster_nodes_ports, view_id);
 
   SCOPED_TRACE("// Make one RW and one RO connection");
-  auto client_rw =
-      make_new_connection_ok(router_port_rw, cluster_nodes_ports[0]);
-  auto client_ro =
-      make_new_connection_ok(router_port_ro, cluster_nodes_ports[1]);
+  auto client_rw_res = make_new_connection(router_port_rw);
+  ASSERT_NO_ERROR(client_rw_res);
+  auto client_rw = std::move(*client_rw_res);
+  {
+    auto port_res = select_port(client_rw.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[0]);
+  }
+
+  auto client_ro_res = make_new_connection(router_port_ro);
+  ASSERT_NO_ERROR(client_ro_res);
+  auto client_ro = std::move(*client_ro_res);
+  {
+    auto port_res = select_port(client_ro.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[1]);
+  }
 
   SCOPED_TRACE(
       "// Now let's change the primary from node[0] to node[1] and let "
@@ -1197,8 +1360,13 @@ TEST_F(AsyncReplicasetTest, NewPrimaryOldBecomesSecondaryDisconnectOnPromoted) {
   EXPECT_TRUE(wait_connection_dropped(*client_ro.get()));
 
   SCOPED_TRACE("// Check that new RW connections is made to the new PRIMARY");
-  /*auto client_rw2 =*/make_new_connection_ok(router_port_rw,
-                                              cluster_nodes_ports[1]);
+  auto client_rw2_res = make_new_connection(router_port_rw);
+  ASSERT_NO_ERROR(client_rw2_res);
+  {
+    auto port_res = select_port(client_rw2_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[1]);
+  }
 }
 
 /**
@@ -1212,12 +1380,13 @@ TEST_F(AsyncReplicasetTest, OnlyPrimaryLeftAcceptsRWAndRO) {
   }
 
   SCOPED_TRACE("// Launch 2 server mocks that will act as our cluster members");
-  const auto trace_file =
-      get_data_dir().join("metadata_dynamic_nodes_v2_ar.js").str();
+  const std::string trace_file = "metadata_dynamic_nodes_v2_ar.js";
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
-    cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
-        trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
-        cluster_http_ports[i]));
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
 
     SCOPED_TRACE("// Let us start with 2 members (PRIMARY and SECONDARY)");
     set_mock_metadata(cluster_http_ports[i], cluster_id, cluster_nodes_ports,
@@ -1253,12 +1422,25 @@ TEST_F(AsyncReplicasetTest, OnlyPrimaryLeftAcceptsRWAndRO) {
                    cluster_nodes_ports, view_id);
 
   SCOPED_TRACE("// Make one RW and one RO connection");
-  auto client_rw =
-      make_new_connection_ok(router_port_rw, cluster_nodes_ports[0]);
+  auto client_rw_res = make_new_connection(router_port_rw);
+  ASSERT_NO_ERROR(client_rw_res);
+  auto client_rw = std::move(*client_rw_res);
+  {
+    auto port_res = select_port(client_rw.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[0]);
+  }
+
   // the ro port is configured for PRIMARY_AND_SECONDARY so the first connection
   // will be directed to the PRIMARY
-  auto client_ro =
-      make_new_connection_ok(router_port_ro, cluster_nodes_ports[0]);
+  auto client_ro_res = make_new_connection(router_port_ro);
+  ASSERT_NO_ERROR(client_ro_res);
+  auto client_ro = std::move(*client_ro_res);
+  {
+    auto port_res = select_port(client_ro.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[0]);
+  }
 
   SCOPED_TRACE(
       "// Now let's change the primary from node[0] to node[1] and let "
@@ -1279,8 +1461,13 @@ TEST_F(AsyncReplicasetTest, OnlyPrimaryLeftAcceptsRWAndRO) {
 
   SCOPED_TRACE(
       "// Check that new RO connection is now made to the new PRIMARY");
-  /*auto client_ro2 =*/make_new_connection_ok(router_port_ro,
-                                              cluster_nodes_ports[1]);
+  auto client_ro2_res = make_new_connection(router_port_ro);
+  ASSERT_NO_ERROR(client_ro2_res);
+  {
+    auto port_res = select_port(client_ro2_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[1]);
+  }
 }
 
 /**
@@ -1294,12 +1481,13 @@ TEST_F(AsyncReplicasetTest, OnlyPrimaryLeftAcceptsRW) {
   }
 
   SCOPED_TRACE("// Launch 2 server mocks that will act as our cluster members");
-  const auto trace_file =
-      get_data_dir().join("metadata_dynamic_nodes_v2_ar.js").str();
+  const std::string trace_file = "metadata_dynamic_nodes_v2_ar.js";
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
-    cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
-        trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
-        cluster_http_ports[i]));
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
 
     SCOPED_TRACE("// Let us start with 2 members (PRIMARY and SECONDARY)");
     set_mock_metadata(cluster_http_ports[i], cluster_id, cluster_nodes_ports,
@@ -1335,8 +1523,14 @@ TEST_F(AsyncReplicasetTest, OnlyPrimaryLeftAcceptsRW) {
                    cluster_nodes_ports, view_id);
 
   SCOPED_TRACE("// Make one RO connection");
-  auto client_ro =
-      make_new_connection_ok(router_port_ro, cluster_nodes_ports[1]);
+  auto client_ro_res = make_new_connection(router_port_ro);
+  ASSERT_NO_ERROR(client_ro_res);
+  auto client_ro = std::move(*client_ro_res);
+  {
+    auto port_res = select_port(client_ro.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[1]);
+  }
 
   SCOPED_TRACE("// Now let's bring the only SECONDARY down");
   set_mock_metadata(cluster_http_ports[0], cluster_id, {cluster_nodes_ports[0]},
@@ -1373,13 +1567,14 @@ TEST_P(NodeUnavailableTest, NodeUnavailable) {
   }
 
   SCOPED_TRACE("// The cluster has 4 nodes but the first SECONDARY is down");
-  const auto trace_file =
-      get_data_dir().join("metadata_dynamic_nodes_v2_ar.js").str();
+  const std::string trace_file = "metadata_dynamic_nodes_v2_ar.js";
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
     if (i == 1) continue;
-    cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
-        trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
-        cluster_http_ports[i]));
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
 
     SCOPED_TRACE("// All 4 nodes are in the metadata");
     set_mock_metadata(cluster_http_ports[i], cluster_id, cluster_nodes_ports,
@@ -1480,13 +1675,14 @@ TEST_P(NodeUnavailableAllNodesDownTest, NodeUnavailableAllNodesDown) {
   }
 
   SCOPED_TRACE("// The cluster has 3 nodes all SECONDARIES are down");
-  const auto trace_file =
-      get_data_dir().join("metadata_dynamic_nodes_v2_ar.js").str();
+  const std::string trace_file = "metadata_dynamic_nodes_v2_ar.js";
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
     if (i > 0) continue;
-    cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
-        trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
-        cluster_http_ports[i]));
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
 
     SCOPED_TRACE("// All 3 nodes are in the metadata");
     set_mock_metadata(cluster_http_ports[i], cluster_id, cluster_nodes_ports,
@@ -1529,8 +1725,12 @@ TEST_P(NodeUnavailableAllNodesDownTest, NodeUnavailableAllNodesDown) {
     if (routing_strategy != "round-robin-with-fallback") {
       verify_new_connection_fails(router_port_ro);
     } else {
-      /*auto client_ro =*/make_new_connection_ok(router_port_ro,
-                                                 cluster_nodes_ports[0]);
+      auto client_ro_res = make_new_connection(router_port_ro);
+      ASSERT_NO_ERROR(client_ro_res);
+
+      auto port_res = select_port(client_ro_res->get());
+      ASSERT_NO_ERROR(port_res);
+      EXPECT_EQ(*port_res, cluster_nodes_ports[0]);
     }
   }
 }
@@ -1564,11 +1764,13 @@ TEST_P(ClusterTypeMismatchTest, ClusterTypeMismatch) {
 
   SCOPED_TRACE(
       "// Launch 2 server mocks that will act as our cluster members.");
-  const auto trace_file = get_data_dir().join(GetParam().tracefile).str();
+  const std::string trace_file = GetParam().tracefile;
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
-    cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
-        trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
-        cluster_http_ports[i]));
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
 
     SCOPED_TRACE("// Let us start with 2 members (PRIMARY and SECONDARY)");
     set_mock_metadata(cluster_http_ports[i], cluster_id, cluster_nodes_ports,
@@ -1593,9 +1795,14 @@ TEST_P(ClusterTypeMismatchTest, ClusterTypeMismatch) {
       routing_section_rw + "\n" + routing_section_ro;
 
   SCOPED_TRACE("// Launch the router with the initial state file");
-  auto &router = launch_router(temp_test_dir.name(), metadata_cache_section,
-                               routing_section, state_file, EXIT_SUCCESS,
-                               /*wait_for_notify_ready=*/-1s);
+
+  auto conf_file = create_config_with_keyring(
+      temp_test_dir.name(), metadata_cache_section + routing_section,
+      state_file);
+
+  auto &router = router_spawner()
+                     .wait_for_sync_point(Spawner::SyncPoint::RUNNING)
+                     .spawn({"-c", conf_file});
 
   SCOPED_TRACE("// Wait until the router at least once queried the metadata");
   ASSERT_TRUE(wait_for_transaction_count_increase(cluster_http_ports[0], 2));
@@ -1637,11 +1844,13 @@ TEST_P(UnexpectedResultFromMDRefreshTest, UnexpectedResultFromMDRefreshQuery) {
   }
 
   SCOPED_TRACE("// Launch 2 server mocks that will act as our cluster members");
-  const auto trace_file = get_data_dir().join(GetParam().tracefile).str();
+  const std::string trace_file = GetParam().tracefile;
   for (unsigned i = 0; i < CLUSTER_NODES; ++i) {
-    cluster_nodes.push_back(&ProcessManager::launch_mysql_server_mock(
-        trace_file, cluster_nodes_ports[i], EXIT_SUCCESS, false,
-        cluster_http_ports[i]));
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(trace_file)
+                                         .port(cluster_nodes_ports[i])
+                                         .http_port(cluster_http_ports[i])
+                                         .args()));
 
     SCOPED_TRACE(
         "// Make our metadata server to return both nodes as a cluster "
@@ -1680,8 +1889,25 @@ TEST_P(UnexpectedResultFromMDRefreshTest, UnexpectedResultFromMDRefreshQuery) {
   ASSERT_TRUE(wait_for_transaction_count_increase(cluster_http_ports[0], 2));
 
   SCOPED_TRACE("// Let's make a connection to the both servers RW and RO");
-  auto client1 = make_new_connection_ok(router_port_rw, cluster_nodes_ports[0]);
-  auto client2 = make_new_connection_ok(router_port_ro, cluster_nodes_ports[1]);
+  auto client1_res = make_new_connection(router_port_rw);
+  ASSERT_NO_ERROR(client1_res);
+  auto client1 = std::move(*client1_res);
+
+  {
+    auto port_res = select_port(client1.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[0]);
+  }
+
+  auto client2_res = make_new_connection(router_port_ro);
+  ASSERT_NO_ERROR(client2_res);
+  auto client2 = std::move(*client2_res);
+
+  {
+    auto port_res = select_port(client2.get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, cluster_nodes_ports[1]);
+  }
 
   SCOPED_TRACE(
       "// Make all members to start returning invalid data when queried for "

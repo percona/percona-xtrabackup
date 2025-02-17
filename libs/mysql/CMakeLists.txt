@@ -21,7 +21,11 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-ADD_SUBDIRECTORY(utils)
-ADD_SUBDIRECTORY(serialization)
-ADD_SUBDIRECTORY(gtid)
+ADD_SUBDIRECTORY(abi_helpers)
+ADD_SUBDIRECTORY(allocators)
 ADD_SUBDIRECTORY(binlog)
+ADD_SUBDIRECTORY(containers)
+ADD_SUBDIRECTORY(gtid)
+ADD_SUBDIRECTORY(math)
+ADD_SUBDIRECTORY(serialization)
+ADD_SUBDIRECTORY(utils)

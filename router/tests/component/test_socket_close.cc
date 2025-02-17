@@ -40,6 +40,7 @@
 #include "mysql/harness/net_ts/io_context.h"
 #include "mysql/harness/net_ts/socket.h"
 #include "mysql/harness/stdx/expected.h"  // make_unexpected
+#include "mysql/harness/stdx/monitor.h"
 #include "mysqlrouter/classic_protocol.h"
 #include "mysqlrouter/cluster_metadata.h"
 #include "mysqlrouter/mysql_session.h"
@@ -52,8 +53,6 @@
 #include "tcp_port_pool.h"
 
 using mysqlrouter::ClusterType;
-using mysqlrouter::MySQLSession;
-using ::testing::PrintToString;
 using namespace std::chrono_literals;
 using namespace std::string_literals;
 
@@ -90,8 +89,6 @@ class SocketCloseTest : public RouterComponentTest {
                      const bool no_primary = false) {
     assert(nodes_count > 0);
 
-    const std::string json_metadata = get_data_dir().join(tracefile).str();
-
     for (size_t i = 0; i < nodes_count; ++i) {
       // if we are "relaunching" the cluster we want to use the same port as
       // before as router has them in the configuration
@@ -101,8 +98,10 @@ class SocketCloseTest : public RouterComponentTest {
       }
 
       cluster_nodes.push_back(
-          &launch_mysql_server_mock(json_metadata, node_ports[i], EXIT_SUCCESS,
-                                    false, node_http_ports[i]));
+          &mock_server_spawner().spawn(mock_server_cmdline(tracefile)
+                                           .port(node_ports[i])
+                                           .http_port(node_http_ports[i])
+                                           .args()));
     }
 
     for (size_t i = 0; i < nodes_count; ++i) {
@@ -591,10 +590,11 @@ TEST_P(SocketCloseOnMetadataUnavailable, 1RW2RO) {
 #endif
 
   SCOPED_TRACE("// launch cluster with 3 nodes, 1 RW/2 RO");
-  setup_cluster(3, GetParam().tracefile);
+  ASSERT_NO_FATAL_FAILURE(setup_cluster(3, GetParam().tracefile));
 
   SCOPED_TRACE("// launch the router with metadata-cache configuration");
-  setup_router(GetParam().cluster_type, GetParam().acceptors);
+  ASSERT_NO_FATAL_FAILURE(
+      setup_router(GetParam().cluster_type, GetParam().acceptors));
   SCOPED_TRACE("// check if both RO and RW ports are used");
   if (use_tcp_port_acceptors) {
     for (const auto &port :
@@ -742,10 +742,11 @@ TEST_P(SocketCloseOnMetadataUnavailable, 1RW) {
 #endif
 
   SCOPED_TRACE("// launch cluster with only RW node");
-  setup_cluster(1, GetParam().tracefile);
+  ASSERT_NO_FATAL_FAILURE(setup_cluster(1, GetParam().tracefile));
 
   SCOPED_TRACE("// launch the router with metadata-cache configuration");
-  setup_router(GetParam().cluster_type, GetParam().acceptors);
+  ASSERT_NO_FATAL_FAILURE(
+      setup_router(GetParam().cluster_type, GetParam().acceptors));
 
   SCOPED_TRACE("// check if RW port is used");
   if (use_tcp_port_acceptors) {
@@ -829,11 +830,13 @@ TEST_P(SocketCloseOnMetadataUnavailable, 1RO) {
 #endif
 
   SCOPED_TRACE("// launch cluster with only RO node");
-  setup_cluster(1, GetParam().tracefile, /*no_primary*/ true);
+  ASSERT_NO_FATAL_FAILURE(
+      setup_cluster(1, GetParam().tracefile, /*no_primary*/ true));
 
   SCOPED_TRACE("// launch the router with metadata-cache configuration");
-  setup_router(GetParam().cluster_type, GetParam().acceptors,
-               /*read_only*/ true);
+  ASSERT_NO_FATAL_FAILURE(setup_router(GetParam().cluster_type,
+                                       GetParam().acceptors,
+                                       /*read_only*/ true));
 
   SCOPED_TRACE("// check if RO port is used");
   if (use_tcp_port_acceptors) {
@@ -917,11 +920,13 @@ TEST_P(SocketCloseOnMetadataUnavailable, 2RO) {
 #endif
 
   SCOPED_TRACE("// launch cluster with 2 RO nodes");
-  setup_cluster(2, GetParam().tracefile, /*no_primary*/ true);
+  ASSERT_NO_FATAL_FAILURE(
+      setup_cluster(2, GetParam().tracefile, /*no_primary*/ true));
 
   SCOPED_TRACE("// launch the router with metadata-cache configuration");
-  setup_router(GetParam().cluster_type, GetParam().acceptors,
-               /*read_only*/ true);
+  ASSERT_NO_FATAL_FAILURE(setup_router(GetParam().cluster_type,
+                                       GetParam().acceptors,
+                                       /*read_only*/ true));
 
   SCOPED_TRACE("// check if RO port is used");
   if (use_tcp_port_acceptors) {
@@ -1060,13 +1065,88 @@ INSTANTIATE_TEST_SUITE_P(
                 Acceptors(AcceptorType::UnixSocket))),
     get_test_description);
 
+class ErrmsgResponderBase {
+ public:
+  // error-code to return on connect
+  static constexpr const uint16_t error_code{1130};
+  // error-msg to return on connect
+  static constexpr const char error_msg[] = "You shall not pass";
+};
+
+template <class Sock>
+class ErrmsgResponder : public ErrmsgResponderBase {
+ public:
+  using socket_type = Sock;
+
+  explicit ErrmsgResponder(socket_type sock) : sock_(std::move(sock)) {}
+
+  stdx::expected<void, std::error_code> respond() {
+    std::vector<uint8_t> err_frame;
+
+    const auto encode_res =
+        classic_protocol::encode<classic_protocol::frame::Frame<
+            classic_protocol::message::server::Error>>(
+            {0, {error_code, error_msg, "HY000"}}, {},
+            net::dynamic_buffer(err_frame));
+    if (!encode_res) return stdx::unexpected(encode_res.error());
+
+    const auto write_res = net::write(sock_, net::buffer(err_frame));
+    if (!write_res) return stdx::unexpected(write_res.error());
+
+    // wait until the client closed the connection on us.
+    //
+    while (true) {
+      std::vector<std::string> drainer;
+      const auto read_res = net::read(sock_, net::dynamic_buffer(drainer));
+
+      if (!read_res &&
+          read_res.error() == make_error_code(net::stream_errc::eof)) {
+        break;
+      }
+
+      // looks like something else happened. At least log it.
+      if (read_res) {
+        std::cerr << __LINE__ << ": " << read_res.value() << std::endl;
+      } else {
+        return stdx::unexpected(read_res.error());
+      }
+    }
+
+    return {};
+  }
+
+ private:
+  socket_type sock_;
+};
+
 template <class AcceptorType>
 class AcceptingEndpointUser {
  public:
-  // error-code to return on connect
-  static const uint16_t error_code{1130};
-  // error-msg to return on connect
-  static const char error_msg[];
+  class AcceptCompletor {
+   public:
+    AcceptCompletor(AcceptorType &acceptor, Monitor<bool> &is_stopped)
+        : acceptor_(acceptor), is_stopped_(is_stopped) {}
+
+    void operator()(std::error_code ec, auto client_sock) {
+      if (ec) return;
+
+      ErrmsgResponder responder(std::move(client_sock));
+
+      responder.respond();
+
+      is_stopped_([&](bool stopped) {
+        if (stopped) return;
+
+        // accept the next one.
+        acceptor_.async_accept(AcceptCompletor(acceptor_, is_stopped_));
+      });
+    }
+
+   private:
+    AcceptorType &acceptor_;
+
+    Monitor<bool> &is_stopped_;
+  };
 
   virtual ~AcceptingEndpointUser() { unlock(); }
 
@@ -1083,11 +1163,21 @@ class AcceptingEndpointUser {
   }
 
   virtual void unlock() {
-    acceptor_.close();
+    is_stopped_([this](bool &stopped) {
+      stopped = true;
+
+      // abort a currently running accept(), if there is one.
+      acceptor_.cancel();
+    });
+
     if (worker_.joinable()) worker_.join();
 
+    // exits the io_ctx_.run() is as there is no other user.
+    acceptor_.close();
+
     if (worker_ec_) {
-      FAIL() << "acceptor() failed after accept() with: " << worker_ec_;
+      FAIL() << "acceptor() failed after accept() with: " << worker_ec_ << " "
+             << worker_ec_.message();
     }
   }
 
@@ -1097,66 +1187,22 @@ class AcceptingEndpointUser {
   virtual bool try_lock() {
     if (!open_and_bind()) return false;
 
-    const auto &listen_res = acceptor_.listen(128);
+    const auto listen_res = acceptor_.listen(128);
     if (!listen_res) {
       return false;
     }
 
     // spawn off a thread to handle a connect.
     worker_ = std::thread([this]() {
-      acceptor_.async_accept([this](std::error_code ec, auto client_sock) {
-        if (ec == std::errc::operation_canceled) return;
+      acceptor_.async_accept(AcceptCompletor(acceptor_, is_stopped_));
 
-        std::vector<uint8_t> err_frame;
-
-        const auto encode_res =
-            classic_protocol::encode<classic_protocol::frame::Frame<
-                classic_protocol::message::server::Error>>(
-                {0, {error_code, error_msg, "HY000"}}, {},
-                net::dynamic_buffer(err_frame));
-        if (!encode_res) {
-          worker_ec_ = encode_res.error();
-          return;
-        }
-
-        // using the full type as sun-cc doesn't like 'auto' here and gives:
-        //
-        // The operation "! ?" is illegal.
-        const stdx::expected<size_t, std::error_code> write_res =
-            net::write(client_sock, net::buffer(err_frame));
-        if (!write_res) {
-          worker_ec_ = write_res.error();
-          return;
-        }
-
-        // wait until the client closed the connection on us.
-        //
-        while (true) {
-          std::vector<std::string> drainer;
-          const auto read_res =
-              net::read(client_sock, net::dynamic_buffer(drainer));
-
-          if (!read_res &&
-              read_res.error() == make_error_code(net::stream_errc::eof)) {
-            break;
-          }
-
-          // looks like something else happened. At least log it.
-          if (read_res) {
-            std::cerr << __LINE__ << ": " << read_res.value() << std::endl;
-          } else {
-            worker_ec_ = read_res.error();
-            return;
-          }
-        }
-      });
-
-      // accept zero-or-one connection.
-      io_ctx_.run_one();
+      io_ctx_.run();
     });
 
     return true;
   }
+
+  Monitor<bool> is_stopped_{false};
 
   std::thread worker_;
   std::error_code worker_ec_{};
@@ -1164,12 +1210,6 @@ class AcceptingEndpointUser {
   net::io_context io_ctx_;
   AcceptorType acceptor_{io_ctx_};
 };
-
-template <class T>
-const uint16_t AcceptingEndpointUser<T>::error_code;
-
-template <class T>
-const char AcceptingEndpointUser<T>::error_msg[] = "You shall not pass";
 
 class TCPPortUser : public AcceptingEndpointUser<net::ip::tcp::acceptor> {
  public:
@@ -1216,8 +1256,6 @@ class UnixSocketUser
 
  protected:
   bool open_and_bind() override {
-    acceptor_.set_option(net::socket_base::reuse_address{true});
-
     const auto open_res = acceptor_.open();
     if (!open_res) {
       return false;
@@ -1237,7 +1275,7 @@ class UnixSocketUser
 
 TEST_F(SocketCloseTest, StaticRoundRobinTCPPort) {
   SCOPED_TRACE("// launch cluster with one node");
-  setup_cluster(1, "my_port.js");
+  ASSERT_NO_FATAL_FAILURE(setup_cluster(1, "my_port.js"));
 
   router_rw_port = port_pool_.get_next_available();
   const auto router_rw_port_str = std::to_string(*router_rw_port);
@@ -1275,9 +1313,12 @@ TEST_F(SocketCloseTest, StaticRoundRobinTCPPort) {
                std::to_string(node_ports[0]) +
                " to bring the destination back from "
                "quarantine.");
-  const std::string json_metadata = get_data_dir().join("my_port.js").str();
-  cluster_nodes.push_back(&launch_mysql_server_mock(
-      json_metadata, node_ports[0], EXIT_SUCCESS, false, node_http_ports[0]));
+
+  cluster_nodes.push_back(
+      &mock_server_spawner().spawn(mock_server_cmdline("my_port.js")
+                                       .port(node_ports[0])
+                                       .http_port(node_http_ports[0])
+                                       .args()));
 
   set_mock_metadata(
       node_http_ports[0], "uuid", classic_ports_to_gr_nodes(node_ports), 0,
@@ -1290,8 +1331,8 @@ TEST_F(SocketCloseTest, StaticRoundRobinTCPPort) {
     try_connection("127.0.0.1", *router_rw_port, custom_user, custom_password);
     FAIL() << "should have failed";
   } catch (const MySQLSession::Error &e) {
-    EXPECT_EQ(e.code(), TCPPortUser::error_code);
-    EXPECT_THAT(e.what(), ::testing::HasSubstr(TCPPortUser::error_msg));
+    EXPECT_EQ(e.code(), ErrmsgResponderBase::error_code);
+    EXPECT_THAT(e.what(), ::testing::HasSubstr(ErrmsgResponderBase::error_msg));
   }
 
   // sleep for a while to test that when the quarantine wants to reopen the
@@ -1314,9 +1355,10 @@ TEST_F(SocketCloseTest, StaticRoundRobinTCPPort) {
 }
 
 #ifndef _WIN32
+
 TEST_F(SocketCloseTest, StaticRoundRobinUnixSocket) {
   SCOPED_TRACE("// launch cluster with one node");
-  setup_cluster(1, "my_port.js");
+  ASSERT_NO_FATAL_FAILURE(setup_cluster(1, "my_port.js"));
 
   router_rw_socket = get_test_temp_dir_name() + "/mysql.socket";
 
@@ -1337,8 +1379,15 @@ TEST_F(SocketCloseTest, StaticRoundRobinUnixSocket) {
   EXPECT_NO_THROW(cluster_nodes[0]->send_clean_shutdown_event());
   EXPECT_NO_THROW(cluster_nodes[0]->wait_for_exit());
 
-  EXPECT_THROW(try_connection(*router_rw_socket, custom_user, custom_password),
-               std::runtime_error);
+  try {
+    try_connection(*router_rw_socket, custom_user, custom_password);
+    FAIL() << "expected to fail";
+  } catch (const MySQLSession::Error &e) {
+    // /tmp/router-0tsoKZ/mysql.socket: Can't connect to remote MySQL server
+    // (2003)
+    EXPECT_EQ(e.code(), 2003) << e.what();
+  }
+
   EXPECT_FALSE(wait_file_exists(*router_rw_socket, false, 10s));
 
   SCOPED_TRACE("// block router from binding to unix socket:" +
@@ -1353,9 +1402,12 @@ TEST_F(SocketCloseTest, StaticRoundRobinUnixSocket) {
                std::to_string(node_ports[0]) +
                " to bring the destination back from "
                "quarantine.");
-  const std::string json_metadata = get_data_dir().join("my_port.js").str();
-  cluster_nodes.push_back(&launch_mysql_server_mock(
-      json_metadata, node_ports[0], EXIT_SUCCESS, false, node_http_ports[0]));
+
+  cluster_nodes.push_back(
+      &mock_server_spawner().spawn(mock_server_cmdline("my_port.js")
+                                       .port(node_ports[0])
+                                       .http_port(node_http_ports[0])
+                                       .args()));
 
   set_mock_metadata(
       node_http_ports[0], "uuid", classic_ports_to_gr_nodes(node_ports), 0,
@@ -1368,8 +1420,8 @@ TEST_F(SocketCloseTest, StaticRoundRobinUnixSocket) {
     try_connection(*router_rw_socket, custom_user, custom_password);
     FAIL() << "should have failed";
   } catch (const MySQLSession::Error &e) {
-    EXPECT_EQ(e.code(), UnixSocketUser::error_code);
-    EXPECT_THAT(e.what(), ::testing::HasSubstr(UnixSocketUser::error_msg));
+    EXPECT_EQ(e.code(), ErrmsgResponderBase::error_code);
+    EXPECT_THAT(e.what(), ::testing::HasSubstr(ErrmsgResponderBase::error_msg));
   }
 
   // sleep for a while to test that when the quarantine wants to reopen the
@@ -1435,11 +1487,12 @@ class FailToOpenROSocketAfterStartup
 
 TEST_P(FailToOpenROSocketAfterStartup, ROportTaken) {
   SCOPED_TRACE("// launch cluster with 3 nodes, 1 RW/2 RO");
-  setup_cluster(3, GetParam().tracefile);
+  ASSERT_NO_FATAL_FAILURE(setup_cluster(3, GetParam().tracefile));
   const auto test_port = port_mapping.at(GetParam().unavailable_ports[0]);
 
   SCOPED_TRACE("// launch the router with metadata-cache configuration");
-  setup_router(GetParam().cluster_type, Acceptors(AcceptorType::TcpSocket));
+  ASSERT_NO_FATAL_FAILURE(setup_router(GetParam().cluster_type,
+                                       Acceptors(AcceptorType::TcpSocket)));
   EXPECT_TRUE(wait_for_port_used(*router_ro_port));
 
   SCOPED_TRACE("// RO nodes hidden");
@@ -1511,11 +1564,12 @@ class FailToOpenRWSocketAfterStartup
 
 TEST_P(FailToOpenRWSocketAfterStartup, RWportTaken) {
   SCOPED_TRACE("// launch cluster with 3 nodes, 1 RW/2 RO");
-  setup_cluster(3, GetParam().tracefile);
+  ASSERT_NO_FATAL_FAILURE(setup_cluster(3, GetParam().tracefile));
   const auto test_port = port_mapping.at(GetParam().unavailable_ports[0]);
 
   SCOPED_TRACE("// launch the router with metadata-cache configuration");
-  setup_router(GetParam().cluster_type, Acceptors(AcceptorType::TcpSocket));
+  ASSERT_NO_FATAL_FAILURE(setup_router(GetParam().cluster_type,
+                                       Acceptors(AcceptorType::TcpSocket)));
   EXPECT_TRUE(wait_for_port_used(*router_rw_port));
 
   SCOPED_TRACE("// RW node hidden");
@@ -1585,7 +1639,7 @@ class FailToOpenSocketOnStartup
 
 TEST_P(FailToOpenSocketOnStartup, FailOnStartup) {
   SCOPED_TRACE("// launch cluster with 1RW/2RO nodes");
-  setup_cluster(3, GetParam().tracefile);
+  ASSERT_NO_FATAL_FAILURE(setup_cluster(3, GetParam().tracefile));
 
   SCOPED_TRACE("// bind sockets");
   std::vector<std::unique_ptr<TCPPortUser>> socket_users;
@@ -1672,7 +1726,7 @@ class RoundRobinFallback
 TEST_P(RoundRobinFallback, RoundRobinFallbackTest) {
   const size_t NUM_NODES = 3;
   SCOPED_TRACE("// launch cluster with 1RW/2RO nodes");
-  setup_cluster(NUM_NODES, GetParam().tracefile);
+  ASSERT_NO_FATAL_FAILURE(setup_cluster(NUM_NODES, GetParam().tracefile));
 
   router_rw_port = port_pool_.get_next_available();
   router_ro_port = port_pool_.get_next_available();
@@ -1750,7 +1804,7 @@ class FirstAvailableDestMetadataCache
 TEST_P(FirstAvailableDestMetadataCache, FirstAvailableDestMetadataCacheTest) {
   const size_t NUM_NODES = 3;
   SCOPED_TRACE("// launch cluster with 1RW/2RO nodes");
-  setup_cluster(NUM_NODES, GetParam().tracefile);
+  ASSERT_NO_FATAL_FAILURE(setup_cluster(NUM_NODES, GetParam().tracefile));
 
   router_rw_port = port_pool_.get_next_available();
   router_ro_port = port_pool_.get_next_available();
@@ -1899,7 +1953,7 @@ class SharedQuarantineSocketClose
       public ::testing::WithParamInterface<SharedQuarantineSocketCloseParam> {};
 
 TEST_P(SharedQuarantineSocketClose, cross_plugin_socket_shutdown) {
-  setup_cluster(1, "metadata_dynamic_nodes_v2_gr.js");
+  ASSERT_NO_FATAL_FAILURE(setup_cluster(1, "metadata_dynamic_nodes_v2_gr.js"));
   const auto bind_port_r1 = port_pool_.get_next_available();
   const auto bind_port_r2 = port_pool_.get_next_available();
   const std::string routing_section{

@@ -2,12 +2,12 @@
 .\"     Title: ndb_config
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 03/11/2024
+.\"      Date: 09/13/2024
 .\"    Manual: MySQL Database System
-.\"    Source: MySQL 8.4
+.\"    Source: MySQL 9.0
 .\"  Language: English
 .\"
-.TH "NDB_CONFIG" "1" "03/11/2024" "MySQL 8\&.4" "MySQL Database System"
+.TH "NDB_CONFIG" "1" "09/13/2024" "MySQL 9\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -278,20 +278,20 @@ $> \fBndb_config \-\-config\-binary\-file=\&.\&./mysql\-cluster/ndb_50_config\&.
 config of [DB] node id 5 that is different from default 
 CONFIG_PARAMETER,ACTUAL_VALUE,DEFAULT_VALUE 
 NodeId,5,(mandatory) 
-BackupDataDir,/local/data/8\&.4,(null) 
-DataDir,/local/data/8\&.4,\&. 
+BackupDataDir,/local/data/9\&.0,(null) 
+DataDir,/local/data/9\&.0,\&. 
 DataMemory,2G,98M 
-FileSystemPath,/local/data/8\&.4,(null) 
+FileSystemPath,/local/data/9\&.0,(null) 
 HostName,127\&.0\&.0\&.1,localhost 
 Nodegroup,0,(null) 
 ThreadConfig,,(null) 
 config of [DB] node id 6 that is different from default 
 CONFIG_PARAMETER,ACTUAL_VALUE,DEFAULT_VALUE 
 NodeId,6,(mandatory) 
-BackupDataDir,/local/data/8\&.4,(null) 
-DataDir,/local/data/8\&.4\&. 
+BackupDataDir,/local/data/9\&.0,(null) 
+DataDir,/local/data/9\&.0\&. 
 DataMemory,2G,98M 
-FileSystemPath,/local/data/8\&.4,(null) 
+FileSystemPath,/local/data/9\&.0,(null) 
 HostName,127\&.0\&.0\&.1,localhost 
 Nodegroup,0,(null) 
 ThreadConfig,,(null)
@@ -323,11 +323,11 @@ HostName= 127\&.0\&.0\&.1
 [ndbd]
 NodeId= 5
 HostName= 127\&.0\&.0\&.1
-DataDir= /local/data/8\&.4
+DataDir= /local/data/9\&.0
 [ndbd]
 NodeId= 6
 HostName= 127\&.0\&.0\&.1
-DataDir= /local/data/8\&.4
+DataDir= /local/data/9\&.0
 .fi
 .if n \{\
 .RE
@@ -1612,7 +1612,7 @@ to provide output as XML by adding this option\&. A portion of such output is sh
 .\}
 .nf
 $> \fBndb_config \-\-configinfo \-\-xml\fR
-<configvariables protocolversion="1" ndbversionstring="5\&.7\&.44\-ndb\-7\&.5\&.32"
+<configvariables protocolversion="1" ndbversionstring="5\&.7\&.44\-ndb\-7\&.5\&.35"
                     ndbversion="460032" ndbversionmajor="7" ndbversionminor="5"
                     ndbversionbuild="0">
   <section name="SYSTEM">

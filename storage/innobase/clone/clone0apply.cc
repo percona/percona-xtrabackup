@@ -1063,7 +1063,6 @@ int Clone_Handle::file_create_init(const Clone_file_ctx *file_ctx,
       return DB_SUCCESS;
     }
 
-    bool atomic = false;
     bool punch_hole = false;
 
     std::string file_name;
@@ -1098,7 +1097,7 @@ int Clone_Handle::file_create_init(const Clone_file_ctx *file_ctx,
     if (db_err == DB_SUCCESS) {
       db_err = fil_write_initial_pages(
           file, file_name.c_str(), FIL_TYPE_TABLESPACE, size_in_pages,
-          encryption_ptr, file_meta->m_space_id, flags, atomic, punch_hole);
+          encryption_ptr, file_meta->m_space_id, flags, punch_hole);
     }
 
     mesg.append(file_name);
@@ -1737,7 +1736,7 @@ int Clone_Snapshot::extend_and_flush_files(bool flush_redo) {
 
     auto file = os_file_create(
         innodb_clone_file_key, file_name.c_str(),
-        OS_FILE_OPEN | OS_FILE_ON_ERROR_NO_EXIT, OS_FILE_NORMAL,
+        OS_FILE_OPEN | OS_FILE_ON_ERROR_NO_EXIT,
         flush_redo ? OS_CLONE_LOG_FILE : OS_CLONE_DATA_FILE, false, &success);
 
     if (!success) {

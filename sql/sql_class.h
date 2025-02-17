@@ -159,7 +159,7 @@ class Rows_log_event;
 class Time_zone;
 class sp_cache;
 struct Binlog_user_var_event;
-struct LOG_INFO;
+struct Log_info;
 
 typedef struct user_conn USER_CONN;
 struct MYSQL_LOCK;
@@ -986,7 +986,7 @@ class THD : public MDL_context_owner,
     call Item::check_column_privileges().
     After use, restore previous value as current value.
   */
-  ulong want_privilege;
+  Access_bitmask want_privilege;
 
  private:
   /**
@@ -1121,6 +1121,11 @@ class THD : public MDL_context_owner,
           mark at once with this check.
   */
   bool is_engine_ha_data_detached() const;
+
+  /// Iterates over the table and call check_and_registered_engine
+  /// and emits error for non-composable engines
+  /// @param[in] table_ref Tables involved in the query
+  void check_and_emit_warning_for_non_composable_engines(Table_ref *table_ref);
 
   void reset_for_next_command();
   /*
@@ -1420,8 +1425,7 @@ class THD : public MDL_context_owner,
     /// Asserts that current_thd has locked this plan, if it does not own it.
     void assert_plan_is_locked_if_other() const
 #ifdef NDEBUG
-    {
-    }
+        {}
 #else
         ;
 #endif
@@ -1431,7 +1435,8 @@ class THD : public MDL_context_owner,
           sql_command(SQLCOM_END),
           lex(nullptr),
           modification_plan(nullptr),
-          is_ps(false) {}
+          is_ps(false) {
+    }
 
     /**
       Set query plan.
@@ -1715,6 +1720,24 @@ class THD : public MDL_context_owner,
   uchar *binlog_row_event_extra_data;
 
   int binlog_setup_trx_data();
+
+  /**
+   * @brief Configure size of binlog transaction cache. Used to configure the
+   * size of an individual cache, normally to a value that differs from the
+   * default `binlog_cache_size` which controls the size otherwise.
+   *
+   * @note Assumes that the binlog cache manager already exist (i.e created
+   * by call to binlog_setup_trx_data()) and is empty.
+   *
+   * @param new_size The new size of cache. Value exceeding
+   * `max_binlog_cache_size` will be clamped and warning logged. Value must be
+   * a multiple of IO_SIZE which is the block size for all binlog cache size
+   * related variables.
+   *
+   * @return true if new cache size can't be configured, in that case the cache
+   * is not usable.
+   */
+  bool binlog_configure_trx_cache_size(ulong new_size);
 
   /*
     Public interface to write RBR events to the binlog
@@ -2449,6 +2472,7 @@ class THD : public MDL_context_owner,
 
   void inc_status_created_tmp_disk_tables();
   void inc_status_created_tmp_tables();
+  void inc_status_count_hit_tmp_table_size();
   void inc_status_select_full_join();
   void inc_status_select_full_range_join();
   void inc_status_select_range();
@@ -4819,6 +4843,9 @@ class THD : public MDL_context_owner,
   /// Flag indicating whether this session incremented the number of sessions
   /// with GTID_NEXT set to AUTOMATIC:tag
   bool has_incremented_gtid_automatic_count;
+
+  /// Count of Regular Statement Handles in use.
+  unsigned short m_regular_statement_handle_count{0};
 };
 
 /**
@@ -4898,6 +4925,20 @@ inline void THD::set_connection_admin(bool connection_admin_flag) {
 */
 inline bool is_xa_tran_detached_on_prepare(const THD *thd) {
   return thd->variables.xa_detach_on_prepare;
+}
+
+/**
+   Return if source replication node is older than the given version.
+   @param thd       thread context
+   @param version   version number to compare
+
+   @retval true     if source version is older
+   @retval false    otherwise
+ */
+inline bool is_rpl_source_older(const THD *thd, uint version) {
+  return thd->is_applier_thread() &&
+         (thd->variables.original_server_version == UNDEFINED_SERVER_VERSION ||
+          thd->variables.original_server_version < version);
 }
 
 #endif /* SQL_CLASS_INCLUDED */

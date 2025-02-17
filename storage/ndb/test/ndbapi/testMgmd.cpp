@@ -1615,6 +1615,37 @@ int runTestMultiMGMDDisconnection(NDBT_Context *ctx, NDBT_Step *step) {
   return NDBT_OK;
 }
 
+int runTestMyCnf(NDBT_Context *ctx, NDBT_Step *step) {
+  /* Construct path name to my.cnf */
+  NDBT_Workingdir wd("test_mgmd");
+  BaseString my_cnf_file = path(wd.path(), "my.cnf", NULL);
+
+  /* Create args to start mgmd using a my.cnf file */
+  NdbProcess::Args args;
+  args.add("--defaults-file=", my_cnf_file.c_str());
+  args.add("--configdir=", wd.path());
+  args.add("--ndb-nodeid=", 1);
+  args.add("--mycnf");
+
+  /* Write a my.cnf file containing an illegal config parameter */
+  FILE *fp = fopen(my_cnf_file.c_str(), "w");
+  CHECK(fp != nullptr);
+  fprintf(fp, "[cluster_config]\n");
+  fprintf(fp, "ndbcluster=on\n");
+  fclose(fp);
+
+  /* Start mgmd */
+  Mgmd mgmd;
+  CHECK(mgmd.start(wd.path(), args));
+
+  /* Mgmd exits with status 1 due to syntax error in my.cnf */
+  int ret;
+  mgmd.wait(ret);
+  CHECK(ret == 1);
+
+  return NDBT_OK;
+}
+
 int runTestSshKeySigning(NDBT_Context *ctx, NDBT_Step *step) {
   /* Skip this test in PB2 environments, where "ssh localhost"
      does not necessarily work.
@@ -2062,6 +2093,9 @@ TESTCASE("MultiMGMDDisconnection",
          "Test multi mgmd robustness against other mgmd disconnections") {
   INITIALIZER(runTestMultiMGMDDisconnection);
 }
+TESTCASE("MyCnf", "Test reading config from my.cnf") {
+  INITIALIZER(runTestMyCnf);
+}
 
 #if OPENSSL_VERSION_NUMBER >= NDB_TLS_MINIMUM_OPENSSL
 
@@ -2112,6 +2146,7 @@ int main(int argc, const char **argv) {
   testMgmd.setRunAllTables(true);
   testMgmd.setConnectCluster(false);
   testMgmd.setEnsureIndexStatTables(false);
+  testMgmd.setCheckErrorInsert(false);
 
 #ifdef NDB_USE_GET_ENV
   char buf1[255], buf2[255];

@@ -931,6 +931,7 @@ eval CREATE TABLE t2 (
 
 INSERT INTO t2 VALUES ('1234567890',2,'2005-05-24 13:53:25');
 
+--sorted_result
 SELECT content, t2.msisdn FROM t1, t2 WHERE t1.msisdn = '1234567890';
 
 DROP TABLE t1,t2;
@@ -1486,7 +1487,6 @@ set names utf8mb4;
 eval create table t1 (a varchar(10) character set latin1, b int) engine $engine;
 insert into t1 values ('a',1);
 select concat(a, if(b>10, N'x', N'y')) from t1;
---error 1267
 select concat(a, if(b>10, N'æ', N'ß')) from t1;
 drop table t1;
 
@@ -1495,7 +1495,6 @@ set names utf8mb4;
 eval create table t1 (a varchar(10) character set latin1, b int) engine $engine;
 insert into t1 values ('a',1);
 select concat(a, if(b>10, _utf8mb4'x', _utf8mb4'y')) from t1;
---error 1267
 select concat(a, if(b>10, _utf8mb4'æ', _utf8mb4'ß')) from t1;
 drop table t1;
 
@@ -1504,7 +1503,6 @@ set names utf8mb4;
 eval create table t1 (a varchar(10) character set latin1, b int) engine $engine;
 insert into t1 values ('a',1);
 select concat(a, if(b>10, _utf8mb4 0x78, _utf8mb4 0x79)) from t1;
---error 1267
 select concat(a, if(b>10, _utf8mb4 0xC3A6, _utf8mb4 0xC3AF)) from t1;
 drop table t1;
 
@@ -1513,7 +1511,6 @@ set names utf8mb4;
 eval create table t1 (a varchar(10) character set latin1, b int) engine $engine;
 insert into t1 values ('a',1);
 select concat(a, if(b>10, 'x' 'x', 'y' 'y')) from t1;
---error 1267
 select concat(a, if(b>10, 'x' 'æ', 'y' 'ß')) from t1;
 drop table t1;
 
@@ -1891,13 +1888,12 @@ DROP TABLE t2;
 --echo #
 --echo # Check that mixing utf8mb4 with an invalid utf8mb3 constant returns error
 --echo #
-# This should perhaps be changed to return ER_INVALID_CHARACTER_STRING
 eval CREATE TABLE t1 (utf8mb4 VARCHAR(10) CHARACTER SET utf8mb4) ENGINE $engine;
 INSERT INTO t1 VALUES (x'f48fbfbf');
 --character_set binary
---error ER_CANT_AGGREGATE_2COLLATIONS
+--error ER_CANNOT_CONVERT_STRING
 SELECT CONCAT(utf8mb4, _utf8mb3 '�') FROM t1;
---error ER_CANT_AGGREGATE_2COLLATIONS
+--error ER_CANNOT_CONVERT_STRING
 SELECT CONCAT('a', _utf8mb3 '�') FROM t1;
 --character_set utf8mb4
 DROP TABLE t1;

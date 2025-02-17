@@ -588,8 +588,6 @@ class Item_func_sysconst : public Item_str_func {
   explicit Item_func_sysconst(const POS &pos) : super(pos) {
     collation.set(system_charset_info, DERIVATION_SYSCONST);
   }
-
-  Item *safe_charset_converter(THD *thd, const CHARSET_INFO *tocs) override;
   /*
     Used to create correct Item name in new converted item in
     safe_charset_converter, return string representation of this function
@@ -616,7 +614,7 @@ class Item_func_database : public Item_func_sysconst {
 
   String *val_str(String *) override;
   bool resolve_type(THD *) override {
-    set_data_type_string(uint32{MAX_FIELD_NAME});
+    set_data_type_string(uint32{NAME_CHAR_LEN});
     set_nullable(true);
     return false;
   }
@@ -676,23 +674,23 @@ class Item_func_user : public Item_func_sysconst {
 
 class Item_func_current_user : public Item_func_user {
   typedef Item_func_user super;
-  /*
+  /**
      Used to pass a security context to the resolver functions.
      Only used for definer views. In all other contexts, the security context
      passed here is nullptr and is instead looked up dynamically at run time
      from the current THD.
   */
-  Name_resolution_context *context = nullptr;
+  Name_resolution_context *m_name_resolution_ctx = nullptr;
 
-  // Copied from context in fix_fields if definer Security_context
-  // is set in Name_resolution_context
-  LEX_CSTRING definer_priv_user = {};
-  LEX_CSTRING definer_priv_host = {};
+  /// Copied from m_name_resolution_ctx in fix_fields if the definer
+  /// Security_context is set in Name_resolution_context
+  LEX_CSTRING m_definer_priv_user = {};
+  LEX_CSTRING m_definer_priv_host = {};
 
  protected:
   type_conversion_status save_in_field_inner(Field *field, bool) override;
 
-  // Overridden to copy definer priv_user and priv_host
+  /// Overridden to copy definer priv_user and priv_host
   bool resolve_type(THD *) override;
 
  public:
@@ -770,14 +768,17 @@ class Item_func_char final : public Item_str_func {
   Item_func_char(const POS &pos, PT_item_list *list)
       : Item_str_func(pos, list) {
     collation.set(&my_charset_bin);
+    null_on_null = false;
   }
   Item_func_char(const POS &pos, PT_item_list *list, const CHARSET_INFO *cs)
       : Item_str_func(pos, list) {
     collation.set(cs);
+    null_on_null = false;
   }
   String *val_str(String *) override;
   bool resolve_type(THD *thd) override {
     if (param_type_is_default(thd, 0, -1, MYSQL_TYPE_LONGLONG)) return true;
+    if (reject_vector_args()) return true;
     set_data_type_string(arg_count * 4U);
     return false;
   }
@@ -866,6 +867,7 @@ class Item_func_is_uuid final : public Item_bool_func {
   longlong val_int() override;
   const char *func_name() const override { return "is_uuid"; }
   bool resolve_type(THD *thd) override {
+    if (reject_vector_args()) return true;
     bool res = super::resolve_type(thd);
     set_nullable(true);
     return res;
@@ -922,6 +924,7 @@ class Item_func_like_range : public Item_str_func {
   bool resolve_type(THD *thd) override {
     if (param_type_is_default(thd, 0, 1)) return true;
     if (param_type_is_default(thd, 1, 2, MYSQL_TYPE_LONGLONG)) return true;
+    if (reject_vector_args()) return true;
     set_data_type_string(uint32{MAX_BLOB_WIDTH}, args[0]->collation);
     return false;
   }
@@ -1023,7 +1026,7 @@ class Item_typecast_char final : public Item_charset_conversion {
     m_cast_length = length_arg;
   }
   enum Functype functype() const override { return TYPECAST_FUNC; }
-  bool eq(const Item *item, bool binary_cmp) const override;
+  bool eq_specific(const Item *item) const override;
   const char *func_name() const override { return "cast_as_char"; }
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
@@ -1045,6 +1048,7 @@ class Item_load_file final : public Item_str_func {
   }
   bool resolve_type(THD *thd) override {
     if (param_type_is_default(thd, 0, 1)) return true;
+    if (reject_vector_args()) return true;
     collation.set(&my_charset_bin, DERIVATION_COERCIBLE);
     set_data_type_blob(MYSQL_TYPE_LONG_BLOB, MAX_BLOB_WIDTH);
     set_nullable(true);
@@ -1098,6 +1102,7 @@ class Item_func_conv_charset final : public Item_charset_conversion {
   const char *func_name() const override { return "convert"; }
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
+  bool eq_specific(const Item *item) const override;
 };
 
 class Item_func_set_collation final : public Item_str_func {
@@ -1113,7 +1118,7 @@ class Item_func_set_collation final : public Item_str_func {
   bool do_itemize(Parse_context *pc, Item **res) override;
   String *val_str(String *) override;
   bool resolve_type(THD *) override;
-  bool eq(const Item *item, bool binary_cmp) const override;
+  bool eq_specific(const Item *item) const override;
   const char *func_name() const override { return "collate"; }
   enum Functype functype() const override { return COLLATE_FUNC; }
   void print(const THD *thd, String *str,
@@ -1183,7 +1188,7 @@ class Item_func_weight_string final : public Item_str_func {
   bool do_itemize(Parse_context *pc, Item **res) override;
 
   const char *func_name() const override { return "weight_string"; }
-  bool eq(const Item *item, bool binary_cmp) const override;
+  bool eq_specific(const Item *item) const override;
   String *val_str(String *) override;
   bool resolve_type(THD *) override;
   void print(const THD *thd, String *str,
@@ -1215,6 +1220,7 @@ class Item_func_uncompressed_length final : public Item_int_func {
   const char *func_name() const override { return "uncompressed_length"; }
   bool resolve_type(THD *thd) override {
     if (param_type_is_default(thd, 0, 1)) return true;
+    if (reject_vector_args()) return true;
     max_length = 10;
     return false;
   }
@@ -1231,12 +1237,38 @@ class Item_func_compress final : public Item_str_func {
   String *val_str(String *str) override;
 };
 
+class Item_func_to_vector final : public Item_str_func {
+  String buffer;
+
+ public:
+  Item_func_to_vector(const POS &pos, Item *a) : Item_str_func(pos, a) {}
+  bool resolve_type(THD *thd) override;
+  const char *func_name() const override { return "to_vector"; }
+  String *val_str(String *str) override;
+};
+
+class Item_func_from_vector final : public Item_str_func {
+  static const uint32 per_value_chars = 16;
+  static const uint32 max_output_bytes =
+      (Field_vector::max_dimensions * Item_func_from_vector::per_value_chars);
+  String buffer;
+
+ public:
+  Item_func_from_vector(const POS &pos, Item *a) : Item_str_func(pos, a) {
+    collation.set(&my_charset_utf8mb4_0900_bin);
+  }
+  bool resolve_type(THD *thd) override;
+  const char *func_name() const override { return "from_vector"; }
+  String *val_str(String *str) override;
+};
+
 class Item_func_uncompress final : public Item_str_func {
   String buffer;
 
  public:
   Item_func_uncompress(const POS &pos, Item *a) : Item_str_func(pos, a) {}
   bool resolve_type(THD *thd) override {
+    if (reject_vector_args()) return true;
     if (Item_str_func::resolve_type(thd)) return true;
     set_nullable(true);
     set_data_type_string(uint32{MAX_BLOB_WIDTH});

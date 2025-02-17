@@ -82,7 +82,7 @@ bool Autorejoin_thread::abort_rejoin() {
   m_being_terminated = true;
 
   /*
-    Unblock the call to mysql_cond_wait() on the auto-rejoin loop,
+    Unblock the call to mysql_cond_timedwait() on the auto-rejoin loop,
     effectively ending the auto-rejoin loop.
   */
   while (m_autorejoin_thd_state.is_thread_alive()) {
@@ -143,7 +143,9 @@ int Autorejoin_thread::start_autorejoin(uint attempts, ulonglong timeout) {
   */
   while (m_autorejoin_thd_state.is_alive_not_running()) {
     DBUG_PRINT("sleep", ("Waiting for the auto-rejoin thread to start"));
-    mysql_cond_wait(&m_run_cond, &m_run_lock);
+    struct timespec abstime;
+    set_timespec(&abstime, 1);
+    mysql_cond_timedwait(&m_run_cond, &m_run_lock, &abstime);
   }
 
 end:
@@ -220,7 +222,7 @@ void Autorejoin_thread::execute_rejoin_process() {
     LogPluginErr(SYSTEM_LEVEL, ER_GRP_RPL_FINISHED_AUTO_REJOIN,
                  num_attempts - 1UL, m_attempts, " not");
 
-    enable_server_read_mode();
+    enable_server_read_mode("(GR) autorejoin failed");
     /*
       Only abort() if the auto-rejoin thread wasn't explicitly stopped, i.e.
       if someone called Autorejoin_thread::abort(), because that implies an
@@ -237,7 +239,7 @@ void Autorejoin_thread::execute_rejoin_process() {
           break;
         }
         case EXIT_STATE_ACTION_OFFLINE_MODE:
-          enable_server_offline_mode();
+          enable_server_offline_mode("(GR) autorejoin failed");
           break;
       }
     }

@@ -37,7 +37,7 @@
 #include "classic_mock_session.h"
 #include "duktape_statement_reader.h"
 #include "mock_session.h"
-#include "mysql/harness/logging/logging.h"
+#include "mysql/harness/logging/logger.h"
 #include "mysql/harness/net_ts/buffer.h"
 #include "mysql/harness/net_ts/impl/resolver.h"
 #include "mysql/harness/net_ts/impl/socket_constants.h"
@@ -47,13 +47,12 @@
 #include "mysql/harness/stdx/expected.h"
 #include "mysql/harness/stdx/monitor.h"
 #include "mysql/harness/tls_server_context.h"
+#include "mysql/harness/utility/string.h"
 #include "mysqlrouter/classic_protocol_message.h"
 #include "mysqlrouter/utils.h"  // to_string
 #include "router/src/mock_server/src/statement_reader.h"
 #include "scope_guard.h"
 #include "x_mock_session.h"
-
-IMPORT_LOG_FUNCTIONS()
 
 using namespace std::chrono_literals;
 using namespace std::string_literals;
@@ -85,7 +84,7 @@ MySQLServerMock::MySQLServerMock(net::io_context &io_ctx,
 void MySQLServerMock::close_all_connections() {
   client_sessions_([](auto &socks) {
     for (auto &conn : socks) {
-      conn->cancel();
+      conn->terminate();
     }
   });
 }
@@ -145,12 +144,11 @@ class Acceptor {
     auto session_it = client_sessions_([&](auto &socks) {
       if (protocol_name_ == "classic") {
         socks.emplace_back(std::make_unique<MySQLServerMockSessionClassic>(
-            MySQLClassicProtocol{std::move(client_sock), client_ep_,
-                                 tls_server_ctx_},
+            std::move(client_sock), client_ep_, tls_server_ctx_,
             std::move(reader), false, with_tls_));
       } else {
         socks.emplace_back(std::make_unique<MySQLServerMockSessionX>(
-            MySQLXProtocol{std::move(client_sock), client_ep_, tls_server_ctx_},
+            std::move(client_sock), client_ep_, tls_server_ctx_,
             std::move(reader), false, with_tls_));
       }
       return std::prev(socks.end());
@@ -203,7 +201,9 @@ class Acceptor {
 
       client_sock.set_option(net::ip::tcp::no_delay{true});
 
-      log_info("accepted from %s", mysqlrouter::to_string(client_ep_).c_str());
+      logger_.info([this]() {
+        return "accepted from " + mysqlrouter::to_string(client_ep_);
+      });
 
       this->accepted(std::move(client_sock));
     });
@@ -271,6 +271,8 @@ class Acceptor {
   //
   // tracks if async_accept is currently waiting.
   WaitableMonitor<int> work_{0};
+
+  mysql_harness::logging::DomainLogger logger_;
 };
 
 void MySQLServerMock::run(mysql_harness::PluginFuncEnv *env) {
@@ -302,8 +304,11 @@ void MySQLServerMock::run(mysql_harness::PluginFuncEnv *env) {
 
   mysql_harness::on_service_ready(env);
 
-  log_info("Starting to handle %s connections on port: %d",
-           protocol_name_.c_str(), bind_port_);
+  mysql_harness::logging::DomainLogger().info([this]() {
+    return mysql_harness::utility::string_format(
+        "Starting to handle %s connections on port: %d", protocol_name_.c_str(),
+        bind_port_);
+  });
 
   acceptor.async_run();
 

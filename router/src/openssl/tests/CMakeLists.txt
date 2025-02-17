@@ -24,14 +24,10 @@
 INCLUDE_DIRECTORIES(SYSTEM ${GMOCK_INCLUDE_DIRS})
 INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR}/tests/)
 
-# Google-test TYPED_TEST doesn't override the virtual method in derived class.
-STRING(REPLACE "-Wsuggest-override" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-
 ADD_GOOGLETEST_FILE(test_tls.cc
   MODULE openssl
   LIB_DEPENDS
     routertest_helpers
-    router_lib
     harness_net_ts
     harness_tls
     harness-library

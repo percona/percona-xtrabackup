@@ -73,6 +73,7 @@
 #include "sql/range_optimizer/group_index_skip_scan_plan.h"
 #include "sql/range_optimizer/index_skip_scan_plan.h"
 #include "sql/range_optimizer/internal.h"
+#include "sql/range_optimizer/path_helpers.h"
 #include "sql/range_optimizer/range_optimizer.h"
 #include "sql/sql_array.h"
 #include "sql/sql_class.h"
@@ -115,14 +116,14 @@ struct ExplainChild {
 /// Convenience function to add a json field.
 template <class T, class JsonObjectPtr, class... Args>
 static bool AddMemberToObject(const JsonObjectPtr &obj, const char *alias,
-                              Args &&... ctor_args) {
+                              Args &&...ctor_args) {
   return obj->add_alias(
       alias, create_dom_ptr<T, Args...>(std::forward<Args>(ctor_args)...));
 }
 
 template <class T, class... Args>
 static bool AddElementToArray(const unique_ptr<Json_array> &array,
-                              Args &&... ctor_args) {
+                              Args &&...ctor_args) {
   return array->append_alias(
       create_dom_ptr<T, Args...>(std::forward<Args>(ctor_args)...));
 }
@@ -194,6 +195,7 @@ static bool AddTableInfoToObject(Json_object *obj, const TABLE *table) {
     }
     error |= obj->add_alias("used_columns", std::move(used_fields_list));
   }
+
   return error;
 }
 
@@ -210,19 +212,13 @@ static bool AddTableInfoToObject(Json_object *obj, const TABLE *table) {
      {scan|skip scan|range scan|lookup|search|
       skip scan for grouping|skip scan for deduplication}
   where <Prefix> = {Single-row|Multi-range}
-
-  Return obj. Not necessary, but for the sake of AddMemberToObject() returning
-  NULL in case of failure, we need to return something non-NULL to indicate
-  success.
 */
-static bool SetIndexInfoInObject(string *str,
-                                 const char *json_index_access_type,
-                                 const char *prefix, const TABLE &table,
-                                 const KEY &key, const char *index_access_type,
-                                 const string lookup_condition,
-                                 const string *ranges_text,
-                                 unique_ptr<Json_array> range_arr, bool reverse,
-                                 Item *pushed_idx_cond, Json_object *obj) {
+static bool SetIndexInfoInObject(
+    string *str, const char *json_index_access_type, const char *prefix,
+    const TABLE &table, const KEY &key, uint n_key_columns,
+    const char *index_access_type, const string lookup_condition,
+    const string *ranges_text, unique_ptr<Json_array> range_arr, bool reverse,
+    Item *pushed_idx_cond, Json_object *obj) {
   string idx_cond_str = pushed_idx_cond ? ItemToString(pushed_idx_cond) : "";
   string covering_index =
       string(IsCoveringIndexScan(key, table) ? "Covering index " : "Index ");
@@ -257,6 +253,20 @@ static bool SetIndexInfoInObject(string *str,
   if (!table.file->explain_extra().empty())
     error |= AddMemberToObject<Json_string>(obj, "message",
                                             table.file->explain_extra());
+
+  unique_ptr<Json_array> key_columns(new (std::nothrow) Json_array());
+  KEY_PART_INFO *kp = key.key_part;
+
+  // When the KEY is over a hash field get_used_key_parts() reports the amount
+  // of fields in the hash, while the hash field only corresponds to one
+  // KEY_PART_INFO.
+  for (uint i = 0; i < n_key_columns && i < key.actual_key_parts; i++, kp++) {
+    error |= AddElementToArray<Json_string>(
+        key_columns, get_field_name_or_expression(current_thd, kp->field));
+  }
+  if (key_columns->size() > 0) {
+    error |= obj->add_alias("key_columns", std::move(key_columns));
+  }
 
   return error;
 }
@@ -296,7 +306,7 @@ string HashJoinTypeToString(RelationalExpression::Type join_type,
     case RelationalExpression::SEMIJOIN:
       if (explain_json_value)
         *explain_json_value = JoinTypeToString(JoinType::SEMI);
-      return "Hash semijoin";
+      return "Hash semijoin (FirstMatch)";
     default:
       assert(false);
       return "<error>";
@@ -705,10 +715,11 @@ static bool ExplainIndexSkipScanAccessPath(Json_object *obj,
 
   // NOTE: Currently, index skip scan is always covering, but there's no
   // good reason why we cannot fix this limitation in the future.
-  return SetIndexInfoInObject(
-      description, "index_skip_scan", nullptr, table, key_info, "skip scan",
-      /*lookup condition*/ "", &ranges, std::move(range_arr), /*reverse*/ false,
-      /*push_condition*/ nullptr, obj);
+  return SetIndexInfoInObject(description, "index_skip_scan", nullptr, table,
+                              key_info, get_used_key_parts(path), "skip scan",
+                              /*lookup condition*/ "", &ranges,
+                              std::move(range_arr), /*reverse*/ false,
+                              /*push_condition*/ nullptr, obj);
 }
 
 static bool ExplainGroupIndexSkipScanAccessPath(Json_object *obj,
@@ -746,6 +757,7 @@ static bool ExplainGroupIndexSkipScanAccessPath(Json_object *obj,
   // good reason why we cannot fix this limitation in the future.
   error |= SetIndexInfoInObject(
       description, "group_index_skip_scan", nullptr, table, key_info,
+      get_used_key_parts(path),
       (param->min_max_arg_part ? "skip scan for grouping"
                                : "skip scan for deduplication"),
       /*lookup condition*/ "", (!ranges.empty() ? &ranges : nullptr),
@@ -1003,19 +1015,18 @@ static bool AddPathCosts(const AccessPath *path,
     }
 
     if (init_cost >= 0.0) {
-      double first_row_cost;
-      if (path->num_output_rows() <= 1.0) {
-        first_row_cost = cost;
-      } else {
-        first_row_cost =
-            init_cost + (cost - init_cost) / path->num_output_rows();
-      }
-      error |= AddMemberToObject<Json_double>(obj, "estimated_first_row_cost",
-                                              first_row_cost);
+      error |= AddMemberToObject<Json_double>(
+          obj, "estimated_first_row_cost",
+          FirstRowCost(init_cost, cost, path->num_output_rows()));
     }
     error |= AddMemberToObject<Json_double>(obj, "estimated_total_cost", cost);
-    error |= AddMemberToObject<Json_double>(obj, "estimated_rows",
-                                            path->num_output_rows());
+    // For a MATERIALIZE path, num_output_rows() gives the number of rows read
+    // by materialize().table_path rather than the number of rows materialized.
+    error |=
+        AddMemberToObject<Json_double>(obj, "estimated_rows",
+                                       path->type == AccessPath::MATERIALIZE
+                                           ? path->materialize().subquery_rows
+                                           : path->num_output_rows());
   } /* if (path->num_output_rows() >= 0.0) */
 
   /* Add analyze figures */
@@ -1048,6 +1059,31 @@ static bool AddPathCosts(const AccessPath *path,
   }
   return error;
 }
+
+namespace {
+/**
+ * Functor that can be passed to WalkItem() to collect the names of all the
+ * columns referenced by an Item.
+ */
+class ColumnNameCollector {
+ public:
+  bool operator()(const Item *item) {
+    if (item->type() != Item::Type::FIELD_ITEM) return false;
+    const Item_field *field_item = down_cast<const Item_field *>(item);
+    String column_name;
+    const ulonglong save_bits = current_thd->variables.option_bits;
+    current_thd->variables.option_bits &= ~OPTION_QUOTE_SHOW_CREATE;
+    field_item->print(current_thd, &column_name, QT_ORDINARY);
+    current_thd->variables.option_bits = save_bits;
+    m_column_names.insert(to_string(column_name));
+    return false;
+  }
+  const std::set<std::string> &column_names() const { return m_column_names; }
+
+ private:
+  std::set<std::string> m_column_names;
+};
+}  // namespace
 
 /**
    Given a json object, update it's appropriate json fields according to the
@@ -1134,7 +1170,7 @@ static unique_ptr<Json_object> SetObjectMembers(
 
       const KEY &key = table.key_info[path->index_scan().idx];
       error |= SetIndexInfoInObject(&description, "index_scan", nullptr, table,
-                                    key, "scan",
+                                    key, get_used_key_parts(path), "scan",
                                     /*lookup condition*/ "", /*range*/ nullptr,
                                     nullptr, path->index_scan().reverse,
                                     /*push_condition*/ nullptr, obj);
@@ -1146,11 +1182,11 @@ static unique_ptr<Json_object> SetObjectMembers(
       assert(table.file->pushed_idx_cond == nullptr);
 
       const KEY &key = table.key_info[path->index_distance_scan().idx];
-      error |= SetIndexInfoInObject(&description, "index_distance_scan",
-                                    nullptr, table, key, "distance scan",
-                                    /*lookup condition*/ "", /*range*/ nullptr,
-                                    nullptr, false,
-                                    /*push_condition*/ nullptr, obj);
+      error |= SetIndexInfoInObject(
+          &description, "index_distance_scan", nullptr, table, key,
+          get_used_key_parts(path), "distance scan",
+          /*lookup condition*/ "", /*range*/ nullptr, nullptr, false,
+          /*push_condition*/ nullptr, obj);
       error |= AddChildrenFromPushedCondition(table, children);
       break;
     }
@@ -1158,7 +1194,8 @@ static unique_ptr<Json_object> SetObjectMembers(
       const TABLE &table = *path->ref().table;
       const KEY &key = table.key_info[path->ref().ref->key];
       error |= SetIndexInfoInObject(
-          &description, "index_lookup", nullptr, table, key, "lookup",
+          &description, "index_lookup", nullptr, table, key,
+          get_used_key_parts(path), "lookup",
           RefToString(*path->ref().ref, key, /*include_nulls=*/false),
           /*ranges=*/nullptr, nullptr, path->ref().reverse,
           table.file->pushed_idx_cond, obj);
@@ -1169,7 +1206,8 @@ static unique_ptr<Json_object> SetObjectMembers(
       const TABLE &table = *path->ref_or_null().table;
       const KEY &key = table.key_info[path->ref_or_null().ref->key];
       error |= SetIndexInfoInObject(
-          &description, "index_lookup", nullptr, table, key, "lookup",
+          &description, "index_lookup", nullptr, table, key,
+          get_used_key_parts(path), "lookup",
           RefToString(*path->ref_or_null().ref, key, /*include_nulls=*/true),
           /*ranges=*/nullptr, nullptr, false, table.file->pushed_idx_cond, obj);
       error |= AddChildrenFromPushedCondition(table, children);
@@ -1179,7 +1217,8 @@ static unique_ptr<Json_object> SetObjectMembers(
       const TABLE &table = *path->eq_ref().table;
       const KEY &key = table.key_info[path->eq_ref().ref->key];
       error |= SetIndexInfoInObject(
-          &description, "index_lookup", "Single-row", table, key, "lookup",
+          &description, "index_lookup", "Single-row", table, key,
+          get_used_key_parts(path), "lookup",
           RefToString(*path->eq_ref().ref, key, /*include_nulls=*/false),
           /*ranges=*/nullptr, nullptr, false, table.file->pushed_idx_cond, obj);
       error |= AddChildrenFromPushedCondition(table, children);
@@ -1192,7 +1231,7 @@ static unique_ptr<Json_object> SetObjectMembers(
       error |= SetIndexInfoInObject(
           &description, "pushed_join_ref",
           path->pushed_join_ref().is_unique ? "Single-row" : nullptr, table,
-          key, "lookup",
+          key, get_used_key_parts(path), "lookup",
           RefToString(*path->pushed_join_ref().ref, key,
                       /*include_nulls=*/false),
           /*ranges=*/nullptr, nullptr,
@@ -1203,12 +1242,13 @@ static unique_ptr<Json_object> SetObjectMembers(
       const TABLE &table = *path->full_text_search().table;
       assert(table.file->pushed_idx_cond == nullptr);
       const KEY &key = table.key_info[path->full_text_search().ref->key];
-      error |= SetIndexInfoInObject(
-          &description, "full_text_search", "Full-text", table, key, "search",
-          RefToString(*path->full_text_search().ref, key,
-                      /*include_nulls=*/false),
-          /*ranges=*/nullptr, nullptr,
-          /*reverse=*/false, nullptr, obj);
+      error |=
+          SetIndexInfoInObject(&description, "full_text_search", "Full-text",
+                               table, key, get_used_key_parts(path), "search",
+                               RefToString(*path->full_text_search().ref, key,
+                                           /*include_nulls=*/false),
+                               /*ranges=*/nullptr, nullptr,
+                               /*reverse=*/false, nullptr, obj);
       break;
     }
     case AccessPath::CONST_TABLE: {
@@ -1225,9 +1265,11 @@ static unique_ptr<Json_object> SetObjectMembers(
       const TABLE &table = *path->mrr().table;
       const KEY &key = table.key_info[path->mrr().ref->key];
       error |= SetIndexInfoInObject(
-          &description, "multi_range_read", "Multi-range", table, key, "lookup",
+          &description, "multi_range_read", "Multi-range", table, key,
+          get_used_key_parts(path), "lookup",
           RefToString(*path->mrr().ref, key, /*include_nulls=*/false),
           /*ranges=*/nullptr, nullptr, false, table.file->pushed_idx_cond, obj);
+      error |= AddMemberToObject<Json_boolean>(obj, "multi_range_read", true);
       error |= AddChildrenFromPushedCondition(table, children);
       break;
     }
@@ -1250,9 +1292,27 @@ static unique_ptr<Json_object> SetObjectMembers(
       string ranges;
       error |= PrintRanges(param.ranges, param.num_ranges, key_info.key_part,
                            /*single_part_only=*/false, range_arr, &ranges);
+
+      // A range scan could use MRR optimization if possible. However, unless
+      // multi_range_read_init() is called, we do not have a way to know if the
+      // optimization will be used even though range optimizer has picked it. If
+      // the range scan requires rows in order, the storage engine might not be
+      // able to provide the order when using MRR optimization, in which case it
+      // switches to the default implementation. Calling multi_range_read_init()
+      // can potentially be costly, so it is not done when executing an EXPLAIN.
+      // We therefore simulate its effect here:
+      uint mrr_flags = param.mrr_flags;
+      bool using_mrr = false;
+      if ((!(mrr_flags & HA_MRR_SORTED) || mrr_flags & HA_MRR_SUPPORT_SORTED) &&
+          !(mrr_flags & HA_MRR_USE_DEFAULT_IMPL)) {
+        using_mrr = true;
+        error |= AddMemberToObject<Json_boolean>(obj, "multi_range_read", true);
+      }
       error |= SetIndexInfoInObject(
           &description, "index_range_scan", nullptr, table, key_info,
-          "range scan", /*lookup condition*/ "", &ranges, std::move(range_arr),
+          get_used_key_parts(path),
+          using_mrr ? "range scan (Multi-Range Read)" : "range scan",
+          /*lookup condition*/ "", &ranges, std::move(range_arr),
           path->index_range_scan().reverse, table.file->pushed_idx_cond, obj);
 
       error |= AddChildrenFromPushedCondition(table, children);
@@ -1366,6 +1426,32 @@ static unique_ptr<Json_object> SetObjectMembers(
       error |=
           AddMemberToObject<Json_string>(obj, "join_algorithm", "nested_loop");
       description = "Nested loop " + join_type;
+      if (path->nested_loop_join().join_type == JoinType::SEMI) {
+        description = description + " (FirstMatch)";
+        error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
+                                                "firstmatch");
+      }
+      const JoinPredicate *predicate = path->nested_loop_join().join_predicate;
+      if (predicate != nullptr &&
+          predicate->expr->type == RelationalExpression::SEMIJOIN &&
+          path->nested_loop_join().join_type == JoinType::INNER) {
+        if (path->nested_loop_join().outer->type ==
+            AccessPath::REMOVE_DUPLICATES) {
+          description.append(" (LooseScan)");
+          error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
+                                                  "loosescan");
+        } else {
+          description.append(" (FirstMatch)");
+          error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
+                                                  "firstmatch");
+        }
+      }
+      if (path->nested_loop_join().outer->type ==
+          AccessPath::REMOVE_DUPLICATES_ON_INDEX) {
+        description.append(" (LooseScan)");
+        error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
+                                                "loosescan");
+      }
       children->push_back({path->nested_loop_join().outer});
       children->push_back({path->nested_loop_join().inner});
       break;
@@ -1373,8 +1459,12 @@ static unique_ptr<Json_object> SetObjectMembers(
     case AccessPath::NESTED_LOOP_SEMIJOIN_WITH_DUPLICATE_REMOVAL:
       // No json fields since this path is not supported in hypergraph
       description =
-          string("Nested loop semijoin with duplicate removal on ") +
+          string(
+              "Nested loop semijoin (FirstMatch) with duplicate removal "
+              "(LooseScan) on ") +
           path->nested_loop_semijoin_with_duplicate_removal().key->name;
+      error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
+                                              "firstmatch_with_loosescan");
       children->push_back(
           {path->nested_loop_semijoin_with_duplicate_removal().outer});
       children->push_back(
@@ -1400,17 +1490,46 @@ static unique_ptr<Json_object> SetObjectMembers(
 
       string json_join_type;
       description = HashJoinTypeToString(type, &json_join_type);
+      if (predicate->expr->type == RelationalExpression::SEMIJOIN) {
+        error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
+                                                "firstmatch");
+      }
+      if (path->hash_join().rewrite_semi_to_inner) {
+        if (path->hash_join().outer->type == AccessPath::REMOVE_DUPLICATES) {
+          description.append(" (LooseScan)");
+          error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
+                                                  "loosescan");
+        } else {
+          description.append(" (FirstMatch)");
+          error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
+                                                  "firstmatch");
+        }
+      }
+      if ((type != RelationalExpression::SEMIJOIN) &&
+          path->hash_join().inner->type ==
+              AccessPath::REMOVE_DUPLICATES_ON_INDEX) {
+        description.append(" (LooseScan)");
+        error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
+                                                "loosescan");
+      }
 
       unique_ptr<Json_array> hash_condition(new (std::nothrow) Json_array());
       if (hash_condition == nullptr) return nullptr;
-
       vector<HashJoinCondition> equijoin_conditions;
       equijoin_conditions.reserve(predicate->expr->equijoin_conditions.size());
       for (Item_eq_base *cond : predicate->expr->equijoin_conditions) {
         equijoin_conditions.emplace_back(cond, thd->mem_root);
       }
       if (equijoin_conditions.empty()) {
-        description.append(" (no condition)");
+        if ((type != RelationalExpression::SEMIJOIN) &&
+            path->hash_join().inner->type == AccessPath::LIMIT_OFFSET &&
+            path->hash_join().inner->limit_offset().limit == 1) {
+          description.append(" (FirstMatch)");
+          error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
+                                                  "firstmatch");
+        } else {
+          description.append(" (no condition)");
+        }
       } else {
         bool first = true;
         for (const HashJoinCondition &hj_cond : equijoin_conditions) {
@@ -1464,12 +1583,21 @@ static unique_ptr<Json_object> SetObjectMembers(
 
       const RelationalExpression *join_predicate =
           path->hash_join().join_predicate->expr;
+      ColumnNameCollector cnc;
       for (Item_eq_base *cond : join_predicate->equijoin_conditions) {
         AddSubqueryPaths(cond, "condition", children);
+        WalkItem(cond, enum_walk::PREFIX, cnc);
       }
       for (Item *cond : join_predicate->join_conditions) {
         AddSubqueryPaths(cond, "extra conditions", children);
+        WalkItem(cond, enum_walk::PREFIX, cnc);
       }
+      unique_ptr<Json_array> join_columns(new (std::nothrow) Json_array());
+      if (join_columns == nullptr) return nullptr;
+      for (const std::string &column_name : cnc.column_names()) {
+        error |= AddElementToArray<Json_string>(join_columns, column_name);
+      }
+      error |= obj->add_alias("join_columns", std::move(join_columns));
 
       break;
     }
@@ -1480,6 +1608,15 @@ static unique_ptr<Json_object> SetObjectMembers(
       description = "Filter: " + filter;
       children->push_back({path->filter().child});
       AddSubqueryPaths(path->filter().condition, "condition", children);
+      ColumnNameCollector cnc;
+      WalkItem(path->filter().condition, enum_walk::PREFIX, cnc);
+      unique_ptr<Json_array> filter_columns(new (std::nothrow) Json_array());
+      if (filter_columns == nullptr) return nullptr;
+      for (const std::string &column_name : cnc.column_names()) {
+        error |= AddElementToArray<Json_string>(filter_columns, column_name);
+      }
+      error |= obj->add_alias("filter_columns", std::move(filter_columns));
+
       break;
     }
     case AccessPath::SORT: {
@@ -1715,7 +1852,8 @@ static unique_ptr<Json_object> SetObjectMembers(
       }
       description += " rows using temporary table (weedout)";
       error |= obj->add_alias("tables", std::move(tables));
-      error |= AddMemberToObject<Json_string>(obj, "access_type", "weedout");
+      error |=
+          AddMemberToObject<Json_string>(obj, "semijoin_strategy", "weedout");
       children->push_back({path->weedout().child});
       break;
     }

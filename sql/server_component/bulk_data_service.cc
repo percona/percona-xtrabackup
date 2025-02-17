@@ -33,11 +33,13 @@
 #include "mysql/components/services/log_builtins.h"
 #include "mysql_time.h"
 #include "mysqld_error.h"
+#include "sql-common/json_dom.h"
 #include "sql-common/my_decimal.h"
 #include "sql/field.h"
 #include "sql/sql_class.h"
 #include "sql/sql_gipk.h"
 #include "sql/sql_time.h"
+#include "sql/strfunc.h"  // find_type2
 #include "sql/tztime.h"
 
 namespace Bulk_data_convert {
@@ -131,6 +133,137 @@ static int format_int_column(const Column_text &text_col,
   return 0;
 }
 
+/** Create a blob column.
+@param[in]   field        table column metadata
+@param[in]   from_cs      charset of the input string from CSV.
+@param[in]   text_col     input column in text read from CSV.
+@param[out]  sql_col      converted column in MySQL storage format
+@param[out]  length_size  number of bytes used to write the length
+@param[out]  error_details  error location details
+@return 0 on success, error code on failure. */
+static int format_blob_column(Field *field, const CHARSET_INFO *from_cs,
+                              const Column_text &text_col,
+                              Column_mysql &sql_col, size_t &length_size,
+                              Bulk_load_error_location_details &error_details) {
+  assert(!sql_col.m_is_null);
+  auto field_str = (const Field_str *)field;
+  const CHARSET_INFO *field_charset = field_str->charset();
+
+  switch (sql_col.m_type) {
+    case MYSQL_TYPE_TINY_BLOB:
+      length_size = 1;
+      break;
+    case MYSQL_TYPE_BLOB:
+      length_size = 2;
+      break;
+    case MYSQL_TYPE_MEDIUM_BLOB:
+      length_size = 3;
+      break;
+    case MYSQL_TYPE_GEOMETRY:
+      [[fallthrough]];
+    case MYSQL_TYPE_JSON:
+      [[fallthrough]];
+    case MYSQL_TYPE_LONG_BLOB:
+      length_size = 4;
+      break;
+    default:
+      assert(0);
+      break;
+  }
+
+  char *field_begin = sql_col.m_data_ptr;
+  char *field_data = field_begin + length_size;
+
+  size_t copy_size = text_col.m_data_len;
+
+  if (text_col.is_ext()) {
+    /* Column data stored externally. */
+    memcpy(field_data, text_col.m_data_ptr, copy_size);
+
+  } else {
+    const char *error_pos = nullptr;
+    const char *convert_error_pos = nullptr;
+    const char *end_pos = nullptr;
+    const size_t nchars = text_col.m_data_len;
+    auto field_size = sql_col.m_data_len;
+
+    if (field_charset == &my_charset_bin) {
+      /* If the charset of the field is binary, then the column data in the CSV
+      would also be binary. Don't do any charset conversions. */
+      if (text_col.m_data_len > sql_col.m_data_len) {
+        return ER_TOO_BIG_FIELDLENGTH;
+      }
+      memcpy(field_data, text_col.m_data_ptr, text_col.m_data_len);
+      copy_size = text_col.m_data_len;
+    } else {
+      copy_size = well_formed_copy_nchars(
+          field_charset, field_data, field_size, from_cs, text_col.m_data_ptr,
+          text_col.m_data_len, nchars, &error_pos, &convert_error_pos,
+          &end_pos);
+
+      if (error_pos != nullptr || convert_error_pos != nullptr) {
+        error_details.column_type = "text";
+        log_conversion_error(text_col, "Invalid Input String: ");
+        return ER_INVALID_CHARACTER_STRING;
+      }
+
+      if (end_pos < text_col.m_data_ptr + text_col.m_data_len) {
+        return ER_TOO_BIG_FIELDLENGTH;
+      }
+    }
+
+    if (sql_col.m_type == MYSQL_TYPE_JSON) {
+      std::string errmsg;
+      auto error_handler = [&errmsg](const char *err, size_t) { errmsg = err; };
+
+      auto depth_handler = []() {};
+
+      auto dom =
+          Json_dom::parse(field_data, copy_size, error_handler, depth_handler);
+      if (dom.get() == nullptr) {
+        error_details.m_error_mesg = errmsg;
+        return ER_BULK_JSON_INVALID;
+      }
+      String value;
+      Bulk_load::Json_serialization_error_handler error_object;
+      bool failure = json_binary::serialize(dom.get(), error_object, &value);
+      if (failure) {
+        /* failure */
+        error_details.m_error_mesg = error_object.get_error();
+        return ER_BULK_JSON_INVALID;
+      }
+      memcpy(field_data, value.ptr(), value.length());
+      copy_size = value.length();
+    }
+  }
+
+  switch (sql_col.m_type) {
+    case MYSQL_TYPE_TINY_BLOB:
+      *field_begin = static_cast<uint8_t>(copy_size);
+      break;
+    case MYSQL_TYPE_BLOB:
+      int2store(field_begin, static_cast<uint16_t>(copy_size));
+      break;
+    case MYSQL_TYPE_MEDIUM_BLOB:
+      int3store(field_begin, copy_size);
+      break;
+    case MYSQL_TYPE_GEOMETRY:
+      [[fallthrough]];
+    case MYSQL_TYPE_JSON:
+      [[fallthrough]];
+    case MYSQL_TYPE_LONG_BLOB:
+      int4store(field_begin, copy_size);
+      break;
+    default:
+      assert(0);
+      break;
+  }
+
+  sql_col.m_data_len = copy_size;
+
+  return 0;
+}
+
 /** Create a char/varchar column converting data to MySQL storage format.
 @param[in]   text_col     input column in text read from CSV
 @param[in]   charset      character set for the input column data
@@ -186,28 +319,36 @@ static int format_char_column(const Column_text &text_col,
   const char *convert_error_pos = nullptr;
   const char *end_pos = nullptr;
 
-  size_t copy_size = well_formed_copy_nchars(
-      field_charset, field_data, field_size, charset, text_col.m_data_ptr,
-      text_col.m_data_len, field_char_size, &error_pos, &convert_error_pos,
-      &end_pos);
+  size_t copy_size{0};
 
-  if (end_pos < text_col.m_data_ptr + text_col.m_data_len) {
-    /* The error is expected when fixed_length = true, where we try to adjust
-    the data within character length limit. The data could not be fit in
-    such limit here which is possible for multi-byte character set. We
-    return from here and retry with variable length format - mysql_format() */
-    if (fixed_length && single_byte) {
-      return ER_TOO_BIG_FIELDLENGTH;
+  if (text_col.is_ext()) {
+    assert(text_col.m_data_len == 20);
+    memcpy(field_data, text_col.m_data_ptr, text_col.m_data_len);
+    copy_size = text_col.m_data_len;
+  } else {
+    copy_size = well_formed_copy_nchars(
+        field_charset, field_data, field_size, charset, text_col.m_data_ptr,
+        text_col.m_data_len, field_char_size, &error_pos, &convert_error_pos,
+        &end_pos);
+
+    if (end_pos < text_col.m_data_ptr + text_col.m_data_len) {
+      /* The error is expected when fixed_length = true, where we try to adjust
+      the data within character length limit. The data could not be fit in
+      such limit here which is possible for multi-byte character set. We
+      return from here and retry with variable length format - mysql_format() */
+      if (fixed_length && single_byte) {
+        return ER_TOO_BIG_FIELDLENGTH;
+      }
+      error_details.column_type = "string";
+      log_conversion_error(text_col, "Input String too long: ");
+      return ER_LOAD_BULK_DATA_WRONG_VALUE_FOR_FIELD;
     }
-    error_details.column_type = "string";
-    log_conversion_error(text_col, "Input String too long: ");
-    return ER_LOAD_BULK_DATA_WRONG_VALUE_FOR_FIELD;
-  }
 
-  if (error_pos != nullptr || convert_error_pos != nullptr) {
-    error_details.column_type = "string";
-    log_conversion_error(text_col, "Invalid Input String: ");
-    return ER_LOAD_BULK_DATA_WRONG_VALUE_FOR_FIELD;
+    if (error_pos != nullptr || convert_error_pos != nullptr) {
+      error_details.column_type = "string";
+      log_conversion_error(text_col, "Invalid Input String: ");
+      return ER_LOAD_BULK_DATA_WRONG_VALUE_FOR_FIELD;
+    }
   }
 
   auto data_length = copy_size;
@@ -315,7 +456,7 @@ static int format_double_column(
     return ER_LOAD_BULK_DATA_WRONG_VALUE_FOR_FIELD;
   }
 
-  if (field_double->truncate(&nr, FLT_MAX) != Field_real::TR_OK) {
+  if (field_double->truncate(&nr, DBL_MAX) != Field_real::TR_OK) {
     error_details.column_type = "double";
     log_conversion_error(text_col, "Invalid value for type: ");
     return ER_LOAD_BULK_DATA_WRONG_VALUE_FOR_FIELD;
@@ -376,10 +517,10 @@ static int format_decimal_column(
 @param[out]  sql_col        converted column in MySQL storage format
 @param[out]  error_details  the error details
 @return error code. */
-static int format_datetime_column(
-    THD *thd, const Column_text &text_col, const CHARSET_INFO *charset,
-    const Field *field, Column_mysql &sql_col,
-    Bulk_load_error_location_details &error_details) {
+int format_datetime_column(THD *thd, const Column_text &text_col,
+                           const CHARSET_INFO *charset, const Field *field,
+                           Column_mysql &sql_col,
+                           Bulk_load_error_location_details &error_details) {
   auto field_date = (const Field_temporal *)field;
   auto flags = field_date->get_date_flags(thd);
 
@@ -445,10 +586,10 @@ static int format_datetime_column(
 @param[out]  sql_col        converted column in MySQL storage format
 @param[out]  error_details  error location details
 @return error code. */
-static int format_date_column(THD *thd, const Column_text &text_col,
-                              const CHARSET_INFO *charset, const Field *field,
-                              Column_mysql &sql_col,
-                              Bulk_load_error_location_details &error_details) {
+int format_date_column(THD *thd, const Column_text &text_col,
+                       const CHARSET_INFO *charset, const Field *field,
+                       Column_mysql &sql_col,
+                       Bulk_load_error_location_details &error_details) {
   auto field_date = (const Field_temporal *)field;
   auto flags = field_date->get_date_flags(thd);
 
@@ -718,6 +859,309 @@ static int format_time_column(THD *thd, const Column_text &text_col,
   return 0;
 }
 
+/** Create a TIMESTAMP column converting data to MySQL storage format.
+@param[in]   thd            session THD
+@param[in]   text_col       input column in text read from CSV
+@param[in]   charset        character set for the input column data
+@param[in]   field          table column metadata
+@param[out]  sql_col        converted column in MySQL storage format
+@param[out]  error_details  the error details
+@return error code. */
+static int format_timestamp_column(
+    THD *thd, const Column_text &text_col, const CHARSET_INFO *charset,
+    const Field *field, Column_mysql &sql_col,
+    Bulk_load_error_location_details &error_details) {
+  auto field_date = (const Field_temporal *)field;
+  auto flags = field_date->get_date_flags(thd);
+
+  MYSQL_TIME ltime;
+  MYSQL_TIME_STATUS status;
+  /* Convert input to MySQL TIME. */
+  bool res = str_to_datetime(charset, text_col.m_data_ptr, text_col.m_data_len,
+                             &ltime, flags, &status);
+
+  /* Adjust value to the column precision. */
+  if (!res && status.warnings == 0) {
+    res = my_datetime_adjust_frac(&ltime, field_date->get_fractional_digits(),
+                                  &status.warnings, flags & TIME_FRAC_TRUNCATE);
+  }
+
+  /* Check for error in conversion. */
+  if (res || (status.warnings != 0)) {
+    error_details.column_type = "timestamp";
+    log_conversion_error(text_col, "Invalid DATETIME: ");
+    return ER_LOAD_BULK_DATA_WRONG_VALUE_FOR_FIELD;
+  }
+
+  MYSQL_TIME *time = &ltime;
+  MYSQL_TIME tz_ltime;
+
+  if (ltime.time_type == MYSQL_TIMESTAMP_DATETIME_TZ) {
+    tz_ltime = ltime;
+    time = &tz_ltime;
+
+    const Time_zone *tz = thd->time_zone();
+
+    if (convert_time_zone_displacement(tz, &tz_ltime)) {
+      error_details.column_type = "timestamp";
+      log_conversion_error(text_col, "TZ displacement failed: ");
+      return ER_LOAD_BULK_DATA_WRONG_VALUE_FOR_FIELD;
+    }
+
+    /* Check for boundary conditions by converting to a timeval */
+    my_timeval tm_not_used;
+    res = datetime_with_no_zero_in_date_to_timeval(&tz_ltime, *tz, &tm_not_used,
+                                                   &status.warnings);
+    if (res || status.warnings != 0) {
+      error_details.column_type = "timestamp";
+      log_conversion_error(text_col, "TZ boundary check failed: ");
+      return ER_LOAD_BULK_DATA_WRONG_VALUE_FOR_FIELD;
+    }
+  }
+
+  my_timeval tm;
+  if (datetime_with_no_zero_in_date_to_timeval(time, *thd->time_zone(), &tm,
+                                               &status.warnings)) {
+    tm.m_tv_sec = tm.m_tv_usec = 0;
+  }
+  if (tm.m_tv_sec > TYPE_TIMESTAMP_MAX_VALUE) {
+    tm.m_tv_sec = tm.m_tv_usec = 0;
+    status.warnings |= MYSQL_TIME_WARN_OUT_OF_RANGE;
+  }
+
+  if (status.warnings != 0) {
+    error_details.column_type = "timestamp";
+    log_conversion_error(text_col, "Invalid TIMESTAMP: ");
+    return ER_LOAD_BULK_DATA_WRONG_VALUE_FOR_FIELD;
+  }
+
+  auto field_begin = (unsigned char *)sql_col.m_data_ptr;
+  my_timestamp_to_binary(&tm, field_begin, field_date->get_fractional_digits());
+
+  return 0;
+}
+
+/** Create a YEAR column converting data to MySQL storage format.
+@param[in]   text_col       input column in text read from CSV
+@param[in]   charset        character set for the input column data
+@param[out]  sql_col        converted column in MySQL storage format
+@param[out]  error_details  the error details
+@return error code. */
+static int format_year_column(const Column_text &text_col,
+                              const CHARSET_INFO *charset,
+                              Column_mysql &sql_col,
+                              Bulk_load_error_location_details &error_details) {
+  constexpr const uint MIN_YEAR{1901}; /* minimum 4 digits year */
+  constexpr const uint MAX_YEAR{2155}; /* maximum 4 digits year */
+
+  int err = 0;
+  const char *end;
+
+  long long val = charset->cset->strntoull10rnd(
+      charset, text_col.m_data_ptr, text_col.m_data_len, 0, &end, &err);
+  if (err != 0) {
+    error_details.column_type = "year";
+    log_conversion_error(text_col, "Integer conversion failed for: ");
+    return ER_LOAD_BULK_DATA_WRONG_VALUE_FOR_FIELD;
+  }
+
+  if (val < 0 || (val >= 100 && val < MIN_YEAR) || val > MAX_YEAR) {
+    error_details.column_type = "year";
+    log_conversion_error(text_col, "Unsigned Integer out of range: ");
+    return ER_LOAD_BULK_DATA_WRONG_VALUE_FOR_FIELD;
+  }
+
+  if (val != 0 || text_col.m_data_len != 4) {
+    if (val < 70)
+      val += 100;  // 2000 - 2069
+    else if (val > 1900)
+      val -= 1900;
+  }
+
+  sql_col.m_int_data = val;
+
+  /* accurate mysql row format, because Loader::Thread_data::store_int_col()
+     doesn't treat YEAR type specially. */
+  sql_col.m_data_len = 1;
+  *sql_col.m_data_ptr = static_cast<unsigned char>(val);
+
+  return 0;
+}
+
+/** Create a BIT column converting data to MySQL storage format.
+@param[in]   text_col       input column in text read from CSV
+@param[out]  sql_col        converted column in MySQL storage format
+@param[out]  error_details  the error details
+@return error code. */
+static int format_bit_column(const Column_text &text_col, Column_mysql &sql_col,
+                             Bulk_load_error_location_details &error_details) {
+  if (text_col.m_data_len != sql_col.m_data_len) {
+    error_details.column_type = "bit";
+    log_conversion_error(text_col, "Input Binary string size wrong: ");
+    return ER_LOAD_BULK_DATA_WRONG_VALUE_FOR_FIELD;
+  }
+
+  /* BIT type is binary string as it is */
+  memcpy(sql_col.m_data_ptr, text_col.m_data_ptr, text_col.m_data_len);
+
+  return 0;
+}
+
+/** Create a ENUM column converting data to MySQL storage format.
+@param[in]   text_col       input column in text read from CSV
+@param[in]   charset        character set for the input column data
+@param[in]   field          table column metadata
+@param[out]  sql_col        converted column in MySQL storage format
+@param[out]  error_details  the error details
+@return error code. */
+static int format_enum_column(const Column_text &text_col,
+                              const CHARSET_INFO *charset, const Field *field,
+                              Column_mysql &sql_col,
+                              Bulk_load_error_location_details &error_details) {
+  auto field_enum = (const Field_enum *)field;
+  const CHARSET_INFO *field_charset = field_enum->charset();
+
+  auto from = text_col.m_data_ptr;
+  auto length = text_col.m_data_len;
+
+  char buff[STRING_BUFFER_USUAL_SIZE];
+  String tmpstr(buff, sizeof(buff), &my_charset_bin);
+
+  /* Convert character set if necessary */
+  if (String::needs_conversion_on_storage(length, charset, field_charset)) {
+    uint dummy_errors;
+    tmpstr.copy(from, length, charset, field_charset, &dummy_errors);
+    from = tmpstr.ptr();
+    length = tmpstr.length();
+  }
+
+  /* Remove end space */
+  length = field_charset->cset->lengthsp(field_charset, from, length);
+  uint tmp = find_type2(field_enum->typelib, from, length, field_charset);
+  if (!tmp) {
+    if (length > 5) {
+      /* Can't be more than 99999 enums */
+      error_details.column_type = "enum";
+      log_conversion_error(text_col, "Invalid value for Enum: ");
+      return ER_LOAD_BULK_DATA_WRONG_VALUE_FOR_FIELD;
+    }
+
+    /* This is for reading numbers with LOAD DATA INFILE */
+    int err = 0;
+    const char *end;
+    tmp = (uint)my_strntoul(charset, from, length, 10, &end, &err);
+    if (err || end != from + length || tmp > field_enum->typelib->count) {
+      error_details.column_type = "enum";
+      log_conversion_error(text_col, "Invalid value for Enum: ");
+      return ER_LOAD_BULK_DATA_WRONG_VALUE_FOR_FIELD;
+    }
+  }
+
+  sql_col.m_int_data = tmp;
+
+  /* accurate mysql row format, because Loader::Thread_data::store_int_col()
+     doesn't treat ENUM type specially. */
+  sql_col.m_data_len = field_enum->pack_length();
+
+  /* At this point, should be stored in little-endian as mysql row format. */
+  switch (sql_col.m_data_len) {
+    case 1:
+      sql_col.m_data_ptr[0] = (uchar)tmp;
+      break;
+    case 2:
+      int2store(sql_col.m_data_ptr, (unsigned short)tmp);
+      break;
+    case 3:
+      int3store(sql_col.m_data_ptr, (long)tmp);
+      break;
+    default:
+      assert(false);
+      break;
+  }
+
+  return 0;
+}
+
+/** Create a SET column converting data to MySQL storage format.
+@param[in]   text_col       input column in text read from CSV
+@param[in]   charset        character set for the input column data
+@param[in]   field          table column metadata
+@param[out]  sql_col        converted column in MySQL storage format
+@param[out]  error_details  the error details
+@return error code. */
+static int format_set_column(const Column_text &text_col,
+                             const CHARSET_INFO *charset, const Field *field,
+                             Column_mysql &sql_col,
+                             Bulk_load_error_location_details &error_details) {
+  auto field_set = (const Field_enum *)field;
+  const CHARSET_INFO *field_charset = field_set->charset();
+
+  auto from = text_col.m_data_ptr;
+  auto length = text_col.m_data_len;
+
+  char buff[STRING_BUFFER_USUAL_SIZE];
+  String tmpstr(buff, sizeof(buff), &my_charset_bin);
+
+  /* Convert character set if necessary */
+  if (String::needs_conversion_on_storage(length, charset, field_charset)) {
+    uint dummy_errors;
+    tmpstr.copy(from, length, charset, field_charset, &dummy_errors);
+    from = tmpstr.ptr();
+    length = tmpstr.length();
+  }
+
+  bool got_warning = false;
+  const char *not_used;
+  uint not_used2;
+  ulonglong tmp = find_set(field_set->typelib, from, length, field_charset,
+                           &not_used, &not_used2, &got_warning);
+
+  if (!tmp && length && length < 22) {
+    /* This is for reading numbers with LOAD DATA INFILE */
+    int err = 0;
+    const char *end;
+    tmp = my_strntoull(charset, from, length, 10, &end, &err);
+    if (err || end != from + length ||
+        (field_set->typelib->count < 64 &&
+         tmp >= (1ULL << field_set->typelib->count))) {
+      error_details.column_type = "set";
+      log_conversion_error(text_col, "Invalid value for Set: ");
+      return ER_LOAD_BULK_DATA_WRONG_VALUE_FOR_FIELD;
+    }
+  } else if (got_warning) {
+    error_details.column_type = "set";
+    log_conversion_error(text_col, "Invalid value for Set: ");
+    return ER_LOAD_BULK_DATA_WRONG_VALUE_FOR_FIELD;
+  }
+
+  sql_col.m_int_data = tmp;
+
+  /* accurate mysql row format, because Loader::Thread_data::store_int_col()
+     doesn't treat SET type specially. */
+  sql_col.m_data_len = field_set->pack_length();
+
+  /* At this point, should be stored in little-endian as mysql row format */
+  switch (sql_col.m_data_len) {
+    case 1:
+      sql_col.m_data_ptr[0] = (uchar)tmp;
+      break;
+    case 2:
+      int2store(sql_col.m_data_ptr, (unsigned short)tmp);
+      break;
+    case 3:
+      int3store(sql_col.m_data_ptr, (long)tmp);
+      break;
+    case 4:
+      int4store(sql_col.m_data_ptr, (long)tmp);
+      break;
+    default:
+      assert(false);
+      break;
+  }
+
+  return 0;
+}
+
 /** Create a row in converting column data to MySQL storage format.
 @param[in]   thd              session THD
 @param[in]   table_share      shared table object
@@ -817,6 +1261,11 @@ static int format_row(THD *thd, const TABLE_SHARE *table_share,
     sql_col.m_type = static_cast<int>(field->type());
     sql_col.m_is_null = text_col.m_data_ptr == nullptr;
 
+    if (sql_col.m_type == MYSQL_TYPE_BLOB) {
+      /* Get more accurate blob type. */
+      sql_col.m_type = get_blob_type_from_length(field->max_data_length());
+    }
+
     if (sql_col.m_is_null) {
       if (!field->is_nullable()) {
         LogErr(INFORMATION_LEVEL, ER_BULK_LOADER_INFO,
@@ -839,7 +1288,7 @@ static int format_row(THD *thd, const TABLE_SHARE *table_share,
     for a field to get the data in storage format. Currently we follow the
     ::store interface that writes the data to the row buffer stored in
     TABLE object. */
-    switch (field->type()) {
+    switch (sql_col.m_type) {
       case MYSQL_TYPE_TINY:
         /* Column type TINYINT */
         err = format_int_column<int8_t, uint8_t>(
@@ -865,7 +1314,32 @@ static int format_row(THD *thd, const TABLE_SHARE *table_share,
         err = format_int_column<int64_t, uint64_t>(
             text_col, charset, field, with_keys, sql_col, error_details);
         break;
+      case MYSQL_TYPE_BLOB:
+        [[fallthrough]];
+      case MYSQL_TYPE_TINY_BLOB:
+        [[fallthrough]];
+      case MYSQL_TYPE_MEDIUM_BLOB:
+        [[fallthrough]];
+      case MYSQL_TYPE_GEOMETRY:
+        [[fallthrough]];
+      case MYSQL_TYPE_JSON:
+        [[fallthrough]];
+      case MYSQL_TYPE_LONG_BLOB:
+        err = format_blob_column(field, charset, text_col, sql_col, length_size,
+                                 error_details);
+        break;
       case MYSQL_TYPE_STRING:
+        if (field->real_type() == MYSQL_TYPE_ENUM) {
+          /* Column type ENUM */
+          err = format_enum_column(text_col, charset, field, sql_col,
+                                   error_details);
+          break;
+        } else if (field->real_type() == MYSQL_TYPE_SET) {
+          /* Column type SET */
+          err = format_set_column(text_col, charset, field, sql_col,
+                                  error_details);
+          break;
+        }
         /* Column type CHAR(n) */
         [[fallthrough]];
       case MYSQL_TYPE_VARCHAR:
@@ -901,6 +1375,19 @@ static int format_row(THD *thd, const TABLE_SHARE *table_share,
         /* Column type TIME */
         err = format_time_column(thd, text_col, charset, field, sql_col,
                                  error_details);
+        break;
+      case MYSQL_TYPE_YEAR:
+        /* Column type YEAR */
+        err = format_year_column(text_col, charset, sql_col, error_details);
+        break;
+      case MYSQL_TYPE_BIT:
+        /* Column type BIT */
+        err = format_bit_column(text_col, sql_col, error_details);
+        break;
+      case MYSQL_TYPE_TIMESTAMP:
+        /* Column type TIMESTAMP */
+        err = format_timestamp_column(thd, text_col, charset, field, sql_col,
+                                      error_details);
         break;
       default: {
         std::ostringstream err_strm;
@@ -983,8 +1470,50 @@ static int fill_column_data(char *buffer, size_t buffer_length,
   if (sql_col.m_is_null) {
     return 0;
   }
+
+  switch (col_meta.m_type) {
+    case MYSQL_TYPE_TINY_BLOB: {
+      auto data_len = static_cast<uint8_t>(buffer[0]);
+      sql_col.m_data_len = data_len;
+      col_length = sql_col.m_data_len + 1;
+      sql_col.m_data_ptr = buffer;
+      return col_length > buffer_length ? ER_DATA_OUT_OF_RANGE : 0;
+    } break;
+    case MYSQL_TYPE_BLOB: {
+      auto data_len = uint2korr(buffer);
+      sql_col.m_data_len = data_len;
+      col_length = sql_col.m_data_len + 2;
+      sql_col.m_data_ptr = buffer;
+      return col_length > buffer_length ? ER_DATA_OUT_OF_RANGE : 0;
+    } break;
+    case MYSQL_TYPE_MEDIUM_BLOB: {
+      auto data_len = uint3korr(buffer);
+      sql_col.m_data_len = data_len;
+      col_length = sql_col.m_data_len + 3;
+      sql_col.m_data_ptr = buffer;
+      return col_length > buffer_length ? ER_DATA_OUT_OF_RANGE : 0;
+    } break;
+    case MYSQL_TYPE_GEOMETRY:
+      [[fallthrough]];
+    case MYSQL_TYPE_JSON:
+      [[fallthrough]];
+    case MYSQL_TYPE_LONG_BLOB: {
+      auto data_len = uint4korr(buffer);
+      sql_col.m_data_len = data_len;
+      col_length = sql_col.m_data_len + 4;
+      sql_col.m_data_ptr = buffer;
+      return col_length > buffer_length ? ER_DATA_OUT_OF_RANGE : 0;
+    } break;
+    default:
+      /* Nothing. */
+      break;
+  }
+
   /* Check format_int_column() case write_in_buffer. */
-  if (col_meta.is_integer()) {
+  /* The another types (ENUM, SET, YEAR) must be excluded.
+     (MYSQL_TYPE_STRING, MYSQL_TYPE_YEAR) */
+  if (col_meta.is_integer() && sql_col.m_type != MYSQL_TYPE_STRING &&
+      sql_col.m_type != MYSQL_TYPE_YEAR) {
     sql_col.m_data_ptr = buffer;
 
     if (sql_col.m_type == MYSQL_TYPE_LONGLONG) {
@@ -1040,6 +1569,27 @@ static int fill_column_data(char *buffer, size_t buffer_length,
     sql_col.m_data_len = col_meta.m_fixed_len;
     sql_col.m_data_ptr = buffer;
     col_length = sql_col.m_data_len;
+
+    if (col_meta.is_integer()) {
+      /* needs sql_col.m_int_data for (ENUM, SET, YEAR) */
+      switch (sql_col.m_data_len) {
+        case 1:
+          sql_col.m_int_data = buffer[0];
+          break;
+        case 2:
+          sql_col.m_int_data = uint2korr(buffer);
+          break;
+        case 3:
+          sql_col.m_int_data = uint3korr(buffer);
+          break;
+        case 4:
+          sql_col.m_int_data = uint4korr(buffer);
+          break;
+        default:
+          assert(false);
+          break;
+      }
+    }
 
     assert(col_length <= buffer_length);
     return col_length > buffer_length ? ER_DATA_OUT_OF_RANGE : 0;
@@ -1316,9 +1866,13 @@ static void set_data_type(const Field *field, Column_meta &col_meta) {
   col_meta.m_is_nullable = field->is_nullable();
   col_meta.m_is_unsigned = field->is_unsigned();
   col_meta.m_index = field->field_index();
-
+  col_meta.m_type = field->type();
   auto type = field->type();
-  col_meta.m_type = static_cast<int>(type);
+
+  if (col_meta.m_type == MYSQL_TYPE_BLOB) {
+    /* Get more accurate blob type. */
+    col_meta.m_type = get_blob_type_from_length(field->max_data_length());
+  }
 
   switch (type) {
     case MYSQL_TYPE_TINY:
@@ -1326,6 +1880,7 @@ static void set_data_type(const Field *field, Column_meta &col_meta) {
     case MYSQL_TYPE_INT24:
     case MYSQL_TYPE_LONG:
     case MYSQL_TYPE_LONGLONG:
+    case MYSQL_TYPE_YEAR:
       col_meta.m_compare = col_meta.m_is_unsigned
                                ? Column_meta::Compare::INTEGER_UNSIGNED
                                : Column_meta::Compare::INTEGER_SIGNED;
@@ -1334,11 +1889,25 @@ static void set_data_type(const Field *field, Column_meta &col_meta) {
     case MYSQL_TYPE_DATETIME:
     case MYSQL_TYPE_DATE:
     case MYSQL_TYPE_TIME:
+    case MYSQL_TYPE_TIMESTAMP:
+    case MYSQL_TYPE_BIT:
+      col_meta.m_compare = Column_meta::Compare::BINARY;
+      break;
+    case MYSQL_TYPE_BLOB:
+      /* For blobs, comparison function will be used only if they are part of
+      a prefix key. */
       col_meta.m_compare = Column_meta::Compare::BINARY;
       break;
     default:
+      if (field->real_type() == MYSQL_TYPE_ENUM ||
+          field->real_type() == MYSQL_TYPE_SET) {
+        col_meta.m_is_unsigned = true;
+        col_meta.m_compare = Column_meta::Compare::INTEGER_UNSIGNED;
+        break;
+      }
       assert(type == MYSQL_TYPE_STRING || type == MYSQL_TYPE_VARCHAR ||
-             type == MYSQL_TYPE_FLOAT || type == MYSQL_TYPE_DOUBLE);
+             type == MYSQL_TYPE_FLOAT || type == MYSQL_TYPE_DOUBLE ||
+             type == MYSQL_TYPE_JSON || type == MYSQL_TYPE_GEOMETRY);
       col_meta.m_compare = Column_meta::Compare::MYSQL;
       break;
   }
@@ -1350,6 +1919,7 @@ static void set_data_type(const Field *field, Column_meta &col_meta) {
 static void fill_column_metadata(const Field *field, Column_meta &col_meta) {
   set_data_type(field, col_meta);
 
+  col_meta.m_field_name = field->field_name;
   col_meta.m_is_key = false;
   col_meta.m_is_desc_key = false;
   col_meta.m_is_prefix_key = false;
@@ -1364,7 +1934,9 @@ static void fill_column_metadata(const Field *field, Column_meta &col_meta) {
 
   auto type = field->type();
 
-  if (type == MYSQL_TYPE_STRING || type == MYSQL_TYPE_VARCHAR) {
+  if (((type == MYSQL_TYPE_STRING || type == MYSQL_TYPE_VARCHAR) &&
+       col_meta.m_compare == Column_meta::Compare::MYSQL) ||
+      col_meta.can_be_stored_externally()) {
     auto field_str = (const Field_str *)field;
     const CHARSET_INFO *field_charset = field_str->charset();
     col_meta.m_charset = static_cast<const void *>(field_charset);
@@ -1409,6 +1981,9 @@ DEFINE_METHOD(bool, get_row_metadata,
 
   std::vector<bool> field_added(table_share->fields, false);
   auto &columns = metadata.m_columns;
+  auto &columns_text_order = metadata.m_columns_text_order;
+  columns.reserve(table_share->fields);
+  columns_text_order.reserve(table_share->fields);
 
   bool all_key_int_signed_asc = true;
   bool all_key_int = true;
@@ -1439,7 +2014,8 @@ DEFINE_METHOD(bool, get_row_metadata,
       col_meta.m_fixed_len = col_meta.m_max_len;
 
       auto type = key_field->type();
-      if (type == MYSQL_TYPE_STRING || type == MYSQL_TYPE_VARCHAR) {
+      if ((type == MYSQL_TYPE_STRING || type == MYSQL_TYPE_VARCHAR) &&
+          col_meta.m_compare == Column_meta::Compare::MYSQL) {
         auto charset = key_field->charset();
         if (charset->mbmaxlen > 0) {
           col_meta.m_fixed_len = col_meta.m_max_len / charset->mbmaxlen;
@@ -1455,6 +2031,9 @@ DEFINE_METHOD(bool, get_row_metadata,
       col_meta.m_null_bit = field_index % 8;
     }
     columns.push_back(col_meta);
+    const auto last_index = columns.size() - 1;
+    columns_text_order.push_back(&columns[last_index]);
+    assert(columns.size() == columns_text_order.size());
 
     if (!col_meta.is_integer()) {
       metadata.m_key_length += col_meta.m_fixed_len;
@@ -1494,10 +2073,26 @@ DEFINE_METHOD(bool, get_row_metadata,
     }
 
     columns.push_back(col_meta);
+    const auto last_index = columns.size() - 1;
+    columns_text_order.push_back(&columns[last_index]);
+    assert(columns.size() == columns_text_order.size());
 
     field_added[index] = true;
     ++metadata.m_non_keys;
   }
+
+  assert(columns_text_order.size() == columns.size());
+
+  std::sort(
+      columns_text_order.begin(), columns_text_order.end(),
+      [](const auto &p1, const auto &p2) { return p1->m_index < p2->m_index; });
+
+  metadata.m_n_blob_cols = std::count_if(
+      columns_text_order.begin(), columns_text_order.end(),
+      [](const auto &p) { return p->can_be_stored_externally(); });
+
+  assert(columns.size() <= table_share->fields);
+  assert(columns_text_order.size() <= table_share->fields);
 
   /* Calculate NULL bitmap length. */
   if (have_key) {
@@ -1529,6 +2124,8 @@ DEFINE_METHOD(bool, get_row_metadata,
 
 namespace Bulk_data_load {
 
+using Blob_context = void *;
+
 DEFINE_METHOD(void *, begin,
               (THD * thd, const TABLE *table, size_t data_size, size_t memory,
                size_t num_threads)) {
@@ -1542,6 +2139,31 @@ DEFINE_METHOD(bool, load,
                Bulk_load::Stat_callbacks &wait_cbks)) {
   int err =
       table->file->bulk_load_execute(thd, ctx, thread, sql_rows, wait_cbks);
+  return (err == 0);
+}
+
+DEFINE_METHOD(bool, open_blob,
+              (THD * thd, void *load_ctx, const TABLE *table,
+               Blob_context &blob_ctx, unsigned char *blobref, size_t thread)) {
+  assert(load_ctx != nullptr);
+
+  int err = table->file->open_blob(thd, load_ctx, thread, blob_ctx, blobref);
+  return (err == 0);
+}
+
+DEFINE_METHOD(bool, write_blob,
+              (THD * thd, void *load_ctx, const TABLE *table,
+               Blob_context blob_ctx, unsigned char *blobref, size_t thread,
+               const unsigned char *data, size_t data_len)) {
+  int err = table->file->write_blob(thd, load_ctx, thread, blob_ctx, blobref,
+                                    data, data_len);
+  return (err == 0);
+}
+
+DEFINE_METHOD(bool, close_blob,
+              (THD * thd, void *load_ctx, const TABLE *table,
+               Blob_context blob_ctx, unsigned char *blobref, size_t thread)) {
+  int err = table->file->close_blob(thd, load_ctx, thread, blob_ctx, blobref);
   return (err == 0);
 }
 
@@ -1720,6 +2342,14 @@ DEFINE_METHOD(bool, is_table_supported, (THD * thd, const TABLE *table)) {
       case MYSQL_TYPE_DATETIME2:
       case MYSQL_TYPE_NEWDATE:
       case MYSQL_TYPE_TIME2:
+      case MYSQL_TYPE_BLOB:
+      case MYSQL_TYPE_JSON:
+      case MYSQL_TYPE_GEOMETRY:
+      case MYSQL_TYPE_YEAR:
+      case MYSQL_TYPE_BIT:
+      case MYSQL_TYPE_TIMESTAMP2:
+      case MYSQL_TYPE_ENUM:
+      case MYSQL_TYPE_SET:
         if (!check_for_deprecated_use(field)) {
           return false;
         }

@@ -50,7 +50,9 @@
 #include "mysql/thread_type.h"
 #include "prealloced_array.h"  // Prealloced_array
 #include "sql/binlog.h"        // MYSQL_BIN_LOG
-#include "sql/log_event.h"     //Gtid_log_event
+#include "sql/changestreams/apply/metrics/applier_metrics.h"
+#include "sql/changestreams/apply/metrics/applier_metrics_stub.h"
+#include "sql/log_event.h"  //Gtid_log_event
 #include "sql/psi_memory_key.h"
 #include "sql/query_options.h"
 #include "sql/rpl_gtid.h"         // Gtid_set
@@ -81,8 +83,9 @@ typedef Prealloced_array<Slave_worker *, 4> Slave_worker_array;
 
 typedef struct slave_job_item {
   Log_event *data;
-  uint relay_number;
   my_off_t relay_pos;
+  char event_relay_log_name[FN_REFLEN + 1];
+  bool m_is_after_metrics_breakpoint;
 } Slave_job_item;
 
 /**
@@ -699,8 +702,6 @@ class Relay_log_info : public Rpl_info {
   char group_relay_log_name[FN_REFLEN];
   ulonglong group_relay_log_pos;
   char event_relay_log_name[FN_REFLEN];
-  /* The suffix number of relay log name */
-  uint event_relay_log_number;
   ulonglong event_relay_log_pos;
   ulonglong future_event_relay_log_pos;
 
@@ -903,19 +904,22 @@ class Relay_log_info : public Rpl_info {
 
   /*
     Handling of the relay_log_space_limit optional constraint.
-    ignore_log_space_limit is used to resolve a deadlock between I/O and SQL
-    threads, the SQL thread sets it to unblock the I/O thread and make it
-    temporarily forget about the constraint.
   */
-  ulonglong log_space_limit, log_space_total;
-  std::atomic<bool> ignore_log_space_limit;
+  std::atomic<ulonglong> log_space_limit, log_space_total;
 
-  /*
-    Used by the SQL thread to instructs the IO thread to rotate
-    the logs when the SQL thread needs to purge to release some
-    disk space.
-   */
-  std::atomic<bool> sql_force_rotate_relay;
+  // This flag is used by a coordinator to check if the receiver waits for
+  // a relay log space. If yes, it will enable aggressive relay log
+  // purge.
+  std::atomic_bool is_receiver_waiting_for_rl_space;
+
+  // This is file to which coordinator moved after enforced purge
+  // It is used by the receiver to check if all possible files were purged
+  // before making a decision on whether transaction may fit into the
+  // relay_log_space_limit. It is used to avoid possibly infinite waiting in
+  // case a transaction and required relay log metadata is bigger than
+  // 'relay_log_space_limit'. This filename is protected with the
+  // log_space_lock
+  std::string coordinator_log_after_purge{""};
 
   time_t last_master_timestamp;
 
@@ -1228,6 +1232,7 @@ class Relay_log_info : public Rpl_info {
      Coordinator in order to avoid reaching WQ limits.
   */
   std::atomic<long> mts_wq_excess_cnt;
+  ulonglong mts_groups_assigned;    // number of groups (transactions) scheduled
   long mts_worker_underrun_level;   // % of WQ size at which W is considered
                                     // hungry
   ulong mts_coordinator_basic_nap;  // C sleeps to avoid WQs overrun
@@ -1274,44 +1279,22 @@ class Relay_log_info : public Rpl_info {
     MTS_KILLED_GROUP /* Coordinator gave up to reach MTS_END_GROUP */
   } mts_group_status;
 
-  /*
-    MTS statistics:
-  */
-  long mts_online_stat_curr;      // counter to decide on generating
-                                  // ER_RPL_MTA_STATISTICS message
-  ulonglong mts_events_assigned;  // number of events (statements) scheduled
-  ulonglong mts_groups_assigned;  // number of groups (transactions) scheduled
-  std::atomic<ulong>
-      mts_wq_overrun_cnt;   // counter of all mts_wq_excess_cnt increments
-  ulong wq_size_waits_cnt;  // number of times C slept due to WQ:s oversize
-  /*
-    Counter of how many times Coordinator saw Workers are filled up
-    "enough" with assignments. The enough definition depends on
-    the scheduler type.
-  */
-  ulong mts_wq_no_underrun_cnt;
-  std::atomic<longlong>
-      mts_total_wait_overlap;  // Waiting time corresponding to above
-  /*
-    Stats to compute Coordinator waiting time for any Worker available,
-    applies solely to the Commit-clock scheduler.
-  */
-  ulonglong mts_total_wait_worker_avail;
-  ulong mts_wq_overfill_cnt;  // counter of C waited due to a WQ queue was full
-  /*
-    Statistics (todo: replace with WL5631) applies to either Coordinator and
-    Worker. The exec time in the Coordinator case means scheduling. The read
-    time in the Worker case means getting an event out of Worker queue
-  */
-  ulonglong stats_exec_time;
-  ulonglong stats_read_time;
-  struct timespec ts_exec[2];   // per event pre- and post- exec timestamp
-  struct timespec stats_begin;  // applier's bootstrap time
+ private:
+  /// @brief The applier metrics aggregator
+  cs::apply::instruments::Applier_metrics m_coordinator_metrics;
+  /// @brief Empty metric aggregator when metric collection is not active
+  cs::apply::instruments::Applier_metrics_stub m_disabled_metric_aggregator;
 
-  time_t mts_last_online_stat;
+ public:
+  /// @brief Returns the replication applier metrics aggregator
+  /// @return the MTA metrics aggregator
+  cs::apply::instruments::Applier_metrics_interface &get_applier_metrics();
+
+  /// Number of times queue memory is exceeded
+  ulong worker_queue_mem_exceeded_count{0};
+
   /// Last moment in time the MTA printed a coordinator waited stats
   time_t mta_coordinator_has_waited_stat;
-  /* end of MTS statistics */
 
   /**
     Storage for holding newly computed values for the last executed
@@ -1647,25 +1630,8 @@ class Relay_log_info : public Rpl_info {
   inline void set_event_relay_log_name(const char *log_file_name) {
     strmake(event_relay_log_name, log_file_name,
             sizeof(event_relay_log_name) - 1);
-    set_event_relay_log_number(relay_log_name_to_number(log_file_name));
     notify_relay_log_change();
   }
-
-  uint get_event_relay_log_number() { return event_relay_log_number; }
-  void set_event_relay_log_number(uint number) {
-    event_relay_log_number = number;
-  }
-
-  /**
-    Given the extension number of the relay log, gets the full
-    relay log path. Currently used in Slave_worker::retry_transaction()
-
-    @param [in]   number      extension number of relay log
-    @param[in, out] name      The full path of the relay log (per-channel)
-                              to be read by the slave worker.
-  */
-  void relay_log_number_to_name(uint number, char name[FN_REFLEN + 1]);
-  uint relay_log_name_to_number(const char *name);
 
   void set_event_start_pos(my_off_t pos) { event_start_pos = pos; }
   my_off_t get_event_start_pos() { return event_start_pos; }
@@ -2452,7 +2418,7 @@ class Applier_security_context_guard {
             false, otherwise.
    */
   bool has_access(
-      std::vector<std::tuple<ulong, TABLE const *, Rows_log_event *>>
+      std::vector<std::tuple<Access_bitmask, TABLE const *, Rows_log_event *>>
           &extra_privileges) const;
   /**
     Checks if the `PRIVILEGE_CHECKS_USER` user has access to the privilieges
@@ -2481,7 +2447,7 @@ class Applier_security_context_guard {
     @return true if the privileges are included in the security context and
             false, otherwise.
    */
-  bool has_access(std::initializer_list<ulong> extra_privileges) const;
+  bool has_access(std::initializer_list<Access_bitmask> extra_privileges) const;
 
   /**
     Returns the username for the user for which the security context was

@@ -52,6 +52,7 @@
 # Pass path to the AWS SDK install
 %{?with_aws_sdk: %global aws_sdk_option -DWITH_KEYRING_AWS=1 -DWITH_AWS_SDK=%{with_aws_sdk}}
 %{?with_aws_sdk: %global aws_sdk 1}
+%{?with_aws_1_11: %global add_component_keyring_aws 1}
 
 %global ssl_default 1
 
@@ -66,9 +67,6 @@
 # Use OpenSSL 3.0 FIPS
 %{?with_openssl3_fips: %global ssl_option -DWITH_SSL=openssl3-fips}
 %{?with_openssl3_fips: %global ssl_default 0}
-
-# Tell build not to use minimal debug
-%{?full_debug: %global no_mini_debug 1}
 
 # Regression tests may take a long time, override the default to skip them
 %{!?runselftest:%global runselftest 0}
@@ -85,10 +83,6 @@
 %global __os_install_post %(echo '%{__os_install_post}' | sed -e 's!/usr/lib[^[:space:]]*/brp-python-bytecompile[[:space:]].*$!!g')
 # - Ship debuginfo for community
 %if 0%{?commercial}
-%if 0%{?no_mini_debug}
-%else
-%global mini_debug_option -DMINIMAL_RELWITHDEBINFO=1
-%endif # no_mini_debug
 %else
 %global with_debuginfo 1
 %endif # commercial
@@ -103,8 +97,8 @@
 %else
 %{?el7:%global __strip /opt/rh/devtoolset-11/root/usr/bin/strip}
 %endif
-%{?el8:%global __strip /opt/rh/gcc-toolset-12/root/usr/bin/strip}
-%{?el9:%global __strip /opt/rh/gcc-toolset-12/root/usr/bin/strip}
+%{?el8:%global __strip /opt/rh/gcc-toolset-13/root/usr/bin/strip}
+%{?el9:%global __strip /opt/rh/gcc-toolset-13/root/usr/bin/strip}
 %{?el8:%global __brp_strip_static_archive %{nil}}
 %{?el9:%global __brp_strip_static_archive %{nil}}
 
@@ -120,6 +114,12 @@
 %global compatver             5.6.51
 %global compatlib             18
 %global compatsrc             https://cdn.mysql.com/Downloads/MySQL-5.6/mysql-%{compatver}.tar.gz
+%endif
+
+%if 0%{?rhel} > 7
+%global compatver             8.0.37
+%global compatlib             21
+%global compatsrc             https://cdn.mysql.com/Downloads/MySQL-8.0/mysql-boost-%{compatver}.tar.gz
 %endif
 
 %global cmake3                cmake%{?el7:3}
@@ -176,18 +176,20 @@ BuildRequires:  cmake3 >= 3.14.6
 %{?el7:BuildRequires:  devtoolset-11-binutils}
 %{?el7:BuildRequires:  devtoolset-11-dwz}
 %endif
-%{?el8:BuildRequires:  gcc-toolset-12-annobin-annocheck}
-%{?el8:BuildRequires:  gcc-toolset-12-annobin-plugin-gcc}
-%{?el8:BuildRequires:  gcc-toolset-12-binutils}
-%{?el8:BuildRequires:  gcc-toolset-12-dwz}
-%{?el8:BuildRequires:  gcc-toolset-12-gcc-c++}
-%{?el8:BuildRequires:  gcc-toolset-12-gcc}
-%{?el9:BuildRequires:  gcc-toolset-12-annobin-annocheck}
-%{?el9:BuildRequires:  gcc-toolset-12-annobin-plugin-gcc}
-%{?el9:BuildRequires:  gcc-toolset-12-binutils}
-%{?el9:BuildRequires:  gcc-toolset-12-dwz}
-%{?el9:BuildRequires:  gcc-toolset-12-gcc-c++}
-%{?el9:BuildRequires:  gcc-toolset-12-gcc}
+%if 0%{?rhel} > 7
+BuildRequires:  gcc-toolset-12-annobin-annocheck
+BuildRequires:  gcc-toolset-12-annobin-plugin-gcc
+BuildRequires:  gcc-toolset-12-binutils
+BuildRequires:  gcc-toolset-12-dwz
+BuildRequires:  gcc-toolset-12-gcc-c++
+BuildRequires:  gcc-toolset-12-gcc
+BuildRequires:  gcc-toolset-13-annobin-annocheck
+BuildRequires:  gcc-toolset-13-annobin-plugin-gcc
+BuildRequires:  gcc-toolset-13-binutils
+BuildRequires:  gcc-toolset-13-dwz
+BuildRequires:  gcc-toolset-13-gcc-c++
+BuildRequires:  gcc-toolset-13-gcc
+%endif
 BuildRequires:  bison >= 3.0.4
 BuildRequires:  elfutils
 BuildRequires:  perl
@@ -249,7 +251,7 @@ BuildRequires:  openldap-devel
 BuildRoot:      %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 
 # For rpm => 4.9 only: https://fedoraproject.org/wiki/Packaging:AutoProvidesAndRequiresFiltering
-%global _privatelibs libabsl_.*|libprotobuf.*|libmysqlharness\.so.*|libmysqlharness_stdx\.so.*|libmysqlharness_tls\.so.*|libmysqlrouter\.so\..*|libmysqlrouter_.*\.so\..*%{?ssl_bundled:|libssl\.so\..*|libcrypto\.so\..*}|libfido2.*
+%global _privatelibs libabsl_.*|libprotobuf.*|libmysqlharness\.so.*|libmysqlharness_stdx\.so.*|libmysqlharness_tls\.so.*|libmysqlrouter\.so\..*|libmysqlrouter_.*\.so\..*%{?ssl_bundled:|libssl\.so\..*|libcrypto\.so\..*}|libfido2.*|libpolyglot.*
 %global _privateperl perl\\((GD|hostnames|lib::mtr|lib::v1|mtr_|My::)
 %global __requires_exclude ^((%{_privatelibs})|(%{_privateperl}))
 %global __provides_exclude_from ^(/usr/share/(mysql|mysql-test)/.*|%{_libdir}/mysql/plugin/.*\\.so|%{_libdir}/mysql/private/.*|%{_libdir}/mysqlrouter/.*|%{_libdir}/mysqlrouter/private/.*)$
@@ -538,7 +540,7 @@ to develop MySQL client applications.
 Summary:        Shared libraries for MySQL database client applications
 Group:          Applications/Databases
 Requires:       %{name}-common%{?_isa} >= %{min}
-Requires:       %{name}-client-plugins = %{version}-%{release}
+Requires:       %{name}-client-plugins >= %{version}-%{release}
 %if 0%{?commercial}
 Provides:       MySQL-shared-advanced%{?_isa} = %{version}-%{release}
 Obsoletes:      MySQL-shared-advanced < %{version}-%{release}
@@ -727,31 +729,16 @@ Requires:       %{name}-ndbclient%{?_isa} = %{version}-%{release}
 This package contains the development header files and libraries
 necessary to develop client applications for MySQL NDB storage engine.
 
-%if 0%{?ndb_nodejs_extras_path:1}
-%package        nodejs
-Summary:        Set of Node.js adapters for MySQL Cluster
-Group:          Applications/Databases
-%description    nodejs
-This package contains MySQL NoSQL Connector for JavaScript, a set of
-Node.js adapters for MySQL Cluster and MySQL Server, which make it
-possible to write JavaScript applications for Node.js using MySQL
-data.
-%endif
-
 %package        java
 Summary:        MySQL Cluster Connector for Java
 Group:          Applications/Databases
 %description    java
 This package contains MySQL Cluster Connector for Java, which includes
-ClusterJ and ClusterJPA, a plugin for use with OpenJPA.
+ClusterJ.
 
 ClusterJ is a high level database API that is similar in style and
 concept to object-relational mapping persistence frameworks such as
 Hibernate and JPA.
-
-ClusterJPA is an OpenJPA implementation for MySQL Cluster that
-attempts to offer the best possible performance by leveraging the
-strengths of both ClusterJ and JDBC.
 
 %endif # cluster
 
@@ -781,6 +768,8 @@ trademark of %{mysql_vendor}
 %else
 %setup -q -T -a 0 -c -n %{src_dir}
 %endif # 0%{?compatlib}
+mkdir -p %{src_dir}/mysql-@MYSQL_BASE_VERSION@
+cp -p %{license_files_server} %{src_dir}/mysql-@MYSQL_BASE_VERSION@
 
 %build
 # Fail quickly and obviously if user tries to build as root
@@ -794,7 +783,7 @@ fi
 %endif
 
 # Build compat libs
-%if 0%{?compatlib}
+%if 0%{?compatlib} && 0%{?rhel} == 7
 (
   pushd mysql-%{compatver}
   mkdir build && pushd build
@@ -817,11 +806,38 @@ fi
     -DCOMPILATION_COMMENT="%{compilation_comment_release}" \
     -DCOMPILATION_COMMENT_SERVER="%{compilation_comment_server_release}" \
     -DMYSQL_SERVER_SUFFIX="%{?server_suffix}"
-  echo BEGIN_NORMAL_CONFIG ; egrep '^#define' include/config.h ; echo END_NORMAL_CONFIG
+  echo BEGIN_NORMAL_CONFIG ; egrep '^#define' include/my_config.h ; echo END_NORMAL_CONFIG
   make %{?_smp_mflags} VERBOSE=1
   popd && popd
 )
-%endif # 0%{?compatlib}
+%endif # 0%{?compatlib} && %{rhel} == 7
+
+%if 0%{?compatlib} && 0%{?rhel} > 7
+(
+  pushd mysql-%{compatver}
+  mkdir build && pushd build
+  cmake .. \
+    -DBUILD_CONFIG=mysql_release \
+    -DINSTALL_LAYOUT=RPM \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DMYSQL_MAINTAINER_MODE=0 \
+    -DCMAKE_C_FLAGS="%{optflags}" \
+    -DCMAKE_CXX_FLAGS="%{optflags}" \
+    -DWITH_SYSTEMD=0 \
+    -DWITH_BOOST=../boost \
+    -DWITH_ROUTER=0 \
+    -DWITH_AUTHENTICATION_CLIENT_PLUGINS=0 \
+    -DWITHOUT_SERVER=1 \
+    -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
+    -DMYSQLX_UNIX_ADDR="/var/run/mysqld/mysqlx.sock" \
+    -DCOMPILATION_COMMENT="%{compilation_comment_release}" \
+    -DCOMPILATION_COMMENT_SERVER="%{compilation_comment_server_release}" \
+    -DMYSQL_SERVER_SUFFIX="%{?server_suffix}"
+  pushd libmysql
+  make %{?_smp_mflags} VERBOSE=1
+  popd && popd && popd
+)
+%endif # 0%{?compatlib} && %{rhel} > 7
 
 # Build debug versions of mysqld
 mkdir debug
@@ -841,6 +857,7 @@ mkdir debug
            -DWITH_AUTHENTICATION_CLIENT_PLUGINS=0 \
            -DWITH_AUTHENTICATION_WEBAUTHN=0 \
            -DWITH_AUTHENTICATION_KERBEROS=0 \
+           -DWITH_AUTHENTICATION_OPENID_CONNECT=0 \
            -DWITH_AUTHENTICATION_LDAP=0 \
            -DWITH_AUTHENTICATION_OCI=0 \
            -DWITH_COMPONENT_KEYRING_OCI=0 \
@@ -853,18 +870,12 @@ mkdir debug
 %if 0%{?cluster}
            -DWITH_NDB=1 \
 %endif
-%if 0%{?ndb_nodejs_path:1}
-           -DNDB_NODEJS_PATH=%{ndb_nodejs_path} \
-%endif
-%if 0%{?ndb_nodejs_extras_path:1}
-           -DNDB_NODEJS_EXTRAS_PATH=%{ndb_nodejs_extras_path} \
-%endif
 %if 0%{?commercial}
            -DWITH_MEB=%{with_meb} \
+           -DWITH_MLE=1 \
            %{?aws_sdk_option} \
 %endif
            %{?ssl_option} \
-           %{?mini_debug_option} \
            -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
            -DMYSQLX_UNIX_ADDR="/var/run/mysqld/mysqlx.sock" \
            -DWITH_NUMA=1 \
@@ -872,7 +883,7 @@ mkdir debug
            -DCOMPILATION_COMMENT="%{compilation_comment_debug}" \
            -DCOMPILATION_COMMENT_SERVER="%{compilation_comment_server_debug}" \
            -DMYSQL_SERVER_SUFFIX="%{?server_suffix}"
-  echo BEGIN_DEBUG_CONFIG ; egrep '^#define' include/config.h ; echo END_DEBUG_CONFIG
+  echo BEGIN_DEBUG_CONFIG ; egrep '^#define' include/my_config.h ; echo END_DEBUG_CONFIG
   make %{?_smp_mflags} VERBOSE=1
 )
 
@@ -893,6 +904,7 @@ mkdir release
            -DWITH_AUTHENTICATION_CLIENT_PLUGINS=0 \
            -DWITH_AUTHENTICATION_WEBAUTHN=0 \
            -DWITH_AUTHENTICATION_KERBEROS=0 \
+           -DWITH_AUTHENTICATION_OPENID_CONNECT=0 \
            -DWITH_AUTHENTICATION_LDAP=0 \
            -DWITH_AUTHENTICATION_OCI=0 \
            -DWITH_COMPONENT_KEYRING_OCI=0 \
@@ -905,18 +917,12 @@ mkdir release
 %if 0%{?cluster}
            -DWITH_NDB=1 \
 %endif
-%if 0%{?ndb_nodejs_path:1}
-           -DNDB_NODEJS_PATH=%{ndb_nodejs_path} \
-%endif
-%if 0%{?ndb_nodejs_extras_path:1}
-           -DNDB_NODEJS_EXTRAS_PATH=%{ndb_nodejs_extras_path} \
-%endif
 %if 0%{?commercial}
            -DWITH_MEB=%{with_meb} \
+           -DWITH_MLE=1 \
            %{?aws_sdk_option} \
 %endif
            %{?ssl_option} \
-           %{?mini_debug_option} \
            -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
            -DMYSQLX_UNIX_ADDR="/var/run/mysqld/mysqlx.sock" \
            -DWITH_NUMA=1 \
@@ -924,20 +930,16 @@ mkdir release
            -DCOMPILATION_COMMENT="%{compilation_comment_release}" \
            -DCOMPILATION_COMMENT_SERVER="%{compilation_comment_server_release}" \
            -DMYSQL_SERVER_SUFFIX="%{?server_suffix}"
-  echo BEGIN_NORMAL_CONFIG ; egrep '^#define' include/config.h ; echo END_NORMAL_CONFIG
+  echo BEGIN_NORMAL_CONFIG ; egrep '^#define' include/my_config.h ; echo END_NORMAL_CONFIG
   make %{?_smp_mflags} VERBOSE=1
 )
 
 %if 0%{?pgo}
 (
   # Run some MTR load to generate profile data
-  [ -d profile-data ] && rm -rf profile-data
-  pushd release/mysql-test
-  ./mtr \
-    --mem --parallel=auto --force --retry=0 \
-    --mysqld=--binlog-format=row \
-    --clean-vardir --suite=main || true
-  rm -r $(readlink var)
+  pushd release
+  make run-profile-suite
+  rm -r $(readlink mysql-test/var)
   popd
 
   # Build again with profile data present
@@ -956,6 +958,7 @@ mkdir release
            -DWITH_AUTHENTICATION_FIDO=0 \
            -DWITH_AUTHENTICATION_WEBAUTHN=0 \
            -DWITH_AUTHENTICATION_KERBEROS=0 \
+           -DWITH_AUTHENTICATION_OPENID_CONNECT=0 \
            -DWITH_AUTHENTICATION_LDAP=0 \
            -DWITH_AUTHENTICATION_OCI=0 \
            -DWITH_COMPONENT_KEYRING_OCI=0 \
@@ -969,18 +972,12 @@ mkdir release
 %if 0%{?cluster}
            -DWITH_NDB=1 \
 %endif
-%if 0%{?ndb_nodejs_path:1}
-           -DNDB_NODEJS_PATH=%{ndb_nodejs_path} \
-%endif
-%if 0%{?ndb_nodejs_extras_path:1}
-           -DNDB_NODEJS_EXTRAS_PATH=%{ndb_nodejs_extras_path} \
-%endif
 %if 0%{?commercial}
            -DWITH_MEB=%{with_meb} \
+           -DWITH_MLE=1 \
            %{?aws_sdk_option} \
 %endif
            %{?ssl_option} \
-           %{?mini_debug_option} \
            -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
            -DMYSQLX_UNIX_ADDR="/var/run/mysqld/mysqlx.sock" \
            -DWITH_NUMA=1 \
@@ -994,8 +991,8 @@ mkdir release
 
 %install
 
-%if 0%{?compatlib}
 # Install compat libs
+%if 0%{?compatlib} && 0%{?rhel} == 7
 dirs="libmysql libmysql_r"
 %{?el7:dirs="build/libmysql build/libmysqld build/sql/share"}
 for dir in $dirs ; do
@@ -1005,7 +1002,16 @@ for dir in $dirs ; do
 done
 rm -f %{buildroot}%{_libdir}/mysql/libmysqlclient{,_r}.{a,la,so}
 %{?el7:rm -f %{buildroot}%{_libdir}/mysql/libmysqld.{a,la,so}}
-%endif # 0%{?compatlib}
+%endif # 0%{?compatlib} && 0%{?rhel} == 7
+
+%if 0%{?compatlib} && 0%{?rhel} > 7
+(
+    pushd mysql-%{compatver}/build/libmysql
+    make DESTDIR=%{buildroot} mysqlclient install
+    rm -f %{buildroot}%{_libdir}/mysql/libmysqlclient.{a,so}
+    popd
+)
+%endif # 0%{?compatlib} && 0%{?rhel} > 7
 
 MBD=$RPM_BUILD_DIR/%{src_dir}
 
@@ -1047,8 +1053,7 @@ install -D -p -m 0644 packaging/rpm-common/mysqlrouter.conf %{buildroot}%{_sysco
 %check
 %if 0%{?runselftest} || 0%{?with_unittests}
 pushd release
-export CTEST_OUTPUT_ON_FAILURE=1
-make test || true
+make test-unit || true
 %endif
 %if 0%{?runselftest}
 export MTR_BUILD_THREAD=auto
@@ -1233,6 +1238,9 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/private/libabsl_throw_delegate.so
 %attr(755, root, root) %{_libdir}/mysql/private/libabsl_time.so
 %attr(755, root, root) %{_libdir}/mysql/private/libabsl_time_zone.so
+%if 0%{?commercial}
+%attr(755, root, root) %{_libdir}/mysql/private/libpolyglot.so
+%endif # commercial
 
 %dir %{_libdir}/mysql/plugin
 %attr(755, root, root) %{_libdir}/mysql/plugin/adt_null.so
@@ -1280,6 +1288,7 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_webauthn.so
 %endif # add_fido_plugins
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_kerberos.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/authentication_openid_connect.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_ldap_sasl.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_ldap_simple.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_keyring_oci.so
@@ -1290,16 +1299,25 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_okv.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/thread_pool.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/firewall.so
+%if 0%{?add_component_keyring_aws}
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_keyring_aws.so
+%endif # add_component_keyring_aws
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_keyring_encrypted_file.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_enterprise_encryption.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_masking.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_masking_functions.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_mle.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_scheduler.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_option_tracker.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_group_replication_flow_control_stats.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_replication_applier_metrics.so
 %attr(644, root, root) %{_datadir}/mysql-*/linux_install_firewall.sql
 %attr(644, root, root) %{_datadir}/mysql-*/uninstall_firewall.sql
 %attr(644, root, root) %{_datadir}/mysql-*/firewall_profile_migration.sql
 %attr(644, root, root) %{_datadir}/mysql-*/masking_functions_install.sql
 %attr(644, root, root) %{_datadir}/mysql-*/masking_functions_uninstall.sql
+%attr(644, root, root) %{_datadir}/mysql-*/option_tracker_install.sql
+%attr(644, root, root) %{_datadir}/mysql-*/option_tracker_uninstall.sql
 %if 0%{?aws_sdk}
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_aws.so
 %endif # aws_sdk
@@ -1366,6 +1384,7 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_webauthn.so
 %endif # add_fido_plugins
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_kerberos.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_openid_connect.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_ldap_sasl.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_ldap_simple.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_keyring_oci.so
@@ -1377,11 +1396,18 @@ fi
 
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/thread_pool.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/firewall.so
+%if 0%{?add_component_keyring_aws}
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_keyring_aws.so
+%endif # add_component_keyring_aws
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_keyring_encrypted_file.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_enterprise_encryption.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_masking.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_masking_functions.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_mle.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_scheduler.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_option_tracker.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_group_replication_flow_control_stats.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_replication_applier_metrics.so
 %if 0%{?aws_sdk}
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/keyring_aws.so
 %endif # aws_sdk
@@ -1441,7 +1467,6 @@ fi
 %attr(755, root, root) %{_bindir}/mysqlslap
 %attr(755, root, root) %{_bindir}/mysql_config_editor
 %attr(755, root, root) %{_bindir}/mysql_migrate_keyring
-
 %attr(644, root, root) %{_mandir}/man1/mysql.1*
 %attr(644, root, root) %{_mandir}/man1/mysqladmin.1*
 %attr(644, root, root) %{_mandir}/man1/mysqlbinlog.1*
@@ -1508,6 +1533,7 @@ fi
 %attr(644, root, root) %{_mandir}/man1/ndb_select_all.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_select_count.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_show_tables.1*
+%attr(644, root, root) %{_mandir}/man1/ndb_sign_keys.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_size.pl.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_top.1*
 %attr(644, root, root) %{_mandir}/man1/ndb_waiter.1*
@@ -1535,7 +1561,7 @@ fi
 
 %files libs
 %defattr(-, root, root, -)
-%doc %{?license_files_server}
+%doc %{src_dir}/mysql-@MYSQL_BASE_VERSION@
 %dir %attr(755, root, root) %{_libdir}/mysql
 %attr(644, root, root) %{_sysconfdir}/ld.so.conf.d/mysql-%{_arch}.conf
 %{_libdir}/mysql/libmysqlclient.so.24*
@@ -1553,11 +1579,13 @@ fi
 %if 0%{?add_fido_plugins}
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_webauthn_client.so
 %attr(755, root, root) %{_libdir}/mysql/private/libfido2.so.1
-%attr(755, root, root) %{_libdir}/mysql/private/libfido2.so.1.13.0
+%attr(755, root, root) %{_libdir}/mysql/private/libfido2.so.1.15.0
 %endif # add_fido_plugins
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_kerberos_client.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/authentication_openid_connect_client.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_ldap_sasl_client.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_oci_client.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/mysql_native_password.so
 %endif # ssl_default
 %if 0%{?commercial}
 %attr(755, root, root) %{_libdir}/mysql/plugin/telemetry_client.so
@@ -1570,9 +1598,11 @@ fi
 %dir %attr(755, root, root) %{_libdir}/mysql
 %attr(644, root, root) %{_sysconfdir}/ld.so.conf.d/mysql-%{_arch}.conf
 %{_libdir}/mysql/libmysqlclient.so.%{compatlib}
-%{_libdir}/mysql/libmysqlclient.so.%{compatlib}.*.0
+%{_libdir}/mysql/libmysqlclient.so.%{compatlib}.*.*
+%if %{?rhel} == 7
 %{_libdir}/mysql/libmysqlclient_r.so.%{compatlib}
-%{_libdir}/mysql/libmysqlclient_r.so.%{compatlib}.*.0
+%{_libdir}/mysql/libmysqlclient_r.so.%{compatlib}.*.*
+%endif # {?rhel} == 7
 %endif
 
 %files test
@@ -1594,6 +1624,9 @@ fi
 %attr(755, root, root) %{_bindir}/mysqltest_safe_process
 %attr(755, root, root) %{_bindir}/mysqlxtest
 %attr(644, root, root) %{_mandir}/man1/comp_err.1*
+%if 0%{?commercial}
+%attr(755, root, root) %{_bindir}/mysql_test_jwt_generator
+%endif # commercial
 
 %attr(755, root, root) %{_libdir}/mysql/plugin/auth.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/auth_test_plugin.so
@@ -1639,6 +1672,7 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_sys_var_service.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_sys_var_service_same.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_sys_var_service_str.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_session_var_service.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_status_var_service.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_status_var_service_int.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_status_var_service_reg_only.so
@@ -1687,6 +1721,8 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_mysqlx_global_reset.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_sensitive_system_variables.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_status_var_reader.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_server_telemetry_logs_client.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_server_telemetry_logs_export.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_server_telemetry_metrics.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_server_telemetry_traces.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_mysql_thd_store_service.so
@@ -1703,8 +1739,10 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_webauthn_client.so
 %endif # add_fido_plugins
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_kerberos_client.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_openid_connect_client.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_ldap_sasl_client.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_oci_client.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/mysql_native_password.so
 %endif # ssl_default
 %if 0%{?commercial}
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/telemetry_client.so
@@ -1751,6 +1789,7 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_sys_var_service.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_sys_var_service_same.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_sys_var_service_str.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_session_var_service.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_status_var_service.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_status_var_service_int.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_status_var_service_reg_only.so
@@ -1798,6 +1837,8 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_mysqlx_global_reset.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_sensitive_system_variables.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_status_var_reader.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_server_telemetry_logs_client.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_server_telemetry_logs_export.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_server_telemetry_metrics.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_server_telemetry_traces.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_mysql_thd_store_service.so
@@ -1871,13 +1912,6 @@ fi
 %{_libdir}/mysql/libndbclient.so
 %{_includedir}/mysql/storage
 
-%if 0%{?ndb_nodejs_extras_path:1}
-%files nodejs
-%defattr(-, root, root, -)
-%doc %{?license_files_server}
-%{_datadir}/mysql-*/nodejs/
-%endif
-
 %files java
 %defattr(-, root, root, -)
 %doc %{?license_files_server}
@@ -1916,17 +1950,23 @@ fi
 %{_libdir}/mysqlrouter/private/libmysqlharness_stdx.so.*
 %{_libdir}/mysqlrouter/private/libmysqlharness_tls.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter.so.*
+%{_libdir}/mysqlrouter/private/libmysqlrouter_cluster.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_connection_pool.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_destination_status.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_http.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_http_auth_backend.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_http_auth_realm.so.*
+%{_libdir}/mysqlrouter/private/libmysqlrouter_http_server.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_io_component.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_metadata_cache.so.*
+%{_libdir}/mysqlrouter/private/libmysqlrouter_mysql.so.*
+%{_libdir}/mysqlrouter/private/libmysqlrouter_mysqlclient.so.*
+%{_libdir}/mysqlrouter/private/libmysqlrouter_mysqlxclient.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_mysqlxmessages.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_routing.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_routing_connections.so.*
-%{_libdir}/mysqlrouter/private/libprotobuf-lite.so.24.4.0
+%{_libdir}/mysqlrouter/private/libmysqlrouter_utils.so.*
+%{_libdir}/mysqlrouter/private/libprotobuf.so.24.4.0
 %{_libdir}/mysqlrouter/private/libabsl_*.so
 %dir %{_libdir}/mysqlrouter
 %dir %{_libdir}/mysqlrouter/private
@@ -1936,6 +1976,20 @@ fi
 %endif # with_router
 
 %changelog
+* Wed Jul 10 2024 Samar Pratap Singh <samar.pratap.singh@oracle.com> - 9.1.0-1
+- Added authentication_openid_connect plugin
+- Added mysql_test_jwt_generator tool
+
+* Wed May 29 2024 Miroslav Rajcic <miroslav.rajcic@oracle.com> - 9.1.0-1
+- Added component_test_server_telemetry_logs_* test components
+- Added component_keyring_aws
+
+* Mon May 27 2024 Georgi "Joro" Kodinov <georgi.kodinov@oracle.com> - 9.0.0-1
+- Added the option usage tracker component
+
+* Mon May 20 2024 Murthy Sidagam <venkata.sidagam@oracle.com> - 9.0
+- Added component_test_session_var_service.so component
+
 * Mon Feb 12 2024 Samar Pratap Singh <samar.pratap.singh@oracle.com> - 8.4.0-1
 - Removed keyring_file plugin
 

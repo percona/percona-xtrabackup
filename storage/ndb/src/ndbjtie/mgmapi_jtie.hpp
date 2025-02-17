@@ -1,6 +1,5 @@
 /*
  Copyright (c) 2010, 2024, Oracle and/or its affiliates.
- Use is subject to license terms.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -32,11 +31,11 @@
 
 // API to implement against
 #include "mgmapi.h"
-//#include "mgmapi_config_parameters.h"
-//#include "mgmapi_debug.h"
-//#include "mgmapi_error.h"
-//#include "ndb_logevent.h"
-//#include "ndbd_exit_codes.h"
+// #include "mgmapi_config_parameters.h"
+// #include "mgmapi_debug.h"
+// #include "mgmapi_error.h"
+// #include "ndb_logevent.h"
+// #include "ndbd_exit_codes.h"
 
 // libraries
 #include "helpers.hpp"

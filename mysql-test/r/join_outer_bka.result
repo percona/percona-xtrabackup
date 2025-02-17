@@ -23,7 +23,7 @@ EXPLAIN
     -> Stream results  (cost=3.67 rows=7)
         -> Nested loop left join  (cost=3.67 rows=7)
             -> Table scan on t1  (cost=1.22 rows=7)
-            -> Single-row index lookup on t2 using PRIMARY (a=t1.a)  (cost=0.264 rows=1)
+            -> Single-row index lookup on t2 using PRIMARY (a = t1.a)  (cost=0.264 rows=1)
 
 select t1.*,t2.* from t1 left join t2 on (t1.a=t2.a) order by t1.grp,t1.a,t2.c;
 grp	a	c	id	a	c	d
@@ -408,7 +408,7 @@ EXPLAIN
 -> Nested loop left join  (cost=2.2 rows=9)
     -> Covering index scan on t3 using PRIMARY  (cost=0.55 rows=3)
     -> Nested loop inner join  (cost=0.834 rows=3)
-        -> Single-row index lookup on t1 using PRIMARY (id=t3.id)  (cost=0.283 rows=1)
+        -> Single-row index lookup on t1 using PRIMARY (id = t3.id)  (cost=0.283 rows=1)
         -> Filter: (t2.`owner` = t3.id)  (cost=0.184 rows=3)
             -> Table scan on t2  (cost=0.184 rows=3)
 
@@ -436,7 +436,7 @@ Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`id` AS `id`,`test`.`t1`.`str` AS `str` from `test`.`t1` where (`test`.`t1`.`str` is null)
 explain format=tree select * from t1 where str is null;
 EXPLAIN
--> Index lookup on t1 using str (str=NULL), with index condition: (t1.str is null)  (cost=0.7 rows=2)
+-> Index lookup on t1 using str (str = NULL), with index condition: (t1.str is null)  (cost=0.7 rows=2)
 
 drop table t1;
 CREATE TABLE t1 (
@@ -1957,7 +1957,7 @@ EXPLAIN
             -> Nested loop inner join  (cost=0.7 rows=1)
                 -> Filter: (t3.col_varchar_10 = t2.col_varchar_10)  (cost=0.35 rows=1)
                     -> Table scan on t3  (cost=0.35 rows=1)
-                -> Single-row covering index lookup on t4 using PRIMARY (pk=t3.col_int)  (cost=0.35 rows=1)
+                -> Single-row covering index lookup on t4 using PRIMARY (pk = t3.col_int)  (cost=0.35 rows=1)
 
 DROP TABLE t1,t2,t3,t4;
 
@@ -3643,8 +3643,8 @@ EXPLAIN
         -> Nested loop inner join  (cost=1.15 rows=2)
             -> Filter: (t1.pk < 5)  (cost=0.45 rows=2)
                 -> Table scan on t1  (cost=0.45 rows=2)
-            -> Single-row covering index lookup on t2 using PRIMARY (pk=t1.pk)  (cost=0.3 rows=1)
-    -> Multi-range index lookup on t3 using k2 (f2=t1.pk)  (cost=0.375 rows=1.25)
+            -> Single-row covering index lookup on t2 using PRIMARY (pk = t1.pk)  (cost=0.3 rows=1)
+    -> Multi-range index lookup on t3 using k2 (f2 = t1.pk)  (cost=0.375 rows=1.25)
 
 SELECT * FROM t1 LEFT JOIN t2 ON t1.pk = t2.pk LEFT JOIN t3 ON t2.pk = t3.f2 WHERE t2.pk < 5;
 pk	pk	f1	f2
@@ -3772,6 +3772,11 @@ CREATE TABLE t3 (f1 INT, f2 INT);
 INSERT INTO t1 VALUES(1, 10), (2, 20), (3, 30), (4, 40);
 INSERT INTO t2 VALUES(1, 10), (2, 20), (5, 30), (6, 40);
 INSERT INTO t3 VALUES(1, 20), (3, 30), (7, 40), (8, 50);
+ANALYZE TABLE t1, t2, t3;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
 EXPLAIN
 SELECT t1.f1
 FROM t1 JOIN t2 ON t1.f1 = t2.f2 AND 1=2;
@@ -3908,4 +3913,44 @@ c0	c0	c0
 1	NULL	3
 2	NULL	3
 DROP TABLE t0, t1, t2;
+#
+# Bug#36418426: Even though there is an index, the index is not being used enough when LEFT JOIN.
+#
+CREATE TABLE t1 (
+id int NOT NULL,
+f1 int NOT NULL,
+f2 int NOT NULL,
+f3 int NOT NULL,
+f4 int NOT NULL,
+f5 int NOT NULL,
+PRIMARY KEY (id),
+KEY idx1 (f2,f3,f4,f5)
+);
+INSERT INTO t1 VALUES (16, 25, 35, 45, 55, 65);
+INSERT INTO t1 VALUES (17, 29, 39, 49, 59, 69);
+INSERT INTO t1 VALUES (18, 23, 33, 43, 53, 63);
+INSERT INTO t1 VALUES (19, 27, 37, 47, 57, 67);
+CREATE TABLE t2 (
+id int NOT NULL,
+f1 int NOT NULL,
+f2 int NOT NULL,
+PRIMARY KEY (id),
+KEY idx2 (f1,f2)
+);
+INSERT INTO t2 VALUES (36, 55, 65);
+INSERT INTO t2 VALUES (37, 59, 69);
+INSERT INTO t2 VALUES (38, 53, 63);
+INSERT INTO t2 VALUES (39, 57, 67);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+EXPLAIN
+SELECT * FROM t2 USE INDEX(idx2) LEFT JOIN t1 USE INDEX(idx1) ON t1.f2=t2.f2 AND t1.f3 = 20 and t1.f4 > 10 and t1.f5>20;
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t2	NULL	index	NULL	idx2	8	NULL	4	100.00	Using index
+1	SIMPLE	t1	NULL	ref	idx1	idx1	8	test.t2.f2,const	1	100.00	Using index condition; Using join buffer (Batched Key Access)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t2`.`id` AS `id`,`test`.`t2`.`f1` AS `f1`,`test`.`t2`.`f2` AS `f2`,`test`.`t1`.`id` AS `id`,`test`.`t1`.`f1` AS `f1`,`test`.`t1`.`f2` AS `f2`,`test`.`t1`.`f3` AS `f3`,`test`.`t1`.`f4` AS `f4`,`test`.`t1`.`f5` AS `f5` from `test`.`t2` USE INDEX (`idx2`) left join `test`.`t1` USE INDEX (`idx1`) on(((`test`.`t1`.`f3` = 20) and (`test`.`t1`.`f2` = `test`.`t2`.`f2`) and (`test`.`t1`.`f4` > 10) and (`test`.`t1`.`f5` > 20))) where true
+DROP TABLES t1,t2;
 set optimizer_switch=default;

@@ -409,7 +409,7 @@ struct GenericStringRef {
      */
 #endif
     GenericStringRef(const CharType* str, SizeType len)
-        : s(RAPIDJSON_LIKELY(str) ? str : emptyString), length(len) { RAPIDJSON_ASSERT(str != 0 || len == 0u); }
+        : s(RAPIDJSON_LIKELY(str) ? str : emptyString), length(len) { RAPIDJSON_ASSERT(str != nullptr || len == 0u); }
 
     GenericStringRef(const GenericStringRef& rhs) : s(rhs.s), length(rhs.length) {}
 
@@ -421,7 +421,7 @@ struct GenericStringRef {
 
 private:
     SizeType NotNullStrLen(const CharType* str) {
-        RAPIDJSON_ASSERT(str != 0);
+        RAPIDJSON_ASSERT(str != nullptr);
         return internal::StrLen(str);
     }
 
@@ -1033,7 +1033,7 @@ public:
                 return false;           
             for (ConstMemberIterator lhsMemberItr = MemberBegin(); lhsMemberItr != MemberEnd(); ++lhsMemberItr) {
                 typename RhsType::ConstMemberIterator rhsMemberItr = rhs.FindMember(lhsMemberItr->name);
-                if (rhsMemberItr == rhs.MemberEnd() || lhsMemberItr->value != rhsMemberItr->value)
+                if (rhsMemberItr == rhs.MemberEnd() || (!(lhsMemberItr->value == rhsMemberItr->value)))
                     return false;
             }
             return true;
@@ -1042,7 +1042,7 @@ public:
             if (data_.a.size != rhs.data_.a.size)
                 return false;
             for (SizeType i = 0; i < data_.a.size; i++)
-                if ((*this)[i] != rhs[i])
+                if (!((*this)[i] == rhs[i]))
                     return false;
             return true;
 
@@ -1078,6 +1078,7 @@ public:
     */
     template <typename T> RAPIDJSON_DISABLEIF_RETURN((internal::OrExpr<internal::IsPointer<T>,internal::IsGenericValue<T> >), (bool)) operator==(const T& rhs) const { return *this == GenericValue(rhs); }
 
+#ifndef __cpp_impl_three_way_comparison
     //! Not-equal-to operator
     /*! \return !(*this == rhs)
      */
@@ -1092,7 +1093,6 @@ public:
      */
     template <typename T> RAPIDJSON_DISABLEIF_RETURN((internal::IsGenericValue<T>), (bool)) operator!=(const T& rhs) const { return !(*this == rhs); }
 
-#ifndef __cpp_impl_three_way_comparison
     //! Equal-to operator with arbitrary types (symmetric version)
     /*! \return (rhs == lhs)
      */
@@ -2049,7 +2049,7 @@ private:
     // This allows to store 13-chars strings in 32-bit mode, 21-chars strings in 64-bit mode,
     // 13-chars strings for RAPIDJSON_48BITPOINTER_OPTIMIZATION=1 inline (for `UTF8`-encoded strings).
     struct ShortString {
-        enum { MaxChars = sizeof(static_cast<Flag*>(0)->payload) / sizeof(Ch), MaxSize = MaxChars - 1, LenPos = MaxSize };
+        enum { MaxChars = sizeof(static_cast<Flag*>(nullptr)->payload) / sizeof(Ch), MaxSize = MaxChars - 1, LenPos = MaxSize };
         Ch str[MaxChars];
 
         inline static bool Usable(SizeType len) { return                       (MaxSize >= len); }
@@ -2407,7 +2407,7 @@ private:
             std::memcpy(static_cast<void*>(e), values, count * sizeof(GenericValue));
         }
         else
-            SetElementsPointer(0);
+            SetElementsPointer(nullptr);
         data_.a.size = data_.a.capacity = count;
     }
 
@@ -2427,7 +2427,7 @@ private:
 #endif
         }
         else
-            SetMembersPointer(0);
+            SetMembersPointer(nullptr);
         data_.o.size = data_.o.capacity = count;
     }
 
@@ -2440,7 +2440,7 @@ private:
 
     //! Initialize this value as copy string with initial data, without calling destructor.
     void SetStringRaw(StringRefType s, Allocator& allocator) {
-        Ch* str = 0;
+        Ch* str = nullptr;
         if (ShortString::Usable(s.length)) {
             data_.f.flags = kShortStringFlag;
             data_.ss.SetLength(s.length);
@@ -2451,7 +2451,9 @@ private:
             str = static_cast<Ch *>(allocator.Malloc((s.length + 1) * sizeof(Ch)));
             SetStringPointer(str);
         }
-        std::memcpy(str, s, s.length * sizeof(Ch));
+        if (s.length > 0) {
+          std::memcpy(str, s, s.length * sizeof(Ch));
+        }
         str[s.length] = '\0';
     }
 
@@ -2510,8 +2512,8 @@ public:
         \param stackCapacity    Optional initial capacity of stack in bytes.
         \param stackAllocator   Optional allocator for allocating memory for stack.
     */
-    explicit GenericDocument(Type type, Allocator* allocator = 0, size_t stackCapacity = kDefaultStackCapacity, StackAllocator* stackAllocator = 0) :
-        GenericValue<Encoding, Allocator>(type),  allocator_(allocator), ownAllocator_(0), stack_(stackAllocator, stackCapacity), parseResult_()
+    explicit GenericDocument(Type type, Allocator* allocator = nullptr, size_t stackCapacity = kDefaultStackCapacity, StackAllocator* stackAllocator = nullptr) :
+        GenericValue<Encoding, Allocator>(type),  allocator_(allocator), ownAllocator_(nullptr), stack_(stackAllocator, stackCapacity), parseResult_()
     {
         if (!allocator_)
             ownAllocator_ = allocator_ = RAPIDJSON_NEW(Allocator)();
@@ -2523,8 +2525,8 @@ public:
         \param stackCapacity    Optional initial capacity of stack in bytes.
         \param stackAllocator   Optional allocator for allocating memory for stack.
     */
-    GenericDocument(Allocator* allocator = 0, size_t stackCapacity = kDefaultStackCapacity, StackAllocator* stackAllocator = 0) : 
-        allocator_(allocator), ownAllocator_(0), stack_(stackAllocator, stackCapacity), parseResult_()
+    GenericDocument(Allocator* allocator = nullptr, size_t stackCapacity = kDefaultStackCapacity, StackAllocator* stackAllocator = nullptr) : 
+        allocator_(allocator), ownAllocator_(nullptr), stack_(stackAllocator, stackCapacity), parseResult_()
     {
         if (!allocator_)
             ownAllocator_ = allocator_ = RAPIDJSON_NEW(Allocator)();
@@ -2641,7 +2643,7 @@ public:
     template <unsigned parseFlags, typename SourceEncoding, typename InputStream>
     GenericDocument& ParseStream(InputStream& is) {
         GenericReader<SourceEncoding, Encoding, StackAllocator> reader(
-            stack_.HasAllocator() ? &stack_.GetAllocator() : 0);
+            stack_.HasAllocator() ? &stack_.GetAllocator() : nullptr);
         ClearStackOnExit scope(*this);
         parseResult_ = reader.template Parse<parseFlags>(is, *this);
         if (parseResult_) {

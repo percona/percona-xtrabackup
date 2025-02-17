@@ -28,11 +28,12 @@ SET(MY_TIME_SOURCES my_time.cc my_systime.cc)
 ADD_CONVENIENCE_LIBRARY(mytime ${MY_TIME_SOURCES})
 
 SET(MYSYS_SOURCES
-  array.cc
+  base64_encode.cc
   charset.cc
   dbug.cc
   decimal.cc
   errors.cc
+  escape_string.cc
   lf_alloc-pin.cc
   lf_dynarray.cc
   lf_hash.cc
@@ -86,6 +87,7 @@ SET(MYSYS_SOURCES
   my_rdtsc.cc
   my_read.cc
   my_rename.cc
+  my_rm_dir_w_symlink.cc
   my_seek.cc
   my_static.cc
   my_string.cc
@@ -97,6 +99,7 @@ SET(MYSYS_SOURCES
   my_thread.cc
   my_thr_init.cc
   my_user.cc
+  my_version.cc
   my_write.cc
   pack.cc
   print_version.cc
@@ -186,6 +189,11 @@ IF(FREEBSD)
   ADD_COMPILE_FLAGS(stacktrace.cc COMPILE_FLAGS ${LIBUNWIND_CFLAGS})
 ENDIF()
 
+MY_CHECK_CXX_COMPILER_WARNING("-Wmissing-profile" HAS_MISSING_PROFILE)
+IF(HAS_MISSING_PROFILE)
+  ADD_COMPILE_FLAGS(mf_path.cc COMPILE_FLAGS "${HAS_MISSING_PROFILE}")
+ENDIF()
+
 ADD_CONVENIENCE_LIBRARY(mysys ${MYSYS_SOURCES}
   LINK_LIBRARIES
   mytime
@@ -232,36 +240,35 @@ IF(MSVC_CPPCHECK AND MSVC AND MSVC_VERSION GREATER 1935)
   ADD_COMPILE_FLAGS(my_conio.cc COMPILE_FLAGS "/wd28286")
 ENDIF()
 
-# We are not interesting in profiling tests.
-DISABLE_MISSING_PROFILE_WARNING()
-
 MYSQL_ADD_EXECUTABLE(thr_lock
   thr_lock.cc
+  EXCLUDE_FROM_PGO
   LINK_LIBRARIES mysys
   SKIP_INSTALL
+  COMPILE_DEFINITIONS MAIN
   )
-SET_TARGET_PROPERTIES(thr_lock PROPERTIES COMPILE_FLAGS "-DMAIN")
 
 MYSQL_ADD_EXECUTABLE(mf_iocache_test
   mf_iocache.cc
+  EXCLUDE_FROM_PGO
   LINK_LIBRARIES mysys
   SKIP_INSTALL
+  COMPILE_DEFINITIONS MAIN
   )
-SET_TARGET_PROPERTIES(mf_iocache_test PROPERTIES COMPILE_FLAGS "-DMAIN")
 
 IF(HAVE_BUILD_ID_SUPPORT)
   MYSQL_ADD_EXECUTABLE(build_id_test
     build_id_test.cc build_id.cc
     SKIP_INSTALL
     )
+  IF(HAS_MISSING_PROFILE)
+    TARGET_COMPILE_OPTIONS(build_id_test PRIVATE ${HAS_MISSING_PROFILE})
+  ENDIF()
   # Verify that we can read our own build-id:
   ADD_CUSTOM_COMMAND(TARGET build_id_test POST_BUILD
-#   COMMAND ./build_id_test
-#   COMMAND LANG=C ${READELF_EXECUTABLE} -n ./build_id_test | grep "Build ID:"
-    COMMAND ./build_id_test      | egrep -o "[0-9a-f]{40}" > build_id_test_1
-    COMMAND LANG=C ${READELF_EXECUTABLE} -n ./build_id_test | grep "Build ID:" |
-                                   egrep -o "[0-9a-f]{40}" > build_id_test_2
-    COMMAND diff build_id_test_1 build_id_test_2
+    COMMAND ${CMAKE_COMMAND}
+    -DREADELF_EXECUTABLE=${READELF_EXECUTABLE}
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/verify_build_id.cmake
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/runtime_output_directory
     COMMENT "Verifying build-id"
     VERBATIM

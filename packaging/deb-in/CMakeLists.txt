@@ -58,6 +58,13 @@ ENDIF()
 # Change uppercase first letter of Ubuntu/Debian
 string(TOLOWER "${DEB_ID}" DEB_ID)
 
+# Ubuntu 20.04 and 22.04 has too old zlib
+IF(DEB_CODENAME STREQUAL "focal" OR DEB_CODENAME STREQUAL "jammy")
+  SET (DEB_ZLIB_OPTION "bundled")
+ELSE()
+  SET (DEB_ZLIB_OPTION "system")
+ENDIF()
+
 IF (WITH_NDB)
   SET (DEB_BASE_PRODUCT "cluster-")
   SET (DEB_BASE_PRODUCTC "Cluster ")
@@ -85,6 +92,7 @@ IF (NOT DEFINED DEB_CHANGELOG_TIMESTAMP)
 ENDIF()
 # Commercial or community
 IF (DEB_PRODUCT STREQUAL "commercial")
+  SET (DEB_CMAKE_EXTRAS "${DEB_CMAKE_EXTRAS} -DWITH_MLE=ON")
   SET (DEB_COPYRIGHT_UPSTREAMNAME "MySQL Commercial Server ${MYSQL_BASE_VERSION}")
   SET (DEB_PRODUCTNAME "${DEB_BASE_PRODUCT}commercial")
   SET (DEB_PRODUCTNAMEC "${DEB_BASE_PRODUCTC}Enterprise")
@@ -97,6 +105,7 @@ IF (DEB_PRODUCT STREQUAL "commercial")
 "
 usr/lib/mysql/plugin/audit_log.so
 usr/lib/mysql/plugin/authentication_kerberos.so
+usr/lib/mysql/plugin/authentication_openid_connect.so
 usr/lib/mysql/plugin/authentication_ldap_sasl.so
 usr/lib/mysql/plugin/authentication_ldap_simple.so
 usr/lib/mysql/plugin/authentication_pam.so
@@ -115,14 +124,20 @@ usr/lib/mysql/plugin/component_keyring_oci.so
 usr/lib/mysql/plugin/component_enterprise_encryption.so
 usr/lib/mysql/plugin/component_masking.so
 usr/lib/mysql/plugin/component_masking_functions.so
+usr/lib/mysql/plugin/component_mle.so
 usr/lib/mysql/plugin/component_scheduler.so
 usr/lib/mysql/plugin/component_telemetry.so
+usr/lib/mysql/plugin/component_option_tracker.so
+usr/lib/mysql/plugin/component_group_replication_flow_control_stats.so
+usr/lib/mysql/plugin/component_replication_applier_metrics.so
+usr/lib/mysql/private/libpolyglot.so
 ")
 
    SET (DEB_INSTALL_TEST_PLUGINS
 "
 usr/lib/mysql/plugin/component_test_global_priv_registration.so
 usr/lib/mysql/plugin/component_test_page_track_component.so
+usr/bin/mysql_test_jwt_generator
 ")
 
   SET (DEB_INSTALL_CLIENT_PLUGINS
@@ -135,6 +150,18 @@ usr/lib/mysql/plugin/telemetry_client.so
     SET (DEB_INSTALL_SERVER_PLUGINS "${DEB_INSTALL_SERVER_PLUGINS}
 usr/lib/mysql/plugin/keyring_aws.so
 ")
+
+    IF (DEFINED ENV{AWS_VER})
+      IF ($ENV{AWS_VER} STREQUAL "1.11")
+        SET (DEB_INSTALL_SERVER_PLUGINS "${DEB_INSTALL_SERVER_PLUGINS}
+usr/lib/mysql/plugin/component_keyring_aws.so
+")
+      ELSE()
+        MESSAGE(STATUS "Unsupported AWS SDK version: $ENV{AWS_VER}, skip packaging component_keyring_aws.")
+      ENDIF()
+    ELSE()
+      MESSAGE(STATUS "Environment variable AWS_VER not set, skip packaging component_keyring_aws.")
+    ENDIF()
   ENDIF()
 
   IF (WITH_CURL)
@@ -298,4 +325,3 @@ ENDFOREACH()
 EXECUTE_PROCESS(
   COMMAND chmod +x ${CMAKE_BINARY_DIR}/debian/rules
 )
-

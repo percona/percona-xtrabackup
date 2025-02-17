@@ -89,7 +89,7 @@
 #include "sql/trigger_def.h"
 #include "sql/uniques.h"  // Unique
 
-class COND_EQUAL;
+struct COND_EQUAL;
 class Item_exists_subselect;
 class Opt_trace_context;
 class Select_lex_visitor;
@@ -710,7 +710,7 @@ bool Sql_cmd_delete::prepare_inner(THD *thd) {
   if (select->setup_tables(thd, table_list, false))
     return true; /* purecov: inspected */
 
-  const ulong want_privilege_saved = thd->want_privilege;
+  const Access_bitmask want_privilege_saved = thd->want_privilege;
   thd->want_privilege = SELECT_ACL;
   const enum enum_mark_columns mark_used_columns_saved = thd->mark_used_columns;
   thd->mark_used_columns = MARK_COLUMNS_READ;
@@ -778,6 +778,12 @@ bool Sql_cmd_delete::prepare_inner(THD *thd) {
   // flattening even if features specific to single-table DELETE (that is, ORDER
   // BY and LIMIT) are used.
   if (lex->using_hypergraph_optimizer()) {
+    if (!multitable) {
+      Table_ref *const delete_table_ref = table_list->updatable_base_table();
+      TABLE *const table = delete_table_ref->table;
+      if (select->active_options() & OPTION_QUICK)
+        (void)table->file->ha_extra(HA_EXTRA_QUICK);
+    }
     multitable = true;
   }
 

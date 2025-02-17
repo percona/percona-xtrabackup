@@ -25,13 +25,12 @@
 #define CACHE_INCLUDED
 
 #include <unordered_map>
+#include <utility>
 
 #include "components/keyrings/common/data/data.h" /* data::Data */
 #include "components/keyrings/common/data/meta.h" /* meta::Metadata */
 
-namespace keyring_common {
-
-namespace cache {
+namespace keyring_common::cache {
 
 template <typename Data_extension>
 using Cache =
@@ -51,6 +50,17 @@ class Datacache final {
 
   /** Destructor */
   ~Datacache() = default;
+
+  /**
+    Swap content of two caches.
+
+    @param [in, out] a   first cache to be swapped
+    @param [in, out] b   second cache to be swapped
+  */
+  static void swap(Datacache &a, Datacache &b) {
+    std::swap(a.version_, b.version_);
+    std::swap(a.cache_, b.cache_);
+  }
 
   /**
     Retrieve an element from cache
@@ -133,7 +143,6 @@ class Datacache final {
   size_t version_{0};
 };
 
-}  // namespace cache
-}  // namespace keyring_common
+}  // namespace keyring_common::cache
 
 #endif  // !CACHE_INCLUDED

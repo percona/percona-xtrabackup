@@ -520,12 +520,15 @@ constexpr size_t inst_col_info_size = 6;
 @param[in]   is_comp       true if COMP
 @param[in]   is_versioned  if table has row versions
 @param[in]   is_instant    true if table has INSTANT cols
+@param[in]   fields_with_changed_order bitmap to indicate fields with changed
+                                       order
 @param[out]  size_needed   total size needed on REDO LOG */
 static void log_index_get_size_needed(const dict_index_t *index, size_t size,
                                       uint16_t n, bool is_comp,
                                       bool is_versioned, bool is_instant,
+                                      const bool *fields_with_changed_order,
                                       size_t &size_needed) {
-  auto size_for_versioned_fields = [](const dict_index_t *ind) {
+  auto size_for_versioned_fields = [&](const dict_index_t *ind) {
     size_t _size = 0;
     /* 2 bytes for number of columns with version */
     _size += 2;
@@ -535,6 +538,16 @@ static void log_index_get_size_needed(const dict_index_t *index, size_t size,
     ut_ad(n_versioned_fields != 0);
 
     _size += n_versioned_fields * inst_col_info_size;
+
+    /* For fields with changed order */
+    size_t n_changed_order_fields = 0;
+    for (size_t i = 0; i < n; i++) {
+      if (fields_with_changed_order[i]) {
+        n_changed_order_fields++;
+      }
+    }
+    _size += n_changed_order_fields * inst_col_info_size;
+
     return (_size);
   };
 
@@ -804,9 +817,33 @@ bool mlog_open_and_write_index(mtr_t *mtr, const byte *rec,
     n = DICT_INDEX_SPATIAL_NODEPTR_SIZE;
   }
 
+  /* Ordinal position of an existing field can't be changed with INSTANT
+  algorithm. But when it is combined with ADD/DROP COLUMN, ordinal position
+  of a filed can be changed. This bool array of size #fields in index,
+  represents if ordinal position of an existing filed is changed. */
+  bool *fields_with_changed_order = nullptr;
+  if (is_versioned) {
+    fields_with_changed_order = new bool[n];
+    memset(fields_with_changed_order, false, (sizeof(bool) * n));
+
+    uint16_t phy_pos = 0;
+    for (size_t i = 0; i < n; i++) {
+      dict_field_t *field = index->get_field(i);
+      const dict_col_t *col = field->col;
+
+      if (col->is_instant_added() || col->is_instant_dropped()) {
+        continue;
+      } else if (field->get_phy_pos() >= phy_pos) {
+        phy_pos = field->get_phy_pos();
+      } else {
+        fields_with_changed_order[i] = true;
+      }
+    }
+  }
+
   size_t size_needed = 0;
   log_index_get_size_needed(index, size, n, is_comp, is_versioned, is_instant,
-                            size_needed);
+                            fields_with_changed_order, size_needed);
   size_t total = size_needed;
   size_t alloc = total;
   if (alloc > mtr_buf_t::MAX_DATA_SIZE) {
@@ -814,6 +851,9 @@ bool mlog_open_and_write_index(mtr_t *mtr, const byte *rec,
   }
 
   if (!mlog_open(mtr, alloc, log_ptr)) {
+    if (is_versioned) {
+      delete[] fields_with_changed_order;
+    }
     /* logging is disabled */
     return (false);
   }
@@ -850,30 +890,6 @@ bool mlog_open_and_write_index(mtr_t *mtr, const byte *rec,
     }
     return true;
   };
-
-  /* Ordinal position of an existing field can't be changed with INSTANT
-  algorithm. But when it is combined with ADD/DROP COLUMN, ordinal position
-  of a filed can be changed. This bool array of size #fields in index,
-  represents if ordinal position of an existing filed is changed. */
-  bool *fields_with_changed_order = nullptr;
-  if (is_versioned) {
-    fields_with_changed_order = new bool[n];
-    memset(fields_with_changed_order, false, (sizeof(bool) * n));
-
-    uint16_t phy_pos = 0;
-    for (size_t i = 0; i < n; i++) {
-      dict_field_t *field = index->get_field(i);
-      const dict_col_t *col = field->col;
-
-      if (col->is_instant_added() || col->is_instant_dropped()) {
-        continue;
-      } else if (col->get_phy_pos() >= phy_pos) {
-        phy_pos = col->get_phy_pos();
-      } else {
-        fields_with_changed_order[i] = true;
-      }
-    }
-  }
 
   if (is_comp) {
     /* Write fields info. */
@@ -1021,8 +1037,8 @@ static const byte *parse_index_fields(const byte *ptr, const byte *end_ptr,
     }
 
     uint32_t phy_pos = UINT32_UNDEFINED;
-    uint8_t v_added = UINT8_UNDEFINED;
-    uint8_t v_dropped = UINT8_UNDEFINED;
+    row_version_t v_added = INVALID_ROW_VERSION;
+    row_version_t v_dropped = INVALID_ROW_VERSION;
 
     /* The high-order bit of len is the NOT NULL flag;
     the rest is 0 or 0x7fff for variable-length fields,
@@ -1063,8 +1079,8 @@ static const byte *parse_index_fields(const byte *ptr, const byte *end_ptr,
 struct Field_instant_info {
   uint16_t logical_pos{UINT16_UNDEFINED};
   uint16_t phy_pos{UINT16_UNDEFINED};
-  uint8_t v_added{UINT8_UNDEFINED};
-  uint8_t v_dropped{UINT8_UNDEFINED};
+  row_version_t v_added{INVALID_ROW_VERSION};
+  row_version_t v_dropped{INVALID_ROW_VERSION};
 };
 
 using instant_fields_list_t = std::vector<Field_instant_info>;
@@ -1097,21 +1113,25 @@ static const byte *parse_index_versioned_fields(const byte *ptr,
     if ((info.phy_pos & 0x8000) != 0) {
       info.phy_pos &= ~0x8000;
 
+      uint8_t version{0};
       /* Read v_added */
-      ptr = read_1_bytes(ptr, end_ptr, info.v_added);
+      ptr = read_1_bytes(ptr, end_ptr, version);
       if (ptr == nullptr) return (nullptr);
-      ut_ad(info.v_added != UINT8_UNDEFINED);
-      crv = std::max(crv, (uint16_t)info.v_added);
+
+      info.v_added = static_cast<row_version_t>(version);
+      crv = std::max(crv, info.v_added);
     }
 
     if ((info.phy_pos & 0x4000) != 0) {
       info.phy_pos &= ~0x4000;
 
+      uint8_t version{0};
       /* Read v_dropped */
-      ptr = read_1_bytes(ptr, end_ptr, info.v_dropped);
+      ptr = read_1_bytes(ptr, end_ptr, version);
       if (ptr == nullptr) return (nullptr);
-      ut_ad(info.v_dropped != UINT8_UNDEFINED);
-      crv = std::max(crv, (uint16_t)info.v_dropped);
+
+      info.v_dropped = static_cast<row_version_t>(version);
+      crv = std::max(crv, info.v_dropped);
       n_dropped++;
     }
 
@@ -1137,8 +1157,8 @@ static void update_instant_info(instant_fields_list_t f, dict_index_t *index) {
   size_t n_dropped = 0;
 
   for (auto field : f) {
-    bool is_added = field.v_added != UINT8_UNDEFINED;
-    bool is_dropped = field.v_dropped != UINT8_UNDEFINED;
+    bool is_added = field.v_added != INVALID_ROW_VERSION;
+    bool is_dropped = field.v_dropped != INVALID_ROW_VERSION;
 
     dict_col_t *col = index->fields[field.logical_pos].col;
 
@@ -1175,8 +1195,8 @@ static void populate_dummy_fields(dict_index_t *index, dict_table_t *table,
   ut_ad(!is_comp);
 
   uint32_t phy_pos = UINT32_UNDEFINED;
-  uint8_t v_added = UINT8_UNDEFINED;
-  uint8_t v_dropped = UINT8_UNDEFINED;
+  row_version_t v_added = INVALID_ROW_VERSION;
+  row_version_t v_dropped = INVALID_ROW_VERSION;
   size_t dummy_len = 10;
 
   for (size_t i = 0; i < n; i++) {

@@ -2862,6 +2862,8 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 Warnings:
 Note	1276	Field or reference 'test.t1.login' of SELECT #2 was resolved in SELECT #1
 Note	1276	Field or reference 'test.t1.login' of SELECT #3 was resolved in SELECT #1
+Note	1276	Field or reference 'test.t1.login' of SELECT #4 was resolved in SELECT #1
+Note	1276	Field or reference 'test.t1.login' of SELECT #5 was resolved in SELECT #1
 Note	1003	/* select#1 */ select `test`.`t1`.`login` AS `tlogin`,((`test`.`t1`.`numb` - ifnull(`derived_1_2`.`sum(nump)`,0)) - ifnull(`derived_1_3`.`sum(nump)`,0)) AS `sp` from `test`.`tbl1` `t1` join `test`.`tbl2` `t2` left join (/* select#2 */ select sum(`test`.`tbl2`.`nump`) AS `sum(nump)`,`test`.`tbl2`.`login` AS `login` from `test`.`tbl2` group by `test`.`tbl2`.`login`) `derived_1_2` on((`derived_1_2`.`login` = `test`.`t1`.`login`)) left join (/* select#3 */ select sum(`test`.`tbl2`.`nump`) AS `sum(nump)`,`test`.`tbl2`.`login` AS `login` from `test`.`tbl2` group by `test`.`tbl2`.`login`) `derived_1_3` on((`derived_1_3`.`login` = `test`.`t1`.`login`)) where (`test`.`t2`.`login` = `test`.`t1`.`login`) group by `test`.`t1`.`login` order by ((`test`.`t1`.`numb` - ifnull(`derived_1_2`.`sum(nump)`,0)) - ifnull(`derived_1_3`.`sum(nump)`,0)) limit 5
 DROP TABLE tbl1, tbl2;
 Bug 2
@@ -2885,7 +2887,6 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 1	PRIMARY	<derived2>	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	Using where; Using join buffer (hash join)
 2	DERIVED	t2	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	Using temporary
 Warnings:
-Note	1276	Field or reference 'test.t4.b' of SELECT #2 was resolved in SELECT #1
 Note	1276	Field or reference 'test.t4.b' of SELECT #2 was resolved in SELECT #1
 Note	1003	/* select#1 */ select `test`.`t4`.`b` AS `b`,max(`test`.`t4`.`a`) AS `ma` from `test`.`t4` left join (/* select#2 */ select max(`test`.`t2`.`a`) AS `MAX(t2.a)`,`test`.`t2`.`b` AS `b` from `test`.`t2` group by `test`.`t2`.`b`) `derived_1_2` on((`derived_1_2`.`b` = `test`.`t4`.`b`)) where true group by `test`.`t4`.`b` having (`ma` < `derived_1_2`.`MAX(t2.a)`)
 DROP TABLE t2, t4;
@@ -3968,23 +3969,23 @@ FROM cc,a
 FROM cc STRAIGHT_JOIN bb ON bb.col_varchar = cc.col_varchar_key
 WHERE cc.col_varchar <> 'w';
 EXPLAIN
--> Left hash join (no condition)  (cost=6.23 rows=1)
-    -> Table scan on derived_1_3  (cost=3.51..3.51 rows=1)
-        -> Materialize  (cost=1..1 rows=1)
-            -> Aggregate: avg(cc.col_varchar_key)  (cost=0.9 rows=1)
-                -> Inner hash join (bb.col_varchar = cc.col_varchar_key)  (cost=0.8 rows=1)
-                    -> Table scan on bb  (cost=0.35 rows=1)
+-> Left hash join (no condition)  (rows=1)
+    -> Table scan on derived_1_3  (rows=1)
+        -> Materialize  (rows=1)
+            -> Aggregate: avg(cc.col_varchar_key)  (rows=1)
+                -> Inner hash join (bb.col_varchar = cc.col_varchar_key)  (rows=1)
+                    -> Table scan on bb  (rows=1)
                     -> Hash
-                        -> Filter: (cc.col_varchar <> 'w')  (cost=0.45 rows=1)
-                            -> Table scan on cc  (cost=0.45 rows=2)
+                        -> Filter: (cc.col_varchar <> 'w')  (rows=1)
+                            -> Table scan on cc  (rows=2)
     -> Hash
-        -> Table scan on derived_1_4  (cost=3.61..3.61 rows=1)
-            -> Materialize  (cost=1.1..1.1 rows=1)
-                -> Aggregate: sum(cc.col_int_key)  (cost=1 rows=1)
-                    -> Inner hash join (no condition)  (cost=0.8 rows=2)
-                        -> Table scan on cc  (cost=0.45 rows=2)
+        -> Table scan on derived_1_4  (rows=1)
+            -> Materialize  (rows=1)
+                -> Aggregate: sum(cc.col_int_key)  (rows=1)
+                    -> Inner hash join (no condition)  (rows=2)
+                        -> Table scan on cc  (rows=2)
                         -> Hash
-                            -> Table scan on a  (cost=0.35 rows=1)
+                            -> Table scan on a  (rows=1)
 
 DROP TABLE a, bb, cc;
 #
@@ -4086,28 +4087,28 @@ table1.col_varchar_key < 'O'
 ORDER BY table1.col_varchar ASC, field2, field1
 LIMIT 1000 OFFSET 2;
 EXPLAIN
--> Limit/Offset: 1000/2 row(s)  (cost=177 rows=0)
-    -> Left hash join (no condition)  (cost=177 rows=1)
-        -> Table scan on derived_1_4  (cost=9.11..9.11 rows=1)
-            -> Materialize  (cost=6.6..6.6 rows=1)
-                -> Aggregate: avg(table2.col_int)  (cost=6.5 rows=1)
-                    -> Inner hash join (no condition)  (cost=4.5 rows=20)
-                        -> Table scan on table2  (cost=2.25 rows=20)
+-> Limit/Offset: 1000/2 row(s)  (rows=0)
+    -> Left hash join (no condition)  (rows=1)
+        -> Table scan on derived_1_4  (rows=1)
+            -> Materialize  (rows=1)
+                -> Aggregate: avg(table2.col_int)  (rows=1)
+                    -> Inner hash join (no condition)  (rows=20)
+                        -> Table scan on table2  (rows=20)
                         -> Hash
-                            -> Filter: ((((table1.pk = 1) and ((table1.col_varchar_key = 'D') or (table1.col_varchar_key = table1.col_varchar_key))) or (table1.col_varchar_key < 'O')) and (table1.col_varchar_key = table1.col_varchar_key))  (cost=2.25 rows=1)
-                                -> Table scan on table1  (cost=2.25 rows=20)
+                            -> Filter: ((((table1.pk = 1) and ((table1.col_varchar_key = 'D') or (table1.col_varchar_key = table1.col_varchar_key))) or (table1.col_varchar_key < 'O')) and (table1.col_varchar_key = table1.col_varchar_key))  (rows=1)
+                                -> Table scan on table1  (rows=20)
         -> Hash
-            -> Table scan on derived_1_5  (cost=175..175 rows=1)
-                -> Materialize  (cost=172..172 rows=1)
-                    -> Aggregate: count(subquery1_t1.col_varchar_key)  (cost=172 rows=1)
-                        -> Nested loop inner join  (cost=169 rows=36)
-                            -> Filter: (subquery1_t1.col_varchar_key <> subquery1_t2.col_varchar)  (cost=42.5 rows=360)
-                                -> Inner hash join (no condition)  (cost=42.5 rows=360)
-                                    -> Table scan on subquery1_t2  (cost=0.103 rows=20)
+            -> Table scan on derived_1_5  (rows=1)
+                -> Materialize  (rows=1)
+                    -> Aggregate: count(subquery1_t1.col_varchar_key)  (rows=1)
+                        -> Nested loop inner join  (rows=36)
+                            -> Filter: (subquery1_t1.col_varchar_key <> subquery1_t2.col_varchar)  (rows=360)
+                                -> Inner hash join (no condition)  (rows=360)
+                                    -> Table scan on subquery1_t2  (rows=20)
                                     -> Hash
-                                        -> Covering index scan on subquery1_t1 using idx_cc_col_varchar_key  (cost=2.25 rows=20)
-                            -> Filter: (cc.col_varchar = subquery1_t2.col_varchar_key)  (cost=0.25 rows=0.1)
-                                -> Index lookup on cc using idx_cc_col_int_key (col_int_key=subquery1_t2.col_int)  (cost=0.25 rows=1)
+                                        -> Covering index scan on subquery1_t1 using idx_cc_col_varchar_key  (rows=20)
+                            -> Filter: (cc.col_varchar = subquery1_t2.col_varchar_key)  (rows=0.1)
+                                -> Index lookup on cc using idx_cc_col_int_key (col_int_key = subquery1_t2.col_int)  (rows=1)
 
 DROP VIEW view_cc;
 DROP TABLE cc;
@@ -4692,6 +4693,7 @@ SELECT
 FROM t1
 GROUP BY f1, f2 WITH ROLLUP;
 f1	f2
+NULL	NULL
 DROP TABLE t1;
 #
 # Bug#33057397: FIELD NAMES ARE DISPLAYED INCORRECTLY WITH ROLLUP AND
@@ -4711,6 +4713,7 @@ CREATE TABLE t1 (f1 INTEGER);
 SELECT (SELECT SUM(f1) AS SQ1_field1 FROM t1) as field1
 FROM t1 GROUP BY f1 WITH ROLLUP ORDER BY f1;
 field1
+NULL
 DROP TABLE t1;
 Original repro case
 CREATE TABLE t1 (pk integer auto_increment,
@@ -4734,6 +4737,7 @@ GROUP BY field1, field2, LOG(alias1.col_int)
 WITH ROLLUP
 ORDER BY alias1.col_datetime, field1, field2, LOG(alias1.col_int) ;
 field1	field2	field3
+NULL	NULL	1
 EXPLAIN SELECT alias1.col_decimal_10_8 AS field1 ,
 ( SELECT SUM(table1.col_smallint ) AS SQ1_field1
 FROM ( t1 as table1 RIGHT JOIN t1 as table2 ON 1 )
@@ -4792,12 +4796,12 @@ SELECT 1 AS one FROM t WHERE 1=(SELECT 1 UNION SELECT 2);
 ERROR 21000: Subquery returns more than 1 row
 EXPLAIN FORMAT=tree SELECT 1 AS one FROM t WHERE 1=(SELECT 1 UNION SELECT 2);
 EXPLAIN
--> Nested loop inner join  (cost=0.8 rows=2)
-    -> Table scan on t  (cost=0.35 rows=1)
-    -> Constant row from derived_1_2  (cost=0.55..0.55 rows=1)
-        -> Union materialize with deduplication  (cost=0.2..0.2 rows=2)
-            -> Rows fetched before execution  (cost=0..0 rows=1)
-            -> Rows fetched before execution  (cost=0..0 rows=1)
+-> Nested loop inner join  (rows=2)
+    -> Table scan on t  (rows=1)
+    -> Constant row from derived_1_2  (rows=1)
+        -> Union materialize with deduplication  (rows=2)
+            -> Rows fetched before execution  (rows=1)
+            -> Rows fetched before execution  (rows=1)
 
 DROP TABLE t;
 #
@@ -4829,5 +4833,67 @@ FROM t;
 i1	i2	subquery	summ
 4	4	4	4
 SET SQL_MODE=default;
+DROP TABLE t;
+#
+# Bug#36314993 CUBE caused crash in Query_block::supported_correlated_scalar_subquery
+#
+CREATE VIEW v2df AS
+SELECT 'a'
+GROUP BY CUBE (TO_DAYS('6087-05-12'));
+CREATE TABLE t24c (
+c0 DATETIME,
+c7 BINARY(172)
+) ENGINE=innodb;
+SET SQL_MODE='';
+WITH cte1 AS
+( SELECT MIN(c0) AS c7,
+( SELECT c7
+FROM v2df
+GROUP BY c0
+FOR UPDATE /*!80001 skip locked*/ ) AS c
+FROM t24c
+WHERE c0 )
+SELECT c7 FROM cte1 WHERE t24c.c7<= 1 LIMIT 241;
+ERROR 42S22: Unknown column 't24c.c7' in 'where clause'
+DROP VIEW v2df;
+DROP TABLE t24c;
+CREATE TABLE t1 (f1 INTEGER, f2 INTEGER);
+SELECT ( SELECT f2
+FROM (SELECT 1
+GROUP BY CUBE(1)) AS dt1
+GROUP BY f1) AS a,
+MIN(f1)
+FROM t1;
+ERROR HY000: Secondary engine operation failed. Reason: "You have not defined the secondary engine for at least one of the query tables.".
+SELECT ( SELECT f2
+FROM (SELECT 1
+GROUP BY ROLLUP(1)) AS dt1
+GROUP BY f1) AS a,
+MIN(f1)
+FROM t1;
+a	MIN(f1)
+NULL	NULL
+DROP TABLE t1;
+SET SQL_MODE=default;
+#
+# Bug#36079456 Assertion `having_cond->has_subquery() ||
+#              !(having_cond->used_tables() & ~(1 | PSEUDO_TABLE_BITS))'
+#              failed.
+CREATE TABLE t(i INT);
+SELECT i FROM t
+HAVING i <> ( SELECT MIN(i)
+FROM t)
+ORDER BY i;
+i
+EXPLAIN SELECT i FROM t
+HAVING i <> ( SELECT MIN(i)
+FROM t)
+ORDER BY i;
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	PRIMARY	t	NULL	ALL	NULL	NULL	NULL	NULL	1	100.00	Using temporary; Using filesort
+1	PRIMARY	<derived2>	NULL	ALL	NULL	NULL	NULL	NULL	1	100.00	Using where; Using join buffer (hash join)
+2	DERIVED	t	NULL	ALL	NULL	NULL	NULL	NULL	1	100.00	NULL
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t`.`i` AS `i` from `test`.`t` left join (/* select#2 */ select min(`test`.`t`.`i`) AS `MIN(i)` from `test`.`t`) `derived_1_2` on(true) where true having (`test`.`t`.`i` <> `derived_1_2`.`MIN(i)`) order by `test`.`t`.`i`
 DROP TABLE t;
 SET optimizer_switch='subquery_to_derived=default';

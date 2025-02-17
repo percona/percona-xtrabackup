@@ -47,14 +47,18 @@
 #include "router_config.h"
 #include "router_test_helpers.h"
 #include "socket_operations.h"
+#include "stdx_expected_no_error.h"
 #include "tcp_port_pool.h"
 
 using mysqlrouter::ClusterType;
-using mysqlrouter::MetadataSchemaVersion;
-using mysqlrouter::MySQLSession;
-using ::testing::PrintToString;
 using namespace std::chrono_literals;
 using namespace std::string_literals;
+
+namespace mysqlrouter {
+std::ostream &operator<<(std::ostream &os, const MysqlError &e) {
+  return os << e.sql_state() << " code: " << e.value() << ": " << e.message();
+}
+}  // namespace mysqlrouter
 
 class GRStateTest : public RouterComponentMetadataTest {
  protected:
@@ -123,10 +127,12 @@ TEST_P(MetadataServerInvalidGRState, InvalidGRState) {
   for (size_t i = 0; i < kClusterNodes; ++i) {
     const auto classic_port = port_pool_.get_next_available();
     const auto http_port = port_pool_.get_next_available();
-    const std::string tracefile =
-        get_data_dir().join(GetParam().tracefile).str();
-    cluster_nodes.push_back(&launch_mysql_server_mock(
-        tracefile, classic_port, EXIT_SUCCESS, false, http_port));
+
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(GetParam().tracefile)
+                                         .port(classic_port)
+                                         .http_port(http_port)
+                                         .args()));
 
     md_servers_classic_ports.push_back(classic_port);
     md_servers_http_ports.push_back(http_port);
@@ -164,26 +170,30 @@ TEST_P(MetadataServerInvalidGRState, InvalidGRState) {
   }
 
   // now promote first SECONDARY to become new PRIMARY
-  // make the old PRIMARY offline (static metadata does not change)
   for (const auto [i, http_port] :
        stdx::views::enumerate(md_servers_http_ports)) {
-    if (i == 0) {
-      // old PRIMARY sees itself as OFFLINE, does not see other nodes
-      const auto gr_nodes = std::vector<GRNode>{
-          {md_servers_classic_ports[0], "uuid-1", "OFFLINE", "PRIMARY"}};
-      set_mock_metadata(
-          http_port, "uuid", gr_nodes, 0,
-          classic_ports_to_cluster_nodes(md_servers_classic_ports));
-    } else {
-      // remaining nodes see the previous SECONDARY-1 as new primary
-      // they do not see old PRIMARY (it was expelled from the group)
-      const auto gr_nodes = std::vector<GRNode>{
-          {{md_servers_classic_ports[1], "uuid-2", "ONLINE", "PRIMARY"},
-           {md_servers_classic_ports[2], "uuid-3", "ONLINE", "SECONDARY"}}};
-      set_mock_metadata(
-          http_port, "uuid", gr_nodes, i - 1,
-          classic_ports_to_cluster_nodes(md_servers_classic_ports));
-    }
+    if (i == 0) continue;  // skip the PRIMARY for now.
+
+    // remaining nodes see the previous SECONDARY-1 as new primary
+    // they do not see old PRIMARY (it was expelled from the group)
+    const auto gr_nodes = std::vector<GRNode>{
+        {{md_servers_classic_ports[1], "uuid-2", "ONLINE", "PRIMARY"},
+         {md_servers_classic_ports[2], "uuid-3", "ONLINE", "SECONDARY"}}};
+    set_mock_metadata(http_port, "uuid", gr_nodes, i - 1,
+                      classic_ports_to_cluster_nodes(md_servers_classic_ports));
+  }
+
+  // ... make the old PRIMARY offline (static metadata does not change) _after_
+  // the SECONDARIES changed to get a consistent view when the metadata-cache
+  // queries the PRIMARY (and _then_ the SECONDARY)
+  {
+    auto http_port = md_servers_http_ports[0];
+
+    // old PRIMARY sees itself as OFFLINE, does not see other nodes
+    const auto gr_nodes = std::vector<GRNode>{
+        {md_servers_classic_ports[0], "uuid-1", "OFFLINE", "PRIMARY"}};
+    set_mock_metadata(http_port, "uuid", gr_nodes, 0,
+                      classic_ports_to_cluster_nodes(md_servers_classic_ports));
   }
 
   // check that the second metadata server (new PRIMARY) is queried for metadata
@@ -199,8 +209,20 @@ TEST_P(MetadataServerInvalidGRState, InvalidGRState) {
                      1);
 
   // new connections are now handled by new primary and the secon secondary
-  make_new_connection_ok(router_rw_port, md_servers_classic_ports[1]);
-  make_new_connection_ok(router_ro_port, md_servers_classic_ports[2]);
+  {
+    auto conn_res = make_new_connection(router_rw_port);
+    ASSERT_NO_ERROR(conn_res);
+    auto port_res = select_port(conn_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, md_servers_classic_ports[1]);
+  }
+  {
+    auto conn_res = make_new_connection(router_ro_port);
+    ASSERT_NO_ERROR(conn_res);
+    auto port_res = select_port(conn_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, md_servers_classic_ports[2]);
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -222,10 +244,12 @@ TEST_P(MetadataServerNoQuorum, NoQuorum) {
   for (size_t i = 0; i < kClusterNodes; ++i) {
     const auto classic_port = port_pool_.get_next_available();
     const auto http_port = port_pool_.get_next_available();
-    const std::string tracefile =
-        get_data_dir().join(GetParam().tracefile).str();
-    cluster_nodes.push_back(&launch_mysql_server_mock(
-        tracefile, classic_port, EXIT_SUCCESS, false, http_port));
+
+    cluster_nodes.push_back(
+        &mock_server_spawner().spawn(mock_server_cmdline(GetParam().tracefile)
+                                         .port(classic_port)
+                                         .http_port(http_port)
+                                         .args()));
 
     md_servers_classic_ports.push_back(classic_port);
     md_servers_http_ports.push_back(http_port);
@@ -265,28 +289,34 @@ TEST_P(MetadataServerNoQuorum, NoQuorum) {
   // now promote first SECONDARY to become new PRIMARY
   // make the old PRIMARY see other as OFFLINE and claim it is ONLINE
   // (static metadata does not change)
+  //
   for (const auto [i, http_port] :
        stdx::views::enumerate(md_servers_http_ports)) {
-    if (i == 0) {
-      // old PRIMARY still sees itself as ONLINE, but it lost quorum, do not
-      // see other GR members
-      const auto gr_nodes = std::vector<GRNode>{
-          {md_servers_classic_ports[0], "uuid-1", "ONLINE", "PRIMARY"},
-          {md_servers_classic_ports[1], "uuid-2", "UNREACHABLE", "SECONDARY"},
-          {md_servers_classic_ports[2], "uuid-3", "UNREACHABLE", "SECONDARY"}};
-      set_mock_metadata(
-          http_port, "uuid", gr_nodes, 0,
-          classic_ports_to_cluster_nodes(md_servers_classic_ports));
-    } else {
-      // remaining nodes see the previous SECONDARY-1 as new primary
-      // they do not see old PRIMARY (it was expelled from the group)
-      const auto gr_nodes = std::vector<GRNode>{
-          {{md_servers_classic_ports[1], "uuid-2", "ONLINE", "PRIMARY"},
-           {md_servers_classic_ports[2], "uuid-3", "ONLINE", "SECONDARY"}}};
-      set_mock_metadata(
-          http_port, "uuid", gr_nodes, i - 1,
-          classic_ports_to_cluster_nodes(md_servers_classic_ports));
-    }
+    if (i == 0) continue;  // skip the PRIMARY.
+
+    // remaining nodes see the previous SECONDARY-1 as new primary
+    // they do not see old PRIMARY (it was expelled from the group)
+    const auto gr_nodes = std::vector<GRNode>{
+        {{md_servers_classic_ports[1], "uuid-2", "ONLINE", "PRIMARY"},
+         {md_servers_classic_ports[2], "uuid-3", "ONLINE", "SECONDARY"}}};
+    set_mock_metadata(http_port, "uuid", gr_nodes, i - 1,
+                      classic_ports_to_cluster_nodes(md_servers_classic_ports));
+  }
+
+  // update the PRIMARY _after_ the SECONDARIES to ensure that the
+  // metadata-cache sees the same state all nodes once it switches
+  // from PRIMARY to SECONDARY
+  {
+    auto http_port = md_servers_http_ports[0];
+
+    // old PRIMARY still sees itself as ONLINE, but it lost quorum, do not
+    // see other GR members
+    const auto gr_nodes = std::vector<GRNode>{
+        {md_servers_classic_ports[0], "uuid-1", "ONLINE", "PRIMARY"},
+        {md_servers_classic_ports[1], "uuid-2", "UNREACHABLE", "SECONDARY"},
+        {md_servers_classic_ports[2], "uuid-3", "UNREACHABLE", "SECONDARY"}};
+    set_mock_metadata(http_port, "uuid", gr_nodes, 0,
+                      classic_ports_to_cluster_nodes(md_servers_classic_ports));
   }
 
   // check that the second metadata server (new PRIMARY) is queried for metadata
@@ -301,9 +331,22 @@ TEST_P(MetadataServerNoQuorum, NoQuorum) {
                          " is not a member of quorum group - skipping.",
                      1);
 
-  // new connections are now handled by new primary and the secon secondary
-  make_new_connection_ok(router_rw_port, md_servers_classic_ports[1]);
-  make_new_connection_ok(router_ro_port, md_servers_classic_ports[2]);
+  // new connections are now handled by new primary and the second secondary
+  {
+    auto conn_res = make_new_connection(router_rw_port);
+    ASSERT_NO_ERROR(conn_res);
+    auto port_res = select_port(conn_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, md_servers_classic_ports[1]);
+  }
+
+  {
+    auto conn_res = make_new_connection(router_ro_port);
+    ASSERT_NO_ERROR(conn_res);
+    auto port_res = select_port(conn_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, md_servers_classic_ports[2]);
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -320,14 +363,15 @@ class MetadataServerGRErrorStates
  * @test Checks that the Router correctly handles non-ONLINE GR nodes
  */
 TEST_P(MetadataServerGRErrorStates, GRErrorStates) {
-  const std::string tracefile =
-      get_data_dir().join("metadata_dynamic_nodes_v2_gr.js").str();
-
   // launch the server mock
   const auto md_servers_classic_port = port_pool_.get_next_available();
   const auto md_servers_http_port = port_pool_.get_next_available();
-  launch_mysql_server_mock(tracefile, md_servers_classic_port, EXIT_SUCCESS,
-                           false, md_servers_http_port);
+
+  mock_server_spawner().spawn(
+      mock_server_cmdline("metadata_dynamic_nodes_v2_gr.js")
+          .port(md_servers_classic_port)
+          .http_port(md_servers_http_port)
+          .args());
 
   std::vector<GRNode> gr_nodes{
       {md_servers_classic_port, "uuid-1", GetParam(), "PRIMARY"}};
@@ -396,7 +440,6 @@ class QuorumTest : public GRStateTest,
  */
 TEST_P(QuorumTest, Verify) {
   auto param = GetParam();
-  const std::string json_metadata = get_data_dir().join(param.tracefile).str();
   std::vector<uint16_t> cluster_classic_ports;
   // The ports set via INSTANTIATE_TEST_SUITE_P are only ids
   // (INSTANTIATE_TEST_SUITE_P does not have access to classic_ports vector). We
@@ -421,8 +464,11 @@ TEST_P(QuorumTest, Verify) {
   const bool expect_ro_ok = !param.expected_rw_endpoints.empty();
 
   for (const auto [id, port] : stdx::views::enumerate(classic_ports)) {
-    launch_mysql_server_mock(json_metadata, port, EXIT_SUCCESS, false,
-                             http_ports[id]);
+    mock_server_spawner().spawn(mock_server_cmdline(param.tracefile)
+                                    .port(port)
+                                    .http_port(http_ports[id])
+                                    .args());
+
     set_mock_metadata(http_ports[id], "uuid", param.gr_nodes, 0,
                       param.cluster_nodes);
   }
@@ -454,13 +500,21 @@ TEST_P(QuorumTest, Verify) {
 
   for (int i = 0; i < 2; i++) {
     if (expect_rw_ok) {
-      make_new_connection_ok(router_rw_port, param.expected_rw_endpoints);
+      auto conn_res = make_new_connection(router_rw_port);
+      ASSERT_NO_ERROR(conn_res);
+      auto port_res = select_port(conn_res->get());
+      ASSERT_NO_ERROR(port_res);
+      EXPECT_THAT(param.expected_rw_endpoints, ::testing::Contains(*port_res));
     } else {
       verify_new_connection_fails(router_rw_port);
     }
 
     if (expect_ro_ok) {
-      make_new_connection_ok(router_ro_port, param.expected_ro_endpoints);
+      auto conn_res = make_new_connection(router_ro_port);
+      ASSERT_NO_ERROR(conn_res);
+      auto port_res = select_port(conn_res->get());
+      ASSERT_NO_ERROR(port_res);
+      EXPECT_THAT(param.expected_ro_endpoints, ::testing::Contains(*port_res));
     } else {
       verify_new_connection_fails(router_ro_port);
     }
@@ -576,13 +630,13 @@ class QuorumConnectionLostStandaloneClusterTest : public GRStateTest {
 /* @test Checks that invalid existing connections are dropped when one of the
  * destination nodes is no longer part of the Cluster. */
 TEST_F(QuorumConnectionLostStandaloneClusterTest, CheckInvalidConDropped) {
-  const std::string json_metadata =
-      get_data_dir().join("metadata_dynamic_nodes_v2_gr.js").str();
-
   // launch the 3-nodes cluster, first node is PRIMARY
   for (size_t i = 0; i < classic_ports.size(); ++i) {
-    launch_mysql_server_mock(json_metadata, classic_ports[i], EXIT_SUCCESS,
-                             false, http_ports[i]);
+    mock_server_spawner().spawn(
+        mock_server_cmdline("metadata_dynamic_nodes_v2_gr.js")
+            .port(classic_ports[i])
+            .http_port(http_ports[i])
+            .args());
 
     set_mock_metadata(http_ports[i], "uuid",
                       classic_ports_to_gr_nodes(classic_ports), i,
@@ -656,7 +710,9 @@ TEST_F(QuorumConnectionLostStandaloneClusterTest, CheckInvalidConDropped) {
 
   /*auto &router = */ router_spawner().spawn({"-c", writer.write()});
 
-  // make the classic connections to each classic port
+  SCOPED_TRACE("// make the classic connections to each classic port");
+
+  SCOPED_TRACE("// - rw connection");
   MySQLSession con_rw;
   ASSERT_NO_THROW(con_rw.connect("127.0.0.1", router_rw_port, "username",
                                  "password", "", ""));
@@ -667,6 +723,7 @@ TEST_F(QuorumConnectionLostStandaloneClusterTest, CheckInvalidConDropped) {
     EXPECT_EQ((*port_res)[0], std::to_string(classic_ports[0]));
   }
 
+  SCOPED_TRACE("// - ro connection");
   MySQLSession con_ro;
   ASSERT_NO_THROW(con_ro.connect("127.0.0.1", router_ro_port, "username",
                                  "password", "", ""));
@@ -677,6 +734,7 @@ TEST_F(QuorumConnectionLostStandaloneClusterTest, CheckInvalidConDropped) {
     EXPECT_EQ((*port_res)[0], std::to_string(classic_ports[1]));
   }
 
+  SCOPED_TRACE("// - rw-split connection");
   MySQLSession con_rw_split;
   ASSERT_NO_THROW(con_rw_split.connect("127.0.0.1", router_rw_split_port,
                                        "username", "password", "", ""));
@@ -687,7 +745,9 @@ TEST_F(QuorumConnectionLostStandaloneClusterTest, CheckInvalidConDropped) {
     EXPECT_EQ((*port_res)[0], std::to_string(classic_ports[1]));
   }
 
-  // simulate removing the PRIMARY from the cluster (c.removeInstance(primary))
+  SCOPED_TRACE(
+      "// simulate removing the PRIMARY from the cluster "
+      "(c.removeInstance(primary))");
   std::vector<::ClusterNode> cluster_nodes{{classic_ports[1], "uuid-2"},
                                            {classic_ports[2], "uuid-3"}};
 
@@ -719,8 +779,20 @@ TEST_F(QuorumConnectionLostStandaloneClusterTest, CheckInvalidConDropped) {
 
   // check that the new rw and rw-split connections don't go to the node that is
   // gone
-  make_new_connection_ok(router_rw_port, classic_ports[1]);
-  make_new_connection_ok(router_rw_split_port, classic_ports[2]);
+  {
+    auto conn_res = make_new_connection(router_rw_port);
+    ASSERT_NO_ERROR(conn_res);
+    auto port_res = select_port(conn_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, classic_ports[1]);
+  }
+  {
+    auto conn_res = make_new_connection(router_rw_split_port);
+    ASSERT_NO_ERROR(conn_res);
+    auto port_res = select_port(conn_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, classic_ports[2]);
+  }
 }
 
 struct AccessToPartitionWithNoQuorumTestParam {
@@ -742,9 +814,6 @@ class AccessToPartitionWithNoQuorum
 
 // unreachable_quorum_allowed_traffic
 TEST_P(AccessToPartitionWithNoQuorum, Spec) {
-  const std::string json_metadata =
-      get_data_dir().join("metadata_dynamic_nodes_v2_gr.js").str();
-
   RecordProperty("Worklog", "15841");
   RecordProperty("RequirementId", GetParam().test_requirements);
   RecordProperty("Description", GetParam().test_description);
@@ -764,8 +833,12 @@ TEST_P(AccessToPartitionWithNoQuorum, Spec) {
                                            {classic_ports[1], "uuid-2"},
                                            {classic_ports[2], "uuid-3"}};
 
-  launch_mysql_server_mock(json_metadata, classic_ports[2], EXIT_SUCCESS, false,
-                           http_ports[2]);
+  mock_server_spawner().spawn(
+      mock_server_cmdline("metadata_dynamic_nodes_v2_gr.js")
+          .port(classic_ports[2])
+          .http_port(http_ports[2])
+          .args());
+
   const std::string router_options = get_router_options_as_json_str(
       std::nullopt, GetParam().unreachable_quorum_allowed_traffic);
 
@@ -807,20 +880,31 @@ TEST_P(AccessToPartitionWithNoQuorum, Spec) {
   }
 
   if (GetParam().expect_rw_connection_ok) {
-    make_new_connection_ok(router_rw_port, classic_ports[2]);
+    auto conn_res = make_new_connection(router_rw_port);
+    ASSERT_NO_ERROR(conn_res);
+    auto port_res = select_port(conn_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, classic_ports[2]);
   } else {
     verify_new_connection_fails(router_rw_port);
   }
 
   if (GetParam().expect_ro_connection_ok) {
-    make_new_connection_ok(router_ro_port, classic_ports[2]);
-
+    auto conn_res = make_new_connection(router_ro_port);
+    ASSERT_NO_ERROR(conn_res);
+    auto port_res = select_port(conn_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, classic_ports[2]);
   } else {
     verify_new_connection_fails(router_ro_port);
   }
 
   if (GetParam().expect_rw_split_connection_ok) {
-    make_new_connection_ok(router_rw_split_port, classic_ports[2]);
+    auto conn_res = make_new_connection(router_rw_split_port);
+    ASSERT_NO_ERROR(conn_res);
+    auto port_res = select_port(conn_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, classic_ports[2]);
   } else {
     verify_new_connection_fails(router_rw_split_port);
   }
@@ -889,9 +973,6 @@ class AccessToBothPartitions
  * there is a group with no quorum and group with a quorum and the Router has an
  * access to both. */
 TEST_P(AccessToBothPartitions, Spec) {
-  const std::string json_metadata =
-      get_data_dir().join("metadata_dynamic_nodes_v2_gr.js").str();
-
   // The GR is split into 2 Groups, the second has quorum.
   // The Router has access to both.
   // Regardless of  unreachable_quorum_allowed_traffic it should always use
@@ -920,16 +1001,23 @@ TEST_P(AccessToBothPartitions, Spec) {
       std::nullopt, GetParam().unreachable_quorum_allowed_traffic);
 
   // launch first partition - 1 node
-  launch_mysql_server_mock(json_metadata, classic_ports[0], EXIT_SUCCESS, false,
-                           http_ports[0]);
+
+  mock_server_spawner().spawn(
+      mock_server_cmdline("metadata_dynamic_nodes_v2_gr.js")
+          .port(classic_ports[0])
+          .http_port(http_ports[0])
+          .args());
 
   set_mock_metadata(http_ports[0], "uuid", gr_nodes_partition1, 0,
                     cluster_nodes, 2, false, "127.0.0.1", router_options);
 
   // launch second partition - 2 nodes
   for (size_t i = 1; i <= 2; ++i) {
-    launch_mysql_server_mock(json_metadata, classic_ports[i], EXIT_SUCCESS,
-                             false, http_ports[i]);
+    mock_server_spawner().spawn(
+        mock_server_cmdline("metadata_dynamic_nodes_v2_gr.js")
+            .port(classic_ports[i])
+            .http_port(http_ports[i])
+            .args());
 
     set_mock_metadata(http_ports[i], "uuid", gr_nodes_partition2, i,
                       cluster_nodes, 1, false, "127.0.0.1", router_options);
@@ -958,9 +1046,27 @@ TEST_P(AccessToBothPartitions, Spec) {
   // Regardless of the unreachable_quorum_allowed_traffic option setting, the
   // Router should always use the partition with the quorum for the traffic as
   // it has an access to it
-  make_new_connection_ok(router_rw_port, classic_ports[1]);
-  make_new_connection_ok(router_ro_port, classic_ports[2]);
-  make_new_connection_ok(router_rw_split_port, classic_ports[1]);
+  {
+    auto conn_res = make_new_connection(router_rw_port);
+    ASSERT_NO_ERROR(conn_res);
+    auto port_res = select_port(conn_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, classic_ports[1]);
+  }
+  {
+    auto conn_res = make_new_connection(router_ro_port);
+    ASSERT_NO_ERROR(conn_res);
+    auto port_res = select_port(conn_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, classic_ports[2]);
+  }
+  {
+    auto conn_res = make_new_connection(router_rw_split_port);
+    ASSERT_NO_ERROR(conn_res);
+    auto port_res = select_port(conn_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(*port_res, classic_ports[1]);
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -1002,9 +1108,6 @@ TEST_P(BootstrapWithNoQuorum, Spec) {
       "Checks that the Router fails to bootstrap if it only has an access to "
       "the subgroup of the Cluster members with no quorum");
 
-  const std::string json_metadata =
-      get_data_dir().join("bootstrap_gr.js").str();
-
   // The GR is plit into 2 partitions, the one with no quorum is used for
   // bootstrap. First partition is: [ONLINE, ONLINE, UNREACHABLE]. The second
   // partition is: [UNREACHABLE, UNREACHABLE, ONLINE ]. We only create the
@@ -1018,8 +1121,11 @@ TEST_P(BootstrapWithNoQuorum, Spec) {
                                            {classic_ports[1], "uuid-2"},
                                            {classic_ports[2], "uuid-3"}};
 
-  launch_mysql_server_mock(json_metadata, classic_ports[0], EXIT_SUCCESS, false,
-                           http_ports[0]);
+  mock_server_spawner().spawn(mock_server_cmdline("bootstrap_gr.js")
+                                  .port(classic_ports[0])
+                                  .http_port(http_ports[0])
+                                  .args());
+
   const std::string router_options = get_router_options_as_json_str(
       std::nullopt, GetParam().unreachable_quorum_allowed_traffic);
 
@@ -1154,27 +1260,37 @@ TEST_P(ClusterSetAccessToPartitionWithNoQuorum, Spec) {
   }
 
   if (GetParam().expect_rw_connection_ok) {
-    make_new_connection_ok(
-        router_rw_port,
+    auto conn_res = make_new_connection(router_rw_port);
+    ASSERT_NO_ERROR(conn_res);
+    auto port_res = select_port(conn_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(
+        *port_res,
         cs_options.topology.clusters[target_cluster_id].nodes[0].classic_port);
   } else {
     verify_new_connection_fails(router_rw_port);
   }
 
   if (GetParam().expect_ro_connection_ok) {
-    make_new_connection_ok(
-        router_ro_port,
+    auto conn_res = make_new_connection(router_ro_port);
+    ASSERT_NO_ERROR(conn_res);
+    auto port_res = select_port(conn_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(
+        *port_res,
         cs_options.topology.clusters[target_cluster_id].nodes[0].classic_port);
-
   } else {
     verify_new_connection_fails(router_ro_port);
   }
 
   if (GetParam().expect_rw_split_connection_ok) {
-    make_new_connection_ok(
-        router_rw_split_port,
+    auto conn_res = make_new_connection(router_rw_split_port);
+    ASSERT_NO_ERROR(conn_res);
+    auto port_res = select_port(conn_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_EQ(
+        *port_res,
         cs_options.topology.clusters[target_cluster_id].nodes[0].classic_port);
-
   } else {
     verify_new_connection_fails(router_rw_split_port);
   }

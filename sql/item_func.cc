@@ -152,6 +152,7 @@
 #include "template_utils.h"
 #include "template_utils.h"  // pointer_cast
 #include "thr_mutex.h"
+#include "vector-common/vector_constants.h"  // get_dimensions
 
 using std::max;
 using std::min;
@@ -620,7 +621,7 @@ bool Item_func::param_type_uses_non_param(THD *thd, enum_field_types def) {
 
 Item *Item_func::replace_func_call(uchar *arg) {
   auto *info = pointer_cast<Item::Item_func_call_replacement *>(arg);
-  if (eq(info->m_target, /*binary_cmp*/ false)) {
+  if (eq(info->m_target)) {
     assert(info->m_curr_block == info->m_trans_block);
     return info->m_item;
   }
@@ -773,22 +774,20 @@ void Item_func::print_op(const THD *thd, String *str,
   str->append(')');
 }
 
-/// @note Please keep in sync with Item_sum::eq().
-bool Item_func::eq(const Item *item, bool binary_cmp) const {
-  /* Assume we don't have rtti */
+bool Item_func::eq(const Item *item) const {
   if (this == item) return true;
-  if (item->type() != FUNC_ITEM) return false;
+  if (item->type() != type()) return false;
   const Item_func::Functype func_type = functype();
-  const Item_func *item_func = down_cast<const Item_func *>(item);
-
-  if ((func_type != item_func->functype()) ||
-      (arg_count != item_func->arg_count) ||
-      (func_type != Item_func::FUNC_SP &&
-       strcmp(func_name(), item_func->func_name()) != 0) ||
-      (func_type == Item_func::FUNC_SP &&
-       my_strcasecmp(system_charset_info, func_name(), item_func->func_name())))
-    return false;
-  return AllItemsAreEqual(args, item_func->args, arg_count, binary_cmp);
+  const Item_func *func = down_cast<const Item_func *>(item);
+  /*
+    Note: most function names are in ASCII character set, however stored
+          functions and UDFs return names in system character set,
+          therefore the comparison is performed using this character set.
+  */
+  return func_type == func->functype() && arg_count == func->arg_count &&
+         !my_strcasecmp(system_charset_info, func_name(), func->func_name()) &&
+         (arg_count == 0 || AllItemsAreEqual(args, func->args, arg_count)) &&
+         eq_specific(item);
 }
 
 Field *Item_func::tmp_table_field(TABLE *table) {
@@ -925,10 +924,10 @@ const Item_field *Item_func::contributes_to_filter(
 
   assert((read_tables & filter_for_table) == 0);
   /*
-    Multiple equality (Item_equal) should not call this function
+    Multiple equality (Item_multi_eq) should not call this function
     because it would reject valid comparisons.
   */
-  assert(functype() != MULT_EQUAL_FUNC);
+  assert(functype() != MULTI_EQ_FUNC);
 
   /*
     To contribute to filtering effect, the condition must refer to
@@ -1119,8 +1118,7 @@ Item_field *get_gc_for_expr(const Item *func, Field *fld, Item_result type,
   }
 
   // JSON implementation always uses binary collation
-  const bool bin_cmp = (expr->data_type() == MYSQL_TYPE_JSON);
-  if (type == fld->result_type() && func->eq(expr, bin_cmp)) {
+  if (type == fld->result_type() && func->eq(expr)) {
     if (found) {
       // Temporary mark the field in order to check correct value conversion
       fld->table->mark_column_used(fld, MARK_COLUMNS_TEMP);
@@ -1535,13 +1533,11 @@ void Item_num_op::set_numeric_type(void) {
     hybrid_type = INT_RESULT;
     result_precision();
   }
-  DBUG_PRINT("info", ("Type: %s", (hybrid_type == REAL_RESULT
-                                       ? "REAL_RESULT"
-                                       : hybrid_type == DECIMAL_RESULT
-                                             ? "DECIMAL_RESULT"
-                                             : hybrid_type == INT_RESULT
-                                                   ? "INT_RESULT"
-                                                   : "--ILLEGAL!!!--")));
+  DBUG_PRINT("info",
+             ("Type: %s", (hybrid_type == REAL_RESULT      ? "REAL_RESULT"
+                           : hybrid_type == DECIMAL_RESULT ? "DECIMAL_RESULT"
+                           : hybrid_type == INT_RESULT     ? "INT_RESULT"
+                                                       : "--ILLEGAL!!!--")));
 }
 
 /**
@@ -1571,13 +1567,11 @@ void Item_func_num1::set_numeric_type() {
     default:
       assert(0);
   }
-  DBUG_PRINT("info", ("Type: %s", (hybrid_type == REAL_RESULT
-                                       ? "REAL_RESULT"
-                                       : hybrid_type == DECIMAL_RESULT
-                                             ? "DECIMAL_RESULT"
-                                             : hybrid_type == INT_RESULT
-                                                   ? "INT_RESULT"
-                                                   : "--ILLEGAL!!!--")));
+  DBUG_PRINT("info",
+             ("Type: %s", (hybrid_type == REAL_RESULT      ? "REAL_RESULT"
+                           : hybrid_type == DECIMAL_RESULT ? "DECIMAL_RESULT"
+                           : hybrid_type == INT_RESULT     ? "INT_RESULT"
+                                                       : "--ILLEGAL!!!--")));
 }
 
 void Item_func_num1::fix_num_length_and_dec() {
@@ -1585,11 +1579,33 @@ void Item_func_num1::fix_num_length_and_dec() {
   max_length = args[0]->max_length;
 }
 
+uint Item_func::num_vector_args() {
+  uint num_vectors = 0;
+  for (uint i = 0; i < arg_count; i++) {
+    /* VECTOR type fields should not participate as function arguments. */
+    if (args[i]->data_type() == MYSQL_TYPE_VECTOR) {
+      num_vectors++;
+    }
+  }
+  return num_vectors;
+}
+
+/*
+  Reject unsupported VECTOR type arguments.
+ */
+bool Item_func::reject_vector_args() {
+  if (num_vector_args() > 0) {
+    my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
+    return true;
+  }
+  return false;
+}
+
 /*
   Reject geometry arguments, should be called in resolve_type() for
   SQL functions/operators where geometries are not suitable as operands.
  */
-bool reject_geometry_args(uint arg_count, Item **args, Item_result_field *me) {
+bool Item_func::reject_geometry_args() {
   /*
     We want to make sure the operands are not GEOMETRY strings because
     it's meaningless for them to participate in arithmetic and/or numerical
@@ -1605,7 +1621,7 @@ bool reject_geometry_args(uint arg_count, Item **args, Item_result_field *me) {
   for (uint i = 0; i < arg_count; i++) {
     if (args[i]->result_type() != ROW_RESULT &&
         args[i]->data_type() == MYSQL_TYPE_GEOMETRY) {
-      my_error(ER_WRONG_ARGUMENTS, MYF(0), me->func_name());
+      my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
       return true;
     }
   }
@@ -1660,7 +1676,10 @@ bool Item_func_numhybrid::resolve_type(THD *thd) {
     }
   }
   if (resolve_type_inner(thd)) return true;
-  return reject_geometry_args(arg_count, args, this);
+  if (reject_geometry_args()) return true;
+  if (reject_vector_args()) return true;
+
+  return false;
 }
 
 bool Item_func_numhybrid::resolve_type_inner(THD *) {
@@ -1877,7 +1896,8 @@ void Item_typecast_signed::print(const THD *thd, String *str,
 }
 
 bool Item_typecast_signed::resolve_type(THD *thd) {
-  if (reject_geometry_args(arg_count, args, this)) return true;
+  if (reject_geometry_args()) return true;
+  if (reject_vector_args()) return true;
   return args[0]->propagate_type(thd, MYSQL_TYPE_LONGLONG, false, true);
 }
 
@@ -1935,7 +1955,8 @@ void Item_typecast_unsigned::print(const THD *thd, String *str,
 }
 
 bool Item_typecast_unsigned::resolve_type(THD *thd) {
-  if (reject_geometry_args(arg_count, args, this)) return true;
+  if (reject_geometry_args()) return true;
+  if (reject_vector_args()) return true;
   return args[0]->propagate_type(thd, MYSQL_TYPE_LONGLONG, false, true);
 }
 
@@ -2062,12 +2083,12 @@ longlong Item_func::val_int_from_real() {
     if (res < 0 || res >= ULLONG_MAX_DOUBLE) {
       return raise_integer_overflow();
     } else
-      return (longlong)double2ulonglong(res);
+      return static_cast<longlong>(double2ulonglong(res));
   } else {
     if (res <= LLONG_MIN || res > LLONG_MAX_DOUBLE) {
       return raise_integer_overflow();
     } else
-      return (longlong)res;
+      return static_cast<longlong>(rint(res));
   }
 }
 
@@ -2759,7 +2780,8 @@ bool Item_func_neg::resolve_type(THD *thd) {
         the negated number
       */
       unsigned_flag = false;
-      set_data_type_decimal(args[0]->decimal_precision(), 0);
+      set_data_type_decimal(
+          min<uint>(args[0]->decimal_precision(), DECIMAL_MAX_PRECISION), 0);
       hybrid_type = DECIMAL_RESULT;
       DBUG_PRINT("info", ("Type changed: DECIMAL_RESULT"));
     }
@@ -2804,7 +2826,9 @@ bool Item_dec_func::resolve_type(THD *thd) {
   decimals = DECIMAL_NOT_SPECIFIED;
   max_length = float_length(decimals);
   set_nullable(true);
-  return reject_geometry_args(arg_count, args, this);
+  if (reject_geometry_args()) return true;
+  if (reject_vector_args()) return true;
+  return false;
 }
 
 /** Gateway to natural LOG function. */
@@ -2984,7 +3008,8 @@ bool Item_func_bit::resolve_type(THD *thd) {
     set_data_type_longlong();
     unsigned_flag = true;
   }
-  return reject_geometry_args(arg_count, args, this);
+  if (reject_vector_args()) return true;
+  return reject_geometry_args();
 }
 
 longlong Item_func_bit::val_int() {
@@ -3062,9 +3087,8 @@ longlong Item_func_shift::eval_int_op() {
   return 0;
 }
 
-/// Instantiations of the above
-template longlong Item_func_shift::eval_int_op<true>();
-template longlong Item_func_shift::eval_int_op<false>();
+longlong Item_func_shift_left::int_op() { return eval_int_op<true>(); }
+longlong Item_func_shift_right::int_op() { return eval_int_op<false>(); }
 
 /**
   Template function that evaluates the bitwise shift operation over binary
@@ -3137,9 +3161,13 @@ String *Item_func_shift::eval_str_op(String *) {
   return &tmp_value;
 }
 
-/// Instantiations of the above
-template String *Item_func_shift::eval_str_op<true>(String *);
-template String *Item_func_shift::eval_str_op<false>(String *);
+String *Item_func_shift_left::str_op(String *str) {
+  return eval_str_op<true>(str);
+}
+
+String *Item_func_shift_right::str_op(String *str) {
+  return eval_str_op<false>(str);
+}
 
 // Bit negation ('~')
 
@@ -3292,7 +3320,8 @@ bool Item_func_int_val::resolve_type_inner(THD *) {
   DBUG_PRINT("info", ("name %s", func_name()));
   assert(args[0]->data_type() != MYSQL_TYPE_INVALID);
 
-  if (reject_geometry_args(arg_count, args, this)) return true;
+  if (reject_geometry_args()) return true;
+  if (reject_vector_args()) return true;
 
   switch (args[0]->result_type()) {
     case STRING_RESULT:
@@ -3319,6 +3348,7 @@ bool Item_func_int_val::resolve_type_inner(THD *) {
       // order of magnitude.
       int precision = args[0]->decimal_precision() - args[0]->decimals;
       if (args[0]->decimals != 0) ++precision;
+      precision = std::min(precision, DECIMAL_MAX_PRECISION);
       set_data_type_decimal(precision, 0);
       hybrid_type = DECIMAL_RESULT;
 
@@ -3338,13 +3368,11 @@ bool Item_func_int_val::resolve_type_inner(THD *) {
     default:
       assert(0);
   }
-  DBUG_PRINT("info", ("Type: %s", (hybrid_type == REAL_RESULT
-                                       ? "REAL_RESULT"
-                                       : hybrid_type == DECIMAL_RESULT
-                                             ? "DECIMAL_RESULT"
-                                             : hybrid_type == INT_RESULT
-                                                   ? "INT_RESULT"
-                                                   : "--ILLEGAL!!!--")));
+  DBUG_PRINT("info",
+             ("Type: %s", (hybrid_type == REAL_RESULT      ? "REAL_RESULT"
+                           : hybrid_type == DECIMAL_RESULT ? "DECIMAL_RESULT"
+                           : hybrid_type == INT_RESULT     ? "INT_RESULT"
+                                                       : "--ILLEGAL!!!--")));
 
   return false;
 }
@@ -3425,7 +3453,8 @@ bool Item_func_round::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_NEWDECIMAL)) return true;
   if (param_type_is_default(thd, 1, 2, MYSQL_TYPE_LONGLONG)) return true;
 
-  if (reject_geometry_args(arg_count, args, this)) return true;
+  if (reject_geometry_args()) return true;
+  if (reject_vector_args()) return true;
 
   switch (args[0]->result_type()) {
     case INT_RESULT:
@@ -3475,6 +3504,7 @@ bool Item_func_round::resolve_type(THD *thd) {
         new_scale = val1;
       }
       if (precision == 0) precision = 1;
+      precision = min<uint>(precision, DECIMAL_MAX_PRECISION);
       set_data_type_decimal(precision, new_scale);
       hybrid_type = DECIMAL_RESULT;
       break;
@@ -3654,7 +3684,9 @@ void Item_func_rand::seed_random(Item *arg) {
 bool Item_func_rand::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, -1, MYSQL_TYPE_DOUBLE)) return true;
   if (Item_real_func::resolve_type(thd)) return true;
-  return reject_geometry_args(arg_count, args, this);
+  if (reject_geometry_args()) return true;
+  if (reject_vector_args()) return true;
+  return false;
 }
 
 bool Item_func_rand::fix_fields(THD *thd, Item **ref) {
@@ -3723,7 +3755,9 @@ double Item_func_rand::val_real() {
 bool Item_func_sign::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_DOUBLE)) return true;
   if (Item_int_func::resolve_type(thd)) return true;
-  return reject_geometry_args(arg_count, args, this);
+  if (reject_geometry_args()) return true;
+  if (reject_vector_args()) return true;
+  return false;
 }
 
 longlong Item_func_sign::val_int() {
@@ -3737,7 +3771,9 @@ bool Item_func_units::resolve_type(THD *thd) {
   if (param_type_is_default(thd, 0, 1, MYSQL_TYPE_DOUBLE)) return true;
   decimals = DECIMAL_NOT_SPECIFIED;
   max_length = float_length(decimals);
-  return reject_geometry_args(arg_count, args, this);
+  if (reject_geometry_args()) return true;
+  if (reject_vector_args()) return true;
+  return false;
 }
 
 double Item_func_units::val_real() {
@@ -3749,12 +3785,16 @@ double Item_func_units::val_real() {
 
 bool Item_func_min_max::resolve_type(THD *thd) {
   // If no arguments have type, type of this operator cannot be determined yet
-  if (args[0]->data_type() == MYSQL_TYPE_INVALID &&
-      args[1]->data_type() == MYSQL_TYPE_INVALID)
-    return false;
+  uint i;
+  for (i = 0; i < arg_count; i++) {
+    if (args[i]->data_type() != MYSQL_TYPE_INVALID) break;
+  }
+  if (i == arg_count) return false;
 
   if (resolve_type_inner(thd)) return true;
-  return reject_geometry_args(arg_count, args, this);
+  if (reject_geometry_args()) return true;
+  if (reject_vector_args()) return true;
+  return false;
 }
 
 TYPELIB *Item_func_min_max::get_typelib() const {
@@ -3941,8 +3981,11 @@ String *Item_func_min_max::str_op(String *str) {
     */
     String *val_buf = res_in_str ? &m_string_buf : str;
     assert(!res || (res != val_buf && !res->uses_buffer_owned_by(val_buf)));
-    String *val = args[i]->val_str(val_buf);
-    if ((null_value = args[i]->null_value)) return nullptr;
+    String *val = eval_string_arg(collation.collation, args[i], val_buf);
+    if (val == nullptr) {
+      assert(current_thd->is_error() || (args[i]->null_value && is_nullable()));
+      return error_str();
+    }
     if (i == 0 ||
         (sortcmp(val, res, collation.collation) < 0) == m_is_least_func) {
       res = val;
@@ -4159,10 +4202,9 @@ void Item_rollup_group_item::print(const THD *thd, String *str,
   str->append(')');
 }
 
-bool Item_rollup_group_item::eq(const Item *item, bool binary_cmp) const {
-  return Item_func::eq(item, binary_cmp) &&
-         min_rollup_level() == down_cast<const Item_rollup_group_item *>(item)
-                                   ->min_rollup_level();
+bool Item_rollup_group_item::eq_specific(const Item *item) const {
+  return min_rollup_level() ==
+         down_cast<const Item_rollup_group_item *>(item)->min_rollup_level();
 }
 
 TYPELIB *Item_rollup_group_item::get_typelib() const {
@@ -4178,6 +4220,21 @@ longlong Item_func_length::val_int() {
   }
   null_value = false;
   return (longlong)res->length();
+}
+
+longlong Item_func_vector_dim::val_int() {
+  assert(fixed);
+  String *res = args[0]->val_str(&value);
+  null_value = false;
+  if (res == nullptr || res->ptr() == nullptr) {
+    return error_int(); /* purecov: inspected */
+  }
+  uint32 dimensions = get_dimensions(res->length(), Field_vector::precision);
+  if (dimensions == UINT32_MAX) {
+    my_error(ER_TO_VECTOR_CONVERSION, MYF(0), res->length(), res->ptr());
+    return error_int(); /* purecov: inspected */
+  }
+  return (longlong)dimensions;
 }
 
 longlong Item_func_char_length::val_int() {
@@ -4206,44 +4263,47 @@ bool Item_func_locate::resolve_type(THD *thd) {
   return false;
 }
 
+/*
+   LOCATE(substr,str), LOCATE(substr,str,pos)
+   Note that the argument order is switched here,
+   see Locate_instantiator::instantiate in item_create.cc
+ */
 longlong Item_func_locate::val_int() {
   assert(fixed);
   // Evaluate the string argument first
   const CHARSET_INFO *cs = collation.collation;
-  String *a = eval_string_arg(cs, args[0], &value1);
-  if (a == nullptr) return error_int();
+  String *haystack = eval_string_arg(cs, args[0], &value1);
+  if (haystack == nullptr) return error_int();
 
   // Evaluate substring argument in same character set as string argument
-  String *b = eval_string_arg(cs, args[1], &value2);
-  if (b == nullptr) return error_int();
+  String *needle = eval_string_arg(cs, args[1], &value2);
+  if (needle == nullptr) return error_int();
 
   null_value = false;
   /* must be longlong to avoid truncation */
-  longlong start = 0;
-  longlong start0 = 0;
-  my_match_t match;
+  longlong start_byte = 0;
+  longlong start_pos = 0;
 
   if (arg_count == 3) {
     const longlong tmp = args[2]->val_int();
     if ((null_value = args[2]->null_value) || tmp <= 0) return 0;
-    start0 = start = tmp - 1;
+    start_pos = tmp - 1;
 
-    if (start > static_cast<longlong>(a->length())) return 0;
+    if (start_pos > static_cast<longlong>(haystack->numchars())) return 0;
 
-    /* start is now sufficiently valid to pass to charpos function */
-    start = a->charpos((int)start);
-
-    if (start + b->length() > a->length()) return 0;
+    /* start_pos is now sufficiently valid to pass to charpos function */
+    start_byte = haystack->charpos(static_cast<size_t>(start_pos));
   }
 
-  if (!b->length())  // Found empty string at start
-    return start + 1;
+  if (needle->length() == 0)  // Found empty string at start
+    return start_pos + 1;
 
-  if (!cs->coll->strstr(cs, a->ptr() + start,
-                        static_cast<uint>(a->length() - start), b->ptr(),
-                        b->length(), &match, 1))
+  my_match_t match;
+  if (!cs->coll->strstr(cs, haystack->ptr() + start_byte,
+                        static_cast<size_t>(haystack->length() - start_byte),
+                        needle->ptr(), needle->length(), &match))
     return 0;
-  return static_cast<longlong>(match.mb_len) + start0 + 1;
+  return static_cast<longlong>(match.mb_len) + start_pos + 1;
 }
 
 void Item_func_locate::print(const THD *thd, String *str,
@@ -4369,6 +4429,8 @@ bool Item_func_find_in_set::resolve_type(THD *thd) {
   if (args[0]->const_item() && args[1]->type() == FIELD_ITEM &&
       args[0]->may_eval_const_item(thd)) {
     Field *field = down_cast<Item_field *>(args[1])->field;
+    // Bail during CREATE TABLE/INDEX so we don't look for absent typelib.
+    if (field->is_wrapper_field()) return false;
     if (field->real_type() == MYSQL_TYPE_SET) {
       String *find = args[0]->val_str(&value);
       if (thd->is_error()) return true;
@@ -4530,6 +4592,7 @@ void udf_handler::clean_buffers() {
   if (buffers == nullptr) return;
   for (uint i = 0; i < f_args.arg_count; i++) {
     buffers[i].mem_free();
+    arg_buffers[i].mem_free();
   }
 }
 
@@ -4636,10 +4699,9 @@ bool udf_handler::fix_fields(THD *thd, Item_result_field *func, uint arg_count,
       used_tables_cache |= item->used_tables();
       f_args.arg_type[i] = item->result_type();
     }
-    // TODO: why all following memory is not allocated with 1 call of sql_alloc?
-    // if (!(buffers = new String[arg_count]) ||
-    if (!(buffers = pointer_cast<String *>(
-              (*THR_MALLOC)->Alloc(sizeof(String) * arg_count))) ||
+
+    if (!(buffers = (*THR_MALLOC)->ArrayAlloc<String>(arg_count)) ||
+        !(arg_buffers = (*THR_MALLOC)->ArrayAlloc<String>(arg_count)) ||
         !(f_args.args =
               (char **)(*THR_MALLOC)->Alloc(arg_count * sizeof(char *))) ||
         !(f_args.lengths =
@@ -4653,14 +4715,10 @@ bool udf_handler::fix_fields(THD *thd, Item_result_field *func, uint arg_count,
         !(f_args.attribute_lengths =
               (ulong *)(*THR_MALLOC)->Alloc(arg_count * sizeof(long))) ||
         !(m_args_extension.charset_info =
-              (const CHARSET_INFO **)(*THR_MALLOC)
-                  ->Alloc(f_args.arg_count * sizeof(CHARSET_INFO *)))) {
+              (*THR_MALLOC)
+                  ->ArrayAlloc<const CHARSET_INFO *>(f_args.arg_count))) {
       return true;
     }
-  }
-  for (uint i = 0; i < arg_count; i++) {
-    (void)::new (buffers + i) String;
-    m_args_extension.charset_info[i] = nullptr;
   }
 
   if (func->resolve_type(thd)) return true;
@@ -4736,7 +4794,8 @@ bool udf_handler::call_init_func() {
     f_args.attribute_lengths[i] = args[i]->item_name.length();
     m_args_extension.charset_info[i] = args[i]->collation.collation;
 
-    if (args[i]->const_for_execution() && !args[i]->has_subquery()) {
+    if (args[i]->const_for_execution() && !args[i]->has_subquery() &&
+        !args[i]->has_stored_program()) {
       switch (args[i]->result_type()) {
         case STRING_RESULT:
         case DECIMAL_RESULT: {
@@ -4981,29 +5040,19 @@ bool udf_handler::get_and_convert_string(uint index) {
   String *res = args[index]->val_str(&buffers[index]);
 
   if (!args[index]->null_value) {
-    auto check_charset = m_args_extension.charset_info[index];
-    if (check_charset != nullptr && res->charset() != check_charset) {
-      /* m_args_extension.charset_info[index] is a legitimate charset */
-      String temp;
-      uint dummy;
-      if (temp.copy(res->ptr(), res->length(), res->charset(),
-                    m_args_extension.charset_info[index], &dummy)) {
-        return true;
-      }
-      *res = std::move(temp);
-    } else if (res != &buffers[index]) {
-      /* The res returned above is &Item::str_value
-       * We may call c_ptr_safe() below, reallocating the buffer of
-       * Item::str_value If we set the str_value m_ptr directly somewhere, the
-       * allocated buffer at c_ptr_safe() will be freed, before the UDF is able
-       * to use it. So, instead of changing Item::str_value, copy its contents
-       * to udf_handler::buffers and use that instead.
-       */
-      buffers[index] = *res;
-      res = &buffers[index];
+    uint errors = 0;
+    if (arg_buffers[index].copy(res->ptr(), res->length(), res->charset(),
+                                m_args_extension.charset_info[index],
+                                &errors)) {
+      return true;
     }
-    f_args.args[index] = res->c_ptr_safe();
-    f_args.lengths[index] = res->length();
+    if (errors) {
+      report_conversion_error(m_args_extension.charset_info[index], res->ptr(),
+                              res->length(), res->charset());
+      return true;
+    }
+    f_args.args[index] = arg_buffers[index].c_ptr_safe();
+    f_args.lengths[index] = arg_buffers[index].length();
   } else {
     f_args.lengths[index] = 0;
   }
@@ -6056,7 +6105,9 @@ bool Item_func_set_user_var::resolve_type(THD *thd) {
           args[0]->max_length;  // Preserves "length" of integer constants
       break;
     case MYSQL_TYPE_NEWDECIMAL:
-      set_data_type_decimal(args[0]->decimal_precision(), args[0]->decimals);
+      set_data_type_decimal(
+          min<uint>(args[0]->decimal_precision(), DECIMAL_MAX_PRECISION),
+          args[0]->decimals);
       break;
     case MYSQL_TYPE_DOUBLE:
       set_data_type_double();
@@ -6976,6 +7027,10 @@ bool Item_func_get_user_var::propagate_type(THD *,
     case MYSQL_TYPE_TIME2:
       set_data_type_string(15, type.m_collation);
       break;
+    case MYSQL_TYPE_VECTOR:
+      set_data_type_vector(
+          Field_vector::dimension_bytes(Field_vector::max_dimensions));
+      break;
     default:
       assert(false);
   }
@@ -7008,13 +7063,7 @@ void Item_func_get_user_var::print(const THD *thd, String *str,
   str->append(')');
 }
 
-bool Item_func_get_user_var::eq(const Item *item, bool) const {
-  /* Assume we don't have rtti */
-  if (this == item) return true;  // Same item is same.
-  /* Check if other type is also a get_user_var() object */
-  if (item->type() != FUNC_ITEM ||
-      down_cast<const Item_func *>(item)->functype() != functype())
-    return false;
+bool Item_func_get_user_var::eq_specific(const Item *item) const {
   const Item_func_get_user_var *other =
       down_cast<const Item_func_get_user_var *>(item);
   return name.eq_bin(other->name);
@@ -7474,13 +7523,7 @@ double Item_func_get_system_var::val_real() {
   return var_tracker.access_system_variable<double>(thd, f).value_or(0);
 }
 
-bool Item_func_get_system_var::eq(const Item *item, bool) const {
-  /* Assume we don't have rtti */
-  if (this == item) return true;  // Same item is same.
-  /* Check if other type is also a get_user_var() object */
-  if (item->type() != FUNC_ITEM ||
-      down_cast<const Item_func *>(item)->functype() != functype())
-    return false;
+bool Item_func_get_system_var::eq_specific(const Item *item) const {
   const Item_func_get_system_var *other =
       down_cast<const Item_func_get_system_var *>(item);
   return var_tracker == other->var_tracker;
@@ -7685,7 +7728,7 @@ bool Item_func_match::fix_fields(THD *thd, Item **ref) {
     my_error(ER_WRONG_ARGUMENTS, MYF(0), "MATCH");
     return true;
   }
-  table_ref = ((Item_field *)item)->table_ref;
+  table_ref = down_cast<Item_field *>(item)->m_table_ref;
 
   if (table_ref != nullptr) table_ref->set_fulltext_searched();
 
@@ -7698,8 +7741,9 @@ bool Item_func_match::fix_fields(THD *thd, Item **ref) {
     a generated column's generation expression it's not. Thus
     we use field's table, at this moment it's already available.
   */
-  TABLE *const table =
-      table_ref ? table_ref->table : ((Item_field *)item)->field->table;
+  TABLE *const table = table_ref != nullptr
+                           ? table_ref->table
+                           : down_cast<Item_field *>(item)->field->table;
 
   if (!(table->file->ha_table_flags() & HA_CAN_FULLTEXT)) {
     my_error(ER_TABLE_CANT_HANDLE_FT, MYF(0));
@@ -7748,12 +7792,19 @@ bool Item_func_match::fix_fields(THD *thd, Item **ref) {
                                             arg_count, 0);
 }
 
+void Item_func_match::update_used_tables() {
+  Item_func::update_used_tables();
+  against->update_used_tables();
+  used_tables_cache |= against->used_tables();
+  add_accum_properties(against);
+}
+
 bool Item_func_match::fix_index(const THD *thd) {
   TABLE *table;
   uint ft_to_key[MAX_KEY], ft_cnt[MAX_KEY], fts = 0, keynr;
   uint max_cnt = 0, mkeys = 0, i;
 
-  if (!table_ref) goto err;
+  if (table_ref == nullptr) goto err;
 
   /*
     We will skip execution if the item is not fixed
@@ -7831,18 +7882,18 @@ err:
   return true;
 }
 
-bool Item_func_match::eq(const Item *item, bool binary_cmp) const {
-  /* We ignore FT_SORTED flag when checking for equality since result is
-     equivalent regardless of sorting */
-  if (!is_function_of_type(item, FT_FUNC) ||
-      (flags | FT_SORTED) !=
-          (down_cast<const Item_func_match *>(item)->flags | FT_SORTED))
-    return false;
-
+bool Item_func_match::eq_specific(const Item *item) const {
   const Item_func_match *ifm = down_cast<const Item_func_match *>(item);
 
+  /*
+    Ignore FT_SORTED flag when checking for equality since result is
+    equivalent regardless of sorting
+  */
+  if ((flags | FT_SORTED) != (ifm->flags | FT_SORTED)) {
+    return false;
+  }
   if (key == ifm->key && table_ref == ifm->table_ref &&
-      key_item()->eq(ifm->key_item(), binary_cmp))
+      key_item()->eq(ifm->key_item()))
     return true;
 
   return false;
@@ -7963,6 +8014,7 @@ bool NonAggregatedFullTextSearchVisitor::operator()(Item *item) {
         case Item_ref::REF:
         case Item_ref::OUTER_REF:
         case Item_ref::AGGREGATE_REF:
+        case Item_ref::NULL_HELPER_REF:
           // Skip all these. REF means the expression is already handled
           // elsewhere in the SELECT list. OUTER_REF is already handled in an
           // outer query block. AGGREGATE_REF means it's aggregated, and we're
@@ -8097,7 +8149,7 @@ bool Item_func_sp::do_itemize(Parse_context *pc, Item **res) {
   THD *thd = pc->thd;
   LEX *lex = thd->lex;
 
-  context = lex->current_context();
+  m_name_resolution_ctx = lex->current_context();
   lex->safe_to_cache_query = false;
 
   if (m_name->m_db.str == nullptr) {
@@ -8188,7 +8240,8 @@ bool Item_func_sp::init_result_field(THD *thd) {
   assert(sp_result_field == nullptr);
 
   Internal_error_handler_holder<View_error_handler, Table_ref> view_handler(
-      thd, context->view_error_handler, context->view_error_handler_arg);
+      thd, m_name_resolution_ctx->view_error_handler,
+      m_name_resolution_ctx->view_error_handler_arg);
   m_sp = sp_find_routine(thd, enum_sp_type::FUNCTION, m_name,
                          &thd->sp_func_cache, true);
   if (m_sp == nullptr) {
@@ -8314,7 +8367,8 @@ bool Item_func_sp::execute() {
   THD *thd = current_thd;
 
   Internal_error_handler_holder<View_error_handler, Table_ref> view_handler(
-      thd, context->view_error_handler, context->view_error_handler_arg);
+      thd, m_name_resolution_ctx->view_error_handler,
+      m_name_resolution_ctx->view_error_handler_arg);
 
   // Bind to an instance of the stored function:
   if (m_sp == nullptr) {
@@ -8363,9 +8417,9 @@ bool Item_func_sp::execute_impl(THD *thd) {
 
   DBUG_TRACE;
 
-  if (context->security_ctx) {
+  if (m_name_resolution_ctx->security_ctx != nullptr) {
     /* Set view definer security context */
-    thd->set_security_context(context->security_ctx);
+    thd->set_security_context(m_name_resolution_ctx->security_ctx);
   }
   if (sp_check_access(thd)) goto error;
 
@@ -8470,9 +8524,9 @@ bool Item_func_sp::fix_fields(THD *thd, Item **ref) {
    */
   if (!thd->lex->is_view_context_analysis() ||
       (thd->lex->sql_command == SQLCOM_CREATE_VIEW)) {
-    if (context->security_ctx) {
+    if (m_name_resolution_ctx->security_ctx != nullptr) {
       /* Set view definer security context */
-      thd->set_security_context(context->security_ctx);
+      thd->set_security_context(m_name_resolution_ctx->security_ctx);
     }
 
     /*
@@ -8480,7 +8534,8 @@ bool Item_func_sp::fix_fields(THD *thd, Item **ref) {
      */
 
     Internal_error_handler_holder<View_error_handler, Table_ref> view_handler(
-        thd, context->view_error_handler, context->view_error_handler_arg);
+        thd, m_name_resolution_ctx->view_error_handler,
+        m_name_resolution_ctx->view_error_handler_arg);
 
     const bool res = check_routine_access(thd, EXECUTE_ACL, m_name->m_db.str,
                                           m_name->m_name.str, false, false);
@@ -8510,12 +8565,11 @@ bool Item_func_sp::fix_fields(THD *thd, Item **ref) {
     if (args[i]->data_type() == MYSQL_TYPE_INVALID) {
       sp_variable *var = sp_ctx->find_variable(i);
       if (args[i]->propagate_type(
-              thd,
-              is_numeric_type(var->type)
-                  ? Type_properties(var->type, var->field_def.is_unsigned)
-                  : is_string_type(var->type)
-                        ? Type_properties(var->type, var->field_def.charset)
-                        : Type_properties(var->type)))
+              thd, is_numeric_type(var->type)
+                       ? Type_properties(var->type, var->field_def.is_unsigned)
+                   : is_string_type(var->type)
+                       ? Type_properties(var->type, var->field_def.charset)
+                       : Type_properties(var->type)))
         return true;
     }
   }
@@ -8743,7 +8797,7 @@ static bool check_table_and_trigger_access(Item **args, bool check_trigger_acl,
   }
 
   // Check access
-  ulong db_access = 0;
+  Access_bitmask db_access = 0;
   if (check_access(thd, SELECT_ACL, schema_name_ptr->ptr(), &db_access, nullptr,
                    false, true))
     return false;
@@ -9875,6 +9929,12 @@ longlong Item_func_internal_dd_char_length::val_int() {
 
   // Check data types for getting info
   const enum_field_types field_type = dd_get_old_field_type(col_type);
+
+  if (field_type == MYSQL_TYPE_VECTOR) {
+    /* For vector types, we can return the field_length as is. */
+    return field_length;
+  }
+
   const bool blob_flag = is_blob(field_type);
   if (!blob_flag && field_type != MYSQL_TYPE_ENUM &&
       field_type != MYSQL_TYPE_SET &&

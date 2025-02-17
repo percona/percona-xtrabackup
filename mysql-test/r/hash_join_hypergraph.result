@@ -4,8 +4,8 @@
 # Join on two integer columns.
 CREATE TABLE t1 (col1 INTEGER);
 CREATE TABLE t2 (col1 INTEGER);
-INSERT INTO t1 VALUES (1), (3), (5), (7);
-INSERT INTO t2 VALUES (1), (2), (5), (6);
+INSERT INTO t1 VALUES (1), (3), (5), (7), (7), (7);
+INSERT INTO t2 VALUES (1), (2), (5), (6), (6), (6);
 ANALYZE TABLE t1, t2;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
@@ -13,11 +13,11 @@ test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree
 SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 = t2.col1 ORDER BY t1.col1;
 EXPLAIN
--> Sort: t1.col1  (cost=1.73..1.73 rows=1.6)
-    -> Inner hash join (t1.col1 = t2.col1)  (cost=1.13..1.41 rows=1.6)
-        -> Table scan on t1  (cost=0.0625..0.25 rows=4)
+-> Sort: t1.col1  (rows=3.6)
+    -> Inner hash join (t1.col1 = t2.col1)  (rows=3.6)
+        -> Table scan on t1  (rows=6)
         -> Hash
-            -> Table scan on t2  (cost=0.0625..0.25 rows=4)
+            -> Table scan on t2  (rows=6)
 
 SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 = t2.col1 ORDER BY t1.col1;
 col1	col1
@@ -27,8 +27,8 @@ DROP TABLE t1, t2;
 # Join on a integer column and a string column.
 CREATE TABLE t1 (col1 INTEGER);
 CREATE TABLE t2 (col1 VARCHAR(255));
-INSERT INTO t1 VALUES (1), (3), (5), (7);
-INSERT INTO t2 VALUES (1), (2), (5), (6);
+INSERT INTO t1 VALUES (1), (3), (5), (7), (7), (7);
+INSERT INTO t2 VALUES (1), (2), (5), (6), (6), (6);
 ANALYZE TABLE t1, t2;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
@@ -36,11 +36,11 @@ test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree
 SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 = t2.col1 ORDER BY t1.col1;
 EXPLAIN
--> Sort: t1.col1  (cost=1.73..1.73 rows=1.6)
-    -> Inner hash join (cast(t1.col1 as double) = cast(t2.col1 as double))  (cost=1.13..1.41 rows=1.6)
-        -> Table scan on t1  (cost=0.0625..0.25 rows=4)
+-> Sort: t1.col1  (rows=3.6)
+    -> Inner hash join (cast(t1.col1 as double) = cast(t2.col1 as double))  (rows=3.6)
+        -> Table scan on t1  (rows=6)
         -> Hash
-            -> Table scan on t2  (cost=0.0625..0.25 rows=4)
+            -> Table scan on t2  (rows=6)
 
 SELECT t1.col1, t2.col1 FROM t1 JOIN t2 ON t1.col1 = t2.col1 ORDER BY t1.col1;
 col1	col1
@@ -98,19 +98,20 @@ DROP TABLE t1, t2;
 # Join on a string and datetime column, where datetime comparison is
 # picked.
 CREATE TABLE t1 (a DATETIME);
-INSERT INTO t1 VALUES ('2001-01-01 00:00:00'), (NULL);
+INSERT INTO t1 VALUES ('2001-01-01 00:00:00'), (NULL), ('2002-01-01 00:00:00'),
+('2002-01-01 00:00:00'), ('2002-01-01 00:00:00'), ('2002-01-01 00:00:00');
 CREATE TABLE t2 (b VARCHAR(64));
-INSERT INTO t2 VALUES ('2001#01#01'), (NULL), (NULL);
+INSERT INTO t2 VALUES ('2001#01#01'), (NULL), (NULL), ('1999-01-01'), ('1999-01-01'), ('1999-01-01');
 ANALYZE TABLE t1, t2;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1, t2 WHERE a=b;
 EXPLAIN
--> Inner hash join (t1.a = cast(t2.b as datetime(6)))  (rows=0.6)
-    -> Table scan on t2  (rows=3)
+-> Inner hash join (t1.a = cast(t2.b as datetime(6)))  (rows=3.6)
+    -> Table scan on t1  (rows=6)
     -> Hash
-        -> Table scan on t1  (rows=2)
+        -> Table scan on t2  (rows=6)
 
 SELECT * FROM t1, t2 WHERE a=b;
 a	b
@@ -119,10 +120,10 @@ Warnings:
 Warning	4095	Delimiter '#' in position 4 in datetime value '2001#01#01' at row 1 is deprecated. Prefer the standard '-'.
 EXPLAIN FORMAT=tree SELECT * FROM t1, t2 WHERE a<=>b;
 EXPLAIN
--> Inner hash join (t1.a <=> cast(t2.b as datetime(6)))  (rows=0.6)
-    -> Table scan on t2  (rows=3)
+-> Inner hash join (t1.a <=> cast(t2.b as datetime(6)))  (rows=3.6)
+    -> Table scan on t1  (rows=6)
     -> Hash
-        -> Table scan on t1  (rows=2)
+        -> Table scan on t2  (rows=6)
 
 SELECT * FROM t1, t2 WHERE a<=>b;
 a	b
@@ -213,19 +214,19 @@ DROP TABLE t1, t2;
 # zeroes should compare equally.
 CREATE TABLE t1 (col1 BIGINT);
 CREATE TABLE t2 (col1 DECIMAL(64,30));
-INSERT INTO t1 VALUES (0), (1), (5), (NULL);
+INSERT INTO t1 VALUES (0), (1), (5), (10), (10), (NULL);
 INSERT INTO t2 VALUES (0), (0.1), (0.000000000000000000000000000001),
-(5.000000000000000000000000000000), (NULL);
+(5.000000000000000000000000000000), (6), (NULL);
 ANALYZE TABLE t1, t2;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1,t2 WHERE t1.col1 = t2.col1;
 EXPLAIN
--> Inner hash join (t1.col1 = t2.col1)  (rows=2)
-    -> Table scan on t2  (rows=5)
+-> Inner hash join (t1.col1 = t2.col1)  (rows=3.6)
+    -> Table scan on t1  (rows=6)
     -> Hash
-        -> Table scan on t1  (rows=4)
+        -> Table scan on t2  (rows=6)
 
 SELECT * FROM t1,t2 WHERE t1.col1 = t2.col1;
 col1	col1
@@ -233,10 +234,10 @@ col1	col1
 5	5.000000000000000000000000000000
 EXPLAIN FORMAT=tree SELECT * FROM t1,t2 WHERE t1.col1 <=> t2.col1;
 EXPLAIN
--> Inner hash join (t1.col1 <=> t2.col1)  (rows=2)
-    -> Table scan on t2  (rows=5)
+-> Inner hash join (t1.col1 <=> t2.col1)  (rows=3.6)
+    -> Table scan on t1  (rows=6)
     -> Hash
-        -> Table scan on t1  (rows=4)
+        -> Table scan on t2  (rows=6)
 
 SELECT * FROM t1,t2 WHERE t1.col1 <=> t2.col1;
 col1	col1
@@ -246,28 +247,28 @@ NULL	NULL
 DROP TABLE t1, t2;
 CREATE TABLE t1 (col1 DECIMAL(5));
 CREATE TABLE t2 (col1 BIGINT);
-INSERT INTO t1 VALUES (1), (NULL);
-INSERT INTO t2 VALUES (1), (0), (NULL);
+INSERT INTO t1 VALUES (1), (2), (2), (2), (2), (NULL);
+INSERT INTO t2 VALUES (1), (0), (3), (3), (3), (NULL);
 ANALYZE TABLE t1, t2;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1,t2 where t1.col1=t2.col1;
 EXPLAIN
--> Inner hash join (t1.col1 = t2.col1)  (rows=0.6)
-    -> Table scan on t2  (rows=3)
+-> Inner hash join (t1.col1 = t2.col1)  (rows=3.6)
+    -> Table scan on t1  (rows=6)
     -> Hash
-        -> Table scan on t1  (rows=2)
+        -> Table scan on t2  (rows=6)
 
 SELECT * FROM t1,t2 where t1.col1=t2.col1;
 col1	col1
 1	1
 EXPLAIN FORMAT=tree SELECT * FROM t1,t2 where t1.col1<=>t2.col1;
 EXPLAIN
--> Inner hash join (t1.col1 <=> t2.col1)  (rows=0.6)
-    -> Table scan on t2  (rows=3)
+-> Inner hash join (t1.col1 <=> t2.col1)  (rows=3.6)
+    -> Table scan on t1  (rows=6)
     -> Hash
-        -> Table scan on t1  (rows=2)
+        -> Table scan on t2  (rows=6)
 
 SELECT * FROM t1,t2 where t1.col1<=>t2.col1;
 col1	col1
@@ -277,18 +278,18 @@ DROP TABLE t1, t2;
 # Bit fields, which is a bit different depending on the storage engine.
 create table t1 (id1 int, b1 bit(1)) engine = myisam;
 create table t2 (id2 int, b2 bit(1)) engine = myisam;
-insert into t1 values (2, 0), (3, 1), (null, null);
-insert into t2 values (2, 1), (3, 0), (null, null);
+insert into t1 values (2, 0), (3, 1), (4, 0), (4, 0), (4, 0), (null, null);
+insert into t2 values (2, 1), (3, 0), (5, 0), (5, 0), (5, 0), (null, null);
 ANALYZE TABLE t1, t2;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1, t2 WHERE id1 = id2;
 EXPLAIN
--> Inner hash join (t1.id1 = t2.id2)  (rows=0.9)
-    -> Table scan on t1  (rows=3)
+-> Inner hash join (t1.id1 = t2.id2)  (rows=3.6)
+    -> Table scan on t1  (rows=6)
     -> Hash
-        -> Table scan on t2  (rows=3)
+        -> Table scan on t2  (rows=6)
 
 SELECT id1, HEX(b1), id2, HEX(b2) FROM t1, t2 WHERE id1 = id2;
 id1	HEX(b1)	id2	HEX(b2)
@@ -296,10 +297,10 @@ id1	HEX(b1)	id2	HEX(b2)
 3	1	3	0
 EXPLAIN FORMAT=tree SELECT * FROM t1, t2 WHERE id1 <=> id2;
 EXPLAIN
--> Inner hash join (t1.id1 <=> t2.id2)  (rows=0.9)
-    -> Table scan on t1  (rows=3)
+-> Inner hash join (t1.id1 <=> t2.id2)  (rows=3.6)
+    -> Table scan on t1  (rows=6)
     -> Hash
-        -> Table scan on t2  (rows=3)
+        -> Table scan on t2  (rows=6)
 
 SELECT id1, HEX(b1), id2, HEX(b2) FROM t1, t2 WHERE id1 <=> id2;
 id1	HEX(b1)	id2	HEX(b2)
@@ -309,18 +310,18 @@ NULL	NULL	NULL	NULL
 DROP TABLE t1, t2;
 create table t1 (id1 int, b1 bit(64)) engine = innodb;
 create table t2 (id2 int, b2 bit(64)) engine = innodb;
-insert into t1 values (2, 0), (3, 2), (null, null);
-insert into t2 values (2, 2), (3, 0), (null, null);
+insert into t1 values (2, 0), (3, 2), (4, 4), (4, 4), (4, 4), (null, null);
+insert into t2 values (2, 2), (3, 0), (5, 4), (5, 4), (5, 4), (null, null);
 ANALYZE TABLE t1, t2;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1, t2 WHERE id1 = id2;
 EXPLAIN
--> Inner hash join (t1.id1 = t2.id2)  (rows=0.9)
-    -> Table scan on t1  (rows=3)
+-> Inner hash join (t1.id1 = t2.id2)  (rows=3.6)
+    -> Table scan on t1  (rows=6)
     -> Hash
-        -> Table scan on t2  (rows=3)
+        -> Table scan on t2  (rows=6)
 
 SELECT id1, HEX(b1), id2, HEX(b2) FROM t1, t2 WHERE id1 = id2;
 id1	HEX(b1)	id2	HEX(b2)
@@ -328,10 +329,10 @@ id1	HEX(b1)	id2	HEX(b2)
 3	2	3	0
 EXPLAIN FORMAT=tree SELECT * FROM t1, t2 WHERE id1 <=> id2;
 EXPLAIN
--> Inner hash join (t1.id1 <=> t2.id2)  (rows=0.9)
-    -> Table scan on t1  (rows=3)
+-> Inner hash join (t1.id1 <=> t2.id2)  (rows=3.6)
+    -> Table scan on t1  (rows=6)
     -> Hash
-        -> Table scan on t2  (rows=3)
+        -> Table scan on t2  (rows=6)
 
 SELECT id1, HEX(b1), id2, HEX(b2) FROM t1, t2 WHERE id1 <=> id2;
 id1	HEX(b1)	id2	HEX(b2)
@@ -342,27 +343,27 @@ DROP TABLE t1, t2;
 # See that we handle NULL values properly.
 CREATE TABLE t1 (col1 VARCHAR(255));
 CREATE TABLE t2 (col1 VARCHAR(255));
-INSERT INTO t1 VALUES (NULL), ('a');
-INSERT INTO t2 VALUES (''), (NULL), ('x'), ('y');
+INSERT INTO t1 VALUES (NULL), ('a'), ('a'), ('a'), ('a'), ('a');
+INSERT INTO t2 VALUES (''), (NULL), ('x'), ('y'), ('y'), ('y');
 ANALYZE TABLE t1, t2;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1, t2 WHERE t1.col1 = t2.col1;
 EXPLAIN
--> Inner hash join (<hash>(t1.col1)=<hash>(t2.col1)), extra conditions: (t1.col1 = t2.col1)  (rows=0.8)
-    -> Table scan on t2  (rows=4)
+-> Inner hash join (<hash>(t1.col1)=<hash>(t2.col1)), extra conditions: (t1.col1 = t2.col1)  (rows=3.6)
+    -> Table scan on t1  (rows=6)
     -> Hash
-        -> Table scan on t1  (rows=2)
+        -> Table scan on t2  (rows=6)
 
 SELECT * FROM t1, t2 WHERE t1.col1 = t2.col1;
 col1	col1
 EXPLAIN FORMAT=tree SELECT * FROM t1, t2 WHERE t1.col1 <=> t2.col1;
 EXPLAIN
--> Inner hash join (<hash>(t1.col1)=<hash>(t2.col1)), extra conditions: (t1.col1 <=> t2.col1)  (rows=0.8)
-    -> Table scan on t2  (rows=4)
+-> Inner hash join (<hash>(t1.col1)=<hash>(t2.col1)), extra conditions: (t1.col1 <=> t2.col1)  (rows=3.6)
+    -> Table scan on t1  (rows=6)
     -> Hash
-        -> Table scan on t1  (rows=2)
+        -> Table scan on t2  (rows=6)
 
 SELECT * FROM t1, t2 WHERE t1.col1 <=> t2.col1;
 col1	col1
@@ -567,17 +568,19 @@ SET optimizer_switch="materialization=off,firstmatch=off";
 CREATE TABLE t1 (i BIGINT);
 CREATE TABLE t2 (i BIGINT);
 INSERT INTO t1 VALUES (1), (2), (3);
-INSERT INTO t2 VALUES (2), (3);
+INSERT INTO t2 VALUES (2), (3), (4);
 ANALYZE TABLE t1, t2;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t2 WHERE (t2.i) IN (SELECT t1.i FROM t1);
 EXPLAIN
--> Hash semijoin (t2.i = t1.i)  (rows=0.346)
-    -> Table scan on t2  (rows=2)
+-> Inner hash join (LooseScan) (t2.i = t1.i)  (rows=0.52)
+    -> Remove duplicates from input grouped on t1.i  (rows=1.73)
+        -> Sort: t1.i  (rows=3)
+            -> Table scan on t1  (rows=3)
     -> Hash
-        -> Table scan on t1  (rows=3)
+        -> Table scan on t2  (rows=3)
 
 SELECT * FROM t2 WHERE (t2.i) IN (SELECT t1.i FROM t1);
 i
@@ -612,10 +615,12 @@ EXPLAIN FORMAT=tree
 SELECT COUNT(*) FROM t2 WHERE (t2.i) IN (SELECT t1.i FROM t1);
 EXPLAIN
 -> Aggregate: count(0)  (rows=1)
-    -> Hash semijoin (t2.i = t1.i)  (rows=1024)
-        -> Table scan on t2  (rows=1024)
+    -> Inner hash join (LooseScan) (t2.i = t1.i)  (rows=1536)
+        -> Remove duplicates from input grouped on t1.i  (rows=39.2)
+            -> Sort: t1.i  (rows=1536)
+                -> Table scan on t1  (rows=1536)
         -> Hash
-            -> Table scan on t1  (rows=1536)
+            -> Table scan on t2  (rows=1536)
 
 TRUNCATE performance_schema.file_summary_by_event_name;
 SELECT COUNT_STAR > 0 FROM performance_schema.file_summary_by_event_name
@@ -668,8 +673,8 @@ DROP TABLE t;
 # make this query deterministic.
 CREATE TABLE t1 (col1 INTEGER);
 CREATE TABLE t2 (col1 INTEGER);
-INSERT INTO t1 VALUES (1), (2);
-INSERT INTO t2 VALUES (1), (2);
+INSERT INTO t1 VALUES (1), (2), (3), (3), (3), (3);
+INSERT INTO t2 VALUES (1), (2), (4), (4), (4), (4);
 ANALYZE TABLE t1, t2;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
@@ -684,11 +689,11 @@ WHERE
 t1.col1 = t2.col1
 AND t1.col1 = FLOOR(RAND() / 2 + 2);
 EXPLAIN
--> Filter: (t1.col1 = floor(((rand() / 2) + 2)))  (rows=0.04)
-    -> Inner hash join (t1.col1 = t2.col1)  (rows=0.4)
-        -> Table scan on t1  (rows=2)
+-> Filter: (t1.col1 = floor(((rand() / 2) + 2)))  (rows=0.36)
+    -> Inner hash join (t1.col1 = t2.col1)  (rows=3.6)
+        -> Table scan on t1  (rows=6)
         -> Hash
-            -> Table scan on t2  (rows=2)
+            -> Table scan on t2  (rows=6)
 
 SELECT
 t1.col1,
@@ -707,8 +712,7 @@ DROP TABLE t1, t2;
 CREATE TABLE c (
 col1 varchar(1)
 ) ENGINE = myisam;
-INSERT INTO c VALUES ('w');
-INSERT INTO c VALUES ('d');
+INSERT INTO c VALUES ('a'), ('b'), ('c'), ('d'), ('e'), ('f');
 ANALYZE TABLE c;
 Table	Op	Msg_type	Msg_text
 test.c	analyze	status	OK
@@ -718,10 +722,10 @@ FROM
 JOIN (SELECT * FROM c) AS table2
 ON table2.col1 = table1.col1;
 EXPLAIN
--> Inner hash join (c.col1 = c.col1)  (rows=0.4)
-    -> Table scan on c  (rows=2)
+-> Inner hash join (c.col1 = c.col1)  (rows=3.6)
+    -> Table scan on c  (rows=6)
     -> Hash
-        -> Table scan on c  (rows=2)
+        -> Table scan on c  (rows=6)
 
 SELECT *
 FROM
@@ -729,8 +733,12 @@ FROM
 JOIN (SELECT * FROM c) AS table2
 ON table2.col1 = table1.col1;
 col1	col1
-w	w
+a	a
+b	b
+c	c
 d	d
+e	e
+f	f
 DROP TABLE c;
 # This query ends up with a BNL between t3 and t2. Ensure that we don't
 # end up with a hash join like:
@@ -747,21 +755,26 @@ SET optimizer_switch='firstmatch=off';
 CREATE TABLE t1 (i INTEGER) ENGINE = MyISAM;
 CREATE TABLE t2 (i INTEGER) ENGINE = MyISAM;
 CREATE TABLE t3 (i INTEGER) ENGINE = MyISAM;
-INSERT INTO t1 VALUES (2);
-INSERT INTO t2 VALUES (2);
+INSERT INTO t1 VALUES (2), (3), (3), (3), (3), (3);
+INSERT INTO t2 VALUES (2), (4), (4), (4), (4), (4);
 ANALYZE TABLE t1, t2;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 test.t2	analyze	status	OK
+# Note: plan change with new hypergraph cost model.
+# Seems to avoid the undesirable plan.
 EXPLAIN FORMAT=tree
 SELECT * FROM t1 WHERE (t1.i) IN  (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 EXPLAIN
--> Nested loop semijoin  (rows=0)
-    -> Table scan on t1  (rows=1)
-    -> Filter: (t1.i = t3.i)  (rows=0)
-        -> Nested loop inner join  (rows=0)
-            -> Table scan on t2  (rows=1)
-            -> Table scan on t3  (rows=0)
+-> Inner hash join (LooseScan) (t1.i = t3.i)  (rows=0)
+    -> Remove duplicates from input grouped on t3.i  (rows=0)
+        -> Sort: t3.i  (rows=0)
+            -> Inner hash join (no condition)  (rows=0)
+                -> Table scan on t3  (rows=0)
+                -> Hash
+                    -> Table scan on t2  (rows=6)
+    -> Hash
+        -> Table scan on t1  (rows=6)
 
 SELECT * FROM t1 WHERE (t1.i) IN  (SELECT t3.i FROM t2 STRAIGHT_JOIN t3);
 i
@@ -779,11 +792,11 @@ test.t1	analyze	status	OK
 test.t3	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1, t3 WHERE t3.b = t1.a + 9 AND t3.a = t1.a;
 EXPLAIN
--> Nested loop inner join  (rows=0.08)
-    -> Filter: (t3.b = (t3.a + 9))  (rows=0.4)
-        -> Table scan on t3  (rows=4)
-    -> Filter: (t3.a = t1.a)  (rows=0.2)
-        -> Table scan on t1  (rows=2)
+-> Inner hash join (t3.a = t1.a)  (rows=0.08)
+    -> Table scan on t1  (rows=2)
+    -> Hash
+        -> Filter: (t3.b = (t3.a + 9))  (rows=0.4)
+            -> Table scan on t3  (rows=4)
 
 SELECT * FROM t1, t3 WHERE t3.b = t1.a + 9 AND t3.a = t1.a;
 a	b	a	b
@@ -794,18 +807,18 @@ DROP TABLE t1,t3;
 # but still uses join buffering.
 CREATE TABLE t1 (col1 INTEGER);
 CREATE TABLE t2 (col1 INTEGER);
-INSERT INTO t1 VALUES (1), (2);
-INSERT INTO t2 VALUES (2);
+INSERT INTO t1 VALUES (1), (2), (3), (3), (3), (3), (3), (3), (3), (3);
+INSERT INTO t2 VALUES (2), (4), (4), (4), (4), (4), (4), (4), (4), (4);
 ANALYZE TABLE t1, t2;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1 LEFT JOIN t2 ON t1.col1 = t2.col1;
 EXPLAIN
--> Left hash join (t1.col1 = t2.col1)  (rows=2)
-    -> Table scan on t1  (rows=2)
+-> Left hash join (t1.col1 = t2.col1)  (rows=10)
+    -> Table scan on t1  (rows=10)
     -> Hash
-        -> Table scan on t2  (rows=1)
+        -> Table scan on t2  (rows=10)
 
 DROP TABLE t1, t2;
 # See that we can replace a BNL with hash join, even if we have extra
@@ -814,8 +827,8 @@ DROP TABLE t1, t2;
 # the join.
 CREATE TABLE t1 (col1 INTEGER, col2 INTEGER);
 CREATE TABLE t2 (col1 INTEGER, col2 INTEGER);
-INSERT INTO t1 VALUES (1, 1), (2, 2), (3, 3);
-INSERT INTO t2 VALUES (1, 1), (2, 4), (3, 6);
+INSERT INTO t1 VALUES (1, 1), (2, 2), (3, 3), (4, 3), (4, 3), (4, 3);
+INSERT INTO t2 VALUES (1, 1), (2, 4), (3, 6), (5, 3), (5, 3), (5, 3);
 ANALYZE TABLE t1, t2;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
@@ -823,10 +836,10 @@ test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree
 SELECT * FROM t1 JOIN t2 ON t1.col1 = t2.col1 AND t1.col2 < t2.col2;
 EXPLAIN
--> Inner hash join (t1.col1 = t2.col1), extra conditions: (t1.col2 < t2.col2)  (rows=0.3)
-    -> Table scan on t1  (rows=3)
+-> Inner hash join (t1.col1 = t2.col1), extra conditions: (t1.col2 < t2.col2)  (rows=1.2)
+    -> Table scan on t1  (rows=6)
     -> Hash
-        -> Table scan on t2  (rows=3)
+        -> Table scan on t2  (rows=6)
 
 SELECT * FROM t1 JOIN t2 ON t1.col1 = t2.col1 AND t1.col2 < t2.col2;
 col1	col2	col1	col2
@@ -838,21 +851,28 @@ INSERT INTO t1 VALUES (1), (1), (1), (1), (1), (1), (1), (1), (1), (1);
 ANALYZE TABLE t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
+# Should use hash joins only, since there are no indexes that could
+# help speed up nested loop joins.
 EXPLAIN FORMAT=tree SELECT SUM(t1.col1)
 FROM t1, t1 t2, t1 t3, t1 t4, t1 t5, t1 t6;
 EXPLAIN
 -> Aggregate: sum(t1.col1)  (rows=1)
-    -> Nested loop inner join  (rows=1e+6)
-        -> Nested loop inner join  (rows=100000)
-            -> Nested loop inner join  (rows=10000)
-                -> Nested loop inner join  (rows=1000)
-                    -> Nested loop inner join  (rows=100)
+    -> Inner hash join (no condition)  (rows=1e+6)
+        -> Inner hash join (no condition)  (rows=100000)
+            -> Inner hash join (no condition)  (rows=10000)
+                -> Inner hash join (no condition)  (rows=1000)
+                    -> Inner hash join (no condition)  (rows=100)
                         -> Table scan on t1  (rows=10)
-                        -> Table scan on t2  (rows=10)
-                    -> Table scan on t3  (rows=10)
-                -> Table scan on t4  (rows=10)
-            -> Table scan on t5  (rows=10)
-        -> Table scan on t6  (rows=10)
+                        -> Hash
+                            -> Table scan on t2  (rows=10)
+                    -> Hash
+                        -> Table scan on t3  (rows=10)
+                -> Hash
+                    -> Table scan on t4  (rows=10)
+            -> Hash
+                -> Table scan on t5  (rows=10)
+        -> Hash
+            -> Table scan on t6  (rows=10)
 
 SELECT SUM(t1.col1) FROM t1, t1 t2, t1 t3, t1 t4, t1 t5, t1 t6;
 SUM(t1.col1)
@@ -875,31 +895,32 @@ DROP TABLE t1;
 CREATE TABLE t1 (col1 INT);
 CREATE TABLE t2 (col1 INT);
 CREATE TABLE t3 (col1 INT);
-INSERT INTO t1 VALUES (1), (2), (3);
-INSERT INTO t2 VALUES (1), (2), (3);
-INSERT INTO t3 VALUES (1), (2), (3);
+INSERT INTO t1 VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9);
+INSERT INTO t2 VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9);
+INSERT INTO t3 VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9);
 ANALYZE TABLE t1, t2, t3;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 test.t3	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT STRAIGHT_JOIN * FROM t1
-JOIN t2 ON t1.col1 + 10 = t2.col1
+JOIN t2 ON t1.col1 + 999 = t2.col1
 JOIN t3 ON t2.col1 = t3.col1;
 EXPLAIN
--> Nested loop inner join  (rows=2.7)
-    -> Inner hash join (t2.col1 = t3.col1)  (rows=0.9)
-        -> Table scan on t3  (rows=3)
-        -> Hash
-            -> Table scan on t2  (rows=3)
-    -> Filter: ((t1.col1 + 10) = t2.col1)  (rows=3)
-        -> Table scan on t1  (rows=3)
+-> Inner hash join (t2.col1 = t3.col1)  (rows=72.9)
+    -> Table scan on t3  (rows=9)
+    -> Hash
+        -> Inner hash join ((t1.col1 + 999) = t2.col1)  (rows=81)
+            -> Table scan on t2  (rows=9)
+            -> Hash
+                -> Table scan on t1  (rows=9)
 
+# The test doesn't specify what we expect here, rendering it meaningless and unmaintainable.
 SELECT SUM(variable_value) AS Total_handler_reads
 FROM performance_schema.session_status
 WHERE variable_name LIKE 'Handler_read%';
 Total_handler_reads
-30
+27
 DROP TABLE t1, t2, t3;
 #
 # Bug#29898802	WL#2241: SIG6 IN HASH_JOIN_BUFFER::LOADINTOTABLEBUFFERS()
@@ -912,7 +933,7 @@ col_varchar_key varchar(1),
 PRIMARY KEY (pk),
 KEY idx_CC_col_varchar_key (col_varchar_key)
 );
-INSERT INTO t1 VALUES (1,'n','X'),(2,'Y','8'),(3,'R','l');
+INSERT INTO t1 VALUES (1,'n','X'), (2,'Y','8'), (3,'R','l'), (4,'a','b'), (5,'c','d'), (6,'e','f');
 ANALYZE TABLE t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
@@ -933,14 +954,15 @@ alias2.col_varchar_key >= t1.col_varchar
 GROUP BY
 field1;
 EXPLAIN
--> Group (no aggregates)  (rows=1.95)
-    -> Nested loop inner join  (rows=3.8)
-        -> Sort: t1.col_varchar_key  (rows=1.27)
-            -> Hash antijoin (no condition), extra conditions: (alias2.col_varchar_key >= t1.col_varchar)  (rows=1.27)
-                -> Table scan on t1  (rows=3)
-                -> Hash
-                    -> Table scan on alias2  (rows=3)
-        -> Table scan on alias1  (rows=3)
+-> Table scan on <temporary>  (rows=2.57)
+    -> Temporary table with deduplication  (rows=2.57)
+        -> Inner hash join (no condition)  (rows=6.61)
+            -> Table scan on alias1  (rows=6)
+            -> Hash
+                -> Hash antijoin (no condition), extra conditions: (alias2.col_varchar_key >= t1.col_varchar)  (rows=1.1)
+                    -> Table scan on t1  (rows=6)
+                    -> Hash
+                        -> Table scan on alias2  (rows=6)
 
 Warnings:
 Note	1276	Field or reference 'test.t1.col_varchar' of SELECT #2 was resolved in SELECT #1
@@ -980,10 +1002,11 @@ test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT t1.col_int_key AS field1, t2.col_int AS field2 FROM t2
 JOIN t1 ON 1 WHERE (CAST("1" AS JSON) MEMBER OF( t1.col_json->'$[*]'));
 EXPLAIN
--> Nested loop inner join  (rows=10)
-    -> Filter: json'"1"' member of (cast(json_extract(col_json,_utf8mb4'$[*]') as char(40) array))  (rows=2)
-        -> Table scan on t1  (rows=3)
+-> Inner hash join (no condition)  (rows=10)
     -> Table scan on t2  (rows=5)
+    -> Hash
+        -> Filter: json'"1"' member of (cast(json_extract(col_json,_utf8mb4'$[*]') as char(40) array))  (rows=2)
+            -> Table scan on t1  (rows=3)
 
 SELECT t1.col_int_key AS field1, t2.col_int AS field2 FROM t2
 JOIN t1 ON 1 WHERE (CAST("1" AS JSON) MEMBER OF( t1.col_json->'$[*]'));
@@ -1012,6 +1035,9 @@ ANALYZE TABLE a, b;
 Table	Op	Msg_type	Msg_text
 test.a	analyze	status	OK
 test.b	analyze	status	OK
+# It will be difficult to trigger the same plan using the hypergraph optimizer
+# and to keep it stable under cost model changes. We avoid changing the original
+# test so that it at least tests for the bug with the original optimizer.
 EXPLAIN FORMAT=tree SELECT 1 FROM (b AS table1
 INNER JOIN a AS table2 ON table2.pk = table1.pk OR table1.col_varchar < 'D')
 WHERE (NOT EXISTS
@@ -1020,10 +1046,10 @@ ON alias4.col_varchar = alias3.col_varchar_key)
 WHERE alias3.pk >= table1.pk));
 EXPLAIN
 -> Hash antijoin (no condition), extra conditions: (alias3.pk >= table1.pk)  (rows=1.33)
-    -> Nested loop inner join  (rows=2)
-        -> Table scan on table2  (rows=1)
-        -> Filter: ((table2.pk = table1.pk) or (table1.col_varchar < 'D'))  (rows=2)
-            -> Table scan on table1  (rows=4)
+    -> Inner hash join (no condition), extra conditions: ((table2.pk = table1.pk) or (table1.col_varchar < 'D'))  (rows=2)
+        -> Table scan on table1  (rows=4)
+        -> Hash
+            -> Table scan on table2  (rows=1)
     -> Hash
         -> Inner hash join (alias4.col_varchar = alias3.col_varchar_key)  (rows=1)
             -> Table scan on alias4  (rows=1)
@@ -1044,19 +1070,20 @@ DROP TABLE a, b;
 #              HASH_JOIN_ITERATOR.CC
 #
 CREATE TABLE t1 (col1 TEXT);
-INSERT INTO t1 VALUES (REPEAT('A', 50000)), (REPEAT('A', 50000));
+INSERT INTO t1 VALUES (REPEAT('A', 50000)), (REPEAT('B', 50000)), (REPEAT('C', 50000)),
+(REPEAT('D', 50000)), (REPEAT('E', 50000)), (REPEAT('F', 50000));
 ANALYZE TABLE t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
-EXPLAIN FORMAT=tree SELECT a.col1 FROM t1 AS a, t1 AS b;
+EXPLAIN FORMAT=tree SELECT a.col1 FROM t1 AS a, t1 AS b WHERE a.col1 = b.col1;
 EXPLAIN
--> Inner hash join (no condition)  (rows=4)
-    -> Table scan on a  (rows=2)
+-> Inner hash join (<hash>(a.col1)=<hash>(b.col1)), extra conditions: (a.col1 = b.col1)  (rows=3.6)
+    -> Table scan on a  (rows=6)
     -> Hash
-        -> Table scan on b  (rows=2)
+        -> Table scan on b  (rows=6)
 
 SET join_buffer_size = 128;
-SELECT a.col1 FROM t1 AS a, t1 AS b;
+SELECT a.col1 FROM t1 AS a, t1 AS b WHERE a.col1 = b.col1;
 DROP TABLE t1;
 # Set up a case where we have very skewed data in the probe input, and we
 # degrade into an on-disk hash join. We want to trigger a code path where
@@ -1084,9 +1111,9 @@ EXPLAIN FORMAT=tree SELECT STRAIGHT_JOIN COUNT(*) FROM t1 JOIN t2 ON t1.col1 = t
 EXPLAIN
 -> Aggregate: count(0)  (rows=1)
     -> Inner hash join (<hash>(t1.col1)=<hash>(t2.col1)), extra conditions: (t1.col1 = t2.col1)  (rows=26214)
-        -> Table scan on t1  (rows=512)
+        -> Table scan on t2  (rows=512)
         -> Hash
-            -> Table scan on t2  (rows=512)
+            -> Table scan on t1  (rows=512)
 
 SET join_buffer_size = 1024;
 SELECT STRAIGHT_JOIN COUNT(*) FROM t1 JOIN t2 ON t1.col1 = t2.col1;
@@ -1126,9 +1153,9 @@ test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1 JOIN t2 ON t1.col1 = t2.col1;
 EXPLAIN
--> Nested loop inner join  (rows=0.1)
+-> Inner hash join (t1.col1 = t2.col1)  (rows=0.1)
     -> Table scan on t1  (rows=1)
-    -> Filter: (t1.col1 = t2.col1)  (rows=0.1)
+    -> Hash
         -> Table scan on t2  (rows=1)
 
 SELECT * FROM t1 JOIN t2 ON t1.col1 = t2.col1;
@@ -1155,9 +1182,9 @@ Warnings:
 Warning	3090	Changing sql mode 'PAD_CHAR_TO_FULL_LENGTH' is deprecated. It will be removed in a future release.
 EXPLAIN FORMAT=tree SELECT * FROM t1 JOIN t2 ON t1.col1 = t2.col1;
 EXPLAIN
--> Nested loop inner join  (rows=0.1)
+-> Inner hash join (t1.col1 = t2.col1)  (rows=0.1)
     -> Table scan on t1  (rows=1)
-    -> Filter: (t1.col1 = t2.col1)  (rows=0.1)
+    -> Hash
         -> Table scan on t2  (rows=1)
 
 SELECT * FROM t1 JOIN t2 ON t1.col1 = t2.col1;
@@ -1268,7 +1295,7 @@ KEY (f2)
 Warnings:
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
-INSERT INTO t2 VALUES (1, 7), (2, 1), (4, 7);
+INSERT INTO t2 VALUES (1, 7), (2, 1), (4, 7), (5, 6), (8, 9), (10, 11);
 CREATE TABLE t4(f1 INT DEFAULT NULL);
 INSERT INTO t4 VALUES (2);
 ANALYZE TABLE t1, t2, t4;
@@ -1282,37 +1309,44 @@ WHERE ta4.f1 IN (SELECT /*+ QB_NAME(qb1) */ f1 FROM t4) AND
 ta3.f2 IN (SELECT /*+ QB_NAME(qb2) */ f2 FROM t2);
 EXPLAIN
 -> Aggregate: count(0)  (rows=1)
-    -> Nested loop inner join  (rows=2.6)
-        -> Nested loop inner join  (rows=1)
-            -> Remove duplicates from input grouped on t4.f1  (rows=1)
-                -> Sort: t4.f1  (rows=1)
+    -> Inner hash join (no condition)  (rows=2.94)
+        -> Inner hash join (no condition)  (rows=2.94)
+            -> Nested loop semijoin (FirstMatch)  (rows=2.94)
+                -> Table scan on ta3  (rows=6)
+                -> Covering index lookup on t2 using f2 (f2 = ta3.f2)  (rows=1.2)
+            -> Hash
+                -> Table scan on t1  (rows=1)
+        -> Hash
+            -> Hash semijoin (FirstMatch) (ta4.f1 = t4.f1)  (rows=1)
+                -> Table scan on ta4  (rows=6)
+                -> Hash
                     -> Table scan on t4  (rows=1)
-            -> Single-row covering index lookup on ta4 using PRIMARY (f1=t4.f1)  (rows=1)
-        -> Nested loop inner join  (rows=2.6)
-            -> Table scan on t1  (rows=1)
-            -> Nested loop inner join  (rows=2.6)
-                -> Remove duplicates from input grouped on t2.f2  (rows=1.73)
-                    -> Covering index scan on t2 using f2  (rows=3)
-                -> Covering index lookup on ta3 using f2 (f2=t2.f2)  (rows=1.5)
 
+Warnings:
+Warning	3515	Hints aren't supported in hypergraph: first table in join order cannot be semijoin/antijoin nest
 SELECT /*+ JOIN_PREFIX(t2@qb2, t4@qb1, ta3, ta4) */
 COUNT(*) FROM t1 JOIN t2 AS ta3 JOIN t2 AS ta4
 WHERE ta4.f1 IN (SELECT /*+ QB_NAME(qb1) */ f1 FROM t4) AND
 ta3.f2 IN (SELECT /*+ QB_NAME(qb2) */ f2 FROM t2);
 COUNT(*)
-3
+6
+Warnings:
+Warning	3515	Hints aren't supported in hypergraph: first table in join order cannot be semijoin/antijoin nest
 SELECT /*+ JOIN_PREFIX(t2@qb2, t4@qb1, ta3, ta4) */
 COUNT(*) FROM t1 JOIN t2 AS ta3 JOIN t2 AS ta4
 WHERE ta4.f1 IN (SELECT /*+ QB_NAME(qb1) */ f1 FROM t4) AND
 ta3.f2 IN (SELECT /*+ QB_NAME(qb2) */ f2 FROM t2);
 COUNT(*)
-3
+6
+Warnings:
+Warning	3515	Hints aren't supported in hypergraph: first table in join order cannot be semijoin/antijoin nest
 DROP TABLE t1, t2, t4;
 #
 # Bug#30035890 SIG 11 IN HASHJOINITERATOR::READJOINEDROW AT
 #              SQL/HASH_JOIN_ITERATOR.CC
 #
 # Note that this test case needs ASAN to reproduce.
+# Note: Different plan with new hypergraph cost model.
 CREATE TABLE t1 (a INT);
 INSERT INTO t1 VALUES (7), (7);
 CREATE TABLE t2 (b INT, c DATETIME);
@@ -1396,16 +1430,16 @@ sq2_alias1.col_varchar_key != alias2.col_varchar
 AND sq2_alias1.col_int > alias2.pk
 );
 EXPLAIN
--> Hash semijoin (alias1.col_varchar_key = sq2_alias1.col_varchar), extra conditions: (sq2_alias1.col_varchar_key <> alias2.col_varchar) and (sq2_alias1.col_int > alias2.pk)  (rows=0.0635)
-    -> Nested loop inner join  (rows=0.2)
-        -> Nested loop inner join  (rows=0.01)
-            -> Table scan on alias2  (rows=1)
-            -> Filter: ((alias3.col_varchar_key = alias2.col_varchar_key) and (alias3.col_int_key = alias2.col_int_key))  (rows=0.01)
-                -> Table scan on alias3  (rows=1)
-                    -> Materialize  (rows=1)
-                        -> Remove duplicates from input grouped on sq1_alias1.pk  (rows=1)
-                            -> Index scan on sq1_alias1 using PRIMARY  (rows=1)
+-> Hash semijoin (FirstMatch) (alias1.col_varchar_key = sq2_alias1.col_varchar), extra conditions: (sq2_alias1.col_varchar_key <> alias2.col_varchar) and (sq2_alias1.col_int > alias2.pk)  (rows=0.0635)
+    -> Inner hash join (no condition)  (rows=0.2)
         -> Table scan on alias1  (rows=20)
+        -> Hash
+            -> Nested loop inner join  (rows=0.01)
+                -> Table scan on alias2  (rows=1)
+                -> Index lookup on alias3 using <auto_key0> (col_int_key = alias2.col_int_key, col_varchar_key = alias2.col_varchar_key)  (rows=0.01)
+                    -> Materialize  (rows=1)
+                        -> Sort with duplicate removal: sq1_alias1.pk  (rows=1)
+                            -> Table scan on sq1_alias1  (rows=1)
     -> Hash
         -> Table scan on sq2_alias1  (rows=20)
 
@@ -1682,21 +1716,22 @@ alias1.col_int_key DESC, field1
 LIMIT 2 OFFSET 2;
 EXPLAIN
 -> Limit/Offset: 2/2 row(s)  (rows=2)
-    -> Sort: alias1.col_int_key DESC, alias1.pk, limit input to 4 row(s) per chunk  (rows=4)
-        -> Filter: (field1 <> 0)  (rows=4.59)
-            -> Group (no aggregates)  (rows=5.1)
-                -> Nested loop semijoin  (rows=24)
-                    -> Sort: alias1.pk  (rows=24)
+    -> Sort: alias1.col_int_key DESC, alias1.field1, limit input to 4 row(s) per chunk  (rows=4)
+        -> Filter: (alias1.field1 <> 0)  (rows=4.59)
+            -> Table scan on <temporary>  (rows=5.1)
+                -> Temporary table with deduplication  (rows=5.1)
+                    -> Nested loop semijoin (FirstMatch)  (rows=24)
                         -> Filter: (alias1.col_varchar_key <> alias1.col_varchar)  (rows=24)
                             -> Table scan on alias1  (rows=26.7)
                                 -> Materialize  (rows=26.7)
                                     -> Limit: 100 row(s)  (rows=26.7)
                                         -> Nested loop left join  (rows=26.7)
                                             -> Table scan on sq1_alias2  (rows=20)
-                                            -> Covering index lookup on sq1_alias1 using col_varchar_key (col_varchar_key=sq1_alias2.col_varchar_key)  (rows=1.33)
-                    -> Nested loop inner join  (rows=26.7)
-                        -> Covering index lookup on sq2_alias1 using col_varchar_key (col_varchar_key=alias1.col_varchar_key)  (rows=1.33)
-                        -> Table scan on sq2_alias2  (rows=20)
+                                            -> Covering index lookup on sq1_alias1 using col_varchar_key (col_varchar_key = sq1_alias2.col_varchar_key)  (rows=1.33)
+                        -> Inner hash join (no condition)  (rows=26.7)
+                            -> Covering index scan on sq2_alias2 using col_date_key  (rows=20)
+                            -> Hash
+                                -> Covering index lookup on sq2_alias1 using col_varchar_key (col_varchar_key = alias1.col_varchar_key)  (rows=1.33)
 
 Warnings:
 Note	1276	Field or reference 'alias1.col_varchar' of SELECT #3 was resolved in SELECT #1
@@ -1775,6 +1810,7 @@ ANALYZE TABLE b, cc;
 Table	Op	Msg_type	Msg_text
 test.b	analyze	status	OK
 test.cc	analyze	status	OK
+# Note: Different plan with new hypergraph cost model.
 EXPLAIN FORMAT=tree SELECT
 table1.col_varchar
 FROM
@@ -1805,20 +1841,20 @@ FROM
 b AS subquery3_t1
 );
 EXPLAIN
--> Left hash join (subquery1_t1.col_varchar = table2.col_varchar), extra conditions: <in_optimizer>(subquery1_t1.col_varchar,<exists>(select #4))  (rows=0.2)
-    -> Nested loop inner join  (rows=0.2)
-        -> Table scan on subquery1_t1  (rows=1)
-        -> Filter: (subquery1_t1.col_varchar = subquery1_t2.col_varchar)  (rows=0.2)
-            -> Table scan on subquery1_t2  (rows=2)
+-> Inner hash join (subquery1_t1.col_varchar = subquery1_t2.col_varchar)  (rows=0.2)
+    -> Table scan on subquery1_t2  (rows=2)
     -> Hash
-        -> Table scan on table2  (rows=1.41)
-            -> Materialize  (rows=1.41)
-                -> Group (no aggregates)  (rows=1.41)
-                    -> Sort: subquery2_t1.col_varchar  (rows=2)
-                        -> Table scan on subquery2_t1  (rows=2)
-    -> Select #4 (subquery in extra conditions; dependent)
-        -> Filter: (<cache>(subquery1_t1.col_varchar) = lower(subquery3_t1.pk))  (rows=1)
-            -> Table scan on subquery3_t1  (rows=1)
+        -> Nested loop left join  (rows=1)
+            -> Table scan on subquery1_t1  (rows=1)
+            -> Filter: <in_optimizer>(subquery1_t1.col_varchar,<exists>(select #4))  (rows=0.141)
+                -> Covering index lookup on table2 using <auto_key0> (col_varchar = subquery1_t1.col_varchar)  (rows=0.141)
+                    -> Materialize  (rows=1.41)
+                        -> Group (no aggregates)  (rows=1.41)
+                            -> Sort: subquery2_t1.col_varchar  (rows=2)
+                                -> Table scan on subquery2_t1  (rows=2)
+                -> Select #4 (subquery in condition; dependent)
+                    -> Filter: (<cache>(subquery1_t1.col_varchar) = lower(subquery3_t1.pk))  (rows=1)
+                        -> Table scan on subquery3_t1  (rows=1)
 
 SELECT
 table1.col_varchar
@@ -1889,7 +1925,7 @@ SELECT * FROM t1, t2 WHERE t1.col1 = t2.col1 LIMIT 1;
 SELECT COUNT_STAR > 0 FROM performance_schema.file_summary_by_event_name
 WHERE event_name LIKE '%hash_join%';
 COUNT_STAR > 0
-0
+1
 # This should spill to disk since we have sorting.
 TRUNCATE performance_schema.file_summary_by_event_name;
 SELECT * FROM t1, t2 WHERE t1.col1 = t2.col1 ORDER BY t1.col1 LIMIT 1;
@@ -1898,7 +1934,7 @@ col1	col1
 SELECT COUNT_STAR > 0 FROM performance_schema.file_summary_by_event_name
 WHERE event_name LIKE '%hash_join%';
 COUNT_STAR > 0
-0
+1
 # This should spill to disk since we have (implicit) grouping.
 TRUNCATE performance_schema.file_summary_by_event_name;
 SELECT SUM(t1.col1) FROM t1, t2 WHERE t1.col1 = t2.col1 LIMIT 10;
@@ -1942,10 +1978,12 @@ JOIN t2 ON t1.col1 = t2.col1
 WHERE t2.col2 > 0 OR t2.col3 > 0 LIMIT 10;
 EXPLAIN
 -> Limit: 10 row(s)  (rows=0.0556)
-    -> Nested loop inner join  (rows=0.0556)
+    -> Inner hash join (t1.col1 = t2.col1)  (rows=0.0556)
         -> Table scan on t1  (rows=1)
-        -> Filter: (((t2.col2 > 0) or (t2.col3 > 0)) and (t1.col1 = t2.col1))  (rows=0.0556)
-            -> Table scan on t2  (rows=1)
+        -> Hash
+            -> Sort-deduplicate by row ID  (rows=0.556)
+                -> Index range scan on t2 using idx_a over (0 < col2)  (rows=1)
+                -> Index range scan on t2 using idx_b over (0 < col3)  (rows=1)
 
 SELECT /*+ JOIN_ORDER(t2, t1) INDEX_MERGE(t2) */ t1.col1
 FROM t1
@@ -1982,13 +2020,14 @@ WHERE table1.col1 = 1
 LIMIT 50;
 EXPLAIN
 -> Limit: 50 row(s)  (rows=0.1)
-    -> Nested loop inner join  (rows=0.1)
-        -> Table scan on table1  (rows=0.1)
-            -> Materialize  (rows=0.1)
-                -> Limit: 1 row(s)  (rows=0.1)
-                    -> Filter: (t1.col1 = 1)  (rows=0.1)
-                        -> Table scan on t1  (rows=1)
+    -> Inner hash join (no condition)  (rows=0.1)
         -> Table scan on t2  (rows=1)
+        -> Hash
+            -> Table scan on table1  (rows=0.1)
+                -> Materialize  (rows=0.1)
+                    -> Limit: 1 row(s)  (rows=0.1)
+                        -> Filter: (t1.col1 = 1)  (rows=0.1)
+                            -> Table scan on t1  (rows=1)
 
 SELECT /*+ JOIN_ORDER(table1, t2) */
 *
@@ -2036,9 +2075,9 @@ test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1 JOIN t2 ON t1.c = t2.c;
 EXPLAIN
--> Nested loop inner join  (rows=0.1)
+-> Inner hash join (t1.c = t2.c)  (rows=0.1)
     -> Table scan on t1  (rows=1)
-    -> Filter: (t1.c = t2.c)  (rows=0.1)
+    -> Hash
         -> Table scan on t2  (rows=1)
 
 SELECT * FROM t1 JOIN t2 ON t1.c = t2.c;
@@ -2074,12 +2113,12 @@ JOIN t2 ON t1.i > t2.i
 JOIN t3 ON t2.i = t3.i;
 EXPLAIN
 -> Inner hash join (t2.i = t3.i)  (rows=8737)
-    -> Inner hash join (no condition), extra conditions: (t1.i > t2.i)  (rows=1365)
-        -> Table scan on t1  (rows=64)
-        -> Hash
-            -> Table scan on t2  (rows=64)
+    -> Table scan on t3  (rows=64)
     -> Hash
-        -> Table scan on t3  (rows=64)
+        -> Inner hash join (no condition), extra conditions: (t1.i > t2.i)  (rows=1365)
+            -> Table scan on t2  (rows=64)
+            -> Hash
+                -> Table scan on t1  (rows=64)
 
 SELECT /*+ NO_BNL(t2) JOIN_ORDER(t1, t2, t3) */ * FROM t1
 JOIN t2 ON t1.i > t2.i
@@ -2133,19 +2172,19 @@ INNER JOIN t1 AS t1_2 ON t1_2.col1 = t1.col1
 WHERE t1.col1 <> t2.col1
 ) AND t2.col1 < 49;
 EXPLAIN
--> Inner hash join (no condition)  (rows=3.4)
-    -> Table scan on const_table  (rows=2)
-        -> Materialize  (rows=2)
-            -> Rows fetched before execution  (rows=2)
+-> Hash antijoin (no condition), extra conditions: (t1_2.col1 <> t2.col1)  (rows=3.4)
+    -> Inner hash join (no condition)  (rows=34)
+        -> Filter: (t2.col1 < 49)  (rows=17)
+            -> Table scan on t2  (rows=17)
+        -> Hash
+            -> Table scan on const_table  (rows=2)
+                -> Materialize  (rows=2)
+                    -> Rows fetched before execution  (rows=2)
     -> Hash
-        -> Hash antijoin (no condition), extra conditions: (t1_2.col1 <> t2.col1)  (rows=1.7)
-            -> Filter: (t2.col1 < 49)  (rows=17)
-                -> Table scan on t2  (rows=17)
+        -> Inner hash join (t1_2.col1 = t1.col1)  (rows=1)
+            -> Table scan on t1  (rows=1)
             -> Hash
-                -> Nested loop inner join  (rows=1)
-                    -> Table scan on t1  (rows=1)
-                    -> Filter: (t1_2.col1 = t1.col1)  (rows=1)
-                        -> Table scan on t1_2  (rows=1)
+                -> Table scan on t1_2  (rows=1)
 
 Warnings:
 Note	1276	Field or reference 'test.t2.col1' of SELECT #3 was resolved in SELECT #1
@@ -2223,13 +2262,14 @@ WHERE t2.pk = 9
 EXPLAIN
 -> Table scan on t1  (rows=2)
 -> Select #2 (subquery in projection; dependent)
-    -> Nested loop inner join  (rows=0.1)
+    -> Inner hash join (no condition)  (rows=0.1)
         -> Nested loop left join  (rows=1)
-            -> Single-row covering index lookup on t2 using PRIMARY (pk=9)  (rows=1)
+            -> Single-row covering index lookup on t2 using PRIMARY (pk = 9)  (rows=1)
             -> Filter: ((t3.pk = 9) and (t2.pk = 9))  (rows=0.1)
                 -> Table scan on t3  (rows=1)
-        -> Filter: (t4.pk = 9)  (rows=0.1)
-            -> Table scan on t4  (rows=1)
+        -> Hash
+            -> Filter: (t4.pk = 9)  (rows=0.1)
+                -> Table scan on t4  (rows=1)
 
 Warnings:
 Note	1276	Field or reference 'test.t1.pk' of SELECT #2 was resolved in SELECT #1
@@ -2259,9 +2299,9 @@ test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1 JOIN t2 ON t1.col1 < t2.col1;
 EXPLAIN
--> Nested loop inner join  (rows=0.333)
+-> Inner hash join (no condition), extra conditions: (t1.col1 < t2.col1)  (rows=0.333)
     -> Table scan on t1  (rows=1)
-    -> Filter: (t1.col1 < t2.col1)  (rows=0.333)
+    -> Hash
         -> Table scan on t2  (rows=1)
 
 DROP TABLE t1, t2;
@@ -2276,7 +2316,7 @@ test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1 WHERE (t1.i) IN (SELECT t2.i FROM t2);
 EXPLAIN
--> Hash semijoin (t1.i = t2.i)  (rows=0.283)
+-> Hash semijoin (FirstMatch) (t1.i = t2.i)  (rows=0.283)
     -> Table scan on t1  (rows=2)
     -> Hash
         -> Table scan on t2  (rows=2)
@@ -2287,8 +2327,8 @@ i
 DROP TABLE t1, t2;
 CREATE TABLE t1 (col1 INTEGER, col2 INTEGER);
 CREATE TABLE t2 (col1 INTEGER, col2 INTEGER);
-INSERT INTO t1 VALUES (1, 1), (2, 2);
-INSERT INTO t2 VALUES (1, 1), (1, 2);
+INSERT INTO t1 VALUES (1, 1), (2, 2), (2, 2), (2, 2), (2, 2), (2, 2);
+INSERT INTO t2 VALUES (1, 1), (1, 2), (3, 3), (3, 3), (3, 3), (3, 3);
 ANALYZE TABLE t1, t2;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
@@ -2297,11 +2337,11 @@ EXPLAIN FORMAT=tree
 SELECT * FROM t1 WHERE (t1.col1) IN
 (SELECT t2.col1 FROM t2 WHERE t2.col2 < 3);
 EXPLAIN
--> Hash semijoin (t1.col1 = t2.col1)  (rows=0.133)
-    -> Table scan on t1  (rows=2)
+-> Hash semijoin (FirstMatch) (t1.col1 = t2.col1)  (rows=0.848)
+    -> Table scan on t1  (rows=6)
     -> Hash
-        -> Filter: (t2.col2 < 3)  (rows=0.667)
-            -> Table scan on t2  (rows=2)
+        -> Filter: (t2.col2 < 3)  (rows=2)
+            -> Table scan on t2  (rows=6)
 
 DROP TABLE t1, t2;
 # Test a query where the optimizer will create a semijoin condition that
@@ -2318,7 +2358,7 @@ test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1 WHERE 1 IN (SELECT t1.col1 = t2.col1 FROM t2);
 EXPLAIN
--> Hash semijoin (no condition), extra conditions: (1 = (t1.col1 = t2.col1))  (rows=4)
+-> Hash semijoin (FirstMatch) (no condition), extra conditions: (1 = (t1.col1 = t2.col1))  (rows=4)
     -> Table scan on t1  (rows=4)
     -> Hash
         -> Table scan on t2  (rows=4)
@@ -2346,12 +2386,12 @@ SET optimizer_switch="materialization=off,duplicateweedout=off";
 EXPLAIN FORMAT=tree SELECT * FROM t1 LEFT JOIN t2 ON t1.a=t2.a
 WHERE (t1.a,t2.a) IN (SELECT a, a FROM t3);
 EXPLAIN
--> Nested loop inner join  (rows=0.01)
+-> Inner hash join (t1.a = t2.a)  (rows=0.01)
     -> Table scan on t1  (rows=1)
-    -> Filter: (t1.a = t2.a)  (rows=0.01)
-        -> Nested loop semijoin  (rows=0.1)
+    -> Hash
+        -> Hash semijoin (FirstMatch) (t2.a = t3.a)  (rows=0.1)
             -> Table scan on t2  (rows=1)
-            -> Filter: (t2.a = t3.a)  (rows=0.1)
+            -> Hash
                 -> Table scan on t3  (rows=1)
 
 SELECT * FROM t1 LEFT JOIN t2 ON t1.a=t2.a
@@ -2395,7 +2435,7 @@ EXPLAIN FORMAT=tree SELECT SUM(t1.col1), SUM(t1.col2) FROM t1 WHERE t1.col1 IN
 (SELECT t2.col1 FROM t2);
 EXPLAIN
 -> Aggregate: sum(t1.col1), sum(t1.col2)  (rows=1)
-    -> Hash semijoin (t1.col1 = t2.col1)  (rows=1024)
+    -> Hash semijoin (FirstMatch) (t1.col1 = t2.col1)  (rows=1024)
         -> Table scan on t1  (rows=1024)
         -> Hash
             -> Table scan on t2  (rows=1024)
@@ -2408,7 +2448,7 @@ EXPLAIN FORMAT=tree SELECT SUM(t1.col1), SUM(t1.col2) FROM t1 WHERE t1.col1 IN
 (SELECT t2.col1 FROM t2 WHERE t1.col2 <> t2.col2);
 EXPLAIN
 -> Aggregate: sum(t1.col1), sum(t1.col2)  (rows=1)
-    -> Hash semijoin (t1.col1 = t2.col1), extra conditions: (t1.col2 <> t2.col2)  (rows=1024)
+    -> Hash semijoin (FirstMatch) (t1.col1 = t2.col1), extra conditions: (t1.col2 <> t2.col2)  (rows=1024)
         -> Table scan on t1  (rows=1024)
         -> Hash
             -> Table scan on t2  (rows=1024)
@@ -2455,10 +2495,12 @@ SET optimizer_switch="materialization=off";
 EXPLAIN FORMAT=tree SELECT COUNT(*) FROM probe WHERE col1 IN (SELECT col1 FROM build);
 EXPLAIN
 -> Aggregate: count(0)  (rows=1)
-    -> Hash semijoin (probe.col1 = build.col1)  (rows=256)
-        -> Table scan on probe  (rows=256)
+    -> Inner hash join (LooseScan) (probe.col1 = build.col1)  (rows=256)
+        -> Remove duplicates from input grouped on build.col1  (rows=27.7)
+            -> Sort: build.col1  (rows=768)
+                -> Table scan on build  (rows=768)
         -> Hash
-            -> Table scan on build  (rows=768)
+            -> Table scan on probe  (rows=256)
 
 SELECT COUNT(*) FROM probe WHERE col1 IN (SELECT col1 FROM build);
 COUNT(*)
@@ -2492,7 +2534,7 @@ SET optimizer_switch = "materialization=off";
 SET join_buffer_size = 1024;
 EXPLAIN FORMAT=tree SELECT * FROM probe WHERE col1 IN (SELECT * FROM build);
 EXPLAIN
--> Hash semijoin (probe.col1 = build.col1)  (rows=256)
+-> Hash semijoin (FirstMatch) (probe.col1 = build.col1)  (rows=256)
     -> Table scan on probe  (rows=256)
     -> Hash
         -> Table scan on build  (rows=512)
@@ -3111,9 +3153,9 @@ test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1
 WHERE 1 IN (SELECT 1 FROM t2 WHERE t1.col1 = t2.col1) IS FALSE;
 EXPLAIN
--> Nested loop antijoin  (rows=0.9)
+-> Hash antijoin (t1.col1 = t2.col1)  (rows=0.9)
     -> Table scan on t1  (rows=1)
-    -> Filter: (t1.col1 = t2.col1)  (rows=0.1)
+    -> Hash
         -> Table scan on t2  (rows=1)
 
 Warnings:
@@ -3346,12 +3388,12 @@ test.t3	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1 LEFT JOIN (t2 INNER JOIN t3 ON t2.col1 = t3.col1)
 ON t1.col1 = t2.col1;
 EXPLAIN
--> Nested loop left join  (rows=1)
+-> Left hash join (t1.col1 = t3.col1)  (rows=1)
     -> Table scan on t1  (rows=1)
-    -> Filter: (t1.col1 = t3.col1)  (rows=0.01)
-        -> Nested loop inner join  (rows=0.1)
+    -> Hash
+        -> Inner hash join (t2.col1 = t3.col1)  (rows=0.1)
             -> Table scan on t2  (rows=1)
-            -> Filter: (t2.col1 = t3.col1)  (rows=0.1)
+            -> Hash
                 -> Table scan on t3  (rows=1)
 
 DROP TABLE t1, t2, t3;
@@ -3368,9 +3410,9 @@ test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1 LEFT JOIN t2 ON RAND() < -1;
 EXPLAIN
--> Nested loop left join  (rows=1)
+-> Left hash join (no condition), extra conditions: (rand() < <cache>(-(1)))  (rows=1)
     -> Table scan on t1  (rows=1)
-    -> Filter: (rand() < <cache>(-(1)))  (rows=1)
+    -> Hash
         -> Table scan on t2  (rows=1)
 
 SELECT * FROM t1 LEFT JOIN t2 ON RAND() < -1;
@@ -3448,9 +3490,9 @@ test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree
 SELECT * FROM t1 LEFT JOIN t2 ON t1.col1 = t2.col1 AND RAND() < RAND();
 EXPLAIN
--> Nested loop left join  (rows=1)
+-> Left hash join (t1.col1 = t2.col1), extra conditions: (rand() < rand())  (rows=1)
     -> Table scan on t1  (rows=1)
-    -> Filter: ((t1.col1 = t2.col1) and (rand() < rand()))  (rows=0.1)
+    -> Hash
         -> Table scan on t2  (rows=1)
 
 DROP TABLE t1, t2;
@@ -3524,12 +3566,12 @@ SELECT * FROM t1 LEFT JOIN
 (t2 LEFT JOIN t3 ON ABS(t2.i) = t3.i)
 ON t2.i = t1.i;
 EXPLAIN
--> Nested loop left join  (rows=1)
+-> Left hash join (t2.i = t1.i)  (rows=1)
     -> Table scan on t1  (rows=1)
-    -> Filter: (t2.i = t1.i)  (rows=0.1)
-        -> Nested loop left join  (rows=1)
+    -> Hash
+        -> Left hash join (abs(t2.i) = t3.i)  (rows=1)
             -> Table scan on t2  (rows=1)
-            -> Filter: (abs(t2.i) = t3.i)  (rows=1)
+            -> Hash
                 -> Table scan on t3  (rows=1)
 
 DROP TABLE t1, t2, t3;
@@ -3543,9 +3585,10 @@ test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1 LEFT JOIN t2 ON 1=1;
 EXPLAIN
--> Nested loop left join  (rows=1)
+-> Left hash join (no condition)  (rows=1)
     -> Table scan on t1  (rows=1)
-    -> Table scan on t2  (rows=1)
+    -> Hash
+        -> Table scan on t2  (rows=1)
 
 DROP TABLE t1, t2;
 # Set up a query where the join condition is an equi-join condition,
@@ -3563,12 +3606,13 @@ test.t3	analyze	status	OK
 EXPLAIN FORMAT=tree
 SELECT * FROM t1 LEFT JOIN (t2 LEFT JOIN t3 ON TRUE) ON t3.i = t2.i;
 EXPLAIN
--> Nested loop left join  (rows=1)
+-> Left hash join (no condition)  (rows=1)
     -> Table scan on t1  (rows=1)
-    -> Nested loop inner join  (rows=0.1)
-        -> Table scan on t2  (rows=1)
-        -> Filter: (t3.i = t2.i)  (rows=0.1)
-            -> Table scan on t3  (rows=1)
+    -> Hash
+        -> Inner hash join (t3.i = t2.i)  (rows=0.1)
+            -> Table scan on t2  (rows=1)
+            -> Hash
+                -> Table scan on t3  (rows=1)
 
 DROP TABLE t1, t2, t3;
 # Execute a query that causes the hash join to do everything in memory
@@ -3613,14 +3657,14 @@ test.t1	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1 AS alias1 LEFT JOIN t1 AS alias2 ON NOT EXISTS (
 SELECT * FROM t1 WHERE alias1.pk NOT IN ( 20 ) );
 EXPLAIN
--> Nested loop left join  (rows=400)
+-> Left hash join (no condition), extra conditions: exists(select #2) is false  (rows=400)
     -> Table scan on alias1  (rows=20)
-    -> Filter: exists(select #2) is false  (rows=20)
+    -> Hash
         -> Table scan on alias2  (rows=20)
-        -> Select #2 (subquery in condition; dependent)
-            -> Limit: 1 row(s)  (rows=1)
-                -> Filter: (alias1.pk <> 20)  (rows=20)
-                    -> Table scan on t1  (rows=20)
+    -> Select #2 (subquery in extra conditions; dependent)
+        -> Limit: 1 row(s)  (rows=1)
+            -> Filter: (alias1.pk <> 20)  (rows=20)
+                -> Table scan on t1  (rows=20)
 
 Warnings:
 Note	1276	Field or reference 'test.alias1.pk' of SELECT #2 was resolved in SELECT #1
@@ -3678,14 +3722,14 @@ test.t1	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1 AS alias1 LEFT JOIN t1 AS alias2 ON alias2.f1 = alias1.f1
 AND NOT EXISTS ( SELECT * FROM t1 AS alias3 WHERE alias1.f1 <= 1 );
 EXPLAIN
--> Nested loop left join  (rows=2)
+-> Left hash join (alias2.f1 = alias1.f1), extra conditions: exists(select #2) is false  (rows=2)
     -> Table scan on alias1  (rows=2)
-    -> Filter: ((alias2.f1 = alias1.f1) and exists(select #2) is false)  (rows=0.2)
+    -> Hash
         -> Table scan on alias2  (rows=2)
-        -> Select #2 (subquery in condition; dependent)
-            -> Limit: 1 row(s)  (rows=1)
-                -> Filter: (alias1.f1 <= 1)  (rows=2)
-                    -> Table scan on alias3  (rows=2)
+    -> Select #2 (subquery in extra conditions; dependent)
+        -> Limit: 1 row(s)  (rows=1)
+            -> Filter: (alias1.f1 <= 1)  (rows=2)
+                -> Table scan on alias3  (rows=2)
 
 Warnings:
 Note	1276	Field or reference 'test.alias1.f1' of SELECT #2 was resolved in SELECT #1
@@ -3717,12 +3761,13 @@ SET optimizer_switch='mrr=on,mrr_cost_based=off,batched_key_access=on';
 EXPLAIN FORMAT=tree SELECT * FROM
 t1 AS table3 LEFT JOIN (t1 AS table1, t2 AS table2) ON table2.col_int_key=table3.pk;
 EXPLAIN
--> Nested loop left join  (rows=1)
+-> Left hash join (table2.col_int_key = table3.pk)  (rows=1)
     -> Table scan on table3  (rows=1)
-    -> Filter: (table2.col_int_key = table3.pk)  (rows=1)
-        -> Nested loop inner join  (rows=1)
+    -> Hash
+        -> Inner hash join (no condition)  (rows=1)
             -> Table scan on table1  (rows=1)
-            -> Table scan on table2  (rows=1)
+            -> Hash
+                -> Table scan on table2  (rows=1)
 
 SELECT * FROM
 t1 AS table3 LEFT JOIN (t1 AS table1, t2 AS table2) ON table2.col_int_key=table3.pk;
@@ -3760,12 +3805,13 @@ EXPLAIN
 -> Left hash join (no condition), extra conditions: exists(select #3) is false  (rows=6.4)
     -> Table scan on table1  (rows=4)
     -> Hash
-        -> Nested loop inner join  (rows=1.6)
-            -> Inner hash join (inner_t1.f1 = inner_t2.f1), (inner_t1.pk = inner_t2.pk)  (rows=0.4)
-                -> Table scan on inner_t1  (rows=4)
-                -> Hash
-                    -> Table scan on inner_t2  (rows=4)
+        -> Inner hash join (no condition)  (rows=1.6)
             -> Table scan on inner_t3  (rows=4)
+            -> Hash
+                -> Inner hash join (inner_t1.f1 = inner_t2.f1), (inner_t1.pk = inner_t2.pk)  (rows=0.4)
+                    -> Table scan on inner_t1  (rows=4)
+                    -> Hash
+                        -> Table scan on inner_t2  (rows=4)
     -> Select #3 (subquery in extra conditions; dependent)
         -> Limit: 1 row(s)  (rows=1)
             -> Filter: ((inner_t3.pk >= 1) or (table1.f1 = 'G'))  (rows=4)
@@ -3830,28 +3876,98 @@ DROP TABLE t1, t2;
 CREATE TABLE t1 (
 a LONGTEXT COLLATE utf32_sinhala_ci
 );
-INSERT INTO t1 (a) VALUES ('abc');
+INSERT INTO t1 (a) VALUES ('abc'), ('abc'), ('abc'), ('abc'), ('abc'), ('abc');
 ANALYZE TABLE t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT 1 FROM t1 JOIN t1 AS t2 ON t1.a=t2.a;
 EXPLAIN
--> Nested loop inner join  (rows=0.1)
-    -> Table scan on t1  (rows=1)
-    -> Filter: (t1.a = t2.a)  (rows=0.1)
-        -> Table scan on t2  (rows=1)
+-> Inner hash join (<hash>(t1.a)=<hash>(t2.a)), extra conditions: (t1.a = t2.a)  (rows=3.6)
+    -> Table scan on t1  (rows=6)
+    -> Hash
+        -> Table scan on t2  (rows=6)
 
 SELECT 1 FROM t1 JOIN t1 AS t2 ON t1.a=t2.a;
 1
 1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
 EXPLAIN FORMAT=tree SELECT 1 FROM t1 LEFT JOIN t1 AS t2 ON t1.a=t2.a;
 EXPLAIN
--> Nested loop left join  (rows=1)
-    -> Table scan on t1  (rows=1)
-    -> Filter: (t1.a = t2.a)  (rows=0.1)
-        -> Table scan on t2  (rows=1)
+-> Left hash join (<hash>(t1.a)=<hash>(t2.a)), extra conditions: (t1.a = t2.a)  (rows=6)
+    -> Table scan on t1  (rows=6)
+    -> Hash
+        -> Table scan on t2  (rows=6)
 
 SELECT 1 FROM t1 LEFT JOIN t1 AS t2 ON t1.a=t2.a;
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
 1
 1
 DROP TABLE t1;
@@ -3892,12 +4008,13 @@ EXPLAIN
     -> Select #2 (subquery in condition; dependent)
         -> Filter: (<if>(outer_field_is_not_null, ((<cache>(t1.str_col) = c1_1.str_col) or (c1_1.str_col is null)), true) and <if>(outer_field_is_not_null, ((<cache>(t1.str_col) = min(c1_2.str_col)) or (min(c1_2.str_col) is null)), true) and <if>(outer_field_is_not_null, <is_not_null_test>(c1_1.str_col), true) and <if>(outer_field_is_not_null, <is_not_null_test>(min(c1_2.str_col)), true))  (rows=1)
             -> Aggregate: min(c1_2.str_col)  (rows=1)
-                -> Nested loop inner join  (rows=2)
-                    -> Inner hash join (t3.i = c1_2.i)  (rows=1)
-                        -> Table scan on t3  (rows=1)
-                        -> Hash
-                            -> Table scan on c1_2  (rows=2)
-                    -> Table scan on c1_1  (rows=2)
+                -> Inner hash join (t3.i = c1_2.i)  (rows=2)
+                    -> Table scan on t3  (rows=1)
+                    -> Hash
+                        -> Inner hash join (no condition)  (rows=4)
+                            -> Table scan on c1_1  (rows=2)
+                            -> Hash
+                                -> Table scan on c1_2  (rows=2)
 
 SELECT 1 FROM t1 RIGHT JOIN t2 ON t2.str_col = t1.str_col
 WHERE (t1.str_col, t1.str_col) NOT IN (
@@ -3924,16 +4041,19 @@ RIGHT JOIN t AS d ON 1
 ) AS z
 NATURAL RIGHT JOIN t;
 EXPLAIN
--> Nested loop left join  (rows=1)
+-> Left hash join (no condition), extra conditions: (t.c = 1)  (rows=1)
     -> Table scan on t  (rows=1)
-    -> Filter: (t.c = 1)  (rows=0.1)
-        -> Nested loop left join  (rows=1)
+    -> Hash
+        -> Left hash join (no condition)  (rows=1)
             -> Table scan on d  (rows=1)
-            -> Nested loop left join  (rows=1)
-                -> Table scan on c  (rows=1)
-                -> Nested loop left join  (rows=1)
-                    -> Table scan on b  (rows=1)
-                    -> Table scan on a  (rows=1)
+            -> Hash
+                -> Left hash join (no condition)  (rows=1)
+                    -> Table scan on c  (rows=1)
+                    -> Hash
+                        -> Left hash join (no condition)  (rows=1)
+                            -> Table scan on b  (rows=1)
+                            -> Hash
+                                -> Table scan on a  (rows=1)
 
 DROP TABLE t;
 #
@@ -3945,45 +4065,59 @@ CREATE TABLE t1 (
 a INTEGER,
 b INTEGER
 );
-INSERT INTO t1 VALUES (1, 1);
+CREATE TABLE t2 (
+a INTEGER,
+b INTEGER
+);
+INSERT INTO t1 VALUES (1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6);
+INSERT INTO t2 VALUES (1, 1);
 ANALYZE TABLE t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t1 as table1
-WHERE (SELECT a, b FROM t1 WHERE table1.a <> 6) IN (SELECT a, b FROM t1);
+WHERE (SELECT a, b FROM t2 WHERE table1.a <> 6) IN (SELECT a, b FROM t1);
 EXPLAIN
--> Hash semijoin (no condition), extra conditions: ((select #2) = (t1.a,t1.b))  (rows=1)
-    -> Table scan on table1  (rows=1)
+-> Hash semijoin (FirstMatch) (no condition), extra conditions: ((select #2) = (t1.a,t1.b))  (rows=6)
+    -> Table scan on table1  (rows=6)
     -> Hash
-        -> Table scan on t1  (rows=1)
+        -> Table scan on t1  (rows=6)
     -> Select #2 (subquery in extra conditions; dependent)
         -> Filter: (table1.a <> 6)  (rows=1)
-            -> Table scan on t1  (rows=1)
+            -> Table scan on t2  (rows=1)
 
 Warnings:
 Note	1276	Field or reference 'test.table1.a' of SELECT #2 was resolved in SELECT #1
 SELECT * FROM t1 as table1
-WHERE (SELECT a, b FROM t1 WHERE table1.a <> 6) IN (SELECT a, b FROM t1);
+WHERE (SELECT a, b FROM t2 WHERE table1.a <> 6) IN (SELECT a, b FROM t1);
 a	b
 1	1
+2	2
+3	3
+4	4
+5	5
 EXPLAIN FORMAT=tree SELECT * FROM t1 as table1
-WHERE (SELECT a FROM t1 WHERE table1.a <> 6) IN (SELECT a FROM t1);
+WHERE (SELECT a FROM t2 WHERE table1.a <> 6) IN (SELECT a FROM t1);
 EXPLAIN
--> Hash semijoin ((select #2) = (t1.a))  (rows=1)
-    -> Table scan on table1  (rows=1)
+-> Hash semijoin (FirstMatch) ((select #2) = (t1.a))  (rows=6)
+    -> Table scan on table1  (rows=6)
     -> Hash
-        -> Table scan on t1  (rows=1)
+        -> Table scan on t1  (rows=6)
     -> Select #2 (subquery in condition; dependent)
         -> Filter: (table1.a <> 6)  (rows=1)
-            -> Table scan on t1  (rows=1)
+            -> Table scan on t2  (rows=1)
 
 Warnings:
 Note	1276	Field or reference 'test.table1.a' of SELECT #2 was resolved in SELECT #1
 SELECT * FROM t1 as table1
-WHERE (SELECT a FROM t1 WHERE table1.a <> 6) IN (SELECT a FROM t1);
+WHERE (SELECT a FROM t2 WHERE table1.a <> 6) IN (SELECT a FROM t1);
 a	b
 1	1
+2	2
+3	3
+4	4
+5	5
 DROP TABLE t1;
+DROP TABLE t2;
 #
 # Bug#30792727 ERRORS WHEN BUILDING HASH TABLE FOR HASH JOIN NOT
 #              PROPAGATED
@@ -3995,9 +4129,9 @@ Table	Op	Msg_type	Msg_text
 test.t	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t t1, t t2 WHERE JSON_EXTRACT(t1.i, t1.i) = t2.i;
 EXPLAIN
--> Nested loop inner join  (rows=4)
+-> Inner hash join (<hash>(json_extract(t1.i,t1.i))=<hash>(t2.i)), extra conditions: (json_extract(t1.i,t1.i) = t2.i)  (rows=4)
     -> Table scan on t1  (rows=2)
-    -> Filter: (json_extract(t1.i,t1.i) = t2.i)  (rows=2)
+    -> Hash
         -> Table scan on t2  (rows=2)
 
 SELECT * FROM t t1, t t2 WHERE JSON_EXTRACT(t1.i, t1.i) = t2.i;
@@ -4037,9 +4171,10 @@ test.t1	analyze	status	OK
 EXPLAIN ANALYZE SELECT t1.a FROM t1 LEFT JOIN t1 AS t2 ON TRUE WHERE t2.a IS NULL;
 EXPLAIN
 -> Filter: (t2.a is null)  (rows=2.5) (actual rows=0 loops=1)
-    -> Nested loop left join  (rows=25) (actual rows=25 loops=1)
+    -> Left hash join (no condition)  (rows=25) (actual rows=25 loops=1)
         -> Table scan on t1  (rows=5) (actual rows=5 loops=1)
-        -> Table scan on t2  (rows=5) (actual rows=5 loops=5)
+        -> Hash
+            -> Table scan on t2  (rows=5) (actual rows=5 loops=1)
 
 DROP TABLE t1;
 #
@@ -4157,18 +4292,19 @@ b TEXT CHARACTER SET utf32 COLLATE utf32_german2_ci
 Warnings:
 Warning	1287	'ucs2' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 Warning	4079	'ucs2_sinhala_ci' is a collation of the deprecated character set ucs2. Please consider using utf8mb4 with an appropriate collation instead.
-INSERT INTO t(a, b) VALUES('h','k'), ('w','e');
+INSERT INTO t(a, b) VALUES('h','k'), ('w','e'), ('a','b'), ('c','d'), ('e','f'), ('x','y');
 ANALYZE TABLE t;
 Table	Op	Msg_type	Msg_text
 test.t	analyze	status	OK
 EXPLAIN FORMAT=TREE SELECT 1 FROM t AS a INNER JOIN t AS b ON a.a=b.b;
 EXPLAIN
--> Inner hash join (<hash>(a.a)=<hash>(b.b)), extra conditions: (a.a = b.b)  (rows=0.4)
-    -> Table scan on a  (rows=2)
+-> Inner hash join (<hash>(a.a)=<hash>(b.b)), extra conditions: (a.a = b.b)  (rows=3.6)
+    -> Table scan on a  (rows=6)
     -> Hash
-        -> Table scan on b  (rows=2)
+        -> Table scan on b  (rows=6)
 
 SELECT 1 FROM t AS a INNER JOIN t AS b ON a.a=b.b;
+1
 1
 DROP TABLE t;
 # Bug#33204161: Strings with ASCII charset and UCS2 don't match in join
@@ -4185,9 +4321,9 @@ test.t2	analyze	status	OK
 EXPLAIN FORMAT=TREE SELECT wstr_name, str_name
 FROM t1 INNER JOIN t2 ON t1.wstr_name = t2.str_name;
 EXPLAIN
--> Nested loop inner join  (rows=0.1)
+-> Inner hash join (t1.wstr_name = t2.str_name)  (rows=0.1)
     -> Table scan on t1  (rows=1)
-    -> Filter: (t1.wstr_name = t2.str_name)  (rows=0.1)
+    -> Hash
         -> Table scan on t2  (rows=1)
 
 SELECT wstr_name, str_name
@@ -4241,8 +4377,15 @@ DROP TABLE t;
 CREATE TABLE t1 (f1 INTEGER);
 CREATE TABLE t2 (f1 INTEGER);
 CREATE VIEW vmerge AS SELECT 1 AS f1, f1 AS b_f1 FROM t2;
-INSERT INTO t1 VALUES (1),(2),(3),(4);
-INSERT INTO t2 VALUES (1),(2);
+INSERT INTO t1 VALUES (1),(2),(3),(4),(5);
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t2 SELECT * FROM t1;
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 ANALYZE TABLE t1, t2;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
@@ -4269,19 +4412,20 @@ DROP TABLE t1;
 # Bug#34837464: Incorrect Left Outer Join Execution
 #
 CREATE TABLE t1(varchar_col VARCHAR(10), decimal_col DECIMAL(10, 0));
-INSERT INTO t1 VALUES ('', 0), ('', 0), ('', 0), ('', 0);
+INSERT INTO t1 VALUES ('', 0), ('', 0), ('', 0), ('', 0), ('', 0), ('', 0);
 CREATE TABLE t2(id INT, varchar_col VARCHAR(10), decimal_col DECIMAL(10, 0));
-INSERT INTO t2 VALUES (1, NULL, NULL), (2, NULL, NULL), (3, NULL, NULL);
+INSERT INTO t2 VALUES (1, NULL, NULL), (2, NULL, NULL), (3, NULL, NULL),
+(4, NULL, NULL), (5, NULL, NULL), (6, NULL, NULL);
 ANALYZE TABLE t1, t2;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 test.t2	analyze	status	OK
 EXPLAIN FORMAT=TREE SELECT id FROM t1 LEFT JOIN t2 USING (varchar_col);
 EXPLAIN
--> Left hash join (t1.varchar_col = t2.varchar_col)  (rows=4)
-    -> Table scan on t1  (rows=4)
+-> Left hash join (t1.varchar_col = t2.varchar_col)  (rows=6)
+    -> Table scan on t1  (rows=6)
     -> Hash
-        -> Table scan on t2  (rows=3)
+        -> Table scan on t2  (rows=6)
 
 SELECT id FROM t1 LEFT JOIN t2 USING (varchar_col);
 id
@@ -4289,15 +4433,19 @@ NULL
 NULL
 NULL
 NULL
+NULL
+NULL
 EXPLAIN FORMAT=TREE SELECT id FROM t1 LEFT JOIN t2 USING (decimal_col);
 EXPLAIN
--> Left hash join (t1.decimal_col = t2.decimal_col)  (rows=4)
-    -> Table scan on t1  (rows=4)
+-> Left hash join (t1.decimal_col = t2.decimal_col)  (rows=6)
+    -> Table scan on t1  (rows=6)
     -> Hash
-        -> Table scan on t2  (rows=3)
+        -> Table scan on t2  (rows=6)
 
 SELECT id FROM t1 LEFT JOIN t2 USING (decimal_col);
 id
+NULL
+NULL
 NULL
 NULL
 NULL
@@ -4337,27 +4485,31 @@ CREATE TABLE t1 (
 a INT NOT NULL,
 b INT NOT NULL
 );
-INSERT INTO t1 VALUES (1,1),(1,2),(2,1),(2,2);
+INSERT INTO t1 VALUES (1,1),(1,2),(2,1);
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
 ANALYZE TABLE t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
+# Plan change with new hypergraph cost model.
 EXPLAIN ANALYZE FORMAT=tree SELECT * FROM t1 x1 LEFT JOIN t1 x2 ON x1.a=x2.a
 WHERE x1.b < 0;
 EXPLAIN
--> Nested loop left join  (...) (actual rows=0 loops=1)
-    -> Filter: (x1.b < 0)  (...) (actual rows=0 loops=1)
-        -> Table scan on x1  (...) (actual rows=4 loops=1)
-    -> Filter: (x1.a = x2.a)  (...) (never executed)
-        -> Table scan on x2  (...) (never executed)
+-> Left hash join (x1.a = x2.a)  (rows=4.8) (actual rows=0 loops=1)
+    -> Filter: (x1.b < 0)  (rows=4) (actual rows=0 loops=1)
+        -> Table scan on x1  (rows=12) (actual rows=12 loops=1)
+    -> Hash
+        -> Table scan on x2  (rows=12) (never executed)
 
+# Plan change with new hypergraph cost model.
 EXPLAIN ANALYZE FORMAT=tree SELECT * FROM t1 x1 WHERE x1.a < 0 AND x1.a NOT IN
 (SELECT a FROM t1 x2 WHERE x2.b = x1.b);
 EXPLAIN
--> Hash antijoin (x1.a = x2.a), (x1.b = x2.b)  (...) (actual rows=0 loops=1)
-    -> Filter: (x1.a < 0)  (...) (actual rows=0 loops=1)
-        -> Table scan on x1  (...) (actual rows=4 loops=1)
+-> Hash antijoin (x1.a = x2.a), (x1.b = x2.b)  (rows=3.68) (actual rows=0 loops=1)
+    -> Filter: (x1.a < 0)  (rows=4) (actual rows=0 loops=1)
+        -> Table scan on x1  (rows=12) (actual rows=12 loops=1)
     -> Hash
-        -> Table scan on x2  (...) (never executed)
+        -> Table scan on x2  (rows=12) (never executed)
 
 Warnings:
 Note	1276	Field or reference 'test.x1.b' of SELECT #2 was resolved in SELECT #1
@@ -4368,17 +4520,20 @@ DROP TABLE t1;
 #
 CREATE TABLE t1(i1 int primary key, i2 int, c varchar(10));
 INSERT INTO t1 VALUES (1,1,'a'), (2,2,'a'), (3,3,'a'), (4,4,'a'), (5,5,'a');
+INSERT INTO t1 SELECT 5 + t.i1, 5 + t.i2, t.c FROM t1 AS t;
+INSERT INTO t1 SELECT 10 + t.i1, 10 + t.i2, t.c FROM t1 AS t;
+INSERT INTO t1 SELECT 20 + t.i1, 20 + t.i2, t.c FROM t1 AS t;
 ANALYZE TABLE t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 EXPLAIN FORMAT=TREE SELECT * FROM t1 x1 LEFT JOIN t1 x2 ON x1.i2=x2.i2
 WHERE x1.c <= CHAR(0xd83f);
 EXPLAIN
--> Left hash join (x1.i2 = x2.i2)  (...)
-    -> Filter: (x1.c <= <cache>(char(0xd83f)))  (...)
-        -> Table scan on x1  (...)
+-> Left hash join (x1.i2 = x2.i2)  (rows=53.3)
+    -> Filter: (x1.c <= <cache>(char(0xd83f)))  (rows=13.3)
+        -> Table scan on x1  (rows=40)
     -> Hash
-        -> Table scan on x2  (...)
+        -> Table scan on x2  (rows=40)
 
 SELECT * FROM t1 x1 LEFT JOIN t1 x2 ON x1.i2=x2.i2
 WHERE x1.c <= CHAR(0xd83f);
@@ -4527,35 +4682,35 @@ EXPLAIN ANALYZE SELECT 1 FROM t1 JOIN
 (SELECT SUM(x1.b) s FROM t1 x1, t1 x2 WHERE x1.b<x2.b GROUP BY x1.c) d1
 ON c=d1.s AND c*2<0;
 EXPLAIN
--> Inner hash join (t1.c = d1.s)  (cost=73.1..78.4 rows=20) (actual rows=0 loops=1)
-    -> Filter: ((t1.c * 2) < 0)  (cost=0.113..2.25 rows=20) (actual rows=0 loops=1)
-        -> Table scan on t1  (cost=0.0125..0.25 rows=20) (actual rows=20 loops=1)
+-> Inner hash join (t1.c = d1.s)  (rows=20) (actual rows=0 loops=1)
+    -> Filter: ((t1.c * 2) < 0)  (rows=20) (actual rows=0 loops=1)
+        -> Table scan on t1  (rows=20) (actual rows=20 loops=1)
     -> Hash
-        -> Table scan on d1  (cost=70.2..72.3 rows=5) (never executed)
-            -> Materialize  (cost=69.7..69.7 rows=5) (never executed)
-                -> Group aggregate: sum(x1.b)  (cost=22.6..69.2 rows=5) (never executed)
-                    -> Nested loop inner join  (cost=11.2..55.9 rows=133) (never executed)
-                        -> Sort: x1.c  (cost=10.9..10.9 rows=20) (never executed)
-                            -> Table scan on x1  (cost=0.0125..0.25 rows=20) (never executed)
-                        -> Filter: (x1.b < x2.b)  (cost=0.338..2.25 rows=6.67) (never executed)
-                            -> Table scan on x2  (cost=0.0125..0.25 rows=20) (never executed)
+        -> Table scan on d1  (rows=5) (never executed)
+            -> Materialize  (rows=5) (never executed)
+                -> Table scan on <temporary>  (rows=5) (never executed)
+                    -> Aggregate using temporary table  (rows=5) (never executed)
+                        -> Inner hash join (no condition), extra conditions: (x1.b < x2.b)  (rows=133) (never executed)
+                            -> Table scan on x1  (rows=20) (never executed)
+                            -> Hash
+                                -> Table scan on x2  (rows=20) (never executed)
 
 EXPLAIN ANALYZE SELECT 1 FROM t1 x1 WHERE b IN
 (SELECT c FROM t1 x2 WHERE b>0) AND x1.c*2<0;
 EXPLAIN
--> Hash semijoin (x1.b = x2.c)  (cost=4.33..9.7 rows=20) (actual rows=0 loops=1)
-    -> Filter: ((x1.c * 2) < 0)  (cost=0.113..2.25 rows=20) (actual rows=0 loops=1)
-        -> Table scan on x1  (cost=0.0125..0.25 rows=20) (actual rows=20 loops=1)
+-> Hash semijoin (FirstMatch) (x1.b = x2.c)  (rows=20) (actual rows=0 loops=1)
+    -> Filter: ((x1.c * 2) < 0)  (rows=20) (actual rows=0 loops=1)
+        -> Table scan on x1  (rows=20) (actual rows=20 loops=1)
     -> Hash
-        -> Filter: (x2.b > 0)  (cost=0.125..2.25 rows=18) (never executed)
-            -> Table scan on x2  (cost=0.0125..0.25 rows=20) (never executed)
+        -> Filter: (x2.b > 0)  (rows=18) (never executed)
+            -> Table scan on x2  (rows=20) (never executed)
 
 DROP TABLE t1;
 #
 # Bug#34155137 STRAIGHT_JOIN GIVES DIFFERENT ORDER FOR HASH JOIN WITH HYPERGRAPH
 #
 CREATE TABLE small_tab(x INT);
-INSERT INTO small_tab VALUES (1), (2), (3), (4);
+INSERT INTO small_tab VALUES (1), (2), (3), (4), (5), (6);
 CREATE TABLE large_tab(x INT);
 INSERT INTO large_tab SELECT x FROM small_tab;
 INSERT INTO large_tab SELECT x FROM large_tab;
@@ -4564,10 +4719,10 @@ INSERT INTO large_tab SELECT x FROM large_tab;
 INSERT INTO large_tab SELECT x FROM large_tab;
 SELECT COUNT(*) FROM small_tab;
 COUNT(*)
-4
+6
 SELECT COUNT(*) FROM large_tab;
 COUNT(*)
-64
+96
 ANALYZE TABLE large_tab;
 Table	Op	Msg_type	Msg_text
 test.large_tab	analyze	status	OK
@@ -4576,17 +4731,17 @@ Table	Op	Msg_type	Msg_text
 test.small_tab	analyze	status	OK
 EXPLAIN FORMAT=TREE SELECT x FROM large_tab STRAIGHT_JOIN small_tab USING (x);
 EXPLAIN
--> Inner hash join (large_tab.x = small_tab.x)  (rows=25.6)
-    -> Table scan on small_tab  (rows=4)
+-> Inner hash join (large_tab.x = small_tab.x)  (rows=57.6)
+    -> Table scan on small_tab  (rows=6)
     -> Hash
-        -> Table scan on large_tab  (rows=64)
+        -> Table scan on large_tab  (rows=96)
 
 EXPLAIN FORMAT=TREE SELECT x FROM small_tab STRAIGHT_JOIN large_tab USING (x);
 EXPLAIN
--> Inner hash join (small_tab.x = large_tab.x)  (rows=25.6)
-    -> Table scan on large_tab  (rows=64)
+-> Inner hash join (small_tab.x = large_tab.x)  (rows=57.6)
+    -> Table scan on large_tab  (rows=96)
     -> Hash
-        -> Table scan on small_tab  (rows=4)
+        -> Table scan on small_tab  (rows=6)
 
 DROP TABLE large_tab;
 DROP TABLE small_tab;

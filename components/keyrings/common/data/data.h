@@ -29,8 +29,7 @@
 #include <string>
 #include "pfs_string.h"
 
-namespace keyring_common {
-namespace data {
+namespace keyring_common::data {
 
 /** Data types */
 using Type = pfs_string;
@@ -97,9 +96,9 @@ struct Sensitive_data {
 
 class Data {
  public:
-  Data(const Sensitive_data data, Type type);
+  Data(const Sensitive_data &data, Type type);
   Data();
-  Data(Type type);
+  explicit Data(Type type);
   Data(const Data &src);
   Data(Data &&src) noexcept;
   Data &operator=(const Data &src);
@@ -107,7 +106,7 @@ class Data {
 
   virtual ~Data();
 
-  virtual const Data get_data() const;
+  virtual Data get_data() const;
 
   Sensitive_data data() const;
 
@@ -133,7 +132,6 @@ class Data {
   bool valid_{false};
 };
 
-}  // namespace data
-}  // namespace keyring_common
+}  // namespace keyring_common::data
 
 #endif  // !DATA_INCLUDED

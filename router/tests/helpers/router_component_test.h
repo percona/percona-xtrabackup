@@ -29,8 +29,10 @@
 #include <chrono>
 
 #include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
 #include "mysql/harness/stdx/attribute.h"
+#include "mysql/harness/stdx/expected.h"
 #include "mysqlrouter/cluster_metadata.h"
 #include "mysqlrouter/mysql_session.h"
 #include "process_manager.h"
@@ -86,66 +88,64 @@ class RouterComponentTest : public ProcessManager, public ::testing::Test {
    */
   static void sleep_for(std::chrono::milliseconds duration);
 
-  std::unique_ptr<MySQLSession> make_new_connection_ok(
-      uint16_t router_port, uint16_t expected_node_port) {
-    std::unique_ptr<MySQLSession> session{std::make_unique<MySQLSession>()};
-    EXPECT_NO_THROW(session->connect("127.0.0.1", router_port, "username",
-                                     "password", "", ""));
+  static stdx::expected<std::unique_ptr<MySQLSession>, mysqlrouter::MysqlError>
+  make_new_connection(uint16_t router_port) {
+    auto session = std::make_unique<MySQLSession>();
 
-    auto result{session->query_one("select @@port")};
-    EXPECT_EQ(std::strtoul((*result)[0], nullptr, 10), expected_node_port);
-
-    return session;
-  }
-
-  std::pair<uint16_t, std::unique_ptr<MySQLSession>> make_new_connection_ok(
-      uint16_t router_port, std::vector<uint16_t> expected_node_ports) {
-    std::unique_ptr<MySQLSession> session{std::make_unique<MySQLSession>()};
-    EXPECT_NO_THROW(session->connect("127.0.0.1", router_port, "username",
-                                     "password", "", ""));
-
-    auto result{session->query_one("select @@port")};
-    const auto port =
-        static_cast<uint16_t>(std::strtoul((*result)[0], nullptr, 10));
-    EXPECT_THAT(expected_node_ports, ::testing::Contains(port));
-
-    return std::make_pair(port, std::move(session));
-  }
-
-  uint16_t make_new_connection_ok(uint16_t router_port) {
-    MySQLSession session;
-    EXPECT_NO_THROW(session.connect("127.0.0.1", router_port, "username",
-                                    "password", "", ""));
-
-    auto result{session.query_one("select @@port")};
-    return static_cast<uint16_t>(std::strtoul((*result)[0], nullptr, 10));
-  }
-
-  uint16_t make_new_connection_ok(const std::string &router_socket) {
-    MySQLSession session;
-    EXPECT_NO_THROW(
-        session.connect("", 0, "username", "password", router_socket, ""));
-
-    auto result{session.query_one("select @@port")};
-    return static_cast<uint16_t>(std::strtoul((*result)[0], nullptr, 10));
-  }
-
-  void verify_new_connection_fails(uint16_t router_port) {
-    MySQLSession session;
-    ASSERT_ANY_THROW(session.connect("127.0.0.1", router_port, "username",
-                                     "password", "", ""));
-  }
-
-  void verify_existing_connection_ok(
-      MySQLSession *session,
-      uint16_t expected_node = 0 /*0 means do not verify the port*/) {
-    auto result{session->query_one("select @@port")};
-    if (expected_node > 0) {
-      EXPECT_EQ(std::strtoul((*result)[0], nullptr, 10), expected_node);
+    try {
+      session->connect("127.0.0.1", router_port, "username", "password", "",
+                       "");
+      return session;
+    } catch (const MySQLSession::Error &e) {
+      return stdx::unexpected(
+          mysqlrouter::MysqlError{e.code(), e.message(), "HY000"});
     }
   }
 
-  void verify_existing_connection_dropped(
+  static stdx::expected<std::unique_ptr<MySQLSession>, mysqlrouter::MysqlError>
+  make_new_connection(const std::string &router_socket) {
+    try {
+      auto session = std::make_unique<MySQLSession>();
+      session->connect("", 0, "username", "password", router_socket, "");
+      return session;
+    } catch (const MySQLSession::Error &e) {
+      return stdx::unexpected(
+          mysqlrouter::MysqlError{e.code(), e.message(), "HY000"});
+    }
+  }
+
+  static stdx::expected<uint16_t, mysqlrouter::MysqlError> select_port(
+      MySQLSession *session) {
+    try {
+      auto result = session->query_one("select @@port");
+      return std::strtoul((*result)[0], nullptr, 10);
+    } catch (const MySQLSession::Error &e) {
+      return stdx::unexpected(
+          mysqlrouter::MysqlError{e.code(), e.message(), "HY000"});
+    }
+  }
+
+  static void verify_port(MySQLSession *session, uint16_t expected_port) {
+    auto port_res = select_port(session);
+    ASSERT_TRUE(port_res) << port_res.error().message();
+    ASSERT_EQ(*port_res, expected_port);
+  }
+
+  /*
+   * check if an existing connection allows to execute a query.
+   *
+   * must be wrapped in ASSERT_NO_FATAL_FAILURE
+   */
+  static void verify_existing_connection_ok(MySQLSession *session) {
+    auto select_res = select_port(session);
+    ASSERT_TRUE(select_res) << select_res.error().message();
+  }
+
+  static void verify_new_connection_fails(uint16_t router_port) {
+    ASSERT_FALSE(make_new_connection(router_port));
+  }
+
+  static void verify_existing_connection_dropped(
       MySQLSession *session,
       std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
     if (getenv("WITH_VALGRIND")) {
@@ -155,12 +155,9 @@ class RouterComponentTest : public ProcessManager, public ::testing::Test {
     const auto MSEC_STEP = std::chrono::milliseconds(50);
     const auto started = std::chrono::steady_clock::now();
     do {
-      try {
-        session->query_one("select @@port");
-      } catch (mysqlrouter::MySQLSession::Error &) {
-        // query failed, connection dropped, all good
-        return;
-      }
+      auto select_res = select_port(session);
+      // query failed, connection dropped, all good
+      if (!select_res) return;
 
       auto step = std::min(timeout, MSEC_STEP);
       RouterComponentTest::sleep_for(step);
@@ -169,6 +166,29 @@ class RouterComponentTest : public ProcessManager, public ::testing::Test {
 
     FAIL() << "Timed out waiting for the connection to drop";
   }
+
+  static void prepare_config_dir_with_default_certs(
+      const std::string &config_dir);
+
+  static void copy_default_certs_to_datadir(const std::string &dst_dir);
+
+  static std::string plugin_output_directory();
+
+  /**
+   * create a ID token for OpenID connect.
+   *
+   * @param subject                subject of the ID-token 'sub'
+   * @param identity_provider_name 'name' of the identity provider
+   * @param expiry                 expiry of the ID token in seconds
+   * @param private_key_file       filename of a PEM file containing
+   *                               the private key
+   * @param outdir                 directory name to place the id-token file
+   *                               into.
+   */
+  stdx::expected<std::string, int> create_openid_connect_id_token_file(
+      const std::string &subject, const std::string &identity_provider_name,
+      int expiry, const std::string &private_key_file,
+      const std::string &outdir);
 
  protected:
   TcpPortPool port_pool_;
@@ -230,6 +250,12 @@ class RouterComponentBootstrapTest : virtual public RouterComponentTest {
   }
 
   static constexpr const char kRootPassword[] = "fake-pass";
+};
+
+class RouterComponentBootstrapWithDefaultCertsTest
+    : public RouterComponentBootstrapTest {
+ public:
+  void SetUp() override;
 };
 
 std::ostream &operator<<(

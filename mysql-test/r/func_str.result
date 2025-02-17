@@ -5822,3 +5822,169 @@ SELECT QUOTE(x'80');
 ERROR HY000: Cannot convert string '\x80' from binary to utf8mb4
 SELECT QUOTE(_utf8mb4 x'80');
 ERROR HY000: Invalid utf8mb4 character string: '80'
+#
+# Bug#36137690 Item_func_conv_charset::eq not correct
+#
+CREATE TABLE t1 (a CHAR(10));
+INSERT INTO t1 VALUES ('你好'), ('中午好');
+SELECT a, CONVERT(a USING latin1) FROM t1 ORDER BY CONVERT(a USING utf8mb4);
+a	CONVERT(a USING latin1)
+中午好	???
+你好	??
+SELECT a FROM t1 ORDER BY CONVERT(a USING utf8mb4);
+a
+中午好
+你好
+DROP TABLE t1;
+# Bug#36118590: Inconsistent results caused by JOIN tables and CHAR func
+CREATE TABLE t0 (vkey INTEGER);
+CREATE TABLE t1 (vkey INTEGER);
+INSERT INTO t0 (vkey) VALUES (6);
+SELECT 1 AS c_0
+FROM t0 LEFT JOIN t1 ON t0.vkey = t1.vkey
+WHERE CHAR(CASE WHEN FALSE THEN t1.vkey ELSE t1.vkey END) NOT LIKE 'YVR';
+c_0
+1
+SELECT 1 AS c_0
+FROM t0 LEFT JOIN t1 ON t0.vkey = t1.vkey
+WHERE CHAR(t1.vkey) NOT LIKE 'YVR';
+c_0
+1
+DROP TABLE t0, t1;
+#
+# Bug#36277823 Contribution: Fix multibyte bugs in my_instr_mb
+#
+SET NAMES utf8mb4;
+SELECT LOCATE('a', 'Å');
+LOCATE('a', 'Å')
+1
+SELECT LOCATE('Å', 'a');
+LOCATE('Å', 'a')
+1
+SELECT LOCATE('aÅ', 'aÅ');
+LOCATE('aÅ', 'aÅ')
+1
+SELECT LOCATE('Åa', 'Åa');
+LOCATE('Åa', 'Åa')
+1
+SELECT LOCATE('ss', 'ß');
+LOCATE('ss', 'ß')
+1
+SELECT LOCATE('ß', 'ss');
+LOCATE('ß', 'ss')
+1
+SELECT LOCATE("", "ÅÅ", 2);
+LOCATE("", "ÅÅ", 2)
+2
+SELECT LOCATE('àà', 'aaa', 2);
+LOCATE('àà', 'aaa', 2)
+2
+SELECT LOCATE('viii', 'Ⅷ', 1);
+LOCATE('viii', 'Ⅷ', 1)
+1
+SELECT LOCATE('', 'å', 3);
+LOCATE('', 'å', 3)
+0
+SET NAMES DEFAULT;
+# Bug#36367313: String::length at include/sql_string.h
+CREATE TABLE t1 (
+pk INTEGER,
+cv VARCHAR(35),
+PRIMARY KEY(pk)
+);
+SELECT REVERSE(TIME_FORMAT('', NULL)) AS field1
+FROM t1
+GROUP BY ROLLUP(REVERSE(TIME_FORMAT('', NULL)));
+field1
+NULL
+DROP TABLE t1;
+# Bug#36367776: Assertion failure in Item_func_numhybrid::val_str
+CREATE TABLE t(col INTEGER);
+SELECT DATE_FORMAT(NULL, -112982309.91)
+FROM t
+GROUP BY DATE_FORMAT(NULL ,-112982309.91);
+DATE_FORMAT(NULL, -112982309.91)
+DROP TABLE t;
+# Bug#36364619: Assertion 'src != dst || cs->casedn_multiply == 1'
+CREATE TABLE t1 (
+pk INTEGER,
+ct TIME,
+cd DATE,
+PRIMARY KEY(pk));
+INSERT INTO t1 VALUES (1, '12:16:22', '2018-06-07');
+SELECT pk
+FROM t1
+WHERE CONCAT_WS('string',
+CONCAT(CONCAT('08:50:27', cd COLLATE utf8mb4_turkish_ci),
+LOWER(ct))) <> 'xyz';
+pk
+1
+DROP TABLE t1;
+# Bug#36457756: Invalid result converting string to numeric
+CREATE TABLE t0(a VARCHAR(10));
+CREATE TABLE t1(a VARCHAR(64));
+INSERT INTO t1 VALUES('316-354');
+SELECT IF(a, 1, 0) FROM t1;
+IF(a, 1, 0)
+1
+Warnings:
+Warning	1292	Truncated incorrect DOUBLE value: '316-354'
+SELECT IF(a <> 0, 1, 0) FROM t1;
+IF(a <> 0, 1, 0)
+1
+Warnings:
+Warning	1292	Truncated incorrect DOUBLE value: '316-354'
+SELECT a | 2147483647 FROM t1;
+a | 2147483647
+2147483647
+Warnings:
+Warning	1292	Truncated incorrect INTEGER value: '316-354'
+SELECT CAST(a AS DECIMAL) FROM t1;
+CAST(a AS DECIMAL)
+316
+Warnings:
+Warning	1292	Truncated incorrect DECIMAL value: '316-354'
+INSERT INTO t0 SELECT IF(a, 1, 0) FROM t1;
+ERROR 22007: Truncated incorrect DOUBLE value: '316-354'
+INSERT INTO t0 SELECT IF(a <> 0, 1, 0) FROM t1;
+ERROR 22007: Truncated incorrect DOUBLE value: '316-354'
+INSERT INTO t0 SELECT a | 2147483647 FROM t1;
+ERROR 22007: Truncated incorrect INTEGER value: '316-354'
+INSERT INTO t0 SELECT CAST(a AS DECIMAL) FROM t1;
+ERROR 22007: Truncated incorrect DECIMAL value: '316-354'
+SET @@sql_mode = '';
+INSERT INTO t0 SELECT IF(a, 1, 0) FROM t1;
+Warnings:
+Warning	1292	Truncated incorrect DOUBLE value: '316-354'
+INSERT INTO t0 SELECT IF(a <> 0, 1, 0) FROM t1;
+Warnings:
+Warning	1292	Truncated incorrect DOUBLE value: '316-354'
+INSERT INTO t0 SELECT a | 2147483647 FROM t1;
+Warnings:
+Warning	1292	Truncated incorrect INTEGER value: '316-354'
+INSERT INTO t0 SELECT CAST(a AS DECIMAL) FROM t1;
+Warnings:
+Warning	1292	Truncated incorrect DECIMAL value: '316-354'
+SELECT * FROM t0;
+a
+1
+1
+2147483647
+316
+SET @@sql_mode = DEFAULT;
+DROP TABLE t0, t1;
+# Bug#36562972: Character set changing unexpectedly
+CREATE TABLE t1 (
+col varchar(36) DEFAULT (REPLACE(UUID(), _utf8mb4'-', _utf8mb4'_'))
+);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `col` varchar(36) DEFAULT (replace(uuid(),_utf8mb3'-',_utf8mb3'_'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+DROP TABLE t1;
+#
+# Bug#36812010 crash in Item_func_soundex::val_str
+#
+DO '' SOUNDS LIKE LEAD(DATABASE(), 1, x'cafe') OVER();
+ERROR HY000: Cannot convert string '\xCA\xFE' from binary to utf8mb3

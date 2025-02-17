@@ -197,25 +197,25 @@ static_assert(sizeof(pk_pos_data_lock_wait) == 2 * (128 + sizeof(size_t)));
 /** A row of table PERFORMANCE_SCHEMA.DATA_LOCK_WAITS. */
 struct row_data_lock_wait {
   /** Column ENGINE */
-  const char *m_engine;
+  const char *m_engine{nullptr};
   /** Engine (REQUESTING_LOCK_ID, BLOCKING_LOCK_ID) key */
   pk_pos_data_lock_wait m_hidden_pk;
   /** Column REQUESTING_ENGINE_TRANSACTION_ID */
-  ulonglong m_requesting_transaction_id;
+  ulonglong m_requesting_transaction_id{0};
   /** Column REQUESTING_THREAD_ID */
-  ulonglong m_requesting_thread_id;
+  ulonglong m_requesting_thread_id{0};
   /** Column REQUESTING_EVENT_ID */
-  ulonglong m_requesting_event_id;
+  ulonglong m_requesting_event_id{0};
   /** Column REQUESTING_OBJECT_INSTANCE_BEGIN */
-  const void *m_requesting_identity;
+  const void *m_requesting_identity{nullptr};
   /** Column BLOCKING_ENGINE_TRANSACTION_ID */
-  ulonglong m_blocking_transaction_id;
+  ulonglong m_blocking_transaction_id{0};
   /** Column BLOCKING_THREAD_ID */
-  ulonglong m_blocking_thread_id;
+  ulonglong m_blocking_thread_id{0};
   /** Column BLOCKING_EVENT_ID */
-  ulonglong m_blocking_event_id;
+  ulonglong m_blocking_event_id{0};
   /** Column BLOCKING_OBJECT_INSTANCE_BEGIN */
-  const void *m_blocking_identity;
+  const void *m_blocking_identity{nullptr};
 };
 
 class PFS_index_data_locks : public PFS_engine_index {
@@ -261,14 +261,40 @@ class PFS_index_data_locks : public PFS_engine_index {
   }
 };
 
-class PFS_index_data_locks_by_lock_id : public PFS_index_data_locks {
+class PFS_pk_data_locks : public PFS_index_data_locks {
  public:
-  PFS_index_data_locks_by_lock_id()
+  PFS_pk_data_locks()
       : PFS_index_data_locks(&m_key_1, &m_key_2),
         m_key_1("ENGINE_LOCK_ID"),
         m_key_2("ENGINE") {}
 
-  ~PFS_index_data_locks_by_lock_id() override = default;
+  ~PFS_pk_data_locks() override = default;
+
+  pk_pos_data_lock *get_pk() {
+    if (m_fields >= 1) {
+      const char *key_value;
+      size_t key_value_length;
+      bool is_null;
+
+      /* Read the value of ENGINE_LOCK_ID. */
+      m_key_1.get_exact_key_value(is_null, key_value, key_value_length);
+      if (is_null) {
+        return nullptr;
+      }
+
+      /* Build a primary key with it. */
+      m_pk_pos.set(key_value, key_value_length);
+
+      /*
+       * IMPORTANT NOTE:
+       * We do not read the second field, ENGINE.
+       * See comments in table_data_locks::index_next()
+       */
+      return &m_pk_pos;
+    }
+
+    return nullptr;
+  }
 
   bool match_lock_id(const char *engine_lock_id,
                      size_t engine_lock_id_length) override {
@@ -294,6 +320,7 @@ class PFS_index_data_locks_by_lock_id : public PFS_index_data_locks {
  private:
   PFS_key_engine_lock_id m_key_1;
   PFS_key_engine_name m_key_2;
+  pk_pos_data_lock m_pk_pos;
 };
 
 class PFS_index_data_locks_by_transaction_id : public PFS_index_data_locks {
@@ -416,6 +443,10 @@ class PFS_index_data_lock_waits : public PFS_engine_index {
   PFS_index_data_lock_waits(PFS_engine_key *key_1, PFS_engine_key *key_2)
       : PFS_engine_index(key_1, key_2) {}
 
+  PFS_index_data_lock_waits(PFS_engine_key *key_1, PFS_engine_key *key_2,
+                            PFS_engine_key *key_3)
+      : PFS_engine_index(key_1, key_2, key_3) {}
+
   ~PFS_index_data_lock_waits() override = default;
 
   virtual bool match_engine(const char *engine [[maybe_unused]],
@@ -460,6 +491,91 @@ class PFS_index_data_lock_waits : public PFS_engine_index {
                                                  [[maybe_unused]]) {
     return true;
   }
+};
+
+class PFS_pk_data_lock_waits : public PFS_index_data_lock_waits {
+ public:
+  PFS_pk_data_lock_waits()
+      : PFS_index_data_lock_waits(&m_key_1, &m_key_2, &m_key_3),
+        m_key_1("REQUESTING_ENGINE_LOCK_ID"),
+        m_key_2("BLOCKING_ENGINE_LOCK_ID"),
+        m_key_3("ENGINE") {}
+
+  ~PFS_pk_data_lock_waits() override = default;
+
+  pk_pos_data_lock_wait *get_pk() {
+    if (m_fields >= 2) {
+      const char *key_value_1;
+      size_t key_value_length_1;
+      bool is_null_1;
+      const char *key_value_2;
+      size_t key_value_length_2;
+      bool is_null_2;
+
+      /* Read the value of REQUESTING_ENGINE_LOCK_ID. */
+      m_key_1.get_exact_key_value(is_null_1, key_value_1, key_value_length_1);
+      if (is_null_1) {
+        return nullptr;
+      }
+
+      /* Read the value of BLOCKING_ENGINE_LOCK_ID. */
+      m_key_2.get_exact_key_value(is_null_2, key_value_2, key_value_length_2);
+      if (is_null_2) {
+        return nullptr;
+      }
+
+      /* Build a primary key with it. */
+      m_pk_pos.set(key_value_1, key_value_length_1, key_value_2,
+                   key_value_length_2);
+
+      /*
+       * IMPORTANT NOTE:
+       * We do not read the third field, ENGINE.
+       * See comments in table_data_lock_waits::index_next()
+       */
+      return &m_pk_pos;
+    }
+
+    return nullptr;
+  }
+
+  bool match_requesting_lock_id(const char *engine_lock_id,
+                                size_t engine_lock_id_length) override {
+    if (m_fields >= 1) {
+      if (!m_key_1.match(engine_lock_id, engine_lock_id_length)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  bool match_blocking_lock_id(const char *engine_lock_id,
+                              size_t engine_lock_id_length) override {
+    if (m_fields >= 2) {
+      if (!m_key_2.match(engine_lock_id, engine_lock_id_length)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  bool match_engine(const char *engine, size_t engine_length) override {
+    if (m_fields >= 3) {
+      if (!m_key_3.match(engine, engine_length)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+ private:
+  PFS_key_engine_lock_id m_key_1;
+  PFS_key_engine_lock_id m_key_2;
+  PFS_key_engine_name m_key_3;
+  pk_pos_data_lock_wait m_pk_pos;
 };
 
 class PFS_index_data_lock_waits_by_requesting_lock_id
@@ -679,7 +795,7 @@ class PFS_data_container_allocator : public PFS_std_allocator<T> {
       : PFS_std_allocator<T>(other) {}
 
   template <class U>
-  constexpr PFS_data_container_allocator(
+  constexpr explicit PFS_data_container_allocator(
       const PFS_data_container_allocator<U> &u) noexcept
       : PFS_std_allocator<T>(u) {}
 };
@@ -687,15 +803,15 @@ class PFS_data_container_allocator : public PFS_std_allocator<T> {
 class PFS_data_cache {
  private:
   typedef std::unordered_set<std::string, std::hash<std::string>,
-                             std::equal_to<std::string>,
+                             std::equal_to<>,
                              PFS_data_container_allocator<std::string>>
       set_type;
 
   set_type m_set;
 
  public:
-  PFS_data_cache() {}
-  ~PFS_data_cache() {}
+  PFS_data_cache() = default;
+  ~PFS_data_cache() = default;
 
   const char *cache_data(const char *ptr, size_t length) {
     /*

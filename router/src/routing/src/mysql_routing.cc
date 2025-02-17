@@ -70,6 +70,7 @@
 #include "mysql/harness/utility/string.h"  // string_format
 #include "mysqlrouter/base_protocol.h"
 #include "mysqlrouter/connection_pool_component.h"
+#include "mysqlrouter/datatypes.h"
 #include "mysqlrouter/io_component.h"
 #include "mysqlrouter/io_thread.h"
 #include "mysqlrouter/metadata_cache.h"
@@ -763,28 +764,6 @@ stdx::expected<void, std::string> MySQLRouting::run_acceptor(
             get_context().get_id(), nodes_changed_on_md_refresh, nodes);
       });
 
-  // make sure to stop the acceptors in case of possible exceptions, otherwise
-  // we can deadlock the process
-  Scope_guard stop_acceptors_guard([&]() { stop_socket_acceptors(); });
-
-  if (!destinations()->empty() ||
-      (routing_strategy_ == RoutingStrategy::kFirstAvailable &&
-       is_destination_standalone_)) {
-    // For standalone destination with first-available strategy we always try
-    // to open a listening socket, even if there are no destinations.
-    auto res = start_accepting_connections();
-    // If the routing started at the exact moment as when the metadata had it
-    // initial refresh then it may start the acceptors even if metadata do not
-    // allow for it to happen, in that case we pass that information to the
-    // destination, socket acceptor state should be handled basend on the
-    // destination type.
-    if (!is_destination_standalone_) destination_->handle_sockets_acceptors();
-    // If we failed to start accepting connections on startup then router
-    // should fail.
-    if (!res) return stdx::unexpected(res.error());
-  }
-  mysql_harness::on_service_ready(env);
-
   auto allowed_nodes_changed =
       [&](const AllowedNodes &existing_connections_nodes,
           const AllowedNodes &new_connection_nodes, const bool disconnect,
@@ -830,6 +809,28 @@ stdx::expected<void, std::string> MySQLRouting::run_acceptor(
       destination_->register_allowed_nodes_change_callback(
           allowed_nodes_changed);
 
+  // make sure to stop the acceptors in case of possible exceptions, otherwise
+  // we can deadlock the process
+  Scope_guard stop_acceptors_guard([&]() { stop_socket_acceptors(); });
+
+  if (!destinations()->empty() ||
+      (routing_strategy_ == RoutingStrategy::kFirstAvailable &&
+       is_destination_standalone_)) {
+    // For standalone destination with first-available strategy we always try
+    // to open a listening socket, even if there are no destinations.
+    auto res = start_accepting_connections();
+    // If the routing started at the exact moment as when the metadata had it
+    // initial refresh then it may start the acceptors even if metadata do not
+    // allow for it to happen, in that case we pass that information to the
+    // destination, socket acceptor state should be handled basend on the
+    // destination type.
+    if (!is_destination_standalone_) destination_->handle_sockets_acceptors();
+    // If we failed to start accepting connections on startup then router
+    // should fail.
+    if (!res) return stdx::unexpected(res.error());
+  }
+  mysql_harness::on_service_ready(env);
+
   Scope_guard exit_guard([&]() {
     destination_->unregister_allowed_nodes_change_callback(
         allowed_nodes_list_iterator_);
@@ -844,7 +845,7 @@ stdx::expected<void, std::string> MySQLRouting::run_acceptor(
   is_running_ = false;
   get_context().shared_quarantine().stop();
 
-  stop_acceptors_guard.commit();
+  stop_acceptors_guard.release();
   // routing is no longer running, lets close listening socket
   stop_socket_acceptors();
 
@@ -991,6 +992,8 @@ void MySQLRouting::create_connection(
       auto *new_conn_ptr = new_connection.get();
 
       connection_container_.add_connection(std::move(new_connection));
+
+      new_conn_ptr->expected_server_mode(purpose());
 
       // defer the call and accept the next connection.
       net::defer(io_ctx, [new_conn_ptr]() { new_conn_ptr->async_run(); });
@@ -1175,4 +1178,12 @@ bool MySQLRouting::is_accepting_connections() const {
     return std::any_of(accepting_endpoints_.begin(), accepting_endpoints_.end(),
                        [](const auto &ep) { return ep->is_open(); });
   });
+}
+
+mysqlrouter::ServerMode MySQLRouting::purpose() const {
+  if (access_mode_ == routing::AccessMode::kAuto) {
+    return mysqlrouter::ServerMode::Unavailable;
+  }
+
+  return destination_->purpose();
 }

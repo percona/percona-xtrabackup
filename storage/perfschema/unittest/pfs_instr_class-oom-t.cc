@@ -34,6 +34,7 @@
 #include "storage/perfschema/unittest/stub_pfs_global.h"
 #include "storage/perfschema/unittest/stub_pfs_plugin_table.h"
 #include "storage/perfschema/unittest/stub_pfs_tls_channel.h"
+#include "storage/perfschema/unittest/stub_server_logs.h"
 #include "storage/perfschema/unittest/stub_server_telemetry.h"
 #include "storage/perfschema/unittest/stub_telemetry_metrics.h"
 #include "unittest/mytap/tap.h"
@@ -43,7 +44,7 @@ static void test_oom() {
   PFS_global_param param;
   TABLE_SHARE table_share;
   PFS_thread pfs_thread;
-  PFS_table_share *pfs_table_share;
+  const PFS_table_share *pfs_table_share;
 
   rc = init_sync_class(1000, 0, 0);
   ok(rc == 1, "oom (mutex)");
@@ -82,8 +83,8 @@ static void test_oom() {
   pfs_thread.m_table_share_hash_pins = nullptr;
   pfs_thread.m_setup_object_hash_pins = nullptr;
 
-  char db_name[] = "schema 1";
-  char table_name[] = "table 1";
+  const char db_name[] = "schema 1";
+  const char table_name[] = "table 1";
   table_share.db.str = db_name;
   table_share.db.length = strlen(db_name);
   table_share.table_name.str = table_name;

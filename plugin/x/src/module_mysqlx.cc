@@ -131,6 +131,10 @@ int Module_mysqlx::initialize(MYSQL_PLUGIN plugin_handle) {
   xpl::plugin_handle = plugin_handle;
 
   try {
+    DBUG_EXECUTE_IF("xplugin_shutdown_unixsocket", {
+      XSYNC_POINT_ENABLE({"xacceptor_stop_wait", "xacceptor_pre_loop_wait",
+                          "xacceptor_post_loop_wait"});
+    });
     xpl::init_performance_schema();
 
     provide_udfs();
@@ -193,7 +197,7 @@ int Module_mysqlx::initialize(MYSQL_PLUGIN plugin_handle) {
     mysql_meter_register(xpl::Plugin_status_variables::m_xpl_meter,
                          xpl::Plugin_status_variables::get_meter_count());
 
-    guard_of_server_start.commit();
+    guard_of_server_start.release();
   } catch (const std::exception &e) {
     log_error(ER_XPLUGIN_STARTUP_FAILED, e.what());
     return 1;

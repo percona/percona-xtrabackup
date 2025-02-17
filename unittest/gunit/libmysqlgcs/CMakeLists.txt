@@ -25,10 +25,6 @@ IF (DEFINED WITHOUT_GROUP_REPLICATION AND WITHOUT_GROUP_REPLICATION)
   RETURN()
 ENDIF()
 
-IF(NOT WIN32)
-  MYSQL_CHECK_RPC()
-ENDIF()
-
 INCLUDE_DIRECTORIES(
   SYSTEM
   ${CMAKE_SOURCE_DIR}/plugin/group_replication/libmysqlgcs/include
@@ -119,9 +115,11 @@ FOREACH(tpath ${GCS_INTERFACE_TESTS} ${GCS_XCOM_TESTS})
     # Suppress linker warnings arising from linking to mysqlgcs and mysys
     # LNK4217: symbol 'symbol' defined in 'f1.obj' is imported by 'f2.obj'...
     # LNK4286: symbol 'symbol' defined in 'f1.obj' is imported by 'f2.obj'
-    MY_TARGET_LINK_OPTIONS(${test}-t "/ignore:4217 /ignore:4286")
+    TARGET_LINK_OPTIONS(${test}-t PRIVATE /ignore:4217 /ignore:4286)
   ENDIF()
 ENDFOREACH()
+
+DOWNGRADE_STRINGOP_WARNINGS(gcs_allowlist-t)
 
 IF(MY_COMPILER_IS_CLANG)
   STRING_APPEND(CMAKE_CXX_FLAGS " -Wno-deprecated")

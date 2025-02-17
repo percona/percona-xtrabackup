@@ -25,10 +25,8 @@
 
 #include "cluster_metadata.h"
 
-#include <cstring>
+#include <cstring>  // strcmp
 #include <stdexcept>
-
-#define RAPIDJSON_HAS_STDSTRING 1
 
 #ifdef RAPIDJSON_NO_SIZETYPEDEFINE
 #include "my_rapidjson_size_t.h"
@@ -408,7 +406,7 @@ bool metadata_schema_version_is_compatible(
   return true;
 }
 
-std::string ROUTER_LIB_EXPORT get_metadata_schema_uncompatible_msg(
+std::string get_metadata_schema_uncompatible_msg(
     const mysqlrouter::MetadataSchemaVersion &version) {
   return "The target Cluster's Metadata version ('" + to_string(version) +
          "') is not supported. Please use the latest MySQL Shell to upgrade it "

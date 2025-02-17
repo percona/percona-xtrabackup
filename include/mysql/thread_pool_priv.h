@@ -118,6 +118,7 @@ uint thd_get_net_read_write(THD *thd);
 void thd_set_not_killable(THD *thd);
 ulong thd_get_net_wait_timeout(THD *thd);
 my_socket thd_get_fd(THD *thd);
+MYSQL_SOCKET thd_get_mysql_socket(THD *);
 void thd_store_globals(THD *thd);
 bool thd_check_connection_admin_privilege(THD *thd);
 
@@ -165,5 +166,11 @@ my_thread_attr_t *get_connection_attrib(void);
 
 /* Increment the status variable 'Aborted_connects'. */
 void increment_aborted_connects();
+
+/* Get accumulated number of incoming connection requests. */
+longlong get_incoming_connects();
+
+/* Get number of connections aborted before authentication. */
+longlong get_aborted_connects();
 
 #endif  // THREAD_POOL_PRIV_INCLUDED

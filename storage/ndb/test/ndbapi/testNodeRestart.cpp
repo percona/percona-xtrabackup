@@ -41,6 +41,7 @@
 #include <Vector.hpp>
 #include <cstring>
 #include <signaldata/DumpStateOrd.hpp>
+#include "../../src/ndbapi/NdbInfo.hpp"
 #include "my_sys.h"
 #include "mysql/strings/m_ctype.h"
 #include "util/require.h"
@@ -4571,8 +4572,12 @@ int runForceStopAndRestart(NDBT_Context *ctx, NDBT_Step *step) {
 
 int runBug58453(NDBT_Context *ctx, NDBT_Step *step) {
   NdbRestarter res;
-  if (res.getNumDbNodes() < 4) {
-    g_err << "[SKIPPED] Test skipped. Requires at least 4 nodes" << endl;
+  if (res.getNumReplicas() < 2) {
+    g_err << "[SKIPPED] Test skipped. Requires at least 2 Replicas" << endl;
+    return NDBT_SKIPPED;
+  }
+  if (res.getNumNodeGroups() < 2) {
+    g_err << "[SKIPPED] Test skipped. Requires at least 2 Node Groups" << endl;
     return NDBT_SKIPPED;
   }
 
@@ -4596,7 +4601,8 @@ int runBug58453(NDBT_Context *ctx, NDBT_Step *step) {
         break;
     }
     int node = (int)hugoOps.getTransaction()->getConnectedNodeId();
-    int node0 = res.getRandomNodePreferOtherNodeGroup(node, rand());
+    int node0 = res.getRandomNodeOtherNodeGroup(node, rand());
+
     int node1 = res.getRandomNodeSameNodeGroup(node0, rand());
 
     ndbout_c("node %u err: %u, node: %u err: %u", node0, 5061, node1, err);
@@ -4616,7 +4622,6 @@ int runBug58453(NDBT_Context *ctx, NDBT_Step *step) {
     CHK_NDB_READY(pNdb);
     hugoOps.clearTable(pNdb);
   }
-
   return NDBT_OK;
 }
 
@@ -5928,6 +5933,75 @@ int runChangeNumLogPartsINR(NDBT_Context *ctx, NDBT_Step *step) {
   return NDBT_OK;
 }
 
+static int get_num_exec_threads(Ndb_cluster_connection *connection,
+                                Uint32 nodeId) {
+  NdbInfo ndbinfo(connection, "ndbinfo/");
+  if (!ndbinfo.init()) {
+    g_err << "ndbinfo.init failed" << endl;
+    return -1;
+  }
+
+  const NdbInfo::Table *table;
+  if (ndbinfo.openTable("ndbinfo/threads", &table) != 0) {
+    g_err << "Failed to openTable(threads)" << endl;
+    return -1;
+  }
+
+  NdbInfoScanOperation *scanOp = nullptr;
+  if (ndbinfo.createScanOperation(table, &scanOp)) {
+    g_err << "No NdbInfoScanOperation" << endl;
+    ndbinfo.closeTable(table);
+    return -1;
+  }
+
+  if (scanOp->readTuples() != 0) {
+    g_err << "scanOp->readTuples failed" << endl;
+    ndbinfo.releaseScanOperation(scanOp);
+    ndbinfo.closeTable(table);
+    return -1;
+  }
+
+  const NdbInfoRecAttr *node_id_col = scanOp->getValue("node_id");
+  const NdbInfoRecAttr *thr_no_col = scanOp->getValue("thr_no");
+
+  if (scanOp->execute() != 0) {
+    g_err << "scanOp->execute failed" << endl;
+    ndbinfo.releaseScanOperation(scanOp);
+    ndbinfo.closeTable(table);
+    return -1;
+  }
+
+  bool found_node_id = false;
+  Uint32 thread_no = 0;
+  // Iterate through the result list
+  do {
+    const int scan_next_result = scanOp->nextResult();
+    if (scan_next_result == -1) {
+      g_err << "Failure to process ndbinfo records" << endl;
+      ndbinfo.releaseScanOperation(scanOp);
+      ndbinfo.closeTable(table);
+      return -1;
+    } else if (scan_next_result == 0) {
+      // All ndbinfo records processed
+      ndbinfo.releaseScanOperation(scanOp);
+      ndbinfo.closeTable(table);
+      if (!found_node_id) return 0;
+      if (thread_no == 0)
+        g_err << "Single threaded data node" << endl;
+      else
+        g_err << "Multi threaded data node" << endl;
+      return thread_no + 1;
+
+    } else {
+      // Check thread_no of records from given nodeId
+      const Uint32 node_id_record = node_id_col->u_32_value();
+      if (node_id_record != nodeId) continue;
+      found_node_id = true;
+      thread_no = thr_no_col->u_32_value();
+    }
+  } while (true);
+}
+
 int runChangeNumLDMsNR(NDBT_Context *ctx, NDBT_Step *step) {
   NdbRestarter restarter;
   if (restarter.getNumDbNodes() < 2) {
@@ -5940,6 +6014,21 @@ int runChangeNumLDMsNR(NDBT_Context *ctx, NDBT_Step *step) {
   if (node_1 == -1 || node_2 == -1) {
     g_err << "Failed to find node ids of data nodes" << endl;
     return NDBT_FAILED;
+  }
+
+  int node1_no_threads =
+      get_num_exec_threads(&ctx->m_cluster_connection, node_1);
+  int node2_no_threads =
+      get_num_exec_threads(&ctx->m_cluster_connection, node_2);
+  g_err << node_1 << " " << node1_no_threads << endl;
+  g_err << node_2 << " " << node2_no_threads << endl;
+
+  if (node1_no_threads < 2 || node2_no_threads < 2) {
+    g_err << "[SKIPPED] Test is useful only for clusters running multi threaded"
+             "data node (ndbmtd)"
+          << endl;
+    ctx->stopTest();
+    return NDBT_SKIPPED;
   }
   NdbMgmd mgmd;
   Uint32 keys[2];

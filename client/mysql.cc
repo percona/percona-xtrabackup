@@ -109,8 +109,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 using std::max;
 using std::min;
 
-extern CHARSET_INFO my_charset_utf16le_bin;
-
 const char *VER = "14.14";
 
 /* Don't try to make a nice table if the data is too big */
@@ -248,10 +246,13 @@ static const CHARSET_INFO *charset_info = &my_charset_latin1;
 
 static char *opt_oci_config_file = nullptr;
 static char *opt_authentication_oci_client_config_profile = nullptr;
+static char *opt_authentication_openid_connect_client_id_token_file = nullptr;
 static char *opt_register_factor = nullptr;
 
 static bool opt_tel_plugin = false;
 static const char *opt_tel_plugin_name = "telemetry_client";
+
+static bool opt_system_command = false;
 
 static struct my_option my_empty_options[] = {
     {nullptr, 0, nullptr, nullptr, nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0,
@@ -431,7 +432,8 @@ static COMMANDS commands[] = {
      "Execute an SQL script file. Takes a file name as an argument."},
     {"status", 's', com_status, false,
      "Get status information from the server."},
-    {"system", '!', com_shell, true, "Execute a system shell command."},
+    {"system", '!', com_shell, true,
+     "Execute a system shell command, if enabled"},
     {"tee", 'T', com_tee, true,
      "Set outfile [to_outfile]. Append everything into given outfile."},
     {"use", 'u', com_use, true,
@@ -1161,6 +1163,11 @@ static COMMANDS commands[] = {
     {"TO_DAYS", 0, nullptr, false, ""},
     {"TOUCHES", 0, nullptr, false, ""},
     {"TRIM", 0, nullptr, false, ""},
+    {"TO_VECTOR", 0, nullptr, false, ""},
+    {"STRING_TO_VECTOR", 0, nullptr, false, ""},
+    {"FROM_VECTOR", 0, nullptr, false, ""},
+    {"VECTOR_TO_STRING", 0, nullptr, false, ""},
+    {"VECTOR_DIM", 0, nullptr, false, ""},
     {"UCASE", 0, nullptr, false, ""},
     {"UNCOMPRESS", 0, nullptr, false, ""},
     {"UNCOMPRESSED_LENGTH", 0, nullptr, false, ""},
@@ -2074,6 +2081,11 @@ static struct my_option my_long_options[] = {
      "is ~/.oci/config and %HOME/.oci/config on Windows.",
      &opt_oci_config_file, &opt_oci_config_file, nullptr, GET_STR, REQUIRED_ARG,
      0, 0, 0, nullptr, 0, nullptr},
+    {"authentication-openid-connect-client-id-token-file", 0,
+     "Specifies the location of the ID token file.",
+     &opt_authentication_openid_connect_client_id_token_file,
+     &opt_authentication_openid_connect_client_id_token_file, nullptr, GET_STR,
+     REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"telemetry-client", 0, "Load the telemetry_client plugin.",
      &opt_tel_plugin, &opt_tel_plugin, nullptr, GET_BOOL, NO_ARG, 0, 0, 0,
      nullptr, 0, nullptr},
@@ -2083,6 +2095,10 @@ static struct my_option my_long_options[] = {
      "Specifies factor for which registration needs to be done for.",
      &opt_register_factor, &opt_register_factor, nullptr, GET_STR, REQUIRED_ARG,
      0, 0, 0, nullptr, 0, nullptr},
+    {"system-command", 0,
+     "Enable or disable (by default) the 'system' mysql command.",
+     &opt_system_command, &opt_system_command, nullptr, GET_BOOL, NO_ARG, 0, 0,
+     0, nullptr, 0, nullptr},
     {nullptr, 0, nullptr, nullptr, nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0,
      0, nullptr, 0, nullptr}};
 
@@ -3347,7 +3363,8 @@ void add_syslog(const char *line) {
            "CONNECTION_ID:%lu, DB_SERVER:'%s', DB:'%s', QUERY:'%s'",
            /* use the cached user/sudo_user value. */
            current_os_sudouser ? current_os_sudouser
-                               : current_os_user ? current_os_user : "--",
+           : current_os_user   ? current_os_user
+                               : "--",
            current_user ? current_user : "--", mysql_thread_id(&mysql_handle),
            current_host ? current_host : "--", current_db ? current_db : "--",
            line);
@@ -3909,15 +3926,15 @@ static void print_field_types(MYSQL_RES *result) {
 /* Used to determine if we should invoke print_as_hex for this field */
 
 static bool is_binary_field(MYSQL_FIELD *field) {
-  return ((field->charsetnr == 63) &&
-          (field->type == MYSQL_TYPE_BIT || field->type == MYSQL_TYPE_BLOB ||
-           field->type == MYSQL_TYPE_LONG_BLOB ||
-           field->type == MYSQL_TYPE_MEDIUM_BLOB ||
-           field->type == MYSQL_TYPE_TINY_BLOB ||
-           field->type == MYSQL_TYPE_VAR_STRING ||
-           field->type == MYSQL_TYPE_STRING ||
-           field->type == MYSQL_TYPE_VARCHAR ||
-           field->type == MYSQL_TYPE_GEOMETRY));
+  return (
+      (field->charsetnr == 63) &&
+      (field->type == MYSQL_TYPE_BIT || field->type == MYSQL_TYPE_BLOB ||
+       field->type == MYSQL_TYPE_LONG_BLOB ||
+       field->type == MYSQL_TYPE_MEDIUM_BLOB ||
+       field->type == MYSQL_TYPE_TINY_BLOB ||
+       field->type == MYSQL_TYPE_VAR_STRING ||
+       field->type == MYSQL_TYPE_STRING || field->type == MYSQL_TYPE_VARCHAR ||
+       field->type == MYSQL_TYPE_VECTOR || field->type == MYSQL_TYPE_GEOMETRY));
 }
 
 /* Print binary value as hex literal (0x ...) */
@@ -3948,13 +3965,13 @@ static void print_table_data(MYSQL_RES *result) {
   bool *num_flag;
   size_t sz;
 
-  sz = sizeof(bool) * mysql_num_fields(result);
-  num_flag = (bool *)my_safe_alloca(sz, MAX_ALLOCA_SIZE);
   if (column_types_flag) {
     print_field_types(result);
     if (!mysql_num_rows(result)) return;
     mysql_field_seek(result, 0);
   }
+  sz = sizeof(bool) * mysql_num_fields(result);
+  num_flag = (bool *)my_safe_alloca(sz, MAX_ALLOCA_SIZE);
   separator.copy("+", 1, charset_info);
   while ((field = mysql_fetch_field(result))) {
     size_t length = column_names ? field->name_length : 0;
@@ -4496,6 +4513,13 @@ static int com_shell(String *buffer [[maybe_unused]],
   if (!shell_cmd) {
     put_info("Usage: \\! shell-command", INFO_ERROR);
     return -1;
+  }
+
+  if (!opt_system_command) {
+    return put_info(
+        "'system' command received, but the --system-command option is off. "
+        "Skipping.",
+        INFO_ERROR);
   }
   /*
     The output of the shell command does not
@@ -5179,6 +5203,29 @@ static bool init_connection_options(MYSQL *mysql) {
     }
   }
 
+  /* set authentication_openid_connect_client ID token file option if required
+   */
+  if (opt_authentication_openid_connect_client_id_token_file != nullptr) {
+    struct st_mysql_client_plugin *openid_connect_plugin =
+        mysql_client_find_plugin(mysql, "authentication_openid_connect_client",
+                                 MYSQL_CLIENT_AUTHENTICATION_PLUGIN);
+    if (!openid_connect_plugin) {
+      put_info("Cannot load the authentication_openid_connect_client plugin.",
+               INFO_ERROR);
+      return true;
+    }
+    if (mysql_plugin_options(
+            openid_connect_plugin, "id-token-file",
+            opt_authentication_openid_connect_client_id_token_file)) {
+      put_info(
+          "Failed to set id token file for "
+          "authentication_openid_connect_client "
+          "plugin.",
+          INFO_ERROR);
+      return true;
+    }
+  }
+
   char error[256]{0};
 #if defined(_WIN32)
   if (set_authentication_kerberos_client_mode(mysql, error, 255)) {
@@ -5818,8 +5865,8 @@ static void get_current_os_user() {
 
   if (GetUserNameW(wbuf, &wbuf_len)) {
     len = my_convert(buf, sizeof(buf) - 1, charset_info, (char *)wbuf,
-                     wbuf_len * sizeof(WCHAR), &my_charset_utf16le_bin,
-                     &dummy_errors);
+                     wbuf_len * sizeof(WCHAR),
+                     get_charset_by_name("utf16le_bin", MYF(0)), &dummy_errors);
     buf[len] = 0;
     user = buf;
   } else {

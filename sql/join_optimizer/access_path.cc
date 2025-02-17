@@ -365,6 +365,27 @@ bool ShouldEnableBatchMode(AccessPath *path) {
   }
 }
 
+// Check if a subquery present in a condition has forced materialization.
+bool IsForcedMaterialization(THD *thd, Item *cond) {
+  bool force_materialization = false;
+  WalkItem(cond, enum_walk::POSTFIX | enum_walk::SUBQUERY,
+           [&force_materialization, thd](Item *item) {
+             if (item->type() == Item::SUBQUERY_ITEM) {
+               if (!is_quantified_comp_predicate(item)) return false;
+               Item_in_subselect *item_subs =
+                   down_cast<Item_in_subselect *>(item);
+               Query_block *qb = item_subs->query_expr()->first_query_block();
+               if (qb->subquery_strategy(thd) ==
+                   Subquery_strategy::SUBQ_MATERIALIZATION) {
+                 force_materialization = true;
+                 return true;
+               }
+             }
+             return false;
+           });
+  return force_materialization;
+}
+
 /**
   If the path is a FILTER path marked that subqueries are to be materialized,
   do so. If not, do nothing.
@@ -378,11 +399,13 @@ bool ShouldEnableBatchMode(AccessPath *path) {
  */
 bool FinalizeMaterializedSubqueries(THD *thd, JOIN *join, AccessPath *path) {
   if (path->type != AccessPath::FILTER ||
-      !path->filter().materialize_subqueries) {
+      !(path->filter().materialize_subqueries ||
+        IsForcedMaterialization(thd, path->filter().condition))) {
     return false;
   }
   return WalkItem(
-      path->filter().condition, enum_walk::POSTFIX, [thd, join](Item *item) {
+      path->filter().condition, enum_walk::POSTFIX | enum_walk::SUBQUERY,
+      [thd, join](Item *item) {
         if (!is_quantified_comp_predicate(item)) {
           return false;
         }
@@ -392,6 +415,10 @@ bool FinalizeMaterializedSubqueries(THD *thd, JOIN *join, AccessPath *path) {
           return false;
         }
         Query_block *qb = item_subs->query_expr()->first_query_block();
+        // If IN-TO-EXISTS is forced, don't materialize.
+        if (qb->subquery_strategy(thd) == Subquery_strategy::SUBQ_EXISTS) {
+          return false;
+        }
         if (!item_subs->subquery_allows_materialization(thd, qb,
                                                         join->query_block)) {
           return false;
@@ -939,10 +966,6 @@ unique_ptr_destroy_only<RowIterator> CreateIteratorFromAccessPath(
                 ? &join->hash_table_generation
                 : nullptr;
 
-        const auto first_row_cost = [](const AccessPath &p) {
-          return p.init_cost() + p.cost() / std::max(p.num_output_rows(), 1.0);
-        };
-
         // If the probe (outer) input is empty, the join result will be empty,
         // and we do not need to read the build input. For inner join and
         // semijoin, the converse is also true. To benefit from this, we want to
@@ -953,7 +976,7 @@ unique_ptr_destroy_only<RowIterator> CreateIteratorFromAccessPath(
         // first for left join and antijoin.
         const HashJoinInput first_input =
             (thd->lex->using_hypergraph_optimizer() &&
-             first_row_cost(*param.inner) > first_row_cost(*param.outer))
+             param.inner->first_row_cost() > param.outer->first_row_cost())
                 ? HashJoinInput::kProbe
                 : HashJoinInput::kBuild;
 
@@ -1339,6 +1362,12 @@ unique_ptr_destroy_only<RowIterator> CreateIteratorFromAccessPath(
 }
 
 void FindTablesToGetRowidFor(AccessPath *path) {
+  // A map of the tables for which other paths further down in the tree will
+  // take care of copying the correct row ID into table->file->ref. The hash
+  // join iterators and the BKA join iterators do that, so iterators higher up
+  // should not call handler::position(), as that would overwrite the copied row
+  // ID with the row ID of the last row that was read by the join. Sorting
+  // iterators, on the other hand, do not
   table_map handled_by_others = 0;
 
   auto add_tables_handled_by_others = [path, &handled_by_others](
@@ -1367,6 +1396,13 @@ void FindTablesToGetRowidFor(AccessPath *path) {
         // Doesn't really matter, we don't cross query blocks anyway.
         return true;
       }
+      case AccessPath::SORT:
+        // The sorting iterators do not populate handler::ref with the row ID
+        // while returning rows, so row IDs in any tables handled by paths below
+        // it have to be fetched again from the handler by the paths above the
+        // sort. Therefore, we don't add any of the tables in the subtree below
+        // SORT to handled_by_others.
+        return true;  // Skip the rest of the subtree.
       default:
         return false;
     }
@@ -1630,4 +1666,82 @@ table_map GetHashJoinTables(AccessPath *path) {
         return false;
       });
   return tables;
+}
+
+void CollectStatusVariables(THD *thd, const JOIN *top_join,
+                            const AccessPath &top_path) {
+  MutableOverflowBitset seen_first_tables(thd->mem_root,
+                                          thd->lex->select_number);
+  WalkAccessPaths(
+      &top_path, top_join, WalkAccessPathPolicy::ENTIRE_TREE,
+      [thd, &seen_first_tables](const AccessPath *path, const JOIN *join) {
+        if (join == nullptr) {
+          // Skip paths that don't belong to a particular query block. In
+          // practice, this means the materialization path of a UNION used as a
+          // derived table.
+          return false;
+        }
+
+        const TABLE *const table = GetBasicTable(path);
+        if (table == nullptr) {
+          // Skip paths that don't represent a table access.
+          return false;
+        }
+        if (table->pos_in_table_list == nullptr) {
+          // Skip paths that read a table that is not in the FROM list.
+          // (Typically an internal temporary table created by the optimizer.)
+          // We count scans of tables in the FROM list only.
+          return false;
+        }
+
+        // Check if this is the first table we see in this query block. The
+        // first table of each query block is counted in a different status
+        // variable than the other tables.
+        const int query_block_bit = join->query_block->select_number - 1;
+        const bool first_table = !IsBitSet(query_block_bit, seen_first_tables);
+        if (first_table) {
+          seen_first_tables.SetBit(query_block_bit);
+        }
+
+        switch (path->type) {
+          case AccessPath::TABLE_SCAN:
+            thd->set_status_no_index_used();
+            [[fallthrough]];
+          case AccessPath::INDEX_SCAN:
+            if (first_table) {
+              thd->inc_status_select_scan();
+            } else {
+              thd->inc_status_select_full_join();
+            }
+            break;
+
+          case AccessPath::INDEX_RANGE_SCAN:
+          case AccessPath::INDEX_SKIP_SCAN:
+          case AccessPath::GROUP_INDEX_SKIP_SCAN:
+          case AccessPath::INDEX_MERGE:
+          case AccessPath::ROWID_INTERSECTION:
+          case AccessPath::ROWID_UNION:
+            if (first_table) {
+              thd->inc_status_select_range();
+            } else {
+              thd->inc_status_select_full_range_join();
+            }
+            break;
+
+          case AccessPath::DYNAMIC_INDEX_RANGE_SCAN:
+            thd->set_status_no_index_used();
+            thd->set_status_no_good_index_used();
+            thd->inc_status_select_range_check();
+            break;
+
+          default:;
+        }
+
+        // Stop traversing the sub-tree when we have seen a table access. There
+        // could be more paths below it (in particular for INDEX_MERGE,
+        // ROWID_INTERSECTION and ROWID_UNION), but they would all be for the
+        // same table, so we don't want to visit them and double-count the
+        // table. Returning true skips the sub-tree below this path.
+        return true;
+      });
 }

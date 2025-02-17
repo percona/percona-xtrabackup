@@ -113,15 +113,6 @@ static void log_data_blocks_validate(os_offset_t offset, os_offset_t size);
 @return bit mask value (2^(bit-1)) */
 static Log_flags log_file_header_flag_bit(uint32_t bit);
 
-#ifndef _WIN32
-
-/** Fsyncs the given directory. Fails on assertion if the directory
-could not be opened.
-@param[in]  path  path to directory to fsync */
-static void log_flush_directory_low(const std::string &path);
-
-#endif /* !_WIN32 */
-
 /** Renames the log file.
 @param[in]  context        redo log files context
 @param[in]  old_file_path  path to the existing log file to rename
@@ -282,30 +273,9 @@ dberr_t Log_file_handle::open() {
 
   ut_ad(s_n_open.fetch_add(1) + 1 <= LOG_MAX_OPEN_FILES);
 
-  /* Note on `OS_FILE_AIO` flag: We don't plan to execute asynchronous IOs on
-  redolog files, all access is through synchronous `os_file_io` calls. The
-  OS_FILE_AIO on Windows causes the file to be in the Overlapped IO mode. The
-  Overlapped IO only affects the low level kernel code, but at the higher level
-  of abstraction the `os_file_io` may need to use `GetOverlappedResult` to wait
-  for the operation to complete before returning, so from the point of view of
-  InnoDB the calls are blocking. All of the operations on redo log files
-  shouldn't really overlap in time, because all operations are done when holding
-  `log_sys->writer_mutex`. Except for `FlushFileBuffers`, which are called when
-  holding `log_sys->flusher_mutex`. On Windows not using Overlapped IO mode
-  means that concurrent synchronous IO requests are serialized on this file,
-  including `WriteFile` and `FlushFileBuffers` calls, which for good performance
-  we need to be executed concurrently. Not having file opened for Overlapped IO
-  mode is impacting performance on Windows very negatively, for example on
-  Sysbench TPCC workloads.
-  However, for non-Overlapped IO mode the `FlushFileBuffers` is not documented
-  to be serialized with other file operations, yet in current implementation it
-  is. And it makes sense, as it is kind of file operation even if it is not
-  listed explicitly on the list of methods that are serialized. So we don't
-  expect this to change and we consider it is a bug in the MSDN documentation
-  that `FlushFileBuffers` is not mentioned on these lists. */
   m_raw_handle =
       os_file_create(innodb_log_file_key, m_file_path.c_str(), OS_FILE_OPEN,
-                     OS_FILE_AIO, OS_LOG_FILE, read_only, &m_is_open);
+                     OS_LOG_FILE, read_only, &m_is_open);
   if (m_is_open) {
     return DB_SUCCESS;
   }
@@ -882,26 +852,6 @@ dberr_t log_list_existing_files(const Log_files_context &ctx,
 
 /** @{ */
 
-#ifndef _WIN32
-
-static void log_flush_directory_low(const std::string &path) {
-  const auto dir_path = 0 < path.length()
-                            ? path.back() == OS_PATH_SEPARATOR
-                                  ? path.substr(0, path.length() - 1)
-                                  : path
-                            : ".";
-
-  bool ret{false};
-  const auto dir =
-      os_file_create(innodb_log_file_key, dir_path.c_str(), OS_FILE_OPEN,
-                     OS_FILE_NORMAL, OS_LOG_FILE, true, &ret);
-  ut_a(ret);
-  os_file_flush(dir);
-  os_file_close(dir);
-}
-
-#endif /* !_WIN32 */
-
 static dberr_t log_rename_file_low(const Log_files_context &ctx
                                    [[maybe_unused]],
                                    const std::string &old_file_path,
@@ -911,15 +861,6 @@ static dberr_t log_rename_file_low(const Log_files_context &ctx
              << new_file_path;
   const bool success = os_file_rename(
       innodb_log_file_key, old_file_path.c_str(), new_file_path.c_str());
-
-  /* On Windows, os_file_rename() uses MoveFileEx
-  and provides MOVEFILE_WRITE_THROUGH. */
-
-#ifndef _WIN32
-  if (success) {
-    log_flush_directory_low(log_directory_path(ctx));
-  }
-#endif /* !_WIN32 */
 
   if (!success) {
     ib::error(err_msg_id, old_file_path.c_str(), new_file_path.c_str());
@@ -1074,7 +1015,7 @@ dberr_t log_create_unused_file(const Log_files_context &ctx,
   bool ret;
   auto file = os_file_create(innodb_log_file_key, file_path.c_str(),
                              OS_FILE_CREATE | OS_FILE_ON_ERROR_NO_EXIT,
-                             OS_FILE_NORMAL, OS_LOG_FILE, false, &ret);
+                             OS_LOG_FILE_RESIZING, false, &ret);
 
   if (!ret) {
     ib::error(ER_IB_MSG_LOG_FILE_OS_CREATE_FAILED, file_path.c_str());
@@ -1125,7 +1066,7 @@ static dberr_t log_resize_file_low(const std::string &file_path,
   bool ret;
   auto file = os_file_create(innodb_log_file_key, file_path.c_str(),
                              OS_FILE_OPEN | OS_FILE_ON_ERROR_NO_EXIT,
-                             OS_FILE_NORMAL, OS_LOG_FILE, false, &ret);
+                             OS_LOG_FILE_RESIZING, false, &ret);
   if (!ret) {
     ib::error(err_msg_id, file_path.c_str(),
               ulonglong{size_in_bytes / (1024 * 1024UL)},
@@ -1190,9 +1131,8 @@ static dberr_t log_check_file(const Log_files_context &ctx, Log_file_id file_id,
   }
 
   bool ret;
-  auto file =
-      os_file_create(innodb_log_file_key, file_path.c_str(), OS_FILE_OPEN,
-                     OS_FILE_NORMAL, OS_LOG_FILE, read_only, &ret);
+  auto file = os_file_create(innodb_log_file_key, file_path.c_str(),
+                             OS_FILE_OPEN, OS_LOG_FILE, read_only, &ret);
   if (!ret) {
     ib::error(ER_IB_MSG_LOG_FILE_OPEN_FAILED, file_path.c_str(),
               static_cast<int>(DB_ERROR));

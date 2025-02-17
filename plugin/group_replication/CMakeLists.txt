@@ -115,6 +115,7 @@ SET(GROUP_REPLICATION_SOURCES
   src/services/status_service/status_service.cc
   src/services/system_variable/get_system_variable.cc
   src/services/system_variable/set_system_variable.cc
+  src/services/flow_control/get_metrics.cc
   src/services/registry.cc
   src/services/server_services_references.cc
   src/sql_service/sql_command_test.cc
@@ -136,12 +137,6 @@ SET(GROUP_REPLICATION_SOURCES
 SET(GMS_LISTENER_SERVICE_TEST_SOURCES
   src/services/notification/impl/gms_listener_test.cc
 )
-
-MY_CHECK_CXX_COMPILER_WARNING("-Wextra-semi" HAS_WARN_FLAG)
-IF(HAS_WARN_FLAG)
-  ADD_COMPILE_FLAGS(${GMS_LISTENER_SERVICE_TEST_SOURCES}
-    COMPILE_FLAGS " ${HAS_WARN_FLAG}")
-ENDIF()
 
 # Allow both WITHOUT_GROUP_REPLICATION=1 and WITH_GROUP_REPLICATION=0 to be
 # specified.
@@ -188,10 +183,6 @@ IF ((NOT (DEFINED WITHOUT_GROUP_REPLICATION AND WITHOUT_GROUP_REPLICATION)) AND
     ADD_DEPENDENCIES(gr_unit_test_resource GenError)
   ENDIF()
 
-  ADD_COMPILE_FLAGS(${GROUP_REPLICATION_SOURCES}
-    COMPILE_FLAGS "${GR_PROTOBUF_FLAGS}"
-  )
-
   ### Configuration ###
 
   IF(WIN32)
@@ -221,6 +212,7 @@ MYSQL_ADD_PLUGIN(group_replication
   ${GR_PROTOBUF_LITE_LIB}
   mysqlgcs
   extra::rapidjson
+  mysql_containers
   mysql_gtid
   MODULE_ONLY
   MODULE_OUTPUT_NAME "group_replication"

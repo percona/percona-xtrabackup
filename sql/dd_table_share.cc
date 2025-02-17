@@ -56,6 +56,7 @@
 #include "sql/dd/collection.h"
 #include "sql/dd/dd_table.h"       // dd::FIELD_NAME_SEPARATOR_CHAR
 #include "sql/dd/dd_tablespace.h"  // dd::get_tablespace_name
+#include "sql/dd/dd_trigger.h"     // dd::load_triggers
 // TODO: Avoid exposing dd/impl headers in public files.
 #include "sql/dd/impl/utils.h"  // dd::eat_str
 #include "sql/dd/properties.h"  // dd::Properties
@@ -178,6 +179,9 @@ enum_field_types dd_get_old_field_type(dd::enum_column_types type) {
     case dd::enum_column_types::LONG_BLOB:
       return MYSQL_TYPE_LONG_BLOB;
 
+    case dd::enum_column_types::VECTOR:
+      return MYSQL_TYPE_VECTOR;
+
     case dd::enum_column_types::BLOB:
       return MYSQL_TYPE_BLOB;
 
@@ -298,8 +302,9 @@ static bool prepare_share(THD *thd, TABLE_SHARE *share,
   if (share->keys) {
     KEY *keyinfo;
     KEY_PART_INFO *key_part;
-    uint primary_key = (uint)(
-        find_type(primary_key_name, &share->keynames, FIND_TYPE_NO_PREFIX) - 1);
+    uint primary_key = (uint)(find_type(primary_key_name, &share->keynames,
+                                        FIND_TYPE_NO_PREFIX) -
+                              1);
     const longlong ha_option = handler_file->ha_table_flags();
     keyinfo = share->key_info;
     key_part = keyinfo->key_part;
@@ -1147,19 +1152,20 @@ static bool fill_columns_from_dd(THD *thd, TABLE_SHARE *share,
                               rec_pos, field_nr))
         return true;
 
+      /*
+        Account for NULL bits if it's a regular column.
+        If it's a generated column, we do it below so the NULL
+        bits end up in the expected order.
+      */
+      if ((null_bit_pos += column_preamble_bits(col_obj)) > 7) {
+        null_pos++;
+        null_bit_pos -= 8;
+      }
+
       rec_pos += share->field[field_nr]->pack_length_in_rec();
     } else
       has_vgc = true;
 
-    /*
-      Virtual generated columns still need to be accounted in null bits and
-      field_nr calculations, since they reside at the normal place in record
-      preamble and TABLE_SHARE::field array.
-    */
-    if ((null_bit_pos += column_preamble_bits(col_obj)) > 7) {
-      null_pos++;
-      null_bit_pos -= 8;
-    }
     field_nr++;
   }
 
@@ -1172,8 +1178,6 @@ static bool fill_columns_from_dd(THD *thd, TABLE_SHARE *share,
         static_cast<ulong>(rec_pos - share->default_values))
       share->stored_rec_length = (rec_pos - share->default_values);
 
-    null_pos = share->default_values;
-    null_bit_pos = (share->db_create_options & HA_OPTION_PACK_RECORD) ? 0 : 1;
     field_nr = 0;
 
     for (const dd::Column *col_obj2 : tab_obj->columns()) {
@@ -1186,17 +1190,18 @@ static bool fill_columns_from_dd(THD *thd, TABLE_SHARE *share,
                                 rec_pos, field_nr))
           return true;
 
+        /*
+          Account for generated columns -- we do this separately here
+          so the NULL bits end up in the expected order.
+        */
+        if ((null_bit_pos += column_preamble_bits(col_obj2)) > 7) {
+          null_pos++;
+          null_bit_pos -= 8;
+        }
+
         rec_pos += share->field[field_nr]->pack_length_in_rec();
       }
 
-      /*
-        Account for all columns while evaluating null_pos/null_bit_pos and
-        field_nr.
-      */
-      if ((null_bit_pos += column_preamble_bits(col_obj2)) > 7) {
-        null_pos++;
-        null_bit_pos -= 8;
-      }
       field_nr++;
     }
   }
@@ -2067,6 +2072,11 @@ static bool fill_partitioning_from_dd(THD *thd, TABLE_SHARE *share,
     if (part_info->partitions.push_back(curr_part_elem, &share->mem_root))
       return true;
 
+    const auto &part_options = part_obj->options();
+    if (part_options.exists("secondary_load")) {
+      part_options.get("secondary_load", &curr_part_elem->secondary_load);
+    }
+
     for (const dd::Partition *sub_part_obj : part_obj->subpartitions()) {
       partition_element *curr_sub_part_elem =
           new (&share->mem_root) partition_element;
@@ -2082,6 +2092,12 @@ static bool fill_partitioning_from_dd(THD *thd, TABLE_SHARE *share,
       if (curr_part_elem->subpartitions.push_back(curr_sub_part_elem,
                                                   &share->mem_root))
         return true;
+
+      const auto &sub_part_options = sub_part_obj->options();
+      if (sub_part_options.exists("secondary_load")) {
+        sub_part_options.get("secondary_load",
+                             &curr_sub_part_elem->secondary_load);
+      }
     }
   }
 
@@ -2284,6 +2300,25 @@ static bool fill_check_constraints_from_dd(TABLE_SHARE *share,
   return false;
 }
 
+/**
+  Add sharable information about triggers to the TABLE_SHARE
+  from a dd::Table object.
+*/
+static bool fill_triggers_from_dd(THD *thd, TABLE_SHARE *share,
+                                  const dd::Table *tab_obj) {
+  assert(share->triggers == nullptr);
+
+  if (tab_obj->has_trigger()) {
+    share->triggers = new (&share->mem_root) List<Trigger>;
+    if (share->triggers == nullptr) return true;  // OOM
+    if (dd::load_triggers(thd, &share->mem_root, share->db.str,
+                          share->table_name.str, *tab_obj, share->triggers))
+      return true;  // OOM.
+  }
+
+  return false;
+}
+
 bool open_table_def(THD *thd, TABLE_SHARE *share, const dd::Table &table_def) {
   DBUG_TRACE;
 
@@ -2297,7 +2332,8 @@ bool open_table_def(THD *thd, TABLE_SHARE *share, const dd::Table &table_def) {
                 fill_indexes_from_dd(thd, share, &table_def) ||
                 fill_partitioning_from_dd(thd, share, &table_def) ||
                 fill_foreign_keys_from_dd(share, &table_def) ||
-                fill_check_constraints_from_dd(share, &table_def));
+                fill_check_constraints_from_dd(share, &table_def) ||
+                fill_triggers_from_dd(thd, share, &table_def));
 
   thd->mem_root = old_root;
 

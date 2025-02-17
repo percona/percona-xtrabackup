@@ -1455,6 +1455,8 @@ void warn_on_deprecated_user_defined_collation(
 %token<lexer.keyword> BERNOULLI_SYM              1213  /* SQL-2016-N */
 %token<lexer.keyword> TABLESAMPLE_SYM            1214  /* SQL-2016-R */
 
+%token<lexer.keyword> VECTOR_SYM 1215
+
 /*
   NOTE! When adding new non-standard keywords, make sure they are added to the
   list ident_keywords_unambiguous lest they become reserved keywords.
@@ -3530,15 +3532,11 @@ event_tail:
 
             lex->stmt_definition_begin= @1.cpp.start;
             lex->create_info->options= $2 ? HA_LEX_CREATE_IF_NOT_EXISTS : 0;
-            if (!(lex->event_parse_data= new (thd->mem_root) Event_parse_data()))
-              MYSQL_YYABORT;
-            lex->event_parse_data->identifier= $3;
-            lex->event_parse_data->on_completion=
-                                  Event_parse_data::ON_COMPLETION_DROP;
 
             lex->sql_command= SQLCOM_CREATE_EVENT;
-            /* We need that for disallowing subqueries */
-            MAKE_CMD_DDL_DUMMY();
+            assert(lex->m_sql_cmd == nullptr);
+            lex->m_sql_cmd = make_create_event_sql_cmd(thd, $3);
+            if (lex->m_sql_cmd == nullptr) { YYABORT; }
           }
           ON_SYM SCHEDULE_SYM ev_schedule_time
           opt_ev_on_completion
@@ -3561,8 +3559,8 @@ ev_schedule_time:
           {
             ITEMIZE($2, &$2);
 
-            Lex->event_parse_data->item_expression= $2;
-            Lex->event_parse_data->interval= $3;
+            get_event_parse_data(Lex)->item_expression= $2;
+            get_event_parse_data(Lex)->interval= $3;
           }
           ev_starts
           ev_ends
@@ -3570,7 +3568,7 @@ ev_schedule_time:
           {
             ITEMIZE($2, &$2);
 
-            Lex->event_parse_data->item_execute_at= $2;
+            get_event_parse_data(Lex)->item_execute_at= $2;
           }
         ;
 
@@ -3578,28 +3576,28 @@ opt_ev_status:
           %empty { $$= 0; }
         | ENABLE_SYM
           {
-            Lex->event_parse_data->status= Event_parse_data::ENABLED;
-            Lex->event_parse_data->status_changed= true;
+            get_event_parse_data(Lex)->status= Event_parse_data::ENABLED;
+            get_event_parse_data(Lex)->status_changed= true;
             $$= 1;
           }
         | DISABLE_SYM ON_SYM SLAVE
           {
             push_deprecated_warn(YYTHD, "<CREATE|ALTER> EVENT ... DISABLE ON SLAVE",
                                         "<CREATE|ALTER> EVENT ... DISABLE ON REPLICA");
-            Lex->event_parse_data->status= Event_parse_data::REPLICA_SIDE_DISABLED;
-            Lex->event_parse_data->status_changed= true;
+            get_event_parse_data(Lex)->status= Event_parse_data::REPLICA_SIDE_DISABLED;
+            get_event_parse_data(Lex)->status_changed= true;
             $$= 1;
           }
         | DISABLE_SYM ON_SYM REPLICA_SYM
           {
-            Lex->event_parse_data->status= Event_parse_data::REPLICA_SIDE_DISABLED;
-            Lex->event_parse_data->status_changed= true;
+            get_event_parse_data(Lex)->status= Event_parse_data::REPLICA_SIDE_DISABLED;
+            get_event_parse_data(Lex)->status_changed= true;
             $$= 1;
           }
         | DISABLE_SYM
           {
-            Lex->event_parse_data->status= Event_parse_data::DISABLED;
-            Lex->event_parse_data->status_changed= true;
+            get_event_parse_data(Lex)->status= Event_parse_data::DISABLED;
+            get_event_parse_data(Lex)->status_changed= true;
             $$= 1;
           }
         ;
@@ -3610,13 +3608,13 @@ ev_starts:
             Item *item= NEW_PTN Item_func_now_local(0);
             if (item == nullptr)
               MYSQL_YYABORT;
-            Lex->event_parse_data->item_starts= item;
+            get_event_parse_data(Lex)->item_starts= item;
           }
         | STARTS_SYM expr
           {
             ITEMIZE($2, &$2);
 
-            Lex->event_parse_data->item_starts= $2;
+            get_event_parse_data(Lex)->item_starts= $2;
           }
         ;
 
@@ -3626,7 +3624,7 @@ ev_ends:
           {
             ITEMIZE($2, &$2);
 
-            Lex->event_parse_data->item_ends= $2;
+            get_event_parse_data(Lex)->item_ends= $2;
           }
         ;
 
@@ -3638,13 +3636,13 @@ opt_ev_on_completion:
 ev_on_completion:
           ON_SYM COMPLETION_SYM PRESERVE_SYM
           {
-            Lex->event_parse_data->on_completion=
+            get_event_parse_data(Lex)->on_completion=
                                   Event_parse_data::ON_COMPLETION_PRESERVE;
             $$= 1;
           }
         | ON_SYM COMPLETION_SYM NOT_SYM PRESERVE_SYM
           {
-            Lex->event_parse_data->on_completion=
+            get_event_parse_data(Lex)->on_completion=
                                   Event_parse_data::ON_COMPLETION_DROP;
             $$= 1;
           }
@@ -3654,7 +3652,7 @@ opt_ev_comment:
           %empty { $$= 0; }
         | COMMENT_SYM TEXT_STRING_sys
           {
-            Lex->event_parse_data->comment= $2;
+            get_event_parse_data(Lex)->comment= {$2.str,$2.length};
             $$= 1;
           }
         ;
@@ -3689,7 +3687,7 @@ ev_sql_stmt:
 
             sp_head *sp= sp_start_parsing(thd,
                                           enum_sp_type::EVENT,
-                                          lex->event_parse_data->identifier);
+                                          get_event_parse_data(lex)->identifier);
 
             if (!sp)
               MYSQL_YYABORT;
@@ -3716,7 +3714,7 @@ ev_sql_stmt:
             sp_finish_parsing(thd);
 
             lex->sp_chistics.suid= SP_IS_SUID;  //always the definer!
-            lex->event_parse_data->body_changed= true;
+            get_event_parse_data(lex)->body_changed= true;
           }
         ;
 
@@ -6791,11 +6789,15 @@ column_def:
         ;
 
 opt_references:
-           %empty { $$= nullptr; }
-        |  references
+          %empty { $$= nullptr; }
+        | references
           {
-            /* Currently we ignore FK references here: */
-            $$= nullptr;
+            $$= NEW_PTN PT_foreign_key_definition(@$, NULL_STR, NULL_STR,
+                                                  nullptr, $1.table_name,
+                                                  $1.reference_list,
+                                                  $1.fk_match_option,
+                                                  $1.fk_update_opt,
+                                                  $1.fk_delete_opt);
           }
         ;
 
@@ -6984,6 +6986,10 @@ type:
         | VARBINARY_SYM field_length
           {
             $$= NEW_PTN PT_char_type(@$, Char_type::VARCHAR, $2, &my_charset_bin);
+          }
+        | VECTOR_SYM opt_field_length
+          {
+            $$= NEW_PTN PT_vector_type(@$, $2);
           }
         | YEAR_SYM opt_field_length field_options
           {
@@ -8083,12 +8089,9 @@ alter_event_stmt:
               Event_parse_data.
             */
 
-            if (!(Lex->event_parse_data= new (YYTHD->mem_root) Event_parse_data()))
-              MYSQL_YYABORT;
-            Lex->event_parse_data->identifier= $4;
-
             Lex->sql_command= SQLCOM_ALTER_EVENT;
-            MAKE_CMD_DDL_DUMMY();
+            Lex->m_sql_cmd = make_alter_event_sql_cmd(YYTHD, $4);
+            if (Lex->m_sql_cmd == nullptr) { YYABORT; }
           }
           ev_alter_on_schedule_completion
           opt_ev_rename_to
@@ -12875,9 +12878,9 @@ drop_event_stmt:
           DROP EVENT_SYM if_exists sp_name
           {
             Lex->drop_if_exists= $3;
-            Lex->spname= $4;
             Lex->sql_command = SQLCOM_DROP_EVENT;
-            MAKE_CMD_DDL_DUMMY();
+            Lex->m_sql_cmd = make_drop_event_sql_cmd(YYTHD, $4);
+            if (Lex->m_sql_cmd == nullptr) { YYABORT; }
           }
         ;
 
@@ -14023,11 +14026,27 @@ opt_explain_format:
         ;
 
 opt_explain_options:
-          ANALYZE_SYM opt_explain_format
+          ANALYZE_SYM opt_explain_format opt_explain_into
           {
             $$ = $2;
             $$.is_analyze = true;
-            $$.explain_into_variable_name = NULL_STR;
+
+            if ($3.length) {
+              if (!$$.is_explicit) {
+                MYSQL_YYABORT_ERROR(
+                  ER_EXPLAIN_INTO_IMPLICIT_FORMAT_NOT_SUPPORTED, MYF(0));
+              }
+              if ($$.explain_format_type != Explain_format_type::JSON) {
+                if ($$.explain_format_type == Explain_format_type::TREE) {
+                  MYSQL_YYABORT_ERROR(ER_EXPLAIN_INTO_FORMAT_NOT_SUPPORTED,
+                                      MYF(0), "TREE");
+                } else {
+                  MYSQL_YYABORT_ERROR(ER_EXPLAIN_INTO_FORMAT_NOT_SUPPORTED,
+                                      MYF(0), "TRADITIONAL");
+                }
+              }
+            }
+            $$.explain_into_variable_name = $3;
           }
         | opt_explain_format opt_explain_into
           {
@@ -14060,6 +14079,9 @@ opt_explain_into:
           }
         | INTO '@' ident_or_text
           {
+            if(check_column_name($3.str)) {
+              MYSQL_YYABORT_ERROR(ER_ILLEGAL_USER_VAR, MYF(0), $3.str);
+            }
             $$ = $3;
           }
         ;
@@ -14071,6 +14093,9 @@ opt_explain_for_schema:
           }
         | FOR_SYM DATABASE ident_or_text
           {
+            if (check_and_convert_db_name(&$3, false) != Ident_name_check::OK) {
+              MYSQL_YYABORT;
+            }
             $$ = to_lex_cstring($3);
           }
         ;
@@ -15711,6 +15736,7 @@ ident_keywords_unambiguous:
         | XML_SYM
         | YEAR_SYM
         | ZONE_SYM
+        | VECTOR_SYM
         ;
 
 /*
@@ -17475,22 +17501,35 @@ view_suid:
         ;
 
 view_tail:
-          view_suid VIEW_SYM table_ident opt_derived_column_list
+          view_suid VIEW_SYM opt_if_not_exists table_ident
+          opt_derived_column_list
           {
             THD *thd= YYTHD;
             LEX *lex= thd->lex;
             lex->sql_command= SQLCOM_CREATE_VIEW;
+            if ($3)
+            {
+              if ((lex->create_view_mode ==
+                   enum_view_create_mode::VIEW_ALTER) ||
+                  (lex->create_view_mode ==
+                   enum_view_create_mode::VIEW_CREATE_OR_REPLACE))
+              {
+                YYTHD->syntax_error_at(@3);
+                MYSQL_YYABORT;
+              }
+              lex->create_info->options= HA_LEX_CREATE_IF_NOT_EXISTS;
+            }
             /* first table in list is target VIEW name */
-            if (!lex->query_block->add_table_to_list(thd, $3, nullptr,
+            if (!lex->query_block->add_table_to_list(thd, $4, nullptr,
                                                     TL_OPTION_UPDATING,
                                                     TL_IGNORE,
                                                     MDL_EXCLUSIVE))
               MYSQL_YYABORT;
             lex->query_tables->open_strategy= Table_ref::OPEN_STUB;
             thd->parsing_system_view= lex->query_tables->is_system_view;
-            if ($4.size())
+            if ($5.size())
             {
-              for (auto column_alias : $4)
+              for (auto column_alias : $5)
               {
                 // Report error if the column name/length is incorrect.
                 if (check_column_name(column_alias.str))
@@ -17500,11 +17539,11 @@ view_tail:
                 }
               }
               /*
-                The $4 object is short-lived (its 'm_array' is not);
+                The $5 object is short-lived (its 'm_array' is not);
                 so we have to duplicate it, and then we can store a
                 pointer.
               */
-              void *rawmem= thd->memdup(&($4), sizeof($4));
+              void *rawmem= thd->memdup(&($5), sizeof($5));
               if (!rawmem)
                 MYSQL_YYABORT; /* purecov: inspected */
               lex->query_tables->

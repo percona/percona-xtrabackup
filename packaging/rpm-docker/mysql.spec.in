@@ -43,6 +43,7 @@
 # Pass path to the AWS SDK install
 %{?with_aws_sdk: %global aws_sdk_option -DWITH_KEYRING_AWS=1 -DWITH_AWS_SDK=%{with_aws_sdk}}
 %{?with_aws_sdk: %global aws_sdk 1}
+%{?with_aws_1_11: %global add_component_keyring_aws 1}
 
 # Regression tests may take a long time, override the default to skip them
 %{!?runselftest:%global runselftest 0}
@@ -52,8 +53,8 @@
 %else
 %{?el7:%global __strip /opt/rh/devtoolset-11/root/usr/bin/strip}
 %endif
-%{?el8:%global __strip /opt/rh/gcc-toolset-12/root/usr/bin/strip}
-%{?el9:%global __strip /opt/rh/gcc-toolset-12/root/usr/bin/strip}
+%{?el8:%global __strip /opt/rh/gcc-toolset-13/root/usr/bin/strip}
+%{?el9:%global __strip /opt/rh/gcc-toolset-13/root/usr/bin/strip}
 %global __brp_strip_static_archive %{nil}
 
 %{!?product_suffix:              %global product_suffix community}
@@ -103,18 +104,18 @@ BuildRequires:  cmake3 >= 3.14.6
 %{?el7:BuildRequires:  devtoolset-11-binutils}
 %{?el7:BuildRequires:  devtoolset-11-dwz}
 %endif
-%{?el8:BuildRequires:  gcc-toolset-12-annobin-annocheck}
-%{?el8:BuildRequires:  gcc-toolset-12-annobin-plugin-gcc}
-%{?el8:BuildRequires:  gcc-toolset-12-binutils}
-%{?el8:BuildRequires:  gcc-toolset-12-dwz}
-%{?el8:BuildRequires:  gcc-toolset-12-gcc-c++}
-%{?el8:BuildRequires:  gcc-toolset-12-gcc}
-%{?el9:BuildRequires:  gcc-toolset-12-annobin-annocheck}
-%{?el9:BuildRequires:  gcc-toolset-12-annobin-plugin-gcc}
-%{?el9:BuildRequires:  gcc-toolset-12-binutils}
-%{?el9:BuildRequires:  gcc-toolset-12-dwz}
-%{?el9:BuildRequires:  gcc-toolset-12-gcc-c++}
-%{?el9:BuildRequires:  gcc-toolset-12-gcc}
+%{?el8:BuildRequires:  gcc-toolset-13-annobin-annocheck}
+%{?el8:BuildRequires:  gcc-toolset-13-annobin-plugin-gcc}
+%{?el8:BuildRequires:  gcc-toolset-13-binutils}
+%{?el8:BuildRequires:  gcc-toolset-13-dwz}
+%{?el8:BuildRequires:  gcc-toolset-13-gcc-c++}
+%{?el8:BuildRequires:  gcc-toolset-13-gcc}
+%{?el9:BuildRequires:  gcc-toolset-13-annobin-annocheck}
+%{?el9:BuildRequires:  gcc-toolset-13-annobin-plugin-gcc}
+%{?el9:BuildRequires:  gcc-toolset-13-binutils}
+%{?el9:BuildRequires:  gcc-toolset-13-dwz}
+%{?el9:BuildRequires:  gcc-toolset-13-gcc-c++}
+%{?el9:BuildRequires:  gcc-toolset-13-gcc}
 BuildRequires:  bison >= 3.0.4
 BuildRequires:  elfutils
 BuildRequires:  time
@@ -132,7 +133,7 @@ BuildRequires:  zlib-devel
 BuildRoot:      %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 
 # For rpm => 4.9 only: https://fedoraproject.org/wiki/Packaging:AutoProvidesAndRequiresFiltering
-%global _privatelibs libabsl_.*|libprotobuf.*|libfido2.*
+%global _privatelibs libabsl_.*|libprotobuf.*|libfido2.*|libpolyglot.*
 %global _privateperl perl\\((GD|hostnames|lib::mtr|lib::v1|mtr_|My::)
 %global __requires_exclude ^((%{_privatelibs})|(%{_privateperl}))
 %global __provides_exclude_from ^(/usr/share/(mysql|mysql-test)/.*|%{_libdir}/mysql/plugin/.*\\.so|%{_libdir}/mysql/private/.*|%{_libdir}/mysqlrouter/.*)$
@@ -234,20 +235,16 @@ mkdir release
            -DCOMPILATION_COMMENT="%{compilation_comment_release}" \
            -DCOMPILATION_COMMENT_SERVER="%{compilation_comment_server_release}" \
            -DMYSQL_SERVER_SUFFIX="%{?server_suffix}"
-  echo BEGIN_NORMAL_CONFIG ; egrep '^#define' include/config.h ; echo END_NORMAL_CONFIG
+  echo BEGIN_NORMAL_CONFIG ; egrep '^#define' include/my_config.h ; echo END_NORMAL_CONFIG
   make %{?_smp_mflags} VERBOSE=1
 )
 
 %if 0%{?pgo}
 (
   # Run some MTR load to generate profile data
-  [ -d profile-data ] && rm -rf profile-data
-  pushd release/mysql-test
-  ./mtr \
-    --mem --parallel=auto --force --retry=0 \
-    --mysqld=--binlog-format=row \
-    --clean-vardir --suite=main || true
-  rm -r $(readlink var)
+  pushd release
+  make run-profile-suite
+  rm -r $(readlink mysql-test/var)
   popd
 
   # Build again with profile data present
@@ -279,7 +276,7 @@ mkdir release
            -DCOMPILATION_COMMENT="%{compilation_comment_release}" \
            -DCOMPILATION_COMMENT_SERVER="%{compilation_comment_server_release}" \
            -DMYSQL_SERVER_SUFFIX="%{?server_suffix}"
-  echo BEGIN_NORMAL_CONFIG ; egrep '^#define' include/config.h ; echo END_NORMAL_CONFIG
+  echo BEGIN_NORMAL_CONFIG ; egrep '^#define' include/my_config.h ; echo END_NORMAL_CONFIG
   make %{?_smp_mflags} VERBOSE=1
 )
 %endif # pgo
@@ -313,7 +310,7 @@ for f in innochecksum ibd2sdi myisamchk myisam_ftdump myisamlog myisampack \
          mysql_config_editor mysqld_multi mysqld_safe mysqldumpslow mysqlimport \
          mysql_secure_installation mysqlshow mysqlslap mysqltest mysqltest_safe_process mysqlxtest \
          comp_err perror mysql_keyring_encryption_test \
-         mysql_test_event_tracking; do
+         mysql_test_event_tracking mysql_test_jwt_generator ; do
     rm -f %{buildroot}%{_bindir}/$f
 done
 
@@ -356,6 +353,8 @@ for p in \
          component_test_pfs_notification.so \
          component_test_pfs_resource_group.so \
          component_test_sensitive_system_variables.so \
+         component_test_server_telemetry_logs_client.so \
+         component_test_server_telemetry_logs_export.so \
          component_test_server_telemetry_metrics.so \
          component_test_server_telemetry_traces.so \
          component_test_status_var_service_int.so \
@@ -372,6 +371,7 @@ for p in \
          component_test_sys_var_service_same.so \
          component_test_sys_var_service.so \
          component_test_sys_var_service_str.so \
+         component_test_session_var_service.so \
          component_test_table_access.so \
          component_test_udf_registration.so \
          component_test_udf_services.so \
@@ -417,9 +417,7 @@ rm -f %{buildroot}%{_datadir}/mysql-*/{mysql.server,mysqld_multi.server,mysql-lo
 
 # Extra files/dirs removed from Cluster build
 %if 0%{?cluster}
-rm -rf %{buildroot}%{_datadir}/mysql-*/nodejs/
 rm -rf %{buildroot}%{_datadir}/mysql-*/java/
-rm -rf %{buildroot}%{_libdir}/mysql/ndb_engine.so
 rm -rf %{buildroot}%{_libdir}/mysql/libndbclient_static.a
 rm -rf %{buildroot}%{_libdir}/mysql/libndbclient.so
 %endif
@@ -427,8 +425,7 @@ rm -rf %{buildroot}%{_libdir}/mysql/libndbclient.so
 %check
 %if 0%{?runselftest} || 0%{?with_unittests}
 pushd release
-export CTEST_OUTPUT_ON_FAILURE=1
-make test || true
+make test-unit || true
 %endif
 %if 0%{?runselftest}
 export MTR_BUILD_THREAD=auto
@@ -585,6 +582,10 @@ rm -r $(readlink var) var
 %if 0%{?add_fido_plugins}
 %attr(755, root, root) %{_libdir}/mysql/private/libfido2.*
 %endif # add_fido_plugins
+%if 0%{?commercial}
+%attr(755, root, root) %{_libdir}/mysql/private/libpolyglot.so
+%endif # commercial
+
 %dir %{_libdir}/mysql/plugin
 %attr(755, root, root) %{_libdir}/mysql/plugin/adt_null.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/auth_socket.so
@@ -593,7 +594,9 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_webauthn_client.so
 %endif # add_fido_plugins
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_kerberos_client.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/authentication_openid_connect_client.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_oci_client.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/mysql_native_password.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/group_replication.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_log_sink_syseventlog.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_log_sink_json.so
@@ -672,6 +675,7 @@ rm -r $(readlink var) var
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_ldap_sasl.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_ldap_simple.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_kerberos.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/authentication_openid_connect.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_pam.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/telemetry_client.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/data_masking.so
@@ -682,13 +686,20 @@ rm -r $(readlink var) var
 %if 0%{?add_fido_plugins}
 %attr(755, root, root) %{_libdir}/mysql/plugin/authentication_webauthn.so
 %endif # add_fido_plugins
+%if 0%{?add_component_keyring_aws}
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_keyring_aws.so
+%endif # add_component_keyring_aws
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_keyring_encrypted_file.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_keyring_oci.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_enterprise_encryption.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_masking.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_masking_functions.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_mle.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_scheduler.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_telemetry.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_option_tracker.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_group_replication_flow_control_stats.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_replication_applier_metrics.so
 %if 0%{?aws_sdk}
 %attr(755, root, root) %{_libdir}/mysql/plugin/keyring_aws.so
 %endif # aws_sdk
@@ -697,6 +708,8 @@ rm -r $(readlink var) var
 %attr(644, root, root) %{_datadir}/mysql-*/firewall_profile_migration.sql
 %attr(644, root, root) %{_datadir}/mysql-*/masking_functions_install.sql
 %attr(644, root, root) %{_datadir}/mysql-*/masking_functions_uninstall.sql
+%attr(644, root, root) %{_datadir}/mysql-*/option_tracker_install.sql
+%attr(644, root, root) %{_datadir}/mysql-*/option_tracker_uninstall.sql
 %endif
 
 %dir %attr(750, mysql, mysql) /var/lib/mysql
@@ -705,6 +718,19 @@ rm -r $(readlink var) var
 %dir %attr(750, mysql, mysql) /var/lib/mysql-keyring
 
 %changelog
+* Wed Jul 10 2024 Samar Pratap Singh <samar.pratap.singh@oracle.com> - 9.1.0-1
+- Added authentication_openid_connect plugin
+
+* Wed May 29 2024 Miroslav Rajcic <miroslav.rajcic@oracle.com> - 9.1.0-1
+- Added component_test_server_telemetry_logs_* test components
+- Added component_keyring_aws
+
+* Mon May 27 2024 Georgi "Joro" Kodinov <georgi.kodinov@oracle.com> - 9.0.0-1
+- Added the option usage tracker component
+
+* Mon May 20 2024 Murthy Sidagam <venkata.sidagam@oracle.com> - 9.0
+- Added component_test_session_var_service.so component
+
 * Mon Feb 12 2024 Samar Pratap Singh <samar.pratap.singh@oracle.com> - 8.4.0-1
 - Removed keyring_file plugin
 

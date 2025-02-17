@@ -369,6 +369,10 @@ bool Query_result_export::send_data(THD *thd,
     goto err;
   for (Item *item : VisibleFields(items)) {
     Item_result result_type = item->result_type();
+    if (item->actual_data_type() == MYSQL_TYPE_BIT) {
+      /* BIT is output as binary string */
+      result_type = STRING_RESULT;
+    }
     bool enclosed =
         (exchange->field.enclosed->length() &&
          (!exchange->field.opt_enclosed || result_type == STRING_RESULT));
@@ -720,7 +724,8 @@ bool Query_dumpvar::send_data(THD *thd, const mem_root_deque<Item *> &items) {
   while ((mv = var_li++) && it != VisibleFields(items).end()) {
     Item *item = *it++;
     if (mv->is_local()) {
-      if (thd->sp_runtime_ctx->set_variable(thd, mv->get_offset(), &item))
+      if (thd->sp_runtime_ctx->set_variable(thd, false, mv->get_offset(),
+                                            &item))
         return true;
     } else {
       Item_func_set_user_var *suv = new Item_func_set_user_var(mv->name, item);

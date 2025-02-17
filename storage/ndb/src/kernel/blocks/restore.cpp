@@ -49,14 +49,14 @@
 #define JAM_FILE_ID 453
 
 #if (defined(VM_TRACE) || defined(ERROR_INSERT))
-//#define DEBUG_START_RES 1
-//#define DEBUG_RES 1
-//#define DEBUG_RES_OPEN 1
-//#define DEBUG_RES_PARTS 1
-//#define DEBUG_RES_STAT 1
-//#define DEBUG_RES_STAT_EXTRA 1
-//#define DEBUG_RES_DEL 1
-//#define DEBUG_HIGH_RES 1
+// #define DEBUG_START_RES 1
+// #define DEBUG_RES 1
+// #define DEBUG_RES_OPEN 1
+// #define DEBUG_RES_PARTS 1
+// #define DEBUG_RES_STAT 1
+// #define DEBUG_RES_STAT_EXTRA 1
+// #define DEBUG_RES_DEL 1
+// #define DEBUG_HIGH_RES 1
 #endif
 
 #ifdef DEBUG_START_RES
@@ -280,9 +280,9 @@ void Restore::sendSTTORRY(Signal *signal) {
   signal->theData[0] = 0;
   signal->theData[3] = 1;
   signal->theData[4] = 255;  // No more start phases from missra
-  BlockReference cntrRef = !isNdbMtLqh()
-                               ? NDBCNTR_REF
-                               : m_is_query_block ? QRESTORE_REF : RESTORE_REF;
+  BlockReference cntrRef = !isNdbMtLqh()      ? NDBCNTR_REF
+                           : m_is_query_block ? QRESTORE_REF
+                                              : RESTORE_REF;
   sendSignal(cntrRef, GSN_STTORRY, signal, 5, JBB);
 }
 
@@ -796,7 +796,7 @@ void Restore::lcp_create_ctl_open(Signal *signal, FilePtr file_ptr) {
 
   req->userPointer = file_ptr.i;
 
-  FsOpenReq::setVersion(req->fileNumber, 5);
+  FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_LCP);
   FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_CTL);
   FsOpenReq::v5_setLcpNo(req->fileNumber, 0);
   FsOpenReq::v5_setTableId(req->fileNumber, file_ptr.p->m_table_id);
@@ -970,7 +970,7 @@ void Restore::lcp_remove_old_file(Signal *signal, FilePtr file_ptr,
   req->userPointer = file_ptr.i;
   req->directory = 0;
   req->ownDirectory = 0;
-  FsOpenReq::setVersion(req->fileNumber, 5);
+  FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_LCP);
   if (is_ctl_file) {
     jam();
     FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_CTL);
@@ -1085,7 +1085,7 @@ void Restore::open_ctl_file(Signal *signal, FilePtr file_ptr, Uint32 lcp_no) {
   req->fileFlags = FsOpenReq::OM_READONLY;
   req->userPointer = file_ptr.i;
 
-  FsOpenReq::setVersion(req->fileNumber, 5);
+  FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_LCP);
   FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_CTL);
   FsOpenReq::v5_setLcpNo(req->fileNumber, lcp_no);
   FsOpenReq::v5_setTableId(req->fileNumber, file_ptr.p->m_table_id);
@@ -2044,7 +2044,7 @@ void Restore::open_data_file(Signal *signal, FilePtr file_ptr) {
                 instance(), file_ptr.p->m_table_id, file_ptr.p->m_fragment_id,
                 file_ptr.p->m_file_id));
 
-  FsOpenReq::setVersion(req->fileNumber, 5);
+  FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_LCP);
   FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_DATA);
   FsOpenReq::v5_setLcpNo(req->fileNumber, file_ptr.p->m_file_id);
   FsOpenReq::v5_setTableId(req->fileNumber, file_ptr.p->m_table_id);
@@ -2059,7 +2059,7 @@ void Restore::open_data_file(Signal *signal, FilePtr file_ptr) {
     LinearSectionPtr lsptr[3];
 
     // Use a dummy file name
-    ndbrequire(FsOpenReq::getVersion(req->fileNumber) != 4);
+    ndbrequire(FsOpenReq::getVersion(req->fileNumber) != FsOpenReq::V_FILENAME);
     lsptr[FsOpenReq::FILENAME].p = nullptr;
     lsptr[FsOpenReq::FILENAME].sz = 0;
 

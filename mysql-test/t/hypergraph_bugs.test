@@ -22,6 +22,7 @@ ANALYZE TABLE t1, t2, t3;
 SET optimizer_trace='enabled=on';
 let $query = SELECT * FROM t1 LEFT JOIN t2 ON t1.a=t2.a JOIN t3 ON t1.a=5;
 eval PREPARE stmt FROM "EXPLAIN FORMAT=tree $query";
+--replace_regex $elide_costs
 eval EXECUTE stmt;
 # Check that we are using the optimized join condition for generating the
 # plan i.e it should be using multiple equalities that are established during
@@ -43,8 +44,10 @@ INSERT INTO t0 VALUES (0),(1);
 INSERT INTO t1 VALUES (0),(1);
 INSERT INTO t2 VALUES (1);
 INSERT INTO t3 VALUES (1);
+ANALYZE TABLE t0, t1, t2, t3;
 # Hypergraph should be able to detect that a1=5 cannot be true resulting
 # in Zero rows access path for right side of the join.
+--replace_regex $elide_costs
 EXPLAIN FORMAT=tree SELECT * FROM t0, t1 LEFT JOIN (t2,t3) ON a1=5 WHERE a0=a1 AND a0=1;
 SELECT * FROM t0, t1 LEFT JOIN (t2,t3) ON a1=5 WHERE a0=a1 AND a0=1;
 DROP TABLE t0,t1,t2,t3;
@@ -54,6 +57,8 @@ DROP TABLE t0,t1,t2,t3;
 --echo #
 
 CREATE TABLE t1 (f1 INTEGER);
+ANALYZE TABLE t1;
+--replace_regex $elide_costs
 EXPLAIN FORMAT=tree
 SELECT f1 FROM t1 GROUP BY f1 HAVING f1 = 10 AND f1 <> 11;
 DROP TABLE t1;
@@ -70,6 +75,8 @@ DROP TABLE t1;
 --echo #
 
 CREATE TABLE t1 (f1 YEAR);
+ANALYZE TABLE t1;
+--replace_regex $elide_costs
 EXPLAIN FORMAT=tree SELECT * FROM t1 WHERE f1 = 1 AND f1 <> 11;
 DROP TABLE t1;
 
@@ -179,6 +186,7 @@ DROP TABLE t;
 --echo #
 
 CREATE TABLE t1 (f1 INTEGER);
+ANALYZE TABLE t1;
 # The condition t2.f1 = t3.f1+1 should be placed as a join condition
 # for the semijoin and not on the outer join.
 --replace_regex $elide_costs
@@ -475,6 +483,7 @@ DROP TABLE t2;
 
 CREATE TABLE num10 (n INT PRIMARY KEY);
 INSERT INTO num10 VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9);
+ANALYZE TABLE num10;
 
 CREATE TABLE t1(
   a INT,
@@ -599,10 +608,10 @@ INSERT INTO t2(x, y) VALUES (1, 1), (2, 2), (3, 3), (4, 4);
 
 CREATE TABLE t3 AS SELECT * FROM t2;
 
+ANALYZE TABLE t2, t3;
+
 --replace_regex $elide_costs_and_time
 EXPLAIN ANALYZE SELECT 1 FROM t2 JOIN t3 USING (x, y);
-
-ANALYZE TABLE t2,t3;
 
 DROP TABLE t1, t2, t3, num10;
 
@@ -691,6 +700,30 @@ EXPLAIN FORMAT=TREE SELECT 1 FROM t1 WHERE foo(2)=3 AND c=5;
 
 DROP FUNCTION foo;
 DROP TABLE num, t1;
+
+--echo #
+--echo # Bug#36316088 	Mysqld crash - Assertion `false &&
+--echo # "Inconsistent row counts for differ
+--echo #
+
+CREATE TABLE t1(
+  a INT,
+  b INT
+);
+
+INSERT INTO t1 values (1,1),(2,2);
+ANALYZE TABLE t1;
+
+CREATE FUNCTION func(x INT) RETURNS INTEGER NO SQL RETURN x+1;
+
+# The term with a function call should be evaluated last.
+--replace_regex $elide_costs
+EXPLAIN FORMAT=TREE SELECT * FROM t1 x1, t1 x2
+WHERE func(x1.b)=x2.b AND x1.a=x2.a;
+
+DROP FUNCTION func;
+
+DROP TABLE t1;
 
 --echo #
 --echo # Bug#34787357 Hypergraph: row estimates for field=non_field_term
@@ -1144,7 +1177,7 @@ SET SESSION OPTIMIZER_TRACE="enabled=on";
 --replace_regex $elide_costs
 EXPLAIN FORMAT=TREE SELECT * FROM t1 x1, t1 x2, t1 x3, t1 x4;
 
-SELECT REGEXP_SUBSTR(trace, " - \\{NESTED_LOOP_JOIN[^\n]*keeping",1,1,'n')
+SELECT REGEXP_SUBSTR(trace, " - \\{HASH_JOIN[^\n]*keeping",1,1,'n')
   FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
 --replace_regex $elide_costs
@@ -1154,6 +1187,48 @@ SELECT REGEXP_SUBSTR(trace, " - \\{FILTER[^\n]*keeping",1,1,'n')
   FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 
 SET SESSION OPTIMIZER_TRACE="enabled=off";
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#33502694 Hypergraph optimizer trace does not respect memory limits
+--echo #
+
+CREATE TABLE t1(
+  pk INT PRIMARY KEY,
+  a INT,
+  KEY ka(a),
+  b INT,
+  KEY kb(b)
+);
+
+INSERT INTO t1
+WITH RECURSIVE qn(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM qn WHERE n<100)
+SELECT n, n%11, n%11 FROM qn;
+
+ANALYZE TABLE t1;
+
+SET @old_optimizer_trace_max_mem_size=@@optimizer_trace_max_mem_size;
+SET SESSION optimizer_trace_max_mem_size=16384;
+SET SESSION OPTIMIZER_TRACE='enabled=on';
+
+# Plan a query that generates more than 16kB of optimizer trace.
+EXPLAIN FORMAT=JSON INTO @explain_output
+SELECT a FROM t1 x2 WHERE x2.b IN
+  (SELECT a FROM t1 x1 WHERE x1.b IN (SELECT a FROM t1 x0));
+
+# The exact figures are platform dependent, so check that they are within a
+# certain range. It is also possible that more optimizer trace is added in
+# later patches, and that the expected length has to be changed accordingly.
+SELECT
+  CAST(LENGTH(TRACE) AS DOUBLE) / @@optimizer_trace_max_mem_size
+  BETWEEN 0.9 AND 1.1 AS trace_length_ok,
+  MISSING_BYTES_BEYOND_MAX_MEM_SIZE BETWEEN 10000 AND 30000 AS excess_length_ok
+FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+
+
+SET SESSION optimizer_trace_max_mem_size=@old_optimizer_trace_max_mem_size;
+SET SESSION OPTIMIZER_TRACE='enabled=off';
 
 DROP TABLE t1;
 
@@ -1283,15 +1358,24 @@ ANALYZE TABLE t;
 # give different row estimates for these two sets of fields, as it does not take
 # functional depdenencies into account. This triggered the assert.
 --replace_regex $elide_costs
-EXPLAIN FORMAT=TREE SELECT DISTINCT t1.x, t2.x FROM t AS t1, t AS t2
+EXPLAIN FORMAT=TREE SELECT SQL_BIG_RESULT DISTINCT t1.x, t2.x FROM t AS t1, t AS t2
+  WHERE t1.pk = t2.x ORDER BY t2.x;
+--replace_regex $elide_costs
+EXPLAIN FORMAT=TREE SELECT SQL_SMALL_RESULT DISTINCT t1.x, t2.x FROM t AS t1, t AS t2
   WHERE t1.pk = t2.x ORDER BY t2.x;
 
 --replace_regex $elide_costs
-EXPLAIN FORMAT=TREE SELECT DISTINCT t1.x, t1.pk FROM t AS t1, t AS t2
+EXPLAIN FORMAT=TREE SELECT SQL_BIG_RESULT DISTINCT t1.x, t1.pk FROM t AS t1, t AS t2
+  WHERE t1.pk = t2.x ORDER BY t1.x;
+--replace_regex $elide_costs
+EXPLAIN FORMAT=TREE SELECT SQL_SMALL_RESULT DISTINCT t1.x, t1.pk FROM t AS t1, t AS t2
   WHERE t1.pk = t2.x ORDER BY t1.x;
 
 --replace_regex $elide_costs
-EXPLAIN FORMAT=TREE SELECT DISTINCT t1.pk, t2.x FROM t AS t1, t AS t2
+EXPLAIN FORMAT=TREE SELECT SQL_BIG_RESULT DISTINCT t1.pk, t2.x FROM t AS t1, t AS t2
+  WHERE t1.pk = t2.x ORDER BY t2.x;
+--replace_regex $elide_costs
+EXPLAIN FORMAT=TREE SELECT SQL_SMALL_RESULT DISTINCT t1.pk, t2.x FROM t AS t1, t AS t2
   WHERE t1.pk = t2.x ORDER BY t2.x;
 
 DROP TABLE t;
@@ -1317,6 +1401,10 @@ ANALYZE TABLE t1;
 # order on an indexed column (x1.a) and have LIMIT.
 # The relatively high first-row cost for d1 should be included in the
 # first-row cost of that NLJ.
+# Note: The plan depends on the cost model and is no longer stable.
+# We likely need a way to fix a specific plan to make this test maintainable/valid.
+# Look into adding hints to get the desired plan after WL#16006.
+--replace_regex $elide_costs
 EXPLAIN FORMAT=TREE SELECT * FROM t1 x1 JOIN
   (SELECT MAX(x2.c) k FROM t1 x2 JOIN t1 x3 ON x2.c < x3.b GROUP BY x3.c) d1
   ON x1.b=d1.k ORDER BY x1.a LIMIT 1;
@@ -1353,10 +1441,19 @@ SELECT /*+ SET_VAR(optimizer_max_subgraph_pairs = 1) */ COUNT(*)
 FROM t AS t1 LEFT JOIN t AS t2 ON TRUE
 WHERE t1.a IN (SELECT * FROM (SELECT DISTINCT t2.a) AS t3);
 
+# This query is quite slow to execute, since it executes the lateral
+# derived table once per row in the t1×t2 Cartesian product. (Which is
+# why the graph simplifier wanted to join in the derived table with t1
+# before the t1-t2 join.) To speed it up, we only EXPLAIN it, which is
+# sufficient to show the bug. We don't care which plan it chooses,
+# only that it is able to find one, which it wasn't able to before.
+--disable_result_log
+EXPLAIN FORMAT=TREE
 SELECT /*+ SET_VAR(optimizer_max_subgraph_pairs = 1) */ COUNT(*)
 FROM t AS t1 LEFT JOIN t AS t2 ON TRUE,
      LATERAL (SELECT DISTINCT t2.a FROM t) AS t3
 WHERE t1.a = t3.a;
+--enable_result_log
 
 SELECT /*+ SET_VAR(optimizer_max_subgraph_pairs = 1) */ COUNT(*)
 FROM t AS t1 LEFT JOIN t AS t2 ON 1,
@@ -1376,3 +1473,63 @@ FROM t WHERE x IN (
   SELECT NULL FROM t AS t1, t AS t2 STRAIGHT_JOIN t AS t3 ON t2.x = t3.x
 ) OR x = 1;
 DROP TABLE t;
+
+--echo #
+--echo # Bug#36578613: Hypergraph result difference when querying I_S.TABLES
+--echo #
+
+# Create a table with a LONGTEXT column, to ensure that filesort uses
+# row IDs, and with enough rows to make a hash join look more
+# attractive than a nested loop join.
+CREATE TABLE t(x INT, y LONGTEXT);
+INSERT INTO t VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd'), (5, 'e'), (6, 'f');
+ANALYZE TABLE t;
+
+let $query =
+SELECT DISTINCT t1.x, t1.y
+FROM t AS t1, t AS t2 WHERE t1.x = t2.x
+ORDER BY -t1.x;
+
+# To reproduce the bug, the plan should have two SORT nodes (one for
+# ORDER BY and one for DISTINCT) on top of a HASH_JOIN node.
+--eval EXPLAIN FORMAT=JSON INTO @explain $query
+query_vertical
+SELECT
+  JSON_EXTRACT(@explain, '$.access_type') AS sort_for_order_by,
+  JSON_EXTRACT(@explain, '$.inputs[0].access_type') AS sort_for_distinct,
+  JSON_EXTRACT(@explain, '$.inputs[0].inputs[0].join_algorithm') AS hash_join;
+
+--eval $query
+
+DROP TABLE t;
+
+--echo #
+--echo # Bug#36715239: Assertion `found_a_plan || is_secondary_engine' failed.
+--echo #
+CREATE TABLE t(a INT, b INT, c INT);
+INSERT INTO t VALUES (1, 2, 3), (2, 3, 4), (3, 4, 5), (4, 5, 6);
+ANALYZE TABLE t;
+
+let $query =
+WITH s AS (
+    SELECT b FROM t AS t2
+    WHERE EXISTS (SELECT * FROM t AS t3 WHERE t2.b = t3.c OR t3.c = 0)
+)
+SELECT t1.a, s.b FROM t AS t1 LEFT JOIN s ON t1.a = s.b;
+
+# Check that a plan can be found for this query. It used to fail with
+# no plan found. We expect the left outer join to be performed as a hash
+# join, as there are no indexes it could use in a nested loop join.
+# The plan is affected by bug#36844820, and may give wrong results if
+# the input data is changed (for example, wrong results are returned
+# after UPDATE t SET c = 100). The plan is expected to change when that
+# bug is fixed.
+--replace_regex $elide_costs
+--eval EXPLAIN FORMAT=TREE $query
+
+--sorted_result
+--eval $query
+
+DROP TABLE t;
+
+--source include/disable_hypergraph.inc

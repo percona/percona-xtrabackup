@@ -273,6 +273,7 @@ static inline CHARSET_INFO *fts_get_charset(ulint prtype) {
     case MYSQL_TYPE_TINY_BLOB:
     case MYSQL_TYPE_MEDIUM_BLOB:
     case MYSQL_TYPE_BLOB:
+    case MYSQL_TYPE_VECTOR:
     case MYSQL_TYPE_LONG_BLOB:
     case MYSQL_TYPE_VARCHAR:
       break;
@@ -705,18 +706,22 @@ bool fts_check_cached_index(
 @param[in]      index           Index to be dropped
 @param[in]      trx             Transaction for the drop
 @param[in,out]  aux_vec         Aux table name vector
+@param[in]      adding_another  Another FTS index is to be added as part
+                                of the same transaction
 @return DB_SUCCESS or error number */
 dberr_t fts_drop_index(dict_table_t *table, dict_index_t *index, trx_t *trx,
-                       aux_name_vec_t *aux_vec) {
+                       aux_name_vec_t *aux_vec, bool adding_another) {
   ib_vector_t *indexes = table->fts->indexes;
   dberr_t err = DB_SUCCESS;
 
   ut_a(indexes);
 
-  if ((ib_vector_size(indexes) == 1 &&
-       (index ==
-        static_cast<dict_index_t *>(ib_vector_getp(table->fts->indexes, 0)))) ||
-      ib_vector_is_empty(indexes)) {
+  const bool last_index = (ib_vector_size(indexes) == 1 &&
+                           (index == static_cast<dict_index_t *>(ib_vector_getp(
+                                         table->fts->indexes, 0)))) ||
+                          ib_vector_is_empty(indexes);
+
+  if (last_index && !adding_another) {
     doc_id_t current_doc_id;
     doc_id_t first_doc_id;
 
@@ -737,7 +742,7 @@ dberr_t fts_drop_index(dict_table_t *table, dict_index_t *index, trx_t *trx,
 
       return (err);
     } else {
-      if (!(index->type & DICT_CORRUPT)) {
+      if (!(index->type & DICT_CORRUPT) && !dict_table_is_discarded(table)) {
         err = fts_empty_common_tables(trx, table);
         ut_ad(err == DB_SUCCESS);
       }
@@ -2523,7 +2528,8 @@ static fts_trx_table_t *fts_trx_table_create(
   ftt->table = table;
   ftt->fts_trx = fts_trx;
 
-  ftt->rows = rbt_create(sizeof(fts_trx_row_t), fts_trx_row_doc_id_cmp);
+  ftt->rows =
+      rbt_create(sizeof(fts_trx_row_t), fts_doc_id_field_cmp<fts_trx_row_t>);
 
   return (ftt);
 }
@@ -2543,7 +2549,8 @@ static fts_trx_table_t *fts_trx_table_clone(
   ftt->table = ftt_src->table;
   ftt->fts_trx = ftt_src->fts_trx;
 
-  ftt->rows = rbt_create(sizeof(fts_trx_row_t), fts_trx_row_doc_id_cmp);
+  ftt->rows =
+      rbt_create(sizeof(fts_trx_row_t), fts_doc_id_field_cmp<fts_trx_row_t>);
 
   /* Copy the rb tree values to the new savepoint. */
   rbt_merge_uniq(ftt->rows, ftt_src->rows);
@@ -4030,7 +4037,7 @@ dberr_t fts_write_node(trx_t *trx,             /*!< in: transaction */
 
   ut_a(ib_vector_size(doc_ids) > 0);
 
-  ib_vector_sort(doc_ids, fts_update_doc_id_cmp);
+  ib_vector_sort(doc_ids, fts_doc_id_field_cmp<fts_update_t>);
 
   info = pars_info_create();
 

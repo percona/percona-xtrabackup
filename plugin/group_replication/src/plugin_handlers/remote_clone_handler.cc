@@ -407,7 +407,7 @@ int Remote_clone_handler::fallback_to_recovery_or_leave(bool critical_error) {
     return 1;
   }
   // If it failed to (re)connect to the server or the set read only query
-  if (enable_server_read_mode()) {
+  if (enable_server_read_mode("(GR) leave group on failure")) {
     abort_plugin_process(
         "Cannot re-enable the super read only after clone failure.");
     return 1;
@@ -624,7 +624,9 @@ int Remote_clone_handler::clone_server(const std::string &group_name,
   */
   while (m_clone_process_thd_state.is_alive_not_running()) {
     DBUG_PRINT("sleep", ("Waiting for the clone process thread to start"));
-    mysql_cond_wait(&m_run_cond, &m_run_lock);
+    struct timespec abstime;
+    set_timespec(&abstime, 1);
+    mysql_cond_timedwait(&m_run_cond, &m_run_lock, &abstime);
   }
 
 end:

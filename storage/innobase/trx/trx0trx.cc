@@ -245,6 +245,10 @@ static void trx_init(trx_t *trx) {
   ++trx->version;
 }
 
+trx_guid_t::trx_guid_t(const trx_t &trx)
+    : m_immutable_id(reinterpret_cast<uint64_t>(&trx)),
+      m_version(trx.version) {}
+
 /** For managing the life-cycle of the trx_t instance that we get
 from the pool. */
 struct TrxFactory {
@@ -1202,9 +1206,6 @@ static trx_rseg_t *get_next_redo_rseg_from_undo_spaces() {
 
     /* Check again with a shared lock. */
     rseg = undo_space->get_active(rseg_slot);
-    if (rseg == nullptr) {
-      continue;
-    }
   }
 
   undo::spaces->s_unlock();
