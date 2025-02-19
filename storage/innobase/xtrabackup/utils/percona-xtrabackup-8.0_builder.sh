@@ -372,6 +372,9 @@ install_deps() {
         if [ "${OS_NAME}" == "focal" ]; then
             PKGLIST+=" gcc-10 g++-10"
         fi
+        if [ "${OS_NAME}" == "noble" ]; then
+            PKGLIST+=" libtirpc-dev"
+        fi
         if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" -o "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "jammy" -o "${OS_NAME}" == "noble" ]; then
             PKGLIST+=" python3-sphinx python3-docutils"
         else
