@@ -557,7 +557,7 @@ build_source_deb(){
 
     echo "DEB_RELEASE=${DEB_RELEASE}" >> ${CURDIR}/percona-xtrabackup-8.0.properties
 
-    NEWTAR=${NAME}-84_${VERSION}.orig.tar.gz
+    NEWTAR=${NAME}-91_${VERSION}.orig.tar.gz
     mv ${TARFILE} ${NEWTAR}
 
     tar xzf ${NEWTAR}
