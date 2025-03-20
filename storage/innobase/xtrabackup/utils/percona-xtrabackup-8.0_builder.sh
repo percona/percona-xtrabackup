@@ -260,7 +260,7 @@ install_deps() {
             yum -y install epel-release
         fi
         if [ ${RHEL} = 8 -o ${RHEL} = 9 ]; then
-            PKGLIST+=" binutils-devel python3-pip python3-setuptools"
+            PKGLIST+=" binutils-devel python3-pip python3-setuptools libtirpc-devel"
             PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make"
             PKGLIST+=" rpm-build libgcrypt-devel ncurses-devel readline-devel openssl-devel"
             PKGLIST+=" vim-common rpmlint patchelf python3-wheel libudev-devel"
@@ -355,7 +355,7 @@ install_deps() {
 
         PKGLIST+=" bison cmake devscripts debconf debhelper automake bison ca-certificates libcurl4-openssl-dev"
         PKGLIST+=" cmake debhelper libaio-dev libncurses-dev libtool libz-dev libsasl2-dev vim-common"
-        PKGLIST+=" libgcrypt-dev libev-dev lsb-release libudev-dev"
+        PKGLIST+=" libgcrypt-dev libev-dev lsb-release libudev-dev pkg-config"
         PKGLIST+=" build-essential rsync libdbd-mysql-perl libnuma1 socat libssl-dev patchelf libicu-dev"
         if [ "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "noble" ]; then
             PKGLIST+=" libproc2-dev"
@@ -371,6 +371,9 @@ install_deps() {
 	fi
         if [ "${OS_NAME}" == "focal" ]; then
             PKGLIST+=" gcc-10 g++-10"
+        fi
+        if [ "${OS_NAME}" == "noble" ]; then
+            PKGLIST+=" libtirpc-dev"
         fi
         if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" -o "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "jammy" -o "${OS_NAME}" == "noble" ]; then
             PKGLIST+=" python3-sphinx python3-docutils"
@@ -554,7 +557,7 @@ build_source_deb(){
 
     echo "DEB_RELEASE=${DEB_RELEASE}" >> ${CURDIR}/percona-xtrabackup-8.0.properties
 
-    NEWTAR=${NAME}-84_${VERSION}.orig.tar.gz
+    NEWTAR=${NAME}-91_${VERSION}.orig.tar.gz
     mv ${TARFILE} ${NEWTAR}
 
     tar xzf ${NEWTAR}
