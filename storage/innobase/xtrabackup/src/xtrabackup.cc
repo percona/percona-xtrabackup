@@ -2656,11 +2656,13 @@ static bool xtrabackup_read_info(char *filename) {
 
   char lock[8];
   if (fscanf(fp, "lock_ddl_type = %7s\n", lock) != 1) {
-    r = false;
-    goto end;
+    xb::warn() << "lock_ddl_type parameter not found, defaulting to 'ON'";
+    opt_lock_ddl = LOCK_DDL_ON;
+  } else {
+    /* used to process the metadata files (.ren .del .new) created by backup
+     * when --lock-ddl=REDUCED  */
+    opt_lock_ddl = ddl_lock_type_from_str(string(lock));
   }
-  /* used at log0recv.cc to apply or not file operations */
-  opt_lock_ddl = ddl_lock_type_from_str(string(lock));
 end:
   fclose(fp);
   return (r);
