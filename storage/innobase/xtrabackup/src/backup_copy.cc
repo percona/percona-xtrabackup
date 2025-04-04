@@ -428,8 +428,8 @@ bool backup_file_printf(const char *filename, const char *fmt, ...) {
 }
 
 template <typename F>
-static bool run_data_threads(const char *dir, F func, uint n,
-                             const char *thread_description) {
+bool run_data_threads(const char *dir, const char *suffix, F func, uint n,
+                      const char *thread_description) {
   datadir_thread_ctxt_t *data_threads;
   uint i, count;
   ib_mutex_t count_mutex;
@@ -453,7 +453,7 @@ static bool run_data_threads(const char *dir, F func, uint n,
   }
 
   xb_process_datadir(
-      dir, "",
+      dir, suffix,
       [&](const datadir_entry_t &entry, void *arg) mutable -> bool {
         queue.push(entry);
         return true;
@@ -487,6 +487,18 @@ static bool run_data_threads(const char *dir, F func, uint n,
 
   return (ret);
 }
+
+// Explicit instantiation for function pointer type:
+// void(*)(datadir_thread_ctxt_t*)
+template bool run_data_threads<void (*)(datadir_thread_ctxt_t *)>(
+    const char *, const char *, void (*)(datadir_thread_ctxt_t *), uint,
+    const char *);
+
+// Explicit instantiation for std::function<void(datadir_thread_ctxt_t*)> (used
+// when std::bind is applied)
+template bool run_data_threads<std::function<void(datadir_thread_ctxt_t *)>>(
+    const char *, const char *, std::function<void(datadir_thread_ctxt_t *)>,
+    uint, const char *);
 
 /************************************************************************
 Write buffer into .ibd file and preserve it's sparsiness. */
@@ -1044,7 +1056,7 @@ bool backup_files(const char *from, bool prep_mode, Backup_context &context) {
   xb::info() << "Starting " << (prep_mode ? "prep copy of" : "to backup")
              << " non-InnoDB tables and files";
 
-  run_data_threads(from,
+  run_data_threads(from, "" /* no suffix filtering */,
                    std::bind(backup_thread_func, std::placeholders::_1,
                              prep_mode, rsync_tmpfile, context),
                    xtrabackup_parallel, "backup");
@@ -2374,8 +2386,9 @@ bool copy_back(int argc, char **argv) {
                << " threads for parallel data files transfer";
   }
 
-  ret = run_data_threads(".", copy_back_thread_func, xtrabackup_parallel,
-                         "copy-back");
+  ret =
+      run_data_threads(".", "" /* no suffix filtering */, copy_back_thread_func,
+                       xtrabackup_parallel, "copy-back");
   if (!ret) goto cleanup;
 
   /* copy buffer pool dump */
@@ -2652,8 +2665,9 @@ bool decrypt_decompress() {
     xb::error() << "Error compiling filename regex";
     return (false);
   }
-  ret = run_data_threads(".", decrypt_decompress_thread_func,
-                         xtrabackup_parallel, "decrypt and decompress");
+  ret = run_data_threads(".", "" /* no suffix filtering */,
+                         decrypt_decompress_thread_func, xtrabackup_parallel,
+                         "decrypt and decompress");
 
   debug_sync_point("decrypt_decompress_func");
 
@@ -2668,6 +2682,39 @@ bool decrypt_decompress() {
   os_event_global_destroy();
 
   return (ret);
+}
+
+void xtrabackup_apply_deltas_parallel(datadir_thread_ctxt_t *ctx) {
+  bool ret = true;
+  datadir_entry_t entry;
+  THD *thd = nullptr;
+
+  if (my_thread_init()) {
+    ret = false;
+    goto cleanup;
+  }
+
+  /* create THD to get thread number in the error log */
+  thd = create_thd(false, false, true, 0, 0);
+
+  while (ctx->queue->pop(entry)) {
+    if (entry.is_empty_dir) continue;
+
+    ret = xtrabackup_apply_delta(entry, nullptr);
+    if (!ret) {
+      goto cleanup;
+    }
+  }
+
+cleanup:
+  my_thread_end();
+  destroy_thd(thd);
+
+  mutex_enter(ctx->count_mutex);
+  --(*ctx->count);
+  mutex_exit(ctx->count_mutex);
+
+  ctx->ret = ret;
 }
 
 #ifdef HAVE_VERSION_CHECK
