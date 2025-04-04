@@ -85,4 +85,23 @@ void version_check();
 #endif
 bool directory_exists(const char *dir, bool create);
 
+/** Execute a callback fun for every file discovered. The files are discovered
+and callback is invoked in parallel threads
+@param[in] dir                the directory to be scanned for file
+@param[in] suffix             file extensions. If provided, only files with
+                              extension are processed
+@param[in] func               the callback to be executed on every file
+                              discovered
+@param[in] n                  the thread number that processes the file
+@param[in] thread_description description of the thread actions
+@return true on success, false on error */
+template <typename F>
+bool run_data_threads(const char *dir, const char *suffix, F func, uint n,
+                      const char *thread_description);
+
+struct datadir_thread_ctxt_t;
+
+/** Apply the .delta files parallely
+@param[in,out] ctx the shared context structure used by all threads */
+void xtrabackup_apply_deltas_parallel(datadir_thread_ctxt_t *ctx);
 #endif

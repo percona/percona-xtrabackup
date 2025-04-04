@@ -5177,6 +5177,27 @@ static space_id_t get_space_id_from_page_0(const char *file_name) {
   return (space_id);
 }
 
+/** Track tablespaces that are found by delta files (incremental prepare).
+This is hash is later used to detect the dropped tablespaces. See
+rm_if_not_found()
+@param[in] dest_space_name the tablespace name */
+static void xb_delta_add_to_hash(const char *dest_space_name) {
+  static std::mutex mtx;  // Function-local static mutex
+  std::lock_guard<std::mutex> lock(mtx);
+
+  /* remember space name used by incremental prepare. This hash is later used to
+  detect the dropped tablespaces and remove them. Check rm_if_not_found() */
+  xb_filter_entry_t *table =
+      static_cast<xb_filter_entry_t *>(ut::malloc_withkey(
+          UT_NEW_THIS_FILE_PSI_KEY,
+          sizeof(xb_filter_entry_t) + strlen(dest_space_name) + 1));
+
+  table->name = ((char *)table) + sizeof(xb_filter_entry_t);
+  strcpy(table->name, dest_space_name);
+  HASH_INSERT(xb_filter_entry_t, name_hash, inc_dir_tables_hash,
+              ut::hash_string(table->name), table);
+}
+
 /***********************************************************************
 Searches for matching tablespace file for given .delta file and space_id
 in given directory. When matching tablespace found, renames it to match the
@@ -5198,7 +5219,6 @@ static pfs_os_file_t xb_delta_open_matching_space(
   char dest_space_name[FN_REFLEN * 2 + 1];
   bool ok;
   pfs_os_file_t file = XB_FILE_UNDEFINED;
-  xb_filter_entry_t *table;
   fil_space_t *fil_space;
   space_id_t f_space_id;
   os_file_create_t create_option = OS_FILE_OPEN;
@@ -5232,17 +5252,7 @@ static pfs_os_file_t xb_delta_open_matching_space(
     xb::error() << "cannot create dir " << dest_dir;
     return file;
   }
-
-  /* remember space name used by incremental prepare. This hash is later used to
-  detect the dropped tablespaces and remove them. Check rm_if_not_found() */
-  table = static_cast<xb_filter_entry_t *>(ut::malloc_withkey(
-      UT_NEW_THIS_FILE_PSI_KEY,
-      sizeof(xb_filter_entry_t) + strlen(dest_space_name) + 1));
-
-  table->name = ((char *)table) + sizeof(xb_filter_entry_t);
-  strcpy(table->name, dest_space_name);
-  HASH_INSERT(xb_filter_entry_t, name_hash, inc_dir_tables_hash,
-              ut::hash_string(table->name), table);
+  xb_delta_add_to_hash(dest_space_name);
 
   if (space_id != SPACE_UNKNOWN && !fsp_is_ibd_tablespace(space_id)) {
     /* since undo tablespaces cannot be renamed, we must either open existing
@@ -5429,7 +5439,7 @@ exit:
  * Applies a given .delta file to the corresponding data file.
  * @return true on success
  */
-static bool xtrabackup_apply_delta(
+bool xtrabackup_apply_delta(
     const datadir_entry_t &entry, /*!<in: datadir entry */
     void * /*data*/) {
   pfs_os_file_t src_file = XB_FILE_UNDEFINED;
@@ -5785,8 +5795,10 @@ bool xb_process_datadir(const char *path,   /*!<in: datadir path */
 Applies all .delta files from incremental_dir to the full backup.
 @return true on success. */
 static bool xtrabackup_apply_deltas() {
-  return xb_process_datadir(xtrabackup_incremental_dir, EXT_DELTA.c_str(),
-                            xtrabackup_apply_delta, NULL);
+  bool ret = run_data_threads(xtrabackup_incremental_dir, EXT_DELTA.c_str(),
+                              xtrabackup_apply_deltas_parallel,
+                              xtrabackup_parallel, "apply-delta");
+  return ret;
 }
 
 /* replace log file in redo directory to xtrabackup_log
@@ -6659,13 +6671,82 @@ static void read_metadata() {
   }
 }
 
+/** Extend the tablespace size if the header size and the actual size mismatch
+@param[in] node     the file node object that is currently extended
+@param[in] thread_n the thread number that processes the tablespace
+@return true on success, false on failure */
+static bool xtrabackup_space_extend(fil_node_t *node, uint thread_n) {
+  byte *header;
+  ulint size;
+  mtr_t mtr;
+  buf_block_t *block;
+
+  fil_space_t *space = node->space;
+
+  /* Align space sizes along with fsp header. We want to process
+  each space once, so skip all nodes except the first one in a
+  multi-node space. */
+  if (node != &space->files.front()) {
+    return true;
+  }
+
+  mtr_start(&mtr);
+
+  mtr_s_lock(fil_space_get_latch(space->id), &mtr, UT_LOCATION_HERE);
+
+  block = buf_page_get(page_id_t(space->id, 0), page_size_t(space->flags),
+                       RW_S_LATCH, UT_LOCATION_HERE, &mtr);
+  header = FSP_HEADER_OFFSET + buf_block_get_frame(block);
+
+  size = mtr_read_ulint(header + FSP_SIZE, MLOG_4BYTES, &mtr);
+
+  mtr_commit(&mtr);
+
+  bool res = fil_space_extend(space, size);
+
+  ut_ad(res);
+  return (res);
+}
+
+/** Extend the tablespace size (if required) parallely. xtrabackup_parallel
+number of threads are used to parallel extension of files
+@param[in]     ctxt          shared context used by all threads */
+static void space_extend_thread_func(data_thread_ctxt_t *ctxt) {
+  uint num = ctxt->num;
+  fil_node_t *node;
+
+  /*
+    Initialize mysys thread-specific memory so we can
+    use mysys functions in this thread.
+  */
+  my_thread_init();
+
+  /* create THD to get thread number in the error log */
+  THD *thd = create_thd(false, false, true, 0, 0);
+  debug_sync_point("space_extend_thread_func");
+
+  while ((node = datafiles_iter_next(ctxt->it)) != NULL && !*(ctxt->error)) {
+    /* extend the datafile */
+    if (!xtrabackup_space_extend(node, num)) {
+      xb::error() << "failed to extend datafile " << node->name;
+      *(ctxt->error) = true;
+    }
+  }
+
+  mutex_enter(ctxt->count_mutex);
+  (*ctxt->count)--;
+  mutex_exit(ctxt->count_mutex);
+
+  destroy_thd(thd);
+  my_thread_end();
+}
+
 static void xtrabackup_prepare_func(int argc, char **argv) {
   ulint err;
   datafiles_iter_t *it;
   fil_node_t *node;
   fil_space_t *space;
   IORequest write_request(IORequest::WRITE);
-
   read_metadata();
 
   /* prepare version check */
@@ -6917,39 +6998,48 @@ skip_check:
     exit(EXIT_FAILURE);
   }
 
-  while ((node = datafiles_iter_next(it)) != NULL) {
-    byte *header;
-    ulint size;
-    mtr_t mtr;
-    buf_block_t *block;
+  /* Create space extending threads */
+  {
+    uint count;
+    ib_mutex_t count_mutex;
+    bool space_extending_error = false;
+    data_thread_ctxt_t *data_threads = (data_thread_ctxt_t *)ut::malloc_withkey(
+        UT_NEW_THIS_FILE_PSI_KEY,
+        sizeof(data_thread_ctxt_t) * xtrabackup_parallel);
+    count = xtrabackup_parallel;
+    mutex_create(LATCH_ID_XTRA_COUNT_MUTEX, &count_mutex);
 
-    space = node->space;
-
-    /* Align space sizes along with fsp header. We want to process
-    each space once, so skip all nodes except the first one in a
-    multi-node space. */
-    if (node != &space->files.front()) {
-      continue;
+    for (uint i = 0; i < (uint)xtrabackup_parallel; i++) {
+      data_threads[i].it = it;
+      data_threads[i].num = i + 1;
+      data_threads[i].count = &count;
+      data_threads[i].count_mutex = &count_mutex;
+      data_threads[i].error = &space_extending_error;
+      os_thread_create(PFS_NOT_INSTRUMENTED, i, space_extend_thread_func,
+                       data_threads + i)
+          .start();
     }
 
-    mtr_start(&mtr);
+    /* Wait for threads to exit */
+    while (1) {
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      mutex_enter(&count_mutex);
+      if (count == 0) {
+        mutex_exit(&count_mutex);
+        break;
+      }
+      mutex_exit(&count_mutex);
+    }
 
-    mtr_s_lock(fil_space_get_latch(space->id), &mtr, UT_LOCATION_HERE);
+    mutex_free(&count_mutex);
+    ut::free(data_threads);
+    datafiles_iter_free(it);
 
-    block = buf_page_get(page_id_t(space->id, 0), page_size_t(space->flags),
-                         RW_S_LATCH, UT_LOCATION_HERE, &mtr);
-    header = FSP_HEADER_OFFSET + buf_block_get_frame(block);
-
-    size = mtr_read_ulint(header + FSP_SIZE, MLOG_4BYTES, &mtr);
-
-    mtr_commit(&mtr);
-
-    bool res = fil_space_extend(space, size);
-
-    ut_a(res);
+    if (space_extending_error) {
+      ib::error() << "Tablespace extending failed";
+      exit(EXIT_FAILURE);
+    }
   }
-
-  datafiles_iter_free(it);
 
   if (xtrabackup_export) {
     xb::info() << "export option is specified.";
