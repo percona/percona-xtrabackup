@@ -357,4 +357,10 @@ void update_log_temp_checkpoint(byte *buf, lsn_t lsn);
 @param[in]      only_undo       Only undo files are discovered, used by
                                 lock-ddl=reduced mode */
 void xb_scan_for_tablespaces(bool only_undo);
+
+/** Apply the data from .delta to the tablespace
+@param[in] entry  the .delta file entry
+@return true on success, false on error */
+bool xtrabackup_apply_delta(const datadir_entry_t &entry, void *);
+
 #endif /* XB_XTRABACKUP_H */
