@@ -333,4 +333,10 @@ bool xb_process_datadir(const char *path,   /*!<in: datadir path */
 @param[in,out]	buf		log header buffer
 @param[in]	lsn		lsn to update */
 void update_log_temp_checkpoint(byte *buf, lsn_t lsn);
+
+/** Apply the data from .delta to the tablespace
+@param[in] entry  the .delta file entry
+@return true on success, false on error */
+bool xtrabackup_apply_delta(const datadir_entry_t &entry, void *);
+
 #endif /* XB_XTRABACKUP_H */
