@@ -101,8 +101,8 @@ bool S3_ec2_instance::parse_keys_response(const Http_response &http_response) {
 
 bool S3_ec2_instance::fetch_metadata() {
   /* token */
-  Http_request token_req(Http_request::PUT, Http_request::HTTP, host,
-                         token_url);
+  Http_request token_req(Http_request::PUT, Http_request::HTTP, host, token_url,
+                         nullptr);
   token_req.add_header("X-aws-ec2-metadata-token-ttl-seconds",
                        std::to_string(token_ttl));
   Http_response token_resp;
@@ -116,7 +116,7 @@ bool S3_ec2_instance::fetch_metadata() {
 
   /* profile id */
   Http_request profile_req(Http_request::GET, Http_request::HTTP, host,
-                           metadata_url);
+                           metadata_url, nullptr);
   profile_req.add_header("X-aws-ec2-metadata-token", token);
   Http_response profile_resp;
   if (!http_client->make_request(profile_req, profile_resp)) {
@@ -129,7 +129,7 @@ bool S3_ec2_instance::fetch_metadata() {
 
   /* metadata */
   Http_request metadata_req(Http_request::GET, Http_request::HTTP, host,
-                            metadata_url + profile);
+                            metadata_url + profile, nullptr);
   metadata_req.add_header("X-aws-ec2-metadata-token", token);
   Http_response metadata_resp;
   if (!http_client->make_request(metadata_req, metadata_resp)) {

@@ -226,9 +226,10 @@ void Azure_client::set_endpoint(const std::string &ep, bool development_storage,
 
 bool Azure_client::delete_object(const std::string &container,
                                  const std::string &name) {
+  auto sign_fun = get_sign_fun(container, name);
   Http_request req(Http_request::DELETE, protocol, host,
-                   "/" + container + "/" + name);
-  signer->sign_request(container, name, req, time(0));
+                   "/" + container + "/" + name, sign_fun);
+  req.sign();
 
   Http_response resp;
   if (!http_client->make_request(req, resp)) {
@@ -259,14 +260,15 @@ bool Azure_client::async_delete_object(const std::string &container,
                                        const std::string &name,
                                        Event_handler *h,
                                        const async_delete_callback_t callback) {
+  auto sign_fun = get_sign_fun(container, name);
   Http_request *req = new Http_request(Http_request::DELETE, protocol, host,
-                                       "/" + container + "/" + name);
+                                       "/" + container + "/" + name, sign_fun);
   if (req == nullptr) {
     msg_ts("%s: Failed to delere object %s/%s. Out of memory.\n", my_progname,
            container.c_str(), name.c_str());
     return false;
   }
-  signer->sign_request(container, name, *req, time(0));
+  req->sign();
 
   Http_response *resp = new Http_response();
   if (resp == nullptr) {
@@ -306,8 +308,10 @@ bool Azure_client::async_delete_object(const std::string &container,
 Http_buffer Azure_client::download_object(const std::string &container,
                                           const std::string &name,
                                           bool &success) {
-  Http_request req(Http_request::GET, protocol, host, container + "/" + name);
-  signer->sign_request(container, name, req, time(0));
+  auto sign_fun = get_sign_fun(container, name);
+  Http_request req(Http_request::GET, protocol, host, container + "/" + name,
+                   sign_fun);
+  req.sign();
 
   Http_response resp;
   if (!http_client->make_request(req, resp)) {
@@ -325,9 +329,10 @@ Http_buffer Azure_client::download_object(const std::string &container,
 }
 
 bool Azure_client::create_container(const std::string &name) {
-  Http_request req(Http_request::PUT, protocol, host, "/" + name);
+  auto sign_fun = get_sign_fun(name, "");
+  Http_request req(Http_request::PUT, protocol, host, "/" + name, sign_fun);
   req.add_param("restype", "container");
-  signer->sign_request(name, "", req, time(0));
+  req.sign();
 
   Http_response resp;
   if (!http_client->make_request(req, resp)) {
@@ -355,10 +360,11 @@ bool Azure_client::create_container(const std::string &name) {
 }
 
 bool Azure_client::container_exists(const std::string &name, bool &exists) {
-  Http_request req(Http_request::HEAD, protocol, host, "/" + name);
+  auto sign_fun = get_sign_fun(name, "");
+  Http_request req(Http_request::HEAD, protocol, host, "/" + name, sign_fun);
   req.add_param("comp", "metadata");
   req.add_param("restype", "container");
-  signer->sign_request(name, "", req, time(0));
+  req.sign();
 
   Http_response resp;
   if (!http_client->make_request(req, resp)) {
@@ -381,11 +387,13 @@ bool Azure_client::container_exists(const std::string &name, bool &exists) {
 bool Azure_client::upload_object(const std::string &container,
                                  const std::string &name,
                                  const Http_buffer &contents) {
-  Http_request req(Http_request::PUT, protocol, host, container + "/" + name);
+  auto sign_fun = get_sign_fun(container, name);
+  Http_request req(Http_request::PUT, protocol, host, container + "/" + name,
+                   sign_fun);
   req.add_header("Content-Length", std::to_string(contents.size()));
   req.add_header(AZURE_BLOB_TYPE_HEADER, "BlockBlob");
   req.append_payload(contents);
-  signer->sign_request(container, name, req, time(0));
+  req.sign();
 
   Http_response resp;
 
@@ -430,8 +438,10 @@ bool Azure_client::async_upload_object(
     const Http_buffer &contents, Event_handler *h,
     async_upload_callback_t callback,
     const Http_request::headers_t &extra_http_headers) {
+  auto sign_fun = get_sign_fun(container, name);
+
   Http_request *req = new Http_request(Http_request::PUT, protocol, host,
-                                       "/" + container + "/" + name);
+                                       "/" + container + "/" + name, sign_fun);
   if (req == nullptr) {
     msg_ts("%s: Failed to upload object %s/%s. Out of memory.\n", my_progname,
            container.c_str(), name.c_str());
@@ -445,7 +455,7 @@ bool Azure_client::async_upload_object(
     req->add_header(h.first, h.second);
   }
   req->append_payload(contents);
-  signer->sign_request(container, name, *req, time(0));
+  req->sign();
 
   Http_response *resp = new Http_response();
   if (resp == nullptr) {
@@ -477,8 +487,9 @@ bool Azure_client::async_download_object(
     const std::string &container, const std::string &name, Event_handler *h,
     const async_download_callback_t callback,
     const Http_request::headers_t &extra_http_headers) {
+  auto sign_fun = get_sign_fun(container, name);
   Http_request *req = new Http_request(Http_request::GET, protocol, host,
-                                       "/" + container + "/" + name);
+                                       "/" + container + "/" + name, sign_fun);
   if (req == nullptr) {
     msg_ts("%s: Failed to download object %s/%s. Out of memory.\n", my_progname,
            container.c_str(), name.c_str());
@@ -487,7 +498,7 @@ bool Azure_client::async_download_object(
   for (const auto &h : extra_http_headers) {
     req->add_header(h.first, h.second);
   }
-  signer->sign_request(container, name, *req, time(0));
+  req->sign();
 
   Http_response *resp = new Http_response();
   if (resp == nullptr) {
@@ -538,7 +549,9 @@ bool Azure_client::list_objects_with_prefix(const std::string &container,
   std::string next_marker;
 
   while (truncated) {
-    Http_request req(Http_request::GET, protocol, host, "/" + container);
+    auto sign_fun = get_sign_fun(container, "");
+    Http_request req(Http_request::GET, protocol, host, "/" + container,
+                     sign_fun);
     req.add_param("comp", "list");
     req.add_param("restype", "container");
     req.add_param("maxresults", "1000");
@@ -546,7 +559,7 @@ bool Azure_client::list_objects_with_prefix(const std::string &container,
     if (truncated == true) {
       req.add_param("marker", next_marker);
     }
-    signer->sign_request(container, "", req, time(0));
+    req.sign();
 
     Http_response resp;
     if (!http_client->make_request(req, resp)) {

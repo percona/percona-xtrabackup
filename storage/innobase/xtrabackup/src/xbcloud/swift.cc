@@ -71,7 +71,7 @@ bool Keystone_client::temp_auth(auth_info_t &auth_info) {
     return false;
   }
 
-  Http_request req(Http_request::GET, protocol, host, path);
+  Http_request req(Http_request::GET, protocol, host, path, nullptr);
   req.add_header("X-Auth-User", user);
   req.add_header("X-Auth-Key", key);
 
@@ -161,7 +161,8 @@ bool Keystone_client::auth_v2(const std::string &swift_region,
   writer.EndObject();  // auth
   writer.EndObject();  // root
 
-  Http_request req(Http_request::POST, protocol, host, path + "tokens");
+  Http_request req(Http_request::POST, protocol, host, path + "tokens",
+                   nullptr);
   req.add_header("Content-Type", "application/json");
   req.add_header("Accept", "application/json");
 
@@ -422,7 +423,8 @@ bool Keystone_client::auth_v3(const std::string &swift_region,
   writer.EndObject();  // auth
   writer.EndObject();  // root
 
-  Http_request req(Http_request::POST, protocol, host, path + "auth/tokens/");
+  Http_request req(Http_request::POST, protocol, host, path + "auth/tokens/",
+                   nullptr);
   req.add_header("Content-Type", "application/json");
   req.add_header("Accept", "application/json");
 
@@ -592,7 +594,7 @@ bool Swift_client::validate_response(const Http_request &req,
 bool Swift_client::delete_object(const std::string &container,
                                  const std::string &name) {
   Http_request req(Http_request::DELETE, protocol, host,
-                   path + container + "/" + name);
+                   path + container + "/" + name, nullptr);
   req.add_header("X-Auth-Token", token);
 
   Http_response resp;
@@ -615,7 +617,7 @@ bool Swift_client::async_delete_object(const std::string &container,
                                        Event_handler *h,
                                        const async_delete_callback_t callback) {
   Http_request *req = new Http_request(Http_request::DELETE, protocol, host,
-                                       path + container + "/" + name);
+                                       path + container + "/" + name, nullptr);
   if (req == nullptr) {
     msg_ts("%s: Failed to delete object %s/%s. Out of memory.\n", my_progname,
            container.c_str(), name.c_str());
@@ -653,7 +655,7 @@ Http_buffer Swift_client::download_object(const std::string &container,
                                           const std::string &name,
                                           bool &success) {
   Http_request req(Http_request::GET, protocol, host,
-                   path + container + "/" + name);
+                   path + container + "/" + name, nullptr);
   req.add_header("X-Auth-Token", token);
 
   Http_response resp;
@@ -681,7 +683,7 @@ void Swift_client::download_callback(
 }
 
 bool Swift_client::create_container(const std::string &name) {
-  Http_request req(Http_request::PUT, protocol, host, path + name);
+  Http_request req(Http_request::PUT, protocol, host, path + name, nullptr);
   req.add_header("X-Auth-Token", token);
 
   Http_response resp;
@@ -700,7 +702,7 @@ bool Swift_client::create_container(const std::string &name) {
 }
 
 bool Swift_client::container_exists(const std::string &name, bool &exists) {
-  Http_request req(Http_request::GET, protocol, host, path + name);
+  Http_request req(Http_request::GET, protocol, host, path + name, nullptr);
   req.add_header("Content-Type", "application/json");
   req.add_header("X-Auth-Token", token);
 
@@ -730,7 +732,7 @@ bool Swift_client::upload_object(const std::string &container,
                                  const std::string &name,
                                  const Http_buffer &contents) {
   Http_request req(Http_request::PUT, protocol, host,
-                   path + container + "/" + name);
+                   path + container + "/" + name, nullptr);
   req.append_payload(contents);
   req.add_header("Content-Type", "application/octet-stream");
   req.add_header("X-Auth-Token", token);
@@ -771,7 +773,7 @@ bool Swift_client::async_upload_object(const std::string &container,
                                        Event_handler *h,
                                        async_upload_callback_t callback) {
   Http_request *req = new Http_request(Http_request::PUT, protocol, host,
-                                       path + container + "/" + name);
+                                       path + container + "/" + name, nullptr);
   if (req == nullptr) {
     msg_ts("%s: Failed to upload object %s/%s. Out of memory.\n", my_progname,
            container.c_str(), name.c_str());
@@ -805,7 +807,7 @@ bool Swift_client::async_download_object(const std::string &container,
                                          Event_handler *h,
                                          async_download_callback_t callback) {
   Http_request *req = new Http_request(Http_request::GET, protocol, host,
-                                       path + container + "/" + name);
+                                       path + container + "/" + name, nullptr);
   if (req == nullptr) {
     msg_ts("%s: Failed to download object %s/%s. Out of memory.\n", my_progname,
            container.c_str(), name.c_str());
@@ -834,7 +836,8 @@ bool Swift_client::list_objects_with_prefix(const std::string &container,
                                             const std::string &prefix,
                                             std::vector<std::string> &objects) {
   while (true) {
-    Http_request req(Http_request::GET, protocol, host, path + container);
+    Http_request req(Http_request::GET, protocol, host, path + container,
+                     nullptr);
     req.add_header("Content-Type", "application/json");
     req.add_header("X-Auth-Token", token);
     req.add_param("format", "json");

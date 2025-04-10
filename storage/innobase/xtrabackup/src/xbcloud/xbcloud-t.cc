@@ -156,15 +156,17 @@ TEST(s3_client, basicEndpoint) {
 }
 
 TEST(s3v4_signer, basicDNS) {
+  S3_signerV4 signer(LOOKUP_DNS, "example-region", "access_key", "secret_key");
+  auto sign_fun = [&signer](Http_request &req) {
+    signer.sign_request("mybucket.myhost", "", req, 1555892546);
+  };
   Http_request req(Http_request::GET, Http_request::HTTPS, "mybucket.hyhost",
-                   "myobject/");
+                   "myobject/", sign_fun);
   req.add_header("Content-Length", "4");
   req.add_header("Content-Type", "application/octet-stream");
   req.append_payload("test", 4);
 
-  S3_signerV4 signer(LOOKUP_DNS, "example-region", "access_key", "secret_key");
-
-  signer.sign_request("mybucket.myhost", "", req, 1555892546);
+  req.sign();
 
   ASSERT_STREQ(req.headers().at("Authorization").c_str(),
                "AWS4-HMAC-SHA256 "
@@ -177,15 +179,17 @@ TEST(s3v4_signer, basicDNS) {
 }
 
 TEST(s3v4_signer, basicPATH) {
+  S3_signerV4 signer(LOOKUP_PATH, "example-region", "access_key", "secret_key");
+  auto sign_fun = [&signer](Http_request &req) {
+    signer.sign_request("myhost", "mybucket", req, 1555892546);
+  };
   Http_request req(Http_request::GET, Http_request::HTTPS, "hyhost",
-                   "mybucket/myobject/");
+                   "mybucket/myobject/", sign_fun);
   req.add_header("Content-Length", "4");
   req.add_header("Content-Type", "application/octet-stream");
   req.append_payload("test", 4);
 
-  S3_signerV4 signer(LOOKUP_PATH, "example-region", "access_key", "secret_key");
-
-  signer.sign_request("myhost", "mybucket", req, 1555892546);
+  req.sign();
 
   ASSERT_STREQ(req.headers().at("Authorization").c_str(),
                "AWS4-HMAC-SHA256 "
@@ -198,16 +202,19 @@ TEST(s3v4_signer, basicPATH) {
 }
 
 TEST(s3v4_signer, sessionToken) {
+  S3_signerV4 signer(LOOKUP_PATH, "example-region", "access_key", "secret_key",
+                     "session_token");
+
+  auto sign_fun = [&signer](Http_request &req) {
+    signer.sign_request("myhost", "mybucket", req, 1555892546);
+  };
   Http_request req(Http_request::GET, Http_request::HTTPS, "hyhost",
-                   "mybucket/myobject/");
+                   "mybucket/myobject/", sign_fun);
   req.add_header("Content-Length", "4");
   req.add_header("Content-Type", "application/octet-stream");
   req.append_payload("test", 4);
 
-  S3_signerV4 signer(LOOKUP_PATH, "example-region", "access_key", "secret_key",
-                     "session_token");
-
-  signer.sign_request("myhost", "mybucket", req, 1555892546);
+  req.sign();
 
   ASSERT_STREQ(req.headers().at("Authorization").c_str(),
                "AWS4-HMAC-SHA256 "
@@ -220,16 +227,19 @@ TEST(s3v4_signer, sessionToken) {
 }
 
 TEST(s3v4_signer, storageClass) {
+  S3_signerV4 signer(LOOKUP_PATH, "example-region", "access_key", "secret_key",
+                     "session_token", "storage_class");
+  auto sign_fun = [&signer](Http_request &req) {
+    signer.sign_request("myhost", "mybucket", req, 1555892546);
+  };
+
   Http_request req(Http_request::GET, Http_request::HTTPS, "hyhost",
-                   "mybucket/myobject/");
+                   "mybucket/myobject/", sign_fun);
   req.add_header("Content-Length", "4");
   req.add_header("Content-Type", "application/octet-stream");
   req.append_payload("test", 4);
 
-  S3_signerV4 signer(LOOKUP_PATH, "example-region", "access_key", "secret_key",
-                     "session_token", "storage_class");
-
-  signer.sign_request("myhost", "mybucket", req, 1555892546);
+  req.sign();
 
   ASSERT_STREQ(
       req.headers().at("Authorization").c_str(),
@@ -242,30 +252,34 @@ TEST(s3v4_signer, storageClass) {
 }
 
 TEST(s3v2_signer, basicDNS) {
+  S3_signerV2 signer(LOOKUP_DNS, "example-region", "access_key", "secret_key");
+  auto sign_fun = [&signer](Http_request &req) {
+    signer.sign_request("mybucket.myhost", "", req, 1555892546);
+  };
   Http_request req(Http_request::GET, Http_request::HTTPS, "mybucket.hyhost",
-                   "myobject/");
+                   "myobject/", sign_fun);
   req.add_header("Content-Length", "4");
   req.add_header("Content-Type", "application/octet-stream");
   req.append_payload("test", 4);
 
-  S3_signerV2 signer(LOOKUP_DNS, "example-region", "access_key", "secret_key");
-
-  signer.sign_request("mybucket.myhost", "", req, 1555892546);
+  req.sign();
 
   ASSERT_STREQ(req.headers().at("Authorization").c_str(),
                "AWS access_key:0oalADiTB2mEnSgKkj5mFXEJZU4=");
 }
 
 TEST(s3v2_signer, basicPATH) {
+  S3_signerV2 signer(LOOKUP_PATH, "example-region", "access_key", "secret_key");
+  auto sign_fun = [&signer](Http_request &req) {
+    signer.sign_request("myhost", "mybucket", req, 1555892546);
+  };
   Http_request req(Http_request::GET, Http_request::HTTPS, "hyhost",
-                   "mybucket/myobject/");
+                   "mybucket/myobject/", sign_fun);
   req.add_header("Content-Length", "4");
   req.add_header("Content-Type", "application/octet-stream");
   req.append_payload("test", 4);
 
-  S3_signerV2 signer(LOOKUP_PATH, "example-region", "access_key", "secret_key");
-
-  signer.sign_request("myhost", "mybucket", req, 1555892546);
+  req.sign();
 
   ASSERT_STREQ(req.headers().at("Authorization").c_str(),
                "AWS access_key:VQ+0g9rlqRH9SMeRubHF2FW9jeI=");
@@ -549,19 +563,23 @@ TEST(azure_client, basicEndpoint) {
 }
 
 TEST(azure_signer, basicDNS) {
-  Http_request req(Http_request::GET, Http_request::HTTPS, "my_host",
-                   "my_container/my_object");
-
-  req.add_header("Content-Length", "4");
-  req.add_header("Content-Type", "application/octet-stream");
-  req.add_header("x-ms-blob-type", "BlockBlob");
-  req.append_payload("test", 4);
   Azure_signer signer(
       "my-storage-account",
       "zUfvsKXc6+2RMJCwvnElnG/"
       "Kk7wxQ8V4TPXIuZ53qFwJNtpLUEjYdBe9iGTkMgwUGFHVfFgn2qkgoqDP/b3OAg==",
       0);
-  signer.sign_request("mycontainer", "myblob", req, 1555892546);
+  auto sign_fun = [&signer](Http_request &req) {
+    signer.sign_request("mycontainer", "myblob", req, 1555892546);
+  };
+
+  Http_request req(Http_request::GET, Http_request::HTTPS, "my_host",
+                   "my_container/my_object", sign_fun);
+
+  req.add_header("Content-Length", "4");
+  req.add_header("Content-Type", "application/octet-stream");
+  req.add_header("x-ms-blob-type", "BlockBlob");
+  req.append_payload("test", 4);
+  req.sign();
 
   ASSERT_STREQ(
       req.headers().at("Authorization").c_str(),
@@ -570,19 +588,23 @@ TEST(azure_signer, basicDNS) {
 }
 
 TEST(azure_signer, storageClass) {
-  Http_request req(Http_request::GET, Http_request::HTTPS, "my_host",
-                   "my_container/my_object");
-
-  req.add_header("Content-Length", "4");
-  req.add_header("Content-Type", "application/octet-stream");
-  req.add_header("x-ms-blob-type", "BlockBlob");
-  req.append_payload("test", 4);
   Azure_signer signer(
       "my-storage-account",
       "zUfvsKXc6+2RMJCwvnElnG/"
       "Kk7wxQ8V4TPXIuZ53qFwJNtpLUEjYdBe9iGTkMgwUGFHVfFgn2qkgoqDP/i3OAg==",
       0, "storage_class");
-  signer.sign_request("mycontainer", "myblob", req, 1555892546);
+  auto sign_fun = [&signer](Http_request &req) {
+    signer.sign_request("mycontainer", "myblob", req, 1555892546);
+  };
+
+  Http_request req(Http_request::GET, Http_request::HTTPS, "my_host",
+                   "my_container/my_object", sign_fun);
+
+  req.add_header("Content-Length", "4");
+  req.add_header("Content-Type", "application/octet-stream");
+  req.add_header("x-ms-blob-type", "BlockBlob");
+  req.append_payload("test", 4);
+  req.sign();
 
   ASSERT_STREQ(
       req.headers().at("Authorization").c_str(),
