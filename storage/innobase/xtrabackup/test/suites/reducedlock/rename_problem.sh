@@ -41,14 +41,14 @@ start_server
   fi
 
   xtrabackup --prepare --target-dir=$topdir/backup_enc_general_tablespace --xtrabackup-plugin-dir=${plugin_dir}
-#
-#
-#  stop_server
-#
-#  rm -rf $mysql_datadir/*
-#  xtrabackup --copy-back --target-dir=$topdir/backup_enc_general_tablespace --xtrabackup-plugin-dir=${plugin_dir}
-#
-#  start_server
-#  verify_db_state test
-#  stop_server
-#  rm -rf $mysql_datadir $topdir/backup_with_enc_general_tablespace.log $topdir/backup_enc_general_tablespace $topdir/backup_inc
+
+ record_db_state test
+ stop_server
+
+ rm -rf $mysql_datadir/*
+ xtrabackup --copy-back --target-dir=$topdir/backup_enc_general_tablespace --xtrabackup-plugin-dir=${plugin_dir}
+
+ start_server
+ verify_db_state test
+ stop_server
+ rm -rf $mysql_datadir $topdir/backup_with_enc_general_tablespace.log $topdir/backup_enc_general_tablespace $topdir/backup_inc
