@@ -12215,6 +12215,7 @@ dberr_t Tablespace_dirs::scan(bool populate_fil_cache IF_XB(, bool only_undo)) {
 
 #ifdef XTRABACKUP
   debug_sync_point("xtrabackup_suspend_between_file_discovery_and_open");
+  debug_sync_thread("xtrabackup_suspend_between_file_discovery_and_open");
 #endif /* XTRABACKUP */
 
   if (err == DB_SUCCESS && populate_fil_cache IF_XB(&&!only_undo)) {
