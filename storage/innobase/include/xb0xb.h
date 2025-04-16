@@ -122,6 +122,4 @@ extern char *xtrabackup_debug_sync;
 LOCK TABLES FOR BACKUP */
 bool is_server_locked();
 
-bool xb_check_and_set_open_files_limit(size_t num_files);
-
 #endif
