@@ -53,25 +53,19 @@ if ! egrep -q "Deleted undo file: $undo_directory_ext/undo_001 : [0-9]*" $topdir
     die "xtrabackup did not handle delete table DDL for undo_001"
 fi
 
-del_count=$(egrep -o "Done: Writing file $topdir/backup/[0-9]*.del" $topdir/backup.log | wc -l)
-
-if ["$del_count" -ne 3]; then
-    die "xtrabackup did not create .del file"
-fi 
-
 if ! egrep -q "New undo file: $undo_directory_ext/undo_1.ibu : [0-9]*" $topdir/backup.log ; then
     die "xtrabackup did not handle new table DDL"
 fi
 
-if ! egrep -q "Done: Copying $undo_directory_ext/undo_1.ibu to $topdir/backup/undo_1.ibu.new" $topdir/backup.log ; then
+if ! egrep -q "Done: Copying file with space_id [0-9]* $undo_directory_ext/undo_1.ibu to $topdir/backup/undo_1.ibu.new" $topdir/backup.log ; then
     die "xtrabackup did not create undo_1.ibu.new file"
 fi
 
-if ! egrep -q "Done: Copying $undo_directory_ext/undo_003.ibu to $topdir/backup/undo_003.ibu.new" $topdir/backup.log ; then
+if ! egrep -q "Done: Copying file with space_id [0-9]* $undo_directory_ext/undo_003.ibu to $topdir/backup/undo_003.ibu.new" $topdir/backup.log ; then
     die "xtrabackup did not create undo_003.ibu.new file"
 fi
 
-if ! egrep -q "Done: Copying $undo_directory_ext/undo_001 to $topdir/backup/undo_001.new" $topdir/backup.log ; then
+if ! egrep -q "Done: Copying file with space_id [0-9]* $undo_directory_ext/undo_001 to $topdir/backup/undo_001.new" $topdir/backup.log ; then
     die "xtrabackup did not create undo_001.new file"
 fi
 
@@ -142,23 +136,15 @@ if ! egrep -q "DDL tracking : LSN: [0-9]* delete space ID: [0-9]* Name: $data_di
     die "xtrabackup did not handle delete table DDL"
 fi
 
-if ! egrep -q "Done: Writing file $topdir/backup_new_table/test/[0-9]*.del" $topdir/backup_with_new_table.log ; then
-    die "xtrabackup did not create .del file"
-fi
-
 if ! egrep -q "DDL tracking : LSN: [0-9]* delete space ID: [0-9]* Name: $data_directory_ext/ts1.ibd" $topdir/backup_with_new_table.log ; then
     die "xtrabackup did not handle delete tablespace DDL"
-fi
-
-if ! egrep -q "Done: Writing file $topdir/backup_new_table/[0-9]*.del" $topdir/backup_with_new_table.log ; then
-    die "xtrabackup did not create .del file for tablespace"
 fi
 
 if ! egrep -q "DDL tracking : LSN: [0-9]* create space ID: [0-9]* Name: $data_directory_ext/test/NEW_TABLE.ibd" $topdir/backup_with_new_table.log ; then
     die "xtrabackup did not handle new table DDL"
 fi
 
-if ! egrep -q "Done: Copying $data_directory_ext/test/OP_DDL_TABLE.ibd to $topdir/backup_new_table/test/OP_DDL_TABLE.ibd.new" $topdir/backup_with_new_table.log ; then
+if ! egrep -q "Done: Copying file with space_id [0-9]* $data_directory_ext/test/OP_DDL_TABLE.ibd to $topdir/backup_new_table/test/OP_DDL_TABLE.ibd.new" $topdir/backup_with_new_table.log ; then
     die "xtrabackup did not create OP_DDL_TABLE.ibd.new file"
 fi
 

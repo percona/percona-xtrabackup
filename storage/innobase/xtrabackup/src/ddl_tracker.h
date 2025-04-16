@@ -56,7 +56,7 @@ class ddl_tracker_t {
   /* For DDL operation found in redo log,  */
   std::unordered_map<space_id_t, std::pair<std::string, std::string>> renames;
   /** Tables that have been deleted between discovery and file open */
-  std::unordered_set<std::string> missing_after_discovery;
+  std::unordered_set<space_id_t> missing_after_discovery;
   /** Tables that have been renamed during scan. Tablespace_id and new table
    *  name */
   space_id_to_name_t renamed_during_scan;
@@ -79,10 +79,6 @@ class ddl_tracker_t {
   more ddls are allowed to change the different DDL handling structures */
   bool handle_ddl_ops = false;
 #endif /* UNIV_DEBUG */
-
-  /** Check if table is in missing list
-  @param[in]  name  tablespace name */
-  bool is_missing_after_discovery(const std::string &name);
 
  public:
   /* Track undo tablespaces. This function is called twice. Once before lock,
@@ -153,7 +149,7 @@ class ddl_tracker_t {
 
   /** Note that a table has been deleted between disovery and file open
   @param[in]  path  missing table name with path. */
-  void add_missing_after_discovery(std::string path);
+  void add_missing_after_discovery(const space_id_t space_id);
 
   /** Note that a table was renamed during scan.
   @param[in]	space_id  tablespace identifier
