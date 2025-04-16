@@ -11666,6 +11666,15 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
 #endif /* XTRABACKUP */
   );
   if (err != DB_SUCCESS) {
+#ifdef XTRABACKUP
+    /* Note that table has been renamed during scan, we will save it in missing
+    tables and copy/rename will be handled by ddl_tracker */
+    space_id_t spaceid = file.space_id();
+    if (ddl_tracker && err == DB_CANNOT_OPEN_FILE) {
+      ddl_tracker->add_missing_after_discovery(spaceid);
+    }
+#endif /* XTRABACKUP */
+
     return {err, SPACE_UNKNOWN};
   }
 
@@ -11675,14 +11684,6 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
   err = file.validate_first_page(SPACE_UNKNOWN, &flush_lsn, false);
 
   space_id_t space_id = file.space_id();
-#ifdef XTRABACKUP
-  /* Note that table has been renamed during scan, we will skip
-  opening renamed table since original table was loaded to cache
-  and copy/rename will be handled by ddl_tracker */
-  if (ddl_tracker && err == DB_TABLESPACE_EXISTS) {
-    ddl_tracker->add_rename_ibd_scan(space_id, path);
-  }
-#endif /* XTRABACKUP */
 
   if (err == DB_PAGE_IS_BLANK) {
     /* allow corrupted first page for xtrabackup, it could be just
@@ -11746,13 +11747,6 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
 #endif /* XTRABACKUP */
 
     xb::error() << "Failed to open tablespace " << space->name;
-#ifdef XTRABACKUP
-  } else if (ddl_tracker) {
-    /* Note that we have opened and loaded the table to cache for copying */
-    if (!is_server_locked()) {
-      ddl_tracker->add_table_from_ibd_scan(space_id, path, space->flags);
-    }
-#endif /* XTRABACKUP */
   }
 
   if (!srv_backup_mode || srv_close_files) {
@@ -11797,13 +11791,8 @@ void Tablespace_dirs::open_ibd(const Const_iter &start, const Const_iter &end,
       dberr_t err;
       std::tie(err, std::ignore) = fil_open_for_xtrabackup(
           phy_filename, filename.substr(0, filename.length() - 4));
-
-      /* Allow deleted tables between disovery and file open when
-      LOCK_DDL_REDUCED, they will be handled by ddl_tracker */
-      if (err == DB_CANNOT_OPEN_FILE && opt_lock_ddl == LOCK_DDL_REDUCED) {
-        ddl_tracker->add_missing_after_discovery(phy_filename);
-      } else if (err == DB_TABLESPACE_EXISTS &&
-                 opt_lock_ddl == LOCK_DDL_REDUCED) {
+      if ((err == DB_TABLESPACE_EXISTS || err == DB_CANNOT_OPEN_FILE) &&
+          opt_lock_ddl == LOCK_DDL_REDUCED) {
         /* table was renamed during scan. Since original table was loaded to
         cache and rename ddl will be handled by ddl_tracker we skip loading
         duplicate tablespace */

@@ -3179,6 +3179,8 @@ bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
   char dst_name[FN_REFLEN];
   ds_file_t *dstfile = NULL;
   xb_fil_cur_t cursor;
+  memset(&cursor, 0, sizeof(xb_fil_cur_t));
+
   xb_fil_cur_result_t res;
   xb_write_filt_t *write_filter = NULL;
   xb_write_filt_ctxt_t write_filt_ctxt;
@@ -3212,6 +3214,9 @@ bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
   }
   res = xb_fil_cur_open(&cursor, read_filter, node, thread_n);
   if (res == XB_FIL_CUR_SKIP) {
+    goto skip;
+  } else if (res == XB_FIL_CUR_MISSING) {
+    ddl_tracker->add_missing_after_discovery(cursor.space_id);
     goto skip;
   } else if (res == XB_FIL_CUR_ERROR) {
     goto error;
@@ -3251,9 +3256,11 @@ bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
   action = xb_get_copy_action();
 
   if (xtrabackup_stream) {
-    xb::info() << action << " " << node_path;
+    xb::info() << action << " file with space_id " << node->space->id << " "
+               << node_path;
   } else {
-    xb::info() << action << " " << node_path << " to " << dstfile->path;
+    xb::info() << action << " file with space_id " << node->space->id << " "
+               << node_path << " to " << dstfile->path;
   }
 
   /* The main copy loop */
@@ -3276,13 +3283,50 @@ bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
 
   /* close */
   if (xtrabackup_stream) {
-    xb::info() << "Done: " << action << " " << node_path;
+    xb::info() << "Done: " << action << " file with space_id "
+               << node->space->id << " " << node_path;
   } else {
-    xb::info() << "Done: " << action << " " << node_path << " to "
+    xb::info() << "Done: " << action << " file with space_id "
+               << node->space->id << " " << node_path << " to "
                << dstfile->path;
   }
 
   xb_fil_cur_close(&cursor);
+
+  if (ddl_tracker != nullptr && opt_lock_ddl == LOCK_DDL_REDUCED &&
+      !is_server_locked()) {
+    switch (res) {
+      // EOF is returned when bytes to read is 0, or when file is empty
+      case XB_FIL_CUR_EOF:
+      case XB_FIL_CUR_SUCCESS:
+        /* With reduced lock mode, instead of tracking undo from the startup
+        scan, we track undo tablespaces after we copy them */
+        if (fsp_is_undo_tablespace(node->space->id)) {
+          ddl_tracker->add_undo_tablespace(node->space->id,
+                                           node->space->files.front().name);
+        } else if (fsp_is_ibd_tablespace(node->space->id)) {
+          ddl_tracker->add_table_from_ibd_scan(node->space->id,
+                                               node->space->files.front().name,
+                                               node->space->flags);
+        }
+
+      case XB_FIL_CUR_SKIP:
+        // Skipped tablespaces are not tracked
+        break;
+
+      case XB_FIL_CUR_ERROR:
+        break;
+      case XB_FIL_CUR_CORRUPTED:
+        ddl_tracker->add_corrupted_tablespace(
+            cursor.space_id, cursor.node->name, cursor.space_flags);
+        break;
+
+      case XB_FIL_CUR_MISSING:
+        // Missing tablespaces are tracked via different path
+        break;
+    }
+  }
+
   if (ds_close(dstfile)) {
     rc = true;
   }
@@ -3320,12 +3364,19 @@ skip:
     write_filter->deinit(&write_filt_ctxt);
   }
 
-  if (opt_lock_ddl != LOCK_DDL_ON) {
-    xb::warn() << "We assume the "
-               << "table was dropped during xtrabackup execution "
-               << "and ignore the file.";
+  switch (opt_lock_ddl) {
+    case LOCK_DDL_ON:
+      xb::warn() << "skipping tablespace " << node_name;
+      break;
+    case LOCK_DDL_OFF:
+    case LOCK_DDL_REDUCED:
+      xb::info() << "We assume the "
+                 << "table was dropped during xtrabackup execution "
+                 << "and ignore the file or it was skipped because of regex";
+      xb::info() << "skipping tablespace " << node_name;
+      break;
   }
-  xb::warn() << "skipping tablespace " << node_name;
+
   return (false);
 }
 
@@ -3370,15 +3421,9 @@ static void data_copy_thread_func(data_thread_ctxt_t *ctxt) {
   while ((node = datafiles_iter_next(ctxt->it)) != NULL && !*(ctxt->error)) {
     /* copy the datafile */
     if (xtrabackup_copy_datafile(node, num)) {
+      // failure
       xb::error() << "failed to copy datafile " << node->name;
       *(ctxt->error) = true;
-    } else {
-      /* With reduced lock mode, instead of tracking undo from the startup scan,
-      we track undo tablespaces after we copy them */
-      if (ddl_tracker && fsp_is_undo_tablespace(node->space->id)) {
-        ddl_tracker->add_undo_tablespace(node->space->id,
-                                         node->space->files.front().name);
-      }
     }
   }
 
@@ -4216,7 +4261,8 @@ void xtrabackup_backup_func(void) {
 
   /* We can safely close files if we don't allow DDL during the
   backup */
-  srv_close_files = xb_close_files || opt_lock_ddl == LOCK_DDL_ON;
+  srv_close_files = xb_close_files || opt_lock_ddl == LOCK_DDL_ON ||
+                    opt_lock_ddl == LOCK_DDL_REDUCED;
 
   if (xb_close_files)
     xb::warn()
