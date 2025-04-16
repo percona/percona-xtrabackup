@@ -574,7 +574,6 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
   for (auto &table : drops) {
     space_id_t space_id = table.first;
     std::string table_name = table.second;
-    ulint flags = tables_copied_no_lock[space_id].second;
 
     if (check_if_skip_table(table_name.c_str())) {
       continue;
@@ -593,6 +592,8 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
       continue;
     }
 
+    ulint flags = tables_copied_no_lock[space_id].second;
+
     // We never create .del for ibdata*
     ut_ad(!fsp_is_system_tablespace(space_id));
     backup_file_printf(
@@ -604,7 +605,6 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     space_id_t space_id = table.first;
     std::string old_table_name = table.second.first;
     std::string new_table_name = table.second.second;
-    ulint flags = tables_copied_no_lock[space_id].second;
 
     if (check_if_skip_table(new_table_name.c_str())) {
       continue;
@@ -619,9 +619,10 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
                    3. t2.ibd is opened and loaded to cache to copy
                    4. t1.ibd is missing now
       so we should add t2.ibd to new_tables and skip .ren file so that we don't
-      try to rename t1.ibd to t2.idb where t1.ibd is missing   */
+      try to rename t1.ibd to t2.idb where t1.ibd is missing
+    */
     if (new_tables.find(space_id) != new_tables.end() ||
-        is_missing_after_discovery(old_table_name)) {
+        tables_copied_no_lock.find(space_id) == tables_copied_no_lock.end()) {
       new_tables[space_id] = new_table_name;
       continue;
     }
@@ -630,6 +631,8 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     if (tables_copied_no_lock.find(space_id) == tables_copied_no_lock.end()) {
       continue;
     }
+
+    ulint flags = tables_copied_no_lock[space_id].second;
 
     backup_file_printf(
         convert_file_name(space_id, old_table_name, flags, EXT_REN).c_str(),
