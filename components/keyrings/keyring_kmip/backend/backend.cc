@@ -110,6 +110,9 @@ bool Keyring_kmip_backend::store(const Metadata &metadata,
     if (id.empty()) {
       return true;
     }
+    if (!ctx.op_activate(id)) {
+      return true;
+    }
     data.set_extension({id});
   } catch (...) {
     mysql_components_handle_std_exception(__func__);
