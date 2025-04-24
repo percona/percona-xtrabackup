@@ -1801,6 +1801,7 @@ bool copy_incremental_over_full() {
       xtrabackup::components::XTRABACKUP_KEYRING_FILE_CONFIG,
       xtrabackup::components::XTRABACKUP_KEYRING_KMIP_CONFIG,
       xtrabackup::components::XTRABACKUP_KEYRING_KMS_CONFIG,
+      xtrabackup::components::XTRABACKUP_KEYRING_VAULT_CONFIG,
       "ib_lru_dump",
       nullptr};
   bool ret = true;
@@ -2010,6 +2011,7 @@ bool should_skip_file_on_copy_back(const char *filepath) {
       xtrabackup::components::XTRABACKUP_KEYRING_FILE_CONFIG,
       xtrabackup::components::XTRABACKUP_KEYRING_KMIP_CONFIG,
       xtrabackup::components::XTRABACKUP_KEYRING_KMS_CONFIG,
+      xtrabackup::components::XTRABACKUP_KEYRING_VAULT_CONFIG,
       ".qp",
       ".lz4",
       ".zst",
