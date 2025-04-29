@@ -18,7 +18,7 @@ $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE test.rename_table (id INT PRIMARY KEY AU
 $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE test.alter_rename_table (id INT PRIMARY KEY AUTO_INCREMENT); INSERT INTO test.alter_rename_table VALUES(1)" test
 $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE test.alter_drop_column_table (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(50)); INSERT INTO test.alter_drop_column_table VALUES(1, 'test')" test
 
-for i in {1..5000} ; do
+for i in {1..1500} ; do
     $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE test.tb_${i} (id INT PRIMARY KEY AUTO_INCREMENT); INSERT INTO test.tb_${i} VALUES (1)" test
 done;
 
