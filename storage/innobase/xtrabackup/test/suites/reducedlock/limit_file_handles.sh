@@ -63,11 +63,7 @@ if ! egrep -q "DDL tracking : LSN: [0-9]* rename space ID: [0-9]* From: test/alt
     die "xtrabackup did not handle alter table rename DDL"
 fi
 
-if ! egrep -q "DDL tracking: missing after discovery space ID: [0-9]*" $topdir/backup.log ; then
-    die "xtrabackup did not add dropped table to missing list"
-fi
-
-if ! egrep -q "DDL tracking: missing after discovery space ID: [0-9]*" $topdir/backup.log ; then
+if ! egrep -q "DDL tracking : missing after discovery space ID: [0-9]*" $topdir/backup.log ; then
     die "xtrabackup did not add dropped table to missing list"
 fi
 

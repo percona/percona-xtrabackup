@@ -147,9 +147,11 @@ xb_fil_cur_result_t xb_fil_cur_open(
       (srv_close_files && cursor->is_ibd)) {
     if (!fil_node_open_file(node)) {
       /* The following call prints an error message */
-      os_file_get_last_error(true);
 
-      xb::error() << "cannot open tablespace " << cursor->abs_path;
+      if (opt_lock_ddl != LOCK_DDL_REDUCED || is_server_locked()) {
+        os_file_get_last_error(true);
+        xb::error() << "cannot open tablespace " << cursor->abs_path;
+      }
 
       return (XB_FIL_CUR_MISSING);
     }
