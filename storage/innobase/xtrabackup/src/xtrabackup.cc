@@ -3417,10 +3417,7 @@ static void data_copy_thread_func(data_thread_ctxt_t *ctxt) {
 
   while ((node = datafiles_iter_next(ctxt->it)) != NULL && !*(ctxt->error)) {
     /* copy the datafile */
-    bool is_error = xtrabackup_copy_datafile(node, num);
-
-    if (!is_error) {
-    } else {
+    if (xtrabackup_copy_datafile(node, num)) {
       // failure
       xb::error() << "failed to copy datafile " << node->name;
       *(ctxt->error) = true;
