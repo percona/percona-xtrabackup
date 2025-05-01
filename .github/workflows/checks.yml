@@ -9,7 +9,7 @@ on:
 
 jobs:
   bidi_scan_job:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     steps:
     - uses: actions/checkout@v3
@@ -26,17 +26,17 @@ jobs:
             python ${{github.workspace}}/scripts/find_unicode_control.py -p bidi -v ${CHANGED_FILES}
         fi
   clang_format:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     steps:
     - uses: actions/checkout@v3
       with:
         fetch-depth: '32'
-    - name: Install clang-format-10
-      run: sudo apt-get install -y clang-format-10
+    - name: Install clang-format-11
+      run: sudo apt-get install -y clang-format-11
     - name: Run clang-format
       run: |
-        git diff -U0 --no-color HEAD^1 *.c *.cc *.cpp *.h *.hpp *.i *.ic *.ih | clang-format-diff-10 -style=file -p1 >_GIT_DIFF
+        git diff -U0 --no-color HEAD^1 *.c *.cc *.cpp *.h *.hpp *.i *.ic *.ih | clang-format-diff-11 -style=file -p1 >_GIT_DIFF
         if [ ! -s _GIT_DIFF ]; then
           echo The last git commit is clang-formatted;
         else
