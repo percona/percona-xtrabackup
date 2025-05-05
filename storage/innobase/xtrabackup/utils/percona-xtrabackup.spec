@@ -4,6 +4,7 @@
 %define xb_version_extra  @@XB_VERSION_EXTRA@@
 %define xb_rpm_version_extra @@XB_RPM_VERSION_EXTRA@@
 %define xb_revision       @@XB_REVISION@@
+%define rpm_release       @@RPM_RELEASE@@
 %if 0%{?rhel} == 8
 %define cmake_bin cmake
 %else
@@ -29,6 +30,7 @@ Group:          Applications/Databases
 License:        GPLv2
 URL:            http://www.percona.com/software/percona-xtrabackup
 Source:         percona-xtrabackup-%{version}%{xb_version_extra}.tar.gz
+Source999:      call-home.sh
 
 BuildRequires:  %{cmake_bin}, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel, libev-devel openssl-devel
 BuildRequires:  libcurl-devel
@@ -115,6 +117,11 @@ rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/i*
 rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/l*
 rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/p*
 rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/z*
+
+%post
+cp %SOURCE999 /tmp/ 2>/dev/null ||
+bash /tmp/call-home.sh -f "PRODUCT_FAMILY_PXB" -v %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}-%{xb_version_extra}-%{rpm_release} -d "PACKAGE" &>/dev/null || :
+rm -f /tmp/call-home.sh
 
 %clean
 rm -rf $RPM_BUILD_ROOT

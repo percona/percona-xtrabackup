@@ -178,6 +178,7 @@ get_sources(){
     sed -i "s:@@XB_VERSION_EXTRA@@:${EXTRAVER}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
     sed -i "s:@@XB_RPM_VERSION_EXTRA@@:${RPM_EXTRAVER}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
     sed -i "s:@@XB_REVISION@@:${REVISION}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
+    sed -i "s:@@RPM_RELEASE@@:${RPM_RELEASE}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
     #
     # create a PXB tar
     cd ${WORKDIR}/percona-xtrabackup
@@ -445,6 +446,20 @@ build_srpm(){
     sed -i "/^%changelog/a - Release ${VERSION}-${RELEASE}" percona-xtrabackup.spec
     sed -i "/^%changelog/a * $(date "+%a") $(date "+%b") $(date "+%d") $(date "+%Y") Percona Development Team <info@percona.com> - ${VERSION}-${RELEASE}" percona-xtrabackup.spec
     #
+    cd ${WORKDIR}/rpmbuild/SOURCES
+    wget https://raw.githubusercontent.com/Percona-Lab/telemetry-agent/phase-0/call-home.sh
+    cd ${WORKDIR}/rpmbuild/SPECS
+    line_number=$(grep -n SOURCE999 percona-xtrabackup.spec | awk -F ':' '{print $1}')
+    cp ../SOURCES/call-home.sh ./
+    awk -v n=$line_number 'NR <= n {print > "part1.txt"} NR > n {print > "part2.txt"}' percona-xtrabackup.spec
+    head -n -1 part1.txt > temp && mv temp part1.txt
+    echo "cat <<'CALLHOME' > /tmp/call-home.sh" >> part1.txt
+    cat call-home.sh >> part1.txt
+    echo "CALLHOME" >> part1.txt
+    cat part2.txt >> part1.txt
+    rm -f call-home.sh part2.txt
+    mv part1.txt percona-xtrabackup.spec
+
     cd $WORKDIR
     #
     mv -fv $TARFILE $WORKDIR/rpmbuild/SOURCES
@@ -589,6 +604,18 @@ build_deb(){
     dpkg-source -x $DSC
     cd $DIRNAME
     dch -m -D "$OS_NAME" --force-distribution -v "$VERSION-$DEB_RELEASE.$OS_NAME" 'Update distribution'
+    cd debian/
+    wget https://raw.githubusercontent.com/Percona-Lab/telemetry-agent/phase-0/call-home.sh
+    sed -i 's:exit 0::' percona-xtrabackup-80.postinst
+    echo "cat <<'CALLHOME' > /tmp/call-home.sh" >> percona-xtrabackup-80.postinst
+    cat call-home.sh >> percona-xtrabackup-80.postinst
+    echo "CALLHOME" >> percona-xtrabackup-80.postinst
+    echo "bash +x /tmp/call-home.sh -f \"PRODUCT_FAMILY_PXB\" -v \"${VERSION}-${DEB_RELEASE}\" -d \"PACKAGE\" &>/dev/null || :" >> percona-xtrabackup-80.postinst
+    echo "rm -rf /tmp/call-home.sh" >> percona-xtrabackup-80.postinst
+    echo "exit 0" >> percona-xtrabackup-80.postinst
+    rm -f call-home.sh
+    cd ../
+
     dpkg-buildpackage -rfakeroot -uc -us -b
 
     cd ${WORKDIR}
