@@ -113,8 +113,14 @@ void ddl_tracker_t::add_undo_tablespace(const space_id_t space_id,
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
   if (is_server_locked()) {
     after_lock_undo[name] = space_id;
+    xb::info() << "DDL tracking : Track Add undo tablespace AFTER server "
+                  "locked : space_id "
+               << space_id << " name: " << name;
   } else {
     before_lock_undo[name] = space_id;
+    xb::info() << "DDL tracking : Track Add undo tablespace BEFORE server "
+                  "locked : space_id "
+               << space_id << " name: " << name;
   }
 }
 
@@ -126,6 +132,8 @@ void ddl_tracker_t::add_corrupted_tablespace(const space_id_t space_id,
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
 
   corrupted_tablespaces[space_id] = {path, space_flags};
+  xb::info() << "DDL tracking : Track corrupted tablespace: space_id: "
+             << space_id << " path: " << path;
 }
 
 void ddl_tracker_t::add_to_recopy_tables(space_id_t space_id, lsn_t record_lsn,
@@ -145,16 +153,14 @@ void ddl_tracker_t::add_to_recopy_tables(space_id_t space_id, lsn_t record_lsn,
              << " on space ID: " << space_id;
 }
 
-void ddl_tracker_t::add_missing_after_discovery(std::string path) {
+void ddl_tracker_t::add_missing_after_discovery(const space_id_t space_id) {
   ut_ad(!handle_ddl_ops);
 
-  Fil_path::normalize(path);
-  if (Fil_path::has_prefix(path, Fil_path::DOT_SLASH)) {
-    path.erase(0, strlen(Fil_path::DOT_SLASH));
-  }
-
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
-  missing_after_discovery.insert(path);
+  missing_after_discovery.insert(space_id);
+
+  xb::info() << "DDL tracking : missing after discovery space ID: " << space_id;
+  ;
 }
 
 void ddl_tracker_t::add_create_table_from_redo(const space_id_t space_id,
@@ -247,10 +253,6 @@ void ddl_tracker_t::add_drop_table_from_redo(const space_id_t space_id,
 
   xb::info() << "DDL tracking : LSN: " << record_lsn
              << " delete space ID: " << space_id << " Name: " << new_space_name;
-}
-
-bool ddl_tracker_t::is_missing_after_discovery(const std::string &name) {
-  return missing_after_discovery.count(name) != 0;
 }
 
 void ddl_tracker_t::add_rename_ibd_scan(const space_id_t &space_id,
@@ -456,6 +458,26 @@ std::tuple<filevec, filevec> findChanges(const name_to_space_id_t &before,
   return {newFiles, deletedOrChangedFiles};
 }
 
+ulint get_space_flags(
+    const space_id_t space_id,
+    const std::unordered_map<space_id_t, std::pair<std::string, ulint>>
+        &tables_copied_no_lock) {
+  if (fsp_is_undo_tablespace(space_id)) {
+    // For undo tablespaces, we dont care about flags because from
+    // flags we only want to know if it is file_per_table or not
+    return (0);
+  }
+
+  auto it = tables_copied_no_lock.find(space_id);
+  ut_ad(it != tables_copied_no_lock.end());
+  if (it == tables_copied_no_lock.end()) {
+    xb::error() << "Space ID " << space_id
+                << " not found in tables_copied_no_lock.";
+    exit(EXIT_FAILURE);
+  }
+  return it->second.second;
+}
+
 std::tuple<filevec, filevec> ddl_tracker_t::handle_undo_ddls() {
   xb::info() << "DDL tracking: handling undo DDLs";
 
@@ -556,17 +578,26 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     name to be copied
   */
   for (auto &table : recopy_tables) {
+    /* Table has not been copied during corruption. So it won't be in
+    tables_copied_no_lock but there is request to recopy. Such tablespaces
+    should be recopied */
     if (tables_copied_no_lock.find(table) != tables_copied_no_lock.end()) {
       if (renames.find(table) != renames.end()) {
         // We never create .del for ibdata*
         ut_ad(!fsp_is_system_tablespace(table));
         std::string old_table_name = renames[table].first;
-        ulint flags = tables_copied_no_lock[table].second;
+        ulint flags = get_space_flags(table, tables_copied_no_lock);
         backup_file_printf(
             convert_file_name(table, old_table_name, flags, EXT_DEL).c_str(),
             "%s", "");
       }
-      string name = tables_copied_no_lock[table].first;
+      string table_name = tables_copied_no_lock[table].first;
+      new_tables[table] = table_name;
+    }
+    auto corrupted_it = corrupted_tablespaces.find(table);
+    if (corrupted_it != corrupted_tablespaces.end()) {
+      std::string name = corrupted_it->second.first;
+      xb::info() << "handle_ddl_operations: Adding to new_tables: " << name;
       new_tables[table] = name;
     }
   }
@@ -574,13 +605,15 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
   for (auto &table : drops) {
     space_id_t space_id = table.first;
     std::string table_name = table.second;
-    ulint flags = tables_copied_no_lock[space_id].second;
 
     if (check_if_skip_table(table_name.c_str())) {
       continue;
     }
     /* Remove from rename */
     renames.erase(space_id);
+
+    /* Remove from missing */
+    missing_after_discovery.erase(space_id);
 
     /* Remove from new tables and skip drop*/
     if (new_tables.find(space_id) != new_tables.end()) {
@@ -593,6 +626,8 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
       continue;
     }
 
+    ulint flags = get_space_flags(space_id, tables_copied_no_lock);
+
     // We never create .del for ibdata*
     ut_ad(!fsp_is_system_tablespace(space_id));
     backup_file_printf(
@@ -604,7 +639,6 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     space_id_t space_id = table.first;
     std::string old_table_name = table.second.first;
     std::string new_table_name = table.second.second;
-    ulint flags = tables_copied_no_lock[space_id].second;
 
     if (check_if_skip_table(new_table_name.c_str())) {
       continue;
@@ -619,9 +653,10 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
                    3. t2.ibd is opened and loaded to cache to copy
                    4. t1.ibd is missing now
       so we should add t2.ibd to new_tables and skip .ren file so that we don't
-      try to rename t1.ibd to t2.idb where t1.ibd is missing   */
+      try to rename t1.ibd to t2.idb where t1.ibd is missing
+    */
     if (new_tables.find(space_id) != new_tables.end() ||
-        is_missing_after_discovery(old_table_name)) {
+        tables_copied_no_lock.find(space_id) == tables_copied_no_lock.end()) {
       new_tables[space_id] = new_table_name;
       continue;
     }
@@ -630,6 +665,8 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     if (tables_copied_no_lock.find(space_id) == tables_copied_no_lock.end()) {
       continue;
     }
+
+    ulint flags = get_space_flags(space_id, tables_copied_no_lock);
 
     backup_file_printf(
         convert_file_name(space_id, old_table_name, flags, EXT_REN).c_str(),
@@ -708,7 +745,7 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
 
   // Create .del files for deleted undo tablespaces
   for (auto &elem : deleted_undo_files) {
-    ulint flags = tables_copied_no_lock[elem.second].second;
+    ulint flags = get_space_flags(elem.second, tables_copied_no_lock);
     backup_file_printf(
         convert_file_name(elem.second, elem.first, flags, EXT_DEL).c_str(),
         "%s", "");

@@ -147,11 +147,13 @@ xb_fil_cur_result_t xb_fil_cur_open(
       (srv_close_files && cursor->is_ibd)) {
     if (!fil_node_open_file(node)) {
       /* The following call prints an error message */
-      os_file_get_last_error(true);
 
-      xb::error() << "cannot open tablespace " << cursor->abs_path;
+      if (opt_lock_ddl != LOCK_DDL_REDUCED || is_server_locked()) {
+        os_file_get_last_error(true);
+        xb::error() << "cannot open tablespace " << cursor->abs_path;
+      }
 
-      return (XB_FIL_CUR_ERROR);
+      return (XB_FIL_CUR_MISSING);
     }
   }
 
@@ -199,6 +201,18 @@ xb_fil_cur_result_t xb_fil_cur_open(
   } else {
     page_size_shift = UNIV_PAGE_SIZE_SHIFT;
   }
+
+  /* With lock_ddl=LOCK_DDL_REDUCED, space_id mismatch can occur between cached
+   * data and page_1 data. In such cases, we abort the file copy and add it to
+   * missing list, then it will be copied under lock. */
+  bool is_space_id_mismatch =
+      cursor->space_id != mach_read_from_4(cursor->buf + FIL_PAGE_SPACE_ID);
+  if (srv_backup_mode && opt_lock_ddl == LOCK_DDL_REDUCED &&
+      is_space_id_mismatch) {
+    xb_fil_cur_close(cursor);
+    return (XB_FIL_CUR_MISSING);
+  }
+
   cursor->page_size = page_size.physical();
   cursor->page_size_shift = page_size_shift;
   cursor->zip_size = page_size.is_compressed() ? page_size.physical() : 0;
@@ -415,7 +429,9 @@ void xb_fil_cur_close(
     /*=============*/
     xb_fil_cur_t *cursor) /*!< in/out: source file cursor */
 {
-  cursor->read_filter->deinit(&cursor->read_filter_ctxt);
+  if (cursor->read_filter) {
+    cursor->read_filter->deinit(&cursor->read_filter_ctxt);
+  }
 
   ut::free(cursor->scratch);
   ut::free(cursor->decrypt);
