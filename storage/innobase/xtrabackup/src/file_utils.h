@@ -121,7 +121,8 @@ typedef enum {
   XB_FIL_CUR_SKIP,
   XB_FIL_CUR_ERROR,
   XB_FIL_CUR_EOF,
-  XB_FIL_CUR_CORRUPTED
+  XB_FIL_CUR_CORRUPTED,
+  XB_FIL_CUR_MISSING
 } xb_fil_cur_result_t;
 
 /* Holds the state needed to copy single data file. */
