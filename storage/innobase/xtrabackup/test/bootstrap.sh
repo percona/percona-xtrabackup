@@ -33,6 +33,8 @@ function glibc_version() {
     glibc=$(ldd --version | head -1 | awk '{print $NF}')
     case ${glibc} in
         2.12|2.17|2.27|2.28|2.31|2.34|2.35) ;;
+        2.36|2.39) echo 2.35; return;;
+
         *)
             >&2 echo "tarball for your glibc version (${glibc}) is not available"
             exit 1
@@ -113,7 +115,7 @@ main () {
         innodb80)
             url="https://dev.mysql.com/get/Downloads/MySQL-8.0"
             fallback_url="https://downloads.mysql.com/archives/get/p/23/file"
-            tarball="mysql-${VERSION}-linux-glibc2.17-${arch}.tar.xz"
+            tarball="mysql-${VERSION}-linux-glibc2.28-${arch}.tar.xz"
             if ! check_url "${url}" "${tarball}"; then
                     unset url
                     url=${fallback_url}
