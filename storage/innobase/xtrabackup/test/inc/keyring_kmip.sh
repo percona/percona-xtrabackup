@@ -22,7 +22,7 @@ KMIP_SERVER_PORT="${KMIP_SERVER_PORT:-5696}"
 KMIP_CLIENT_CA="${KMIP_CLIENT_CA:-/etc/pykmip/client_certificate_jane_doe.pem}"
 KMIP_CLIENT_KEY="${KMIP_CLIENT_KEY:-/etc/pykmip/client_key_jane_doe.pem}"
 KMIP_SERVER_CA="${KMIP_SERVER_CA:-/etc/pykmip/root_certificate.pem}"
-KMIP_OBJECT_GROUP="${KMIP_OBJECT_GROUP:-$(uuidgen)}"
+#KMIP_OBJECT_GROUP="${KMIP_OBJECT_GROUP:-$(uuidgen)}"
 
 function configure_keyring_file_component()
 {
@@ -43,10 +43,14 @@ EOF
   "server_port": "${KMIP_SERVER_PORT}",
   "client_ca": "${KMIP_CLIENT_CA}",
   "client_key": "${KMIP_CLIENT_KEY}",
-  "server_ca": "${KMIP_SERVER_CA}",
-  "object_group": "${KMIP_OBJECT_GROUP}"
+  "server_ca": "${KMIP_SERVER_CA}"
 }
+
 EOF
+# This should be added to the above cat .cnf contents after
+# object group PS-9799 bug is fixed
+# "object_group": "${KMIP_OBJECT_GROUP}"
+
 cp "${MYSQLD_DATADIR}/${binary}.my" ${instance_local_manifest}
 cp "${MYSQLD_DATADIR}/component_keyring_kmip.cnf" ${keyring_component_cnf}
 }
