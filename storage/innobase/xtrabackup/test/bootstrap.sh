@@ -33,6 +33,8 @@ function glibc_version() {
     glibc=$(ldd --version | head -1 | awk '{print $NF}')
     case ${glibc} in
         2.12|2.17|2.27|2.28|2.31|2.34|2.35) ;;
+        2.36|2.39) echo 2.35; return;;
+
         *)
             >&2 echo "tarball for your glibc version (${glibc}) is not available"
             exit 1
@@ -75,14 +77,14 @@ parse_arguments() {
 }
 
 check_url() {
-  url=$1
-  tarball=$2
+  local_url=$1
+  local_tarball=$2
   retries=10
   # upstream sometimes reports file does not exists due to transient error
   # we should retry a few times before failing back
   tries=0
   while [[ ${tries} -lt ${retries} ]]; do
-    if ! wget --spider "${url}/${tarball}" 2>/dev/null; then
+    if ! wget --spider "${local_url}/${local_tarball}" 2>/dev/null; then
       tries=$((tries+1))
     else
       return 0;
@@ -113,14 +115,11 @@ main () {
         innodb80)
             url="https://dev.mysql.com/get/Downloads/MySQL-8.0"
             fallback_url="https://downloads.mysql.com/archives/get/p/23/file"
-            tarball="mysql-${VERSION}-linux-glibc2.12-${arch}.tar.xz"
-            if ! check_url "${url}" "${tarball}"; then
-                    unset url
-                    url=${fallback_url}
-            fi
+            tarball="mysql-${VERSION}-linux-glibc2.28-${arch}.tar.xz"
             ;;
         xtradb80)
             url="https://www.percona.com/downloads/Percona-Server-8.0/Percona-Server-${VERSION}/binary/tarball"
+            fallback_url="https://downloads.percona.com/downloads/TESTING/ps-${VERSION}"
             short_version=$(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1)
             if [[ ${PXB_TYPE} == "Debug" ]] || [[ ${PXB_TYPE} == "debug" ]]; then
                 SUFFIX="-debug"
@@ -143,13 +142,16 @@ main () {
             ;;
     esac
 
-    # Check if tarball exist before any download
-    if ! check_url "${url}" "${tarball}"; then
-        echo "Version you specified(${VERSION}) does not exist on ${url}/${tarball}"
-        exit 1
-    else
-        echo "Downloading ${tarball}"
+    # Check if tarball exists at primary URL
+    if check_url "${url}" "${tarball}"; then
+        echo "Downloading ${tarball} from ${url}"
         wget -qc "${url}/${tarball}"
+    elif check_url "${fallback_url}" "${tarball}"; then
+        echo "Primary URL failed. Downloading ${tarball} from fallback URL: ${fallback_url}"
+        wget -qc "${fallback_url}/${tarball}"
+    else
+        echo "Version you specified (${VERSION}) does not exist at either ${url}/${tarball} or ${fallback_url}/${tarball}"
+        exit 1
     fi
 
     echo "Unpacking ${tarball} into ${DESTDIR}"
