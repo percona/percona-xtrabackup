@@ -75,14 +75,14 @@ parse_arguments() {
 }
 
 check_url() {
-  url=$1
-  tarball=$2
+  local_url=$1
+  local_tarball=$2
   retries=10
   # upstream sometimes reports file does not exists due to transient error
   # we should retry a few times before failing back
   tries=0
   while [[ ${tries} -lt ${retries} ]]; do
-    if ! wget --spider "${url}/${tarball}" 2>/dev/null; then
+    if ! wget --spider "${local_url}/${local_tarball}" 2>/dev/null; then
       tries=$((tries+1))
     else
       return 0;
@@ -122,13 +122,11 @@ main () {
             else
                 tarball="mysql-${clean_version}-linux-glibc2.17-${arch}.tar.xz"
             fi
-            if ! check_url "${url}" "${tarball}"; then
-                    unset url
-                    url=${fallback_url}
-            fi
             ;;
         xtradb80)
             url="https://www.percona.com/downloads/Percona-Server-8.4/Percona-Server-${VERSION}/binary/tarball"
+            fallback_url="https://downloads.percona.com/downloads/TESTING/ps-${VERSION}"
+            short_version=$(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1)
             if [[ ${PXB_TYPE} == "Debug" ]] || [[ ${PXB_TYPE} == "debug" ]]; then
                 SUFFIX="-debug"
               else
@@ -145,13 +143,16 @@ main () {
             ;;
     esac
 
-    # Check if tarball exist before any download
-    if ! check_url "${url}" "${tarball}"; then
-        echo "Version you specified(${VERSION}) does not exist on ${url}/${tarball}"
-        exit 1
-    else
-        echo "Downloading ${tarball}"
+    # Check if tarball exists at primary URL
+    if check_url "${url}" "${tarball}"; then
+        echo "Downloading ${tarball} from ${url}"
         wget -qc "${url}/${tarball}"
+    elif check_url "${fallback_url}" "${tarball}"; then
+        echo "Primary URL failed. Downloading ${tarball} from fallback URL: ${fallback_url}"
+        wget -qc "${fallback_url}/${tarball}"
+    else
+        echo "Version you specified (${VERSION}) does not exist at either ${url}/${tarball} or ${fallback_url}/${tarball}"
+        exit 1
     fi
 
     echo "Unpacking ${tarball} into ${DESTDIR}"
@@ -179,7 +180,7 @@ main () {
 
 TYPE="xtradb80"
 PXB_TYPE="release"
-VERSION="8.4.0-1"
+VERSION="8.4.4-4"
 DESTDIR="./server"
 parse_arguments PICK-ARGS-FROM-ARGV "$@"
 main
