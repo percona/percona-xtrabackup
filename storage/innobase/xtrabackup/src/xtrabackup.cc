@@ -3486,12 +3486,12 @@ bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
   action = xb_get_copy_action();
 
   if (xtrabackup_stream) {
-    xb::info() << action << " file with space_id " << node->space->id << " "
-               << node_path << ", size " << cursor.statinfo.st_size << " ("
+    xb::info() << "space_id: " << node->space->id << ", " << action << node_path
+               << ", size " << cursor.statinfo.st_size << " ("
                << xtrabackup::utils::human_readable(cursor.statinfo.st_size)
                << ")";
   } else {
-    xb::info() << action << " file with space_id " << node->space->id << " "
+    xb::info() << "space_id: " << node->space->id << ", " << action << " "
                << node_path << " to " << dstfile->path << ", size "
                << cursor.statinfo.st_size << " ("
                << xtrabackup::utils::human_readable(cursor.statinfo.st_size)
@@ -3518,12 +3518,11 @@ bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
 
   /* close */
   if (xtrabackup_stream) {
-    xb::info() << "Done: " << action << " file with space_id "
-               << node->space->id << " " << node_path;
+    xb::info() << "space_id: " << node->space->id << ", Done: " << action << " "
+               << node_path;
   } else {
-    xb::info() << "Done: " << action << " file with space_id "
-               << node->space->id << " " << node_path << " to "
-               << dstfile->path;
+    xb::info() << "space_id: " << node->space->id << ", Done: " << action << " "
+               << node_path << " to " << dstfile->path;
   }
 
   xb_fil_cur_close(&cursor);
