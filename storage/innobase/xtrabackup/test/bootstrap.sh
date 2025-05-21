@@ -33,6 +33,8 @@ function glibc_version() {
     glibc=$(ldd --version | head -1 | awk '{print $NF}')
     case ${glibc} in
         2.12|2.17|2.27|2.28|2.31|2.34|2.35) ;;
+        2.36|2.39) echo 2.35; return;;
+
         *)
             >&2 echo "tarball for your glibc version (${glibc}) is not available"
             exit 1
@@ -117,11 +119,7 @@ main () {
             clean_version="${VERSION%-[0-9][0-9]}"
             clean_version="${clean_version%-[0-9]}"
 
-	    if [ "${OS}" == "deb" ]; then
-                tarball="mysql-${clean_version}-linux-glibc2.28-${arch}.tar.xz"
-            else
-                tarball="mysql-${clean_version}-linux-glibc2.17-${arch}.tar.xz"
-            fi
+            tarball="mysql-${clean_version}-linux-glibc2.28-${arch}.tar.xz"
             ;;
         xtradb80)
             url="https://www.percona.com/downloads/Percona-Server-8.4/Percona-Server-${VERSION}/binary/tarball"
