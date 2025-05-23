@@ -25,14 +25,14 @@ algo=AES256
 mkdir -p $topdir/tmp $topdir/tmp2 $topdir/tmp3
 set -o pipefail
 
-run_cmd xtrabackup --backup --no-version-check --stream=xbstream --target-dir=$topdir/backup \
+run_cmd xtrabackup --backup --stream=xbstream --target-dir=$topdir/backup \
     | xbcrypt --encrypt-algo=$algo --encrypt-key=$key \
     | xbcrypt -d --encrypt-algo=$algo --encrypt-key=$key \
     | xbstream -x -C $topdir/tmp
 
 check_pipestatus
 
-run_cmd xtrabackup --backup --no-version-check --stream=xbstream --target-dir=$topdir/backup \
+run_cmd xtrabackup --backup --stream=xbstream --target-dir=$topdir/backup \
     | xbcrypt --encrypt-algo=$algo --encrypt-key=$key --read-buffer-size=10K \
     | xbcrypt -d --encrypt-algo=$algo --encrypt-key=$key --read-buffer-size=10K \
     | xbstream -x -C $topdir/tmp2
