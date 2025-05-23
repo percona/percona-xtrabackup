@@ -11,7 +11,7 @@ using namespace ::testing;
 
 class Mock_http_client : public xbcloud::Http_client {
  public:
-  MOCK_CONST_METHOD2(make_request, bool(const Http_request &, Http_response &));
+  MOCK_METHOD(bool, make_request, (const Http_request &, Http_response &), (const, override));
 };
 
 MATCHER_P3(Response, code, body, headers, "") {
