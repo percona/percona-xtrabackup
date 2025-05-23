@@ -78,10 +78,6 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "xtrabackup.h"
 #include "xtrabackup_config.h"
 #include "xtrabackup_version.h"
-#ifdef HAVE_VERSION_CHECK
-#include <version_check_pl.h>
-#endif
-
 
 /** Possible values for system variable "innodb_checksum_algorithm". */
 extern const char *innodb_checksum_algorithm_names[];
@@ -2718,40 +2714,3 @@ cleanup:
 
   ctx->ret = ret;
 }
-
-#ifdef HAVE_VERSION_CHECK
-void version_check() {
-  if (system("which perl > /dev/null 2>&1")) {
-    xb::info() << "perl binary not found. Skipping the version check";
-    return;
-  }
-
-  if (opt_password != NULL) {
-    setenv("option_mysql_password", opt_password, 1);
-  }
-  if (opt_user != NULL) {
-    setenv("option_mysql_user", opt_user, 1);
-  }
-  if (opt_host != NULL) {
-    setenv("option_mysql_host", opt_host, 1);
-  }
-  if (opt_socket != NULL) {
-    setenv("option_mysql_socket", opt_socket, 1);
-  }
-  if (opt_port != 0) {
-    char port[20];
-    snprintf(port, sizeof(port), "%u", opt_port);
-    setenv("option_mysql_port", port, 1);
-  }
-  setenv("XTRABACKUP_VERSION", XTRABACKUP_VERSION, 1);
-
-  FILE *pipe = popen("perl", "w");
-  if (pipe == NULL) {
-    return;
-  }
-
-  fwrite((const char *)version_check_pl, version_check_pl_len, 1, pipe);
-
-  pclose(pipe);
-}
-#endif

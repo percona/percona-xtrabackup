@@ -16,7 +16,16 @@
 INCLUDE(gcrypt)
 INCLUDE(procps)
 
+IF(DEFINED CACHE{WITH_VERSION_CHECK})
+    MESSAGE(WARNING "VERSION CHECK is deprecated. Please remove -DWITH_VERSION_CHECK from CMake Command")
+endif()
+
 OPTION(WITH_VERSION_CHECK "Build with version check" ON)
+
+IF(WITH_VERSION_CHECK)
+  SET(HAVE_VERSION_CHECK 1)
+ENDIF()
+
 
 OPTION(PROBUILD "Build Percona XtraBackup Pro variant" OFF)
 IF (PROBUILD)
@@ -34,19 +43,6 @@ IF(NOT APPLE)
 ENDIF()
 
 CHECK_TYPE_SIZE("unsigned long" SIZEOF_UNSIGNED_LONG)
-
-IF(WITH_VERSION_CHECK)
-# xxd is needed to embed version_check script
-FIND_PROGRAM(XXD_PATH xxd)
-
-IF(NOT XXD_PATH)
-  MESSAGE(FATAL_ERROR "xxd not found. Try to install vim-common.")
-ENDIF(NOT XXD_PATH)
-
-SET(HAVE_VERSION_CHECK 1)
-ELSE()
-SET(HAVE_VERSION_CHECK 0)
-ENDIF(WITH_VERSION_CHECK)
 
 INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/include
@@ -160,18 +156,6 @@ ENDIF()
  INCLUDE_DIRECTORIES(SYSTEM
         ${BOOST_PATCHES_DIR}
         ${BOOST_INCLUDE_DIR})
-
-IF(WITH_VERSION_CHECK)
-ADD_CUSTOM_COMMAND(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h
-                   COMMAND ${XXD_PATH} --include version_check.pl
-                   ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h
-                   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-
-ADD_CUSTOM_TARGET(GenVersionCheck
-                  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/version_check_pl.h)
-
-ADD_DEPENDENCIES(xtrabackup GenVersionCheck)
-ENDIF(WITH_VERSION_CHECK)
 
 ########################################################################
 # xbstream binary
