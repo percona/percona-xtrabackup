@@ -232,6 +232,9 @@ install_deps() {
     CURPLACE=$(pwd)
     if [ "$OS" == "rpm" ]
     then
+        if [ $RHEL = 7 ]; then
+            sed -i.bak -e 's|^mirrorlist=|#mirrorlist=|g' -e 's|^#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo 
+        fi
         yum -y install git wget yum-utils curl
         yum install -y https://repo.percona.com/yum/percona-release-latest.noarch.rpm
         if [ x"$ARCH" = "xx86_64" ]; then
@@ -239,9 +242,6 @@ install_deps() {
                 yum-config-manager --enable ol9_distro_builder
                 yum-config-manager --enable ol9_codeready_builder
                 yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
-            else
-                add_percona_yum_repo
-                percona-release enable tools testing
             fi
         else
             yum-config-manager --enable ol"${RHEL}"_codeready_builder
@@ -288,16 +288,9 @@ install_deps() {
                 fi
             fi
         else
-            until yum -y install epel-release centos-release-scl; do
-                yum clean all
-                sleep 1
-                echo "waiting"
-            done
-            until yum -y makecache; do
-                yum clean all
-                sleep 1
-                echo "waiting"
-            done
+            yum -y install epel-release centos-release-scl
+            sed -i.bak -e 's|^mirrorlist=|#mirrorlist=|g' -e 's|^# *baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-SCL*.repo
+            yum -y makecache
             PKGLIST+=" devtoolset-7-gcc-c++ devtoolset-7-binutils libopcodes"
             PKGLIST+=" devtoolset-7-libasan-devel devtoolset-7-libubsan-devel"
             PKGLIST+=" devtoolset-7-valgrind devtoolset-7-valgrind-devel"
