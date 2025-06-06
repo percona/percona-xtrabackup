@@ -13,11 +13,6 @@ require_server_version_higher_than 5.7.10
 require_lz4
 require_zstd
 
-function is_sparse_file() {
-    let n=$(stat --printf "%b*%B/%s" $1)
-    [ "$n" = "0" ]
-}
-
 function is_multiple_of_page_size() {
     let n=$(stat --printf "%s" $1)
     remainder=$((n % 16384 ))
