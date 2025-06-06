@@ -3014,6 +3014,13 @@ xtrabackup_scan_log_recs(
 	log_block = log_sys->buf;
 
 	while (log_block < log_sys->buf + RECV_SCAN_SIZE && !*finished) {
+		if (metadata_to_lsn > 0 && scanned_lsn > metadata_to_lsn) {
+			*finished = true;
+			msg("xtrabackup: Stop scanning at LSN " LSN_PF 
+				" as it exceeds latest checkpoint LSN " LSN_PF "\n",
+				scanned_lsn, metadata_to_lsn);
+			break;
+		}
 		ulint	no = log_block_get_hdr_no(log_block);
 		ulint	scanned_no = log_block_convert_lsn_to_no(scanned_lsn);
 		ibool	checksum_is_ok = log_block_checksum_is_ok(log_block);
@@ -5071,6 +5078,58 @@ reread_log_header:
 	}
 	}
 
+	/* read the latest checkpoint lsn before lock and
+	wait until the redo log copying thread catches up to the latest checkpoint lsn*/
+	latest_cp = 0;
+
+	{
+		log_group_t* max_cp_group;
+		ulint max_cp_field;
+		ulint err;
+
+		mutex_enter(&log_sys->mutex);
+
+		err = recv_find_max_checkpoint(&max_cp_group, &max_cp_field);
+
+		if (err != DB_SUCCESS) {
+			msg("xtrabackup: Error: recv_find_max_checkpoint() failed.\n");
+			mutex_exit(&log_sys->mutex);
+			goto skip_last_cp;
+		}
+
+		log_group_header_read(max_cp_group, max_cp_field);
+
+		xtrabackup_choose_lsn_offset(checkpoint_lsn_start);
+
+		latest_cp = mach_read_from_8(log_sys->checkpoint_buf + LOG_CHECKPOINT_LSN);
+
+		mutex_exit(&log_sys->mutex);
+
+		msg("xtrabackup: The latest checkpoint LSN before lock: '"
+			LSN_PF "'\n", latest_cp);
+
+		bool first_wait = true;
+
+		while (true) {
+			if (log_copy_scanned_lsn >= latest_cp) {
+				msg("xtrabackup: The log_copy LSN (" LSN_PF
+					") is larger than latest checkpoint LSN (" LSN_PF ")\n",
+					log_copy_scanned_lsn, latest_cp);
+					break;
+			} else {
+				if (first_wait) {
+					msg("xtrabackup: Waiting for log copy thread to catchup to LSN "
+						LSN_PF " (currently parsing at " LSN_PF ")\n",
+						latest_cp, log_copy_scanned_lsn);
+						first_wait = false;
+				} else {
+					msg(".");
+				}
+				os_thread_sleep(1000000);
+			}
+		}
+	}
+
 	if (!backup_start()) {
 		exit(EXIT_FAILURE);
 	}
@@ -5080,7 +5139,7 @@ reread_log_header:
 		os_thread_sleep(opt_debug_sleep_before_unlock * 1000000);
 	}
 	/* read the latest checkpoint lsn */
-	latest_cp = 0;
+	//latest_cp = 0;
 	{
 		log_group_t*	max_cp_group;
 		ulint	max_cp_field;
@@ -5110,6 +5169,7 @@ reread_log_header:
 	}
 skip_last_cp:
 	/* stop log_copying_thread */
+	metadata_to_lsn = latest_cp;
 	log_copying = FALSE;
 	os_event_set(log_copying_stop);
 	msg("xtrabackup: Stopping log copying thread.\n");
@@ -5136,7 +5196,7 @@ skip_last_cp:
 		strcpy(metadata_type, "incremental");
 		metadata_from_lsn = incremental_lsn;
 	}
-	metadata_to_lsn = latest_cp;
+	//metadata_to_lsn = latest_cp;
 	metadata_last_lsn = log_copy_scanned_lsn;
 
 	if (!xtrabackup_stream_metadata(ds_meta)) {
