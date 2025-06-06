@@ -348,8 +348,7 @@ function switch_server()
 	MYSQLD_ARGS="$MYSQLD_ARGS --user=root"
     fi
 
-    XB_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf \
---no-version-check ${XB_EXTRA_OPTS:-}"
+    XB_ARGS="--defaults-file=$MYSQLD_VARDIR/my.cnf ${XB_EXTRA_OPTS:-}"
 
     # Some aliases for compatibility, as tests use the following names
     topdir="$MYSQLD_VARDIR"

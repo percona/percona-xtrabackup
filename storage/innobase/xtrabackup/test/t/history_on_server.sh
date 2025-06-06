@@ -175,7 +175,7 @@ check_for_value "name" "NULL"
 # validate command tool and encrypt key scrubbibng but need to pop off first
 # three arguments in the result added by test framework function xtrabackup
 get_one_value "tool_command"
-val=`set -- $val; shift 2; echo "$@"`
+val=`set -- $val; shift 1; echo "$@"`
 expected_val="--backup --history "\
 "--incremental-history-uuid=$third_uuid --stream=xbstream --compress "\
 "--encrypt=AES256 --encrypt-key=... --transition-key=... --target-dir=$backup_dir/1"
@@ -244,7 +244,7 @@ compact ENUM('Y', 'N') DEFAULT NULL,
 compressed ENUM('Y', 'N') DEFAULT NULL,
 encrypted ENUM('Y', 'N') DEFAULT NULL
 ) CHARACTER SET utf8 ENGINE=innodb"
-${MYSQL} ${MYSQL_ARGS} -Ns -e "INSERT INTO \`PERCONA_SCHEMA\`.\`xtrabackup_history\` VALUES ('1bc0b0cb-9dec-11eb-bfc3-d45d64347a19',NULL,'xtrabackup','--defaults-file=/work/pxb/ins/2.4/xtrabackup-test/var/w1/var1/my.cnf --no-version-check --backup --history --target-dir=/work/pxb/ins/2.4/xtrabackup-test/var/w1/var1/backup0','2.4.21','2.4.21','5.7.31-34-debug-log','2021-04-15 10:11:34','2021-04-15 10:11:36',0,'filename \'mysql-bin.000001\', position \'1424\', GTID of the last change \'12c397b9-9dec-11eb-abcb-d45d64347a19:1-2\'',0,2789167,'N','N','file','N','N','N')"
+${MYSQL} ${MYSQL_ARGS} -Ns -e "INSERT INTO \`PERCONA_SCHEMA\`.\`xtrabackup_history\` VALUES ('1bc0b0cb-9dec-11eb-bfc3-d45d64347a19',NULL,'xtrabackup','--defaults-file=/work/pxb/ins/2.4/xtrabackup-test/var/w1/var1/my.cnf --backup --history --target-dir=/work/pxb/ins/2.4/xtrabackup-test/var/w1/var1/backup0','2.4.21','2.4.21','5.7.31-34-debug-log','2021-04-15 10:11:34','2021-04-15 10:11:36',0,'filename \'mysql-bin.000001\', position \'1424\', GTID of the last change \'12c397b9-9dec-11eb-abcb-d45d64347a19:1-2\'',0,2789167,'N','N','file','N','N','N')"
 xtrabackup --backup --history --target-dir=$topdir/backup0
 check_count PERCONA_SCHEMA xtrabackup_history 2
 check_for_value "SUBSTRING(binlog_pos, -39)" "ffffffff-ffff-ffff-ffff-ffffffffffff:1'"
