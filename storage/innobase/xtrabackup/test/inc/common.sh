@@ -1,10 +1,5 @@
 set -eu
 
-function is_sparse_file() {
-    let n=$(stat --printf "%b*%B/%s" $1)
-    [ "$n" = "0" ]
-}
-
 ### save a copy of backup directory
 function save_backup()
 {

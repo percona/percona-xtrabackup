@@ -594,8 +594,7 @@ static void extract_worker_thread_func(extract_ctxt_t &ctxt) {
                qpress_offset] = 0;
 
         char error[512];
-        if (!restore_sparseness(path, XBSTREAM_BUFFER_SIZE, error,
-                                opt_verbose)) {
+        if (!restore_sparseness(path, XBSTREAM_BUFFER_SIZE, error)) {
           msg("%s: restore_sparseness failed for file %s: %s\n", my_progname,
               chunk.path, error);
         }
