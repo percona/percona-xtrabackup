@@ -80,9 +80,6 @@ bool copy_redo_encryption_info();
 bool apply_log_finish();
 bool copy_back(int argc, char **argv);
 bool decrypt_decompress();
-#ifdef HAVE_VERSION_CHECK
-void version_check();
-#endif
 bool directory_exists(const char *dir, bool create);
 
 /** Execute a callback fun for every file discovered. The files are discovered

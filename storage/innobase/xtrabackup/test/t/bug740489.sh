@@ -22,7 +22,7 @@ EOF
 backup_dir=$topdir/backup
 run_cmd $XB_BIN \
     --defaults-extra-file=$defaults_extra_file --port=${MYSQLD_PORT} --socket=${MYSQLD_SOCKET} \
-    --no-version-check --backup --target-dir=$backup_dir
+    --backup --target-dir=$backup_dir
 vlog "Backup created in directory $backup_dir"
 
 run_cmd ${MYSQL} ${MYSQL_ARGS} --password=password <<EOF

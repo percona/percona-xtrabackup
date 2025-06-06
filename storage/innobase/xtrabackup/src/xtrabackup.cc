@@ -1165,7 +1165,8 @@ struct my_option xb_client_options[] = {
 #ifdef HAVE_VERSION_CHECK
     {"no-version-check", OPT_NO_VERSION_CHECK,
      "This option disables the "
-     "version check which is enabled by the --version-check option.",
+     "version check which is enabled by the --version-check option. "
+     "(Deprecated)",
      (uchar *)&opt_noversioncheck, (uchar *)&opt_noversioncheck, 0, GET_BOOL,
      NO_ARG, 0, 0, 0, 0, 0, 0},
 #endif
@@ -7250,8 +7251,9 @@ bool xb_init() {
 
   if (xtrabackup_backup) {
 #ifdef HAVE_VERSION_CHECK
-    if (!opt_noversioncheck) {
-      version_check();
+    if (opt_noversioncheck) {
+      xb::warn()
+          << "version check is removed and --no-version-check is deprecated.";
     }
 #endif
 
