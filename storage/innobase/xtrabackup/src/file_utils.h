@@ -176,7 +176,7 @@ xb_fil_cur_result_t datafile_read(datafile_cur_t *cursor);
   @return false in case of error, true otherwise
 */
 bool restore_sparseness(const char *src_file_path, uint buffer_size,
-                        char error[512]);
+                        char error[512], bool opt_verbose = false);
 
 /**
   Open FIFO file for writing. Wait up to timeout seconds for it to return a

@@ -71,6 +71,11 @@ inline page_type_t fil_page_get_type(const byte *page) {
   return (static_cast<page_type_t>(mach_read_from_2(page + XB_FIL_PAGE_TYPE)));
 }
 
+inline bool is_page_io_compressed(const byte *page) {
+  return (fil_page_get_type(page) == XB_FIL_PAGE_COMPRESSED ||
+          fil_page_get_type(page) == XB_FIL_PAGE_COMPRESSED_AND_ENCRYPTED);
+}
+
 /** Calculates the smallest multiple of m that is not smaller than n
  when m is a power of two.  In other words, rounds n up to m * k.
  @param n in: number to round up
@@ -277,8 +282,42 @@ xb_fil_cur_result_t datafile_read(datafile_cur_t *cursor) {
   return (XB_FIL_CUR_SUCCESS);
 }
 
+/** Check if an IBD file is IO compressed or not. We just check page numbers
+1 & 2. This is because the first 7 pages are created when an IBD file is
+created. This is the minimum size of a tablespace. So it is sufficient to check
+only two pages.
+Note that page 0 is not compressed. So we check page number 1 & 2 only. */
+class PageCompressionTracker {
+ public:
+  explicit PageCompressionTracker(ulint page_size)
+      : page_size_{page_size},
+        is_compressed_{false, false},
+        checked_exit_{false} {}
+
+  // Call this for every page
+  bool record(ulint buf_offset, const byte *page) {
+    const ulint page_num = buf_offset / page_size_;
+
+    if (page_num == 1 || page_num == 2) {
+      is_compressed_[page_num - 1] = is_page_io_compressed(page);
+    }
+
+    if (page_num == 3 && !checked_exit_) {
+      checked_exit_ = true;  // Ensure we only check once
+      return !is_compressed_[0] && !is_compressed_[1];  // true = can exit early
+    }
+
+    return false;
+  }
+
+ private:
+  const ulint page_size_;
+  bool is_compressed_[2];  // 0 => page 1, 1 => page 2
+  bool checked_exit_;      // ensures we only check once at page 3
+};
+
 bool restore_sparseness(const char *src_file_path, uint buffer_size,
-                        char error[512]) {
+                        char error[512], bool opt_verbose) {
   datafile_cur_t cursor;
   size_t page_size = 0;
   size_t seek = 0;
@@ -289,7 +328,7 @@ bool restore_sparseness(const char *src_file_path, uint buffer_size,
     return false;
   }
   auto punch_hole_func = [&](const auto page) {
-    if (fil_page_get_type(page) == XB_FIL_PAGE_COMPRESSED) {
+    if (is_page_io_compressed(page)) {
 #ifdef UNIV_DEBUG
       assert(page_size % (size_t)cursor.statinfo.st_blksize == 0);
 #endif
@@ -332,8 +371,20 @@ bool restore_sparseness(const char *src_file_path, uint buffer_size,
 #endif
     }
 
+    PageCompressionTracker compression_tracker(page_size);
+
     for (ulint i = 0; i < cursor.buf_read / page_size; ++i) {
       const auto page = cursor.buf + buf_offset;
+
+      if (compression_tracker.record(buf_offset, page)) {
+        if (opt_verbose) {
+          msg("File %s is not sparse, skipping restore_sparseness\n",
+              src_file_path);
+        }
+        datafile_close(&cursor);
+        return true;
+      }
+
       if (!punch_hole_func(page)) return false;
 
       buf_offset += page_size;
