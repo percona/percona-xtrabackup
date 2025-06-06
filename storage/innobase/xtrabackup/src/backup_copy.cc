@@ -2601,7 +2601,8 @@ bool decrypt_decompress_file(const char *filepath, uint thread_n) {
   }
   if (ds_data->fs_support_punch_hole) {
     char error[512];
-    if (!restore_sparseness(dest_filepath, opt_read_buffer_size, error)) {
+    if (!restore_sparseness(dest_filepath, opt_read_buffer_size,
+                            error IF_DEBUG(, true))) {
       xb::warn() << "restore_sparseness failed for file: " << dest_filepath
                  << " Error: " << error;
     }
