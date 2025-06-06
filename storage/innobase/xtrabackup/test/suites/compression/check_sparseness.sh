@@ -1,9 +1,11 @@
-. inc/common.sh
-. inc/keyring_file.sh
-
 require_lz4
 require_zstd
 require_debug_pxb_version
+
+KEYRING_TYPE="component"
+. inc/keyring_common.sh
+. inc/keyring_file.sh
+configure_server_with_component
 
 cleanup() {
 run_cmd $MYSQL $MYSQL_ARGS test <<EOF
@@ -65,7 +67,6 @@ check_sparseness() {
 }
 
 check_and_start_server_sparse() {
-start_server
 
 if grep -q 'PUNCH HOLE support not available' $MYSQLD_ERRFILE ; then
     skip 'punch hole support is not available'
@@ -147,6 +148,9 @@ restore_and_verify() {
     xtrabackup --copy-back --target-dir=$TARGETDIR --transition-key=123 \
                --generate-new-master-key \
                --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
+    cp ${instance_local_manifest}  $mysql_datadir
+    cp ${keyring_component_cnf} $mysql_datadir
+
     start_server
     verify_db_state test
 }
@@ -161,6 +165,7 @@ stop_server
 rm -rf $mysql_datadir
 
 echo "Test with zstd"
+configure_server_with_component
 check_and_start_server_sparse
 vlog "Taking backup with LZ4 compression"
 take_backup_local_and_stream "--compress=zstd --read-buffer-size=1M"
