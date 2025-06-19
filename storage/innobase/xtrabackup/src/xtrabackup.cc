@@ -195,6 +195,7 @@ static os_thread_id_t	thread_ids[SRV_MAX_N_IO_THREADS + 6];
 lsn_t checkpoint_lsn_start;
 lsn_t checkpoint_no_start;
 lsn_t log_copy_scanned_lsn;
+lsn_t latest_cp_before_lock = 0;
 ibool log_copying = TRUE;
 ibool log_copying_running = FALSE;
 ibool io_watching_thread_running = FALSE;
@@ -3014,6 +3015,13 @@ xtrabackup_scan_log_recs(
 	log_block = log_sys->buf;
 
 	while (log_block < log_sys->buf + RECV_SCAN_SIZE && !*finished) {
+		if (latest_cp_before_lock > 0 && scanned_lsn > latest_cp_before_lock) {
+			*finished = true;
+			msg("xtrabackup: Stop scanning at LSN " LSN_PF 
+				" as it exceeds latest checkpoint LSN " LSN_PF "\n",
+				scanned_lsn, latest_cp_before_lock);
+			break;
+		}
 		ulint	no = log_block_get_hdr_no(log_block);
 		ulint	scanned_no = log_block_convert_lsn_to_no(scanned_lsn);
 		ibool	checksum_is_ok = log_block_checksum_is_ok(log_block);
@@ -5069,6 +5077,58 @@ reread_log_header:
 	if (changed_page_bitmap) {
 		xb_page_bitmap_deinit(changed_page_bitmap);
 	}
+	}
+
+	/* read the latest checkpoint lsn before lock and
+	wait until the redo log copying thread catches up to the latest checkpoint lsn*/
+	latest_cp_before_lock = 0;
+
+	{
+		log_group_t* max_cp_group;
+		ulint max_cp_field;
+		ulint err;
+
+		mutex_enter(&log_sys->mutex);
+
+		err = recv_find_max_checkpoint(&max_cp_group, &max_cp_field);
+
+		if (err != DB_SUCCESS) {
+			msg("xtrabackup: Error: recv_find_max_checkpoint() failed.\n");
+			mutex_exit(&log_sys->mutex);
+			goto skip_last_cp;
+		}
+
+		log_group_header_read(max_cp_group, max_cp_field);
+
+		xtrabackup_choose_lsn_offset(checkpoint_lsn_start);
+
+		latest_cp_before_lock = mach_read_from_8(log_sys->checkpoint_buf + LOG_CHECKPOINT_LSN);
+
+		mutex_exit(&log_sys->mutex);
+
+		msg_ts("xtrabackup: The latest checkpoint LSN before lock: '"
+			LSN_PF "'\n", latest_cp_before_lock);
+
+		bool first_wait = true;
+
+		while (true) {
+			if (log_copy_scanned_lsn >= latest_cp_before_lock) {
+				msg_ts("xtrabackup: The log_copy LSN (" LSN_PF
+					") is larger than latest checkpoint LSN (" LSN_PF ")\n",
+					log_copy_scanned_lsn, latest_cp_before_lock);
+					break;
+			} else {
+				if (first_wait) {
+					msg_ts("xtrabackup: Waiting for log copy thread to catchup to LSN "
+						LSN_PF " (currently parsing at " LSN_PF ")\n",
+						latest_cp_before_lock, log_copy_scanned_lsn);
+						first_wait = false;
+				} else {
+					msg(".");
+				}
+				os_thread_sleep(1000000);
+			}
+		}
 	}
 
 	if (!backup_start()) {
