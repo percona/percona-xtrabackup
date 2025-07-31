@@ -31,7 +31,7 @@ kill -SIGCONT $xb_pid
 run_cmd wait $job_pid
 
 # xtrabackup uses an ever incremental thread ID. Second phase copy will start from 20+
-if ! egrep -q '[1-3][0-9] \[Note\] \[MY-[0-9]*\] \[Xtrabackup\] Copying file with space_id [0-9]* test/tb_[0-9]*\.ibd to .*/test/tb_[0-9]*.ibd.new' $topdir/backup.log ; then
+if ! egrep -q '[1-3][0-9] \[Note\] \[MY-[0-9]*\] \[Xtrabackup\] space_id: [0-9]*, Copying test/tb_[0-9]*\.ibd to .*/test/tb_[0-9]*.ibd.new' $topdir/backup.log ; then
     die "xtrabackup did not copied tables in parallel"
 fi
 
