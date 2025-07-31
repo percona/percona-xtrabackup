@@ -255,6 +255,11 @@ void ddl_tracker_t::add_drop_table_from_redo(const space_id_t space_id,
              << " delete space ID: " << space_id << " Name: " << new_space_name;
 }
 
+bool ddl_tracker_t::is_tablespace_dropped(const space_id_t space_id) {
+  std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
+  return (drops.find(space_id) != drops.end());
+}
+
 void ddl_tracker_t::add_rename_ibd_scan(const space_id_t &space_id,
                                         std::string new_name) {
   // undo tablespaces are tracked separately.

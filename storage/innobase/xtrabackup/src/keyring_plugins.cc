@@ -38,6 +38,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "keyring_operations_helper.h"
 
 #include "backup_mysql.h"
+#include "ddl_tracker.h"
 #include "keyring_plugins.h"
 #include "rpl_log_encryption.h"
 #include "utils.h"
@@ -186,17 +187,6 @@ dberr_t xb_set_encryption(fil_space_t *space) {
   return (fil_set_encryption(space->id, Encryption::AES, key, iv));
 }
 
-#define TRANSITION_KEY_PREFIX_STR "XBKey"
-
-const char *TRANSITION_KEY_PREFIX = TRANSITION_KEY_PREFIX_STR;
-const size_t TRANSITION_KEY_PREFIX_LEN = sizeof(TRANSITION_KEY_PREFIX_STR) - 1;
-const size_t TRANSITION_KEY_RANDOM_DATA_LEN = 32;
-const size_t TRANSITION_KEY_NAME_MAX_LEN_V1 =
-    Encryption::SERVER_UUID_LEN + 2 + 45;
-const size_t TRANSITION_KEY_NAME_MAX_LEN_V2 =
-    TRANSITION_KEY_PREFIX_LEN + Encryption::SERVER_UUID_LEN +
-    TRANSITION_KEY_RANDOM_DATA_LEN + 1;
-
 /** Fetch the key from keyring.
 @param[in]	key_name	key name
 @param[out]	key		key
@@ -250,9 +240,14 @@ static bool xb_create_transition_key(char *key_name, char *key) {
 
   base64_encode(rand32, 20, rand64);
 
+  std::ostringstream oss;
+
   /* Trasnsition key name is composed of server uuid and random suffix. */
-  snprintf(key_name, TRANSITION_KEY_NAME_MAX_LEN_V2, "%s-%s-%s",
-           TRANSITION_KEY_PREFIX, server_uuid, rand64);
+  oss << TRANSITION_KEY_PREFIX << '-' << server_uuid << '-' << rand64;
+  std::string s = oss.str();
+  memset(key_name, 0, TRANSITION_KEY_NAME_MAX_LEN_V2);
+  std::memcpy(key_name, s.data(),
+              std::min(s.size(), TRANSITION_KEY_NAME_MAX_LEN_V2));
 
   /* Let keyring generate key for us. */
   ret = srv_keyring_generator->generate(key_name, nullptr, "AES",
@@ -661,120 +656,6 @@ static bool xb_tablespace_keys_write_single(ds_file_t *stream,
   return (true);
 }
 
-/** Dump tablespace keys into encrypted "xtrabackup_keys" file.
-@param[in]	ds_ctxt			datasink context to output file into
-@param[in]	transition_key		transition key used to encrypt
-                                        tablespace keys
-@param[in]	transition_key_len	transition key length
-@return true if success */
-bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
-                             size_t transition_key_len) {
-  byte derived_key[Encryption::KEY_LEN];
-  byte salt[XB_KDF_SALT_SIZE];
-  char transition_key_name[TRANSITION_KEY_NAME_MAX_LEN_V2];
-  char transition_key_buf[Encryption::KEY_LEN];
-
-  xb::info() << "Saving " << XTRABACKUP_KEYS_FILE;
-
-  if (my_rand_buffer(salt, sizeof(salt)) != 0) {
-    return (false);
-  }
-
-  memset(transition_key_name, 0, sizeof(transition_key_name));
-
-  if (transition_key == NULL) {
-    if (!xb_create_transition_key(transition_key_name, transition_key_buf)) {
-      return (false);
-    }
-    transition_key = transition_key_buf;
-    transition_key_len = Encryption::KEY_LEN;
-  }
-
-  xb_libgcrypt_init();
-  bool ret = xb_derive_key(transition_key, transition_key_len, salt,
-                           sizeof(salt), sizeof(derived_key), derived_key);
-
-  if (!ret) {
-    xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
-                << ": failed to derive encryption key.";
-    return (false);
-  }
-
-  dberr_t err;
-  MY_STAT stat_info;
-  memset(&stat_info, 0, sizeof(MY_STAT));
-
-  ds_file_t *stream = ds_open(ds_ctxt, XTRABACKUP_KEYS_FILE, &stat_info);
-  if (stream == NULL) {
-    xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
-                << ": failed to create file.";
-    return (false);
-  }
-
-  if (ds_write(stream, XTRABACKUP_KEYS_MAGIC_V2, XTRABACKUP_KEYS_MAGIC_SIZE)) {
-    xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
-                << ": failed to write magic.";
-    goto error;
-  }
-
-  if (ds_write(stream, salt, sizeof(salt))) {
-    xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
-                << ": failed to write salt.";
-    goto error;
-  }
-
-  if (ds_write(stream, transition_key_name, sizeof(transition_key_name))) {
-    xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
-                << ": failed to write transition key name.";
-    goto error;
-  }
-
-  err = Fil_space_iterator::for_each_space([&](fil_space_t *space) {
-    if (space->m_encryption_metadata.m_type == Encryption::NONE) {
-      return (DB_SUCCESS);
-    }
-    if (!xb_tablespace_keys_write_single(stream, derived_key, space->id,
-                                         space->m_encryption_metadata.m_key,
-                                         space->m_encryption_metadata.m_iv)) {
-      xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
-                  << ": failed to save tablespace key.";
-      return (DB_ERROR);
-    }
-    return (DB_SUCCESS);
-  });
-
-  if (err != DB_SUCCESS) {
-    goto error;
-  }
-
-  if (recv_sys->keys != nullptr) {
-    for (auto &key : *recv_sys->keys) {
-      if (!xb_tablespace_keys_write_single(stream, derived_key, key.space_id,
-                                           key.ptr, key.iv)) {
-        xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
-                    << ": failed to save tablespace key.";
-        goto error;
-      }
-    }
-  }
-
-  for (const auto &entry : encryption_info) {
-    if (!xb_tablespace_keys_write_single(stream, derived_key, entry.first,
-                                         entry.second.key, entry.second.iv)) {
-      xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
-                  << ": failed to save tablespace key.";
-      goto error;
-    }
-  }
-
-  ds_close(stream);
-  return (true);
-
-error:
-  ds_close(stream);
-  return (false);
-}
-
 /**
   Read encrypted binlog file header
 
@@ -895,4 +776,158 @@ void xb_keyring_shutdown() {
 
   free_list(opt_plugin_load_list_ptr);
   xtrabackup::components::deinitialize_service_handles();
+}
+
+TablespaceKeyDumper::TablespaceKeyDumper(ds_ctxt_t *ds_ctxt,
+                                         const char *transition_key,
+                                         size_t transition_key_len)
+    : m_ds_ctxt(ds_ctxt),
+      m_transition_key(transition_key),
+      m_transition_key_len(transition_key_len),
+      m_stream(nullptr),
+      m_state(State::Init),
+      m_finalized(false) {
+  memset(m_salt, 0, sizeof(m_salt));
+  memset(m_derived_key, 0, sizeof(m_derived_key));
+  memset(m_transition_key_name, 0, sizeof(m_transition_key_name));
+}
+
+bool TablespaceKeyDumper::is_initialized() const {
+  return m_state != State::Init;
+}
+
+bool TablespaceKeyDumper::initialize() {
+  xb::info() << "Saving " << XTRABACKUP_KEYS_FILE;
+
+  if (my_rand_buffer(m_salt, sizeof(m_salt)) != 0) return false;
+
+  if (m_transition_key == nullptr) {
+    if (!xb_create_transition_key(m_transition_key_name,
+                                  m_transition_key_buf)) {
+      return false;
+    }
+    m_transition_key = m_transition_key_buf;
+    m_transition_key_len = Encryption::KEY_LEN;
+  }
+
+  xb_libgcrypt_init();
+  if (!xb_derive_key(m_transition_key, m_transition_key_len, m_salt,
+                     sizeof(m_salt), sizeof(m_derived_key), m_derived_key)) {
+    xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
+                << ": failed to derive encryption key.";
+    return false;
+  }
+
+  MY_STAT stat_info;
+  memset(&stat_info, 0, sizeof(MY_STAT));
+
+  m_stream = ds_open(m_ds_ctxt, XTRABACKUP_KEYS_FILE, &stat_info);
+  if (!m_stream) {
+    xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
+                << ": failed to create file.";
+    return false;
+  }
+
+  if (ds_write(m_stream, XTRABACKUP_KEYS_MAGIC_V2,
+               XTRABACKUP_KEYS_MAGIC_SIZE) ||
+      ds_write(m_stream, m_salt, sizeof(m_salt)) ||
+      ds_write(m_stream, m_transition_key_name,
+               sizeof(m_transition_key_name))) {
+    xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
+                << ": failed to write header.";
+    ds_close(m_stream);
+    m_stream = nullptr;
+    return false;
+  }
+
+  m_state = State::Initialized;
+  return true;
+}
+
+bool TablespaceKeyDumper::dump_from_spaces(bool use_ddl_tracker) {
+  if (use_ddl_tracker) {
+    ut_a(ddl_tracker != nullptr);
+  }
+
+  if (m_state != State::Initialized && m_state != State::SpacesDumpedOnce)
+    return fail_state("dump_from_spaces");
+
+  m_state = State::SpacesDumpedOnce;
+
+  dberr_t err = Fil_space_iterator::for_each_space([&](fil_space_t *space) {
+    if (space->m_encryption_metadata.m_type == Encryption::NONE) {
+      return DB_SUCCESS;
+    }
+
+    if (use_ddl_tracker && ddl_tracker != nullptr) {
+      if (ddl_tracker->is_tablespace_dropped(space->id)) {
+        return DB_SUCCESS;
+      }
+    }
+
+    if (!xb_tablespace_keys_write_single(m_stream, m_derived_key, space->id,
+                                         space->m_encryption_metadata.m_key,
+                                         space->m_encryption_metadata.m_iv)) {
+      xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
+                  << ": failed to save tablespace key.";
+      return DB_ERROR;
+    }
+
+    return DB_SUCCESS;
+  });
+
+  return err == DB_SUCCESS;
+}
+
+bool TablespaceKeyDumper::dump_from_redo() {
+  if (m_state != State::SpacesDumpedOnce) return fail_state("dump_from_redo");
+  m_state = State::RecoveryDumped;
+
+  if (!recv_sys || !recv_sys->keys) return true;
+
+  for (auto &key : *recv_sys->keys) {
+    if (!xb_tablespace_keys_write_single(m_stream, m_derived_key, key.space_id,
+                                         key.ptr, key.iv)) {
+      xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
+                  << ": failed to save tablespace key.";
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool TablespaceKeyDumper::dump_from_encryption_infos() {
+  if (m_state != State::RecoveryDumped)
+    return fail_state("dump_from_encryption_infos");
+  m_state = State::EncryptionInfosDumped;
+
+  for (const auto &entry : encryption_info) {
+    if (!xb_tablespace_keys_write_single(m_stream, m_derived_key, entry.first,
+                                         entry.second.key, entry.second.iv)) {
+      xb::error() << "Error writing " << XTRABACKUP_KEYS_FILE
+                  << ": failed to save tablespace key.";
+      return false;
+    }
+  }
+
+  return true;
+}
+
+void TablespaceKeyDumper::finalize() {
+  if (m_stream) {
+    ds_close(m_stream);
+    m_stream = nullptr;
+  }
+  m_finalized = true;
+}
+
+TablespaceKeyDumper::~TablespaceKeyDumper() {
+  assert(m_finalized && "finalize() must be called before destruction");
+}
+
+bool TablespaceKeyDumper::fail_state(const char *func) {
+  xb::error() << "Invalid call to " << func
+              << ": incorrect stage or already called.";
+  return false;
 }

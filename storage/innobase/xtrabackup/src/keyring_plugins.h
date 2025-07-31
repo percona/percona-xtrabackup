@@ -22,6 +22,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <mysql.h>
 #include <os0file.h>
 #include "datasink.h"
+#include "kdf.h"
 #include "log0types.h"
 
 /** Initialize keyring plugin for backup. Config is read from live mysql server.
@@ -58,15 +59,6 @@ bool xb_tablespace_keys_exist();
 bool xb_tablespace_keys_load(const char *dir, const char *transition_key,
                              size_t transition_key_len);
 
-/** Dump tablespace keys into encrypted "xtrabackup_keys" file.
-@param[in]	ds_ctxt			datasink context to output file into
-@param[in]	transition_key		transition key used to encrypt
-                                        tablespace keys
-@param[in]	transition_key_len	transition key length
-@return true if success */
-bool xb_tablespace_keys_dump(ds_ctxt_t *ds_ctxt, const char *transition_key,
-                             size_t transition_key_len);
-
 /**
   Store binlog password into a backup
 
@@ -97,4 +89,55 @@ variable
 @param[out]   e_m   Encryption metadata of redo log
 @return true on success, else false */
 bool xb_load_saved_redo_encryption(Encryption_metadata &em);
+
+#define TRANSITION_KEY_PREFIX_STR "XBKey"
+
+const char *const TRANSITION_KEY_PREFIX = TRANSITION_KEY_PREFIX_STR;
+const size_t TRANSITION_KEY_PREFIX_LEN = sizeof(TRANSITION_KEY_PREFIX_STR) - 1;
+const size_t TRANSITION_KEY_RANDOM_DATA_LEN = 32;
+const size_t TRANSITION_KEY_NAME_MAX_LEN_V1 =
+    Encryption::SERVER_UUID_LEN + 2 + 45;
+const size_t TRANSITION_KEY_NAME_MAX_LEN_V2 =
+    TRANSITION_KEY_PREFIX_LEN + Encryption::SERVER_UUID_LEN +
+    TRANSITION_KEY_RANDOM_DATA_LEN + 1;
+
+class TablespaceKeyDumper {
+ public:
+  TablespaceKeyDumper(ds_ctxt_t *ds_ctxt, const char *transition_key,
+                      size_t transition_key_len);
+
+  bool initialize();
+  bool dump_from_spaces(bool use_ddl_tracker);
+  bool dump_from_redo();
+  bool dump_from_encryption_infos();
+  void finalize();
+  bool is_initialized() const;
+
+  ~TablespaceKeyDumper();
+
+ private:
+  enum class State {
+    Init,
+    Initialized,
+    SpacesDumpedOnce,
+    RecoveryDumped,
+    EncryptionInfosDumped
+  };
+
+  bool fail_state(const char *func);
+
+  ds_ctxt_t *m_ds_ctxt;
+  const char *m_transition_key;
+  size_t m_transition_key_len;
+
+  byte m_derived_key[Encryption::KEY_LEN];
+  byte m_salt[XB_KDF_SALT_SIZE];
+  char m_transition_key_name[TRANSITION_KEY_NAME_MAX_LEN_V2];
+  char m_transition_key_buf[Encryption::KEY_LEN];
+
+  ds_file_t *m_stream;
+  State m_state;
+  bool m_finalized;
+};
+
 #endif  // XB_KEYRING_PLUGINS_H
