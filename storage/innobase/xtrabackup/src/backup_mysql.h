@@ -145,10 +145,13 @@ class Myrocks_checkpoint {
   file_list data_files() const;
 };
 
+class TablespaceKeyDumper;
+
 struct Backup_context {
   Myrocks_checkpoint myrocks_checkpoint;
   std::unordered_set<std::string> rocksdb_files;
   Redo_Log_Data_Manager *redo_mgr;
+  TablespaceKeyDumper *ts_key_dumper;
 };
 
 /* server capabilities */

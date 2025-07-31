@@ -4518,6 +4518,22 @@ void xtrabackup_backup_func(void) {
 
   Backup_context backup_ctxt;
   backup_ctxt.redo_mgr = &redo_mgr;
+
+  TablespaceKeyDumper ts_key_dumper(
+      ds_data, opt_transition_key,
+      opt_transition_key != NULL ? strlen(opt_transition_key) : 0);
+
+  if (opt_transition_key != NULL || opt_generate_transition_key) {
+    if (!ts_key_dumper.initialize()) {
+      xb::error() << "--transition-key couldn't be initialized. Please check"
+                  << " the transition key, the errors and retry";
+      exit(EXIT_FAILURE);
+    }
+    backup_ctxt.ts_key_dumper = &ts_key_dumper;
+  } else {
+    backup_ctxt.ts_key_dumper = nullptr;
+  }
+
   if (!backup_start(backup_ctxt)) {
     exit(EXIT_FAILURE);
   }
@@ -4594,14 +4610,23 @@ void xtrabackup_backup_func(void) {
 
   Tablespace_map::instance().serialize(ds_data);
 
-  if (opt_transition_key != NULL || opt_generate_transition_key) {
-    if (!xb_tablespace_keys_dump(
-            ds_data, opt_transition_key,
-            opt_transition_key != NULL ? strlen(opt_transition_key) : 0)) {
-      xb::error() << "failed to dump tablespace keys.";
-      exit(EXIT_FAILURE);
+  if (ts_key_dumper.is_initialized()) {
+    if (!ts_key_dumper.dump_from_spaces(false)) {
+      xb::error() << "Couldn't dump transition key for all tablespaces.";
+    }
+
+    if (!ts_key_dumper.dump_from_redo()) {
+      xb::error() << "Couldn't dump transition key for all tablespaces found"
+                  << " from redo log";
+    }
+
+    if (!ts_key_dumper.dump_from_encryption_infos()) {
+      xb::error() << "Couldn't dump transition key for all tablespaces found"
+                  << " from encryption_info vector ";
     }
   }
+
+  ts_key_dumper.finalize();
 
   xtrabackup_destroy_datasinks();
 

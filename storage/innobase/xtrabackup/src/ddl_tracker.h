@@ -155,6 +155,10 @@ class ddl_tracker_t {
   @param[in]	space_id  tablespace identifier
   @param[in]	new_name  tablespace new name */
   void add_rename_ibd_scan(const space_id_t &space_id, std::string new_name);
+
+  /** @return true if tablespace is dropped
+  @param[in]    space_id tablespace id */
+  bool is_tablespace_dropped(const space_id_t space_id);
 };
 
 /** Insert into meta files map. This map is later used to delete the right

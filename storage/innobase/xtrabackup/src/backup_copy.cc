@@ -1406,6 +1406,17 @@ bool backup_start(Backup_context &context) {
     /* LTFB/LIFB has to be executed before copying MyISAM */
     if (ddl_tracker != nullptr) {
       debug_sync_point("ddl_tracker_before_lock_ddl");
+
+      /* The tablespaces will be closed on handle_ddl_operations. Hence
+      dump the tablespace keys now. For tablespace that are tracked as
+      dropped, dont dump the tablespace encryption keys. Note that we
+      still need to save tablespace keys found from redo. We cannot do it
+      now as the redo log thread is still in progress. It is done after
+      the redo thread is stopped. See TablespaceKeyDumper::dump_from_redo() */
+      if (context.ts_key_dumper != nullptr) {
+        context.ts_key_dumper->dump_from_spaces(true);
+      }
+
       if (!lock_tables_for_backup(mysql_connection, opt_backup_lock_timeout,
                                   opt_backup_lock_retry_count)) {
         return (false);
