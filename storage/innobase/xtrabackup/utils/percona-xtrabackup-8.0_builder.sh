@@ -246,10 +246,10 @@ install_deps() {
         yum -y install git wget yum-utils curl
         yum install -y https://repo.percona.com/yum/percona-release-latest.noarch.rpm
         if [ x"$ARCH" = "xx86_64" ]; then
-            if [ $RHEL = 9 ]; then
-                yum-config-manager --enable ol9_distro_builder
-                yum-config-manager --enable ol9_codeready_builder
-                yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
+            if [ ${RHEL} = 9 -o ${RHEL} = 10 ]; then
+                yum-config-manager --enable ol${RHEL}_distro_builder
+                yum-config-manager --enable ol${RHEL}_codeready_builder
+                yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-${RHEL}.noarch.rpm
             else
                 add_percona_yum_repo
                 percona-release enable tools testing
@@ -259,12 +259,12 @@ install_deps() {
             yum -y install epel-release
         fi
 
-        if [ ${RHEL} = 8 -o ${RHEL} = 9 ]; then
+        if [ ${RHEL} = 8 -o ${RHEL} = 9 -o ${RHEL} = 10 ]; then
             PKGLIST+=" binutils-devel python3-pip python3-setuptools"
             PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make gcc"
             PKGLIST+=" rpm-build libgcrypt-devel ncurses-devel readline-devel openssl-devel gcc-c++"
             PKGLIST+=" vim-common rpmlint patchelf python3-wheel libudev-devel"
-            if [ $RHEL = 9 ]; then
+            if [ ${RHEL} = 9 -o ${RHEL} = 10 ]; then
                 PKGLIST+=" rsync procps-ng-devel python3-sphinx"
             else
                 if [ x"$ARCH" = "xx86_64" ]; then
