@@ -57,21 +57,17 @@ if ! egrep -q "New undo file: $undo_directory_ext/undo_1.ibu : [0-9]*" $topdir/b
     die "xtrabackup did not handle new table DDL"
 fi
 
-if ! egrep -q "Done: Copying file with space_id [0-9]* $undo_directory_ext/undo_1.ibu to $topdir/backup/undo_1.ibu.new" $topdir/backup.log ; then
+if ! egrep -q "space_id: [0-9]*, Done: Copying $undo_directory_ext/undo_1.ibu to $topdir/backup/undo_1.ibu.new" $topdir/backup.log ; then
     die "xtrabackup did not create undo_1.ibu.new file"
 fi
 
-if ! egrep -q "Done: Copying file with space_id [0-9]* $undo_directory_ext/undo_003.ibu to $topdir/backup/undo_003.ibu.new" $topdir/backup.log ; then
+if ! egrep -q "space_id: [0-9]*, Done: Copying $undo_directory_ext/undo_003.ibu to $topdir/backup/undo_003.ibu.new" $topdir/backup.log ; then
     die "xtrabackup did not create undo_003.ibu.new file"
 fi
 
-if ! egrep -q "Done: Copying file with space_id [0-9]* $undo_directory_ext/undo_001 to $topdir/backup/undo_001.new" $topdir/backup.log ; then
+if ! egrep -q "space_id: [0-9]*, Done: Copying $undo_directory_ext/undo_001 to $topdir/backup/undo_001.new" $topdir/backup.log ; then
     die "xtrabackup did not create undo_001.new file"
 fi
-
-
-
-
 
 mysql -e "SET GLOBAL innodb_purge_rseg_truncate_frequency=default"
 xtrabackup --prepare --target-dir=$topdir/backup
@@ -84,8 +80,6 @@ start_server
 stop_server
 rm -rf $MYSQLD_DATADIR
 rm -rf $undo_directory_ext
-
-
 
 vlog "case #2: ensure external file-per-table and general tablespaces are handled"
 
@@ -144,7 +138,7 @@ if ! egrep -q "DDL tracking : LSN: [0-9]* create space ID: [0-9]* Name: $data_di
     die "xtrabackup did not handle new table DDL"
 fi
 
-if ! egrep -q "Done: Copying file with space_id [0-9]* $data_directory_ext/test/OP_DDL_TABLE.ibd to $topdir/backup_new_table/test/OP_DDL_TABLE.ibd.new" $topdir/backup_with_new_table.log ; then
+if ! egrep -q "space_id: [0-9]*, Done: Copying $data_directory_ext/test/OP_DDL_TABLE.ibd to $topdir/backup_new_table/test/OP_DDL_TABLE.ibd.new" $topdir/backup_with_new_table.log ; then
     die "xtrabackup did not create OP_DDL_TABLE.ibd.new file"
 fi
 
