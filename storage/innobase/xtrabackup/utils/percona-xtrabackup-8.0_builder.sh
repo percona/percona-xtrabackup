@@ -256,7 +256,12 @@ install_deps() {
             fi
         else
             yum-config-manager --enable ol"${RHEL}"_codeready_builder
-            yum -y install epel-release
+            if [ ${RHEL} = 10 ]; then
+                yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+                yum -y install epel-release
+            else
+                yum -y install epel-release
+            fi
         fi
 
         if [ ${RHEL} = 8 -o ${RHEL} = 9 -o ${RHEL} = 10 ]; then
