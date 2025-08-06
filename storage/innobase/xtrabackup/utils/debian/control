@@ -32,7 +32,7 @@ Provides: xtrabackup
 Conflicts: percona-xtrabackup-21,
            percona-xtrabackup-22,
            percona-xtrabackup,
-           percona-xtrabackup-24
+           percona-xtrabackup-24,
            percona-xtrabackup-81,
            percona-xtrabackup-82,
            percona-xtrabackup-83,
