@@ -270,7 +270,7 @@ install_deps() {
             PKGLIST+=" rpm-build libgcrypt-devel ncurses-devel readline-devel openssl-devel gcc-c++"
             PKGLIST+=" vim-common rpmlint patchelf python3-wheel libudev-devel"
             if [ ${RHEL} = 9 -o ${RHEL} = 10 ]; then
-                PKGLIST+=" rsync procps-ng-devel python3-sphinx"
+                PKGLIST+=" rsync procps-ng-devel python3-sphinx libquadmath-devel"
             else
                 if [ x"$ARCH" = "xx86_64" ]; then
                     yum-config-manager --enable powertools
