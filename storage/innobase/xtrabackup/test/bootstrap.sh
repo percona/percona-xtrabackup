@@ -118,7 +118,7 @@ main () {
             tarball="mysql-${VERSION}-linux-glibc2.28-${arch}.tar.xz"
             ;;
         xtradb80)
-            url="https://www.percona.com/downloads/Percona-Server-8.0/Percona-Server-${VERSION}/binary/tarball"
+            url="https://downloads.percona.com/downloads/Percona-Server-8.0/Percona-Server-${VERSION}/binary/tarball"
             fallback_url="https://downloads.percona.com/downloads/TESTING/ps-${VERSION}"
             short_version=$(echo ${VERSION} | awk -F "." '{ print $3 }' | cut -d '-' -f1)
             if [[ ${PXB_TYPE} == "Debug" ]] || [[ ${PXB_TYPE} == "debug" ]]; then
