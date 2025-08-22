@@ -120,7 +120,7 @@ rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/z*
 
 %post
 cp %SOURCE999 /tmp/ 2>/dev/null ||
-bash /tmp/call-home.sh -f "PRODUCT_FAMILY_PXB" -v %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}-%{xb_version_extra}-%{rpm_release} -d "PACKAGE" &>/dev/null || :
+bash /tmp/call-home.sh -f "PRODUCT_FAMILY_PXB" -v %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}%{xb_version_extra}-%{rpm_release} -d "PACKAGE" &>/dev/null || :
 rm -f /tmp/call-home.sh
 
 %clean
