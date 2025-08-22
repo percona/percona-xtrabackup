@@ -1006,7 +1006,7 @@ static bool copy_or_move_file(const char *src_file_path,
   ds_ctxt_t *datasink = ds_data; /* copy to datadir by default */
   bool ret;
 
-  /* File is located outsude of the datadir */
+  /* File is located outside of the datadir */
   char external_dir[FN_REFLEN];
 
   if (Fil_path::type_of_path(dst_file_path) == Fil_path::absolute) {
@@ -1372,19 +1372,26 @@ Myrocks_checkpoint::file_list Myrocks_checkpoint::data_files() const {
   return Myrocks_datadir(checkpoint_dir).data_files();
 }
 
-static void par_copy_rocksdb_files(const Myrocks_datadir::const_iterator &start,
-                                   const Myrocks_datadir::const_iterator &end,
-                                   size_t thread_n, ds_ctxt_t *ds,
-                                   bool *result) {
+static void par_copy_or_move_rocksdb_files(
+    const Myrocks_datadir::const_iterator &start,
+    const Myrocks_datadir::const_iterator &end, size_t thread_n, ds_ctxt_t *ds,
+    bool *result) {
   for (auto it = start; it != end; it++) {
     if (ends_with(it->path.c_str(), ".qp") ||
         ends_with(it->path.c_str(), ".lz4") ||
         ends_with(it->path.c_str(), ".xbcrypt")) {
       continue;
     }
-    if (!copy_file(ds, it->path.c_str(), it->rel_path.c_str(), thread_n,
-                   FILE_PURPOSE_OTHER, it->file_size)) {
-      *result = false;
+    if (xtrabackup_copy_back) {
+      if (!copy_file(ds, it->path.c_str(), it->rel_path.c_str(), thread_n,
+                     FILE_PURPOSE_OTHER, it->file_size)) {
+        *result = false;
+      }
+    } else {
+      if (!move_file(ds, it->path.c_str(), it->rel_path.c_str(), ds->root,
+                     thread_n, FILE_PURPOSE_OTHER)) {
+        *result = false;
+      }
     }
     if (!*result) {
       break;
@@ -1948,7 +1955,8 @@ bool copy_incremental_over_full() {
     bool result = true;
     std::function<void(const Myrocks_datadir::const_iterator &,
                        const Myrocks_datadir::const_iterator &, size_t)>
-        copy = std::bind(&par_copy_rocksdb_files, _1, _2, _3, ds_data, &result);
+        copy = std::bind(&par_copy_or_move_rocksdb_files, _1, _2, _3, ds_data,
+                         &result);
 
     par_for(PFS_NOT_INSTRUMENTED, rocksdb.files(), xtrabackup_parallel, copy);
   }
@@ -2449,7 +2457,8 @@ bool copy_back(int argc, char **argv) {
     using std::placeholders::_3;
     std::function<void(const Myrocks_datadir::const_iterator &,
                        const Myrocks_datadir::const_iterator &, size_t)>
-        copy = std::bind(&par_copy_rocksdb_files, _1, _2, _3, ds_data, &ret);
+        copy = std::bind(&par_copy_or_move_rocksdb_files, _1, _2, _3, ds_data,
+                         &ret);
 
     if (rocksdb_wal_dir.empty()) {
       par_for(PFS_NOT_INSTRUMENTED, rocksdb.files("", ""), xtrabackup_parallel,
@@ -2483,7 +2492,8 @@ bool copy_back(int argc, char **argv) {
       using std::placeholders::_3;
       std::function<void(const Myrocks_datadir::const_iterator &,
                          const Myrocks_datadir::const_iterator &, size_t)>
-          copy = std::bind(&par_copy_rocksdb_files, _1, _2, _3, ds_data, &ret);
+          copy = std::bind(&par_copy_or_move_rocksdb_files, _1, _2, _3, ds_data,
+                           &ret);
 
       par_for(PFS_NOT_INSTRUMENTED, rocksdb.wal_files(""), xtrabackup_parallel,
               copy);
