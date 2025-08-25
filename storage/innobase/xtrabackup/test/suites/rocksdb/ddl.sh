@@ -115,6 +115,11 @@ stop_server
 rm -rf $mysql_datadir
 xtrabackup --move-back --target-dir=$topdir/backup
 
+# Check if RocksDB files have been moved (--move-back).
+if ls $topdir/backup/.rocksdb/* 1>/dev/null 2>&1 ; then
+    die "RocksDB files haven't been moved."
+fi
+
 start_server
 
 # Verify backup
