@@ -634,8 +634,7 @@ void Http_client::callback(CLIENT *client, std::string container,
            delay, name.c_str(), count);
     std::this_thread::sleep_for(std::chrono::milliseconds(delay));
     resp->reset_body();
-    client->signer->sign_request(client->hostname(container), container, *req,
-                                 time(0));
+    req->sign();
     http_client->make_async_request(
         *req, *resp, h,
         std::bind(&Http_client::callback<CLIENT, CALLBACK>, this, client,

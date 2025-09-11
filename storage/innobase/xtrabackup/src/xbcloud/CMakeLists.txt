@@ -79,6 +79,7 @@ IF (WITH_UNIT_TESTS AND CMAKE_VERSION VERSION_GREATER 3.22.1)
     ADD_EXECUTABLE(xbcloud-t xbcloud-t.cc
       http.cc
       s3.cc
+      s3_ec2.cc
       azure.cc
       swift.cc)
 

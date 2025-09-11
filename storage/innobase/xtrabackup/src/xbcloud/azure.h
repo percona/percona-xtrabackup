@@ -77,9 +77,9 @@ class Azure_client {
       std::function<void(bool, const Http_buffer &)>;
   using async_delete_callback_t = std::function<void(bool)>;
 
+ private:
   std::unique_ptr<Azure_signer> signer;
 
- private:
   const Http_client *http_client;
 
   std::string endpoint;
@@ -106,6 +106,13 @@ class Azure_client {
       Http_request *req, Http_response *resp, const Http_client *http_client,
       Event_handler *h, Azure_client::async_download_callback_t callback,
       CURLcode rc, const Http_connection *conn, ulong count);
+
+  Http_request::sign_fun_t get_sign_fun(const std::string &container,
+                                        const std::string &name) {
+    return [this, container, name](Http_request &req) {
+      signer->sign_request(container, name, req, time(0));
+    };
+  }
 
  public:
   Azure_client(const Http_client *client, const std::string &storage_account,

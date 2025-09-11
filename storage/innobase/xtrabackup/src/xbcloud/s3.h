@@ -137,9 +137,9 @@ class S3_client {
       std::function<void(bool, const Http_buffer &)>;
   using async_delete_callback_t = std::function<void(bool)>;
 
+ private:
   std::unique_ptr<S3_signer> signer;
 
- private:
   const Http_client *http_client;
   std::shared_ptr<S3_ec2_instance> ec2_instance;
   s3_api_version_t api_version{S3_V_AUTO};
@@ -182,6 +182,12 @@ class S3_client {
       Http_request *req, Http_response *resp, const Http_client *http_client,
       Event_handler *h, S3_client::async_download_callback_t callback,
       CURLcode rc, const Http_connection *conn, ulong count);
+
+  Http_request::sign_fun_t get_sign_fun(const std::string &bucket) {
+    return [this, bucket](Http_request &req) {
+      signer->sign_request(hostname(bucket), bucket, req, time(0));
+    };
+  }
 
  public:
   S3_client(const Http_client *client, const std::string &region,

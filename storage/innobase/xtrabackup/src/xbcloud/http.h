@@ -141,6 +141,7 @@ class Http_request {
   using headers_t = std::map<std::string, std::string>;
   using param_t = std::pair<std::string, std::string>;
   using params_t = std::map<std::string, std::string>;
+  using sign_fun_t = std::function<void(Http_request &)>;
 
  private:
   method_t method_;
@@ -150,14 +151,16 @@ class Http_request {
   headers_t headers_;
   params_t params_;
   Http_buffer payload_;
+  sign_fun_t sign_fun_;
 
  public:
   Http_request(method_t method, protocol_t protocol, const std::string host,
-               const std::string &path)
+               const std::string &path, const sign_fun_t &sign_fun)
       : method_(method),
         protocol_(protocol),
         host_(host),
-        path_(uri_escape_path(path)) {}
+        path_(uri_escape_path(path)),
+        sign_fun_(sign_fun) {}
   void add_header(const std::string &name, const std::string &value) {
     headers_[name] = value;
   }
@@ -190,6 +193,11 @@ class Http_request {
   protocol_t protocol() const { return protocol_; }
   const Http_buffer &payload() const { return payload_; }
   std::string query_string() const;
+  void sign() {
+    if (sign_fun_) {
+      sign_fun_(*this);
+    }
+  }
 };
 
 class Http_response {
@@ -339,6 +347,7 @@ class Event_handler {
 class Http_client {
  public:
   using async_callback_t = std::function<void(CURLcode, Http_connection *)>;
+
  private:
   bool insecure{false};
   bool verbose{false};
