@@ -273,6 +273,8 @@ lsn_t Redo_Log_Reader::read_log_seg_8030(log_t &log, byte *buf, lsn_t start_lsn,
 
   ut_ad(file != log.m_files.end());
 
+  debug_sync_point("pause_before_open_redo");
+
   auto file_handle = file->open(Log_file_access_mode::READ_ONLY);
 
   if (!file_handle.is_open()) {
@@ -1498,9 +1500,19 @@ bool Redo_Log_Data_Manager::stop_at(lsn_t lsn, lsn_t checkpoint_lsn) {
              << SQUOTE(last_checkpoint_lsn);
   xb::info() << "Stopping log copying thread at LSN " << lsn;
 
+  DBUG_EXECUTE_IF("xtrabackup_pause_before_stop_copy_redo",
+    const char *key = "pause_before_open_redo";
+    *const_cast<const char **>(&xtrabackup_debug_sync) = key;);
+
   stop_lsn = lsn;
   os_event_set(event);
   thread.join();
+
+  /* Check for errors during copying to last_lsn */
+  if (error) {
+    xb::error() << "Error occured when copying to last_lsn.";
+    return false;
+  }
 
   archived_log_monitor.stop();
 
