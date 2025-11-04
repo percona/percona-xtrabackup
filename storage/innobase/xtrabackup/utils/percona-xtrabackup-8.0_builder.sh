@@ -206,6 +206,11 @@ enable_venv(){
     fi
 }
 
+switch_to_vault_repo() {
+    sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
+    sed -i 's|#\s*baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
+}
+
 install_deps() {
     if [ $INSTALL = 0 ]
     then
@@ -220,6 +225,9 @@ install_deps() {
     CURPLACE=$(pwd)
     if [ "$OS" == "rpm" ]
     then
+        if [ $RHEL = 7 ]; then
+            switch_to_vault_repo
+        fi
         yum install -y https://repo.percona.com/yum/percona-release-latest.noarch.rpm
         add_percona_yum_repo
         percona-release enable tools testing
