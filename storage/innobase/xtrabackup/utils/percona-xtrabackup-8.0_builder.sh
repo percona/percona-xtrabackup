@@ -257,6 +257,7 @@ install_deps() {
                 sleep 1
                 echo "waiting"
             done
+            switch_to_vault_repo
             until yum -y makecache; do
                 yum clean all
                 sleep 1
