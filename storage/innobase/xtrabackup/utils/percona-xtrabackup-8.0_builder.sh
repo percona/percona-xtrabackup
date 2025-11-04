@@ -228,29 +228,67 @@ install_deps() {
         if [ $RHEL = 7 ]; then
             switch_to_vault_repo
         fi
+        yum -y install git wget yum-utils curl
         yum install -y https://repo.percona.com/yum/percona-release-latest.noarch.rpm
-        add_percona_yum_repo
-        percona-release enable tools testing
-        yum -y install git wget 
-        if [[ "${RHEL}" -eq 8 ]]; then         
-            PKGLIST+=" binutils-devel python3-pip python3-setuptools python3-wheel"
+        if [ x"$ARCH" = "xx86_64" ]; then
+            if [ ${RHEL} = 9 -o ${RHEL} = 10 ]; then
+                yum-config-manager --enable ol${RHEL}_distro_builder
+                yum-config-manager --enable ol${RHEL}_codeready_builder
+                yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-${RHEL}.noarch.rpm
+            else
+                add_percona_yum_repo
+                percona-release enable tools testing
+            fi
+        else
+            yum-config-manager --enable ol"${RHEL}"_codeready_builder
+            if [ ${RHEL} = 10 ]; then
+                yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+                yum -y install epel-release
+            else
+                yum -y install epel-release
+            fi
+        fi
+        if [ ${RHEL} = 8 -o ${RHEL} = 9 -o ${RHEL} = 10 ]; then
+            PKGLIST+=" binutils-devel python3-pip python3-setuptools"
             PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make gcc"
             PKGLIST+=" rpm-build libgcrypt-devel ncurses-devel readline-devel openssl-devel gcc-c++"
-            PKGLIST+=" vim-common rpmlint patchelf python3-sphinx"
-            DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-gcc-c++ gcc-toolset-10-binutils"
-            DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-valgrind gcc-toolset-10-valgrind-devel gcc-toolset-10-libatomic-devel"
-            DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-libasan-devel gcc-toolset-10-libubsan-devel"
-            dnf config-manager --set-enabled powertools
+            PKGLIST+=" vim-common rpmlint patchelf python3-wheel libudev-devel"
+            if [ ${RHEL} = 9 -o ${RHEL} = 10 ]; then
+                PKGLIST+=" rsync procps-ng-devel python3-sphinx"
+            else
+                if [ x"$ARCH" = "xx86_64" ]; then
+                    yum-config-manager --enable powertools
+                    yum-config-manager --enable ol8_codeready_builder
+                    PKGLIST+=" libarchive procps-ng-devel"
+                else
+                    PKGLIST+=" rsync python3-sphinx libarchive procps-ng-devel"
+                fi
+	    fi
             until yum -y install ${PKGLIST}; do
                 echo "waiting"
                 sleep 1
             done
-            yum -y install centos-release-stream
-            until yum -y install ${DEVTOOLSET10_PKGLIST}; do
-                echo "waiting"
-                sleep 1
-            done       
-            yum -y remove centos-release-stream
+            if [ $RHEL = 8 ]; then
+                DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-gcc-c++ gcc-toolset-10-binutils"
+                DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-valgrind gcc-toolset-10-valgrind-devel gcc-toolset-10-libatomic-devel"
+                DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-libasan-devel gcc-toolset-10-libubsan-devel gcc-toolset-10-annobin"
+                DEVTOOLSET12_PKGLIST+=" gcc-toolset-12-gcc-c++ gcc-toolset-12-binutils"
+                DEVTOOLSET12_PKGLIST+=" gcc-toolset-12-libasan-devel gcc-toolset-12-libubsan-devel gcc-toolset-12-annobin-annocheck gcc-toolset-12-annobin-plugin-gcc"
+                if [ x"$ARCH" = "xx86_64" ]; then
+                    yum -y install centos-release-stream
+                    until yum -y install ${DEVTOOLSET10_PKGLIST}; do
+                        echo "waiting"
+                        sleep 1
+                    done
+                    yum -y remove centos-release-stream
+                else
+                    until yum -y install ${DEVTOOLSET12_PKGLIST}; do
+                        echo "waiting"
+                        sleep 1
+                    done
+                    source /opt/rh/gcc-toolset-12/enable
+                fi
+            fi
         else
             until yum -y install epel-release centos-release-scl; do
                 yum clean all
@@ -270,6 +308,7 @@ install_deps() {
             PKGLIST+=" libaio-devel perl-DBD-MySQL vim-common ncurses-devel readline-devel readline"
             PKGLIST+=" zlib-devel libgcrypt-devel bison patchelf"
             PKGLIST+=" socat numactli libudev-devel libicu-devel"
+            PKGLIST+=" procps-ng-devel"
             if [[ "${RHEL}" -eq 7 ]]; then
                 PKGLIST+=" numactl-libs perl-Digest-MD5  python3-pip python3-setuptools python3-wheel rh-python36-python-sphinx"
             elif [[ "${RHEL}" -eq 6 ]]; then
@@ -282,6 +321,7 @@ install_deps() {
             if [[ "${RHEL}" -eq 7 ]]; then
                 yum -y --enablerepo=centos-sclo-rh-testing install devtoolset-10-gcc-c++ devtoolset-10-binutils devtoolset-10-valgrind devtoolset-10-valgrind-devel devtoolset-10-libatomic-devel
                 yum -y --enablerepo=centos-sclo-rh-testing install devtoolset-10-libasan-devel devtoolset-10-libubsan-devel
+                yum -y update nss
             elif [[ "${RHEL}" -eq 6 ]]; then
                 source /opt/rh/rh-python36/enable
                 pip install sphinx
@@ -303,7 +343,7 @@ install_deps() {
         if [ "${OS_NAME}" == "bionic" ]; then
             PKGLIST+=" gcc-8 g++-8"
 	fi
-        if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" ]; then
+        if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" -o "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "jammy" -o "${OS_NAME}" == "noble" ]; then
             PKGLIST+=" python3-sphinx python3-docutils"
         else
             PKGLIST+=" python-sphinx python-docutils"
