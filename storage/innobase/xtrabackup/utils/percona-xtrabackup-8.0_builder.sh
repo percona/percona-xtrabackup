@@ -236,8 +236,17 @@ install_deps() {
                 yum-config-manager --enable ol${RHEL}_codeready_builder
                 yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-${RHEL}.noarch.rpm
             else
-                add_percona_yum_repo
-                percona-release enable tools testing
+                #add_percona_yum_repo
+                #percona-release enable tools testing
+                dnf install -y autoconf automake libtool make
+                dnf install -y gcc-toolset-12
+                source /opt/rh/gcc-toolset-12/enable
+                gcc --version
+                git clone https://github.com/NixOS/patchelf.git
+                cd patchelf
+                ./bootstrap.sh && ./configure && make
+                make install
+                patchelf --version
             fi
         else
             yum-config-manager --enable ol"${RHEL}"_codeready_builder
@@ -306,7 +315,7 @@ install_deps() {
             PKGLIST+=" devtoolset-7-valgrind devtoolset-7-valgrind-devel"
             PKGLIST+=" wget libcurl-devel cmake cmake3 make gcc gcc-c++ libev-devel openssl-devel rpm-build"
             PKGLIST+=" libaio-devel perl-DBD-MySQL vim-common ncurses-devel readline-devel readline"
-            PKGLIST+=" zlib-devel libgcrypt-devel bison patchelf"
+            PKGLIST+=" zlib-devel libgcrypt-devel bison"
             PKGLIST+=" socat numactli libudev-devel libicu-devel"
             PKGLIST+=" procps-ng-devel"
             if [[ "${RHEL}" -eq 7 ]]; then
