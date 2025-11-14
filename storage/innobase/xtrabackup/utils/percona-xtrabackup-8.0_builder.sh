@@ -355,7 +355,7 @@ install_deps() {
         PKGLIST+=" cmake debhelper libaio-dev libncurses-dev libtool libz-dev libsasl2-dev vim-common"
         PKGLIST+=" libgcrypt-dev libev-dev lsb-release libudev-dev"
         PKGLIST+=" build-essential rsync libdbd-mysql-perl libnuma1 socat libssl-dev patchelf libicu-dev"
-        if [ "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "noble" ]; then
+        if [ "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" ]; then
             PKGLIST+=" libproc2-dev"
         else
             PKGLIST+=" libprocps-dev"
@@ -363,7 +363,7 @@ install_deps() {
         if [ "${OS_NAME}" == "bionic" ]; then
             PKGLIST+=" gcc-8 g++-8"
 	fi
-        if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" -o "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "jammy" -o "${OS_NAME}" == "noble" ]; then
+        if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" -o "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "jammy" -o "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" ]; then
             PKGLIST+=" python3-sphinx python3-docutils"
         else
             PKGLIST+=" python-sphinx python-docutils"
@@ -373,7 +373,11 @@ install_deps() {
             sleep 1
             echo "waiting"
         done
-
+        if [ "${OS_NAME}" == "trixie" ]; then
+            apt-get -y install gcc-13 g++-13
+            update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 --slave /usr/bin/g++ g++ /usr/bin/g++-13
+            update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-13 100
+        fi
     fi
     return;
 }
