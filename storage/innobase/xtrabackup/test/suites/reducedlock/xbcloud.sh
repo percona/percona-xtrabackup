@@ -1,7 +1,6 @@
 . inc/xbcloud_common.sh
 . inc/common.sh
 
-require_pro_pxb_version
 require_debug_pxb_version
 is_xbcloud_credentials_set
 

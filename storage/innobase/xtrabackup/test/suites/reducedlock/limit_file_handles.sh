@@ -5,7 +5,6 @@
 . inc/common.sh
 
 require_debug_pxb_version
-require_pro_pxb_version
 
 open_file_limit=$(ulimit -n)
 ulimit -n 1024
