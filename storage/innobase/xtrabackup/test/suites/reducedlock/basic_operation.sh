@@ -5,7 +5,6 @@
 . inc/common.sh
 
 require_debug_pxb_version
-require_pro_pxb_version
 
 function run_test() {
   local TEST_TYPE=$1
