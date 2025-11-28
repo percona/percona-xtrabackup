@@ -145,6 +145,7 @@ get_sources(){
         export DESTINATION=experimental
     fi 
     echo "DESTINATION=${DESTINATION}" >> percona-xtrabackup-8.0.properties
+    sed -i 's|https://boostorg.jfrog.io/artifactory/main/release/1.77.0/source/|https://downloads.percona.com/downloads/packaging/boost/|g' cmake/boost.cmake
 
     enable_venv
 
@@ -162,6 +163,7 @@ get_sources(){
     rsync -av ../extra/libkmip/* extra/libkmip/
     sed -i 's:-Wall -Wextra -Wformat-security -Wvla -Wundef:-Wextra -Wformat-security -Wvla -Wundef:g' cmake/maintainer.cmake
     sed -i '/Werror/d' cmake/maintainer.cmake
+    sed -i 's|https://boostorg.jfrog.io/artifactory/main/release/1.77.0/source/|https://downloads.percona.com/downloads/packaging/boost/|g' cmake/boost.cmake
     sed -i 's:Wstringop-truncation:Wno-stringop-truncation:g' cmake/maintainer.cmake
     sed -i "s:@@XB_VERSION_MAJOR@@:${XB_VERSION_MAJOR}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
     sed -i "s:@@XB_VERSION_MINOR@@:${XB_VERSION_MINOR}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
@@ -201,6 +203,12 @@ get_system(){
         export RHEL=$(rpm --eval %rhel)
         export ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
         export OS_NAME="el$RHEL"
+        export OS="rpm"
+    elif [ -f /etc/amazon-linux-release ]; then
+        GLIBC_VER_TMP="$(rpm glibc -qa --qf %{VERSION})"
+        export RHEL=$(rpm --eval %amzn)
+        export ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
+        export OS_NAME="amzn$RHEL"
         export OS="rpm"
     else
         GLIBC_VER_TMP="$(dpkg-query -W -f='${Version}' libc6 | awk -F'-' '{print $1}')"
@@ -264,12 +272,12 @@ install_deps() {
             fi
         fi
 
-        if [ ${RHEL} = 8 -o ${RHEL} = 9 -o ${RHEL} = 10 ]; then
+        if [[ "${RHEL}" = "8" || "${RHEL}" = "9" || "${RHEL}" = "2023" || "${RHEL}" = "10" ]]; then
             PKGLIST+=" binutils-devel python3-pip python3-setuptools"
             PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make gcc"
             PKGLIST+=" rpm-build libgcrypt-devel ncurses-devel readline-devel openssl-devel gcc-c++"
             PKGLIST+=" vim-common rpmlint patchelf python3-wheel libudev-devel"
-            if [ ${RHEL} = 9 -o ${RHEL} = 10 ]; then
+            if [[ "${RHEL}" = "9" || "${RHEL}" = "2023" || "${RHEL}" = "10" ]]; then
                 PKGLIST+=" rsync procps-ng-devel python3-sphinx"
             else
                 if [ x"$ARCH" = "xx86_64" ]; then
@@ -526,7 +534,8 @@ build_rpm(){
 
     enable_venv
 
-    rpmbuild --define "_topdir ${WORKDIR}/rpmbuild" --define "dist .el${RHEL}" --rebuild rpmbuild/SRPMS/${SRCRPM}
+    rpmbuild --define "_topdir ${WORKDIR}/rpmbuild" --define "dist .${OS_NAME}" --rebuild rpmbuild/SRPMS/${SRCRPM}
+
     return_code=$?
     if [ $return_code != 0 ]; then
         exit $return_code
