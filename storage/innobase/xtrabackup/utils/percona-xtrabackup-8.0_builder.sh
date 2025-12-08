@@ -204,6 +204,12 @@ get_system(){
         export ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
         export OS_NAME="el$RHEL"
         export OS="rpm"
+    elif [ -f /etc/amazon-linux-release ]; then
+        GLIBC_VER_TMP="$(rpm glibc -qa --qf %{VERSION})"
+        export RHEL=$(rpm --eval %amzn)
+        export ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
+        export OS_NAME="amzn$RHEL"
+        export OS="rpm"
     else
         GLIBC_VER_TMP="$(dpkg-query -W -f='${Version}' libc6 | awk -F'-' '{print $1}')"
         export ARCH=$(uname -m)
@@ -266,12 +272,12 @@ install_deps() {
                 yum -y install epel-release
             fi
         fi
-        if [ ${RHEL} = 8 -o ${RHEL} = 9 -o ${RHEL} = 10 ]; then
+        if [[ "${RHEL}" = "8" || "${RHEL}" = "9" || "${RHEL}" = "2023" || "${RHEL}" = "10" ]]; then
             PKGLIST+=" binutils-devel python3-pip python3-setuptools"
             PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make"
             PKGLIST+=" rpm-build libgcrypt-devel ncurses-devel readline-devel openssl-devel"
             PKGLIST+=" vim-common rpmlint patchelf python3-wheel libudev-devel"
-            if [ ${RHEL} = 9 -o ${RHEL} = 10 ]; then
+            if [[ "${RHEL}" = "9" || "${RHEL}" = "2023" || "${RHEL}" = "10" ]]; then
                 PKGLIST+=" rsync procps-ng-devel python3-sphinx gcc gcc-c++ gcc-gfortran"
             else
                 if [ x"$ARCH" = "xx86_64" ]; then
@@ -558,11 +564,8 @@ build_rpm(){
     SRCRPM=$(basename $(find . -name '*.src.rpm' | sort | tail -n1))
 
     enable_venv
-    if [[ "x${FIPSMODE}" == "x1" ]]; then
-        rpmbuild --define "_topdir ${WORKDIR}/rpmbuild" --define "dist .el${RHEL}" --define "enable_fipsmode 1" --rebuild rpmbuild/SRPMS/${SRCRPM}
-    else
-        rpmbuild --define "_topdir ${WORKDIR}/rpmbuild" --define "dist .el${RHEL}" --rebuild rpmbuild/SRPMS/${SRCRPM}
-    fi
+
+    rpmbuild --define "_topdir ${WORKDIR}/rpmbuild" --define "dist .${OS_NAME}" --rebuild rpmbuild/SRPMS/${SRCRPM}
     return_code=$?
     if [ $return_code != 0 ]; then
         exit $return_code
