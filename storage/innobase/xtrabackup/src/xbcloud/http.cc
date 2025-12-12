@@ -371,8 +371,8 @@ bool Event_handler::init() {
 }
 
 Event_handler::~Event_handler() {
-  if (loop != nullptr) ev_loop_destroy(loop);
   if (curl_multi != nullptr) curl_multi_cleanup(curl_multi);
+  if (loop != nullptr) ev_loop_destroy(loop);
 }
 
 void Event_handler::main_loop() { ev_loop(loop, 0); }
