@@ -82,7 +82,6 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <version_check_pl.h>
 #endif
 
-
 /** Possible values for system variable "innodb_checksum_algorithm". */
 extern const char *innodb_checksum_algorithm_names[];
 
@@ -163,7 +162,6 @@ struct datadir_thread_ctxt_t {
   std::thread::id id;
   bool ret;
 };
-
 
 /************************************************************************
 Trim leading slashes from absolute path so it becomes relative */
@@ -2230,7 +2228,15 @@ bool copy_back(int argc, char **argv) {
 
   /* copy undo tablespaces */
   if (srv_undo_tablespaces > 0) {
-    dst_dir = (srv_undo_dir && *srv_undo_dir) ? srv_undo_dir : mysql_data_home;
+    dst_dir = mysql_data_home;
+
+    // If innodb_undo_directory is set, use it as the destination directory.
+    // Ignore innodb_undo_directory if it's set to "./" (default value), because
+    // it will make xtrabackup try to copy files back to backup directory,
+    // resulting in "file exists" errors.
+    if (srv_undo_dir && *srv_undo_dir && strcmp(srv_undo_dir, "./") != 0) {
+      dst_dir = srv_undo_dir;
+    }
 
     ds_data = ds_create(dst_dir, DS_TYPE_LOCAL);
 
