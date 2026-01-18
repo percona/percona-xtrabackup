@@ -3,7 +3,6 @@
 ###############################################################################
 
 . inc/common.sh
-require_pro_pxb_version
 
 run_cmd_expect_failure $XB_BIN $XB_ARGS --backup --target-dir=$topdir/backup_base --lock-ddl=REDUCED  --page-tracking 2> >(tee $topdir/backup_error.log)
 

@@ -50,7 +50,8 @@ MYSQL_ADD_EXECUTABLE(xbcloud
   s3_ec2.cc
   ../xbcrypt_common.cc
   ../file_utils.cc
-  swift.cc)
+  swift.cc
+  library_version_check.cc)
 
 SET_TARGET_PROPERTIES(xbcloud
         PROPERTIES LINKER_LANGUAGE CXX

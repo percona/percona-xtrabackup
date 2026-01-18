@@ -43,6 +43,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "xtrabackup_version.h"
 
 #include "crc_glue.h"
+#include "library_version_check.h"
 #include "msg.h"
 #include "nulls.h"
 #include "xbcloud/azure.h"
@@ -563,7 +564,6 @@ static bool get_one_option(int optid,
 
 static const char *load_default_groups[] = {"xbcloud", 0};
 
-
 static void get_env_args() {
   get_env_value(opt_swift_auth_url, "OS_AUTH_URL");
   get_env_value(opt_swift_tenant, "OS_TENANT_NAME");
@@ -834,9 +834,7 @@ void put_func(put_thread_ctxt_t &cntx) {
   xb_rstream_chunk_t chunk;
   xb_rstream_result_t res;
 
-
   memset(&chunk, 0, sizeof(chunk));
-
 
   if (!h.init()) {
     msg_ts("%s: Failed to initialize event handler.\n", my_progname);
@@ -1312,6 +1310,8 @@ int main(int argc, char **argv) {
   if (parse_args(argc, argv)) {
     return EXIT_FAILURE;
   }
+
+  check_library_versions();
 
   std::unique_ptr<Object_store> object_store = nullptr;
   if (opt_verbose) {
