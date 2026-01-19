@@ -72,9 +72,16 @@ static bool wf_incremental_init(xb_write_filt_ctxt_t *ctxt, char *dst_name,
       (cursor->page_size / 4 + 1) * cursor->page_size + UNIV_PAGE_SIZE_MAX;
   cp->delta_buf_base = static_cast<byte *>(
       ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, buf_size));
-  memset(cp->delta_buf_base, 0, buf_size);
   cp->delta_buf =
       static_cast<byte *>(ut_align(cp->delta_buf_base, UNIV_PAGE_SIZE_MAX));
+
+  /* OPTIMIZATION: Only zero the first page (header/index page).
+  Previously, we zeroed the entire buffer (~67MB), which triggered massive
+  OS page faults (asm_exc_page_fault) and consumed significant CPU (~80%).
+  We only need the header page to be clean so that no garbage follows the
+  0xFFFFFFFF sentinel. The data pages are overwritten by memcpy or never
+  written to disk.*/
+  memset(cp->delta_buf, 0, cursor->page_size);
 
   /* write delta meta info */
   snprintf(meta_name, sizeof(meta_name), "%s%s", dst_name,
@@ -135,7 +142,11 @@ static bool wf_incremental_process(xb_write_filt_ctxt_t *ctxt,
       }
 
       /* clear buffer */
-      memset(cp->delta_buf, 0, page_size / 4 * page_size);
+      /* OPTIMIZATION: Only clear the header page for the next batch.
+      The rest of the buffer will be overwritten by new data pages.
+      Since we track 'npages', we never write the dirty tail to disk,
+      so zeroing the whole buffer is wasted memory bandwidth.*/
+      memset(cp->delta_buf, 0, page_size);
       /*"xtra"*/
       mach_write_to_4(cp->delta_buf, 0x78747261UL);
       cp->npages = 1;
