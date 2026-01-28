@@ -186,13 +186,7 @@ static int local_write_sparse(ds_file_t *file, const void *buf, size_t len,
       return 1;
     }
 
-#ifdef HAVE_FALLOC_PUNCH_HOLE_AND_KEEP_SIZE
-    if (punch_hole_supported) {
-      fallocate(fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, seek,
-                sparse_map[i].skip);
-    }
-#endif
-
+    posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
     ptr += sparse_map[i].len;
   }
   /* to track if last page is sparse */
