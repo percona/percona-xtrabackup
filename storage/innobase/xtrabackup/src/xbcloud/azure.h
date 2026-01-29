@@ -107,6 +107,14 @@ class Azure_client {
       Event_handler *h, Azure_client::async_download_callback_t callback,
       CURLcode rc, const Http_connection *conn, ulong count);
 
+  // Common helper function for listing objects - handles pagination and XML
+  // parsing ProcessBlob is a callable that takes (rapidxml::xml_node<>* node)
+  // and returns bool Returns false to stop processing, true to continue
+  template <typename ProcessBlob>
+  bool list_objects_common(const std::string &container,
+                           const std::string &prefix,
+                           ProcessBlob &&process_blob);
+
  public:
   Azure_client(const Http_client *client, const std::string &storage_account,
                const std::string &access_key, bool development_storage,
@@ -146,6 +154,22 @@ class Azure_client {
   bool list_objects_with_prefix(const std::string &container,
                                 const std::string &prefix,
                                 std::vector<std::string> &objects);
+
+  /**
+   * List objects under a prefix and split them into files and directories.
+   *
+   * For HNS-enabled containers, directory entries are returned explicitly.
+   *
+   * @param container Container name.
+   * @param prefix Prefix to list.
+   * @param files Output list of file objects.
+   * @param dirs Output list of directory objects.
+   * @return true on success, false on error.
+   */
+  bool list_objects_files_and_dirs(const std::string &container,
+                                   const std::string &prefix,
+                                   std::vector<std::string> &files,
+                                   std::vector<std::string> &dirs);
 
   ulong get_max_retries() { return max_retries; }
 
@@ -234,6 +258,13 @@ class Azure_object_store : public Object_store {
                                       const std::string &name,
                                       bool &success) override {
     return azure_client.download_object(container, name, success);
+  }
+  virtual bool list_objects_files_and_dirs(
+      const std::string &container, const std::string &directory,
+      std::vector<std::string> &files,
+      std::vector<std::string> &dirs) override {
+    return azure_client.list_objects_files_and_dirs(container, directory + "/",
+                                                    files, dirs);
   }
 };
 }  // namespace xbcloud
