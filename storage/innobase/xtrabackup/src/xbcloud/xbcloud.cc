@@ -1046,16 +1046,27 @@ bool chunk_name_to_file_name(const std::string &chunk_name,
   return true;
 }
 
+/**
+ * Delete a backup directory from object storage.
+ *
+ * @param store Object store implementation.
+ * @param container Container/bucket name.
+ * @param backup_name Backup directory to delete.
+ * @return true on success, false on error.
+ */
 bool xbcloud_delete(Object_store *store, const std::string &container,
                     const std::string &backup_name) {
-  std::vector<std::string> object_list;
+  std::vector<std::string> files;
+  std::vector<std::string> dirs;
 
-  if (!store->list_objects_in_directory(container, backup_name, object_list)) {
+  // First pass lists files/dirs to validate existence and drive deletion.
+  if (!store->list_objects_files_and_dirs(container, backup_name, files,
+                                          dirs)) {
     msg_ts("%s: Delete failed. Cannot list %s.\n", my_progname,
            backup_name.c_str());
     return false;
   }
-  if (object_list.empty()) {
+  if (files.empty() && dirs.empty()) {
     msg_ts("%s: error: backup named %s doesn't exists!\n", my_progname,
            backup_name.c_str());
     return false;
@@ -1069,7 +1080,7 @@ bool xbcloud_delete(Object_store *store, const std::string &container,
   auto thread = h.run();
 
   bool error = false;
-  for (const auto &obj : object_list) {
+  for (const auto &obj : files) {
     std::string file_name;
     my_off_t idx;
     if (error) break;
@@ -1091,6 +1102,8 @@ bool xbcloud_delete(Object_store *store, const std::string &container,
                   }
                 },
                 std::placeholders::_1, obj, &error))) {
+      h.stop();
+      thread.join();
       return false;
     }
   }
@@ -1100,11 +1113,31 @@ bool xbcloud_delete(Object_store *store, const std::string &container,
 
   if (error) {
     msg_ts("%s: Delete failed.\n", my_progname);
-  } else {
-    msg_ts("%s: Delete completed.\n", my_progname);
+    return false;
   }
 
-  return !error;
+  if (!dirs.empty()) {
+    std::sort(dirs.begin(), dirs.end(), std::greater<std::string>());
+    for (const auto &d : dirs) {
+      msg_ts("%s: Deleting directory %s.\n", my_progname, d.c_str());
+      if (!store->delete_object(container, d)) {
+        msg_ts("%s: Delete failed. Cannot delete directory %s.\n", my_progname,
+               d.c_str());
+        return false;
+      }
+    }
+
+    // Delete the root directory of the backup
+    msg_ts("%s: Deleting directory %s.\n", my_progname, backup_name.c_str());
+    if (!store->delete_object(container, backup_name)) {
+      msg_ts("%s: Warning: Failed to delete root directory %s.\n", my_progname,
+             backup_name.c_str());
+    }
+  }
+
+  msg_ts("%s: Delete completed.\n", my_progname);
+
+  return true;
 }
 
 void download_func(download_thread_ctxt_t &cntx) {
