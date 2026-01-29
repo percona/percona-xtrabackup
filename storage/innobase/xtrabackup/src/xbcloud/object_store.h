@@ -56,6 +56,21 @@ class Object_store {
   virtual Http_buffer download_object(const std::string &container,
                                       const std::string &name,
                                       bool &success) = 0;
+  /**
+   * List objects under a directory prefix and split them into files and dirs.
+   *
+   * Default implementation treats all returned objects as files.
+   *
+   * @param container Container/bucket name.
+   * @param directory Directory prefix to list.
+   * @param files Output list of file objects.
+   * @param dirs Output list of directory objects (may be empty).
+   * @return true on success, false on error.
+   */
+  virtual bool list_objects_files_and_dirs(const std::string &container,
+                                           const std::string &directory,
+                                           std::vector<std::string> &files,
+                                           std::vector<std::string> &dirs);
   virtual ~Object_store() {}
 };
 
