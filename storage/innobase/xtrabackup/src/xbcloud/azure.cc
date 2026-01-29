@@ -40,7 +40,7 @@ const std::string AZURE_DATE_HEADER = "x-ms-date";
 const std::string AZURE_VERSION_HEADER = "x-ms-version";
 const std::string AZURE_BLOB_TYPE_HEADER = "x-ms-blob-type";
 const std::string AZURE_STORAGE_CLASS_HEADER = "x-ms-access-tier";
-const std::string AZURE_VERSION_DATE = "2020-06-12";
+const std::string AZURE_VERSION_DATE = "2020-10-02";
 const std::string AZURE_DEVELOPMENT_HOST = "127.0.0.1:10000";
 const std::string AZURE_HOST = ".blob.core.windows.net";
 
@@ -531,9 +531,12 @@ Azure_client::Azure_client(const Http_client *client,
       storage_account, access_key, development_storage, storage_class));
 }
 
-bool Azure_client::list_objects_with_prefix(const std::string &container,
-                                            const std::string &prefix,
-                                            std::vector<std::string> &objects) {
+// Common helper function for listing objects - handles pagination and XML
+// parsing
+template <typename ProcessBlob>
+bool Azure_client::list_objects_common(const std::string &container,
+                                       const std::string &prefix,
+                                       ProcessBlob &&process_blob) {
   bool truncated = true;
   std::string next_marker;
 
@@ -602,20 +605,67 @@ bool Azure_client::list_objects_with_prefix(const std::string &container,
 
     auto node = blobs_node->first_node("Blob");
     while (node != nullptr) {
-      auto name = node->first_node("Name");
-      if (name == nullptr) {
-        msg_ts(
-            "%s: Failed to parse list container result. Cannot find object "
-            "name.\n",
-            my_progname);
-        return false;
+      if (!process_blob(node)) {
+        return false;  // Processing failed
       }
-      objects.push_back(name->value());
       node = node->next_sibling("Blob");
     }
   }
 
   return true;
+}
+
+bool Azure_client::list_objects_with_prefix(const std::string &container,
+                                            const std::string &prefix,
+                                            std::vector<std::string> &objects) {
+  return list_objects_common(
+      container, prefix, [&objects](rapidxml::xml_node<> *node) {
+        auto name = node->first_node("Name");
+        if (name == nullptr) {
+          msg_ts(
+              "%s: Failed to parse list container result. Cannot find object "
+              "name.\n",
+              my_progname);
+          return false;
+        }
+        objects.push_back(name->value());
+        return true;
+      });
+}
+
+bool Azure_client::list_objects_files_and_dirs(const std::string &container,
+                                               const std::string &prefix,
+                                               std::vector<std::string> &files,
+                                               std::vector<std::string> &dirs) {
+  return list_objects_common(
+      container, prefix, [&](rapidxml::xml_node<> *node) {
+        auto name = node->first_node("Name");
+        if (name == nullptr) {
+          msg_ts(
+              "%s: Failed to parse list container result. Cannot find object "
+              "name.\n",
+              my_progname);
+          return false;
+        }
+
+        // HNS returns directories explicitly via the ResourceType property.
+        bool is_directory = false;
+        auto properties_node = node->first_node("Properties");
+        if (properties_node) {
+          auto type_node = properties_node->first_node("ResourceType");
+          if (type_node && type_node->value() &&
+              strcmp(type_node->value(), "directory") == 0) {
+            is_directory = true;
+          }
+        }
+
+        if (is_directory) {
+          dirs.push_back(name->value());
+        } else {
+          files.push_back(name->value());
+        }
+        return true;
+      });
 }
 
 }  // namespace xbcloud
