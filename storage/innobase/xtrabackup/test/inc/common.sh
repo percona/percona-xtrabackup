@@ -431,7 +431,7 @@ replicate-ignore-db=mysql
 replicate-ignore-db=performance_schema
 replicate-ignore-db=sys
 secure-file-priv=""
-innodb_log_file_size=48M
+innodb_redo_log_capacity=48M
 ${MYSQLD_EXTRA_MY_CNF_OPTS:-}
 #core-file
 
