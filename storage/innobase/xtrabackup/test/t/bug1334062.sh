@@ -1,15 +1,15 @@
 #############################################################################
 # Bug #1334062: Xtrabackup 2.2.3 fails to perform a full backup on PS 5.5 if
-#               innodb_log_file_size on the [mysqld] section of my.cnf is not
+#               innodb_redo_log_capacity on the [mysqld] section of my.cnf is not
 #               set
 #############################################################################
 
 start_server
 
-sed -i -e 's/innodb_log_file_size=.*//' $MYSQLD_VARDIR/my.cnf
+sed -i -e 's/innodb_redo_log_capacity=.*//' $MYSQLD_VARDIR/my.cnf
 
-grep innodb_log_file_size $MYSQLD_VARDIR/my.cnf &&
-  die "innodb_log_file_size is present in my.cnf"
+grep innodb_redo_log_capacity $MYSQLD_VARDIR/my.cnf &&
+  die "innodb_redo_log_capacity is present in my.cnf"
 
 xtrabackup --backup --target-dir=$topdir/backup
 

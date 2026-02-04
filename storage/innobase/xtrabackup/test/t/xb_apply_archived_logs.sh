@@ -227,7 +227,7 @@ function test_archived_logs
 	local BACKUP_DIR=$topdir/backup
 	local BASE_DATA_DIR=$topdir/base_data
 	local ARCHIVED_LOGS_DIR=$topdir/archived_logs
-	local XTRABACKUP_OPTIONS="--innodb_log_file_size=2M $EXTRA_OPTIONS"
+	local XTRABACKUP_OPTIONS="--innodb_redo_log_capacity=8M $EXTRA_OPTIONS"
 	#Setup ROW binlog format to supress warnings in result file
 	local SERVER_OPTIONS="$XTRABACKUP_OPTIONS --innodb_log_archive=ON --innodb_log_arch_dir=$ARCHIVED_LOGS_DIR  --binlog-format=ROW"
 	mkdir -p $BASE_BACKUP_DIR $BACKUP_DIR

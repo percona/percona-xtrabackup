@@ -4,8 +4,7 @@ if ! $XB_BIN --help 2>&1 | grep -q debug-sync; then
     skip_test "Requires --debug-sync support"
 fi
 
-start_server --innodb_log_file_size=4M --innodb_thread_concurrency=1 \
-    --innodb_log_buffer_size=1M
+start_server --innodb_redo_log_capacity=8M --innodb_thread_concurrency=3 
 
 load_dbase_schema sakila
 load_dbase_data sakila
@@ -14,7 +13,7 @@ mkdir $topdir/backup
 #avoid log wrap before we do the first scan
 innodb_wait_for_flush_all
 run_cmd_expect_failure $XB_BIN $XB_ARGS --datadir=$mysql_datadir --backup \
-    --lock-ddl=OFF --innodb_log_file_size=4M --target-dir=$topdir/backup \
+    --lock-ddl=OFF --innodb_redo_log_capacity=8M --target-dir=$topdir/backup \
     --debug-sync="xtrabackup_copy_logfile_pause" &
 
 job_pid=$!

@@ -3,7 +3,7 @@ KEYRING_TYPE="component"
 . inc/keyring_common.sh
 . inc/keyring_file.sh
 MYSQLD_EXTRA_MY_CNF_OPTS="
-innodb-log-file-size=80M
+innodb-redo-log-capacity=160M
 "
 configure_server_with_component
 
@@ -22,7 +22,7 @@ mkdir $topdir/backup
 
 # Test 1 - should fail since we don't have any entry on keyring file yet
 vlog "Test 1 - Should fail as keyring file does not have encryption information"
-run_cmd_expect_failure $XB_BIN $XB_ARGS --innodb-log-file-size=80M --xtrabackup-plugin-dir=${plugin_dir} --lock-ddl=OFF --backup \
+run_cmd_expect_failure $XB_BIN $XB_ARGS --innodb-redo-log-capacity=160M --xtrabackup-plugin-dir=${plugin_dir} --lock-ddl=OFF --backup \
 --target-dir=$topdir/backup --debug-sync="xtrabackup_pause_after_redo_catchup" 2> >(tee $topdir/backup.log)&
 
 job_pid=$!
@@ -84,7 +84,7 @@ $MYSQL $MYSQL_ARGS -Ns -e "DROP TABLE tmp1" sakila
 innodb_wait_for_flush_all
 
 
-run_cmd $XB_BIN $XB_ARGS --innodb-log-file-size=80M --lock-ddl=OFF --backup \
+run_cmd $XB_BIN $XB_ARGS --innodb-redo-log-capacity=160M --lock-ddl=OFF --backup \
 --target-dir=$topdir/backup --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} --debug-sync="xtrabackup_pause_after_redo_catchup" &
 
 job_pid=$!
@@ -125,5 +125,5 @@ xtrabackup --copy-back --target-dir=$topdir/backup
 cp ${instance_local_manifest}  $mysql_datadir
 cp ${keyring_component_cnf} $mysql_datadir
 
-start_server --innodb-log-file-size=80M
+start_server --innodb-redo-log-capacity=160M
 run_cmd $MYSQL $MYSQL_ARGS -Ns -e "SELECT * FROM tmp2;" sakila

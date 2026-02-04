@@ -219,7 +219,7 @@ function keyring_extra_tests()
   #
   MYSQLD_EXTRA_MY_CNF_OPTS="${MYSQLD_EXTRA_MY_CNF_OPTS:-""}
   innodb-buffer-pool-size=536870912
-  innodb-log-file-size=536870912
+  innodb-redo-log-capacity=1073741824
   "
 
   XB_EXTRA_MY_CNF_OPTS="${XB_EXTRA_MY_CNF_OPTS:-""}

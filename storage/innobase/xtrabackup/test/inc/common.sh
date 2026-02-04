@@ -1414,7 +1414,7 @@ function innodb_wait_for_flush_all()
 ########################################################################
 function innodb_lsn()
 {
-    ${MYSQL} ${MYSQL_ARGS} -e "SHOW ENGINE InnoDB STATUS\G" | \
+    ${MYSQL} ${MYSQL_ARGS} --vertical -e "SHOW ENGINE InnoDB STATUS" | \
         grep "Log sequence number" | awk '{ print $4 }'
 }
 
@@ -1422,15 +1422,14 @@ function innodb_lsn()
 ########################################################################
 function innodb_flushed_lsn()
 {
-    ${MYSQL} ${MYSQL_ARGS} -e "SHOW ENGINE InnoDB STATUS\G" | \
-        grep "Log flushed up to" | awk '{ print $5 }'
+    ${MYSQL} ${MYSQL_ARGS} --vertical -e "SHOW ENGINE InnoDB STATUS" | grep "Log flushed up to" | awk '{ print $5 }'
 }
 
 # Return checkpoint LSN
 ########################################################################
 function innodb_checkpoint_lsn()
 {
-    ${MYSQL} ${MYSQL_ARGS} -e "SHOW ENGINE InnoDB STATUS\G" | \
+    ${MYSQL} ${MYSQL_ARGS} --vertical -e "SHOW ENGINE InnoDB STATUS" | \
         grep "Last checkpoint at" | awk '{ print $4 }'
 }
 
